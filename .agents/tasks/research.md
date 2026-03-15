@@ -108,15 +108,20 @@ Each layer is independent.
 
 Recommended stack:
 
-- React
-- TypeScript
-- Zustand (state management)
+- React 19 + React Compiler
+- TypeScript (tsgo / native-preview)
+- TanStack Router (file-based routing)
+- TanStack Query (async state / server state)
+- Vanilla JS stores + `useSyncExternalStore` (global UI state, no third-party)
+- Tailwind v4 + Shadcn UI (styling + components)
 
 Reasoning:
 
 - stable ecosystem
+- type-safe routing and queries
 - predictable state updates
 - high performance UI composition
+- React Compiler eliminates manual memoization
 
 ---
 
@@ -166,8 +171,7 @@ Capabilities required:
 
 Use:
 
-- Tauri (preferred)
-- Electron (alternative)
+- **Tauri v2** (required for this project)
 
 Reasons:
 
@@ -175,6 +179,9 @@ Reasons:
 - plugin hosting
 - lower audio latency
 - system integration
+- native sidecar support for bundled llama.cpp / whisper.cpp binaries
+- smaller bundle size than Electron
+- Rust backend for safe native command execution
 
 ---
 
@@ -410,11 +417,13 @@ These limits ensure the AI behaves like a **responsive assistant rather than a b
 
 Models should be optimized for local execution.
 
-Recommended target sizes:
+Two tiers apply:
 
-Command model
+## Native desktop sidecar models (llama.cpp / whisper.cpp)
 
-    1-2 GB
+Command/reasoning model
+
+    1-2 GB (quantized GGUF, e.g. Qwen2.5-1.5B-Instruct or similar)
 
 Music generation models
 
@@ -424,7 +433,19 @@ Audio analysis models
 
     < 500 MB
 
-Models must support quantization to reduce memory footprint.
+## Browser-local models (ONNX Runtime Web / Transformers.js)
+
+Intent classification / command scoring
+
+    < 100 MB (small distilled or quantized ONNX models)
+
+ASR (browser fallback)
+
+    Whisper tiny (~40 MB) or base (~140 MB)
+
+Browser models must use quantization (q4, q8) to minimize download size and memory.
+
+All models must support quantization to reduce memory footprint.
 
 ---
 

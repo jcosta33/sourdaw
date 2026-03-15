@@ -1,264 +1,376 @@
 ---
 name: event-driven-communication
 description: >
-    Use when modules need to communicate without creating direct dependencies — emitting, subscribing to, or handling domain events. Covers defining typed `DomainEvent` classes, publishing from use cases via `EventBus.emit`, subscribing for side effects (cache updates, analytics, store mutations), handler registration with cleanup, and the `inject`-in-hook anti-pattern. Apply even when the user says "notify another module", "react to a change", "trigger a side effect", "listen for an update", "invalidate cache after mutation", or "cross-module communication".
+    Use when modules need to communicate without creating direct dependencies — emitting, subscribing to, or handling domain events. Covers defining typed DAW domain events using the project's DomainEvent abstract class, using EventBus to publish and subscribe, creating cross-module event flows, and subscribing from React hooks with proper cleanup. Apply even when the user says "notify another module", "react to a change", "trigger a side effect", "listen for an update", "invalidate cache after mutation", or "cross-module communication".
 ---
 
 ## Setup
 
-```typescript
-// ProductCatalog/events/ProductPriceChangedEvent.ts
+The project ships `DomainEvent<TPayload>` (abstract class) and `EventBus` in `src/helpers/Event/`. All domain events must extend `DomainEvent`. The `createEventBus` factory is inject-based and should be called once at app bootstrap.
+
+```ts
+// src/helpers/Event/DomainEvent.ts (reference — do not modify)
+abstract class DomainEvent<TPayload = unknown> {
+    get payload(): TPayload   // read-only payload
+    get timestamp(): number   // Date.now() at construction time
+}
+```
+
+```ts
+// src/helpers/Event/EventBus.ts (reference — do not modify)
+class EventBus {
+    on<TEvent extends typeof DomainEvent<unknown>>(
+        event: TEvent,
+        handler: (event: InstanceType<TEvent>) => void
+    ): () => void  // returns unsubscribe
+
+    emit(event: DomainEvent<unknown>): void
+}
+```
+
+```ts
+// src/modules/Track/events/TrackAddedEvent.ts
 import { DomainEvent } from '#/helpers/Event/DomainEvent';
 
-// 1. Define the event
-export class ProductPriceChangedEvent extends DomainEvent<{
-    productId: string;
-    previousPrice: number;
-    newPrice: number;
-}> {
-    constructor(payload: ProductPriceChangedEvent['payload']) {
-        super(payload);
-    }
-}
-
-// ProductCatalog/useCases/updateProductPrice.ts
-import { inject } from '#/helpers/DependencyInjector/inject';
-import { EventBus } from '#/helpers/Event/EventBus';
-import { patchProductApi } from '../repositories/patchProductApi';
-import { type Product } from '../models/Product';
-
-type UpdateProductPriceInput = {
-    id: string;
-    newPrice: number;
-    previousPrice: number;
+type TrackAddedPayload = {
+    trackId: string;
+    name: string;
+    kind: 'audio' | 'midi' | 'bus';
 };
 
-type UpdateProductPriceOutput = Promise<Product>;
+export class TrackAddedEvent extends DomainEvent<TrackAddedPayload> {}
+```
 
-export const updateProductPrice = inject({ patchProductApi, eventBus: EventBus }, ({ patchProductApi, eventBus }) => {
-    return async function ({ id, newPrice, previousPrice }: UpdateProductPriceInput): UpdateProductPriceOutput {
-        const updatedProduct = await patchProductApi({ id, price: newPrice });
+```ts
+// src/modules/Track/events/TrackRemovedEvent.ts
+import { DomainEvent } from '#/helpers/Event/DomainEvent';
 
-        // 2. Publish the event from a use case
-        eventBus.emit(
-            new ProductPriceChangedEvent({
-                productId: updatedProduct.id,
-                previousPrice,
-                newPrice,
-            })
-        );
+type TrackRemovedPayload = {
+    trackId: string;
+    name: string;
+    kind: 'audio' | 'midi' | 'bus';
+};
 
-        return updatedProduct;
-    };
-});
+export class TrackRemovedEvent extends DomainEvent<TrackRemovedPayload> {}
+```
+
+```ts
+// src/modules/Transport/events/TempoChangedEvent.ts
+import { DomainEvent } from '#/helpers/Event/DomainEvent';
+
+type TempoChangedPayload = {
+    previousBpm: number;
+    newBpm: number;
+};
+
+export class TempoChangedEvent extends DomainEvent<TempoChangedPayload> {}
+```
+
+```ts
+// src/app/eventBus.ts — create the singleton at bootstrap
+import { Container } from '#/helpers/DependencyInjector/Container';
+import { Logger } from '#/helpers/Logger/Logger';
+import { createEventBus } from '#/helpers/Event/createEventBus';
+import { EventLog } from '#/helpers/Event/EventLog';
+
+// createEventBus is inject-based: it resolves getEventLoggingEnabled from the Container
+// and returns DevToolsEventBus in development, EventBus in production.
+// Must be called after Logger is registered in the Container.
+const eventLog = new EventLog();
+
+export const eventBus = createEventBus(
+    Container.getInstance().get(Logger),
+    eventLog,
+);
 ```
 
 ## Core Patterns
 
-### Subscribing to events for cache updates
+### Defining a domain event
 
-```typescript
-// ShoppingCart/useCases/registerCartEventHandlers.ts
-import { EventBus } from '#/helpers/Event/EventBus';
-import { getQueryClient } from '#/helpers/QueryClient/getQueryClient';
-import { ProductPriceChangedEvent } from '#/modules/ProductCatalog/events/ProductPriceChangedEvent';
-import { useCartProducts } from '../hooks/useCartProducts';
+```ts
+// src/modules/Clip/events/ClipMovedEvent.ts
+import { DomainEvent } from '#/helpers/Event/DomainEvent';
 
-export const registerCartEventHandlers = (eventBus: EventBus) => {
-    eventBus.on(ProductPriceChangedEvent, (event) => {
-        const queryClient = getQueryClient();
-        const { productId, newPrice } = event.payload;
-        const queryKey = useCartProducts.getKey();
+type ClipMovedPayload = {
+    clipId: string;
+    trackId: string;
+    previousStartSeconds: number;
+    newStartSeconds: number;
+};
 
-        queryClient.setQueryData(queryKey, (old: any[] = []) =>
-            old.map((item) => (item.productId === productId ? { ...item, unitPrice: newPrice } : item))
-        );
-    });
+// The class itself IS the event type key — no string constants needed.
+export class ClipMovedEvent extends DomainEvent<ClipMovedPayload> {}
+```
+
+One class per event. The class constructor is the type discriminant. No string event names are needed.
+
+### Emitting events from a use case
+
+```ts
+// src/modules/Track/useCases/addTrack.ts
+import { eventBus } from '#/app/eventBus';
+import { TrackAddedEvent } from '../events/TrackAddedEvent';
+import { createTrackApi } from '../repositories/createTrackApi';
+import type { Track } from '../models/Track';
+
+type AddTrackInput = {
+    projectId: string;
+    name: string;
+    kind: 'audio' | 'midi' | 'bus';
+};
+
+export const addTrack = async (input: AddTrackInput): Promise<Track> => {
+    const track = await createTrackApi(input);
+
+    // Emit an instance — EventBus dispatches based on the constructor class
+    eventBus.emit(new TrackAddedEvent({
+        trackId: track.id,
+        name: track.name,
+        kind: track.kind,
+    }));
+
+    return track;
 };
 ```
 
-Subscribe to events in other domains to trigger side effects, such as updating a cache or sending analytics, keeping concerns separate.
+### Subscribing from a use case (non-React context)
 
-### Creating reusable subscription helpers
+```ts
+// src/modules/Analytics/useCases/registerAnalyticsHandlers.ts
+import { eventBus } from '#/app/eventBus';
+import { TrackAddedEvent } from '#/modules/Track/events/TrackAddedEvent';
+import { TrackRemovedEvent } from '#/modules/Track/events/TrackRemovedEvent';
+import { TempoChangedEvent } from '#/modules/Transport/events/TempoChangedEvent';
 
-```typescript
-// FeatureFlags/helpers/subscribeToFlagsFetchedEvent.ts
-import { inject } from '#/helpers/DependencyInjector/inject';
-import { EventBus } from '#/helpers/Event/EventBus';
-import { FlagsFetchedEvent } from '../events/FlagsFetchedEvent';
-
-type Input = (flags: FlagsFetchedEvent['payload']) => void;
-type Output = () => void;
-
-export const subscribeToFlagsFetchedEvent = inject({ eventBus: EventBus }, ({ eventBus }) => {
-    return function (callback: Input): Output {
-        return eventBus.on(FlagsFetchedEvent, (event) => {
-            callback(event.payload);
-        });
-    };
-});
-```
-
-Encapsulate subscription logic into reusable helpers for events that are frequently subscribed to across the application.
-
-### Cross-module handlers with complex logic
-
-When a handler needs to do more than update a cache, delegate to use cases via `inject`:
-
-```typescript
-// ShoppingCart/useCases/handleProductPriceChanged.ts
-import { inject } from '#/helpers/DependencyInjector/inject';
-import { findByProductId } from '../useCases/findByProductId';
-import { updateCartProduct } from '../useCases/updateCartProduct';
-
-export const handleProductPriceChanged = inject(
-    { findByProductId, updateCartProduct },
-    ({ findByProductId, updateCartProduct }) => {
-        return async function (event: ProductPriceChangedEvent): Promise<void> {
-            const cartProducts = await findByProductId(event.payload.productId);
-
-            for (const cartProduct of cartProducts) {
-                await updateCartProduct({ ...cartProduct, unitPrice: event.payload.newPrice });
-            }
-        };
-    }
-);
-```
-
-Handlers should be kept small and delegate long-running or complex work to use cases.
-
-### Event handler registration with cleanup
-
-Group related handlers into a registration function that returns an unsubscribe teardown:
-
-```typescript
-// Analytics/useCases/registerAnalyticsEventHandlers.ts
-import { type EventBus } from '#/helpers/Event/EventBus';
-
-export const registerAnalyticsEventHandlers = (eventBus: EventBus): (() => void) => {
-    eventBus.on(UserRegisteredEvent, trackUserRegistration);
-    eventBus.on(OrderCompletedEvent, trackPurchase);
-    eventBus.on(PaymentProcessedEvent, trackPaymentMethod);
+export const registerAnalyticsHandlers = (): (() => void) => {
+    const unsubscribers = [
+        // First argument is the CLASS — EventBus uses it as the handler map key
+        eventBus.on(TrackAddedEvent, (event) => {
+            // event.payload is fully typed as TrackAddedPayload
+            trackTrackCreated(event.payload.trackId, event.payload.kind);
+        }),
+        eventBus.on(TrackRemovedEvent, (event) => {
+            trackTrackDeleted(event.payload.trackId);
+        }),
+        eventBus.on(TempoChangedEvent, (event) => {
+            trackTempoChange(event.payload.previousBpm, event.payload.newBpm);
+        }),
+    ];
 
     return () => {
-        eventBus.off(UserRegisteredEvent, trackUserRegistration);
-        eventBus.off(OrderCompletedEvent, trackPurchase);
-        eventBus.off(PaymentProcessedEvent, trackPaymentMethod);
+        unsubscribers.forEach((fn) => fn());
     };
 };
 ```
 
-Always return a cleanup function so handlers can be safely torn down (e.g. in tests or on module unmount).
+Register cross-module handlers at app startup (e.g., inside `main.tsx` or a root initialisation function), not inside React component mounts.
+
+### Subscribing in a React hook with cleanup
+
+```ts
+// src/modules/Track/presentations/hooks/useTrackAddedSubscription.ts
+import { useEffect, useEffectEvent } from 'react';
+import { eventBus } from '#/app/eventBus';
+import { TrackAddedEvent } from '../../events/TrackAddedEvent';
+
+type TrackAddedPayload = InstanceType<typeof TrackAddedEvent>['payload'];
+
+export const useTrackAddedSubscription = (onTrackAdded: (payload: TrackAddedPayload) => void) => {
+    // useEffectEvent captures the latest callback without adding it to the
+    // dependency array — prevents re-subscribing when the callback changes
+    const handleTrackAdded = useEffectEvent(onTrackAdded);
+
+    useEffect(() => {
+        return eventBus.on(TrackAddedEvent, (event) => {
+            handleTrackAdded(event.payload);
+        });
+    }, []);
+};
+```
+
+### Cache invalidation in response to events
+
+```ts
+// src/modules/Track/useCases/registerTrackQueryHandlers.ts
+import { getQueryClient } from '#/app/queryClient';
+import { eventBus } from '#/app/eventBus';
+import { TrackAddedEvent } from '../events/TrackAddedEvent';
+import { TrackRemovedEvent } from '../events/TrackRemovedEvent';
+import { useTracks } from '../presentations/hooks/useTracks';
+
+export const registerTrackQueryHandlers = (): (() => void) => {
+    const queryClient = getQueryClient();
+
+    const unsubscribers = [
+        eventBus.on(TrackAddedEvent, () => {
+            queryClient.invalidateQueries({ queryKey: useTracks.getKey });
+        }),
+        eventBus.on(TrackRemovedEvent, () => {
+            queryClient.invalidateQueries({ queryKey: useTracks.getKey });
+        }),
+    ];
+
+    return () => unsubscribers.forEach((fn) => fn());
+};
+```
+
+### Cross-module communication: AudioEngine → UI
+
+```ts
+// src/modules/AudioEngine/useCases/startTransport.ts
+import { eventBus } from '#/app/eventBus';
+import { TransportStartedEvent } from '#/modules/Transport/events/TransportStartedEvent';
+
+export const startTransport = async (): Promise<void> => {
+    await audioEngine.play();
+
+    eventBus.emit(new TransportStartedEvent({
+        positionSeconds: audioEngine.getPosition(),
+    }));
+};
+```
+
+```ts
+// src/modules/Transport/presentations/hooks/useTransportStartedSubscription.ts
+import { useEffect, useEffectEvent } from 'react';
+import { eventBus } from '#/app/eventBus';
+import { TransportStartedEvent } from '../../events/TransportStartedEvent';
+
+type Payload = InstanceType<typeof TransportStartedEvent>['payload'];
+
+export const useTransportStartedSubscription = (onStart: (payload: Payload) => void) => {
+    const handleStart = useEffectEvent(onStart);
+
+    useEffect(() => {
+        return eventBus.on(TransportStartedEvent, (event) => handleStart(event.payload));
+    }, []);
+};
+```
+
+The AudioEngine module emits events via the shared bus. The UI subscribes through hooks with proper cleanup. Neither side imports from the other's internals.
 
 ## Common Mistakes
 
-### CRITICAL Using inject inside React hooks
+### CRITICAL Using strings as event keys instead of classes
 
 Wrong:
 
-```typescript
-// FeatureFlags/presentations/hooks/useFlagSubscription.ts
-import { useEffect } from 'react';
-import { inject } from '#/helpers/DependencyInjector/inject';
-import { EventBus } from '#/helpers/Event/EventBus';
-import { FlagsFetchedEvent } from '../events/FlagsFetchedEvent';
+```ts
+eventBus.emit('track:added', { trackId: '123' }); // string-based — not the real API
+eventBus.on('track:added', handler);
+```
 
-export const useFlagSubscription = (callback: () => void) => {
-    useEffect(() => {
-        // This will fail after minification
-        const subscribe = inject({ eventBus: EventBus }, ({ eventBus }) => {
-            return eventBus.on(FlagsFetchedEvent, callback);
-        });
+Correct:
 
-        return subscribe();
-    }, [callback]);
+```ts
+eventBus.emit(new TrackAddedEvent({ trackId: '123', name: 'Kick', kind: 'audio' }));
+eventBus.on(TrackAddedEvent, (event) => handler(event.payload));
+```
+
+The real `EventBus` uses the class constructor as the handler map key. Strings are not supported.
+
+### CRITICAL Emitting a plain object instead of a class instance
+
+Wrong:
+
+```ts
+eventBus.emit({ type: 'TrackAdded', trackId: '123' });
+```
+
+Correct:
+
+```ts
+eventBus.emit(new TrackAddedEvent({ trackId: '123', name: 'Kick', kind: 'audio' }));
+```
+
+`EventBus.emit` resolves the handler set using `event.constructor`. Plain objects have `Object` as their constructor and will never match registered handlers.
+
+### CRITICAL Creating DomainEvent instances as plain types instead of classes
+
+Wrong:
+
+```ts
+type TrackAddedEvent = {
+    trackId: string;
+    name: string;
 };
 ```
 
 Correct:
 
-```typescript
-// FeatureFlags/presentations/hooks/useFlagSubscription.ts
-import { useEffect, useEffectEvent } from 'react';
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { EventBus } from '#/helpers/Event/EventBus';
-import { FlagsFetchedEvent } from '../events/FlagsFetchedEvent';
+```ts
+import { DomainEvent } from '#/helpers/Event/DomainEvent';
 
-export const useFlagSubscription = (callback: () => void) => {
-    const onFlagsFetched = useEffectEvent(callback);
+export class TrackAddedEvent extends DomainEvent<{ trackId: string; name: string }> {}
+```
 
+Domain events must be classes that extend `DomainEvent<TPayload>`. The class itself acts as the type discriminant in the EventBus handler map.
+
+### CRITICAL Subscribing without returning the unsubscribe function from useEffect
+
+Wrong:
+
+```tsx
+useEffect(() => {
+    eventBus.on(TrackAddedEvent, handler);
+}, []);
+```
+
+Correct:
+
+```tsx
+useEffect(() => {
+    return eventBus.on(TrackAddedEvent, handler); // on() returns unsubscribe
+}, []);
+```
+
+Failing to return the unsubscribe function causes memory leaks and stale handlers after the component unmounts.
+
+### HIGH Subscribing in React without useEffectEvent
+
+Wrong:
+
+```tsx
+export const useTrackAddedSubscription = (onTrackAdded: (payload: TrackAddedPayload) => void) => {
     useEffect(() => {
-        const eventBus = Container.getInstance().get(EventBus);
-        const unsubscribe = eventBus.on(FlagsFetchedEvent, () => {
-            onFlagsFetched();
-        });
-
-        return () => {
-            unsubscribe();
-        };
-    }, []);
+        // onTrackAdded captured in closure — stale if the prop changes
+        return eventBus.on(TrackAddedEvent, (event) => onTrackAdded(event.payload));
+    }, []); // missing dependency — stale closure
 };
 ```
 
-Two rules: (1) `inject` in hooks is forbidden -- it fails after minification; use `Container.getInstance()` instead. (2) Use `useEffectEvent` (stable in React 19.2) to capture the latest callback without adding it to the dependency array, preventing unnecessary re-subscriptions.
+Correct:
 
-Source: <root>/docs/events.md
+```tsx
+export const useTrackAddedSubscription = (onTrackAdded: (payload: TrackAddedPayload) => void) => {
+    const handleTrackAdded = useEffectEvent(onTrackAdded);
+
+    useEffect(() => {
+        return eventBus.on(TrackAddedEvent, (event) => handleTrackAdded(event.payload));
+    }, []); // stable — useEffectEvent always reads the latest callback
+};
+```
+
+Wrap the callback in `useEffectEvent` (stable in React 19) to always get the latest version of the handler without re-subscribing on every render.
 
 ### HIGH Insufficient event payload context
 
 Wrong:
 
-```typescript
-// Authorization/events/UserPermissionChangedEvent.ts
-import { DomainEvent } from '#/helpers/Event/DomainEvent';
-
-export class UserPermissionChangedEvent extends DomainEvent<{
-    readonly userId: string;
-    readonly newPermissions: string[];
-}> {}
+```ts
+export class TrackRemovedEvent extends DomainEvent<{ trackId: string }> {}
+// subscriber must fetch track name separately after removal — but the track may already be gone
 ```
 
 Correct:
 
-```typescript
-// Authorization/events/UserPermissionChangedEvent.ts
-import { DomainEvent } from '#/helpers/Event/DomainEvent';
-
-export class UserPermissionChangedEvent extends DomainEvent<{
-    readonly userId: string;
-    readonly previousPermissions: string[];
-    readonly newPermissions: string[];
-    readonly changedBy: string;
-    readonly reason: string;
+```ts
+export class TrackRemovedEvent extends DomainEvent<{
+    trackId: string;
+    name: string;
+    kind: 'audio' | 'midi' | 'bus';
 }> {}
 ```
 
-Minimal context forces subscribers to make additional API calls to fetch related data; payloads must contain sufficient, immutable context for immediate action.
-
-Source: <root>/docs/events.md
-
-### HIGH Vague event naming conventions
-
-Wrong:
-
-```typescript
-// Order/events/OrderEvent.ts
-import { DomainEvent } from '#/helpers/Event/DomainEvent';
-
-export class OrderEvent extends DomainEvent<{ id: string }> {}
-export class UpdateDataEvent extends DomainEvent<{ id: string }> {}
-```
-
-Correct:
-
-```typescript
-// Order/events/OrderCompletedEvent.ts
-import { DomainEvent } from '#/helpers/Event/DomainEvent';
-
-export class OrderCompletedEvent extends DomainEvent<{ id: string }> {}
-export class PaymentProcessedEvent extends DomainEvent<{ id: string }> {}
-```
-
-Event names must be clear, descriptive, and use verbs in their past tense form at the end of the event name.
-
-Source: <root>/docs/events.md
+Payloads must contain enough context for every subscriber to act immediately without additional async lookups.

@@ -1,130 +1,336 @@
 ---
 name: form-engineering
-description: Use when creating or updating inputs / forms. Enforces the internal Form wrapper, React Hook Form, Zod schemas and integrated Fondue form fields instead of manual state management.
+description: >
+    Use when creating or updating inputs and forms. Enforces React Hook Form + Zod schemas + Shadcn UI form components instead of manual state management. Apply even when the user says "input", "form", "validation", "settings dialog", "rename", "tempo", or "controlled input".
 ---
 
 ## Setup
 
 ```tsx
-// Library/presentations/components/SchemaForm.tsx
-import * as z from 'zod';
-import { Form } from 'Common/Form/Form';
-import { FormTextInput } from 'Common/Form/TextInput/TextInput';
-import { Button } from '@frontify/fondue/components';
-import { useTranslation } from 'react-i18next';
+// src/modules/Transport/presentations/components/TempoForm.tsx
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import {
+    Form,
+    FormControl,
+    FormField,
+    FormItem,
+    FormLabel,
+    FormMessage,
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 
-const getLibrarySchema = (t: (key: string) => string) =>
-    z.object({
-        name: z.string().min(1, t('Form_error_nameRequired')),
+const tempoSchema = z.object({
+    bpm: z
+        .number({ invalid_type_error: 'BPM must be a number' })
+        .min(20, 'Minimum tempo is 20 BPM')
+        .max(300, 'Maximum tempo is 300 BPM'),
+});
+
+type TempoFormData = z.infer<typeof tempoSchema>;
+
+export const TempoForm = ({ currentBpm, onSubmit }: { currentBpm: number; onSubmit: (data: TempoFormData) => void }) => {
+    const form = useForm<TempoFormData>({
+        resolver: zodResolver(tempoSchema),
+        defaultValues: { bpm: currentBpm },
     });
 
-type LibraryFormData = z.infer<ReturnType<typeof getLibrarySchema>>;
-
-export const SchemaForm = ({ onSubmit }: { onSubmit: (data: LibraryFormData) => void }) => {
-    const { t } = useTranslation();
-
     return (
-        <Form id="library-form" schema={getLibrarySchema(t)} onSubmit={onSubmit} initialValues={{ name: '' }}>
-            <FormTextInput name="name" label={{ children: 'Name', required: true }} />
-            <Button type="submit" form="library-form">
-                Submit
-            </Button>
+        <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="flex items-center gap-2">
+                <FormField
+                    control={form.control}
+                    name="bpm"
+                    render={({ field }) => (
+                        <FormItem>
+                            <FormLabel>Tempo</FormLabel>
+                            <FormControl>
+                                <Input
+                                    type="number"
+                                    {...field}
+                                    onChange={(e) => field.onChange(e.target.valueAsNumber)}
+                                    className="w-24"
+                                />
+                            </FormControl>
+                            <FormMessage />
+                        </FormItem>
+                    )}
+                />
+                <Button type="submit">Set</Button>
+            </form>
         </Form>
     );
 };
 ```
 
-## Core patterns
+Install: `pnpm add react-hook-form @hookform/resolvers zod`. Shadcn UI form components are generated with `pnpm dlx shadcn@latest add form`.
 
-### Accessing form context in nested components
+## Core Patterns
 
-```tsx
-// User/presentations/components/ConditionalCompanyFields.tsx
-import { useEffect } from 'react';
-import { useFormContext } from 'Common/Form/Context/FormContext';
-import { FormTextInput } from 'Common/Form/TextInput/TextInput';
-
-export const ConditionalCompanyFields = () => {
-    const { watch, setValue } = useFormContext<{ userType: string; companyName: string }>();
-    const userType = watch('userType');
-
-    useEffect(() => {
-        if (userType !== 'business') {
-            setValue('companyName', '');
-        }
-    }, [userType, setValue]);
-
-    if (userType !== 'business') {
-        return null;
-    }
-
-    return <FormTextInput name="companyName" label={{ children: 'Company Name', required: true }} />;
-};
-```
-
-For deeply nested components that need access to form methods without prop drilling, use the `useFormContext` hook.
-
-### Dynamic form arrays
+### Inline track rename form
 
 ```tsx
-// Team/presentations/components/TeamMembersFieldArray.tsx
-import { useFieldArray, type Control } from 'react-hook-form';
-import { FormTextInput } from 'Common/Form/TextInput/TextInput';
-import { Button } from '@frontify/fondue/components';
+// src/modules/Track/presentations/components/TrackNameInput.tsx
+import { useEffect, useRef } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import {
+    Form,
+    FormControl,
+    FormField,
+    FormItem,
+    FormMessage,
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
 
-type TeamMembersFieldArrayProps = {
-    control: Control<{ members: { name: string }[] }>;
+const trackNameSchema = z.object({
+    name: z.string().min(1, 'Track name cannot be empty').max(64, 'Track name is too long'),
+});
+
+type TrackNameFormData = z.infer<typeof trackNameSchema>;
+
+type TrackNameInputProps = {
+    trackId: string;
+    currentName: string;
+    onRename: (data: TrackNameFormData & { trackId: string }) => void;
+    onCancel: () => void;
 };
 
-export const TeamMembersFieldArray = ({ control }: TeamMembersFieldArrayProps) => {
-    const { fields, append, remove } = useFieldArray({
-        control,
-        name: 'members',
+export const TrackNameInput = ({ trackId, currentName, onRename, onCancel }: TrackNameInputProps) => {
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    const form = useForm<TrackNameFormData>({
+        resolver: zodResolver(trackNameSchema),
+        defaultValues: { name: currentName },
     });
 
+    useEffect(() => {
+        inputRef.current?.select();
+    }, []);
+
+    const handleSubmit = (data: TrackNameFormData) => {
+        onRename({ ...data, trackId });
+    };
+
     return (
-        <>
-            {fields.map((field, index) => (
-                <div key={field.id}>
-                    <FormTextInput name={`members.${index}.name`} label={{ children: 'Name' }} />
-                    <Button type="button" onClick={() => remove(index)}>
-                        Remove
-                    </Button>
-                </div>
-            ))}
-            <Button type="button" onClick={() => append({ name: '' })}>
-                Add Member
-            </Button>
-        </>
+        <Form {...form}>
+            <form onSubmit={form.handleSubmit(handleSubmit)}>
+                <FormField
+                    control={form.control}
+                    name="name"
+                    render={({ field }) => (
+                        <FormItem>
+                            <FormControl>
+                                <Input
+                                    {...field}
+                                    ref={inputRef}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Escape') {
+                                            onCancel();
+                                        }
+                                    }}
+                                    onBlur={form.handleSubmit(handleSubmit)}
+                                    className="h-6 text-sm"
+                                />
+                            </FormControl>
+                            <FormMessage />
+                        </FormItem>
+                    )}
+                />
+            </form>
+        </Form>
     );
 };
 ```
 
-Extract the `control` prop from the `<Form />` component using the function-as-children pattern and pass it to `useFieldArray`.
+### Project settings dialog with multiple fields
 
-## Common mistakes
+```tsx
+// src/modules/Project/presentations/components/ProjectSettingsDialog.tsx
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogFooter,
+} from '@/components/ui/dialog';
+import {
+    Form,
+    FormControl,
+    FormField,
+    FormItem,
+    FormLabel,
+    FormMessage,
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { useSaveProjectSettings } from '../hooks/useSaveProjectSettings';
 
-### CRITICAL Managing form state manually
+const projectSettingsSchema = z.object({
+    name: z.string().min(1, 'Project name is required').max(128),
+    bpm: z.number().min(20).max(300),
+    sampleRate: z.union([
+        z.literal(44100),
+        z.literal(48000),
+        z.literal(96000),
+    ]),
+});
+
+type ProjectSettingsData = z.infer<typeof projectSettingsSchema>;
+
+type ProjectSettingsDialogProps = {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    defaultValues: ProjectSettingsData;
+};
+
+export const ProjectSettingsDialog = ({ open, onOpenChange, defaultValues }: ProjectSettingsDialogProps) => {
+    const { saveSettings } = useSaveProjectSettings();
+
+    const form = useForm<ProjectSettingsData>({
+        resolver: zodResolver(projectSettingsSchema),
+        defaultValues,
+    });
+
+    const handleSubmit = async (data: ProjectSettingsData) => {
+        await saveSettings(data);
+        onOpenChange(false);
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Project Settings</DialogTitle>
+                </DialogHeader>
+
+                <Form {...form}>
+                    <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+                        <FormField
+                            control={form.control}
+                            name="name"
+                            render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>Project Name</FormLabel>
+                                    <FormControl>
+                                        <Input {...field} />
+                                    </FormControl>
+                                    <FormMessage />
+                                </FormItem>
+                            )}
+                        />
+                        <FormField
+                            control={form.control}
+                            name="bpm"
+                            render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>Tempo (BPM)</FormLabel>
+                                    <FormControl>
+                                        <Input
+                                            type="number"
+                                            {...field}
+                                            onChange={(e) => field.onChange(e.target.valueAsNumber)}
+                                        />
+                                    </FormControl>
+                                    <FormMessage />
+                                </FormItem>
+                            )}
+                        />
+                        <DialogFooter>
+                            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                                Cancel
+                            </Button>
+                            <Button type="submit" disabled={form.formState.isSubmitting}>
+                                Save
+                            </Button>
+                        </DialogFooter>
+                    </form>
+                </Form>
+            </DialogContent>
+        </Dialog>
+    );
+};
+```
+
+### useFormContext for nested fields
+
+```tsx
+// src/modules/Project/presentations/components/SampleRateField.tsx
+import { useFormContext } from 'react-hook-form';
+import {
+    FormControl,
+    FormField,
+    FormItem,
+    FormLabel,
+    FormMessage,
+} from '@/components/ui/form';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
+// Used inside a parent <Form> provider — no need to pass control as a prop
+export const SampleRateField = () => {
+    const { control } = useFormContext<{ sampleRate: 44100 | 48000 | 96000 }>();
+
+    return (
+        <FormField
+            control={control}
+            name="sampleRate"
+            render={({ field }) => (
+                <FormItem>
+                    <FormLabel>Sample Rate</FormLabel>
+                    <Select
+                        onValueChange={(value) => field.onChange(Number(value))}
+                        defaultValue={String(field.value)}
+                    >
+                        <FormControl>
+                            <SelectTrigger>
+                                <SelectValue placeholder="Select sample rate" />
+                            </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                            <SelectItem value="44100">44,100 Hz</SelectItem>
+                            <SelectItem value="48000">48,000 Hz</SelectItem>
+                            <SelectItem value="96000">96,000 Hz</SelectItem>
+                        </SelectContent>
+                    </Select>
+                    <FormMessage />
+                </FormItem>
+            )}
+        />
+    );
+};
+```
+
+Use `useFormContext` in nested components to access the parent form without prop drilling. The parent must render `<Form {...form}>` which provides the context.
+
+## Common Mistakes
+
+### CRITICAL Managing form state manually with useState
 
 Wrong:
 
 ```tsx
-// Library/presentations/components/ManualForm.tsx
+// src/modules/Transport/presentations/components/TempoInput.tsx
 import { useState, type FormEvent } from 'react';
-import { TextInput, Button } from '@frontify/fondue/components';
 
-export const ManualForm = () => {
-    const [name, setName] = useState('');
+export const TempoInput = ({ onSet }: { onSet: (bpm: number) => void }) => {
+    const [bpm, setBpm] = useState(120);
 
-    const handleSubmit = (event: FormEvent) => {
-        event.preventDefault();
-        // manual submission logic
+    const handleSubmit = (e: FormEvent) => {
+        e.preventDefault();
+        if (bpm < 20 || bpm > 300) return;
+        onSet(bpm);
     };
 
     return (
         <form onSubmit={handleSubmit}>
-            <TextInput value={name} onChange={(e) => setName(e.target.value)} />
-            <Button type="submit">Submit</Button>
+            <input type="number" value={bpm} onChange={(e) => setBpm(Number(e.target.value))} />
+            <button type="submit">Set</button>
         </form>
     );
 };
@@ -133,113 +339,128 @@ export const ManualForm = () => {
 Correct:
 
 ```tsx
-// Library/presentations/components/SchemaForm.tsx
-import * as z from 'zod';
-import { Form } from 'Common/Form/Form';
-import { FormTextInput } from 'Common/Form/TextInput/TextInput';
-import { Button } from '@frontify/fondue/components';
+// src/modules/Transport/presentations/components/TempoInput.tsx
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { Form, FormControl, FormField, FormItem, FormMessage } from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 
-const schema = z.object({ name: z.string().min(1) });
+const schema = z.object({ bpm: z.number().min(20).max(300) });
 
-export const SchemaForm = () => {
-    const handleSubmit = (data: z.infer<typeof schema>) => {};
+export const TempoInput = ({ onSet }: { onSet: (bpm: number) => void }) => {
+    const form = useForm({ resolver: zodResolver(schema), defaultValues: { bpm: 120 } });
 
     return (
-        <Form schema={schema} initialValues={{ name: '' }} onSubmit={handleSubmit}>
-            <FormTextInput name="name" label={{ children: 'Name' }} />
-            <Button type="submit">Submit</Button>
+        <Form {...form}>
+            <form onSubmit={form.handleSubmit(({ bpm }) => onSet(bpm))}>
+                <FormField
+                    control={form.control}
+                    name="bpm"
+                    render={({ field }) => (
+                        <FormItem>
+                            <FormControl>
+                                <Input type="number" {...field} onChange={(e) => field.onChange(e.target.valueAsNumber)} />
+                            </FormControl>
+                            <FormMessage />
+                        </FormItem>
+                    )}
+                />
+                <Button type="submit">Set</Button>
+            </form>
         </Form>
     );
 };
 ```
 
-Managing form state manually with `useState` is an anti-pattern that leads to boilerplate, bugs, and excessive re-renders.
+Manual `useState` for form fields causes boilerplate, missing validation, and excessive re-renders. Always use React Hook Form + Zod.
 
-Source: <root>/docs/forms.md
-
-### HIGH Using standard HTML inputs or unintegrated Fondue inputs
+### CRITICAL Skipping Zod schema validation
 
 Wrong:
 
 ```tsx
-// Library/presentations/components/MyForm.tsx
-import { Form } from 'Common/Form/Form';
-import { TextInput } from '@frontify/fondue/components';
-
-export const MyForm = () => (
-    <Form schema={schema} onSubmit={handleSubmit} initialValues={{ name: '' }}>
-        <TextInput id="name" placeholder="Name" />
-    </Form>
-);
+const form = useForm({ defaultValues: { bpm: 120 } });
+// no resolver — no validation
 ```
 
 Correct:
 
 ```tsx
-// Library/presentations/components/MyForm.tsx
-import { Form } from 'Common/Form/Form';
-import { FormTextInput } from 'Common/Form/TextInput/TextInput';
-
-export const MyForm = () => (
-    <Form schema={schema} onSubmit={handleSubmit} initialValues={{ name: '' }}>
-        <FormTextInput name="name" label={{ children: 'Name' }} placeholder="Name" />
-    </Form>
-);
+const schema = z.object({ bpm: z.number().min(20).max(300) });
+const form = useForm({ resolver: zodResolver(schema), defaultValues: { bpm: 120 } });
 ```
 
-The integrated components (like `FormTextInput`) automatically hook into React Hook Form to handle validation, errors, and labels. Standard components do not.
+Every form must have a Zod schema passed via `zodResolver`. Schema validation is the only reliable way to enforce constraints and generate typed, safe form data.
 
-Source: <root>/docs/forms.md
-
-### HIGH Putting complex business logic directly in the component
+### HIGH Putting complex submission logic directly in the component
 
 Wrong:
 
 ```tsx
-// Library/presentations/components/CreateLibraryDialog.tsx
-import { useCallback } from 'react';
-import { Form } from 'Common/Form/Form';
+export const ProjectSettingsDialog = () => {
+    const form = useForm({ ... });
 
-export const CreateLibraryDialog = () => {
-    const handleSubmit = useCallback(async (formData) => {
-        const response = await fetch('/api/libraries', {
+    const handleSubmit = async (data) => {
+        const response = await fetch('/api/project/settings', {
             method: 'POST',
-            body: JSON.stringify(formData),
+            body: JSON.stringify(data),
         });
-        const data = await response.json();
-        // handle UI updates manually
-    }, []);
-
-    return (
-        <Form schema={schema} onSubmit={handleSubmit}>
-            {/* ... */}
-        </Form>
-    );
+        // manual cache updates, error handling...
+    };
+    // ...
 };
 ```
 
 Correct:
 
 ```tsx
-// Library/presentations/components/CreateLibraryDialog.tsx
-import { Form } from 'Common/Form/Form';
-import { useCreateLibrary } from '../hooks/useCreateLibrary';
+import { useSaveProjectSettings } from '../hooks/useSaveProjectSettings';
 
-export const CreateLibraryDialog = () => {
-    const { createLibrary } = useCreateLibrary();
+export const ProjectSettingsDialog = () => {
+    const { saveSettings } = useSaveProjectSettings();
+    const form = useForm({ ... });
 
-    const handleSubmit = async (formData) => {
-        await createLibrary(formData);
+    const handleSubmit = async (data) => {
+        await saveSettings(data);
     };
-
-    return (
-        <Form schema={schema} onSubmit={handleSubmit}>
-            {/* ... */}
-        </Form>
-    );
+    // ...
 };
 ```
 
-It is critical to delegate complex submission and business logic to use cases (often TanStack Query mutations) rather than placing that logic directly inside the component.
+Delegate mutation logic to a dedicated hook (typically wrapping a TanStack Query mutation). The component is responsible only for rendering and triggering the operation.
 
-Source: <root>/docs/forms.md
+### HIGH Using raw HTML inputs instead of Shadcn form components
+
+Wrong:
+
+```tsx
+<FormField
+    control={form.control}
+    name="name"
+    render={({ field }) => (
+        <input type="text" {...field} />
+    )}
+/>
+```
+
+Correct:
+
+```tsx
+<FormField
+    control={form.control}
+    name="name"
+    render={({ field }) => (
+        <FormItem>
+            <FormLabel>Name</FormLabel>
+            <FormControl>
+                <Input {...field} />
+            </FormControl>
+            <FormMessage />
+        </FormItem>
+    )}
+/>
+```
+
+Always use the Shadcn `FormItem`, `FormLabel`, `FormControl`, and `FormMessage` wrappers. They wire up accessibility attributes (id, aria-describedby, aria-invalid) automatically based on field state.

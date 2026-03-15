@@ -1,339 +1,389 @@
 ---
 name: state-management
 description: >
-    Use when working with any form of state: fetching or caching server data, managing global or local UI state, persisting data or deriving values from props/store. Covers TanStack Query conventions, the vanilla `Store` / `ReadonlyStore` and derived state computed at render time. Apply even when the user only says "fetch data", "global state", "cache", "local storage" or "React state" and always when they reach for `useEffect` to fetch or sync state.
+    Use when working with any form of state: fetching or caching async data, managing global or local UI state, persisting preferences, or deriving values from props and stores. Covers TanStack Query for async state, the project's Store and ReadonlyStore classes for UI state (connected to React via useSyncExternalStore), audio engine state ownership, and derived state computed at render time. Apply even when the user says "fetch data", "global state", "cache", "persist", "sidebar", "workspace mode", "panel", or "React state".
 ---
 
 ## Setup
 
-```tsx
-// Brand/presentations/hooks/useBrandDetailsSuspense.ts
-import { useSuspenseQuery } from '@tanstack/react-query';
-import { getBrandByIdApi } from '../repositories/getBrandByIdApi';
+The project ships `Store<T>` and `ReadonlyStore<T>` in `src/helpers/Store/`. Use them for all client-side UI state. Do not install third-party state libraries.
 
-export const useBrandDetailsSuspense = (id: number) => {
-    const { data: brand } = useSuspenseQuery({
-        queryKey: useBrandDetailsSuspense.getKey(id),
-        queryFn: ({ signal }) => getBrandByIdApi(id, signal),
+```ts
+// src/modules/Workspace/stores/workspaceStore.ts
+import { Container } from '#/helpers/DependencyInjector/Container';
+import { Logger } from '#/helpers/Logger/Logger';
+import { Store } from '#/helpers/Store/Store';
+import { MemoryStorage } from '#/helpers/Store/Storage/MemoryStorage';
+
+export type WorkspaceMode = 'arrange' | 'mixer' | 'piano-roll';
+
+type WorkspaceState = {
+    mode: WorkspaceMode;
+    isSidebarOpen: boolean;
+    isInspectorOpen: boolean;
+};
+
+const defaultState: WorkspaceState = {
+    mode: 'arrange',
+    isSidebarOpen: true,
+    isInspectorOpen: true,
+};
+
+// Stores are module-level singletons — never create them inside a hook or component.
+// Logger must already be registered in the Container before this module loads.
+export const workspaceStore = new Store<WorkspaceState>(
+    Container.getInstance().get(Logger),
+    {
+        storage: new MemoryStorage(),
+        initialData: defaultState,
+    },
+);
+```
+
+```ts
+// src/modules/Workspace/presentations/hooks/useWorkspace.ts
+import { useSyncExternalStore } from 'react';
+import { workspaceStore, type WorkspaceMode } from '../../stores/workspaceStore';
+
+const defaultState = workspaceStore.value!;
+
+export const useWorkspace = () => {
+    // Store.subscribe passes value to the callback, but useSyncExternalStore
+    // wants a zero-argument notifier. Adapt with an arrow wrapper.
+    const state = useSyncExternalStore(
+        (onChange) => workspaceStore.subscribe(() => onChange()),
+        () => workspaceStore.value ?? defaultState,
+        () => workspaceStore.value ?? defaultState,
+    );
+
+    return {
+        mode: state.mode,
+        setMode: (mode: WorkspaceMode) =>
+            workspaceStore.set({ ...workspaceStore.value!, mode }),
+        isSidebarOpen: state.isSidebarOpen,
+        toggleSidebar: () =>
+            workspaceStore.set({ ...workspaceStore.value!, isSidebarOpen: !workspaceStore.value!.isSidebarOpen }),
+        isInspectorOpen: state.isInspectorOpen,
+        toggleInspector: () =>
+            workspaceStore.set({ ...workspaceStore.value!, isInspectorOpen: !workspaceStore.value!.isInspectorOpen }),
+    };
+};
+```
+
+TanStack Query for async state:
+
+```ts
+// src/modules/Project/presentations/hooks/useProjectSuspense.ts
+import { useSuspenseQuery } from '@tanstack/react-query';
+import { getProject } from '../useCases/getProject';
+
+export const useProjectSuspense = (id: string) => {
+    const { data: project } = useSuspenseQuery({
+        queryKey: useProjectSuspense.getKey(id),
+        queryFn: ({ signal }) => getProject(id, signal),
     });
 
-    return { brand };
+    return { project };
 };
 
-useBrandDetailsSuspense.getKey = (id: number) => ['brand', id];
-
-// Brand/presentations/views/BrandDetailsSuspense.tsx
-import { type ReactElement } from 'react';
-
-export const BrandDetailsSuspense = ({ id }: { id: number }): ReactElement => {
-    const { brand } = useBrandDetailsSuspense(id);
-
-    // Derived state is computed directly during render
-    const isPublished = brand.status === 'published';
-
-    return <div>{isPublished ? brand.name : 'Draft'}</div>;
-};
+useProjectSuspense.getKey = (id: string) => ['project', id];
 ```
 
 ## Core Patterns
 
-### Server State (TanStack Query)
+### Store class API
 
-```tsx
-// Library/presentations/hooks/useLibraries.ts
-import { useQuery } from '@tanstack/react-query';
-import { getLibraries } from '../useCases/getLibraries';
-
-type UseLibrariesParams = {
-    type: string;
-    filters: string;
-};
-
-export const useLibraries = ({ type, filters }: UseLibrariesParams) => {
-    const { data: libraries, isLoading } = useQuery({
-        queryKey: useLibraries.getKey({ type, filters }),
-        queryFn: () => getLibraries({ type, filters }),
-        staleTime: 300000,
-    });
-
-    return { libraries, isLoading };
-};
-
-useLibraries.getKey = ({ type, filters }: UseLibrariesParams) => ['libraries', type, filters];
+```ts
+// src/helpers/Store/Store.ts (reference — do not modify)
+class Store<TDataSchema> {
+    get value(): TDataSchema | null          // read current value
+    set(value: TDataSchema | null): void     // replace full value, notify subscribers
+    subscribe(callback: (value: TDataSchema | null) => void): () => void  // returns unsubscribe
+    clear(): void                            // sets value to null, notifies subscribers
+}
 ```
 
-TanStack Query must be the single source of truth for all data fetched from an API.
+Important: `set()` replaces the **entire** value. For partial updates, spread the current value:
 
-### Global UI State (Vanilla Store via DI)
+```ts
+workspaceStore.set({ ...workspaceStore.value!, mode: 'mixer' });
+```
 
-```typescript
-// App/presentations/stores/appStore.ts
+### Connecting a Store to React
+
+`Store.subscribe` passes the value to its callback. `useSyncExternalStore` expects a zero-argument notifier. Always adapt with an arrow wrapper:
+
+```ts
+useSyncExternalStore(
+    (onChange) => store.subscribe(() => onChange()),  // adapter
+    () => store.value ?? fallback,
+    () => store.value ?? fallback,
+);
+```
+
+### Persisted store (localStorage)
+
+New localStorage keys must be added to `src/helpers/Store/Storage/LocalStorageKeys.ts` as a string literal in the `LocalStorageKey` union — one per key, with a comment explaining its purpose.
+
+```ts
+// src/helpers/Store/Storage/LocalStorageKeys.ts — add your keys here
+export type LocalStorageKey =
+    // ... existing keys ...
+
+    // Stores the DAW workspace layout preferences
+    | 'daw-workspace-preferences';
+```
+
+```ts
+// src/modules/User/stores/userPreferencesStore.ts
 import { Container } from '#/helpers/DependencyInjector/Container';
-import { Store } from '#/helpers/Store/Store';
 import { Logger } from '#/helpers/Logger/Logger';
+import { Store } from '#/helpers/Store/Store';
+import { LocalStorageStorage } from '#/helpers/Store/Storage/LocalStorageStorage';
 
-type AppState = { isSidebarOpen: boolean };
-
-let instance: Store<AppState>;
-
-export const getAppStore = (): Store<AppState> => {
-    if (!instance) {
-        const logger = Container.getInstance().get(Logger);
-        instance = new Store<AppState>(logger, {
-            initialData: {
-                isSidebarOpen: false,
-            },
-        });
-    }
-    return instance;
+type UserPreferencesState = {
+    theme: 'dark' | 'light';
+    defaultSampleRate: 44100 | 48000 | 96000;
 };
+
+export const userPreferencesStore = new Store<UserPreferencesState>(
+    Container.getInstance().get(Logger),
+    {
+        storage: new LocalStorageStorage('daw-workspace-preferences'),
+        initialData: {
+            theme: 'dark',
+            defaultSampleRate: 48000,
+        },
+    },
+);
 ```
 
-Use the singleton `Store` injected via the DI container for client-side UI state that isn't server data.
+### ReadonlyStore for externally-fetched data
 
-### Connecting a store to React
+Use `ReadonlyStore` for data that is fetched from an external source and never directly mutated by the client (feature flags, Tauri config, etc.).
 
-Use `useSyncExternalStore` to subscribe components to a vanilla store:
-
-```tsx
-// App/presentations/hooks/useAppStore.ts
-import { useSyncExternalStore } from 'react';
-import { getAppStore } from '../stores/appStore';
-
-export const useAppStore = () => {
-    const store = getAppStore();
-    return useSyncExternalStore(store.subscribe, store.get, store.get);
-};
-```
-
-Components receive state via props from the subscribing hook — they never import the store directly.
-
-### Read-only stores
-
-For state fetched from an external source and never mutated on the client (e.g. user permissions, feature flags), use `ReadonlyStore`. It is created via an async `ReadonlyStore.create()` and has no `set()` method:
-
-```typescript
-// Authorization/stores/permissionsStore.ts
+```ts
+// src/modules/Config/stores/dawConfigStore.ts
+import { Container } from '#/helpers/DependencyInjector/Container';
+import { Logger } from '#/helpers/Logger/Logger';
 import { ReadonlyStore } from '#/helpers/Store/ReadonlyStore';
+import { MemoryStorage } from '#/helpers/Store/Storage/MemoryStorage';
+import { fetchDawConfig } from '../repositories/fetchDawConfig';
 
-export const getPermissionsStore = async (): Promise<ReadonlyStore<Permissions>> => {
-    return ReadonlyStore.create({
-        getDataFn: () => fetchPermissionsApi(),
+// ReadonlyStore.create is async — initialize during app bootstrap
+export const createDawConfigStore = () =>
+    ReadonlyStore.create<DawConfig>(Container.getInstance().get(Logger), {
+        storage: new MemoryStorage(),
+        getDataFn: () => fetchDawConfig(),
     });
+```
+
+`ReadonlyStore` has no `set()`. Call `.refresh()` to re-fetch. Connect to React with the same `useSyncExternalStore` adapter pattern.
+
+### Audio engine state bridged into React
+
+The audio engine is not a Store — it owns its own state. Expose it as a subscribe/getSnapshot pair for `useSyncExternalStore`.
+
+```ts
+// src/modules/AudioEngine/repositories/audioEngineStore.ts
+// The engine publishes its TransportState to subscribers.
+// This is NOT a Store<T> instance — the engine manages its own internal state.
+export type AudioEngineStore = {
+    subscribe: (onChange: () => void) => () => void;
+    getSnapshot: () => TransportState;
 };
 ```
 
-### Derived State
+```ts
+// src/modules/Transport/presentations/hooks/useTransportState.ts
+import { useSyncExternalStore } from 'react';
+import { audioEngineStore } from '#/modules/AudioEngine/repositories/audioEngineStore';
+
+export const useTransportState = () => {
+    return useSyncExternalStore(
+        audioEngineStore.subscribe,
+        audioEngineStore.getSnapshot,
+        audioEngineStore.getSnapshot,
+    );
+};
+```
+
+### Async state with TanStack Query
+
+```ts
+// src/modules/Track/presentations/hooks/useTracks.ts
+import { useSuspenseQuery } from '@tanstack/react-query';
+import { getTracks } from '../useCases/getTracks';
+
+type UseTracksParams = { projectId: string };
+
+export const useTracks = ({ projectId }: UseTracksParams) => {
+    const { data: tracks } = useSuspenseQuery({
+        queryKey: useTracks.getKey({ projectId }),
+        queryFn: ({ signal }) => getTracks({ projectId, signal }),
+    });
+
+    return { tracks };
+};
+
+useTracks.getKey = ({ projectId }: UseTracksParams) => ['tracks', projectId];
+```
+
+### Mutations
+
+```ts
+// src/modules/Track/presentations/hooks/useAddTrack.ts
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { addTrack } from '../useCases/addTrack';
+import { useTracks } from './useTracks';
+
+export const useAddTrack = (projectId: string) => {
+    const queryClient = useQueryClient();
+
+    const { mutateAsync, isPending } = useMutation({
+        mutationFn: (name: string) => addTrack({ projectId, name }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: useTracks.getKey({ projectId }) });
+        },
+    });
+
+    return { addTrack: mutateAsync, isPending };
+};
+```
+
+### Derived state at render time
 
 ```tsx
-// Common/presentations/components/Badge.tsx
-import { type ReactElement } from 'react';
-
-export const Badge = ({ count }: { count: number }): ReactElement => {
-    const label = count > 99 ? '99+' : String(count);
+export const TrackStatusBadge = ({ clipCount, isMuted }: Props): ReactElement => {
+    const label = isMuted ? 'Muted' : clipCount > 0 ? `${clipCount} clips` : 'Empty';
     return <span>{label}</span>;
 };
 ```
 
-Compute derived state directly during rendering. The React Compiler handles memoization automatically -- do not use `useMemo`, `useCallback`, or `React.memo` manually.
+Compute derived values during rendering. The React Compiler memoizes them automatically.
 
 ## Common Mistakes
 
-### HIGH Leaking TanStack Query internals from hooks
+### CRITICAL Creating a Store inside a React hook or component
 
 Wrong:
 
 ```tsx
-// Brand/presentations/hooks/useBrand.ts
-import { useSuspenseQuery } from '@tanstack/react-query';
-import { getBrandById } from '../useCases/getBrandById';
-
-export const useBrand = (id: number) => {
-    return useSuspenseQuery({
-        queryKey: useBrand.getKey(id),
-        queryFn: ({ signal }) => getBrandById(id, signal),
-    });
+const useWorkspace = () => {
+    // Creates a new isolated store on every render
+    const logger = Container.getInstance().get(Logger);
+    const store = new Store(logger, { storage: new MemoryStorage(), initialData: ... });
+    return useSyncExternalStore(...);
 };
+```
 
-useBrand.getKey = (id: number) => ['brand', id];
+Correct:
+
+```ts
+// Store is defined at module level — one singleton shared across all consumers
+export const workspaceStore = new Store<WorkspaceState>(logger, { ... });
+```
+
+### CRITICAL Forgetting the useSyncExternalStore adapter
+
+Wrong:
+
+```ts
+// Store.subscribe passes value to callback — not compatible with useSyncExternalStore
+useSyncExternalStore(
+    workspaceStore.subscribe,  // type mismatch — passes value, onChange wants no args
+    () => workspaceStore.value,
+    () => workspaceStore.value,
+);
+```
+
+Correct:
+
+```ts
+useSyncExternalStore(
+    (onChange) => workspaceStore.subscribe(() => onChange()),
+    () => workspaceStore.value ?? defaultState,
+    () => workspaceStore.value ?? defaultState,
+);
+```
+
+### CRITICAL Calling store.set() with only partial data
+
+Wrong:
+
+```ts
+// Wipes out all other fields — Store.set replaces the full value
+workspaceStore.set({ mode: 'mixer' });
+```
+
+Correct:
+
+```ts
+workspaceStore.set({ ...workspaceStore.value!, mode: 'mixer' });
+```
+
+### CRITICAL Putting audio engine state in React state
+
+Wrong:
+
+```tsx
+const [position, setPosition] = useState(0);
+useEffect(() => {
+    const id = setInterval(() => setPosition(engine.getPosition()), 16);
+    return () => clearInterval(id);
+}, []);
 ```
 
 Correct:
 
 ```tsx
-// Brand/presentations/hooks/useBrand.ts
-import { useSuspenseQuery } from '@tanstack/react-query';
-import { getBrandById } from '../useCases/getBrandById';
-
-export const useBrand = (id: number) => {
-    const { data: brand } = useSuspenseQuery({
-        queryKey: useBrand.getKey(id),
-        queryFn: ({ signal }) => getBrandById(id, signal),
-    });
-
-    return { brand };
-};
-
-useBrand.getKey = (id: number) => ['brand', id];
+const { positionSeconds } = useTransportState();
+// backed by useSyncExternalStore against the engine's own store interface
 ```
 
-Directly returning the query object leaks TanStack Query internals (`isFetching`, `error`, `status`, etc.) into components, coupling them to the library. Destructure only the properties you need and rename `data` to a meaningful domain name.
+### CRITICAL Using TanStack Query for UI-only state
 
-Source: <root>/docs/data-fetching.md
+Wrong:
+
+```tsx
+const { data: mode } = useQuery({ queryKey: ['workspaceMode'], queryFn: () => 'arrange' });
+```
+
+Correct:
+
+```ts
+const { mode } = useWorkspace(); // backed by workspaceStore + useSyncExternalStore
+```
 
 ### CRITICAL Using useEffect for data fetching
 
 Wrong:
 
 ```tsx
-// Brand/presentations/views/BrandDetails.tsx
-import { type ReactElement, useState, useEffect } from 'react';
-import { Spinner } from '@frontify/fondue/components';
-
-export const BrandDetails = ({ id }: { id: number }): ReactElement => {
-    const [data, setData] = useState<any>(null);
-
-    useEffect(() => {
-        let isMounted = true;
-        fetch(`/api/brands/${id}`)
-            .then((r) => r.json())
-            .then((json) => {
-                if (isMounted) setData(json);
-            });
-        return () => {
-            isMounted = false;
-        };
-    }, [id]);
-
-    if (!data) return <Spinner />;
-    return <div>{data.name}</div>;
-};
+useEffect(() => { getTracks({ projectId }).then(setTracks); }, [projectId]);
 ```
 
 Correct:
 
 ```tsx
-// Brand/presentations/hooks/useBrandDetailsSuspense.ts
-import { useSuspenseQuery } from '@tanstack/react-query';
-import { getBrandByIdApi } from '../repositories/getBrandByIdApi';
-
-export const useBrandDetailsSuspense = (id: number) => {
-    const { data: brand } = useSuspenseQuery({
-        queryKey: useBrandDetailsSuspense.getKey(id),
-        queryFn: ({ signal }) => getBrandByIdApi(id, signal),
-    });
-
-    return { brand };
-};
-
-useBrandDetailsSuspense.getKey = (id: number) => ['brand', id];
-
-// Brand/presentations/views/BrandDetails.tsx
-import { type ReactElement } from 'react';
-
-export const BrandDetails = ({ id }: { id: number }): ReactElement => {
-    const { brand } = useBrandDetailsSuspense(id);
-    return <div>{brand.name}</div>;
-};
+const { tracks } = useTracks({ projectId }); // backed by useSuspenseQuery
 ```
-
-Data fetching must be handled by TanStack Query; using `useEffect` circumvents the cache and creates race conditions.
-
-Source: <root>/docs/conventions.md
-
-### HIGH Using useEffect for derived state from props
-
-Wrong:
-
-```tsx
-// HowMany/presentations/components/Badge.tsx
-import { type ReactElement, useState, useEffect } from 'react';
-
-export const Badge = ({ count }: { count: number }): ReactElement => {
-    const [isMany, setIsMany] = useState(false);
-
-    useEffect(() => {
-        setIsMany(count > 99);
-    }, [count]);
-
-    return <span>{isMany ? '99+' : String(count)}</span>;
-};
-```
-
-Correct:
-
-```tsx
-// HowMany/presentations/components/Badge.tsx
-import { type ReactElement } from 'react';
-
-export const Badge = ({ count }: { count: number }): ReactElement => {
-    const label = count > 99 ? '99+' : String(count);
-    return <span>{label}</span>;
-};
-```
-
-Using `useEffect` to derive state causes an unnecessary double-render and leads to out-of-sync UI states.
-
-Source: <root>/docs/conventions.md
-
-### HIGH Manual useMemo/useCallback/React.memo
-
-Wrong:
-
-```tsx
-// Product/presentations/components/ProductCard.tsx
-import { type ReactElement, useMemo, useCallback } from 'react';
-
-export const ProductCard = ({ product }: ProductCardProps): ReactElement => {
-    const price = useMemo(() => formatPrice(product.price), [product.price]);
-    const handleClick = useCallback(() => selectProduct(product.id), [product.id]);
-
-    return <button onClick={handleClick}>{price}</button>;
-};
-```
-
-Correct:
-
-```tsx
-// Product/presentations/components/ProductCard.tsx
-import { type ReactElement } from 'react';
-
-export const ProductCard = ({ product }: ProductCardProps): ReactElement => {
-    const price = formatPrice(product.price);
-    const handleClick = () => selectProduct(product.id);
-
-    return <button onClick={handleClick}>{price}</button>;
-};
-```
-
-The React Compiler handles memoization automatically at build time. Manual `useMemo`, `useCallback`, and `React.memo` are unnecessary and should be removed when touching a file.
-
-Source: <root>/docs/conventions.md
 
 ### HIGH Using localStorage directly
 
 Wrong:
 
-```typescript
-// User/useCases/saveUserPreference.ts
-export const saveUserPreference = (theme: string): void => {
-    window.localStorage.setItem('theme', theme);
-};
+```ts
+localStorage.setItem('daw-workspace-preferences', JSON.stringify(state));
 ```
 
 Correct:
 
-```typescript
-// User/useCases/saveUserPreference.ts
-import { getAppStore } from './appStore';
-
-export const saveUserPreference = (theme: string): void => {
-    const store = getAppStore();
-    // Assuming the store is configured with LocalStorageStorage
-    store.update({ theme });
-};
+```ts
+userPreferencesStore.set({ ...userPreferencesStore.value!, theme: 'dark' });
+// LocalStorageStorage writes automatically; uses superjson for serialization
 ```
 
-Directly using `localStorage` is prohibited by custom linting rules (`no-restricted-syntax`); state must be persisted via the `Store` with `LocalStorageStorage`.
+### HIGH Manual useMemo/useCallback/React.memo
 
-Source: <root>/docs/conventions.md
+The React Compiler handles memoization automatically. Never add `useMemo`, `useCallback`, or `React.memo` manually.
