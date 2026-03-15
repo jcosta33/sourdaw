@@ -1,16 +1,19 @@
-# AI-Native DAW — Unified Architecture + UX + Implementation Specification
+# AI-Native DAW — Architecture & Technical Research
 
-This document merges:
+## Role of this document
 
-1. **Technical stack research**
-2. **UI/UX design research**
-3. **Product architecture**
-4. **AI copilot design**
-5. **Implementation roadmap**
+This is the **technical architecture and AI system reference** for the project.
 
-The goal is to create a **complete specification that another AI can use to build the system.**
+It covers:
+- Product vision and principles
+- High-level system architecture
+- Technology stack decisions with rationale
+- Plugin system architecture
+- Local AI system design (runtime, models, bundling, performance)
 
-The system is a **browser-first DAW with a native wrapper and fully local AI models**.
+For the UI/UX product specification (layout, modes, tools, workflows), see **`.agents/tasks/spec.md`**.
+
+For the implementation plan, phase sequence, and setup instructions, see **`.agents/tasks/task.md`**.
 
 ---
 
@@ -38,8 +41,8 @@ Platforms:
 
 Delivered as:
 
-- Web application
-- Native wrapper application
+- Web application (primary)
+- Native desktop wrapper (Tauri v2)
 
 ---
 
@@ -55,24 +58,24 @@ The product must approach feature parity with:
 - Bitwig Studio
 - Reaper
 
+These are the benchmark. The app should feel like a real production tool, not a demo.
+
 ---
 
 # 3. Core Product Principles
 
-## Design Principles
-
-1. **Immediate usability**
-2. **Minimum UI complexity**
-3. **Maximum editing speed**
-4. **Zero modal confusion**
-5. **Everything discoverable**
-6. **AI augmenting workflow**
+1. **Immediate usability** — works without a manual
+2. **Minimum UI complexity** — no clutter, no modal hell
+3. **Maximum editing speed** — every action is fast
+4. **Zero modal confusion** — no floating window sprawl
+5. **Everything discoverable** — via prompt, palette, right-click, or shortcut
+6. **AI augmenting workflow** — AI is an assistant, not a gatekeeper
 
 ---
 
 # 4. Interaction Model
 
-The system supports three simultaneous interaction methods.
+Three simultaneous interaction methods, all routing to the same command system:
 
 | Method          | Purpose                  |
 | --------------- | ------------------------ |
@@ -80,702 +83,305 @@ The system supports three simultaneous interaction methods.
 | Prompt commands | natural language control |
 | Voice commands  | hands-free editing       |
 
-All interactions map to the **same command system**.
+All interactions produce **typed app actions** that the command engine validates and executes. The AI does not get a special path — it uses the same command system as manual editing.
 
 ---
 
-# 5. High Level Architecture
+# 5. High-Level Architecture
 
-System layers:
+```
+Frontend (Web UI / React)
+         ↓
+    Command Engine          ← all actions — manual, prompt, voice — go through here
+         ↓
+    Audio Engine            ← Web Audio API, AudioWorklets, owns all real-time state
+         ↓
+    Native System Layer     ← Tauri v2: file system, plugin hosting, sidecar invocation
+         ↓
+    Local AI Model Layer    ← llama.cpp / whisper.cpp sidecars + browser ONNX runtime
+```
 
-    Frontend (Web UI)
-         ↓
-    Command Engine
-         ↓
-    Audio Engine
-         ↓
-    Native System Layer
-         ↓
-    Local AI Model Layer
+Each layer is independently testable. The AI layer never bypasses the Command Engine.
 
-Each layer is independent.
+### Application internals
+
+```
+Application
+  ├ UI Layer                ← React 19 + TanStack Router + Shadcn UI
+  ├ Command System          ← typed AppAction union, executeAppAction dispatcher
+  ├ AI Runtime Layer        ← prompt parsing, voice ASR, action generation
+  └ Audio Engine            ← AudioContext graph, worklets, transport, offline render
+```
 
 ---
 
 # 6. Technology Stack
 
-## Frontend Framework
+## Frontend
 
-Recommended stack:
+| Concern | Technology | Notes |
+| --- | --- | --- |
+| UI framework | React 19 + React Compiler | no manual useMemo/useCallback |
+| Type system | TypeScript strict + tsgo | `@typescript/native-preview` |
+| Routing | TanStack Router | file-based, typed search params |
+| Async state | TanStack Query | useSuspenseQuery, useMutation |
+| UI state | `Store<T>` + `useSyncExternalStore` | project-native, no third-party |
+| Styling | Tailwind v4 + Shadcn UI | CSS-first, dark mode default |
+| Forms | React Hook Form + Zod | `@tanstack/zod-adapter` for search params |
+| Build | Vite + `@tailwindcss/vite` + `@tanstack/router-plugin` | |
 
-- React 19 + React Compiler
-- TypeScript (tsgo / native-preview)
-- TanStack Router (file-based routing)
-- TanStack Query (async state / server state)
-- Vanilla JS stores + `useSyncExternalStore` (global UI state, no third-party)
-- Tailwind v4 + Shadcn UI (styling + components)
+No third-party state library (no Zustand, Jotai, Redux, Recoil). The project has `Store<T>` and `ReadonlyStore<T>` in `src/helpers/Store/`.
 
-Reasoning:
+## Rendering
 
-- stable ecosystem
-- type-safe routing and queries
-- predictable state updates
-- high performance UI composition
-- React Compiler eliminates manual memoization
+Dense editor surfaces (timeline, piano roll, waveforms, automation, meters) must not be rendered as DOM trees. Use:
 
----
+- **WebGPU** — primary GPU-accelerated renderer
+- **Canvas 2D / OffscreenCanvas** — fallback where WebGPU is unavailable
 
-## Rendering Engine
+React manages layout shells only. The renderer receives a render model and owns its own draw loop.
 
-Use GPU accelerated rendering.
+## Audio
 
-Primary technologies:
+- `AudioContext` — audio graph
+- `AudioWorklet` — real-time DSP in isolated scope
+- `AudioParam` — automatable parameters
+- `OfflineAudioContext` — offline/bounce render
 
-- WebGPU
-- Canvas
-
-Use GPU rendering for:
-
-- timeline
-- piano roll
-- waveform display
-- automation curves
-- meters
-- spectrograms
-
-React manages layout only.
-
----
-
-## Audio Engine
-
-Core technologies:
-
-- Web Audio API
-- AudioWorklets
-- WebAssembly DSP
-
-Capabilities required:
-
-- multitrack audio
-- MIDI sequencing
-- routing graph
-- real-time DSP
-- automation
-- time stretching
-- pitch shifting
-
----
+AudioWorklet processor files are plain JavaScript in `public/audio/worklets/`. They cannot be TypeScript-compiled by Vite.
 
 ## Native Wrapper
 
-Use:
-
-- **Tauri v2** (required for this project)
+**Tauri v2** (required — not optional, not Electron).
 
 Reasons:
+- filesystem access for project files and plugin scanning
+- native plugin host process
+- lower audio latency than browser-only
+- native sidecar support for llama.cpp / whisper.cpp binaries
+- smaller bundle than Electron
+- Rust backend: safe, typed command layer
 
-- filesystem access
-- plugin hosting
-- lower audio latency
-- system integration
-- native sidecar support for bundled llama.cpp / whisper.cpp binaries
-- smaller bundle size than Electron
-- Rust backend for safe native command execution
+Key Tauri v2 API notes:
+- `#[tauri::command]` functions receive `app: tauri::AppHandle` as a parameter — not `tauri::AppHandle::current()`
+- Use `.output().await` to run sidecars, not `.execute()`
+- Use `tauri_plugin_shell::ShellExt` for sidecar invocation
 
 ---
 
 # 7. Plugin Architecture
 
-Goal:
-
-support existing plugins.
-
-Formats:
+Target plugin formats:
 
 - VST3
 - CLAP
-- AU (macOS)
+- AU (macOS only)
 
-Implementation:
+Implementation path: **native plugin host** running as a Tauri sidecar or child process.
 
-native plugin host.
+Plugin UI options (in order of preference):
+1. Parameter bridge UI — web UI mirroring plugin parameters (preferred long-term)
+2. Native window embedding — embed plugin's own UI window
 
-Plugin UI options:
-
-1. native window embedding
-2. parameter bridge UI
-
-Preferred long-term approach:
-
-parameter UI rendering.
+The web app communicates with the plugin host over a typed IPC bridge. Plugin parameters appear as automatable device slots in the track rack.
 
 ---
 
-# 8. Local AI System (Zero-Setup Architecture)
+# 8. Local AI System
 
-## Design Requirement
+## Design requirement
 
-All AI functionality must work **without any installation, configuration, or external dependencies**.
+All AI functionality must work **without any external setup**.
 
-Users must be able to:
-
-1. open the web application
-2. or install the native wrapper
-3. immediately use all AI features
-
-The system must **never require**:
-
+The system must never require:
 - Python
-- command line tools
-- model downloads from external repos
+- CLI tools
+- external model downloads
 - manual runtime installation
 - user configuration
 
-All AI models and runtimes must be **bundled and initialized automatically**.
+AI is ready as soon as the app opens.
 
----
+## Runtime architecture
 
-# 8.1 AI Runtime Architecture
+Two complementary runtimes:
 
-The application embeds its AI runtimes directly in the software.
+### Browser-local runtime (web + desktop)
 
-The architecture is:
+Library: `@huggingface/transformers` + `onnxruntime-web`
 
-    Application
-      ├ UI Layer
-      ├ Command System
-      ├ AI Runtime Layer
-      └ Audio Engine
+Used for:
+- intent classification and command scoring
+- lightweight text understanding
+- browser-only fallback ASR (Whisper tiny/base)
+- embedding generation
 
-The AI Runtime Layer is fully self-contained.
+Models are downloaded on first use and cached in browser persistent storage (IndexedDB). After first load, fully offline.
 
----
+Device priority: WebGPU → WASM fallback.
 
-# 8.2 Model Bundling Strategy
+### Native sidecar runtime (desktop only)
 
-All models are distributed with the application.
+Sidecars: `llama.cpp`, `whisper.cpp`
 
-Two distribution modes exist.
+Used for:
+- prompt-to-action generation (full LLM reasoning)
+- structured command output with grammar constraints
+- high-quality local ASR
+- music generation (future)
 
-## Web Application Mode
+Sidecars are bundled inside the Tauri app bundle. No download required on desktop.
 
-Models are hosted with the application and downloaded automatically.
+## Model bundling
 
-Process:
+### Web application
 
-1. user opens the web app
-2. application checks browser storage
-3. if models are not present → download automatically
-4. models are cached locally
-5. AI system initializes automatically
+1. User opens the app
+2. App checks IndexedDB for cached models
+3. Missing models download automatically in the background
+4. Models initialize; AI features become available progressively
+5. Subsequent loads are fully offline
 
-Models are stored in browser persistent storage.
+### Desktop application
 
-After the first load the system runs completely offline.
+Models ship inside the app bundle:
 
----
+```
+app/
+  sidecars/
+    llama          ← llama.cpp binary
+    whisper        ← whisper.cpp binary
+  models/
+    command-intent.gguf
+    whisper-base.en.bin
+```
 
-## Native Application Mode
+No download or configuration required.
 
-All models ship inside the application bundle.
+## Model types
 
-Example structure:
+### Command interpretation model
 
-    app/
-      models/
-        command_model.bin
-        midi_model.bin
-        audio_model.bin
-
-On application launch:
-
-1. runtime loads models automatically
-2. AI services initialize
-3. system becomes available
-
-No configuration step exists.
-
----
-
-# 8.3 Model Types
-
-The system uses multiple small specialized models.
-
-## Command Interpretation Model
-
-Purpose:
-
-convert natural language into structured DAW commands.
+Purpose: convert natural language into structured DAW actions.
 
 Example:
 
-    "add shaker from bar 8 to 16"
+```
+"add shaker from bar 8 to 16"
+→ [{ type: "addTrack", payload: { name: "Shaker", kind: "midi" } },
+   { type: "createClip", payload: { trackId: "...", startBar: 8, endBar: 16 } }]
+```
 
-becomes
+Priorities: fast inference, low memory, high accuracy on DAW-domain commands.
 
-    generate_midi(pattern=shaker)
-    place_clip(track=percussion, bars=8-16)
-
-This model prioritizes:
-
-- fast inference
-- low memory usage
-- high command accuracy
-
----
-
-## Music Generation Models
-
-Used for:
+### Music generation models
 
 - drum patterns
-- MIDI fills
-- chord suggestions
+- MIDI fills and chord progressions
 - melody generation
 
-These models produce **MIDI output**, not raw audio.
+Output: MIDI data, not raw audio.
 
----
+### Audio analysis models
 
-## Audio Analysis Models
-
-Used for:
-
-- mix suggestions
+- mix analysis and suggestions
 - EQ analysis
-- transient detection
-- rhythm detection
+- transient and rhythm detection
 
-These models analyze audio buffers.
+Input: audio buffer. Output: structured analysis result.
 
----
+## Memory constraints
 
-# 8.4 Model Execution Environment
+### Native sidecar models
 
-All models execute inside the application runtime.
+| Model | Budget |
+| --- | --- |
+| Command/reasoning LLM | 1–2 GB (quantized GGUF, e.g. Qwen2.5-1.5B-Instruct) |
+| Music generation | < 1 GB each |
+| Audio analysis | < 500 MB |
 
-Execution environments include:
+### Browser-local models
 
-- browser WebAssembly runtime
-- GPU compute runtime
-- native runtime (desktop wrapper)
+| Model | Budget |
+| --- | --- |
+| Intent classification | < 100 MB (quantized ONNX, q4/q8) |
+| ASR fallback | Whisper tiny (~40 MB) or base (~140 MB) |
 
-The AI layer must initialize automatically during application startup.
+All browser models must use quantization (q4 or q8) to minimize download size and WASM heap.
 
----
+## AI performance targets
 
-# 8.5 AI System Startup
+| Task | Target |
+| --- | --- |
+| Command interpretation | < 300 ms |
+| Music generation | < 2 s |
+| Audio analysis | < 1 s |
 
-During application launch the following occurs automatically:
+These targets make the AI feel like a responsive assistant, not a blocking process.
 
-1. runtime initializes
-2. models load
-3. AI services register command handlers
-4. prompt and voice systems activate
+## AI safety layer
 
-No user interaction is required.
+All model output passes through a validation layer before execution:
 
----
+- action type must be in the known registry
+- payload shape and numeric ranges must be valid
+- referenced IDs must exist
+- destructive operations require explicit user confirmation
 
-# 8.6 Offline Capability
+The AI never executes actions directly. Output → validation → `executeAppAction()`.
 
-After initial loading the AI system must operate fully offline.
+## AI startup sequence
 
-This includes:
+At app launch:
 
-- prompt commands
-- voice commands
-- music generation
-- audio analysis
+1. Browser runtime initializes (ONNX + Transformers.js)
+2. Models load (from cache or download)
+3. AI services register with the command system
+4. Prompt bar and voice input become active
 
-Internet access must not be required.
-
----
-
-# 8.7 Performance Targets
-
-AI response times must meet the following targets.
-
-Command interpretation
-
-    < 300 ms
-
-Music generation
-
-    < 2 seconds
-
-Audio analysis
-
-    < 1 second
-
-These limits ensure the AI behaves like a **responsive assistant rather than a blocking process**.
+On desktop, sidecar processes are started on demand (first prompt), not at launch, to keep startup fast.
 
 ---
 
-# 8.8 Memory Constraints
+# 9. Performance Requirements
 
-Models should be optimized for local execution.
+## Rendering
 
-Two tiers apply:
+| Operation | Target |
+| --- | --- |
+| Clip drag | < 10 ms |
+| Zoom | < 16 ms |
+| Scroll | < 16 ms |
 
-## Native desktop sidecar models (llama.cpp / whisper.cpp)
+Achieve by:
+- GPU-accelerated timeline (WebGPU / Canvas)
+- virtualized track list (only visible tracks rendered)
+- tiled waveform rendering with incremental redraw
+- React Compiler handling memoization automatically
 
-Command/reasoning model
+## Audio
 
-    1-2 GB (quantized GGUF, e.g. Qwen2.5-1.5B-Instruct or similar)
+- AudioWorklet for all real-time DSP (never main thread)
+- AudioParam for all automatable parameters
+- Scheduling via `AudioContext.currentTime` (never `setTimeout`)
+- OfflineAudioContext for bounce/export
 
-Music generation models
+## AI
 
-    < 1 GB each
-
-Audio analysis models
-
-    < 500 MB
-
-## Browser-local models (ONNX Runtime Web / Transformers.js)
-
-Intent classification / command scoring
-
-    < 100 MB (small distilled or quantized ONNX models)
-
-ASR (browser fallback)
-
-    Whisper tiny (~40 MB) or base (~140 MB)
-
-Browser models must use quantization (q4, q8) to minimize download size and memory.
-
-All models must support quantization to reduce memory footprint.
+See section 8 performance targets above.
 
 ---
 
-# 8.9 AI Safety Layer
+# 10. Future Expansion
 
-AI output must pass through a validation layer.
+Architecture must allow for:
 
-The validation system ensures:
+- collaboration and remote sessions
+- advanced AI mixing assistants
+- generative instruments and sound design
+- deeper plugin integration (parameter AI control)
 
-- commands are valid
-- operations are reversible
-- destructive edits require confirmation
-
-The AI system never executes commands directly on the project state.
-
-All commands pass through the command engine.
-
----
-
-# 8.10 AI System Summary
-
-Key properties:
-
-- zero user setup
-- automatic model loading
-- offline capable
-- fast local inference
-- modular model architecture
-- fully reversible actions
-
-# 9. UI Layout
-
-Default layout:
-
-    ---------------------------------------------------------
-    | Transport | Tools | Prompt Bar | Voice Indicator      |
-    ---------------------------------------------------------
-    | Browser | Arrangement Workspace | Inspector Panel     |
-    |         |                       |                     |
-    |         |                       |                     |
-    ---------------------------------------------------------
-    | Mixer Panel (dockable bottom panel)                  |
-    ---------------------------------------------------------
-
----
-
-# 10. Workspace Modes
-
-Three modes.
-
-Arrange Mode
-
-timeline editing.
-
-Clip Mode
-
-piano roll / audio editing.
-
-Mix Mode
-
-mixer focus.
-
-Modes change layout only.
-
----
-
-# 11. Track Model
-
-Tracks are unified objects.
-
-    Track
-     ├ Clips
-     ├ Devices
-     ├ Sends
-     ├ Automation
-     └ Modulators
-
-Tracks can contain both audio and MIDI.
-
----
-
-# 12. Device Rack
-
-Plugins appear as devices in a rack.
-
-Advantages:
-
-- no floating windows
-- visible processing chain
-- easy reordering
-
----
-
-# 13. Editing Tools
-
-Minimal toolset.
-
-| Tool       | Purpose        |
-| ---------- | -------------- |
-| Select     | move objects   |
-| Cut        | split clips    |
-| Draw       | create notes   |
-| Automation | edit envelopes |
-| Stretch    | time editing   |
-
----
-
-# 14. Automation System
-
-Automation is inline.
-
-Features:
-
-- draw curves
-- scale envelopes
-- copy automation
-- clip automation
-
----
-
-# 15. Command System
-
-All operations become commands.
-
-Example:
-
-    duplicate_section
-    quantize_notes
-    apply_eq
-    add_reverb
-    sidechain
-    humanize
-
-Commands power:
-
-- prompts
-- voice commands
-- keyboard shortcuts
-
----
-
-# 16. Prompt System
-
-Persistent prompt bar.
-
-Example prompts:
-
-    add shaker from bar 8 to 16
-    make the bass warmer
-    tighten drums
-    duplicate chorus
-
-AI returns preview operations.
-
----
-
-# 17. Voice Command System
-
-Voice activation via keyboard shortcut.
-
-Example:
-
-    Hold V
-
-Displays listening indicator.
-
----
-
-# 18. AI Task System
-
-AI tasks run asynchronously.
-
-Task queue:
-
-    AI tasks
-    Audio rendering
-    Analysis
-
-Users can continue editing.
-
----
-
-# 19. AI Visual Feedback
-
-When AI performs changes:
-
-- highlight tracks
-- show overlays
-- show summary
-
-Example:
-
-    EQ applied
-    +2 dB at 5kHz
-
----
-
-# 20. Browser
-
-Unified browser for:
-
-- samples
-- plugins
-- presets
-- MIDI clips
-
-Features:
-
-- tagging
-- fuzzy search
-- favorites
-
----
-
-# 21. Mixer
-
-Dockable mixer.
-
-Includes:
-
-- channel strips
-- sends
-- routing
-- meters
-- plugin slots
-
----
-
-# 22. Routing Visualization
-
-Signal flow visible on hover.
-
-Example:
-
-    Kick → Drum Bus → Master
-    Bass → Music Bus → Master
-
----
-
-# 23. Undo System
-
-All operations produce undo entries.
-
-AI operations are reversible.
-
----
-
-# 24. Discoverability
-
-Features accessible through:
-
-- command palette
-- prompt
-- right click
-- keyboard shortcuts
-
----
-
-# 25. Accessibility
-
-Support:
-
-- colorblind themes
-- large track heights
-- keyboard workflows
-
----
-
-# 26. Performance Targets
-
-Target performance:
-
-| Action    | Target |
-| --------- | ------ |
-| clip drag | <10 ms |
-| zoom      | <16 ms |
-| scrolling | <16 ms |
-
----
-
-# 27. Implementation Roadmap
-
-Phase 1
-
-core timeline.
-
-Phase 2
-
-audio engine.
-
-Phase 3
-
-MIDI editor.
-
-Phase 4
-
-plugin hosting.
-
-Phase 5
-
-AI command system.
-
-Phase 6
-
-voice interface.
-
----
-
-# 28. Future Expansion
-
-Future capabilities:
-
-- collaboration
-- advanced AI mixing
-- generative instruments
-
----
-
-# 29. Final Product Concept
-
-The result is a **hybrid DAW + AI copilot**.
-
-Users can:
-
-- work traditionally
-- automate tasks
-- control the DAW with prompts
-- control the DAW with voice
-
-AI becomes a **production assistant**, not a replacement for musicians.
+Design decisions now should not foreclose these paths.
 
 ---
 

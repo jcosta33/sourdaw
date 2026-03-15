@@ -7,20 +7,25 @@ Build the product end-to-end from the provided specification, stack skills, and 
 This is **not** just a bootstrap task.  
 This is the **main trigger document** for the agent.
 
-The other documents shared alongside this one define:
+The other documents shared alongside this one define the full set of rules and patterns you must follow. They live in the `.agents/` directory relative to the project root:
 
-- product vision
-- UX/UI principles
-- architecture
-- stack rules
-- React rules
-- routing/query/UI rules
-- audio/AI integration rules
-- conventions
-- accessibility
-- testing
-- forms
-- state patterns
+**Research and product spec:**
+- `.agents/tasks/research.md` — product vision, UX principles, full architecture overview
+
+**Skill files (read all of these before writing code):**
+- `.agents/skills/react19-compiler/SKILL.md` — React 19 + Compiler rules
+- `.agents/skills/tanstack-router/SKILL.md` — routing patterns
+- `.agents/skills/tanstack-query/SKILL.md` — async state / query patterns
+- `.agents/skills/state-management/SKILL.md` — Store<T>, useSyncExternalStore patterns
+- `.agents/skills/event-communication/SKILL.md` — DomainEvent, EventBus patterns
+- `.agents/skills/architecture.md/SKILL.md` — module structure, DI, domain errors
+- `.agents/skills/form-engineering/SKILL.md` — form patterns
+- `.agents/skills/frontend-a11y/SKILL.md` — accessibility patterns
+- `.agents/skills/tailwind-v4/SKILL.md` — Tailwind v4 + Shadcn UI setup
+- `.agents/skills/llm-action-bridge/SKILL.md` — AI action bridge patterns
+- `.agents/skills/audio-ai-runtime/SKILL.md` — audio engine + AI runtime patterns
+- `.agents/skills/web-audio-engine/SKILL.md` — Web Audio API patterns
+- `.agents/skills/webgpu-rendering-surfaces/SKILL.md` — WebGPU / Canvas rendering patterns
 
 This file tells the agent how to begin, how to sequence the work, and what success looks like.
 
@@ -180,56 +185,81 @@ The app should become a **real executable system as early as possible**.
 
 Use **pnpm** for all package management.
 
-Initialize and configure:
+Install the following with pnpm. Group them as shown.
 
-- Vite (latest)
-- React 19
-- TypeScript (7 [native-preview])
-- tsgo
-- TanStack Router
-- TanStack Query
-- Tailwind v4
-- Shadcn UI
-- Tauri v2
+### Core framework
 
-Also install the libraries needed for the project’s critical technical systems.
+```bash
+pnpm add react react-dom
+pnpm add -D @vitejs/plugin-react vite
+```
 
-### Build toolchain
+### React Compiler
 
-- `@vitejs/plugin-react`
-- `babel-plugin-react-compiler`
-- `tailwindcss`
-- `@tailwindcss/vite`
-- `@tanstack/router-plugin`
+```bash
+pnpm add -D babel-plugin-react-compiler
+```
+
+### Routing and query
+
+```bash
+pnpm add @tanstack/react-router @tanstack/react-query
+pnpm add -D @tanstack/router-plugin
+```
+
+### Styling
+
+```bash
+pnpm add tailwindcss @tailwindcss/vite
+```
+
+Then run Shadcn UI init after Tailwind is configured:
+
+```bash
+pnpm dlx shadcn@latest init
+```
+
+### State persistence
+
+```bash
+pnpm add superjson
+```
+
+`superjson` is used internally by `LocalStorageStorage` from `src/helpers/Store/`. Required for any persisted store.
 
 ### Forms
 
-- `react-hook-form`
-- `@hookform/resolvers`
-- `@tanstack/zod-adapter`
-
-### Browser AI
-
-- `@huggingface/transformers`
-- `onnxruntime-web`
-
-### Desktop/local AI bridge
-
-- `@tauri-apps/api`
-- `@tauri-apps/cli`
-- `tauri-plugin-shell`
+```bash
+pnpm add react-hook-form @hookform/resolvers zod
+pnpm add @tanstack/zod-adapter
+```
 
 ### UI and utility baseline
 
-- `clsx`
-- `tailwind-merge`
-- `class-variance-authority`
-- `lucide-react`
-- `zod`
+```bash
+pnpm add clsx tailwind-merge class-variance-authority lucide-react
+```
+
+### Browser AI
+
+```bash
+pnpm add @huggingface/transformers onnxruntime-web
+```
+
+### Desktop / local AI bridge (install after Tauri is set up)
+
+```bash
+pnpm add @tauri-apps/api
+pnpm add -D @tauri-apps/cli tauri-plugin-shell
+```
 
 ### TypeScript native toolchain
 
-- `@typescript/native-preview`
+```bash
+pnpm add -D @typescript/native-preview typescript
+```
+
+The `@typescript/native-preview` package provides `tsgo`, the native TypeScript compiler. The `pnpm typecheck` script must run `tsgo --noEmit`, not `tsc --noEmit`. Do not install `typescript@7` — it does not exist yet; `@typescript/native-preview` is the correct package.
 
 ---
 
@@ -239,9 +269,11 @@ Also install the libraries needed for the project’s critical technical systems
 
 Use React 19 with Compiler assumptions from day one.
 
-Enable the React Compiler in `vite.config.ts`:
+Enable the React Compiler in `vite.config.ts`. This is the complete baseline config — include both plugins and the path alias:
 
 ```ts
+import path from "path";
+import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
@@ -256,6 +288,11 @@ export default defineConfig({
     }),
     tailwindcss(),
   ],
+  resolve: {
+    alias: {
+      "#": path.resolve(__dirname, "./src"),
+    },
+  },
 });
 ```
 
@@ -453,7 +490,6 @@ src/
     ErrorBoundary/
   components/
     ui/                         # Shadcn UI components (shadcn generated)
-  audio/                        # (compiled separately — see notes)
 public/
   audio/
     worklets/                   # AudioWorklet processor .js files
@@ -485,6 +521,44 @@ The `src/helpers/` directory already contains production-ready infrastructure. U
 
 Do not invent factory functions like `createStore()` or `createEventBus()` as module-level exports unless they map exactly to the existing inject-based helpers above.
 
+### App bootstrap sequence
+
+The helpers have strict initialization order requirements. Bootstrap in this order in `src/app/main.tsx` (or equivalent):
+
+1. **Register `Logger` in the Container first** — every other helper depends on it.
+2. **Create the `EventBus` singleton** — call `createEventBus(logger, eventLog)` once; export it as `src/app/eventBus.ts`.
+3. **Create module-level Store singletons** — they require `Logger` from the Container, so they must be defined after step 1.
+4. **Register cross-module event handlers** — call registration functions (e.g., `registerTrackQueryHandlers()`) after stores and the query client are ready.
+5. **Mount the React app** — everything above must be done before `ReactDOM.createRoot(...).render(...)`.
+
+The event bus singleton must live in its own file so modules can import it without importing from the entry point:
+
+```ts
+// src/app/bootstrap.ts — run once before mounting React
+import { Container } from '#/helpers/DependencyInjector/Container';
+import { Logger } from '#/helpers/Logger/Logger';
+import { ConsoleWriter } from '#/helpers/Logger/Writer/ConsoleWriter';
+import { createEventBus } from '#/helpers/Event/createEventBus';
+import { EventLog } from '#/helpers/Event/EventLog';
+
+const logger = new Logger([new ConsoleWriter()]);
+Container.getInstance().register(Logger, logger);
+
+const eventLog = new EventLog();
+export const eventBus = createEventBus(logger, eventLog);
+```
+
+```ts
+// src/app/main.tsx
+import './bootstrap'; // must be first — registers Logger in Container
+import { createRoot } from 'react-dom/client';
+import { App } from './App';
+
+createRoot(document.getElementById('root')!).render(<App />);
+```
+
+Module-level Store singletons (e.g. `workspaceStore`) are created when their module files are first imported. Since they call `Container.getInstance().get(Logger)`, those files must only be imported after `bootstrap.ts` has run.
+
 ---
 
 ## Critical Architectural Rule
@@ -514,14 +588,14 @@ If the AI needs to act, it must go through the app action layer.
 
 ### Read everything first
 
-Before making deep implementation decisions:
+Before writing any code:
 
-1. read this file
-2. read the stack skills
-3. read the design/architecture docs
-4. understand the product goal
+1. Read this file in full
+2. Read `.agents/tasks/research.md` — architecture, tech stack, AI system
+3. Read `.agents/tasks/spec.md` — product vision, UX, features
+4. Read all skill files listed at the top of this document
 
-Do not blindly scaffold random code without aligning to the provided materials.
+Do not start writing code until you understand the product, the architecture, and the conventions. Do not blindly scaffold — align to the materials.
 
 ### Then begin implementation
 
@@ -552,17 +626,20 @@ Create real foundations that can support the product.
 
 ### Phase 1 — foundation
 
-Set up:
+Set up the browser app first. Do **not** block on Tauri in this phase — get the web app running before adding the desktop wrapper.
 
-- package manager
-- app scaffold
-- type system
-- router
-- query
-- styling
-- Shadcn
-- Tauri
-- basic shell
+- pnpm + Vite + React 19 scaffold
+- TypeScript strict config + `#/` path alias + tsgo typecheck
+- React Compiler enabled
+- TanStack Router (file-based routes, basic shell route)
+- TanStack Query (QueryClient provider)
+- Tailwind v4 CSS-first setup
+- Shadcn UI init
+- Logger + Container bootstrap
+- EventBus singleton
+- Basic app shell: sidebar, main area, transport bar placeholders
+
+Add Tauri after the browser app boots and renders cleanly. Tauri requires a Rust toolchain; do not let it block the web scaffold.
 
 ### Phase 2 — command system baseline
 

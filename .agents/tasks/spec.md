@@ -1,17 +1,12 @@
-# AI-Native DAW – Complete UI/UX Product Specification
+# AI-Native DAW — UI/UX Product Specification
 
-## Purpose
+## Role of this document
 
-Design a **next-generation digital audio workstation (DAW)** that combines:
+This is the **product and UX specification**. It defines what the app looks like, how users interact with it, and what features it must have.
 
-- Feature parity with professional DAWs
-- A simplified, unified interface
-- A built-in AI copilot
-- Prompt + voice + manual editing workflows
-- Fully local AI models
-- Offline capability
+For technical architecture, AI system design, and technology stack, see **`.agents/tasks/research.md`**.
 
-The system must be usable by beginners yet powerful for professionals.
+For the implementation plan and setup instructions, see **`.agents/tasks/task.md`**.
 
 ---
 
@@ -19,12 +14,12 @@ The system must be usable by beginners yet powerful for professionals.
 
 ## Primary Goals
 
-1. **Immediate usability**
-2. **Minimal cognitive load**
-3. **Maximum editing speed**
-4. **AI augmentation without disruption**
-5. **All actions reversible**
-6. **Everything discoverable**
+1. **Immediate usability** — works without reading a manual
+2. **Minimal cognitive load** — no clutter, no floating window sprawl
+3. **Maximum editing speed** — common operations are fast and direct
+4. **AI augmentation without disruption** — AI assists, never blocks
+5. **All actions reversible** — full undo including AI operations
+6. **Everything discoverable** — via prompt, palette, right-click, or shortcut
 
 ---
 
@@ -38,7 +33,7 @@ The DAW supports **three simultaneous interaction methods**:
 | Prompt commands | Fast operations via natural language |
 | Voice commands  | Hands-free editing                   |
 
-All three methods execute the **same internal command system**.
+All three methods execute the **same internal command system**. There is no special AI execution path — AI produces typed actions, the command system executes them, just as manual UI does.
 
 ---
 
@@ -48,535 +43,505 @@ All three methods execute the **same internal command system**.
 
 Users must always be able to:
 
-- override AI actions
-- manually edit any change
-- undo AI operations
+- override any AI action
+- manually edit any AI change
+- undo AI operations individually
 
-AI tasks must run **non-blocking**.
+AI tasks run **non-blocking**. Users continue editing during AI tasks.
 
-Users can continue editing during AI tasks.
+AI changes are highlighted visually so the user always knows what changed.
 
 ---
 
 # 4. Layout Overview
 
-    ---------------------------------------------------------
-    | Transport | Tools | Prompt Bar | Voice Indicator      |
-    ---------------------------------------------------------
-    | Browser | Arrangement Workspace | Inspector Panel     |
-    |         |                       |                     |
-    |         |                       |                     |
-    ---------------------------------------------------------
-    | Mixer Panel (dockable bottom panel)                  |
-    ---------------------------------------------------------
+```
+---------------------------------------------------------
+| Transport | Tools | Prompt Bar         | Voice Button |
+---------------------------------------------------------
+| Browser   | Arrangement Workspace     | Inspector    |
+|           |                           |              |
+|           |                           |              |
+---------------------------------------------------------
+| Mixer Panel (dockable, collapsed by default)         |
+---------------------------------------------------------
+```
+
+All panels are resizable. The sidebar (Browser) and Inspector can be toggled. The Mixer docks to the bottom.
 
 ---
 
 # 5. Primary Interface Areas
 
-## 1. Transport Bar
+## Transport Bar
 
-Contains:
+Always visible at the top. Contains:
 
-- Play / Stop
-- Record
-- Loop
-- Tempo
+- Play / Stop / Record
+- Loop toggle
+- Tempo (BPM, editable inline)
 - Time signature
-- Metronome
-- CPU meter
-- AI status indicator
+- Metronome toggle
+- CPU / latency meter
+- AI status indicator (idle / processing / error)
 
----
+## Prompt Bar
 
-## 2. Prompt Bar
-
-Persistent input field for AI commands.
+Persistent text input for natural language commands. Always visible in the toolbar.
 
 Examples:
 
-    add shaker from bar 8 to 16
-    make this bass warmer
-    duplicate chorus
-    tighten drums
+```
+add shaker from bar 8 to 16
+make this bass warmer
+duplicate chorus
+tighten drums
+quantize kick to 1/16
+```
 
-Outputs preview actions before execution.
+Behavior:
+1. User types and submits
+2. AI parses input into planned actions
+3. Preview shown: what will happen, which tracks are affected
+4. User confirms (or cancels)
+5. Actions execute
 
----
+For non-destructive commands (e.g., set tempo), execute immediately with undo support. Require confirmation for destructive or multi-track operations.
 
-## 3. Voice Command Indicator
+## Voice Command Input
 
-Triggered by keyboard shortcut.
-
-Example:
-
-    Hold V
+Triggered by a configurable keyboard shortcut (default: hold `V`).
 
 Displays:
-
 - listening indicator
-- waveform animation
-- transcript preview
+- live waveform animation
+- transcript preview as speech is recognized
 
----
+Recognized transcript feeds into the same prompt parsing pipeline as text input.
 
-## 4. Browser Panel
+## Browser Panel
 
-Unified browser for:
+Left sidebar. Unified content browser for:
 
-- plugins
-- instruments
-- samples
-- MIDI patterns
+- samples and audio files
+- plugins and instruments
 - presets
+- MIDI patterns and clips
 
 Features:
-
 - fuzzy search
-- tagging
+- tag filtering
 - favorites
-- history
+- browse history
 
----
+## Arrangement Workspace
 
-## 5. Arrangement Workspace
+Primary editing surface. Contains:
 
-Primary editing surface.
+- track headers (left column)
+- timeline grid (right, scrollable horizontally)
+- audio clips, MIDI clips, automation lanes
+- markers and arrangement sections
+- playhead
 
-Supports:
+Everything is editable inline. No modal editors — double-clicking a MIDI clip switches to Clip Mode in the same view.
 
-- audio clips
-- MIDI clips
-- automation
-- markers
-- tempo changes
-- arrangement sections
+## Inspector Panel
 
-Everything editable inline.
+Right sidebar. Context-aware — shows properties for whatever is selected:
 
----
+- track: name, color, routing, gain, pan, sends
+- clip: start, length, pitch, warp settings
+- device/plugin: all parameters with automation indicator
+- automation: curve editing controls
 
-## 6. Inspector Panel
+Inspector replaces floating plugin/parameter windows.
 
-Context-aware panel displaying:
+## Mixer Panel
 
-- track settings
-- clip properties
-- device parameters
-- automation parameters
+Dockable bottom panel (collapsed by default). Contains:
 
-Inspector replaces floating windows.
-
----
-
-## 7. Mixer Panel
-
-Dockable bottom panel.
-
-Includes:
-
-- channel strips
-- meters
-- sends
-- routing
-- plugin chains
-
-Plugins open in inspector.
+- channel strips for all tracks
+- faders and meters
+- send levels
+- routing visualization
+- plugin chain slots (plugins open in Inspector when clicked)
 
 ---
 
 # 6. Workspace Modes
 
-Three workspace modes:
+Three modes, selectable from the toolbar. Modes change **layout only** — all data is always present.
 
-## Arrange Mode
+## Arrange Mode (default)
 
-Timeline editing.
+Focus: clips, arrangement, automation on the timeline.
 
-Focus:
-
-- clips
-- arrangement
-- automation
-
----
+- full timeline width
+- track headers visible
+- Inspector on right
 
 ## Clip Mode
 
-Detailed clip editing.
+Focus: detailed editing of a selected clip.
 
-Displays:
-
-- piano roll
-- audio waveform
-- warp markers
-
----
+- Piano roll (MIDI clips)
+- Audio waveform with warp markers (audio clips)
+- Note velocity editor
+- Automation lane for the clip
 
 ## Mix Mode
 
-Mixer-focused layout.
+Focus: mixer and signal flow.
 
-Shows:
-
-- expanded channel strips
-- routing view
-- meters
+- Expanded channel strips
+- Full routing visualization
+- All meters visible
+- Inspector shows plugin parameters
 
 ---
 
 # 7. Track Model
 
-Tracks are unified objects.
+Tracks are unified objects — no separate "audio track" and "MIDI track" types.
 
-    Track
-     ├ Clips
-     ├ Devices
-     ├ Sends
-     ├ Automation
-     └ Modulators
+```
+Track
+ ├ Clips        ← audio clips, MIDI clips, mixed
+ ├ Devices      ← plugin rack (instruments + effects)
+ ├ Sends        ← send levels to bus tracks
+ ├ Automation   ← per-parameter envelopes
+ └ Modulators   ← LFOs, envelope followers (future)
+```
 
-Tracks can be:
-
-- audio
-- MIDI
-- hybrid
-
-Hybrid tracks eliminate confusion between track types.
+Track kinds:
+- **Audio** — records and plays audio files
+- **MIDI** — sequences MIDI, routes to instrument devices
+- **Bus** — receives sends, applies processing, routes to master or other buses
+- **Master** — final output
 
 ---
 
-# 8. Device Rack System
+# 8. Device Rack
 
-Plugins appear in a **device rack**.
+Plugins and instruments appear as **devices in a rack**, not as floating windows.
 
-Inspired by modular systems.
+```
+Track
+ ├ Instrument (Synth)
+ ├ EQ Eight
+ ├ Compressor
+ └ Reverb Send
+```
 
 Benefits:
-
-- no floating windows
 - visible signal chain
-- easy reordering
-
-Example:
-
-    Track
-     ├ Synth
-     ├ EQ
-     ├ Compressor
-     ├ Reverb Send
+- easy drag-to-reorder
+- inline bypass toggle
+- parameters accessible in Inspector on click
 
 ---
 
 # 9. Editing Tools
 
-Minimal toolset:
+Minimal toolset. Tool is selected from the toolbar or by keyboard shortcut.
 
-| Tool       | Purpose                 |
-| ---------- | ----------------------- |
-| Select     | move clips              |
-| Cut        | split clips             |
-| Draw       | create notes/automation |
-| Automation | edit envelopes          |
-| Stretch    | time editing            |
+| Tool       | Shortcut | Purpose                          |
+| ---------- | -------- | -------------------------------- |
+| Select     | S        | move and resize clips            |
+| Cut        | C        | split clips at cursor            |
+| Draw       | D        | create clips / draw MIDI notes   |
+| Automation | A        | draw and edit automation curves  |
+| Stretch    | T        | time-stretch clips               |
 
-All other actions use context menus.
+Right-click context menu exposes all remaining operations. No tool needed for common actions like mute, solo, rename.
 
 ---
 
 # 10. Automation System
 
-Automation appears **inline with clips**.
+Automation appears **inline within the track**, below its clips. No separate automation editor.
 
-Supports:
-
-- curve drawing
-- parameter automation
-- automation scaling
-- clip automation
-
-No separate automation editor.
+Features:
+- draw freehand curves
+- draw linear segments
+- scale entire envelope
+- copy automation between parameters
+- clip automation (automation follows the clip)
+- automation from any plugin parameter via right-click → "Edit Automation"
 
 ---
 
 # 11. Routing System
 
-Signal routing visualization.
-
-Hovering over tracks reveals signal flow.
+Signal routing visualization appears on hover over any track or bus.
 
 Example:
 
-    Kick -> Bus Drum -> Master
-    Bass -> Bus Music -> Master
+```
+Kick → Drum Bus → Master
+Bass → Music Bus → Master
+Pad  → FX Bus → Music Bus → Master
+```
+
+Routing is editable via the Inspector when a track is selected.
 
 ---
 
 # 12. Command System
 
-All operations map to commands.
+Every operation in the app maps to a typed command (AppAction). This powers prompt commands, voice commands, keyboard shortcuts, and menu actions uniformly.
 
 Example commands:
 
-    duplicate_section
-    quantize_notes
-    apply_eq
-    add_reverb
-    sidechain
-    humanize
+```
+addTrack       renameTrack     removeTrack
+setTempo       togglePlayback  setMasterGain
+addClip        moveClip        duplicateClip
+soloTrack      muteTrack       armTrack
+addDevice      bypassDevice    removeDevice
+quantizeNotes  humanizeNotes   transposeNotes
+createBus      setSend         setRouting
+```
 
-Commands can be triggered by:
-
-- prompt
-- voice
-- keyboard
-- menus
+The full command registry is defined in `src/modules/Command/models/AppAction.ts`.
 
 ---
 
 # 13. AI Prompt Workflow
 
-Process:
+```
+1. User types prompt
+2. AI parses → planned actions (typed AppAction[])
+3. Preview displayed: label per action, affected elements highlighted
+4. User confirms or cancels
+5. Actions execute via command system
+6. Undo entry created
+```
 
-1. user prompt
-2. AI interprets command
-3. preview generated
-4. user confirms
-5. command executed
+For simple, non-destructive commands (e.g. "set tempo to 128"), skip confirmation and execute immediately.
 
-All actions are undoable.
+Require confirmation for:
+- multi-track operations
+- deletions
+- operations affecting clips with unsaved audio
+- anything irreversible without undo
 
 ---
 
 # 14. Voice Command System
 
-Voice input triggered by shortcut.
+Push-to-talk via configurable shortcut (default: hold `V`).
 
-Example:
+```
+"mute the guitar track"
+"add reverb to vocals"
+"loop bars 8 to 16"
+"bump up the tempo"
+"duplicate the chorus"
+```
 
-    Hold V
+Voice transcript feeds into the same prompt parsing pipeline. No separate voice command registry needed.
 
-Supported commands:
-
-    mute guitar track
-    add delay
-    loop bars 8 to 16
-    increase tempo
-
-Voice commands translate to internal commands.
+ASR runtime:
+- Desktop: whisper.cpp sidecar (bundled, offline, high quality)
+- Browser: Whisper ONNX (downloaded on first use, cached offline)
 
 ---
 
 # 15. AI Task System
 
-AI tasks run asynchronously.
+AI tasks (generation, analysis, longer operations) run asynchronously.
 
-    Task Queue
-     ├ analysis
-     ├ generation
-     ├ edits
+```
+Task Queue
+ ├ command interpretation   (< 300 ms — feels instant)
+ ├ audio analysis           (< 1 s — background)
+ └ music generation         (< 2 s — progress shown)
+```
 
-UI displays task progress.
+UI during AI task:
+- prompt bar shows spinner / progress
+- affected tracks show subtle "processing" overlay
+- user can continue editing unaffected areas
+- task can be cancelled
 
 ---
 
 # 16. AI Change Visualization
 
-AI modifications highlight affected elements.
+When AI completes a change:
+- affected tracks/clips briefly highlighted
+- summary overlay appears near the change
 
-Example overlay:
+Example:
 
-    EQ added
-    +2 dB @ 5kHz
+```
+✓ EQ applied to Kick
+  +2 dB at 5 kHz, -3 dB at 200 Hz
+  [Undo]  [Accept]
+```
 
-User can accept or revert.
+User can undo AI operations individually. AI changes are never silent.
 
 ---
 
 # 17. Command Palette
 
-Shortcut:
+Shortcut: `Ctrl/Cmd + K`
 
-    Ctrl/Cmd + K
+Fuzzy search over all available commands. Works like a traditional command palette.
 
-Allows typed commands:
+Examples:
 
-    create bus
-    normalize audio
-    sidechain bass
+```
+> create bus
+> normalize audio
+> sidechain bass to kick
+> export stems
+```
+
+Executes the same AppAction commands as prompt and voice input.
 
 ---
 
 # 18. Undo System
 
-Every operation produces an undo step.
+Every operation — manual, prompt, voice, or AI — produces an undo entry.
+
+```
+Undo history:
+  Apply EQ to Kick
+  Duplicate Chorus (AI)
+  Humanize Drums (AI)
+  Move Clip: Bass Riff → bar 9
+  Set Tempo: 128 BPM
+```
+
+Undo is unlimited within a session. AI operations are individually reversible.
+
+---
+
+# 19. Smart Suggestions (Optional / Future)
+
+Contextual AI suggestions can appear non-intrusively when the user pauses.
 
 Example:
 
-    Undo: Apply EQ
-    Undo: Duplicate Chorus
-    Undo: AI Drum Humanization
+```
+Suggested:
+• Humanize hi-hat velocity
+• Add groove to drum loop
+• Layer a second percussion track
+```
+
+These are suggestions only — user must explicitly trigger them. Never auto-apply.
 
 ---
 
-# 19. Performance Design
-
-Rendering requirements:
-
-- GPU accelerated UI
-- virtualized track list
-- tiled waveform rendering
-- incremental redraw
-
-Target latency:
-
-| Operation | Target |
-| --------- | ------ |
-| clip drag | <10ms  |
-| zoom      | <16ms  |
-| scroll    | <16ms  |
-
----
-
-# 20. Discoverability
-
-Features must be accessible through:
-
-1. right-click menus
-2. command palette
-3. prompt commands
-4. keyboard shortcuts
-
----
-
-# 21. Browser Design
-
-Search supports:
-
-- fuzzy matching
-- tagging
-- favorites
-- plugin categories
-
----
-
-# 22. Plugin Automation
-
-Plugin parameters can be automated by:
-
-- dragging parameter
-- right-click automation
-- prompt command
-- voice command
-
----
-
-# 23. Smart Suggestions
-
-Optional AI suggestions appear contextually.
-
-Example:
-
-    Suggested actions:
-    • Humanize notes
-    • Add groove
-    • Layer percussion
-
----
-
-# 24. Safety Constraints
+# 20. Safety Constraints
 
 AI must never:
 
-- delete tracks silently
-- overwrite recordings
+- delete tracks or clips silently
+- overwrite recorded audio without confirmation
 - change routing without confirmation
+- apply any change that cannot be individually undone
+
+All destructive operations require explicit confirmation, regardless of whether they were triggered by prompt, voice, or UI.
 
 ---
 
-# 25. Project Context Model
+# 21. Project Context
 
-AI receives structured project state:
+When the AI interprets a prompt, it receives structured context about the current project state:
 
-    tempo
-    tracks
-    instruments
-    sections
-    selected clips
-    automation
+```
+{
+  tempo: number,
+  timeSignature: [number, number],
+  tracks: Track[],
+  selectedTrackId: string | null,
+  selectedClipId: string | null,
+  activeView: "arrange" | "clip" | "mix",
+  playheadPosition: number
+}
+```
+
+This allows the AI to understand "this track" or "the selected clip" correctly.
 
 ---
 
-# 26. Accessibility
+# 22. Discoverability
+
+Every feature must be reachable through at least one of:
+
+1. Right-click context menu
+2. Command palette (`Ctrl/Cmd + K`)
+3. Prompt bar
+4. Keyboard shortcut
+
+No feature should require knowing a specific menu path to access it.
+
+---
+
+# 23. Accessibility
 
 Must support:
 
-- large track sizes
-- colorblind palettes
-- keyboard-only workflow
-- screen reader metadata
+- keyboard-only workflow for all core editing operations
+- large track height mode (option in preferences)
+- colorblind-safe palette (no red/green-only distinctions)
+- screen reader metadata on transport controls and track headers
+- `aria-label` on all icon-only buttons
+- `aria-live` regions for AI status and transport position
+
+See `.agents/skills/frontend-a11y/SKILL.md` for implementation patterns.
 
 ---
 
-# 27. Visual Style
+# 24. Visual Style
 
-Modern minimal UI.
-
-Principles:
-
-- dark mode default
-- subtle color coding
-- high contrast meters
-- low visual clutter
+- **Dark mode by default** — `class="dark"` on `<html>` from startup
+- Subtle color coding for track types (audio / MIDI / bus)
+- High-contrast level meters
+- Low visual clutter — no decorative chrome
+- Consistent use of Shadcn UI components for all standard UI
+- Custom WebGPU / Canvas rendering only for dense editor surfaces
 
 ---
 
-# 28. Minimum Feature Parity
+# 25. Minimum Feature Set (v1 Scope)
 
-Essential capabilities:
+Essential capabilities required before the product is considered functional:
 
-- recording
-- MIDI editing
-- audio editing
-- automation
-- plugin hosting
+- audio recording and playback
+- MIDI editing (piano roll)
+- audio clip editing (trim, move, split)
+- automation (draw and edit)
+- plugin hosting (VST3 / CLAP via native host)
+- send/return routing
+- bus groups
 - sidechain routing
-- grouping
-- comping
-- warping
+- track folders / grouping
+- comping (multiple takes)
+- warping / time-stretching
 - tempo mapping
-- markers
-- track folders
-- buses
-- sends
-- freeze / bounce
+- markers and arrangement sections
+- freeze / bounce tracks
 - export stems
 
 ---
 
-# 29. Future Expansion
+# 26. Future Expansion
 
-Architecture must allow:
+The architecture must not foreclose:
 
-- advanced AI assistants
-- generative music tools
-- collaboration
-- remote sessions
-
----
-
-# 30. Final Product Vision
-
-The system is a **hybrid production environment**:
-
-Users can:
-
-- work traditionally
-- accelerate tasks via prompts
-- operate the DAW with voice
-- automate repetitive operations
-
-The AI becomes a **production copilot** rather than a replacement for musicians.
+- real-time collaboration and remote sessions
+- advanced AI mixing assistants
+- generative instruments and procedural sound design
+- deeper plugin parameter AI control
+- mobile / tablet companion interface
 
 ---
 
