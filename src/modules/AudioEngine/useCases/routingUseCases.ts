@@ -10,7 +10,7 @@ export const addRoute = (sourceId: string, destinationId: string, gain = 1): voi
     );
     if (exists) return;
 
-    const route: AudioRoute = { sourceId, destinationId, gain };
+    const route: AudioRoute = { id: `route-${sourceId}-${destinationId}`, sourceId, destinationId, gain };
     audioGraphStore.set({ routes: [...state.routes, route] });
 };
 

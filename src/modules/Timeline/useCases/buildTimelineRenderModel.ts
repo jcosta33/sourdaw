@@ -1,12 +1,17 @@
 import { trackStore } from "#/modules/Track/stores/trackStore";
 import { transportStore } from "#/modules/Transport/stores/transportStore";
 import { timelineViewStore } from "../stores/timelineViewStore";
+import { midiStore } from "#/modules/Track/stores/midiStore";
+import { workspaceStore } from "#/modules/Workspace/stores/workspaceStore";
+import { preferencesStore } from "#/modules/Workspace/stores/preferencesStore";
+import { TRACK_HEIGHT_VALUES } from "#/modules/Workspace/models/Preferences";
 import type { TimelineRenderModel } from "../models/TimelineRenderModel";
 
 export const buildTimelineRenderModel = (): TimelineRenderModel => {
     const trackState = trackStore.value;
     const transportState = transportStore.value;
     const viewState = timelineViewStore.value;
+    const midiState = midiStore.value;
 
     const pixelsPerBeat = viewState?.pixelsPerBeat ?? 12;
     const scrollX = viewState?.scrollX ?? 0;
@@ -17,25 +22,45 @@ export const buildTimelineRenderModel = (): TimelineRenderModel => {
         name: track.name,
         index,
         kind: track.kind,
+        color: track.color,
         muted: track.muted,
         soloed: track.soloed,
-        clips: track.clips.map((clip) => ({
-            id: clip.id,
-            startBeat: clip.startBeat,
-            endBeat: clip.endBeat,
-            name: clip.name,
-            color: track.color,
-        })),
+        height: track.height,
+        clips: track.clips.map((clip) => {
+            const notes = clip.type === "midi" ? (midiState?.notesByClipId[clip.id] ?? []) : [];
+            return {
+                id: clip.id,
+                startBeat: clip.startBeat,
+                endBeat: clip.endBeat,
+                name: clip.name,
+                color: clip.color || track.color,
+                type: clip.type,
+                muted: clip.muted,
+                midiNotes: notes.map((n) => ({ pitch: n.pitch, startBeat: n.startBeat, duration: n.duration })),
+                audioBufferId: clip.audioBufferId,
+                loopEnabled: clip.loopEnabled,
+                loopLength: clip.loopLength,
+                fadeInBeats: clip.fadeInBeats,
+                fadeOutBeats: clip.fadeOutBeats,
+            };
+        }),
     }));
+
+    const prefs = preferencesStore.value;
+    const trackHeight = TRACK_HEIGHT_VALUES[prefs?.trackHeight ?? "normal"];
 
     return {
         tracks,
+        selectedTrackId: trackState?.selectedTrackId ?? null,
+        selectedClipId: workspaceStore.value?.selectedClipId ?? null,
+        selectedClipIds: workspaceStore.value?.selectedClipIds ?? [],
         playheadPosition: transportState?.playheadPosition ?? 0,
         viewportStartBeat,
-        viewportEndBeat: viewportStartBeat + 256,
+        viewportEndBeat: viewportStartBeat + (window.innerWidth / pixelsPerBeat),
         beatsPerPixel: 1 / pixelsPerBeat,
         pixelsPerBeat,
-        trackHeight: 64,
+        trackHeight,
+        scrollY: viewState?.scrollY ?? 0,
         tempo: transportState?.tempo ?? 120,
         timeSignatureNumerator: transportState?.timeSignatureNumerator ?? 4,
         timeSignatureDenominator: transportState?.timeSignatureDenominator ?? 4,

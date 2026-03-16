@@ -3,11 +3,46 @@ export type AudioEngineState = {
     sampleRate: number;
     state: AudioContextState;
     masterGain: number;
+    currentTime: number;
+    baseLatency: number;
+};
+
+export type BuiltinDeviceNode = {
+    deviceId: string;
+    type: string;
+    nodes: AudioNode[];
+    inputNode: AudioNode;
+    outputNode: AudioNode;
+};
+
+export type TrackChannelStrip = {
+    trackId: string;
+    preFaderTap: GainNode;
+    gainNode: GainNode;
+    panNode: StereoPannerNode;
+    analyserNode: AnalyserNode;
+    muted: boolean;
+    soloed: boolean;
+    deviceNodes: BuiltinDeviceNode[];
+};
+
+export type BusStrip = {
+    busId: string;
+    gainNode: GainNode;
+    analyserNode: AnalyserNode;
+};
+
+export type SendNode = {
+    sourceTrackId: string;
+    busId: string;
+    gainNode: GainNode;
+    preFader: boolean;
 };
 
 export type AudioEngine = {
     readonly context: AudioContext;
     readonly masterGainNode: GainNode;
+    readonly masterAnalyser: AnalyserNode;
     initialize(): Promise<void>;
     resume(): Promise<void>;
     suspend(): Promise<void>;
@@ -15,4 +50,27 @@ export type AudioEngine = {
     getMasterGain(): number;
     getState(): AudioEngineState;
     dispose(): void;
+    ensureTrackStrip(trackId: string): TrackChannelStrip;
+    removeTrackStrip(trackId: string): void;
+    getTrackStrip(trackId: string): TrackChannelStrip | undefined;
+    setTrackGain(trackId: string, gain: number): void;
+    setTrackPan(trackId: string, pan: number): void;
+    setTrackMute(trackId: string, muted: boolean, restoreGain?: number): void;
+    getTrackPeakLevel(trackId: string): number;
+    getMasterPeakLevel(): number;
+    getBusPeakLevel(busId: string): number;
+    addDeviceToStrip(trackId: string, deviceId: string, deviceType: string): void;
+    removeDeviceFromStrip(trackId: string, deviceId: string): void;
+    updateDeviceParam(trackId: string, deviceId: string, paramId: string, value: number): void;
+    ensureBusStrip(busId: string): BusStrip;
+    removeBusStrip(busId: string): void;
+    setBusGain(busId: string, gain: number): void;
+    setSend(sourceTrackId: string, busId: string, level: number, preFader?: boolean): void;
+    removeSend(sourceTrackId: string, busId: string): void;
+    setTrackOutput(trackId: string, outputId: string): void;
+    scheduleOscillator(frequency: number, startTime: number, duration: number, gain?: number): void;
+    scheduleClick(time: number, accent: boolean, volume?: number): void;
+    stopAllScheduled(): void;
+    wireSidechainRoute(sourceTrackId: string, targetTrackId: string, targetDeviceId: string): void;
+    unwireSidechainRoute(sourceTrackId: string, targetDeviceId: string): void;
 };

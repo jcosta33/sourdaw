@@ -1,0 +1,17 @@
+{
+    "name": "webdaw-collab-server",
+    "private": true,
+    "scripts": {
+        "dev": "tsx collab-server.ts",
+        "build": "tsc",
+        "start": "node dist/collab-server.js"
+    },
+    "dependencies": {
+        "ws": "^8.0.0"
+    },
+    "devDependencies": {
+        "tsx": "^4.0.0",
+        "typescript": "^5.0.0",
+        "@types/ws": "^8.0.0"
+    }
+}

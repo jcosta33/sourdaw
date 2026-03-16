@@ -8,8 +8,6 @@ export type TimelineRenderer = {
 };
 
 export const getPreferredRendererBackend = (): RendererBackend => {
-    if (typeof navigator !== "undefined" && "gpu" in navigator) {
-        return "webgpu";
-    }
+    // TODO: re-enable once the WebGPU renderer draws more than a clear screen
     return "canvas2d";
 };

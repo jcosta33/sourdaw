@@ -1,4 +1,5 @@
 export type AudioRoute = {
+    id: string;
     sourceId: string;
     destinationId: string;
     gain: number;

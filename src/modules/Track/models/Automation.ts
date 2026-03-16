@@ -7,6 +7,7 @@ export type AutomationPoint = {
 export type AutomationLane = {
     id: string;
     trackId: string;
+    clipId?: string;
     parameterId: string;
     parameterName: string;
     points: AutomationPoint[];
@@ -23,9 +24,11 @@ export const createAutomationLane = (
     parameterName: string,
     minValue = 0,
     maxValue = 1,
+    clipId?: string,
 ): AutomationLane => ({
     id: `auto-${nextLaneId++}`,
     trackId,
+    clipId,
     parameterId,
     parameterName,
     points: [],

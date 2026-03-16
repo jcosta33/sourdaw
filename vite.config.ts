@@ -19,4 +19,18 @@ export default defineConfig({
       "#": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    chunkSizeWarningLimit: 600,
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            { name: "vendor-react", test: /node_modules[\\/](react-dom|react)\//, priority: 20 },
+            { name: "vendor-tanstack", test: /node_modules[\\/]@tanstack/, priority: 15 },
+            { name: "vendor-ui", test: /node_modules[\\/]@radix-ui/, priority: 10 },
+          ],
+        },
+      },
+    },
+  },
 });

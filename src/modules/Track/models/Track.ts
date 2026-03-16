@@ -1,5 +1,9 @@
 export type TrackKind = "audio" | "midi" | "bus" | "master" | "folder";
 
+export type InputMonitoring = "auto" | "on" | "off";
+
+export type AutomationMode = "read" | "write" | "touch" | "latch" | "off";
+
 export type Track = {
     id: string;
     name: string;
@@ -14,9 +18,21 @@ export type Track = {
     devices: Device[];
     sends: Send[];
     frozen: boolean;
+    frozenBufferId?: string;
     parentId: string | null;
     collapsed: boolean;
+    inputMonitoring: InputMonitoring;
+    hidden: boolean;
+    disabled: boolean;
+    height: number;
+    outputId: string;
+    automationMode: AutomationMode;
+    groupId: string | null;
+    soloSafe: boolean;
+    notes: string;
 };
+
+export type StretchMode = "off" | "repitch" | "timestretch";
 
 export type Clip = {
     id: string;
@@ -25,6 +41,17 @@ export type Clip = {
     startBeat: number;
     endBeat: number;
     type: "audio" | "midi";
+    audioBufferId?: string;
+    fadeInBeats: number;
+    fadeOutBeats: number;
+    gain: number;
+    color: string;
+    locked: boolean;
+    muted: boolean;
+    stretchMode?: StretchMode;
+    stretchRatio?: number;
+    loopEnabled?: boolean;
+    loopLength?: number;
 };
 
 export type Device = {
@@ -32,37 +59,61 @@ export type Device = {
     name: string;
     type: string;
     bypassed: boolean;
+    parameterValues: Record<string, number>;
 };
 
 export type Send = {
     busId: string;
     level: number;
+    preFader: boolean;
 };
 
-const TRACK_COLORS: Record<TrackKind, string> = {
-    audio: "oklch(0.65 0.15 145)",
-    midi: "oklch(0.65 0.15 260)",
-    bus: "oklch(0.65 0.15 50)",
-    master: "oklch(0.65 0.15 0)",
-    folder: "oklch(0.65 0.08 200)",
-};
+const TRACK_COLOR_PALETTE = [
+    "#3b82f6",
+    "#ef4444",
+    "#22c55e",
+    "#f59e0b",
+    "#8b5cf6",
+    "#ec4899",
+    "#06b6d4",
+    "#f97316",
+    "#14b8a6",
+    "#6366f1",
+    "#84cc16",
+    "#e11d48",
+] as const;
 
 let nextTrackId = 1;
+let trackColorCounter = 0;
 
-export const createTrack = (input: { name: string; kind: TrackKind; parentId?: string }): Track => ({
-    id: `track-${nextTrackId++}`,
-    name: input.name,
-    kind: input.kind,
-    muted: false,
-    soloed: false,
-    armed: false,
-    gain: 0.8,
-    pan: 0,
-    color: TRACK_COLORS[input.kind],
-    clips: [],
-    devices: [],
-    sends: [],
-    frozen: false,
-    parentId: input.parentId ?? null,
-    collapsed: false,
-});
+export const createTrack = (input: { name: string; kind: TrackKind; parentId?: string }): Track => {
+    const color = TRACK_COLOR_PALETTE[trackColorCounter % TRACK_COLOR_PALETTE.length]!;
+    trackColorCounter++;
+
+    return {
+        id: `track-${nextTrackId++}`,
+        name: input.name,
+        kind: input.kind,
+        muted: false,
+        soloed: false,
+        armed: false,
+        gain: 0.8,
+        pan: 0,
+        color,
+        clips: [],
+        devices: [],
+        sends: [],
+        frozen: false,
+        parentId: input.parentId ?? null,
+        collapsed: false,
+        inputMonitoring: "auto",
+        hidden: false,
+        disabled: false,
+        height: 80,
+        outputId: "master",
+        automationMode: "read",
+        groupId: null,
+        soloSafe: input.kind === "bus",
+        notes: "",
+    };
+};

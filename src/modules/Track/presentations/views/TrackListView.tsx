@@ -1,15 +1,61 @@
-import { type ReactElement } from "react";
+import { type ReactElement, type DragEvent, type KeyboardEvent, useRef, useState, useEffect, useCallback, useSyncExternalStore } from "react";
 import { Button } from "#/components/ui/button";
-import { Plus, FolderPlus } from "lucide-react";
+import { Plus, FolderPlus, Rows3 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "#/components/ui/tooltip";
-import { ScrollArea } from "#/components/ui/scroll-area";
 import { useTracks } from "../hooks/useTracks";
 import { TrackHeader } from "../components/TrackHeader";
 import { addTrack } from "../../useCases/addTrack";
 import { createFolder } from "../../useCases/folderUseCases";
+import { reorderTrack, selectTrack } from "../../useCases/toggleTrackState";
+import { removeTrack } from "../../useCases/removeTrack";
+import { setWorkspaceMode } from "#/modules/Workspace/useCases/setWorkspaceMode";
+import { preferencesStore } from "#/modules/Workspace/stores/preferencesStore";
+import { defaultPreferences, type Preferences } from "#/modules/Workspace/models/Preferences";
+import { timelineViewStore, setScrollY } from "#/modules/Timeline/stores/timelineViewStore";
+
+const HEIGHT_CYCLE: Preferences["trackHeight"][] = ["compact", "normal", "large"];
+const HEIGHT_LABELS: Record<Preferences["trackHeight"], string> = { compact: "Compact", normal: "Normal", large: "Large" };
 
 export const TrackListView = (): ReactElement => {
     const { tracks, selectedTrackId } = useTracks();
+    const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+    const dragTrackIdRef = useRef<string | null>(null);
+    const scrollRef = useRef<HTMLDivElement>(null);
+    const isSyncingRef = useRef(false);
+    const prefs = useSyncExternalStore(
+        (cb) => preferencesStore.subscribe(cb),
+        () => preferencesStore.value ?? defaultPreferences,
+    );
+    const currentHeight = prefs.trackHeight;
+
+    const scrollY = useSyncExternalStore(
+        (cb) => timelineViewStore.subscribe(() => cb()),
+        () => timelineViewStore.value?.scrollY ?? 0,
+        () => 0,
+    );
+
+    useEffect(() => {
+        const el = scrollRef.current;
+        if (!el) {
+            return;
+        }
+        if (Math.abs(el.scrollTop - scrollY) > 1) {
+            isSyncingRef.current = true;
+            el.scrollTop = scrollY;
+            requestAnimationFrame(() => { isSyncingRef.current = false; });
+        }
+    }, [scrollY]);
+
+    const handleScroll = useCallback(() => {
+        if (isSyncingRef.current) {
+            return;
+        }
+        const el = scrollRef.current;
+        if (!el) {
+            return;
+        }
+        setScrollY(el.scrollTop);
+    }, []);
 
     const collapsedFolders = new Set(
         tracks.filter((t) => t.kind === "folder" && t.collapsed).map((t) => t.id),
@@ -19,6 +65,62 @@ export const TrackListView = (): ReactElement => {
         return !collapsedFolders.has(t.parentId);
     });
 
+    const handleDragStart = (trackId: string) => {
+        dragTrackIdRef.current = trackId;
+    };
+
+    const handleDragOver = (e: DragEvent<HTMLDivElement>, index: number) => {
+        e.preventDefault();
+        setDragOverIndex(index);
+    };
+
+    const handleDrop = (index: number) => {
+        if (dragTrackIdRef.current) {
+            const globalIndex = tracks.findIndex((t) => t.id === visibleTracks[index]?.id);
+            if (globalIndex >= 0) {
+                reorderTrack(dragTrackIdRef.current, globalIndex);
+            }
+        }
+        dragTrackIdRef.current = null;
+        setDragOverIndex(null);
+    };
+
+    const handleDragEnd = () => {
+        dragTrackIdRef.current = null;
+        setDragOverIndex(null);
+    };
+
+    const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+        const currentIndex = visibleTracks.findIndex((t) => t.id === selectedTrackId);
+
+        if (e.key === "ArrowDown") {
+            e.preventDefault();
+            if (currentIndex < visibleTracks.length - 1) {
+                selectTrack(visibleTracks[currentIndex + 1]!.id);
+            } else if (currentIndex === -1 && visibleTracks.length > 0) {
+                selectTrack(visibleTracks[0]!.id);
+            }
+        } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            if (currentIndex > 0) {
+                selectTrack(visibleTracks[currentIndex - 1]!.id);
+            } else if (currentIndex === -1 && visibleTracks.length > 0) {
+                selectTrack(visibleTracks[visibleTracks.length - 1]!.id);
+            }
+        } else if (e.key === "Enter" && selectedTrackId) {
+            e.preventDefault();
+            setWorkspaceMode("clip");
+        } else if (e.key === "Delete" || e.key === "Backspace") {
+            if (selectedTrackId) {
+                e.preventDefault();
+                const track = visibleTracks.find((t) => t.id === selectedTrackId);
+                if (track && window.confirm(`Delete track "${track.name}"?`)) {
+                    removeTrack(selectedTrackId);
+                }
+            }
+        }
+    };
+
     return (
         <div className="flex h-full w-44 shrink-0 flex-col border-r border-border/30 bg-surface-raised">
             <div className="flex items-center justify-between border-b border-border/30 px-2 py-1">
@@ -26,6 +128,23 @@ export const TrackListView = (): ReactElement => {
                     Tracks
                 </span>
                 <div className="flex items-center gap-0.5">
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="icon-xs"
+                                aria-label={`Track height: ${HEIGHT_LABELS[currentHeight]}`}
+                                onClick={() => {
+                                    const idx = HEIGHT_CYCLE.indexOf(currentHeight);
+                                    const next = HEIGHT_CYCLE[(idx + 1) % HEIGHT_CYCLE.length]!;
+                                    if (prefs) preferencesStore.set({ ...prefs, trackHeight: next });
+                                }}
+                            >
+                                <Rows3 className="size-3" aria-hidden="true" />
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Track height: {HEIGHT_LABELS[currentHeight]}</TooltipContent>
+                    </Tooltip>
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <Button
@@ -55,14 +174,43 @@ export const TrackListView = (): ReactElement => {
                 </div>
             </div>
 
-            <ScrollArea className="flex-1">
+            <div
+                ref={scrollRef}
+                className="flex-1 overflow-y-auto overflow-x-hidden"
+                onScroll={handleScroll}
+                onKeyDown={handleKeyDown}
+            >
                 <div role="grid" aria-label="Track list">
-                    {visibleTracks.map((track) => (
-                        <TrackHeader
+                    {visibleTracks.map((track, index) => (
+                        <div
                             key={track.id}
-                            track={track}
-                            isSelected={track.id === selectedTrackId}
-                        />
+                            role="row"
+                            tabIndex={track.id === selectedTrackId ? 0 : -1}
+                            aria-selected={track.id === selectedTrackId}
+                            draggable
+                            onDragStart={(e) => {
+                                e.dataTransfer.setData("text/plain", track.id);
+                                e.dataTransfer.effectAllowed = "move";
+                                handleDragStart(track.id);
+                            }}
+                            onDragOver={(e) => {
+                                e.preventDefault();
+                                e.dataTransfer.dropEffect = "move";
+                                handleDragOver(e, index);
+                            }}
+                            onDrop={(e) => {
+                                e.preventDefault();
+                                handleDrop(index);
+                            }}
+                            onDragEnd={handleDragEnd}
+                            onClick={() => selectTrack(track.id)}
+                            className={dragOverIndex === index ? "border-t-2 border-ring outline-none" : "outline-none"}
+                        >
+                            <TrackHeader
+                                track={track}
+                                isSelected={track.id === selectedTrackId}
+                            />
+                        </div>
                     ))}
 
                     {tracks.length === 0 && (
@@ -76,7 +224,7 @@ export const TrackListView = (): ReactElement => {
                         </div>
                     )}
                 </div>
-            </ScrollArea>
+            </div>
         </div>
     );
 };

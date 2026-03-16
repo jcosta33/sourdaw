@@ -1,0 +1,92 @@
+import { type ReactElement, useState, useEffect } from "react";
+import { AlertTriangle, X } from "lucide-react";
+import { Button } from "#/components/ui/button";
+import { cn } from "#/helpers/Styles/cn";
+export { notifyUser } from "#/helpers/Notification/notifyUser";
+
+export type AppNotification = {
+    id: string;
+    message: string;
+    level: "warning" | "error" | "info";
+    timestamp: number;
+};
+
+export const NotificationToast = (): ReactElement | null => {
+    const [items, setItems] = useState<AppNotification[]>([]);
+
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const { message, level } = (e as CustomEvent<{ message: string; level: AppNotification["level"] }>).detail;
+            const notification: AppNotification = {
+                id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                message,
+                level,
+                timestamp: Date.now(),
+            };
+            setItems((prev) => {
+                if (prev.some((existing) => existing.message === notification.message)) {
+                    return prev;
+                }
+                return [...prev, notification];
+            });
+        };
+        document.addEventListener("webdaw:notify", handler);
+        return () => {
+            document.removeEventListener("webdaw:notify", handler);
+        };
+    }, []);
+
+    useEffect(() => {
+        if (items.length === 0) {
+            return;
+        }
+        const timer = setTimeout(() => {
+            setItems((prev) => prev.slice(1));
+        }, 8000);
+        return () => clearTimeout(timer);
+    }, [items]);
+
+    if (items.length === 0) {
+        return null;
+    }
+
+    const latest = items[0]!;
+
+    return (
+        <div
+            className={cn(
+                "fixed bottom-16 left-4 z-50 w-80 rounded-lg border p-3 shadow-xl animate-in slide-in-from-left-5",
+                latest.level === "error"
+                    ? "border-red-500/40 bg-red-950/80"
+                    : latest.level === "warning"
+                      ? "border-yellow-500/40 bg-yellow-950/80"
+                      : "border-border bg-surface-raised",
+            )}
+            role="alert"
+            aria-live="assertive"
+        >
+            <div className="flex items-start gap-2">
+                <AlertTriangle
+                    className={cn(
+                        "mt-0.5 size-4 shrink-0",
+                        latest.level === "error" ? "text-red-400" : "text-yellow-400",
+                    )}
+                />
+                <p className="flex-1 text-xs text-foreground">{latest.message}</p>
+                <Button
+                    variant="ghost"
+                    size="xs"
+                    onClick={() => setItems((prev) => prev.slice(1))}
+                    aria-label="Dismiss notification"
+                >
+                    <X className="size-3" />
+                </Button>
+            </div>
+            {items.length > 1 && (
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                    +{items.length - 1} more
+                </p>
+            )}
+        </div>
+    );
+};

@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useEffect, useRef } from "react";
+import { type ReactElement, type KeyboardEvent, useState, useEffect, useRef } from "react";
 import { Dialog, DialogContent, DialogTitle } from "#/components/ui/dialog";
 import { Input } from "#/components/ui/input";
 import { cn } from "#/helpers/Styles/cn";
@@ -41,7 +41,7 @@ export const CommandPalette = (): ReactElement | null => {
         }
     };
 
-    const handleKeyDown = (e: React.KeyboardEvent) => {
+    const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
         if (e.key === "ArrowDown") {
             e.preventDefault();
             setSelectedIndex((i) => Math.min(i + 1, results.length - 1));

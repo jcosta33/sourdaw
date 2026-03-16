@@ -1,43 +1,574 @@
 import { transportStore } from "../stores/transportStore";
+import { tempoMapStore } from "../stores/tempoMapStore";
+import { getTempoAtBeat } from "../models/TempoMap";
+import { getTimeSignatureAtBeat } from "../models/TimeSignatureMap";
+import { timeSignatureMapStore } from "../stores/timeSignatureMapStore";
+import { trackStore } from "#/modules/Track/stores/trackStore";
+import { midiStore } from "#/modules/Track/stores/midiStore";
+import { automationStore } from "#/modules/Track/stores/automationStore";
+import { getAutomationValueAtBeat } from "#/modules/Track/useCases/automationUseCases";
+import {
+    startAutomationRecording,
+    stopAutomationRecording,
+    isRecordingAutomation,
+} from "#/modules/Track/useCases/automationRecording";
 import { audioEngine } from "#/modules/AudioEngine/repositories/audioEngineInstance";
+import { audioBufferCache } from "#/modules/AudioEngine/stores/audioBufferCache";
+import { resolveClipsWithComping } from "#/modules/Track/useCases/resolveComping";
+import { scheduleNote, getSynthParamsForTrack } from "#/modules/AudioEngine/useCases/builtinSynth";
+import { getDrumKitByIndex, scheduleKitNote } from "#/modules/AudioEngine/useCases/drumKitSynth";
+import type { DrumKit } from "#/modules/AudioEngine/useCases/drumKitSynth";
+import { getCompensationDelay } from "#/modules/AudioEngine/useCases/latencyCompensation";
+import { startAudioRecording, stopAudioRecording } from "#/modules/AudioEngine/useCases/audioRecorder";
+import { startRecording, stopRecording } from "#/modules/Track/useCases/recordingUseCases";
+import { addTakeLane, addTake } from "#/modules/Track/useCases/compingUseCases";
+import { takeLaneStore } from "#/modules/Track/stores/takeLaneStore";
+import { notifyUser } from "#/helpers/Notification/notifyUser";
 
-let rafId = 0;
-let startTime = 0;
-let startPosition = 0;
+let timerId: ReturnType<typeof setTimeout> | null = null;
+let lastTickTime = 0;
+let accumulatedPosition = 0;
+let lastScheduledBeat = -1;
+let lastMetronomeBeat = -1;
+const scheduledAudioClips = new Set<string>();
+const scheduledFrozenTracks = new Set<string>();
+const activeAudioSources: AudioBufferSourceNode[] = [];
+let punchRecordingActive = false;
+let punchRecordingClipIds: string[] = [];
+
+const SCHEDULE_AHEAD_SECONDS = 0.1;
+const MICRO_FADE_SECONDS = 0.003;
+const DEFAULT_SCHEDULE_GRAIN_MS = 10;
+const scheduleMetronome = (fromBeat: number, toBeat: number, transport: NonNullable<typeof transportStore.value>, _currentTempo: number): void => {
+    if (!transport.metronomeEnabled) {
+        return;
+    }
+
+    const startBeatInt = Math.ceil(fromBeat);
+    const endBeatInt = Math.floor(toBeat);
+    const tsChanges = timeSignatureMapStore.value?.changes ?? [];
+
+    for (let beat = startBeatInt; beat <= endBeatInt; beat++) {
+        if (beat <= lastMetronomeBeat) {
+            continue;
+        }
+        lastMetronomeBeat = beat;
+
+        const beatTempo = getTempoAtBeat(tempoMapStore.value?.changes ?? [], beat, transport.tempo);
+        const beatOffset = beat - accumulatedPosition;
+        const time = audioEngine.context.currentTime + beatOffset / (beatTempo / 60);
+        const ts = getTimeSignatureAtBeat(tsChanges, beat, transport.timeSignatureNumerator, transport.timeSignatureDenominator);
+        const isAccent = beat % ts.numerator === 0;
+        audioEngine.scheduleClick(time, isAccent, transport.metronomeVolume ?? 0.5);
+    }
+};
+
+const resolveDrumKit = (devices: { type: string; parameterValues: Record<string, number> }[]): DrumKit | null => {
+    const kitDevice = devices.find((d) => d.type === "drum-kit");
+    if (!kitDevice) {
+        return null;
+    }
+    const kitIndex = kitDevice.parameterValues["kitId"] ?? 0;
+    return getDrumKitByIndex(kitIndex);
+};
+
+const scheduleFrozenTrack = (
+    track: { id: string; frozenBufferId?: string },
+    _fromBeat: number,
+    currentTempo: number,
+): boolean => {
+    if (!track.frozenBufferId) {
+        return false;
+    }
+    if (scheduledFrozenTracks.has(track.id)) {
+        return true;
+    }
+
+    const buffer = audioBufferCache.get(track.frozenBufferId);
+    if (!buffer) {
+        return false;
+    }
+
+    scheduledFrozenTracks.add(track.id);
+
+    const strip = audioEngine.ensureTrackStrip(track.id);
+    const source = audioEngine.context.createBufferSource();
+    source.buffer = buffer;
+
+    source.connect(strip.gainNode);
+
+    const beatOffset = 0 - accumulatedPosition;
+    const startTime = audioEngine.context.currentTime + beatOffset / (currentTempo / 60);
+    const now = audioEngine.context.currentTime;
+
+    if (startTime >= now) {
+        source.start(startTime);
+    } else {
+        const elapsed = now - startTime;
+        if (elapsed < buffer.duration) {
+            source.start(now, elapsed);
+        } else {
+            return true;
+        }
+    }
+
+    activeAudioSources.push(source);
+    source.onended = () => {
+        const idx = activeAudioSources.indexOf(source);
+        if (idx >= 0) {
+            activeAudioSources.splice(idx, 1);
+        }
+    };
+
+    return true;
+};
+
+const scheduleMidiNotes = (fromBeat: number, toBeat: number, transport: NonNullable<typeof transportStore.value>, currentTempo: number): void => {
+    const tracks = trackStore.value?.tracks;
+    const midiState = midiStore.value;
+    if (!tracks || !midiState) {
+        return;
+    }
+
+    const changes = tempoMapStore.value?.changes ?? [];
+
+    for (const track of tracks) {
+        if (track.kind !== "midi" || track.muted) {
+            continue;
+        }
+
+        if (track.frozen && track.frozenBufferId) {
+            scheduleFrozenTrack(track, fromBeat, currentTempo);
+            continue;
+        }
+
+        const drumKit = resolveDrumKit(track.devices);
+        const resolvedClips = resolveClipsWithComping(track.id, track.clips);
+
+        for (const clip of resolvedClips) {
+            if (clip.muted) continue;
+            if (clip.type !== "midi") {
+                continue;
+            }
+            const notes = midiState.notesByClipId[clip.id];
+            if (!notes) {
+                continue;
+            }
+
+            const synthParams = drumKit ? null : getSynthParamsForTrack(track.id);
+            const compensation = getCompensationDelay(track.id);
+            const clipVisualLength = clip.endBeat - clip.startBeat;
+            const loopLen = clip.loopEnabled
+                ? (clip.loopLength ?? clipVisualLength)
+                : clipVisualLength;
+            const maxIterations = clip.loopEnabled
+                ? Math.ceil(clipVisualLength / loopLen)
+                : 1;
+
+            for (let iter = 0; iter < maxIterations; iter++) {
+                const iterOffset = iter * loopLen;
+
+                for (const note of notes) {
+                    if (note.startBeat >= loopLen) {
+                        continue;
+                    }
+
+                    const noteStartBeat = clip.startBeat + iterOffset + note.startBeat;
+                    if (noteStartBeat >= clip.endBeat) {
+                        continue;
+                    }
+
+                    if (noteStartBeat >= fromBeat && noteStartBeat < toBeat && noteStartBeat > lastScheduledBeat) {
+                        const noteTempo = getTempoAtBeat(changes, noteStartBeat, transport.tempo);
+                        const noteBeatsPerSecond = noteTempo / 60;
+                        const beatOffset = noteStartBeat - accumulatedPosition;
+                        const time = audioEngine.context.currentTime + beatOffset / (currentTempo / 60) + compensation;
+                        const noteEndBeat = Math.min(noteStartBeat + note.duration, clip.endBeat);
+                        const duration = (noteEndBeat - noteStartBeat) / noteBeatsPerSecond;
+
+                        const strip = audioEngine.ensureTrackStrip(track.id);
+
+                        if (drumKit) {
+                            scheduleKitNote(
+                                audioEngine.context,
+                                strip.gainNode,
+                                drumKit,
+                                note.pitch,
+                                time,
+                                duration,
+                                note.velocity,
+                            );
+                        } else {
+                            const mpe = (note.pressure !== undefined || note.slide !== undefined || note.pitchBend !== undefined)
+                                ? { pressure: note.pressure, slide: note.slide, pitchBend: note.pitchBend }
+                                : undefined;
+                            scheduleNote(
+                                audioEngine.context,
+                                strip.gainNode,
+                                note.pitch,
+                                time,
+                                duration,
+                                note.velocity,
+                                synthParams!,
+                                mpe,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+};
+
+const scheduleAudioClips = (fromBeat: number, toBeat: number, transport: NonNullable<typeof transportStore.value>, currentTempo: number): void => {
+    const tracks = trackStore.value?.tracks;
+    if (!tracks) {
+        return;
+    }
+
+    const changes = tempoMapStore.value?.changes ?? [];
+
+    for (const track of tracks) {
+        if (track.kind !== "audio" || track.muted) {
+            continue;
+        }
+
+        if (track.frozen && track.frozenBufferId) {
+            scheduleFrozenTrack(track, fromBeat, currentTempo);
+            continue;
+        }
+
+        const compensation = getCompensationDelay(track.id);
+        const resolvedAudioClips = resolveClipsWithComping(track.id, track.clips);
+
+        for (const clip of resolvedAudioClips) {
+            if (clip.muted) continue;
+            if (clip.type !== "audio" || !clip.audioBufferId) {
+                continue;
+            }
+            const clipKey = `${clip.id}:${clip.regionStartBeat}:${clip.regionEndBeat}`;
+            if (scheduledAudioClips.has(clipKey)) {
+                continue;
+            }
+            if (clip.startBeat > toBeat || clip.endBeat < fromBeat) {
+                continue;
+            }
+
+            const buffer = audioBufferCache.get(clip.audioBufferId);
+            if (!buffer) {
+                notifyUser(
+                    `Missing audio for clip "${clip.name}" — re-import the audio file`,
+                    "warning",
+                );
+                scheduledAudioClips.add(clipKey);
+                continue;
+            }
+
+            scheduledAudioClips.add(clipKey);
+
+            const strip = audioEngine.ensureTrackStrip(track.id);
+
+            const stretchRatio = (clip.stretchMode && clip.stretchMode !== "off")
+                ? (clip.stretchRatio ?? 1)
+                : 1;
+
+            const clipTempo = getTempoAtBeat(changes, clip.startBeat, transport.tempo);
+            const clipBeatsPerSecond = clipTempo / 60;
+            const clipVisualLength = clip.endBeat - clip.startBeat;
+            const clipDurationSeconds = clipVisualLength / clipBeatsPerSecond;
+
+            const loopLen = clip.loopEnabled
+                ? (clip.loopLength ?? clipVisualLength)
+                : clipVisualLength;
+            const loopLenSeconds = loopLen / clipBeatsPerSecond;
+            const maxIterations = clip.loopEnabled
+                ? Math.ceil(clipVisualLength / loopLen)
+                : 1;
+
+            for (let iter = 0; iter < maxIterations; iter++) {
+                const iterOffsetBeats = iter * loopLen;
+                const iterStartBeat = clip.startBeat + iterOffsetBeats;
+                if (iterStartBeat >= clip.endBeat) {
+                    break;
+                }
+
+                const remainingBeats = clip.endBeat - iterStartBeat;
+                const iterDurationBeats = Math.min(loopLen, remainingBeats);
+                const iterDurationSeconds = iterDurationBeats / clipBeatsPerSecond;
+
+                const source = audioEngine.context.createBufferSource();
+                source.buffer = buffer;
+                if (stretchRatio !== 1) {
+                    source.playbackRate.value = stretchRatio;
+                }
+
+                const isFirstIter = iter === 0;
+                const isLastIter = iter === maxIterations - 1 || iterStartBeat + loopLen >= clip.endBeat;
+                const hasExplicitFade = (isFirstIter && clip.fadeInBeats > 0) || (isLastIter && clip.fadeOutBeats > 0);
+                const needsMicroFadeIn = isFirstIter && clip.fadeInBeats === 0;
+                const needsMicroFadeOut = isLastIter && clip.fadeOutBeats === 0;
+                const needsFadeGain = hasExplicitFade || needsMicroFadeIn || needsMicroFadeOut;
+                const fadeGain = needsFadeGain ? audioEngine.context.createGain() : null;
+
+                if (fadeGain) {
+                    source.connect(fadeGain);
+                    fadeGain.connect(strip.gainNode);
+                } else {
+                    source.connect(strip.gainNode);
+                }
+
+                const beatOffset = iterStartBeat - accumulatedPosition;
+                const iterStartTime = audioEngine.context.currentTime + beatOffset / (currentTempo / 60) + compensation;
+                const now = audioEngine.context.currentTime;
+
+                const playDuration = Math.min(iterDurationSeconds, buffer.duration / stretchRatio);
+
+                if (iterStartTime >= now) {
+                    source.start(iterStartTime, 0, playDuration * stretchRatio);
+                } else {
+                    const elapsed = now - iterStartTime;
+                    const bufferOffset = elapsed * stretchRatio;
+                    if (bufferOffset < buffer.duration && bufferOffset < playDuration * stretchRatio) {
+                        source.start(now, bufferOffset, (playDuration * stretchRatio) - bufferOffset);
+                    } else {
+                        continue;
+                    }
+                }
+
+                if (fadeGain) {
+                    const effectiveStart = Math.max(iterStartTime, now);
+
+                    if (isFirstIter && clip.fadeInBeats > 0) {
+                        const fadeInEnd = iterStartTime + clip.fadeInBeats / clipBeatsPerSecond;
+                        if (effectiveStart < fadeInEnd) {
+                            const progressRatio = Math.max(0, effectiveStart - iterStartTime) / (clip.fadeInBeats / clipBeatsPerSecond);
+                            fadeGain.gain.setValueAtTime(progressRatio, effectiveStart);
+                            fadeGain.gain.linearRampToValueAtTime(1, fadeInEnd);
+                        } else {
+                            fadeGain.gain.setValueAtTime(1, effectiveStart);
+                        }
+                    } else if (needsMicroFadeIn) {
+                        fadeGain.gain.setValueAtTime(0, effectiveStart);
+                        fadeGain.gain.linearRampToValueAtTime(1, effectiveStart + MICRO_FADE_SECONDS);
+                    } else {
+                        fadeGain.gain.setValueAtTime(1, effectiveStart);
+                    }
+
+                    if (isLastIter && clip.fadeOutBeats > 0) {
+                        const clipEndTime = audioEngine.context.currentTime + (clip.endBeat - accumulatedPosition) / (currentTempo / 60) + compensation;
+                        const fadeOutStart = clipEndTime - clip.fadeOutBeats / clipBeatsPerSecond;
+                        fadeGain.gain.setValueAtTime(1, Math.max(fadeOutStart, effectiveStart));
+                        fadeGain.gain.linearRampToValueAtTime(0, clipEndTime);
+                    } else if (needsMicroFadeOut) {
+                        const iterEndTime = effectiveStart + playDuration;
+                        fadeGain.gain.setValueAtTime(1, Math.max(effectiveStart, iterEndTime - MICRO_FADE_SECONDS));
+                        fadeGain.gain.linearRampToValueAtTime(0, iterEndTime);
+                    }
+                }
+
+                activeAudioSources.push(source);
+                source.onended = () => {
+                    const idx = activeAudioSources.indexOf(source);
+                    if (idx >= 0) {
+                        activeAudioSources.splice(idx, 1);
+                    }
+                    fadeGain?.disconnect();
+                };
+            }
+
+            void clipDurationSeconds;
+            void loopLenSeconds;
+        }
+    }
+};
+
+const applyAutomation = (currentBeat: number): void => {
+    const autoState = automationStore.value;
+    if (!autoState) {
+        return;
+    }
+
+    const tracks = trackStore.value?.tracks;
+
+    for (const lane of autoState.lanes) {
+        if (lane.points.length === 0) {
+            continue;
+        }
+
+        const track = tracks?.find((t) => t.id === lane.trackId);
+        if (!track || track.automationMode === "off") {
+            continue;
+        }
+
+        if (lane.clipId) {
+            const clip = track.clips.find((c) => c.id === lane.clipId);
+            if (!clip || currentBeat < clip.startBeat || currentBeat > clip.endBeat) {
+                continue;
+            }
+        }
+
+        if (isRecordingAutomation(lane.trackId, lane.parameterId)) {
+            continue;
+        }
+
+        const value = getAutomationValueAtBeat(lane.id, currentBeat);
+        if (value === null) {
+            continue;
+        }
+
+        if (lane.parameterId === "gain") {
+            audioEngine.setTrackGain(lane.trackId, value);
+        } else if (lane.parameterId === "pan") {
+            audioEngine.setTrackPan(lane.trackId, value * 100 - 50);
+        } else {
+            for (const device of track.devices) {
+                if (device.parameterValues[lane.parameterId] !== undefined) {
+                    audioEngine.updateDeviceParam(lane.trackId, device.id, lane.parameterId, value);
+                    break;
+                }
+            }
+        }
+    }
+};
 
 export const startPlayheadScheduler = (): void => {
     const state = transportStore.value;
-    if (!state) return;
+    if (!state) {
+        return;
+    }
+
+    startAutomationRecording();
 
     const ctx = audioEngine.context;
-    startTime = ctx.currentTime;
-    startPosition = state.playheadPosition;
+    lastTickTime = ctx.currentTime;
+    accumulatedPosition = state.playheadPosition;
+    lastScheduledBeat = state.playheadPosition;
+    lastMetronomeBeat = Math.floor(state.playheadPosition) - 1;
 
-    const tick = () => {
+    const grainMs = state.scheduleGrainMs ?? DEFAULT_SCHEDULE_GRAIN_MS;
+
+    const tick = (): void => {
         const current = transportStore.value;
-        if (!current?.isPlaying) return;
-
-        const elapsed = ctx.currentTime - startTime;
-        const beatsPerSecond = current.tempo / 60;
-        const newPosition = startPosition + elapsed * beatsPerSecond;
-
-        if (current.isLooping && current.loopEnd > current.loopStart && newPosition >= current.loopEnd) {
-            const loopLength = current.loopEnd - current.loopStart;
-            const wrapped = current.loopStart + ((newPosition - current.loopStart) % loopLength);
-            transportStore.set({ ...current, playheadPosition: wrapped });
-            startTime = ctx.currentTime;
-            startPosition = wrapped;
-        } else {
-            transportStore.set({ ...current, playheadPosition: newPosition });
+        if (!current?.isPlaying) {
+            return;
         }
 
-        rafId = requestAnimationFrame(tick);
+        const now = ctx.currentTime;
+        const deltaSec = now - lastTickTime;
+        lastTickTime = now;
+
+        const changes = tempoMapStore.value?.changes ?? [];
+        const currentTempo = getTempoAtBeat(changes, accumulatedPosition, current.tempo);
+        const beatsPerSecond = currentTempo / 60;
+        const deltaBeats = deltaSec * beatsPerSecond;
+        let newPosition = accumulatedPosition + deltaBeats;
+
+        if (current.isLooping && current.loopEnd > current.loopStart && newPosition >= current.loopEnd) {
+            if (current.isRecording) {
+                const armedTracks = trackStore.value?.tracks.filter((t) => t.armed) ?? [];
+                for (const track of armedTracks) {
+                    const laneState = takeLaneStore.value;
+                    if (!laneState?.lanes.some((l) => l.trackId === track.id)) {
+                        addTakeLane(track.id);
+                    }
+                    const takeNum = (takeLaneStore.value?.lanes.find((l) => l.trackId === track.id)?.takes.length ?? 0) + 1;
+                    addTake(track.id, `take-${Date.now()}-${track.id}`, `Take ${takeNum}`, current.loopStart, current.loopEnd);
+                }
+            }
+
+            const loopLength = current.loopEnd - current.loopStart;
+            newPosition = current.loopStart + ((newPosition - current.loopStart) % loopLength);
+            lastScheduledBeat = newPosition;
+            lastMetronomeBeat = Math.floor(newPosition) - 1;
+            audioEngine.stopAllScheduled();
+            for (const src of activeAudioSources) {
+                try { src.stop(); } catch { /* already stopped */ }
+            }
+            activeAudioSources.length = 0;
+            scheduledAudioClips.clear();
+            scheduledFrozenTracks.clear();
+        }
+
+        accumulatedPosition = newPosition;
+        transportStore.set({ ...current, playheadPosition: newPosition });
+
+        if (current.punchInEnabled && !current.isRecording && !punchRecordingActive && newPosition >= current.punchInBeat) {
+            punchRecordingActive = true;
+            const clips = startRecording();
+            punchRecordingClipIds = clips.map((c) => c.id);
+            transportStore.set({ ...transportStore.value!, isRecording: true });
+
+            const armedTracks = trackStore.value?.tracks.filter((t) => t.armed) ?? [];
+            for (const track of armedTracks) {
+                if (track.kind === "audio") {
+                    const recClip = clips.find((c) => c.trackId === track.id);
+                    void startAudioRecording(track.id, (buffer) => {
+                        const bufferId = `rec-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+                        audioBufferCache.set(bufferId, buffer);
+                        if (recClip) {
+                            const ts = trackStore.value;
+                            if (ts) {
+                                trackStore.set({
+                                    ...ts,
+                                    tracks: ts.tracks.map((t) => ({
+                                        ...t,
+                                        clips: t.clips.map((c) =>
+                                            c.id === recClip.id ? { ...c, audioBufferId: bufferId } : c,
+                                        ),
+                                    })),
+                                });
+                            }
+                        }
+                    });
+                }
+            }
+        }
+
+        if (punchRecordingActive && current.punchInEnabled && newPosition >= current.punchOutBeat) {
+            stopAudioRecording();
+            stopRecording(punchRecordingClipIds);
+            punchRecordingClipIds = [];
+            punchRecordingActive = false;
+            transportStore.set({ ...transportStore.value!, isRecording: false });
+        }
+
+        const lookAheadBeats = SCHEDULE_AHEAD_SECONDS * beatsPerSecond;
+        const scheduleUpTo = newPosition + lookAheadBeats;
+
+        scheduleMetronome(newPosition, scheduleUpTo, current, currentTempo);
+        scheduleMidiNotes(newPosition, scheduleUpTo, current, currentTempo);
+        scheduleAudioClips(newPosition, scheduleUpTo, current, currentTempo);
+        applyAutomation(newPosition);
+
+        lastScheduledBeat = scheduleUpTo;
+
+        timerId = setTimeout(tick, current.scheduleGrainMs ?? grainMs);
     };
 
-    rafId = requestAnimationFrame(tick);
+    timerId = setTimeout(tick, grainMs);
 };
 
 export const stopPlayheadScheduler = (): void => {
-    cancelAnimationFrame(rafId);
-    rafId = 0;
+    stopAutomationRecording();
+    if (timerId !== null) {
+        clearTimeout(timerId);
+        timerId = null;
+    }
+    if (punchRecordingActive) {
+        stopAudioRecording();
+        stopRecording(punchRecordingClipIds);
+        punchRecordingClipIds = [];
+        punchRecordingActive = false;
+    }
+    lastTickTime = 0;
+    accumulatedPosition = 0;
+    lastScheduledBeat = -1;
+    lastMetronomeBeat = -1;
+    scheduledAudioClips.clear();
+    scheduledFrozenTracks.clear();
+    for (const src of activeAudioSources) {
+        try { src.stop(); } catch { /* already stopped */ }
+    }
+    activeAudioSources.length = 0;
+    audioEngine.stopAllScheduled();
 };

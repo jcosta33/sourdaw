@@ -6,13 +6,17 @@ const logger = Container.getInstance().get(Logger);
 
 export type TimelineViewState = {
     scrollX: number;
+    scrollY: number;
     pixelsPerBeat: number;
+    autoScrollEnabled: boolean;
 };
 
 export const timelineViewStore = new Store<TimelineViewState>(logger, {
     initialData: {
         scrollX: 0,
+        scrollY: 0,
         pixelsPerBeat: 12,
+        autoScrollEnabled: true,
     },
 });
 
@@ -25,6 +29,34 @@ export const zoomTimeline = (delta: number): void => {
 
 export const scrollTimeline = (deltaX: number): void => {
     const state = timelineViewStore.value;
-    if (!state) return;
+    if (!state) {
+        return;
+    }
     timelineViewStore.set({ ...state, scrollX: Math.max(0, state.scrollX + deltaX) });
+};
+
+export const setAutoScroll = (enabled: boolean): void => {
+    const state = timelineViewStore.value;
+    if (!state) {
+        return;
+    }
+    timelineViewStore.set({ ...state, autoScrollEnabled: enabled });
+};
+
+export const toggleAutoScroll = (): void => {
+    const state = timelineViewStore.value;
+    if (!state) {
+        return;
+    }
+    timelineViewStore.set({ ...state, autoScrollEnabled: !state.autoScrollEnabled });
+};
+
+export const setScrollY = (scrollY: number): void => {
+    const state = timelineViewStore.value;
+    if (!state) {
+        return;
+    }
+    if (state.scrollY !== scrollY) {
+        timelineViewStore.set({ ...state, scrollY });
+    }
 };
