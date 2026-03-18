@@ -1,6 +1,6 @@
-import { type ReactElement, useState, useEffect } from "react";
-import { Button } from "#/components/ui/button";
-import { X } from "lucide-react";
+import { type ReactElement, useState, useEffect } from 'react';
+import { Button } from '#/components/ui/button';
+import { X } from 'lucide-react';
 
 type ShortcutGroup = {
     title: string;
@@ -9,90 +9,90 @@ type ShortcutGroup = {
 
 const SHORTCUT_GROUPS: ShortcutGroup[] = [
     {
-        title: "Transport",
+        title: 'Transport',
         shortcuts: [
-            { keys: "Space", description: "Play / Pause" },
-            { keys: "Escape", description: "Deselect / Stop" },
-            { keys: "R", description: "Record" },
-            { keys: "L", description: "Toggle loop" },
-            { keys: "M", description: "Toggle metronome" },
-            { keys: "Home", description: "Go to start" },
-            { keys: "End", description: "Go to end" },
+            { keys: 'Space', description: 'Play / Pause' },
+            { keys: 'Escape', description: 'Deselect / Stop' },
+            { keys: 'R', description: 'Record' },
+            { keys: 'L', description: 'Toggle loop' },
+            { keys: 'M', description: 'Toggle metronome' },
+            { keys: 'Home', description: 'Go to start' },
+            { keys: 'End', description: 'Go to end' },
         ],
     },
     {
-        title: "Tools (letter)",
+        title: 'Tools (letter)',
         shortcuts: [
-            { keys: "S", description: "Select tool" },
-            { keys: "C", description: "Cut / Split tool" },
-            { keys: "D", description: "Draw tool" },
-            { keys: "A", description: "Automation tool" },
-            { keys: "T", description: "Stretch tool" },
+            { keys: 'S', description: 'Select tool' },
+            { keys: 'C', description: 'Cut / Split tool' },
+            { keys: 'D', description: 'Draw tool' },
+            { keys: 'A', description: 'Automation tool' },
+            { keys: 'T', description: 'Stretch tool' },
         ],
     },
     {
-        title: "Tools (number)",
+        title: 'Tools (number)',
         shortcuts: [
-            { keys: "1", description: "Select tool" },
-            { keys: "2", description: "Cut tool" },
-            { keys: "3", description: "Draw tool" },
-            { keys: "4", description: "Automation tool" },
-            { keys: "5", description: "Stretch tool" },
+            { keys: '1', description: 'Select tool' },
+            { keys: '2', description: 'Cut tool' },
+            { keys: '3', description: 'Draw tool' },
+            { keys: '4', description: 'Automation tool' },
+            { keys: '5', description: 'Stretch tool' },
         ],
     },
     {
-        title: "Editing",
+        title: 'Editing',
         shortcuts: [
-            { keys: "⌘ Z", description: "Undo" },
-            { keys: "⌘ ⇧ Z", description: "Redo" },
-            { keys: "⌘ C", description: "Copy clip" },
-            { keys: "⌘ X", description: "Cut clip" },
-            { keys: "⌘ V", description: "Paste clip" },
-            { keys: "⌘ D", description: "Duplicate clip" },
-            { keys: "⌥ D", description: "Duplicate to next bar" },
-            { keys: "⌘ A", description: "Select all clips" },
-            { keys: "⌘ ⇧ A", description: "Deselect all" },
-            { keys: "Del", description: "Delete selected" },
+            { keys: '⌘ Z', description: 'Undo' },
+            { keys: '⌘ ⇧ Z', description: 'Redo' },
+            { keys: '⌘ C', description: 'Copy clip' },
+            { keys: '⌘ X', description: 'Cut clip' },
+            { keys: '⌘ V', description: 'Paste clip' },
+            { keys: '⌘ D', description: 'Duplicate clip' },
+            { keys: '⌥ D', description: 'Duplicate to next bar' },
+            { keys: '⌘ A', description: 'Select all clips' },
+            { keys: '⌘ ⇧ A', description: 'Deselect all' },
+            { keys: 'Del', description: 'Delete selected' },
         ],
     },
     {
-        title: "Navigation",
+        title: 'Navigation',
         shortcuts: [
-            { keys: "⌘ K", description: "Command palette" },
-            { keys: "]", description: "Next marker" },
-            { keys: "[", description: "Previous marker" },
-            { keys: "Tab", description: "Toggle arrange / clip" },
-            { keys: "V", description: "Voice command (hold)" },
-            { keys: "?", description: "This shortcut sheet" },
+            { keys: '⌘ K', description: 'Command palette' },
+            { keys: ']', description: 'Next marker' },
+            { keys: '[', description: 'Previous marker' },
+            { keys: 'Tab', description: 'Toggle arrange / clip' },
+            { keys: 'V', description: 'Voice command (hold)' },
+            { keys: '?', description: 'This shortcut sheet' },
         ],
     },
     {
-        title: "View / Zoom",
+        title: 'View / Zoom',
         shortcuts: [
-            { keys: "= / +", description: "Zoom in" },
-            { keys: "-", description: "Zoom out" },
-            { keys: "f", description: "Zoom to fit" },
-            { keys: "⇧ F", description: "Zoom to selection" },
-            { keys: "⇧ L", description: "Scroll to playhead" },
-            { keys: "⌘ ⇧ =", description: "Zoom track heights in" },
-            { keys: "⌘ ⇧ -", description: "Zoom track heights out" },
+            { keys: '= / +', description: 'Zoom in' },
+            { keys: '-', description: 'Zoom out' },
+            { keys: 'f', description: 'Zoom to fit' },
+            { keys: '⇧ F', description: 'Zoom to selection' },
+            { keys: '⇧ L', description: 'Scroll to playhead' },
+            { keys: '⌘ ⇧ =', description: 'Zoom track heights in' },
+            { keys: '⌘ ⇧ -', description: 'Zoom track heights out' },
         ],
     },
     {
-        title: "Tracks",
+        title: 'Tracks',
         shortcuts: [
-            { keys: "N", description: "New MIDI track" },
-            { keys: "⇧ N", description: "New audio track" },
-            { keys: "⌘ ⇧ D", description: "Duplicate track" },
-            { keys: "⌥ S", description: "Clear all solos" },
+            { keys: 'N', description: 'New MIDI track' },
+            { keys: '⇧ N', description: 'New audio track' },
+            { keys: '⌘ ⇧ D', description: 'Duplicate track' },
+            { keys: '⌥ S', description: 'Clear all solos' },
         ],
     },
     {
-        title: "Project",
+        title: 'Project',
         shortcuts: [
-            { keys: "⌘ S", description: "Save project" },
-            { keys: "⌘ ⇧ E", description: "Export audio" },
-            { keys: "⌘ ,", description: "Preferences" },
+            { keys: '⌘ S', description: 'Save project' },
+            { keys: '⌘ ⇧ E', description: 'Export audio' },
+            { keys: '⌘ ,', description: 'Preferences' },
         ],
     },
 ];
@@ -103,20 +103,24 @@ export const ShortcutCheatSheet = (): ReactElement | null => {
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {
             const target = e.target as HTMLElement;
-            if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
-            if (e.key === "?" || (e.key === "/" && e.shiftKey)) {
+            if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+                return;
+            }
+            if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
                 e.preventDefault();
                 setOpen((prev) => !prev);
             }
-            if (e.key === "Escape" && open) {
+            if (e.key === 'Escape' && open) {
                 setOpen(false);
             }
         };
-        window.addEventListener("keydown", handler);
-        return () => window.removeEventListener("keydown", handler);
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
     }, [open]);
 
-    if (!open) return null;
+    if (!open) {
+        return null;
+    }
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setOpen(false)}>
@@ -145,7 +149,7 @@ export const ShortcutCheatSheet = (): ReactElement | null => {
                                     <div key={s.keys} className="flex items-center justify-between gap-2">
                                         <span className="text-xs text-foreground">{s.description}</span>
                                         <div className="flex gap-0.5">
-                                            {s.keys.split(" ").map((k, i) => (
+                                            {s.keys.split(' ').map((k, i) => (
                                                 <kbd
                                                     key={i}
                                                     className="min-w-[20px] rounded bg-surface-overlay px-1.5 py-0.5 text-center text-[10px] font-mono text-muted-foreground border border-border"
@@ -162,7 +166,11 @@ export const ShortcutCheatSheet = (): ReactElement | null => {
                 </div>
 
                 <p className="mt-4 text-center text-[10px] text-muted-foreground">
-                    Press <kbd className="rounded bg-surface-overlay px-1 py-0.5 text-[10px] font-mono border border-border">?</kbd> to toggle this sheet
+                    Press{' '}
+                    <kbd className="rounded bg-surface-overlay px-1 py-0.5 text-[10px] font-mono border border-border">
+                        ?
+                    </kbd>{' '}
+                    to toggle this sheet
                 </p>
             </div>
         </div>

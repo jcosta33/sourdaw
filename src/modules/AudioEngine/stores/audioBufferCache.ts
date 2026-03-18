@@ -1,9 +1,9 @@
 const cache = new Map<string, AudioBuffer>();
 const waveformCache = new Map<string, Float32Array>();
 
-const DB_NAME = "webdaw-audio";
+const DB_NAME = 'webdaw-audio';
 const DB_VERSION = 1;
-const STORE_NAME = "buffers";
+const STORE_NAME = 'buffers';
 
 const openDb = (): Promise<IDBDatabase> =>
     new Promise((resolve, reject) => {
@@ -24,34 +24,37 @@ type SerializedBuffer = {
     channelData: Float32Array[];
 };
 
-const serializeBuffer = (buffer: AudioBuffer): SerializedBuffer => {
+function serializeBuffer(buffer: AudioBuffer): SerializedBuffer {
     const channelData: Float32Array[] = [];
     for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
         channelData.push(new Float32Array(buffer.getChannelData(ch)));
     }
     return { sampleRate: buffer.sampleRate, numberOfChannels: buffer.numberOfChannels, channelData };
-};
+}
 
-const persistToIdb = async (id: string, buffer: AudioBuffer): Promise<void> => {
+async function persistToIdb(id: string, buffer: AudioBuffer): Promise<void> {
     try {
         const db = await openDb();
-        const tx = db.transaction(STORE_NAME, "readwrite");
+        const tx = db.transaction(STORE_NAME, 'readwrite');
         tx.objectStore(STORE_NAME).put(serializeBuffer(buffer), id);
-        await new Promise<void>((res, rej) => { tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); });
+        await new Promise<void>((resolve, reject) => {
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
     } catch {
         // IndexedDB unavailable
     }
-};
+}
 
-const removeFromIdb = async (id: string): Promise<void> => {
+async function removeFromIdb(id: string): Promise<void> {
     try {
         const db = await openDb();
-        const tx = db.transaction(STORE_NAME, "readwrite");
+        const tx = db.transaction(STORE_NAME, 'readwrite');
         tx.objectStore(STORE_NAME).delete(id);
     } catch {
         // ignore
     }
-};
+}
 
 export const audioBufferCache = {
     get(id: string): AudioBuffer | undefined {
@@ -81,10 +84,14 @@ export const audioBufferCache = {
 
         const key = `${id}:${numBins}`;
         const cached = waveformCache.get(key);
-        if (cached) return cached;
+        if (cached) {
+            return cached;
+        }
 
         const buffer = cache.get(id);
-        if (!buffer) return new Float32Array(numBins);
+        if (!buffer) {
+            return new Float32Array(numBins);
+        }
 
         const channelData = buffer.getChannelData(0);
         const peaks = new Float32Array(numBins);
@@ -96,7 +103,9 @@ export const audioBufferCache = {
             const end = Math.min(start + samplesPerBin, channelData.length);
             for (let i = start; i < end; i++) {
                 const abs = Math.abs(channelData[i]!);
-                if (abs > peak) peak = abs;
+                if (abs > peak) {
+                    peak = abs;
+                }
             }
             peaks[bin] = peak;
         }
@@ -108,26 +117,31 @@ export const audioBufferCache = {
     async restoreFromIdb(context: BaseAudioContext): Promise<number> {
         try {
             const db = await openDb();
-            const tx = db.transaction(STORE_NAME, "readonly");
+            const tx = db.transaction(STORE_NAME, 'readonly');
             const store = tx.objectStore(STORE_NAME);
-            const keys = await new Promise<IDBValidKey[]>((res, rej) => {
+            const keys = await new Promise<IDBValidKey[]>((resolve, reject) => {
                 const req = store.getAllKeys();
-                req.onsuccess = () => res(req.result);
-                req.onerror = () => rej(req.error);
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
             });
 
             let restored = 0;
             for (const key of keys) {
-                if (cache.has(key as string)) continue;
-                const data = await new Promise<SerializedBuffer | undefined>((res, rej) => {
+                if (cache.has(key as string)) {
+                    continue;
+                }
+                const data = await new Promise<SerializedBuffer | undefined>((resolve, reject) => {
                     const req = store.get(key);
-                    req.onsuccess = () => res(req.result as SerializedBuffer | undefined);
-                    req.onerror = () => rej(req.error);
+                    req.onsuccess = () => resolve(req.result as SerializedBuffer | undefined);
+                    req.onerror = () => reject(req.error);
                 });
-                if (!data) continue;
-
+                if (!data) {
+                    continue;
+                }
                 const length = data.channelData[0]?.length ?? 0;
-                if (length === 0) continue;
+                if (length === 0) {
+                    continue;
+                }
                 const buffer = context.createBuffer(data.numberOfChannels, length, data.sampleRate);
                 for (let ch = 0; ch < data.numberOfChannels; ch++) {
                     const src = data.channelData[ch]!;
@@ -145,9 +159,13 @@ export const audioBufferCache = {
     clear(): void {
         cache.clear();
         waveformCache.clear();
-        openDb().then((db) => {
-            const tx = db.transaction(STORE_NAME, "readwrite");
-            tx.objectStore(STORE_NAME).clear();
-        }).catch(() => { /* ignore */ });
+        openDb()
+            .then((db) => {
+                const tx = db.transaction(STORE_NAME, 'readwrite');
+                tx.objectStore(STORE_NAME).clear();
+            })
+            .catch(() => {
+                /* ignore */
+            });
     },
 };

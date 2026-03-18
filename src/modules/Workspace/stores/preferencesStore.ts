@@ -1,32 +1,23 @@
-import { Container } from "#/helpers/DependencyInjector/Container";
-import { Logger } from "#/helpers/Logger/Logger";
-import { Store } from "#/helpers/Store/Store";
-import { defaultPreferences, type Preferences } from "../models/Preferences";
+import { Container } from '#/helpers/DependencyInjector/Container';
+import { Logger } from '#/helpers/Logger/Logger';
+import { Store } from '#/helpers/Store/Store';
+import { LocalStorageStorage } from '#/helpers/Store/Storage/LocalStorageStorage';
+import { defaultPreferences, type Preferences } from '../models/Preferences';
 
 const logger = Container.getInstance().get(Logger);
 
-const PREFS_KEY = "webdaw-preferences";
+const storage = new LocalStorageStorage<Preferences>('webdaw-preferences');
 
-const loadFromStorage = (): Preferences => {
-    try {
-        const raw = localStorage.getItem(PREFS_KEY);
-        if (raw) return { ...defaultPreferences, ...JSON.parse(raw) };
-    } catch {
-        // ignore
+// Merge stored data with defaults so new preference keys are always present
+function mergeWithDefaults(): Preferences {
+    const stored = storage.get();
+    if (stored) {
+        return { ...defaultPreferences, ...stored };
     }
     return defaultPreferences;
-};
+}
 
 export const preferencesStore = new Store<Preferences>(logger, {
-    initialData: loadFromStorage(),
-});
-
-preferencesStore.subscribe((value) => {
-    if (value) {
-        try {
-            localStorage.setItem(PREFS_KEY, JSON.stringify(value));
-        } catch {
-            // ignore
-        }
-    }
+    storage,
+    initialData: mergeWithDefaults(),
 });

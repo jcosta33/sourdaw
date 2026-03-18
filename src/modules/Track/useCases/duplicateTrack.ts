@@ -1,18 +1,19 @@
-import { trackStore } from "../stores/trackStore";
-import { midiStore } from "../stores/midiStore";
-import { addTrack } from "./addTrack";
-import { addClip } from "./clipUseCases";
-import type { MidiNote } from "../models/MidiNote";
+import { getTrackById, updateTrack } from '../repositories/trackRepository';
+import { midiStore } from '../stores/midiStore';
+import { addTrack } from './addTrack';
+import { addClip } from './clipUseCases';
+import { type MidiNote } from '../models/MidiNote';
 
-export const duplicateTrack = (trackId: string): void => {
-    const state = trackStore.value;
-    if (!state) return;
-
-    const source = state.tracks.find((t) => t.id === trackId);
-    if (!source) return;
+export function duplicateTrack(trackId: string): void {
+    const source = getTrackById(trackId);
+    if (!source) {
+        return;
+    }
 
     const newTrack = addTrack({ name: `${source.name} (copy)`, kind: source.kind });
-    if (!newTrack) return;
+    if (!newTrack) {
+        return;
+    }
 
     for (const clip of source.clips) {
         const newClip = addClip({
@@ -24,7 +25,7 @@ export const duplicateTrack = (trackId: string): void => {
             audioBufferId: clip.audioBufferId,
         });
 
-        if (newClip && clip.type === "midi") {
+        if (newClip && clip.type === 'midi') {
             const midiState = midiStore.value;
             const sourceNotes = midiState?.notesByClipId[clip.id];
             if (sourceNotes && sourceNotes.length > 0) {
@@ -46,21 +47,12 @@ export const duplicateTrack = (trackId: string): void => {
     }
 
     for (const device of source.devices) {
-        const ts = trackStore.value;
-        if (!ts) break;
-        trackStore.set({
-            ...ts,
-            tracks: ts.tracks.map((t) =>
-                t.id === newTrack.id
-                    ? {
-                        ...t,
-                        devices: [
-                            ...t.devices,
-                            { ...device, id: `device-dup-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` },
-                        ],
-                    }
-                    : t,
-            ),
-        });
+        updateTrack(newTrack.id, (t) => ({
+            ...t,
+            devices: [
+                ...t.devices,
+                { ...device, id: `device-dup-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` },
+            ],
+        }));
     }
-};
+}

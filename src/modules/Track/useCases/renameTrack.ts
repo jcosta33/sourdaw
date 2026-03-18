@@ -1,13 +1,5 @@
-import { trackStore } from "../stores/trackStore";
+import { updateTrack } from '../repositories/trackRepository';
 
-export const renameTrack = (trackId: string, name: string): void => {
-    const state = trackStore.value;
-    if (!state) return;
-
-    trackStore.set({
-        ...state,
-        tracks: state.tracks.map((t) =>
-            t.id === trackId ? { ...t, name } : t,
-        ),
-    });
-};
+export function renameTrack(trackId: string, name: string): void {
+    updateTrack(trackId, (t) => ({ ...t, name }));
+}

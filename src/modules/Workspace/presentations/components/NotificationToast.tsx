@@ -1,13 +1,13 @@
-import { type ReactElement, useState, useEffect } from "react";
-import { AlertTriangle, X } from "lucide-react";
-import { Button } from "#/components/ui/button";
-import { cn } from "#/helpers/Styles/cn";
-export { notifyUser } from "#/helpers/Notification/notifyUser";
+import { type ReactElement, useState, useEffect } from 'react';
+import { AlertTriangle, X } from 'lucide-react';
+import { Button } from '#/components/ui/button';
+import { cn } from '#/helpers/Styles/cn';
+export { notifyUser } from '#/helpers/Notification/notifyUser';
 
 export type AppNotification = {
     id: string;
     message: string;
-    level: "warning" | "error" | "info";
+    level: 'warning' | 'error' | 'info';
     timestamp: number;
 };
 
@@ -16,7 +16,7 @@ export const NotificationToast = (): ReactElement | null => {
 
     useEffect(() => {
         const handler = (e: Event) => {
-            const { message, level } = (e as CustomEvent<{ message: string; level: AppNotification["level"] }>).detail;
+            const { message, level } = (e as CustomEvent<{ message: string; level: AppNotification['level'] }>).detail;
             const notification: AppNotification = {
                 id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
                 message,
@@ -30,9 +30,9 @@ export const NotificationToast = (): ReactElement | null => {
                 return [...prev, notification];
             });
         };
-        document.addEventListener("webdaw:notify", handler);
+        document.addEventListener('webdaw:notify', handler);
         return () => {
-            document.removeEventListener("webdaw:notify", handler);
+            document.removeEventListener('webdaw:notify', handler);
         };
     }, []);
 
@@ -55,12 +55,12 @@ export const NotificationToast = (): ReactElement | null => {
     return (
         <div
             className={cn(
-                "fixed bottom-16 left-4 z-50 w-80 rounded-lg border p-3 shadow-xl animate-in slide-in-from-left-5",
-                latest.level === "error"
-                    ? "border-red-500/40 bg-red-950/80"
-                    : latest.level === "warning"
-                      ? "border-yellow-500/40 bg-yellow-950/80"
-                      : "border-border bg-surface-raised",
+                'fixed bottom-16 left-4 z-50 w-80 rounded-lg border p-3 shadow-xl animate-in slide-in-from-left-5',
+                latest.level === 'error'
+                    ? 'border-red-500/40 bg-red-950/80'
+                    : latest.level === 'warning'
+                      ? 'border-yellow-500/40 bg-yellow-950/80'
+                      : 'border-border bg-surface-raised'
             )}
             role="alert"
             aria-live="assertive"
@@ -68,8 +68,8 @@ export const NotificationToast = (): ReactElement | null => {
             <div className="flex items-start gap-2">
                 <AlertTriangle
                     className={cn(
-                        "mt-0.5 size-4 shrink-0",
-                        latest.level === "error" ? "text-red-400" : "text-yellow-400",
+                        'mt-0.5 size-4 shrink-0',
+                        latest.level === 'error' ? 'text-red-400' : 'text-yellow-400'
                     )}
                 />
                 <p className="flex-1 text-xs text-foreground">{latest.message}</p>
@@ -82,11 +82,7 @@ export const NotificationToast = (): ReactElement | null => {
                     <X className="size-3" />
                 </Button>
             </div>
-            {items.length > 1 && (
-                <p className="mt-1 text-[10px] text-muted-foreground">
-                    +{items.length - 1} more
-                </p>
-            )}
+            {items.length > 1 && <p className="mt-1 text-[10px] text-muted-foreground">+{items.length - 1} more</p>}
         </div>
     );
 };

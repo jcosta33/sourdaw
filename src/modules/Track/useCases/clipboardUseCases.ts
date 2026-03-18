@@ -1,11 +1,10 @@
-import { trackStore } from "#/modules/Track/stores/trackStore";
-import { midiStore } from "#/modules/Track/stores/midiStore";
-import { workspaceStore } from "#/modules/Workspace/stores/workspaceStore";
-import { transportStore } from "#/modules/Transport/stores/transportStore";
-import { addClip, removeClip } from "#/modules/Track/useCases/clipUseCases";
-import type { Clip } from "#/modules/Track/models/Track";
-import type { MidiNote } from "#/modules/Track/models/MidiNote";
-import { createMidiNote } from "#/modules/Track/models/MidiNote";
+import { getTrackState } from '../repositories/trackRepository';
+import { getWorkspaceStoreValue as getWorkspaceState } from '#/modules/Workspace/useCases/workspaceQueries';
+import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
+import { midiStore } from '#/modules/Track/stores/midiStore';
+import { addClip, removeClip } from '#/modules/Track/useCases/clipUseCases';
+import { type Clip } from '#/modules/Track/models/Track';
+import { type MidiNote, createMidiNote } from '#/modules/Track/models/MidiNote';
 
 type ClipboardEntry = {
     clip: Clip;
@@ -20,18 +19,22 @@ type NoteClipboardEntry = {
 let clipClipboard: ClipboardEntry[] = [];
 let noteClipboard: NoteClipboardEntry | null = null;
 
-const findClipById = (clipId: string): { clip: Clip; trackId: string } | null => {
-    const state = trackStore.value;
-    if (!state) return null;
+function findClipById(clipId: string): { clip: Clip; trackId: string } | null {
+    const state = getTrackState();
+    if (!state) {
+        return null;
+    }
 
     for (const track of state.tracks) {
         const clip = track.clips.find((c) => c.id === clipId);
-        if (clip) return { clip, trackId: track.id };
+        if (clip) {
+            return { clip, trackId: track.id };
+        }
     }
     return null;
-};
+}
 
-const copyClipIds = (ids: string[]): void => {
+function copyClipIds(ids: string[]): void {
     const midiState = midiStore.value;
     clipClipboard = [];
     for (const id of ids) {
@@ -39,43 +42,43 @@ const copyClipIds = (ids: string[]): void => {
         if (!found) {
             continue;
         }
-        const midiNotes = found.clip.type === "midi"
-            ? midiState?.notesByClipId[found.clip.id]
-            : undefined;
+        const midiNotes = found.clip.type === 'midi' ? midiState?.notesByClipId[found.clip.id] : undefined;
         clipClipboard.push({
             clip: { ...found.clip },
             midiNotes: midiNotes ? midiNotes.map((n) => ({ ...n })) : undefined,
             sourceTrackId: found.trackId,
         });
     }
-};
+}
 
-export const copySelectedClip = (): void => {
-    const workspace = workspaceStore.value;
+export function copySelectedClip(): void {
+    const workspace = getWorkspaceState();
     if (!workspace) {
         return;
     }
-    const ids = workspace.selectedClipIds.length > 0
-        ? workspace.selectedClipIds
-        : workspace.selectedClipId
-            ? [workspace.selectedClipId]
-            : [];
+    const ids =
+        workspace.selectedClipIds.length > 0
+            ? workspace.selectedClipIds
+            : workspace.selectedClipId
+              ? [workspace.selectedClipId]
+              : [];
     if (ids.length === 0) {
         return;
     }
     copyClipIds(ids);
-};
+}
 
-export const cutSelectedClip = (): void => {
-    const workspace = workspaceStore.value;
+export function cutSelectedClip(): void {
+    const workspace = getWorkspaceState();
     if (!workspace) {
         return;
     }
-    const ids = workspace.selectedClipIds.length > 0
-        ? workspace.selectedClipIds
-        : workspace.selectedClipId
-            ? [workspace.selectedClipId]
-            : [];
+    const ids =
+        workspace.selectedClipIds.length > 0
+            ? workspace.selectedClipIds
+            : workspace.selectedClipId
+              ? [workspace.selectedClipId]
+              : [];
     if (ids.length === 0) {
         return;
     }
@@ -83,14 +86,18 @@ export const cutSelectedClip = (): void => {
     for (const id of ids) {
         removeClip(id);
     }
-};
+}
 
-export const pasteClip = (): void => {
-    if (clipClipboard.length === 0) return;
+export function pasteClip(): void {
+    if (clipClipboard.length === 0) {
+        return;
+    }
 
-    const transport = transportStore.value;
-    const trackState = trackStore.value;
-    if (!transport || !trackState) return;
+    const transport = getTransportState();
+    const trackState = getTrackState();
+    if (!transport || !trackState) {
+        return;
+    }
 
     const playheadBeat = transport.playheadPosition;
     const minStartBeat = Math.min(...clipClipboard.map((e) => e.clip.startBeat));
@@ -99,7 +106,9 @@ export const pasteClip = (): void => {
     for (const entry of clipClipboard) {
         const targetTrackId = trackState.selectedTrackId ?? entry.sourceTrackId;
         const targetTrack = trackState.tracks.find((t) => t.id === targetTrackId);
-        if (!targetTrack) continue;
+        if (!targetTrack) {
+            continue;
+        }
 
         const newClip = addClip({
             trackId: targetTrackId,
@@ -110,11 +119,13 @@ export const pasteClip = (): void => {
             audioBufferId: entry.clip.audioBufferId,
         });
 
-        if (!newClip) continue;
+        if (!newClip) {
+            continue;
+        }
 
         if (entry.midiNotes && entry.midiNotes.length > 0) {
             const copiedNotes: MidiNote[] = entry.midiNotes.map((n) =>
-                createMidiNote(n.pitch, n.startBeat, n.duration, n.velocity),
+                createMidiNote(n.pitch, n.startBeat, n.duration, n.velocity)
             );
 
             const midiState = midiStore.value;
@@ -129,40 +140,45 @@ export const pasteClip = (): void => {
             }
         }
     }
-};
+}
 
-export const copySelectedNotes = (clipId: string, noteIds: string[]): void => {
+export function copySelectedNotes(clipId: string, noteIds: string[]): void {
     const midiState = midiStore.value;
-    if (!midiState) return;
+    if (!midiState) {
+        return;
+    }
 
     const notes = midiState.notesByClipId[clipId];
-    if (!notes) return;
+    if (!notes) {
+        return;
+    }
 
     const selected = notes.filter((n) => noteIds.includes(n.id));
-    if (selected.length === 0) return;
+    if (selected.length === 0) {
+        return;
+    }
 
     noteClipboard = {
         notes: selected.map((n) => ({ ...n })),
     };
-};
+}
 
-export const pasteNotes = (clipId: string, beatOffset: number): void => {
-    if (!noteClipboard || noteClipboard.notes.length === 0) return;
+export function pasteNotes(clipId: string, beatOffset: number): void {
+    if (!noteClipboard || noteClipboard.notes.length === 0) {
+        return;
+    }
 
     const midiState = midiStore.value;
-    if (!midiState) return;
+    if (!midiState) {
+        return;
+    }
 
     const existing = midiState.notesByClipId[clipId] ?? [];
 
     const minStart = Math.min(...noteClipboard.notes.map((n) => n.startBeat));
 
     const pastedNotes: MidiNote[] = noteClipboard.notes.map((n) =>
-        createMidiNote(
-            n.pitch,
-            n.startBeat - minStart + beatOffset,
-            n.duration,
-            n.velocity,
-        ),
+        createMidiNote(n.pitch, n.startBeat - minStart + beatOffset, n.duration, n.velocity)
     );
 
     midiStore.set({
@@ -172,4 +188,4 @@ export const pasteNotes = (clipId: string, beatOffset: number): void => {
             [clipId]: [...existing, ...pastedNotes],
         },
     });
-};
+}

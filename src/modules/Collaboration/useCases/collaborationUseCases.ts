@@ -1,28 +1,25 @@
-import type { AppAction } from "#/modules/Command/models/AppAction";
-import { executeAppAction } from "#/modules/Command/useCases/executeAppAction";
-import type { PeerInfo, SyncMessage } from "../models/CollaborationTypes";
-import { collaborationStore } from "../stores/collaborationStore";
-import { appendLocalOperation, appendRemoteOperation, clearOperations } from "./operationLog";
-import * as transport from "./webSocketTransport";
+import { type AppAction } from '#/modules/Command/models/AppAction';
+import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
+import { type PeerInfo, type SyncMessage } from '../models/CollaborationTypes';
+import { collaborationStore } from '../stores/collaborationStore';
+import { appendLocalOperation, appendRemoteOperation, clearOperations } from './operationLog';
+import * as transport from './webSocketTransport';
 
-const PEER_COLORS = [
-    "#3b82f6", "#ef4444", "#10b981", "#f59e0b",
-    "#8b5cf6", "#ec4899", "#06b6d4", "#f97316",
-];
+const PEER_COLORS = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
 
 let colorIndex = 0;
 
-const generatePeerColor = (): string => {
+function generatePeerColor(): string {
     const color = PEER_COLORS[colorIndex % PEER_COLORS.length]!;
     colorIndex++;
     return color;
-};
+}
 
-const DEFAULT_WS_URL = "ws://localhost:8787";
+const DEFAULT_WS_URL = 'ws://localhost:8787';
 
-const getWsUrl = (): string => {
-    return import.meta.env.VITE_COLLAB_WS_URL as string | undefined ?? DEFAULT_WS_URL;
-};
+function getWsUrl(): string {
+    return (import.meta.env.VITE_COLLAB_WS_URL as string | undefined) ?? DEFAULT_WS_URL;
+}
 
 function handleServerMessage(msg: SyncMessage): void {
     const state = collaborationStore.value;
@@ -31,7 +28,7 @@ function handleServerMessage(msg: SyncMessage): void {
     }
 
     switch (msg.type) {
-        case "action": {
+        case 'action': {
             const entry = {
                 id: `remote-${Date.now()}`,
                 peerId: msg.peerId,
@@ -43,7 +40,7 @@ function handleServerMessage(msg: SyncMessage): void {
             void executeAppAction(entry.action);
             break;
         }
-        case "peer-join": {
+        case 'peer-join': {
             const exists = state.peers.some((p) => p.id === msg.peer.id);
             if (!exists) {
                 collaborationStore.set({
@@ -53,19 +50,17 @@ function handleServerMessage(msg: SyncMessage): void {
             }
             break;
         }
-        case "peer-leave": {
+        case 'peer-leave': {
             collaborationStore.set({
                 ...state,
                 peers: state.peers.filter((p) => p.id !== msg.peerId),
             });
             break;
         }
-        case "cursor-update": {
+        case 'cursor-update': {
             collaborationStore.set({
                 ...state,
-                peers: state.peers.map((p) =>
-                    p.id === msg.peerId ? { ...p, cursor: msg.cursor } : p,
-                ),
+                peers: state.peers.map((p) => (p.id === msg.peerId ? { ...p, cursor: msg.cursor } : p)),
             });
             break;
         }
@@ -75,17 +70,17 @@ function handleServerMessage(msg: SyncMessage): void {
 }
 
 type JoinedMessage = {
-    type: "joined";
+    type: 'joined';
     peerId: string;
     sessionId: string;
     isHost: boolean;
     peers: Array<{ id: string; name: string; isHost: boolean }>;
 };
 
-type PeerJoinedMessage = { type: "peer-joined"; peerId: string; name: string; isHost: boolean };
-type PeerLeftMessage = { type: "peer-left"; peerId: string; newHostId: string | null };
-type ActionMessage = { type: "action"; peerId: string; action: AppAction; timestamp: number };
-type CursorMessage = { type: "cursor"; peerId: string; cursor: { trackId: string; beat: number } };
+type PeerJoinedMessage = { type: 'peer-joined'; peerId: string; name: string; isHost: boolean };
+type PeerLeftMessage = { type: 'peer-left'; peerId: string; newHostId: string | null };
+type ActionMessage = { type: 'action'; peerId: string; action: AppAction; timestamp: number };
+type CursorMessage = { type: 'cursor'; peerId: string; cursor: { trackId: string; beat: number } };
 
 type ServerMessage =
     | JoinedMessage
@@ -93,7 +88,7 @@ type ServerMessage =
     | PeerLeftMessage
     | ActionMessage
     | CursorMessage
-    | { type: "error"; message: string };
+    | { type: 'error'; message: string };
 
 function handleRawServerMessage(data: unknown): void {
     const msg = data as ServerMessage;
@@ -104,7 +99,7 @@ function handleRawServerMessage(data: unknown): void {
     }
 
     switch (msg.type) {
-        case "joined": {
+        case 'joined': {
             const remotePeers: PeerInfo[] = msg.peers
                 .filter((p) => p.id !== msg.peerId)
                 .map((p) => ({
@@ -121,12 +116,12 @@ function handleRawServerMessage(data: unknown): void {
 
             collaborationStore.set({
                 ...state,
-                connectionStatus: "connected",
+                connectionStatus: 'connected',
                 peers: allPeers,
             });
             break;
         }
-        case "peer-joined": {
+        case 'peer-joined': {
             const newPeer: PeerInfo = {
                 id: msg.peerId,
                 name: msg.name,
@@ -135,44 +130,44 @@ function handleRawServerMessage(data: unknown): void {
                 isConnected: true,
                 lastSeen: Date.now(),
             };
-            handleServerMessage({ type: "peer-join", peer: newPeer });
+            handleServerMessage({ type: 'peer-join', peer: newPeer });
             break;
         }
-        case "peer-left": {
-            handleServerMessage({ type: "peer-leave", peerId: msg.peerId });
+        case 'peer-left': {
+            handleServerMessage({ type: 'peer-leave', peerId: msg.peerId });
             if (msg.newHostId && state.localPeerId === msg.newHostId) {
                 const updated = collaborationStore.value;
                 if (updated) {
                     collaborationStore.set({
                         ...updated,
                         peers: updated.peers.map((p) =>
-                            p.id === msg.newHostId ? { ...p, isHost: true } : { ...p, isHost: false },
+                            p.id === msg.newHostId ? { ...p, isHost: true } : { ...p, isHost: false }
                         ),
                     });
                 }
             }
             break;
         }
-        case "action": {
+        case 'action': {
             handleServerMessage({
-                type: "action",
+                type: 'action',
                 peerId: msg.peerId,
                 action: msg.action,
                 timestamp: msg.timestamp,
             });
             break;
         }
-        case "cursor": {
+        case 'cursor': {
             handleServerMessage({
-                type: "cursor-update",
+                type: 'cursor-update',
                 peerId: msg.peerId,
                 cursor: msg.cursor,
             });
             break;
         }
-        case "error": {
-            const errMsg = msg as { type: "error"; message: string };
-            collaborationStore.set({ ...state, connectionStatus: "error", error: errMsg.message });
+        case 'error': {
+            const errMsg = msg as { type: 'error'; message: string };
+            collaborationStore.set({ ...state, connectionStatus: 'error', error: errMsg.message });
             break;
         }
         default:
@@ -180,7 +175,7 @@ function handleRawServerMessage(data: unknown): void {
     }
 }
 
-export const createSession = (): string => {
+export function createSession(): string {
     const sessionId = crypto.randomUUID();
     const localPeerId = crypto.randomUUID();
 
@@ -188,83 +183,87 @@ export const createSession = (): string => {
         isEnabled: true,
         sessionId,
         localPeerId,
-        peers: [{
-            id: localPeerId,
-            name: "You",
-            color: "#3b82f6",
-            isHost: true,
-            isConnected: true,
-            lastSeen: Date.now(),
-        }],
-        connectionStatus: "connecting",
+        peers: [
+            {
+                id: localPeerId,
+                name: 'You',
+                color: '#3b82f6',
+                isHost: true,
+                isConnected: true,
+                lastSeen: Date.now(),
+            },
+        ],
+        connectionStatus: 'connecting',
         error: null,
     });
 
     transport.connect(getWsUrl(), {
         onMessage: (raw) => handleRawServerMessage(raw as unknown),
         onConnect: () => {
-            sendRaw({ type: "join", peerId: localPeerId, sessionId, name: "You" });
+            sendRaw({ type: 'join', peerId: localPeerId, sessionId, name: 'You' });
         },
         onDisconnect: () => {
             const s = collaborationStore.value;
             if (s?.isEnabled) {
-                collaborationStore.set({ ...s, connectionStatus: "disconnected" });
+                collaborationStore.set({ ...s, connectionStatus: 'disconnected' });
             }
         },
         onError: (error) => {
             const s = collaborationStore.value;
             if (s) {
-                collaborationStore.set({ ...s, connectionStatus: "error", error });
+                collaborationStore.set({ ...s, connectionStatus: 'error', error });
             }
         },
     });
 
     return sessionId;
-};
+}
 
-export const joinSession = (sessionId: string, peerName: string): void => {
+export function joinSession(sessionId: string, peerName: string): void {
     const localPeerId = crypto.randomUUID();
 
     collaborationStore.set({
         isEnabled: true,
         sessionId,
         localPeerId,
-        peers: [{
-            id: localPeerId,
-            name: peerName || "Peer",
-            color: generatePeerColor(),
-            isHost: false,
-            isConnected: true,
-            lastSeen: Date.now(),
-        }],
-        connectionStatus: "connecting",
+        peers: [
+            {
+                id: localPeerId,
+                name: peerName || 'Peer',
+                color: generatePeerColor(),
+                isHost: false,
+                isConnected: true,
+                lastSeen: Date.now(),
+            },
+        ],
+        connectionStatus: 'connecting',
         error: null,
     });
 
     transport.connect(getWsUrl(), {
         onMessage: (raw) => handleRawServerMessage(raw as unknown),
         onConnect: () => {
-            sendRaw({ type: "join", peerId: localPeerId, sessionId, name: peerName || "Peer" });
+            sendRaw({ type: 'join', peerId: localPeerId, sessionId, name: peerName || 'Peer' });
         },
         onDisconnect: () => {
             const s = collaborationStore.value;
             if (s?.isEnabled) {
-                collaborationStore.set({ ...s, connectionStatus: "disconnected" });
+                collaborationStore.set({ ...s, connectionStatus: 'disconnected' });
             }
         },
         onError: (error) => {
             const s = collaborationStore.value;
             if (s) {
-                collaborationStore.set({ ...s, connectionStatus: "error", error });
+                collaborationStore.set({ ...s, connectionStatus: 'error', error });
             }
         },
     });
-};
+}
 
-export const leaveSession = (): void => {
+export function leaveSession(): void {
     const state = collaborationStore.value;
     if (state?.localPeerId && state.sessionId) {
-        sendRaw({ type: "leave", peerId: state.localPeerId, sessionId: state.sessionId });
+        sendRaw({ type: 'leave', peerId: state.localPeerId, sessionId: state.sessionId });
     }
 
     transport.disconnect();
@@ -274,12 +273,12 @@ export const leaveSession = (): void => {
         sessionId: null,
         localPeerId: null,
         peers: [],
-        connectionStatus: "disconnected",
+        connectionStatus: 'disconnected',
         error: null,
     });
-};
+}
 
-export const broadcastAction = (action: AppAction): void => {
+export function broadcastAction(action: AppAction): void {
     const state = collaborationStore.value;
     if (!state?.isEnabled || !state.localPeerId || !state.sessionId) {
         return;
@@ -287,27 +286,27 @@ export const broadcastAction = (action: AppAction): void => {
 
     appendLocalOperation(state.localPeerId, action);
     sendRaw({
-        type: "action",
+        type: 'action',
         peerId: state.localPeerId,
         sessionId: state.sessionId,
         action,
         timestamp: Date.now(),
     });
-};
+}
 
-export const updateCursor = (trackId: string, beat: number): void => {
+export function updateCursor(trackId: string, beat: number): void {
     const state = collaborationStore.value;
     if (!state?.isEnabled || !state.localPeerId || !state.sessionId) {
         return;
     }
 
     sendRaw({
-        type: "cursor",
+        type: 'cursor',
         peerId: state.localPeerId,
         sessionId: state.sessionId,
         cursor: { trackId, beat },
     });
-};
+}
 
 export const receiveRemoteAction = async (entry: {
     id: string;
@@ -321,5 +320,5 @@ export const receiveRemoteAction = async (entry: {
 };
 
 function sendRaw(msg: Record<string, unknown>): void {
-    transport.send(msg as unknown as import("../models/CollaborationTypes").SyncMessage);
+    transport.send(msg as unknown as import('../models/CollaborationTypes').SyncMessage);
 }

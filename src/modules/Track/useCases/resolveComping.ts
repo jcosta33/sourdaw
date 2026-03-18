@@ -1,12 +1,12 @@
-import { takeLaneStore } from "../stores/takeLaneStore";
-import type { Clip } from "../models/Track";
+import { takeLaneStore } from '../stores/takeLaneStore';
+import { type Clip } from '../models/Track';
 
 export type ResolvedClip = Clip & {
     regionStartBeat: number;
     regionEndBeat: number;
 };
 
-export const resolveClipsWithComping = (trackId: string, clips: Clip[]): ResolvedClip[] => {
+export function resolveClipsWithComping(trackId: string, clips: Clip[]): ResolvedClip[] {
     const laneState = takeLaneStore.value;
     if (!laneState) {
         return clips.map((c) => ({ ...c, regionStartBeat: c.startBeat, regionEndBeat: c.endBeat }));
@@ -77,4 +77,4 @@ export const resolveClipsWithComping = (trackId: string, clips: Clip[]): Resolve
     }
 
     return resolved.sort((a, b) => a.startBeat - b.startBeat);
-};
+}

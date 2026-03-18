@@ -1,4 +1,4 @@
-import type { AppAction } from "#/modules/Command/models/AppAction";
+import { type AppAction } from '#/modules/Command/models/AppAction';
 
 export type IntentResult = {
     actions: AppAction[];
@@ -7,4 +7,4 @@ export type IntentResult = {
     requiresConfirmation: boolean;
 };
 
-export type AiRuntimeStatus = "idle" | "loading" | "processing" | "ready" | "error";
+export type AiRuntimeStatus = 'idle' | 'loading' | 'processing' | 'ready' | 'error';

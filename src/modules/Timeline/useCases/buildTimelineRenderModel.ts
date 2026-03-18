@@ -1,13 +1,13 @@
-import { trackStore } from "#/modules/Track/stores/trackStore";
-import { transportStore } from "#/modules/Transport/stores/transportStore";
-import { timelineViewStore } from "../stores/timelineViewStore";
-import { midiStore } from "#/modules/Track/stores/midiStore";
-import { workspaceStore } from "#/modules/Workspace/stores/workspaceStore";
-import { preferencesStore } from "#/modules/Workspace/stores/preferencesStore";
-import { TRACK_HEIGHT_VALUES } from "#/modules/Workspace/models/Preferences";
-import type { TimelineRenderModel } from "../models/TimelineRenderModel";
+import { trackStore } from '#/modules/Track/stores/trackStore';
+import { transportStore } from '#/modules/Transport/stores/transportStore';
+import { timelineViewStore } from '../stores/timelineViewStore';
+import { midiStore } from '#/modules/Track/stores/midiStore';
+import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
+import { preferencesStore } from '#/modules/Workspace/stores/preferencesStore';
+import { TRACK_HEIGHT_VALUES } from '#/modules/Workspace/useCases/workspaceQueries';
+import { type TimelineRenderModel } from '../models/TimelineRenderModel';
 
-export const buildTimelineRenderModel = (): TimelineRenderModel => {
+export function buildTimelineRenderModel(): TimelineRenderModel {
     const trackState = trackStore.value;
     const transportState = transportStore.value;
     const viewState = timelineViewStore.value;
@@ -27,7 +27,7 @@ export const buildTimelineRenderModel = (): TimelineRenderModel => {
         soloed: track.soloed,
         height: track.height,
         clips: track.clips.map((clip) => {
-            const notes = clip.type === "midi" ? (midiState?.notesByClipId[clip.id] ?? []) : [];
+            const notes = clip.type === 'midi' ? (midiState?.notesByClipId[clip.id] ?? []) : [];
             return {
                 id: clip.id,
                 startBeat: clip.startBeat,
@@ -47,7 +47,7 @@ export const buildTimelineRenderModel = (): TimelineRenderModel => {
     }));
 
     const prefs = preferencesStore.value;
-    const trackHeight = TRACK_HEIGHT_VALUES[prefs?.trackHeight ?? "normal"];
+    const trackHeight = TRACK_HEIGHT_VALUES[prefs?.trackHeight ?? 'normal'];
 
     return {
         tracks,
@@ -56,7 +56,7 @@ export const buildTimelineRenderModel = (): TimelineRenderModel => {
         selectedClipIds: workspaceStore.value?.selectedClipIds ?? [],
         playheadPosition: transportState?.playheadPosition ?? 0,
         viewportStartBeat,
-        viewportEndBeat: viewportStartBeat + (window.innerWidth / pixelsPerBeat),
+        viewportEndBeat: viewportStartBeat + window.innerWidth / pixelsPerBeat,
         beatsPerPixel: 1 / pixelsPerBeat,
         pixelsPerBeat,
         trackHeight,
@@ -65,4 +65,4 @@ export const buildTimelineRenderModel = (): TimelineRenderModel => {
         timeSignatureNumerator: transportState?.timeSignatureNumerator ?? 4,
         timeSignatureDenominator: transportState?.timeSignatureDenominator ?? 4,
     };
-};
+}

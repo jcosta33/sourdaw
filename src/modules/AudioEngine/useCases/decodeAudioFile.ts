@@ -1,18 +1,18 @@
-import { audioEngine } from "../repositories/audioEngineInstance";
-import { audioBufferCache } from "../stores/audioBufferCache";
+import { audioEngine } from '../repositories/audioEngineInstance';
+import { audioBufferCache } from '../stores/audioBufferCache';
 
-export const decodeAudioFile = async (file: File): Promise<{ id: string; buffer: AudioBuffer }> => {
+export async function decodeAudioFile(file: File): Promise<{ id: string; buffer: AudioBuffer }> {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = await audioEngine.context.decodeAudioData(arrayBuffer);
     const id = `audio-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     audioBufferCache.set(id, buffer);
     return { id, buffer };
-};
+}
 
-export const generateSyntheticBuffer = (
+export function generateSyntheticBuffer(
     durationSeconds: number,
-    sampleRate = 44100,
-): { id: string; buffer: AudioBuffer } => {
+    sampleRate = 44100
+): { id: string; buffer: AudioBuffer } {
     const ctx = audioEngine.context;
     const length = Math.ceil(durationSeconds * sampleRate);
     const buffer = ctx.createBuffer(2, length, sampleRate);
@@ -28,4 +28,4 @@ export const generateSyntheticBuffer = (
     const id = `synth-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     audioBufferCache.set(id, buffer);
     return { id, buffer };
-};
+}

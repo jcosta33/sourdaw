@@ -1,16 +1,9 @@
-import { addClip } from "#/modules/Track/useCases/clipUseCases";
-import { addMidiNote } from "#/modules/Track/useCases/midiUseCases";
+import { addClip } from '#/modules/Track/useCases/clipUseCases';
+import { addMidiNote } from '#/modules/Track/useCases/midiUseCases';
 
-export type MelodyStyle = "simple" | "arpeggiated" | "stepwise" | "rhythmic" | "ambient";
+export type MelodyStyle = 'simple' | 'arpeggiated' | 'stepwise' | 'rhythmic' | 'ambient';
 
-export type ScaleType =
-    | "major"
-    | "minor"
-    | "pentatonic"
-    | "minor-pentatonic"
-    | "blues"
-    | "dorian"
-    | "mixolydian";
+export type ScaleType = 'major' | 'minor' | 'pentatonic' | 'minor-pentatonic' | 'blues' | 'dorian' | 'mixolydian';
 
 export type GenerateMelodyOptions = {
     style: MelodyStyle;
@@ -30,16 +23,20 @@ type GeneratedNote = {
 };
 
 const SCALE_INTERVALS: Record<ScaleType, readonly number[]> = {
-    major:            [0, 2, 4, 5, 7, 9, 11],
-    minor:            [0, 2, 3, 5, 7, 8, 10],
-    pentatonic:       [0, 2, 4, 7, 9],
-    "minor-pentatonic": [0, 3, 5, 7, 10],
-    blues:            [0, 3, 5, 6, 7, 10],
-    dorian:           [0, 2, 3, 5, 7, 9, 10],
-    mixolydian:       [0, 2, 4, 5, 7, 9, 10],
+    major: [0, 2, 4, 5, 7, 9, 11],
+    minor: [0, 2, 3, 5, 7, 8, 10],
+    pentatonic: [0, 2, 4, 7, 9],
+    'minor-pentatonic': [0, 3, 5, 7, 10],
+    blues: [0, 3, 5, 6, 7, 10],
+    dorian: [0, 2, 3, 5, 7, 9, 10],
+    mixolydian: [0, 2, 4, 5, 7, 9, 10],
 };
 
-const buildScaleNotesFromIntervals = (intervals: readonly number[], baseMidi: number, rangeSemitones: number): number[] => {
+function buildScaleNotesFromIntervals(
+    intervals: readonly number[],
+    baseMidi: number,
+    rangeSemitones: number
+): number[] {
     const notes: number[] = [];
     const octaveSize = 12;
 
@@ -55,16 +52,16 @@ const buildScaleNotesFromIntervals = (intervals: readonly number[], baseMidi: nu
     }
 
     return notes;
-};
+}
 
 type RhythmSlot = { duration: number; isRest: boolean };
 
-const buildRhythm = (style: MelodyStyle, totalBeats: number, density: number): RhythmSlot[] => {
+function buildRhythm(style: MelodyStyle, totalBeats: number, density: number): RhythmSlot[] {
     const slots: RhythmSlot[] = [];
     let position = 0;
 
     switch (style) {
-        case "simple": {
+        case 'simple': {
             while (position < totalBeats) {
                 const r = Math.random();
                 const duration = r < 0.4 ? 1 : r < 0.7 ? 2 : 0.5;
@@ -79,7 +76,7 @@ const buildRhythm = (style: MelodyStyle, totalBeats: number, density: number): R
             break;
         }
 
-        case "arpeggiated": {
+        case 'arpeggiated': {
             const subdivisionSize = density > 0.6 ? 0.25 : 0.5;
             while (position < totalBeats) {
                 const isRest = Math.random() > density * 1.5;
@@ -93,7 +90,7 @@ const buildRhythm = (style: MelodyStyle, totalBeats: number, density: number): R
             break;
         }
 
-        case "stepwise": {
+        case 'stepwise': {
             while (position < totalBeats) {
                 const duration = Math.random() < 0.7 ? 0.5 : 0.25;
                 const isRest = Math.random() > density * 1.4;
@@ -107,7 +104,7 @@ const buildRhythm = (style: MelodyStyle, totalBeats: number, density: number): R
             break;
         }
 
-        case "rhythmic": {
+        case 'rhythmic': {
             const rhythmCells = [0.5, 0.5, 1, 0.5, 0.5, 0.5, 0.5, 1];
             let cellIndex = 0;
             while (position < totalBeats) {
@@ -124,7 +121,7 @@ const buildRhythm = (style: MelodyStyle, totalBeats: number, density: number): R
             break;
         }
 
-        case "ambient": {
+        case 'ambient': {
             while (position < totalBeats) {
                 const r = Math.random();
                 const duration = r < 0.3 ? 4 : r < 0.6 ? 2 : 3;
@@ -141,26 +138,22 @@ const buildRhythm = (style: MelodyStyle, totalBeats: number, density: number): R
     }
 
     return slots;
-};
+}
 
-const pickNextNote = (
-    scaleNotes: number[],
-    currentIndex: number,
-    style: MelodyStyle,
-): number => {
+function pickNextNote(scaleNotes: number[], currentIndex: number, style: MelodyStyle): number {
     const len = scaleNotes.length;
     if (len === 0) {
         return 0;
     }
 
     switch (style) {
-        case "simple": {
+        case 'simple': {
             const stepWeights = [-2, -1, -1, 0, 1, 1, 2];
             const step = stepWeights[Math.floor(Math.random() * stepWeights.length)]!;
             return Math.max(0, Math.min(len - 1, currentIndex + step));
         }
 
-        case "arpeggiated": {
+        case 'arpeggiated': {
             // Walk up through chord tones, wrap around
             const direction = Math.random() < 0.7 ? 1 : -1;
             const step = direction * (Math.random() < 0.5 ? 2 : 3);
@@ -174,12 +167,12 @@ const pickNextNote = (
             return next;
         }
 
-        case "stepwise": {
+        case 'stepwise': {
             const direction = Math.random() < 0.6 ? 1 : -1;
             return Math.max(0, Math.min(len - 1, currentIndex + direction));
         }
 
-        case "rhythmic": {
+        case 'rhythmic': {
             // Favor repeated notes and small steps
             const r = Math.random();
             if (r < 0.3) {
@@ -189,43 +182,35 @@ const pickNextNote = (
             return Math.max(0, Math.min(len - 1, currentIndex + step));
         }
 
-        case "ambient": {
+        case 'ambient': {
             // Wide intervals
             const step = Math.floor(Math.random() * 7) - 3;
             return Math.max(0, Math.min(len - 1, currentIndex + step));
         }
     }
-};
+}
 
 const clampVelocity = (v: number): number => Math.max(1, Math.min(127, Math.round(v)));
 
-const velocityForStyle = (style: MelodyStyle, beatPosition: number): number => {
+function velocityForStyle(style: MelodyStyle, beatPosition: number): number {
     const isDownbeat = beatPosition % 1 === 0;
 
     switch (style) {
-        case "simple":
+        case 'simple':
             return clampVelocity(isDownbeat ? 90 + Math.random() * 10 : 75 + Math.random() * 15);
-        case "arpeggiated":
+        case 'arpeggiated':
             return clampVelocity(70 + Math.random() * 20);
-        case "stepwise":
+        case 'stepwise':
             return clampVelocity(80 + Math.random() * 15);
-        case "rhythmic":
+        case 'rhythmic':
             return clampVelocity(isDownbeat ? 100 + Math.random() * 10 : 80 + Math.random() * 15);
-        case "ambient":
+        case 'ambient':
             return clampVelocity(55 + Math.random() * 25);
     }
-};
+}
 
-export const generateMelody = (options: GenerateMelodyOptions): GeneratedNote[] => {
-    const {
-        style,
-        key,
-        scale,
-        octave = 4,
-        bars = 4,
-        density = 0.5,
-        range = 12,
-    } = options;
+export function generateMelody(options: GenerateMelodyOptions): GeneratedNote[] {
+    const { style, key, scale, octave = 4, bars = 4, density = 0.5, range = 12 } = options;
 
     const intervals = SCALE_INTERVALS[scale];
     const baseMidi = key + octave * 12;
@@ -260,22 +245,22 @@ export const generateMelody = (options: GenerateMelodyOptions): GeneratedNote[] 
     }
 
     return notes;
-};
+}
 
-export const applyMelodyToTrack = (trackId: string, options: GenerateMelodyOptions): void => {
+export function applyMelodyToTrack(trackId: string, options: GenerateMelodyOptions): void {
     const bars = options.bars ?? 4;
     const totalBeats = bars * 4;
 
     const scaleName = options.scale.charAt(0).toUpperCase() + options.scale.slice(1);
-    const keyNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-    const keyName = keyNames[options.key % 12] ?? "C";
+    const keyNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    const keyName = keyNames[options.key % 12] ?? 'C';
 
     const clip = addClip({
         trackId,
         startBeat: 0,
         endBeat: totalBeats,
         name: `${options.style} melody (${keyName} ${scaleName})`,
-        type: "midi",
+        type: 'midi',
     });
 
     if (!clip) {
@@ -286,4 +271,4 @@ export const applyMelodyToTrack = (trackId: string, options: GenerateMelodyOptio
     for (const note of notes) {
         addMidiNote(clip.id, note.pitch, note.startBeat, note.duration, note.velocity);
     }
-};
+}

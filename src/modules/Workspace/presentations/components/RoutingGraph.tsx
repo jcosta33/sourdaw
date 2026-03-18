@@ -1,9 +1,9 @@
-import { type ReactElement, useSyncExternalStore } from "react";
-import { trackStore, type TrackStoreState } from "#/modules/Track/stores/trackStore";
-import { getAllSidechainRoutes } from "#/modules/AudioEngine/useCases/sidechainUseCases";
-import { selectTrack } from "#/modules/Track/useCases/toggleTrackState";
-import type { Track } from "#/modules/Track/models/Track";
-import type { SidechainRoute } from "#/modules/AudioEngine/models/SidechainRoute";
+import { type ReactElement, useSyncExternalStore } from 'react';
+import { trackStore, type TrackStoreState } from '#/modules/Track/stores/trackStore';
+import { getAllSidechainRoutes } from '../../useCases/workspaceViewActions';
+import { selectTrack } from '../../useCases/workspaceViewActions';
+import { type Track } from '../../useCases/workspaceViewActions';
+import { type SidechainRoute } from '../../useCases/workspaceViewActions';
 
 const defaultState: TrackStoreState = { tracks: [], selectedTrackId: null };
 
@@ -16,11 +16,11 @@ const PAD = 16;
 type NodePosition = { x: number; y: number; track: Track };
 
 const KIND_FILLS: Record<string, string> = {
-    audio: "#3b82f6",
-    midi: "#a855f7",
-    bus: "#f59e0b",
-    master: "#ef4444",
-    folder: "#6b7280",
+    audio: '#3b82f6',
+    midi: '#a855f7',
+    bus: '#f59e0b',
+    master: '#ef4444',
+    folder: '#6b7280',
 };
 
 function layoutNodes(tracks: Track[]): {
@@ -30,9 +30,9 @@ function layoutNodes(tracks: Track[]): {
     width: number;
     height: number;
 } {
-    const sources = tracks.filter((t) => t.kind === "audio" || t.kind === "midi");
-    const buses = tracks.filter((t) => t.kind === "bus");
-    const masterTrack = tracks.find((t) => t.kind === "master") ?? null;
+    const sources = tracks.filter((t) => t.kind === 'audio' || t.kind === 'midi');
+    const buses = tracks.filter((t) => t.kind === 'bus');
+    const masterTrack = tracks.find((t) => t.kind === 'master') ?? null;
 
     const sourcePositions: NodePosition[] = sources.map((track, i) => ({
         x: PAD,
@@ -47,13 +47,9 @@ function layoutNodes(tracks: Track[]): {
         track,
     }));
 
-    const masterColX = buses.length > 0
-        ? busColX + NODE_W + COL_GAP
-        : PAD + NODE_W + COL_GAP;
+    const masterColX = buses.length > 0 ? busColX + NODE_W + COL_GAP : PAD + NODE_W + COL_GAP;
 
-    const masterPosition: NodePosition | null = masterTrack
-        ? { x: masterColX, y: PAD, track: masterTrack }
-        : null;
+    const masterPosition: NodePosition | null = masterTrack ? { x: masterColX, y: PAD, track: masterTrack } : null;
 
     const maxRows = Math.max(sources.length, buses.length, 1);
     const height = PAD * 2 + maxRows * (NODE_H + ROW_GAP) - ROW_GAP;
@@ -62,31 +58,27 @@ function layoutNodes(tracks: Track[]): {
     return { sources: sourcePositions, buses: busPositions, master: masterPosition, width, height };
 }
 
-function getNodeCenter(pos: NodePosition, side: "left" | "right"): { x: number; y: number } {
+function getNodeCenter(pos: NodePosition, side: 'left' | 'right'): { x: number; y: number } {
     return {
-        x: side === "right" ? pos.x + NODE_W : pos.x,
+        x: side === 'right' ? pos.x + NODE_W : pos.x,
         y: pos.y + NODE_H / 2,
     };
 }
 
-const TrackNode = ({
-    pos,
-    isSelected,
-}: {
-    pos: NodePosition;
-    isSelected: boolean;
-}): ReactElement => {
-    const fill = KIND_FILLS[pos.track.kind] ?? "#6b7280";
+const TrackNode = ({ pos, isSelected }: { pos: NodePosition; isSelected: boolean }): ReactElement => {
+    const fill = KIND_FILLS[pos.track.kind] ?? '#6b7280';
 
     return (
         <g
             className="cursor-pointer"
-            onClick={() => { selectTrack(pos.track.id); }}
+            onClick={() => {
+                selectTrack(pos.track.id);
+            }}
             role="button"
             tabIndex={0}
             aria-label={`Select ${pos.track.name}`}
             onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
+                if (e.key === 'Enter' || e.key === ' ') {
                     selectTrack(pos.track.id);
                 }
             }}
@@ -99,7 +91,7 @@ const TrackNode = ({
                 rx={4}
                 fill={fill}
                 fillOpacity={0.15}
-                stroke={isSelected ? "#ffffff" : fill}
+                stroke={isSelected ? '#ffffff' : fill}
                 strokeWidth={isSelected ? 2 : 1}
             />
             <text
@@ -109,9 +101,7 @@ const TrackNode = ({
                 dominantBaseline="central"
                 className="fill-foreground text-[9px] pointer-events-none select-none"
             >
-                {pos.track.name.length > 12
-                    ? pos.track.name.slice(0, 11) + "…"
-                    : pos.track.name}
+                {pos.track.name.length > 12 ? `${pos.track.name.slice(0, 11)}…` : pos.track.name}
             </text>
         </g>
     );
@@ -126,21 +116,13 @@ const ConnectionLine = ({
 }: {
     from: { x: number; y: number };
     to: { x: number; y: number };
-    variant: "output" | "send" | "sidechain";
+    variant: 'output' | 'send' | 'sidechain';
     label?: string;
     highlighted: boolean;
 }): ReactElement => {
-    const strokeColor = variant === "sidechain"
-        ? "#ef4444"
-        : highlighted
-            ? "#ffffff"
-            : "#64748b";
+    const strokeColor = variant === 'sidechain' ? '#ef4444' : highlighted ? '#ffffff' : '#64748b';
 
-    const dashArray = variant === "output"
-        ? undefined
-        : variant === "send"
-            ? "4 3"
-            : "2 3";
+    const dashArray = variant === 'output' ? undefined : variant === 'send' ? '4 3' : '2 3';
 
     const midX = (from.x + to.x) / 2;
 
@@ -172,9 +154,12 @@ const ConnectionLine = ({
 
 export const RoutingGraph = (): ReactElement => {
     const state = useSyncExternalStore(
-        (cb) => trackStore.subscribe(() => { cb(); }),
+        (cb) =>
+            trackStore.subscribe(() => {
+                cb();
+            }),
         () => trackStore.value ?? defaultState,
-        () => trackStore.value ?? defaultState,
+        () => trackStore.value ?? defaultState
     );
 
     const { tracks, selectedTrackId } = state;
@@ -212,7 +197,7 @@ export const RoutingGraph = (): ReactElement => {
         return sidechainRoutes.some(
             (r) =>
                 (r.sourceTrackId === selectedTrackId && r.targetTrackId === trackId) ||
-                (r.targetTrackId === selectedTrackId && r.sourceTrackId === trackId),
+                (r.targetTrackId === selectedTrackId && r.sourceTrackId === trackId)
         );
     };
 
@@ -225,25 +210,18 @@ export const RoutingGraph = (): ReactElement => {
     }
 
     return (
-        <svg
-            viewBox={`0 0 ${width} ${height}`}
-            className="w-full"
-            role="img"
-            aria-label="Signal routing graph"
-        >
+        <svg viewBox={`0 0 ${width} ${height}`} className="w-full" role="img" aria-label="Signal routing graph">
             {/* Output connections (track → output target) */}
             {[...sources, ...buses].map((pos) => {
                 const targetId = pos.track.outputId;
-                const targetPos = targetId === "master"
-                    ? master
-                    : positionMap.get(targetId) ?? master;
+                const targetPos = targetId === 'master' ? master : (positionMap.get(targetId) ?? master);
 
                 if (!targetPos) {
                     return null;
                 }
 
-                const from = getNodeCenter(pos, "right");
-                const to = getNodeCenter(targetPos, "left");
+                const from = getNodeCenter(pos, 'right');
+                const to = getNodeCenter(targetPos, 'left');
                 const highlighted = isConnectedToSelected(pos.track.id) || isConnectedToSelected(targetPos.track.id);
 
                 return (
@@ -267,10 +245,11 @@ export const RoutingGraph = (): ReactElement => {
                             return null;
                         }
 
-                        const from = getNodeCenter(pos, "right");
-                        const to = getNodeCenter(busPos, "left");
-                        const highlighted = isConnectedToSelected(pos.track.id) || isConnectedToSelected(busPos.track.id);
-                        const label = `${(send.level * 100).toFixed(0)}%${send.preFader ? " pre" : ""}`;
+                        const from = getNodeCenter(pos, 'right');
+                        const to = getNodeCenter(busPos, 'left');
+                        const highlighted =
+                            isConnectedToSelected(pos.track.id) || isConnectedToSelected(busPos.track.id);
+                        const label = `${(send.level * 100).toFixed(0)}%${send.preFader ? ' pre' : ''}`;
 
                         return (
                             <ConnectionLine
@@ -282,7 +261,7 @@ export const RoutingGraph = (): ReactElement => {
                                 highlighted={highlighted}
                             />
                         );
-                    }),
+                    })
             )}
 
             {/* Sidechain connections */}
@@ -293,9 +272,10 @@ export const RoutingGraph = (): ReactElement => {
                     return null;
                 }
 
-                const from = getNodeCenter(sourcePos, "right");
-                const to = getNodeCenter(targetPos, "left");
-                const highlighted = isConnectedToSelected(route.sourceTrackId) || isConnectedToSelected(route.targetTrackId);
+                const from = getNodeCenter(sourcePos, 'right');
+                const to = getNodeCenter(targetPos, 'left');
+                const highlighted =
+                    isConnectedToSelected(route.sourceTrackId) || isConnectedToSelected(route.targetTrackId);
 
                 return (
                     <ConnectionLine
@@ -310,23 +290,25 @@ export const RoutingGraph = (): ReactElement => {
 
             {/* Nodes on top of lines */}
             {allPositions.map((pos) => (
-                <TrackNode
-                    key={pos.track.id}
-                    pos={pos}
-                    isSelected={pos.track.id === selectedTrackId}
-                />
+                <TrackNode key={pos.track.id} pos={pos} isSelected={pos.track.id === selectedTrackId} />
             ))}
 
             {/* Legend */}
             <g transform={`translate(${PAD}, ${height - 28})`}>
                 <line x1={0} y1={0} x2={16} y2={0} stroke="#64748b" strokeWidth={1} />
-                <text x={20} y={0} dominantBaseline="central" className="fill-muted-foreground text-[7px]">Output</text>
+                <text x={20} y={0} dominantBaseline="central" className="fill-muted-foreground text-[7px]">
+                    Output
+                </text>
 
                 <line x1={60} y1={0} x2={76} y2={0} stroke="#64748b" strokeWidth={1} strokeDasharray="4 3" />
-                <text x={80} y={0} dominantBaseline="central" className="fill-muted-foreground text-[7px]">Send</text>
+                <text x={80} y={0} dominantBaseline="central" className="fill-muted-foreground text-[7px]">
+                    Send
+                </text>
 
                 <line x1={110} y1={0} x2={126} y2={0} stroke="#ef4444" strokeWidth={1} strokeDasharray="2 3" />
-                <text x={130} y={0} dominantBaseline="central" className="fill-muted-foreground text-[7px]">Sidechain</text>
+                <text x={130} y={0} dominantBaseline="central" className="fill-muted-foreground text-[7px]">
+                    Sidechain
+                </text>
             </g>
         </svg>
     );

@@ -1,5 +1,4 @@
 {
-  "$schema": "https://raw.githubusercontent.com/nicegui-org/nicegui/main/nicegui/static/tauri.conf.json",
   "productName": "WebDAW",
   "version": "0.1.0",
   "identifier": "com.webdaw.app",
@@ -10,7 +9,6 @@
     "beforeBuildCommand": "pnpm build"
   },
   "app": {
-    "title": "WebDAW",
     "windows": [
       {
         "title": "WebDAW",
@@ -24,7 +22,8 @@
     ],
     "security": {
       "csp": null
-    }
+    },
+    "withGlobalTauri": true
   },
   "bundle": {
     "active": true,
@@ -35,21 +34,19 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "entitlements": "Entitlements.plist",
+      "infoPlist": "Info.plist"
+    }
   },
   "plugins": {
     "shell": {
       "open": true,
-      "sidecar": true,
       "scope": [
         {
           "name": "llama-server",
-          "cmd": "sidecars/llama-server",
-          "args": true
-        },
-        {
-          "name": "whisper-server",
-          "cmd": "sidecars/whisper-server",
+          "cmd": "llama-server",
           "args": true
         }
       ]

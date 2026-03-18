@@ -1,6 +1,14 @@
-import { midiStore } from "#/modules/Track/stores/midiStore";
-import { trackStore } from "#/modules/Track/stores/trackStore";
-import type { MidiNote } from "#/modules/Track/models/MidiNote";
+import { midiStore } from '#/modules/Track/stores/midiStore';
+import { getAllTracks } from '#/modules/Track/useCases/trackQueries';
+
+/** Local type matching Track module's MidiNote shape, avoids cross-module model import. */
+type MidiNote = {
+    id: string;
+    pitch: number;
+    startBeat: number;
+    duration: number;
+    velocity: number;
+};
 
 export type GrooveTemplate = {
     id: string;
@@ -14,79 +22,71 @@ export type GrooveTemplate = {
 // Factory grooves
 // ---------------------------------------------------------------------------
 
-const fill = (length: number, value: number): number[] => Array.from({ length }, () => value);
+function fill(length: number, value: number): number[] {
+    return Array.from({ length }, () => value);
+}
 
 const STRAIGHT_16: GrooveTemplate = {
-    id: "straight",
-    name: "Straight",
+    id: 'straight',
+    name: 'Straight',
     subdivisions: 16,
     offsets: fill(16, 0),
     velocities: fill(16, 1),
 };
 
 const LIGHT_SWING: GrooveTemplate = {
-    id: "swing-light",
-    name: "Light Swing",
+    id: 'swing-light',
+    name: 'Light Swing',
     subdivisions: 16,
     offsets: [0, 0.03, 0, 0.03, 0, 0.03, 0, 0.03, 0, 0.03, 0, 0.03, 0, 0.03, 0, 0.03],
     velocities: [1, 0.7, 0.9, 0.7, 1, 0.7, 0.9, 0.7, 1, 0.7, 0.9, 0.7, 1, 0.7, 0.9, 0.7],
 };
 
 const HEAVY_SWING: GrooveTemplate = {
-    id: "swing-heavy",
-    name: "Heavy Swing",
+    id: 'swing-heavy',
+    name: 'Heavy Swing',
     subdivisions: 16,
     offsets: [0, 0.08, 0, 0.08, 0, 0.08, 0, 0.08, 0, 0.08, 0, 0.08, 0, 0.08, 0, 0.08],
     velocities: [1, 0.6, 0.85, 0.6, 1, 0.6, 0.85, 0.6, 1, 0.6, 0.85, 0.6, 1, 0.6, 0.85, 0.6],
 };
 
 const MPC_60: GrooveTemplate = {
-    id: "mpc-60",
-    name: "MPC 60 Feel",
+    id: 'mpc-60',
+    name: 'MPC 60 Feel',
     subdivisions: 16,
     offsets: [0, 0.04, 0, 0.02, 0, 0.04, 0, 0.03, 0, 0.04, 0, 0.02, 0, 0.04, 0, 0.03],
     velocities: [1.15, 0.75, 0.9, 0.7, 1.1, 0.75, 0.85, 0.7, 1.15, 0.75, 0.9, 0.7, 1.1, 0.75, 0.85, 0.7],
 };
 
 const SP_1200: GrooveTemplate = {
-    id: "sp-1200",
-    name: "SP-1200 Feel",
+    id: 'sp-1200',
+    name: 'SP-1200 Feel',
     subdivisions: 16,
     offsets: [0, -0.03, 0, -0.01, 0, -0.03, 0, -0.02, 0, -0.03, 0, -0.01, 0, -0.03, 0, -0.02],
     velocities: [1.1, 0.8, 0.95, 0.8, 1.05, 0.8, 0.9, 0.8, 1.1, 0.8, 0.95, 0.8, 1.05, 0.8, 0.9, 0.8],
 };
 
 const LIVE_DRUMMER: GrooveTemplate = {
-    id: "live-drummer",
-    name: "Live Drummer",
+    id: 'live-drummer',
+    name: 'Live Drummer',
     subdivisions: 16,
     offsets: [
-        0.01, -0.02, 0.015, -0.01, 0.02, -0.015, 0.005, -0.02,
-        0.015, -0.01, 0.02, -0.005, 0.01, -0.02, 0.015, -0.01,
+        0.01, -0.02, 0.015, -0.01, 0.02, -0.015, 0.005, -0.02, 0.015, -0.01, 0.02, -0.005, 0.01, -0.02, 0.015, -0.01,
     ],
-    velocities: [
-        1.05, 0.85, 0.95, 0.82, 1.08, 0.83, 0.92, 0.8,
-        1.06, 0.84, 0.93, 0.81, 1.07, 0.82, 0.94, 0.83,
-    ],
+    velocities: [1.05, 0.85, 0.95, 0.82, 1.08, 0.83, 0.92, 0.8, 1.06, 0.84, 0.93, 0.81, 1.07, 0.82, 0.94, 0.83],
 };
 
-export const FACTORY_GROOVES: GrooveTemplate[] = [
-    STRAIGHT_16,
-    LIGHT_SWING,
-    HEAVY_SWING,
-    MPC_60,
-    SP_1200,
-    LIVE_DRUMMER,
-];
+export const FACTORY_GROOVES: GrooveTemplate[] = [STRAIGHT_16, LIGHT_SWING, HEAVY_SWING, MPC_60, SP_1200, LIVE_DRUMMER];
 
-export const getGrooveById = (grooveId: string): GrooveTemplate | undefined =>
-    FACTORY_GROOVES.find((g) => g.id === grooveId);
+export function getGrooveById(grooveId: string): GrooveTemplate | undefined {
+    return FACTORY_GROOVES.find((g) => g.id === grooveId);
+}
 
 // ---------------------------------------------------------------------------
 // Extract groove from a clip's notes
 // ---------------------------------------------------------------------------
 
-export const extractGroove = (clipId: string, subdivisions = 16): GrooveTemplate => {
+export function extractGroove(clipId: string, subdivisions = 16): GrooveTemplate {
     const state = midiStore.value;
     const notes: MidiNote[] = state?.notesByClipId[clipId] ?? [];
 
@@ -107,12 +107,8 @@ export const extractGroove = (clipId: string, subdivisions = 16): GrooveTemplate
         velocityAccum[stepIndex]!.push(note.velocity / 100);
     }
 
-    const offsets = offsetAccum.map((arr) =>
-        arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0,
-    );
-    const velocities = velocityAccum.map((arr) =>
-        arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 1,
-    );
+    const offsets = offsetAccum.map((arr) => (arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0));
+    const velocities = velocityAccum.map((arr) => (arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 1));
 
     return {
         id: `extracted-${clipId}`,
@@ -121,13 +117,13 @@ export const extractGroove = (clipId: string, subdivisions = 16): GrooveTemplate
         offsets,
         velocities,
     };
-};
+}
 
 // ---------------------------------------------------------------------------
 // Apply groove to a clip's notes
 // ---------------------------------------------------------------------------
 
-export const applyGroove = (clipId: string, template: GrooveTemplate, amount = 1.0): void => {
+export function applyGroove(clipId: string, template: GrooveTemplate, amount = 1.0): void {
     const state = midiStore.value;
     if (!state) {
         return;
@@ -164,17 +160,14 @@ export const applyGroove = (clipId: string, template: GrooveTemplate, amount = 1
             [clipId]: updated,
         },
     });
-};
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-const findClip = (clipId: string) => {
-    const tracks = trackStore.value?.tracks;
-    if (!tracks) {
-        return undefined;
-    }
+function findClip(clipId: string) {
+    const tracks = getAllTracks();
     for (const track of tracks) {
         const clip = track.clips.find((c) => c.id === clipId);
         if (clip) {
@@ -182,4 +175,4 @@ const findClip = (clipId: string) => {
         }
     }
     return undefined;
-};
+}

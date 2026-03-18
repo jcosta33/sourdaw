@@ -1,7 +1,7 @@
-import { Container } from "#/helpers/DependencyInjector/Container";
-import { Logger } from "#/helpers/Logger/Logger";
-import { Store } from "#/helpers/Store/Store";
-import type { TakeLane } from "../models/TakeLane";
+import { Container } from '#/helpers/DependencyInjector/Container';
+import { Logger } from '#/helpers/Logger/Logger';
+import { Store } from '#/helpers/Store/Store';
+import { type TakeLane } from '../models/TakeLane';
 
 const logger = Container.getInstance().get(Logger);
 

@@ -1,6 +1,6 @@
 # Accessibility (a11y)
 
-This guide provides a process for building accessible user interfaces that conform to [WCAG 2.x AA](https://www.w3.org/WAI/standards-guidelines/wcag/) and [WAI-ARIA Authoring Practices](https://www.w3.org/WAI/ARIA/apg/). For more information on best practices, see [Frontify a11y](https://weare.frontify.com/document/2399).
+This guide provides a process for building accessible user interfaces that conform to [WCAG 2.x AA](https://www.w3.org/WAI/standards-guidelines/wcag/) and [WAI-ARIA Authoring Practices](https://www.w3.org/WAI/ARIA/apg/). For more information on best practices, see [Webdaw a11y](https://weare.frontify.com/document/2399).
 
 ## How to build an accessible component
 
@@ -109,7 +109,7 @@ After building your component, verify its accessibility through a combination of
     - Exercise all keyboard navigation paths. Can you reach and operate everything without a mouse?
     - Use browser developer tools to inspect the accessibility tree.
     - Perform spot-checks with a screen reader.
-    - Use Frontify dev tools
+    - Use Webdaw dev tools
 
 ---
 
@@ -127,4 +127,4 @@ Always prefer using Fondue. If a required pattern is missing:
 ### Fondue
 
 - Fondue docs: [fondue-components.frontify.com](https://fondue-components.frontify.com/)
-- Fondue repo: [github.com/Frontify/fondue](https://github.com/Frontify/fondue)
+- Fondue repo: [github.com/Webdaw/fondue](https://github.com/Webdaw/fondue)

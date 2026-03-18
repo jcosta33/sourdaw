@@ -5,16 +5,16 @@ export type DevicePreset = {
 };
 
 export type SoundPresetCategory =
-    | "synth"
-    | "bass"
-    | "pad"
-    | "lead"
-    | "keys"
-    | "drums"
-    | "fx"
-    | "vocal"
-    | "guitar"
-    | "strings";
+    | 'synth'
+    | 'bass'
+    | 'pad'
+    | 'lead'
+    | 'keys'
+    | 'drums'
+    | 'fx'
+    | 'vocal'
+    | 'guitar'
+    | 'strings';
 
 export type SoundPreset = {
     id: string;
@@ -22,7 +22,7 @@ export type SoundPreset = {
     category: SoundPresetCategory;
     subcategory?: string;
     description: string;
-    trackKind: "midi" | "audio";
+    trackKind: 'midi' | 'audio';
     devices: DevicePreset[];
     tags: string[];
     author: string;

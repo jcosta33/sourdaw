@@ -1,4 +1,4 @@
-/* (c) Copyright Frontify Ltd., all rights reserved. */
+/* (c) Copyright Webdaw Ltd., all rights reserved. */
 
 import { type Logger } from '../Logger/Logger';
 

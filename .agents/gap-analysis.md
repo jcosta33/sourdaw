@@ -70,6 +70,7 @@ Every feature listed here must also be AI-promptable via the AppAction system.
 | Track notes/comments | DONE | setTrackNotes action, textarea in Inspector |
 | Vertical zoom all tracks | DONE | zoomTracksVertical action, Cmd+Shift+=/- shortcuts |
 | Cycle recording | DONE | New take created per loop pass when recording with loop enabled |
+| Track templates | MISSING | Ability to save a track (or group) + device chain + routing as a reusable library asset |
 
 ## 3. Clip System
 
@@ -100,6 +101,7 @@ Every feature listed here must also be AI-promptable via the AppAction system.
 | Strip silence | DONE | stripSilence action, 10ms window peak analysis, auto-split at silent regions |
 | Bounce selection to clip | DONE | bounceSelection: offline render a beat range on a track, replace with single audio clip |
 | Bounce to new track | DONE | bounceToNewTrack: renders and creates a new audio track with bounced clip |
+| Spectral Editing | MISSING | Visualizating and editing audio on a spectrogram basis (frequency domain vs amplitude domain) |
 
 ## 4. MIDI
 
@@ -124,6 +126,7 @@ Every feature listed here must also be AI-promptable via the AppAction system.
 | MPE support | DONE | Per-note pressure, slide (CC74), pitch bend; MPE input from Web MIDI; expression editing use cases; dedicated pressure and slide editing lanes in piano roll |
 | Note length quantize | DONE | quantizeNoteLengths + quantizeNotesAndLengths (start + duration) |
 | Velocity curve scaling | DONE | 6 curves (linear, exponential, logarithmic, s-curve, compress, expand), scaleAllVelocities, setAllVelocities |
+| Multi-channel MIDI routing | MISSING | Route MIDI out from a track/plugin to another track (e.g., for vocoders, sidechain MIDI, or multi-timbral instruments like Kontakt) |
 
 ## 5. Automation
 
@@ -159,6 +162,8 @@ Every feature listed here must also be AI-promptable via the AppAction system.
 | Device reorder DnD | DONE | Drag-and-drop reorder in mixer and inspector with grip indicator |
 | Bus/group solo | DONE | Soloing a bus makes tracks routed to it audible (routing-aware solo logic) |
 | Sidechain source selection | DONE | addSidechainRoute/removeSidechainRoute actions, Inspector dropdown, persisted with project |
+| VCA Faders / DCA Groups | MISSING | Dedicated VCA master faders to strictly control levels/mutes of assigned group tracks without routing their audio |
+| Spatial Audio / Surround Mixing | MISSING | Support for multi-channel master buses (5.1, 7.1.4) or Dolby Atmos object rendering |
 
 ## 7. Plugin System
 
@@ -176,6 +181,8 @@ Every feature listed here must also be AI-promptable via the AppAction system.
 | Built-in instruments (drum kits) | DONE | 4 factory kits (808, Analog, Electronic, Acoustic), per-pitch voices |
 | Sound preset library | DONE | 50+ factory presets, user save/load, categories, sidebar browser |
 | Preset import/export | DONE | .webdaw-preset JSON format, save/load to localStorage |
+| Plugin oversampling | MISSING | Option to run individual plugins at 2x/4x project sample rate to reduce aliasing |
+| ARA2 Integration | MISSING | Direct timeline integration for advanced repair/pitch tools (e.g. Melodyne, Auto-Tune) |
 
 ## 8. Workspace & UI
 
@@ -244,6 +251,9 @@ Every feature listed here must also be AI-promptable via the AppAction system.
 | Insert time | DONE | insertTime action, pushes everything after a beat forward |
 | Duplicate time range | DONE | duplicateTimeRange action, inserts time then copies clips |
 | Consolidate all tracks | DONE | consolidateAllTracks action, bounces all audio/midi tracks |
+| Track alternatives / playlists | MISSING | Store multiple arrangement versions of a track (e.g. "Take 1", "Take 2") to quickly swap full clip arrangements |
+| Hardware inserts (external FX) | MISSING | Route audio out through physical interfaces to outboard gear and back in, with ping-based delay compensation |
+| Video track | MISSING | Import, playback, and basic cut editing of a reference video file synced to the timeline |
 
 ## 9. Project Management
 
@@ -470,6 +480,11 @@ RESOLVED (batch 20 — polish + completeness):
 - ~~No save error feedback~~ → DONE (try/catch with notifyUser on storage full)
 - ~~No export success notification~~ → DONE (notifyUser on project export + audio export)
 - ~~No code splitting~~ → DONE (CollaborationPanel lazy, vendor chunks split, projectPersistence lazy)
+
+RESOLVED (batch 25 — bug fixes & AI upgrade):
+- ~~Prompt tags disappearing on enter~~ → DONE (added `type="button"` to tags and AI badges to prevent overriding form submission)
+- ~~WebLLM model selection~~ → DONE (upgraded to `Llama-3.2-3B-Instruct-q4f16_1-MLC` for better structured output reliability)
+- ~~Audio Engine drops on device add~~ → FIXED (modified `rebuildStripChain` to only disconnect outer outputNode, preserving internal device sub-graphs)
 
 RESOLVED (batch 19 — comprehensive codebase review):
 - ~~Division-by-zero in waveform peaks (numBins=0)~~ → DONE (guard returns empty array)

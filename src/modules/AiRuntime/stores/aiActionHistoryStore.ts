@@ -1,7 +1,7 @@
-import { Container } from "#/helpers/DependencyInjector/Container";
-import { Logger } from "#/helpers/Logger/Logger";
-import { Store } from "#/helpers/Store/Store";
-import type { AppAction } from "#/modules/Command/models/AppAction";
+import { Container } from '#/helpers/DependencyInjector/Container';
+import { Logger } from '#/helpers/Logger/Logger';
+import { Store } from '#/helpers/Store/Store';
+import { type AppAction } from '#/modules/Command/models/AppAction';
 
 const logger = Container.getInstance().get(Logger);
 
@@ -25,32 +25,38 @@ export const aiActionHistoryStore = new Store<AiActionHistoryState>(logger, {
 
 const MAX_HISTORY = 50;
 
-export const pushAiActionGroup = (group: AiActionGroup): void => {
+export function pushAiActionGroup(group: AiActionGroup): void {
     const state = aiActionHistoryStore.value;
-    if (!state) return;
+    if (!state) {
+        return;
+    }
     const groups = [...state.groups, group].slice(-MAX_HISTORY);
     aiActionHistoryStore.set({ ...state, groups, panelOpen: true });
-};
+}
 
-export const markGroupReverted = (groupId: string): void => {
+export function markGroupReverted(groupId: string): void {
     const state = aiActionHistoryStore.value;
-    if (!state) return;
+    if (!state) {
+        return;
+    }
     aiActionHistoryStore.set({
         ...state,
-        groups: state.groups.map((g) =>
-            g.groupId === groupId ? { ...g, reverted: true } : g,
-        ),
+        groups: state.groups.map((g) => (g.groupId === groupId ? { ...g, reverted: true } : g)),
     });
-};
+}
 
-export const toggleAiHistoryPanel = (): void => {
+export function toggleAiHistoryPanel(): void {
     const state = aiActionHistoryStore.value;
-    if (!state) return;
+    if (!state) {
+        return;
+    }
     aiActionHistoryStore.set({ ...state, panelOpen: !state.panelOpen });
-};
+}
 
-export const clearAiHistory = (): void => {
+export function clearAiHistory(): void {
     const state = aiActionHistoryStore.value;
-    if (!state) return;
+    if (!state) {
+        return;
+    }
     aiActionHistoryStore.set({ ...state, groups: [] });
-};
+}

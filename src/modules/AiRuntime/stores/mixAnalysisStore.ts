@@ -1,12 +1,12 @@
-import { Container } from "#/helpers/DependencyInjector/Container";
-import { Logger } from "#/helpers/Logger/Logger";
-import { Store } from "#/helpers/Store/Store";
-import type { MixAnalysisResult } from "../useCases/analyzeMix";
+import { Container } from '#/helpers/DependencyInjector/Container';
+import { Logger } from '#/helpers/Logger/Logger';
+import { Store } from '#/helpers/Store/Store';
+import { type MixAnalysis } from '../models/MixAnalysis';
 
 const logger = Container.getInstance().get(Logger);
 
 export type MixAnalysisStoreState = {
-    result: MixAnalysisResult | null;
+    result: MixAnalysis | null;
     isAnalyzing: boolean;
     panelOpen: boolean;
 };
@@ -19,10 +19,10 @@ export const mixAnalysisStore = new Store<MixAnalysisStoreState>(logger, {
     },
 });
 
-export const toggleMixAnalysisPanel = (): void => {
+export function toggleMixAnalysisPanel(): void {
     const state = mixAnalysisStore.value;
     if (!state) {
         return;
     }
     mixAnalysisStore.set({ ...state, panelOpen: !state.panelOpen });
-};
+}

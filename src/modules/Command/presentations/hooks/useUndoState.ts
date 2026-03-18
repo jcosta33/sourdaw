@@ -1,5 +1,5 @@
-import { useSyncExternalStore } from "react";
-import { undoStore, type UndoStoreState } from "../../stores/undoStore";
+import { useSyncExternalStore } from 'react';
+import { undoStore, type UndoStoreState } from '../../stores/undoStore';
 
 const defaultState: UndoStoreState = { past: [], future: [] };
 
@@ -7,7 +7,7 @@ export const useUndoState = () => {
     const state = useSyncExternalStore(
         (onChange) => undoStore.subscribe(() => onChange()),
         () => undoStore.value ?? defaultState,
-        () => undoStore.value ?? defaultState,
+        () => undoStore.value ?? defaultState
     );
 
     return {

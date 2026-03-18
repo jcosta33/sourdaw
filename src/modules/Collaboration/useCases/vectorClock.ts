@@ -1,21 +1,25 @@
 export type VectorClock = Record<string, number>;
 
-export const createClock = (): VectorClock => ({});
+export function createClock(): VectorClock {
+    return {};
+}
 
-export const increment = (clock: VectorClock, peerId: string): VectorClock => ({
-    ...clock,
-    [peerId]: (clock[peerId] ?? 0) + 1,
-});
+export function increment(clock: VectorClock, peerId: string): VectorClock {
+    return {
+        ...clock,
+        [peerId]: (clock[peerId] ?? 0) + 1,
+    };
+}
 
-export const merge = (a: VectorClock, b: VectorClock): VectorClock => {
+export function merge(a: VectorClock, b: VectorClock): VectorClock {
     const result = { ...a };
     for (const [key, value] of Object.entries(b)) {
         result[key] = Math.max(result[key] ?? 0, value);
     }
     return result;
-};
+}
 
-export const happensBefore = (a: VectorClock, b: VectorClock): boolean => {
+export function happensBefore(a: VectorClock, b: VectorClock): boolean {
     let allLessOrEqual = true;
     let someStrictlyLess = false;
 
@@ -32,8 +36,8 @@ export const happensBefore = (a: VectorClock, b: VectorClock): boolean => {
     }
 
     return allLessOrEqual && someStrictlyLess;
-};
+}
 
-export const areConcurrent = (a: VectorClock, b: VectorClock): boolean => {
+export function areConcurrent(a: VectorClock, b: VectorClock): boolean {
     return !happensBefore(a, b) && !happensBefore(b, a);
-};
+}

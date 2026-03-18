@@ -10,7 +10,7 @@ let nextTimeSignatureChangeId = 1;
 export const createTimeSignatureChange = (
     beat: number,
     numerator: number,
-    denominator: number,
+    denominator: number
 ): TimeSignatureChange => ({
     id: `ts-${nextTimeSignatureChangeId++}`,
     beat,
@@ -22,7 +22,7 @@ export const getTimeSignatureAtBeat = (
     changes: TimeSignatureChange[],
     beat: number,
     defaultNumerator: number,
-    defaultDenominator: number,
+    defaultDenominator: number
 ): { numerator: number; denominator: number } => {
     if (changes.length === 0) {
         return { numerator: defaultNumerator, denominator: defaultDenominator };
@@ -43,7 +43,7 @@ export const getBarBeatAtPosition = (
     changes: TimeSignatureChange[],
     position: number,
     defaultNumerator: number,
-    defaultDenominator: number,
+    defaultDenominator: number
 ): { bar: number; beat: number; tick: number } => {
     const sorted = [...changes].sort((a, b) => a.beat - b.beat);
     let bar = 1;

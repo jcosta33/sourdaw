@@ -1,519 +1,1097 @@
-# Architecture
+# DAW Architecture
 
-This guide defines the domain architecture and patterns. The goal is a minimal UI layer and a framework-agnostic core written in TypeScript, easily testable and easy to reason about, make changes and with clear boundaries.
+This document defines the domain architecture for the DAW. It extends the base architecture guide with patterns specific to a real-time audio application: how classes are used for stateful engine objects, how the real-time boundary is respected, and how each layer is structured within every domain.
 
-## Contents
+---
 
-- [Core principles](#core-principles)
-- [Module structure](#module-structure)
-- [Layer implementation](#layer-implementation)
-- [Dependency rules](#dependency-rules)
-- [Testing approach](#testing-approach)
-- [Implementation guidelines](#implementation-guidelines)
-- [Quick reference](#quick-reference)
+## Core principles (additions to the base guide)
 
-## Core principles
+The base architecture principles (UI → Business → IO, contract-based boundaries, framework-independent use cases) all apply. Three additional constraints govern every decision here:
 
-### Separation of concerns
+**The real-time boundary is inviolable.** The Web Audio callback runs every ~5.8ms at 44.1kHz/256 samples. Nothing on that path may allocate memory, dispatch React state updates, or acquire locks. All state that the audio thread reads must be prepared on the main thread and handed off via lock-free primitives (`AudioParam`, `SharedArrayBuffer` + `Atomics`, or atomic ref swaps).
 
-Business logic is independent from UI frameworks. Use cases perform operations; presentations handle user interaction and rendering.
+**Classes are appropriate for engine objects.** The base guide uses plain functions and module-level singletons. Engine objects — `AudioEngine`, `TrackNode`, `PluginNode` — are inherently stateful: they own `AudioNode` instances, manage lifecycle (connect/disconnect/dispose), and must reconcile diffs between old and new project state. Classes with explicit lifecycle (`initialize`, `dispose`) are the right tool for this. Use classes for anything that owns Web Audio resources.
 
-```mermaid
-graph LR
-    UI[Presentations] --> UC[Use Cases]
-    UC --> R[Repositories]
-    UC --> E[Events]
-```
+**State has four tiers.** All state in the DAW falls into exactly one of:
 
-### Dependency direction
+| Tier                      | Where it lives                                         | Scope              | Examples                                     |
+| ------------------------- | ------------------------------------------------------ | ------------------ | -------------------------------------------- |
+| **Project state**         | `Store<T>` in `stores/` — contract                     | App-wide singleton | tracks, clips, BPM, plugin chains            |
+| **Shared runtime state**  | `Store<T>` in `stores/` — contract                     | App-wide singleton | MIDI device list, engine ready status        |
+| **Persistent UI state**   | `Store<T>` with `LocalStorageStorage` — module-private | Module             | user zoom preference, sidebar open           |
+| **Ephemeral UI state**    | React context — module-private                         | Module subtree     | selected track, active tool, scroll position |
+| **Local component state** | `useState`                                             | Component          | hover state, input draft value               |
+| **Engine state**          | Class instances / `useRef`                             | Singleton          | AudioContext, AudioNodes                     |
 
-Dependencies flow from UI to business to IO:
+Conflating these tiers is the primary source of bugs. Engine state is never in React state or a Store. Context is never shared across modules.
 
-```text
-UI Layer → Business Layer → Data Layer
-```
-
-This prevents circular dependencies and enables isolated unit testing. These constraints are enforced by [boundaries](./boundaries.md).
-
-### Contract-based communication
-
-Domains expose minimal public interfaces through contract folders:
-
-- **Use Cases**: Business operation interfaces
-- **Events**: Cross-domain message contracts
-- **Errors**: Domain error types for cross-module error handling
-- **Views**: UI composition interfaces
-
-### Framework independence
-
-Business logic has no framework dependencies. To achieve this, we minimize the role of third party libraries and prefer pure TypeScript for use cases and transformers. The [React Compiler](https://react.dev/learn/react-compiler) handles memoization automatically, so the presentation layer stays thin -- no manual `useMemo`, `useCallback`, or `React.memo`. This enables:
-
-- Framework migrations without business logic changes
-- Comprehensive unit testing of business operations
-- Reusable logic across different presentation layers. Forms, fetching, and UI composition are described in [forms](./forms.md), [data fetching](./data-fetching.md), and [routing](./routing.md).
+---
 
 ## Module structure
 
-Each domain follows a standardized folder structure with clear public contracts:
+Each domain follows the base structure, extended with engine-specific layers:
 
-```text
-Brand/                         # Domain name
-├── _tests/                    # Test utilities and mocks
-├── models/                    # Domain types
-├── errors/                    # 🔗 CONTRACT: Domain error types
-├── events/                    # 🔗 CONTRACT: Inter-domain events
-├── useCases/                  # 🔗 CONTRACT: Business operations
-├── repositories/              # Data access implementation
-├── transformers/              # Data mapping functions
-├── helpers/                   # Domain utilities
-└── presentations/             # UI layer
-    ├── components/            # Pure components, no business logic
-    ├── hooks/                 # React integration
-    ├── stores/                # UI state management
-    ├── helpers/               # View utilities
-    └── views/                 # 🔗 CONTRACT: Consumes use cases through hooks
+```
+AudioEngine/
+├── _tests/
+├── models/            # Domain types: AudioEngine, AudioGraph, AudioNode descriptors
+├── errors/            # 🔗 CONTRACT: AudioEngineNotReadyError, AudioContextSuspendedError
+├── events/            # 🔗 CONTRACT: EngineStartedEvent, EngineStoppedEvent
+├── useCases/          # 🔗 CONTRACT: initializeEngine, startEngine, setMasterGain
+├── repositories/      # Concrete engine construction: createWebAudioEngine
+├── engine/            # Engine classes: AudioEngine, TrackNode, MixerNode (stateful)
+├── worklets/          # AudioWorkletProcessor implementations (run in audio thread)
+├── transformers/      # Map project state → engine config
+└── presentations/
+    ├── hooks/         # useAudioEngine, useMasterGain, useEngineStatus
+    ├── stores/        # private: persistent UI preferences (LocalStorageStorage only)
+    ├── context/       # private: ephemeral UI state (selection, active panel)
+    └── views/         # 🔗 CONTRACT: views that compose engine hooks
+
+Track/
+├── models/            # Track, TrackKind, TrackInput
+├── errors/            # 🔗 CONTRACT: TrackNotFoundError
+├── events/            # 🔗 CONTRACT: TrackAddedEvent, TrackRemovedEvent, TrackMutedEvent
+├── useCases/          # 🔗 CONTRACT: addTrack, removeTrack, muteTrack, renameTrack
+├── repositories/      # Track API calls (persist to project file)
+├── transformers/      # transformTrack, transformTrackToEngineConfig
+└── presentations/
+    ├── hooks/         # useTracks, useAddTrack, useTrackControls
+    ├── context/       # private: ephemeral UI state (selectedTrackId, activeTool)
+    └── views/         # 🔗 CONTRACT: TrackListView, TrackHeaderView
+
+Transport/
+├── models/            # TransportState, TempoMap, TimeSignature, LoopRange
+├── errors/            # 🔗 CONTRACT: InvalidTempoError
+├── events/            # 🔗 CONTRACT: TransportStartedEvent, TempoChangedEvent
+├── useCases/          # 🔗 CONTRACT: startTransport, stopTransport, setTempo, seekTo
+├── repositories/      # transportEngineAdapter (bridge to AudioEngine)
+└── presentations/
+    ├── hooks/         # useTransportControls, usePlaybackPosition
+    └── views/         # 🔗 CONTRACT: TransportBarView
+
+Mixer/
+├── models/            # MixerChannel, SendRoute, BusConfig
+├── events/            # 🔗 CONTRACT: FaderMovedEvent, PanChangedEvent
+├── useCases/          # 🔗 CONTRACT: setChannelGain, setPan, setSendLevel, addBus
+├── repositories/      # mixerEngineAdapter
+└── presentations/
+    ├── hooks/         # useMixerChannel, useMasterOut, useMeters
+    └── views/         # 🔗 CONTRACT: MixerConsoleView, ChannelStripView
+
+Plugin/
+├── models/            # PluginInstance, PluginParameter, PluginPreset
+├── errors/            # 🔗 CONTRACT: PluginNotFoundError, PluginLoadError
+├── events/            # 🔗 CONTRACT: PluginAddedEvent, ParameterChangedEvent
+├── useCases/          # 🔗 CONTRACT: addPlugin, removePlugin, setParameter, loadPreset
+├── repositories/      # pluginTauriAdapter (Tauri IPC bridge for native VST/AU)
+└── presentations/
+    ├── hooks/         # usePlugin, usePluginParameters
+    └── views/         # 🔗 CONTRACT: PluginRackView, PluginEditorView
+
+Clip/
+├── models/            # Clip, ClipKind (audio|midi), FadeCurve, MidiNote
+├── errors/            # 🔗 CONTRACT: ClipNotFoundError, ClipOverlapError
+├── events/            # 🔗 CONTRACT: ClipAddedEvent, ClipMovedEvent, ClipSplitEvent
+├── useCases/          # 🔗 CONTRACT: addClip, moveClip, resizeClip, splitClip
+├── repositories/      # clipEngineAdapter, clipFileAdapter
+└── presentations/
+    ├── hooks/         # useClips, useMoveClip
+    └── views/         # 🔗 CONTRACT: ArrangementView, ClipView
+
+MIDI/
+├── models/            # MidiEvent, MidiDevice, MidiRoute, MpeState
+├── events/            # 🔗 CONTRACT: NoteOnEvent, NoteOffEvent, MidiDeviceConnectedEvent
+├── useCases/          # 🔗 CONTRACT: connectMidiPort, sendMidiClock, routeMidiInput
+├── repositories/      # midiTauriAdapter (Tauri IPC bridge — midir in Rust)
+└── presentations/
+    ├── hooks/         # useMidiDevices, useMidiInput
+    └── views/         # 🔗 CONTRACT: MidiRoutingView
+
+Project/
+├── models/            # Project, ProjectMeta, ProjectSnapshot
+├── errors/            # 🔗 CONTRACT: ProjectLoadError, ProjectSaveError
+├── events/            # 🔗 CONTRACT: ProjectLoadedEvent, ProjectSavedEvent
+├── useCases/          # 🔗 CONTRACT: loadProject, saveProject, newProject
+├── repositories/      # projectFileAdapter (Tauri fs plugin)
+├── transformers/      # serializeProject, deserializeProject
+└── presentations/
+    ├── hooks/         # useProjectMeta, useRecentProjects
+    └── views/         # 🔗 CONTRACT: ProjectSettingsView
+
+Automation/
+├── models/            # AutomationLane, BreakpointList, AutomationTarget
+├── events/            # 🔗 CONTRACT: AutomationPointAddedEvent, AutomationModeChangedEvent
+├── useCases/          # 🔗 CONTRACT: addBreakpoint, setAutomationMode, deleteBreakpoint
+├── repositories/      # automationEngineAdapter
+└── presentations/
+    ├── hooks/         # useAutomationLane, useAutomationMode
+    └── views/         # 🔗 CONTRACT: AutomationLaneView
+
+Command/                # Cross-cutting: undo/redo, keyboard shortcut dispatch
+├── models/            # AppCommand union type, UndoStack
+├── useCases/          # 🔗 CONTRACT: executeCommand, undo, redo
+└── presentations/
+    └── hooks/         # useUndo, useCommandHistory
 ```
 
-Contract folders can be imported by other domains. All other folders remain domain-private.
+---
 
-## Layer implementation
+## State ownership in detail
 
-### Models
+### Project state — the Zustand store
 
-Define core domain entities. This model should be a subset of the properties needed by the domain, based on the canonical types you provided.
+The project store is the single source of truth for everything that gets serialized. It is a **pure data model** — no AudioNode references, no class instances, no functions.
 
 ```typescript
-// Brand/models/Brand.ts
+// src/modules/Project/stores/projectStore.ts
 
-export type Brand = {
-    id: number;
-    name: string;
-    slug: string;
-    color: string | null;
+import { create } from 'zustand';
+import { subscribeWithSelector } from 'zustand/middleware';
+
+// The complete serializable project state
+export type ProjectState = {
+    meta: ProjectMeta;
+    tracks: ReadonlyArray<Track>;
+    clips: ReadonlyArray<Clip>;
+    transport: TransportConfig; // BPM, time signature, loop range
+    mixer: MixerState; // fader, pan, send levels per track
+    plugins: ReadonlyArray<PluginInstance>;
+    automation: ReadonlyArray<AutomationLane>;
 };
+
+export const useProjectStore = create<ProjectState>()(subscribeWithSelector(() => defaultProjectState));
+
+// Engine reconciliation subscribes to specific slices
+// This is the key pattern: engine reacts to state changes without re-renders
+useProjectStore.subscribe(
+    (state) => state.transport,
+    (transport) => audioEngine.reconcileTransport(transport)
+);
+
+useProjectStore.subscribe(
+    (state) => state.tracks,
+    (tracks, prevTracks) => audioEngine.reconcileTracks(tracks, prevTracks)
+);
 ```
 
-Should not host any and all manner of types. Find contextual locations for auxiliary and presentation types (ie: `/types`, `types.ts`, next to the function declaration that consumes it, etc).
+`subscribeWithSelector` is essential — it lets the audio engine subscribe to specific slices of state without reacting to unrelated changes.
 
-### Repositories
+### Engine state — class instances and refs
 
-Handle IO and external service integration. Always return domain models.
+Engine objects are created once, stored in a module-level singleton or React ref, and never placed in React state, context, or a Store.
 
 ```typescript
-// Brand/repositories/getBrandByIdApi.ts
+// src/modules/AudioEngine/engine/AudioEngine.ts
 
-type GetBrandResponse = {
-    id: number;
-    name: string;
-    brand_color: string;
-};
+export class AudioEngine {
+    private context: AudioContext;
+    private masterGain: GainNode;
+    private trackNodes = new Map<string, TrackNode>();
 
-type GetBrandByIdApiOutput = Promise<Brand | null>;
+    constructor() {
+        // Not created here — lazy init on first user gesture
+    }
 
-export const getBrandByIdApi = inject({ httpClient: HttpClient }, ({ httpClient }) => {
-    return function (id: number, signal: AbortSignal): GetBrandByIdApiOutput {
-        const { result } = await httpClient.get<GetBrandResponse>(`api/brand/${id}`, { signal });
+    async initialize(): Promise<void> {
+        this.context = new AudioContext({ latencyHint: 'playback' });
+        this.masterGain = this.context.createGain();
+        this.masterGain.connect(this.context.destination);
+        await this.context.audioWorklet.addModule('/worklets/transport-processor.js');
+    }
 
-        if (!result.data) {
-            return null;
+    // Called by Zustand subscription when tracks change
+    reconcileTracks(next: ReadonlyArray<Track>, prev: ReadonlyArray<Track>): void {
+        const added = next.filter((t) => !prev.find((p) => p.id === t.id));
+        const removed = prev.filter((t) => !next.find((n) => n.id === t.id));
+
+        for (const track of removed) {
+            this.trackNodes.get(track.id)?.dispose();
+            this.trackNodes.delete(track.id);
         }
+        for (const track of added) {
+            const node = new TrackNode(this.context, track);
+            node.connect(this.masterGain);
+            this.trackNodes.set(track.id, node);
+        }
+    }
 
-        return {
-            id: result.data.id,
-            name: result.data.name,
-            color: result.data.brand_color,
-        };
-    };
+    // Parameter changes: bypass React entirely, update AudioParam directly
+    setTrackGain(trackId: string, gain: number): void {
+        const node = this.trackNodes.get(trackId);
+        if (!node) throw new AudioEngineNotReadyError(trackId);
+        node.gainNode.gain.setTargetAtTime(gain, this.context.currentTime, 0.01);
+    }
+
+    dispose(): void {
+        this.trackNodes.forEach((n) => n.dispose());
+        this.context.close();
+    }
+}
+
+// Module-level singleton — one per app lifetime
+export const audioEngine = new AudioEngine();
+```
+
+### UI state — context and presentation stores
+
+UI state that doesn't belong to the project splits into two sub-tiers based on whether it needs to survive a page refresh.
+
+**Ephemeral UI state** (selection, active tool, scroll position) lives in React context scoped to the module's view subtree. It is created and consumed entirely within `presentations/` and never imported by another module.
+
+```typescript
+// src/modules/Arrangement/presentations/context/ArrangementContext.tsx
+
+type ArrangementContextValue = {
+  selectedTrackId: TrackId | null;
+  selectedClipIds: ReadonlySet<ClipId>;
+  activeTool: 'select' | 'draw' | 'erase' | 'split';
+  scrollPosition: number;
+  setSelectedTrackId: (id: TrackId | null) => void;
+  setActiveTool: (tool: ArrangementTool) => void;
+  setScrollPosition: (pos: number) => void;
+};
+
+const ArrangementContext = createContext<ArrangementContextValue | null>(null);
+
+export const ArrangementProvider = ({ children }: { children: ReactNode }) => {
+  const [selectedTrackId, setSelectedTrackId] = useState<TrackId | null>(null);
+  const [selectedClipIds] = useState<ReadonlySet<ClipId>>(new Set());
+  const [activeTool, setActiveTool] = useState<ArrangementTool>('select');
+  const [scrollPosition, setScrollPosition] = useState(0);
+
+  return (
+    <ArrangementContext value={{
+      selectedTrackId, selectedClipIds, activeTool, scrollPosition,
+      setSelectedTrackId, setActiveTool, setScrollPosition,
+    }}>
+      {children}
+    </ArrangementContext>
+  );
+};
+
+export const useArrangementContext = () => {
+  const ctx = use(ArrangementContext);
+  if (!ctx) throw new Error('useArrangementContext must be used within ArrangementProvider');
+  return ctx;
+};
+```
+
+**Persistent UI state** (zoom level, sidebar open, panel layout — anything that should survive a refresh) lives in a `Store<T>` with `LocalStorageStorage` inside `presentations/stores/`. This is the only acceptable use of a store inside `presentations/`. It is still module-private — never imported by another module.
+
+```typescript
+// src/modules/Arrangement/presentations/stores/arrangementPreferencesStore.ts
+
+export const arrangementPreferencesStore = new Store<ArrangementPreferences>(Container.getInstance().get(Logger), {
+    storage: new LocalStorageStorage('arrangement-preferences'),
+    initialData: {
+        zoomLevel: 100, // pixels per beat
+        snapToGrid: true,
+    },
 });
 ```
 
-### Transformers
+---
 
-Convert external or persistence-layer shapes into domain models. Keep pure and deterministic. Place non-trivial mappings here to keep repositories focused on IO and use cases expressive. For simpler transformations, inlining is acceptable.
+## Layer implementation: DAW-specific patterns
+
+### Models
+
+Models are plain TypeScript types. They describe shapes, not behavior. Engine resources are never in models.
 
 ```typescript
-// Brand/transformers/transformBrand.ts
+// src/modules/Track/models/Track.ts
 
-type TransformBrandInput = {
-    id: number;
+export type TrackKind = 'audio' | 'midi' | 'instrument' | 'bus' | 'master';
+
+export type Track = {
+    id: string;
     name: string;
-    brand_color: string;
+    kind: TrackKind;
+    color: string;
+    isMuted: boolean;
+    isSoloed: boolean;
+    isArmed: boolean;
+    gainDb: number;
+    pan: number; // -1 to 1
+    inputSource: string | null;
+    pluginChain: ReadonlyArray<string>; // plugin instance IDs, ordered
 };
 
-export const transformBrand = (brand: TransformBrandInput): Brand => {
-    return {
-        id: brand.id,
-        name: brand.name,
-        color: brand.brand_color,
-    };
+// src/modules/Transport/models/TransportConfig.ts
+
+export type TransportConfig = {
+    bpm: number;
+    timeSignatureNumerator: number;
+    timeSignatureDenominator: number;
+    loopEnabled: boolean;
+    loopStartBeats: number;
+    loopEndBeats: number;
+};
+```
+
+### Repositories — two kinds
+
+DAW repositories fall into two patterns.
+
+**File/API repositories** follow the base pattern (HTTP client, Tauri invoke) and return domain models.
+
+**Engine adapter repositories** bridge between a use case and the audio engine. They are the **only** place where use cases touch engine instances. This keeps engine imports out of use cases.
+
+```typescript
+// src/modules/Mixer/repositories/mixerEngineAdapter.ts
+
+// The adapter knows about the audioEngine singleton and translates
+// domain calls into engine calls. Use cases import this, not audioEngine directly.
+
+export const setChannelGainInEngine = (trackId: string, gainDb: number): void => {
+    const gain = dbToLinear(gainDb);
+    audioEngine.setTrackGain(trackId, gain);
+};
+
+export const setChannelPanInEngine = (trackId: string, pan: number): void => {
+    audioEngine.setTrackPan(trackId, pan);
+};
+```
+
+**Tauri adapter repositories** wrap `invoke` and Tauri event listeners for Rust-backed features.
+
+```typescript
+// src/modules/MIDI/repositories/midiTauriAdapter.ts
+
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
+import type { MidiDevice, MidiEvent } from '../models/MidiEvent';
+
+export const listMidiPorts = (): Promise<MidiDevice[]> => {
+    return invoke('list_midi_ports');
+};
+
+export const connectMidiPort = (portIndex: number): Promise<void> => {
+    return invoke('connect_midi_port', { portIndex });
+};
+
+export const onMidiMessage = (handler: (event: MidiEvent) => void): Promise<() => void> => {
+    return listen<MidiEvent>('midi-message', (e) => handler(e.payload));
 };
 ```
 
 ### Use cases
 
-Implement business operations with clear interfaces:
+Use cases contain business logic only. They may call repositories (including engine adapters) but never import engine classes directly. They always dispatch domain events after mutating state.
 
 ```typescript
-// Brand/useCases/getBrandById.ts
+// src/modules/Transport/useCases/setTempo.ts
 
-type GetBrandByIdOutput = Promise<Brand | null>;
+import { inject } from '#/helpers/DependencyInjector/inject';
+import { transportEngineAdapter } from '../repositories/transportEngineAdapter';
+import { eventBus } from '#/app/eventBus';
+import { TempoChangedEvent } from '../events/TempoChangedEvent';
+import { InvalidTempoError } from '../errors/InvalidTempoError';
+import { useProjectStore } from '#/modules/Project/stores/projectStore';
 
-export const getBrandById = inject({ getBrandByIdApi }, ({ getBrandByIdApi }) => {
-    return async function (id: number, signal: AbortSignal): GetBrandByIdOutput {
-        const data = await getBrandByIdApi(id, signal);
+export const setTempo = inject(
+    { transportEngineAdapter },
+    ({ transportEngineAdapter }) =>
+        async (bpm: number): Promise<void> => {
+            if (bpm < 20 || bpm > 300) {
+                throw new InvalidTempoError(bpm);
+            }
 
-        if (!data) {
-            return null;
+            // 1. Update project state (serializable, triggers engine reconciliation via subscription)
+            const prev = projectStore.value?.transport.bpm ?? 120;
+            projectStore.set({
+                ...projectStore.value!,
+                transport: { ...projectStore.value!.transport, bpm },
+            });
+
+            // 2. Apply to engine immediately for zero-latency response
+            transportEngineAdapter.setTempo(bpm);
+
+            // 3. Emit event for other domains (Analytics, MIDI clock, etc.)
+            eventBus.emit(new TempoChangedEvent({ previousBpm: prev, newBpm: bpm }));
         }
+);
+```
 
-        return data;
-    };
+### The reconciliation pattern for undo/redo
+
+When a user performs undo, the project store is restored to its previous snapshot. The engine must catch up. This works automatically because the engine subscribes to store slices.
+
+```typescript
+// src/modules/Command/useCases/undo.ts
+
+export const undo = (): void => {
+    const snapshot = undoStack.pop();
+    if (!snapshot) return;
+
+    // Restore entire project state — engine subscriptions fire automatically
+    useProjectStore.setState(snapshot);
+};
+```
+
+This is the key architectural insight: **undo/redo is free** because the engine reconciles to whatever state the store contains.
+
+### Transformers
+
+Transformers map between domain models and engine configuration. They are pure functions with no side effects.
+
+```typescript
+// src/modules/Track/transformers/transformTrackToEngineConfig.ts
+
+export type TrackEngineConfig = {
+    id: string;
+    gainLinear: number;
+    pan: number;
+    isMuted: boolean;
+    isSoloed: boolean;
+    pluginChain: ReadonlyArray<string>;
+};
+
+export const transformTrackToEngineConfig = (track: Track): TrackEngineConfig => ({
+    id: track.id,
+    gainLinear: isMuted ? 0 : dbToLinear(track.gainDb),
+    pan: track.pan,
+    isMuted: track.isMuted,
+    isSoloed: track.isSoloed,
+    pluginChain: track.pluginChain,
 });
-```
-
-When a use case is consumed by another module, its output type becomes a cross-module contract. In that case, the use case must export an explicit DTO type rather than returning an internal model. This keeps the module's models private and gives consumers a stable type to import from `useCases/` (a contract folder). Within the same module, returning models directly is accepted.
-
-#### Cross-module DTO example
-
-Module A's use case exports a DTO - a subset of its internal model:
-
-```typescript
-// Brand/useCases/getBrand.ts
-
-export type BrandDto = { id: number; name: string; isPublished: boolean };
-export type GetBrandUsecase = (input: GetBrandInput) => Promise<BrandDto>;
-export const getBrand: GetBrandUsecase ...
-```
-
-Module B's transformer imports the DTO across the boundary and maps it to a local type:
-
-```typescript
-// Guideline/transformers/transformBrandToGuidelineSummary.ts
-
-import { type BrandDto } from '#/modules/Brand/useCases/getBrand';
-
-type GuidelineBrandSummary = { brandId: number; isPublished: boolean };
-
-export const transformBrandToGuidelineSummary = (brand: BrandDto): GuidelineBrandSummary => ({
-    brandId: brand.id,
-    isPublished: brand.isPublished,
-});
-```
-
-Module B's use case calls the cross-module use case and consumes the transformed result:
-
-```typescript
-// Guideline/useCases/getGuidelineSummary.ts
-
-import { getBrand } from '#/modules/Brand/useCases/getBrand';
-import { transformBrandToGuidelineSummary } from '#/modules/Guideline/transformers/transformBrandToGuidelineSummary';
-
-// inside the use case:
-const brand = await getBrand({ id: guideline.brandId });
-const brandSummary = transformBrandToGuidelineSummary(brand);
-
-if (!brandSummary.isPublished) {
-    return;
-}
-
-...
-```
-
-- `Brand/models/Brand.ts` is **never imported** by Module B - the DTO is the only cross-module type contract.
-- The transformer stays pure - it consumes a DTO and produces a module-local type.
-- The use case consumes the transformed result in its own business logic rather than passing it through.
-
-### Errors
-
-Define typed error classes that repositories throw and other modules catch. Place error classes in an `errors/` folder, this makes them part of the module's public contract so consumers can import and `instanceof`-check them without coupling to internal repositories.
-
-```typescript
-// Brand/errors/BrandNotFoundError.ts
-
-export class BrandNotFoundError extends Error {
-    readonly name = 'BrandNotFoundError';
-
-    constructor(readonly brandId: number) {
-        super(`Brand ${brandId} not found`);
-    }
-}
-```
-
-Example: Repositories throw domain errors; use cases and presentations catch them by importing from the `errors/` contract folder:
-
-```typescript
-// Guideline/useCases/getGuidelineSummary.ts
-
-import { BrandNotFoundError } from '#/modules/Brand/errors/BrandNotFoundError';
-
-try {
-    const brand = await getBrand({ id: guideline.brandId });
-} catch (error) {
-    if (error instanceof BrandNotFoundError) {
-        // handle known cross-module error
-    }
-    throw error;
-}
-```
-
-### Events
-
-Enable cross-domain communication. For a detailed guide, see the [events](./events.md) documentation.
-
-```typescript
-// Brand/events/BrandCreatedEvent.ts
-
-export class BrandCreatedEvent extends DomainEvent<{
-    readonly brandId: number;
-    readonly createdBy: number;
-    readonly createdAt: Date;
-}> {}
 ```
 
 ### Presentations
 
-Implement UI components and React integration. For server state, we use [TanStack Query](./data-fetching.md) and never fetch data directly in `useEffect`. The React Compiler handles memoization, so hooks and components are written without manual `useMemo`/`useCallback`.
+**Hooks** connect use cases to React. They never import engine classes or AudioNodes directly.
 
 ```typescript
-// Brand/presentations/hooks/useBrand.ts
+// src/modules/Mixer/presentations/hooks/useMixerChannel.ts
 
-export const useBrand = (id: number) => {
-    const { data: brand } = useSuspenseQuery({
-        queryKey: ['brand', id],
-        queryFn: () => getBrandById(id),
+export const useMixerChannel = (trackId: string) => {
+    const channel = useProjectStore((s) => s.tracks.find((t) => t.id === trackId));
+
+    const { mutateAsync: setGain } = useMutation({
+        // During drag: set AudioParam directly (zero latency, no re-render)
+        mutationFn: (gainDb: number) => setChannelGain(trackId, gainDb),
     });
 
-    return { brand };
-};
-
-useBrand.getKey = (id: number) => ['brand', id];
-```
-
-## Dependency rules
-
-### Cross-module dependencies
-
-Modules can only import from contract folders of other modules:
-
-```typescript
-// ✅ Allowed
-import { getBrandById } from '#/modules/Brand/useCases/getBrandById';
-
-// ❌ Forbidden (importing from a non-contract folder)
-import { type Brand } from '#/modules/Brand/models/Brand';
-import { getBrandByIdApi } from '#/modules/Brand/repositories/getBrandByIdApi';
-```
-
-### Intra-module dependencies
-
-Within a module, dependencies follow layer boundaries:
-
-```text
-presentations → useCases → repositories
-presentations → models
-useCases → models
-repositories → models
-```
-
-### Application layer integration
-
-The `application/` layer can import from `src/modules/` contract folders but not vice versa:
-
-```typescript
-// application/ code can import from src/modules/
-import { getBrandById } from '#/modules/Brand/useCases/getBrandById';
-
-// src/modules/ cannot import from application/
-// This prevents business logic from depending on legacy code
-```
-
-## Testing approach
-
-A key benefit of this architecture is its inherent testability. The strict separation of concerns allows each layer to be tested in isolation:
-
-- **Use Cases**: As pure TypeScript functions, they can be unit-tested without any UI framework, ensuring the core business logic is robust.
-- **Repositories**: These can be tested by mocking their external dependencies (e.g., GraphQL executors or HTTP clients) to verify data transformation logic.
-- **Presentations**: UI components can be tested independently by providing mock data, without needing to run the underlying business logic.
-
-This approach simplifies test setup and leads to faster, more reliable tests. For a comprehensive guide with detailed examples for each layer, see the [testing](./testing.md) documentation.
-
-## Implementation guidelines
-
-### Domain boundaries
-
-Create domains based on business capabilities. It's better to favor smaller, more focused domains over large, monolithic ones.
-
-- **Authorization**: Handles permissions, roles, and access control policies.
-- **Brand**: Brand information and asset management
-- **User**: User and permission management
-- **Analytics**: Usage tracking and reporting
-- **Tracking**: Event logging and audit trails
-- **File**: Handles file uploading.
-
-This granularity makes each domain easier to understand, test, and maintain.
-
-#### Cross-module boundaries
-
-Modules can only import from the public contract folders of other modules. Any attempt to import from an internal folder (like `repositories` or `components`) is forbidden.
-
-```mermaid
-graph TD
-    subgraph ModuleA
-        A_UC[useCases]
-        A_Repo[repositories]
-    end
-
-    subgraph ModuleB
-        B_UC[useCases]
-        B_View[presentations/views]
-        B_Comp[presentations/components]
-
-        B_View --> B_UC
-        B_View --> B_Comp
-    end
-
-    B_UC -- ✅ Allowed --> A_UC
-    B_Comp -- ❌ Forbidden --> A_Repo
-
-    style A_UC fill:#c8e6c9
-    style B_View fill:#e1f5fe
-    style B_Comp fill:#fce4ec
-    style A_Repo fill:#fce4ec
-```
-
-- Only the following folders are considered contract surfaces and may be imported by other modules:
-    - `errors/`
-    - `events/`
-    - `useCases/`
-    - `presentations/views/`
-- ❌ Any imports across modules to other folders (e.g., `models/`, `repositories/`, `transformers/`, `presentations/components/`, `presentations/stores/`, `helpers/`) are forbidden. Each module owns its own types; integration happens through use cases, events, and errors, with transformers mapping at the boundaries.
-
-#### Intra-module boundaries
-
-Within a single module, dependencies must flow from the presentation layer down to the data layer. Direct jumps (e.g., a component importing a repository) are not allowed.
-
-```mermaid
-graph TD
-    subgraph Module
-        Pres[presentations]
-        UC[useCases]
-        Repo[repositories]
-    end
-
-    Pres -- ✅ Allowed --> UC
-    UC -- ✅ Allowed --> Repo
-    Pres -- ❌ Forbidden --> Repo
-
-    style Pres fill:#e1f5fe
-    style UC fill:#fff9c4
-    style Repo fill:#c8e6c9
-```
-
-- ✅ Only `presentations/*` may import from `presentations/stores/` within the same module.
-- ✅ Only `useCases` and `repositories` may import from `repositories/` within the same module.
-- ❌ `presentations/*` cannot import from `repositories/` directly.
-- ❌ Transformers must remain pure and may not import from `repositories`, `useCases`, or `presentations/stores`.
-
-##### Practical examples
-
-```typescript
-// ✅ Allowed: cross-module import from contract folders
-import { updateUserPermissions } from '#/modules/User/useCases/updateUserPermissions';
-
-// ❌ Forbidden: cross-module import from non-contract folders
-import { type Brand } from '#/modules/Brand/models/Brand';
-import { getBrandByIdApi } from '#/modules/Brand/repositories/getBrandByIdApi';
-
-// ✅ Allowed: presentations/view consuming use cases
-import { getBrandById } from '#/modules/Brand/useCases/getBrandById';
-
-// ❌ Forbidden: components accessing stores directly
-import { getBrandStore } from '#/modules/Brand/presentations/stores/brandStore';
-```
-
-#### Application vs src
-
-The legacy `application` directory can consume code from the modern `src` modules, but not the other way around. This prevents new, clean code from becoming dependent on legacy implementations.
-
-```mermaid
-graph TD
-    App[application]
-    Src[src]
-
-    App -- ✅ Allowed --> Src
-    Src -- ❌ Forbidden --> App
-
-    style App fill:#fce4ec
-    style Src fill:#c8e6c9
-```
-
-- ❌ `src` cannot import from `application`.
-- ✅ `application` may import only from `src/helpers` and the contract folders listed above (`errors/`, `events/`, `useCases/`, `presentations/views/`).
-
-#### Testing boundaries
-
-- ❌ Do not import from `*.spec.*` or `*.test.*` files.
-
-### Contract design
-
-Keep public interfaces minimal and stable:
-
-```typescript
-// ✅ Stable interface
-export const searchBrands = (query: BrandSearchQuery): Promise<Brand[]> => {
-    return Promise<Brand[]>;
-};
-
-// ❌ Leaking implementation details
-export const searchBrands = (esQuery: ElasticsearchQuery): Promise<ESResponse> => {
-    return Promise<ESResponse>;
+    return { channel, setGain };
 };
 ```
 
-### Event patterns
-
-Use events for cross-domain coordination:
-
-```mermaid
-sequenceDiagram
-    participant SD as Source Domain
-    participant EB as Event Bus
-    participant RD as Receiver Domain
-
-    SD->>EB: emit(new SomethingHappened(payload))
-    EB-->>RD: on(SomethingHappened, handler)
-    RD->>RD: handle with pure logic
-```
+**Real-time meters** bypass React entirely using `requestAnimationFrame` and canvas refs.
 
 ```typescript
-// When user publishes a brand
-eventBus.emit(new BrandCreatedEvent({ brandId, userId }));
+// src/modules/Mixer/presentations/hooks/useMeterDisplay.ts
 
-// Analytics domain can react without direct coupling
-eventBus.on(BrandCreatedEvent, trackBrandCreation);
+export const useMeterDisplay = (trackId: string, canvasRef: RefObject<HTMLCanvasElement>) => {
+    useEffect(() => {
+        const analyser = audioEngine.getAnalyserNode(trackId);
+        if (!analyser || !canvasRef.current) return;
+
+        const data = new Float32Array(analyser.fftSize);
+        let rafId: number;
+
+        const draw = () => {
+            analyser.getFloatTimeDomainData(data);
+            const rms = Math.sqrt(data.reduce((s, v) => s + v * v, 0) / data.length);
+            drawMeter(canvasRef.current!, rms);
+            rafId = requestAnimationFrame(draw);
+        };
+
+        rafId = requestAnimationFrame(draw);
+        return () => cancelAnimationFrame(rafId);
+    }, [trackId]);
+};
 ```
 
-## Quick reference
+**Transport position display** uses the same pattern — an imperative DOM ref updated at 60fps, not React state.
 
-### Contract folders
+```typescript
+// src/modules/Transport/presentations/hooks/usePlaybackPosition.ts
 
-These folders define public APIs that other domains can import:
+export const usePlaybackPosition = (displayRef: RefObject<HTMLElement>) => {
+    useEffect(() => {
+        let rafId: number;
 
-| Folder                 | Purpose             | Import Pattern                                                               |
-| ---------------------- | ------------------- | ---------------------------------------------------------------------------- |
-| `errors/`              | Domain error types  | `import { BrandError } from '#/modules/Domain/errors/BrandError'`            |
-| `useCases/`            | Business operations | `import { getBrand } from '#/modules/Domain/useCases/getBrand'`              |
-| `events/`              | Event definitions   | `import { BrandEvent } from '#/modules/Domain/events/BrandEvent'`            |
-| `presentations/views/` | UI compositions     | `import { BrandView } from '#/modules/Domain/presentations/views/BrandView'` |
+        const update = () => {
+            const positionSeconds = audioEngine.getCurrentPosition();
+            if (displayRef.current) {
+                displayRef.current.textContent = formatTimecode(positionSeconds);
+            }
+            rafId = requestAnimationFrame(update);
+        };
 
-### Internal folders
+        rafId = requestAnimationFrame(update);
+        return () => cancelAnimationFrame(rafId);
+    }, []);
+};
+```
 
-These folders are implementation details and should not be imported by other domains:
+---
 
-- `models/` - Domain types (each module owns its own types)
-- `repositories/` - Data access implementation
-- `transformers/` - Data mapping functions
-- `helpers/` - Domain utilities
-- `presentations/components/` - Internal UI components
-- `presentations/hooks/` - Internal React hooks
-- `presentations/stores/` - Internal state management
+## Cross-domain interaction patterns
+
+### Pattern A: Event-driven (async, no return value needed)
+
+One domain emits, others subscribe. Neither side knows about the other.
+
+```
+Track use case → emits TrackAddedEvent
+  ↳ AudioEngine module: reconciles track into audio graph
+  ↳ Analytics module: logs track creation
+  ↳ Command module: records to undo stack
+```
+
+### Pattern B: Direct use case import (sync, return value needed)
+
+Allowed only between contract folders. Module B's use case calls Module A's use case.
+
+```typescript
+// Clip use case validating track existence before adding clip
+import { getTrackById } from '#/modules/Track/useCases/getTrackById';
+
+export const addClip = async (input: AddClipInput): Promise<Clip> => {
+    const track = await getTrackById(input.trackId); // cross-module, allowed
+    if (!track.isArmed && input.isRecording) throw new TrackNotArmedError(input.trackId);
+    // ...
+};
+```
+
+### Pattern C: Zustand selector (read-only, presentation layer)
+
+Presentations read cross-domain state directly via the shared project store.
+
+```typescript
+// Transport bar showing track count (Transport domain reading Track domain state)
+const trackCount = useProjectStore((s) => s.tracks.length);
+```
+
+### Pattern D: Tauri IPC (Rust services)
+
+Repositories call Tauri commands for MIDI, file I/O, and plugin hosting. The result is transformed into domain types before reaching use cases.
+
+```typescript
+// Plugin domain repository
+export const loadPluginFromRust = async (path: string): Promise<PluginInstance> => {
+    const raw = await invoke<RustPluginResponse>('load_plugin', { path });
+    return transformRustPluginToInstance(raw);
+};
+```
+
+---
+
+## Domain event catalog
+
+Every event extends `DomainEvent<TPayload>` and lives in the emitting domain's `events/` folder.
+
+```typescript
+// Transport
+class TransportStartedEvent extends DomainEvent<{ positionBeats: number }> {}
+class TransportStoppedEvent extends DomainEvent<{ positionBeats: number }> {}
+class TempoChangedEvent extends DomainEvent<{ previousBpm: number; newBpm: number }> {}
+class LoopRangeChangedEvent extends DomainEvent<{ startBeats: number; endBeats: number }> {}
+
+// Track
+class TrackAddedEvent extends DomainEvent<{ trackId: string; kind: TrackKind }> {}
+class TrackRemovedEvent extends DomainEvent<{ trackId: string; kind: TrackKind; name: string }> {}
+class TrackMutedEvent extends DomainEvent<{ trackId: string; isMuted: boolean }> {}
+class TrackArmedEvent extends DomainEvent<{ trackId: string; isArmed: boolean }> {}
+
+// Clip
+class ClipAddedEvent extends DomainEvent<{ clipId: string; trackId: string; startBeats: number }> {}
+class ClipMovedEvent extends DomainEvent<{ clipId: string; fromTrack: string; toTrack: string; startBeats: number }> {}
+class ClipSplitEvent extends DomainEvent<{ originalId: string; rightId: string; splitPoint: number }> {}
+
+// Plugin
+class PluginAddedEvent extends DomainEvent<{ pluginId: string; trackId: string }> {}
+class PluginRemovedEvent extends DomainEvent<{ pluginId: string; trackId: string }> {}
+class ParameterChangedEvent extends DomainEvent<{ pluginId: string; paramId: string; value: number }> {}
+
+// MIDI (from Rust via Tauri — re-emitted as DomainEvents)
+class NoteOnEvent extends DomainEvent<{ channel: number; note: number; velocity: number; deviceId: string }> {}
+class NoteOffEvent extends DomainEvent<{ channel: number; note: number; deviceId: string }> {}
+class MidiDeviceConnectedEvent extends DomainEvent<{ deviceId: string; name: string }> {}
+
+// Project
+class ProjectLoadedEvent extends DomainEvent<{ projectId: string; name: string }> {}
+class ProjectSavedEvent extends DomainEvent<{ projectId: string; path: string }> {}
+```
+
+---
+
+## AudioContext lifecycle
+
+The `AudioContext` requires a user gesture to start and must be managed carefully across the app lifecycle.
+
+```typescript
+// src/modules/AudioEngine/useCases/initializeEngine.ts
+
+export const initializeEngine = async (): Promise<void> => {
+    // Must be called from a user interaction handler (click, keydown, etc.)
+    await audioEngine.initialize();
+    engineStatusStore.set({ status: 'ready', sampleRate: audioEngine.sampleRate });
+    eventBus.emit(new EngineStartedEvent({ sampleRate: audioEngine.sampleRate }));
+};
+
+// src/modules/AudioEngine/presentations/hooks/useEngineInit.ts
+// Called once from the root layout on first meaningful user interaction
+
+export const useEngineInit = () => {
+    const status = useSyncExternalStore(
+        (onChange) => engineStatusStore.subscribe(() => onChange()),
+        () => engineStatusStore.value?.status ?? 'uninitialized',
+        () => 'uninitialized'
+    );
+
+    const initialize = () => {
+        if (status !== 'uninitialized') return;
+        initializeEngine().catch(console.error);
+    };
+
+    return { status, initialize };
+};
+```
+
+---
+
+## Undo/redo via the Command domain
+
+The `Command` domain owns the undo stack. Every mutating use case goes through it.
+
+```typescript
+// src/modules/Command/models/AppCommand.ts
+
+// Each command captures the before/after state delta
+export type AppCommand =
+    | { type: 'ADD_TRACK'; payload: Track }
+    | { type: 'REMOVE_TRACK'; payload: { trackId: string; snapshot: Track } }
+    | { type: 'MOVE_CLIP'; payload: { clipId: string; from: ClipPosition; to: ClipPosition } }
+    | { type: 'SET_TEMPO'; payload: { previousBpm: number; newBpm: number } }
+    | { type: 'COMPOUND'; commands: AppCommand[] }; // for multi-step operations
+
+// src/modules/Command/useCases/executeCommand.ts
+
+export const executeCommand = (command: AppCommand): void => {
+    applyCommand(command); // mutates projectStore
+    undoStack.push(command);
+    redoStack.clear(); // new action clears redo history
+};
+
+export const undo = (): void => {
+    const command = undoStack.pop();
+    if (!command) return;
+    reverseCommand(command); // restores projectStore slice
+    redoStack.push(command);
+};
+```
+
+Continuous operations (fader drag, clip resize) use **coalescing**: the command is not committed until the gesture ends.
+
+```typescript
+// src/modules/Mixer/presentations/hooks/useFaderDrag.ts
+
+export const useFaderDrag = (trackId: string) => {
+    const isDragging = useRef(false);
+    const startGain = useRef(0);
+
+    const onDragStart = (gainDb: number) => {
+        isDragging.current = true;
+        startGain.current = gainDb;
+    };
+
+    const onDrag = (gainDb: number) => {
+        // Direct engine update — no store mutation, no re-render during drag
+        audioEngine.setTrackGain(trackId, dbToLinear(gainDb));
+    };
+
+    const onDragEnd = (gainDb: number) => {
+        isDragging.current = false;
+        // Now commit to store and undo stack as a single action
+        executeCommand({
+            type: 'SET_CHANNEL_GAIN',
+            payload: { trackId, previousGainDb: startGain.current, gainDb },
+        });
+    };
+
+    return { onDragStart, onDrag, onDragEnd };
+};
+```
+
+---
+
+## Dependency rules (additions to base guide)
+
+### Models and stores are module-private — always
+
+This is the most commonly violated rule and must be stated explicitly.
+
+**A module's `models/` folder is never imported by another module.** Models are internal implementation details. They exist to give the module's own use cases, repositories, and transformers a well-typed internal language. They are not a public API. If another module needs a type from your domain, you export a **DTO from `useCases/`** — a deliberate, minimal subset — not the model itself.
+
+**A module's `presentations/stores/` folder is never imported by another module.** Stores hold UI state that belongs to one domain. If a second domain's presentation needs that state, either it reads from `projectStore` (for project data) or it calls a use case that returns a DTO (for domain data). It does not reach into another module's store.
+
+The reason this matters: models and stores are subject to internal refactoring at any time. If another module imports them directly, a rename, restructure, or split of the internal model silently breaks that consumer. Contracts (use cases, events, errors) are versioned surfaces — you control when they change. Internals are not.
+
+```typescript
+// ❌ Forbidden — importing a model from another module
+import type { Track } from '#/modules/Track/models/Track';
+
+// ❌ Forbidden — importing a store from another module
+import { trackSelectionStore } from '#/modules/Track/presentations/stores/trackSelectionStore';
+
+// ❌ Forbidden — importing a transformer from another module
+import { transformTrack } from '#/modules/Track/transformers/transformTrack';
+
+// ❌ Forbidden — importing a repository from another module
+import { getTrackByIdApi } from '#/modules/Track/repositories/getTrackByIdApi';
+
+// ❌ Forbidden — importing a hook from another module
+import { useTrackControls } from '#/modules/Track/presentations/hooks/useTrackControls';
+
+// ✅ Allowed — importing a DTO type exported from a use case (contract folder)
+import type { TrackDto } from '#/modules/Track/useCases/getTrackById';
+
+// ✅ Allowed — calling a use case (contract folder)
+import { getTrackById } from '#/modules/Track/useCases/getTrackById';
+
+// ✅ Allowed — importing an error (contract folder)
+import { TrackNotFoundError } from '#/modules/Track/errors/TrackNotFoundError';
+
+// ✅ Allowed — importing an event (contract folder)
+import { TrackAddedEvent } from '#/modules/Track/events/TrackAddedEvent';
+
+// ✅ Allowed — importing a view (contract folder)
+import { TrackListView } from '#/modules/Track/presentations/views/TrackListView';
+
+// ✅ Allowed — importing a shared primitive (not a module boundary at all)
+import type { TrackId } from '#/shared/types/ids';
+```
+
+The only folders that may be imported by other modules are: `useCases/`, `events/`, `errors/`, `presentations/views/`. Every other folder is private.
+
+---
+
+### Engine objects
+
+`engine/` folders are **internal** to their domain. No other domain imports from `AudioEngine/engine/` directly. All cross-domain engine access goes through `useCases/` contracts.
+
+```typescript
+// ❌ Forbidden — importing engine class from another domain
+import { audioEngine } from '#/modules/AudioEngine/engine/AudioEngine';
+
+// ✅ Allowed — calling a use case that delegates to the engine
+import { setMasterGain } from '#/modules/AudioEngine/useCases/setMasterGain';
+```
+
+### Real-time code
+
+AudioWorklet processors in `worklets/` are isolated modules. They communicate with the main thread only via `MessagePort` or `SharedArrayBuffer + Atomics`. They never import from `useCases/` or `repositories/`.
+
+### Tauri adapters
+
+Tauri IPC (`invoke`, `listen`) is isolated to `repositories/`. Use cases never call `invoke` directly.
+
+```typescript
+// ❌ Forbidden
+import { invoke } from '@tauri-apps/api/core';
+export const loadPlugin = () => invoke('load_plugin', ...);
+
+// ✅ Correct — invoke only in repository
+export const loadPlugin = inject(
+  { pluginTauriAdapter },
+  ({ pluginTauriAdapter }) => (path: string) => pluginTauriAdapter.loadPlugin(path),
+);
+```
+
+---
+
+## Cross-module sharing
+
+### 1. Shared primitive types — the `shared/` layer
+
+Many domains need the same identifiers and units. Rather than having `Track` own `TrackId` and forcing every other domain to import from `Track/models/`, place all cross-cutting primitives in a dedicated `shared/` folder outside `modules/`. This is not a domain — it has no use cases, no events, no repositories. It is imported by any module that needs it.
+
+```
+src/
+├── shared/
+│   ├── types/
+│   │   ├── ids.ts          # TrackId, ClipId, PluginId, ProjectId (branded types)
+│   │   ├── time.ts         # Beats, Seconds, Samples, Bpm, SampleRate
+│   │   ├── audio.ts        # Decibels, LinearGain, Pan (−1 to 1)
+│   │   └── midi.ts         # MidiNote (0–127), MidiChannel (0–15), MidiVelocity
+│   └── helpers/
+│       └── conversions.ts  # dbToLinear, beatsToSeconds, samplesToSeconds
+└── modules/
+    └── ...
+```
+
+Branded types prevent accidental mixing of structurally identical values:
+
+```typescript
+// src/shared/types/ids.ts
+
+declare const __brand: unique symbol;
+type Brand<T, B> = T & { [__brand]: B };
+
+export type TrackId = Brand<string, 'TrackId'>;
+export type ClipId = Brand<string, 'ClipId'>;
+export type PluginId = Brand<string, 'PluginId'>;
+
+// Cast at the boundary where IDs originate (repositories, factories)
+export const toTrackId = (id: string): TrackId => id as TrackId;
+export const toClipId = (id: string): ClipId => id as ClipId;
+export const toPluginId = (id: string): PluginId => id as PluginId;
+
+// src/shared/types/time.ts
+
+export type Beats = Brand<number, 'Beats'>;
+export type Seconds = Brand<number, 'Seconds'>;
+export type Samples = Brand<number, 'Samples'>;
+export type Bpm = Brand<number, 'Bpm'>;
+
+export const toBeats = (n: number): Beats => n as Beats;
+export const toSeconds = (n: number): Seconds => n as Seconds;
+
+// src/shared/types/audio.ts
+
+export type Decibels = Brand<number, 'Decibels'>;
+export type LinearGain = Brand<number, 'LinearGain'>;
+export type Pan = Brand<number, 'Pan'>; // −1 to 1
+
+// src/shared/helpers/conversions.ts
+
+import type { Decibels, LinearGain } from '../types/audio';
+
+export const dbToLinear = (db: Decibels): LinearGain => Math.pow(10, db / 20) as LinearGain;
+
+export const linearToDb = (linear: LinearGain): Decibels => (20 * Math.log10(linear)) as Decibels;
+```
+
+**Rule:** `shared/` may only contain pure types and pure functions. It never imports from `modules/`. Modules import from `shared/` freely — it is not a domain boundary violation.
+
+---
+
+### 2. DTOs vs models — the distinction and when it matters
+
+The distinction tracks the direction of the cross-module dependency:
+
+| Situation                                                                    | Use                                                                                   |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Module uses a type internally (own models, own use cases, own presentations) | **Internal model** — never exported across modules                                    |
+| Module A's use case result is consumed by Module B's use case or transformer | **DTO exported from `useCases/`** — the only cross-module type contract               |
+| Module A's event carries data that Module B needs                            | **Event payload type exported from `events/`** — consumed via `DomainEvent<TPayload>` |
+| Two modules both need the same identifier or unit                            | **Primitive from `shared/types/`**                                                    |
+
+A model stays internal to its module. A DTO is what that module chooses to expose — a deliberate, minimal, stable subset. The DTO lives in the `useCases/` file that produces it, so consuming modules import from a contract folder:
+
+```typescript
+// src/modules/Track/useCases/getTrackById.ts
+
+// Internal model — Track lives in Track/models/ and never crosses the boundary
+import type { Track } from '../models/Track';
+import type { TrackId } from '#/shared/types/ids';
+
+// DTO — the contract exported to other modules
+export type TrackDto = {
+    id: TrackId;
+    name: string;
+    kind: TrackKind;
+    isMuted: boolean;
+    isArmed: boolean;
+};
+
+export type GetTrackByIdUseCase = (id: TrackId) => Promise<TrackDto>;
+
+export const getTrackById: GetTrackByIdUseCase = async (id) => {
+    const track = await trackRepository.findById(id);
+    if (!track) throw new TrackNotFoundError(id);
+    // Map internal model → DTO before returning
+    return {
+        id: track.id,
+        name: track.name,
+        kind: track.kind,
+        isMuted: track.isMuted,
+        isArmed: track.isArmed,
+        // gainDb, pluginChain, etc. are intentionally excluded — not this caller's concern
+    };
+};
+```
+
+The consuming module maps the DTO to its own local type immediately:
+
+```typescript
+// src/modules/Clip/transformers/transformTrackToClipContext.ts
+
+import type { TrackDto } from '#/modules/Track/useCases/getTrackById';
+
+// Clip domain's local representation of what it needs from a track
+type ClipTrackContext = {
+    trackId: TrackId;
+    isArmed: boolean;
+};
+
+export const transformTrackToClipContext = (dto: TrackDto): ClipTrackContext => ({
+    trackId: dto.id,
+    isArmed: dto.isArmed,
+});
+```
+
+**The rule:** if you find yourself needing more fields than the DTO exposes, either expand the DTO (a deliberate contract change) or reconsider whether the consuming domain is reaching too far into another domain's concerns.
+
+---
+
+### 3. Business layer stores — shared contract, not a violation
+
+Business layer stores (`Store<T>` files that live outside `presentations/`) are deliberately cross-cutting. Any module may import and read them. They are contract surfaces, the same as `useCases/` or `events/`.
+
+The rules that still apply:
+
+**Modules write to the store only through their own use cases.** No presentation layer and no cross-module use case writes to a shared store directly — they call the owning domain's use case, which performs the write.
+
+```typescript
+// ❌ Forbidden — Clip presentation writing to projectStore directly
+projectStore.set({ ...projectStore.value!, tracks: [...tracks, newTrack] });
+
+// ✅ Correct — calling the Track use case, which owns the write
+await addTrack({ name: 'New Track', kind: 'audio' });
+// addTrack internally calls projectStore.set(...)
+```
+
+**Modules read from the store freely.**
+
+```typescript
+// ✅ Fine — any hook reading from a business layer store
+const tracks = useSyncExternalStore(
+    (cb) => projectStore.subscribe(() => cb()),
+    () => projectStore.value?.tracks ?? [],
+    () => []
+);
+
+// ✅ Fine — engine subscribing outside React
+projectStore.subscribe((state) => {
+    if (state) audioEngine.reconcileTracks(state.tracks);
+});
+```
+
+**Modules own their slice.** Each domain's use cases only write to the slice that belongs to them. No module writes to another module's slice.
+
+```typescript
+// ❌ Forbidden — Transport writing to the tracks slice
+projectStore.set({ ...projectStore.value!, tracks: projectStore.value!.tracks.map(muteAll) });
+
+// ✅ Correct — Transport only touches its own slice
+projectStore.set({ ...projectStore.value!, transport: { ...projectStore.value!.transport, bpm } });
+```
+
+The ownership map for `projectStore`:
+
+| Store slice        | Owning domain | Who may write             |
+| ------------------ | ------------- | ------------------------- |
+| `state.transport`  | Transport     | Transport use cases only  |
+| `state.tracks`     | Track         | Track use cases only      |
+| `state.clips`      | Clip          | Clip use cases only       |
+| `state.mixer`      | Mixer         | Mixer use cases only      |
+| `state.plugins`    | Plugin        | Plugin use cases only     |
+| `state.automation` | Automation    | Automation use cases only |
+| `state.meta`       | Project       | Project use cases only    |
+
+---
+
+### 4. Shared engine state — the ownership rule
+
+When multiple domains need the same engine state, the question is always: **which domain is responsible for that audio concept?**
+
+Track gain is a good example. Both `Track` (because it's a track property) and `Mixer` (because the mixer controls it) seem like reasonable owners. The resolution is that **the concept lives where it semantically belongs** and is exposed through that domain's use case contract.
+
+Track gain belongs to `Mixer` because gain is a mixing decision, not a track identity. The `Track` model carries `gainDb` as a persisted value for serialization, but the engine operation lives in `Mixer`.
+
+```typescript
+// Mixer owns the engine adapter for gain
+// src/modules/Mixer/repositories/mixerEngineAdapter.ts
+
+export const setChannelGainInEngine = (trackId: TrackId, gainDb: Decibels): void => {
+    audioEngine.setTrackGain(trackId, dbToLinear(gainDb));
+};
+
+// Mixer owns the use case
+// src/modules/Mixer/useCases/setChannelGain.ts
+
+export const setChannelGain = (trackId: TrackId, gainDb: Decibels): void => {
+    setChannelGainInEngine(trackId, gainDb);
+    const state = projectStore.value!;
+    projectStore.set({
+        ...state,
+        mixer: {
+            ...state.mixer,
+            channels: state.mixer.channels.map((c) => (c.trackId === trackId ? { ...c, gainDb } : c)),
+        },
+    });
+};
+```
+
+If `Track` presentations need to display gain (e.g. in a compact track header), they read from the store — not from Mixer's use cases:
+
+```typescript
+// Track presentation reading gain from the shared store — fine
+const gainDb = useSyncExternalStore(
+    (cb) => projectStore.subscribe(() => cb()),
+    () => projectStore.value?.mixer.channels.find((c) => c.trackId === trackId)?.gainDb ?? 0,
+    () => 0
+);
+```
+
+For engine state that has no natural domain home (e.g. the `AudioContext` sample rate, which many domains might want), expose it through `AudioEngine`'s use case contract:
+
+```typescript
+// src/modules/AudioEngine/useCases/getEngineStatus.ts
+
+export type EngineStatusDto = {
+    isReady: boolean;
+    sampleRate: number;
+    baseLatencySeconds: number;
+};
+
+export const getEngineStatus = (): EngineStatusDto => ({
+    isReady: audioEngine.context?.state === 'running',
+    sampleRate: audioEngine.context?.sampleRate ?? 44100,
+    baseLatencySeconds: audioEngine.context?.baseLatency ?? 0,
+});
+```
+
+Other domains call `getEngineStatus()` from `AudioEngine/useCases/` — never reaching into `AudioEngine/engine/` directly.
+
+**Decision tree for shared engine state:**
+
+```
+Does the concept have a clear audio/domain home?
+├── Yes → Put the engine adapter in that domain's repositories/,
+│         the use case in that domain's useCases/,
+│         and expose a DTO for anyone who needs to read it.
+└── No (truly cross-cutting, e.g. AudioContext lifecycle) →
+    Put it in AudioEngine/useCases/ as the canonical source.
+    Other domains import from AudioEngine/useCases/, never AudioEngine/engine/.
+```
+
+---
+
+## Quick reference: which layer owns what
+
+| Concern                                | Layer                                                                       | Example                         |
+| -------------------------------------- | --------------------------------------------------------------------------- | ------------------------------- |
+| Serializable project data              | `projectStore` in `Project/stores/` — **contract**                          | tracks, clips, BPM              |
+| Cross-module runtime state             | `Store<T>` in `stores/` at business layer — **contract**                    | MIDI device list, engine status |
+| Persistent UI state                    | `Store<T>` + `LocalStorageStorage` in `presentations/stores/` — **private** | zoom level, sidebar open        |
+| Ephemeral UI state                     | React context inside `presentations/context/` — **private**                 | selected track, active tool     |
+| Local component state                  | `useState`                                                                  | hover, input draft              |
+| AudioContext + nodes                   | `engine/` class                                                             | `AudioEngine`, `TrackNode`      |
+| Subscribing to a store outside React   | `store.subscribe()`                                                         | engine reconciliation           |
+| Subscribing to a store inside React    | `useSyncExternalStore`                                                      | hooks reading project state     |
+| Real-time display (60fps)              | `requestAnimationFrame` + canvas ref                                        | meters, position                |
+| Parameter during interaction           | `AudioParam` direct set                                                     | fader drag                      |
+| Parameter at rest                      | `projectStore` + engine reconcile                                           | saved fader value               |
+| Tauri IPC                              | `repositories/` adapter                                                     | MIDI, file I/O, plugins         |
+| Cross-domain business logic            | `useCases/`                                                                 | add clip to armed track         |
+| Cross-domain notification              | `DomainEvent` + `eventBus`                                                  | tempo changed → MIDI clock      |
+| Shared identifiers and units           | `src/shared/types/`                                                         | `TrackId`, `Beats`, `Decibels`  |
+| Cross-module type contract             | DTO exported from `useCases/`                                               | `TrackDto`, `EngineStatusDto`   |
+| Reading another domain's state         | business layer store or DTO                                                 | mixer reading track names       |
+| Writing another domain's slice         | ❌ Never — call their use case                                              | `addTrack()` not `store.set()`  |
+| Shared engine concept (no clear owner) | `AudioEngine/useCases/` DTO                                                 | `getEngineStatus()`             |

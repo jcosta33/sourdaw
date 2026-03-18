@@ -1,7 +1,7 @@
-import { Store } from "#/helpers/Store/Store";
-import { Container } from "#/helpers/DependencyInjector/Container";
-import { Logger } from "#/helpers/Logger/Logger";
-import type { CollaborationState } from "../models/CollaborationTypes";
+import { Store } from '#/helpers/Store/Store';
+import { Container } from '#/helpers/DependencyInjector/Container';
+import { Logger } from '#/helpers/Logger/Logger';
+import { type CollaborationState } from '../models/CollaborationTypes';
 
 const logger = Container.getInstance().get(Logger);
 
@@ -10,7 +10,7 @@ const initialState: CollaborationState = {
     sessionId: null,
     localPeerId: null,
     peers: [],
-    connectionStatus: "disconnected",
+    connectionStatus: 'disconnected',
     error: null,
 };
 

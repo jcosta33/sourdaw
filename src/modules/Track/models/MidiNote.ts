@@ -30,12 +30,7 @@ let nextNoteId = 1;
 let nextCcId = 1;
 let nextPitchBendId = 1;
 
-export const createMidiNote = (
-    pitch: number,
-    startBeat: number,
-    duration: number,
-    velocity = 100,
-): MidiNote => ({
+export const createMidiNote = (pitch: number, startBeat: number, duration: number, velocity = 100): MidiNote => ({
     id: `note-${nextNoteId++}`,
     pitch,
     startBeat,
@@ -43,12 +38,7 @@ export const createMidiNote = (
     velocity,
 });
 
-export const createMidiCC = (
-    controller: number,
-    value: number,
-    beat: number,
-    channel = 0,
-): MidiCC => ({
+export const createMidiCC = (controller: number, value: number, beat: number, channel = 0): MidiCC => ({
     id: `cc-${nextCcId++}`,
     controller,
     value,
@@ -56,11 +46,7 @@ export const createMidiCC = (
     channel,
 });
 
-export const createMidiPitchBend = (
-    value: number,
-    beat: number,
-    channel = 0,
-): MidiPitchBend => ({
+export const createMidiPitchBend = (value: number, beat: number, channel = 0): MidiPitchBend => ({
     id: `pb-${nextPitchBendId++}`,
     value,
     beat,

@@ -1,4 +1,4 @@
-import { DomainEvent } from "#/helpers/Event/DomainEvent";
+import { DomainEvent } from '#/helpers/Event/DomainEvent';
 
 type TrackRemovedPayload = {
     trackId: string;

@@ -1,72 +1,100 @@
-import type { ActionHandler } from "../models/ActionHandler";
-import type { AppAction } from "../models/AppAction";
-import { addDevice, removeDevice, bypassDevice, setSend, removeSend, setDeviceParameter } from "#/modules/Track/useCases/deviceUseCases";
-import { audioEngine } from "#/modules/AudioEngine/repositories/audioEngineInstance";
-import { trackStore } from "#/modules/Track/stores/trackStore";
-import { getLatencyReport } from "#/modules/AudioEngine/useCases/latencyCompensation";
-import { setMpeEnabled } from "#/modules/AudioEngine/useCases/webMidiInput";
-import { addSidechainRoute, removeSidechainRoute as removeSidechainRouteUseCase, getSidechainRoutesForTrack } from "#/modules/AudioEngine/useCases/sidechainUseCases";
+import { type ActionHandler } from '../models/ActionHandler';
+import { type AppAction } from '../models/AppAction';
+import {
+    addDevice,
+    removeDevice,
+    bypassDevice,
+    setSend,
+    removeSend,
+    setDeviceParameter,
+} from '#/modules/Track/useCases/deviceUseCases';
+import { updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
+import { getTrackStoreState } from '#/modules/Track/useCases/trackQueries';
+import { getLatencyReport } from '#/modules/AudioEngine/useCases/latencyCompensation';
+import { setMpeEnabled } from '#/modules/AudioEngine/useCases/webMidiInput';
+import {
+    addSidechainRoute,
+    removeSidechainRoute as removeSidechainRouteUseCase,
+    getSidechainRoutesForTrack,
+} from '#/modules/AudioEngine/useCases/sidechainUseCases';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 
 export const deviceHandlers = {
     addDevice: {
-        execute: (a) => { addDevice(a.payload.trackId, a.payload.deviceType); },
+        execute: (a) => {
+            addDevice(a.payload.trackId, a.payload.deviceType);
+        },
         describe: (a) => ({ label: `Add ${a.payload.deviceType}` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, "addDevice">>,
+    } satisfies ActionHandler<Extract<AppAction, 'addDevice'>>,
 
     bypassDevice: {
-        execute: (a) => { bypassDevice(a.payload.deviceId, a.payload.bypassed); },
-        describe: (a) => ({ label: a.payload.bypassed ? "Bypass device" : "Enable device" }),
+        execute: (a) => {
+            bypassDevice(a.payload.deviceId, a.payload.bypassed);
+        },
+        describe: (a) => ({ label: a.payload.bypassed ? 'Bypass device' : 'Enable device' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, "bypassDevice">>,
+    } satisfies ActionHandler<Extract<AppAction, 'bypassDevice'>>,
 
     removeDevice: {
-        execute: (a) => { removeDevice(a.payload.deviceId); },
-        describe: () => ({ label: "Remove device" }),
+        execute: (a) => {
+            removeDevice(a.payload.deviceId);
+        },
+        describe: () => ({ label: 'Remove device' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, "removeDevice">>,
+    } satisfies ActionHandler<Extract<AppAction, 'removeDevice'>>,
 
     setDeviceParameter: {
         execute: (a) => {
             setDeviceParameter(a.payload.deviceId, a.payload.paramId, a.payload.value);
-            const ownerTrackId = trackStore.value?.tracks.find((t) => t.devices.some((d) => d.id === a.payload.deviceId))?.id ?? "";
-            audioEngine.updateDeviceParam(ownerTrackId, a.payload.deviceId, a.payload.paramId, a.payload.value);
+            const ownerTrackId =
+                getTrackStoreState()?.tracks.find((t) => t.devices.some((d) => d.id === a.payload.deviceId))?.id ?? '';
+            updateDeviceParam(ownerTrackId, a.payload.deviceId, a.payload.paramId, a.payload.value);
         },
         describe: (a) => ({ label: `Set ${a.payload.paramId}` }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, "setDeviceParameter">>,
+    } satisfies ActionHandler<Extract<AppAction, 'setDeviceParameter'>>,
 
     setSend: {
-        execute: (a) => { setSend(a.payload.trackId, a.payload.busId, a.payload.level); },
-        describe: () => ({ label: "Set send level" }),
+        execute: (a) => {
+            setSend(a.payload.trackId, a.payload.busId, a.payload.level);
+        },
+        describe: () => ({ label: 'Set send level' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, "setSend">>,
+    } satisfies ActionHandler<Extract<AppAction, 'setSend'>>,
 
     addSend: {
-        execute: (a) => { setSend(a.payload.trackId, a.payload.busId, a.payload.level); },
-        describe: () => ({ label: "Add send" }),
+        execute: (a) => {
+            setSend(a.payload.trackId, a.payload.busId, a.payload.level);
+        },
+        describe: () => ({ label: 'Add send' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, "addSend">>,
+    } satisfies ActionHandler<Extract<AppAction, 'addSend'>>,
 
     removeSend: {
-        execute: (a) => { removeSend(a.payload.trackId, a.payload.busId); },
-        describe: () => ({ label: "Remove send" }),
+        execute: (a) => {
+            removeSend(a.payload.trackId, a.payload.busId);
+        },
+        describe: () => ({ label: 'Remove send' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, "removeSend">>,
+    } satisfies ActionHandler<Extract<AppAction, 'removeSend'>>,
 
     enableMpe: {
-        execute: () => { setMpeEnabled(true); },
-        describe: () => ({ label: "Enable MPE" }),
+        execute: () => {
+            setMpeEnabled(true);
+        },
+        describe: () => ({ label: 'Enable MPE' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, "enableMpe">>,
+    } satisfies ActionHandler<Extract<AppAction, 'enableMpe'>>,
 
     disableMpe: {
-        execute: () => { setMpeEnabled(false); },
-        describe: () => ({ label: "Disable MPE" }),
+        execute: () => {
+            setMpeEnabled(false);
+        },
+        describe: () => ({ label: 'Disable MPE' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, "disableMpe">>,
+    } satisfies ActionHandler<Extract<AppAction, 'disableMpe'>>,
 
     getLatencyReport: {
         execute: () => {
@@ -76,29 +104,31 @@ export const deviceHandlers = {
             const trackLines = report.tracks
                 .filter((t) => t.deviceLatencyMs > 0)
                 .map((t) => `${t.trackId}: ${t.totalLatencyMs.toFixed(1)}ms`)
-                .join(", ");
+                .join(', ');
             const detail = trackLines
                 ? `Max: ${maxMs}ms, Base: ${baseMs}ms — ${trackLines}`
                 : `Max: ${maxMs}ms, Base: ${baseMs}ms — no device latency`;
-            document.dispatchEvent(new CustomEvent("webdaw:notify", {
-                detail: { message: `Latency Report: ${detail}`, level: "info" },
-            }));
+            document.dispatchEvent(
+                new CustomEvent('webdaw:notify', {
+                    detail: { message: `Latency Report: ${detail}`, level: 'info' },
+                })
+            );
         },
-        describe: () => ({ label: "Get latency report" }),
+        describe: () => ({ label: 'Get latency report' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, "getLatencyReport">>,
+    } satisfies ActionHandler<Extract<AppAction, 'getLatencyReport'>>,
 
     addSidechainRoute: {
         execute: (a) => {
-            const targetTrack = trackStore.value?.tracks.find((t) => t.id === a.payload.targetTrackId);
-            const scDevice = targetTrack?.devices.find((d) => d.type.toLowerCase().includes("sidechain"));
+            const targetTrack = getTrackStoreState()?.tracks.find((t) => t.id === a.payload.targetTrackId);
+            const scDevice = targetTrack?.devices.find((d) => d.type.toLowerCase().includes('sidechain'));
             if (scDevice) {
                 addSidechainRoute(a.payload.sourceTrackId, a.payload.targetTrackId, scDevice.id);
             }
         },
-        describe: () => ({ label: "Add sidechain route" }),
+        describe: () => ({ label: 'Add sidechain route' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, "addSidechainRoute">>,
+    } satisfies ActionHandler<Extract<AppAction, 'addSidechainRoute'>>,
 
     removeSidechainRoute: {
         execute: (a) => {
@@ -108,7 +138,7 @@ export const deviceHandlers = {
                 removeSidechainRouteUseCase(route.id);
             }
         },
-        describe: () => ({ label: "Remove sidechain route" }),
+        describe: () => ({ label: 'Remove sidechain route' }),
         undoable: true,
-    } satisfies ActionHandler<Extract<AppAction, "removeSidechainRoute">>,
+    } satisfies ActionHandler<Extract<AppAction, 'removeSidechainRoute'>>,
 };

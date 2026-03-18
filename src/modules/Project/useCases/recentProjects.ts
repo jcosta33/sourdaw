@@ -1,21 +1,21 @@
-import { Container } from "#/helpers/DependencyInjector/Container";
-import { Logger } from "#/helpers/Logger/Logger";
-import { trackStore } from "#/modules/Track/stores/trackStore";
-import { transportStore } from "#/modules/Transport/stores/transportStore";
-import { automationStore } from "#/modules/Track/stores/automationStore";
-import { midiStore } from "#/modules/Track/stores/midiStore";
-import { tempoMapStore } from "#/modules/Transport/stores/tempoMapStore";
-import { timeSignatureMapStore } from "#/modules/Transport/stores/timeSignatureMapStore";
-import { markerStore } from "#/modules/Timeline/stores/markerStore";
-import { takeLaneStore } from "#/modules/Track/stores/takeLaneStore";
-import { setSidechainRoutes } from "#/modules/AudioEngine/useCases/sidechainUseCases";
-import { defaultTransportState } from "#/modules/Transport/models/TransportState";
-import { type ProjectData, PROJECT_STORAGE_KEY, RECENT_PROJECTS_KEY } from "../models/ProjectData";
-import { projectStore } from "../stores/projectStore";
-import { audioBufferCache } from "#/modules/AudioEngine/stores/audioBufferCache";
-import { audioEngine } from "#/modules/AudioEngine/repositories/audioEngineInstance";
-import { undoStore } from "#/modules/Command/stores/undoStore";
-import { notifyUser } from "#/helpers/Notification/notifyUser";
+import { Container } from '#/helpers/DependencyInjector/Container';
+import { Logger } from '#/helpers/Logger/Logger';
+import { trackStore } from '#/modules/Track/stores/trackStore';
+import { transportStore } from '#/modules/Transport/stores/transportStore';
+import { automationStore } from '#/modules/Track/stores/automationStore';
+import { midiStore } from '#/modules/Track/stores/midiStore';
+import { tempoMapStore } from '#/modules/Transport/stores/tempoMapStore';
+import { timeSignatureMapStore } from '#/modules/Transport/stores/timeSignatureMapStore';
+import { markerStore } from '#/modules/Timeline/stores/markerStore';
+import { takeLaneStore } from '#/modules/Track/stores/takeLaneStore';
+import { setSidechainRoutes } from '#/modules/AudioEngine/useCases/sidechainUseCases';
+import { defaultTransportState } from '#/modules/Transport/useCases/transportQueries';
+import { type ProjectData, PROJECT_STORAGE_KEY, RECENT_PROJECTS_KEY } from '../models/ProjectData';
+import { projectStore } from '../stores/projectStore';
+import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
+import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
+import { undoStore } from '#/modules/Command/stores/undoStore';
+import { notifyUser } from '#/helpers/Notification/notifyUser';
 
 const logger = Container.getInstance().get(Logger);
 
@@ -27,7 +27,7 @@ export type RecentProjectEntry = {
     updatedAt: number;
 };
 
-export const getRecentProjects = (): RecentProjectEntry[] => {
+export function getRecentProjects(): RecentProjectEntry[] {
     try {
         const raw = localStorage.getItem(RECENT_PROJECTS_KEY);
         if (!raw) {
@@ -37,29 +37,29 @@ export const getRecentProjects = (): RecentProjectEntry[] => {
     } catch {
         return [];
     }
-};
+}
 
-export const addToRecentProjects = (name: string, key: string): void => {
+export function addToRecentProjects(name: string, key: string): void {
     try {
         const entries = getRecentProjects().filter((e) => e.key !== key);
         entries.unshift({ name, key, updatedAt: Date.now() });
         const trimmed = entries.slice(0, MAX_RECENT);
         localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(trimmed));
-    } catch (err) {
-        logger.warn(`Failed to update recent projects: ${err}`);
+    } catch (error) {
+        logger.warn(`Failed to update recent projects: ${error}`);
     }
-};
+}
 
-export const removeFromRecentProjects = (key: string): void => {
+export function removeFromRecentProjects(key: string): void {
     try {
         const entries = getRecentProjects().filter((e) => e.key !== key);
         localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(entries));
-    } catch (err) {
-        logger.warn(`Failed to remove from recent projects: ${err}`);
+    } catch (error) {
+        logger.warn(`Failed to remove from recent projects: ${error}`);
     }
-};
+}
 
-export const loadRecentProject = async (key: string): Promise<boolean> => {
+export async function loadRecentProject(key: string): Promise<boolean> {
     try {
         const raw = localStorage.getItem(key);
         if (!raw) {
@@ -106,18 +106,18 @@ export const loadRecentProject = async (key: string): Promise<boolean> => {
 
         localStorage.setItem(PROJECT_STORAGE_KEY, raw);
 
-        await audioBufferCache.restoreFromIdb(audioEngine.context);
+        await audioBufferCache.restoreFromIdb(getAudioContext());
         verifyAudioBufferReferences();
         undoStore.set({ past: [], future: [] });
 
         return true;
-    } catch (err) {
-        logger.error(new Error("Failed to load recent project", { cause: err }));
+    } catch (error) {
+        logger.error(new Error('Failed to load recent project', { cause: error }));
         return false;
     }
-};
+}
 
-const verifyAudioBufferReferences = (): void => {
+function verifyAudioBufferReferences(): void {
     const state = trackStore.value;
     if (!state) {
         return;
@@ -126,19 +126,17 @@ const verifyAudioBufferReferences = (): void => {
     const missingClips: string[] = [];
     for (const track of state.tracks) {
         for (const clip of track.clips) {
-            if (clip.type === "audio" && clip.audioBufferId && !audioBufferCache.has(clip.audioBufferId)) {
+            if (clip.type === 'audio' && clip.audioBufferId && !audioBufferCache.has(clip.audioBufferId)) {
                 missingClips.push(clip.name);
             }
         }
     }
 
     if (missingClips.length > 0) {
-        const clipList = missingClips.length <= 3
-            ? missingClips.join(", ")
-            : `${missingClips.slice(0, 3).join(", ")} and ${missingClips.length - 3} more`;
-        notifyUser(
-            `Missing audio buffers for: ${clipList} — re-import the audio files`,
-            "warning",
-        );
+        const clipList =
+            missingClips.length <= 3
+                ? missingClips.join(', ')
+                : `${missingClips.slice(0, 3).join(', ')} and ${missingClips.length - 3} more`;
+        notifyUser(`Missing audio buffers for: ${clipList} — re-import the audio files`, 'warning');
     }
-};
+}

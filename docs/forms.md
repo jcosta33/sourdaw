@@ -255,7 +255,6 @@ Use the `useFieldArray` hook to manage dynamic lists of inputs, such as adding m
 import { useFieldArray, type Control } from 'react-hook-form';
 import { Form } from 'Common/Form/Form';
 import { FormTextInput } from 'Common/Form/TextInput/TextInput';
-import { Button } from '@frontify/fondue/components';
 
 type TeamMemberData = {
     name: string;
@@ -451,7 +450,6 @@ export const ManualForm = () => {
 };
 
 // ✅ Good: Form component + Zod schema handle validation and state efficiently
-import { Button } from '@frontify/fondue/components';
 import * as z from 'zod';
 
 import { Form } from 'Common/Form/Form';
@@ -652,7 +650,6 @@ If you're updating an existing form that uses manual state management, follow th
 
 ```tsx
 import { type FormEvent, useState } from 'react';
-import { TextInput } from '@frontify/fondue/components';
 
 export const LegacyForm = () => {
     const [name, setName] = useState('');
@@ -695,7 +692,6 @@ export const LegacyForm = () => {
 **After: Schema-driven with `<Form />`**
 
 ```tsx
-import { Button } from '@frontify/fondue/components';
 import * as z from 'zod';
 import { Form } from 'Common/Form/Form';
 import { FormTextInput } from 'Common/Form/TextInput/TextInput';

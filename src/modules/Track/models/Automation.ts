@@ -1,7 +1,8 @@
 export type AutomationPoint = {
     beat: number;
     value: number;
-    curve: "linear" | "exponential" | "step";
+    curve: 'linear' | 'exponential' | 'step' | 's-curve';
+    tension: number; // 0 = linear, 0.5 = default smooth, 1 = hard curve
 };
 
 export type AutomationLane = {
@@ -24,7 +25,7 @@ export const createAutomationLane = (
     parameterName: string,
     minValue = 0,
     maxValue = 1,
-    clipId?: string,
+    clipId?: string
 ): AutomationLane => ({
     id: `auto-${nextLaneId++}`,
     trackId,

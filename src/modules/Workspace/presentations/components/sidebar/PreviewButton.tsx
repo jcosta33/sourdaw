@@ -1,0 +1,30 @@
+import { type ReactElement } from 'react';
+import { Play, Square } from 'lucide-react';
+import { cn } from '#/helpers/Styles/cn';
+
+export type PreviewButtonProps = {
+    isPlaying: boolean;
+    onPlay: () => void;
+    onStop: () => void;
+};
+
+export const PreviewButton = ({ isPlaying, onPlay, onStop }: PreviewButtonProps): ReactElement => (
+    <button
+        type="button"
+        className={cn(
+            'size-4 shrink-0 flex items-center justify-center rounded transition-colors',
+            isPlaying ? 'text-primary hover:text-primary/80' : 'text-muted-foreground/60 hover:text-foreground'
+        )}
+        onClick={(e) => {
+            e.stopPropagation();
+            if (isPlaying) {
+                onStop();
+            } else {
+                onPlay();
+            }
+        }}
+        aria-label={isPlaying ? 'Stop preview' : 'Preview sound'}
+    >
+        {isPlaying ? <Square className="size-2.5 fill-current" /> : <Play className="size-2.5 fill-current" />}
+    </button>
+);

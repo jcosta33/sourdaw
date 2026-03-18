@@ -1,6 +1,6 @@
-import { Container } from "#/helpers/DependencyInjector/Container";
-import { Logger } from "#/helpers/Logger/Logger";
-import { Store } from "#/helpers/Store/Store";
+import { Container } from '#/helpers/DependencyInjector/Container';
+import { Logger } from '#/helpers/Logger/Logger';
+import { Store } from '#/helpers/Store/Store';
 
 const logger = Container.getInstance().get(Logger);
 
@@ -20,38 +20,40 @@ export const timelineViewStore = new Store<TimelineViewState>(logger, {
     },
 });
 
-export const zoomTimeline = (delta: number): void => {
+export function zoomTimeline(delta: number): void {
     const state = timelineViewStore.value;
-    if (!state) return;
+    if (!state) {
+        return;
+    }
     const newPpb = Math.max(2, Math.min(80, state.pixelsPerBeat + delta));
     timelineViewStore.set({ ...state, pixelsPerBeat: newPpb });
-};
+}
 
-export const scrollTimeline = (deltaX: number): void => {
+export function scrollTimeline(deltaX: number): void {
     const state = timelineViewStore.value;
     if (!state) {
         return;
     }
     timelineViewStore.set({ ...state, scrollX: Math.max(0, state.scrollX + deltaX) });
-};
+}
 
-export const setAutoScroll = (enabled: boolean): void => {
+export function setAutoScroll(enabled: boolean): void {
     const state = timelineViewStore.value;
     if (!state) {
         return;
     }
     timelineViewStore.set({ ...state, autoScrollEnabled: enabled });
-};
+}
 
-export const toggleAutoScroll = (): void => {
+export function toggleAutoScroll(): void {
     const state = timelineViewStore.value;
     if (!state) {
         return;
     }
     timelineViewStore.set({ ...state, autoScrollEnabled: !state.autoScrollEnabled });
-};
+}
 
-export const setScrollY = (scrollY: number): void => {
+export function setScrollY(scrollY: number): void {
     const state = timelineViewStore.value;
     if (!state) {
         return;
@@ -59,4 +61,4 @@ export const setScrollY = (scrollY: number): void => {
     if (state.scrollY !== scrollY) {
         timelineViewStore.set({ ...state, scrollY });
     }
-};
+}

@@ -1,8 +1,10 @@
-import type { WorkspaceMode } from "../models/WorkspaceState";
-import { workspaceStore } from "../stores/workspaceStore";
+import { type WorkspaceMode } from '../models/WorkspaceState';
+import { getWorkspaceState, updateWorkspaceState } from '../repositories/workspaceRepository';
 
-export const setWorkspaceMode = (mode: WorkspaceMode): void => {
-    const current = workspaceStore.value;
-    if (!current) return;
-    workspaceStore.set({ ...current, mode });
-};
+export function setWorkspaceMode(mode: WorkspaceMode): void {
+    const current = getWorkspaceState();
+    if (!current) {
+        return;
+    }
+    updateWorkspaceState({ mode });
+}

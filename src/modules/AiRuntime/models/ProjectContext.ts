@@ -5,14 +5,14 @@ export type ProjectContext = {
     selectedTrackId: string | null;
     selectedClipId: string | null;
     selectedClipIds: string[];
-    activeView: "arrange" | "clip" | "mix";
+    activeView: 'arrange' | 'automation' | 'clip' | 'mix';
     playheadPosition: number;
 };
 
 export type ProjectContextClip = {
     id: string;
     name: string;
-    type: "audio" | "midi";
+    type: 'audio' | 'midi';
     startBeat: number;
     endBeat: number;
     noteCount: number;

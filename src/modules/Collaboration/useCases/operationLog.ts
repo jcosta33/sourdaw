@@ -1,13 +1,12 @@
-import type { AppAction } from "#/modules/Command/models/AppAction";
-import type { OperationEntry, PeerId } from "../models/CollaborationTypes";
-import type { VectorClock } from "./vectorClock";
-import { increment, merge, happensBefore } from "./vectorClock";
+import { type AppAction } from '#/modules/Command/models/AppAction';
+import { type OperationEntry, type PeerId } from '../models/CollaborationTypes';
+import { type VectorClock, increment, merge, happensBefore } from './vectorClock';
 
 let operations: OperationEntry[] = [];
 let localClock: VectorClock = {};
 let nextOpId = 1;
 
-export const appendLocalOperation = (peerId: PeerId, action: AppAction): OperationEntry => {
+export function appendLocalOperation(peerId: PeerId, action: AppAction): OperationEntry {
     localClock = increment(localClock, peerId);
     const entry: OperationEntry = {
         id: `op-${String(nextOpId++)}`,
@@ -18,9 +17,9 @@ export const appendLocalOperation = (peerId: PeerId, action: AppAction): Operati
     };
     operations.push(entry);
     return entry;
-};
+}
 
-export const appendRemoteOperation = (entry: OperationEntry): void => {
+export function appendRemoteOperation(entry: OperationEntry): void {
     localClock = merge(localClock, entry.vectorClock);
     operations.push(entry);
     operations.sort((a, b) => {
@@ -32,14 +31,18 @@ export const appendRemoteOperation = (entry: OperationEntry): void => {
         }
         return a.timestamp - b.timestamp;
     });
-};
+}
 
-export const getOperations = (): readonly OperationEntry[] => operations;
+export function getOperations(): readonly OperationEntry[] {
+    return operations;
+}
 
-export const getLocalClock = (): VectorClock => ({ ...localClock });
+export function getLocalClock(): VectorClock {
+    return { ...localClock };
+}
 
-export const clearOperations = (): void => {
+export function clearOperations(): void {
     operations = [];
     localClock = {};
     nextOpId = 1;
-};
+}

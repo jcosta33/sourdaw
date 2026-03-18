@@ -1,7 +1,7 @@
-import { Container } from "#/helpers/DependencyInjector/Container";
-import { Logger } from "#/helpers/Logger/Logger";
-import { Store } from "#/helpers/Store/Store";
-import type { MidiNote, MidiCC, MidiPitchBend } from "../models/MidiNote";
+import { Container } from '#/helpers/DependencyInjector/Container';
+import { Logger } from '#/helpers/Logger/Logger';
+import { Store } from '#/helpers/Store/Store';
+import { type MidiNote, type MidiCC, type MidiPitchBend } from '../models/MidiNote';
 
 const logger = Container.getInstance().get(Logger);
 

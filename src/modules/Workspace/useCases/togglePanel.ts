@@ -1,59 +1,92 @@
-import { workspaceStore } from "../stores/workspaceStore";
-import { trackStore } from "#/modules/Track/stores/trackStore";
-import type { SoloMode } from "../models/WorkspaceState";
+import { getWorkspaceState, updateWorkspaceState } from '../repositories/workspaceRepository';
+import { trackStore } from '#/modules/Track/stores/trackStore';
+import { type SoloMode } from '../models/WorkspaceState';
 
-export const setSoloMode = (soloMode: SoloMode): void => {
-    const current = workspaceStore.value;
+export function setSoloMode(soloMode: SoloMode): void {
+    const current = getWorkspaceState();
     if (!current) {
         return;
     }
-    workspaceStore.set({ ...current, soloMode });
-};
+    updateWorkspaceState({ soloMode });
+}
 
-export const toggleSidebar = (): void => {
-    const current = workspaceStore.value;
-    if (!current) return;
-    workspaceStore.set({ ...current, sidebarOpen: !current.sidebarOpen });
-};
-
-export const toggleInspector = (): void => {
-    const current = workspaceStore.value;
-    if (!current) return;
-    workspaceStore.set({ ...current, inspectorOpen: !current.inspectorOpen });
-};
-
-export const toggleMixer = (): void => {
-    const current = workspaceStore.value;
+export function toggleSidebar(): void {
+    const current = getWorkspaceState();
     if (!current) {
         return;
     }
-    workspaceStore.set({ ...current, mixerOpen: !current.mixerOpen });
-};
+    updateWorkspaceState({ sidebarOpen: !current.sidebarOpen });
+}
 
-export const setSnapValue = (value: number): void => {
-    const current = workspaceStore.value;
+export function toggleInspector(): void {
+    const current = getWorkspaceState();
     if (!current) {
         return;
     }
-    workspaceStore.set({ ...current, snapValue: value });
-};
+    updateWorkspaceState({ inspectorOpen: !current.inspectorOpen });
+}
 
-export const zoomToFit = (): void => {
-    document.dispatchEvent(new CustomEvent("webdaw:zoom-to-fit"));
-};
+export function toggleChatPanel(): void {
+    const current = getWorkspaceState();
+    if (!current) {
+        return;
+    }
+    updateWorkspaceState({ chatPanelOpen: !current.chatPanelOpen });
+}
 
-export const zoomToSelection = (): void => {
-    const ws = workspaceStore.value;
+export function toggleMixer(): void {
+    const current = getWorkspaceState();
+    if (!current) {
+        return;
+    }
+    updateWorkspaceState({ mixerOpen: !current.mixerOpen });
+}
+
+export function openMixer(): void {
+    const current = getWorkspaceState();
+    if (!current) {
+        return;
+    }
+    updateWorkspaceState({ mixerOpen: true });
+}
+
+export function toggleAutomationPanel(): void {
+    const current = getWorkspaceState();
+    if (!current) {
+        return;
+    }
+    updateWorkspaceState({ automationPanelOpen: !current.automationPanelOpen });
+}
+
+export function toggleTrackList(): void {
+    const current = getWorkspaceState();
+    if (!current) {
+        return;
+    }
+    updateWorkspaceState({ trackListOpen: !current.trackListOpen });
+}
+
+export function setSnapValue(value: number): void {
+    const current = getWorkspaceState();
+    if (!current) {
+        return;
+    }
+    updateWorkspaceState({ snapValue: value });
+}
+
+export function zoomToFit(): void {
+    document.dispatchEvent(new CustomEvent('webdaw:zoom-to-fit'));
+}
+
+export function zoomToSelection(): void {
+    const ws = getWorkspaceState();
     const state = trackStore.value;
     if (!ws || !state) {
         return;
     }
 
-    const selectedIds = ws.selectedClipIds.length > 0
-        ? ws.selectedClipIds
-        : ws.selectedClipId
-            ? [ws.selectedClipId]
-            : [];
+    const selectedIds =
+        ws.selectedClipIds.length > 0 ? ws.selectedClipIds : ws.selectedClipId ? [ws.selectedClipId] : [];
 
     if (selectedIds.length === 0) {
         return;
@@ -78,7 +111,9 @@ export const zoomToSelection = (): void => {
         return;
     }
 
-    document.dispatchEvent(new CustomEvent("webdaw:zoom-to-selection", {
-        detail: { startBeat: minStart, endBeat: maxEnd },
-    }));
-};
+    document.dispatchEvent(
+        new CustomEvent('webdaw:zoom-to-selection', {
+            detail: { startBeat: minStart, endBeat: maxEnd },
+        })
+    );
+}

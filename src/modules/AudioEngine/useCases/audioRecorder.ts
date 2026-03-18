@@ -1,7 +1,7 @@
-import { Container } from "#/helpers/DependencyInjector/Container";
-import { Logger } from "#/helpers/Logger/Logger";
-import { audioEngine } from "../repositories/audioEngineInstance";
-import { getSelectedInputId } from "./audioDeviceSelection";
+import { Container } from '#/helpers/DependencyInjector/Container';
+import { Logger } from '#/helpers/Logger/Logger';
+import { audioEngine } from '../repositories/audioEngineInstance';
+import { getSelectedInputId } from './audioDeviceSelection';
 
 const logger = Container.getInstance().get(Logger);
 
@@ -11,16 +11,17 @@ let recordedChunks: Blob[] = [];
 let sourceNode: MediaStreamAudioSourceNode | null = null;
 let onRecordingComplete: ((buffer: AudioBuffer) => void) | null = null;
 
-export const isRecordingSupported = (): boolean => {
-    return typeof navigator.mediaDevices?.getUserMedia === "function";
-};
+export function isRecordingSupported(): boolean {
+    return typeof navigator.mediaDevices?.getUserMedia === 'function';
+}
 
-export const startAudioRecording = async (
+export async function startAudioRecording(
     trackId: string,
     onComplete: (buffer: AudioBuffer) => void,
-): Promise<boolean> => {
+    inputId?: string | null
+): Promise<boolean> {
     try {
-        const selectedInputId = getSelectedInputId();
+        const selectedInputId = inputId ?? getSelectedInputId();
         const audioConstraints: MediaTrackConstraints = {
             echoCancellation: false,
             noiseSuppression: false,
@@ -43,9 +44,7 @@ export const startAudioRecording = async (
         onRecordingComplete = onComplete;
 
         mediaRecorder = new MediaRecorder(mediaStream, {
-            mimeType: MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-                ? "audio/webm;codecs=opus"
-                : "audio/webm",
+            mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm',
         });
 
         mediaRecorder.ondataavailable = (event) => {
@@ -55,7 +54,7 @@ export const startAudioRecording = async (
         };
 
         mediaRecorder.onstop = async () => {
-            const blob = new Blob(recordedChunks, { type: "audio/webm" });
+            const blob = new Blob(recordedChunks, { type: 'audio/webm' });
             const arrayBuffer = await blob.arrayBuffer();
             const buffer = await ctx.decodeAudioData(arrayBuffer);
 
@@ -64,7 +63,9 @@ export const startAudioRecording = async (
                 sourceNode = null;
             }
             if (mediaStream) {
-                mediaStream.getTracks().forEach((t) => t.stop());
+                for (const t of mediaStream.getTracks()) {
+                    t.stop();
+                }
                 mediaStream = null;
             }
 
@@ -75,32 +76,32 @@ export const startAudioRecording = async (
 
         mediaRecorder.start(100);
         return true;
-    } catch (err) {
-        logger.error(new Error("Failed to start recording", { cause: err }));
+    } catch (error) {
+        logger.error(new Error('Failed to start recording', { cause: error }));
         return false;
     }
-};
+}
 
-export const stopAudioRecording = (): void => {
-    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+export function stopAudioRecording(): void {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
         mediaRecorder.stop();
     }
     mediaRecorder = null;
-};
+}
 
-export const isCurrentlyRecording = (): boolean => {
-    return mediaRecorder?.state === "recording";
-};
+export function isCurrentlyRecording(): boolean {
+    return mediaRecorder?.state === 'recording';
+}
 
 let monitorStream: MediaStream | null = null;
 let monitorSource: MediaStreamAudioSourceNode | null = null;
 
-export const startInputMonitoring = async (trackId: string): Promise<boolean> => {
+export async function startInputMonitoring(trackId: string, inputId?: string | null): Promise<boolean> {
     if (monitorSource) {
         return true;
     }
     try {
-        const selectedInputId = getSelectedInputId();
+        const selectedInputId = inputId ?? getSelectedInputId();
         const audioConstraints: MediaTrackConstraints = {
             echoCancellation: false,
             noiseSuppression: false,
@@ -120,17 +121,21 @@ export const startInputMonitoring = async (trackId: string): Promise<boolean> =>
     } catch {
         return false;
     }
-};
+}
 
-export const stopInputMonitoring = (): void => {
+export function stopInputMonitoring(): void {
     if (monitorSource) {
         monitorSource.disconnect();
         monitorSource = null;
     }
     if (monitorStream) {
-        monitorStream.getTracks().forEach((t) => t.stop());
+        for (const t of monitorStream.getTracks()) {
+            t.stop();
+        }
         monitorStream = null;
     }
-};
+}
 
-export const isMonitoring = (): boolean => monitorSource !== null;
+export function isMonitoring(): boolean {
+    return monitorSource !== null;
+}

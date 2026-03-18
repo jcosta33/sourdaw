@@ -1,0 +1,201 @@
+import { type ReactElement } from 'react';
+import { AlertCircle, AlertTriangle, Info, Volume2 } from 'lucide-react';
+import { type MixAnalysis, type MixIssue } from '#/modules/AiRuntime/models/MixAnalysis';
+
+// ── Shared helpers ──────────────────────────────────────────────────────
+
+export const levelColor = (db: number): string => {
+    if (db > -0.5) {
+        return 'bg-red-500';
+    }
+    if (db > -3) {
+        return 'bg-amber-500';
+    }
+    if (db > -12) {
+        return 'bg-emerald-500';
+    }
+    return 'bg-emerald-700';
+};
+
+export const levelTextColor = (db: number): string => {
+    if (db > -0.5) {
+        return 'text-red-400';
+    }
+    if (db > -3) {
+        return 'text-amber-400';
+    }
+    return 'text-emerald-400';
+};
+
+export const severityIcon = (severity: MixIssue['severity']): ReactElement => {
+    switch (severity) {
+        case 'critical':
+            return <AlertCircle className="size-3 shrink-0 text-red-400" />;
+        case 'warning':
+            return <AlertTriangle className="size-3 shrink-0 text-amber-400" />;
+        case 'info':
+            return <Info className="size-3 shrink-0 text-blue-400" />;
+    }
+};
+
+export const BAND_LABELS: Array<{ key: keyof MixAnalysis['frequencyBalance']; label: string; range: string }> = [
+    { key: 'sub', label: 'Sub', range: '20–60 Hz' },
+    { key: 'bass', label: 'Bass', range: '60–250 Hz' },
+    { key: 'lowMid', label: 'Low-Mid', range: '250–500 Hz' },
+    { key: 'mid', label: 'Mid', range: '500–2k Hz' },
+    { key: 'highMid', label: 'Hi-Mid', range: '2k–6k Hz' },
+    { key: 'high', label: 'High', range: '6k–20k Hz' },
+];
+
+// ── FrequencyBar ────────────────────────────────────────────────────────
+
+export type FrequencyBarProps = { label: string; range: string; db: number };
+
+export const FrequencyBar = ({ label, range, db }: FrequencyBarProps): ReactElement => {
+    const normalizedWidth = Math.max(0, Math.min(100, ((db + 100) / 100) * 100));
+    return (
+        <div className="space-y-0.5">
+            <div className="flex items-center justify-between">
+                <span className="text-[10px] text-muted-foreground" title={range}>
+                    {label}
+                </span>
+                <span className="text-[10px] font-mono text-muted-foreground">{db.toFixed(1)} dB</span>
+            </div>
+            <div className="h-1.5 w-full rounded-full bg-surface-overlay">
+                <div
+                    className={`h-full rounded-full transition-all ${levelColor(db)}`}
+                    style={{ width: `${String(normalizedWidth)}%` }}
+                />
+            </div>
+        </div>
+    );
+};
+
+// ── OverallLevel ────────────────────────────────────────────────────────
+
+export type OverallLevelProps = { level: MixAnalysis['overallLevel'] };
+
+export const OverallLevel = ({ level }: OverallLevelProps): ReactElement => (
+    <section>
+        <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Master Level</h3>
+        <div className="flex items-center gap-3">
+            <div className={`size-2.5 rounded-full ${levelColor(level.peakDb)}`} />
+            <div className="flex-1 space-y-0.5">
+                <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-muted-foreground">Peak</span>
+                    <span className={`text-xs font-mono font-medium ${levelTextColor(level.peakDb)}`}>
+                        {level.peakDb.toFixed(1)} dB
+                    </span>
+                </div>
+                <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-muted-foreground">RMS</span>
+                    <span className="text-xs font-mono text-muted-foreground">{level.rmsDb.toFixed(1)} dB</span>
+                </div>
+            </div>
+        </div>
+    </section>
+);
+
+// ── FrequencyBalance ────────────────────────────────────────────────────
+
+export type FrequencyBalanceProps = { bands: MixAnalysis['frequencyBalance'] };
+
+export const FrequencyBalance = ({ bands }: FrequencyBalanceProps): ReactElement => (
+    <section>
+        <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+            Frequency Balance
+        </h3>
+        <div className="space-y-1.5">
+            {BAND_LABELS.map(({ key, label, range }) => (
+                <FrequencyBar key={key} label={label} range={range} db={bands[key]} />
+            ))}
+        </div>
+    </section>
+);
+
+// ── TrackLevelsList ─────────────────────────────────────────────────────
+
+export type TrackLevelsListProps = { trackLevels: MixAnalysis['trackLevels'] };
+
+export const TrackLevelsList = ({ trackLevels }: TrackLevelsListProps): ReactElement => (
+    <section>
+        <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+            Track Levels ({trackLevels.length})
+        </h3>
+        {trackLevels.length > 0 ? (
+            <div className="space-y-1">
+                {trackLevels.map((tl) => (
+                    <div
+                        key={tl.trackId}
+                        className={`flex items-center justify-between rounded bg-surface-overlay px-2 py-1 ${tl.isMuted ? 'opacity-40' : ''}`}
+                    >
+                        <div className="flex items-center gap-1.5 min-w-0">
+                            <Volume2 className="size-3 shrink-0 text-muted-foreground" />
+                            <span className="text-xs text-foreground truncate">{tl.trackName}</span>
+                            {tl.isMuted ? <span className="text-[9px] text-muted-foreground">M</span> : null}
+                            {tl.isSoloed ? <span className="text-[9px] text-amber-400">S</span> : null}
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                            <span
+                                className={`text-[10px] font-mono ${tl.isClipping ? 'text-red-400 font-bold' : 'text-muted-foreground'}`}
+                            >
+                                {tl.peakDb.toFixed(1)} dB
+                            </span>
+                            <div className={`size-1.5 rounded-full ${levelColor(tl.peakDb)}`} />
+                        </div>
+                    </div>
+                ))}
+            </div>
+        ) : (
+            <p className="text-[10px] text-muted-foreground">No tracks to analyze.</p>
+        )}
+    </section>
+);
+
+// ── IssuesList ──────────────────────────────────────────────────────────
+
+export type IssuesListProps = { issues: MixIssue[] };
+
+export const IssuesList = ({ issues }: IssuesListProps): ReactElement | null => {
+    if (issues.length === 0) {
+        return null;
+    }
+    return (
+        <section>
+            <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                Issues ({issues.length})
+            </h3>
+            <div className="space-y-1">
+                {issues.map((issue, i) => (
+                    <div key={i} className="flex items-start gap-1.5 rounded bg-surface-overlay px-2 py-1.5">
+                        {severityIcon(issue.severity)}
+                        <span className="text-[10px] text-foreground leading-tight">{issue.message}</span>
+                    </div>
+                ))}
+            </div>
+        </section>
+    );
+};
+
+// ── SuggestionsList ─────────────────────────────────────────────────────
+
+export type SuggestionsListProps = { suggestions: string[] };
+
+export const SuggestionsList = ({ suggestions }: SuggestionsListProps): ReactElement | null => {
+    if (suggestions.length === 0) {
+        return null;
+    }
+    return (
+        <section>
+            <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Suggestions</h3>
+            <ul className="space-y-1">
+                {suggestions.map((s, i) => (
+                    <li key={i} className="flex items-start gap-1.5 text-[10px] text-muted-foreground leading-tight">
+                        <span className="shrink-0 mt-0.5">•</span>
+                        <span>{s}</span>
+                    </li>
+                ))}
+            </ul>
+        </section>
+    );
+};

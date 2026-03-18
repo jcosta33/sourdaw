@@ -1,4 +1,4 @@
-import type { SyncMessage } from "../models/CollaborationTypes";
+import { type SyncMessage } from '../models/CollaborationTypes';
 
 type TransportCallbacks = {
     onMessage: (msg: SyncMessage) => void;
@@ -10,9 +10,11 @@ type TransportCallbacks = {
 let ws: WebSocket | null = null;
 let activeCallbacks: TransportCallbacks | null = null;
 
-export const getCallbacks = (): TransportCallbacks | null => activeCallbacks;
+export function getCallbacks(): TransportCallbacks | null {
+    return activeCallbacks;
+}
 
-export const connect = (url: string, cbs: TransportCallbacks): void => {
+export function connect(url: string, cbs: TransportCallbacks): void {
     activeCallbacks = cbs;
     try {
         ws = new WebSocket(url);
@@ -23,7 +25,7 @@ export const connect = (url: string, cbs: TransportCallbacks): void => {
             cbs.onDisconnect();
         };
         ws.onerror = () => {
-            cbs.onError("WebSocket connection failed");
+            cbs.onError('WebSocket connection failed');
         };
         ws.onmessage = (event) => {
             try {
@@ -34,20 +36,22 @@ export const connect = (url: string, cbs: TransportCallbacks): void => {
             }
         };
     } catch {
-        cbs.onError("Failed to create WebSocket connection");
+        cbs.onError('Failed to create WebSocket connection');
     }
-};
+}
 
-export const send = (msg: SyncMessage): void => {
+export function send(msg: SyncMessage): void {
     if (ws?.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(msg));
     }
-};
+}
 
-export const disconnect = (): void => {
+export function disconnect(): void {
     ws?.close();
     ws = null;
     activeCallbacks = null;
-};
+}
 
-export const isConnected = (): boolean => ws?.readyState === WebSocket.OPEN;
+export function isConnected(): boolean {
+    return ws?.readyState === WebSocket.OPEN;
+}

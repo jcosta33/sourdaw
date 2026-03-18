@@ -1,6 +1,6 @@
-import { createRouter } from "@tanstack/react-router";
-import { routeTree } from "#/routeTree.gen";
-import { queryClient } from "./queryClient";
+import { createRouter } from '@tanstack/react-router';
+import { routeTree } from '#/routeTree.gen';
+import { queryClient } from './queryClient';
 
 export type AppRouterContext = {
     queryClient: typeof queryClient;
@@ -8,14 +8,14 @@ export type AppRouterContext = {
 
 export const router = createRouter({
     routeTree,
-    defaultPreload: "intent",
+    defaultPreload: 'intent',
     scrollRestoration: true,
     context: {
         queryClient,
     },
 });
 
-declare module "@tanstack/react-router" {
+declare module '@tanstack/react-router' {
     interface Register {
         router: typeof router;
     }

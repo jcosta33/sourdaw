@@ -1,13 +1,8 @@
-import { trackStore } from "../stores/trackStore";
+import { mapAllTracks } from '../repositories/trackRepository';
 
-export const zoomTracksVertical = (delta: number): void => {
-    const state = trackStore.value;
-    if (!state) return;
-    trackStore.set({
-        ...state,
-        tracks: state.tracks.map((t) => ({
-            ...t,
-            height: Math.max(30, Math.min(300, (t.height ?? 64) + delta)),
-        })),
-    });
-};
+export function zoomTracksVertical(delta: number): void {
+    mapAllTracks((t) => ({
+        ...t,
+        height: Math.max(30, Math.min(300, (t.height ?? 64) + delta)),
+    }));
+}

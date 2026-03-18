@@ -19,7 +19,7 @@ export type TrackRenderModel = {
     id: string;
     name: string;
     index: number;
-    kind: "audio" | "midi" | "bus" | "master" | "folder";
+    kind: 'audio' | 'midi' | 'bus' | 'master' | 'folder';
     color: string;
     muted: boolean;
     soloed: boolean;
@@ -39,7 +39,7 @@ export type ClipRenderModel = {
     endBeat: number;
     name: string;
     color: string;
-    type: "audio" | "midi";
+    type: 'audio' | 'midi';
     muted: boolean;
     midiNotes: MiniNoteRenderModel[];
     audioBufferId?: string;

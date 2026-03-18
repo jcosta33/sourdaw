@@ -1,39 +1,12 @@
-import { trackStore } from "../stores/trackStore";
+import { updateClip } from '../repositories/trackRepository';
 
-export const setClipLoop = (clipId: string, enabled: boolean): void => {
-    const state = trackStore.value;
-    if (!state) {
-        return;
-    }
+export function setClipLoop(clipId: string, enabled: boolean): void {
+    updateClip(clipId, (c) => ({ ...c, loopEnabled: enabled }));
+}
 
-    trackStore.set({
-        ...state,
-        tracks: state.tracks.map((t) => ({
-            ...t,
-            clips: t.clips.map((c) =>
-                c.id === clipId ? { ...c, loopEnabled: enabled } : c,
-            ),
-        })),
-    });
-};
-
-export const setClipLoopLength = (clipId: string, loopLength: number): void => {
-    const state = trackStore.value;
-    if (!state) {
-        return;
-    }
-
+export function setClipLoopLength(clipId: string, loopLength: number): void {
     if (loopLength <= 0) {
         return;
     }
-
-    trackStore.set({
-        ...state,
-        tracks: state.tracks.map((t) => ({
-            ...t,
-            clips: t.clips.map((c) =>
-                c.id === clipId ? { ...c, loopLength } : c,
-            ),
-        })),
-    });
-};
+    updateClip(clipId, (c) => ({ ...c, loopLength }));
+}

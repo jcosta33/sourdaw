@@ -1,4 +1,4 @@
-/* (c) Copyright Frontify Ltd., all rights reserved. */
+/* (c) Copyright Webdaw Ltd., all rights reserved. */
 
 import { type Writer, type WriteErrorParams } from './Writer';
 

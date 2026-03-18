@@ -1,0 +1,60 @@
+import { type ReactElement, useRef, useSyncExternalStore } from 'react';
+import { ArrangementBar } from '#/modules/Timeline/presentations/views/ArrangementBar';
+import { timelineViewStore, scrollTimeline, setScrollY } from '#/modules/Timeline/stores/timelineViewStore';
+import { useTracks } from '../hooks/useTracks';
+import { TrackAutomationSection } from '../components/automationView/TrackAutomationSection';
+
+export const AutomationView = (): ReactElement => {
+    const { tracks } = useTracks();
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    const viewState = useSyncExternalStore(
+        (cb) => timelineViewStore.subscribe(() => cb()),
+        () => timelineViewStore.value,
+        () => timelineViewStore.value
+    );
+
+    const pixelsPerBeat = viewState?.pixelsPerBeat ?? 12;
+    const scrollX = viewState?.scrollX ?? 0;
+    const containerWidth = containerRef.current?.clientWidth ?? 800;
+
+    const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+        if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+            scrollTimeline(e.deltaX || e.deltaY);
+        } else {
+            const currentY = timelineViewStore.value?.scrollY ?? 0;
+            setScrollY(Math.max(0, currentY + e.deltaY));
+        }
+    };
+
+    return (
+        <div className="flex h-full flex-col overflow-hidden" ref={containerRef}>
+            <ArrangementBar pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} />
+            <div className="flex-1 overflow-y-auto bg-surface-base/50" onWheel={handleWheel}>
+                {tracks.length === 0 ? (
+                    <div className="flex items-center justify-center h-full">
+                        <div className="text-center space-y-2">
+                            <p className="text-sm text-muted-foreground">No tracks yet</p>
+                            <p className="text-[10px] text-muted-foreground/60">
+                                Add tracks in the Arrange view first, then return here to add automation
+                            </p>
+                        </div>
+                    </div>
+                ) : (
+                    tracks.map((track) => (
+                        <TrackAutomationSection
+                            key={track.id}
+                            trackId={track.id}
+                            trackName={track.name}
+                            trackColor={track.color ?? '#3b82f6'}
+                            devices={track.devices.map((d) => ({ type: d.type, name: d.name }))}
+                            pixelsPerBeat={pixelsPerBeat}
+                            scrollX={scrollX}
+                            containerWidth={containerWidth}
+                        />
+                    ))
+                )}
+            </div>
+        </div>
+    );
+};

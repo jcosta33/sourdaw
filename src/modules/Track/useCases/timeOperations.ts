@@ -1,14 +1,16 @@
-import { trackStore } from "#/modules/Track/stores/trackStore";
-import { automationStore } from "#/modules/Track/stores/automationStore";
-import { markerStore } from "#/modules/Timeline/stores/markerStore";
-import type { Clip } from "#/modules/Track/models/Track";
+import { getTrackState, setTrackState } from '../repositories/trackRepository';
+import { automationStore } from '#/modules/Track/stores/automationStore';
+import { markerStore } from '#/modules/Timeline/stores/markerStore';
+import { type Clip } from '#/modules/Track/models/Track';
 
-export const deleteTime = (startBeat: number, endBeat: number): void => {
-    const state = trackStore.value;
-    if (!state) return;
+export function deleteTime(startBeat: number, endBeat: number): void {
+    const state = getTrackState();
+    if (!state) {
+        return;
+    }
     const duration = endBeat - startBeat;
 
-    trackStore.set({
+    setTrackState({
         ...state,
         tracks: state.tracks.map((track) => {
             const newClips: Clip[] = [];
@@ -53,20 +55,28 @@ export const deleteTime = (startBeat: number, endBeat: number): void => {
             })),
         });
     }
-};
+}
 
-export const insertTime = (atBeat: number, durationBeats: number): void => {
-    const state = trackStore.value;
-    if (!state) return;
+export function insertTime(atBeat: number, durationBeats: number): void {
+    const state = getTrackState();
+    if (!state) {
+        return;
+    }
 
-    trackStore.set({
+    setTrackState({
         ...state,
         tracks: state.tracks.map((track) => ({
             ...track,
             clips: track.clips.map((clip) => {
-                if (clip.endBeat <= atBeat) return clip;
+                if (clip.endBeat <= atBeat) {
+                    return clip;
+                }
                 if (clip.startBeat >= atBeat) {
-                    return { ...clip, startBeat: clip.startBeat + durationBeats, endBeat: clip.endBeat + durationBeats };
+                    return {
+                        ...clip,
+                        startBeat: clip.startBeat + durationBeats,
+                        endBeat: clip.endBeat + durationBeats,
+                    };
                 }
                 return { ...clip, endBeat: clip.endBeat + durationBeats };
             }),
@@ -91,21 +101,23 @@ export const insertTime = (atBeat: number, durationBeats: number): void => {
             })),
         });
     }
-};
+}
 
-export const duplicateTimeRange = (startBeat: number, endBeat: number): void => {
+export function duplicateTimeRange(startBeat: number, endBeat: number): void {
     const duration = endBeat - startBeat;
     insertTime(endBeat, duration);
 
-    const state = trackStore.value;
-    if (!state) return;
+    const state = getTrackState();
+    if (!state) {
+        return;
+    }
 
     let nextId = Date.now();
-    trackStore.set({
+    setTrackState({
         ...state,
         tracks: state.tracks.map((track) => {
             const clipsInRange = track.clips.filter(
-                (c) => c.startBeat >= startBeat && c.endBeat <= endBeat + duration && c.startBeat < endBeat,
+                (c) => c.startBeat >= startBeat && c.endBeat <= endBeat + duration && c.startBeat < endBeat
             );
             const duplicated = clipsInRange.map((c) => ({
                 ...c,
@@ -116,4 +128,4 @@ export const duplicateTimeRange = (startBeat: number, endBeat: number): void => 
             return { ...track, clips: [...track.clips, ...duplicated] };
         }),
     });
-};
+}

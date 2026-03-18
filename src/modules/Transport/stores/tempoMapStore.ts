@@ -1,7 +1,7 @@
-import { Container } from "#/helpers/DependencyInjector/Container";
-import { Logger } from "#/helpers/Logger/Logger";
-import { Store } from "#/helpers/Store/Store";
-import type { TempoChange } from "../models/TempoMap";
+import { Container } from '#/helpers/DependencyInjector/Container';
+import { Logger } from '#/helpers/Logger/Logger';
+import { Store } from '#/helpers/Store/Store';
+import { type TempoChange } from '../models/TempoMap';
 
 const logger = Container.getInstance().get(Logger);
 

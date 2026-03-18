@@ -1,4 +1,4 @@
-import type { AppAction, AppActionType } from "./AppAction";
+import { type AppAction, type AppActionType } from './AppAction';
 
 export type ActionResult = {
     label: string;

@@ -1,37 +1,30 @@
-import { trackStore } from "../stores/trackStore";
-import { transportStore } from "#/modules/Transport/stores/transportStore";
-import { takeLaneStore } from "../stores/takeLaneStore";
-import type { Clip } from "../models/Track";
-import { addTakeLane, addTake, getTakeLaneForTrack } from "./compingUseCases";
-import { setMidiInputTrack } from "#/modules/AudioEngine/useCases/webMidiInput";
+import { getTrackState, setTrackState, updateTrack, getTrackById } from '../repositories/trackRepository';
+import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
+import { takeLaneStore } from '../stores/takeLaneStore';
+import { type Clip } from '../models/Track';
+import { addTakeLane, addTake, getTakeLaneForTrack } from './compingUseCases';
+import { setMidiInputTrack } from '#/modules/AudioEngine/useCases/webMidiInput';
 
 let recordClipId = 1;
 let takeCounter = 1;
 
-export const armTrack = (trackId: string, armed: boolean): void => {
-    const state = trackStore.value;
-    if (!state) {
-        return;
-    }
-    trackStore.set({
-        ...state,
-        tracks: state.tracks.map((t) =>
-            t.id === trackId ? { ...t, armed } : t,
-        ),
-    });
+export function armTrack(trackId: string, armed: boolean): void {
+    updateTrack(trackId, (t) => ({ ...t, armed }));
 
     if (armed) {
-        const track = state.tracks.find((t) => t.id === trackId);
-        if (track && track.kind === "midi") {
+        const track = getTrackById(trackId);
+        if (track && track.kind === 'midi') {
             setMidiInputTrack(trackId);
         }
     }
-};
+}
 
-export const startRecording = (): Clip[] => {
-    const trackState = trackStore.value;
-    const transportState = transportStore.value;
-    if (!trackState || !transportState) return [];
+export function startRecording(): Clip[] {
+    const trackState = getTrackState();
+    const transportState = getTransportState();
+    if (!trackState || !transportState) {
+        return [];
+    }
 
     const armedTracks = trackState.tracks.filter((t) => t.armed);
     const newClips: Clip[] = [];
@@ -44,11 +37,11 @@ export const startRecording = (): Clip[] => {
             name: `Recording ${recordClipId}`,
             startBeat: transportState.playheadPosition,
             endBeat: transportState.playheadPosition,
-            type: track.kind === "midi" ? "midi" : "audio",
+            type: track.kind === 'midi' ? 'midi' : 'audio',
             fadeInBeats: 0,
             fadeOutBeats: 0,
             gain: 1.0,
-            color: "",
+            color: '',
             locked: false,
             muted: false,
         };
@@ -62,39 +55,41 @@ export const startRecording = (): Clip[] => {
             clipId,
             `Take ${takeCounter++}`,
             transportState.playheadPosition,
-            transportState.playheadPosition,
+            transportState.playheadPosition
         );
     }
 
     if (newClips.length > 0) {
-        trackStore.set({
+        setTrackState({
             ...trackState,
             tracks: trackState.tracks.map((t) => {
                 const clip = newClips.find((c) => c.trackId === t.id);
-                if (!clip) return t;
+                if (!clip) {
+                    return t;
+                }
                 return { ...t, clips: [...t.clips, clip] };
             }),
         });
     }
 
     return newClips;
-};
+}
 
-export const stopRecording = (clipIds: string[]): void => {
-    const trackState = trackStore.value;
-    const transportState = transportStore.value;
-    if (!trackState || !transportState) return;
+export function stopRecording(clipIds: string[]): void {
+    const trackState = getTrackState();
+    const transportState = getTransportState();
+    if (!trackState || !transportState) {
+        return;
+    }
 
     const endBeat = transportState.playheadPosition;
 
-    trackStore.set({
+    setTrackState({
         ...trackState,
         tracks: trackState.tracks.map((t) => ({
             ...t,
             clips: t.clips.map((c) =>
-                clipIds.includes(c.id)
-                    ? { ...c, endBeat: Math.max(c.startBeat + 1, endBeat) }
-                    : c,
+                clipIds.includes(c.id) ? { ...c, endBeat: Math.max(c.startBeat + 1, endBeat) } : c
             ),
         })),
     });
@@ -105,11 +100,9 @@ export const stopRecording = (clipIds: string[]): void => {
             lanes: tlState.lanes.map((lane) => ({
                 ...lane,
                 takes: lane.takes.map((take) =>
-                    clipIds.includes(take.clipId)
-                        ? { ...take, endBeat: Math.max(take.startBeat + 1, endBeat) }
-                        : take,
+                    clipIds.includes(take.clipId) ? { ...take, endBeat: Math.max(take.startBeat + 1, endBeat) } : take
                 ),
             })),
         });
     }
-};
+}

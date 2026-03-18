@@ -1,13 +1,13 @@
-import { Container } from "#/helpers/DependencyInjector/Container";
-import { Logger } from "#/helpers/Logger/Logger";
-import { audioEngine } from "#/modules/AudioEngine/repositories/audioEngineInstance";
+import { Container } from '#/helpers/DependencyInjector/Container';
+import { Logger } from '#/helpers/Logger/Logger';
+import { audioEngine } from '#/modules/AudioEngine/repositories/audioEngineInstance';
 
 const logger = Container.getInstance().get(Logger);
 
 export type AudioDeviceInfo = {
     id: string;
     label: string;
-    kind: "audioinput" | "audiooutput";
+    kind: 'audioinput' | 'audiooutput';
 };
 
 type AudioDeviceSnapshot = {
@@ -19,56 +19,72 @@ let selectedOutputId: string | null = null;
 let selectedInputId: string | null = null;
 const listeners = new Set<() => void>();
 
-const notify = (): void => {
+let cachedSnapshot: AudioDeviceSnapshot = {
+    selectedOutputId: null,
+    selectedInputId: null,
+};
+
+function buildSnapshot(): AudioDeviceSnapshot {
+    if (cachedSnapshot.selectedOutputId !== selectedOutputId || cachedSnapshot.selectedInputId !== selectedInputId) {
+        cachedSnapshot = { selectedOutputId, selectedInputId };
+    }
+    return cachedSnapshot;
+}
+
+function notify(): void {
+    buildSnapshot();
     for (const cb of listeners) {
         cb();
     }
-};
+}
 
-export const getAudioDevices = async (): Promise<AudioDeviceInfo[]> => {
+export async function getAudioDevices(): Promise<AudioDeviceInfo[]> {
     try {
         const devices = await navigator.mediaDevices.enumerateDevices();
         return devices
-            .filter((d) => d.kind === "audioinput" || d.kind === "audiooutput")
+            .filter((d) => d.kind === 'audioinput' || d.kind === 'audiooutput')
             .map((d) => ({
                 id: d.deviceId,
                 label: d.label || `Device ${d.deviceId.slice(0, 8)}`,
-                kind: d.kind as "audioinput" | "audiooutput",
+                kind: d.kind as 'audioinput' | 'audiooutput',
             }));
-    } catch (e) {
-        logger.warn(`Failed to enumerate audio devices: ${e}`);
+    } catch (error) {
+        logger.warn(`Failed to enumerate audio devices: ${error}`);
         return [];
     }
-};
+}
 
-export const setOutputDevice = async (deviceId: string): Promise<void> => {
-    if ("setSinkId" in audioEngine.context) {
+export async function setOutputDevice(deviceId: string): Promise<void> {
+    if ('setSinkId' in audioEngine.context) {
         try {
             await (audioEngine.context as unknown as { setSinkId(id: string): Promise<void> }).setSinkId(deviceId);
-        } catch (e) {
-            logger.warn(`Failed to set output device: ${e}`);
+        } catch (error) {
+            logger.warn(`Failed to set output device: ${error}`);
         }
     }
     selectedOutputId = deviceId;
     notify();
-};
+}
 
-export const setInputDevice = (deviceId: string): void => {
+export function setInputDevice(deviceId: string): void {
     selectedInputId = deviceId;
     notify();
-};
+}
 
-export const getSelectedOutputId = (): string | null => selectedOutputId;
-export const getSelectedInputId = (): string | null => selectedInputId;
+export function getSelectedOutputId(): string | null {
+    return selectedOutputId;
+}
+export function getSelectedInputId(): string | null {
+    return selectedInputId;
+}
 
-export const subscribe = (cb: () => void): (() => void) => {
+export function subscribe(cb: () => void): () => void {
     listeners.add(cb);
     return () => {
         listeners.delete(cb);
     };
-};
+}
 
-export const getSnapshot = (): AudioDeviceSnapshot => ({
-    selectedOutputId,
-    selectedInputId,
-});
+export function getSnapshot(): AudioDeviceSnapshot {
+    return buildSnapshot();
+}

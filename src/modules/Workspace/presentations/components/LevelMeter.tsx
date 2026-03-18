@@ -1,5 +1,5 @@
-import { type ReactElement } from "react";
-import { cn } from "#/helpers/Styles/cn";
+import { type ReactElement } from 'react';
+import { cn } from '#/helpers/Styles/cn';
 
 type LevelMeterProps = {
     peak: number;
@@ -13,17 +13,22 @@ const DB_MARKS = [0, -6, -12, -24, -48] as const;
 const MIN_DB = -60;
 
 const linearToDb = (linear: number): number => {
-    if (linear <= 0) return MIN_DB;
+    if (linear <= 0) {
+        return MIN_DB;
+    }
     return Math.max(MIN_DB, 20 * Math.log10(linear));
 };
 
-const dbToPercent = (db: number): number =>
-    Math.max(0, Math.min(100, ((db - MIN_DB) / (0 - MIN_DB)) * 100));
+const dbToPercent = (db: number): number => Math.max(0, Math.min(100, ((db - MIN_DB) / (0 - MIN_DB)) * 100));
 
 const getMeterColor = (db: number): string => {
-    if (db > -3) return "var(--color-destructive, #ef4444)";
-    if (db > -12) return "var(--color-accent-warning, #eab308)";
-    return "var(--color-accent-success, #22c55e)";
+    if (db > -3) {
+        return 'var(--color-destructive, #ef4444)';
+    }
+    if (db > -12) {
+        return 'var(--color-accent-warning, #eab308)';
+    }
+    return 'var(--color-accent-success, #22c55e)';
 };
 
 const buildGradient = (): string => {
@@ -38,8 +43,8 @@ export const LevelMeter = ({
     peak,
     rms,
     peakHold,
-    height = "h-full",
-    width = "w-2",
+    height = 'h-full',
+    width = 'w-2',
 }: LevelMeterProps): ReactElement => {
     const peakDb = linearToDb(peak);
     const rmsDb = linearToDb(rms);
@@ -53,13 +58,13 @@ export const LevelMeter = ({
 
     return (
         <div
-            className={cn("flex gap-px", height)}
+            className={cn('flex gap-px', height)}
             role="meter"
             aria-label="Level meter"
             aria-valuenow={Math.round(peakDb)}
             aria-valuemin={MIN_DB}
             aria-valuemax={0}
-            aria-valuetext={`Peak ${peakDb > MIN_DB ? peakDb.toFixed(1) : "-∞"} dB, RMS ${rmsDb > MIN_DB ? rmsDb.toFixed(1) : "-∞"} dB`}
+            aria-valuetext={`Peak ${peakDb > MIN_DB ? peakDb.toFixed(1) : '-∞'} dB, RMS ${rmsDb > MIN_DB ? rmsDb.toFixed(1) : '-∞'} dB`}
         >
             <div className="flex flex-col justify-between py-0.5 pr-px shrink-0">
                 {DB_MARKS.map((db) => (
@@ -73,7 +78,7 @@ export const LevelMeter = ({
                 ))}
             </div>
 
-            <div className={cn("relative rounded-sm overflow-hidden bg-muted/20", width)}>
+            <div className={cn('relative rounded-sm overflow-hidden bg-muted/20', width)}>
                 <div
                     className="absolute bottom-0 left-0 w-full transition-[height] duration-75"
                     style={{
@@ -98,7 +103,7 @@ export const LevelMeter = ({
                         className="absolute left-0 w-full transition-[bottom] duration-150"
                         style={{
                             bottom: `${holdPct}%`,
-                            height: "1.5px",
+                            height: '1.5px',
                             backgroundColor: holdColor,
                         }}
                     />

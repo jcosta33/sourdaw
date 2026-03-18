@@ -1,8 +1,8 @@
-import { trackStore } from "#/modules/Track/stores/trackStore";
-import { automationStore } from "#/modules/Track/stores/automationStore";
-import { batchAddAutomationPoints } from "#/modules/Track/useCases/automationUseCases";
-import type { AutomationPoint } from "#/modules/Track/models/Automation";
-import type { AutomationMode } from "#/modules/Track/models/Track";
+import { getTrackById, getAllTracks } from '../repositories/trackRepository';
+import { automationStore } from '#/modules/Track/stores/automationStore';
+import { batchAddAutomationPoints } from '#/modules/Track/useCases/automationUseCases';
+import { type AutomationPoint } from '#/modules/Track/models/Automation';
+import { type AutomationMode } from '#/modules/Track/models/Track';
 
 type RecordingSession = {
     parameterId: string;
@@ -11,27 +11,26 @@ type RecordingSession = {
     lastValue: number | null;
 };
 
-const RECORDING_MODES: ReadonlySet<AutomationMode> = new Set(["write", "touch", "latch"]);
+const RECORDING_MODES: ReadonlySet<AutomationMode> = new Set(['write', 'touch', 'latch']);
 
 const activeRecording = new Map<string, RecordingSession>();
 const pendingPoints = new Map<string, AutomationPoint[]>();
 const touchActive = new Set<string>();
 
-const makeKey = (trackId: string, parameterId: string): string =>
-    `${trackId}::${parameterId}`;
+function makeKey(trackId: string, parameterId: string): string {
+    return `${trackId}::${parameterId}`;
+}
 
-const findLaneId = (trackId: string, parameterId: string): string | null => {
+function findLaneId(trackId: string, parameterId: string): string | null {
     const state = automationStore.value;
     if (!state) {
         return null;
     }
-    const lane = state.lanes.find(
-        (l) => l.trackId === trackId && l.parameterId === parameterId,
-    );
+    const lane = state.lanes.find((l) => l.trackId === trackId && l.parameterId === parameterId);
     return lane?.id ?? null;
-};
+}
 
-const clearPointsInRange = (laneId: string, fromBeat: number, toBeat: number): void => {
+function clearPointsInRange(laneId: string, fromBeat: number, toBeat: number): void {
     const state = automationStore.value;
     if (!state) {
         return;
@@ -43,15 +42,13 @@ const clearPointsInRange = (laneId: string, fromBeat: number, toBeat: number): v
             }
             return {
                 ...l,
-                points: l.points.filter(
-                    (p) => p.beat < fromBeat || p.beat > toBeat,
-                ),
+                points: l.points.filter((p) => p.beat < fromBeat || p.beat > toBeat),
             };
         }),
     });
-};
+}
 
-const flushPendingPoints = (key: string): void => {
+function flushPendingPoints(key: string): void {
     const points = pendingPoints.get(key);
     const session = activeRecording.get(key);
     if (!points || points.length === 0 || !session) {
@@ -65,24 +62,21 @@ const flushPendingPoints = (key: string): void => {
 
     batchAddAutomationPoints(laneId, points);
     pendingPoints.set(key, []);
-};
+}
 
-export const startAutomationRecording = (): void => {
+export function startAutomationRecording(): void {
     activeRecording.clear();
     pendingPoints.clear();
     touchActive.clear();
 
-    const trackState = trackStore.value;
-    if (!trackState) {
-        return;
-    }
+    const tracks = getAllTracks();
 
     const autoState = automationStore.value;
     if (!autoState) {
         return;
     }
 
-    for (const track of trackState.tracks) {
+    for (const track of tracks) {
         if (!RECORDING_MODES.has(track.automationMode)) {
             continue;
         }
@@ -102,20 +96,10 @@ export const startAutomationRecording = (): void => {
             pendingPoints.set(key, []);
         }
     }
-};
+}
 
-export const recordAutomationValue = (
-    trackId: string,
-    parameterId: string,
-    value: number,
-    beat: number,
-): void => {
-    const trackState = trackStore.value;
-    if (!trackState) {
-        return;
-    }
-
-    const track = trackState.tracks.find((t) => t.id === trackId);
+export function recordAutomationValue(trackId: string, parameterId: string, value: number, beat: number): void {
+    const track = getTrackById(trackId);
     if (!track || !RECORDING_MODES.has(track.automationMode)) {
         return;
     }
@@ -134,10 +118,10 @@ export const recordAutomationValue = (
         pendingPoints.set(key, []);
     }
 
-    const point: AutomationPoint = { beat, value, curve: "linear" };
+    const point: AutomationPoint = { beat, value, curve: 'linear', tension: 0 };
     const laneId = findLaneId(trackId, parameterId);
 
-    if (track.automationMode === "write") {
+    if (track.automationMode === 'write') {
         if (laneId) {
             clearPointsInRange(laneId, session.startBeat, beat);
         }
@@ -146,26 +130,24 @@ export const recordAutomationValue = (
         pendingPoints.set(key, points);
         session.lastValue = value;
         session.startBeat = beat;
-    } else if (track.automationMode === "touch" || track.automationMode === "latch") {
+    } else if (track.automationMode === 'touch' || track.automationMode === 'latch') {
         touchActive.add(key);
         const points = pendingPoints.get(key) ?? [];
         points.push(point);
         pendingPoints.set(key, points);
         session.lastValue = value;
     }
-};
+}
 
-export const stopAutomationRecording = (): void => {
-    const trackState = trackStore.value;
+export function stopAutomationRecording(): void {
+    const tracks = getAllTracks();
 
     for (const [key, session] of activeRecording) {
-        const track = trackState?.tracks.find((t) => t.id === session.trackId);
+        const track = tracks.find((t) => t.id === session.trackId);
 
-        if (track?.automationMode === "latch" && session.lastValue !== null) {
+        if (track?.automationMode === 'latch' && session.lastValue !== null) {
             const points = pendingPoints.get(key) ?? [];
-            const lastBeat = points.length > 0
-                ? points[points.length - 1]!.beat
-                : session.startBeat;
+            const lastBeat = points.length > 0 ? points[points.length - 1]!.beat : session.startBeat;
             const laneId = findLaneId(session.trackId, session.parameterId);
 
             if (laneId && lastBeat > session.startBeat) {
@@ -179,42 +161,37 @@ export const stopAutomationRecording = (): void => {
     activeRecording.clear();
     pendingPoints.clear();
     touchActive.clear();
-};
+}
 
-export const isRecordingAutomation = (trackId: string, parameterId: string): boolean => {
+export function isRecordingAutomation(trackId: string, parameterId: string): boolean {
     const key = makeKey(trackId, parameterId);
     const session = activeRecording.get(key);
     if (!session) {
         return false;
     }
 
-    const trackState = trackStore.value;
-    if (!trackState) {
-        return false;
-    }
-
-    const track = trackState.tracks.find((t) => t.id === trackId);
+    const track = getTrackById(trackId);
     if (!track) {
         return false;
     }
 
-    if (track.automationMode === "write") {
+    if (track.automationMode === 'write') {
         return true;
     }
 
-    if (track.automationMode === "touch") {
+    if (track.automationMode === 'touch') {
         return touchActive.has(key);
     }
 
-    if (track.automationMode === "latch") {
+    if (track.automationMode === 'latch') {
         return touchActive.has(key) || session.lastValue !== null;
     }
 
     return false;
-};
+}
 
-export const releaseTouchAutomation = (trackId: string, parameterId: string): void => {
+export function releaseTouchAutomation(trackId: string, parameterId: string): void {
     const key = makeKey(trackId, parameterId);
     touchActive.delete(key);
     flushPendingPoints(key);
-};
+}

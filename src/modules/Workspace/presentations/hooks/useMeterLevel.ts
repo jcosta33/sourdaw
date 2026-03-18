@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef } from "react";
-import { audioEngine } from "#/modules/AudioEngine/repositories/audioEngineInstance";
+import { useState, useEffect, useRef } from 'react';
+import { getTrackPeakLevel } from '../../useCases/workspaceViewActions';
+import { getMasterPeakLevel } from '../../useCases/workspaceViewActions';
 
 type MeterLevel = {
     peak: number;
@@ -25,16 +26,18 @@ export const useMeterLevel = (trackId: string | null): MeterLevel => {
 
         const tick = () => {
             const now = performance.now();
-            const peak = trackId
-                ? audioEngine.getTrackPeakLevel(trackId)
-                : audioEngine.getMasterPeakLevel();
+            const peak = trackId ? getTrackPeakLevel(trackId) : getMasterPeakLevel();
 
             const buf = rmsBufferRef.current;
             buf.push(peak * peak);
-            if (buf.length > RMS_BUFFER_SIZE) buf.shift();
+            if (buf.length > RMS_BUFFER_SIZE) {
+                buf.shift();
+            }
 
             let sumSquares = 0;
-            for (let i = 0; i < buf.length; i++) sumSquares += buf[i]!;
+            for (let i = 0; i < buf.length; i++) {
+                sumSquares += buf[i]!;
+            }
             const rms = Math.sqrt(sumSquares / buf.length);
 
             if (peak >= peakHoldRef.current) {

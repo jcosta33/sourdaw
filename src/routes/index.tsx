@@ -1,11 +1,11 @@
-import { type ReactElement } from "react";
-import { createFileRoute } from "@tanstack/react-router";
-import { ArrangeView } from "#/modules/Workspace/presentations/views/ArrangeView";
-import { ClipView } from "#/modules/Workspace/presentations/views/ClipView";
-import { MixView } from "#/modules/Workspace/presentations/views/MixView";
-import { useWorkspaceState } from "#/modules/Workspace/presentations/hooks/useWorkspaceState";
+import { type ReactElement } from 'react';
+import { createFileRoute } from '@tanstack/react-router';
+import { ArrangeView } from '#/modules/Workspace/presentations/views/ArrangeView';
+import { AutomationView } from '#/modules/Workspace/presentations/views/AutomationView';
+import { ClipView } from '#/modules/Workspace/presentations/views/ClipView';
+import { useWorkspaceState } from '#/modules/Workspace/presentations/hooks/useWorkspaceState';
 
-export const Route = createFileRoute("/")({
+export const Route = createFileRoute('/')({
     component: IndexPage,
 });
 
@@ -13,11 +13,13 @@ function IndexPage(): ReactElement {
     const { mode } = useWorkspaceState();
 
     switch (mode) {
-        case "arrange":
+        case 'arrange':
             return <ArrangeView />;
-        case "clip":
+        case 'automation':
+            return <AutomationView />;
+        case 'clip':
             return <ClipView />;
-        case "mix":
-            return <MixView />;
+        default:
+            return <ArrangeView />;
     }
 }

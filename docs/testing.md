@@ -173,7 +173,7 @@ describe('libraryApiToModel', () => {
             name: 'my-library',
             createdAt: new Date('2024-01-01T12:00:00Z'),
             creator: {
-                email: 'creator@frontify.com',
+                email: 'creator@webdaw.com',
             },
             modifiedAt: null,
             modifier: null,
@@ -183,7 +183,7 @@ describe('libraryApiToModel', () => {
             id: 123,
             name: 'my-library',
             created: new Date('2024-01-01T12:00:00Z'),
-            creator: 'creator@frontify.com',
+            creator: 'creator@webdaw.com',
             modified: null,
             modifier: null,
         };

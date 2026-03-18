@@ -1,172 +1,230 @@
 export type AppAction =
-    | { type: "addTrack"; payload: { name: string; kind: TrackKind } }
-    | { type: "removeTrack"; payload: { trackId: string } }
-    | { type: "renameTrack"; payload: { trackId: string; name: string } }
-    | { type: "selectTrack"; payload: { trackId: string } }
-    | { type: "muteTrack"; payload: { trackId: string; muted: boolean } }
-    | { type: "soloTrack"; payload: { trackId: string; soloed: boolean } }
-    | { type: "toggleSoloSafe"; payload: { trackId: string } }
-    | { type: "armTrack"; payload: { trackId: string; armed: boolean } }
-    | { type: "freezeTrack"; payload: { trackId: string } }
-    | { type: "unfreezeTrack"; payload: { trackId: string } }
-    | { type: "bounceInPlace"; payload: { trackId: string } }
-    | { type: "reorderTrack"; payload: { trackId: string; newIndex: number } }
-    | { type: "setTempo"; payload: { bpm: number } }
-    | { type: "togglePlayback"; payload?: undefined }
-    | { type: "stopPlayback"; payload?: undefined }
-    | { type: "toggleRecording"; payload?: undefined }
-    | { type: "setMasterGain"; payload: { gain: number } }
-    | { type: "toggleLoop"; payload?: undefined }
-    | { type: "toggleMetronome"; payload?: undefined }
-    | { type: "setMetronomeVolume"; payload: { volume: number } }
-    | { type: "setLoopRegion"; payload: { startBeat: number; endBeat: number } }
-    | { type: "addClip"; payload: { trackId: string; startBeat: number; endBeat: number; name: string; audioBufferId?: string } }
-    | { type: "moveClip"; payload: { clipId: string; trackId: string; startBeat: number } }
-    | { type: "duplicateClip"; payload: { clipId: string } }
-    | { type: "duplicateClipToNextBar"; payload: { clipId: string } }
-    | { type: "duplicateTrack"; payload: { trackId: string } }
-    | { type: "removeClip"; payload: { clipId: string } }
-    | { type: "renameClip"; payload: { clipId: string; name: string } }
-    | { type: "splitClip"; payload: { clipId: string; beat: number } }
-    | { type: "trimClipStart"; payload: { clipId: string; newStartBeat: number } }
-    | { type: "trimClipEnd"; payload: { clipId: string; newEndBeat: number } }
-    | { type: "addDevice"; payload: { trackId: string; deviceType: string } }
-    | { type: "bypassDevice"; payload: { deviceId: string; bypassed: boolean } }
-    | { type: "removeDevice"; payload: { deviceId: string } }
-    | { type: "setDeviceParameter"; payload: { deviceId: string; paramId: string; value: number } }
-    | { type: "createBus"; payload: { name: string } }
-    | { type: "createFolder"; payload: { name: string } }
-    | { type: "setSend"; payload: { trackId: string; busId: string; level: number } }
-    | { type: "setWorkspaceMode"; payload: { mode: "arrange" | "clip" | "mix" } }
-    | { type: "openMixer"; payload?: undefined }
-    | { type: "closeMixer"; payload?: undefined }
-    | { type: "toggleSidebar"; payload?: undefined }
-    | { type: "toggleInspector"; payload?: undefined }
-    | { type: "setEditingTool"; payload: { tool: string } }
-    | { type: "addMarker"; payload: { beat: number; name: string } }
-    | { type: "removeMarker"; payload: { markerId: string } }
-    | { type: "setMarkerColor"; payload: { markerId: string; color: string } }
-    | { type: "addSection"; payload: { startBeat: number; endBeat: number; name: string } }
-    | { type: "removeSection"; payload: { sectionId: string } }
-    | { type: "renameSection"; payload: { sectionId: string; name: string } }
-    | { type: "addAutomationLane"; payload: { trackId: string; parameterId: string; parameterName: string } }
-    | { type: "addAutomationPoint"; payload: { laneId: string; beat: number; value: number; curve?: "linear" | "step" | "exponential" } }
-    | { type: "quantizeNotes"; payload: { clipId: string; gridSize: number } }
-    | { type: "quantizeNoteLengths"; payload: { clipId: string; gridSize: number } }
-    | { type: "transposeNotes"; payload: { clipId: string; semitones: number } }
-    | { type: "humanizeNotes"; payload: { clipId: string; amount: number } }
-    | { type: "invertNotes"; payload: { clipId: string } }
-    | { type: "retrogradeNotes"; payload: { clipId: string } }
-    | { type: "scaleVelocities"; payload: { clipId: string; curve: string; minVelocity?: number; maxVelocity?: number } }
-    | { type: "scaleAllVelocities"; payload: { clipId: string; factor: number } }
-    | { type: "setAllVelocities"; payload: { clipId: string; velocity: number } }
-    | { type: "setTrackGain"; payload: { trackId: string; gain: number } }
-    | { type: "setTrackPan"; payload: { trackId: string; pan: number } }
-    | { type: "setTrackColor"; payload: { trackId: string; color: string } }
-    | { type: "copyClip"; payload?: undefined }
-    | { type: "cutClip"; payload?: undefined }
-    | { type: "pasteClip"; payload?: undefined }
-    | { type: "setClipFade"; payload: { clipId: string; fadeInBeats: number; fadeOutBeats: number } }
-    | { type: "importMidiFile"; payload?: undefined }
-    | { type: "normalizeClip"; payload: { clipId: string; mode?: "peak" | "rms" | "lufs"; targetDb?: number } }
-    | { type: "reverseClip"; payload: { clipId: string } }
-    | { type: "glueClips"; payload: { clipIds: string[] } }
-    | { type: "nudgeClip"; payload: { clipId: string; beats: number } }
-    | { type: "crossfadeClips"; payload: { clipAId: string; clipBId: string; durationBeats: number } }
-    | { type: "setClipGain"; payload: { clipId: string; gain: number } }
-    | { type: "setClipColor"; payload: { clipId: string; color: string } }
-    | { type: "lockClip"; payload: { clipId: string; locked: boolean } }
-    | { type: "consolidateSelection"; payload: { trackId: string; startBeat: number; endBeat: number } }
-    | { type: "bounceSelection"; payload: { trackId: string; startBeat: number; endBeat: number } }
-    | { type: "seekPlayhead"; payload: { beat: number } }
-    | { type: "setPunchIn"; payload: { beat: number } }
-    | { type: "setPunchOut"; payload: { beat: number } }
-    | { type: "togglePunch"; payload?: undefined }
-    | { type: "toggleCountIn"; payload?: undefined }
-    | { type: "setCountInBars"; payload: { bars: number } }
-    | { type: "togglePreRoll"; payload?: undefined }
-    | { type: "setPreRollBars"; payload: { bars: number } }
-    | { type: "zoomTracksVertical"; payload: { delta: number } }
-    | { type: "addTimeSignatureChange"; payload: { beat: number; numerator: number; denominator: number } }
-    | { type: "removeTimeSignatureChange"; payload: { beat: number } }
-    | { type: "setTrackOutput"; payload: { trackId: string; outputId: string } }
-    | { type: "addSend"; payload: { trackId: string; busId: string; level: number } }
-    | { type: "removeSend"; payload: { trackId: string; busId: string } }
-    | { type: "removeAutomationPoint"; payload: { laneId: string; pointIndex: number } }
-    | { type: "setAutomationMode"; payload: { trackId: string; mode: "read" | "write" | "touch" | "latch" | "off" } }
-    | { type: "hideTrack"; payload: { trackId: string; hidden: boolean } }
-    | { type: "disableTrack"; payload: { trackId: string; disabled: boolean } }
-    | { type: "setTrackHeight"; payload: { trackId: string; height: number } }
-    | { type: "setSnapValue"; payload: { value: number } }
-    | { type: "zoomToFit"; payload?: undefined }
-    | { type: "zoomToSelection"; payload?: undefined }
-    | { type: "exportProject"; payload?: undefined }
-    | { type: "saveProject"; payload?: undefined }
-    | { type: "newProject"; payload?: undefined }
-    | { type: "importAudioFile"; payload?: undefined }
-    | { type: "exportMidi"; payload: { clipId: string } }
-    | { type: "foldTrack"; payload: { trackId: string; folded: boolean } }
-    | { type: "groupTracks"; payload: { trackIds: string[]; name: string } }
-    | { type: "ungroupTracks"; payload: { groupId: string } }
-    | { type: "scaleAutomation"; payload: { laneId: string; factor: number; anchor?: number } }
-    | { type: "stretchAutomation"; payload: { laneId: string; factor: number; anchorBeat?: number } }
-    | { type: "invertAutomation"; payload: { laneId: string } }
-    | { type: "reverseAutomation"; payload: { laneId: string } }
-    | { type: "thinAutomation"; payload: { laneId: string; tolerance?: number } }
-    | { type: "quantizeAutomation"; payload: { laneId: string; gridSize: number } }
-    | { type: "loadPreset"; payload: { presetId: string; trackId?: string } }
-    | { type: "savePreset"; payload: { trackId: string; name: string; category: string } }
-    | { type: "generateDrumPattern"; payload: { style: string; trackId?: string; bars?: number; density?: number } }
-    | { type: "generateMelody"; payload: { style: string; key?: number; scale?: string; trackId?: string; bars?: number } }
-    | { type: "generateChordProgression"; payload: { style: string; key?: number; scale?: string; trackId?: string; bars?: number; voicing?: string } }
-    | { type: "setClipLoop"; payload: { clipId: string; enabled: boolean } }
-    | { type: "setClipLoopLength"; payload: { clipId: string; loopLength: number } }
-    | { type: "extractGroove"; payload: { clipId: string } }
-    | { type: "applyGroove"; payload: { clipId: string; grooveId: string; amount?: number } }
-    | { type: "setClipStretchMode"; payload: { clipId: string; mode: "off" | "repitch" | "timestretch" } }
-    | { type: "setClipStretchRatio"; payload: { clipId: string; ratio: number } }
-    | { type: "fitClipToBeats"; payload: { clipId: string; targetBeats: number } }
-    | { type: "analyzeMix"; payload?: undefined }
-    | { type: "autoFixMix"; payload?: undefined }
-    | { type: "enableMpe"; payload?: undefined }
-    | { type: "disableMpe"; payload?: undefined }
-    | { type: "getLatencyReport"; payload?: undefined }
-    | { type: "createCollabSession"; payload?: undefined }
-    | { type: "joinCollabSession"; payload: { sessionId: string; peerName: string } }
-    | { type: "leaveCollabSession"; payload?: undefined }
-    | { type: "scanPlugins"; payload?: undefined }
-    | { type: "loadExternalPlugin"; payload: { pluginId: string; trackId?: string } }
-    | { type: "audioToMidi"; payload: { clipId: string; trackId?: string; sensitivity?: number; mode?: string } }
-    | { type: "muteClip"; payload: { clipId: string; muted: boolean } }
-    | { type: "clearSolos"; payload?: undefined }
-    | { type: "setTrackNotes"; payload: { trackId: string; notes: string } }
-    | { type: "deleteTime"; payload: { startBeat: number; endBeat: number } }
-    | { type: "insertTime"; payload: { atBeat: number; durationBeats: number } }
-    | { type: "duplicateTimeRange"; payload: { startBeat: number; endBeat: number } }
-    | { type: "stripSilence"; payload: { clipId: string; threshold?: number; minDuration?: number } }
-    | { type: "detectTempo"; payload: { clipId: string } }
-    | { type: "detectKey"; payload: { clipId: string } }
-    | { type: "consolidateAllTracks"; payload?: undefined }
-    | { type: "arpeggiate"; payload: { clipId: string; pattern?: string; rate?: number; octaves?: number; gate?: number } }
-    | { type: "addSidechainRoute"; payload: { sourceTrackId: string; targetTrackId: string } }
-    | { type: "removeSidechainRoute"; payload: { sourceTrackId: string; targetTrackId: string } }
-    | { type: "bounceToNewTrack"; payload: { trackId: string } };
+    | { type: 'addTrack'; payload: { name: string; kind: TrackKind } }
+    | { type: 'removeTrack'; payload: { trackId: string } }
+    | { type: 'removeAllTracks'; payload?: undefined }
+    | { type: 'renameTrack'; payload: { trackId: string; name: string } }
+    | { type: 'createTrackAlternative'; payload: { trackId: string; name: string; duplicateActive: boolean } }
+    | { type: 'switchTrackAlternative'; payload: { trackId: string; alternativeId: string } }
+    | { type: 'renameTrackAlternative'; payload: { trackId: string; alternativeId: string; name: string } }
+    | { type: 'deleteTrackAlternative'; payload: { trackId: string; alternativeId: string } }
+    | { type: 'selectTrack'; payload: { trackId: string } }
+    | { type: 'muteTrack'; payload: { trackId: string; muted: boolean } }
+    | { type: 'soloTrack'; payload: { trackId: string; soloed: boolean } }
+    | { type: 'toggleSoloSafe'; payload: { trackId: string } }
+    | { type: 'armTrack'; payload: { trackId: string; armed: boolean } }
+    | { type: 'freezeTrack'; payload: { trackId: string } }
+    | { type: 'unfreezeTrack'; payload: { trackId: string } }
+    | { type: 'bounceInPlace'; payload: { trackId: string } }
+    | { type: 'reorderTrack'; payload: { trackId: string; newIndex: number } }
+    | { type: 'setTempo'; payload: { bpm: number } }
+    | { type: 'togglePlayback'; payload?: undefined }
+    | { type: 'stopPlayback'; payload?: undefined }
+    | { type: 'toggleRecording'; payload?: undefined }
+    | { type: 'setMasterGain'; payload: { gain: number } }
+    | { type: 'toggleLoop'; payload?: undefined }
+    | { type: 'toggleMetronome'; payload?: undefined }
+    | { type: 'setMetronomeVolume'; payload: { volume: number } }
+    | { type: 'setLoopRegion'; payload: { startBeat: number; endBeat: number } }
+    | {
+          type: 'addClip';
+          payload: { trackId: string; startBeat: number; endBeat: number; name: string; audioBufferId?: string };
+      }
+    | { type: 'moveClip'; payload: { clipId: string; trackId: string; startBeat: number } }
+    | { type: 'duplicateClip'; payload: { clipId: string } }
+    | { type: 'duplicateClipToNextBar'; payload: { clipId: string } }
+    | { type: 'duplicateTrack'; payload: { trackId: string } }
+    | { type: 'removeClip'; payload: { clipId: string } }
+    | { type: 'renameClip'; payload: { clipId: string; name: string } }
+    | { type: 'splitClip'; payload: { clipId: string; beat: number } }
+    | { type: 'trimClipStart'; payload: { clipId: string; newStartBeat: number } }
+    | { type: 'trimClipEnd'; payload: { clipId: string; newEndBeat: number } }
+    | { type: 'addDevice'; payload: { trackId: string; deviceType: string } }
+    | { type: 'bypassDevice'; payload: { deviceId: string; bypassed: boolean } }
+    | { type: 'removeDevice'; payload: { deviceId: string } }
+    | { type: 'setDeviceParameter'; payload: { deviceId: string; paramId: string; value: number } }
+    | { type: 'createBus'; payload: { name: string } }
+    | { type: 'createFolder'; payload: { name: string } }
+    | { type: 'setSend'; payload: { trackId: string; busId: string; level: number } }
+    | { type: 'setWorkspaceMode'; payload: { mode: 'arrange' | 'clip' } }
+    | { type: 'openMixer'; payload?: undefined }
+    | { type: 'closeMixer'; payload?: undefined }
+    | { type: 'toggleSidebar'; payload?: undefined }
+    | { type: 'toggleInspector'; payload?: undefined }
+    | { type: 'toggleChatPanel'; payload?: undefined }
+    | { type: 'setTrackInput'; payload: { trackId: string; inputId: string | null } }
+    | { type: 'setEditingTool'; payload: { tool: string } }
+    | { type: 'addMarker'; payload: { beat: number; name: string } }
+    | { type: 'removeMarker'; payload: { markerId: string } }
+    | { type: 'setMarkerColor'; payload: { markerId: string; color: string } }
+    | { type: 'addSection'; payload: { startBeat: number; endBeat: number; name: string } }
+    | { type: 'removeSection'; payload: { sectionId: string } }
+    | { type: 'renameSection'; payload: { sectionId: string; name: string } }
+    | { type: 'addAutomationLane'; payload: { trackId: string; parameterId: string; parameterName: string } }
+    | {
+          type: 'addAutomationPoint';
+          payload: { laneId: string; beat: number; value: number; curve?: 'linear' | 'step' | 'exponential' };
+      }
+    | { type: 'quantizeNotes'; payload: { clipId: string; gridSize: number } }
+    | { type: 'quantizeNoteLengths'; payload: { clipId: string; gridSize: number } }
+    | { type: 'transposeNotes'; payload: { clipId: string; semitones: number } }
+    | { type: 'humanizeNotes'; payload: { clipId: string; amount: number } }
+    | { type: 'invertNotes'; payload: { clipId: string } }
+    | { type: 'retrogradeNotes'; payload: { clipId: string } }
+    | {
+          type: 'scaleVelocities';
+          payload: { clipId: string; curve: string; minVelocity?: number; maxVelocity?: number };
+      }
+    | { type: 'scaleAllVelocities'; payload: { clipId: string; factor: number } }
+    | { type: 'setAllVelocities'; payload: { clipId: string; velocity: number } }
+    | { type: 'setTrackGain'; payload: { trackId: string; gain: number } }
+    | { type: 'setTrackPan'; payload: { trackId: string; pan: number } }
+    | { type: 'setTrackColor'; payload: { trackId: string; color: string } }
+    | { type: 'copyClip'; payload?: undefined }
+    | { type: 'cutClip'; payload?: undefined }
+    | { type: 'pasteClip'; payload?: undefined }
+    | { type: 'setClipFade'; payload: { clipId: string; fadeInBeats: number; fadeOutBeats: number } }
+    | { type: 'importMidiFile'; payload?: undefined }
+    | { type: 'normalizeClip'; payload: { clipId: string; mode?: 'peak' | 'rms' | 'lufs'; targetDb?: number } }
+    | { type: 'reverseClip'; payload: { clipId: string } }
+    | { type: 'glueClips'; payload: { clipIds: string[] } }
+    | { type: 'nudgeClip'; payload: { clipId: string; beats: number } }
+    | { type: 'crossfadeClips'; payload: { clipAId: string; clipBId: string; durationBeats: number } }
+    | { type: 'setClipGain'; payload: { clipId: string; gain: number } }
+    | { type: 'setClipColor'; payload: { clipId: string; color: string } }
+    | { type: 'lockClip'; payload: { clipId: string; locked: boolean } }
+    | { type: 'consolidateSelection'; payload: { trackId: string; startBeat: number; endBeat: number } }
+    | { type: 'bounceSelection'; payload: { trackId: string; startBeat: number; endBeat: number } }
+    | { type: 'seekPlayhead'; payload: { beat: number } }
+    | { type: 'setPunchIn'; payload: { beat: number } }
+    | { type: 'setPunchOut'; payload: { beat: number } }
+    | { type: 'togglePunch'; payload?: undefined }
+    | { type: 'toggleCountIn'; payload?: undefined }
+    | { type: 'setCountInBars'; payload: { bars: number } }
+    | { type: 'togglePreRoll'; payload?: undefined }
+    | { type: 'setPreRollBars'; payload: { bars: number } }
+    | { type: 'zoomTracksVertical'; payload: { delta: number } }
+    | { type: 'addTimeSignatureChange'; payload: { beat: number; numerator: number; denominator: number } }
+    | { type: 'removeTimeSignatureChange'; payload: { beat: number } }
+    | { type: 'setTrackOutput'; payload: { trackId: string; outputId: string } }
+    | { type: 'addSend'; payload: { trackId: string; busId: string; level: number } }
+    | { type: 'removeSend'; payload: { trackId: string; busId: string } }
+    | { type: 'removeAutomationPoint'; payload: { laneId: string; pointIndex: number } }
+    | { type: 'setAutomationMode'; payload: { trackId: string; mode: 'read' | 'write' | 'touch' | 'latch' | 'off' } }
+    | { type: 'hideTrack'; payload: { trackId: string; hidden: boolean } }
+    | { type: 'disableTrack'; payload: { trackId: string; disabled: boolean } }
+    | { type: 'setTrackHeight'; payload: { trackId: string; height: number } }
+    | { type: 'setSnapValue'; payload: { value: number } }
+    | { type: 'zoomToFit'; payload?: undefined }
+    | { type: 'zoomToSelection'; payload?: undefined }
+    | { type: 'exportProject'; payload?: undefined }
+    | { type: 'saveProject'; payload?: undefined }
+    | { type: 'newProject'; payload?: undefined }
+    | { type: 'importAudioFile'; payload?: undefined }
+    | { type: 'exportMidi'; payload: { clipId: string } }
+    | { type: 'foldTrack'; payload: { trackId: string; folded: boolean } }
+    | { type: 'groupTracks'; payload: { trackIds: string[]; name: string } }
+    | { type: 'ungroupTracks'; payload: { groupId: string } }
+    | { type: 'scaleAutomation'; payload: { laneId: string; factor: number; anchor?: number } }
+    | { type: 'stretchAutomation'; payload: { laneId: string; factor: number; anchorBeat?: number } }
+    | { type: 'invertAutomation'; payload: { laneId: string } }
+    | { type: 'reverseAutomation'; payload: { laneId: string } }
+    | { type: 'thinAutomation'; payload: { laneId: string; tolerance?: number } }
+    | { type: 'quantizeAutomation'; payload: { laneId: string; gridSize: number } }
+    | { type: 'loadPreset'; payload: { presetId: string; trackId?: string } }
+    | { type: 'savePreset'; payload: { trackId: string; name: string; category: string } }
+    | { type: 'generateDrumPattern'; payload: { style: string; trackId?: string; bars?: number; density?: number } }
+    | {
+          type: 'generateMelody';
+          payload: { style: string; key?: number; scale?: string; trackId?: string; bars?: number };
+      }
+    | {
+          type: 'generateChordProgression';
+          payload: { style: string; key?: number; scale?: string; trackId?: string; bars?: number; voicing?: string };
+      }
+    | { type: 'setClipLoop'; payload: { clipId: string; enabled: boolean } }
+    | { type: 'setClipLoopLength'; payload: { clipId: string; loopLength: number } }
+    | { type: 'extractGroove'; payload: { clipId: string } }
+    | { type: 'applyGroove'; payload: { clipId: string; grooveId: string; amount?: number } }
+    | { type: 'setClipStretchMode'; payload: { clipId: string; mode: 'off' | 'repitch' | 'timestretch' } }
+    | { type: 'setClipStretchRatio'; payload: { clipId: string; ratio: number } }
+    | { type: 'fitClipToBeats'; payload: { clipId: string; targetBeats: number } }
+    | { type: 'analyzeMix'; payload?: undefined }
+    | { type: 'autoFixMix'; payload?: undefined }
+    | { type: 'enableMpe'; payload?: undefined }
+    | { type: 'disableMpe'; payload?: undefined }
+    | { type: 'getLatencyReport'; payload?: undefined }
+    | { type: 'createCollabSession'; payload?: undefined }
+    | { type: 'joinCollabSession'; payload: { sessionId: string; peerName: string } }
+    | { type: 'leaveCollabSession'; payload?: undefined }
+    | { type: 'scanPlugins'; payload?: undefined }
+    | { type: 'loadExternalPlugin'; payload: { pluginId: string; trackId?: string } }
+    | { type: 'audioToMidi'; payload: { clipId: string; trackId?: string; sensitivity?: number; mode?: string } }
+    | { type: 'muteClip'; payload: { clipId: string; muted: boolean } }
+    | { type: 'clearSolos'; payload?: undefined }
+    | { type: 'setTrackNotes'; payload: { trackId: string; notes: string } }
+    | { type: 'deleteTime'; payload: { startBeat: number; endBeat: number } }
+    | { type: 'insertTime'; payload: { atBeat: number; durationBeats: number } }
+    | { type: 'duplicateTimeRange'; payload: { startBeat: number; endBeat: number } }
+    | { type: 'stripSilence'; payload: { clipId: string; threshold?: number; minDuration?: number } }
+    | { type: 'detectTempo'; payload: { clipId: string } }
+    | { type: 'detectKey'; payload: { clipId: string } }
+    | { type: 'consolidateAllTracks'; payload?: undefined }
+    | {
+          type: 'arpeggiate';
+          payload: { clipId: string; pattern?: string; rate?: number; octaves?: number; gate?: number };
+      }
+    | { type: 'addSidechainRoute'; payload: { sourceTrackId: string; targetTrackId: string } }
+    | { type: 'removeSidechainRoute'; payload: { sourceTrackId: string; targetTrackId: string } }
+    | { type: 'bounceToNewTrack'; payload: { trackId: string } }
+    | { type: 'saveTrackTemplate'; payload: { trackId: string; name: string; category: string } }
+    | { type: 'loadTrackTemplate'; payload: { templateId: string } }
+    | { type: 'deleteTrackTemplate'; payload: { templateId: string } }
+    | { type: 'createVcaGroup'; payload: { name: string; trackIds: string[] } }
+    | { type: 'assignToVca'; payload: { trackId: string; vcaGroupId: string } }
+    | { type: 'removeFromVca'; payload: { trackId: string } }
+    | { type: 'setVcaGain'; payload: { vcaGroupId: string; gain: number } }
+    | { type: 'setMidiOutput'; payload: { trackId: string; destinationTrackId: string } }
+    | { type: 'clearMidiOutput'; payload: { trackId: string } }
+    | {
+          type: 'addNotes';
+          payload: {
+              clipId: string;
+              notes: Array<{ pitch: number; startBeat: number; duration: number; velocity?: number }>;
+          };
+      }
+    | {
+          type: 'completeMidi';
+          payload: { clipId: string; direction?: 'forward' | 'backward'; bars?: number };
+      }
+    | { type: 'variationMidi'; payload: { clipId: string; amount?: number } }
+    | { type: 'generateBassline'; payload: { clipId: string; style?: string; trackId?: string } }
+    | {
+          type: 'generateAudio';
+          payload: { prompt: string; durationSeconds?: number; trackId?: string };
+      }
+    | {
+          type: 'stemSeparate';
+          payload: { clipId: string; stems?: string[] };
+      };
 
-export type TrackKind = "audio" | "midi" | "bus" | "master" | "folder";
+export type TrackKind = 'audio' | 'midi' | 'bus' | 'master' | 'folder';
 
-export type AppActionType = AppAction["type"];
+export type AppActionType = AppAction['type'];
 
 export const DESTRUCTIVE_ACTIONS: ReadonlySet<AppActionType> = new Set([
-    "removeTrack",
-    "removeClip",
-    "removeDevice",
-    "removeMarker",
-    "bounceInPlace",
+    'removeTrack',
+    'removeAllTracks',
+    'removeClip',
+    'removeDevice',
+    'removeMarker',
+    'bounceInPlace',
 ]);
 
 export const REQUIRES_CONFIRMATION: ReadonlySet<AppActionType> = new Set([
-    "removeTrack",
-    "removeClip",
-    "removeDevice",
-    "bounceInPlace",
+    'removeTrack',
+    'removeAllTracks',
+    'removeClip',
+    'removeDevice',
+    'bounceInPlace',
+    'deleteTrackAlternative',
 ]);

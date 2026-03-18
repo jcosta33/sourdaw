@@ -1,60 +1,59 @@
-import { trackStore } from "#/modules/Track/stores/trackStore";
-import { midiStore } from "#/modules/Track/stores/midiStore";
-import { createTrack } from "#/modules/Track/models/Track";
-import { createMidiNote } from "#/modules/Track/models/MidiNote";
-import { projectStore } from "../stores/projectStore";
-import { audioBufferCache } from "#/modules/AudioEngine/stores/audioBufferCache";
+import { trackStore } from '#/modules/Track/stores/trackStore';
+import { midiStore } from '#/modules/Track/stores/midiStore';
+import { createTrack, createMidiNote } from '#/modules/Track/useCases/trackQueries';
+import { projectStore } from '../stores/projectStore';
+import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 
-export const createDemoProject = async (): Promise<void> => {
-    const audioTrack = createTrack({ name: "Drums", kind: "audio" });
-    const midiTrack = createTrack({ name: "Synth Lead", kind: "midi" });
-    const bassTrack = createTrack({ name: "Bass", kind: "midi" });
+export async function createDemoProject(): Promise<void> {
+    const audioTrack = createTrack({ name: 'Drums', kind: 'audio' });
+    const midiTrack = createTrack({ name: 'Synth Lead', kind: 'midi' });
+    const bassTrack = createTrack({ name: 'Bass', kind: 'midi' });
 
-    const drumBufferId = "demo-drum-buffer";
+    const drumBufferId = 'demo-drum-buffer';
     await generateDemoDrumBuffer(drumBufferId);
 
     const drumClip = {
-        id: "demo-clip-1",
+        id: 'demo-clip-1',
         trackId: audioTrack.id,
-        name: "Drum Loop",
+        name: 'Drum Loop',
         startBeat: 0,
         endBeat: 16,
-        type: "audio" as const,
+        type: 'audio' as const,
         audioBufferId: drumBufferId,
         fadeInBeats: 0,
         fadeOutBeats: 0,
         gain: 1.0,
-        color: "",
+        color: '',
         locked: false,
         muted: false,
     };
 
     const synthClip = {
-        id: "demo-clip-2",
+        id: 'demo-clip-2',
         trackId: midiTrack.id,
-        name: "Melody",
+        name: 'Melody',
         startBeat: 0,
         endBeat: 16,
-        type: "midi" as const,
+        type: 'midi' as const,
         fadeInBeats: 0,
         fadeOutBeats: 0,
         gain: 1.0,
-        color: "",
+        color: '',
         locked: false,
         muted: false,
     };
 
     const bassClip = {
-        id: "demo-clip-3",
+        id: 'demo-clip-3',
         trackId: bassTrack.id,
-        name: "Bassline",
+        name: 'Bassline',
         startBeat: 0,
         endBeat: 16,
-        type: "midi" as const,
+        type: 'midi' as const,
         fadeInBeats: 0,
         fadeOutBeats: 0,
         gain: 1.0,
-        color: "",
+        color: '',
         locked: false,
         muted: false,
     };
@@ -110,14 +109,14 @@ export const createDemoProject = async (): Promise<void> => {
     });
 
     projectStore.set({
-        name: "Demo Project",
+        name: 'Demo Project',
         createdAt: Date.now(),
         updatedAt: Date.now(),
         dirty: false,
     });
-};
+}
 
-const generateDemoDrumBuffer = async (bufferId: string): Promise<void> => {
+async function generateDemoDrumBuffer(bufferId: string): Promise<void> {
     try {
         const ctx = new OfflineAudioContext(2, 44100 * 8, 44100);
         const bps = 120 / 60;
@@ -152,7 +151,7 @@ const generateDemoDrumBuffer = async (bufferId: string): Promise<void> => {
                 env.gain.setValueAtTime(0.6, time);
                 env.gain.exponentialRampToValueAtTime(0.001, time + 0.12);
                 const hp = ctx.createBiquadFilter();
-                hp.type = "highpass";
+                hp.type = 'highpass';
                 hp.frequency.value = 2000;
                 noise.connect(hp);
                 hp.connect(env);
@@ -172,7 +171,7 @@ const generateDemoDrumBuffer = async (bufferId: string): Promise<void> => {
                 env.gain.setValueAtTime(0.25, time);
                 env.gain.exponentialRampToValueAtTime(0.001, time + 0.04);
                 const hp = ctx.createBiquadFilter();
-                hp.type = "highpass";
+                hp.type = 'highpass';
                 hp.frequency.value = 8000;
                 noise.connect(hp);
                 hp.connect(env);
@@ -187,4 +186,4 @@ const generateDemoDrumBuffer = async (bufferId: string): Promise<void> => {
     } catch {
         // OfflineAudioContext may not be available in some environments
     }
-};
+}

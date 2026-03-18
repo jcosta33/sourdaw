@@ -1,14 +1,22 @@
-import { Container } from "#/helpers/DependencyInjector/Container";
-import { Logger } from "#/helpers/Logger/Logger";
-import type { AudioEngine, AudioEngineState, TrackChannelStrip, BuiltinDeviceNode, BusStrip, SendNode } from "../models/AudioEngineState";
+import { Container } from '#/helpers/DependencyInjector/Container';
+import { Logger } from '#/helpers/Logger/Logger';
+import {
+    type AudioEngine,
+    type AudioEngineState,
+    type TrackChannelStrip,
+    type BuiltinDeviceNode,
+    type BusStrip,
+    type SendNode,
+} from '../models/AudioEngineState';
+import { PluginHostNode } from '../models/PluginHostNode';
 
 const logger = Container.getInstance().get(Logger);
 
-const createNoopEngine = (): AudioEngine => {
+function createNoopEngine(): AudioEngine {
     const noopState: AudioEngineState = {
         isReady: false,
         sampleRate: 44100,
-        state: "closed",
+        state: 'closed',
         masterGain: 0,
         currentTime: 0,
         baseLatency: 0,
@@ -63,14 +71,14 @@ const createNoopEngine = (): AudioEngine => {
         wireSidechainRoute: () => {},
         unwireSidechainRoute: () => {},
     };
-};
+}
 
-export const createWebAudioEngine = (): AudioEngine => {
+export function createWebAudioEngine(): AudioEngine {
     let context: AudioContext;
     try {
-        context = new AudioContext({ latencyHint: "interactive" });
-    } catch (e) {
-        logger.warn(`Failed to create AudioContext: ${e}`);
+        context = new AudioContext({ latencyHint: 'interactive' });
+    } catch (error) {
+        logger.warn(`Failed to create AudioContext: ${error}`);
         return createNoopEngine();
     }
 
@@ -92,56 +100,53 @@ export const createWebAudioEngine = (): AudioEngine => {
 
     let workletReady = false;
 
-    const initialize = async (): Promise<void> => {
+    async function initialize(): Promise<void> {
         try {
-            await context.audioWorklet.addModule("/audio/worklets/sidechain-compressor-processor.js");
+            await context.audioWorklet.addModule('/audio/worklets/sidechain-compressor-processor.js');
+            await context.audioWorklet.addModule('/audio/worklets/native-plugin-host-processor.js');
             workletReady = true;
-        } catch (e) {
-            logger.warn(`AudioWorklet modules failed to load: ${e}`);
+        } catch (error) {
+            logger.warn(`AudioWorklet modules failed to load: ${error}`);
             workletReady = false;
         }
 
         try {
-            if (context.state === "suspended") {
+            if (context.state === 'suspended') {
                 await context.resume();
             }
-        } catch (e) {
-            logger.warn(`AudioContext resume failed during init: ${e}`);
+        } catch (error) {
+            logger.warn(`AudioContext resume failed during init: ${error}`);
         }
-    };
+    }
 
-    const resume = async (): Promise<void> => {
+    async function resume(): Promise<void> {
         try {
-            if (context.state === "suspended") {
+            if (context.state === 'suspended') {
                 await context.resume();
             }
-        } catch (e) {
-            logger.warn(`AudioContext resume failed: ${e}`);
+        } catch (error) {
+            logger.warn(`AudioContext resume failed: ${error}`);
         }
-    };
+    }
 
-    const suspend = async (): Promise<void> => {
+    async function suspend(): Promise<void> {
         try {
-            if (context.state === "running") {
+            if (context.state === 'running') {
                 await context.suspend();
             }
-        } catch (e) {
-            logger.warn(`AudioContext suspend failed: ${e}`);
+        } catch (error) {
+            logger.warn(`AudioContext suspend failed: ${error}`);
         }
-    };
+    }
 
-    const setMasterGain = (value: number): void => {
-        masterGainNode.gain.setTargetAtTime(
-            Math.max(0, Math.min(1, value)),
-            context.currentTime,
-            0.01,
-        );
-    };
+    function setMasterGain(value: number): void {
+        masterGainNode.gain.setTargetAtTime(Math.max(0, Math.min(1, value)), context.currentTime, 0.01);
+    }
 
     const getMasterGain = (): number => masterGainNode.gain.value;
 
     const getState = (): AudioEngineState => ({
-        isReady: context.state === "running" || workletReady,
+        isReady: context.state === 'running' || workletReady,
         sampleRate: context.sampleRate,
         state: context.state,
         masterGain: masterGainNode.gain.value,
@@ -149,9 +154,11 @@ export const createWebAudioEngine = (): AudioEngine => {
         baseLatency: context.baseLatency ?? 0,
     });
 
-    const ensureTrackStrip = (trackId: string): TrackChannelStrip => {
+    function ensureTrackStrip(trackId: string): TrackChannelStrip {
         const existing = trackStrips.get(trackId);
-        if (existing) return existing;
+        if (existing) {
+            return existing;
+        }
 
         const preFaderTap = context.createGain();
         preFaderTap.gain.value = 1;
@@ -184,45 +191,45 @@ export const createWebAudioEngine = (): AudioEngine => {
 
         trackStrips.set(trackId, strip);
         return strip;
-    };
+    }
 
-    const removeTrackStrip = (trackId: string): void => {
+    function removeTrackStrip(trackId: string): void {
         const strip = trackStrips.get(trackId);
-        if (!strip) return;
+        if (!strip) {
+            return;
+        }
         strip.preFaderTap.disconnect();
         strip.gainNode.disconnect();
         strip.panNode.disconnect();
         strip.analyserNode.disconnect();
         trackStrips.delete(trackId);
-    };
+    }
 
-    const getTrackStrip = (trackId: string): TrackChannelStrip | undefined => {
+    function getTrackStrip(trackId: string): TrackChannelStrip | undefined {
         return trackStrips.get(trackId);
-    };
+    }
 
-    const setTrackGain = (trackId: string, gain: number): void => {
+    function setTrackGain(trackId: string, gain: number): void {
         const strip = trackStrips.get(trackId);
-        if (!strip) return;
-        strip.gainNode.gain.setTargetAtTime(
-            Math.max(0, Math.min(1, gain)),
-            context.currentTime,
-            0.01,
-        );
-    };
+        if (!strip) {
+            return;
+        }
+        strip.gainNode.gain.setTargetAtTime(Math.max(0, Math.min(1, gain)), context.currentTime, 0.01);
+    }
 
-    const setTrackPan = (trackId: string, pan: number): void => {
+    function setTrackPan(trackId: string, pan: number): void {
         const strip = trackStrips.get(trackId);
-        if (!strip) return;
-        strip.panNode.pan.setTargetAtTime(
-            Math.max(-1, Math.min(1, pan / 50)),
-            context.currentTime,
-            0.01,
-        );
-    };
+        if (!strip) {
+            return;
+        }
+        strip.panNode.pan.setTargetAtTime(Math.max(-1, Math.min(1, pan / 50)), context.currentTime, 0.01);
+    }
 
-    const setTrackMute = (trackId: string, muted: boolean, restoreGain?: number): void => {
+    function setTrackMute(trackId: string, muted: boolean, restoreGain?: number): void {
         const strip = trackStrips.get(trackId);
-        if (!strip) return;
+        if (!strip) {
+            return;
+        }
         strip.muted = muted;
         if (muted) {
             strip.gainNode.gain.setTargetAtTime(0, context.currentTime, 0.005);
@@ -230,42 +237,43 @@ export const createWebAudioEngine = (): AudioEngine => {
             const gain = restoreGain ?? (strip.gainNode.gain.value || 0.8);
             strip.gainNode.gain.setTargetAtTime(Math.max(0, Math.min(1, gain)), context.currentTime, 0.005);
         }
-    };
+    }
 
-    const getTrackPeakLevel = (trackId: string): number => {
+    function getTrackPeakLevel(trackId: string): number {
         const strip = trackStrips.get(trackId);
-        if (!strip) return 0;
+        if (!strip) {
+            return 0;
+        }
         const data = new Float32Array(strip.analyserNode.frequencyBinCount);
         strip.analyserNode.getFloatTimeDomainData(data);
         let peak = 0;
         for (let i = 0; i < data.length; i++) {
             const abs = Math.abs(data[i]!);
-            if (abs > peak) peak = abs;
+            if (abs > peak) {
+                peak = abs;
+            }
         }
         return peak;
-    };
+    }
 
-    const getMasterPeakLevel = (): number => {
+    function getMasterPeakLevel(): number {
         const data = new Float32Array(masterAnalyser.frequencyBinCount);
         masterAnalyser.getFloatTimeDomainData(data);
         let peak = 0;
         for (let i = 0; i < data.length; i++) {
             const abs = Math.abs(data[i]!);
-            if (abs > peak) peak = abs;
+            if (abs > peak) {
+                peak = abs;
+            }
         }
         return peak;
-    };
+    }
 
-    const scheduleOscillator = (
-        frequency: number,
-        startTime: number,
-        duration: number,
-        gain = 0.3,
-    ): void => {
+    function scheduleOscillator(frequency: number, startTime: number, duration: number, gain = 0.3): void {
         const osc = context.createOscillator();
         const env = context.createGain();
 
-        osc.type = "sine";
+        osc.type = 'sine';
         osc.frequency.value = frequency;
 
         env.gain.setValueAtTime(0, startTime);
@@ -281,19 +289,21 @@ export const createWebAudioEngine = (): AudioEngine => {
         scheduledNodes.push(osc);
         osc.onended = () => {
             const idx = scheduledNodes.indexOf(osc);
-            if (idx >= 0) scheduledNodes.splice(idx, 1);
+            if (idx >= 0) {
+                scheduledNodes.splice(idx, 1);
+            }
             env.disconnect();
         };
-    };
+    }
 
-    const scheduleClick = (time: number, accent: boolean, volume = 1): void => {
+    function scheduleClick(time: number, accent: boolean, volume = 1): void {
         const freq = accent ? 1500 : 1000;
         const dur = accent ? 0.04 : 0.03;
         const baseVol = accent ? 0.4 : 0.25;
         scheduleOscillator(freq, time, dur, baseVol * volume);
-    };
+    }
 
-    const stopAllScheduled = (): void => {
+    function stopAllScheduled(): void {
         const now = context.currentTime;
         for (const node of [...scheduledNodes]) {
             try {
@@ -303,13 +313,13 @@ export const createWebAudioEngine = (): AudioEngine => {
             }
         }
         scheduledNodes.length = 0;
-    };
+    }
 
-    const rebuildStripChain = (strip: TrackChannelStrip): void => {
+    function rebuildStripChain(strip: TrackChannelStrip): void {
         strip.preFaderTap.disconnect();
         strip.gainNode.disconnect();
         for (const dn of strip.deviceNodes) {
-            for (const n of dn.nodes) n.disconnect();
+            dn.outputNode.disconnect();
         }
         strip.panNode.disconnect();
 
@@ -325,28 +335,28 @@ export const createWebAudioEngine = (): AudioEngine => {
         strip.analyserNode.connect(masterGainNode);
 
         reconnectSendsForTrack(strip);
-    };
+    }
 
-    const createEqDevice = (deviceId: string): BuiltinDeviceNode => {
+    function createEqDevice(deviceId: string): BuiltinDeviceNode {
         const low = context.createBiquadFilter();
-        low.type = "lowshelf";
+        low.type = 'lowshelf';
         low.frequency.value = 100;
         low.gain.value = 0;
         const mid = context.createBiquadFilter();
-        mid.type = "peaking";
+        mid.type = 'peaking';
         mid.frequency.value = 1000;
         mid.Q.value = 1;
         mid.gain.value = 0;
         const high = context.createBiquadFilter();
-        high.type = "highshelf";
+        high.type = 'highshelf';
         high.frequency.value = 8000;
         high.gain.value = 0;
         low.connect(mid);
         mid.connect(high);
-        return { deviceId, type: "builtin-eq", nodes: [low, mid, high], inputNode: low, outputNode: high };
-    };
+        return { deviceId, type: 'builtin-eq', nodes: [low, mid, high], inputNode: low, outputNode: high };
+    }
 
-    const createCompressorDevice = (deviceId: string): BuiltinDeviceNode => {
+    function createCompressorDevice(deviceId: string): BuiltinDeviceNode {
         const comp = context.createDynamicsCompressor();
         comp.threshold.value = -20;
         comp.ratio.value = 4;
@@ -355,10 +365,10 @@ export const createWebAudioEngine = (): AudioEngine => {
         const makeup = context.createGain();
         makeup.gain.value = 1;
         comp.connect(makeup);
-        return { deviceId, type: "builtin-compressor", nodes: [comp, makeup], inputNode: comp, outputNode: makeup };
-    };
+        return { deviceId, type: 'builtin-compressor', nodes: [comp, makeup], inputNode: comp, outputNode: makeup };
+    }
 
-    const createReverbDevice = (deviceId: string): BuiltinDeviceNode => {
+    function createReverbDevice(deviceId: string): BuiltinDeviceNode {
         const dry = context.createGain();
         dry.gain.value = 0.7;
         const wet = context.createGain();
@@ -380,10 +390,16 @@ export const createWebAudioEngine = (): AudioEngine => {
         convolver.connect(wet);
         dry.connect(merger);
         wet.connect(merger);
-        return { deviceId, type: "builtin-reverb", nodes: [splitter, dry, wet, convolver, merger], inputNode: splitter, outputNode: merger };
-    };
+        return {
+            deviceId,
+            type: 'builtin-reverb',
+            nodes: [splitter, dry, wet, convolver, merger],
+            inputNode: splitter,
+            outputNode: merger,
+        };
+    }
 
-    const createDelayDevice = (deviceId: string): BuiltinDeviceNode => {
+    function createDelayDevice(deviceId: string): BuiltinDeviceNode {
         const dry = context.createGain();
         dry.gain.value = 0.7;
         const wet = context.createGain();
@@ -401,31 +417,37 @@ export const createWebAudioEngine = (): AudioEngine => {
         delay.connect(wet);
         dry.connect(merger);
         wet.connect(merger);
-        return { deviceId, type: "builtin-delay", nodes: [splitter, dry, wet, delay, feedback, merger], inputNode: splitter, outputNode: merger };
-    };
+        return {
+            deviceId,
+            type: 'builtin-delay',
+            nodes: [splitter, dry, wet, delay, feedback, merger],
+            inputNode: splitter,
+            outputNode: merger,
+        };
+    }
 
-    const createGainDevice = (deviceId: string): BuiltinDeviceNode => {
+    function createGainDevice(deviceId: string): BuiltinDeviceNode {
         const g = context.createGain();
         g.gain.value = 1;
-        return { deviceId, type: "builtin-gain", nodes: [g], inputNode: g, outputNode: g };
-    };
+        return { deviceId, type: 'builtin-gain', nodes: [g], inputNode: g, outputNode: g };
+    }
 
-    const createSidechainCompressorDevice = (deviceId: string): BuiltinDeviceNode => {
-        const workletNode = new AudioWorkletNode(context, "sidechain-compressor-processor", {
+    function createSidechainCompressorDevice(deviceId: string): BuiltinDeviceNode {
+        const workletNode = new AudioWorkletNode(context, 'sidechain-compressor-processor', {
             numberOfInputs: 2,
             numberOfOutputs: 1,
             outputChannelCount: [2],
         });
         return {
             deviceId,
-            type: "builtin-sidechain-compressor",
+            type: 'builtin-sidechain-compressor',
             nodes: [workletNode],
             inputNode: workletNode,
             outputNode: workletNode,
         };
-    };
+    }
 
-    const createChorusDevice = (deviceId: string): BuiltinDeviceNode => {
+    function createChorusDevice(deviceId: string): BuiltinDeviceNode {
         const splitter = context.createGain();
         const dry = context.createGain();
         dry.gain.value = 0.5;
@@ -434,7 +456,7 @@ export const createWebAudioEngine = (): AudioEngine => {
         const delay = context.createDelay(0.05);
         delay.delayTime.value = 0.007;
         const lfo = context.createOscillator();
-        lfo.type = "sine";
+        lfo.type = 'sine';
         lfo.frequency.value = 1.5;
         const lfoGain = context.createGain();
         lfoGain.gain.value = 0.005;
@@ -447,23 +469,29 @@ export const createWebAudioEngine = (): AudioEngine => {
         delay.connect(wet);
         dry.connect(merger);
         wet.connect(merger);
-        return { deviceId, type: "builtin-chorus", nodes: [splitter, dry, wet, delay, lfo, lfoGain, merger], inputNode: splitter, outputNode: merger };
-    };
+        return {
+            deviceId,
+            type: 'builtin-chorus',
+            nodes: [splitter, dry, wet, delay, lfo, lfoGain, merger],
+            inputNode: splitter,
+            outputNode: merger,
+        };
+    }
 
-    const createPhaserDevice = (deviceId: string): BuiltinDeviceNode => {
+    function createPhaserDevice(deviceId: string): BuiltinDeviceNode {
         const input = context.createGain();
         const output = context.createGain();
         const stageCount = 4;
         const filters: BiquadFilterNode[] = [];
         for (let i = 0; i < stageCount; i++) {
             const ap = context.createBiquadFilter();
-            ap.type = "allpass";
+            ap.type = 'allpass';
             ap.frequency.value = 1000;
             ap.Q.value = 0.5;
             filters.push(ap);
         }
         const lfo = context.createOscillator();
-        lfo.type = "sine";
+        lfo.type = 'sine';
         lfo.frequency.value = 0.5;
         const lfoGain = context.createGain();
         lfoGain.gain.value = 500;
@@ -489,21 +517,27 @@ export const createWebAudioEngine = (): AudioEngine => {
         prev.connect(wet);
         dry.connect(output);
         wet.connect(output);
-        return { deviceId, type: "builtin-phaser", nodes: [input, ...filters, lfo, lfoGain, feedbackGain, dry, wet, output], inputNode: input, outputNode: output };
-    };
+        return {
+            deviceId,
+            type: 'builtin-phaser',
+            nodes: [input, ...filters, lfo, lfoGain, feedbackGain, dry, wet, output],
+            inputNode: input,
+            outputNode: output,
+        };
+    }
 
-    const makeDistortionCurve = (drive: number): Float32Array<ArrayBuffer> => {
+    function makeDistortionCurve(drive: number): Float32Array<ArrayBuffer> {
         const samples = 44100;
-        const curve = new Float32Array(samples) as Float32Array<ArrayBuffer>;
+        const curve = new Float32Array(samples);
         const k = Math.max(0.1, drive);
         for (let i = 0; i < samples; i++) {
             const x = (i * 2) / samples - 1;
             curve[i] = Math.tanh(k * x);
         }
         return curve;
-    };
+    }
 
-    const createDistortionDevice = (deviceId: string): BuiltinDeviceNode => {
+    function createDistortionDevice(deviceId: string): BuiltinDeviceNode {
         const splitter = context.createGain();
         const dry = context.createGain();
         dry.gain.value = 0.5;
@@ -511,9 +545,9 @@ export const createWebAudioEngine = (): AudioEngine => {
         wet.gain.value = 0.5;
         const shaper = context.createWaveShaper();
         shaper.curve = makeDistortionCurve(20);
-        shaper.oversample = "4x";
+        shaper.oversample = '4x';
         const tone = context.createBiquadFilter();
-        tone.type = "lowpass";
+        tone.type = 'lowpass';
         tone.frequency.value = 4000;
         const merger = context.createGain();
         splitter.connect(dry);
@@ -522,10 +556,16 @@ export const createWebAudioEngine = (): AudioEngine => {
         tone.connect(wet);
         dry.connect(merger);
         wet.connect(merger);
-        return { deviceId, type: "builtin-distortion", nodes: [splitter, dry, wet, shaper, tone, merger], inputNode: splitter, outputNode: merger };
-    };
+        return {
+            deviceId,
+            type: 'builtin-distortion',
+            nodes: [splitter, dry, wet, shaper, tone, merger],
+            inputNode: splitter,
+            outputNode: merger,
+        };
+    }
 
-    const createLimiterDevice = (deviceId: string): BuiltinDeviceNode => {
+    function createLimiterDevice(deviceId: string): BuiltinDeviceNode {
         const comp = context.createDynamicsCompressor();
         comp.threshold.value = -6;
         comp.ratio.value = 20;
@@ -533,12 +573,23 @@ export const createWebAudioEngine = (): AudioEngine => {
         comp.release.value = 0.1;
         comp.knee.value = 0;
         const ceiling = context.createGain();
-        ceiling.gain.value = Math.pow(10, -0.3 / 20);
+        ceiling.gain.value = 10 ** (-0.3 / 20);
         comp.connect(ceiling);
-        return { deviceId, type: "builtin-limiter", nodes: [comp, ceiling], inputNode: comp, outputNode: ceiling };
-    };
+        return { deviceId, type: 'builtin-limiter', nodes: [comp, ceiling], inputNode: comp, outputNode: ceiling };
+    }
 
-    const addDeviceToStrip = (trackId: string, deviceId: string, deviceType: string): void => {
+    function createNativePluginDevice(deviceId: string): BuiltinDeviceNode {
+        const workletNode = new PluginHostNode(context, deviceId);
+        return {
+            deviceId,
+            type: 'external-plugin',
+            nodes: [workletNode],
+            inputNode: workletNode,
+            outputNode: workletNode,
+        };
+    }
+
+    function addDeviceToStrip(trackId: string, deviceId: string, deviceType: string): void {
         const strip = trackStrips.get(trackId);
         if (!strip) {
             return;
@@ -549,91 +600,143 @@ export const createWebAudioEngine = (): AudioEngine => {
 
         let dn: BuiltinDeviceNode;
         switch (deviceType) {
-            case "builtin-eq": dn = createEqDevice(deviceId); break;
-            case "builtin-compressor": dn = createCompressorDevice(deviceId); break;
-            case "builtin-reverb": dn = createReverbDevice(deviceId); break;
-            case "builtin-delay": dn = createDelayDevice(deviceId); break;
-            case "builtin-gain": dn = createGainDevice(deviceId); break;
-            case "builtin-sidechain-compressor": dn = createSidechainCompressorDevice(deviceId); break;
-            case "builtin-chorus": dn = createChorusDevice(deviceId); break;
-            case "builtin-phaser": dn = createPhaserDevice(deviceId); break;
-            case "builtin-distortion": dn = createDistortionDevice(deviceId); break;
-            case "builtin-limiter": dn = createLimiterDevice(deviceId); break;
-            default: return;
+            case 'builtin-eq':
+                dn = createEqDevice(deviceId);
+                break;
+            case 'builtin-compressor':
+                dn = createCompressorDevice(deviceId);
+                break;
+            case 'builtin-reverb':
+                dn = createReverbDevice(deviceId);
+                break;
+            case 'builtin-delay':
+                dn = createDelayDevice(deviceId);
+                break;
+            case 'builtin-gain':
+                dn = createGainDevice(deviceId);
+                break;
+            case 'builtin-sidechain-compressor':
+                dn = createSidechainCompressorDevice(deviceId);
+                break;
+            case 'builtin-chorus':
+                dn = createChorusDevice(deviceId);
+                break;
+            case 'builtin-phaser':
+                dn = createPhaserDevice(deviceId);
+                break;
+            case 'builtin-distortion':
+                dn = createDistortionDevice(deviceId);
+                break;
+            case 'builtin-limiter':
+                dn = createLimiterDevice(deviceId);
+                break;
+            case 'external-plugin':
+                dn = createNativePluginDevice(deviceId);
+                break;
+            default:
+                return;
         }
         strip.deviceNodes.push(dn);
         rebuildStripChain(strip);
-    };
+    }
 
-    const removeDeviceFromStrip = (trackId: string, deviceId: string): void => {
+    function removeDeviceFromStrip(trackId: string, deviceId: string): void {
         const strip = trackStrips.get(trackId);
-        if (!strip) return;
+        if (!strip) {
+            return;
+        }
         const dn = strip.deviceNodes.find((d) => d.deviceId === deviceId);
-        if (!dn) return;
-        for (const n of dn.nodes) n.disconnect();
+        if (!dn) {
+            return;
+        }
+        for (const n of dn.nodes) {
+            n.disconnect();
+        }
         strip.deviceNodes = strip.deviceNodes.filter((d) => d.deviceId !== deviceId);
         rebuildStripChain(strip);
-    };
+    }
 
-    const updateDeviceParam = (trackId: string, deviceId: string, paramId: string, value: number): void => {
+    function updateDeviceParam(trackId: string, deviceId: string, paramId: string, value: number): void {
         const strip = trackStrips.get(trackId);
-        if (!strip) return;
+        if (!strip) {
+            return;
+        }
         const dn = strip.deviceNodes.find((d) => d.deviceId === deviceId);
-        if (!dn) return;
+        if (!dn) {
+            return;
+        }
 
         switch (dn.type) {
-            case "builtin-eq": {
+            case 'builtin-eq': {
                 const [low, mid, high] = dn.nodes as [BiquadFilterNode, BiquadFilterNode, BiquadFilterNode];
-                if (paramId === "eq-low-gain") low.gain.setTargetAtTime(value, context.currentTime, 0.01);
-                else if (paramId === "eq-low-freq") low.frequency.setTargetAtTime(value, context.currentTime, 0.01);
-                else if (paramId === "eq-mid-gain") mid.gain.setTargetAtTime(value, context.currentTime, 0.01);
-                else if (paramId === "eq-mid-freq") mid.frequency.setTargetAtTime(value, context.currentTime, 0.01);
-                else if (paramId === "eq-mid-q") mid.Q.setTargetAtTime(value, context.currentTime, 0.01);
-                else if (paramId === "eq-high-gain") high.gain.setTargetAtTime(value, context.currentTime, 0.01);
-                else if (paramId === "eq-high-freq") high.frequency.setTargetAtTime(value, context.currentTime, 0.01);
+                if (paramId === 'eq-low-gain') {
+                    low.gain.setTargetAtTime(value, context.currentTime, 0.01);
+                } else if (paramId === 'eq-low-freq') {
+                    low.frequency.setTargetAtTime(value, context.currentTime, 0.01);
+                } else if (paramId === 'eq-mid-gain') {
+                    mid.gain.setTargetAtTime(value, context.currentTime, 0.01);
+                } else if (paramId === 'eq-mid-freq') {
+                    mid.frequency.setTargetAtTime(value, context.currentTime, 0.01);
+                } else if (paramId === 'eq-mid-q') {
+                    mid.Q.setTargetAtTime(value, context.currentTime, 0.01);
+                } else if (paramId === 'eq-high-gain') {
+                    high.gain.setTargetAtTime(value, context.currentTime, 0.01);
+                } else if (paramId === 'eq-high-freq') {
+                    high.frequency.setTargetAtTime(value, context.currentTime, 0.01);
+                }
                 break;
             }
-            case "builtin-compressor": {
+            case 'builtin-compressor': {
                 const [comp, makeup] = dn.nodes as [DynamicsCompressorNode, GainNode];
-                if (paramId === "comp-threshold") comp.threshold.setTargetAtTime(value, context.currentTime, 0.01);
-                else if (paramId === "comp-ratio") comp.ratio.setTargetAtTime(Math.max(1, value), context.currentTime, 0.01);
-                else if (paramId === "comp-attack") comp.attack.setTargetAtTime(value / 1000, context.currentTime, 0.01);
-                else if (paramId === "comp-release") comp.release.setTargetAtTime(value / 1000, context.currentTime, 0.01);
-                else if (paramId === "comp-makeup") makeup.gain.setTargetAtTime(Math.pow(10, value / 20), context.currentTime, 0.01);
+                if (paramId === 'comp-threshold') {
+                    comp.threshold.setTargetAtTime(value, context.currentTime, 0.01);
+                } else if (paramId === 'comp-ratio') {
+                    comp.ratio.setTargetAtTime(Math.max(1, value), context.currentTime, 0.01);
+                } else if (paramId === 'comp-attack') {
+                    comp.attack.setTargetAtTime(value / 1000, context.currentTime, 0.01);
+                } else if (paramId === 'comp-release') {
+                    comp.release.setTargetAtTime(value / 1000, context.currentTime, 0.01);
+                } else if (paramId === 'comp-makeup') {
+                    makeup.gain.setTargetAtTime(10 ** (value / 20), context.currentTime, 0.01);
+                }
                 break;
             }
-            case "builtin-reverb": {
+            case 'builtin-reverb': {
                 const wet = dn.nodes[2] as GainNode;
                 const dry = dn.nodes[1] as GainNode;
-                if (paramId === "rev-mix") {
+                if (paramId === 'rev-mix') {
                     wet.gain.setTargetAtTime(value, context.currentTime, 0.01);
                     dry.gain.setTargetAtTime(1 - value, context.currentTime, 0.01);
                 }
                 break;
             }
-            case "builtin-delay": {
+            case 'builtin-delay': {
                 const delay = dn.nodes[3] as DelayNode;
                 const fb = dn.nodes[4] as GainNode;
                 const dryD = dn.nodes[1] as GainNode;
                 const wetD = dn.nodes[2] as GainNode;
-                if (paramId === "delay-time") delay.delayTime.setTargetAtTime(value / 1000, context.currentTime, 0.01);
-                else if (paramId === "delay-feedback") fb.gain.setTargetAtTime(value, context.currentTime, 0.01);
-                else if (paramId === "delay-mix") {
+                if (paramId === 'delay-time') {
+                    delay.delayTime.setTargetAtTime(value / 1000, context.currentTime, 0.01);
+                } else if (paramId === 'delay-feedback') {
+                    fb.gain.setTargetAtTime(value, context.currentTime, 0.01);
+                } else if (paramId === 'delay-mix') {
                     wetD.gain.setTargetAtTime(value, context.currentTime, 0.01);
                     dryD.gain.setTargetAtTime(1 - value, context.currentTime, 0.01);
                 }
                 break;
             }
-            case "builtin-gain": {
+            case 'builtin-gain': {
                 const g = dn.nodes[0] as GainNode;
-                if (paramId === "gain-level") g.gain.setTargetAtTime(Math.pow(10, value / 20), context.currentTime, 0.01);
+                if (paramId === 'gain-level') {
+                    g.gain.setTargetAtTime(10 ** (value / 20), context.currentTime, 0.01);
+                }
                 break;
             }
-            case "builtin-sidechain-compressor": {
+            case 'builtin-sidechain-compressor': {
                 const worklet = dn.nodes[0] as AudioWorkletNode;
-                const param = worklet.parameters.get(paramId.replace("sc-comp-", ""));
+                const param = worklet.parameters.get(paramId.replace('sc-comp-', ''));
                 if (param) {
-                    if (paramId === "sc-comp-attack" || paramId === "sc-comp-release") {
+                    if (paramId === 'sc-comp-attack' || paramId === 'sc-comp-release') {
                         param.setTargetAtTime(value / 1000, context.currentTime, 0.01);
                     } else {
                         param.setTargetAtTime(value, context.currentTime, 0.01);
@@ -641,79 +744,81 @@ export const createWebAudioEngine = (): AudioEngine => {
                 }
                 break;
             }
-            case "builtin-chorus": {
+            case 'builtin-chorus': {
                 const dryC = dn.nodes[1] as GainNode;
                 const wetC = dn.nodes[2] as GainNode;
                 const delayC = dn.nodes[3] as DelayNode;
                 const lfoC = dn.nodes[4] as OscillatorNode;
                 const lfoGainC = dn.nodes[5] as GainNode;
-                if (paramId === "chorus-rate") {
+                if (paramId === 'chorus-rate') {
                     lfoC.frequency.setTargetAtTime(value, context.currentTime, 0.01);
-                } else if (paramId === "chorus-depth") {
+                } else if (paramId === 'chorus-depth') {
                     lfoGainC.gain.setTargetAtTime(value / 1000, context.currentTime, 0.01);
                     delayC.delayTime.setTargetAtTime(Math.max(0.001, value / 1000), context.currentTime, 0.01);
-                } else if (paramId === "chorus-mix") {
+                } else if (paramId === 'chorus-mix') {
                     wetC.gain.setTargetAtTime(value, context.currentTime, 0.01);
                     dryC.gain.setTargetAtTime(1 - value, context.currentTime, 0.01);
                 }
                 break;
             }
-            case "builtin-phaser": {
+            case 'builtin-phaser': {
                 const filters = dn.nodes.slice(1, 5) as BiquadFilterNode[];
                 const lfoP = dn.nodes[5] as OscillatorNode;
                 const lfoGainP = dn.nodes[6] as GainNode;
                 const feedbackP = dn.nodes[7] as GainNode;
                 const dryP = dn.nodes[8] as GainNode;
                 const wetP = dn.nodes[9] as GainNode;
-                if (paramId === "phaser-rate") {
+                if (paramId === 'phaser-rate') {
                     lfoP.frequency.setTargetAtTime(value, context.currentTime, 0.01);
-                } else if (paramId === "phaser-depth") {
+                } else if (paramId === 'phaser-depth') {
                     lfoGainP.gain.setTargetAtTime(value * 1000, context.currentTime, 0.01);
                     const wetVal = value * 0.5 + 0.25;
                     wetP.gain.setTargetAtTime(Math.min(1, wetVal), context.currentTime, 0.01);
                     dryP.gain.setTargetAtTime(1 - Math.min(1, wetVal), context.currentTime, 0.01);
-                } else if (paramId === "phaser-feedback") {
+                } else if (paramId === 'phaser-feedback') {
                     feedbackP.gain.setTargetAtTime(value, context.currentTime, 0.01);
-                } else if (paramId === "phaser-stages") {
+                } else if (paramId === 'phaser-stages') {
                     for (const f of filters) {
                         f.Q.setTargetAtTime(value > 6 ? 1 : 0.5, context.currentTime, 0.01);
                     }
                 }
                 break;
             }
-            case "builtin-distortion": {
+            case 'builtin-distortion': {
                 const dryD = dn.nodes[1] as GainNode;
                 const wetD = dn.nodes[2] as GainNode;
                 const shaperD = dn.nodes[3] as WaveShaperNode;
                 const toneD = dn.nodes[4] as BiquadFilterNode;
-                if (paramId === "dist-drive") {
+                if (paramId === 'dist-drive') {
                     shaperD.curve = makeDistortionCurve(value);
-                } else if (paramId === "dist-tone") {
+                } else if (paramId === 'dist-tone') {
                     toneD.frequency.setTargetAtTime(value, context.currentTime, 0.01);
-                } else if (paramId === "dist-mix") {
+                } else if (paramId === 'dist-mix') {
                     wetD.gain.setTargetAtTime(value, context.currentTime, 0.01);
                     dryD.gain.setTargetAtTime(1 - value, context.currentTime, 0.01);
                 }
                 break;
             }
-            case "builtin-limiter": {
+            case 'builtin-limiter': {
                 const compL = dn.nodes[0] as DynamicsCompressorNode;
                 const ceilingL = dn.nodes[1] as GainNode;
-                if (paramId === "lim-threshold") {
+                if (paramId === 'lim-threshold') {
                     compL.threshold.setTargetAtTime(value, context.currentTime, 0.01);
-                } else if (paramId === "lim-release") {
+                } else if (paramId === 'lim-release') {
                     compL.release.setTargetAtTime(value / 1000, context.currentTime, 0.01);
-                } else if (paramId === "lim-ceiling") {
-                    ceilingL.gain.setTargetAtTime(Math.pow(10, value / 20), context.currentTime, 0.01);
+                } else if (paramId === 'lim-ceiling') {
+                    ceilingL.gain.setTargetAtTime(10 ** (value / 20), context.currentTime, 0.01);
                 }
                 break;
             }
         }
-    };
+    }
 
-    const ensureBusStrip = (busId: string): BusStrip => {
+    function ensureBusStrip(busId: string): BusStrip {
         const existing = busStrips.get(busId);
-        if (existing) return existing;
+        if (existing) {
+            return existing;
+        }
 
         const gainNode = context.createGain();
         gainNode.gain.value = 1;
@@ -728,11 +833,13 @@ export const createWebAudioEngine = (): AudioEngine => {
         const strip: BusStrip = { busId, gainNode, analyserNode };
         busStrips.set(busId, strip);
         return strip;
-    };
+    }
 
-    const removeBusStrip = (busId: string): void => {
+    function removeBusStrip(busId: string): void {
         const strip = busStrips.get(busId);
-        if (!strip) return;
+        if (!strip) {
+            return;
+        }
         for (const [key, send] of sendNodes) {
             if (send.busId === busId) {
                 send.gainNode.disconnect();
@@ -742,25 +849,31 @@ export const createWebAudioEngine = (): AudioEngine => {
         strip.gainNode.disconnect();
         strip.analyserNode.disconnect();
         busStrips.delete(busId);
-    };
+    }
 
-    const setBusGain = (busId: string, gain: number): void => {
+    function setBusGain(busId: string, gain: number): void {
         const strip = busStrips.get(busId);
-        if (!strip) return;
+        if (!strip) {
+            return;
+        }
         strip.gainNode.gain.setTargetAtTime(Math.max(0, Math.min(2, gain)), context.currentTime, 0.01);
-    };
+    }
 
     const sendKey = (src: string, bus: string) => `${src}→${bus}`;
 
     const tapNodeForSend = (strip: TrackChannelStrip, preFader: boolean): AudioNode =>
         preFader ? strip.preFaderTap : strip.analyserNode;
 
-    const reconnectSendsForTrack = (strip: TrackChannelStrip): void => {
+    function reconnectSendsForTrack(strip: TrackChannelStrip): void {
         for (const [, send] of sendNodes) {
             if (send.sourceTrackId !== strip.trackId) {
                 continue;
             }
-            try { send.gainNode.disconnect(); } catch { /* already disconnected */ }
+            try {
+                send.gainNode.disconnect();
+            } catch {
+                /* already disconnected */
+            }
             const tap = tapNodeForSend(strip, send.preFader);
             tap.connect(send.gainNode);
             const busStrip = busStrips.get(send.busId);
@@ -768,9 +881,9 @@ export const createWebAudioEngine = (): AudioEngine => {
                 send.gainNode.connect(busStrip.gainNode);
             }
         }
-    };
+    }
 
-    const setSend = (sourceTrackId: string, busId: string, level: number, preFader = false): void => {
+    function setSend(sourceTrackId: string, busId: string, level: number, preFader = false): void {
         const trackStrip = trackStrips.get(sourceTrackId);
         if (!trackStrip) {
             return;
@@ -782,7 +895,11 @@ export const createWebAudioEngine = (): AudioEngine => {
         if (existing) {
             existing.gainNode.gain.setTargetAtTime(Math.max(0, Math.min(1, level)), context.currentTime, 0.01);
             if (existing.preFader !== preFader) {
-                try { existing.gainNode.disconnect(); } catch { /* already disconnected */ }
+                try {
+                    existing.gainNode.disconnect();
+                } catch {
+                    /* already disconnected */
+                }
                 const tap = tapNodeForSend(trackStrip, preFader);
                 tap.connect(existing.gainNode);
                 existing.gainNode.connect(busStrip.gainNode);
@@ -798,48 +915,53 @@ export const createWebAudioEngine = (): AudioEngine => {
         sendGain.connect(busStrip.gainNode);
 
         sendNodes.set(key, { sourceTrackId, busId, gainNode: sendGain, preFader });
-    };
+    }
 
-    const removeSend = (sourceTrackId: string, busId: string): void => {
+    function removeSend(sourceTrackId: string, busId: string): void {
         const key = sendKey(sourceTrackId, busId);
         const send = sendNodes.get(key);
-        if (!send) return;
+        if (!send) {
+            return;
+        }
         send.gainNode.disconnect();
         sendNodes.delete(key);
-    };
+    }
 
-    const setTrackOutput = (trackId: string, outputId: string): void => {
+    function setTrackOutput(trackId: string, outputId: string): void {
         const strip = trackStrips.get(trackId);
         if (!strip) {
             return;
         }
         strip.analyserNode.disconnect();
 
-        if (outputId === "master" || !outputId) {
+        if (outputId === 'master' || !outputId) {
             strip.analyserNode.connect(masterGainNode);
         } else {
             const busStrip = ensureBusStrip(outputId);
             strip.analyserNode.connect(busStrip.gainNode);
         }
-    };
+    }
 
-    const getBusPeakLevel = (busId: string): number => {
+    function getBusPeakLevel(busId: string): number {
         const strip = busStrips.get(busId);
-        if (!strip) return 0;
+        if (!strip) {
+            return 0;
+        }
         const data = new Float32Array(strip.analyserNode.frequencyBinCount);
         strip.analyserNode.getFloatTimeDomainData(data);
         let peak = 0;
         for (let i = 0; i < data.length; i++) {
             const abs = Math.abs(data[i]!);
-            if (abs > peak) peak = abs;
+            if (abs > peak) {
+                peak = abs;
+            }
         }
         return peak;
-    };
+    }
 
-    const sidechainKey = (sourceTrackId: string, targetDeviceId: string) =>
-        `${sourceTrackId}→${targetDeviceId}`;
+    const sidechainKey = (sourceTrackId: string, targetDeviceId: string) => `${sourceTrackId}→${targetDeviceId}`;
 
-    const wireSidechainRoute = (sourceTrackId: string, targetTrackId: string, targetDeviceId: string): void => {
+    function wireSidechainRoute(sourceTrackId: string, targetTrackId: string, targetDeviceId: string): void {
         const sourceStrip = trackStrips.get(sourceTrackId);
         const targetStrip = trackStrips.get(targetTrackId);
         if (!sourceStrip || !targetStrip) {
@@ -847,7 +969,7 @@ export const createWebAudioEngine = (): AudioEngine => {
         }
 
         const deviceNode = targetStrip.deviceNodes.find((d) => d.deviceId === targetDeviceId);
-        if (!deviceNode || deviceNode.type !== "builtin-sidechain-compressor") {
+        if (!deviceNode || deviceNode.type !== 'builtin-sidechain-compressor') {
             return;
         }
 
@@ -863,9 +985,9 @@ export const createWebAudioEngine = (): AudioEngine => {
         scGain.connect(deviceNode.inputNode, 0, 1);
 
         sidechainConnections.set(key, scGain);
-    };
+    }
 
-    const unwireSidechainRoute = (sourceTrackId: string, targetDeviceId: string): void => {
+    function unwireSidechainRoute(sourceTrackId: string, targetDeviceId: string): void {
         const key = sidechainKey(sourceTrackId, targetDeviceId);
         const scGain = sidechainConnections.get(key);
         if (!scGain) {
@@ -874,20 +996,28 @@ export const createWebAudioEngine = (): AudioEngine => {
 
         scGain.disconnect();
         sidechainConnections.delete(key);
-    };
+    }
 
-    const dispose = (): void => {
+    function dispose(): void {
         stopAllScheduled();
-        for (const [, scGain] of sidechainConnections) scGain.disconnect();
+        for (const [, scGain] of sidechainConnections) {
+            scGain.disconnect();
+        }
         sidechainConnections.clear();
-        for (const [, send] of sendNodes) send.gainNode.disconnect();
+        for (const [, send] of sendNodes) {
+            send.gainNode.disconnect();
+        }
         sendNodes.clear();
-        for (const [id] of busStrips) removeBusStrip(id);
-        for (const [id] of trackStrips) removeTrackStrip(id);
+        for (const [id] of busStrips) {
+            removeBusStrip(id);
+        }
+        for (const [id] of trackStrips) {
+            removeTrackStrip(id);
+        }
         masterGainNode.disconnect();
         masterAnalyser.disconnect();
         void context.close();
-    };
+    }
 
     return {
         context,
@@ -924,4 +1054,4 @@ export const createWebAudioEngine = (): AudioEngine => {
         wireSidechainRoute,
         unwireSidechainRoute,
     };
-};
+}

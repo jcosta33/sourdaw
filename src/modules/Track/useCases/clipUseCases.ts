@@ -1,20 +1,25 @@
-import { trackStore } from "../stores/trackStore";
-import type { Clip } from "../models/Track";
-import { shiftClipAutomation, duplicateClipAutomation } from "#/modules/Track/useCases/automationUseCases";
-import { transportStore } from "#/modules/Transport/stores/transportStore";
+import { getTrackState, setTrackState, updateTrack, mapAllTracks } from '../repositories/trackRepository';
+import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
+import { type Clip } from '../models/Track';
+import { shiftClipAutomation, duplicateClipAutomation } from '#/modules/Track/useCases/automationUseCases';
 
 let nextClipId = 1;
 
-export const addClip = (input: {
+export function addClip(input: {
     trackId: string;
     startBeat: number;
     endBeat: number;
     name: string;
-    type?: "audio" | "midi";
+    type?: 'audio' | 'midi';
     audioBufferId?: string;
-}): Clip | null => {
-    const state = trackStore.value;
-    if (!state) return null;
+}): Clip | null {
+    const state = getTrackState();
+    if (!state) {
+        return null;
+    }
+
+    const track = state.tracks.find((t) => t.id === input.trackId);
+    const inferredType = input.type ?? (track?.kind === 'midi' ? 'midi' : 'audio');
 
     const clip: Clip = {
         id: `clip-${nextClipId++}`,
@@ -22,43 +27,27 @@ export const addClip = (input: {
         name: input.name,
         startBeat: input.startBeat,
         endBeat: input.endBeat,
-        type: input.type ?? "audio",
+        type: inferredType,
         audioBufferId: input.audioBufferId,
         fadeInBeats: 0,
         fadeOutBeats: 0,
         gain: 1.0,
-        color: "",
+        color: '',
         locked: false,
         muted: false,
     };
 
-    trackStore.set({
-        ...state,
-        tracks: state.tracks.map((t) =>
-            t.id === input.trackId
-                ? { ...t, clips: [...t.clips, clip] }
-                : t,
-        ),
-    });
+    updateTrack(input.trackId, (t) => ({ ...t, clips: [...t.clips, clip] }));
 
     return clip;
-};
+}
 
-export const removeClip = (clipId: string): void => {
-    const state = trackStore.value;
-    if (!state) return;
+export function removeClip(clipId: string): void {
+    mapAllTracks((t) => ({ ...t, clips: t.clips.filter((c) => c.id !== clipId) }));
+}
 
-    trackStore.set({
-        ...state,
-        tracks: state.tracks.map((t) => ({
-            ...t,
-            clips: t.clips.filter((c) => c.id !== clipId),
-        })),
-    });
-};
-
-export const moveClip = (clipId: string, targetTrackId: string, startBeat: number): void => {
-    const state = trackStore.value;
+export function moveClip(clipId: string, targetTrackId: string, startBeat: number): void {
+    const state = getTrackState();
     if (!state) {
         return;
     }
@@ -69,7 +58,12 @@ export const moveClip = (clipId: string, targetTrackId: string, startBeat: numbe
         const clip = t.clips.find((c) => c.id === clipId);
         if (clip) {
             oldStartBeat = clip.startBeat;
-            movedClip = { ...clip, trackId: targetTrackId, startBeat, endBeat: startBeat + (clip.endBeat - clip.startBeat) };
+            movedClip = {
+                ...clip,
+                trackId: targetTrackId,
+                startBeat,
+                endBeat: startBeat + (clip.endBeat - clip.startBeat),
+            };
         }
         return { ...t, clips: t.clips.filter((c) => c.id !== clipId) };
     });
@@ -78,23 +72,19 @@ export const moveClip = (clipId: string, targetTrackId: string, startBeat: numbe
         return;
     }
 
-    trackStore.set({
+    setTrackState({
         ...state,
-        tracks: tracksWithoutClip.map((t) =>
-            t.id === targetTrackId
-                ? { ...t, clips: [...t.clips, movedClip!] }
-                : t,
-        ),
+        tracks: tracksWithoutClip.map((t) => (t.id === targetTrackId ? { ...t, clips: [...t.clips, movedClip!] } : t)),
     });
 
     const beatDelta = startBeat - oldStartBeat;
     if (beatDelta !== 0) {
         shiftClipAutomation(clipId, beatDelta);
     }
-};
+}
 
-export const moveClipPreview = (clipId: string, targetTrackId: string, startBeat: number): void => {
-    const state = trackStore.value;
+export function moveClipPreview(clipId: string, targetTrackId: string, startBeat: number): void {
+    const state = getTrackState();
     if (!state) {
         return;
     }
@@ -105,7 +95,19 @@ export const moveClipPreview = (clipId: string, targetTrackId: string, startBeat
         const clip = t.clips.find((c) => c.id === clipId);
         if (clip) {
             oldStartBeat = clip.startBeat;
-            movedClip = { ...clip, trackId: targetTrackId, startBeat, endBeat: startBeat + (clip.endBeat - clip.startBeat) };
+            const targetTrack = state.tracks.find((tr) => tr.id === targetTrackId);
+            const effectiveTargetId =
+                targetTrack &&
+                ((clip.type === 'audio' && targetTrack.kind !== 'audio') ||
+                    (clip.type === 'midi' && targetTrack.kind !== 'midi'))
+                    ? t.id
+                    : targetTrackId;
+            movedClip = {
+                ...clip,
+                trackId: effectiveTargetId,
+                startBeat,
+                endBeat: startBeat + (clip.endBeat - clip.startBeat),
+            };
         }
         return { ...t, clips: t.clips.filter((c) => c.id !== clipId) };
     });
@@ -114,12 +116,10 @@ export const moveClipPreview = (clipId: string, targetTrackId: string, startBeat
         return;
     }
 
-    trackStore.set({
+    setTrackState({
         ...state,
         tracks: tracksWithoutClip.map((t) =>
-            t.id === targetTrackId
-                ? { ...t, clips: [...t.clips, movedClip!] }
-                : t,
+            t.id === movedClip!.trackId ? { ...t, clips: [...t.clips, movedClip!] } : t
         ),
     });
 
@@ -127,10 +127,10 @@ export const moveClipPreview = (clipId: string, targetTrackId: string, startBeat
     if (beatDelta !== 0) {
         shiftClipAutomation(clipId, beatDelta);
     }
-};
+}
 
-export const duplicateClip = (clipId: string): void => {
-    const state = trackStore.value;
+export function duplicateClip(clipId: string): void {
+    const state = getTrackState();
     if (!state) {
         return;
     }
@@ -154,15 +154,15 @@ export const duplicateClip = (clipId: string): void => {
             return;
         }
     }
-};
+}
 
-export const duplicateClipToNextBar = (clipId: string): void => {
-    const state = trackStore.value;
+export function duplicateClipToNextBar(clipId: string): void {
+    const state = getTrackState();
     if (!state) {
         return;
     }
 
-    const transport = transportStore.value;
+    const transport = getTransportState();
     const beatsPerBar = transport?.timeSignatureNumerator ?? 4;
 
     for (const track of state.tracks) {
@@ -185,4 +185,4 @@ export const duplicateClipToNextBar = (clipId: string): void => {
             return;
         }
     }
-};
+}

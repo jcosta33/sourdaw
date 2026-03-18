@@ -1,22 +1,18 @@
-import { trackStore } from "../stores/trackStore";
-import { midiStore } from "../stores/midiStore";
-import { transportStore } from "#/modules/Transport/stores/transportStore";
-import { audioBufferCache } from "#/modules/AudioEngine/stores/audioBufferCache";
-import { buildDeviceChain } from "#/modules/AudioEngine/useCases/buildDeviceChain";
-import type { Clip, Track } from "../models/Track";
+import { trackStore } from '../stores/trackStore';
+import { midiStore } from '../stores/midiStore';
+import { transportStore } from '#/modules/Transport/stores/transportStore';
+import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
+import { buildDeviceChain } from '#/modules/AudioEngine/useCases/buildDeviceChain';
+import { type Clip, type Track } from '../models/Track';
 
 let frozenClipId = 1;
 
 const MIDI_FREQUENCIES: Record<number, number> = {};
 for (let n = 0; n < 128; n++) {
-    MIDI_FREQUENCIES[n] = 440 * Math.pow(2, (n - 69) / 12);
+    MIDI_FREQUENCIES[n] = 440 * 2 ** ((n - 69) / 12);
 }
 
-const renderTrackOffline = async (
-    track: Track,
-    startBeat: number,
-    endBeat: number,
-): Promise<AudioBuffer | null> => {
+async function renderTrackOffline(track: Track, startBeat: number, endBeat: number): Promise<AudioBuffer | null> {
     const durationBeats = endBeat - startBeat;
     const transport = transportStore.value;
     const tempo = transport?.tempo ?? 120;
@@ -24,7 +20,7 @@ const renderTrackOffline = async (
     const durationSeconds = (durationBeats / tempo) * 60;
     const midi = midiStore.value;
 
-    if (track.kind === "midi" && midi) {
+    if (track.kind === 'midi' && midi) {
         const offlineCtx = new OfflineAudioContext(2, Math.ceil(durationSeconds * sampleRate), sampleRate);
         const trackGain = offlineCtx.createGain();
         trackGain.gain.value = track.gain;
@@ -34,7 +30,7 @@ const renderTrackOffline = async (
         trackPan.connect(offlineCtx.destination);
 
         for (const clip of track.clips) {
-            if (clip.type !== "midi") {
+            if (clip.type !== 'midi') {
                 continue;
             }
             const notes = midi.notesByClipId[clip.id];
@@ -52,7 +48,7 @@ const renderTrackOffline = async (
                 const freq = MIDI_FREQUENCIES[note.pitch] ?? 440;
                 const osc = offlineCtx.createOscillator();
                 const env = offlineCtx.createGain();
-                osc.type = "triangle";
+                osc.type = 'triangle';
                 osc.frequency.value = freq;
                 env.gain.setValueAtTime(0, noteStart);
                 env.gain.linearRampToValueAtTime((note.velocity / 127) * 0.3, noteStart + 0.005);
@@ -68,7 +64,7 @@ const renderTrackOffline = async (
         return offlineCtx.startRendering();
     }
 
-    if (track.kind === "audio") {
+    if (track.kind === 'audio') {
         const offlineCtx = new OfflineAudioContext(2, Math.ceil(durationSeconds * sampleRate), sampleRate);
         const trackGain = offlineCtx.createGain();
         trackGain.gain.value = track.gain;
@@ -78,7 +74,7 @@ const renderTrackOffline = async (
         trackPan.connect(offlineCtx.destination);
 
         for (const clip of track.clips) {
-            const buffer = audioBufferCache.get(clip.audioBufferId ?? "");
+            const buffer = audioBufferCache.get(clip.audioBufferId ?? '');
             if (!buffer) {
                 continue;
             }
@@ -94,9 +90,9 @@ const renderTrackOffline = async (
     }
 
     return null;
-};
+}
 
-export const freezeTrack = async (trackId: string): Promise<void> => {
+export async function freezeTrack(trackId: string): Promise<void> {
     const state = trackStore.value;
     if (!state) {
         return;
@@ -121,9 +117,7 @@ export const freezeTrack = async (trackId: string): Promise<void> => {
 
     const renderedBuffer = await renderTrackOffline(track, startBeat, endBeat);
 
-    const frozenBufferId = renderedBuffer
-        ? `frozen-${trackId}-${Date.now()}`
-        : undefined;
+    const frozenBufferId = renderedBuffer ? `frozen-${trackId}-${Date.now()}` : undefined;
     if (renderedBuffer && frozenBufferId) {
         audioBufferCache.set(frozenBufferId, renderedBuffer);
     }
@@ -147,9 +141,9 @@ export const freezeTrack = async (trackId: string): Promise<void> => {
             };
         }),
     });
-};
+}
 
-export const unfreezeTrack = (trackId: string): void => {
+export function unfreezeTrack(trackId: string): void {
     const state = trackStore.value;
     if (!state) {
         return;
@@ -174,9 +168,9 @@ export const unfreezeTrack = (trackId: string): void => {
             };
         }),
     });
-};
+}
 
-export const bounceInPlace = async (trackId: string): Promise<void> => {
+export async function bounceInPlace(trackId: string): Promise<void> {
     const state = trackStore.value;
     if (!state) {
         return;
@@ -203,12 +197,12 @@ export const bounceInPlace = async (trackId: string): Promise<void> => {
         name: `${track.name} (bounced)`,
         startBeat,
         endBeat,
-        type: "audio",
+        type: 'audio',
         audioBufferId,
         fadeInBeats: 0,
         fadeOutBeats: 0,
         gain: 1.0,
-        color: "",
+        color: '',
         locked: false,
         muted: false,
     };
@@ -231,14 +225,18 @@ export const bounceInPlace = async (trackId: string): Promise<void> => {
             };
         }),
     });
-};
+}
 
-export const bounceToNewTrack = async (trackId: string): Promise<void> => {
+export async function bounceToNewTrack(trackId: string): Promise<void> {
     const state = trackStore.value;
-    if (!state) return;
+    if (!state) {
+        return;
+    }
 
     const track = state.tracks.find((t) => t.id === trackId);
-    if (!track || track.clips.length === 0) return;
+    if (!track || track.clips.length === 0) {
+        return;
+    }
 
     const startBeat = Math.min(...track.clips.map((c) => c.startBeat));
     const endBeat = Math.max(...track.clips.map((c) => c.endBeat));
@@ -256,23 +254,25 @@ export const bounceToNewTrack = async (trackId: string): Promise<void> => {
         name: `${track.name} (bounced)`,
         startBeat,
         endBeat,
-        type: "audio",
+        type: 'audio',
         audioBufferId,
         fadeInBeats: 0,
         fadeOutBeats: 0,
         gain: 1.0,
-        color: "",
+        color: '',
         locked: false,
         muted: false,
     };
 
     const freshState = trackStore.value;
-    if (!freshState) return;
+    if (!freshState) {
+        return;
+    }
 
     const newTrack: Track = {
         id: newTrackId,
         name: `${track.name} (bounce)`,
-        kind: "audio",
+        kind: 'audio',
         muted: false,
         soloed: false,
         armed: false,
@@ -285,15 +285,20 @@ export const bounceToNewTrack = async (trackId: string): Promise<void> => {
         frozen: false,
         parentId: null,
         collapsed: false,
-        inputMonitoring: "auto",
+        inputMonitoring: 'auto',
         hidden: false,
         disabled: false,
         height: 80,
-        outputId: "master",
-        automationMode: "read",
+        outputId: 'master',
+        automationMode: 'read',
         groupId: null,
         soloSafe: false,
-        notes: "",
+        notes: '',
+        inputId: null,
+        alternatives: [{ id: 'alt-main', name: 'Main', clips: [bouncedClip] }],
+        activeAlternativeId: 'alt-main',
+        vcaGroupId: null,
+        midiOutputTrackId: null,
     };
 
     const insertIndex = freshState.tracks.findIndex((t) => t.id === trackId) + 1;
@@ -301,13 +306,9 @@ export const bounceToNewTrack = async (trackId: string): Promise<void> => {
     tracks.splice(insertIndex, 0, newTrack);
 
     trackStore.set({ ...freshState, tracks });
-};
+}
 
-export const bounceSelection = async (
-    trackId: string,
-    startBeat: number,
-    endBeat: number,
-): Promise<void> => {
+export async function bounceSelection(trackId: string, startBeat: number, endBeat: number): Promise<void> {
     const state = trackStore.value;
     if (!state) {
         return;
@@ -318,9 +319,7 @@ export const bounceSelection = async (
         return;
     }
 
-    const clipsInRange = track.clips.filter(
-        (c) => c.endBeat > startBeat && c.startBeat < endBeat,
-    );
+    const clipsInRange = track.clips.filter((c) => c.endBeat > startBeat && c.startBeat < endBeat);
     if (clipsInRange.length === 0) {
         return;
     }
@@ -347,12 +346,12 @@ export const bounceSelection = async (
         name: `${track.name} (selection bounce)`,
         startBeat,
         endBeat,
-        type: "audio",
+        type: 'audio',
         audioBufferId,
         fadeInBeats: 0,
         fadeOutBeats: 0,
         gain: 1.0,
-        color: "",
+        color: '',
         locked: false,
         muted: false,
     };
@@ -368,13 +367,11 @@ export const bounceSelection = async (
             if (t.id !== trackId) {
                 return t;
             }
-            const keptClips = t.clips.filter(
-                (c) => c.endBeat <= startBeat || c.startBeat >= endBeat,
-            );
+            const keptClips = t.clips.filter((c) => c.endBeat <= startBeat || c.startBeat >= endBeat);
             return {
                 ...t,
                 clips: [...keptClips, bouncedClip],
             };
         }),
     });
-};
+}

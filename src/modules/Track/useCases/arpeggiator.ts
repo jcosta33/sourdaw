@@ -1,21 +1,25 @@
-import { midiStore } from "#/modules/Track/stores/midiStore";
-import type { MidiNote } from "#/modules/Track/models/MidiNote";
+import { midiStore } from '#/modules/Track/stores/midiStore';
+import { type MidiNote } from '#/modules/Track/models/MidiNote';
 
-export type ArpPattern = "up" | "down" | "updown" | "downup" | "random";
+export type ArpPattern = 'up' | 'down' | 'updown' | 'downup' | 'random';
 export type ArpRate = 4 | 8 | 16 | 32;
 
-export const arpeggiate = (
+export function arpeggiate(
     clipId: string,
-    pattern: ArpPattern = "up",
+    pattern: ArpPattern = 'up',
     rate: ArpRate = 16,
     octaves: number = 1,
-    gatePercent: number = 80,
-): void => {
+    gatePercent: number = 80
+): void {
     const state = midiStore.value;
-    if (!state) return;
+    if (!state) {
+        return;
+    }
 
     const notes = state.notesByClipId[clipId];
-    if (!notes || notes.length === 0) return;
+    if (!notes || notes.length === 0) {
+        return;
+    }
 
     const uniquePitches = [...new Set(notes.map((n) => n.pitch))].sort((a, b) => a - b);
 
@@ -23,32 +27,38 @@ export const arpeggiate = (
     for (let oct = 0; oct < octaves; oct++) {
         for (const pitch of uniquePitches) {
             const p = pitch + oct * 12;
-            if (p <= 127) expandedPitches.push(p);
+            if (p <= 127) {
+                expandedPitches.push(p);
+            }
         }
     }
 
-    if (expandedPitches.length === 0) return;
+    if (expandedPitches.length === 0) {
+        return;
+    }
 
     let sequence: number[];
     switch (pattern) {
-        case "up":
+        case 'up': {
             sequence = [...expandedPitches];
             break;
-        case "down":
+        }
+        case 'down': {
             sequence = [...expandedPitches].reverse();
             break;
-        case "updown": {
+        }
+        case 'updown': {
             const inner = expandedPitches.length > 2 ? expandedPitches.slice(1, -1).reverse() : [];
             sequence = [...expandedPitches, ...inner];
             break;
         }
-        case "downup": {
+        case 'downup': {
             const rev = [...expandedPitches].reverse();
             const inner = rev.length > 2 ? rev.slice(1, -1).reverse() : [];
             sequence = [...rev, ...inner];
             break;
         }
-        case "random": {
+        case 'random': {
             sequence = [...expandedPitches];
             for (let i = sequence.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
@@ -58,7 +68,9 @@ export const arpeggiate = (
         }
     }
 
-    if (sequence.length === 0) return;
+    if (sequence.length === 0) {
+        return;
+    }
 
     const minBeat = Math.min(...notes.map((n) => n.startBeat));
     const maxBeat = Math.max(...notes.map((n) => n.startBeat + n.duration));
@@ -87,4 +99,4 @@ export const arpeggiate = (
             [clipId]: newNotes,
         },
     });
-};
+}

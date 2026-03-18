@@ -13,8 +13,8 @@ export const createSidechainRoute = (
     sourceTrackId: string,
     targetTrackId: string,
     targetDeviceId: string,
-    targetParameterId = "threshold",
-    gain = 1,
+    targetParameterId = 'threshold',
+    gain = 1
 ): SidechainRoute => ({
     id: `sidechain-${nextSidechainId++}`,
     sourceTrackId,

@@ -1,26 +1,28 @@
-import { undoStore } from "../stores/undoStore";
-import { executeAppAction } from "./executeAppAction";
-import type { UndoEntry } from "../models/UndoEntry";
+import { undoStore } from '../stores/undoStore';
+import { executeAppAction } from './executeAppAction';
+import { type UndoEntry } from '../models/UndoEntry';
 
-const executeUndo = async (entry: UndoEntry): Promise<void> => {
-    if (entry.kind === "callback") {
+async function executeUndo(entry: UndoEntry): Promise<void> {
+    if (entry.kind === 'callback') {
         entry.undo();
     } else if (entry.inverseAction) {
         await executeAppAction(entry.inverseAction);
     }
-};
+}
 
-const executeRedo = async (entry: UndoEntry): Promise<void> => {
-    if (entry.kind === "callback") {
+async function executeRedo(entry: UndoEntry): Promise<void> {
+    if (entry.kind === 'callback') {
         entry.redo();
     } else {
         await executeAppAction(entry.action);
     }
-};
+}
 
-export const undo = async (): Promise<void> => {
+export async function undo(): Promise<void> {
     const state = undoStore.value;
-    if (!state || state.past.length === 0) return;
+    if (!state || state.past.length === 0) {
+        return;
+    }
 
     const lastEntry = state.past[state.past.length - 1]!;
 
@@ -51,11 +53,13 @@ export const undo = async (): Promise<void> => {
         past: newPast,
         future: [lastEntry, ...state.future],
     });
-};
+}
 
-export const redo = async (): Promise<void> => {
+export async function redo(): Promise<void> {
     const state = undoStore.value;
-    if (!state || state.future.length === 0) return;
+    if (!state || state.future.length === 0) {
+        return;
+    }
 
     const entry = state.future[0]!;
     const newFuture = state.future.slice(1);
@@ -66,19 +70,19 @@ export const redo = async (): Promise<void> => {
         past: [...state.past, entry],
         future: newFuture,
     });
-};
+}
 
-export const canUndo = (): boolean => {
+export function canUndo(): boolean {
     const state = undoStore.value;
     return (state?.past.length ?? 0) > 0;
-};
+}
 
-export const canRedo = (): boolean => {
+export function canRedo(): boolean {
     const state = undoStore.value;
     return (state?.future.length ?? 0) > 0;
-};
+}
 
-export const undoToIndex = async (targetIndex: number): Promise<void> => {
+export async function undoToIndex(targetIndex: number): Promise<void> {
     const state = undoStore.value;
     if (!state) {
         return;
@@ -100,4 +104,4 @@ export const undoToIndex = async (targetIndex: number): Promise<void> => {
             await redo();
         }
     }
-};
+}

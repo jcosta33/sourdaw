@@ -1,23 +1,17 @@
+//! Tauri commands for plugin scanning, loading, and parameter management.
+
 use serde::{Deserialize, Serialize};
-use std::collections::hash_map::DefaultHasher;
-use std::fs;
-use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ScannedPlugin {
-    pub id: String,
-    pub name: String,
-    pub vendor: String,
-    pub format: String,
-    pub category: String,
-    pub path: String,
-    pub version: String,
-    pub num_inputs: u32,
-    pub num_outputs: u32,
-    pub num_parameters: u32,
-    pub has_custom_ui: bool,
-}
+use crate::host::clap_wrapper::ClapWrapper;
+use crate::host::scanner::{self, ScannedPlugin, ScanResult};
+use crate::host::traits::AudioPlugin;
+use crate::state::{AppState, PluginInstanceData, PluginRegistryEntry};
+
+// Re-export for use by traits.rs and other modules
+pub use crate::host::scanner::ScannedPlugin as ScannedPluginInfo;
+
+// ── Types ───────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginParameter {
@@ -41,78 +35,13 @@ pub struct PluginInstance {
     pub latency_samples: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ScanResult {
-    pub plugins: Vec<ScannedPlugin>,
-    pub errors: Vec<String>,
-    pub scan_duration_ms: u64,
-}
-
-fn stable_id(path: &Path) -> String {
-    let mut hasher = DefaultHasher::new();
-    path.to_string_lossy().hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
-}
-
-fn detect_format(path: &Path, is_dir: bool) -> Option<&'static str> {
-    let ext = path.extension()?.to_str()?;
-    match (ext, is_dir) {
-        ("vst3", true) => Some("vst3"),
-        ("clap", false) => Some("clap"),
-        ("component", true) => Some("au"),
-        _ => None,
-    }
-}
-
-fn plugin_name_from_path(path: &Path) -> String {
-    path.file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "Unknown".to_string())
-}
-
-fn scan_directory(dir: &Path, plugins: &mut Vec<ScannedPlugin>, errors: &mut Vec<String>) {
-    let entries = match fs::read_dir(dir) {
-        Ok(entries) => entries,
-        Err(e) => {
-            errors.push(format!("Cannot read {}: {}", dir.display(), e));
-            return;
-        }
-    };
-
-    for entry in entries {
-        let entry = match entry {
-            Ok(e) => e,
-            Err(e) => {
-                errors.push(format!("Error reading entry in {}: {}", dir.display(), e));
-                continue;
-            }
-        };
-
-        let entry_path = entry.path();
-        let is_dir = entry_path.is_dir();
-
-        if let Some(format) = detect_format(&entry_path, is_dir) {
-            plugins.push(ScannedPlugin {
-                id: stable_id(&entry_path),
-                name: plugin_name_from_path(&entry_path),
-                vendor: String::new(),
-                format: format.to_string(),
-                category: "effect".to_string(),
-                path: entry_path.to_string_lossy().into_owned(),
-                version: String::new(),
-                num_inputs: 2,
-                num_outputs: 2,
-                num_parameters: 0,
-                has_custom_ui: false,
-            });
-        } else if is_dir {
-            scan_directory(&entry_path, plugins, errors);
-        }
-    }
-}
+// ── Scanning commands ───────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn scan_plugins(paths: Vec<String>) -> Result<ScanResult, String> {
+pub async fn scan_plugins(
+    paths: Vec<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<ScanResult, String> {
     let start = std::time::Instant::now();
     let mut plugins = Vec::new();
     let mut errors = Vec::new();
@@ -123,7 +52,26 @@ pub async fn scan_plugins(paths: Vec<String>) -> Result<ScanResult, String> {
             errors.push(format!("Not a directory: {}", scan_path));
             continue;
         }
-        scan_directory(&path, &mut plugins, &mut errors);
+        scanner::scan_directory(&path, &mut plugins, &mut errors);
+    }
+
+    // Populate the plugin registry so load_plugin can find them
+    if let Ok(mut registry) = state.plugin_registry.lock() {
+        for p in &plugins {
+            let clap_id = if p.format == "clap" {
+                let (_, id) = scanner::extract_clap_metadata(Path::new(&p.path));
+                id
+            } else {
+                String::new()
+            };
+
+            registry.insert(p.id.clone(), PluginRegistryEntry {
+                path: p.path.clone(),
+                clap_id,
+                format: p.format.clone(),
+                name: p.name.clone(),
+            });
+        }
     }
 
     Ok(ScanResult {
@@ -170,52 +118,130 @@ pub async fn get_default_plugin_paths() -> Result<Vec<String>, String> {
     Ok(paths)
 }
 
+// ── Instance lifecycle commands ─────────────────────────────────────────
+
 #[tauri::command]
-pub async fn load_plugin(plugin_id: String, instance_id: String) -> Result<PluginInstance, String> {
-    Err(format!(
-        "Plugin host not yet available. Plugin: {plugin_id}, Instance: {instance_id}. \
-         A native plugin host sidecar is required to load VST3/CLAP/AU plugins."
-    ))
+pub async fn load_plugin(
+    plugin_id: String,
+    instance_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<PluginInstance, String> {
+    let entry = {
+        let registry = state.plugin_registry.lock()
+            .map_err(|e| format!("Failed to lock registry: {}", e))?;
+        registry.get(&plugin_id).cloned()
+            .ok_or_else(|| format!("Plugin {} not found in registry. Run a scan first.", plugin_id))?
+    };
+
+    match entry.format.as_str() {
+        "clap" => {
+            let clap_id = if entry.clap_id.is_empty() {
+                entry.name.clone()
+            } else {
+                entry.clap_id.clone()
+            };
+
+            let wrapper = ClapWrapper::new(&entry.path, &clap_id)?;
+            let name = wrapper.get_name().to_string();
+            let params = wrapper.get_parameters();
+
+            let instance = PluginInstance {
+                instance_id: instance_id.clone(),
+                plugin_id: plugin_id.clone(),
+                name,
+                parameters: params,
+                is_active: true,
+                latency_samples: 0,
+            };
+
+            let mut plugins = state.plugins.lock()
+                .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+            plugins.insert(instance_id, PluginInstanceData {
+                plugin: Box::new(wrapper),
+            });
+
+            Ok(instance)
+        }
+        "vst3" => Err("VST3 plugin loading is not yet implemented. CLAP plugins are supported.".to_string()),
+        "au" => Err("Audio Unit plugin loading is not yet implemented. CLAP plugins are supported.".to_string()),
+        _ => Err(format!("Unknown plugin format: {}", entry.format)),
+    }
 }
 
 #[tauri::command]
-pub async fn unload_plugin(instance_id: String) -> Result<(), String> {
-    Err(format!(
-        "Plugin host not yet available. Instance: {instance_id}"
-    ))
+pub async fn unload_plugin(
+    instance_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let mut plugins = state.plugins.lock()
+        .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+
+    if plugins.remove(&instance_id).is_none() {
+        return Err(format!("No plugin instance found with id: {}", instance_id));
+    }
+
+    Ok(())
 }
+
+// ── Parameter commands ──────────────────────────────────────────────────
 
 #[tauri::command]
 pub async fn set_plugin_parameter(
     instance_id: String,
     param_id: u32,
     value: f64,
+    state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    Err(format!(
-        "Plugin host not yet available. Instance: {instance_id}, Param: {param_id}, Value: {value}"
-    ))
+    let mut plugins = state.plugins.lock()
+        .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+
+    let instance = plugins.get_mut(&instance_id)
+        .ok_or_else(|| format!("No plugin instance: {}", instance_id))?;
+
+    instance.plugin.set_parameter(param_id, value);
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn get_plugin_parameters(
     instance_id: String,
+    state: tauri::State<'_, AppState>,
 ) -> Result<Vec<PluginParameter>, String> {
-    Err(format!(
-        "Plugin host not yet available. Instance: {instance_id}"
-    ))
+    let plugins = state.plugins.lock()
+        .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+
+    let instance = plugins.get(&instance_id)
+        .ok_or_else(|| format!("No plugin instance: {}", instance_id))?;
+
+    Ok(instance.plugin.get_parameters())
 }
 
 #[tauri::command]
-pub async fn get_plugin_state(instance_id: String) -> Result<Vec<u8>, String> {
-    Err(format!(
-        "Plugin host not yet available. Instance: {instance_id}"
-    ))
+pub async fn get_plugin_state(
+    instance_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<u8>, String> {
+    let plugins = state.plugins.lock()
+        .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+
+    let instance = plugins.get(&instance_id)
+        .ok_or_else(|| format!("No plugin instance: {}", instance_id))?;
+
+    Ok(instance.plugin.get_state())
 }
 
 #[tauri::command]
-pub async fn set_plugin_state(instance_id: String, state: Vec<u8>) -> Result<(), String> {
-    let _ = state;
-    Err(format!(
-        "Plugin host not yet available. Instance: {instance_id}"
-    ))
+pub async fn set_plugin_state(
+    instance_id: String,
+    plugin_state: Vec<u8>,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let mut plugins = state.plugins.lock()
+        .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+
+    let instance = plugins.get_mut(&instance_id)
+        .ok_or_else(|| format!("No plugin instance: {}", instance_id))?;
+
+    instance.plugin.set_state(&plugin_state);
+    Ok(())
 }

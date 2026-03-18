@@ -1,31 +1,15 @@
-import { trackStore } from "../stores/trackStore";
-import { audioBufferCache } from "#/modules/AudioEngine/stores/audioBufferCache";
-import { transportStore } from "#/modules/Transport/stores/transportStore";
-import type { Clip } from "../models/Track";
-
-let nextClipId = 1000;
-
-function findNearestZeroCrossing(buffer: AudioBuffer, targetSample: number, windowSize: number = 256): number {
-    const data = buffer.getChannelData(0);
-    let bestOffset = 0;
-    let bestDistance = Infinity;
-    for (let offset = -windowSize; offset <= windowSize; offset++) {
-        const idx = targetSample + offset;
-        if (idx < 0 || idx >= data.length - 1) {
-            continue;
-        }
-        if (data[idx]! * data[idx + 1]! <= 0) {
-            if (Math.abs(offset) < bestDistance) {
-                bestDistance = Math.abs(offset);
-                bestOffset = offset;
-            }
-        }
-    }
-    return targetSample + bestOffset;
-}
+import { getTrackState, updateTrack, mapAllTracks, updateClip, setTrackState } from '../repositories/trackRepository';
+import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
+import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
+import {
+    findNearestZeroCrossing,
+    computeNormalizationScale,
+    type NormalizationMode,
+} from '../transformers/clipDspTransformers';
+import { type Clip } from '../models/Track';
 
 function snapSplitBeatToZeroCrossing(clip: Clip, splitBeat: number): number {
-    if (clip.type !== "audio" || !clip.audioBufferId) {
+    if (clip.type !== 'audio' || !clip.audioBufferId) {
         return splitBeat;
     }
 
@@ -34,42 +18,32 @@ function snapSplitBeatToZeroCrossing(clip: Clip, splitBeat: number): number {
         return splitBeat;
     }
 
-    const tempo = transportStore.value?.tempo ?? 120;
+    const tempo = getTransportState()?.tempo ?? 120;
     const beatsPerSecond = tempo / 60;
     const sampleRate = buffer.sampleRate;
 
     const relativeBeat = splitBeat - clip.startBeat;
-    const targetSample = Math.round(relativeBeat / beatsPerSecond * sampleRate);
+    const targetSample = Math.round((relativeBeat / beatsPerSecond) * sampleRate);
 
-    const snappedSample = findNearestZeroCrossing(buffer, targetSample);
+    const snappedSample = findNearestZeroCrossing(buffer.getChannelData(0), targetSample);
     const snappedRelativeBeat = (snappedSample / sampleRate) * beatsPerSecond;
 
     return clip.startBeat + snappedRelativeBeat;
 }
 
-export const renameClip = (clipId: string, name: string): void => {
-    const state = trackStore.value;
-    if (!state) {
-        return;
-    }
-    trackStore.set({
-        ...state,
-        tracks: state.tracks.map((t) => ({
-            ...t,
-            clips: t.clips.map((c) =>
-                c.id === clipId ? { ...c, name } : c,
-            ),
-        })),
-    });
-};
+let nextClipId = 1000;
 
-export const splitClip = (clipId: string, splitBeat: number): void => {
-    const state = trackStore.value;
+export function renameClip(clipId: string, name: string): void {
+    updateClip(clipId, (c) => ({ ...c, name }));
+}
+
+export function splitClip(clipId: string, splitBeat: number): void {
+    const state = getTrackState();
     if (!state) {
         return;
     }
 
-    trackStore.set({
+    setTrackState({
         ...state,
         tracks: state.tracks.map((t) => {
             const clip = t.clips.find((c) => c.id === clipId);
@@ -100,7 +74,7 @@ export const splitClip = (clipId: string, splitBeat: number): void => {
                 fadeInBeats: 0,
                 fadeOutBeats: clip.fadeOutBeats,
                 gain: 1.0,
-                color: "",
+                color: '',
                 locked: false,
                 muted: clip.muted,
             };
@@ -111,88 +85,39 @@ export const splitClip = (clipId: string, splitBeat: number): void => {
             };
         }),
     });
-};
+}
 
-export const trimClipStart = (clipId: string, newStartBeat: number): void => {
-    const state = trackStore.value;
-    if (!state) return;
-    trackStore.set({
-        ...state,
-        tracks: state.tracks.map((t) => ({
-            ...t,
-            clips: t.clips.map((c) =>
-                c.id === clipId && newStartBeat < c.endBeat
-                    ? { ...c, startBeat: Math.max(0, newStartBeat) }
-                    : c,
-            ),
-        })),
+export function trimClipStart(clipId: string, newStartBeat: number): void {
+    updateClip(clipId, (c) => (newStartBeat < c.endBeat ? { ...c, startBeat: Math.max(0, newStartBeat) } : c));
+}
+
+export function trimClipEnd(clipId: string, newEndBeat: number): void {
+    updateClip(clipId, (c) => (newEndBeat > c.startBeat ? { ...c, endBeat: newEndBeat } : c));
+}
+
+export function setClipFade(clipId: string, fadeInBeats: number, fadeOutBeats: number): void {
+    updateClip(clipId, (c) => ({
+        ...c,
+        fadeInBeats: Math.max(0, fadeInBeats),
+        fadeOutBeats: Math.max(0, fadeOutBeats),
+    }));
+}
+
+export function resizeClip(clipId: string, factor: number): void {
+    updateClip(clipId, (c) => {
+        const duration = c.endBeat - c.startBeat;
+        return { ...c, endBeat: c.startBeat + duration * factor };
     });
-};
+}
 
-export const trimClipEnd = (clipId: string, newEndBeat: number): void => {
-    const state = trackStore.value;
-    if (!state) return;
-    trackStore.set({
-        ...state,
-        tracks: state.tracks.map((t) => ({
-            ...t,
-            clips: t.clips.map((c) =>
-                c.id === clipId && newEndBeat > c.startBeat
-                    ? { ...c, endBeat: newEndBeat }
-                    : c,
-            ),
-        })),
-    });
-};
-
-export const setClipFade = (clipId: string, fadeInBeats: number, fadeOutBeats: number): void => {
-    const state = trackStore.value;
-    if (!state) return;
-    trackStore.set({
-        ...state,
-        tracks: state.tracks.map((t) => ({
-            ...t,
-            clips: t.clips.map((c) =>
-                c.id === clipId
-                    ? { ...c, fadeInBeats: Math.max(0, fadeInBeats), fadeOutBeats: Math.max(0, fadeOutBeats) }
-                    : c,
-            ),
-        })),
-    });
-};
-
-export const resizeClip = (clipId: string, factor: number): void => {
-    const state = trackStore.value;
-    if (!state) {
-        return;
-    }
-    trackStore.set({
-        ...state,
-        tracks: state.tracks.map((t) => ({
-            ...t,
-            clips: t.clips.map((c) => {
-                if (c.id !== clipId) {
-                    return c;
-                }
-                const duration = c.endBeat - c.startBeat;
-                return { ...c, endBeat: c.startBeat + duration * factor };
-            }),
-        })),
-    });
-};
-
-export const normalizeClip = (
-    clipId: string,
-    mode: "peak" | "rms" | "lufs" = "peak",
-    targetDb?: number,
-): void => {
-    const state = trackStore.value;
+export function normalizeClip(clipId: string, mode: NormalizationMode = 'peak', targetDb?: number): void {
+    const state = getTrackState();
     if (!state) {
         return;
     }
     for (const track of state.tracks) {
         const clip = track.clips.find((c) => c.id === clipId);
-        if (!clip || clip.type !== "audio" || !clip.audioBufferId) {
+        if (!clip || clip.type !== 'audio' || !clip.audioBufferId) {
             continue;
         }
         const buffer = audioBufferCache.get(clip.audioBufferId);
@@ -200,91 +125,24 @@ export const normalizeClip = (
             return;
         }
 
-        let scale: number;
-
-        if (mode === "rms") {
-            const target = targetDb ?? -14;
-            let sumSq = 0;
-            let totalSamples = 0;
-            for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
-                const data = buffer.getChannelData(ch);
-                for (let i = 0; i < data.length; i++) {
-                    sumSq += data[i]! * data[i]!;
-                }
-                totalSamples += data.length;
-            }
-            const rms = Math.sqrt(sumSq / totalSamples);
-            if (rms === 0) return;
-            const rmsDb = 20 * Math.log10(rms);
-            const gainDb = target - rmsDb;
-            scale = Math.pow(10, gainDb / 20);
-        } else if (mode === "lufs") {
-            const target = targetDb ?? -14;
-            // Simplified K-weighting: high-shelf pre-emphasis (+4dB above ~2kHz)
-            // Apply a simple first-order high-shelf approximation per channel
-            const sampleRate = buffer.sampleRate;
-            const cutoff = 2000;
-            const boostLinear = Math.pow(10, 4 / 20); // +4dB
-            const rc = 1 / (2 * Math.PI * cutoff);
-            const dt = 1 / sampleRate;
-            const alpha = dt / (rc + dt);
-
-            let sumSq = 0;
-            let totalSamples = 0;
-            for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
-                const data = buffer.getChannelData(ch);
-                let lpPrev = 0;
-                for (let i = 0; i < data.length; i++) {
-                    const sample = data[i]!;
-                    lpPrev = lpPrev + alpha * (sample - lpPrev);
-                    const hp = sample - lpPrev;
-                    const weighted = lpPrev + hp * boostLinear;
-                    sumSq += weighted * weighted;
-                }
-                totalSamples += data.length;
-            }
-            const rms = Math.sqrt(sumSq / totalSamples);
-            if (rms === 0) return;
-            const rmsDb = 20 * Math.log10(rms);
-            const gainDb = target - rmsDb;
-            scale = Math.pow(10, gainDb / 20);
-        } else {
-            // Peak normalization (default)
-            let peak = 0;
-            for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
-                const data = buffer.getChannelData(ch);
-                for (let i = 0; i < data.length; i++) {
-                    const abs = Math.abs(data[i]!);
-                    if (abs > peak) {
-                        peak = abs;
-                    }
-                }
-            }
-            if (peak === 0) return;
-            scale = 1.0 / peak;
+        const scale = computeNormalizationScale(buffer, mode, targetDb);
+        if (scale === null) {
+            return;
         }
 
-        trackStore.set({
-            ...state,
-            tracks: state.tracks.map((t) => ({
-                ...t,
-                clips: t.clips.map((c) =>
-                    c.id === clipId ? { ...c, gain: c.gain * scale } : c,
-                ),
-            })),
-        });
+        updateClip(clipId, (c) => ({ ...c, gain: c.gain * scale }));
         return;
     }
-};
+}
 
-export const reverseClip = (clipId: string): void => {
-    const state = trackStore.value;
+export function reverseClip(clipId: string): void {
+    const state = getTrackState();
     if (!state) {
         return;
     }
     for (const track of state.tracks) {
         const clip = track.clips.find((c) => c.id === clipId);
-        if (!clip || clip.type !== "audio" || !clip.audioBufferId) {
+        if (!clip || clip.type !== 'audio' || !clip.audioBufferId) {
             continue;
         }
         const buffer = audioBufferCache.get(clip.audioBufferId);
@@ -302,21 +160,13 @@ export const reverseClip = (clipId: string): void => {
         }
         const newId = `reversed-${clip.audioBufferId}-${Date.now()}`;
         audioBufferCache.set(newId, reversed);
-        trackStore.set({
-            ...state,
-            tracks: state.tracks.map((t) => ({
-                ...t,
-                clips: t.clips.map((c) =>
-                    c.id === clipId ? { ...c, audioBufferId: newId, name: `${c.name} (reversed)` } : c,
-                ),
-            })),
-        });
+        updateClip(clipId, (c) => ({ ...c, audioBufferId: newId, name: `${c.name} (reversed)` }));
         return;
     }
-};
+}
 
-export const glueClips = (clipIds: string[]): void => {
-    const state = trackStore.value;
+export function glueClips(clipIds: string[]): void {
+    const state = getTrackState();
     if (!state || clipIds.length < 2) {
         return;
     }
@@ -344,107 +194,41 @@ export const glueClips = (clipIds: string[]): void => {
         locked: false,
         muted: false,
     };
-    trackStore.set({
-        ...state,
-        tracks: state.tracks.map((t) => {
-            if (t.id !== firstTrack.id) {
-                return t;
-            }
-            return {
-                ...t,
-                clips: [...t.clips.filter((c) => !clipIds.includes(c.id)), glued],
-            };
-        }),
-    });
-};
+    updateTrack(firstTrack.id, (t) => ({
+        ...t,
+        clips: [...t.clips.filter((c) => !clipIds.includes(c.id)), glued],
+    }));
+}
 
-export const nudgeClip = (clipId: string, beats: number): void => {
-    const state = trackStore.value;
-    if (!state) {
-        return;
-    }
-    trackStore.set({
-        ...state,
-        tracks: state.tracks.map((t) => ({
-            ...t,
-            clips: t.clips.map((c) => {
-                if (c.id !== clipId || c.locked) {
-                    return c;
-                }
-                const newStart = Math.max(0, c.startBeat + beats);
-                const duration = c.endBeat - c.startBeat;
-                return { ...c, startBeat: newStart, endBeat: newStart + duration };
-            }),
-        })),
+export function nudgeClip(clipId: string, beats: number): void {
+    updateClip(clipId, (c) => {
+        if (c.locked) {
+            return c;
+        }
+        const newStart = Math.max(0, c.startBeat + beats);
+        const duration = c.endBeat - c.startBeat;
+        return { ...c, startBeat: newStart, endBeat: newStart + duration };
     });
-};
+}
 
-export const setClipGain = (clipId: string, gain: number): void => {
-    const state = trackStore.value;
-    if (!state) {
-        return;
-    }
-    trackStore.set({
-        ...state,
-        tracks: state.tracks.map((t) => ({
-            ...t,
-            clips: t.clips.map((c) =>
-                c.id === clipId ? { ...c, gain: Math.max(0, Math.min(2, gain)) } : c,
-            ),
-        })),
-    });
-};
+export function setClipGain(clipId: string, gain: number): void {
+    updateClip(clipId, (c) => ({ ...c, gain: Math.max(0, Math.min(2, gain)) }));
+}
 
-export const setClipColor = (clipId: string, color: string): void => {
-    const state = trackStore.value;
-    if (!state) {
-        return;
-    }
-    trackStore.set({
-        ...state,
-        tracks: state.tracks.map((t) => ({
-            ...t,
-            clips: t.clips.map((c) =>
-                c.id === clipId ? { ...c, color } : c,
-            ),
-        })),
-    });
-};
+export function setClipColor(clipId: string, color: string): void {
+    updateClip(clipId, (c) => ({ ...c, color }));
+}
 
-export const lockClip = (clipId: string, locked: boolean): void => {
-    const state = trackStore.value;
-    if (!state) {
-        return;
-    }
-    trackStore.set({
-        ...state,
-        tracks: state.tracks.map((t) => ({
-            ...t,
-            clips: t.clips.map((c) =>
-                c.id === clipId ? { ...c, locked } : c,
-            ),
-        })),
-    });
-};
+export function lockClip(clipId: string, locked: boolean): void {
+    updateClip(clipId, (c) => ({ ...c, locked }));
+}
 
-export const muteClip = (clipId: string, muted: boolean): void => {
-    const state = trackStore.value;
-    if (!state) return;
-    trackStore.set({
-        ...state,
-        tracks: state.tracks.map((t) => ({
-            ...t,
-            clips: t.clips.map((c) => (c.id === clipId ? { ...c, muted } : c)),
-        })),
-    });
-};
+export function muteClip(clipId: string, muted: boolean): void {
+    updateClip(clipId, (c) => ({ ...c, muted }));
+}
 
-export const crossfadeClips = (
-    clipAId: string,
-    clipBId: string,
-    durationBeats = 0.5,
-): void => {
-    const state = trackStore.value;
+export function crossfadeClips(clipAId: string, clipBId: string, durationBeats = 0.5): void {
+    const state = getTrackState();
     if (!state) {
         return;
     }
@@ -464,27 +248,16 @@ export const crossfadeClips = (
     const newClipBStart = Math.max(0, clipB.startBeat - halfLen);
     const actualOverlap = newClipAEnd - newClipBStart;
 
-    trackStore.set({
-        ...state,
-        tracks: state.tracks.map((t) => ({
-            ...t,
-            clips: t.clips.map((c) => {
-                if (c.id === clipAId) {
-                    return {
-                        ...c,
-                        endBeat: newClipAEnd,
-                        fadeOutBeats: actualOverlap,
-                    };
-                }
-                if (c.id === clipBId) {
-                    return {
-                        ...c,
-                        startBeat: newClipBStart,
-                        fadeInBeats: actualOverlap,
-                    };
-                }
-                return c;
-            }),
-        })),
-    });
-};
+    mapAllTracks((t) => ({
+        ...t,
+        clips: t.clips.map((c) => {
+            if (c.id === clipAId) {
+                return { ...c, endBeat: newClipAEnd, fadeOutBeats: actualOverlap };
+            }
+            if (c.id === clipBId) {
+                return { ...c, startBeat: newClipBStart, fadeInBeats: actualOverlap };
+            }
+            return c;
+        }),
+    }));
+}

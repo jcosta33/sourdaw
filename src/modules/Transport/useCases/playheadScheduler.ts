@@ -1,29 +1,40 @@
-import { transportStore } from "../stores/transportStore";
-import { tempoMapStore } from "../stores/tempoMapStore";
-import { getTempoAtBeat } from "../models/TempoMap";
-import { getTimeSignatureAtBeat } from "../models/TimeSignatureMap";
-import { timeSignatureMapStore } from "../stores/timeSignatureMapStore";
-import { trackStore } from "#/modules/Track/stores/trackStore";
-import { midiStore } from "#/modules/Track/stores/midiStore";
-import { automationStore } from "#/modules/Track/stores/automationStore";
-import { getAutomationValueAtBeat } from "#/modules/Track/useCases/automationUseCases";
+import { transportStore } from '../stores/transportStore';
+import { tempoMapStore } from '../stores/tempoMapStore';
+import { getTempoAtBeat } from '../models/TempoMap';
+import { getTimeSignatureAtBeat } from '../models/TimeSignatureMap';
+import { timeSignatureMapStore } from '../stores/timeSignatureMapStore';
+import { trackStore } from '#/modules/Track/stores/trackStore';
+import { midiStore } from '#/modules/Track/stores/midiStore';
+import { automationStore } from '#/modules/Track/stores/automationStore';
+import { getAutomationValueAtBeat } from '#/modules/Track/useCases/automationUseCases';
 import {
     startAutomationRecording,
     stopAutomationRecording,
     isRecordingAutomation,
-} from "#/modules/Track/useCases/automationRecording";
-import { audioEngine } from "#/modules/AudioEngine/repositories/audioEngineInstance";
-import { audioBufferCache } from "#/modules/AudioEngine/stores/audioBufferCache";
-import { resolveClipsWithComping } from "#/modules/Track/useCases/resolveComping";
-import { scheduleNote, getSynthParamsForTrack } from "#/modules/AudioEngine/useCases/builtinSynth";
-import { getDrumKitByIndex, scheduleKitNote } from "#/modules/AudioEngine/useCases/drumKitSynth";
-import type { DrumKit } from "#/modules/AudioEngine/useCases/drumKitSynth";
-import { getCompensationDelay } from "#/modules/AudioEngine/useCases/latencyCompensation";
-import { startAudioRecording, stopAudioRecording } from "#/modules/AudioEngine/useCases/audioRecorder";
-import { startRecording, stopRecording } from "#/modules/Track/useCases/recordingUseCases";
-import { addTakeLane, addTake } from "#/modules/Track/useCases/compingUseCases";
-import { takeLaneStore } from "#/modules/Track/stores/takeLaneStore";
-import { notifyUser } from "#/helpers/Notification/notifyUser";
+} from '#/modules/Track/useCases/automationRecording';
+import {
+    ensureTrackStrip,
+    setTrackGain as engineSetTrackGain,
+    setTrackPan as engineSetTrackPan,
+} from '#/modules/AudioEngine/useCases/trackAudioControls';
+import { updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
+import {
+    scheduleClick,
+    stopAllScheduled,
+    getCurrentTime,
+    createBufferSource,
+} from '#/modules/AudioEngine/useCases/scheduling';
+import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
+import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
+import { resolveClipsWithComping } from '#/modules/Track/useCases/resolveComping';
+import { scheduleNote, getSynthParamsForTrack } from '#/modules/AudioEngine/useCases/builtinSynth';
+import { getDrumKitByIndex, scheduleKitNote, type DrumKit } from '#/modules/AudioEngine/useCases/drumKitSynth';
+import { getCompensationDelay } from '#/modules/AudioEngine/useCases/latencyCompensation';
+import { startAudioRecording, stopAudioRecording } from '#/modules/AudioEngine/useCases/audioRecorder';
+import { startRecording, stopRecording } from '#/modules/Track/useCases/recordingUseCases';
+import { addTakeLane, addTake } from '#/modules/Track/useCases/compingUseCases';
+import { takeLaneStore } from '#/modules/Track/stores/takeLaneStore';
+import { notifyUser } from '#/helpers/Notification/notifyUser';
 
 let timerId: ReturnType<typeof setTimeout> | null = null;
 let lastTickTime = 0;
@@ -39,7 +50,12 @@ let punchRecordingClipIds: string[] = [];
 const SCHEDULE_AHEAD_SECONDS = 0.1;
 const MICRO_FADE_SECONDS = 0.003;
 const DEFAULT_SCHEDULE_GRAIN_MS = 10;
-const scheduleMetronome = (fromBeat: number, toBeat: number, transport: NonNullable<typeof transportStore.value>, _currentTempo: number): void => {
+function scheduleMetronome(
+    fromBeat: number,
+    toBeat: number,
+    transport: NonNullable<typeof transportStore.value>,
+    _currentTempo: number
+): void {
     if (!transport.metronomeEnabled) {
         return;
     }
@@ -56,27 +72,32 @@ const scheduleMetronome = (fromBeat: number, toBeat: number, transport: NonNulla
 
         const beatTempo = getTempoAtBeat(tempoMapStore.value?.changes ?? [], beat, transport.tempo);
         const beatOffset = beat - accumulatedPosition;
-        const time = audioEngine.context.currentTime + beatOffset / (beatTempo / 60);
-        const ts = getTimeSignatureAtBeat(tsChanges, beat, transport.timeSignatureNumerator, transport.timeSignatureDenominator);
+        const time = getCurrentTime() + beatOffset / (beatTempo / 60);
+        const ts = getTimeSignatureAtBeat(
+            tsChanges,
+            beat,
+            transport.timeSignatureNumerator,
+            transport.timeSignatureDenominator
+        );
         const isAccent = beat % ts.numerator === 0;
-        audioEngine.scheduleClick(time, isAccent, transport.metronomeVolume ?? 0.5);
+        scheduleClick(time, isAccent, transport.metronomeVolume ?? 0.5);
     }
-};
+}
 
-const resolveDrumKit = (devices: { type: string; parameterValues: Record<string, number> }[]): DrumKit | null => {
-    const kitDevice = devices.find((d) => d.type === "drum-kit");
+function resolveDrumKit(devices: { type: string; parameterValues: Record<string, number> }[]): DrumKit | null {
+    const kitDevice = devices.find((d) => d.type === 'drum-kit');
     if (!kitDevice) {
         return null;
     }
-    const kitIndex = kitDevice.parameterValues["kitId"] ?? 0;
+    const kitIndex = kitDevice.parameterValues.kitId ?? 0;
     return getDrumKitByIndex(kitIndex);
-};
+}
 
-const scheduleFrozenTrack = (
+function scheduleFrozenTrack(
     track: { id: string; frozenBufferId?: string },
     _fromBeat: number,
-    currentTempo: number,
-): boolean => {
+    currentTempo: number
+): boolean {
     if (!track.frozenBufferId) {
         return false;
     }
@@ -91,15 +112,15 @@ const scheduleFrozenTrack = (
 
     scheduledFrozenTracks.add(track.id);
 
-    const strip = audioEngine.ensureTrackStrip(track.id);
-    const source = audioEngine.context.createBufferSource();
+    const strip = ensureTrackStrip(track.id);
+    const source = createBufferSource();
     source.buffer = buffer;
 
     source.connect(strip.gainNode);
 
     const beatOffset = 0 - accumulatedPosition;
-    const startTime = audioEngine.context.currentTime + beatOffset / (currentTempo / 60);
-    const now = audioEngine.context.currentTime;
+    const startTime = getCurrentTime() + beatOffset / (currentTempo / 60);
+    const now = getCurrentTime();
 
     if (startTime >= now) {
         source.start(startTime);
@@ -121,9 +142,14 @@ const scheduleFrozenTrack = (
     };
 
     return true;
-};
+}
 
-const scheduleMidiNotes = (fromBeat: number, toBeat: number, transport: NonNullable<typeof transportStore.value>, currentTempo: number): void => {
+function scheduleMidiNotes(
+    fromBeat: number,
+    toBeat: number,
+    transport: NonNullable<typeof transportStore.value>,
+    currentTempo: number
+): void {
     const tracks = trackStore.value?.tracks;
     const midiState = midiStore.value;
     if (!tracks || !midiState) {
@@ -133,7 +159,7 @@ const scheduleMidiNotes = (fromBeat: number, toBeat: number, transport: NonNulla
     const changes = tempoMapStore.value?.changes ?? [];
 
     for (const track of tracks) {
-        if (track.kind !== "midi" || track.muted) {
+        if (track.kind !== 'midi' || track.muted) {
             continue;
         }
 
@@ -146,8 +172,10 @@ const scheduleMidiNotes = (fromBeat: number, toBeat: number, transport: NonNulla
         const resolvedClips = resolveClipsWithComping(track.id, track.clips);
 
         for (const clip of resolvedClips) {
-            if (clip.muted) continue;
-            if (clip.type !== "midi") {
+            if (clip.muted) {
+                continue;
+            }
+            if (clip.type !== 'midi') {
                 continue;
             }
             const notes = midiState.notesByClipId[clip.id];
@@ -158,12 +186,8 @@ const scheduleMidiNotes = (fromBeat: number, toBeat: number, transport: NonNulla
             const synthParams = drumKit ? null : getSynthParamsForTrack(track.id);
             const compensation = getCompensationDelay(track.id);
             const clipVisualLength = clip.endBeat - clip.startBeat;
-            const loopLen = clip.loopEnabled
-                ? (clip.loopLength ?? clipVisualLength)
-                : clipVisualLength;
-            const maxIterations = clip.loopEnabled
-                ? Math.ceil(clipVisualLength / loopLen)
-                : 1;
+            const loopLen = clip.loopEnabled ? (clip.loopLength ?? clipVisualLength) : clipVisualLength;
+            const maxIterations = clip.loopEnabled ? Math.ceil(clipVisualLength / loopLen) : 1;
 
             for (let iter = 0; iter < maxIterations; iter++) {
                 const iterOffset = iter * loopLen;
@@ -182,35 +206,36 @@ const scheduleMidiNotes = (fromBeat: number, toBeat: number, transport: NonNulla
                         const noteTempo = getTempoAtBeat(changes, noteStartBeat, transport.tempo);
                         const noteBeatsPerSecond = noteTempo / 60;
                         const beatOffset = noteStartBeat - accumulatedPosition;
-                        const time = audioEngine.context.currentTime + beatOffset / (currentTempo / 60) + compensation;
+                        const time = getCurrentTime() + beatOffset / (currentTempo / 60) + compensation;
                         const noteEndBeat = Math.min(noteStartBeat + note.duration, clip.endBeat);
                         const duration = (noteEndBeat - noteStartBeat) / noteBeatsPerSecond;
 
-                        const strip = audioEngine.ensureTrackStrip(track.id);
+                        const strip = ensureTrackStrip(track.id);
 
                         if (drumKit) {
                             scheduleKitNote(
-                                audioEngine.context,
+                                getAudioContext(),
                                 strip.gainNode,
                                 drumKit,
                                 note.pitch,
                                 time,
                                 duration,
-                                note.velocity,
+                                note.velocity
                             );
                         } else {
-                            const mpe = (note.pressure !== undefined || note.slide !== undefined || note.pitchBend !== undefined)
-                                ? { pressure: note.pressure, slide: note.slide, pitchBend: note.pitchBend }
-                                : undefined;
+                            const mpe =
+                                note.pressure !== undefined || note.slide !== undefined || note.pitchBend !== undefined
+                                    ? { pressure: note.pressure, slide: note.slide, pitchBend: note.pitchBend }
+                                    : undefined;
                             scheduleNote(
-                                audioEngine.context,
+                                getAudioContext(),
                                 strip.gainNode,
                                 note.pitch,
                                 time,
                                 duration,
                                 note.velocity,
                                 synthParams!,
-                                mpe,
+                                mpe
                             );
                         }
                     }
@@ -218,9 +243,14 @@ const scheduleMidiNotes = (fromBeat: number, toBeat: number, transport: NonNulla
             }
         }
     }
-};
+}
 
-const scheduleAudioClips = (fromBeat: number, toBeat: number, transport: NonNullable<typeof transportStore.value>, currentTempo: number): void => {
+function scheduleAudioClips(
+    fromBeat: number,
+    toBeat: number,
+    transport: NonNullable<typeof transportStore.value>,
+    currentTempo: number
+): void {
     const tracks = trackStore.value?.tracks;
     if (!tracks) {
         return;
@@ -229,7 +259,7 @@ const scheduleAudioClips = (fromBeat: number, toBeat: number, transport: NonNull
     const changes = tempoMapStore.value?.changes ?? [];
 
     for (const track of tracks) {
-        if (track.kind !== "audio" || track.muted) {
+        if (track.kind !== 'audio' || track.muted) {
             continue;
         }
 
@@ -242,8 +272,10 @@ const scheduleAudioClips = (fromBeat: number, toBeat: number, transport: NonNull
         const resolvedAudioClips = resolveClipsWithComping(track.id, track.clips);
 
         for (const clip of resolvedAudioClips) {
-            if (clip.muted) continue;
-            if (clip.type !== "audio" || !clip.audioBufferId) {
+            if (clip.muted) {
+                continue;
+            }
+            if (clip.type !== 'audio' || !clip.audioBufferId) {
                 continue;
             }
             const clipKey = `${clip.id}:${clip.regionStartBeat}:${clip.regionEndBeat}`;
@@ -256,34 +288,30 @@ const scheduleAudioClips = (fromBeat: number, toBeat: number, transport: NonNull
 
             const buffer = audioBufferCache.get(clip.audioBufferId);
             if (!buffer) {
-                notifyUser(
-                    `Missing audio for clip "${clip.name}" — re-import the audio file`,
-                    "warning",
-                );
-                scheduledAudioClips.add(clipKey);
+                // If audioBufferId is a recording ID (starts with 'rec-'), don't permanently
+                // skip — the buffer may not be ready yet. Re-try on next tick.
+                const isRecordingClip = clip.audioBufferId.startsWith('rec-');
+                if (!isRecordingClip) {
+                    notifyUser(`Missing audio for clip "${clip.name}" — re-import the audio file`, 'warning');
+                    scheduledAudioClips.add(clipKey);
+                }
                 continue;
             }
 
             scheduledAudioClips.add(clipKey);
 
-            const strip = audioEngine.ensureTrackStrip(track.id);
+            const strip = ensureTrackStrip(track.id);
 
-            const stretchRatio = (clip.stretchMode && clip.stretchMode !== "off")
-                ? (clip.stretchRatio ?? 1)
-                : 1;
+            const stretchRatio = clip.stretchMode && clip.stretchMode !== 'off' ? (clip.stretchRatio ?? 1) : 1;
 
             const clipTempo = getTempoAtBeat(changes, clip.startBeat, transport.tempo);
             const clipBeatsPerSecond = clipTempo / 60;
             const clipVisualLength = clip.endBeat - clip.startBeat;
             const clipDurationSeconds = clipVisualLength / clipBeatsPerSecond;
 
-            const loopLen = clip.loopEnabled
-                ? (clip.loopLength ?? clipVisualLength)
-                : clipVisualLength;
+            const loopLen = clip.loopEnabled ? (clip.loopLength ?? clipVisualLength) : clipVisualLength;
             const loopLenSeconds = loopLen / clipBeatsPerSecond;
-            const maxIterations = clip.loopEnabled
-                ? Math.ceil(clipVisualLength / loopLen)
-                : 1;
+            const maxIterations = clip.loopEnabled ? Math.ceil(clipVisualLength / loopLen) : 1;
 
             for (let iter = 0; iter < maxIterations; iter++) {
                 const iterOffsetBeats = iter * loopLen;
@@ -296,7 +324,7 @@ const scheduleAudioClips = (fromBeat: number, toBeat: number, transport: NonNull
                 const iterDurationBeats = Math.min(loopLen, remainingBeats);
                 const iterDurationSeconds = iterDurationBeats / clipBeatsPerSecond;
 
-                const source = audioEngine.context.createBufferSource();
+                const source = createBufferSource();
                 source.buffer = buffer;
                 if (stretchRatio !== 1) {
                     source.playbackRate.value = stretchRatio;
@@ -308,7 +336,7 @@ const scheduleAudioClips = (fromBeat: number, toBeat: number, transport: NonNull
                 const needsMicroFadeIn = isFirstIter && clip.fadeInBeats === 0;
                 const needsMicroFadeOut = isLastIter && clip.fadeOutBeats === 0;
                 const needsFadeGain = hasExplicitFade || needsMicroFadeIn || needsMicroFadeOut;
-                const fadeGain = needsFadeGain ? audioEngine.context.createGain() : null;
+                const fadeGain = needsFadeGain ? getAudioContext().createGain() : null;
 
                 if (fadeGain) {
                     source.connect(fadeGain);
@@ -318,8 +346,8 @@ const scheduleAudioClips = (fromBeat: number, toBeat: number, transport: NonNull
                 }
 
                 const beatOffset = iterStartBeat - accumulatedPosition;
-                const iterStartTime = audioEngine.context.currentTime + beatOffset / (currentTempo / 60) + compensation;
-                const now = audioEngine.context.currentTime;
+                const iterStartTime = getCurrentTime() + beatOffset / (currentTempo / 60) + compensation;
+                const now = getCurrentTime();
 
                 const playDuration = Math.min(iterDurationSeconds, buffer.duration / stretchRatio);
 
@@ -329,7 +357,7 @@ const scheduleAudioClips = (fromBeat: number, toBeat: number, transport: NonNull
                     const elapsed = now - iterStartTime;
                     const bufferOffset = elapsed * stretchRatio;
                     if (bufferOffset < buffer.duration && bufferOffset < playDuration * stretchRatio) {
-                        source.start(now, bufferOffset, (playDuration * stretchRatio) - bufferOffset);
+                        source.start(now, bufferOffset, playDuration * stretchRatio - bufferOffset);
                     } else {
                         continue;
                     }
@@ -341,7 +369,8 @@ const scheduleAudioClips = (fromBeat: number, toBeat: number, transport: NonNull
                     if (isFirstIter && clip.fadeInBeats > 0) {
                         const fadeInEnd = iterStartTime + clip.fadeInBeats / clipBeatsPerSecond;
                         if (effectiveStart < fadeInEnd) {
-                            const progressRatio = Math.max(0, effectiveStart - iterStartTime) / (clip.fadeInBeats / clipBeatsPerSecond);
+                            const progressRatio =
+                                Math.max(0, effectiveStart - iterStartTime) / (clip.fadeInBeats / clipBeatsPerSecond);
                             fadeGain.gain.setValueAtTime(progressRatio, effectiveStart);
                             fadeGain.gain.linearRampToValueAtTime(1, fadeInEnd);
                         } else {
@@ -355,7 +384,10 @@ const scheduleAudioClips = (fromBeat: number, toBeat: number, transport: NonNull
                     }
 
                     if (isLastIter && clip.fadeOutBeats > 0) {
-                        const clipEndTime = audioEngine.context.currentTime + (clip.endBeat - accumulatedPosition) / (currentTempo / 60) + compensation;
+                        const clipEndTime =
+                            getCurrentTime() +
+                            (clip.endBeat - accumulatedPosition) / (currentTempo / 60) +
+                            compensation;
                         const fadeOutStart = clipEndTime - clip.fadeOutBeats / clipBeatsPerSecond;
                         fadeGain.gain.setValueAtTime(1, Math.max(fadeOutStart, effectiveStart));
                         fadeGain.gain.linearRampToValueAtTime(0, clipEndTime);
@@ -380,9 +412,9 @@ const scheduleAudioClips = (fromBeat: number, toBeat: number, transport: NonNull
             void loopLenSeconds;
         }
     }
-};
+}
 
-const applyAutomation = (currentBeat: number): void => {
+function applyAutomation(currentBeat: number): void {
     const autoState = automationStore.value;
     if (!autoState) {
         return;
@@ -396,7 +428,7 @@ const applyAutomation = (currentBeat: number): void => {
         }
 
         const track = tracks?.find((t) => t.id === lane.trackId);
-        if (!track || track.automationMode === "off") {
+        if (!track || track.automationMode === 'off') {
             continue;
         }
 
@@ -416,22 +448,22 @@ const applyAutomation = (currentBeat: number): void => {
             continue;
         }
 
-        if (lane.parameterId === "gain") {
-            audioEngine.setTrackGain(lane.trackId, value);
-        } else if (lane.parameterId === "pan") {
-            audioEngine.setTrackPan(lane.trackId, value * 100 - 50);
+        if (lane.parameterId === 'gain') {
+            engineSetTrackGain(lane.trackId, value);
+        } else if (lane.parameterId === 'pan') {
+            engineSetTrackPan(lane.trackId, value * 100 - 50);
         } else {
             for (const device of track.devices) {
                 if (device.parameterValues[lane.parameterId] !== undefined) {
-                    audioEngine.updateDeviceParam(lane.trackId, device.id, lane.parameterId, value);
+                    updateDeviceParam(lane.trackId, device.id, lane.parameterId, value);
                     break;
                 }
             }
         }
     }
-};
+}
 
-export const startPlayheadScheduler = (): void => {
+export function startPlayheadScheduler(): void {
     const state = transportStore.value;
     if (!state) {
         return;
@@ -439,7 +471,7 @@ export const startPlayheadScheduler = (): void => {
 
     startAutomationRecording();
 
-    const ctx = audioEngine.context;
+    const ctx = getAudioContext();
     lastTickTime = ctx.currentTime;
     accumulatedPosition = state.playheadPosition;
     lastScheduledBeat = state.playheadPosition;
@@ -447,7 +479,7 @@ export const startPlayheadScheduler = (): void => {
 
     const grainMs = state.scheduleGrainMs ?? DEFAULT_SCHEDULE_GRAIN_MS;
 
-    const tick = (): void => {
+    function tick(): void {
         const current = transportStore.value;
         if (!current?.isPlaying) {
             return;
@@ -471,8 +503,15 @@ export const startPlayheadScheduler = (): void => {
                     if (!laneState?.lanes.some((l) => l.trackId === track.id)) {
                         addTakeLane(track.id);
                     }
-                    const takeNum = (takeLaneStore.value?.lanes.find((l) => l.trackId === track.id)?.takes.length ?? 0) + 1;
-                    addTake(track.id, `take-${Date.now()}-${track.id}`, `Take ${takeNum}`, current.loopStart, current.loopEnd);
+                    const takeNum =
+                        (takeLaneStore.value?.lanes.find((l) => l.trackId === track.id)?.takes.length ?? 0) + 1;
+                    addTake(
+                        track.id,
+                        `take-${Date.now()}-${track.id}`,
+                        `Take ${takeNum}`,
+                        current.loopStart,
+                        current.loopEnd
+                    );
                 }
             }
 
@@ -480,9 +519,13 @@ export const startPlayheadScheduler = (): void => {
             newPosition = current.loopStart + ((newPosition - current.loopStart) % loopLength);
             lastScheduledBeat = newPosition;
             lastMetronomeBeat = Math.floor(newPosition) - 1;
-            audioEngine.stopAllScheduled();
+            stopAllScheduled();
             for (const src of activeAudioSources) {
-                try { src.stop(); } catch { /* already stopped */ }
+                try {
+                    src.stop();
+                } catch {
+                    /* already stopped */
+                }
             }
             activeAudioSources.length = 0;
             scheduledAudioClips.clear();
@@ -492,7 +535,15 @@ export const startPlayheadScheduler = (): void => {
         accumulatedPosition = newPosition;
         transportStore.set({ ...current, playheadPosition: newPosition });
 
-        if (current.punchInEnabled && !current.isRecording && !punchRecordingActive && newPosition >= current.punchInBeat) {
+        const hasArmedTracks = trackStore.value?.tracks.some((t) => t.armed) ?? false;
+        if (
+            current.punchInEnabled &&
+            !current.isRecording &&
+            !punchRecordingActive &&
+            hasArmedTracks &&
+            current.punchInBeat < current.punchOutBeat &&
+            newPosition >= current.punchInBeat
+        ) {
             punchRecordingActive = true;
             const clips = startRecording();
             punchRecordingClipIds = clips.map((c) => c.id);
@@ -500,7 +551,7 @@ export const startPlayheadScheduler = (): void => {
 
             const armedTracks = trackStore.value?.tracks.filter((t) => t.armed) ?? [];
             for (const track of armedTracks) {
-                if (track.kind === "audio") {
+                if (track.kind === 'audio') {
                     const recClip = clips.find((c) => c.trackId === track.id);
                     void startAudioRecording(track.id, (buffer) => {
                         const bufferId = `rec-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -513,7 +564,7 @@ export const startPlayheadScheduler = (): void => {
                                     tracks: ts.tracks.map((t) => ({
                                         ...t,
                                         clips: t.clips.map((c) =>
-                                            c.id === recClip.id ? { ...c, audioBufferId: bufferId } : c,
+                                            c.id === recClip.id ? { ...c, audioBufferId: bufferId } : c
                                         ),
                                     })),
                                 });
@@ -543,12 +594,12 @@ export const startPlayheadScheduler = (): void => {
         lastScheduledBeat = scheduleUpTo;
 
         timerId = setTimeout(tick, current.scheduleGrainMs ?? grainMs);
-    };
+    }
 
     timerId = setTimeout(tick, grainMs);
-};
+}
 
-export const stopPlayheadScheduler = (): void => {
+export function stopPlayheadScheduler(): void {
     stopAutomationRecording();
     if (timerId !== null) {
         clearTimeout(timerId);
@@ -567,8 +618,12 @@ export const stopPlayheadScheduler = (): void => {
     scheduledAudioClips.clear();
     scheduledFrozenTracks.clear();
     for (const src of activeAudioSources) {
-        try { src.stop(); } catch { /* already stopped */ }
+        try {
+            src.stop();
+        } catch {
+            /* already stopped */
+        }
     }
     activeAudioSources.length = 0;
-    audioEngine.stopAllScheduled();
-};
+    stopAllScheduled();
+}

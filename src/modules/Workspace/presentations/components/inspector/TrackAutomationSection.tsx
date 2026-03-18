@@ -1,0 +1,176 @@
+import { type ReactElement, useState, useEffect, useRef, useSyncExternalStore } from 'react';
+import { Button } from '#/components/ui/button';
+import { Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
+import { BUILTIN_PLUGINS } from '../../../useCases/workspaceViewActions';
+import {
+    addAutomationLane,
+    toggleAutomationVisibility,
+    removeAutomationLane,
+} from '../../../useCases/workspaceViewActions';
+import { automationStore } from '#/modules/Track/stores/automationStore';
+import { type Track } from '../../../useCases/workspaceViewActions';
+
+export type TrackAutomationSectionProps = {
+    track: Track;
+};
+
+export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): ReactElement => {
+    const [showAutoMenu, setShowAutoMenu] = useState(false);
+    const autoMenuRef = useRef<HTMLDivElement>(null);
+
+    const autoState = useSyncExternalStore(
+        (cb) => automationStore.subscribe(cb),
+        () => automationStore.value
+    );
+
+    const trackLanes = autoState?.lanes.filter((l) => l.trackId === track.id) ?? [];
+
+    useEffect(() => {
+        if (!showAutoMenu) {
+            return;
+        }
+        const handleClick = (e: MouseEvent): void => {
+            if (autoMenuRef.current && !autoMenuRef.current.contains(e.target as Node)) {
+                setShowAutoMenu(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClick);
+        return () => {
+            document.removeEventListener('mousedown', handleClick);
+        };
+    }, [showAutoMenu]);
+
+    return (
+        <section>
+            <div className="flex items-center justify-between mb-2">
+                <h3 className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Automation</h3>
+                <div className="relative" ref={autoMenuRef}>
+                    <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={() => {
+                            setShowAutoMenu(!showAutoMenu);
+                        }}
+                        aria-label="Add automation lane"
+                    >
+                        <Plus className="size-3" />
+                    </Button>
+                    {showAutoMenu && (
+                        <div
+                            className="absolute right-0 top-full z-50 mt-1 w-48 rounded-md border border-border/50 bg-surface-raised py-1 shadow-lg"
+                            role="menu"
+                        >
+                            <p className="px-3 py-1 text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                Track
+                            </p>
+                            <button
+                                type="button"
+                                className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
+                                role="menuitem"
+                                onClick={() => {
+                                    addAutomationLane(track.id, 'gain', 'Gain');
+                                    setShowAutoMenu(false);
+                                }}
+                            >
+                                Gain
+                            </button>
+                            <button
+                                type="button"
+                                className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
+                                role="menuitem"
+                                onClick={() => {
+                                    addAutomationLane(track.id, 'pan', 'Pan');
+                                    setShowAutoMenu(false);
+                                }}
+                            >
+                                Pan
+                            </button>
+                            {track.devices.length > 0 && (
+                                <>
+                                    <div className="mx-2 my-1 border-t border-border/30" />
+                                    {track.devices.map((device) => {
+                                        const plugin = BUILTIN_PLUGINS.find(
+                                            (p) => p.name.toLowerCase() === device.type.toLowerCase()
+                                        );
+                                        if (!plugin) {
+                                            return null;
+                                        }
+                                        const autoParams = plugin.parameters.filter((p) => p.automatable);
+                                        if (autoParams.length === 0) {
+                                            return null;
+                                        }
+                                        return (
+                                            <div key={device.id}>
+                                                <p className="px-3 py-1 text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                                    {device.name}
+                                                </p>
+                                                {autoParams.map((param) => (
+                                                    <button
+                                                        type="button"
+                                                        key={param.id}
+                                                        className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
+                                                        role="menuitem"
+                                                        onClick={() => {
+                                                            addAutomationLane(
+                                                                track.id,
+                                                                param.id,
+                                                                `${device.name}: ${param.name}`
+                                                            );
+                                                            setShowAutoMenu(false);
+                                                        }}
+                                                    >
+                                                        {param.name}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        );
+                                    })}
+                                </>
+                            )}
+                        </div>
+                    )}
+                </div>
+            </div>
+            {trackLanes.length > 0 ? (
+                <div className="space-y-1">
+                    {trackLanes.map((lane) => (
+                        <div
+                            key={lane.id}
+                            className="flex items-center justify-between rounded bg-surface-overlay px-2 py-1.5"
+                        >
+                            <span className="text-xs text-foreground">{lane.parameterName}</span>
+                            <div className="flex gap-0.5">
+                                <Button
+                                    variant="ghost"
+                                    size="icon-xs"
+                                    aria-label={lane.visible ? 'Hide' : 'Show'}
+                                    onClick={() => {
+                                        toggleAutomationVisibility(lane.id);
+                                    }}
+                                >
+                                    {lane.visible ? (
+                                        <Eye className="size-3" />
+                                    ) : (
+                                        <EyeOff className="size-3 text-muted-foreground" />
+                                    )}
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    size="icon-xs"
+                                    aria-label="Remove lane"
+                                    onClick={() => {
+                                        removeAutomationLane(lane.id);
+                                    }}
+                                >
+                                    <Trash2 className="size-3 text-muted-foreground" />
+                                </Button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                <p className="text-[10px] text-muted-foreground">No automation lanes.</p>
+            )}
+        </section>
+    );
+};

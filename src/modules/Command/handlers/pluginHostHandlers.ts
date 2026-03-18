@@ -1,10 +1,8 @@
-import type { ActionHandler } from "../models/ActionHandler";
-import type { AppAction } from "../models/AppAction";
-import { startPluginScan } from "#/modules/AudioEngine/useCases/pluginScanUseCases";
-import { loadPlugin } from "#/modules/AudioEngine/useCases/pluginBridge";
-import { addTrack } from "#/modules/Track/useCases/addTrack";
-import { addDevice } from "#/modules/Track/useCases/deviceUseCases";
-import { findPluginByName } from "#/modules/AudioEngine/useCases/pluginScanUseCases";
+import { type ActionHandler } from '../models/ActionHandler';
+import { type AppAction } from '../models/AppAction';
+import { startPluginScan, findPluginByName } from '#/modules/AudioEngine/useCases/pluginScanUseCases';
+import { addTrack } from '#/modules/Track/useCases/addTrack';
+import { addExternalDevice } from '#/modules/Track/useCases/deviceUseCases';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 
@@ -13,9 +11,9 @@ export const pluginHostHandlers = {
         execute: async () => {
             await startPluginScan();
         },
-        describe: () => ({ label: "Scan external plugins" }),
+        describe: () => ({ label: 'Scan external plugins' }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, "scanPlugins">>,
+    } satisfies ActionHandler<Extract<AppAction, 'scanPlugins'>>,
 
     loadExternalPlugin: {
         execute: async (a) => {
@@ -24,10 +22,10 @@ export const pluginHostHandlers = {
             let trackId = providedTrackId;
             if (!trackId) {
                 const plugin = findPluginByName(pluginId);
-                const isInstrument = plugin?.category.toLowerCase() === "instrument";
+                const isInstrument = plugin?.category.toLowerCase() === 'instrument';
                 const newTrack = addTrack({
-                    name: plugin?.name ?? "Plugin",
-                    kind: isInstrument ? "midi" : "audio",
+                    name: plugin?.name ?? 'Plugin',
+                    kind: isInstrument ? 'midi' : 'audio',
                 });
                 if (!newTrack) {
                     return;
@@ -37,12 +35,9 @@ export const pluginHostHandlers = {
 
             const scanned = findPluginByName(pluginId);
             const pluginName = scanned?.name ?? pluginId;
-            addDevice(trackId, pluginName);
-
-            const instanceId = `${pluginId}-${String(Date.now())}`;
-            await loadPlugin(pluginId, instanceId);
+            addExternalDevice(trackId, pluginId, pluginName);
         },
         describe: (a) => ({ label: `Load external plugin "${a.payload.pluginId}"` }),
         undoable: false,
-    } satisfies ActionHandler<Extract<AppAction, "loadExternalPlugin">>,
+    } satisfies ActionHandler<Extract<AppAction, 'loadExternalPlugin'>>,
 };

@@ -1,11 +1,11 @@
-import { audioEngine } from "../repositories/audioEngineInstance";
-import { transportStore } from "#/modules/Transport/stores/transportStore";
+import { audioEngine } from '../repositories/audioEngineInstance';
+import { getTransportStoreValue } from '#/modules/Transport/useCases/transportQueries';
 
-export const initializeAudioEngine = async (): Promise<void> => {
+export async function initializeAudioEngine(): Promise<void> {
     await audioEngine.initialize();
 
-    const transport = transportStore.value;
+    const transport = getTransportStoreValue();
     if (transport) {
         audioEngine.setMasterGain(transport.masterGain / 100);
     }
-};
+}

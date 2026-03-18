@@ -1,8 +1,8 @@
-import { trackStore } from "../stores/trackStore";
-import { midiStore } from "../stores/midiStore";
-import { createTrack } from "../models/Track";
-import { addClip } from "./clipUseCases";
-import type { MidiNote } from "../models/MidiNote";
+import { getTrackState, setTrackState } from '../repositories/trackRepository';
+import { midiStore } from '../stores/midiStore';
+import { createTrack } from '../models/Track';
+import { addClip } from './clipUseCases';
+import { type MidiNote } from '../models/MidiNote';
 
 type ParsedTrack = {
     name: string;
@@ -35,8 +35,10 @@ class MidiReader {
     }
 
     readString(len: number): string {
-        let s = "";
-        for (let i = 0; i < len; i++) s += String.fromCharCode(this.readUint8());
+        let s = '';
+        for (let i = 0; i < len; i++) {
+            s += String.fromCharCode(this.readUint8());
+        }
         return s;
     }
 
@@ -63,18 +65,22 @@ class MidiReader {
     }
 }
 
-const parseMidiFile = (buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBeat: number; tempo: number } => {
+function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBeat: number; tempo: number } {
     const reader = new MidiReader(buffer);
 
     const headerChunk = reader.readString(4);
-    if (headerChunk !== "MThd") throw new Error("Not a valid MIDI file");
+    if (headerChunk !== 'MThd') {
+        throw new Error('Not a valid MIDI file');
+    }
 
     reader.readUint32(); // header length
     const format = reader.readUint16();
     const numTracks = reader.readUint16();
     const ticksPerBeat = reader.readUint16();
 
-    if (format > 1) throw new Error(`MIDI format ${format} not supported`);
+    if (format > 1) {
+        throw new Error(`MIDI format ${format} not supported`);
+    }
 
     let globalTempo = 120;
     const parsedTracks: ParsedTrack[] = [];
@@ -83,7 +89,7 @@ const parseMidiFile = (buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBe
         const chunkType = reader.readString(4);
         const chunkLength = reader.readUint32();
 
-        if (chunkType !== "MTrk") {
+        if (chunkType !== 'MTrk') {
             reader.skip(chunkLength);
             continue;
         }
@@ -138,7 +144,6 @@ const parseMidiFile = (buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBe
             const eventType = statusByte & 0xf0;
 
             if (eventType === 0xc0 || eventType === 0xd0) {
-                // program change / channel pressure: 1 data byte only
                 data2 = 0;
             } else {
                 data2 = reader.readUint8();
@@ -169,27 +174,31 @@ const parseMidiFile = (buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBe
     }
 
     return { tracks: parsedTracks, ticksPerBeat, tempo: globalTempo };
-};
+}
 
-export const importMidiFile = async (file: File): Promise<void> => {
+export async function importMidiFile(file: File): Promise<void> {
     const buffer = await file.arrayBuffer();
     const { tracks: parsedTracks } = parseMidiFile(buffer);
 
-    if (parsedTracks.length === 0) return;
+    if (parsedTracks.length === 0) {
+        return;
+    }
 
-    const state = trackStore.value;
-    if (!state) return;
+    const state = getTrackState();
+    if (!state) {
+        return;
+    }
 
     const newMidiData: Record<string, MidiNote[]> = { ...(midiStore.value?.notesByClipId ?? {}) };
 
     const createdTracks = parsedTracks.map((parsed) => ({
-        track: createTrack({ name: parsed.name, kind: "midi" }),
+        track: createTrack({ name: parsed.name, kind: 'midi' }),
         parsed,
     }));
 
-    const ts = trackStore.value;
+    const ts = getTrackState();
     if (ts) {
-        trackStore.set({
+        setTrackState({
             ...ts,
             tracks: [...ts.tracks, ...createdTracks.map((ct) => ct.track)],
         });
@@ -204,7 +213,7 @@ export const importMidiFile = async (file: File): Promise<void> => {
             startBeat: 0,
             endBeat,
             name: parsed.name,
-            type: "midi",
+            type: 'midi',
         });
 
         if (clip) {
@@ -217,4 +226,4 @@ export const importMidiFile = async (file: File): Promise<void> => {
         ccByClipId: midiStore.value?.ccByClipId ?? {},
         pitchBendByClipId: midiStore.value?.pitchBendByClipId ?? {},
     });
-};
+}

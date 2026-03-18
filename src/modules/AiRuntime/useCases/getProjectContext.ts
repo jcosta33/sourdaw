@@ -1,10 +1,10 @@
-import { trackStore } from "#/modules/Track/stores/trackStore";
-import { midiStore } from "#/modules/Track/stores/midiStore";
-import { transportStore } from "#/modules/Transport/stores/transportStore";
-import { workspaceStore } from "#/modules/Workspace/stores/workspaceStore";
-import type { ProjectContext } from "../models/ProjectContext";
+import { trackStore } from '#/modules/Track/stores/trackStore';
+import { midiStore } from '#/modules/Track/stores/midiStore';
+import { transportStore } from '#/modules/Transport/stores/transportStore';
+import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
+import { type ProjectContext } from '../models/ProjectContext';
 
-export const getProjectContext = (): ProjectContext => {
+export function getProjectContext(): ProjectContext {
     const trackState = trackStore.value;
     const transportState = transportStore.value;
     const workspaceState = workspaceStore.value;
@@ -15,10 +15,7 @@ export const getProjectContext = (): ProjectContext => {
 
     return {
         tempo: transportState?.tempo ?? 120,
-        timeSignature: [
-            transportState?.timeSignatureNumerator ?? 4,
-            transportState?.timeSignatureDenominator ?? 4,
-        ],
+        timeSignature: [transportState?.timeSignatureNumerator ?? 4, transportState?.timeSignatureDenominator ?? 4],
         tracks: (trackState?.tracks ?? []).map((t) => ({
             id: t.id,
             name: t.name,
@@ -33,10 +30,10 @@ export const getProjectContext = (): ProjectContext => {
             clips: t.clips.map((c) => ({
                 id: c.id,
                 name: c.name,
-                type: (c.type ?? "audio") as "audio" | "midi",
+                type: c.type ?? 'audio',
                 startBeat: c.startBeat,
                 endBeat: c.endBeat,
-                noteCount: c.type === "midi" ? (midiStore.value?.notesByClipId[c.id]?.length ?? 0) : 0,
+                noteCount: c.type === 'midi' ? (midiStore.value?.notesByClipId[c.id]?.length ?? 0) : 0,
             })),
             devices: t.devices.map((d) => ({
                 id: d.id,
@@ -47,7 +44,7 @@ export const getProjectContext = (): ProjectContext => {
         selectedTrackId,
         selectedClipId,
         selectedClipIds,
-        activeView: workspaceState?.mode ?? "arrange",
+        activeView: workspaceState?.mode ?? 'arrange',
         playheadPosition: transportState?.playheadPosition ?? 0,
     };
-};
+}

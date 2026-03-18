@@ -1,4 +1,4 @@
-declare module "@tauri-apps/plugin-dialog" {
+declare module '@tauri-apps/plugin-dialog' {
     type DialogFilter = {
         name: string;
         extensions: string[];

@@ -1,79 +1,80 @@
-import { takeLaneStore } from "../stores/takeLaneStore";
-import { createTake, createTakeLane, type CompRegion } from "../models/TakeLane";
+import { takeLaneStore } from '../stores/takeLaneStore';
+import { createTake, createTakeLane, type CompRegion } from '../models/TakeLane';
 
-export const addTakeLane = (trackId: string): void => {
+export function addTakeLane(trackId: string): void {
     const state = takeLaneStore.value;
-    if (!state) return;
+    if (!state) {
+        return;
+    }
 
     const exists = state.lanes.some((l) => l.trackId === trackId);
-    if (exists) return;
+    if (exists) {
+        return;
+    }
 
     takeLaneStore.set({
         lanes: [...state.lanes, createTakeLane(trackId)],
     });
-};
+}
 
-export const removeTakeLane = (laneId: string): void => {
+export function removeTakeLane(laneId: string): void {
     const state = takeLaneStore.value;
-    if (!state) return;
+    if (!state) {
+        return;
+    }
     takeLaneStore.set({
         lanes: state.lanes.filter((l) => l.id !== laneId),
     });
-};
+}
 
-export const addTake = (
-    trackId: string,
-    clipId: string,
-    name: string,
-    startBeat: number,
-    endBeat: number,
-): void => {
+export function addTake(trackId: string, clipId: string, name: string, startBeat: number, endBeat: number): void {
     const state = takeLaneStore.value;
-    if (!state) return;
+    if (!state) {
+        return;
+    }
 
     const take = createTake(clipId, name, startBeat, endBeat);
 
     takeLaneStore.set({
-        lanes: state.lanes.map((l) =>
-            l.trackId === trackId
-                ? { ...l, takes: [...l.takes, take] }
-                : l,
-        ),
+        lanes: state.lanes.map((l) => (l.trackId === trackId ? { ...l, takes: [...l.takes, take] } : l)),
     });
-};
+}
 
-export const selectTake = (trackId: string, takeId: string): void => {
+export function selectTake(trackId: string, takeId: string): void {
     const state = takeLaneStore.value;
-    if (!state) return;
+    if (!state) {
+        return;
+    }
 
     takeLaneStore.set({
         lanes: state.lanes.map((l) =>
             l.trackId === trackId
                 ? {
-                    ...l,
-                    takes: l.takes.map((t) => ({
-                        ...t,
-                        selected: t.id === takeId,
-                    })),
-                }
-                : l,
+                      ...l,
+                      takes: l.takes.map((t) => ({
+                          ...t,
+                          selected: t.id === takeId,
+                      })),
+                  }
+                : l
         ),
     });
-};
+}
 
-export const setCompRegion = (
-    trackId: string,
-    region: CompRegion,
-): void => {
+export function setCompRegion(trackId: string, region: CompRegion): void {
     const state = takeLaneStore.value;
-    if (!state) return;
+    if (!state) {
+        return;
+    }
 
     takeLaneStore.set({
         lanes: state.lanes.map((l) => {
-            if (l.trackId !== trackId) return l;
+            if (l.trackId !== trackId) {
+                return l;
+            }
 
             const filtered = l.activeCompRegions.filter(
-                (r) => r.endBeat <= region.startBeat || r.startBeat >= region.endBeat,
+                (r) => r.endBeat <= region.startBeat || r.startBeat >= region.endBeat
             );
 
             return {
@@ -82,19 +83,23 @@ export const setCompRegion = (
             };
         }),
     });
-};
+}
 
-export const getTakeLaneForTrack = (trackId: string) => {
+export function getTakeLaneForTrack(trackId: string) {
     const state = takeLaneStore.value;
-    if (!state) return null;
+    if (!state) {
+        return null;
+    }
     return state.lanes.find((l) => l.trackId === trackId) ?? null;
-};
+}
 
-export const flattenComp = (trackId: string): void => {
+export function flattenComp(trackId: string): void {
     const state = takeLaneStore.value;
-    if (!state) return;
+    if (!state) {
+        return;
+    }
 
     takeLaneStore.set({
         lanes: state.lanes.filter((l) => l.trackId !== trackId),
     });
-};
+}

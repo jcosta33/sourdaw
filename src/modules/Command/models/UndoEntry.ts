@@ -1,6 +1,6 @@
-import type { AppAction } from "./AppAction";
+import { type AppAction } from './AppAction';
 
-export type UndoSource = "manual" | "prompt" | "voice" | "ai";
+export type UndoSource = 'manual' | 'prompt' | 'voice' | 'ai';
 
 type UndoEntryBase = {
     id: string;
@@ -12,13 +12,13 @@ type UndoEntryBase = {
 };
 
 export type ActionUndoEntry = UndoEntryBase & {
-    kind: "action";
+    kind: 'action';
     action: AppAction;
     inverseAction: AppAction | null;
 };
 
 export type CallbackUndoEntry = UndoEntryBase & {
-    kind: "callback";
+    kind: 'callback';
     undo: () => void;
     redo: () => void;
 };
@@ -32,10 +32,10 @@ export const createUndoEntry = (
     label: string,
     action: AppAction,
     inverseAction: AppAction | null,
-    source: UndoSource = "manual",
+    source: UndoSource = 'manual'
 ): ActionUndoEntry => ({
     id: `undo-${nextUndoId++}`,
-    kind: "action",
+    kind: 'action',
     label,
     action,
     inverseAction,
@@ -47,10 +47,10 @@ export const createCallbackUndoEntry = (
     label: string,
     undoFn: () => void,
     redoFn: () => void,
-    source: UndoSource = "manual",
+    source: UndoSource = 'manual'
 ): CallbackUndoEntry => ({
     id: `undo-${nextUndoId++}`,
-    kind: "callback",
+    kind: 'callback',
     label,
     undo: undoFn,
     redo: redoFn,
@@ -63,8 +63,6 @@ export const generateGroupId = (label: string): { groupId: string; groupLabel: s
     groupLabel: label,
 });
 
-export const isActionEntry = (entry: UndoEntry): entry is ActionUndoEntry =>
-    entry.kind === "action";
+export const isActionEntry = (entry: UndoEntry): entry is ActionUndoEntry => entry.kind === 'action';
 
-export const isCallbackEntry = (entry: UndoEntry): entry is CallbackUndoEntry =>
-    entry.kind === "callback";
+export const isCallbackEntry = (entry: UndoEntry): entry is CallbackUndoEntry => entry.kind === 'callback';

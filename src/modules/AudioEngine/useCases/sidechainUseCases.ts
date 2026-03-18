@@ -1,5 +1,5 @@
-import { createSidechainRoute, type SidechainRoute } from "../models/SidechainRoute";
-import { audioEngine } from "../repositories/audioEngineInstance";
+import { createSidechainRoute, type SidechainRoute } from '../models/SidechainRoute';
+import { audioEngine } from '../repositories/audioEngineInstance';
 
 type SidechainState = {
     routes: SidechainRoute[];
@@ -7,14 +7,14 @@ type SidechainState = {
 
 let sidechainState: SidechainState = { routes: [] };
 
-export const addSidechainRoute = (
+export function addSidechainRoute(
     sourceTrackId: string,
     targetTrackId: string,
     targetDeviceId: string,
-    targetParameterId = "threshold",
-): void => {
+    targetParameterId = 'threshold'
+): void {
     const exists = sidechainState.routes.some(
-        (r) => r.sourceTrackId === sourceTrackId && r.targetDeviceId === targetDeviceId,
+        (r) => r.sourceTrackId === sourceTrackId && r.targetDeviceId === targetDeviceId
     );
     if (exists) {
         return;
@@ -24,9 +24,9 @@ export const addSidechainRoute = (
     sidechainState = { routes: [...sidechainState.routes, route] };
 
     audioEngine.wireSidechainRoute(sourceTrackId, targetTrackId, targetDeviceId);
-};
+}
 
-export const removeSidechainRoute = (routeId: string): void => {
+export function removeSidechainRoute(routeId: string): void {
     const route = sidechainState.routes.find((r) => r.id === routeId);
     if (route) {
         audioEngine.unwireSidechainRoute(route.sourceTrackId, route.targetDeviceId);
@@ -35,23 +35,21 @@ export const removeSidechainRoute = (routeId: string): void => {
     sidechainState = {
         routes: sidechainState.routes.filter((r) => r.id !== routeId),
     };
-};
+}
 
-export const getSidechainRoutesForTrack = (trackId: string): SidechainRoute[] => {
-    return sidechainState.routes.filter(
-        (r) => r.sourceTrackId === trackId || r.targetTrackId === trackId,
-    );
-};
+export function getSidechainRoutesForTrack(trackId: string): SidechainRoute[] {
+    return sidechainState.routes.filter((r) => r.sourceTrackId === trackId || r.targetTrackId === trackId);
+}
 
-export const getSidechainSource = (targetDeviceId: string): SidechainRoute | null => {
+export function getSidechainSource(targetDeviceId: string): SidechainRoute | null {
     return sidechainState.routes.find((r) => r.targetDeviceId === targetDeviceId) ?? null;
-};
+}
 
-export const getAllSidechainRoutes = (): SidechainRoute[] => {
+export function getAllSidechainRoutes(): SidechainRoute[] {
     return sidechainState.routes;
-};
+}
 
-export const setSidechainRoutes = (routes: SidechainRoute[]): void => {
+export function setSidechainRoutes(routes: SidechainRoute[]): void {
     for (const route of sidechainState.routes) {
         audioEngine.unwireSidechainRoute(route.sourceTrackId, route.targetDeviceId);
     }
@@ -60,4 +58,4 @@ export const setSidechainRoutes = (routes: SidechainRoute[]): void => {
         sidechainState = { routes: [...sidechainState.routes, route] };
         audioEngine.wireSidechainRoute(route.sourceTrackId, route.targetTrackId, route.targetDeviceId);
     }
-};
+}

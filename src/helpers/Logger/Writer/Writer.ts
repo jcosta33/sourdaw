@@ -1,4 +1,4 @@
-/* (c) Copyright Frontify Ltd., all rights reserved. */
+/* (c) Copyright Webdaw Ltd., all rights reserved. */
 
 type WriteErrorFn = (error: Error) => void;
 export type WriteErrorParams = Parameters<WriteErrorFn>;

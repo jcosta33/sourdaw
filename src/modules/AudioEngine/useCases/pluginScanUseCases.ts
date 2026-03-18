@@ -1,10 +1,9 @@
-import { pluginScanStore, defaultPluginScanState } from "../stores/pluginScanStore";
-import type { ScannedPlugin } from "./pluginBridge";
-import { scanPlugins, getDefaultPluginPaths } from "./pluginBridge";
+import { pluginScanStore, defaultPluginScanState } from '../stores/pluginScanStore';
+import { type ScannedPlugin, scanPlugins, getDefaultPluginPaths } from './pluginBridge';
 
 const getState = () => pluginScanStore.value ?? defaultPluginScanState;
 
-export const startPluginScan = async (): Promise<void> => {
+export async function startPluginScan(): Promise<void> {
     const state = getState();
     pluginScanStore.set({ ...state, isScanning: true, errors: [] });
 
@@ -17,7 +16,7 @@ export const startPluginScan = async (): Promise<void> => {
             pluginScanStore.set({
                 ...getState(),
                 isScanning: false,
-                errors: ["No plugin paths configured"],
+                errors: ['No plugin paths configured'],
             });
             return;
         }
@@ -31,16 +30,16 @@ export const startPluginScan = async (): Promise<void> => {
             lastScanTime: Date.now(),
             errors: result.errors,
         });
-    } catch (err) {
+    } catch (error) {
         pluginScanStore.set({
             ...getState(),
             isScanning: false,
-            errors: [err instanceof Error ? err.message : String(err)],
+            errors: [error instanceof Error ? error.message : String(error)],
         });
     }
-};
+}
 
-export const scanCustomPaths = async (paths: string[]): Promise<void> => {
+export async function scanCustomPaths(paths: string[]): Promise<void> {
     const state = getState();
     pluginScanStore.set({ ...state, isScanning: true, errors: [] });
 
@@ -56,41 +55,43 @@ export const scanCustomPaths = async (paths: string[]): Promise<void> => {
             lastScanTime: Date.now(),
             errors: result.errors,
         });
-    } catch (err) {
+    } catch (error) {
         pluginScanStore.set({
             ...getState(),
             isScanning: false,
-            errors: [err instanceof Error ? err.message : String(err)],
+            errors: [error instanceof Error ? error.message : String(error)],
         });
     }
-};
+}
 
-export const addScanPath = (path: string): void => {
+export function addScanPath(path: string): void {
     const state = getState();
     if (state.scanPaths.includes(path)) {
         return;
     }
     pluginScanStore.set({ ...state, scanPaths: [...state.scanPaths, path] });
-};
+}
 
-export const removeScanPath = (path: string): void => {
+export function removeScanPath(path: string): void {
     const state = getState();
     pluginScanStore.set({
         ...state,
         scanPaths: state.scanPaths.filter((p) => p !== path),
     });
-};
+}
 
-export const getScannedPlugins = (): ScannedPlugin[] => {
+export function getScannedPlugins(): ScannedPlugin[] {
     return getState().scannedPlugins;
-};
+}
 
-export const getScannedPluginsByFormat = (format: string): ScannedPlugin[] => {
+export function getScannedPluginsByFormat(format: string): ScannedPlugin[] {
     return getState().scannedPlugins.filter((p) => p.format.toLowerCase() === format.toLowerCase());
-};
+}
 
-export const findPluginByName = (name: string): ScannedPlugin | undefined => {
+export function findPluginByName(name: string): ScannedPlugin | undefined {
     const lower = name.toLowerCase();
-    return getState().scannedPlugins.find((p) => p.name.toLowerCase() === lower)
-        ?? getState().scannedPlugins.find((p) => p.name.toLowerCase().includes(lower));
-};
+    return (
+        getState().scannedPlugins.find((p) => p.name.toLowerCase() === lower) ??
+        getState().scannedPlugins.find((p) => p.name.toLowerCase().includes(lower))
+    );
+}

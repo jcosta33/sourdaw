@@ -1,9 +1,9 @@
-import { audioBufferCache } from "#/modules/AudioEngine/stores/audioBufferCache";
-import { transportStore } from "#/modules/Transport/stores/transportStore";
-import { trackStore } from "#/modules/Track/stores/trackStore";
-import { addClip } from "#/modules/Track/useCases/clipUseCases";
-import { addMidiNote } from "#/modules/Track/useCases/midiUseCases";
-import { addTrack } from "#/modules/Track/useCases/addTrack";
+import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
+import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
+import { getAllTracks } from '#/modules/Track/useCases/trackQueries';
+import { addClip } from '#/modules/Track/useCases/clipUseCases';
+import { addMidiNote } from '#/modules/Track/useCases/midiUseCases';
+import { addTrack } from '#/modules/Track/useCases/addTrack';
 
 export type AudioToMidiOptions = {
     clipId: string;
@@ -11,7 +11,7 @@ export type AudioToMidiOptions = {
     sensitivity?: number;
     minInterval?: number;
     targetPitch?: number;
-    mode?: "rhythm" | "pitched";
+    mode?: 'rhythm' | 'pitched';
 };
 
 export type DetectedOnset = {
@@ -23,20 +23,20 @@ export type DetectedOnset = {
 const FRAME_SIZE = 1024;
 const HOP_SIZE = 512;
 
-const computeRmsEnergy = (data: Float32Array, start: number, length: number): number => {
+function computeRmsEnergy(data: Float32Array, start: number, length: number): number {
     let sum = 0;
     const end = Math.min(start + length, data.length);
     for (let i = start; i < end; i++) {
         sum += data[i]! * data[i]!;
     }
     return Math.sqrt(sum / (end - start));
-};
+}
 
 /**
  * Autocorrelation-based pitch estimation on a windowed sample region.
  * Returns frequency in Hz, or 0 if no clear pitch is found.
  */
-const estimatePitch = (data: Float32Array, start: number, length: number, sampleRate: number): number => {
+function estimatePitch(data: Float32Array, start: number, length: number, sampleRate: number): number {
     const end = Math.min(start + length, data.length);
     const actual = end - start;
     if (actual < 64) {
@@ -81,16 +81,13 @@ const estimatePitch = (data: Float32Array, start: number, length: number, sample
     }
 
     return sampleRate / bestLag;
-};
+}
 
-const freqToMidiPitch = (freq: number): number =>
-    Math.round(69 + 12 * Math.log2(freq / 440));
+function freqToMidiPitch(freq: number): number {
+    return Math.round(69 + 12 * Math.log2(freq / 440));
+}
 
-export const detectOnsets = (
-    buffer: AudioBuffer,
-    sensitivity: number,
-    minIntervalSec: number,
-): DetectedOnset[] => {
+export function detectOnsets(buffer: AudioBuffer, sensitivity: number, minIntervalSec: number): DetectedOnset[] {
     const channelData = buffer.getChannelData(0);
     const sampleRate = buffer.sampleRate;
 
@@ -129,7 +126,7 @@ export const detectOnsets = (
             flux[i]! > threshold &&
             flux[i]! > flux[i - 1]! &&
             flux[i]! >= flux[i + 1]! &&
-            (i - lastOnsetFrame) >= minIntervalFrames
+            i - lastOnsetFrame >= minIntervalFrames
         ) {
             const timeSec = ((i + 1) * HOP_SIZE) / sampleRate;
             onsets.push({
@@ -141,13 +138,9 @@ export const detectOnsets = (
     }
 
     return onsets;
-};
+}
 
-const detectPitchForOnsets = (
-    onsets: DetectedOnset[],
-    buffer: AudioBuffer,
-    targetPitch: number,
-): DetectedOnset[] => {
+function detectPitchForOnsets(onsets: DetectedOnset[], buffer: AudioBuffer, targetPitch: number): DetectedOnset[] {
     const channelData = buffer.getChannelData(0);
     const sampleRate = buffer.sampleRate;
     const windowSamples = FRAME_SIZE * 2;
@@ -164,19 +157,12 @@ const detectPitchForOnsets = (
         }
         return { ...onset, pitch: targetPitch };
     });
-};
+}
 
-export const audioToMidi = (options: AudioToMidiOptions): void => {
-    const {
-        clipId,
-        trackId,
-        sensitivity = 0.5,
-        minInterval = 0.25,
-        targetPitch = 36,
-        mode = "rhythm",
-    } = options;
+export function audioToMidi(options: AudioToMidiOptions): void {
+    const { clipId, trackId, sensitivity = 0.5, minInterval = 0.25, targetPitch = 36, mode = 'rhythm' } = options;
 
-    const clip = trackStore.value?.tracks
+    const clip = getAllTracks()
         .flatMap((t) => t.clips)
         .find((c) => c.id === clipId);
     if (!clip) {
@@ -189,13 +175,13 @@ export const audioToMidi = (options: AudioToMidiOptions): void => {
         return;
     }
 
-    const tempo = transportStore.value?.tempo ?? 120;
+    const tempo = getTransportState()?.tempo ?? 120;
     const beatsPerSecond = tempo / 60;
     const minIntervalSec = minInterval / beatsPerSecond;
 
     let onsets = detectOnsets(buffer, sensitivity, minIntervalSec);
 
-    if (mode === "pitched") {
+    if (mode === 'pitched') {
         onsets = detectPitchForOnsets(onsets, buffer, targetPitch);
     }
 
@@ -204,9 +190,9 @@ export const audioToMidi = (options: AudioToMidiOptions): void => {
     }
 
     let midiTrackId = trackId;
-    const existingTrack = trackStore.value?.tracks.find((t) => t.id === trackId);
-    if (!existingTrack || existingTrack.kind !== "midi") {
-        const newTrack = addTrack({ name: `${clip.name} (MIDI)`, kind: "midi" });
+    const existingTrack = getAllTracks().find((t) => t.id === trackId);
+    if (!existingTrack || existingTrack.kind !== 'midi') {
+        const newTrack = addTrack({ name: `${clip.name} (MIDI)`, kind: 'midi' });
         if (!newTrack) {
             return;
         }
@@ -222,7 +208,7 @@ export const audioToMidi = (options: AudioToMidiOptions): void => {
         startBeat: clipStartBeat,
         endBeat: Math.ceil(endBeat),
         name: `${clip.name} → MIDI`,
-        type: "midi",
+        type: 'midi',
     });
 
     if (!midiClip) {
@@ -234,13 +220,11 @@ export const audioToMidi = (options: AudioToMidiOptions): void => {
     for (let i = 0; i < onsets.length; i++) {
         const onset = onsets[i]!;
         const startBeat = onset.timeSec * beatsPerSecond;
-        const nextOnsetBeat = i < onsets.length - 1
-            ? onsets[i + 1]!.timeSec * beatsPerSecond
-            : startBeat + 1;
+        const nextOnsetBeat = i < onsets.length - 1 ? onsets[i + 1]!.timeSec * beatsPerSecond : startBeat + 1;
         const duration = Math.max(minInterval, (nextOnsetBeat - startBeat) * 0.9);
         const velocity = Math.max(1, Math.min(127, Math.round((onset.amplitude / maxAmplitude) * 127)));
-        const pitch = mode === "pitched" && onset.pitch !== undefined ? onset.pitch : targetPitch;
+        const pitch = mode === 'pitched' && onset.pitch !== undefined ? onset.pitch : targetPitch;
 
         addMidiNote(midiClip.id, pitch, startBeat, duration, velocity);
     }
-};
+}

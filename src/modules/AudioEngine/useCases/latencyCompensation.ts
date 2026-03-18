@@ -1,5 +1,5 @@
-import { trackStore } from "#/modules/Track/stores/trackStore";
-import { audioEngine } from "#/modules/AudioEngine/repositories/audioEngineInstance";
+import { getTrackStoreState } from '#/modules/Track/useCases/trackQueries';
+import { audioEngine } from '#/modules/AudioEngine/repositories/audioEngineInstance';
 
 export type TrackLatency = {
     trackId: string;
@@ -17,40 +17,40 @@ export type LatencyReport = {
 const WORKLET_BLOCK_SIZE = 128;
 
 const deviceLatencyMap: Record<string, number> = {
-    "builtin-eq": 0,
-    "builtin-compressor": 0,
-    "builtin-reverb": 0,
-    "builtin-delay": 0,
-    "builtin-gain": 0,
-    "builtin-sidechain-compressor": (WORKLET_BLOCK_SIZE / 48000) * 1000,
+    'builtin-eq': 0,
+    'builtin-compressor': 0,
+    'builtin-reverb': 0,
+    'builtin-delay': 0,
+    'builtin-gain': 0,
+    'builtin-sidechain-compressor': (WORKLET_BLOCK_SIZE / 48000) * 1000,
 };
 
 const externalLatencyRegistry = new Map<string, number>();
 
-export const reportLatency = (deviceType: string, latencyMs: number): void => {
+export function reportLatency(deviceType: string, latencyMs: number): void {
     externalLatencyRegistry.set(deviceType, latencyMs);
-};
+}
 
-export const clearReportedLatency = (deviceType: string): void => {
+export function clearReportedLatency(deviceType: string): void {
     externalLatencyRegistry.delete(deviceType);
-};
+}
 
-const getDeviceLatencyMs = (deviceType: string): number => {
+function getDeviceLatencyMs(deviceType: string): number {
     const external = externalLatencyRegistry.get(deviceType);
     if (external !== undefined) {
         return external;
     }
 
     const sampleRate = audioEngine.context.sampleRate;
-    if (deviceType === "builtin-sidechain-compressor") {
+    if (deviceType === 'builtin-sidechain-compressor') {
         return (WORKLET_BLOCK_SIZE / sampleRate) * 1000;
     }
 
     return deviceLatencyMap[deviceType] ?? 0;
-};
+}
 
-export const getTrackLatency = (trackId: string): TrackLatency => {
-    const state = trackStore.value;
+export function getTrackLatency(trackId: string): TrackLatency {
+    const state = getTrackStoreState();
     if (!state) {
         return { trackId, deviceLatencyMs: 0, totalLatencyMs: 0 };
     }
@@ -68,10 +68,10 @@ export const getTrackLatency = (trackId: string): TrackLatency => {
     }
 
     return { trackId, deviceLatencyMs, totalLatencyMs: deviceLatencyMs };
-};
+}
 
-export const getMaxTrackLatency = (): number => {
-    const state = trackStore.value;
+export function getMaxTrackLatency(): number {
+    const state = getTrackStoreState();
     if (!state) {
         return 0;
     }
@@ -85,16 +85,16 @@ export const getMaxTrackLatency = (): number => {
     }
 
     return maxMs;
-};
+}
 
-export const getCompensationDelay = (trackId: string): number => {
+export function getCompensationDelay(trackId: string): number {
     const maxLatencyMs = getMaxTrackLatency();
     const trackLatency = getTrackLatency(trackId);
     return (maxLatencyMs - trackLatency.totalLatencyMs) / 1000;
-};
+}
 
-export const getLatencyReport = (): LatencyReport => {
-    const state = trackStore.value;
+export function getLatencyReport(): LatencyReport {
+    const state = getTrackStoreState();
     const tracks: TrackLatency[] = [];
 
     if (state) {
@@ -109,6 +109,7 @@ export const getLatencyReport = (): LatencyReport => {
         tracks,
         maxLatencyMs: getMaxTrackLatency(),
         contextBaseLatencyMs: (ctx.baseLatency ?? 0) * 1000,
-        contextOutputLatencyMs: ("outputLatency" in ctx ? (ctx as unknown as { outputLatency: number }).outputLatency : 0) * 1000,
+        contextOutputLatencyMs:
+            ('outputLatency' in ctx ? (ctx as unknown as { outputLatency: number }).outputLatency : 0) * 1000,
     };
-};
+}

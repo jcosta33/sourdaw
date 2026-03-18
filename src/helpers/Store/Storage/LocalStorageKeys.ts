@@ -1,4 +1,4 @@
-/* (c) Copyright Frontify Ltd., all rights reserved. */
+/* (c) Copyright Webdaw Ltd., all rights reserved. */
 
 /*****************************************************************************
  * THESE KEYS HAVE LEGAL IMPLICATIONS!                                       *
@@ -93,4 +93,27 @@ export type LocalStorageKey =
     | 'segmentAnalyticsLoggerEnabled'
 
     // [Dev] DevTools settings (visibility, activeTab, reactScanStatus, fpsMeterState, triggerPosition)
-    | 'frontify-devtools-settings';
+    | 'webdaw-devtools-settings'
+
+    // ========================== DAW KEYS ====================================
+
+    // Stores user preferences (theme, audio device, track height, etc.)
+    | 'webdaw-preferences'
+
+    // Stores the current project state
+    | 'webdaw-project'
+
+    // Stores list of recently opened projects
+    | 'webdaw-recent-projects'
+
+    // Stores user-created sound presets
+    | 'webdaw-user-presets'
+
+    // Stores user-saved track templates
+    | 'webdaw:track-templates'
+
+    // Stores last-used export dialog settings
+    | 'webdaw-export-settings'
+
+    // Stores the sidebar collapsed/expanded state
+    | 'webdaw-sidebar-state';

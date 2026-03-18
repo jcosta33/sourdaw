@@ -1,11 +1,14 @@
-import { trackStore } from "#/modules/Track/stores/trackStore";
-import { audioBufferCache } from "#/modules/AudioEngine/stores/audioBufferCache";
+import { getTrackState, updateTrack } from '../repositories/trackRepository';
+import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
+import { type Clip } from '../models/Track';
 
-export const stripSilence = (clipId: string, thresholdDb: number = -40, _minSilenceBeats: number = 0.5): void => {
-    const state = trackStore.value;
-    if (!state) return;
+export function stripSilence(clipId: string, thresholdDb: number = -40, _minSilenceBeats: number = 0.5): void {
+    const state = getTrackState();
+    if (!state) {
+        return;
+    }
 
-    let targetClip: { trackId: string; clip: typeof state.tracks[0]["clips"][0] } | null = null;
+    let targetClip: { trackId: string; clip: Clip } | null = null;
     for (const track of state.tracks) {
         const clip = track.clips.find((c) => c.id === clipId);
         if (clip) {
@@ -13,12 +16,16 @@ export const stripSilence = (clipId: string, thresholdDb: number = -40, _minSile
             break;
         }
     }
-    if (!targetClip || targetClip.clip.type !== "audio" || !targetClip.clip.audioBufferId) return;
+    if (!targetClip || targetClip.clip.type !== 'audio' || !targetClip.clip.audioBufferId) {
+        return;
+    }
 
     const buffer = audioBufferCache.get(targetClip.clip.audioBufferId);
-    if (!buffer) return;
+    if (!buffer) {
+        return;
+    }
 
-    const threshold = Math.pow(10, thresholdDb / 20);
+    const threshold = 10 ** (thresholdDb / 20);
     const sampleRate = buffer.sampleRate;
     const channelData = buffer.getChannelData(0);
     const clipDurationBeats = targetClip.clip.endBeat - targetClip.clip.startBeat;
@@ -33,7 +40,9 @@ export const stripSilence = (clipId: string, thresholdDb: number = -40, _minSile
         const end = Math.min(i + windowSize, channelData.length);
         for (let j = i; j < end; j++) {
             const abs = Math.abs(channelData[j]!);
-            if (abs > peak) peak = abs;
+            if (abs > peak) {
+                peak = abs;
+            }
         }
 
         if (peak > threshold) {
@@ -52,7 +61,9 @@ export const stripSilence = (clipId: string, thresholdDb: number = -40, _minSile
         regions.push({ startSample: regionStart, endSample: channelData.length });
     }
 
-    if (regions.length <= 1) return;
+    if (regions.length <= 1) {
+        return;
+    }
 
     const clip = targetClip.clip;
     const beatsPerSample = clipDurationBeats / channelData.length;
@@ -65,14 +76,8 @@ export const stripSilence = (clipId: string, thresholdDb: number = -40, _minSile
         endBeat: clip.startBeat + region.endSample * beatsPerSample,
     }));
 
-    trackStore.set({
-        ...state,
-        tracks: state.tracks.map((t) => {
-            if (t.id !== targetClip!.trackId) return t;
-            return {
-                ...t,
-                clips: [...t.clips.filter((c) => c.id !== clipId), ...newClips],
-            };
-        }),
-    });
-};
+    updateTrack(targetClip.trackId, (t) => ({
+        ...t,
+        clips: [...t.clips.filter((c) => c.id !== clipId), ...newClips],
+    }));
+}

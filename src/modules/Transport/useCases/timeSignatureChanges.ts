@@ -1,7 +1,7 @@
-import { timeSignatureMapStore } from "../stores/timeSignatureMapStore";
-import { createTimeSignatureChange } from "../models/TimeSignatureMap";
+import { timeSignatureMapStore } from '../stores/timeSignatureMapStore';
+import { createTimeSignatureChange } from '../models/TimeSignatureMap';
 
-export const addTimeSignatureChange = (beat: number, numerator: number, denominator: number): void => {
+export function addTimeSignatureChange(beat: number, numerator: number, denominator: number): void {
     const state = timeSignatureMapStore.value;
     if (!state) {
         return;
@@ -11,9 +11,7 @@ export const addTimeSignatureChange = (beat: number, numerator: number, denomina
     if (existing) {
         timeSignatureMapStore.set({
             ...state,
-            changes: state.changes.map((c) =>
-                c.beat === beat ? { ...c, numerator, denominator } : c,
-            ),
+            changes: state.changes.map((c) => (c.beat === beat ? { ...c, numerator, denominator } : c)),
         });
         return;
     }
@@ -23,9 +21,9 @@ export const addTimeSignatureChange = (beat: number, numerator: number, denomina
         ...state,
         changes: [...state.changes, change].sort((a, b) => a.beat - b.beat),
     });
-};
+}
 
-export const removeTimeSignatureChange = (beat: number): void => {
+export function removeTimeSignatureChange(beat: number): void {
     const state = timeSignatureMapStore.value;
     if (!state) {
         return;
@@ -35,8 +33,8 @@ export const removeTimeSignatureChange = (beat: number): void => {
         ...state,
         changes: state.changes.filter((c) => c.beat !== beat),
     });
-};
+}
 
-export const getTimeSignatureChanges = (): readonly import("../models/TimeSignatureMap").TimeSignatureChange[] => {
+export function getTimeSignatureChanges(): readonly import('../models/TimeSignatureMap').TimeSignatureChange[] {
     return timeSignatureMapStore.value?.changes ?? [];
-};
+}

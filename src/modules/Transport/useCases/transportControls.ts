@@ -1,41 +1,52 @@
-import { transportStore } from "../stores/transportStore";
-import { trackStore } from "#/modules/Track/stores/trackStore";
-import { audioEngine } from "#/modules/AudioEngine/repositories/audioEngineInstance";
-import { startPlayheadScheduler, stopPlayheadScheduler } from "./playheadScheduler";
-import { startAudioRecording, stopAudioRecording } from "#/modules/AudioEngine/useCases/audioRecorder";
-import { startRecording, stopRecording } from "#/modules/Track/useCases/recordingUseCases";
-import { audioBufferCache } from "#/modules/AudioEngine/stores/audioBufferCache";
-import { resetMidiState } from "#/modules/AudioEngine/useCases/webMidiInput";
+import { getTransportState, updateTransportState } from '../repositories/transportRepository';
+import { trackStore } from '#/modules/Track/stores/trackStore';
+import {
+    ensureTrackStrip,
+    setTrackGain,
+    setTrackPan,
+    setTrackMute,
+} from '#/modules/AudioEngine/useCases/trackAudioControls';
+import { ensureBusStrip, setBusGain, setSend } from '#/modules/AudioEngine/useCases/busControls';
+import { resumeEngine, getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
+import {
+    stopAllScheduled,
+    scheduleClick,
+} from '#/modules/AudioEngine/useCases/scheduling';
+import { startPlayheadScheduler, stopPlayheadScheduler } from './playheadScheduler';
+import { startAudioRecording, stopAudioRecording } from '#/modules/AudioEngine/useCases/audioRecorder';
+import { startRecording, stopRecording } from '#/modules/Track/useCases/recordingUseCases';
+import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
+import { resetMidiState } from '#/modules/AudioEngine/useCases/webMidiInput';
 
-const ensureTrackStrips = (): void => {
+function ensureTrackStrips(): void {
     const tracks = trackStore.value?.tracks;
     if (!tracks) {
         return;
     }
 
-    const busTracks = tracks.filter((t) => t.kind === "bus");
+    const busTracks = tracks.filter((t) => t.kind === 'bus');
     for (const bus of busTracks) {
-        audioEngine.ensureBusStrip(bus.id);
-        audioEngine.setBusGain(bus.id, bus.gain);
+        ensureBusStrip(bus.id);
+        setBusGain(bus.id, bus.gain);
     }
 
     for (const track of tracks) {
-        if (track.kind === "folder") {
+        if (track.kind === 'folder') {
             continue;
         }
-        audioEngine.ensureTrackStrip(track.id);
-        audioEngine.setTrackGain(track.id, track.gain);
-        audioEngine.setTrackPan(track.id, track.pan);
-        audioEngine.setTrackMute(track.id, track.muted, track.gain);
+        ensureTrackStrip(track.id);
+        setTrackGain(track.id, track.gain);
+        setTrackPan(track.id, track.pan);
+        setTrackMute(track.id, track.muted, track.gain);
 
         for (const send of track.sends) {
-            audioEngine.setSend(track.id, send.busId, send.level, send.preFader);
+            setSend(track.id, send.busId, send.level, send.preFader);
         }
     }
-};
+}
 
-export const togglePlayback = (): void => {
-    const state = transportStore.value;
+export function togglePlayback(): void {
+    const state = getTransportState();
     if (!state) {
         return;
     }
@@ -45,15 +56,15 @@ export const togglePlayback = (): void => {
     } else {
         startPlayback();
     }
-};
+}
 
-export const startPlayback = (): void => {
-    const state = transportStore.value;
+export function startPlayback(): void {
+    const state = getTransportState();
     if (!state) {
         return;
     }
 
-    void audioEngine.resume();
+    void resumeEngine();
     ensureTrackStrips();
 
     let startPosition = state.playheadPosition;
@@ -62,121 +73,121 @@ export const startPlayback = (): void => {
         startPosition = Math.max(0, startPosition - preRollBeats);
     }
 
-    transportStore.set({ ...state, isPlaying: true, playheadPosition: startPosition });
+    updateTransportState({ isPlaying: true, playheadPosition: startPosition });
     startPlayheadScheduler();
-};
+}
 
-export const stopPlayback = (): void => {
-    const state = transportStore.value;
+export function stopPlayback(): void {
+    const state = getTransportState();
     if (!state) {
         return;
     }
 
     stopPlayheadScheduler();
-    audioEngine.stopAllScheduled();
+    stopAllScheduled();
     resetMidiState();
-    transportStore.set({ ...state, isPlaying: false, isRecording: false, playheadPosition: 0 });
-};
+    updateTransportState({ isPlaying: false, isRecording: false, playheadPosition: 0 });
+}
 
-export const toggleLoop = (): void => {
-    const state = transportStore.value;
+export function toggleLoop(): void {
+    const state = getTransportState();
     if (!state) {
         return;
     }
-    transportStore.set({ ...state, isLooping: !state.isLooping });
-};
+    updateTransportState({ isLooping: !state.isLooping });
+}
 
-export const toggleMetronome = (): void => {
-    const state = transportStore.value;
+export function toggleMetronome(): void {
+    const state = getTransportState();
     if (!state) {
         return;
     }
-    transportStore.set({ ...state, metronomeEnabled: !state.metronomeEnabled });
-};
+    updateTransportState({ metronomeEnabled: !state.metronomeEnabled });
+}
 
-export const setMetronomeVolume = (volume: number): void => {
-    const state = transportStore.value;
+export function setMetronomeVolume(volume: number): void {
+    const state = getTransportState();
     if (!state) {
         return;
     }
-    transportStore.set({ ...state, metronomeVolume: Math.max(0, Math.min(1, volume)) });
-};
+    updateTransportState({ metronomeVolume: Math.max(0, Math.min(1, volume)) });
+}
 
-export const setLoopRegion = (startBeat: number, endBeat: number): void => {
-    const state = transportStore.value;
+export function setLoopRegion(startBeat: number, endBeat: number): void {
+    const state = getTransportState();
     if (!state) {
         return;
     }
-    transportStore.set({ ...state, loopStart: startBeat, loopEnd: endBeat });
-};
+    updateTransportState({ loopStart: startBeat, loopEnd: endBeat });
+}
 
-export const setPunchIn = (beat: number): void => {
-    const state = transportStore.value;
+export function setPunchIn(beat: number): void {
+    const state = getTransportState();
     if (!state) {
         return;
     }
-    transportStore.set({ ...state, punchInBeat: Math.max(0, beat) });
-};
+    updateTransportState({ punchInBeat: Math.max(0, beat) });
+}
 
-export const setPunchOut = (beat: number): void => {
-    const state = transportStore.value;
+export function setPunchOut(beat: number): void {
+    const state = getTransportState();
     if (!state) {
         return;
     }
-    transportStore.set({ ...state, punchOutBeat: Math.max(0, beat) });
-};
+    updateTransportState({ punchOutBeat: Math.max(0, beat) });
+}
 
-export const togglePunchEnabled = (): void => {
-    const state = transportStore.value;
+export function togglePunchEnabled(): void {
+    const state = getTransportState();
     if (!state) {
         return;
     }
-    transportStore.set({ ...state, punchInEnabled: !state.punchInEnabled });
-};
+    updateTransportState({ punchInEnabled: !state.punchInEnabled });
+}
 
-export const toggleCountIn = (): void => {
-    const state = transportStore.value;
+export function toggleCountIn(): void {
+    const state = getTransportState();
     if (!state) {
         return;
     }
-    transportStore.set({ ...state, countInEnabled: !state.countInEnabled });
-};
+    updateTransportState({ countInEnabled: !state.countInEnabled });
+}
 
-export const setCountInBars = (bars: number): void => {
-    const state = transportStore.value;
+export function setCountInBars(bars: number): void {
+    const state = getTransportState();
     if (!state) {
         return;
     }
-    transportStore.set({ ...state, countInBars: Math.max(1, Math.min(8, bars)) });
-};
+    updateTransportState({ countInBars: Math.max(1, Math.min(8, bars)) });
+}
 
-export const togglePreRoll = (): void => {
-    const state = transportStore.value;
+export function togglePreRoll(): void {
+    const state = getTransportState();
     if (!state) {
         return;
     }
-    transportStore.set({ ...state, preRollEnabled: !state.preRollEnabled });
-};
+    updateTransportState({ preRollEnabled: !state.preRollEnabled });
+}
 
-export const setPreRollBars = (bars: number): void => {
-    const state = transportStore.value;
+export function setPreRollBars(bars: number): void {
+    const state = getTransportState();
     if (!state) {
         return;
     }
-    transportStore.set({ ...state, preRollBars: Math.max(1, Math.min(8, bars)) });
-};
+    updateTransportState({ preRollBars: Math.max(1, Math.min(8, bars)) });
+}
 
 let activeRecordingClipIds: string[] = [];
 let countInTimerId: ReturnType<typeof setTimeout> | null = null;
 
-const beginActualRecording = (state: NonNullable<typeof transportStore.value>): void => {
+function beginActualRecording(): void {
     const clips = startRecording();
     activeRecordingClipIds = clips.map((c) => c.id);
-    transportStore.set({ ...transportStore.value!, isRecording: true });
+    updateTransportState({ isRecording: true });
 
     const armedTracks = trackStore.value?.tracks.filter((t) => t.armed) ?? [];
     for (const track of armedTracks) {
-        if (track.kind === "audio") {
+        if (track.kind === 'audio') {
             const recClip = clips.find((c) => c.trackId === track.id);
             void startAudioRecording(track.id, (buffer) => {
                 const bufferId = `rec-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -190,7 +201,7 @@ const beginActualRecording = (state: NonNullable<typeof transportStore.value>): 
                             tracks: ts.tracks.map((t) => ({
                                 ...t,
                                 clips: t.clips.map((c) =>
-                                    c.id === recClip.id ? { ...c, audioBufferId: bufferId } : c,
+                                    c.id === recClip.id ? { ...c, audioBufferId: bufferId } : c
                                 ),
                             })),
                         });
@@ -199,12 +210,10 @@ const beginActualRecording = (state: NonNullable<typeof transportStore.value>): 
             });
         }
     }
+}
 
-    void state;
-};
-
-export const toggleRecording = (): void => {
-    const state = transportStore.value;
+export function toggleRecording(): void {
+    const state = getTransportState();
     if (!state) {
         return;
     }
@@ -217,12 +226,12 @@ export const toggleRecording = (): void => {
             clearTimeout(countInTimerId);
             countInTimerId = null;
         }
-        transportStore.set({ ...state, isRecording: false });
+        updateTransportState({ isRecording: false });
         return;
     }
 
     if (state.punchInEnabled) {
-        transportStore.set({ ...state, isRecording: false });
+        updateTransportState({ isRecording: false });
         if (!state.isPlaying) {
             startPlayback();
         }
@@ -234,39 +243,37 @@ export const toggleRecording = (): void => {
         const countInBeats = state.countInBars * beatsPerBar;
         const countInDurationSec = countInBeats / (state.tempo / 60);
 
-        void audioEngine.resume();
+        void resumeEngine();
         ensureTrackStrips();
 
-        const ctx = audioEngine.context;
+        const ctx = getAudioContext();
         for (let i = 0; i < countInBeats; i++) {
             const time = ctx.currentTime + i / (state.tempo / 60);
-            audioEngine.scheduleClick(time, i % beatsPerBar === 0, state.metronomeVolume ?? 0.5);
+            scheduleClick(time, i % beatsPerBar === 0, state.metronomeVolume ?? 0.5);
         }
 
         countInTimerId = setTimeout(() => {
             countInTimerId = null;
-            beginActualRecording(transportStore.value!);
-            if (!transportStore.value?.isPlaying) {
+            beginActualRecording();
+            const current = getTransportState();
+            if (current && !current.isPlaying) {
                 startPlayback();
             }
         }, countInDurationSec * 1000);
         return;
     }
 
-    beginActualRecording(state);
+    beginActualRecording();
 
     if (!state.isPlaying) {
         startPlayback();
     }
-};
+}
 
-export const seekPlayhead = (beat: number): void => {
-    const state = transportStore.value;
+export function seekPlayhead(beat: number): void {
+    const state = getTransportState();
     if (!state) {
         return;
     }
-    transportStore.set({
-        ...state,
-        playheadPosition: Math.max(0, beat),
-    });
-};
+    updateTransportState({ playheadPosition: Math.max(0, beat) });
+}

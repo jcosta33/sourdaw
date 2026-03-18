@@ -1,8 +1,10 @@
-import type { EditingTool } from "../models/EditingTool";
-import { workspaceStore } from "../stores/workspaceStore";
+import { type EditingTool } from '../models/EditingTool';
+import { getWorkspaceState, updateWorkspaceState } from '../repositories/workspaceRepository';
 
-export const setEditingTool = (tool: EditingTool): void => {
-    const current = workspaceStore.value;
-    if (!current) return;
-    workspaceStore.set({ ...current, activeTool: tool });
-};
+export function setEditingTool(tool: EditingTool): void {
+    const current = getWorkspaceState();
+    if (!current) {
+        return;
+    }
+    updateWorkspaceState({ activeTool: tool });
+}
