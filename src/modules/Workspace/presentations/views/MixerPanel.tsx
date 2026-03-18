@@ -6,8 +6,8 @@ import { useTracks } from '../hooks/useTracks';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { type ChannelStripWidth } from '#/modules/Workspace/models/WorkspaceState';
-import { ExpandedChannelStrip } from '../components/mixer/ExpandedChannelStrip';
-import { MasterChannelStrip } from '../components/mixer/MasterChannelStrip';
+import { ExpandedChannelStrip } from './mixer/ExpandedChannelStrip';
+import { MasterChannelStrip } from './mixer/MasterChannelStrip';
 
 type MixerPanelProps = {
     style?: CSSProperties;

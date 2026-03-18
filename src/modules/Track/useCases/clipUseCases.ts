@@ -2,6 +2,7 @@ import { getTrackState, setTrackState, updateTrack, mapAllTracks } from '../repo
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { type Clip } from '../models/Track';
 import { shiftClipAutomation, duplicateClipAutomation } from '#/modules/Track/useCases/automationUseCases';
+import { shiftClipMidiNotes } from '#/modules/Track/useCases/midiNoteCrud';
 
 let nextClipId = 1;
 
@@ -80,6 +81,7 @@ export function moveClip(clipId: string, targetTrackId: string, startBeat: numbe
     const beatDelta = startBeat - oldStartBeat;
     if (beatDelta !== 0) {
         shiftClipAutomation(clipId, beatDelta);
+        shiftClipMidiNotes(clipId, beatDelta);
     }
 }
 
@@ -126,6 +128,7 @@ export function moveClipPreview(clipId: string, targetTrackId: string, startBeat
     const beatDelta = startBeat - oldStartBeat;
     if (beatDelta !== 0) {
         shiftClipAutomation(clipId, beatDelta);
+        shiftClipMidiNotes(clipId, beatDelta);
     }
 }
 

@@ -3,7 +3,7 @@
  */
 import { useSyncExternalStore } from 'react';
 import { collaborationStore } from '#/modules/Collaboration/stores/collaborationStore';
-import { type CollaborationState } from '#/modules/Collaboration/models/CollaborationTypes';
+import { type CollaborationState } from '#/modules/Collaboration/useCases/collaborationQueries';
 
 const defaultState: CollaborationState = {
     isEnabled: false,

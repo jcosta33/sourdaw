@@ -2,9 +2,9 @@ import { type CSSProperties, type ReactElement, useState, useSyncExternalStore }
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { useTracks } from '../hooks/useTracks';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { TrackInspector } from '../components/inspector/TrackInspector';
-import { ClipInspector } from '../components/inspector/ClipInspector';
-import { DeviceInspector } from '../components/inspector/DeviceInspector';
+import { TrackInspector } from './inspector/TrackInspector';
+import { ClipInspector } from './inspector/ClipInspector';
+import { DeviceInspector } from './inspector/DeviceInspector';
 
 type InspectorPanelProps = {
     style?: CSSProperties;

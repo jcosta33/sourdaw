@@ -92,6 +92,7 @@ export const AutomationLaneRow = ({
         }
         const origBeat = origPoint.beat;
         const origValue = origPoint.value;
+        let currentBeat = pointBeat;
         setDragPointBeat(pointBeat);
 
         const onMove = (me: MouseEvent) => {
@@ -99,7 +100,9 @@ export const AutomationLaneRow = ({
             const my = me.clientY - rect.top;
             const newBeat = Math.max(0, xToBeat(mx));
             const newValue = yToValue(my);
-            updateAutomationPoint(lane.id, pointBeat, newValue, newBeat);
+            updateAutomationPoint(lane.id, currentBeat, newValue, newBeat);
+            currentBeat = newBeat;
+            setDragPointBeat(newBeat);
         };
 
         const onUp = () => {
@@ -109,7 +112,7 @@ export const AutomationLaneRow = ({
             const finalState = automationStore.value;
             const finalLane = finalState?.lanes.find((l) => l.id === lane.id);
             const finalPoint =
-                finalLane?.points.find((p) => Math.abs(p.beat - origBeat) < 0.05) ??
+                finalLane?.points.find((p) => Math.abs(p.beat - currentBeat) < 0.05) ??
                 finalLane?.points.find((p) => p !== undefined);
             if (finalPoint && (finalPoint.beat !== origBeat || finalPoint.value !== origValue)) {
                 const fb = finalPoint.beat;
@@ -239,6 +242,7 @@ export const AutomationLaneRow = ({
                                 fill={isDragging ? '#60a5fa' : '#3b82f6'}
                                 stroke="white"
                                 strokeWidth={1.5}
+                                pointerEvents="none"
                                 className={cn('transition-all cursor-grab', isDragging && 'cursor-grabbing')}
                                 style={{
                                     filter: isDragging

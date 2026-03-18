@@ -1,7 +1,7 @@
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
 import { Store } from '#/helpers/Store/Store';
-import { type AppAction } from '#/modules/Command/models/AppAction';
+import { type AppAction } from '#/modules/Command/useCases/commandQueries';
 
 const logger = Container.getInstance().get(Logger);
 

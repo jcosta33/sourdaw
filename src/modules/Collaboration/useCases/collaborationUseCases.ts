@@ -1,4 +1,4 @@
-import { type AppAction } from '#/modules/Command/models/AppAction';
+import { type AppAction } from '#/modules/Command/useCases/commandQueries';
 import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
 import { type PeerInfo, type SyncMessage } from '../models/CollaborationTypes';
 import { collaborationStore } from '../stores/collaborationStore';

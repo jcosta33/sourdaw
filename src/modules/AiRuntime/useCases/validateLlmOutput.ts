@@ -1,6 +1,6 @@
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
-import { type AppAction } from '#/modules/Command/models/AppAction';
+import { type AppAction } from '#/modules/Command/useCases/commandQueries';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 import { validateSingleAction, extractJsonString } from '../transformers/actionValidator';
 

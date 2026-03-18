@@ -1,3 +1,46 @@
+async function triggerBlobDownload(blob: Blob, filename: string): Promise<void> {
+    // Try File System Access API for a proper native Save dialog
+    if ('showSaveFilePicker' in window) {
+        try {
+            const ext = filename.includes('.') ? filename.slice(filename.lastIndexOf('.')) : '';
+            const mimeMap: Record<string, string> = {
+                '.wav': 'audio/wav',
+                '.mp3': 'audio/mpeg',
+                '.flac': 'audio/flac',
+                '.webdaw': 'application/json',
+                '.json': 'application/json',
+            };
+            const handle = await (window as unknown as { showSaveFilePicker: (opts: unknown) => Promise<FileSystemFileHandle> }).showSaveFilePicker({
+                suggestedName: filename,
+                types: ext ? [{
+                    description: ext.slice(1).toUpperCase() + ' file',
+                    accept: { [mimeMap[ext] ?? 'application/octet-stream']: [ext] },
+                }] : undefined,
+            });
+            const writable = await handle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+            return;
+        } catch {
+            // User cancelled or API error — don't fall through to anchor
+            return;
+        }
+    }
+
+    // Fallback: anchor download (Chrome, Firefox, etc.)
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }, 1000);
+}
+
 export function audioBufferToWav(buffer: AudioBuffer, bitDepth: 16 | 24 | 32 = 16): ArrayBuffer {
     const numChannels = buffer.numberOfChannels;
     const sampleRate = buffer.sampleRate;
@@ -69,15 +112,10 @@ export function audioBufferToWav(buffer: AudioBuffer, bitDepth: 16 | 24 | 32 = 1
     return arrayBuffer;
 }
 
-export function downloadWav(buffer: AudioBuffer, filename = 'export.wav', bitDepth: 16 | 24 | 32 = 16): void {
+export async function downloadWav(buffer: AudioBuffer, filename = 'export.wav', bitDepth: 16 | 24 | 32 = 16): Promise<void> {
     const wav = audioBufferToWav(buffer, bitDepth);
     const blob = new Blob([wav], { type: 'audio/wav' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
+    await triggerBlobDownload(blob, filename);
 }
 
 type LameEncoder = {
@@ -136,12 +174,7 @@ export async function downloadMp3(buffer: AudioBuffer, filename = 'export.mp3', 
     const encoder = new lamejs.Mp3Encoder(numChannels, buffer.sampleRate, bitRate);
     const mp3Data = encodePcmToMp3(buffer, encoder);
     const blob = new Blob([mp3Data.buffer as ArrayBuffer], { type: 'audio/mpeg' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
+    await triggerBlobDownload(blob, filename);
 }
 
 // ---------------------------------------------------------------------------
@@ -374,13 +407,8 @@ function encodeFlac(buffer: AudioBuffer): Uint8Array {
     return out.subarray(0, pos);
 }
 
-export function downloadFlac(buffer: AudioBuffer, filename = 'export.flac'): void {
+export async function downloadFlac(buffer: AudioBuffer, filename = 'export.flac'): Promise<void> {
     const flacData = encodeFlac(buffer);
     const blob = new Blob([flacData.buffer as ArrayBuffer], { type: 'audio/flac' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
+    await triggerBlobDownload(blob, filename);
 }

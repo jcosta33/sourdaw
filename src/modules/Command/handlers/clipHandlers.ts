@@ -34,6 +34,9 @@ import { getTrackStoreState } from '#/modules/Track/useCases/trackQueries';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { deleteTime, insertTime, duplicateTimeRange } from '#/modules/Track/useCases/timeOperations';
 import { stripSilence } from '#/modules/Track/useCases/stripSilence';
+import { midiStore } from '#/modules/Track/stores/midiStore';
+import { updateTrack } from '#/modules/Track/repositories/trackRepository';
+import { pushUndoEntry } from '../useCases/pushUndoEntry';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 
@@ -72,10 +75,71 @@ export const clipHandlers = {
 
     removeClip: {
         execute: (a) => {
+            // Find the clip and its track before deletion
+            const state = getTrackStoreState();
+            let clipSnapshot: { id: string; trackId: string; name: string; startBeat: number; endBeat: number; type: string; [key: string]: unknown } | null = null;
+            let trackId: string | null = null;
+
+            if (state) {
+                for (const track of state.tracks) {
+                    const clip = track.clips.find((c) => c.id === a.payload.clipId);
+                    if (clip) {
+                        clipSnapshot = JSON.parse(JSON.stringify(clip));
+                        trackId = track.id;
+                        break;
+                    }
+                }
+            }
+
+            // Snapshot MIDI data for this clip
+            const midiState = midiStore.value;
+            const notesSnapshot = midiState?.notesByClipId[a.payload.clipId]
+                ? JSON.parse(JSON.stringify(midiState.notesByClipId[a.payload.clipId]))
+                : null;
+            const ccSnapshot = midiState?.ccByClipId[a.payload.clipId]
+                ? JSON.parse(JSON.stringify(midiState.ccByClipId[a.payload.clipId]))
+                : null;
+            const pbSnapshot = midiState?.pitchBendByClipId[a.payload.clipId]
+                ? JSON.parse(JSON.stringify(midiState.pitchBendByClipId[a.payload.clipId]))
+                : null;
+
+            // Execute the removal
             removeClip(a.payload.clipId);
+
+            // Push callback undo entry
+            if (clipSnapshot && trackId) {
+                const savedTrackId = trackId;
+                const savedClip = clipSnapshot;
+                pushUndoEntry(
+                    'Remove clip',
+                    () => {
+                        // Undo: restore clip to its track
+                        updateTrack(savedTrackId, (t) => ({ ...t, clips: [...t.clips, savedClip as never] }));
+                        // Restore MIDI data
+                        const currentMidi = midiStore.value;
+                        if (currentMidi && (notesSnapshot || ccSnapshot || pbSnapshot)) {
+                            midiStore.set({
+                                notesByClipId: notesSnapshot
+                                    ? { ...currentMidi.notesByClipId, [a.payload.clipId]: notesSnapshot }
+                                    : currentMidi.notesByClipId,
+                                ccByClipId: ccSnapshot
+                                    ? { ...currentMidi.ccByClipId, [a.payload.clipId]: ccSnapshot }
+                                    : currentMidi.ccByClipId,
+                                pitchBendByClipId: pbSnapshot
+                                    ? { ...currentMidi.pitchBendByClipId, [a.payload.clipId]: pbSnapshot }
+                                    : currentMidi.pitchBendByClipId,
+                            });
+                        }
+                    },
+                    () => {
+                        // Redo: remove again
+                        removeClip(a.payload.clipId);
+                    }
+                );
+            }
         },
         describe: () => ({ label: 'Remove clip' }),
-        undoable: true,
+        undoable: false, // handler manages its own undo entry
     } satisfies ActionHandler<Extract<AppAction, 'removeClip'>>,
 
     renameClip: {

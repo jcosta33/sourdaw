@@ -1,12 +1,12 @@
 import { type TrackStoreState } from '#/modules/Track/stores/trackStore';
-import { type TransportState } from '#/modules/Transport/models/TransportState';
+import { type TransportState } from '#/modules/Transport/useCases/transportQueries';
 import { type AutomationStoreState } from '#/modules/Track/stores/automationStore';
 import { type MidiStoreState } from '#/modules/Track/stores/midiStore';
 import { type TempoMapStoreState } from '#/modules/Transport/stores/tempoMapStore';
 import { type TimeSignatureMapStoreState } from '#/modules/Transport/stores/timeSignatureMapStore';
 import { type MarkerStoreState } from '#/modules/Timeline/stores/markerStore';
 import { type TakeLaneStoreState } from '#/modules/Track/stores/takeLaneStore';
-import { type SidechainRoute } from '#/modules/AudioEngine/models/SidechainRoute';
+import { type SidechainRoute } from '#/modules/AudioEngine/useCases/sidechainUseCases';
 
 export type ProjectData = {
     version: 1;

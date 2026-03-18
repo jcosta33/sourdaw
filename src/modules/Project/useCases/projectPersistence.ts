@@ -205,7 +205,7 @@ export function markDirty(): void {
     }
 }
 
-export function exportProjectFile(): void {
+export async function exportProjectFile(): Promise<void> {
     const tracks = trackStore.value;
     const transport = transportStore.value;
     const automation = automationStore.value;
@@ -249,7 +249,7 @@ export function exportProjectFile(): void {
         sidechainRoutes: getAllSidechainRoutes(),
     };
 
-    downloadProjectFile(data);
+    await downloadProjectFile(data);
     notifyUser('Project exported successfully', 'info');
 }
 

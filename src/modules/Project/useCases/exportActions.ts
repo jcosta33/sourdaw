@@ -24,7 +24,7 @@ export const downloadWav = (
     buffer: AudioBuffer,
     filename: string,
     bitDepth?: 16 | 24 | 32
-): void => _downloadWav(buffer, filename, bitDepth);
+): Promise<void> => _downloadWav(buffer, filename, bitDepth);
 
 export const downloadMp3 = (
     buffer: AudioBuffer,
@@ -34,4 +34,4 @@ export const downloadMp3 = (
 export const downloadFlac = (
     buffer: AudioBuffer,
     filename: string
-): void => _downloadFlac(buffer, filename);
+): Promise<void> => _downloadFlac(buffer, filename);

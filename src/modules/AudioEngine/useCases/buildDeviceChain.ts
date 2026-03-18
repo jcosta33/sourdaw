@@ -1,4 +1,4 @@
-import { type Device } from '#/modules/Track/models/Track';
+import { type Device } from '#/modules/Track/useCases/trackQueries';
 import { type OfflineDeviceNode, DEVICE_FACTORIES, applyParams } from '../repositories/deviceNodeFactory';
 
 // Re-export for consumers

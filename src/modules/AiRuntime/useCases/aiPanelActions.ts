@@ -4,7 +4,7 @@
  * use cases directly.
  */
 
-import { type AppAction } from '#/modules/Command/models/AppAction';
+import { type AppAction } from '#/modules/Command/useCases/commandQueries';
 import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
 
 export type { AppAction };

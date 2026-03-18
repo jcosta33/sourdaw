@@ -1,5 +1,5 @@
 import { type ReactElement, useState, useRef, useEffect } from 'react';
-import { ChevronDown, Clock, LayoutTemplate, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, Clock, FileDown, FileUp, LayoutTemplate, Music, Plus, Save, Trash2 } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import {
@@ -8,8 +8,9 @@ import {
     loadRecentProject,
     type RecentProjectEntry,
 } from '../../useCases/recentProjects';
-import { newProject, saveProject } from '../../useCases/projectPersistence';
+import { newProject, saveProject, exportProjectFile, importProjectFile } from '../../useCases/projectPersistence';
 import { TemplateChooser } from './TemplateChooser';
+import { pickFiles } from '../../useCases/nativeFileDialog';
 
 const formatRelativeTime = (timestamp: number): string => {
     const now = Date.now();
@@ -82,6 +83,34 @@ export const RecentProjectsMenu = (): ReactElement => {
         setTemplateChooserOpen(true);
     };
 
+    const handleSave = () => {
+        saveProject();
+        setOpen(false);
+    };
+
+    const handleExportAudio = () => {
+        setOpen(false);
+        document.dispatchEvent(new CustomEvent('webdaw:open-export'));
+    };
+
+    const handleExportProject = () => {
+        exportProjectFile();
+        setOpen(false);
+    };
+
+    const handleImportProject = () => {
+        setOpen(false);
+        void pickFiles({
+            filters: [{ name: 'WebDAW Project', extensions: ['webdaw', 'json'] }],
+        }).then((files) => {
+            if (!files || files.length === 0) {
+                return;
+            }
+            void importProjectFile(files[0]!);
+        });
+    };
+
+
     const handleLoad = (entry: RecentProjectEntry) => {
         saveProject();
         void loadRecentProject(entry.key);
@@ -101,7 +130,7 @@ export const RecentProjectsMenu = (): ReactElement => {
                     <Button
                         variant="ghost"
                         size="icon-sm"
-                        aria-label="Recent projects"
+                        aria-label="Project menu"
                         aria-expanded={open}
                         aria-haspopup="menu"
                         onClick={() => setOpen((prev) => !prev)}
@@ -109,15 +138,16 @@ export const RecentProjectsMenu = (): ReactElement => {
                         <ChevronDown className="size-3" aria-hidden="true" />
                     </Button>
                 </TooltipTrigger>
-                <TooltipContent>Recent projects</TooltipContent>
+                <TooltipContent>Project menu</TooltipContent>
             </Tooltip>
 
             {open && (
                 <div
                     className="absolute top-full left-0 mt-1 z-50 w-64 rounded-md border border-border bg-surface-overlay shadow-lg py-1"
                     role="menu"
-                    aria-label="Recent projects"
+                    aria-label="Project menu"
                 >
+                    {/* ── Create ── */}
                     <button
                         type="button"
                         className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
@@ -138,10 +168,65 @@ export const RecentProjectsMenu = (): ReactElement => {
                         New from Template…
                     </button>
 
+                    <div className="mx-2 my-1 h-px bg-border" role="separator" />
+
+                    {/* ── Save & Export ── */}
+                    <button
+                        type="button"
+                        className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
+                        role="menuitem"
+                        onClick={handleSave}
+                    >
+                        <span className="flex items-center gap-2">
+                            <Save className="size-3 text-muted-foreground" aria-hidden="true" />
+                            Save
+                        </span>
+                        <kbd className="text-[10px] text-muted-foreground/60">⌘S</kbd>
+                    </button>
+
+                    <button
+                        type="button"
+                        className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
+                        role="menuitem"
+                        onClick={handleExportAudio}
+                    >
+                        <span className="flex items-center gap-2">
+                            <Music className="size-3 text-muted-foreground" aria-hidden="true" />
+                            Export Audio…
+                        </span>
+                        <kbd className="text-[10px] text-muted-foreground/60">⌘⇧E</kbd>
+                    </button>
+
+                    <div className="mx-2 my-1 h-px bg-border" role="separator" />
+
+                    {/* ── Project File I/O ── */}
+                    <button
+                        type="button"
+                        className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
+                        role="menuitem"
+                        onClick={handleExportProject}
+                    >
+                        <FileDown className="size-3 text-muted-foreground" aria-hidden="true" />
+                        Export Project File…
+                    </button>
+
+                    <button
+                        type="button"
+                        className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
+                        role="menuitem"
+                        onClick={handleImportProject}
+                    >
+                        <FileUp className="size-3 text-muted-foreground" aria-hidden="true" />
+                        Import Project File…
+                    </button>
+
+                    {/* ── Recent Projects ── */}
                     {entries.length > 0 && <div className="mx-2 my-1 h-px bg-border" role="separator" />}
 
-                    {entries.length === 0 && (
-                        <div className="px-3 py-2 text-[10px] text-muted-foreground/60">No recent projects</div>
+                    {entries.length > 0 && (
+                        <div className="px-3 py-1 text-[9px] font-semibold text-muted-foreground/60 uppercase tracking-wider">
+                            Recent
+                        </div>
                     )}
 
                     {entries.map((entry) => (
@@ -190,3 +275,4 @@ export const RecentProjectsMenu = (): ReactElement => {
         </div>
     );
 };
+

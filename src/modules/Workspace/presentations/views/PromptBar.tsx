@@ -41,7 +41,7 @@ import { executeAppAction } from '../../useCases/workspaceViewActions';
 import { notifyAiChange } from '#/modules/AiRuntime/presentations/views/AiChangeToast';
 import { isLlmAvailable, initEngine } from '../../useCases/workspaceViewActions';
 import { llmStatusStore } from '#/modules/AiRuntime/stores/llmStatusStore';
-import { LlmStatusBadge } from '../components/prompt/LlmStatusBadge';
+import { LlmStatusBadge } from './prompt/LlmStatusBadge';
 import { generateGroupId } from '../../useCases/workspaceViewActions';
 import {
     pushAiActionGroup,

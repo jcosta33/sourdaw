@@ -4,8 +4,8 @@ import { cn } from '#/helpers/Styles/cn';
 import { addTrack } from '../../../useCases/workspaceViewActions';
 import { addClip } from '../../../useCases/workspaceViewActions';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { PreviewButton } from './PreviewButton';
-import { type SampleItem } from './sidebarConstants';
+import { PreviewButton } from '../../components/sidebar/PreviewButton';
+import { type SampleItem } from '../../components/sidebar/sidebarConstants';
 import { type PreviewHandle } from '../../hooks/usePreviewAudio';
 
 export type SamplesTabProps = {

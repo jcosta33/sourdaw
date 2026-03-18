@@ -374,3 +374,116 @@ useEffect(() => eventBus.on(TrackAddedEvent, handler), []);
 | Need to call a Tauri command                 | In `repositories/` adapter only                                 |
 | Need to touch an AudioNode                   | Inside `engine/` class only                                     |
 | AudioContext lifecycle                       | Use case calls `audioEngine.initialize()` on first user gesture |
+
+---
+
+## Forbidden anti-patterns — do not attempt these
+
+These are bypass techniques that technically pass `depcruise` but violate the spirit of the architecture. They are **all forbidden**.
+
+### 1. Barrel re-exports to bypass boundaries
+
+Creating a file in a contract folder that simply re-exports something from a private folder. This does not make the private thing public — it makes the contract folder dishonest.
+
+```typescript
+// ❌ FORBIDDEN: presentations/views/fooContract.ts that just re-exports a private hook
+export { useFoo } from '../hooks/useFoo';
+
+// ❌ FORBIDDEN: presentations/hooks/useFoo.ts that just re-exports from another module's view
+export { useFoo } from '#/modules/Other/presentations/views/fooContract';
+
+// ❌ FORBIDDEN: chaining two barrel re-exports to launder a private import
+// Module A: views/contract.ts → re-exports hooks/impl.ts (bypass #1)
+// Module B: hooks/local.ts → re-exports Module A views/contract.ts (bypass #2)
+```
+
+**The correct approach:** If multiple modules need the same logic, each module re-implements its own hook using the shared store (contract) directly. Hooks are private — they are never shared.
+
+### 2. Sharing hooks across modules
+
+Hooks in `presentations/hooks/` are **private to the module**. No module may import another module's hooks. No barrel re-export, proxy file, or view-layer wrapper changes this.
+
+```typescript
+// ❌ FORBIDDEN: importing another module's hook, even indirectly
+import { useTracks } from '#/modules/Track/presentations/hooks/useTracks';
+
+// ✅ CORRECT: re-implement the hook locally using the store (a contract)
+import { useSyncExternalStore } from 'react';
+import { trackStore } from '#/modules/Track/stores/trackStore';
+export const useTracks = () => useSyncExternalStore(
+    (cb) => trackStore.subscribe(() => cb()),
+    () => trackStore.value?.tracks ?? [],
+    () => []
+);
+```
+
+### 3. `export *` wildcard re-exports
+
+Never use `export *` when re-exporting from another module's use cases. Wildcard re-exports hide what is actually being shared, make it impossible to audit the public surface, and silently pick up new exports over time.
+
+```typescript
+// ❌ FORBIDDEN
+export * from '#/modules/Track/useCases/presetUseCases';
+export * from '#/modules/Transport/useCases/transportControls';
+
+// ✅ CORRECT: explicit named exports only
+export { getUserPresets, saveUserPreset } from '#/modules/Track/useCases/presetUseCases';
+export { togglePlayback, stopPlayback } from '#/modules/Transport/useCases/transportControls';
+```
+
+### 4. Importing from private `models/` cross-module (even type-only)
+
+Type-only imports from another module's `models/` are still forbidden. The type boundary is the same as the value boundary. If you need a type cross-module, it must be re-exported from the owning module's `useCases/` (as a DTO or query re-export).
+
+```typescript
+// ❌ FORBIDDEN: even though it's type-only
+import { type AppAction } from '#/modules/Command/models/AppAction';
+import { type SidechainRoute } from '#/modules/AudioEngine/models/SidechainRoute';
+import { type Track } from '#/modules/Track/models/Track';
+
+// ✅ CORRECT: import from the use case / query layer
+import { type AppAction } from '#/modules/Command/useCases/commandQueries';
+import { type SidechainRoute } from '#/modules/AudioEngine/useCases/sidechainUseCases';
+import { type Track } from '#/modules/Track/useCases/trackQueries';
+```
+
+### 5. Components importing use cases
+
+Components in `presentations/components/` are **pure rendering units**. They receive data and DOM callbacks as props. They do NOT import use cases, stores, or contain business logic.
+
+If a "component" imports use cases, it is actually a **view** and belongs in `presentations/views/`.
+
+```typescript
+// ❌ FORBIDDEN: component importing use cases
+// presentations/components/transport/UndoRedoButtons.tsx
+import { undo, redo } from '../../../useCases/workspaceViewActions';
+
+// ✅ CORRECT: either promote to views/ or make the component pure
+// Option A: Move to presentations/views/transport/UndoRedoButtons.tsx (it's a view)
+// Option B: Accept callbacks as props
+export const UndoRedoButtons = ({ onUndo, onRedo, canUndo, canRedo }: Props) => (
+    <button disabled={!canUndo} onClick={onUndo}>Undo</button>
+    <button disabled={!canRedo} onClick={onRedo}>Redo</button>
+);
+```
+
+### 6. Passing use case functions as component props to work around the rule
+
+Do not take a file that should be a view and keep it as a component by passing use case functions down as props from a parent. If the component has enough business logic to warrant interaction with use cases, **it is a view**.
+
+```typescript
+// ❌ FORBIDDEN: keeping it as a component and passing use cases as props
+<TrackHeader
+    track={track}
+    onRename={renameTrack}         // use case passed as prop
+    onFreeze={freezeTrack}         // use case passed as prop
+    onSetColor={setTrackColor}     // use case passed as prop
+/>
+
+// ✅ CORRECT: promote to a view — views orchestrate business logic
+// presentations/views/inspector/TrackHeader.tsx
+import { renameTrack, freezeTrack, setTrackColor } from '../../useCases/workspaceViewActions';
+```
+
+The distinction: a **pure component** receives primitive data + DOM callbacks (`onChange`, `onClick`). A **view** imports use cases and wires business logic. If the parent is just proxying use cases to the child, the child is a view.
+

@@ -4,7 +4,7 @@ import { cn } from '#/helpers/Styles/cn';
 import { setMasterGainValue } from '../../../useCases/workspaceViewActions';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { useMeterLevel } from '../../hooks/useMeterLevel';
-import { LevelMeter } from '../LevelMeter';
+import { LevelMeter } from '../../components/LevelMeter';
 
 export type MasterChannelStripProps = {
     widthClass: string;

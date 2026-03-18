@@ -1,4 +1,6 @@
 import { createSidechainRoute, type SidechainRoute } from '../models/SidechainRoute';
+
+export type { SidechainRoute };
 import { audioEngine } from '../repositories/audioEngineInstance';
 
 type SidechainState = {

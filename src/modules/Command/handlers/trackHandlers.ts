@@ -3,6 +3,11 @@ import { type AppAction } from '../models/AppAction';
 import { addTrack } from '#/modules/Track/useCases/addTrack';
 import { setTrackInput } from '#/modules/Track/useCases/setTrackInput';
 import { removeTrack } from '#/modules/Track/useCases/removeTrack';
+import { automationStore } from '#/modules/Track/stores/automationStore';
+import { type MidiStoreState, midiStore } from '#/modules/Track/stores/midiStore';
+import { takeLaneStore } from '#/modules/Track/stores/takeLaneStore';
+import { setTrackState } from '#/modules/Track/repositories/trackRepository';
+import { pushUndoEntry } from '../useCases/pushUndoEntry';
 import { renameTrack } from '#/modules/Track/useCases/renameTrack';
 import {
     muteTrack,
@@ -45,10 +50,80 @@ export const trackHandlers = {
 
     removeTrack: {
         execute: (a) => {
+            const track = getTrackStoreState()?.tracks.find((t) => t.id === a.payload.trackId);
+            if (!track) {
+                return;
+            }
+
+            // Snapshot everything that removeTrack deletes
+            const trackSnapshot = JSON.parse(JSON.stringify(track)) as typeof track;
+
+            const autoState = automationStore.value;
+            const autoLanes = autoState ? autoState.lanes.filter((l) => l.trackId === a.payload.trackId) : [];
+            const autoLaneSnapshots = JSON.parse(JSON.stringify(autoLanes)) as typeof autoLanes;
+
+            const midiState = midiStore.value;
+            const clipIds = track.clips.map((c) => c.id);
+            const midiSnapshots: MidiStoreState = { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };
+            if (midiState) {
+                for (const cid of clipIds) {
+                    if (midiState.notesByClipId[cid]) {
+                        midiSnapshots.notesByClipId[cid] = JSON.parse(JSON.stringify(midiState.notesByClipId[cid]));
+                    }
+                    if (midiState.ccByClipId[cid]) {
+                        midiSnapshots.ccByClipId[cid] = JSON.parse(JSON.stringify(midiState.ccByClipId[cid]));
+                    }
+                    if (midiState.pitchBendByClipId[cid]) {
+                        midiSnapshots.pitchBendByClipId[cid] = JSON.parse(JSON.stringify(midiState.pitchBendByClipId[cid]));
+                    }
+                }
+            }
+
+            const takeLaneState = takeLaneStore.value;
+            const takeLanes = takeLaneState ? takeLaneState.lanes.filter((l) => l.trackId === a.payload.trackId) : [];
+            const takeLaneSnapshots = JSON.parse(JSON.stringify(takeLanes)) as typeof takeLanes;
+
+            // Execute the actual removal
             removeTrack(a.payload.trackId);
+
+            // Push callback undo entry
+            pushUndoEntry(
+                'Remove track',
+                () => {
+                    // Undo: restore track, automation, MIDI, take lanes
+                    const state = getTrackStoreState();
+                    if (state) {
+                        setTrackState({ ...state, tracks: [...state.tracks, trackSnapshot] });
+                    }
+                    if (autoLaneSnapshots.length > 0) {
+                        const currentAuto = automationStore.value;
+                        if (currentAuto) {
+                            automationStore.set({ lanes: [...currentAuto.lanes, ...autoLaneSnapshots] });
+                        }
+                    }
+                    const currentMidi = midiStore.value;
+                    if (currentMidi) {
+                        midiStore.set({
+                            notesByClipId: { ...currentMidi.notesByClipId, ...midiSnapshots.notesByClipId },
+                            ccByClipId: { ...currentMidi.ccByClipId, ...midiSnapshots.ccByClipId },
+                            pitchBendByClipId: { ...currentMidi.pitchBendByClipId, ...midiSnapshots.pitchBendByClipId },
+                        });
+                    }
+                    if (takeLaneSnapshots.length > 0) {
+                        const currentTake = takeLaneStore.value;
+                        if (currentTake) {
+                            takeLaneStore.set({ lanes: [...currentTake.lanes, ...takeLaneSnapshots] });
+                        }
+                    }
+                },
+                () => {
+                    // Redo: remove again
+                    removeTrack(a.payload.trackId);
+                }
+            );
         },
         describe: () => ({ label: 'Remove track' }),
-        undoable: true,
+        undoable: false, // handler manages its own undo entry
     } satisfies ActionHandler<Extract<AppAction, 'removeTrack'>>,
 
     removeAllTracks: {

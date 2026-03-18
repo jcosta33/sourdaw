@@ -1,4 +1,4 @@
-import { type AppAction } from '#/modules/Command/models/AppAction';
+import { type AppAction } from '#/modules/Command/useCases/commandQueries';
 import { type OperationEntry, type PeerId } from '../models/CollaborationTypes';
 import { type VectorClock, increment, merge, happensBefore } from './vectorClock';
 

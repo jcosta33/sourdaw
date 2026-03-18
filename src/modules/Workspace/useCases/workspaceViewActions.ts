@@ -53,7 +53,6 @@ export { getAudioContext, getEngineState, getMasterPeakLevel, setMasterGainValue
 export { initializeAudioEngine } from '#/modules/AudioEngine/useCases/initializeAudioEngine';
 export { getTrackPeakLevel, setTrackMute } from '#/modules/AudioEngine/useCases/trackAudioControls';
 export { initWebMidi } from '#/modules/AudioEngine/useCases/webMidiInput';
-export { isTauriAvailable } from '#/modules/AudioEngine/useCases/pluginBridge';
 export { getAllSidechainRoutes, addSidechainRoute, removeSidechainRoute, getSidechainRoutesForTrack, getSidechainSource, setSidechainRoutes } from '#/modules/AudioEngine/useCases/sidechainUseCases';
 
 // ── Command ───────────────────────────────────────────────────────
@@ -82,19 +81,15 @@ export { defaultTransportState, type TempoChange } from '#/modules/Transport/use
 export { BUILTIN_PLUGINS } from '#/modules/Track/useCases/trackQueries';
 export { NATIVE_MODEL_INFO, WEBLLM_MODEL_INFO, searchPresets, getAvailablePresets, type FuzzyResult, type IntentResult, type PresetCategory, type PresetContext } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
 export { generateGroupId, type AppAction, type UndoEntry } from '#/modules/Command/useCases/commandQueries';
-export { type SoundPreset } from '#/modules/Track/models/SoundPreset';
-export { type MidiCC, type MidiPitchBend } from '#/modules/Track/models/MidiNote';
-export { type Device } from '#/modules/Track/models/Track';
-export { type SidechainRoute } from '#/modules/AudioEngine/models/SidechainRoute';
-export type { WarpState } from '#/modules/Track/models/WarpMarker';
+export { type SoundPreset, type MidiCC, type MidiPitchBend, type Device, type WarpState } from '#/modules/Track/useCases/trackQueries';
+export { type SidechainRoute } from '#/modules/AudioEngine/useCases/sidechainUseCases';
 
 // Track presets
-export * from '#/modules/Track/useCases/presetUseCases';
-export * from '#/modules/Track/useCases/warpUseCases';
+export { getUserPresets, saveUserPreset, deleteUserPreset, createTrackFromPreset, loadPresetToTrack, saveCurrentAsPreset, type SaveCurrentAsPresetInput } from '#/modules/Track/useCases/presetUseCases';
+export { getWarpState, enableWarp, disableWarp, setStretchMode, addWarpMarker, removeWarpMarker, moveWarpMarker } from '#/modules/Track/useCases/warpUseCases';
 
 // Transport
-export * from '#/modules/Transport/useCases/transportControls';
+export { togglePlayback, startPlayback, stopPlayback, seekPlayhead, toggleLoop, toggleMetronome, setMetronomeVolume, setLoopRegion, setPunchIn, setPunchOut, togglePunchEnabled, toggleCountIn, setCountInBars, togglePreRoll, setPreRollBars, toggleRecording } from '#/modules/Transport/useCases/transportControls';
 
 // Command: track alternatives
-export * from '#/modules/Command/useCases/trackAlternativeHandlers';
-
+export { handleCreateTrackAlternative, handleSwitchTrackAlternative, handleDeleteTrackAlternative, handleRenameTrackAlternative } from '#/modules/Command/useCases/trackAlternativeHandlers';

@@ -1,6 +1,6 @@
 import { type ReactElement, useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import { Button } from '#/components/ui/button';
-import { Plus, Power, Trash2 } from 'lucide-react';
+import { Plus, Power, Trash2, Monitor } from 'lucide-react';
 import { BUILTIN_PLUGINS } from '../../../useCases/workspaceViewActions';
 import {
     bypassDevice,
@@ -9,9 +9,10 @@ import {
     addExternalDevice,
     reorderDevices,
 } from '../../../useCases/workspaceViewActions';
-import { isTauriAvailable } from '../../../useCases/workspaceViewActions';
 import { pluginScanStore, defaultPluginScanState } from '#/modules/AudioEngine/stores/pluginScanStore';
 import { type Track } from '../../../useCases/workspaceViewActions';
+import { getPlatformCapabilities, DISABLED_REASONS } from '#/helpers/platformCapabilities';
+import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 
 export type TrackDevicesSectionProps = {
     track: Track;
@@ -97,32 +98,46 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                     {plugin.name}
                                 </button>
                             ))}
-                            {isTauriAvailable() && pluginScanState.scannedPlugins.length > 0 && (
-                                <>
-                                    <div className="mx-2 my-1 border-t border-border/30" />
-                                    <p className="px-3 py-1 text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">
-                                        External
-                                    </p>
-                                    <div className="max-h-32 overflow-y-auto">
-                                        {pluginScanState.scannedPlugins.map((plugin) => (
-                                            <button
-                                                type="button"
-                                                key={plugin.id}
-                                                className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
-                                                role="menuitem"
-                                                onClick={() => {
-                                                    addExternalDevice(track.id, plugin.id, plugin.name);
-                                                    setShowDeviceMenu(false);
-                                                }}
-                                            >
-                                                <span className="truncate">{plugin.name}</span>
-                                                <span className="ml-1 shrink-0 rounded px-1 py-px text-[7px] font-bold uppercase text-muted-foreground bg-muted">
-                                                    {plugin.format}
-                                                </span>
-                                            </button>
-                                        ))}
-                                    </div>
-                                </>
+                            <div className="mx-2 my-1 border-t border-border/30" />
+                            <p className="px-3 py-1 text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                External
+                            </p>
+                            {getPlatformCapabilities().hasNativePlugins && pluginScanState.scannedPlugins.length > 0 ? (
+                                <div className="max-h-32 overflow-y-auto">
+                                    {pluginScanState.scannedPlugins.map((plugin) => (
+                                        <button
+                                            type="button"
+                                            key={plugin.id}
+                                            className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
+                                            role="menuitem"
+                                            onClick={() => {
+                                                addExternalDevice(track.id, plugin.id, plugin.name);
+                                                setShowDeviceMenu(false);
+                                            }}
+                                        >
+                                            <span className="truncate">{plugin.name}</span>
+                                            <span className="ml-1 shrink-0 rounded px-1 py-px text-[7px] font-bold uppercase text-muted-foreground bg-muted">
+                                                {plugin.format}
+                                            </span>
+                                        </button>
+                                    ))}
+                                </div>
+                            ) : (
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <div className="flex items-center gap-2 px-3 py-2 opacity-50 cursor-not-allowed" aria-disabled="true">
+                                            <Monitor className="size-3 text-muted-foreground shrink-0" aria-hidden="true" />
+                                            <span className="text-[10px] text-muted-foreground">
+                                                {getPlatformCapabilities().hasNativePlugins ? 'No plugins found — scan first' : 'Desktop app required'}
+                                            </span>
+                                        </div>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="left" className="max-w-56 text-center">
+                                        {getPlatformCapabilities().hasNativePlugins
+                                            ? 'Scan for plugins in Preferences → Plugin Paths'
+                                            : DISABLED_REASONS.nativePlugins}
+                                    </TooltipContent>
+                                </Tooltip>
                             )}
                         </div>
                     )}

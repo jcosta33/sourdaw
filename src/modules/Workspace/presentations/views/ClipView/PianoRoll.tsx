@@ -49,6 +49,8 @@ type DragState = {
     origBeat: number;
     origPitch: number;
     origDuration: number;
+    _prevDeltaBeat: number;
+    _prevDeltaPitch: number;
 };
 
 type PianoRollMenu = { x: number; y: number; beat: number } | null;
@@ -77,7 +79,7 @@ type PianoRollProps = {
 export const PianoRoll = ({ clipId, selectedNoteIds, onSelectedNoteIdsChange }: PianoRollProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [zoom, setZoom] = useState(1);
-    const [scrollX, setScrollX] = useState(0);
+    const [_scrollX, setScrollX] = useState(0);
     const setSelectedNoteIds = onSelectedNoteIdsChange;
     const [gridSnap, setGridSnap] = useState(0.25);
     const [ctxMenu, setCtxMenu] = useState<PianoRollMenu>(null);
@@ -91,6 +93,8 @@ export const PianoRoll = ({ clipId, selectedNoteIds, onSelectedNoteIdsChange }: 
         origBeat: 0,
         origPitch: 0,
         origDuration: 1,
+        _prevDeltaBeat: 0,
+        _prevDeltaPitch: 0,
     });
     const rubberBandRef = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
     const drawPreviewRef = useRef<{ beat: number; pitch: number; duration: number } | null>(null);
@@ -407,7 +411,7 @@ export const PianoRoll = ({ clipId, selectedNoteIds, onSelectedNoteIdsChange }: 
             return;
         }
         const rect = canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left + scrollX;
+        const x = e.clientX - rect.left;
         const rawY = e.clientY - rect.top;
 
         // Click in ruler area — ignore for note editing
@@ -432,7 +436,11 @@ export const PianoRoll = ({ clipId, selectedNoteIds, onSelectedNoteIdsChange }: 
                 return;
             }
 
-            setSelectedNoteIds(new Set([hit.note.id]));
+            // If clicking a note that's already selected (part of multi-selection),
+            // keep the selection so the user can drag the group
+            if (!selectedNoteIds.has(hit.note.id)) {
+                setSelectedNoteIds(new Set([hit.note.id]));
+            }
 
             if (hit.edge === 'left') {
                 dragRef.current = {
@@ -443,6 +451,8 @@ export const PianoRoll = ({ clipId, selectedNoteIds, onSelectedNoteIdsChange }: 
                     origBeat: hit.note.startBeat,
                     origPitch: hit.note.pitch,
                     origDuration: hit.note.duration,
+                    _prevDeltaBeat: 0,
+                    _prevDeltaPitch: 0,
                 };
             } else if (hit.edge === 'right') {
                 dragRef.current = {
@@ -453,6 +463,8 @@ export const PianoRoll = ({ clipId, selectedNoteIds, onSelectedNoteIdsChange }: 
                     origBeat: hit.note.startBeat,
                     origPitch: hit.note.pitch,
                     origDuration: hit.note.duration,
+                    _prevDeltaBeat: 0,
+                    _prevDeltaPitch: 0,
                 };
             } else {
                 dragRef.current = {
@@ -463,6 +475,8 @@ export const PianoRoll = ({ clipId, selectedNoteIds, onSelectedNoteIdsChange }: 
                     origBeat: hit.note.startBeat,
                     origPitch: hit.note.pitch,
                     origDuration: hit.note.duration,
+                    _prevDeltaBeat: 0,
+                    _prevDeltaPitch: 0,
                 };
             }
         } else {
@@ -480,6 +494,8 @@ export const PianoRoll = ({ clipId, selectedNoteIds, onSelectedNoteIdsChange }: 
                     origBeat: 0,
                     origPitch: 0,
                     origDuration: 0,
+                    _prevDeltaBeat: 0,
+                    _prevDeltaPitch: 0,
                 };
                 return;
             }
@@ -509,6 +525,8 @@ export const PianoRoll = ({ clipId, selectedNoteIds, onSelectedNoteIdsChange }: 
                         origBeat: beat,
                         origPitch: pitch,
                         origDuration: gridSnap,
+                        _prevDeltaBeat: 0,
+                        _prevDeltaPitch: 0,
                     };
                     setSelectedNoteIds(new Set());
                     draw();
@@ -527,7 +545,7 @@ export const PianoRoll = ({ clipId, selectedNoteIds, onSelectedNoteIdsChange }: 
                 return;
             }
             const rect = canvas.getBoundingClientRect();
-            const hx = e.clientX - rect.left + scrollX;
+            const hx = e.clientX - rect.left;
             const hy = e.clientY - rect.top - RULER_HEIGHT;
             if (hy >= 0) {
                 const hit = hitTest(hx, hy);
@@ -547,7 +565,7 @@ export const PianoRoll = ({ clipId, selectedNoteIds, onSelectedNoteIdsChange }: 
             return;
         }
         const rect = canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left + scrollX;
+        const x = e.clientX - rect.left;
         const noteY = e.clientY - rect.top - RULER_HEIGHT;
 
         if (drag.mode === 'rubber-band') {
@@ -572,9 +590,25 @@ export const PianoRoll = ({ clipId, selectedNoteIds, onSelectedNoteIdsChange }: 
         } else if (drag.mode === 'move') {
             const deltaBeat = snap((x - drag.startX) / beatWidth);
             const deltaRow = Math.round((noteY - drag.startY) / ROW_HEIGHT);
-            const newBeat = Math.max(0, drag.origBeat + deltaBeat);
-            const newPitch = Math.max(0, Math.min(127, drag.origPitch - deltaRow));
-            moveMidiNote(clipId, drag.noteId!, newPitch, newBeat);
+            const deltaPitch = -deltaRow;
+            // Move ALL selected notes (or just the dragged one if none selected)
+            const idsToMove = selectedNoteIds.size > 0 && selectedNoteIds.has(drag.noteId!)
+                ? [...selectedNoteIds]
+                : [drag.noteId!];
+            for (const id of idsToMove) {
+                const n = notes.find((nn) => nn.id === id);
+                if (!n) {
+                    continue;
+                }
+                // Compute original position for this note based on the delta from the anchor note
+                const origN = n; // current position is being updated each move
+                const newBeat = Math.max(0, origN.startBeat + deltaBeat - (dragRef.current._prevDeltaBeat ?? 0));
+                const newPitch = Math.max(0, Math.min(127, origN.pitch + deltaPitch - (dragRef.current._prevDeltaPitch ?? 0)));
+                moveMidiNote(clipId, id, newPitch, newBeat);
+            }
+            // Track cumulative delta for incremental moves
+            dragRef.current._prevDeltaBeat = deltaBeat;
+            dragRef.current._prevDeltaPitch = deltaPitch;
         } else if (drag.mode === 'resize-left') {
             const deltaBeat = snap((x - drag.startX) / beatWidth);
             const newBeat = Math.max(0, drag.origBeat + deltaBeat);
@@ -640,6 +674,8 @@ export const PianoRoll = ({ clipId, selectedNoteIds, onSelectedNoteIdsChange }: 
                 origBeat: 0,
                 origPitch: 0,
                 origDuration: 1,
+                _prevDeltaBeat: 0,
+                _prevDeltaPitch: 0,
             };
             draw();
             return;
@@ -661,14 +697,38 @@ export const PianoRoll = ({ clipId, selectedNoteIds, onSelectedNoteIdsChange }: 
             const note = notes.find((n) => n.id === drag.noteId);
             if (note) {
                 const { noteId, origBeat, origPitch, origDuration, mode } = drag;
-                if (mode === 'move' && (note.startBeat !== origBeat || note.pitch !== origPitch)) {
-                    const newBeat = note.startBeat;
-                    const newPitch = note.pitch;
-                    pushUndoEntry(
-                        'Move MIDI note',
-                        () => moveMidiNote(clipId, noteId, origPitch, origBeat),
-                        () => moveMidiNote(clipId, noteId, newPitch, newBeat)
-                    );
+                if (mode === 'move') {
+                    // Bulk move undo: snapshot all moved notes
+                    const movedIds = selectedNoteIds.size > 0 && selectedNoteIds.has(noteId)
+                        ? [...selectedNoteIds]
+                        : [noteId];
+                    const currentPositions = movedIds.map((id) => {
+                        const n = notes.find((nn) => nn.id === id);
+                        return { id, beat: n?.startBeat ?? 0, pitch: n?.pitch ?? 0 };
+                    });
+                    const deltaBeat = note.startBeat - origBeat;
+                    const deltaPitch = note.pitch - origPitch;
+                    if (deltaBeat !== 0 || deltaPitch !== 0) {
+                        // Compute original positions by reversing the delta
+                        const origPositions = currentPositions.map((p) => ({
+                            id: p.id,
+                            beat: p.beat - deltaBeat,
+                            pitch: p.pitch - deltaPitch,
+                        }));
+                        pushUndoEntry(
+                            `Move ${movedIds.length} note${movedIds.length > 1 ? 's' : ''}`,
+                            () => {
+                                for (const p of origPositions) {
+                                    moveMidiNote(clipId, p.id, p.pitch, p.beat);
+                                }
+                            },
+                            () => {
+                                for (const p of currentPositions) {
+                                    moveMidiNote(clipId, p.id, p.pitch, p.beat);
+                                }
+                            }
+                        );
+                    }
                 } else if (
                     (mode === 'resize-right' || mode === 'resize-left') &&
                     (note.duration !== origDuration || note.startBeat !== origBeat)
@@ -700,6 +760,8 @@ export const PianoRoll = ({ clipId, selectedNoteIds, onSelectedNoteIdsChange }: 
             origBeat: 0,
             origPitch: 0,
             origDuration: 1,
+            _prevDeltaBeat: 0,
+            _prevDeltaPitch: 0,
         };
     };
 
@@ -709,7 +771,7 @@ export const PianoRoll = ({ clipId, selectedNoteIds, onSelectedNoteIdsChange }: 
             return;
         }
         const rect = canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left + scrollX;
+        const x = e.clientX - rect.left;
         const rawY = e.clientY - rect.top;
         if (rawY < RULER_HEIGHT) {
             return;
@@ -883,7 +945,7 @@ export const PianoRoll = ({ clipId, selectedNoteIds, onSelectedNoteIdsChange }: 
             return;
         }
         const rect = canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left + scrollX;
+        const x = e.clientX - rect.left;
         setCtxMenu({ x: e.clientX, y: e.clientY, beat: x / beatWidth });
     };
 

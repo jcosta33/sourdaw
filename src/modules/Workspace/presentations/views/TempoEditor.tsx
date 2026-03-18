@@ -8,7 +8,7 @@ import { setTempo } from '../../useCases/workspaceViewActions';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { tempoMapStore, type TempoMapStoreState } from '#/modules/Transport/stores/tempoMapStore';
 import { addTempoChange, removeTempoChange, updateTempoChange } from '../../useCases/workspaceViewActions';
-import { type TempoChange } from '#/modules/Transport/models/TempoMap';
+import { type TempoChange } from '#/modules/Transport/useCases/transportQueries';
 import { Map, Plus, Trash2 } from 'lucide-react';
 
 const defaultTempoMapState: TempoMapStoreState = { changes: [] };

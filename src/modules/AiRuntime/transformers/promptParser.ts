@@ -4,7 +4,7 @@
  * regex patterns, preset matching, and recipe lookups.
  */
 
-import { type AppAction } from '#/modules/Command/models/AppAction';
+import { type AppAction } from '#/modules/Command/useCases/commandQueries';
 import { type ProjectContext } from '../models/ProjectContext';
 import { type PresetContext } from '../helpers/presetActions';
 import { findBestMatch } from '../helpers/fuzzySearch';

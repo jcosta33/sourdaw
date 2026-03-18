@@ -8,9 +8,9 @@ import { BUILTIN_PLUGINS } from '../../useCases/workspaceViewActions';
 import { useTracks } from '../hooks/useTracks';
 import { decodeAudioFile } from '../../useCases/workspaceViewActions';
 import { usePreviewAudio } from '../hooks/usePreviewAudio';
-import { SamplesTab } from '../components/sidebar/SamplesTab';
-import { InstrumentsTab } from '../components/sidebar/InstrumentsTab';
-import { EffectsTab } from '../components/sidebar/EffectsTab';
+import { SamplesTab } from './sidebar/SamplesTab';
+import { InstrumentsTab } from './sidebar/InstrumentsTab';
+import { EffectsTab } from './sidebar/EffectsTab';
 
 type BrowserTab = 'samples' | 'instruments' | 'effects';
 

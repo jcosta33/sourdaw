@@ -165,15 +165,21 @@ export async function executeAppAction(action: AppAction, options?: ExecuteOptio
         return;
     }
 
+    // Capture undo info BEFORE executing — this lets describe() snapshot current
+    // state for destructive actions like removeTrack / removeClip.
+    let undoResult: { label: string; inverseAction?: AppAction | null } | null = null;
+    if (handler.undoable) {
+        undoResult = handler.describe(action);
+    }
+
     await handler.execute(action);
 
     if (getCollaborationStoreValue()?.sessionId) {
         broadcastAction(action);
     }
 
-    if (handler.undoable) {
-        const result = handler.describe(action);
-        const entry = createUndoEntry(result.label, action, result.inverseAction ?? null, options?.source ?? 'manual');
+    if (undoResult) {
+        const entry = createUndoEntry(undoResult.label, action, undoResult.inverseAction ?? null, options?.source ?? 'manual');
         if (options?.groupId) {
             entry.groupId = options.groupId;
             entry.groupLabel = options.groupLabel;

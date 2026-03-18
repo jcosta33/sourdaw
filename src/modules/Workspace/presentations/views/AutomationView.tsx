@@ -2,7 +2,7 @@ import { type ReactElement, useRef, useSyncExternalStore } from 'react';
 import { ArrangementBar } from '#/modules/Timeline/presentations/views/ArrangementBar';
 import { timelineViewStore, scrollTimeline, setScrollY } from '#/modules/Timeline/stores/timelineViewStore';
 import { useTracks } from '../hooks/useTracks';
-import { TrackAutomationSection } from '../components/automationView/TrackAutomationSection';
+import { TrackAutomationSection } from './automationView/TrackAutomationSection';
 
 export const AutomationView = (): ReactElement => {
     const { tracks } = useTracks();

@@ -15,7 +15,7 @@ import { AiActionHistoryPanel } from '#/modules/AiRuntime/presentations/views/Ai
 import { MixAnalysisPanel } from '#/modules/AiRuntime/presentations/views/MixAnalysisPanel';
 import { ExportDialog } from '#/modules/Project/presentations/views/ExportDialog';
 import { PreferencesDialog } from '../components/PreferencesDialog';
-import { useGlobalKeyboardShortcuts } from '../hooks/useGlobalKeyboardShortcuts';
+import { useGlobalKeyboardShortcuts } from '#/modules/Command/presentations/views/keyboardShortcutsContract';
 import { initializeAudioEngine } from '../../useCases/workspaceViewActions';
 import { initWebMidi } from '../../useCases/workspaceViewActions';
 import { loadProject, saveProject, newProject } from '../../useCases/workspaceViewActions';

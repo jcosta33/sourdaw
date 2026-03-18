@@ -22,7 +22,7 @@ import {
     setTrackPan as engineSetTrackPan,
 } from '../../../useCases/workspaceViewActions';
 import { useMeterLevel } from '../../hooks/useMeterLevel';
-import { LevelMeter } from '../LevelMeter';
+import { LevelMeter } from '../../components/LevelMeter';
 import { DeviceChainSection } from './DeviceChainSection';
 import { SendsSection } from './SendsSection';
 import { IOSection } from './IOSection';

@@ -15,8 +15,8 @@ import {
     saveCurrentAsPreset,
     deleteUserPreset,
 } from '../../../useCases/workspaceViewActions';
-import { PresetItem } from './PresetItem';
-import { PRESET_CATEGORIES, CATEGORY_ICONS } from './sidebarConstants';
+import { PresetItem } from '../../components/sidebar/PresetItem';
+import { PRESET_CATEGORIES, CATEGORY_ICONS } from '../../components/sidebar/sidebarConstants';
 import { type PreviewHandle } from '../../hooks/usePreviewAudio';
 
 export type InstrumentsTabProps = {

@@ -1,12 +1,14 @@
 import { type ReactElement, useSyncExternalStore, useState } from 'react';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
-import { Search, ChevronDown, ChevronRight, Plug, RefreshCw, Loader2, Plus, AlertCircle } from 'lucide-react';
+import { Search, ChevronDown, ChevronRight, Plug, RefreshCw, Loader2, Plus, AlertCircle, Monitor } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
 import { pluginScanStore, defaultPluginScanState } from '../../stores/pluginScanStore';
 import { startPluginScan } from '../../useCases/pluginScanUseCases';
-import { isTauriAvailable, type ScannedPlugin } from '../../useCases/pluginBridge';
+import { type ScannedPlugin } from '../../useCases/pluginBridge';
 import { createTrackForPlugin, loadExternalPlugin } from '../../useCases/pluginBrowserActions';
+import { getPlatformCapabilities, DISABLED_REASONS } from '#/helpers/platformCapabilities';
+import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 
 type PluginBrowserProps = {
     selectedTrackId: string | null;
@@ -29,8 +31,33 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
     const [collapsedFormats, setCollapsedFormats] = useState<Set<string>>(new Set());
     const [localSearch, setLocalSearch] = useState('');
 
-    if (!isTauriAvailable()) {
-        return null;
+    const { hasNativePlugins } = getPlatformCapabilities();
+
+    if (!hasNativePlugins) {
+        return (
+            <div className="space-y-1">
+                <div className="flex items-center gap-1 px-1 py-0.5 pt-2">
+                    <Plug className="size-3 text-muted-foreground" aria-hidden="true" />
+                    <span className="text-[10px] font-medium text-muted-foreground uppercase">External Plugins</span>
+                </div>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <div className="px-2 py-3 text-center opacity-50 cursor-not-allowed" aria-disabled="true">
+                            <Monitor className="size-5 text-muted-foreground mx-auto mb-1" aria-hidden="true" />
+                            <p className="text-[10px] text-muted-foreground">
+                                VST / AU / CLAP plugins
+                            </p>
+                            <p className="text-[9px] text-muted-foreground/60 mt-0.5">
+                                Desktop app required
+                            </p>
+                        </div>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-64 text-center">
+                        {DISABLED_REASONS.nativePlugins}
+                    </TooltipContent>
+                </Tooltip>
+            </div>
+        );
     }
 
     const query = (searchQuery || localSearch).toLowerCase().trim();

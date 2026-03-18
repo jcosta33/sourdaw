@@ -5,9 +5,9 @@
 
 import { undoStore } from '../stores/undoStore';
 import { type UndoEntry, generateGroupId as modelGenerateGroupId } from '../models/UndoEntry';
-import { type AppAction } from '../models/AppAction';
+import { type AppAction, type AppActionType } from '../models/AppAction';
 
-export type { UndoEntry, AppAction };
+export type { UndoEntry, AppAction, AppActionType };
 export { modelGenerateGroupId as generateGroupId };
 
 /** Get the undo store snapshot. */

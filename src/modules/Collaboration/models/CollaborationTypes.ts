@@ -1,4 +1,4 @@
-import { type AppAction } from '#/modules/Command/models/AppAction';
+import { type AppAction } from '#/modules/Command/useCases/commandQueries';
 
 export type PeerId = string;
 

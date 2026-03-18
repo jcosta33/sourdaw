@@ -9,7 +9,7 @@
  * single preset still defer to the LLM path.
  */
 
-import { type AppAction } from '#/modules/Command/models/AppAction';
+import { type AppAction } from '#/modules/Command/useCases/commandQueries';
 
 // ── Context passed to every preset builder ──────────────────────────────
 

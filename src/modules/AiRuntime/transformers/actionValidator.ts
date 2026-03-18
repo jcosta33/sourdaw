@@ -2,7 +2,7 @@
  * Transformer: pure validation and sanitisation of raw LLM action payloads.
  * No I/O — only transforms unknown input into typed AppAction.
  */
-import { type AppAction, type AppActionType } from '#/modules/Command/models/AppAction';
+import { type AppAction, type AppActionType } from '#/modules/Command/useCases/commandQueries';
 
 const VALID_TYPES: ReadonlySet<string> = new Set<AppActionType>([
     'addTrack',

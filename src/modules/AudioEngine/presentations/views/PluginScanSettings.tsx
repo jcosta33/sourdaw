@@ -1,10 +1,11 @@
 import { type ReactElement, useSyncExternalStore, useState } from 'react';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
-import { FolderOpen, Trash2, RefreshCw, Loader2, Plus, AlertCircle, CheckCircle2, Plug } from 'lucide-react';
+import { FolderOpen, Trash2, RefreshCw, Loader2, Plus, AlertCircle, CheckCircle2, Plug, Monitor } from 'lucide-react';
 import { pluginScanStore, defaultPluginScanState } from '../../stores/pluginScanStore';
 import { startPluginScan, addScanPath, removeScanPath } from '../../useCases/pluginScanUseCases';
-import { isTauriAvailable } from '../../useCases/pluginBridge';
+import { getPlatformCapabilities, DISABLED_REASONS } from '#/helpers/platformCapabilities';
+import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 
 export const PluginScanSettings = (): ReactElement | null => {
     const state = useSyncExternalStore(
@@ -13,11 +14,30 @@ export const PluginScanSettings = (): ReactElement | null => {
     );
     const [newPath, setNewPath] = useState('');
 
-    if (!isTauriAvailable()) {
+    const { hasPluginScanning } = getPlatformCapabilities();
+
+    if (!hasPluginScanning) {
         return (
-            <div className="text-[10px] text-muted-foreground">
-                External plugin hosting is only available in the desktop app.
-            </div>
+            <section>
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1">
+                    <Plug className="size-3" aria-hidden="true" />
+                    Plugin Paths
+                </label>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <div className="flex items-center gap-2 rounded-md border border-border/30 bg-surface-overlay/30 px-3 py-3 opacity-50 cursor-not-allowed" aria-disabled="true">
+                            <Monitor className="size-4 text-muted-foreground shrink-0" aria-hidden="true" />
+                            <div>
+                                <p className="text-[10px] text-muted-foreground">Plugin scanning unavailable</p>
+                                <p className="text-[9px] text-muted-foreground/60">Desktop app required</p>
+                            </div>
+                        </div>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-64 text-center">
+                        {DISABLED_REASONS.pluginScanning}
+                    </TooltipContent>
+                </Tooltip>
+            </section>
         );
     }
 

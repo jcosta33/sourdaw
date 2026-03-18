@@ -1,9 +1,9 @@
 import { type ReactElement, useState } from 'react';
-import { VelocityLane } from '../../components/automationLane/VelocityLane';
-import { PressureLane } from '../../components/automationLane/PressureLane';
-import { SlideLane } from '../../components/automationLane/SlideLane';
-import { CCLane } from '../../components/automationLane/CCLane';
-import { PitchBendLane } from '../../components/automationLane/PitchBendLane';
+import { VelocityLane } from '../automationLane/VelocityLane';
+import { PressureLane } from '../automationLane/PressureLane';
+import { SlideLane } from '../automationLane/SlideLane';
+import { CCLane } from '../automationLane/CCLane';
+import { PitchBendLane } from '../automationLane/PitchBendLane';
 
 type LaneMode =
     | { kind: 'velocity' }
