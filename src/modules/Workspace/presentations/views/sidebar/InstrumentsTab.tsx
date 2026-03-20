@@ -221,9 +221,10 @@ export const InstrumentsTab = ({
                 </div>
                 
                 <div className="flex flex-col gap-[1px]">
-                    <button
-                        type="button"
-                        className="flex w-full items-center justify-between px-2 py-2 rounded border border-transparent hover:bg-surface-raised hover:border-border/40 transition-colors group"
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="w-full justify-between px-2 py-2 h-auto group"
                         onClick={() => pushRoute({ id: 'instruments-user', title: 'My Presets' })}
                     >
                         <div className="flex items-center gap-2">
@@ -234,17 +235,18 @@ export const InstrumentsTab = ({
                             <span className="text-[10px] text-muted-foreground group-hover:text-foreground/70 transition-colors">{filteredUser.length}</span>
                             <ChevronRight className="size-3.5 text-muted-foreground opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
                         </div>
-                    </button>
+                    </Button>
 
                     {categoriesWithPresets.map((cat) => {
                         const presetsInCat = filteredFactory.filter((p) => p.category === cat);
                         const CatIcon = CATEGORY_ICONS[cat] ?? Folder;
                         
                         return (
-                            <button
+                            <Button
                                 key={cat}
-                                type="button"
-                                className="flex w-full items-center justify-between px-2 py-2 rounded border border-transparent hover:bg-surface-raised hover:border-border/40 transition-colors group"
+                                variant="ghost"
+                                size="sm"
+                                className="w-full justify-between px-2 py-2 h-auto group"
                                 onClick={() => pushRoute({ id: `instruments-${cat}`, title: cat })}
                             >
                                 <div className="flex items-center gap-2">
@@ -255,7 +257,7 @@ export const InstrumentsTab = ({
                                     <span className="text-[10px] text-muted-foreground group-hover:text-foreground/70 transition-colors">{presetsInCat.length}</span>
                                     <ChevronRight className="size-3.5 text-muted-foreground opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
                                 </div>
-                            </button>
+                            </Button>
                         );
                     })}
                 </div>

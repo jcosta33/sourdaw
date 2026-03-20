@@ -1,10 +1,10 @@
 import { type ReactElement, useSyncExternalStore } from 'react';
-import { Knob } from '#/components/ui/knob';
+import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { BipolarSlider } from '#/components/ui/bipolar-slider';
 import { cn } from '#/helpers/Styles/cn';
 import { MidiLearnButton } from '#/modules/Track/presentations/views/MidiLearnButton';
 import { type DeviceParameter } from '../../../useCases/workspaceViewActions';
-import { addAutomationLane } from '../../../useCases/workspaceViewActions';
+import { addAutomationLane, removeAutomationLane } from '../../../useCases/workspaceViewActions';
 import { setDeviceParameter } from '../../../useCases/workspaceViewActions';
 import { automationStore } from '#/modules/Track/stores/automationStore';
 import { type Device } from '../../../useCases/workspaceViewActions';
@@ -21,7 +21,8 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
         () => automationStore.value
     );
 
-    const hasAutomation = autoState?.lanes.some((l) => l.trackId === trackId && l.parameterId === param.id) ?? false;
+    const activeLane = autoState?.lanes.find((l) => l.trackId === trackId && l.parameterId === param.id);
+    const hasAutomation = !!activeLane;
 
     const value = device.parameterValues[param.id] ?? param.value;
 
@@ -59,12 +60,18 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                             <button
                                 type="button"
                                 className={cn(
-                                    'size-3 rounded-full border shrink-0 transition-colors',
+                                    'size-3 rounded-full border shrink-0 transition-colors cursor-pointer',
                                     hasAutomation ? 'border-orange-400 bg-orange-400/20' : 'border-muted-foreground/30 hover:bg-muted'
                                 )}
-                                onClick={() => addAutomationLane(trackId, param.id, param.name)}
+                                onClick={() => {
+                                    if (activeLane) {
+                                        removeAutomationLane(activeLane.id);
+                                    } else {
+                                        addAutomationLane(trackId, param.id, param.name);
+                                    }
+                                }}
                                 aria-label={`Automate ${param.name}`}
-                                title={hasAutomation ? 'Automation active' : 'Add automation lane'}
+                                title={hasAutomation ? 'Remove automation lane' : 'Add automation lane'}
                             />
                         )}
                     </div>
@@ -91,12 +98,18 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                             <button
                                 type="button"
                                 className={cn(
-                                    'size-3 rounded-full border shrink-0 transition-colors',
+                                    'size-3 rounded-full border shrink-0 transition-colors cursor-pointer',
                                     hasAutomation ? 'border-orange-400 bg-orange-400/20' : 'border-muted-foreground/30 hover:bg-muted'
                                 )}
-                                onClick={() => addAutomationLane(trackId, param.id, param.name)}
+                                onClick={() => {
+                                    if (activeLane) {
+                                        removeAutomationLane(activeLane.id);
+                                    } else {
+                                        addAutomationLane(trackId, param.id, param.name);
+                                    }
+                                }}
                                 aria-label={`Automate ${param.name}`}
-                                title={hasAutomation ? 'Automation active' : 'Add automation lane'}
+                                title={hasAutomation ? 'Remove automation lane' : 'Add automation lane'}
                             />
                         )}
                     </div>
@@ -129,13 +142,14 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                         className="w-full"
                     />
                 ) : (
-                    <Knob
+                    <RotaryKnob
                         value={value}
-                        onValueChange={handleKnobChange}
+                        onChange={handleKnobChange}
                         min={param.minValue}
                         max={param.maxValue}
-                        step={param.type === 'int' ? 1 : 0}
+                        step={param.type === 'int' ? 1 : undefined}
                         defaultValue={param.defaultValue ?? param.value}
+                        bipolar={param.minValue < 0 && param.maxValue > 0}
                         size={
                             param.name.toLowerCase().includes('mix') ||
                             param.name.toLowerCase().includes('dry/wet') ||
@@ -145,7 +159,6 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                                 ? 64
                                 : 48
                         }
-                        aria-label={param.name}
                     />
                 )}
             </div>

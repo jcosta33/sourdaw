@@ -7,6 +7,7 @@ import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { trackStore } from '#/modules/Track/stores/trackStore';
 import { llmStatusStore } from '#/modules/AiRuntime/stores/llmStatusStore';
 import { History, Users } from 'lucide-react';
+import { Button } from '#/components/ui/button';
 
 export const StatusBar = (): ReactElement => {
     const [engineInfo, setEngineInfo] = useState(() => getEngineState());
@@ -150,9 +151,10 @@ export const StatusBar = (): ReactElement => {
                 {undoState.lastAction && (
                     <span className="text-[10px] text-muted-foreground/60">Last: {undoState.lastAction.label}</span>
                 )}
-                <button
-                    type="button"
-                    className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                <Button
+                    variant="ghost"
+                    size="xs"
+                    className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground h-5"
                     onClick={() => {
                         const ws = workspaceStore.value;
                         if (ws) {
@@ -170,10 +172,11 @@ export const StatusBar = (): ReactElement => {
                     />
                     <Users className="size-3" />
                     {collab.isEnabled ? collab.peers.length : 0}
-                </button>
-                <button
-                    type="button"
-                    className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                </Button>
+                <Button
+                    variant="ghost"
+                    size="xs"
+                    className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground h-5"
                     onClick={() => {
                         const ws = workspaceStore.value;
                         if (ws) {
@@ -185,7 +188,7 @@ export const StatusBar = (): ReactElement => {
                 >
                     <History className="size-3" />
                     {undoState.undoCount} undo{undoState.undoCount !== 1 ? 's' : ''}
-                </button>
+                </Button>
                 <span
                     className={cn(
                         'size-1.5 rounded-full',

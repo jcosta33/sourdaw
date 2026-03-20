@@ -1,6 +1,6 @@
 import { type ReactElement } from 'react';
 import { Slider } from '#/components/ui/slider';
-import { cn } from '#/helpers/Styles/cn';
+import { LatchButton } from '#/components/daw/LatchButton';
 import { useTracks } from '../../hooks/useTracks';
 import { setSend, toggleSendPreFader } from '../../../useCases/workspaceViewActions';
 import { type Track } from '../../../useCases/workspaceViewActions';
@@ -40,14 +40,11 @@ export const SendsSection = ({ track }: SendsSectionProps): ReactElement | null 
                             className="flex-1"
                             aria-label={`Send to ${bus.name}`}
                         />
-                        <button
-                            type="button"
-                            className={cn(
-                                'shrink-0 rounded px-0.5 text-[5px] font-bold leading-tight',
-                                isPreFader
-                                    ? 'bg-yellow-500/20 text-yellow-400'
-                                    : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
-                            )}
+                        <LatchButton
+                            active={isPreFader}
+                            variant="amber"
+                            size="icon-sm"
+                            className="shrink-0 text-[5px] font-bold leading-tight px-0.5"
                             onClick={(e) => {
                                 e.stopPropagation();
                                 toggleSendPreFader(track.id, bus.id);
@@ -56,7 +53,7 @@ export const SendsSection = ({ track }: SendsSectionProps): ReactElement | null 
                             title={isPreFader ? 'Pre-fader (click for post)' : 'Post-fader (click for pre)'}
                         >
                             {isPreFader ? 'PRE' : 'POST'}
-                        </button>
+                        </LatchButton>
                     </div>
                 );
             })}

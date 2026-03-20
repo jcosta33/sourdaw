@@ -149,7 +149,7 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
 
     return (
         <aside
-            className="flex shrink-0 flex-col border-r border-border/50 bg-surface-raised"
+            className="flex shrink-0 flex-col border-r border-border-hairline bg-[#0a0a0a] shadow-[inset_-1px_0_0_rgba(255,255,255,0.02)]"
             style={style}
             aria-label="Browser panel"
         >

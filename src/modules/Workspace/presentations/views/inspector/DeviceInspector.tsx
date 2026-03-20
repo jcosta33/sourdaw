@@ -1,9 +1,10 @@
 import { type ReactElement } from 'react';
 import { Card } from '#/components/ui/card';
 import { Button } from '#/components/ui/button';
-import { ChevronRight, Power } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { BUILTIN_PLUGINS } from '../../../useCases/workspaceViewActions';
 import { bypassDevice } from '../../../useCases/workspaceViewActions';
+import { MechanicalSwitch } from '#/components/daw/MechanicalSwitch';
 import { getSidechainSource, addSidechainRoute, removeSidechainRoute } from '../../../useCases/workspaceViewActions';
 import { useTracks } from '../../hooks/useTracks';
 import { type Device } from '../../../useCases/workspaceViewActions';
@@ -33,14 +34,11 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
                     </Button>
                     <h3 className="text-xs font-medium text-foreground">{device.name}</h3>
                 </div>
-                <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    aria-label={device.bypassed ? 'Enable' : 'Bypass'}
-                    onClick={() => bypassDevice(device.id, !device.bypassed)}
-                >
-                    <Power className={`size-3 ${device.bypassed ? 'text-muted-foreground' : 'text-emerald-400'}`} />
-                </Button>
+                <MechanicalSwitch
+                    checked={!device.bypassed}
+                    onChange={(c) => bypassDevice(device.id, !c)}
+                    size="sm"
+                />
             </div>
 
             {isSidechainComp && (

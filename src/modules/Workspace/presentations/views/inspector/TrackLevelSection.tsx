@@ -1,7 +1,7 @@
 import { type ReactElement } from 'react';
 import { Card } from '#/components/ui/card';
 import { Slider } from '#/components/ui/slider';
-import { Knob } from '#/components/ui/knob';
+import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { MidiLearnButton } from '#/modules/Track/presentations/views/MidiLearnButton';
 import { setTrackGain, setTrackPan } from '../../../useCases/workspaceViewActions';
 import { type Track } from '../../../useCases/workspaceViewActions';
@@ -59,23 +59,16 @@ export const TrackLevelSection = ({ track }: TrackLevelSectionProps): ReactEleme
                             </div>
                         </div>
                         <div className="shrink-0 flex items-center justify-center">
-                            <Knob
-                                value={track.pan + 50}
-                                onValueChange={(v) => {
-                                    if (v !== undefined) {
-                                        setTrackPan(track.id, v - 50);
-                                    }
+                            <RotaryKnob
+                                value={track.pan}
+                                onChange={(v) => {
+                                    setTrackPan(track.id, v);
                                 }}
-                                defaultValue={50}
-                                min={0}
-                                max={100}
-                                step={1}
-                                size={48}
+                                min={-50}
+                                max={50}
+                                size={32}
                                 aria-label={`${track.name} pan`}
-                                formatValue={(v) => {
-                                    const p = v - 50;
-                                    return p === 0 ? 'C' : p > 0 ? `R${p}` : `L${Math.abs(p)}`;
-                                }}
+                                bipolar
                             />
                         </div>
                     </div>

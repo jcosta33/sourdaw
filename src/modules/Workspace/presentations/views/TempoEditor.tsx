@@ -1,6 +1,7 @@
 import { type ReactElement, useState, useRef, useEffect, useSyncExternalStore } from 'react';
 import { Input } from '#/components/ui/input';
 import { Button } from '#/components/ui/button';
+import { ValueField } from '#/components/daw/ValueField';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { cn } from '#/helpers/Styles/cn';
 import { useTransportState } from '../hooks/useTransportState';
@@ -24,9 +25,7 @@ const useTempoMapState = (): TempoMapStoreState => {
 export const TempoEditor = (): ReactElement => {
     const transport = useTransportState();
     const tempoMap = useTempoMapState();
-    const [editingTempo, setEditingTempo] = useState(false);
     const [editingTimeSig, setEditingTimeSig] = useState(false);
-    const [tempoValue, setTempoValue] = useState('');
     const [numValue, setNumValue] = useState('');
     const [denValue, setDenValue] = useState('');
     const tapTimesRef = useRef<number[]>([]);
@@ -52,19 +51,6 @@ export const TempoEditor = (): ReactElement => {
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [mapOpen]);
-
-    const startTempoEdit = () => {
-        setTempoValue(transport.tempo.toFixed(2));
-        setEditingTempo(true);
-    };
-
-    const commitTempo = () => {
-        const bpm = parseFloat(tempoValue);
-        if (!isNaN(bpm) && bpm >= 20 && bpm <= 300) {
-            setTempo(bpm);
-        }
-        setEditingTempo(false);
-    };
 
     const startTimeSigEdit = () => {
         setNumValue(String(transport.timeSignatureNumerator));
@@ -145,46 +131,25 @@ export const TempoEditor = (): ReactElement => {
     };
 
     return (
-        <div className="relative flex items-center gap-1 px-1">
-            {editingTempo ? (
-                <Input
-                    type="number"
-                    value={tempoValue}
-                    onChange={(e) => setTempoValue(e.target.value)}
-                    onBlur={commitTempo}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                            commitTempo();
-                        }
-                        if (e.key === 'Escape') {
-                            setEditingTempo(false);
-                        }
-                    }}
-                    className="h-6 w-16 text-center font-mono text-xs"
-                    min={20}
-                    max={300}
-                    step={0.01}
-                    autoFocus
-                    aria-label="Tempo BPM"
-                />
-            ) : (
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <button
-                            type="button"
-                            className="rounded px-2 py-0.5 flex items-center hover:bg-accent/50 transition-colors"
-                            onClick={startTempoEdit}
-                            aria-label={`Tempo: ${transport.tempo} BPM. Click to edit.`}
-                        >
-                            <span className="font-mono text-xl font-medium tabular-nums text-foreground">
-                                {transport.tempo.toFixed(2)}
-                            </span>
-                            <span className="text-xs text-muted-foreground ml-1 mt-1 font-sans uppercase">BPM</span>
-                        </button>
-                    </TooltipTrigger>
-                    <TooltipContent>Click to edit tempo</TooltipContent>
-                </Tooltip>
-            )}
+        <div className="relative flex items-center gap-2 px-2 bg-bg-panelRaised shadow-elevation-flush border border-border-soft rounded-sm h-8">
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <div>
+                        <ValueField
+                            value={transport.tempo}
+                            onChange={setTempo}
+                            onReset={() => setTempo(120)}
+                            min={20}
+                            max={300}
+                            step={1}
+                            fineStep={0.01}
+                            unit=" BPM"
+                            className="w-16"
+                        />
+                    </div>
+                </TooltipTrigger>
+                <TooltipContent>Drag up/down to adjust, double-click to reset, Shift for fine.</TooltipContent>
+            </Tooltip>
 
             <Tooltip>
                 <TooltipTrigger asChild>

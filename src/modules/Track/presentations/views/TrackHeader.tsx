@@ -1,5 +1,6 @@
 import { type ReactElement } from 'react';
 import { Button } from '#/components/ui/button';
+import { LatchButton } from '#/components/daw/LatchButton';
 import {
     Circle,
     ChevronRight,
@@ -55,8 +56,8 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
             <TrackContextMenu track={track}>
                 <div
                     className={cn(
-                        'relative flex shrink-0 items-center gap-1 border-b border-border/30 px-1 cursor-pointer',
-                        isSelected ? 'bg-accent/30' : ''
+                        'relative flex shrink-0 items-center gap-1 border-b border-border-soft px-1 cursor-pointer transition-colors duration-fast',
+                        isSelected ? 'bg-[#080808] shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)]' : 'hover:bg-[#111]'
                     )}
                     style={{ height: trackHeight }}
                     role="row"
@@ -91,9 +92,9 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
         <TrackContextMenu track={track}>
             <div
                 className={cn(
-                    'relative flex shrink-0 items-center gap-1 border-b border-border/30 px-2 cursor-pointer',
+                    'relative flex shrink-0 items-center gap-1 border-b border-border-soft px-2 cursor-pointer transition-colors duration-fast',
                     track.parentId ? 'pl-5' : '',
-                    isSelected ? 'bg-accent/30' : ''
+                        isSelected ? 'bg-[#080808] shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)]' : 'hover:bg-[#111]'
                 )}
                 style={{ height: trackHeight }}
                 role="row"
@@ -125,21 +126,19 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                     {track.kind === 'audio' || track.kind === 'midi' ? (
                         <Tooltip>
                             <TooltipTrigger asChild>
-                                <Button
-                                    variant="ghost"
-                                    size="icon-xs"
+                                <LatchButton
+                                    active={track.inputMonitoring === 'on'}
+                                    variant="mint"
+                                    size="icon-sm"
                                     aria-label={`Input monitoring: ${INPUT_MONITORING_LABEL[track.inputMonitoring]}`}
-                                    className={cn(
-                                        'size-5 text-[10px] font-bold',
-                                        track.inputMonitoring === 'on' ? 'text-green-400' : ''
-                                    )}
+                                    className="font-bold text-[10px]"
                                     onClick={(e) => {
                                         e.stopPropagation();
                                         setInputMonitoring(track.id, INPUT_MONITORING_CYCLE[track.inputMonitoring]);
                                     }}
                                 >
                                     {INPUT_MONITORING_LABEL[track.inputMonitoring][0]}
-                                </Button>
+                                </LatchButton>
                             </TooltipTrigger>
                             <TooltipContent side="bottom">
                                 Input monitoring: {INPUT_MONITORING_LABEL[track.inputMonitoring]}
@@ -149,34 +148,33 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
 
                     <Tooltip>
                         <TooltipTrigger asChild>
-                            <Button
-                                variant="ghost"
-                                size="icon-xs"
+                            <LatchButton
+                                active={track.armed}
+                                variant="red"
+                                size="icon-sm"
                                 aria-label={track.armed ? `Disarm ${track.name}` : `Arm ${track.name}`}
-                                aria-pressed={track.armed}
-                                className={cn('size-5', track.armed ? 'text-red-500' : '')}
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     armTrack(track.id, !track.armed);
                                 }}
                             >
                                 <Circle
-                                    className={cn('size-2.5', track.armed ? 'fill-current' : '')}
+                                    className={cn('size-2.5', track.armed ? 'fill-state-record' : '')}
                                     aria-hidden="true"
                                 />
-                            </Button>
+                            </LatchButton>
                         </TooltipTrigger>
                         <TooltipContent side="bottom">{track.armed ? 'Disarm' : 'Arm for recording'}</TooltipContent>
                     </Tooltip>
 
                     <Tooltip>
                         <TooltipTrigger asChild>
-                            <Button
-                                variant="ghost"
-                                size="icon-xs"
+                            <LatchButton
+                                active={track.muted}
+                                variant="amber"
+                                size="icon-sm"
                                 aria-label={track.muted ? `Unmute ${track.name}` : `Mute ${track.name}`}
-                                aria-pressed={track.muted}
-                                className={cn('size-5 text-[9px] font-bold', track.muted ? 'text-amber-500 bg-amber-500/20' : '')}
+                                className="font-bold text-[9px]"
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     muteTrack(track.id, !track.muted);
@@ -184,19 +182,19 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                                 }}
                             >
                                 M
-                            </Button>
+                            </LatchButton>
                         </TooltipTrigger>
                         <TooltipContent side="bottom">{track.muted ? 'Unmute' : 'Mute'}</TooltipContent>
                     </Tooltip>
 
                     <Tooltip>
                         <TooltipTrigger asChild>
-                            <Button
-                                variant="ghost"
-                                size="icon-xs"
+                            <LatchButton
+                                active={track.soloed}
+                                variant="cyan"
+                                size="icon-sm"
                                 aria-label={track.soloed ? `Unsolo ${track.name}` : `Solo ${track.name}`}
-                                aria-pressed={track.soloed}
-                                className={cn('size-5 text-[9px] font-bold', track.soloed ? 'text-blue-500 bg-blue-500/20' : '')}
+                                className="font-bold text-[9px]"
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     if (e.metaKey || e.ctrlKey) {
@@ -207,7 +205,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                                 }}
                             >
                                 S
-                            </Button>
+                            </LatchButton>
                         </TooltipTrigger>
                         <TooltipContent side="bottom">
                             {track.soloed ? 'Unsolo' : 'Solo (⌘+click for additive)'}

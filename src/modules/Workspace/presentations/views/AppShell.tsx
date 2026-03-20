@@ -1,4 +1,13 @@
-import { type ReactElement, type ReactNode, lazy, Suspense, useEffect, useRef, useState } from 'react';
+import {
+    type ReactElement,
+    type ReactNode,
+    lazy,
+    Suspense,
+    useEffect,
+    useRef,
+    useState,
+    useSyncExternalStore,
+} from 'react';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
 import { TransportBar } from './TransportBar';
 import { Sidebar } from './Sidebar';
@@ -11,13 +20,14 @@ import { RoutingMatrix } from './RoutingMatrix';
 import { AutomationView } from './AutomationView';
 import { ClipView } from './ClipView';
 import { AnalysisPanel } from './AnalysisPanel';
-import { ResizeHandle } from '../components/ResizeHandle';
+
 import { CommandPalette } from '#/modules/Command/presentations/views/CommandPalette';
 import { VoiceCommandOverlay } from '#/modules/AiRuntime/presentations/views/VoiceCommandOverlay';
 import { AiChangeToast } from '#/modules/AiRuntime/presentations/views/AiChangeToast';
 import { NotificationToast } from '../components/NotificationToast';
 import { AiActionHistoryPanel } from '#/modules/AiRuntime/presentations/views/AiActionHistoryPanel';
 import { MixAnalysisPanel } from '#/modules/AiRuntime/presentations/views/MixAnalysisPanel';
+import { subscribeGenerativeAi, getGenerativeAiSnapshot } from '#/modules/AiRuntime/useCases/generativeAiActions';
 import { ExportDialog } from '#/modules/Project/presentations/views/ExportDialog';
 import { PreferencesDialog } from '../components/PreferencesDialog';
 import { useGlobalKeyboardShortcuts } from '#/modules/Command/presentations/views/keyboardShortcutsContract';
@@ -45,28 +55,15 @@ import {
 import { StatusBar } from './StatusBar';
 import { ShortcutCheatSheet } from '../components/ShortcutCheatSheet';
 import { UndoHistoryPanel } from '#/modules/Command/presentations/views/UndoHistoryPanel';
-import { cn } from '#/helpers/Styles/cn';
+
+import { Button } from '#/components/ui/button';
+import { DragResizeHandle } from '#/components/ui/DragResizeHandle';
 
 const CollaborationPanelLazy = lazy(() =>
     import('#/modules/Collaboration/presentations/views/CollaborationPanel').then((m) => ({
         default: m.CollaborationPanel,
     }))
 );
-
-const SIDEBAR_MIN = 150;
-const SIDEBAR_MAX = 400;
-const INSPECTOR_MIN = 180;
-const INSPECTOR_MAX = 500;
-const CHAT_MIN = 300;
-const CHAT_MAX = 600;
-const MIXER_MIN = 120;
-const MIXER_MAX = 800;
-const AUTO_PANEL_MIN = 250;
-const AUTO_PANEL_MAX = 800;
-
-function clamp(value: number, min: number, max: number): number {
-    return Math.min(max, Math.max(min, value));
-}
 
 type AppShellProps = {
     children: ReactNode;
@@ -78,15 +75,13 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         inspectorOpen,
         mixerOpen,
         automationPanelOpen,
-        automationPanelWidth,
-        sidebarWidth,
-        inspectorWidth,
-        mixerHeight,
         collaborationPanelOpen,
         chatPanelOpen,
-        chatPanelWidth,
         selectedClipId,
     } = useWorkspaceState();
+
+    const aiState = useSyncExternalStore(subscribeGenerativeAi, getGenerativeAiSnapshot);
+    const aiPanelOpen = aiState.isPanelOpen;
     const [exportOpen, setExportOpen] = useState(false);
     const [prefsOpen, setPrefsOpen] = useState(false);
     const [bottomTab, setBottomTab] = useState<'editor' | 'mixer' | 'session' | 'routing' | 'analysis'>('mixer');
@@ -101,104 +96,6 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
             }
         }
     }, [selectedClipId]);
-
-    const [localSidebarWidth, setLocalSidebarWidth] = useState(sidebarWidth);
-    const [localInspectorWidth, setLocalInspectorWidth] = useState(inspectorWidth);
-    const [localMixerHeight, setLocalMixerHeight] = useState(mixerHeight);
-    const [localChatPanelWidth, setLocalChatPanelWidth] = useState(chatPanelWidth);
-    const [localAutoPanelWidth, setLocalAutoPanelWidth] = useState(automationPanelWidth);
-
-    const sidebarRef = useRef(localSidebarWidth);
-    const inspectorRef = useRef(localInspectorWidth);
-    const mixerRef = useRef(localMixerHeight);
-    const chatPanelRef = useRef(localChatPanelWidth);
-    const autoPanelRef = useRef(localAutoPanelWidth);
-
-    useEffect(() => {
-        setLocalSidebarWidth(sidebarWidth);
-    }, [sidebarWidth]);
-    useEffect(() => {
-        setLocalInspectorWidth(inspectorWidth);
-    }, [inspectorWidth]);
-    useEffect(() => {
-        setLocalMixerHeight(mixerHeight);
-    }, [mixerHeight]);
-    useEffect(() => {
-        setLocalChatPanelWidth(chatPanelWidth);
-    }, [chatPanelWidth]);
-    useEffect(() => {
-        setLocalAutoPanelWidth(automationPanelWidth);
-    }, [automationPanelWidth]);
-
-    const handleSidebarResize = (delta: number) => {
-        setLocalSidebarWidth((prev) => {
-            const next = clamp(prev + delta, SIDEBAR_MIN, SIDEBAR_MAX);
-            sidebarRef.current = next;
-            return next;
-        });
-    };
-    const handleSidebarResizeEnd = () => {
-        const ws = workspaceStore.value;
-        if (ws) {
-            workspaceStore.set({ ...ws, sidebarWidth: sidebarRef.current });
-        }
-    };
-
-    const handleInspectorResize = (delta: number) => {
-        setLocalInspectorWidth((prev) => {
-            const next = clamp(prev + delta, INSPECTOR_MIN, INSPECTOR_MAX);
-            inspectorRef.current = next;
-            return next;
-        });
-    };
-    const handleInspectorResizeEnd = () => {
-        const ws = workspaceStore.value;
-        if (ws) {
-            workspaceStore.set({ ...ws, inspectorWidth: inspectorRef.current });
-        }
-    };
-
-    const handleChatPanelResize = (delta: number) => {
-        setLocalChatPanelWidth((prev) => {
-            const next = clamp(prev - delta, CHAT_MIN, CHAT_MAX);
-            chatPanelRef.current = next;
-            return next;
-        });
-    };
-    const handleChatPanelResizeEnd = () => {
-        const ws = workspaceStore.value;
-        if (ws) {
-            workspaceStore.set({ ...ws, chatPanelWidth: chatPanelRef.current });
-        }
-    };
-
-    const handleMixerResize = (delta: number) => {
-        setLocalMixerHeight((prev) => {
-            const next = clamp(prev - delta, MIXER_MIN, MIXER_MAX);
-            mixerRef.current = next;
-            return next;
-        });
-    };
-    const handleMixerResizeEnd = () => {
-        const ws = workspaceStore.value;
-        if (ws) {
-            workspaceStore.set({ ...ws, mixerHeight: mixerRef.current });
-        }
-    };
-
-    const handleAutoPanelResize = (delta: number) => {
-        setLocalAutoPanelWidth((prev) => {
-            const next = clamp(prev - delta, AUTO_PANEL_MIN, AUTO_PANEL_MAX);
-            autoPanelRef.current = next;
-            return next;
-        });
-    };
-    const handleAutoPanelResizeEnd = () => {
-        const ws = workspaceStore.value;
-        if (ws) {
-            workspaceStore.set({ ...ws, automationPanelWidth: autoPanelRef.current });
-        }
-    };
 
     useGlobalKeyboardShortcuts();
 
@@ -364,8 +261,18 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         };
     }, []);
 
+    // ─── Panel width state (pixels, clamped) ───
+    const [sidebarWidth, setSidebarWidth] = useState(280);
+    const [inspectorWidth, setInspectorWidth] = useState(260);
+    const [automationWidth, setAutomationWidth] = useState(320);
+    const [chatWidth, setChatWidth] = useState(320);
+    const [aiWidth, setAiWidth] = useState(340);
+    const [mixerHeight, setMixerHeight] = useState(300);
+
+    const clamp = (v: number, min: number, max: number): number => Math.max(min, Math.min(max, v));
+
     return (
-        <div className="flex h-screen w-screen flex-col overflow-hidden bg-surface-base">
+        <div className="flex h-screen w-screen flex-col overflow-hidden bg-[#020202]">
             <a
                 href="#main-content"
                 className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground"
@@ -374,43 +281,116 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
             </a>
             <TransportBar />
 
+            {/* ─── Main horizontal layout ─── */}
             <div className="flex flex-1 overflow-hidden">
+                {/* Sidebar */}
                 {sidebarOpen && (
                     <>
-                        <Sidebar style={{ width: localSidebarWidth }} />
-                        <ResizeHandle
-                            direction="vertical"
-                            onResize={handleSidebarResize}
-                            onResizeEnd={handleSidebarResizeEnd}
+                        <Sidebar style={{ width: sidebarWidth, minWidth: 180 }} />
+                        <DragResizeHandle
+                            side="right"
+                            onResize={(d) => setSidebarWidth((w) => clamp(w + d, 180, 500))}
                         />
                     </>
                 )}
 
+                {/* Center: vertical split — arrangement over mixer */}
+                <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+                    {/* Main arrangement area */}
+                    <main id="main-content" className="flex-1 overflow-hidden min-h-0">
+                        {children}
+                    </main>
+
+                    {/* Mixer bottom panel */}
+                    {mixerOpen && (
+                        <>
+                            <DragResizeHandle
+                                side="top"
+                                onResize={(d) => setMixerHeight((h) => clamp(h + d, 120, 800))}
+                            />
+                            <div className="flex flex-col bg-[#060606] overflow-hidden shrink-0" style={{ height: mixerHeight }}>
+                                {/* Bottom panel tab bar */}
+                                <div className="flex items-center gap-0.5 px-2 py-0.5 border-b border-border-hairline bg-[#0a0a0a] shrink-0">
+                                    <Button
+                                        variant={bottomTab === 'mixer' ? 'secondary' : 'ghost'}
+                                        size="xs"
+                                        className={bottomTab === 'mixer' ? 'text-primary' : ''}
+                                        onClick={() => setBottomTab('mixer')}
+                                    >
+                                        Mixer
+                                    </Button>
+                                    <Button
+                                        variant={bottomTab === 'editor' ? 'secondary' : 'ghost'}
+                                        size="xs"
+                                        className={bottomTab === 'editor' ? 'text-blue-400' : ''}
+                                        onClick={() => setBottomTab('editor')}
+                                    >
+                                        Editor
+                                    </Button>
+                                    <Button
+                                        variant={bottomTab === 'session' ? 'secondary' : 'ghost'}
+                                        size="xs"
+                                        className={bottomTab === 'session' ? 'text-green-400' : ''}
+                                        onClick={() => setBottomTab('session')}
+                                    >
+                                        Session
+                                    </Button>
+                                    <Button
+                                        variant={bottomTab === 'routing' ? 'secondary' : 'ghost'}
+                                        size="xs"
+                                        className={bottomTab === 'routing' ? 'text-orange-400' : ''}
+                                        onClick={() => setBottomTab('routing')}
+                                    >
+                                        Routing
+                                    </Button>
+                                    <Button
+                                        variant={bottomTab === 'analysis' ? 'secondary' : 'ghost'}
+                                        size="xs"
+                                        className={bottomTab === 'analysis' ? 'text-purple-400' : ''}
+                                        onClick={() => setBottomTab('analysis')}
+                                    >
+                                        Analysis
+                                    </Button>
+                                </div>
+                                {/* Panel content */}
+                                <div className="flex-1 overflow-hidden">
+                                    {bottomTab === 'editor' ? (
+                                        <ClipView />
+                                    ) : bottomTab === 'mixer' ? (
+                                        <MixerPanel style={{ height: '100%' }} />
+                                    ) : bottomTab === 'session' ? (
+                                        <SessionView />
+                                    ) : bottomTab === 'analysis' ? (
+                                        <AnalysisPanel />
+                                    ) : (
+                                        <RoutingMatrix />
+                                    )}
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </div>
+
+                {/* ─── Right-side panels with drag handles ─── */}
                 {inspectorOpen && (
                     <>
-                        <InspectorPanel style={{ width: localInspectorWidth }} />
-                        <ResizeHandle
-                            direction="vertical"
-                            onResize={handleInspectorResize}
-                            onResizeEnd={handleInspectorResizeEnd}
+                        <DragResizeHandle
+                            side="left"
+                            onResize={(d) => setInspectorWidth((w) => clamp(w + d, 200, 500))}
                         />
+                        <InspectorPanel style={{ width: inspectorWidth, minWidth: 200 }} />
                     </>
                 )}
-
-                <main id="main-content" className={cn('flex-1 overflow-hidden', 'border-x border-border/50')}>
-                    {children}
-                </main>
 
                 {automationPanelOpen && (
                     <>
-                        <ResizeHandle
-                            direction="vertical"
-                            onResize={handleAutoPanelResize}
-                            onResizeEnd={handleAutoPanelResizeEnd}
+                        <DragResizeHandle
+                            side="left"
+                            onResize={(d) => setAutomationWidth((w) => clamp(w + d, 200, 600))}
                         />
                         <div
-                            className="overflow-hidden border-l border-border/50"
-                            style={{ width: localAutoPanelWidth }}
+                            className="flex flex-col border-l border-border-hairline bg-[#0a0a0a] overflow-hidden"
+                            style={{ width: automationWidth, minWidth: 200 }}
                         >
                             <AutomationView />
                         </div>
@@ -419,106 +399,23 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
                 {chatPanelOpen && (
                     <>
-                        <ResizeHandle
-                            direction="vertical"
-                            onResize={handleChatPanelResize}
-                            onResizeEnd={handleChatPanelResizeEnd}
-                        />
-                        <ChatPanel style={{ width: localChatPanelWidth }} />
+                        <DragResizeHandle side="left" onResize={(d) => setChatWidth((w) => clamp(w + d, 200, 600))} />
+                        <ChatPanel style={{ width: chatWidth, minWidth: 200 }} />
                     </>
                 )}
 
-                <GenerativeAiPanel />
+                {aiPanelOpen && (
+                    <>
+                        <DragResizeHandle side="left" onResize={(d) => setAiWidth((w) => clamp(w + d, 200, 500))} />
+                        <div
+                            className="flex flex-col border-l border-border-hairline bg-[#0a0a0a] overflow-hidden"
+                            style={{ width: aiWidth, minWidth: 200 }}
+                        >
+                            <GenerativeAiPanel />
+                        </div>
+                    </>
+                )}
             </div>
-
-            {mixerOpen && (
-                <>
-                    <ResizeHandle
-                        direction="horizontal"
-                        onResize={handleMixerResize}
-                        onResizeEnd={handleMixerResizeEnd}
-                    />
-                    <div style={{ height: localMixerHeight }} className="flex flex-col">
-                        {/* Bottom panel tab bar */}
-                        <div className="flex items-center gap-0.5 px-2 py-0.5 border-b border-border/30 bg-surface-overlay/50 shrink-0">
-                            <button
-                                type="button"
-                                className={cn(
-                                    'px-2 py-0.5 text-[10px] rounded transition-colors',
-                                    bottomTab === 'mixer'
-                                        ? 'bg-primary/20 text-primary font-semibold'
-                                        : 'text-muted-foreground hover:text-foreground'
-                                )}
-                                onClick={() => setBottomTab('mixer')}
-                            >
-                                Mixer
-                            </button>
-                            <button
-                                type="button"
-                                className={cn(
-                                    'px-2 py-0.5 text-[10px] rounded transition-colors',
-                                    bottomTab === 'editor'
-                                        ? 'bg-blue-500/20 text-blue-400 font-semibold'
-                                        : 'text-muted-foreground hover:text-foreground'
-                                )}
-                                onClick={() => setBottomTab('editor')}
-                            >
-                                Editor
-                            </button>
-                            <button
-                                type="button"
-                                className={cn(
-                                    'px-2 py-0.5 text-[10px] rounded transition-colors',
-                                    bottomTab === 'session'
-                                        ? 'bg-green-500/20 text-green-400 font-semibold'
-                                        : 'text-muted-foreground hover:text-foreground'
-                                )}
-                                onClick={() => setBottomTab('session')}
-                            >
-                                Session
-                            </button>
-                            <button
-                                type="button"
-                                className={cn(
-                                    'px-2 py-0.5 text-[10px] rounded transition-colors',
-                                    bottomTab === 'routing'
-                                        ? 'bg-orange-500/20 text-orange-400 font-semibold'
-                                        : 'text-muted-foreground hover:text-foreground'
-                                )}
-                                onClick={() => setBottomTab('routing')}
-                            >
-                                Routing
-                            </button>
-                            <button
-                                type="button"
-                                className={cn(
-                                    'px-2 py-0.5 text-[10px] rounded transition-colors',
-                                    bottomTab === 'analysis'
-                                        ? 'bg-purple-500/20 text-purple-400 font-semibold'
-                                        : 'text-muted-foreground hover:text-foreground'
-                                )}
-                                onClick={() => setBottomTab('analysis')}
-                            >
-                                Analysis
-                            </button>
-                        </div>
-                        {/* Panel content */}
-                        <div className="flex-1 overflow-hidden">
-                            {bottomTab === 'editor' ? (
-                                <ClipView />
-                            ) : bottomTab === 'mixer' ? (
-                                <MixerPanel style={{ height: '100%' }} />
-                            ) : bottomTab === 'session' ? (
-                                <SessionView />
-                            ) : bottomTab === 'analysis' ? (
-                                <AnalysisPanel />
-                            ) : (
-                                <RoutingMatrix />
-                            )}
-                        </div>
-                    </div>
-                </>
-            )}
 
             <StatusBar />
             <UndoHistoryPanel />
@@ -540,4 +437,3 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         </div>
     );
 };
-

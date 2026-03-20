@@ -617,7 +617,7 @@ export const AutomationLaneRow = ({
                 ))}
 
                 {/* Automation objects (bounded containers) */}
-                {lane.objects.map((obj) => {
+                {(lane.objects ?? []).map((obj) => {
                     const objX = beatToX(obj.startBeat);
                     const objW = beatToX(obj.endBeat) - objX;
                     if (objX + objW < 0 || objX > containerWidth) {

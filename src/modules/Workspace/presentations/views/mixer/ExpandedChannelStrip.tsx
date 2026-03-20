@@ -1,7 +1,7 @@
 import { type ReactElement, type MouseEvent as ReactMouseEvent, useState, useRef, useEffect } from 'react';
-import { Button } from '#/components/ui/button';
-import { Slider } from '#/components/ui/slider';
-import { Knob } from '#/components/ui/knob';
+import { Fader } from '#/components/daw/Fader';
+import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { LatchButton } from '#/components/daw/LatchButton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { Circle, Ear, ShieldCheck } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
@@ -145,15 +145,15 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
             {track.vcaGroupId && <span className="text-[9px] text-cyan-400/80 font-mono">VCA</span>}
 
             {/* Mute / Solo / Arm / Monitor */}
-            <div className="flex flex-wrap justify-center gap-0.5">
+            <div className="flex flex-wrap justify-center gap-1">
                 <Tooltip>
                     <TooltipTrigger asChild>
-                        <Button
-                            variant="ghost"
-                            size="icon-xs"
-                            aria-pressed={track.muted}
+                        <LatchButton
+                            active={track.muted}
+                            variant="amber"
+                            size="icon-sm"
                             aria-label={track.muted ? 'Unmute' : 'Mute'}
-                            className={cn('size-5 text-[9px] font-bold', track.muted && 'text-amber-500 bg-amber-500/20')}
+                            className="font-bold text-[10px]"
                             onClick={(e) => {
                                 e.stopPropagation();
                                 muteTrack(track.id, !track.muted);
@@ -161,18 +161,18 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                             }}
                         >
                             M
-                        </Button>
+                        </LatchButton>
                     </TooltipTrigger>
                     <TooltipContent>{track.muted ? 'Unmute' : 'Mute'}</TooltipContent>
                 </Tooltip>
                 <Tooltip>
                     <TooltipTrigger asChild>
-                        <Button
-                            variant="ghost"
-                            size="icon-xs"
-                            aria-pressed={track.soloed}
+                        <LatchButton
+                            active={track.soloed}
+                            variant="cyan"
+                            size="icon-sm"
                             aria-label={track.soloed ? 'Unsolo' : 'Solo'}
-                            className={cn('size-5 text-[9px] font-bold', track.soloed && 'text-blue-500 bg-blue-500/20')}
+                            className="font-bold text-[10px]"
                             onClick={(e) => {
                                 e.stopPropagation();
                                 if (e.metaKey || e.ctrlKey) {
@@ -183,100 +183,93 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                             }}
                         >
                             S
-                        </Button>
+                        </LatchButton>
                     </TooltipTrigger>
                     <TooltipContent>{track.soloed ? 'Unsolo' : 'Solo (⌘ click for additive)'}</TooltipContent>
                 </Tooltip>
                 <Tooltip>
                     <TooltipTrigger asChild>
-                        <Button
-                            variant="ghost"
-                            size="icon-xs"
-                            aria-pressed={track.armed}
+                        <LatchButton
+                            active={track.armed}
+                            variant="red"
+                            size="icon-sm"
                             aria-label={track.armed ? 'Disarm' : 'Arm'}
-                            className={cn('size-5', track.armed && 'text-red-500 bg-red-500/20')}
+                            className=""
                             onClick={(e) => {
                                 e.stopPropagation();
                                 armTrack(track.id, !track.armed);
                             }}
                         >
-                            <Circle className={cn('size-2.5', track.armed && 'fill-red-500')} />
-                        </Button>
+                            <Circle className={cn('size-3', track.armed && 'fill-state-record')} />
+                        </LatchButton>
                     </TooltipTrigger>
                     <TooltipContent>{track.armed ? 'Disarm' : 'Arm for recording'}</TooltipContent>
                 </Tooltip>
                 {track.kind === 'audio' && (
                     <Tooltip>
                         <TooltipTrigger asChild>
-                            <Button
-                                variant="ghost"
-                                size="icon-xs"
-                                aria-pressed={track.inputMonitoring === 'on'}
+                            <LatchButton
+                                active={track.inputMonitoring === 'on'}
+                                variant="mint"
+                                size="icon-sm"
                                 aria-label={track.inputMonitoring === 'on' ? 'Disable monitoring' : 'Enable monitoring'}
-                                className={cn('size-5', track.inputMonitoring === 'on' && 'text-green-400')}
+                                className=""
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     toggleInputMonitoring(track.id);
                                 }}
                             >
                                 <Ear
-                                    className={cn('size-2.5', track.inputMonitoring === 'on' && 'fill-green-400/30')}
+                                    className={cn('size-3', track.inputMonitoring === 'on' && 'fill-state-play/30')}
                                 />
-                            </Button>
+                            </LatchButton>
                         </TooltipTrigger>
                         <TooltipContent>Input monitoring</TooltipContent>
                     </Tooltip>
                 )}
-                {track.soloSafe && <ShieldCheck className="size-2.5 text-cyan-400" aria-label="Solo safe" />}
+                {track.soloSafe && <ShieldCheck className="size-3 text-state-active" aria-label="Solo safe" />}
             </div>
 
             {/* Fader + meter */}
-            <div className="flex gap-2 h-[160px] shrink-0 mt-2 mb-1 items-end justify-center w-[85%]">
-                <Slider
-                    orientation="vertical"
-                    value={[track.gain * 100]}
-                    onValueChange={([v]) => {
-                        if (v !== undefined) {
-                            setTrackGain(track.id, v / 100);
-                            engineSetTrackGain(track.id, v / 100);
-                        }
+            <div className="flex gap-2 h-40 shrink-0 mt-3 mb-1 items-end justify-center w-[85%]">
+                <Fader
+                    value={track.gain}
+                    onChange={(v) => {
+                        setTrackGain(track.id, v);
+                        engineSetTrackGain(track.id, v);
                     }}
-                    max={100}
-                    step={1}
-                    className="h-full w-full"
+                    min={0}
+                    max={1.5}
+                    step={0.01}
+                    fineStep={0.001}
+                    defaultValue={0.8}
                     aria-label={`${track.name} gain`}
-                    title="Gain"
                 />
-                <LevelMeter peak={peak} rms={rms} peakHold={peakHold} width="w-2" />
+                <LevelMeter peak={peak} rms={rms} peakHold={peakHold} width="w-2.5" />
                 <VUMeterCanvas trackId={track.id} size={80} />
             </div>
 
-            <span className="text-[10px] font-mono text-muted-foreground">
+            <span className="text-[10px] font-mono text-text-secondary mt-1">
                 {track.gain === 0 ? '-∞' : `${((track.gain - 0.8) * 40).toFixed(1)}`} dB
             </span>
 
             {/* Pan */}
-            <div className="w-full px-1 flex flex-col items-center">
-                <Knob
-                    value={track.pan + 50}
-                    onValueChange={(v) => {
-                        if (v !== undefined) {
-                            setTrackPan(track.id, v - 50);
-                            engineSetTrackPan(track.id, v - 50);
-                        }
+            <div className="w-full px-1 flex flex-col items-center mt-2 mb-2">
+                <RotaryKnob
+                    value={track.pan}
+                    onChange={(v) => {
+                        setTrackPan(track.id, v);
+                        engineSetTrackPan(track.id, v);
                     }}
-                    min={0}
-                    max={100}
-                    step={1}
+                    min={-50}
+                    max={50}
                     size={28}
-                    defaultValue={50}
                     aria-label={`${track.name} pan`}
-                    label="Pan"
-                    formatValue={(v) => {
-                        const p = v - 50;
-                        return p === 0 ? 'C' : p > 0 ? `R${p}` : `L${Math.abs(p)}`;
-                    }}
+                    bipolar
                 />
+                <span className="text-[9px] font-mono text-text-secondary mt-1">
+                    {track.pan === 0 ? 'C' : track.pan > 0 ? `R${Math.round(track.pan)}` : `L${Math.abs(Math.round(track.pan))}`}
+                </span>
             </div>
 
             {/* Devices — contained with scroll */}

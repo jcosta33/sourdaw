@@ -1,5 +1,5 @@
 import { type ReactElement, useSyncExternalStore } from 'react';
-import { Slider } from '#/components/ui/slider';
+import { Fader } from '#/components/daw/Fader';
 import { cn } from '#/helpers/Styles/cn';
 import { setMasterGainValue } from '../../../useCases/workspaceViewActions';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
@@ -28,34 +28,27 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
     return (
         <div
             className={cn(
-                'flex shrink-0 flex-col items-center gap-1.5 rounded-lg bg-surface-overlay px-2 py-2 ml-2 border-l-2 border-foreground/10',
+                'flex shrink-0 flex-col items-center gap-1.5 rounded-lg bg-surface-overlay px-2 py-2 ml-2 border-l-2 border-border-soft',
                 widthClass
             )}
             role="group"
             aria-label="Master channel"
         >
-            <div className="h-1 w-full rounded-full bg-foreground/30" />
-            <span className="text-[10px] font-bold text-foreground">Master</span>
+            <div className="h-1 w-full rounded-full bg-border-active" />
+            <span className="text-[10px] font-bold text-text-primary uppercase tracking-wider">Master</span>
 
-            <div className="flex gap-2 h-32 mt-1 mb-1 items-end justify-center w-full">
-                <Slider
-                    orientation="vertical"
-                    value={[masterGain]}
-                    onValueChange={([v]) => {
-                        if (v !== undefined) {
-                            setMasterGain(v);
-                        }
+            <div className="flex gap-2 h-40 mt-1 mb-1 items-end justify-center w-full">
+                <Fader
+                    value={masterGain / 100}
+                    onChange={(v) => {
+                        setMasterGain(v * 100);
                     }}
-                    max={100}
-                    step={1}
-                    className="h-full w-full"
                     aria-label="Master gain"
-                    title="Master Gain"
                 />
-                <LevelMeter peak={peak} rms={rms} peakHold={peakHold} width="w-2" />
+                <LevelMeter peak={peak} rms={rms} peakHold={peakHold} width="w-2.5" />
             </div>
 
-            <span className="text-[10px] font-mono text-muted-foreground">
+            <span className="text-[10px] font-mono text-text-secondary mt-1">
                 {masterGain === 0 ? '-∞' : `${((masterGain / 80 - 1) * 12).toFixed(1)} dB`}
             </span>
 

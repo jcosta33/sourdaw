@@ -3,7 +3,6 @@ import { X, Sparkles, Music, Mic2, RefreshCw, AudioWaveform, Play, Plus, Loader2
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { DisabledFeatureWrapper } from '#/components/ui/disabled-feature-wrapper';
-import { cn } from '#/helpers/Styles/cn';
 import { isTauri } from '#/modules/AudioEngine/useCases/nativeAIBridge';
 import {
     subscribeGenerativeAi,
@@ -78,66 +77,51 @@ export const GenerativeAiPanel = (): ReactElement | null => {
 
             {/* Primary Tabs */}
             <div className="flex p-2 gap-1 border-b border-border/20 shrink-0">
-                <button
-                    className={cn(
-                        'flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 text-[11px] rounded-md font-medium transition-colors',
-                        activeTab === 'midi'
-                            ? 'bg-accent text-accent-foreground'
-                            : 'text-muted-foreground hover:bg-surface-raised hover:text-foreground'
-                    )}
+                <Button
+                    variant={activeTab === 'midi' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    className="flex-1"
                     onClick={() => setActiveTab('midi')}
                 >
                     <Music className="size-3" /> MIDI
-                </button>
-                <button
-                    className={cn(
-                        'flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 text-[11px] rounded-md font-medium transition-colors',
-                        activeTab === 'audio'
-                            ? 'bg-accent text-accent-foreground'
-                            : 'text-muted-foreground hover:bg-surface-raised hover:text-foreground'
-                    )}
+                </Button>
+                <Button
+                    variant={activeTab === 'audio' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    className="flex-1"
                     onClick={() => setActiveTab('audio')}
                 >
                     <AudioWaveform className="size-3" /> Audio
-                </button>
-                <button
-                    className={cn(
-                        'flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 text-[11px] rounded-md font-medium transition-colors',
-                        activeTab === 'stems'
-                            ? 'bg-accent text-accent-foreground'
-                            : 'text-muted-foreground hover:bg-surface-raised hover:text-foreground'
-                    )}
+                </Button>
+                <Button
+                    variant={activeTab === 'stems' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    className="flex-1"
                     onClick={() => setActiveTab('stems')}
                 >
                     <RefreshCw className="size-3" /> Stems
-                </button>
+                </Button>
             </div>
 
             {/* MIDI Sub-tabs */}
             {activeTab === 'midi' && (
                 <div className="flex px-3 pt-2 pb-1 gap-2 shrink-0">
-                    <button
-                        className={cn(
-                            'flex items-center gap-1 px-2 py-1 text-[10px] rounded-md font-medium transition-colors border',
-                            midiSubTab === 'patterns'
-                                ? 'bg-purple-600/15 border-purple-500/30 text-purple-300'
-                                : 'border-transparent text-muted-foreground hover:bg-surface-raised hover:text-foreground'
-                        )}
+                    <Button
+                        variant={midiSubTab === 'patterns' ? 'secondary' : 'ghost'}
+                        size="xs"
+                        className={midiSubTab === 'patterns' ? 'text-purple-300 drop-shadow-[0_0_4px_theme(colors.purple.500/50)]' : ''}
                         onClick={() => setMidiSubTab('patterns')}
                     >
                         <Library className="size-3" /> Patterns
-                    </button>
-                    <button
-                        className={cn(
-                            'flex items-center gap-1 px-2 py-1 text-[10px] rounded-md font-medium transition-colors border',
-                            midiSubTab === 'ai'
-                                ? 'bg-purple-600/15 border-purple-500/30 text-purple-300'
-                                : 'border-transparent text-muted-foreground hover:bg-surface-raised hover:text-foreground'
-                        )}
+                    </Button>
+                    <Button
+                        variant={midiSubTab === 'ai' ? 'secondary' : 'ghost'}
+                        size="xs"
+                        className={midiSubTab === 'ai' ? 'text-purple-300 drop-shadow-[0_0_4px_theme(colors.purple.500/50)]' : ''}
                         onClick={() => setMidiSubTab('ai')}
                     >
                         <Sparkles className="size-3" /> AI Generate
-                    </button>
+                    </Button>
                 </div>
             )}
 

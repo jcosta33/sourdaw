@@ -1,6 +1,7 @@
 import { type ReactElement, useState, useEffect } from 'react';
 import { Play, Pause, Square, Circle, Repeat, Scissors, ListOrdered, Link as LinkIcon, Layers } from 'lucide-react';
 import { Button } from '#/components/ui/button';
+import { LatchButton } from '#/components/daw/LatchButton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { cn } from '#/helpers/Styles/cn';
 import {
@@ -65,15 +66,16 @@ export const TransportControls = ({
     };
 
     return (
-        <div className="flex items-center gap-0.5" role="group" aria-label="Playback controls">
+        <div className="flex items-center gap-1 bg-[#0e0e0e] px-1.5 py-1 rounded-sm shadow-[inset_0_1px_3px_rgba(0,0,0,0.6),0_1px_0_rgba(255,255,255,0.03)] border border-black/60" role="group" aria-label="Playback controls">
             <span className="sr-only" aria-live="polite" role="status">
                 {isRecording ? 'Recording' : isPlaying ? 'Playing' : 'Stopped'}
             </span>
             <Tooltip>
                 <TooltipTrigger asChild>
-                    <Button
-                        variant={isPlaying ? 'secondary' : 'ghost'}
-                        size="icon-sm"
+                    <LatchButton
+                        active={isPlaying}
+                        variant="mint"
+                        size="icon"
                         aria-label={isPlaying ? 'Pause' : 'Play'}
                         onClick={togglePlayback}
                     >
@@ -82,15 +84,15 @@ export const TransportControls = ({
                         ) : (
                             <Play className="size-4" aria-hidden="true" />
                         )}
-                    </Button>
+                    </LatchButton>
                 </TooltipTrigger>
                 <TooltipContent>{isPlaying ? 'Pause' : 'Play'} (Space)</TooltipContent>
             </Tooltip>
 
             <Tooltip>
                 <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon-sm" aria-label="Stop" onClick={stopPlayback}>
-                        <Square className="size-3.5" aria-hidden="true" />
+                    <Button variant="transport" size="icon-sm" aria-label="Stop" onClick={stopPlayback}>
+                        <Square className="size-3.5 fill-text-secondary" aria-hidden="true" />
                     </Button>
                 </TooltipTrigger>
                 <TooltipContent>Stop (Esc)</TooltipContent>
@@ -98,19 +100,20 @@ export const TransportControls = ({
 
             <Tooltip>
                 <TooltipTrigger asChild>
-                    <Button
-                        variant={isRecording ? 'secondary' : 'ghost'}
-                        size="icon-sm"
+                    <LatchButton
+                        active={isRecording}
+                        variant="red"
+                        size="icon"
                         aria-label={isRecording ? 'Stop recording' : 'Record'}
                         aria-pressed={isRecording}
                         onClick={toggleRecording}
-                        className={cn(!isRecording && anyTrackArmed && 'ring-2 ring-red-500/70')}
+                        className={cn(!isRecording && anyTrackArmed && 'ring-1 ring-state-danger')}
                     >
                         <Circle
-                            className={cn('size-3.5 text-red-500', isRecording && 'fill-red-500 animate-pulse')}
+                            className={cn('size-3.5', isRecording ? 'fill-state-record' : 'text-text-primary')}
                             aria-hidden="true"
                         />
-                    </Button>
+                    </LatchButton>
                 </TooltipTrigger>
                 <TooltipContent>
                     {isRecording ? 'Stop Recording' : anyTrackArmed ? 'Record (tracks armed)' : 'Record'} (R)
@@ -119,56 +122,58 @@ export const TransportControls = ({
 
             <Tooltip>
                 <TooltipTrigger asChild>
-                    <Button
-                        variant={isLooping ? 'secondary' : 'ghost'}
-                        size="icon-sm"
+                    <LatchButton
+                        active={isLooping}
+                        variant="amber"
+                        size="icon"
                         aria-label="Loop"
                         aria-pressed={isLooping}
                         onClick={toggleLoop}
                     >
                         <Repeat className="size-3.5" aria-hidden="true" />
-                    </Button>
+                    </LatchButton>
                 </TooltipTrigger>
                 <TooltipContent>Loop (L)</TooltipContent>
             </Tooltip>
 
             <Tooltip>
                 <TooltipTrigger asChild>
-                    <Button
-                        variant={overdubEnabled ? 'secondary' : 'ghost'}
-                        size="icon-sm"
+                    <LatchButton
+                        active={overdubEnabled}
+                        variant="cyan"
+                        size="icon"
                         aria-label="Overdub"
                         aria-pressed={overdubEnabled}
                         onClick={toggleOverdub}
-                        className={cn(overdubEnabled && 'text-purple-400')}
                     >
                         <Layers className="size-3.5" aria-hidden="true" />
-                    </Button>
+                    </LatchButton>
                 </TooltipTrigger>
                 <TooltipContent>MIDI Overdub (+)</TooltipContent>
             </Tooltip>
 
             <Tooltip>
                 <TooltipTrigger asChild>
-                    <Button
-                        variant={linkEnabled ? 'secondary' : 'ghost'}
-                        size="icon-sm"
+                    <LatchButton
+                        active={linkEnabled}
+                        variant="amber"
+                        size="icon"
                         aria-label="Ableton Link"
                         aria-pressed={linkEnabled}
                         onClick={handleLinkToggle}
-                        className={cn(linkEnabled && 'text-yellow-400')}
                     >
                         <LinkIcon className="size-3.5" aria-hidden="true" />
-                    </Button>
+                    </LatchButton>
                 </TooltipTrigger>
                 <TooltipContent>Ableton Link Sync</TooltipContent>
             </Tooltip>
 
             <Tooltip>
                 <TooltipTrigger asChild>
-                    <Button
-                        variant={metronomeEnabled ? 'secondary' : 'ghost'}
-                        size="icon-sm"
+                    <LatchButton
+                        active={metronomeEnabled}
+                        variant="cyan"
+                        size="icon"
                         aria-label="Metronome"
                         aria-pressed={metronomeEnabled}
                         onClick={toggleMetronome}
@@ -186,7 +191,7 @@ export const TransportControls = ({
                             <path d="M12 2L6 22h12L12 2z" />
                             <path d="M12 12l4-8" />
                         </svg>
-                    </Button>
+                    </LatchButton>
                 </TooltipTrigger>
                 <TooltipContent>Metronome (M)</TooltipContent>
             </Tooltip>
@@ -194,16 +199,18 @@ export const TransportControls = ({
             {metronomeEnabled && (
                 <Tooltip>
                     <TooltipTrigger asChild>
-                        <input
-                            type="range"
-                            min={0}
-                            max={1}
-                            step={0.01}
-                            value={metronomeVolume}
-                            onChange={(e) => setMetronomeVolume(parseFloat(e.target.value))}
-                            className="h-4 w-14 cursor-pointer accent-foreground opacity-70 hover:opacity-100 transition-opacity"
-                            aria-label={`Metronome volume: ${Math.round(metronomeVolume * 100)}%`}
-                        />
+                        <div className="flex items-center px-1">
+                            <input
+                                type="range"
+                                min={0}
+                                max={1}
+                                step={0.01}
+                                value={metronomeVolume}
+                                onChange={(e) => setMetronomeVolume(parseFloat(e.target.value))}
+                                className="h-2 w-16 cursor-pointer rounded-full appearance-none bg-bg-slot shadow-elevation-inset [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-text-secondary [&::-webkit-slider-thumb]:rounded-sm"
+                                aria-label={`Metronome volume: ${Math.round(metronomeVolume * 100)}%`}
+                            />
+                        </div>
                     </TooltipTrigger>
                     <TooltipContent>Metronome volume: {Math.round(metronomeVolume * 100)}%</TooltipContent>
                 </Tooltip>
@@ -211,45 +218,48 @@ export const TransportControls = ({
 
             <Tooltip>
                 <TooltipTrigger asChild>
-                    <Button
-                        variant={punchInEnabled ? 'secondary' : 'ghost'}
-                        size="icon-sm"
+                    <LatchButton
+                        active={punchInEnabled}
+                        variant="amber"
+                        size="icon"
                         aria-label="Punch in/out"
                         aria-pressed={punchInEnabled}
                         onClick={togglePunchEnabled}
                     >
                         <Scissors className="size-3.5" aria-hidden="true" />
-                    </Button>
+                    </LatchButton>
                 </TooltipTrigger>
                 <TooltipContent>Punch In/Out (I)</TooltipContent>
             </Tooltip>
 
             <Tooltip>
                 <TooltipTrigger asChild>
-                    <Button
-                        variant={countInEnabled ? 'secondary' : 'ghost'}
-                        size="icon-sm"
+                    <LatchButton
+                        active={countInEnabled}
+                        variant="cyan"
+                        size="icon"
                         aria-label="Count-in"
                         aria-pressed={countInEnabled}
                         onClick={toggleCountIn}
                     >
                         <ListOrdered className="size-3.5" aria-hidden="true" />
-                    </Button>
+                    </LatchButton>
                 </TooltipTrigger>
                 <TooltipContent>Count-in</TooltipContent>
             </Tooltip>
 
             <Tooltip>
                 <TooltipTrigger asChild>
-                    <Button
-                        variant={preRollEnabled ? 'secondary' : 'ghost'}
+                    <LatchButton
+                        active={preRollEnabled}
+                        variant="cyan"
                         size="xs"
                         aria-label="Pre-roll"
                         aria-pressed={preRollEnabled}
                         onClick={togglePreRoll}
                     >
-                        <span className="text-[10px] font-semibold">PRE</span>
-                    </Button>
+                        <span className="text-[10px] uppercase font-semibold">PRE</span>
+                    </LatchButton>
                 </TooltipTrigger>
                 <TooltipContent>Pre-roll (start playback N bars before cursor)</TooltipContent>
             </Tooltip>

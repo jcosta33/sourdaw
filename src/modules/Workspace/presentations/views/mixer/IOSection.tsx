@@ -1,6 +1,7 @@
 import { type ReactElement, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
+import { Button } from '#/components/ui/button';
 import { useTracks } from '../../hooks/useTracks';
 import { setTrackOutput } from '../../../useCases/workspaceViewActions';
 import { type Track } from '../../../useCases/workspaceViewActions';
@@ -36,9 +37,10 @@ export const IOSection = ({ track }: IOSectionProps): ReactElement => {
 
             <div className="relative flex items-center justify-between px-0.5">
                 <span className="text-[6px] text-muted-foreground/50 uppercase">Out</span>
-                <button
-                    type="button"
-                    className="flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] text-foreground hover:bg-muted/30 transition-colors max-w-16 truncate"
+                <Button
+                    variant="ghost"
+                    size="xs"
+                    className="flex items-center gap-0.5 text-[10px] max-w-16 truncate h-5 px-1"
                     onClick={(e) => {
                         e.stopPropagation();
                         setOutputOpen(!outputOpen);
@@ -48,7 +50,7 @@ export const IOSection = ({ track }: IOSectionProps): ReactElement => {
                 >
                     <span className="truncate">{outputLabel}</span>
                     <ChevronDown className="size-2 shrink-0 text-muted-foreground" aria-hidden="true" />
-                </button>
+                </Button>
 
                 {outputOpen && (
                     <div

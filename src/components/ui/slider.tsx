@@ -15,10 +15,16 @@ function Slider({
     step = 1,
     ...props
 }: React.ComponentProps<typeof SliderPrimitive.Root>) {
-    const _values = React.useMemo(
-        () => (Array.isArray(value) ? value : Array.isArray(defaultValue) ? defaultValue : [min, max]),
-        [value, defaultValue, min, max]
-    );
+    const _values = React.useMemo(() => {
+        if (value != null) {
+            return Array.isArray(value) ? value : [value];
+        }
+        if (defaultValue != null) {
+            return Array.isArray(defaultValue) ? defaultValue : [defaultValue];
+        }
+        // No value provided — single thumb at midpoint
+        return [Math.round((min + max) / 2)];
+    }, [value, defaultValue, min, max]);
 
     return (
         <SliderPrimitive.Root
@@ -36,13 +42,13 @@ function Slider({
             <SliderPrimitive.Track
                 data-slot="slider-track"
                 className={cn(
-                    'relative grow overflow-hidden rounded-full bg-muted data-[orientation=horizontal]:h-1.5 data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-1.5'
+                    'relative grow overflow-hidden rounded-full bg-surface-inset shadow-elevation-inset border border-border-soft data-[orientation=horizontal]:h-1.5 data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-1.5'
                 )}
             >
                 <SliderPrimitive.Range
                     data-slot="slider-range"
                     className={cn(
-                        'absolute bg-primary data-[orientation=horizontal]:h-full data-[orientation=vertical]:w-full'
+                        'absolute bg-accent-cyan/80 data-[orientation=horizontal]:h-full data-[orientation=vertical]:w-full'
                     )}
                 />
             </SliderPrimitive.Track>
@@ -82,7 +88,7 @@ function SliderThumbNode({
     return (
         <SliderPrimitive.Thumb
             data-slot="slider-thumb"
-            className="block size-4 shrink-0 rounded-full border border-primary bg-white shadow-sm ring-ring/50 transition-[color,box-shadow] hover:ring-4 focus-visible:ring-4 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50"
+            className="block size-4 shrink-0 rounded-[4px] border border-black bg-gradient-to-b from-zinc-400 to-zinc-600 shadow-[0_1px_3px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.15)] cursor-pointer outline-none transition-[color,box-shadow] hover:ring-2 hover:ring-accent-cyan/30 focus-visible:ring-4 focus-visible:ring-accent-cyan/40 disabled:pointer-events-none disabled:opacity-50"
             onPointerDown={(e) => {
                 if (e.metaKey || e.ctrlKey) {
                     e.preventDefault();
@@ -100,7 +106,7 @@ function SliderThumbNode({
             {isEditing && (
                 <input
                     autoFocus
-                    className="absolute -top-6 left-1/2 -translate-x-1/2 w-12 rounded bg-surface-overlay text-foreground text-[10px] text-center px-1 py-0.5 border border-primary outline-none ring-1 ring-primary z-50"
+                    className="absolute -top-6 left-1/2 -translate-x-1/2 w-12 rounded bg-surface-overlay text-foreground text-[10px] text-center px-1 py-0.5 border border-border outline-none ring-1 ring-accent-cyan z-50 shadow-elevation-floating"
                     value={editVal}
                     onChange={(e) => setEditVal(e.target.value)}
                     onBlur={() => setIsEditing(false)}
