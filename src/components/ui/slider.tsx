@@ -31,6 +31,7 @@ function Slider({
             data-slot="slider"
             defaultValue={defaultValue}
             value={value}
+            onValueChange={onValueChange}
             min={min}
             max={max}
             className={cn(
@@ -42,7 +43,7 @@ function Slider({
             <SliderPrimitive.Track
                 data-slot="slider-track"
                 className={cn(
-                    'relative grow overflow-hidden rounded-full bg-surface-inset shadow-elevation-inset border border-border-soft data-[orientation=horizontal]:h-1.5 data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-1.5'
+                    'relative grow overflow-hidden rounded-full bg-surface-inset shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)] border border-border-soft data-[orientation=horizontal]:h-1.5 data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-1.5'
                 )}
             >
                 <SliderPrimitive.Range

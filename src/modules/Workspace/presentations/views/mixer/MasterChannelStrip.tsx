@@ -28,7 +28,7 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
     return (
         <div
             className={cn(
-                'flex shrink-0 flex-col items-center gap-1.5 rounded-lg bg-surface-overlay px-2 py-2 ml-2 border-l-2 border-border-soft',
+                'flex shrink-0 flex-col items-center gap-1.5 rounded-lg bg-surface-recess px-2 py-2 ml-2 border-l-2 border-border-soft shadow-[0_1px_2px_rgba(0,0,0,0.4)]',
                 widthClass
             )}
             role="group"

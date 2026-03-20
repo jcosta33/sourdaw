@@ -93,7 +93,7 @@ export const RotaryKnob = ({
             {/* Outer well / bezel */}
             <div 
                 className={cn(
-                    'relative rounded-full bg-bg-panelInset shadow-elevation-inset flex items-center justify-center p-[2px]',
+                    'relative rounded-full bg-bg-panelInset shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] flex items-center justify-center p-[2px]',
                     isDragging && 'ring-1 ring-border-focus'
                 )}
                 style={{ width: size, height: size }}
@@ -101,8 +101,8 @@ export const RotaryKnob = ({
                 {/* Knob Cap (satin metal) */}
                 <div 
                     className={cn(
-                        'w-full h-full rounded-full bg-bg-panelRaised border border-border-soft shadow-elevation-raised relative',
-                        isDragging && 'shadow-elevation-inset bg-bg-panel drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]'
+                        'w-full h-full rounded-full bg-surface-raised border border-border-soft shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_1px_2px_rgba(0,0,0,0.5)] relative',
+                        isDragging && 'shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] bg-bg-panel'
                     )}
                     style={{ transform: `rotate(${rotation}deg)` }}
                 >

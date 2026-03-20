@@ -73,15 +73,15 @@ export const SessionView = (): ReactElement => {
             <div className="flex-1 overflow-auto">
                 <div className="flex min-w-max">
                     {/* Scene triggers column */}
-                    <div className="flex flex-col w-10 shrink-0 border-r border-border/30">
-                        <div className="h-6 flex items-center justify-center text-[10px] text-muted-foreground border-b border-border/20">
+                    <div className="flex flex-col w-10 shrink-0 border-r border-border-soft bg-surface-tray shadow-[inset_-1px_0_0_rgba(255,255,255,0.02)]">
+                        <div className="h-6 flex items-center justify-center text-[10px] text-muted-foreground border-b border-border-hairline bg-surface-base/50">
                             Scene
                         </div>
                         {Array.from({ length: SCENE_COUNT }, (_, i) => (
                             <button
                                 type="button"
                                 key={i}
-                                className="h-10 flex items-center justify-center border-b border-border/10 hover:bg-accent/20 transition-colors"
+                                className="h-10 flex items-center justify-center border-b border-border-hairline hover:bg-surface-raised transition-colors shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] cursor-pointer"
                                 onClick={() => handleLaunchScene(i)}
                                 aria-label={`Launch scene ${i + 1}`}
                             >

@@ -107,7 +107,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                 <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
                     Position
                 </h3>
-                <div className="space-y-2">
+                <div className="rounded-md bg-surface-well border border-border-hairline shadow-[inset_0_1px_3px_rgba(0,0,0,0.4)] p-2 space-y-1.5">
                     <div className="flex items-center justify-between">
                         <label className="text-[10px] text-muted-foreground">Start</label>
                         <span className="text-[10px] font-mono text-foreground">
@@ -269,7 +269,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                 <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
                     Properties
                 </h3>
-                <div className="space-y-1">
+                <div className="rounded-md bg-surface-well border border-border-hairline shadow-[inset_0_1px_3px_rgba(0,0,0,0.4)] p-2 space-y-1.5">
                     <div className="flex items-center justify-between">
                         <label className="text-[10px] text-muted-foreground">Type</label>
                         <span className="text-[10px] font-mono text-foreground capitalize">{clip.type}</span>
@@ -282,20 +282,20 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                         <label className="text-[10px] text-muted-foreground" htmlFor="follow-action-select">Follow Action</label>
                         <select
                             id="follow-action-select"
-                            className="bg-transparent text-[10px] text-foreground text-right outline-none focus:ring-0 border-none appearance-none cursor-pointer hover:underline"
+                            className="rounded bg-surface-overlay text-[10px] text-foreground text-right outline-none focus:ring-1 focus:ring-ring border border-border-hairline px-1 py-0.5 cursor-pointer hover:bg-surface-raised transition-colors"
                             value={clip.followAction ?? 'none'}
                             onChange={(e) => {
                                 const val = e.target.value === 'none' ? undefined : (e.target.value as any);
                                 setClipFollowAction(clip.id, val);
                             }}
                         >
-                            <option className="bg-background" value="none">None</option>
-                            <option className="bg-background" value="stop">Stop</option>
-                            <option className="bg-background" value="play_next">Play Next</option>
-                            <option className="bg-background" value="play_previous">Play Previous</option>
-                            <option className="bg-background" value="play_first">Play First</option>
-                            <option className="bg-background" value="play_last">Play Last</option>
-                            <option className="bg-background" value="play_random">Play Random</option>
+                            <option className="bg-bg-overlay" value="none">None</option>
+                            <option className="bg-bg-overlay" value="stop">Stop</option>
+                            <option className="bg-bg-overlay" value="play_next">Play Next</option>
+                            <option className="bg-bg-overlay" value="play_previous">Play Previous</option>
+                            <option className="bg-bg-overlay" value="play_first">Play First</option>
+                            <option className="bg-bg-overlay" value="play_last">Play Last</option>
+                            <option className="bg-bg-overlay" value="play_random">Play Random</option>
                         </select>
                     </div>
                     {clip.type === 'audio' && (

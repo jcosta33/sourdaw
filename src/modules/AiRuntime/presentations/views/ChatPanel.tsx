@@ -68,7 +68,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
             className="flex flex-col bg-surface-raised border-l border-border/50 overflow-hidden shadow-2xl relative select-none"
         >
             {/* Header */}
-            <div className="flex items-center justify-between px-3 h-10 border-b border-border/50 bg-surface-header sticky top-0 shrink-0 z-10">
+            <div className="flex items-center justify-between px-3 h-10 border-b border-border/50 bg-surface-tray sticky top-0 shrink-0 z-10">
                 <div className="flex items-center gap-2">
                     <span className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase flex items-center gap-1.5">
                         <Bot className="size-3.5 text-purple-400" />
@@ -139,7 +139,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                                         'text-xs px-3 py-2.5 rounded-lg max-w-[92%] leading-relaxed',
                                         msg.role === 'user'
                                             ? 'bg-primary text-primary-foreground rounded-tr-sm'
-                                            : 'bg-surface-elevated text-foreground border border-border/50 rounded-tl-sm w-full',
+                                            : 'bg-surface-raised text-foreground border border-border/50 rounded-tl-sm w-full',
                                         msg.error &&
                                             'bg-destructive/10 border-destructive/30 text-destructive-foreground'
                                     )}
@@ -163,7 +163,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
             </div>
 
             {/* Input Footer */}
-            <div className="p-3 bg-surface-header border-t border-border/50 shrink-0">
+            <div className="p-3 bg-surface-tray border-t border-border/50 shrink-0">
                 <div className="relative rounded-lg bg-surface-base border border-border focus-within:ring-1 focus-within:ring-purple-500/50 focus-within:border-purple-500/50 transition-all flex shadow-sm">
                     <textarea
                         ref={textareaRef}

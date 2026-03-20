@@ -57,7 +57,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                 <div
                     className={cn(
                         'relative flex shrink-0 items-center gap-1 border-b border-border-soft px-1 cursor-pointer transition-colors duration-fast',
-                        isSelected ? 'bg-[#080808] shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)]' : 'hover:bg-[#111]'
+                        isSelected ? 'bg-surface-base shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)]' : 'hover:bg-surface-panel'
                     )}
                     style={{ height: trackHeight }}
                     role="row"
@@ -94,7 +94,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                 className={cn(
                     'relative flex shrink-0 items-center gap-1 border-b border-border-soft px-2 cursor-pointer transition-colors duration-fast',
                     track.parentId ? 'pl-5' : '',
-                        isSelected ? 'bg-[#080808] shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)]' : 'hover:bg-[#111]'
+                        isSelected ? 'bg-surface-base shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)]' : 'hover:bg-surface-panel'
                 )}
                 style={{ height: trackHeight }}
                 role="row"

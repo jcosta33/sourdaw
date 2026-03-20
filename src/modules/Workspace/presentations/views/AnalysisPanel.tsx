@@ -55,8 +55,8 @@ type AnalysisCardProps = {
 };
 
 const AnalysisCard = ({ title, children, className = '' }: AnalysisCardProps): ReactElement => (
-    <div className={`bg-surface-base border border-border/50 rounded-lg overflow-hidden flex flex-col min-w-0 min-h-0 ${className}`}>
-        <div className="px-2.5 py-1 border-b border-border/30 shrink-0">
+    <div className={`bg-surface-well border border-border-soft rounded-lg overflow-hidden flex flex-col min-w-0 min-h-0 shadow-[inset_0_1px_3px_rgba(0,0,0,0.4)] ${className}`}>
+        <div className="px-2.5 py-1 border-b border-border-hairline bg-surface-base/50 shrink-0">
             <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{title}</h3>
         </div>
         <div className="flex-1 flex items-center justify-center min-h-0 min-w-0 overflow-hidden">
@@ -68,7 +68,7 @@ const AnalysisCard = ({ title, children, className = '' }: AnalysisCardProps): R
 /* ── Panel ───────────────────────────────────────────── */
 export const AnalysisPanel = (): ReactElement => {
     return (
-        <div className="flex flex-col h-full bg-surface-raised">
+        <div className="flex flex-col h-full bg-surface-base">
             <ScrollArea className="flex-1">
                 <div className="p-2 flex flex-wrap gap-2">
                     {/* Wide cards: min 280, max 600, h-[140px] */}

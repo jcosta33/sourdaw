@@ -9,6 +9,9 @@
     /* Surfaces (Extreme deep blacks) */
     --color-bg-app: #030303;      /* Small perceptible gap to total #000 */
     --color-bg-canvas: #080808;
+    --color-bg-tray: #0a0a0a;     /* Sidebar/inspector container */
+    --color-bg-well: #0c0c0c;     /* Channel strip / track‑list well */
+    --color-bg-recess: #0e0e0e;   /* Transport/tempo recessed bay */
     --color-bg-panel: #111111;    /* Resting hardware surface */
     --color-bg-panelRaised: #1A1A1A;
     --color-bg-panelInset: #050505;  /* Deep pushed-in state */
@@ -103,6 +106,9 @@
     /* Surface Aliases (convenience names used in Tailwind utilities) */
     --color-surface-app: var(--color-bg-app);
     --color-surface-base: var(--color-bg-canvas);
+    --color-surface-tray: var(--color-bg-tray);
+    --color-surface-well: var(--color-bg-well);
+    --color-surface-recess: var(--color-bg-recess);
     --color-surface-panel: var(--color-bg-panel);
     --color-surface-raised: var(--color-bg-panelRaised);
     --color-surface-inset: var(--color-bg-panelInset);

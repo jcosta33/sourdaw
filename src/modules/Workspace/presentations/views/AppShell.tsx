@@ -272,7 +272,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const clamp = (v: number, min: number, max: number): number => Math.max(min, Math.min(max, v));
 
     return (
-        <div className="flex h-screen w-screen flex-col overflow-hidden bg-[#020202]">
+        <div className="flex h-screen w-screen flex-col overflow-hidden bg-surface-app">
             <a
                 href="#main-content"
                 className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground"
@@ -308,9 +308,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 side="top"
                                 onResize={(d) => setMixerHeight((h) => clamp(h + d, 120, 800))}
                             />
-                            <div className="flex flex-col bg-[#060606] overflow-hidden shrink-0" style={{ height: mixerHeight }}>
+                            <div className="flex flex-col bg-surface-base overflow-hidden shrink-0" style={{ height: mixerHeight }}>
                                 {/* Bottom panel tab bar */}
-                                <div className="flex items-center gap-0.5 px-2 py-0.5 border-b border-border-hairline bg-[#0a0a0a] shrink-0">
+                                <div className="flex items-center gap-0.5 px-2 py-0.5 border-b border-border-hairline bg-surface-tray shrink-0">
                                     <Button
                                         variant={bottomTab === 'mixer' ? 'secondary' : 'ghost'}
                                         size="xs"
@@ -389,7 +389,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                             onResize={(d) => setAutomationWidth((w) => clamp(w + d, 200, 600))}
                         />
                         <div
-                            className="flex flex-col border-l border-border-hairline bg-[#0a0a0a] overflow-hidden"
+                            className="flex flex-col border-l border-border-hairline bg-surface-tray overflow-hidden"
                             style={{ width: automationWidth, minWidth: 200 }}
                         >
                             <AutomationView />
@@ -408,7 +408,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                     <>
                         <DragResizeHandle side="left" onResize={(d) => setAiWidth((w) => clamp(w + d, 200, 500))} />
                         <div
-                            className="flex flex-col border-l border-border-hairline bg-[#0a0a0a] overflow-hidden"
+                            className="flex flex-col border-l border-border-hairline bg-surface-tray overflow-hidden"
                             style={{ width: aiWidth, minWidth: 200 }}
                         >
                             <GenerativeAiPanel />

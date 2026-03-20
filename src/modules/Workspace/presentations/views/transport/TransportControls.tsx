@@ -66,7 +66,7 @@ export const TransportControls = ({
     };
 
     return (
-        <div className="flex items-center gap-1 bg-[#0e0e0e] px-1.5 py-1 rounded-sm shadow-[inset_0_1px_3px_rgba(0,0,0,0.6),0_1px_0_rgba(255,255,255,0.03)] border border-black/60" role="group" aria-label="Playback controls">
+        <div className="flex items-center gap-1 bg-surface-recess px-1.5 py-1 rounded-sm shadow-[inset_0_1px_3px_rgba(0,0,0,0.6),0_1px_0_rgba(255,255,255,0.03)] border border-black/60" role="group" aria-label="Playback controls">
             <span className="sr-only" aria-live="polite" role="status">
                 {isRecording ? 'Recording' : isPlaying ? 'Playing' : 'Stopped'}
             </span>
@@ -207,7 +207,7 @@ export const TransportControls = ({
                                 step={0.01}
                                 value={metronomeVolume}
                                 onChange={(e) => setMetronomeVolume(parseFloat(e.target.value))}
-                                className="h-2 w-16 cursor-pointer rounded-full appearance-none bg-bg-slot shadow-elevation-inset [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-text-secondary [&::-webkit-slider-thumb]:rounded-sm"
+                                className="h-2 w-16 cursor-pointer rounded-full appearance-none bg-bg-slot shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-text-secondary [&::-webkit-slider-thumb]:rounded-sm"
                                 aria-label={`Metronome volume: ${Math.round(metronomeVolume * 100)}%`}
                             />
                         </div>

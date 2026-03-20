@@ -29,9 +29,9 @@ export const LED = ({ on, variant = 'amber', size = 'md', className }: LEDProps)
     return (
         <div
             className={cn(
-                'rounded-micro transition-colors duration-fast shadow-elevation-inset border border-[rgba(0,0,0,0.5)]',
+                'rounded-micro transition-colors duration-fast shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)] border border-[rgba(0,0,0,0.5)]',
                 sizeStyles[size],
-                on ? activeGlows[variant] : 'bg-[#1A1A1A]',
+                on ? activeGlows[variant] : 'bg-surface-raised',
                 className
             )}
             aria-hidden="true"

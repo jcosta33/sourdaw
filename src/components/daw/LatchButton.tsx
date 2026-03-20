@@ -50,7 +50,7 @@ export function LatchButton({
             data-active={active}
             className={cn(
                 // Base structure & smooth DAW transitions
-                'relative inline-flex items-center justify-center font-medium select-none overflow-hidden',
+                'relative inline-flex items-center justify-center font-medium select-none overflow-hidden cursor-pointer',
                 'transition-all duration-fast easing-press',
                 'focus:outline-none focus-visible:ring-1 focus-visible:ring-border-focus',
                 'disabled:opacity-50 disabled:pointer-events-none',

@@ -131,7 +131,7 @@ export const TempoEditor = (): ReactElement => {
     };
 
     return (
-        <div className="relative flex items-center gap-2 px-2 bg-bg-panelRaised shadow-elevation-flush border border-border-soft rounded-sm h-8">
+        <div className="relative flex items-center gap-2 px-2 bg-surface-recess shadow-[inset_0_1px_3px_rgba(0,0,0,0.6),0_1px_0_rgba(255,255,255,0.03)] border border-black/60 rounded-sm h-8">
             <Tooltip>
                 <TooltipTrigger asChild>
                     <div>
@@ -219,16 +219,17 @@ export const TempoEditor = (): ReactElement => {
             ) : (
                 <Tooltip>
                     <TooltipTrigger asChild>
-                        <button
-                            type="button"
-                            className="rounded px-2 py-0.5 hover:bg-accent/50 transition-colors"
+                        <Button
+                            variant="ghost"
+                            size="sm"
                             onClick={startTimeSigEdit}
                             aria-label={`Time signature: ${transport.timeSignatureNumerator}/${transport.timeSignatureDenominator}. Click to edit.`}
+                            className="px-2 py-0.5"
                         >
                             <span className="text-lg font-mono font-medium text-muted-foreground">
                                 {transport.timeSignatureNumerator}/{transport.timeSignatureDenominator}
                             </span>
-                        </button>
+                        </Button>
                     </TooltipTrigger>
                     <TooltipContent>Click to edit time signature</TooltipContent>
                 </Tooltip>
@@ -278,14 +279,15 @@ export const TempoEditor = (): ReactElement => {
                                             aria-label={`Edit tempo at beat ${change.beat}`}
                                         />
                                     ) : (
-                                        <button
-                                            type="button"
-                                            className="w-14 rounded text-center font-mono tabular-nums text-foreground hover:bg-accent/50"
+                                        <Button
+                                            variant="ghost"
+                                            size="xs"
+                                            className="w-14 text-center font-mono tabular-nums"
                                             onClick={() => startEditChange(change)}
                                             aria-label={`${change.tempo} BPM at beat ${change.beat}. Click to edit.`}
                                         >
                                             {change.tempo}
-                                        </button>
+                                        </Button>
                                     )}
 
                                     <span className="text-muted-foreground">BPM</span>

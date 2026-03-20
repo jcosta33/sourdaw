@@ -94,7 +94,7 @@ export const StatusBar = (): ReactElement => {
 
     return (
         <footer
-            className="flex h-6 shrink-0 items-center justify-between border-t border-border/50 bg-surface-raised px-3"
+            className="flex h-6 shrink-0 items-center justify-between border-t border-black/50 bg-surface-tray shadow-[inset_0_1px_2px_rgba(0,0,0,0.4)] px-3"
             role="status"
             aria-label="Application status"
         >

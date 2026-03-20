@@ -119,7 +119,7 @@ export const Fader = ({
             {/* Background Track (Slot) */}
             <div 
                 ref={trackRef}
-                className="absolute top-0 bottom-0 w-2.5 bg-bg-slot shadow-elevation-inset rounded-full overflow-hidden"
+                className="absolute top-0 bottom-0 w-2.5 bg-bg-slot shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] rounded-full overflow-hidden"
             >
                 {/* Track ticks (optional unity line) */}
                 <div 
@@ -134,7 +134,7 @@ export const Fader = ({
                 className={cn(
                     'absolute w-8 h-10 -ml-4 left-1/2 rounded-sm cursor-grab z-10',
                     'transition-all duration-instant',
-                    isDragging ? 'shadow-elevation-inset cursor-grabbing drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]' : 'shadow-elevation-raised',
+                    isDragging ? 'shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] cursor-grabbing' : 'shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_1px_2px_rgba(0,0,0,0.5)]',
                     'bg-bg-panel border border-border-soft',
                     'flex flex-col items-center justify-center gap-[2px]'
                 )}

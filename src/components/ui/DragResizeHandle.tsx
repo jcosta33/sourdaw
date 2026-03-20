@@ -58,7 +58,7 @@ export const DragResizeHandle = ({ side, onResize, className }: DragResizeHandle
         <div
             className={cn(
                 'shrink-0 select-none transition-colors',
-                'bg-[#0a0a0a] hover:bg-[#1a1a1a] active:bg-[#222]',
+                'bg-surface-tray hover:bg-surface-raised active:bg-surface-overlay',
                 vertical
                     ? [
                           'w-[5px] cursor-col-resize border-x border-border-hairline',

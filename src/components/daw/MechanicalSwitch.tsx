@@ -38,7 +38,7 @@ export function MechanicalSwitch({
                 aria-checked={checked}
                 onClick={() => onChange(!checked)}
                 className={cn(
-                    'relative rounded-[3px] bg-black border border-white/5 shadow-elevation-inset overflow-hidden',
+                    'relative rounded-[3px] bg-black border border-white/5 shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] overflow-hidden',
                     'focus:outline-none focus-visible:ring-1 focus-visible:ring-border-focus transition-all duration-75 group',
                     sizeConfig[size]
                 )}
@@ -46,7 +46,7 @@ export function MechanicalSwitch({
                 <div 
                     className={cn(
                         'absolute inset-[1px] rounded-[2px] transition-all duration-100 ease-in-out',
-                        'bg-gradient-to-b from-[#1a1a1a] to-[#0a0a0a] border border-black/50',
+                        'bg-gradient-to-b from-surface-raised to-surface-base border border-black/50',
                         checked 
                             ? 'translate-y-[-1px] shadow-[inset_0_4px_4px_rgba(0,0,0,0.8),inset_0_-1px_1px_rgba(255,255,255,0.1)]' 
                             : 'translate-y-[1px] shadow-[inset_0_1px_1px_rgba(255,255,255,0.1),inset_0_-4px_4px_rgba(0,0,0,0.8)]'

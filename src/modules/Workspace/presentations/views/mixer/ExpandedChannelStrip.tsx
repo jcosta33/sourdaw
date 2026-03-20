@@ -100,7 +100,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
             className={cn(
                 'flex shrink-0 flex-col items-center gap-1.5 rounded-lg p-2',
                 widthClass,
-                'bg-surface-0 border border-border shadow-sm',
+                'bg-surface-well border border-border-soft shadow-[0_1px_2px_rgba(0,0,0,0.4)]',
                 isSelected && 'ring-1 ring-ring border-transparent'
             )}
             onClick={() => selectTrack(track.id)}

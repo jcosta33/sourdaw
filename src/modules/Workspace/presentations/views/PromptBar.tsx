@@ -523,15 +523,16 @@ export const PromptBar = (): ReactElement => {
                     aria-controls="prompt-results"
                     disabled={isProcessing}
                 />
-                <button
+                <Button
+                    variant="ghost"
+                    size="icon-xs"
                     onClick={toggleAiHistoryPanel}
-                    className="text-muted-foreground/60 hover:text-muted-foreground transition-colors"
                     title="AI action history"
                     aria-label="Toggle AI action history"
                     type="button"
                 >
                     <History className="size-3.5" />
-                </button>
+                </Button>
                 <LlmStatusBadge status={llmStatus ?? { state: 'idle' }} onLoad={handleLoadModel} />
             </form>
 
