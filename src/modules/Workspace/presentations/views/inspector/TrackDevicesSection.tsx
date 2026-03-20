@@ -1,4 +1,5 @@
 import { type ReactElement, useState, useEffect, useRef, useSyncExternalStore } from 'react';
+import { Card, CardHeader, CardTitle, CardContent } from '#/components/ui/card';
 import { Button } from '#/components/ui/button';
 import { Plus, Power, Trash2, Monitor } from 'lucide-react';
 import { BUILTIN_PLUGINS } from '../../../useCases/workspaceViewActions';
@@ -44,9 +45,9 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
     }, [showDeviceMenu]);
 
     return (
-        <section>
-            <div className="flex items-center justify-between mb-2">
-                <h3 className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Devices</h3>
+        <Card className="rounded-md shadow-none bg-surface-base border-border/50 overflow-visible">
+            <CardHeader className="p-2 pl-3 pb-2 border-b border-border/30 flex flex-row items-center justify-between space-y-0">
+                <CardTitle className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Devices</CardTitle>
                 <div className="relative" ref={deviceMenuRef}>
                     <Button
                         variant="ghost"
@@ -150,7 +151,8 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                         </div>
                     )}
                 </div>
-            </div>
+            </CardHeader>
+            <CardContent className="p-2 pt-3">
             {track.devices.length > 0 ? (
                 <div className="space-y-1">
                     {track.devices.map((device, deviceIndex) => (
@@ -212,8 +214,9 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                     ))}
                 </div>
             ) : (
-                <p className="text-[10px] text-muted-foreground">No devices. Click + to add.</p>
+                <p className="text-[10px] text-muted-foreground px-1 pb-1">No devices. Click + to add.</p>
             )}
-        </section>
+            </CardContent>
+        </Card>
     );
 };

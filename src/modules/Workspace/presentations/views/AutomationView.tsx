@@ -3,6 +3,9 @@ import { ArrangementBar } from '#/modules/Timeline/presentations/views/Arrangeme
 import { timelineViewStore, scrollTimeline, setScrollY } from '#/modules/Timeline/stores/timelineViewStore';
 import { useTracks } from '../hooks/useTracks';
 import { TrackAutomationSection } from './automationView/TrackAutomationSection';
+import { Button } from '#/components/ui/button';
+import { X } from 'lucide-react';
+import { toggleAutomationPanel } from '../../useCases/togglePanel';
 
 export const AutomationView = (): ReactElement => {
     const { tracks } = useTracks();
@@ -28,8 +31,17 @@ export const AutomationView = (): ReactElement => {
     };
 
     return (
-        <div className="flex h-full flex-col overflow-hidden" ref={containerRef}>
+        <div className="flex h-full flex-col overflow-hidden relative" ref={containerRef}>
             <ArrangementBar pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} />
+            <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={toggleAutomationPanel}
+                className="absolute top-[2px] right-2 z-50 text-muted-foreground hover:text-foreground"
+                aria-label="Close automation panel"
+            >
+                <X className="size-3.5" />
+            </Button>
             <div className="flex-1 overflow-y-auto bg-surface-base/50" onWheel={handleWheel}>
                 {tracks.length === 0 ? (
                     <div className="flex items-center justify-center h-full">

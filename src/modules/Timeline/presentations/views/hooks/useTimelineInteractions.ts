@@ -300,12 +300,10 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
 
             if (!clipHit) {
                 const trackId = hitTestTrack(y);
-                if (trackId) {
-                    selectTrack(trackId);
-                    const ws = workspaceStore.value;
-                    if (ws) {
-                        workspaceStore.set({ ...ws, selectedClipId: null, selectedClipIds: [] });
-                    }
+                selectTrack(trackId);
+                const ws = workspaceStore.value;
+                if (ws) {
+                    workspaceStore.set({ ...ws, selectedClipId: null, selectedClipIds: [] });
                 }
                 rubberBandRef.current = { startX: x, startY: y };
                 setPlayheadFromClick(x);

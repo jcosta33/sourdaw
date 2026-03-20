@@ -2,7 +2,7 @@ import { type ReactElement } from 'react';
 import {
     PanelLeft,
     PanelRight,
-    LayoutPanelTop,
+    PanelBottom,
     ListOrdered,
     MessageSquare,
     Settings2,
@@ -108,14 +108,14 @@ export const PanelToggles = ({
                     <Button
                         variant={mixerOpen ? 'secondary' : 'ghost'}
                         size="icon-sm"
-                        aria-label="Toggle mixer"
+                        aria-label="Toggle bottom dock"
                         aria-pressed={mixerOpen}
                         onClick={toggleMixer}
                     >
-                        <LayoutPanelTop className="size-3.5" aria-hidden="true" />
+                        <PanelBottom className="size-3.5" aria-hidden="true" />
                     </Button>
                 </TooltipTrigger>
-                <TooltipContent>Toggle Mixer (⌘M)</TooltipContent>
+                <TooltipContent>Toggle Bottom Dock (⌘M)</TooltipContent>
             </Tooltip>
             <Tooltip>
                 <TooltipTrigger asChild>

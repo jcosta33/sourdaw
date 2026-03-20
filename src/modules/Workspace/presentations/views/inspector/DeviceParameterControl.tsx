@@ -1,5 +1,6 @@
 import { type ReactElement, useSyncExternalStore } from 'react';
-import { Slider } from '#/components/ui/slider';
+import { Knob } from '#/components/ui/knob';
+import { BipolarSlider } from '#/components/ui/bipolar-slider';
 import { cn } from '#/helpers/Styles/cn';
 import { MidiLearnButton } from '#/modules/Track/presentations/views/MidiLearnButton';
 import { type DeviceParameter } from '../../../useCases/workspaceViewActions';
@@ -23,15 +24,9 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
     const hasAutomation = autoState?.lanes.some((l) => l.trackId === trackId && l.parameterId === param.id) ?? false;
 
     const value = device.parameterValues[param.id] ?? param.value;
-    const range = param.maxValue - param.minValue;
-    const normalized = range !== 0 ? ((value - param.minValue) / range) * 100 : 50;
 
-    const handleSliderChange = ([v]: number[]) => {
-        if (v === undefined) {
-            return;
-        }
-        const newValue = param.minValue + (v / 100) * range;
-        setDeviceParameter(device.id, param.id, newValue);
+    const handleKnobChange = (v: number) => {
+        setDeviceParameter(device.id, param.id, v);
     };
 
     const handleChoiceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -85,13 +80,38 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                     ))}
                 </select>
             ) : (
-                <Slider
-                    value={[normalized]}
-                    onValueChange={handleSliderChange}
-                    max={100}
-                    step={0.1}
-                    aria-label={param.name}
-                />
+                <div className="flex justify-center mt-3 pb-1 w-full px-1">
+                    {param.unit === 'dB' ? (
+                        <BipolarSlider
+                            value={value}
+                            onValueChange={handleKnobChange}
+                            min={param.minValue}
+                            max={param.maxValue}
+                            step={param.type === 'int' ? 1 : 0.1}
+                            defaultValue={param.defaultValue ?? param.value}
+                            formatValue={(v) => `${v.toFixed(1)} dB`}
+                        />
+                    ) : (
+                        <Knob
+                            value={value}
+                            onValueChange={handleKnobChange}
+                            min={param.minValue}
+                            max={param.maxValue}
+                            step={param.type === 'int' ? 1 : 0}
+                            defaultValue={param.defaultValue ?? param.value}
+                            size={
+                                param.name.toLowerCase().includes('mix') ||
+                                param.name.toLowerCase().includes('dry/wet') ||
+                                param.name.toLowerCase().includes('threshold') ||
+                                param.name.toLowerCase().includes('time') ||
+                                param.name.toLowerCase().includes('rate')
+                                    ? 64
+                                    : 48
+                            }
+                            aria-label={param.name}
+                        />
+                    )}
+                </div>
             )}
         </div>
     );

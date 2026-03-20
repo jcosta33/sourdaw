@@ -1,0 +1,80 @@
+import { type ReactElement } from 'react';
+import { Slider } from '#/components/ui/slider';
+import { cn } from '#/helpers/Styles/cn';
+
+export type BipolarSliderProps = {
+    value: number;
+    onValueChange: (val: number) => void;
+    min: number;
+    max: number;
+    step?: number;
+    defaultValue?: number;
+    label?: string;
+    formatValue?: (val: number) => string;
+    className?: string;
+};
+
+export const BipolarSlider = ({
+    value,
+    onValueChange,
+    min,
+    max,
+    step = 0.1,
+    defaultValue = 0,
+    label,
+    formatValue = (v) => v.toFixed(1),
+    className,
+}: BipolarSliderProps): ReactElement => {
+    // We visually represent this as a slider from 0-100 where 50 is center (0)
+    // assuming min is negative and max is positive and symmetric, or close to it.
+    const range = max - min;
+    const normalized = range === 0 ? 50 : ((value - min) / range) * 100;
+    
+    // Default position
+    const normalizedDefault = range === 0 ? 50 : ((defaultValue - min) / range) * 100;
+
+    const handleChange = ([v]: number[]) => {
+        if (v === undefined) return;
+        const mapped = min + (v / 100) * range;
+        onValueChange(mapped);
+    };
+
+    const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+        if (e.metaKey || e.ctrlKey) {
+            e.preventDefault();
+            e.stopPropagation();
+            onValueChange(defaultValue);
+        }
+    };
+
+    return (
+        <div className={cn("flex flex-col gap-1 w-full", className)}>
+            {label && (
+                <div className="flex justify-between items-center px-1">
+                    <span className="text-[10px] text-muted-foreground">{label}</span>
+                    <span className="text-[10px] font-mono text-muted-foreground">{formatValue(value)}</span>
+                </div>
+            )}
+            <div className="relative pt-2 pb-1 px-1 h-6 flex items-center" onPointerDownCapture={handlePointerDown}>
+                {/* Center tick */}
+                <div 
+                    className="absolute top-1 bottom-1 w-[2px] bg-border z-0 transform -translate-x-1/2 pointer-events-none" 
+                    style={{ left: `${normalizedDefault}%` }} 
+                />
+                
+                <Slider
+                    value={[normalized]}
+                    onValueChange={handleChange}
+                    max={100}
+                    step={step > 0 ? (step / range) * 100 : 0.1}
+                    className="z-10"
+                />
+            </div>
+            {!label && (
+                <div className="flex justify-center">
+                    <span className="text-[9px] font-mono text-muted-foreground">{formatValue(value)}</span>
+                </div>
+            )}
+        </div>
+    );
+};

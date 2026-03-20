@@ -38,12 +38,14 @@ export function soloTrackExclusive(trackId: string): void {
     applySoloLogic();
 }
 
-export function selectTrack(trackId: string): void {
+export function selectTrack(trackId: string | null): void {
     updateTrackState({ selectedTrackId: trackId });
 
-    const track = getTrackById(trackId);
-    if (track && track.kind === 'midi') {
-        setMidiInputTrack(trackId);
+    if (trackId) {
+        const track = getTrackById(trackId);
+        if (track && track.kind === 'midi') {
+            setMidiInputTrack(trackId);
+        }
     }
 }
 

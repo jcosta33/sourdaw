@@ -2,8 +2,9 @@ import { type CSSProperties, type ReactElement, useState, useRef } from 'react';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { Input } from '#/components/ui/input';
 import { Button } from '#/components/ui/button';
-import { Search, Music, FileAudio, Waves, Upload } from 'lucide-react';
+import { Search, Music, FileAudio, Waves, Upload, X } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
+import { toggleSidebar } from '../../useCases/togglePanel';
 import { BUILTIN_PLUGINS } from '../../useCases/workspaceViewActions';
 import { useTracks } from '../hooks/useTracks';
 import { decodeAudioFile } from '../../useCases/workspaceViewActions';
@@ -141,6 +142,9 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                     className="h-7 border-0 bg-transparent text-xs shadow-none focus-visible:ring-0 px-1"
                     aria-label="Search browser"
                 />
+                <Button variant="ghost" size="icon-xs" onClick={toggleSidebar} aria-label="Close browser">
+                    <X className="size-3.5" />
+                </Button>
             </div>
 
             <div className="flex border-b border-border/50 bg-surface-overlay" role="tablist" aria-label="Browser categories">
@@ -153,7 +157,7 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                         aria-selected={activeTab === tab.id}
                         aria-controls={`browser-panel-${tab.id}`}
                         className={cn(
-                            'flex-1 rounded-none border-b-2 transition-colors py-3 h-auto',
+                            'flex-1 rounded-none border-b-2 transition-colors py-2 h-auto flex flex-col items-center justify-center gap-1',
                             activeTab === tab.id
                                 ? 'border-primary text-primary bg-surface-base'
                                 : 'border-transparent text-muted-foreground hover:bg-surface-overlay hover:text-foreground'
@@ -161,6 +165,7 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                         onClick={() => setActiveTab(tab.id)}
                     >
                         <tab.Icon className="size-4" aria-hidden="true" />
+                        <span className="text-[8px] uppercase tracking-wider font-semibold">{tab.label}</span>
                     </Button>
                 ))}
             </div>

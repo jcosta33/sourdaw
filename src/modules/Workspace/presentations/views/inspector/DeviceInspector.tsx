@@ -68,12 +68,47 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
                 </section>
             )}
 
-            {parameters.length > 0 ? (
+            {plugin?.id === 'builtin-eq' && parameters.length > 0 ? (
+                <section>
+                    <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                        EQ Graphic
+                    </h3>
+                    <div className="grid grid-cols-[repeat(auto-fit,minmax(80px,1fr))] gap-2 bg-surface-base p-2 rounded border border-border/50">
+                        {/* Low Band */}
+                        <div className="flex flex-col items-center gap-1">
+                            <span className="text-[9px] text-muted-foreground font-semibold uppercase mb-2">Low</span>
+                            <div className="w-full space-y-4">
+                                {parameters.filter(p => p.name.includes('Low')).map(param => (
+                                    <DeviceParameterControl key={param.id} param={param} device={device} trackId={trackId} />
+                                ))}
+                            </div>
+                        </div>
+                        {/* Mid Band */}
+                        <div className="flex flex-col items-center gap-1 border-l border-r border-border/30 px-1">
+                            <span className="text-[9px] text-muted-foreground font-semibold uppercase mb-2">Mid</span>
+                            <div className="w-full space-y-4">
+                                {parameters.filter(p => p.name.includes('Mid')).map(param => (
+                                    <DeviceParameterControl key={param.id} param={param} device={device} trackId={trackId} />
+                                ))}
+                            </div>
+                        </div>
+                        {/* High Band */}
+                        <div className="flex flex-col items-center gap-1">
+                            <span className="text-[9px] text-muted-foreground font-semibold uppercase mb-2">High</span>
+                            <div className="w-full space-y-4">
+                                {parameters.filter(p => p.name.includes('High')).map(param => (
+                                    <DeviceParameterControl key={param.id} param={param} device={device} trackId={trackId} />
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            ) : parameters.length > 0 ? (
                 <section>
                     <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
                         Parameters
                     </h3>
-                    <div className="space-y-3">
+                    <div className="grid grid-cols-[repeat(auto-fit,minmax(90px,1fr))] gap-x-2 gap-y-4">
                         {parameters.map((param) => (
                             <DeviceParameterControl key={param.id} param={param} device={device} trackId={trackId} />
                         ))}

@@ -1,7 +1,10 @@
 import { type CSSProperties, type ReactElement, useState, useSyncExternalStore } from 'react';
 import { ScrollArea } from '#/components/ui/scroll-area';
+import { Button } from '#/components/ui/button';
+import { X } from 'lucide-react';
 import { useTracks } from '../hooks/useTracks';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
+import { toggleInspector } from '../../useCases/togglePanel';
 import { TrackInspector } from './inspector/TrackInspector';
 import { ClipInspector } from './inspector/ClipInspector';
 import { DeviceInspector } from './inspector/DeviceInspector';
@@ -12,7 +15,9 @@ type InspectorPanelProps = {
 
 export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => {
     const { tracks, selectedTrackId } = useTracks();
-    const selectedTrack = tracks.find((t) => t.id === selectedTrackId);
+    const selectedTrack = selectedTrackId 
+        ? tracks.find((t) => t.id === selectedTrackId) 
+        : tracks.find((t) => t.id === 'master');
     const wsSelectedClipId = useSyncExternalStore(
         (cb) => workspaceStore.subscribe(cb),
         () => workspaceStore.value?.selectedClipId ?? null
@@ -28,8 +33,11 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
             style={style}
             aria-label="Inspector panel"
         >
-            <div className="border-b border-border/50 px-3 py-2">
+            <div className="flex items-center justify-between border-b border-border/50 px-3 py-2">
                 <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Inspector</h2>
+                <Button variant="ghost" size="icon-xs" onClick={toggleInspector} aria-label="Close inspector">
+                    <X className="size-3.5" />
+                </Button>
             </div>
 
             <ScrollArea className="flex-1">

@@ -1,6 +1,7 @@
 import { type ReactElement, type MouseEvent as ReactMouseEvent, useState, useRef, useEffect } from 'react';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
+import { Knob } from '#/components/ui/knob';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { Volume2, VolumeX, Headphones, Circle, Ear, ShieldCheck } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
@@ -152,7 +153,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                             size="icon-xs"
                             aria-pressed={track.muted}
                             aria-label={track.muted ? 'Unmute' : 'Mute'}
-                            className={cn('size-5', track.muted && 'text-destructive-foreground bg-destructive/20')}
+                            className={cn('size-5', track.muted && 'text-amber-500 bg-amber-500/20')}
                             onClick={(e) => {
                                 e.stopPropagation();
                                 muteTrack(track.id, !track.muted);
@@ -171,7 +172,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                             size="icon-xs"
                             aria-pressed={track.soloed}
                             aria-label={track.soloed ? 'Unsolo' : 'Solo'}
-                            className={cn('size-5', track.soloed && 'text-yellow-400 bg-yellow-400/10')}
+                            className={cn('size-5', track.soloed && 'text-blue-500 bg-blue-500/20')}
                             onClick={(e) => {
                                 e.stopPropagation();
                                 if (e.metaKey || e.ctrlKey) {
@@ -193,7 +194,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                             size="icon-xs"
                             aria-pressed={track.armed}
                             aria-label={track.armed ? 'Disarm' : 'Arm'}
-                            className={cn('size-5', track.armed && 'text-red-500')}
+                            className={cn('size-5', track.armed && 'text-red-500 bg-red-500/20')}
                             onClick={(e) => {
                                 e.stopPropagation();
                                 armTrack(track.id, !track.armed);
@@ -230,7 +231,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
             </div>
 
             {/* Fader + meter */}
-            <div className="flex gap-2 h-40 mt-2 mb-1 items-end justify-center w-full">
+            <div className="flex gap-2 h-[160px] shrink-0 mt-2 mb-1 items-end justify-center w-[85%]">
                 <Slider
                     orientation="vertical"
                     value={[track.gain * 100]}
@@ -255,19 +256,26 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
             </span>
 
             {/* Pan */}
-            <div className="w-full px-1">
-                <label className="text-[7px] text-muted-foreground/60 block text-center mb-0.5">Pan</label>
-                <Slider
-                    value={[track.pan + 50]}
-                    onValueChange={([v]) => {
+            <div className="w-full px-1 flex flex-col items-center">
+                <Knob
+                    value={track.pan + 50}
+                    onValueChange={(v) => {
                         if (v !== undefined) {
                             setTrackPan(track.id, v - 50);
                             engineSetTrackPan(track.id, v - 50);
                         }
                     }}
+                    min={0}
                     max={100}
                     step={1}
+                    size={28}
+                    defaultValue={50}
                     aria-label={`${track.name} pan`}
+                    label="Pan"
+                    formatValue={(v) => {
+                        const p = v - 50;
+                        return p === 0 ? 'C' : p > 0 ? `R${p}` : `L${Math.abs(p)}`;
+                    }}
                 />
             </div>
 
