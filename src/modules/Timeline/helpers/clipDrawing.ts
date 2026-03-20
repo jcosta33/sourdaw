@@ -55,14 +55,30 @@ export const drawClip = (
         ctx.globalAlpha = 0.35;
     }
 
+    // Ghost clip: AI-generated preview, 40% opacity with purple dashed border
+    const isGhost = clip.isGhost ?? false;
+    if (isGhost) {
+        ctx.globalAlpha = 0.4;
+    }
+
     ctx.fillStyle = clip.color;
-    ctx.globalAlpha = (isMuted ? 0.35 : 1) * (isSelected ? 0.75 : 0.55);
+    const baseAlpha = isGhost ? 0.35 : (isMuted ? 0.35 : 1);
+    ctx.globalAlpha = baseAlpha * (isSelected ? 0.75 : 0.55);
     ctx.beginPath();
     ctx.roundRect(x, trackY + padding, w, trackHeight - padding * 2, 3);
     ctx.fill();
-    ctx.globalAlpha = isMuted ? 0.35 : 1;
+    ctx.globalAlpha = isGhost ? 0.6 : (isMuted ? 0.35 : 1);
 
-    if (isSelected) {
+    if (isGhost) {
+        // Ghost clips get a dashed purple border
+        ctx.strokeStyle = 'rgba(168, 85, 247, 0.8)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.roundRect(x, trackY + padding, w, trackHeight - padding * 2, 3);
+        ctx.stroke();
+        ctx.setLineDash([]);
+    } else if (isSelected) {
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
         ctx.lineWidth = 1.5;
         ctx.beginPath();
@@ -105,7 +121,7 @@ export const drawClip = (
         drawResizeHandles(ctx, x, trackY + padding, w, trackHeight - padding * 2);
     }
 
-    if (isMuted) {
+    if (isMuted || isGhost) {
         ctx.globalAlpha = 1;
     }
 };

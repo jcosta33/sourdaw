@@ -1,5 +1,5 @@
 import { type ReactElement, useState, useSyncExternalStore } from 'react';
-import { X, Sparkles, Music, Mic2, RefreshCw, AudioWaveform, Play, Plus, Loader2, Music4 } from 'lucide-react';
+import { X, Sparkles, Music, Mic2, RefreshCw, AudioWaveform, Play, Plus, Loader2, Music4, Library } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { DisabledFeatureWrapper } from '#/components/ui/disabled-feature-wrapper';
@@ -17,16 +17,20 @@ import {
     type GenerativeAiState,
 } from '../../useCases/generativeAiActions';
 import { GenreGrid, MoodGrid, InstrumentGrid } from '../components/GenerativeParamGrids';
+import { PatternBrowser } from './PatternBrowser';
 
 export const GenerativeAiPanel = (): ReactElement | null => {
     const state = useSyncExternalStore<GenerativeAiState>(subscribeGenerativeAi, getGenerativeAiSnapshot);
-    const [activeTab, setActiveTab] = useState<'audio' | 'midi' | 'stems'>('audio');
+    const [activeTab, setActiveTab] = useState<'audio' | 'midi' | 'stems'>('midi');
+    const [midiSubTab, setMidiSubTab] = useState<'ai' | 'patterns'>('patterns');
     const [prompt, setPrompt] = useState('');
     const [genre, setGenre] = useState('');
     const [instrument, setInstrument] = useState('');
     const [mood, setMood] = useState('');
     const [audioDuration, setAudioDuration] = useState(4);
     const [midiNotes, setMidiNotes] = useState(32);
+    const [creativity, setCreativity] = useState(65);
+    const [audioStrength, setAudioStrength] = useState(70);
 
     if (!state.isPanelOpen) {
         return null;
@@ -47,9 +51,9 @@ export const GenerativeAiPanel = (): ReactElement | null => {
         }
 
         if (activeTab === 'audio') {
-            handleGenerateAudioFallback(finalPrompt, audioDuration.toString());
+            handleGenerateAudioFallback(finalPrompt, audioDuration.toString(), audioStrength / 100);
         } else if (activeTab === 'midi') {
-            handleGenerateMidiPrompt(finalPrompt, midiNotes);
+            handleGenerateMidiPrompt(finalPrompt, midiNotes, creativity / 100);
         }
         setPrompt('');
     };
@@ -65,26 +69,15 @@ export const GenerativeAiPanel = (): ReactElement | null => {
             <div className="flex h-[38px] items-center justify-between border-b border-border/40 px-3 shrink-0 bg-surface-raised/50">
                 <div className="flex items-center gap-2">
                     <Sparkles className="size-4 text-purple-400" />
-                    <h2 className="text-xs font-semibold text-foreground tracking-tight">Generative AI</h2>
+                    <h2 className="text-xs font-semibold text-foreground tracking-tight">Generation</h2>
                 </div>
                 <Button variant="ghost" size="icon-xs" onClick={toggleGenerativeAiPanel} className="h-6 w-6">
                     <X className="size-3.5" />
                 </Button>
             </div>
 
-            {/* Tabs */}
+            {/* Primary Tabs */}
             <div className="flex p-2 gap-1 border-b border-border/20 shrink-0">
-                <button
-                    className={cn(
-                        'flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 text-[11px] rounded-md font-medium transition-colors',
-                        activeTab === 'audio'
-                            ? 'bg-accent text-accent-foreground'
-                            : 'text-muted-foreground hover:bg-surface-raised hover:text-foreground'
-                    )}
-                    onClick={() => setActiveTab('audio')}
-                >
-                    <AudioWaveform className="size-3" /> Audio
-                </button>
                 <button
                     className={cn(
                         'flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 text-[11px] rounded-md font-medium transition-colors',
@@ -99,6 +92,17 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                 <button
                     className={cn(
                         'flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 text-[11px] rounded-md font-medium transition-colors',
+                        activeTab === 'audio'
+                            ? 'bg-accent text-accent-foreground'
+                            : 'text-muted-foreground hover:bg-surface-raised hover:text-foreground'
+                    )}
+                    onClick={() => setActiveTab('audio')}
+                >
+                    <AudioWaveform className="size-3" /> Audio
+                </button>
+                <button
+                    className={cn(
+                        'flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 text-[11px] rounded-md font-medium transition-colors',
                         activeTab === 'stems'
                             ? 'bg-accent text-accent-foreground'
                             : 'text-muted-foreground hover:bg-surface-raised hover:text-foreground'
@@ -109,10 +113,44 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                 </button>
             </div>
 
-            {/* Controls */}
-            <div className="p-3 border-b border-border/20 shrink-0 space-y-4 bg-surface-raised/30">
-                {activeTab === 'stems' ? (
-                    <div className="space-y-3">
+            {/* MIDI Sub-tabs */}
+            {activeTab === 'midi' && (
+                <div className="flex px-3 pt-2 pb-1 gap-2 shrink-0">
+                    <button
+                        className={cn(
+                            'flex items-center gap-1 px-2 py-1 text-[10px] rounded-md font-medium transition-colors border',
+                            midiSubTab === 'patterns'
+                                ? 'bg-purple-600/15 border-purple-500/30 text-purple-300'
+                                : 'border-transparent text-muted-foreground hover:bg-surface-raised hover:text-foreground'
+                        )}
+                        onClick={() => setMidiSubTab('patterns')}
+                    >
+                        <Library className="size-3" /> Patterns
+                    </button>
+                    <button
+                        className={cn(
+                            'flex items-center gap-1 px-2 py-1 text-[10px] rounded-md font-medium transition-colors border',
+                            midiSubTab === 'ai'
+                                ? 'bg-purple-600/15 border-purple-500/30 text-purple-300'
+                                : 'border-transparent text-muted-foreground hover:bg-surface-raised hover:text-foreground'
+                        )}
+                        onClick={() => setMidiSubTab('ai')}
+                    >
+                        <Sparkles className="size-3" /> AI Generate
+                    </button>
+                </div>
+            )}
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto">
+                {activeTab === 'midi' && midiSubTab === 'patterns' && (
+                    <div className="p-3">
+                        <PatternBrowser />
+                    </div>
+                )}
+
+                {activeTab === 'stems' && (
+                    <div className="p-3 space-y-3">
                         <p className="text-[10px] text-muted-foreground leading-relaxed">
                             Drop an audio clip here or select one from the arrangement to separate it into 4 distinct
                             stems (Vocals, Drums, Bass, Other) using HTDemucs.
@@ -139,87 +177,119 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                             </Button>
                         </DisabledFeatureWrapper>
                     </div>
-                ) : (
-                    <div className="space-y-3">
-                        <div className="space-y-1.5">
-                            <label className="text-[10px] font-medium text-foreground/80">Prompt details</label>
-                            <textarea
-                                value={prompt}
-                                onChange={(e) => setPrompt(e.target.value)}
-                                placeholder={
-                                    activeTab === 'audio'
-                                        ? 'e.g. vintage vinyl crackle, 85bpm'
-                                        : 'e.g. syncopated rhythm, D minor'
-                                }
-                                className="w-full h-12 bg-surface-base border border-border/60 rounded-md p-2 text-xs placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-purple-500/50 resize-none"
-                            />
-                        </div>
+                )}
 
-                        <div className="space-y-4 pt-1 pb-2">
-                            <div className="space-y-2">
-                                <label className="text-[10px] font-semibold text-foreground/90 uppercase tracking-wider flex items-center justify-between">
-                                    Genre
-                                    {genre && <Button variant="link" size="xs" className="h-4 p-0 text-[9px] text-muted-foreground hover:text-foreground" onClick={() => setGenre('')}>Clear</Button>}
-                                </label>
-                                <GenreGrid value={genre} onChange={setGenre} />
-                            </div>
-                            
-                            <div className="space-y-2">
-                                <label className="text-[10px] font-semibold text-foreground/90 uppercase tracking-wider flex items-center justify-between">
-                                    Mood
-                                    {mood && <Button variant="link" size="xs" className="h-4 p-0 text-[9px] text-muted-foreground hover:text-foreground" onClick={() => setMood('')}>Clear</Button>}
-                                </label>
-                                <MoodGrid value={mood} onChange={setMood} />
-                            </div>
-                            
-                            <div className="space-y-2">
-                                <label className="text-[10px] font-semibold text-foreground/90 uppercase tracking-wider flex items-center justify-between">
-                                    Instrument Focus
-                                    {instrument && <Button variant="link" size="xs" className="h-4 p-0 text-[9px] text-muted-foreground hover:text-foreground" onClick={() => setInstrument('')}>Clear</Button>}
-                                </label>
-                                <InstrumentGrid value={instrument} onChange={setInstrument} />
-                            </div>
-                        </div>
-
-                        {activeTab === 'audio' && (
-                            <div className="space-y-2">
-                                <div className="flex justify-between items-center">
-                                    <label className="text-[10px] font-medium text-foreground/80">Duration</label>
-                                    <span className="text-[10px] text-muted-foreground">{audioDuration}s</span>
-                                </div>
-                                <Slider
-                                    value={[audioDuration]}
-                                    onValueChange={([v]) => setAudioDuration(v!)}
-                                    min={1}
-                                    max={30}
-                                    step={1}
-                                    className="pt-1"
+                {(activeTab === 'audio' || (activeTab === 'midi' && midiSubTab === 'ai')) && (
+                    <div className="p-3 space-y-4">
+                        <div className="space-y-3">
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-medium text-foreground/80">Prompt details</label>
+                                <textarea
+                                    value={prompt}
+                                    onChange={(e) => setPrompt(e.target.value)}
+                                    placeholder={
+                                        activeTab === 'audio'
+                                            ? 'e.g. vintage vinyl crackle, 85bpm'
+                                            : 'e.g. jazzy chord progression in D minor'
+                                    }
+                                    className="w-full h-12 bg-surface-base border border-border/60 rounded-md p-2 text-xs placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-purple-500/50 resize-none"
                                 />
                             </div>
-                        )}
 
-                        {activeTab === 'midi' && (
-                            <div className="space-y-2">
-                                <div className="flex justify-between items-center">
-                                    <label className="text-[10px] font-medium text-foreground/80">Max Notes</label>
-                                    <span className="text-[10px] text-muted-foreground">{midiNotes}</span>
+                            <div className="space-y-4 pt-1 pb-2">
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-semibold text-foreground/90 uppercase tracking-wider flex items-center justify-between">
+                                        Genre
+                                        {genre && <Button variant="link" size="xs" className="h-4 p-0 text-[9px] text-muted-foreground hover:text-foreground" onClick={() => setGenre('')}>Clear</Button>}
+                                    </label>
+                                    <GenreGrid value={genre} onChange={setGenre} />
                                 </div>
-                                <Slider
-                                    value={[midiNotes]}
-                                    onValueChange={([v]) => setMidiNotes(v!)}
-                                    min={4}
-                                    max={128}
-                                    step={4}
-                                    className="pt-1"
-                                />
+                                
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-semibold text-foreground/90 uppercase tracking-wider flex items-center justify-between">
+                                        Mood
+                                        {mood && <Button variant="link" size="xs" className="h-4 p-0 text-[9px] text-muted-foreground hover:text-foreground" onClick={() => setMood('')}>Clear</Button>}
+                                    </label>
+                                    <MoodGrid value={mood} onChange={setMood} />
+                                </div>
+                                
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-semibold text-foreground/90 uppercase tracking-wider flex items-center justify-between">
+                                        Instrument Focus
+                                        {instrument && <Button variant="link" size="xs" className="h-4 p-0 text-[9px] text-muted-foreground hover:text-foreground" onClick={() => setInstrument('')}>Clear</Button>}
+                                    </label>
+                                    <InstrumentGrid value={instrument} onChange={setInstrument} />
+                                </div>
                             </div>
-                        )}
 
-                        <DisabledFeatureWrapper
-                            disabled={!isTauri()}
-                            reason="AI Generation requires the Tauri Desktop version of WebDAW to execute local inference models."
-                            className="w-full flex"
-                        >
+                            {activeTab === 'audio' && (
+                                <>
+                                <div className="space-y-2">
+                                    <div className="flex justify-between items-center">
+                                        <label className="text-[10px] font-medium text-foreground/80">Duration</label>
+                                        <span className="text-[10px] text-muted-foreground">{audioDuration}s</span>
+                                    </div>
+                                    <Slider
+                                        value={[audioDuration]}
+                                        onValueChange={([v]) => setAudioDuration(v!)}
+                                        min={1}
+                                        max={30}
+                                        step={1}
+                                        className="pt-1"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <div className="flex justify-between items-center">
+                                        <label className="text-[10px] font-medium text-foreground/80">Strength</label>
+                                        <span className="text-[10px] text-muted-foreground">{audioStrength}%</span>
+                                    </div>
+                                    <Slider
+                                        value={[audioStrength]}
+                                        onValueChange={([v]) => setAudioStrength(v!)}
+                                        min={10}
+                                        max={100}
+                                        step={5}
+                                        className="pt-1"
+                                    />
+                                    <p className="text-[9px] text-muted-foreground/60">Lower = subtle, higher = aggressive</p>
+                                </div>
+                                </>
+                            )}
+
+                            {activeTab === 'midi' && midiSubTab === 'ai' && (
+                                <>
+                                <div className="space-y-2">
+                                    <div className="flex justify-between items-center">
+                                        <label className="text-[10px] font-medium text-foreground/80">Max Notes</label>
+                                        <span className="text-[10px] text-muted-foreground">{midiNotes}</span>
+                                    </div>
+                                    <Slider
+                                        value={[midiNotes]}
+                                        onValueChange={([v]) => setMidiNotes(v!)}
+                                        min={4}
+                                        max={128}
+                                        step={4}
+                                        className="pt-1"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <div className="flex justify-between items-center">
+                                        <label className="text-[10px] font-medium text-foreground/80">Creativity</label>
+                                        <span className="text-[10px] text-muted-foreground">{creativity}%</span>
+                                    </div>
+                                    <Slider
+                                        value={[creativity]}
+                                        onValueChange={([v]) => setCreativity(v!)}
+                                        min={10}
+                                        max={100}
+                                        step={5}
+                                        className="pt-1"
+                                    />
+                                    <p className="text-[9px] text-muted-foreground/60">Lower = predictable, higher = experimental</p>
+                                </div>
+                                </>
+                            )}
+
                             <Button
                                 className="w-full h-8 text-xs bg-purple-600 hover:bg-purple-500 text-white flex justify-between items-center"
                                 onClick={handleGenerate}
@@ -230,29 +300,24 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                     Generate {activeTab === 'audio' ? 'Audio' : 'MIDI'}
                                 </div>
                                 <span className="text-[9px] opacity-70 border border-white/40 rounded px-1">
-                                    {isTauri() ? 'Desktop' : 'Web'}
+                                    {activeTab === 'midi' ? 'WebLLM' : isTauri() ? 'Desktop' : 'Web'}
                                 </span>
                             </Button>
-                        </DisabledFeatureWrapper>
+                        </div>
                     </div>
                 )}
-            </div>
 
-            {/* Results Library */}
-            <div className="flex-1 overflow-y-auto p-2">
-                <h3 className="text-[10px] font-semibold text-muted-foreground mb-2 px-1 uppercase tracking-wider">
-                    Library
-                </h3>
-                {state.tasks.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-10 text-muted-foreground opacity-60">
-                        <Sparkles className="size-8 mb-2 opacity-50" />
-                        <span className="text-[11px]">No generations yet</span>
-                    </div>
-                ) : (
-                    <div className="space-y-1.5">
-                        {state.tasks.map((task: AiTaskResult) => (
-                            <TaskResultCard key={task.id} task={task} />
-                        ))}
+                {/* Results Library */}
+                {state.tasks.length > 0 && (
+                    <div className="p-2 border-t border-border/20">
+                        <h3 className="text-[10px] font-semibold text-muted-foreground mb-2 px-1 uppercase tracking-wider">
+                            Recent
+                        </h3>
+                        <div className="space-y-1.5">
+                            {state.tasks.map((task: AiTaskResult) => (
+                                <TaskResultCard key={task.id} task={task} />
+                            ))}
+                        </div>
                     </div>
                 )}
             </div>
@@ -260,7 +325,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
     );
 };
 
-const TaskResultCard = ({ task }: { task: AiTaskResult }) => {
+const TaskResultCard = ({ task }: { task: AiTaskResult }): ReactElement => {
     return (
         <div className="group relative bg-surface-raised border border-border/40 rounded-md p-2 text-xs flex flex-col gap-1.5 hover:border-purple-500/40 transition-colors">
             <div className="flex items-start justify-between">

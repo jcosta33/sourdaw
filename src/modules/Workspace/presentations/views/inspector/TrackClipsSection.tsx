@@ -1,6 +1,9 @@
 import { type ReactElement } from 'react';
 import { Card } from '#/components/ui/card';
+import { Button } from '#/components/ui/button';
+import { Check, X, Sparkles } from 'lucide-react';
 import { type Track } from '../../../useCases/workspaceViewActions';
+import { acceptGhostClip, dismissGhostClip } from '#/modules/Track/useCases/clipUseCases';
 
 export type TrackClipsSectionProps = {
     track: Track;
@@ -18,15 +21,48 @@ export const TrackClipsSection = ({ track, onSelectClip }: TrackClipsSectionProp
                     {track.clips.map((clip) => (
                         <Card
                             key={clip.id}
-                            className="rounded-md shadow-none bg-surface-base border-border/50 p-2 cursor-pointer hover:bg-surface-raised flex flex-col justify-center"
+                            className={`rounded-md shadow-none bg-surface-base p-2 cursor-pointer hover:bg-surface-raised flex flex-col justify-center ${
+                                clip.isGhost
+                                    ? 'border-purple-500/60 border-dashed'
+                                    : 'border-border/50'
+                            }`}
                             onClick={() => {
                                 onSelectClip(clip.id);
                             }}
                         >
-                            <span className="text-xs text-foreground font-medium truncate">{clip.name}</span>
+                            <div className="flex items-center gap-1.5">
+                                {clip.isGhost && <Sparkles className="size-3 text-purple-400 shrink-0" />}
+                                <span className="text-xs text-foreground font-medium truncate">{clip.name}</span>
+                            </div>
                             <span className="text-[10px] text-muted-foreground">
                                 bar {Math.floor(clip.startBeat / 4) + 1}–{Math.floor(clip.endBeat / 4) + 1}
                             </span>
+                            {clip.isGhost && (
+                                <div className="flex items-center gap-1 mt-1.5 pt-1.5 border-t border-border/30">
+                                    <Button
+                                        variant="secondary"
+                                        size="xs"
+                                        className="h-5 flex-1 text-[10px] bg-purple-600/20 hover:bg-purple-600/40 text-purple-300"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            acceptGhostClip(clip.id);
+                                        }}
+                                    >
+                                        <Check className="size-3 mr-1" /> Accept
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="xs"
+                                        className="h-5 flex-1 text-[10px] text-muted-foreground hover:text-destructive"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            dismissGhostClip(clip.id);
+                                        }}
+                                    >
+                                        <X className="size-3 mr-1" /> Dismiss
+                                    </Button>
+                                </div>
+                            )}
                         </Card>
                     ))}
                 </div>

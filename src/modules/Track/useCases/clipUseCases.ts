@@ -13,6 +13,7 @@ export function addClip(input: {
     name: string;
     type?: 'audio' | 'midi';
     audioBufferId?: string;
+    isGhost?: boolean;
 }): Clip | null {
     const state = getTrackState();
     if (!state) {
@@ -36,11 +37,25 @@ export function addClip(input: {
         color: '',
         locked: false,
         muted: false,
+        isGhost: input.isGhost,
     };
 
     updateTrack(input.trackId, (t) => ({ ...t, clips: [...t.clips, clip] }));
 
     return clip;
+}
+
+export function acceptGhostClip(clipId: string): void {
+    mapAllTracks((t) => ({
+        ...t,
+        clips: t.clips.map((c) =>
+            c.id === clipId ? { ...c, isGhost: undefined } : c
+        ),
+    }));
+}
+
+export function dismissGhostClip(clipId: string): void {
+    mapAllTracks((t) => ({ ...t, clips: t.clips.filter((c) => c.id !== clipId) }));
 }
 
 export function removeClip(clipId: string): void {

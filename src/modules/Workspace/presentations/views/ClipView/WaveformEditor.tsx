@@ -23,7 +23,8 @@ import {
     addWarpMarker,
     removeWarpMarker,
 } from '../../../useCases/workspaceViewActions';
-import { handleAiDenoiseClip } from '#/modules/AiRuntime/useCases/generativeAiActions';
+import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiRuntime/useCases/generativeAiActions';
+import { audioToMidi } from '#/modules/AiRuntime/useCases/audioToMidi';
 import { isTauri } from '#/modules/AudioEngine/useCases/nativeAIBridge';
 
 const STRETCH_MODES: WarpState['stretchMode'][] = ['complex', 'repitch', 'texture', 'beats'];
@@ -395,6 +396,37 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                             </span>
                         </button>
                     </DisabledFeatureWrapper>
+                    <DisabledFeatureWrapper
+                        disabled={!isTauri()}
+                        reason="AI Stem Separation requires the Tauri Desktop version of WebDAW."
+                        className="w-full flex"
+                    >
+                        <button
+                            type="button"
+                            className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-purple-400 hover:bg-accent"
+                            role="menuitem"
+                            onClick={waveAct(() => handleStemSeparationPreview(clipId))}
+                        >
+                            <span>AI Stem Separation</span>
+                            <span className="text-[9px] opacity-60 border border-current rounded px-1 ml-2">
+                                {isTauri() ? 'Desktop' : 'Web'}
+                            </span>
+                        </button>
+                    </DisabledFeatureWrapper>
+                    <button
+                        type="button"
+                        className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-purple-400 hover:bg-accent"
+                        role="menuitem"
+                        onClick={waveAct(() => {
+                            const track = trackStore.value?.tracks.find(t => t.clips.some(c => c.id === clipId));
+                            if (track) {
+                                audioToMidi({ clipId, trackId: track.id });
+                            }
+                        })}
+                    >
+                        <span>AI Audio → MIDI</span>
+                        <span className="text-[9px] opacity-60 border border-current rounded px-1 ml-2">DSP</span>
+                    </button>
                     <div className="my-1 border-t border-border/50" />
                     <button
                         type="button"

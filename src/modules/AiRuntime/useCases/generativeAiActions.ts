@@ -6,6 +6,7 @@ import { trackStore } from '#/modules/Track/stores/trackStore';
 import { addClip } from '#/modules/Track/useCases/clipUseCases';
 import { addMidiNote } from '#/modules/Track/useCases/midiNoteCrud';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
+import { generateMidiViaLlm } from './llmMidiGeneration';
 
 // ── Types ──
 
@@ -74,32 +75,25 @@ export const removeTask = (id: string) => {
 
 // ── Orchestrators ──
 
-export async function handleGenerateMidiPrompt(prompt: string, numNotes: number = 32) {
+export async function handleGenerateMidiPrompt(prompt: string, numNotes: number = 32, creativity: number = 0.65) {
     const taskId = addTask({ type: 'midi-generation', status: 'processing', prompt });
     try {
         const start = performance.now();
         let finalNotes: GeneratedNote[] = [];
         
         if (isTauri()) {
+            // Native path: use the Tauri sidecar MIDI AI model
             const seedNotes: Array<[number, number, number, number]> = [
                 [60, 80, 0, 0.5],
                 [62, 75, 0.5, 0.5],
                 [64, 85, 1.0, 0.5],
                 [65, 80, 1.5, 0.5]
             ];
-            const res = await generateMidiAI(seedNotes, numNotes, 0.8, 40);
+            const res = await generateMidiAI(seedNotes, numNotes, creativity, 40);
             finalNotes = res.notes;
         } else {
-            // [Web Fallback]: Procedural Pentatonic Generator
-            let currentBeat = 0;
-            const pentatonic = [60, 62, 64, 67, 69, 72, 74];
-            for (let i = 0; i < numNotes; i++) {
-                const pitch = pentatonic[Math.floor(Math.random() * pentatonic.length)] || 60;
-                const duration = Math.random() > 0.5 ? 0.5 : 0.25;
-                finalNotes.push({ pitch, velocity: 70 + Math.random() * 30, start_beat: currentBeat, duration_beats: duration });
-                currentBeat += duration;
-            }
-            await new Promise((resolve) => setTimeout(resolve, 600)); // Simulate think time
+            // Web path: use WebLLM for structured MIDI generation
+            finalNotes = await generateMidiViaLlm(prompt, numNotes, creativity);
         }
         
         
@@ -121,8 +115,9 @@ export async function handleGenerateMidiPrompt(prompt: string, numNotes: number 
                     trackId: targetTrack.id,
                     startBeat,
                     endBeat,
-                    name: prompt ? `AI: ${prompt.slice(0, 15)}...` : 'AI Generation',
-                    type: 'midi'
+                    name: prompt ? `✨ AI: ${prompt.slice(0, 15)}` : '✨ AI Generation',
+                    type: 'midi',
+                    isGhost: true,
                 });
                 
                 if (clip) {
@@ -257,7 +252,7 @@ export async function handleStemSeparationPreview(clipId: string) {
     }
 }
 
-export async function handleGenerateAudioFallback(prompt: string, durationStr: string) {
+export async function handleGenerateAudioFallback(prompt: string, durationStr: string, _strength: number = 0.7) {
     const taskId = addTask({ type: 'audio-generation', status: 'processing', prompt });
     try {
         const start = performance.now();

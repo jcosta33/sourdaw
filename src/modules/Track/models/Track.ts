@@ -64,6 +64,7 @@ export type Clip = {
     loopEnabled?: boolean;
     loopLength?: number;
     generating?: boolean;
+    isGhost?: boolean;
 };
 
 export type Device = {

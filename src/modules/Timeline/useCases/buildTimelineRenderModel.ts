@@ -43,6 +43,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
                 fadeInBeats: clip.fadeInBeats,
                 fadeOutBeats: clip.fadeOutBeats,
                 generating: clip.generating,
+                isGhost: clip.isGhost,
             };
         }),
     }));

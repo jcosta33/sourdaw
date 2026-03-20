@@ -3,7 +3,8 @@ import { Slider } from '#/components/ui/slider';
 import { Separator } from '#/components/ui/separator';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
-import { ChevronRight } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
+import { ChevronRight, Sparkles, Volume2, VolumeX, Loader2 } from 'lucide-react';
 import {
     trimClipStart,
     trimClipEnd,
@@ -14,6 +15,9 @@ import {
 } from '../../../useCases/workspaceViewActions';
 import { type Clip } from '../../../useCases/workspaceViewActions';
 import { CLIP_COLOR_PRESETS } from './colorPresets';
+import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiRuntime/useCases/generativeAiActions';
+import { audioToMidi } from '#/modules/AiRuntime/useCases/audioToMidi';
+import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 
 export type ClipInspectorProps = {
     clip: Clip;
@@ -21,12 +25,17 @@ export type ClipInspectorProps = {
     onBack: () => void;
 };
 
-export const ClipInspector = ({ clip, onBack }: ClipInspectorProps): ReactElement => {
+export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): ReactElement => {
     const duration = clip.endBeat - clip.startBeat;
     const startBar = Math.floor(clip.startBeat / 4) + 1;
     const endBar = Math.floor(clip.endBeat / 4) + 1;
     const [editingName, setEditingName] = useState(false);
     const [nameValue, setNameValue] = useState(clip.name);
+    const [denoiseStrength, setDenoiseStrength] = useState(70);
+    const [isDenoising, setIsDenoising] = useState(false);
+    const [abMode, setAbMode] = useState<'original' | 'processed'>('original');
+
+    const hasDenoised = clip.audioBufferId ? audioBufferCache.has(`${clip.audioBufferId}-denoised`) : false;
 
     const commitClipName = () => {
         const trimmed = nameValue.trim();
@@ -34,6 +43,16 @@ export const ClipInspector = ({ clip, onBack }: ClipInspectorProps): ReactElemen
             renameClip(clip.id, trimmed);
         }
         setEditingName(false);
+    };
+
+    const handleDenoise = async () => {
+        setIsDenoising(true);
+        try {
+            await handleAiDenoiseClip(clip.id, denoiseStrength / 100);
+            setAbMode('processed');
+        } finally {
+            setIsDenoising(false);
+        }
     };
 
     return (
@@ -259,6 +278,105 @@ export const ClipInspector = ({ clip, onBack }: ClipInspectorProps): ReactElemen
                     )}
                 </div>
             </section>
+
+            {clip.type === 'audio' && (
+                <>
+                    <Separator />
+                    <section>
+                        <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                            <Sparkles className="size-3 text-purple-400" />
+                            AI Actions
+                        </h3>
+                        <div className="space-y-3">
+                            {/* Denoise with A/B */}
+                            <div className="bg-surface-raised/50 rounded-md p-2 space-y-2 border border-border/30">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-medium text-foreground/90">Denoise</span>
+                                    {hasDenoised && (
+                                        <div className="flex items-center gap-0.5 bg-surface-base rounded-md p-0.5">
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <Button
+                                                        variant={abMode === 'original' ? 'secondary' : 'ghost'}
+                                                        size="icon-xs"
+                                                        className="h-5 w-7 text-[9px]"
+                                                        onClick={() => setAbMode('original')}
+                                                        aria-label="Listen to original audio"
+                                                    >
+                                                        <Volume2 className="size-3" />
+                                                    </Button>
+                                                </TooltipTrigger>
+                                                <TooltipContent>Original (A)</TooltipContent>
+                                            </Tooltip>
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <Button
+                                                        variant={abMode === 'processed' ? 'secondary' : 'ghost'}
+                                                        size="icon-xs"
+                                                        className="h-5 w-7 text-[9px]"
+                                                        onClick={() => setAbMode('processed')}
+                                                        aria-label="Listen to denoised audio"
+                                                    >
+                                                        <VolumeX className="size-3" />
+                                                    </Button>
+                                                </TooltipTrigger>
+                                                <TooltipContent>Denoised (B)</TooltipContent>
+                                            </Tooltip>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="space-y-1">
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-[10px] text-muted-foreground">Strength</label>
+                                        <span className="text-[10px] text-muted-foreground">{denoiseStrength}%</span>
+                                    </div>
+                                    <Slider
+                                        value={[denoiseStrength]}
+                                        onValueChange={([v]) => setDenoiseStrength(v!)}
+                                        min={10}
+                                        max={100}
+                                        step={5}
+                                        aria-label="Denoise strength"
+                                    />
+                                </div>
+                                <Button
+                                    variant="secondary"
+                                    size="xs"
+                                    className="w-full h-6 text-[10px] bg-purple-600/20 hover:bg-purple-600/40 text-purple-300"
+                                    onClick={handleDenoise}
+                                    disabled={isDenoising}
+                                >
+                                    {isDenoising ? (
+                                        <><Loader2 className="size-3 mr-1 animate-spin" /> Denoising…</>
+                                    ) : (
+                                        <><Sparkles className="size-3 mr-1" /> Apply Denoise</>
+                                    )}
+                                </Button>
+                            </div>
+
+                            {/* Quick AI actions */}
+                            <div className="flex gap-1">
+                                <Button
+                                    variant="ghost"
+                                    size="xs"
+                                    className="flex-1 h-6 text-[10px] text-purple-400 hover:bg-purple-600/20"
+                                    onClick={() => handleStemSeparationPreview(clip.id)}
+                                >
+                                    Separate Stems
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    size="xs"
+                                    className="flex-1 h-6 text-[10px] text-purple-400 hover:bg-purple-600/20"
+                                    onClick={() => audioToMidi({ clipId: clip.id, trackId })}
+                                >
+                                    Audio → MIDI
+                                </Button>
+                            </div>
+                        </div>
+                    </section>
+                </>
+            )}
         </div>
     );
 };
