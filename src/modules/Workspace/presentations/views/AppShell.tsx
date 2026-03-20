@@ -21,6 +21,7 @@ import { MixAnalysisPanel } from '#/modules/AiRuntime/presentations/views/MixAna
 import { ExportDialog } from '#/modules/Project/presentations/views/ExportDialog';
 import { PreferencesDialog } from '../components/PreferencesDialog';
 import { useGlobalKeyboardShortcuts } from '#/modules/Command/presentations/views/keyboardShortcutsContract';
+import { startShortcutEngine } from '../../useCases/shortcutEngine';
 import { initializeAudioEngine } from '../../useCases/workspaceViewActions';
 import { registerBuiltinPlugins } from '#/modules/AudioEngine/useCases/wamPluginHost';
 import { registerBuiltinFaustDSP } from '#/modules/AudioEngine/useCases/faustEngine';
@@ -200,6 +201,11 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     };
 
     useGlobalKeyboardShortcuts();
+
+    useEffect(() => {
+        const cleanup = startShortcutEngine();
+        return cleanup;
+    }, []);
 
     const audioInitialized = useRef(false);
     useEffect(() => {

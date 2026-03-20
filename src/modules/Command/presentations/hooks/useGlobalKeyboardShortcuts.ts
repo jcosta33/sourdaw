@@ -23,6 +23,7 @@ import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { trackStore } from '#/modules/Track/stores/trackStore';
 import { zoomTimeline } from '#/modules/Timeline/stores/timelineViewStore';
 import { getAllClipIds, getLastClipEndBeat, goToNextMarker, goToPreviousMarker } from '../../helpers/selectionHelpers';
+import { cycleAutomationVisibility } from '#/modules/Workspace/useCases/togglePanel';
 
 const ZOOM_STEP = 4;
 
@@ -244,6 +245,9 @@ export const useGlobalKeyboardShortcuts = (): void => {
                 case 'Tab':
                     e.preventDefault();
                     toggleWorkspaceMode();
+                    break;
+                case 'a':
+                    cycleAutomationVisibility();
                     break;
                 default: {
                     const numberTool = NUMBER_TOOL_MAP[e.key];

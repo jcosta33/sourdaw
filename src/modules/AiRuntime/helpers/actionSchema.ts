@@ -1,18 +1,24 @@
 import { type ProjectContext } from '../models/ProjectContext';
-import { buildHermesSystemPrompt } from './systemPrompt';
-import { serializeToolsForPrompt } from './toolDefinitions';
+import { type PromptFormat, buildSystemPrompt } from './systemPrompt';
+import { mcpToCompactPromptText } from './mcpToolAdapter';
 
 /**
- * Build the system prompt for Hermes function calling.
+ * Build the system prompt for tool calling.
  *
- * Tool definitions are embedded inside `<tools>` XML tags following the
- * Hermes prompt format. The model responds with `<tool_call>` XML.
+ * @param format - 'json' for WebLLM/cloud (JSON output),
+ *                 'hermes' for native llama-server (XML output).
+ *                 Defaults to 'json' for broader model compatibility.
  */
-export function buildSystemPrompt(context: ProjectContext): string {
-    const toolsJson = serializeToolsForPrompt();
+export function buildActionSystemPrompt(context: ProjectContext, format: PromptFormat = 'json'): string {
+    const toolsJson = mcpToCompactPromptText();
     const projectState = buildProjectState(context);
-    return buildHermesSystemPrompt(toolsJson, projectState);
+    return buildSystemPrompt(toolsJson, projectState, format);
 }
+
+/**
+ * @deprecated Use buildActionSystemPrompt instead.
+ */
+export { buildActionSystemPrompt as buildSystemPrompt };
 
 // ── Project state serialisation ─────────────────────────────────────────
 
@@ -28,7 +34,7 @@ function formatTrackLine(t: ProjectContext['tracks'][number], index: number): st
         const clipStr = shown
             .map(
                 (c) =>
-                    `${c.id}:${c.name}(${String(c.startBeat)}-${String(c.endBeat)}${c.noteCount > 0 ? `,${String(c.noteCount)}notes` : ''})`
+                    `${c.id}:${c.name}(${String(c.startBeat)}-${String(c.endBeat)}${c.noteCount > 0 ? `,${String(c.noteCount)}notes` : ''})`,
             )
             .join(',');
         const overflow =

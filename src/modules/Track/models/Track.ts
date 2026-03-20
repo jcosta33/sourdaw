@@ -45,6 +45,8 @@ export type Track = {
 
 export type StretchMode = 'off' | 'repitch' | 'timestretch';
 
+export type FollowAction = 'stop' | 'play_next' | 'play_previous' | 'play_random' | 'play_first' | 'play_last';
+
 export type Clip = {
     id: string;
     trackId: string;
@@ -63,6 +65,7 @@ export type Clip = {
     stretchRatio?: number;
     loopEnabled?: boolean;
     loopLength?: number;
+    followAction?: FollowAction;
     generating?: boolean;
     isGhost?: boolean;
 };

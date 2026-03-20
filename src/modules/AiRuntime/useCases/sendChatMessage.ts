@@ -1,5 +1,6 @@
 import { getLlmEngine } from '../repositories/webLlmRepository';
 import { streamNativeCompletion, isLlamaServerRunning } from '../repositories/llamaServerEngine';
+import { isCloudAvailable, streamCloudChatCompletion } from '../repositories/cloudLlmRepository';
 import { resolveBackend } from './llmOrchestration';
 import { chatStore, appendChatMessage, updateChatMessage, setChatGenerating } from '../stores/chatStore';
 import { getProjectContext } from './getProjectContext';
@@ -16,11 +17,17 @@ export async function sendChatMessage(userText: string): Promise<void> {
     const backend = resolveBackend();
 
     // Verify the appropriate engine is available
+    if (backend === 'none') {
+        throw new Error('No AI backend available. Configure an API key or use a WebGPU-capable browser.');
+    }
     if (backend === 'native' && !isLlamaServerRunning()) {
         throw new Error('Native AI engine is not running. Load the AI engine first.');
     }
     if (backend === 'webllm' && !getLlmEngine()) {
         throw new Error('AI Engine is not initialized or not supported on this device.');
+    }
+    if (backend === 'cloud' && !isCloudAvailable()) {
+        throw new Error('Cloud AI not configured. Set API key in settings.');
     }
 
     const state = chatStore.value;
@@ -65,7 +72,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
             }));
 
         const completionMessages = [{ role: 'system' as const, content: systemPrompt }, ...conversationHistory].filter(
-            (m) => m.role === 'system' || m.role === 'user' || m.role === 'assistant'
+            (m) => m.role === 'system' || m.role === 'user' || m.role === 'assistant',
         ) as Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
 
         let fullContent = '';
@@ -78,7 +85,17 @@ export async function sendChatMessage(userText: string): Promise<void> {
                     fullContent += token;
                     updateChatMessage(assistantMsgId, { content: fullContent });
                 },
-                { temperature: 0.7, maxTokens: 2048 }
+                { temperature: 0.7, maxTokens: 2048 },
+            );
+        } else if (backend === 'cloud') {
+            // Cloud: streaming completion via Claude API
+            await streamCloudChatCompletion(
+                completionMessages,
+                (token) => {
+                    fullContent += token;
+                    updateChatMessage(assistantMsgId, { content: fullContent });
+                },
+                { temperature: 0.7, maxTokens: 2048 },
             );
         } else {
             // WebLLM: streaming completion via the in-browser engine

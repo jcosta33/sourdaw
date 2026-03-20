@@ -51,11 +51,13 @@ export const onPromptInjection = (cb: (text: string) => void): (() => void) => {
     };
 };
 
-const injectIntoPrompt = (text: string): void => {
+export const injectPromptCommand = (text: string): void => {
     for (const listener of injectionListeners) {
         listener(text);
     }
 };
+
+const injectIntoPrompt = injectPromptCommand;
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 

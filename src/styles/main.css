@@ -12,6 +12,11 @@
     --color-surface-4: #333333;
     --color-surface-5: #3A3A3A;
 
+    /* Semantic Surfaces used across UI */
+    --color-surface-base: var(--color-surface-0);
+    --color-surface-raised: var(--color-surface-1);
+    --color-surface-overlay: var(--color-surface-2);
+
     /* Shadcn Overrides mapped to Base Surfaces */
     --color-background: var(--color-surface-0);
     --color-foreground: #E8E8E8;

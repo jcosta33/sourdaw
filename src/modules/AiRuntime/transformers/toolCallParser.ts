@@ -1,6 +1,11 @@
 /**
  * Transformer: Parse LLM tool call responses.
- * Handles multiple model output formats (XML, JSONL, etc.).
+ * Handles multiple model output formats:
+ * - Hermes XML:     <tool_call>{"name":"...","arguments":{...}}</tool_call>
+ * - JSON object:    {"actions":[{"name":"...","arguments":{...}}]}
+ * - JSON array:     [{"name":"...","arguments":{...}}]
+ * - JSONL:          {"name":"...","arguments":{...}}\n{"name":"...","arguments":{...}}
+ * - Llama format:   <function>{"name":"...","parameters":{...}}</function>
  */
 
 import { Container } from '#/helpers/DependencyInjector/Container';
@@ -15,14 +20,16 @@ export type ToolCallResult = {
 
 /**
  * Parse tool calls from model response content.
- *
- * Handles all observed model output formats:
- * 1. Proper XML:    <tool_call>{"name":"...","arguments":{...}}</tool_call>
- * 2. Open-only:     <tool_call>\n{...}\n<tool_call>\n{...}
- * 3. JSONL in one:  <tool_call>\n{...}\n{...}\n{...}\n</tool_call>
- * 4. Llama format:  <function>{"name":"...","parameters":{...}}</function>
+ * Handles all observed model output formats (see module docstring).
  */
 export function parseToolCallXml(content: string): ToolCallResult[] {
+    // 1. Try JSON-mode formats first (faster, no XML splitting)
+    const jsonResults = tryParseJsonMode(content);
+    if (jsonResults.length > 0) {
+        return jsonResults;
+    }
+
+    // 2. Fall back to XML-based parsing (Hermes / Llama format)
     const results: ToolCallResult[] = [];
     const segments = content.split(/<\/?tool_call>|<\/?function>/);
 
@@ -44,23 +51,81 @@ export function parseToolCallXml(content: string): ToolCallResult[] {
     return results;
 }
 
+/**
+ * Try to parse JSON-mode responses:
+ * - {"actions":[...]} wrapper
+ * - Top-level JSON array [...]
+ * - Single tool call object {"name":"..."}
+ */
+function tryParseJsonMode(content: string): ToolCallResult[] {
+    const trimmed = content.trim();
+
+    // Try to extract JSON from potential markdown fencing
+    const jsonMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/) ?? [null, trimmed];
+    const candidate = (jsonMatch[1] ?? trimmed).trim();
+
+    if (!candidate.startsWith('{') && !candidate.startsWith('[')) {
+        return [];
+    }
+
+    try {
+        const parsed = JSON.parse(candidate) as unknown;
+
+        // {"actions":[...]} wrapper
+        if (isObject(parsed) && Array.isArray((parsed as Record<string, unknown>).actions)) {
+            return ((parsed as Record<string, unknown>).actions as unknown[])
+                .map(coerceToolCall)
+                .filter((r): r is ToolCallResult => r !== null);
+        }
+
+        // {"tool_calls":[...]} wrapper
+        if (isObject(parsed) && Array.isArray((parsed as Record<string, unknown>).tool_calls)) {
+            return ((parsed as Record<string, unknown>).tool_calls as unknown[])
+                .map(coerceToolCall)
+                .filter((r): r is ToolCallResult => r !== null);
+        }
+
+        // Top-level array
+        if (Array.isArray(parsed)) {
+            return (parsed as unknown[]).map(coerceToolCall).filter((r): r is ToolCallResult => r !== null);
+        }
+
+        // Single tool call object
+        const single = coerceToolCall(parsed);
+        if (single) {
+            return [single];
+        }
+    } catch {
+        // Not valid JSON, fall through to XML parsing
+    }
+
+    return [];
+}
+
+function isObject(val: unknown): val is Record<string, unknown> {
+    return typeof val === 'object' && val !== null && !Array.isArray(val);
+}
+
+function coerceToolCall(raw: unknown): ToolCallResult | null {
+    if (!isObject(raw)) {
+        return null;
+    }
+    const obj = raw as Record<string, unknown>;
+    const name = obj.name;
+    if (typeof name !== 'string' || name.length === 0) {
+        return null;
+    }
+    const args = (obj.arguments ?? obj.parameters ?? {}) as Record<string, unknown>;
+    return { name, arguments: args };
+}
+
 function tryParseToolCallJson(jsonStr: string | undefined): ToolCallResult | null {
     if (!jsonStr) {
         return null;
     }
     try {
-        const parsed = JSON.parse(jsonStr) as {
-            name?: string;
-            arguments?: Record<string, unknown>;
-            parameters?: Record<string, unknown>;
-        };
-        if (!parsed.name) {
-            return null;
-        }
-        return {
-            name: parsed.name,
-            arguments: parsed.arguments ?? parsed.parameters ?? {},
-        };
+        const parsed = JSON.parse(jsonStr) as unknown;
+        return coerceToolCall(parsed);
     } catch {
         logger.warn(`[AI Engine] Failed to parse tool call JSON: ${jsonStr.slice(0, 100)}`);
         return null;

@@ -2,6 +2,7 @@ import { type ReactElement, type DragEvent, useSyncExternalStore, useState, useR
 import { TimelineSurface } from '#/modules/Timeline/presentations/views/TimelineSurface';
 import { TimelineMinimap } from '#/modules/Timeline/presentations/views/TimelineMinimap';
 import { ArrangementBar } from '#/modules/Timeline/presentations/views/ArrangementBar';
+import { MarkerLane } from '#/modules/Timeline/presentations/views/MarkerLane';
 import { timelineViewStore } from '#/modules/Timeline/stores/timelineViewStore';
 import { TrackListView } from '#/modules/Track/presentations/views/TrackListView';
 import { useTracks } from '../hooks/useTracks';
@@ -72,6 +73,7 @@ export const ArrangeView = (): ReactElement => {
             )}
             <div className="flex flex-1 flex-col overflow-hidden relative">
                 <ArrangementBar pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} />
+                <MarkerLane pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} />
                 <TimelineMinimap />
                 <TimelineSurface />
                 {tracks.length === 0 && <EmptyArrangeOverlay />}

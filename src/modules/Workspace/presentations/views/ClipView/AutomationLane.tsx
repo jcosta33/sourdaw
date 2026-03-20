@@ -1,5 +1,6 @@
 import { type ReactElement, useState } from 'react';
 import { VelocityLane } from '../automationLane/VelocityLane';
+import { ProbabilityLane } from '../automationLane/ProbabilityLane';
 import { PressureLane } from '../automationLane/PressureLane';
 import { SlideLane } from '../automationLane/SlideLane';
 import { CCLane } from '../automationLane/CCLane';
@@ -7,6 +8,7 @@ import { PitchBendLane } from '../automationLane/PitchBendLane';
 
 type LaneMode =
     | { kind: 'velocity' }
+    | { kind: 'probability' }
     | { kind: 'cc'; controller: number; label: string }
     | { kind: 'pitchBend' }
     | { kind: 'pressure' }
@@ -14,6 +16,7 @@ type LaneMode =
 
 const LANE_OPTIONS: { value: string; label: string; mode: LaneMode }[] = [
     { value: 'velocity', label: 'Velocity', mode: { kind: 'velocity' } },
+    { value: 'probability', label: 'Probability', mode: { kind: 'probability' } },
     { value: 'pressure', label: 'Pressure', mode: { kind: 'pressure' } },
     { value: 'slide', label: 'Slide (CC74)', mode: { kind: 'slide' } },
     { value: 'cc1', label: 'CC 1 (Mod Wheel)', mode: { kind: 'cc', controller: 1, label: 'Mod Wheel' } },
@@ -59,6 +62,8 @@ export const AutomationLane = ({ clipId, selectedNoteIds }: AutomationLaneProps)
             <div className="flex-1 min-h-0">
                 {mode.kind === 'velocity' ? (
                     <VelocityLane clipId={clipId} selectedNoteIds={selectedNoteIds} />
+                ) : mode.kind === 'probability' ? (
+                    <ProbabilityLane clipId={clipId} selectedNoteIds={selectedNoteIds} />
                 ) : mode.kind === 'pressure' ? (
                     <PressureLane clipId={clipId} selectedNoteIds={selectedNoteIds} />
                 ) : mode.kind === 'slide' ? (

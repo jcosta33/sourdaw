@@ -8,6 +8,18 @@ import { type MarkerStoreState } from '#/modules/Timeline/stores/markerStore';
 import { type TakeLaneStoreState } from '#/modules/Track/stores/takeLaneStore';
 import { type SidechainRoute } from '#/modules/AudioEngine/useCases/sidechainUseCases';
 
+export type ArrangementData = {
+    id: string;
+    name: string;
+    tracks: TrackStoreState;
+    automation: AutomationStoreState;
+    midi: MidiStoreState;
+    tempoMap?: TempoMapStoreState;
+    timeSignatureMap?: TimeSignatureMapStoreState;
+    markers?: MarkerStoreState;
+    takeLanes?: TakeLaneStoreState;
+};
+
 export type ProjectData = {
     version: 1;
     name: string;
@@ -40,6 +52,10 @@ export type ProjectData = {
     markers?: MarkerStoreState;
     takeLanes?: TakeLaneStoreState;
     sidechainRoutes?: SidechainRoute[];
+    
+    // New arrangement fields
+    arrangements?: ArrangementData[];
+    activeArrangementId?: string;
 };
 
 export const PROJECT_STORAGE_KEY = 'webdaw-project';

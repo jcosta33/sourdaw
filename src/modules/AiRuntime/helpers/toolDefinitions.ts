@@ -181,6 +181,27 @@ const trackTools: ToolSchema[] = [
         },
         ['trackId', 'folded']
     ),
+    tool(
+        'autoOrganizeProject',
+        'Automatically rename, color-code, and group tracks based on their content to organize the project. E.g., combine all vocals into a "Vocals" folder, name them "Lead Vocal", "Backing Vocal", and color them purple.',
+        {
+            tracks: {
+                type: 'array',
+                description: 'List of updates per track.',
+                items: {
+                    type: 'object',
+                    properties: {
+                        trackId: { type: 'string' },
+                        newName: { type: 'string', description: 'Standardized name (e.g., "Bass", "Kick")' },
+                        color: { type: 'string', description: 'CSS color (e.g., "blue", "#ff0000")' },
+                        folderName: { type: 'string', description: 'Optional folder group to move this track into (e.g., "Drums").' },
+                    },
+                    required: ['trackId'],
+                },
+            },
+        },
+        ['tracks']
+    ),
 ];
 
 // ─── Transport & Playback ────────────────────────────────────────────────

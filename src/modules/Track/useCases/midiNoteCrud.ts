@@ -89,6 +89,28 @@ export function setNoteVelocity(clipId: string, noteId: string, velocity: number
     });
 }
 
+export function setNoteProbability(clipId: string, noteId: string, probability: number): void {
+    const state = midiStore.value;
+    if (!state) {
+        return;
+    }
+
+    const existing = state.notesByClipId[clipId];
+    if (!existing) {
+        return;
+    }
+
+    midiStore.set({
+        ...state,
+        notesByClipId: {
+            ...state.notesByClipId,
+            [clipId]: existing.map((n) =>
+                n.id === noteId ? { ...n, probability: Math.max(0, Math.min(100, probability)) } : n
+            ),
+        },
+    });
+}
+
 export function getNotesForClip(clipId: string): MidiNote[] {
     const state = midiStore.value;
     if (!state) {
@@ -157,5 +179,18 @@ export function shiftClipMidiNotes(clipId: string, beatDelta: number): void {
         pitchBendByClipId: pbs
             ? { ...state.pitchBendByClipId, [clipId]: pbs.map((p) => ({ ...p, beat: p.beat + beatDelta })) }
             : state.pitchBendByClipId,
+    });
+}
+
+export function setNotesForClip(clipId: string, notes: MidiNote[]): void {
+    const state = midiStore.value;
+    if (!state) return;
+
+    midiStore.set({
+        ...state,
+        notesByClipId: {
+            ...state.notesByClipId,
+            [clipId]: notes,
+        },
     });
 }

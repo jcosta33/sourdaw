@@ -4,7 +4,7 @@ import { Separator } from '#/components/ui/separator';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { ChevronRight, Sparkles, Volume2, VolumeX, Loader2 } from 'lucide-react';
+import { ChevronRight, Sparkles, Volume2, VolumeX, Loader2, Music, BarChart3 } from 'lucide-react';
 import {
     trimClipStart,
     trimClipEnd,
@@ -12,12 +12,17 @@ import {
     setClipGain,
     setClipColor,
     renameClip,
+    setClipFollowAction,
+    polyphonicAudioToMidi,
+    detectDominantPitch,
+    summarizeFeatures,
 } from '../../../useCases/workspaceViewActions';
 import { type Clip } from '../../../useCases/workspaceViewActions';
 import { CLIP_COLOR_PRESETS } from './colorPresets';
 import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiRuntime/useCases/generativeAiActions';
 import { audioToMidi } from '#/modules/AiRuntime/useCases/audioToMidi';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
+import { generateMidiVariations } from '#/modules/AiRuntime/useCases/generateMidiVariations';
 
 export type ClipInspectorProps = {
     clip: Clip;
@@ -34,6 +39,11 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
     const [denoiseStrength, setDenoiseStrength] = useState(70);
     const [isDenoising, setIsDenoising] = useState(false);
     const [abMode, setAbMode] = useState<'original' | 'processed'>('original');
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [isConvertingPoly, setIsConvertingPoly] = useState(false);
+    const [isGeneratingVariations, setIsGeneratingVariations] = useState(false);
+    const [analysisResult, setAnalysisResult] = useState<string | null>(null);
+    const [pitchResult, setPitchResult] = useState<string | null>(null);
 
     const hasDenoised = clip.audioBufferId ? audioBufferCache.has(`${clip.audioBufferId}-denoised`) : false;
 
@@ -268,6 +278,26 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                         <label className="text-[10px] text-muted-foreground">Track</label>
                         <span className="text-[10px] font-mono text-foreground">{clip.trackId}</span>
                     </div>
+                    <div className="flex items-center justify-between">
+                        <label className="text-[10px] text-muted-foreground" htmlFor="follow-action-select">Follow Action</label>
+                        <select
+                            id="follow-action-select"
+                            className="bg-transparent text-[10px] text-foreground text-right outline-none focus:ring-0 border-none appearance-none cursor-pointer hover:underline"
+                            value={clip.followAction ?? 'none'}
+                            onChange={(e) => {
+                                const val = e.target.value === 'none' ? undefined : (e.target.value as any);
+                                setClipFollowAction(clip.id, val);
+                            }}
+                        >
+                            <option className="bg-background" value="none">None</option>
+                            <option className="bg-background" value="stop">Stop</option>
+                            <option className="bg-background" value="play_next">Play Next</option>
+                            <option className="bg-background" value="play_previous">Play Previous</option>
+                            <option className="bg-background" value="play_first">Play First</option>
+                            <option className="bg-background" value="play_last">Play Last</option>
+                            <option className="bg-background" value="play_random">Play Random</option>
+                        </select>
+                    </div>
                     {clip.type === 'audio' && (
                         <div className="flex items-center justify-between">
                             <label className="text-[10px] text-muted-foreground">Audio Source</label>
@@ -370,7 +400,130 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                                     className="flex-1 h-6 text-[10px] text-purple-400 hover:bg-purple-600/20"
                                     onClick={() => audioToMidi({ clipId: clip.id, trackId })}
                                 >
-                                    Audio → MIDI
+                                    MIDI (Basic)
+                                </Button>
+                            </div>
+
+                            {/* Polyphonic Audio → MIDI */}
+                            <div className="bg-surface-raised/50 rounded-md p-2 space-y-1.5 border border-border/30">
+                                <div className="flex items-center gap-1.5">
+                                    <Music className="size-3 text-purple-400" aria-hidden="true" />
+                                    <span className="text-[10px] font-medium text-foreground/90">Polyphonic MIDI (AI)</span>
+                                </div>
+                                <p className="text-[9px] text-muted-foreground leading-relaxed">
+                                    Neural network detects chords, melodies, and pitch bends.
+                                </p>
+                                <Button
+                                    variant="secondary"
+                                    size="xs"
+                                    className="w-full h-6 text-[10px] bg-purple-600/20 hover:bg-purple-600/40 text-purple-300"
+                                    onClick={async () => {
+                                        setIsConvertingPoly(true);
+                                        try {
+                                            await polyphonicAudioToMidi({ clipId: clip.id, trackId });
+                                        } finally {
+                                            setIsConvertingPoly(false);
+                                        }
+                                    }}
+                                    disabled={isConvertingPoly}
+                                >
+                                    {isConvertingPoly ? (
+                                        <><Loader2 className="size-3 mr-1 animate-spin" /> Converting…</>
+                                    ) : (
+                                        <><Music className="size-3 mr-1" /> Audio → MIDI (Poly)</>
+                                    )}
+                                </Button>
+                            </div>
+
+                            {/* Audio Analysis */}
+                            <div className="bg-surface-raised/50 rounded-md p-2 space-y-1.5 border border-border/30">
+                                <div className="flex items-center gap-1.5">
+                                    <BarChart3 className="size-3 text-purple-400" aria-hidden="true" />
+                                    <span className="text-[10px] font-medium text-foreground/90">Audio Analysis</span>
+                                </div>
+                                <Button
+                                    variant="secondary"
+                                    size="xs"
+                                    className="w-full h-6 text-[10px] bg-purple-600/20 hover:bg-purple-600/40 text-purple-300"
+                                    onClick={() => {
+                                        setIsAnalyzing(true);
+                                        try {
+                                            const bufferId = clip.audioBufferId ?? clip.id;
+                                            const summary = summarizeFeatures(bufferId);
+                                            const pitch = detectDominantPitch(bufferId);
+                                            if (summary) {
+                                                setAnalysisResult(
+                                                    `RMS: ${summary.avgRms.toFixed(3)} | Brightness: ${summary.avgSpectralCentroid.toFixed(0)} Hz | Tonality: ${(1 - summary.avgSpectralFlatness).toFixed(2)}`
+                                                );
+                                            }
+                                            if (pitch) {
+                                                setPitchResult(`Dominant: ${pitch.noteName} (${pitch.frequency.toFixed(1)} Hz, ${(pitch.clarity * 100).toFixed(0)}% clarity)`);
+                                            }
+                                        } finally {
+                                            setIsAnalyzing(false);
+                                        }
+                                    }}
+                                    disabled={isAnalyzing}
+                                >
+                                    {isAnalyzing ? (
+                                        <><Loader2 className="size-3 mr-1 animate-spin" /> Analyzing…</>
+                                    ) : (
+                                        <><BarChart3 className="size-3 mr-1" /> Analyze Clip</>
+                                    )}
+                                </Button>
+                                {analysisResult ? (
+                                    <p className="text-[9px] text-muted-foreground font-mono leading-relaxed">
+                                        {analysisResult}
+                                    </p>
+                                ) : null}
+                                {pitchResult ? (
+                                    <p className="text-[9px] text-emerald-400/80 font-mono">
+                                        {pitchResult}
+                                    </p>
+                                ) : null}
+                            </div>
+                        </div>
+                    </section>
+                </>
+            )}
+
+            {clip.type === 'midi' && (
+                <>
+                    <Separator />
+                    <section>
+                        <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                            <Sparkles className="size-3 text-purple-400" />
+                            AI Actions
+                        </h3>
+                        <div className="space-y-3">
+                            {/* AI Variations */}
+                            <div className="bg-surface-raised/50 rounded-md p-2 space-y-1.5 border border-border/30">
+                                <div className="flex items-center gap-1.5">
+                                    <Music className="size-3 text-purple-400" aria-hidden="true" />
+                                    <span className="text-[10px] font-medium text-foreground/90">AI Variations</span>
+                                </div>
+                                <p className="text-[9px] text-muted-foreground leading-relaxed">
+                                    Generate 3 musical variations (rhythm, passing notes, simplification).
+                                </p>
+                                <Button
+                                    variant="secondary"
+                                    size="xs"
+                                    className="w-full h-6 text-[10px] bg-purple-600/20 hover:bg-purple-600/40 text-purple-300"
+                                    onClick={async () => {
+                                        setIsGeneratingVariations(true);
+                                        try {
+                                            await generateMidiVariations(clip.id);
+                                        } finally {
+                                            setIsGeneratingVariations(false);
+                                        }
+                                    }}
+                                    disabled={isGeneratingVariations}
+                                >
+                                    {isGeneratingVariations ? (
+                                        <><Loader2 className="size-3 mr-1 animate-spin" /> Generating…</>
+                                    ) : (
+                                        <><Sparkles className="size-3 mr-1" /> Generate</>
+                                    )}
                                 </Button>
                             </div>
                         </div>

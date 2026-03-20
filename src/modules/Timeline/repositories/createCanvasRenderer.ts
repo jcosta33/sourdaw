@@ -8,6 +8,9 @@ import { timeSignatureMapStore } from '#/modules/Transport/stores/timeSignatureM
 import { getTimeSignatureAtBeat } from '#/modules/Transport/useCases/transportQueries';
 import { takeLaneStore } from '#/modules/Track/stores/takeLaneStore';
 import { drawClip } from '../helpers/clipDrawing';
+import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
+import { getAutomationRegions } from '#/modules/Track/transformers/automationTransformers';
+import { AUTOMATION_SUB_LANE_HEIGHT } from '../models/automationConstants';
 
 export function createCanvasRenderer(canvas: HTMLCanvasElement): TimelineRenderer {
     const ctx = canvas.getContext('2d')!;
@@ -416,6 +419,7 @@ function drawAutomation(ctx: CanvasRenderingContext2D, model: TimelineRenderMode
     const { pixelsPerBeat, viewportStartBeat, tracks } = model;
     const yOffsets = getTrackYOffsets(tracks);
     const visibleLanes = autoState.lanes.filter((l) => l.visible && l.points.length >= 2);
+    const canvasWidth = ctx.canvas.width / (window.devicePixelRatio || 1);
 
     for (const lane of visibleLanes) {
         const trackIndex = tracks.findIndex((t) => t.id === lane.trackId);
@@ -423,46 +427,200 @@ function drawAutomation(ctx: CanvasRenderingContext2D, model: TimelineRenderMode
             continue;
         }
 
+        const track = tracks[trackIndex]!;
         const trackY = yOffsets[trackIndex]!;
-        const h = tracks[trackIndex]!.height;
-        const laneHeight = h * 0.4;
+        const h = track.height;
+        const laneHeight = Math.min(h * 0.5, 60);
         const laneY = trackY + h - laneHeight - 2;
-
-        ctx.fillStyle = 'rgba(255, 180, 50, 0.08)';
-        ctx.fillRect(0, laneY, ctx.canvas.width / (window.devicePixelRatio || 1), laneHeight);
-
-        ctx.strokeStyle = 'rgba(255, 180, 50, 0.6)';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-
         const range = lane.maxValue - lane.minValue;
+        const curveColor = lane.color ?? track.color;
+        const isDisabled = lane.enabled === false;
 
-        let started = false;
-        for (const point of lane.points) {
-            const px = (point.beat - viewportStartBeat) * pixelsPerBeat;
-            const normalizedValue = range !== 0 ? (point.value - lane.minValue) / range : 0;
-            const py = laneY + laneHeight - normalizedValue * laneHeight;
+        // Parse color for alpha variations
+        const r = parseInt(curveColor.slice(1, 3), 16) || 100;
+        const g = parseInt(curveColor.slice(3, 5), 16) || 160;
+        const b = parseInt(curveColor.slice(5, 7), 16) || 255;
 
-            if (!started) {
-                ctx.moveTo(px, py);
-                started = true;
+        const beatToX = (beat: number): number => (beat - viewportStartBeat) * pixelsPerBeat;
+        const valueToY = (value: number): number => {
+            const norm = range !== 0 ? (value - lane.minValue) / range : 0;
+            return laneY + laneHeight - norm * laneHeight;
+        };
+
+        // Background fill for lane area
+        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${isDisabled ? 0.03 : 0.06})`;
+        ctx.fillRect(0, laneY, canvasWidth, laneHeight);
+
+        // Build path with proper curve interpolation
+        const pathPoints: { x: number; y: number }[] = [];
+
+        for (let i = 0; i < lane.points.length; i++) {
+            const p = lane.points[i]!;
+            const px = beatToX(p.beat);
+            const py = valueToY(p.value);
+
+            if (i === 0) {
+                pathPoints.push({ x: px, y: py });
+                continue;
+            }
+
+            const prev = lane.points[i - 1]!;
+
+            if (prev.curve === 'step') {
+                pathPoints.push({ x: px, y: valueToY(prev.value) });
+                pathPoints.push({ x: px, y: py });
+            } else if (prev.curve === 'linear') {
+                pathPoints.push({ x: px, y: py });
+            } else if (prev.curve === 'stairs') {
+                const steps = prev.stairSteps ?? 4;
+                for (let s = 0; s < steps; s++) {
+                    const t1 = s / steps;
+                    const t2 = (s + 1) / steps;
+                    const sv = prev.value + (p.value - prev.value) * t1;
+                    const sx1 = beatToX(prev.beat) + (px - beatToX(prev.beat)) * t1;
+                    const sx2 = beatToX(prev.beat) + (px - beatToX(prev.beat)) * t2;
+                    pathPoints.push({ x: sx1, y: valueToY(sv) });
+                    pathPoints.push({ x: sx2, y: valueToY(sv) });
+                    if (s === steps - 1) {
+                        pathPoints.push({ x: sx2, y: py });
+                    }
+                }
+            } else if (prev.curve === 'smooth') {
+                // Catmull-Rom subdivision
+                const v0 = i >= 2 ? lane.points[i - 2]!.value : prev.value;
+                const v1 = prev.value;
+                const v2 = p.value;
+                const v3 = i < lane.points.length - 1 ? lane.points[i + 1]!.value : p.value;
+                const segments = 16;
+                const prevX = beatToX(prev.beat);
+                for (let s = 1; s <= segments; s++) {
+                    const t = s / segments;
+                    const t2 = t * t;
+                    const t3 = t2 * t;
+                    const iv =
+                        0.5 *
+                        (2 * v1 + (-v0 + v2) * t + (2 * v0 - 5 * v1 + 4 * v2 - v3) * t2 + (-v0 + 3 * v1 - 3 * v2 + v3) * t3);
+                    pathPoints.push({ x: prevX + (px - prevX) * t, y: valueToY(iv) });
+                }
             } else {
-                ctx.lineTo(px, py);
+                // Exponential / S-curve — subdivide
+                const tension = prev.tension ?? 0;
+                const segments = 12;
+                const prevX = beatToX(prev.beat);
+                for (let s = 1; s <= segments; s++) {
+                    const t = s / segments;
+                    let curved: number;
+                    if (prev.curve === 's-curve') {
+                        const st = t * t * (3 - 2 * t);
+                        curved = t + (st - t) * Math.abs(tension);
+                    } else {
+                        // Exponential with tension
+                        const power = Math.pow(2, tension * 3);
+                        curved = Math.pow(t, power);
+                    }
+                    const iv = prev.value + (p.value - prev.value) * curved;
+                    pathPoints.push({ x: prevX + (px - prevX) * t, y: valueToY(iv) });
+                }
             }
         }
+
+        if (pathPoints.length < 2) {
+            continue;
+        }
+
+        // Draw gradient fill under curve
+        ctx.beginPath();
+        ctx.moveTo(pathPoints[0]!.x, pathPoints[0]!.y);
+        for (let i = 1; i < pathPoints.length; i++) {
+            ctx.lineTo(pathPoints[i]!.x, pathPoints[i]!.y);
+        }
+        ctx.lineTo(pathPoints[pathPoints.length - 1]!.x, laneY + laneHeight);
+        ctx.lineTo(pathPoints[0]!.x, laneY + laneHeight);
+        ctx.closePath();
+        const fillAlpha = isDisabled ? 0.04 : 0.12;
+        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${fillAlpha})`;
+        ctx.fill();
+
+        // Draw curve line
+        ctx.beginPath();
+        ctx.moveTo(pathPoints[0]!.x, pathPoints[0]!.y);
+        for (let i = 1; i < pathPoints.length; i++) {
+            ctx.lineTo(pathPoints[i]!.x, pathPoints[i]!.y);
+        }
+        ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${isDisabled ? 0.3 : 0.8})`;
+        ctx.lineWidth = 1.5;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        if (isDisabled) {
+            ctx.setLineDash([4, 4]);
+        }
         ctx.stroke();
+        if (isDisabled) {
+            ctx.setLineDash([]);
+        }
 
+        // Draw breakpoint nodes
         for (const point of lane.points) {
-            const px = (point.beat - viewportStartBeat) * pixelsPerBeat;
-            const normalizedValue = range !== 0 ? (point.value - lane.minValue) / range : 0;
-            const py = laneY + laneHeight - normalizedValue * laneHeight;
+            const px = beatToX(point.beat);
+            const py = valueToY(point.value);
 
-            ctx.fillStyle = 'rgba(255, 180, 50, 0.9)';
+            // Outer glow
+            ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.2)`;
             ctx.beginPath();
-            ctx.arc(px, py, 3, 0, Math.PI * 2);
+            ctx.arc(px, py, 5, 0, Math.PI * 2);
             ctx.fill();
+
+            // Node fill
+            ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${isDisabled ? 0.4 : 0.9})`;
+            ctx.beginPath();
+            ctx.arc(px, py, 3.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // White stroke
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.arc(px, py, 3.5, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        // Draw trim curve overlay if trim data exists
+        if (lane.trimPoints && lane.trimPoints.length >= 2) {
+            const trimPathPoints: { x: number; y: number }[] = [];
+            for (const tp of lane.trimPoints) {
+                const tpx = beatToX(tp.beat);
+                // Trim value is an offset from the base curve
+                const baseValue = lane.points.reduce((acc, p, idx) => {
+                    if (p.beat <= tp.beat) {
+                        const next = lane.points[idx + 1];
+                        if (next && next.beat >= tp.beat) {
+                            const t = (tp.beat - p.beat) / (next.beat - p.beat);
+                            return p.value + (next.value - p.value) * t;
+                        }
+                        return p.value;
+                    }
+                    return acc;
+                }, lane.points[0]?.value ?? 0);
+                const combinedValue = Math.max(lane.minValue, Math.min(lane.maxValue, baseValue + tp.value));
+                trimPathPoints.push({ x: tpx, y: valueToY(combinedValue) });
+            }
+
+            if (trimPathPoints.length >= 2) {
+                // Draw combined trim+base curve at full opacity
+                ctx.beginPath();
+                ctx.moveTo(trimPathPoints[0]!.x, trimPathPoints[0]!.y);
+                for (let i = 1; i < trimPathPoints.length; i++) {
+                    ctx.lineTo(trimPathPoints[i]!.x, trimPathPoints[i]!.y);
+                }
+                ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 1.0)`;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
         }
     }
+
+    // Draw inline automation sub-lanes below tracks
+    drawInlineSubLanes(ctx, model, canvasWidth);
 
     void contentHeight;
 }
@@ -490,4 +648,211 @@ function drawLoopRegion(ctx: CanvasRenderingContext2D, model: TimelineRenderMode
     ctx.lineTo(x2, height);
     ctx.stroke();
     ctx.setLineDash([]);
+}
+
+function drawInlineSubLanes(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, canvasWidth: number): void {
+    const autoState = automationStore.value;
+    const ws = workspaceStore.value;
+    if (!autoState || !ws || ws.automationVisibility === 'hidden') {
+        return;
+    }
+
+    const subLaneMap = ws.automationSubLanes;
+    const { pixelsPerBeat, viewportStartBeat, tracks } = model;
+    const yOffsets = getTrackYOffsets(tracks);
+
+    for (let ti = 0; ti < tracks.length; ti++) {
+        const track = tracks[ti]!;
+        const paramIds = subLaneMap[track.id];
+        if (!paramIds || paramIds.length === 0) {
+            continue;
+        }
+
+        const trackY = yOffsets[ti]!;
+        // Base track height = total height minus sub-lane space
+        const baseHeight = track.height - paramIds.length * AUTOMATION_SUB_LANE_HEIGHT;
+
+        for (let si = 0; si < paramIds.length; si++) {
+            const paramId = paramIds[si]!;
+            const lane = autoState.lanes.find((l) => l.trackId === track.id && l.parameterId === paramId);
+            if (!lane) {
+                // Draw empty sub-lane placeholder
+                const slY = trackY + baseHeight + si * AUTOMATION_SUB_LANE_HEIGHT;
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.02)';
+                ctx.fillRect(0, slY, canvasWidth, AUTOMATION_SUB_LANE_HEIGHT);
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(0, slY);
+                ctx.lineTo(canvasWidth, slY);
+                ctx.stroke();
+                // Label
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+                ctx.font = '9px system-ui';
+                ctx.fillText(paramId, 4, slY + 12);
+                continue;
+            }
+
+            const slY = trackY + baseHeight + si * AUTOMATION_SUB_LANE_HEIGHT;
+            const slH = AUTOMATION_SUB_LANE_HEIGHT;
+            const range = lane.maxValue - lane.minValue;
+            const curveColor = lane.color ?? track.color;
+            const isDisabled = lane.enabled === false;
+
+            const r = parseInt(curveColor.slice(1, 3), 16) || 100;
+            const g = parseInt(curveColor.slice(3, 5), 16) || 160;
+            const b = parseInt(curveColor.slice(5, 7), 16) || 255;
+
+            // Sub-lane separator
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(0, slY);
+            ctx.lineTo(canvasWidth, slY);
+            ctx.stroke();
+
+            // Background
+            ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.03)`;
+            ctx.fillRect(0, slY, canvasWidth, slH);
+
+            // Parameter label
+            ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.5)`;
+            ctx.font = '9px system-ui';
+            ctx.fillText(lane.parameterName, 4, slY + 11);
+
+            if (lane.points.length < 2) {
+                continue;
+            }
+
+            const beatToX = (beat: number): number => (beat - viewportStartBeat) * pixelsPerBeat;
+            const valueToY = (value: number): number => {
+                const norm = range !== 0 ? (value - lane.minValue) / range : 0;
+                return slY + slH - norm * (slH - 4) - 2;
+            };
+
+            // Build curve using virgin territory segments
+            const regions = lane.virginTerritory ? getAutomationRegions(lane.points) : [{ startBeat: -Infinity, endBeat: Infinity }];
+
+            for (const region of regions) {
+                const regionPts = lane.points.filter((p) =>
+                    p.beat >= region.startBeat && p.beat <= region.endBeat
+                );
+                if (regionPts.length < 2) {
+                    continue;
+                }
+
+                // Build path
+                const pathPoints: { x: number; y: number }[] = [];
+                for (let i = 0; i < regionPts.length; i++) {
+                    const p = regionPts[i]!;
+                    const px = beatToX(p.beat);
+                    const py = valueToY(p.value);
+
+                    if (i === 0) {
+                        pathPoints.push({ x: px, y: py });
+                        continue;
+                    }
+
+                    const prev = regionPts[i - 1]!;
+                    if (prev.curve === 'step') {
+                        pathPoints.push({ x: px, y: valueToY(prev.value) });
+                        pathPoints.push({ x: px, y: py });
+                    } else if (prev.curve === 'linear') {
+                        pathPoints.push({ x: px, y: py });
+                    } else {
+                        // Subdivision for smooth/exp/s-curve/stairs
+                        const segments = 12;
+                        const prevX = beatToX(prev.beat);
+                        for (let s = 1; s <= segments; s++) {
+                            const t = s / segments;
+                            let iv: number;
+                            if (prev.curve === 'stairs') {
+                                const steps = prev.stairSteps ?? 4;
+                                const st = Math.floor(t * steps) / steps;
+                                iv = prev.value + (p.value - prev.value) * st;
+                            } else if (prev.curve === 'smooth') {
+                                const v0 = i >= 2 ? regionPts[i - 2]?.value ?? prev.value : prev.value;
+                                const v1 = prev.value;
+                                const v2 = p.value;
+                                const v3 = i < regionPts.length - 1 ? regionPts[i + 1]?.value ?? p.value : p.value;
+                                const t2 = t * t;
+                                const t3 = t2 * t;
+                                iv = 0.5 * (2 * v1 + (-v0 + v2) * t + (2 * v0 - 5 * v1 + 4 * v2 - v3) * t2 + (-v0 + 3 * v1 - 3 * v2 + v3) * t3);
+                            } else {
+                                const tension = prev.tension ?? 0;
+                                if (prev.curve === 's-curve') {
+                                    const st = t * t * (3 - 2 * t);
+                                    const curved = t + (st - t) * Math.abs(tension);
+                                    iv = prev.value + (p.value - prev.value) * curved;
+                                } else {
+                                    const power = Math.pow(2, tension * 3);
+                                    iv = prev.value + (p.value - prev.value) * Math.pow(t, power);
+                                }
+                            }
+                            pathPoints.push({ x: prevX + (px - prevX) * t, y: valueToY(iv) });
+                        }
+                    }
+                }
+
+                if (pathPoints.length < 2) {
+                    continue;
+                }
+
+                // Gradient fill
+                ctx.beginPath();
+                ctx.moveTo(pathPoints[0]!.x, pathPoints[0]!.y);
+                for (let i = 1; i < pathPoints.length; i++) {
+                    ctx.lineTo(pathPoints[i]!.x, pathPoints[i]!.y);
+                }
+                ctx.lineTo(pathPoints[pathPoints.length - 1]!.x, slY + slH);
+                ctx.lineTo(pathPoints[0]!.x, slY + slH);
+                ctx.closePath();
+                ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${isDisabled ? 0.04 : 0.1})`;
+                ctx.fill();
+
+                // Curve line
+                ctx.beginPath();
+                ctx.moveTo(pathPoints[0]!.x, pathPoints[0]!.y);
+                for (let i = 1; i < pathPoints.length; i++) {
+                    ctx.lineTo(pathPoints[i]!.x, pathPoints[i]!.y);
+                }
+                ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${isDisabled ? 0.3 : 0.8})`;
+                ctx.lineWidth = 1.5;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                if (isDisabled) {
+                    ctx.setLineDash([4, 4]);
+                }
+                ctx.stroke();
+                if (isDisabled) {
+                    ctx.setLineDash([]);
+                }
+            }
+
+            // Breakpoint nodes
+            for (const point of lane.points) {
+                const px = beatToX(point.beat);
+                const py = valueToY(point.value);
+                if (px < -10 || px > canvasWidth + 10) {
+                    continue;
+                }
+
+                ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.15)`;
+                ctx.beginPath();
+                ctx.arc(px, py, 4, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${isDisabled ? 0.4 : 0.9})`;
+                ctx.beginPath();
+                ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+                ctx.lineWidth = 0.75;
+                ctx.beginPath();
+                ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+        }
+    }
 }

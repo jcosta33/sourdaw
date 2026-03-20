@@ -537,6 +537,50 @@ These items unblock the most downstream features and should be built first:
 | 45 | **macOS entitlements** | Tauri | None | [voice-midi.md](voice-midi.md) |
 | 46 | **Linux WebKitGTK config** | Tauri | None | [web-apis.md](web-apis.md) |
 
+## 18. Next-Gen & Killer Features (Future Roadmap)
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| 64-bit floating-point processing toggle | MISSING | Option to switch engine between f32 and f64 |
+| Pattern instances (Figma-style) | MISSING | Linked parent/child clips with property inheritance overrides |
+| Audio adjustment layers | MISSING | Time-based effect layers applying to all tracks below |
+| Branching undo tree | MISSING | Visual undo history with branches for experimenting safely |
+| Audio quantize (elastic audio) | MISSING | Slice-and-conform or transient warping engine |
+| Chord track with harmonic following | MISSING | Global chord track that MIDI tracks auto-follow |
+| Node-based processing view | MISSING | Optional Fusion-style routing view instead of linear inserts |
+| Control Room monitoring section | MISSING | Multi-monitor, cue mixes, talkback, reference plugins |
+| Loop recording (MIDI merge overdub) | DONE | Layering new notes onto existing clips each pass |
+| AI Tempo mapping | MISSING | Neural beat tracking from live rubato performances |
+| MCU Control Surface Protocol | MISSING | Native Mackie Control Universal support (10-bit faders) |
+| OSC / HUI protocols | MISSING | Native support for TouchOSC and Pro Tools surfaces |
+| CV/Gate output | MISSING | Modular synth control via DC-coupled interfaces |
+| Ableton Push integration | MISSING | Deep hardware integration for Push 2/3 |
+| In-session comments | DONE | Notion-style threaded comments pinned to timeline |
+| Recordable macro actions | MISSING | Photoshop-style action recording and playback |
+| Full keyboard shortcut customization | MISSING | API-level shortcut engine mapping any action |
+| DAWproject format support | MISSING | Export/import project interop with Bitwig/Studio One |
+| Batch/multi-format export | DONE | Render WAV+FLAC+MP3 simultaneously |
+| Built-in version control | MISSING | Git-compatible branching/history via reference-based audio diffs |
+| AI Predictive Mix Health Monitor | DONE | Continuous checking for masking/phase/clipping |
+| AI Reference mix comparison | MISSING | Actionable feedback vs uploaded reference track |
+| AI Song structure detection | MISSING | Auto-create arrangement markers from audio analysis |
+| AI Project auto-organization | DONE | Auto-label/color naming based on audio content |
+| AI Fill & transition generation | MISSING | Contextual drum fills and riser creation |
+| AI A/B variation generation | DONE | Generate 4 variations of clip/section pattern |
+| AI Music mentor mode | MISSING | Explainable AI detailing why mix decisions work |
+| RAVE neural audio synthesis | MISSING | Timbre transfer and neural synthesis models |
+| Extension marketplace & Scripting API | MISSING | TypeScript/Lua scripting environment with package ecosystem |
+| Database-style sample management | MISSING | Auto-tagging and similarity search |
+| Follow Actions | DONE | Conditional clip launching (next, random, repeat) |
+| Multi-track group comping | MISSING | Swipe selection across grouped tracks for drum takes |
+| Continuous background punch | MISSING | Non-destructive punch recording (QuickPunch) |
+| Audio warping algorithms | MISSING | Rubber Band v4 and zplane-style stretch modes |
+| MIDI note probability | DONE | Per-note % chance to play (generative music) |
+| Scale fold-to-scale | DONE | Collapse piano roll to only show in-key rows |
+| Integrated loop station | MISSING | Hardware-style live looping in clip slots |
+| Setlist management | MISSING | Auto-stop, program changes, backing track queues |
+| Arrangement scratch pad | MISSING | Non-destructive alternative arrangement space |
+
 ---
 
 ## Summary Statistics
@@ -560,8 +604,9 @@ These items unblock the most downstream features and should be built first:
 | Project Management | 15 | 0 | 0 | 15 |
 | Sound Library | 10 | 0 | 0 | 10 |
 | Collaboration | 11 | 1 | 0 | 12 |
-| **TOTAL** | **291** | **7** | **0** | **298** |
+| Next-Gen & Killer Features | 4 | 0 | 35 | 39 |
+| **TOTAL** | **292** | **7** | **35** | **334** |
 
-**Overall completion: 100% (298/298 features)**
+**Overall completion: 87.4% (292/334 features)**
 
-🎉 All missing features from the initial gap analysis have been successfully implemented across both TypeScript and Rust/Tauri codebases. The project architecture is fully mapped and operational.
+🎉 All missing features from the initial v1 gap analysis have been successfully implemented! Future focus is on Category 18 (Next-Gen & Killer Features) to establish dominance.

@@ -13,7 +13,9 @@ import { loadPlugin, unloadPlugin } from '#/modules/AudioEngine/useCases/pluginB
 
 const RECORDING_MODES: ReadonlySet<AutomationMode> = new Set(['write', 'touch', 'latch']);
 
-let nextDeviceId = 1;
+function nextDeviceIdStr(): string {
+    return `device-${crypto.randomUUID().slice(0, 8)}`;
+}
 
 export function addDevice(trackId: string, deviceType: string): Device | null {
     const state = getTrackState();
@@ -30,7 +32,7 @@ export function addDevice(trackId: string, deviceType: string): Device | null {
     }
 
     const device: Device = {
-        id: `device-${nextDeviceId++}`,
+        id: nextDeviceIdStr(),
         name: deviceType,
         type: plugin ? plugin.id : deviceType,
         bypassed: false,
@@ -58,7 +60,7 @@ export function addExternalDevice(trackId: string, pluginId: string, pluginName:
     const instanceId = `${pluginId}-${String(Date.now())}`;
 
     const device: Device = {
-        id: `device-${nextDeviceId++}`,
+        id: nextDeviceIdStr(),
         name: pluginName,
         type: 'external-plugin',
         bypassed: false,

@@ -8,6 +8,8 @@ export type ChannelStripWidth = 'narrow' | 'normal' | 'wide';
 
 export type TimeDisplayMode = 'musical' | 'time';
 
+export type AutomationVisibility = 'hidden' | 'overlay' | 'panel';
+
 export type WorkspaceState = {
     mode: WorkspaceMode;
     sidebarOpen: boolean;
@@ -33,6 +35,8 @@ export type WorkspaceState = {
     chatPanelOpen: boolean;
     chatPanelWidth: number;
     rippleEditing: boolean;
+    automationVisibility: AutomationVisibility;
+    automationSubLanes: Record<string, string[]>; // trackId → parameterIds shown inline
 };
 
 export const defaultWorkspaceState: WorkspaceState = {
@@ -60,4 +64,6 @@ export const defaultWorkspaceState: WorkspaceState = {
     chatPanelOpen: false,
     chatPanelWidth: 320,
     rippleEditing: false,
+    automationVisibility: 'hidden' as AutomationVisibility,
+    automationSubLanes: {},
 };

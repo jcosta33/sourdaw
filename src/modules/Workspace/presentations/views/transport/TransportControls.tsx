@@ -1,5 +1,5 @@
 import { type ReactElement, useState, useEffect } from 'react';
-import { Play, Pause, Square, Circle, Repeat, Scissors, ListOrdered, Link as LinkIcon } from 'lucide-react';
+import { Play, Pause, Square, Circle, Repeat, Scissors, ListOrdered, Link as LinkIcon, Layers } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { cn } from '#/helpers/Styles/cn';
@@ -7,6 +7,7 @@ import {
     togglePlayback,
     stopPlayback,
     toggleLoop,
+    toggleOverdub,
     toggleMetronome,
     setMetronomeVolume,
     toggleRecording,
@@ -20,6 +21,7 @@ export type TransportControlsProps = {
     isPlaying: boolean;
     isRecording: boolean;
     isLooping: boolean;
+    overdubEnabled: boolean;
     metronomeEnabled: boolean;
     metronomeVolume: number;
     punchInEnabled: boolean;
@@ -32,6 +34,7 @@ export const TransportControls = ({
     isPlaying,
     isRecording,
     isLooping,
+    overdubEnabled,
     metronomeEnabled,
     metronomeVolume,
     punchInEnabled,
@@ -127,6 +130,22 @@ export const TransportControls = ({
                     </Button>
                 </TooltipTrigger>
                 <TooltipContent>Loop (L)</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <Button
+                        variant={overdubEnabled ? 'secondary' : 'ghost'}
+                        size="icon-sm"
+                        aria-label="Overdub"
+                        aria-pressed={overdubEnabled}
+                        onClick={toggleOverdub}
+                        className={cn(overdubEnabled && 'text-purple-400')}
+                    >
+                        <Layers className="size-3.5" aria-hidden="true" />
+                    </Button>
+                </TooltipTrigger>
+                <TooltipContent>MIDI Overdub (+)</TooltipContent>
             </Tooltip>
 
             <Tooltip>

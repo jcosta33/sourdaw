@@ -6,6 +6,8 @@ import { tempoMapStore } from '#/modules/Transport/stores/tempoMapStore';
 import { timeSignatureMapStore } from '#/modules/Transport/stores/timeSignatureMapStore';
 import { markerStore } from '#/modules/Timeline/stores/markerStore';
 import { takeLaneStore } from '#/modules/Track/stores/takeLaneStore';
+import { arrangementStore, defaultArrangementId } from '../stores/arrangementStore';
+import { syncCurrentArrangementToStore } from './arrangementUseCases';
 import { defaultTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { type ProjectData } from '../models/ProjectData';
 import { projectStore } from '../stores/projectStore';
@@ -54,13 +56,17 @@ function verifyAudioBufferReferences(): void {
 }
 
 export function saveProject(): void {
+    // Make sure the active arrangement reflects recent track changes in the project file
+    syncCurrentArrangementToStore();
+    
     const tracks = trackStore.value;
     const transport = transportStore.value;
     const automation = automationStore.value;
     const midi = midiStore.value;
     const project = projectStore.value;
+    const arrState = arrangementStore.value;
 
-    if (!tracks || !transport || !automation || !midi || !project) {
+    if (!tracks || !transport || !automation || !midi || !project || !arrState) {
         return;
     }
 
@@ -69,6 +75,7 @@ export function saveProject(): void {
         name: project.name,
         createdAt: project.createdAt,
         updatedAt: Date.now(),
+        // Keep active stores at root for backwards compatibility and ease of access
         tracks,
         transport: {
             tempo: transport.tempo,
@@ -95,6 +102,8 @@ export function saveProject(): void {
         markers: markerStore.value ?? undefined,
         takeLanes: takeLaneStore.value ?? undefined,
         sidechainRoutes: getAllSidechainRoutes(),
+        arrangements: arrState.arrangements,
+        activeArrangementId: arrState.activeArrangementId,
     };
 
     try {
@@ -155,6 +164,29 @@ export async function loadProject(): Promise<boolean> {
             dirty: false,
         });
 
+        // Initialize arrangementStore with the saved arrangements (or fallback to backwards compat)
+        if (data.arrangements && data.arrangements.length > 0 && data.activeArrangementId) {
+            arrangementStore.set({
+                arrangements: data.arrangements,
+                activeArrangementId: data.activeArrangementId,
+            });
+        } else {
+            arrangementStore.set({
+                arrangements: [{
+                    id: defaultArrangementId,
+                    name: 'Arrangement 1',
+                    tracks: data.tracks,
+                    automation: data.automation,
+                    midi: data.midi,
+                    tempoMap: data.tempoMap,
+                    timeSignatureMap: data.timeSignatureMap,
+                    markers: data.markers,
+                    takeLanes: data.takeLanes,
+                }],
+                activeArrangementId: defaultArrangementId,
+            });
+        }
+
         await audioBufferCache.restoreFromIdb(getAudioContext());
         verifyAudioBufferReferences();
         clearUndoHistory();
@@ -177,6 +209,17 @@ export function newProject(name = 'Untitled Project'): void {
     markerStore.set({ markers: [], sections: [] });
     takeLaneStore.set({ lanes: [] });
     setSidechainRoutes([]);
+
+    arrangementStore.set({
+        arrangements: [{
+            id: defaultArrangementId,
+            name: 'Arrangement 1',
+            tracks: { tracks: [], selectedTrackId: null },
+            automation: { lanes: [] },
+            midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+        }],
+        activeArrangementId: defaultArrangementId,
+    });
 
     // Always seed a master track
     addTrackUseCase({ name: 'Master', kind: 'master' });
@@ -210,13 +253,16 @@ export function markDirty(): void {
 }
 
 export async function exportProjectFile(): Promise<void> {
+    syncCurrentArrangementToStore();
+    
     const tracks = trackStore.value;
     const transport = transportStore.value;
     const automation = automationStore.value;
     const midi = midiStore.value;
     const project = projectStore.value;
+    const arrState = arrangementStore.value;
 
-    if (!tracks || !transport || !automation || !midi || !project) {
+    if (!tracks || !transport || !automation || !midi || !project || !arrState) {
         return;
     }
 
@@ -251,6 +297,8 @@ export async function exportProjectFile(): Promise<void> {
         markers: markerStore.value ?? undefined,
         takeLanes: takeLaneStore.value ?? undefined,
         sidechainRoutes: getAllSidechainRoutes(),
+        arrangements: arrState.arrangements,
+        activeArrangementId: arrState.activeArrangementId,
     };
 
     await downloadProjectFile(data);
@@ -298,6 +346,28 @@ export async function importProjectFile(file: File): Promise<boolean> {
             updatedAt: data.updatedAt,
             dirty: false,
         });
+
+        if (data.arrangements && data.arrangements.length > 0 && data.activeArrangementId) {
+            arrangementStore.set({
+                arrangements: data.arrangements,
+                activeArrangementId: data.activeArrangementId,
+            });
+        } else {
+            arrangementStore.set({
+                arrangements: [{
+                    id: defaultArrangementId,
+                    name: 'Arrangement 1',
+                    tracks: data.tracks,
+                    automation: data.automation,
+                    midi: data.midi,
+                    tempoMap: data.tempoMap,
+                    timeSignatureMap: data.timeSignatureMap,
+                    markers: data.markers,
+                    takeLanes: data.takeLanes,
+                }],
+                activeArrangementId: defaultArrangementId,
+            });
+        }
 
         await audioBufferCache.restoreFromIdb(getAudioContext());
         verifyAudioBufferReferences();

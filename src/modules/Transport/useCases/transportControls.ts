@@ -94,6 +94,14 @@ export function toggleLoop(): void {
     updateTransportState({ isLooping: !state.isLooping });
 }
 
+export function toggleOverdub(): void {
+    const state = getTransportState();
+    if (!state) {
+        return;
+    }
+    updateTransportState({ overdubEnabled: !state.overdubEnabled });
+}
+
 export function toggleMetronome(): void {
     const state = getTransportState();
     if (!state) {

@@ -4,6 +4,7 @@ export type MidiNote = {
     startBeat: number;
     duration: number;
     velocity: number;
+    probability?: number;
     pressure?: number;
     slide?: number;
     pitchBend?: number;
@@ -30,12 +31,19 @@ let nextNoteId = 1;
 let nextCcId = 1;
 let nextPitchBendId = 1;
 
-export const createMidiNote = (pitch: number, startBeat: number, duration: number, velocity = 100): MidiNote => ({
+export const createMidiNote = (
+    pitch: number,
+    startBeat: number,
+    duration: number,
+    velocity = 100,
+    probability = 100
+): MidiNote => ({
     id: `note-${nextNoteId++}`,
     pitch,
     startBeat,
     duration,
     velocity,
+    probability,
 });
 
 export const createMidiCC = (controller: number, value: number, beat: number, channel = 0): MidiCC => ({

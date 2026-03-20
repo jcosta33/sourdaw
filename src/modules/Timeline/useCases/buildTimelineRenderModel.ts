@@ -6,47 +6,59 @@ import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { preferencesStore } from '#/modules/Workspace/stores/preferencesStore';
 import { TRACK_HEIGHT_VALUES } from '#/modules/Workspace/useCases/workspaceQueries';
 import { type TimelineRenderModel } from '../models/TimelineRenderModel';
+import { AUTOMATION_SUB_LANE_HEIGHT } from '../models/automationConstants';
 
 export function buildTimelineRenderModel(): TimelineRenderModel {
     const trackState = trackStore.value;
     const transportState = transportStore.value;
     const viewState = timelineViewStore.value;
     const midiState = midiStore.value;
+    const ws = workspaceStore.value;
 
     const pixelsPerBeat = viewState?.pixelsPerBeat ?? 12;
     const scrollX = viewState?.scrollX ?? 0;
     const viewportStartBeat = scrollX / pixelsPerBeat;
 
-    const tracks = (trackState?.tracks ?? []).map((track, index) => ({
-        id: track.id,
-        name: track.name,
-        index,
-        kind: track.kind,
-        color: track.color,
-        muted: track.muted,
-        soloed: track.soloed,
-        height: track.height,
-        clips: track.clips.map((clip) => {
-            const notes = clip.type === 'midi' ? (midiState?.notesByClipId[clip.id] ?? []) : [];
-            return {
-                id: clip.id,
-                startBeat: clip.startBeat,
-                endBeat: clip.endBeat,
-                name: clip.name,
-                color: clip.color || track.color,
-                type: clip.type,
-                muted: clip.muted,
-                midiNotes: notes.map((n) => ({ pitch: n.pitch, startBeat: n.startBeat, duration: n.duration })),
-                audioBufferId: clip.audioBufferId,
-                loopEnabled: clip.loopEnabled,
-                loopLength: clip.loopLength,
-                fadeInBeats: clip.fadeInBeats,
-                fadeOutBeats: clip.fadeOutBeats,
-                generating: clip.generating,
-                isGhost: clip.isGhost,
-            };
-        }),
-    }));
+    const autoVisible = ws?.automationVisibility !== 'hidden';
+    const autoSubLanes = ws?.automationSubLanes ?? {};
+
+    const tracks = (trackState?.tracks ?? []).map((track, index) => {
+        const subLaneCount = autoVisible ? (autoSubLanes[track.id]?.length ?? 0) : 0;
+        const effectiveHeight = track.height + subLaneCount * AUTOMATION_SUB_LANE_HEIGHT;
+
+        return {
+            id: track.id,
+            name: track.name,
+            index,
+            kind: track.kind,
+            color: track.color,
+            muted: track.muted,
+            soloed: track.soloed,
+            height: effectiveHeight,
+            automationSubLaneCount: subLaneCount,
+            automationMode: track.automationMode,
+            clips: track.clips.map((clip) => {
+                const notes = clip.type === 'midi' ? (midiState?.notesByClipId[clip.id] ?? []) : [];
+                return {
+                    id: clip.id,
+                    startBeat: clip.startBeat,
+                    endBeat: clip.endBeat,
+                    name: clip.name,
+                    color: clip.color || track.color,
+                    type: clip.type,
+                    muted: clip.muted,
+                    midiNotes: notes.map((n) => ({ pitch: n.pitch, startBeat: n.startBeat, duration: n.duration })),
+                    audioBufferId: clip.audioBufferId,
+                    loopEnabled: clip.loopEnabled,
+                    loopLength: clip.loopLength,
+                    fadeInBeats: clip.fadeInBeats,
+                    fadeOutBeats: clip.fadeOutBeats,
+                    generating: clip.generating,
+                    isGhost: clip.isGhost,
+                };
+            }),
+        };
+    });
 
     const prefs = preferencesStore.value;
     const trackHeight = TRACK_HEIGHT_VALUES[prefs?.trackHeight ?? 'normal'];
@@ -54,8 +66,8 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
     return {
         tracks,
         selectedTrackId: trackState?.selectedTrackId ?? null,
-        selectedClipId: workspaceStore.value?.selectedClipId ?? null,
-        selectedClipIds: workspaceStore.value?.selectedClipIds ?? [],
+        selectedClipId: ws?.selectedClipId ?? null,
+        selectedClipIds: ws?.selectedClipIds ?? [],
         playheadPosition: transportState?.playheadPosition ?? 0,
         viewportStartBeat,
         viewportEndBeat: viewportStartBeat + window.innerWidth / pixelsPerBeat,

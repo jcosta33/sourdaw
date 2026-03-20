@@ -60,8 +60,16 @@ export async function generateMidiViaLlm(
     const backend = resolveBackend();
     let rawResponse: string;
 
+    if (backend === 'none') {
+        return fallbackToPatternMatch(prompt);
+    }
+
     if (backend === 'native' && isLlamaServerRunning()) {
         rawResponse = await generateNativeCompletion(MIDI_SYSTEM_PROMPT, userMessage);
+    } else if (backend === 'cloud') {
+        // Cloud fallback: use the same MIDI prompt but via native completion
+        // (Cloud tool-calling is better suited for DAW actions, not raw JSON MIDI)
+        return fallbackToPatternMatch(prompt);
     } else {
         rawResponse = await generateWebLlmCompletion(MIDI_SYSTEM_PROMPT, userMessage);
     }

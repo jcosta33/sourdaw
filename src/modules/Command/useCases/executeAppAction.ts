@@ -21,6 +21,7 @@ import { analysisHandlers } from '../handlers/analysisHandlers';
 import { collaborationHandlers } from '../handlers/collaborationHandlers';
 import { pluginHostHandlers } from '../handlers/pluginHostHandlers';
 import { aiMidiHandlers } from '../handlers/aiMidiHandlers';
+import { aiOrganizationHandlers } from '../handlers/aiOrganizationHandlers';
 import {
     handleCreateTrackAlternative,
     handleSwitchTrackAlternative,
@@ -149,6 +150,7 @@ const handlerRegistry: Record<string, ActionHandler<any>> = {
     ...templateHandlers,
     ...vcaHandlers,
     ...midiRoutingHandlers,
+    ...aiOrganizationHandlers,
 };
 
 export type ExecuteOptions = {

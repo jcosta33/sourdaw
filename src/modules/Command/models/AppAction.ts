@@ -205,6 +205,17 @@ export type AppAction =
     | {
           type: 'stemSeparate';
           payload: { clipId: string; stems?: string[] };
+      }
+    | {
+          type: 'autoOrganizeProject';
+          payload: {
+              tracks: Array<{
+                  trackId: string;
+                  newName?: string;
+                  color?: string;
+                  folderName?: string;
+              }>;
+          };
       };
 
 export type TrackKind = 'audio' | 'midi' | 'bus' | 'master' | 'folder';

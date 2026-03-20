@@ -1,6 +1,5 @@
 import {
     type MouseEvent as ReactMouseEvent,
-    type WheelEvent as ReactWheelEvent,
     type DragEvent as ReactDragEvent,
     useRef,
     useState,
@@ -25,6 +24,7 @@ import {
     snapToGridOrClips,
     getTrackAtY,
     type DragState,
+    hitTestAutomationSubLane,
 } from '../../../useCases/timelineInteractions';
 import {
     selectTrack,
@@ -100,34 +100,38 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         };
         const onGestureEnd = (e: Event) => e.preventDefault();
 
+        const onWheel = (e: WheelEvent) => {
+            e.preventDefault();
+            if (e.ctrlKey || e.metaKey) {
+                const isPinch = Math.abs(e.deltaY) < 10;
+                const zoomFactor = isPinch ? -e.deltaY * 0.02 : -e.deltaY * 0.005;
+                zoomTimeline(zoomFactor);
+            } else if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+                scrollTimeline(e.deltaX || e.deltaY);
+                const transport = transportStore.value;
+                if (transport?.isPlaying) {
+                    setAutoScroll(false);
+                }
+            } else {
+                const currentY = timelineViewStore.value?.scrollY ?? 0;
+                setScrollY(Math.max(0, currentY + e.deltaY));
+            }
+        };
+
         canvas.addEventListener('gesturestart', onGestureStart, { passive: false });
         canvas.addEventListener('gesturechange', onGestureChange, { passive: false });
         canvas.addEventListener('gestureend', onGestureEnd, { passive: false });
+        canvas.addEventListener('wheel', onWheel, { passive: false });
 
         return () => {
             canvas.removeEventListener('gesturestart', onGestureStart);
             canvas.removeEventListener('gesturechange', onGestureChange);
             canvas.removeEventListener('gestureend', onGestureEnd);
+            canvas.removeEventListener('wheel', onWheel);
         };
     }, [canvasRef]);
 
-    const handleWheel = useCallback((e: ReactWheelEvent<HTMLCanvasElement>) => {
-        e.preventDefault();
-        if (e.ctrlKey || e.metaKey) {
-            const isPinch = Math.abs(e.deltaY) < 10;
-            const zoomFactor = isPinch ? -e.deltaY * 0.02 : -e.deltaY * 0.005;
-            zoomTimeline(zoomFactor);
-        } else if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-            scrollTimeline(e.deltaX || e.deltaY);
-            const transport = transportStore.value;
-            if (transport?.isPlaying) {
-                setAutoScroll(false);
-            }
-        } else {
-            const currentY = timelineViewStore.value?.scrollY ?? 0;
-            setScrollY(Math.max(0, currentY + e.deltaY));
-        }
-    }, []);
+
 
     const getCanvasCoords = useCallback(
         (e: ReactMouseEvent<HTMLCanvasElement> | ReactDragEvent<HTMLDivElement>): { x: number; y: number } => {
@@ -166,6 +170,19 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                 }
                 setPlayheadFromClick(x);
                 return;
+            }
+
+            // Check sub-lane click when automation is visible (any tool)
+            const wsState = workspaceStore.value;
+            if (wsState && wsState.automationVisibility !== 'hidden') {
+                const subLaneHit = hitTestAutomationSubLane(x, y);
+                if (subLaneHit) {
+                    const point: AutomationPoint = { beat: subLaneHit.beat, value: subLaneHit.value, curve: 'linear', tension: 0 };
+                    addAutomationPoint(subLaneHit.laneId, point);
+                    autoDragRef.current = { laneId: subLaneHit.laneId, trackId: subLaneHit.trackId, points: [point] };
+                    selectTrack(subLaneHit.trackId);
+                    return;
+                }
             }
 
             if (tool === 'cut') {
@@ -228,6 +245,16 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             }
 
             if (tool === 'automation') {
+                // Check sub-lane first
+                const subLaneHit = hitTestAutomationSubLane(x, y);
+                if (subLaneHit) {
+                    const point: AutomationPoint = { beat: subLaneHit.beat, value: subLaneHit.value, curve: 'linear', tension: 0 };
+                    addAutomationPoint(subLaneHit.laneId, point);
+                    autoDragRef.current = { laneId: subLaneHit.laneId, trackId: subLaneHit.trackId, points: [point] };
+                    selectTrack(subLaneHit.trackId);
+                    return;
+                }
+
                 const trackId = hitTestTrack(y);
                 if (trackId) {
                     const beat = getBeatFromX(x);
@@ -877,7 +904,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         handleMouseDown,
         handleMouseMove,
         handleMouseUp,
-        handleWheel,
+
         handleDoubleClick,
         handleContextMenu,
         handlePointerDown,

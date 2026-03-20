@@ -25,6 +25,8 @@ export type TrackRenderModel = {
     soloed: boolean;
     height: number;
     clips: ClipRenderModel[];
+    automationSubLaneCount: number;
+    automationMode: 'read' | 'write' | 'touch' | 'latch' | 'off';
 };
 
 export type MiniNoteRenderModel = {

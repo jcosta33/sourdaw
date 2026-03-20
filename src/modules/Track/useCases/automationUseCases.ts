@@ -38,6 +38,26 @@ export function toggleAutomationVisibility(laneId: string): void {
     });
 }
 
+export function toggleLaneCollapsed(laneId: string): void {
+    const state = automationStore.value;
+    if (!state) {
+        return;
+    }
+    automationStore.set({
+        lanes: state.lanes.map((l) => (l.id === laneId ? { ...l, collapsed: !l.collapsed } : l)),
+    });
+}
+
+export function toggleLaneEnabled(laneId: string): void {
+    const state = automationStore.value;
+    if (!state) {
+        return;
+    }
+    automationStore.set({
+        lanes: state.lanes.map((l) => (l.id === laneId ? { ...l, enabled: !l.enabled } : l)),
+    });
+}
+
 export function addAutomationPoint(laneId: string, point: AutomationPoint): void {
     const state = automationStore.value;
     if (!state) {

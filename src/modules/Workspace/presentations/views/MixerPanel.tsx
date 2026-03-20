@@ -1,7 +1,7 @@
 import { type CSSProperties, type ReactElement, useState, useCallback } from 'react';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { Button } from '#/components/ui/button';
-import { Columns3, Save, RotateCcw } from 'lucide-react';
+import { Columns3, Save, RotateCcw, Sparkles } from 'lucide-react';
 import { useTracks } from '../hooks/useTracks';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
@@ -17,6 +17,7 @@ import {
     type MixerSnapshot,
 } from '#/modules/Track/useCases/mixerSnapshotUseCases';
 import { pushUndoEntry } from '../../useCases/workspaceViewActions';
+import { MixHealthDialog } from './mixer/MixHealthDialog';
 
 type MixerPanelProps = {
     style?: CSSProperties;
@@ -52,6 +53,7 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
 
     const [snapshots, setSnapshots] = useState<MixerSnapshot[]>(getMixerSnapshots);
     const [showSnapshots, setShowSnapshots] = useState(false);
+    const [showMixHealth, setShowMixHealth] = useState(false);
 
     const handleSaveSnapshot = useCallback(() => {
         const name = `Snapshot ${snapshots.length + 1}`;
@@ -109,6 +111,17 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
                     <Save className="size-3" />
                 </Button>
 
+                <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    className="text-purple-400 hover:text-purple-300 hover:bg-purple-900/20"
+                    aria-label="AI Mix Health Analysis"
+                    title="AI Mix Health Analysis"
+                    onClick={() => setShowMixHealth(true)}
+                >
+                    <Sparkles className="size-3" />
+                </Button>
+
                 <div className="relative">
                     <Button
                         variant={showSnapshots ? 'secondary' : 'ghost'}
@@ -146,6 +159,8 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
                     )}
                 </div>
             </div>
+
+            <MixHealthDialog open={showMixHealth} onOpenChange={setShowMixHealth} />
 
             <ScrollArea className="flex-1">
                 <div className="flex h-full items-stretch gap-1 p-2">

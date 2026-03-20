@@ -203,6 +203,11 @@ function scheduleMidiNotes(
                     }
 
                     if (noteStartBeat >= fromBeat && noteStartBeat < toBeat && noteStartBeat > lastScheduledBeat) {
+                        const probability = note.probability ?? 100;
+                        if (probability < 100 && Math.random() * 100 >= probability) {
+                            continue;
+                        }
+
                         const noteTempo = getTempoAtBeat(changes, noteStartBeat, transport.tempo);
                         const noteBeatsPerSecond = noteTempo / 60;
                         const beatOffset = noteStartBeat - accumulatedPosition;
@@ -517,6 +522,67 @@ export function startPlayheadScheduler(): void {
 
             const loopLength = current.loopEnd - current.loopStart;
             newPosition = current.loopStart + ((newPosition - current.loopStart) % loopLength);
+            lastScheduledBeat = newPosition;
+            lastMetronomeBeat = Math.floor(newPosition) - 1;
+            stopAllScheduled();
+            for (const src of activeAudioSources) {
+                try {
+                    src.stop();
+                } catch {
+                    /* already stopped */
+                }
+            }
+            activeAudioSources.length = 0;
+            scheduledAudioClips.clear();
+            scheduledFrozenTracks.clear();
+        }
+
+        let jumpToPosition: number | null = null;
+        let shouldStop = false;
+
+        const tracks = trackStore.value?.tracks ?? [];
+        for (const track of tracks) {
+            for (const clip of track.clips) {
+                if (
+                    clip.followAction &&
+                    !clip.loopEnabled &&
+                    accumulatedPosition < clip.endBeat &&
+                    newPosition >= clip.endBeat
+                ) {
+                    if (clip.followAction === 'stop') {
+                        shouldStop = true;
+                    } else if (clip.followAction === 'play_next') {
+                        const nextClips = track.clips.filter((c) => c.startBeat >= clip.endBeat && c.id !== clip.id);
+                        nextClips.sort((a, b) => a.startBeat - b.startBeat);
+                        if (nextClips[0]) jumpToPosition = nextClips[0].startBeat;
+                    } else if (clip.followAction === 'play_previous') {
+                        const prevClips = track.clips.filter((c) => c.endBeat <= clip.startBeat && c.id !== clip.id);
+                        prevClips.sort((a, b) => a.startBeat - b.startBeat);
+                        if (prevClips[prevClips.length - 1]) jumpToPosition = prevClips[prevClips.length - 1]!.startBeat;
+                    } else if (clip.followAction === 'play_first') {
+                        const firstClip = [...track.clips].sort((a, b) => a.startBeat - b.startBeat)[0];
+                        if (firstClip) jumpToPosition = firstClip.startBeat;
+                    } else if (clip.followAction === 'play_last') {
+                        const lastClip = [...track.clips].sort((a, b) => b.startBeat - a.startBeat)[0];
+                        if (lastClip) jumpToPosition = lastClip.startBeat;
+                    } else if (clip.followAction === 'play_random') {
+                        const otherClips = track.clips.filter((c) => c.id !== clip.id);
+                        if (otherClips.length > 0) {
+                            const randomClip = otherClips[Math.floor(Math.random() * otherClips.length)];
+                            if (randomClip) jumpToPosition = randomClip.startBeat;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (shouldStop) {
+            import('./transportControls').then(({ stopPlayback }) => stopPlayback());
+            return;
+        }
+
+        if (jumpToPosition !== null) {
+            newPosition = jumpToPosition;
             lastScheduledBeat = newPosition;
             lastMetronomeBeat = Math.floor(newPosition) - 1;
             stopAllScheduled();

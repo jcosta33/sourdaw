@@ -128,7 +128,8 @@ function secondsToBeats(seconds: number, tempo: number): number {
 
 function findActiveRecordingClip(trackId: string): string | null {
     const trackState = getTrackStoreState();
-    if (!trackState) {
+    const transport = getTransportStoreValue();
+    if (!trackState || !transport) {
         return null;
     }
 
@@ -138,7 +139,26 @@ function findActiveRecordingClip(trackId: string): string | null {
     }
 
     const midiClips = track.clips.filter((c) => c.type === 'midi');
-    return midiClips.length > 0 ? midiClips[midiClips.length - 1]!.id : null;
+    if (midiClips.length === 0) {
+        return null;
+    }
+    
+    if (transport.isRecording && transport.overdubEnabled) {
+        const ph = transport.playheadPosition;
+        const intersecting = midiClips.find((c) => ph >= c.startBeat && ph <= c.endBeat);
+        if (intersecting) {
+            return intersecting.id;
+        }
+        
+        if (transport.isLooping && ph >= transport.loopStart && ph <= transport.loopEnd) {
+             const loopClip = midiClips.find((c) => c.startBeat >= transport.loopStart && c.endBeat <= transport.loopEnd);
+             if (loopClip) {
+                 return loopClip.id;
+             }
+        }
+    }
+
+    return midiClips[midiClips.length - 1]!.id;
 }
 
 function handleNoteOn(channel: number, note: number, velocity: number): void {

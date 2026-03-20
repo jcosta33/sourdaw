@@ -1,13 +1,29 @@
 /**
- * System prompt template for Hermes function-calling format.
+ * System prompt template for AI tool calling.
  *
- * The prompt instructs the LLM to act as a DAW copilot, generating
- * `<tool_call>` XML blocks. It includes production knowledge (beat math,
- * gain/pan values, chord references) so the model can resolve
- * natural-language descriptions into concrete parameters.
+ * Supports two output formats depending on the backend:
+ * - JSON mode (WebLLM / Phi-3.5 / cloud APIs): produces {"actions":[...]}
+ * - Hermes XML (native llama-server / Hermes models): produces <tool_call> blocks
+ *
+ * The prompt includes production knowledge (beat math, gain/pan values,
+ * chord references) so the model can resolve natural-language descriptions
+ * into concrete parameters.
  */
 
-// ── Hermes function-calling preamble ────────────────────────────────────
+// ── JSON-mode preamble (for WebLLM / Phi-3.5 / cloud APIs) ─────────────
+
+const JSON_PREAMBLE = `You are an expert music producer and mix engineer embedded in a DAW (Digital Audio Workstation). You are a function calling AI model.
+
+You will be provided with a list of available tool definitions. When the user asks you to do something, respond ONLY with a JSON object containing an "actions" array. Each action has a "name" (the tool name) and "arguments" (an object with the parameters).
+
+Response format: {"actions":[{"name":"toolName","arguments":{"param":"value"}}]}
+
+IMPORTANT:
+- Output ONLY valid JSON. No explanation, no markdown, no text before or after.
+- Multiple actions = multiple objects in the "actions" array.
+- Never describe what you would do — just output the JSON.`;
+
+// ── Hermes XML preamble (for native llama-server with Hermes models) ────
 
 const HERMES_PREAMBLE = `You are a function calling AI model. You are an expert music producer and mix engineer embedded in a DAW (Digital Audio Workstation). You are provided with function signatures within <tools></tools> XML tags. You may call one or more functions to assist with the user query. Don't make assumptions about what values to plug into functions. Here are the available tools:`;
 
@@ -39,7 +55,7 @@ Panning:
 - pan -50 = hard left, 0 = center, 50 = hard right
 - "pan it left" = -25, "hard left" = -50, "slightly right" = 15`;
 
-const CHAINING_EXAMPLES = `CHAINING — you MUST generate ALL needed tool calls for complex requests:
+const CHAINING_EXAMPLES = `CHAINING — you MUST generate ALL needed actions for complex requests:
 
 Session setup ("set up a hip-hop session"):
 → setTempo + addTrack (Kick, midi) + addTrack (Snare, midi) + addTrack (Hi-Hats, midi) + addTrack (Bass, midi) + addTrack (Keys, midi) + addTrack (Vocals, audio) + addDevice (Compressor on vocals) + etc.
@@ -87,16 +103,26 @@ When asked to "create a variation" → use variationMidi.
 When asked to "add a bassline" → use generateBassline.
 For standard patterns → use generateDrumPattern, generateMelody, or generateChordProgression.`;
 
-const CLOSING = `ALWAYS generate every tool call needed. Do not explain — just output the <tool_call> blocks. Multiple tool calls = multiple <tool_call> blocks.`;
+const CLOSING = `ALWAYS generate every action needed. Do not explain — just output the actions. Multiple actions = multiple entries in the array.`;
 
 // ── Public API ──────────────────────────────────────────────────────────
 
+export type PromptFormat = 'json' | 'hermes';
+
 /**
  * Assemble the full system prompt from template parts + tool JSON.
+ *
+ * @param format - 'json' for WebLLM/cloud (JSON object output),
+ *                 'hermes' for native llama-server (XML blocks output)
  */
-export function buildHermesSystemPrompt(toolsJson: string, projectState: string): string {
+export function buildSystemPrompt(toolsJson: string, projectState: string, format: PromptFormat = 'json'): string {
+    const preamble =
+        format === 'hermes'
+            ? `${HERMES_PREAMBLE} <tools> ${toolsJson} </tools> ${HERMES_SCHEMA}`
+            : `${JSON_PREAMBLE}\n\nAvailable tools:\n${toolsJson}`;
+
     return [
-        `${HERMES_PREAMBLE} <tools> ${toolsJson} </tools> ${HERMES_SCHEMA}`,
+        preamble,
         projectState,
         'PRODUCTION KNOWLEDGE:',
         BEAT_BAR_MATH,
@@ -106,4 +132,11 @@ export function buildHermesSystemPrompt(toolsJson: string, projectState: string)
         MIDI_COMPOSITION,
         CLOSING,
     ].join('\n\n');
+}
+
+/**
+ * @deprecated Use buildSystemPrompt with format parameter instead.
+ */
+export function buildHermesSystemPrompt(toolsJson: string, projectState: string): string {
+    return buildSystemPrompt(toolsJson, projectState, 'hermes');
 }

@@ -12,6 +12,7 @@ import {
 } from 'react';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
+import { useMemo } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 import { midiStore } from '#/modules/Track/stores/midiStore';
 import { trackStore } from '#/modules/Track/stores/trackStore';
@@ -125,6 +126,7 @@ export const PianoRoll = ({
     const [chordType, setChordType] = useState<ChordType>('major');
     const [paintMode, setPaintMode] = useState(false);
     const [lassoMode, setLassoMode] = useState(false);
+    const [isFolded, setIsFolded] = useState(false);
 
     const beatWidth = Math.max(1, 40 * zoom);
 
@@ -160,8 +162,20 @@ export const PianoRoll = ({
         }
 
         const dpr = window.devicePixelRatio || 1;
+        
+        const scaleIntervals = SCALES[scaleType] ?? SCALES.chromatic!;
+
+        const visiblePitches = [];
+        for (let pitch = BASE_PITCH + TOTAL_ROWS - 1; pitch >= BASE_PITCH; pitch--) {
+            const noteIndex = pitch % 12;
+            const relativeNote = (noteIndex - scaleRoot + 12) % 12;
+            if (!isFolded || scaleIntervals.includes(relativeNote)) {
+                visiblePitches.push(pitch);
+            }
+        }
+        
+        const noteAreaHeight = visiblePitches.length * ROW_HEIGHT;
         const width = canvas.parentElement?.clientWidth ?? GRID_BEATS * beatWidth;
-        const noteAreaHeight = TOTAL_ROWS * ROW_HEIGHT;
         const height = noteAreaHeight + RULER_HEIGHT;
         canvas.width = Math.max(width, GRID_BEATS * beatWidth) * dpr;
         canvas.height = height * dpr;
@@ -223,10 +237,8 @@ export const PianoRoll = ({
         ctx.save();
         ctx.translate(0, RULER_HEIGHT);
 
-        const scaleIntervals = SCALES[scaleType] ?? SCALES.chromatic!;
-
-        for (let row = 0; row < TOTAL_ROWS; row++) {
-            const pitch = BASE_PITCH + TOTAL_ROWS - 1 - row;
+        for (let row = 0; row < visiblePitches.length; row++) {
+            const pitch = visiblePitches[row]!;
             const noteIndex = pitch % 12;
             const isBlack = [1, 3, 6, 8, 10].includes(noteIndex);
             const y = row * ROW_HEIGHT;
@@ -292,8 +304,8 @@ export const PianoRoll = ({
                         continue;
                     }
                     for (const gn of otherNotes) {
-                        const row = BASE_PITCH + TOTAL_ROWS - 1 - gn.pitch;
-                        if (row < 0 || row >= TOTAL_ROWS) {
+                        const row = visiblePitches.indexOf(gn.pitch);
+                        if (row === -1) {
                             continue;
                         }
                         const x = gn.startBeat * beatWidth;
@@ -310,8 +322,8 @@ export const PianoRoll = ({
         }
 
         for (const note of notes) {
-            const row = BASE_PITCH + TOTAL_ROWS - 1 - note.pitch;
-            if (row < 0 || row >= TOTAL_ROWS) {
+            const row = visiblePitches.indexOf(note.pitch);
+            if (row === -1) {
                 continue;
             }
             const x = note.startBeat * beatWidth;
@@ -374,18 +386,20 @@ export const PianoRoll = ({
         // Draw preview (drag-to-create)
         const dp = drawPreviewRef.current;
         if (dp) {
-            const dpRow = BASE_PITCH + TOTAL_ROWS - 1 - dp.pitch;
-            const dpX = dp.beat * beatWidth;
-            const dpY = dpRow * ROW_HEIGHT;
-            const dpW = dp.duration * beatWidth;
+            const dpRow = visiblePitches.indexOf(dp.pitch);
+            if (dpRow !== -1) {
+                const dpX = dp.beat * beatWidth;
+                const dpY = dpRow * ROW_HEIGHT;
+                const dpW = dp.duration * beatWidth;
 
-            ctx.fillStyle = 'rgba(100, 220, 140, 0.35)';
-            ctx.beginPath();
-            ctx.roundRect(dpX + 1, dpY + 1, Math.max(4, dpW - 2), ROW_HEIGHT - 2, 2);
-            ctx.fill();
-            ctx.strokeStyle = 'rgba(100, 220, 140, 0.8)';
-            ctx.lineWidth = 1;
-            ctx.stroke();
+                ctx.fillStyle = 'rgba(100, 220, 140, 0.35)';
+                ctx.beginPath();
+                ctx.roundRect(dpX + 1, dpY + 1, Math.max(4, dpW - 2), ROW_HEIGHT - 2, 2);
+                ctx.fill();
+                ctx.strokeStyle = 'rgba(100, 220, 140, 0.8)';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            }
         }
 
         // Rubber-band selection rectangle
@@ -424,6 +438,7 @@ export const PianoRoll = ({
         chordType,
         paintMode,
         lassoMode,
+        isFolded,
     ]);
 
     useEffect(() => {
@@ -463,9 +478,20 @@ export const PianoRoll = ({
     }, []);
 
     const hitTest = (x: number, y: number): { note: MidiNote; edge: 'body' | 'left' | 'right' } | null => {
+        const scaleIntervals = SCALES[scaleType] ?? SCALES.chromatic!;
+        const visiblePitches: number[] = [];
+        for (let pitch = BASE_PITCH + TOTAL_ROWS - 1; pitch >= BASE_PITCH; pitch--) {
+            const relativeNote = (pitch % 12 - scaleRoot + 12) % 12;
+            if (!isFolded || scaleIntervals.includes(relativeNote)) {
+                visiblePitches.push(pitch);
+            }
+        }
+
         for (let i = notes.length - 1; i >= 0; i--) {
             const note = notes[i]!;
-            const row = BASE_PITCH + TOTAL_ROWS - 1 - note.pitch;
+            const row = visiblePitches.indexOf(note.pitch);
+            if (row === -1) continue;
+            
             const nx = note.startBeat * beatWidth;
             const ny = row * ROW_HEIGHT;
             const nw = note.duration * beatWidth;
@@ -595,10 +621,20 @@ export const PianoRoll = ({
             }
 
             const row = Math.floor(noteY / ROW_HEIGHT);
-            const pitch = BASE_PITCH + TOTAL_ROWS - 1 - row;
+            
+            const scaleIntervals = SCALES[scaleType] ?? SCALES.chromatic!;
+            const visiblePitches: number[] = [];
+            for (let p = BASE_PITCH + TOTAL_ROWS - 1; p >= BASE_PITCH; p--) {
+                const relativeNote = (p % 12 - scaleRoot + 12) % 12;
+                if (!isFolded || scaleIntervals.includes(relativeNote)) {
+                    visiblePitches.push(p);
+                }
+            }
 
-            if (pitch >= 0 && pitch < 128) {
-                if (stepInput) {
+            if (row >= 0 && row < visiblePitches.length) {
+                const pitch = visiblePitches[row]!;
+                if (pitch >= 0 && pitch < 128) {
+                    if (stepInput) {
                     const note = addMidiNote(clipId, pitch, stepBeat, gridSnap, 100);
                     pushUndoEntry(
                         'Add MIDI note',
@@ -656,6 +692,7 @@ export const PianoRoll = ({
                     draw();
                 }
             }
+        }
         }
     };
 
@@ -761,10 +798,26 @@ export const PianoRoll = ({
             drawPreviewRef.current = { beat: drag.origBeat, pitch: drag.origPitch, duration };
             draw();
         } else if (drag.mode === 'move') {
+            const scaleIntervals = SCALES[scaleType] ?? SCALES.chromatic!;
+            const visiblePitches: number[] = [];
+            for (let p = BASE_PITCH + TOTAL_ROWS - 1; p >= BASE_PITCH; p--) {
+                const relativeNote = (p % 12 - scaleRoot + 12) % 12;
+                if (!isFolded || scaleIntervals.includes(relativeNote)) {
+                    visiblePitches.push(p);
+                }
+            }
+
             const deltaBeat = snap((x - drag.startX) / beatWidth);
             const deltaRow = Math.round((noteY - drag.startY) / ROW_HEIGHT);
-            const deltaPitch = -deltaRow;
-            // Move ALL selected notes (or just the dragged one if none selected)
+            
+            const anchorOrigRow = visiblePitches.indexOf(drag.origPitch);
+            let targetPitch = drag.origPitch;
+            if (anchorOrigRow !== -1) {
+                const anchorNewRow = Math.max(0, Math.min(visiblePitches.length - 1, anchorOrigRow + deltaRow));
+                targetPitch = visiblePitches[anchorNewRow]!;
+            }
+            const deltaPitch = targetPitch - drag.origPitch;
+
             const idsToMove =
                 selectedNoteIds.size > 0 && selectedNoteIds.has(drag.noteId!) ? [...selectedNoteIds] : [drag.noteId!];
             for (const id of idsToMove) {
@@ -772,8 +825,7 @@ export const PianoRoll = ({
                 if (!n) {
                     continue;
                 }
-                // Compute original position for this note based on the delta from the anchor note
-                const origN = n; // current position is being updated each move
+                const origN = n;
                 const newBeat = Math.max(0, origN.startBeat + deltaBeat - (dragRef.current._prevDeltaBeat ?? 0));
                 const newPitch = Math.max(
                     0,
@@ -781,7 +833,6 @@ export const PianoRoll = ({
                 );
                 moveMidiNote(clipId, id, newPitch, newBeat);
             }
-            // Track cumulative delta for incremental moves
             dragRef.current._prevDeltaBeat = deltaBeat;
             dragRef.current._prevDeltaPitch = deltaPitch;
         } else if (drag.mode === 'resize-left') {
@@ -818,10 +869,19 @@ export const PianoRoll = ({
                 const rbTop = rb.y;
                 const rbBottom = rb.y + rb.h;
 
+                const scaleIntervals = SCALES[scaleType] ?? SCALES.chromatic!;
+                const visiblePitches: number[] = [];
+                for (let p = BASE_PITCH + TOTAL_ROWS - 1; p >= BASE_PITCH; p--) {
+                    const relativeNote = (p % 12 - scaleRoot + 12) % 12;
+                    if (!isFolded || scaleIntervals.includes(relativeNote)) {
+                        visiblePitches.push(p);
+                    }
+                }
+
                 const hitIds = new Set<string>();
                 for (const note of notes) {
-                    const row = BASE_PITCH + TOTAL_ROWS - 1 - note.pitch;
-                    if (row < 0 || row >= TOTAL_ROWS) {
+                    const row = visiblePitches.indexOf(note.pitch);
+                    if (row === -1) {
                         continue;
                     }
                     const nx = note.startBeat * beatWidth;
@@ -928,13 +988,25 @@ export const PianoRoll = ({
         drawPreviewRef.current = null;
 
         if (drag.mode === 'lasso' && lassoPathRef.current.length > 2) {
+            const scaleIntervals = SCALES[scaleType] ?? SCALES.chromatic!;
+            const visiblePitches: number[] = [];
+            for (let p = BASE_PITCH + TOTAL_ROWS - 1; p >= BASE_PITCH; p--) {
+                const relativeNote = (p % 12 - scaleRoot + 12) % 12;
+                if (!isFolded || scaleIntervals.includes(relativeNote)) {
+                    visiblePitches.push(p);
+                }
+            }
+
             // Point-in-polygon selection — select notes whose center falls inside the lasso
             const path = lassoPathRef.current;
             const enclosed = new Set<string>();
 
             for (const note of notes) {
+                const row = visiblePitches.indexOf(note.pitch);
+                if (row === -1) continue;
+
                 const cx = (note.startBeat + note.duration / 2) * beatWidth;
-                const cy = (TOTAL_ROWS - 1 - (note.pitch - BASE_PITCH)) * ROW_HEIGHT + ROW_HEIGHT / 2;
+                const cy = row * ROW_HEIGHT + ROW_HEIGHT / 2;
 
                 // Ray-casting point-in-polygon
                 let inside = false;
@@ -1265,6 +1337,17 @@ export const PianoRoll = ({
                     ))}
                 </select>
 
+                <Button
+                    variant={isFolded ? 'secondary' : 'ghost'}
+                    size="xs"
+                    onClick={() => setIsFolded((prev) => !prev)}
+                    className={cn('text-[10px] px-2', isFolded && 'text-blue-400 border-blue-400/30')}
+                    aria-pressed={isFolded}
+                    aria-label="Toggle fold to scale"
+                >
+                    Fold
+                </Button>
+
                 <div className="w-px h-4 bg-border/40 mx-1" />
 
                 <Button
@@ -1362,24 +1445,34 @@ export const PianoRoll = ({
             >
                 <div className="w-10 shrink-0 border-r border-border/30 bg-surface-raised sticky left-0 z-10">
                     <div className="bg-surface-raised border-b border-border/30" style={{ height: RULER_HEIGHT }} />
-                    {Array.from({ length: TOTAL_ROWS }, (_, row) => {
-                        const pitch = BASE_PITCH + TOTAL_ROWS - 1 - row;
-                        const noteIndex = pitch % 12;
-                        const isBlack = [1, 3, 6, 8, 10].includes(noteIndex);
-                        return (
-                            <div
-                                key={row}
-                                className={cn(
-                                    'flex items-center justify-end pr-1 text-[10px]',
-                                    isBlack ? 'bg-surface-base text-muted-foreground/40' : 'text-muted-foreground/60'
-                                )}
-                                style={{ height: ROW_HEIGHT }}
-                            >
-                                {NOTE_NAMES[noteIndex]}
-                                {Math.floor(pitch / 12) - 1}
-                            </div>
-                        );
-                    })}
+                    {useMemo(() => {
+                        const scaleIntervals = SCALES[scaleType] ?? SCALES.chromatic!;
+                        const visiblePitches: number[] = [];
+                        for (let p = BASE_PITCH + TOTAL_ROWS - 1; p >= BASE_PITCH; p--) {
+                            const relativeNote = (p % 12 - scaleRoot + 12) % 12;
+                            if (!isFolded || scaleIntervals.includes(relativeNote)) {
+                                visiblePitches.push(p);
+                            }
+                        }
+                        
+                        return visiblePitches.map((pitch, row) => {
+                            const noteIndex = pitch % 12;
+                            const isBlack = [1, 3, 6, 8, 10].includes(noteIndex);
+                            return (
+                                <div
+                                    key={row}
+                                    className={cn(
+                                        'flex items-center justify-end pr-1 text-[10px]',
+                                        isBlack ? 'bg-surface-base text-muted-foreground/40' : 'text-muted-foreground/60'
+                                    )}
+                                    style={{ height: ROW_HEIGHT }}
+                                >
+                                    {NOTE_NAMES[noteIndex]}
+                                    {Math.floor(pitch / 12) - 1}
+                                </div>
+                            );
+                        });
+                    }, [scaleType, scaleRoot, isFolded])}
                 </div>
                 <canvas
                     ref={canvasRef}

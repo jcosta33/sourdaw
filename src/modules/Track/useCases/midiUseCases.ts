@@ -9,6 +9,7 @@ export {
     removeMidiNote,
     moveMidiNote,
     setNoteVelocity,
+    setNoteProbability,
     getNotesForClip,
     duplicateNotes,
 } from './midiNoteCrud';

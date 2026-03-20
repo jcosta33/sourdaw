@@ -2,6 +2,7 @@ export type TransportState = {
     isPlaying: boolean;
     isRecording: boolean;
     isLooping: boolean;
+    overdubEnabled: boolean;
     metronomeEnabled: boolean;
     metronomeVolume: number;
     tempo: number;
@@ -25,6 +26,7 @@ export const defaultTransportState: TransportState = {
     isPlaying: false,
     isRecording: false,
     isLooping: false,
+    overdubEnabled: false,
     metronomeEnabled: false,
     metronomeVolume: 0.5,
     tempo: 120,

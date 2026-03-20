@@ -56,10 +56,31 @@ export function rdpSimplify(points: AutomationPoint[], tolerance: number): Autom
 }
 
 /**
- * Interpolates an automation value at a given beat position between two points.
- * Supports linear, step, exponential, and s-curve interpolation.
+ * Apply tension to a normalized t value (0–1).
+ * tension < 0: logarithmic (fast start, slow end)
+ * tension = 0: linear
+ * tension > 0: exponential (slow start, fast end)
  */
-export function interpolateAutomationValue(p1: AutomationPoint, p2: AutomationPoint, beat: number): number {
+function applyTension(t: number, tension: number): number {
+    if (Math.abs(tension) < 0.01) {
+        return t;
+    }
+    // Use power curve with tension mapping
+    const power = Math.pow(2, tension * 3); // Maps -1..+1 to 0.125..8
+    return Math.pow(t, power);
+}
+
+/**
+ * Interpolates an automation value at a given beat position between two points.
+ * Supports linear, step, exponential, s-curve, stairs, and smooth interpolation.
+ */
+export function interpolateAutomationValue(
+    p1: AutomationPoint,
+    p2: AutomationPoint,
+    beat: number,
+    prevPoint?: AutomationPoint,
+    nextPoint?: AutomationPoint
+): number {
     if (p2.beat === p1.beat) {
         return p1.value;
     }
@@ -70,17 +91,147 @@ export function interpolateAutomationValue(p1: AutomationPoint, p2: AutomationPo
 
     const t = (beat - p1.beat) / (p2.beat - p1.beat);
 
+    if (p1.curve === 'stairs') {
+        const steps = p1.stairSteps ?? 4;
+        const steppedT = Math.floor(t * steps) / steps;
+        return p1.value + (p2.value - p1.value) * steppedT;
+    }
+
     if (p1.curve === 'exponential') {
-        const expT = t * t;
+        const tension = p1.tension ?? 0;
+        const expT = applyTension(t, tension);
         return p1.value + (p2.value - p1.value) * expT;
     }
 
     if (p1.curve === 's-curve') {
         const tension = p1.tension ?? 0.5;
-        const st = t * t * (3 - 2 * t);
-        const curved = t + (st - t) * tension;
+        const st = t * t * (3 - 2 * t); // Hermite basis
+        const curved = t + (st - t) * Math.abs(tension);
         return p1.value + (p2.value - p1.value) * curved;
     }
 
+    if (p1.curve === 'smooth') {
+        // Catmull-Rom spline: uses neighboring points for tangents
+        const v0 = prevPoint?.value ?? p1.value;
+        const v1 = p1.value;
+        const v2 = p2.value;
+        const v3 = nextPoint?.value ?? p2.value;
+
+        const t2 = t * t;
+        const t3 = t2 * t;
+
+        // Catmull-Rom coefficients
+        const result =
+            0.5 *
+            (2 * v1 +
+                (-v0 + v2) * t +
+                (2 * v0 - 5 * v1 + 4 * v2 - v3) * t2 +
+                (-v0 + 3 * v1 - 3 * v2 + v3) * t3);
+
+        return result;
+    }
+
+    // Linear
     return p1.value + (p2.value - p1.value) * t;
+}
+
+/**
+ * Generate an array of points for a shape within a beat range.
+ */
+export type AutomationShapeType = 'sine' | 'triangle' | 'sawtooth-up' | 'sawtooth-down' | 'square' | 'random';
+
+export function generateShapePoints(
+    shape: AutomationShapeType,
+    startBeat: number,
+    endBeat: number,
+    minValue: number,
+    maxValue: number,
+    resolution = 16
+): AutomationPoint[] {
+    const points: AutomationPoint[] = [];
+    const range = maxValue - minValue;
+    const duration = endBeat - startBeat;
+
+    for (let i = 0; i <= resolution; i++) {
+        const t = i / resolution;
+        const beat = startBeat + t * duration;
+        let normalizedValue: number;
+
+        switch (shape) {
+            case 'sine':
+                normalizedValue = 0.5 + 0.5 * Math.sin(t * Math.PI * 2 - Math.PI / 2);
+                break;
+            case 'triangle':
+                normalizedValue = t < 0.5 ? t * 2 : 2 - t * 2;
+                break;
+            case 'sawtooth-up':
+                normalizedValue = t;
+                break;
+            case 'sawtooth-down':
+                normalizedValue = 1 - t;
+                break;
+            case 'square':
+                normalizedValue = t < 0.5 ? 1 : 0;
+                break;
+            case 'random':
+                normalizedValue = Math.random();
+                break;
+        }
+
+        points.push({
+            beat,
+            value: minValue + normalizedValue * range,
+            curve: shape === 'square' ? 'step' : 'linear',
+            tension: 0,
+        });
+    }
+
+    return points;
+}
+
+/**
+ * Determine contiguous automation regions (for virgin territory rendering).
+ * Returns beat ranges where automation data has been explicitly written.
+ * Adjacent points (within maxGap beats) are considered part of the same region.
+ */
+export function getAutomationRegions(
+    points: AutomationPoint[],
+    maxGap = 0
+): { startBeat: number; endBeat: number }[] {
+    if (points.length === 0) {
+        return [];
+    }
+
+    const sorted = [...points].sort((a, b) => a.beat - b.beat);
+    const regions: { startBeat: number; endBeat: number }[] = [];
+    let regionStart = sorted[0]!.beat;
+    let regionEnd = sorted[0]!.beat;
+
+    for (let i = 1; i < sorted.length; i++) {
+        const p = sorted[i]!;
+        if (p.beat - regionEnd > maxGap) {
+            regions.push({ startBeat: regionStart, endBeat: regionEnd });
+            regionStart = p.beat;
+        }
+        regionEnd = p.beat;
+    }
+
+    regions.push({ startBeat: regionStart, endBeat: regionEnd });
+    return regions;
+}
+
+/**
+ * Resolve clip automation against a track automation value.
+ * Additive: trackValue + clipValue (clipValue is an offset, typically -0.5 to +0.5)
+ * Multiplicative: trackValue * clipValue (clipValue 0..1 scales from mute to pass-through)
+ */
+export function resolveClipAutomation(
+    trackValue: number,
+    clipValue: number,
+    mode: 'additive' | 'multiplicative'
+): number {
+    if (mode === 'additive') {
+        return trackValue + clipValue;
+    }
+    return trackValue * clipValue;
 }

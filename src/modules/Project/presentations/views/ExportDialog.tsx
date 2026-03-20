@@ -20,13 +20,13 @@ type ExportDialogProps = {
 
 const EXPORT_SETTINGS_KEY = 'webdaw:export-settings';
 
-const loadExportSettings = (): { format: ExportFormat; sampleRate: number; bitDepth: number } => {
+const loadExportSettings = (): { formats: ExportFormat[]; sampleRate: number; bitDepth: number } => {
     try {
         const stored = localStorage.getItem(EXPORT_SETTINGS_KEY);
         if (stored) {
             const parsed = JSON.parse(stored);
             return {
-                format: parsed.format ?? 'wav',
+                formats: Array.isArray(parsed.formats) ? parsed.formats : (parsed.format ? [parsed.format] : ['wav']),
                 sampleRate: parsed.sampleRate ?? 44100,
                 bitDepth: parsed.bitDepth ?? 24,
             };
@@ -34,10 +34,10 @@ const loadExportSettings = (): { format: ExportFormat; sampleRate: number; bitDe
     } catch {
         /* ignore */
     }
-    return { format: 'wav', sampleRate: 44100, bitDepth: 24 };
+    return { formats: ['wav'], sampleRate: 44100, bitDepth: 24 };
 };
 
-const saveExportSettings = (settings: { format: ExportFormat; sampleRate: number; bitDepth: number }): void => {
+const saveExportSettings = (settings: { formats: ExportFormat[]; sampleRate: number; bitDepth: number }): void => {
     try {
         localStorage.setItem(EXPORT_SETTINGS_KEY, JSON.stringify(settings));
     } catch {
@@ -47,24 +47,33 @@ const saveExportSettings = (settings: { format: ExportFormat; sampleRate: number
 
 export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement => {
     const defaults = loadExportSettings();
-    const [format, setFormat] = useState<ExportFormat>(defaults.format);
+    const [formats, setFormats] = useState<Set<ExportFormat>>(() => new Set(defaults.formats));
     const [mode, setMode] = useState<ExportMode>('mixdown');
     const [sampleRate, setSampleRate] = useState(defaults.sampleRate);
     const [bitDepth, setBitDepth] = useState(defaults.bitDepth);
     const [exporting, setExporting] = useState(false);
     const [progress, setProgress] = useState(0);
 
-    const updateFormat = (f: ExportFormat) => {
-        setFormat(f);
-        saveExportSettings({ format: f, sampleRate, bitDepth });
+    const toggleFormat = (f: ExportFormat) => {
+        setFormats((prev) => {
+            const next = new Set(prev);
+            if (next.has(f) && next.size > 1) {
+                next.delete(f);
+            } else {
+                next.add(f);
+            }
+            saveExportSettings({ formats: Array.from(next), sampleRate, bitDepth });
+            return next;
+        });
     };
+    
     const updateSampleRate = (sr: number) => {
         setSampleRate(sr);
-        saveExportSettings({ format, sampleRate: sr, bitDepth });
+        saveExportSettings({ formats: Array.from(formats), sampleRate: sr, bitDepth });
     };
     const updateBitDepth = (bd: number) => {
         setBitDepth(bd);
-        saveExportSettings({ format, sampleRate, bitDepth: bd });
+        saveExportSettings({ formats: Array.from(formats), sampleRate, bitDepth: bd });
     };
 
     const handleExport = async () => {
@@ -84,12 +93,14 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 for (const [trackId, buffer] of stems) {
                     const track = tracks.find((t) => t.id === trackId);
                     const name = track?.name ?? trackId;
-                    if (format === 'mp3') {
-                        await downloadMp3(buffer, `${name}-${ts}.mp3`);
-                    } else if (format === 'flac') {
-                        downloadFlac(buffer, `${name}-${ts}.flac`);
-                    } else {
-                        downloadWav(buffer, `${name}-${ts}.wav`, bd);
+                    for (const f of Array.from(formats)) {
+                        if (f === 'mp3') {
+                            await downloadMp3(buffer, `${name}-${ts}.mp3`);
+                        } else if (f === 'flac') {
+                            downloadFlac(buffer, `${name}-${ts}.flac`);
+                        } else {
+                            downloadWav(buffer, `${name}-${ts}.wav`, bd);
+                        }
                     }
                     done++;
                     setProgress(20 + (done / stems.size) * 80);
@@ -98,12 +109,14 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 setProgress(30);
                 const buffer = await renderOffline(maxBeat, sampleRate);
                 setProgress(80);
-                if (format === 'mp3') {
-                    await downloadMp3(buffer, `webdaw-export-${ts}.mp3`);
-                } else if (format === 'flac') {
-                    downloadFlac(buffer, `webdaw-export-${ts}.flac`);
-                } else {
-                    downloadWav(buffer, `webdaw-export-${ts}.wav`, bd);
+                for (const f of Array.from(formats)) {
+                    if (f === 'mp3') {
+                        await downloadMp3(buffer, `webdaw-export-${ts}.mp3`);
+                    } else if (f === 'flac') {
+                        downloadFlac(buffer, `webdaw-export-${ts}.flac`);
+                    } else {
+                        downloadWav(buffer, `webdaw-export-${ts}.wav`, bd);
+                    }
                 }
             }
             setProgress(100);
@@ -119,7 +132,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         }
     };
 
-    const formats: { value: ExportFormat; label: string; desc: string }[] = [
+    const FORMAT_OPTIONS: { value: ExportFormat; label: string; desc: string }[] = [
         { value: 'wav', label: 'WAV', desc: 'Uncompressed, lossless' },
         { value: 'mp3', label: 'MP3', desc: 'Compressed, lossy' },
         { value: 'flac', label: 'FLAC', desc: 'Compressed, lossless' },
@@ -169,15 +182,15 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                             Format
                         </label>
                         <div className="grid grid-cols-3 gap-2">
-                            {formats.map((f) => (
+                            {FORMAT_OPTIONS.map((f) => (
                                 <button
                                     type="button"
                                     key={f.value}
-                                    className={`rounded-md border px-3 py-2 text-left transition-colors ${format === f.value ? 'border-ring bg-accent' : 'border-border hover:bg-accent/50'}`}
-                                    onClick={() => updateFormat(f.value)}
-                                    aria-pressed={format === f.value}
-                                    role="radio"
-                                    aria-checked={format === f.value}
+                                    className={`rounded-md border px-3 py-2 text-left transition-colors ${formats.has(f.value) ? 'border-ring bg-accent' : 'border-border hover:bg-accent/50'}`}
+                                    onClick={() => toggleFormat(f.value)}
+                                    aria-pressed={formats.has(f.value)}
+                                    role="checkbox"
+                                    aria-checked={formats.has(f.value)}
                                 >
                                     <div className="text-xs font-medium text-foreground">{f.label}</div>
                                     <div className="text-[10px] text-muted-foreground">{f.desc}</div>
@@ -254,7 +267,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         <Button variant="ghost" size="sm" onClick={onClose} disabled={exporting}>
                             Cancel
                         </Button>
-                        <Button size="sm" onClick={handleExport} disabled={exporting}>
+                        <Button size="sm" onClick={handleExport} disabled={exporting || formats.size === 0}>
                             <Download className="size-3.5 mr-1" />
                             {exporting ? 'Exporting...' : `Export ${mode === 'stems' ? 'Stems' : 'Mixdown'}`}
                         </Button>

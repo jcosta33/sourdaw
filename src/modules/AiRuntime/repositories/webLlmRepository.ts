@@ -28,6 +28,13 @@ export function initWebLlmEngine(): Promise<WebLlmEngine> {
         return initPromise;
     }
 
+    // WebGPU is required — absent on Linux (WebKitGTK) and older browsers
+    if (typeof navigator === 'undefined' || !('gpu' in navigator)) {
+        return Promise.reject(
+            new Error('WebGPU not available — WebLLM requires WebGPU. Use native or cloud backend instead.'),
+        );
+    }
+
     initPromise = (async () => {
         llmStatusStore.set({ state: 'loading', progress: 0, text: 'Loading AI engine...' });
 
@@ -81,6 +88,7 @@ export async function generateWebLlmCompletion(systemPrompt: string, userMessage
         temperature: 0.1,
         max_tokens: 1024,
         seed: 0,
+        response_format: { type: 'json_object' },
     });
     return response.choices[0]?.message.content ?? '';
 }

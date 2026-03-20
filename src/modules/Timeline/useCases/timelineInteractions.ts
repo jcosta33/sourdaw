@@ -1,6 +1,8 @@
 import { getTransportState, updateTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { trackStore } from '#/modules/Track/stores/trackStore';
 import { timelineViewStore } from '../stores/timelineViewStore';
+import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
+import { automationStore } from '#/modules/Track/stores/automationStore';
 
 const getTrackState = () => trackStore.value;
 const getAllTracks = () => trackStore.value?.tracks ?? [];
@@ -8,6 +10,7 @@ import { moveClip } from '#/modules/Track/useCases/clipUseCases';
 import { trimClipStart, trimClipEnd } from '#/modules/Track/useCases/clipEditingUseCases';
 import { preferencesStore } from '#/modules/Workspace/stores/preferencesStore';
 import { gridSnapBeats } from '#/modules/Workspace/useCases/workspaceQueries';
+import { AUTOMATION_SUB_LANE_HEIGHT } from '../models/automationConstants';
 
 const RULER_HEIGHT = 24;
 
@@ -270,4 +273,77 @@ export function commitClipDrag(drag: DragState, canvasX: number, canvasY: number
 
     const newStartBeat = Math.max(0, snapToGridOrClips(beat - drag.offsetBeat, targetTrackId, drag.clipId));
     moveClip(drag.clipId, targetTrackId, newStartBeat);
+}
+
+export type AutomationSubLaneHit = {
+    laneId: string;
+    trackId: string;
+    subLaneIndex: number;
+    value: number; // normalized 0..1 within the sub-lane
+    beat: number;
+};
+
+/**
+ * Hit-test whether a canvas coordinate falls inside an inline automation sub-lane.
+ */
+export function hitTestAutomationSubLane(
+    canvasX: number,
+    canvasY: number
+): AutomationSubLaneHit | null {
+    const viewState = timelineViewStore.value;
+    const trackState = getTrackState();
+    // Import stores at the top-level of the file instead
+    const workspace = workspaceStore.value;
+    if (!viewState || !trackState || !workspace || workspace.automationVisibility === 'hidden') {
+        return null;
+    }
+
+    const contentY = canvasY - RULER_HEIGHT + (viewState.scrollY ?? 0);
+    if (contentY < 0) {
+        return null;
+    }
+
+    const subLaneMap = workspace.automationSubLanes;
+    const tracks = trackState.tracks;
+    let trackYOffset = 0;
+
+    for (const track of tracks) {
+        const paramIds = subLaneMap[track.id] ?? [];
+        const totalHeight = track.height; // Already includes sub-lane expansion from build model
+        const baseHeight = totalHeight - paramIds.length * AUTOMATION_SUB_LANE_HEIGHT;
+        const trackBottom = trackYOffset + totalHeight;
+
+        if (contentY >= trackYOffset && contentY < trackBottom) {
+            // Check if Y is in the sub-lane area
+            const localY = contentY - trackYOffset;
+            if (localY >= baseHeight && paramIds.length > 0) {
+                const subLaneLocalY = localY - baseHeight;
+                const subLaneIndex = Math.floor(subLaneLocalY / AUTOMATION_SUB_LANE_HEIGHT);
+                if (subLaneIndex >= 0 && subLaneIndex < paramIds.length) {
+                    const withinLaneY = subLaneLocalY - subLaneIndex * AUTOMATION_SUB_LANE_HEIGHT;
+                    const value = Math.max(0, Math.min(1, 1 - (withinLaneY - 2) / (AUTOMATION_SUB_LANE_HEIGHT - 4)));
+                    const beat = canvasX / viewState.pixelsPerBeat + viewState.scrollX / viewState.pixelsPerBeat;
+
+                    const autoState = automationStore.value;
+                    const lane = autoState?.lanes.find(
+                        (l) =>
+                            l.trackId === track.id && l.parameterId === paramIds[subLaneIndex]
+                    );
+
+                    if (lane) {
+                        return {
+                            laneId: lane.id,
+                            trackId: track.id,
+                            subLaneIndex,
+                            value,
+                            beat,
+                        };
+                    }
+                }
+            }
+        }
+        trackYOffset += totalHeight;
+    }
+
+    return null;
 }

@@ -9,7 +9,7 @@ import {
     useSyncExternalStore,
 } from 'react';
 import { Button } from '#/components/ui/button';
-import { Plus, FolderPlus, Rows3, Music, Mic2, GitBranch, FileStack } from 'lucide-react';
+import { Plus, FolderPlus, Rows3, Music, Mic2, GitBranch, FileStack, Wand2 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useTracks } from '../hooks/useTracks';
 import { TrackHeader } from './TrackHeader';
@@ -20,6 +20,7 @@ import { removeTrack } from '../../useCases/removeTrack';
 import { setWorkspaceMode, defaultPreferences, type Preferences } from '../../useCases/trackViewActions';
 import { preferencesStore } from '#/modules/Workspace/stores/preferencesStore';
 import { timelineViewStore, setScrollY } from '#/modules/Timeline/stores/timelineViewStore';
+import { injectPromptCommand } from '#/modules/AiRuntime/presentations/views/VoiceCommandOverlay';
 
 const HEIGHT_CYCLE: Preferences['trackHeight'][] = ['compact', 'normal', 'large'];
 const HEIGHT_LABELS: Record<Preferences['trackHeight'], string> = {
@@ -158,6 +159,21 @@ export const TrackListView = ({ style }: { style?: CSSProperties }): ReactElemen
                             </Button>
                         </TooltipTrigger>
                         <TooltipContent>Track height: {HEIGHT_LABELS[currentHeight]}</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="icon-xs"
+                                aria-label="Auto-organize with AI"
+                                onClick={() =>
+                                    injectPromptCommand('Auto-organize my project into color-coded instrument folders and standardized names.')
+                                }
+                            >
+                                <Wand2 className="size-3 text-purple-400" aria-hidden="true" />
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Auto-organize with AI</TooltipContent>
                     </Tooltip>
                     <Tooltip>
                         <TooltipTrigger asChild>

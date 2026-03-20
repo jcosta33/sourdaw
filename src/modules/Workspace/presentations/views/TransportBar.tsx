@@ -18,6 +18,7 @@ import { PromptBar } from './PromptBar';
 import { ToolSelector } from './ToolSelector';
 import { TempoEditor } from './TempoEditor';
 import { RecentProjectsMenu } from '#/modules/Project/presentations/views/RecentProjectsMenu';
+import { ArrangementSelector } from '#/modules/Project/presentations/views/ArrangementSelector';
 import { toggleRippleEditing } from '../../useCases/rippleEditing';
 import { Button } from '#/components/ui/button';
 
@@ -58,10 +59,15 @@ export const TransportBar = (): ReactElement => {
 
                 <Separator orientation="vertical" className="mx-0.5 h-5" />
 
+                <ArrangementSelector />
+
+                <Separator orientation="vertical" className="mx-0.5 h-5" />
+
                 <TransportControls
                     isPlaying={transport.isPlaying}
                     isRecording={transport.isRecording}
                     isLooping={transport.isLooping}
+                    overdubEnabled={transport.overdubEnabled}
                     metronomeEnabled={transport.metronomeEnabled}
                     metronomeVolume={transport.metronomeVolume}
                     punchInEnabled={transport.punchInEnabled}

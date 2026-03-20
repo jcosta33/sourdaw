@@ -4,8 +4,8 @@ import { type IntentResult } from '../models/IntentResult';
 import { type ProjectContext } from '../models/ProjectContext';
 import { validateActions } from './validateActions';
 import { parseToolCallsToActions } from './validateLlmOutput';
-import { isLlmAvailable, generateToolCalls } from './llmOrchestration';
-import { buildSystemPrompt } from '../helpers/actionSchema';
+import { isLlmAvailable, generateToolCalls, resolveBackend } from './llmOrchestration';
+import { buildActionSystemPrompt } from '../helpers/actionSchema';
 import {
     tryPresetMatch,
     buildPresetContext,
@@ -99,7 +99,9 @@ async function parseLlmPath(prompt: string, context: ProjectContext, signal?: Ab
         return { actions: [], confidence: 0, rawText: prompt, requiresConfirmation: false };
     }
 
-    const systemPrompt = buildSystemPrompt(context);
+    // Use 'hermes' XML format for native Hermes GGUF model, 'json' for WebLLM Phi-3.5
+    const format = resolveBackend() === 'native' ? 'hermes' as const : 'json' as const;
+    const systemPrompt = buildActionSystemPrompt(context, format);
     const toolCalls = await generateToolCalls(systemPrompt, prompt);
 
     if (signal?.aborted) {

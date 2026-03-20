@@ -20,6 +20,7 @@ export {
     muteClip,
     lockClip,
     setClipGain,
+    setClipFollowAction,
 } from '#/modules/Track/useCases/clipEditingUseCases';
 
 // ── Track: clip operations ────────────────────────────────────────
@@ -95,6 +96,7 @@ export {
     setNotePressure,
     setNoteSlide,
     setNoteVelocity,
+    setNoteProbability,
     addMidiNote,
     removeMidiNote,
     moveMidiNote,
@@ -166,6 +168,7 @@ export { BUILTIN_PLUGINS } from '#/modules/Track/useCases/trackQueries';
 export {
     NATIVE_MODEL_INFO,
     WEBLLM_MODEL_INFO,
+    CLOUD_MODEL_INFO,
     searchPresets,
     getAvailablePresets,
     type FuzzyResult,
@@ -174,6 +177,19 @@ export {
     type PresetContext,
 } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
 export { generateGroupId, type AppAction, type UndoEntry } from '#/modules/Command/useCases/commandQueries';
+
+// ── AiRuntime: Cloud API management ──────────────────────────────
+export {
+    configureCloudApi,
+    removeCloudApi,
+    getCloudStatus,
+    isCloudAvailable as isCloudApiAvailable,
+} from '#/modules/AiRuntime/useCases/cloudApiManagement';
+
+// ── AiRuntime: Audio analysis ────────────────────────────────────
+export { polyphonicAudioToMidi } from '#/modules/AiRuntime/useCases/polyphonicAudioToMidi';
+export { trackPitch, detectDominantPitch } from '#/modules/AiRuntime/useCases/pitchDetection';
+export { summarizeFeatures } from '#/modules/AiRuntime/useCases/audioFeatures';
 export {
     type SoundPreset,
     type MidiCC,
@@ -210,6 +226,7 @@ export {
     stopPlayback,
     seekPlayhead,
     toggleLoop,
+    toggleOverdub,
     toggleMetronome,
     setMetronomeVolume,
     setLoopRegion,

@@ -200,8 +200,7 @@ export function audioToMidi(options: AudioToMidiOptions): void {
     }
 
     const clipStartBeat = clip.startBeat;
-    const lastOnset = onsets[onsets.length - 1]!;
-    const endBeat = clipStartBeat + lastOnset.timeSec * beatsPerSecond + 1;
+    const endBeat = clip.endBeat;
 
     const midiClip = addClip({
         trackId: midiTrackId,
