@@ -18,12 +18,7 @@ export const setBusGain = (busId: string, gain: number): void => {
     audioEngine.setBusGain(busId, gain);
 };
 
-export const setSend = (
-    sourceTrackId: string,
-    busId: string,
-    level: number,
-    preFader = false,
-): void => {
+export const setSend = (sourceTrackId: string, busId: string, level: number, preFader = false): void => {
     audioEngine.setSend(sourceTrackId, busId, level, preFader);
 };
 

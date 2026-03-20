@@ -125,10 +125,18 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                             ) : (
                                 <Tooltip>
                                     <TooltipTrigger asChild>
-                                        <div className="flex items-center gap-2 px-3 py-2 opacity-50 cursor-not-allowed" aria-disabled="true">
-                                            <Monitor className="size-3 text-muted-foreground shrink-0" aria-hidden="true" />
+                                        <div
+                                            className="flex items-center gap-2 px-3 py-2 opacity-50 cursor-not-allowed"
+                                            aria-disabled="true"
+                                        >
+                                            <Monitor
+                                                className="size-3 text-muted-foreground shrink-0"
+                                                aria-hidden="true"
+                                            />
                                             <span className="text-[10px] text-muted-foreground">
-                                                {getPlatformCapabilities().hasNativePlugins ? 'No plugins found — scan first' : 'Desktop app required'}
+                                                {getPlatformCapabilities().hasNativePlugins
+                                                    ? 'No plugins found — scan first'
+                                                    : 'Desktop app required'}
                                             </span>
                                         </div>
                                     </TooltipTrigger>

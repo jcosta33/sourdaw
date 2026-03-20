@@ -10,11 +10,7 @@
  */
 
 import { type ReactNode } from 'react';
-import {
-    Tooltip,
-    TooltipContent,
-    TooltipTrigger,
-} from '#/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 
 type DisabledFeatureWrapperProps = {
     /** Whether the feature is unavailable */
@@ -40,10 +36,7 @@ export function DisabledFeatureWrapper({
     return (
         <Tooltip>
             <TooltipTrigger asChild>
-                <span
-                    className={`inline-flex cursor-not-allowed opacity-50 ${className ?? ''}`}
-                    aria-disabled="true"
-                >
+                <span className={`inline-flex cursor-not-allowed opacity-50 ${className ?? ''}`} aria-disabled="true">
                     <span className="pointer-events-none">{children}</span>
                 </span>
             </TooltipTrigger>

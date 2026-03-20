@@ -36,8 +36,11 @@ export function isRippleEditing(): boolean {
  */
 export function rippleDeleteClips(
     trackId: string,
-    clipIds: string[],
-): { removedClips: Clip[]; shiftedClips: Array<{ clipId: string; origStartBeat: number; origEndBeat: number }> } | null {
+    clipIds: string[]
+): {
+    removedClips: Clip[];
+    shiftedClips: Array<{ clipId: string; origStartBeat: number; origEndBeat: number }>;
+} | null {
     const state = getTrackState();
     if (!state) {
         return null;
@@ -95,7 +98,7 @@ export function rippleDeleteClips(
 export function undoRippleDelete(
     trackId: string,
     removedClips: Clip[],
-    shiftedClips: Array<{ clipId: string; origStartBeat: number; origEndBeat: number }>,
+    shiftedClips: Array<{ clipId: string; origStartBeat: number; origEndBeat: number }>
 ): void {
     const state = getTrackState();
     if (!state) {

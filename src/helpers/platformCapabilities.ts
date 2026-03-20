@@ -26,12 +26,10 @@ export type PlatformCapabilities = {
     readonly isDesktopApp: boolean;
 };
 
-const webMidiSupported =
-    typeof navigator !== 'undefined' && 'requestMIDIAccess' in navigator;
+const webMidiSupported = typeof navigator !== 'undefined' && 'requestMIDIAccess' in navigator;
 
 const speechRecognitionSupported =
-    typeof window !== 'undefined' &&
-    ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
+    typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
 
 let cached: PlatformCapabilities | null = null;
 

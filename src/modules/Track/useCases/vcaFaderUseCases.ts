@@ -46,9 +46,7 @@ export function assignTrackToVCA(trackId: string, vcaGroupId: string): void {
 
     setTrackState({
         ...state,
-        tracks: state.tracks.map((t) =>
-            t.id === trackId ? { ...t, vcaGroupId } : t
-        ),
+        tracks: state.tracks.map((t) => (t.id === trackId ? { ...t, vcaGroupId } : t)),
     });
 }
 
@@ -63,9 +61,7 @@ export function removeTrackFromVCA(trackId: string): void {
 
     setTrackState({
         ...state,
-        tracks: state.tracks.map((t) =>
-            t.id === trackId ? { ...t, vcaGroupId: null } : t
-        ),
+        tracks: state.tracks.map((t) => (t.id === trackId ? { ...t, vcaGroupId: null } : t)),
     });
 }
 
@@ -127,9 +123,7 @@ export function deleteVCAGroup(vcaGroupId: string): void {
 
     setTrackState({
         ...state,
-        tracks: state.tracks.map((t) =>
-            t.vcaGroupId === vcaGroupId ? { ...t, vcaGroupId: null } : t
-        ),
+        tracks: state.tracks.map((t) => (t.vcaGroupId === vcaGroupId ? { ...t, vcaGroupId: null } : t)),
     });
 }
 
@@ -141,7 +135,5 @@ export function getVCAGroupTracks(vcaGroupId: string): string[] {
     if (!state) {
         return [];
     }
-    return state.tracks
-        .filter((t) => t.vcaGroupId === vcaGroupId)
-        .map((t) => t.id);
+    return state.tracks.filter((t) => t.vcaGroupId === vcaGroupId).map((t) => t.id);
 }

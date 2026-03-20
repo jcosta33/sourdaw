@@ -27,11 +27,7 @@ import {
     executeAppAction,
 } from '../../useCases/timelineViewActions';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import {
-    addMarker,
-    setMarkerColor,
-    removeMarker as removeMarkerUseCase,
-} from '../../useCases/markerUseCases';
+import { addMarker, setMarkerColor, removeMarker as removeMarkerUseCase } from '../../useCases/markerUseCases';
 import { trackStore } from '#/modules/Track/stores/trackStore';
 import { markerStore } from '#/modules/Timeline/stores/markerStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';

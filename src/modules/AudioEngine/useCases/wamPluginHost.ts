@@ -40,7 +40,7 @@ export async function initWAMEnvironment(context: AudioContext): Promise<string>
     // In production, this loads the WAM SDK scripts and initializes
     // the WAM environment on the AudioContext.
     // For now, we store the context reference.
-    ((context as unknown) as Record<string, unknown>).__wamGroupId = groupId;
+    (context as unknown as Record<string, unknown>).__wamGroupId = groupId;
 
     return groupId;
 }
@@ -121,16 +121,96 @@ export function getActiveInstances(): Map<string, WAMInstance> {
 // These are the factory plugins that ship with the DAW
 
 const BUILTIN_WAM_DESCRIPTORS: WAMDescriptor[] = [
-    { id: 'webdaw.eq', name: 'Parametric EQ', vendor: 'WebDAW', version: '1.0', category: 'effect', sdkVersion: '2.0', keywords: ['eq', 'filter', 'tone'] },
-    { id: 'webdaw.compressor', name: 'Compressor', vendor: 'WebDAW', version: '1.0', category: 'effect', sdkVersion: '2.0', keywords: ['dynamics', 'compressor'] },
-    { id: 'webdaw.reverb', name: 'Reverb', vendor: 'WebDAW', version: '1.0', category: 'effect', sdkVersion: '2.0', keywords: ['reverb', 'space'] },
-    { id: 'webdaw.delay', name: 'Delay', vendor: 'WebDAW', version: '1.0', category: 'effect', sdkVersion: '2.0', keywords: ['delay', 'echo'] },
-    { id: 'webdaw.chorus', name: 'Chorus', vendor: 'WebDAW', version: '1.0', category: 'effect', sdkVersion: '2.0', keywords: ['modulation', 'chorus'] },
-    { id: 'webdaw.distortion', name: 'Distortion', vendor: 'WebDAW', version: '1.0', category: 'effect', sdkVersion: '2.0', keywords: ['distortion', 'saturation'] },
-    { id: 'webdaw.limiter', name: 'Limiter', vendor: 'WebDAW', version: '1.0', category: 'effect', sdkVersion: '2.0', keywords: ['dynamics', 'limiter'] },
-    { id: 'webdaw.synth', name: 'Subtractive Synth', vendor: 'WebDAW', version: '1.0', category: 'instrument', sdkVersion: '2.0', keywords: ['synth', 'subtractive'] },
-    { id: 'webdaw.drumkit', name: 'Drum Machine', vendor: 'WebDAW', version: '1.0', category: 'instrument', sdkVersion: '2.0', keywords: ['drums', 'percussion'] },
-    { id: 'webdaw.sampler', name: 'Sampler', vendor: 'WebDAW', version: '1.0', category: 'instrument', sdkVersion: '2.0', keywords: ['sampler', 'sample'] },
+    {
+        id: 'webdaw.eq',
+        name: 'Parametric EQ',
+        vendor: 'WebDAW',
+        version: '1.0',
+        category: 'effect',
+        sdkVersion: '2.0',
+        keywords: ['eq', 'filter', 'tone'],
+    },
+    {
+        id: 'webdaw.compressor',
+        name: 'Compressor',
+        vendor: 'WebDAW',
+        version: '1.0',
+        category: 'effect',
+        sdkVersion: '2.0',
+        keywords: ['dynamics', 'compressor'],
+    },
+    {
+        id: 'webdaw.reverb',
+        name: 'Reverb',
+        vendor: 'WebDAW',
+        version: '1.0',
+        category: 'effect',
+        sdkVersion: '2.0',
+        keywords: ['reverb', 'space'],
+    },
+    {
+        id: 'webdaw.delay',
+        name: 'Delay',
+        vendor: 'WebDAW',
+        version: '1.0',
+        category: 'effect',
+        sdkVersion: '2.0',
+        keywords: ['delay', 'echo'],
+    },
+    {
+        id: 'webdaw.chorus',
+        name: 'Chorus',
+        vendor: 'WebDAW',
+        version: '1.0',
+        category: 'effect',
+        sdkVersion: '2.0',
+        keywords: ['modulation', 'chorus'],
+    },
+    {
+        id: 'webdaw.distortion',
+        name: 'Distortion',
+        vendor: 'WebDAW',
+        version: '1.0',
+        category: 'effect',
+        sdkVersion: '2.0',
+        keywords: ['distortion', 'saturation'],
+    },
+    {
+        id: 'webdaw.limiter',
+        name: 'Limiter',
+        vendor: 'WebDAW',
+        version: '1.0',
+        category: 'effect',
+        sdkVersion: '2.0',
+        keywords: ['dynamics', 'limiter'],
+    },
+    {
+        id: 'webdaw.synth',
+        name: 'Subtractive Synth',
+        vendor: 'WebDAW',
+        version: '1.0',
+        category: 'instrument',
+        sdkVersion: '2.0',
+        keywords: ['synth', 'subtractive'],
+    },
+    {
+        id: 'webdaw.drumkit',
+        name: 'Drum Machine',
+        vendor: 'WebDAW',
+        version: '1.0',
+        category: 'instrument',
+        sdkVersion: '2.0',
+        keywords: ['drums', 'percussion'],
+    },
+    {
+        id: 'webdaw.sampler',
+        name: 'Sampler',
+        vendor: 'WebDAW',
+        version: '1.0',
+        category: 'instrument',
+        sdkVersion: '2.0',
+        keywords: ['sampler', 'sample'],
+    },
 ];
 
 /**

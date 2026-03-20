@@ -66,16 +66,8 @@ export function applySpectralEdit(
     const freqRatio = (highBin - lowBin) / (fftSize / 2);
 
     // Create output buffer (copy of input)
-    const ctx = new OfflineAudioContext(
-        audioBuffer.numberOfChannels,
-        audioBuffer.length,
-        sr
-    );
-    const outputBuffer = ctx.createBuffer(
-        audioBuffer.numberOfChannels,
-        audioBuffer.length,
-        sr
-    );
+    const ctx = new OfflineAudioContext(audioBuffer.numberOfChannels, audioBuffer.length, sr);
+    const outputBuffer = ctx.createBuffer(audioBuffer.numberOfChannels, audioBuffer.length, sr);
 
     for (let ch = 0; ch < audioBuffer.numberOfChannels; ch++) {
         const input = audioBuffer.getChannelData(ch);
@@ -120,8 +112,8 @@ export function yToFrequency(y: number, height: number, sampleRate: number): num
     const minFreq = 20;
     const logMin = Math.log10(minFreq);
     const logMax = Math.log10(nyquist);
-    const logFreq = logMax - ((y / height) * (logMax - logMin));
-    return Math.pow(10, logFreq);
+    const logFreq = logMax - (y / height) * (logMax - logMin);
+    return 10 ** logFreq;
 }
 
 /**

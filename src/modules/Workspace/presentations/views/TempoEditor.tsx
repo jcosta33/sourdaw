@@ -172,14 +172,14 @@ export const TempoEditor = (): ReactElement => {
                     <TooltipTrigger asChild>
                         <button
                             type="button"
-                            className="rounded px-1 hover:bg-accent/50 transition-colors"
+                            className="rounded px-2 py-0.5 flex items-center hover:bg-accent/50 transition-colors"
                             onClick={startTempoEdit}
                             aria-label={`Tempo: ${transport.tempo} BPM. Click to edit.`}
                         >
-                            <span className="font-mono text-xs tabular-nums text-foreground">
+                            <span className="font-mono text-xl font-medium tabular-nums text-foreground">
                                 {transport.tempo.toFixed(2)}
                             </span>
-                            <span className="text-xs text-muted-foreground ml-0.5">BPM</span>
+                            <span className="text-xs text-muted-foreground ml-1 mt-1 font-sans uppercase">BPM</span>
                         </button>
                     </TooltipTrigger>
                     <TooltipContent>Click to edit tempo</TooltipContent>
@@ -256,11 +256,11 @@ export const TempoEditor = (): ReactElement => {
                     <TooltipTrigger asChild>
                         <button
                             type="button"
-                            className="rounded px-1 hover:bg-accent/50 transition-colors"
+                            className="rounded px-2 py-0.5 hover:bg-accent/50 transition-colors"
                             onClick={startTimeSigEdit}
                             aria-label={`Time signature: ${transport.timeSignatureNumerator}/${transport.timeSignatureDenominator}. Click to edit.`}
                         >
-                            <span className="text-xs text-muted-foreground">
+                            <span className="text-lg font-mono font-medium text-muted-foreground">
                                 {transport.timeSignatureNumerator}/{transport.timeSignatureDenominator}
                             </span>
                         </button>

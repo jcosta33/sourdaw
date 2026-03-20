@@ -18,11 +18,7 @@ import {
     stopLlamaServer,
     generateNativeCompletion,
 } from '../repositories/llamaServerEngine';
-import {
-    initWebLlmEngine,
-    unloadWebLlmEngine,
-    generateWebLlmCompletion,
-} from '../repositories/webLlmRepository';
+import { initWebLlmEngine, unloadWebLlmEngine, generateWebLlmCompletion } from '../repositories/webLlmRepository';
 import { parseToolCallXml, type ToolCallResult } from '../transformers/toolCallParser';
 
 export type { ToolCallResult } from '../transformers/toolCallParser';
@@ -98,9 +94,7 @@ export async function generateToolCalls(systemPrompt: string, userMessage: strin
     logger.info(`[AI Engine] Raw response (${String(content.length)} chars): ${content.slice(0, 500)}`);
 
     const results = parseToolCallXml(content);
-    logger.info(
-        `[AI Engine] Parsed ${String(results.length)} tool call(s): ${results.map((r) => r.name).join(', ')}`
-    );
+    logger.info(`[AI Engine] Parsed ${String(results.length)} tool call(s): ${results.map((r) => r.name).join(', ')}`);
 
     const modelId = backend === 'native' ? 'native' : WEBLLM_MODEL_ID;
     llmStatusStore.set({ state: 'ready', modelId });

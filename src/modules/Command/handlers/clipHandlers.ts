@@ -77,7 +77,15 @@ export const clipHandlers = {
         execute: (a) => {
             // Find the clip and its track before deletion
             const state = getTrackStoreState();
-            let clipSnapshot: { id: string; trackId: string; name: string; startBeat: number; endBeat: number; type: string; [key: string]: unknown } | null = null;
+            let clipSnapshot: {
+                id: string;
+                trackId: string;
+                name: string;
+                startBeat: number;
+                endBeat: number;
+                type: string;
+                [key: string]: unknown;
+            } | null = null;
             let trackId: string | null = null;
 
             if (state) {
@@ -357,7 +365,9 @@ export const clipHandlers = {
 
     detectTempo: {
         execute: (a) => {
-            const clip = getTrackStoreState()?.tracks.flatMap((t) => t.clips).find((c) => c.id === a.payload.clipId);
+            const clip = getTrackStoreState()
+                ?.tracks.flatMap((t) => t.clips)
+                .find((c) => c.id === a.payload.clipId);
             if (clip?.audioBufferId) {
                 const bpm = detectTempo(clip.audioBufferId);
                 if (bpm) {
@@ -373,7 +383,9 @@ export const clipHandlers = {
 
     detectKey: {
         execute: (a) => {
-            const clip = getTrackStoreState()?.tracks.flatMap((t) => t.clips).find((c) => c.id === a.payload.clipId);
+            const clip = getTrackStoreState()
+                ?.tracks.flatMap((t) => t.clips)
+                .find((c) => c.id === a.payload.clipId);
             if (clip?.audioBufferId) {
                 const result = detectKey(clip.audioBufferId);
                 if (result) {

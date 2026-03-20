@@ -21,6 +21,36 @@ export const drawClip = (
     const isSelected = clip.id === selectedClipId || selectedClipIds.includes(clip.id);
     const isMuted = clip.muted;
 
+    const isGenerating = clip.generating;
+
+    if (isGenerating) {
+        ctx.globalAlpha = (Math.sin(Date.now() / 150) + 1) * 0.15 + 0.1;
+        ctx.fillStyle = clip.color;
+        ctx.beginPath();
+        ctx.roundRect(x, trackY + padding, w, trackHeight - padding * 2, 3);
+        ctx.fill();
+
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = clip.color;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        
+        const time = Date.now() / 1000;
+        ctx.lineDashOffset = -time * 20;
+
+        ctx.beginPath();
+        ctx.roundRect(x, trackY + padding, w, trackHeight - padding * 2, 3);
+        ctx.stroke();
+        
+        ctx.setLineDash([]);
+        ctx.lineDashOffset = 0;
+        
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.font = 'italic 10px system-ui, sans-serif';
+        ctx.fillText("Generating...", x + 6, trackY + 14, w - 12);
+        return;
+    }
+
     if (isMuted) {
         ctx.globalAlpha = 0.35;
     }
@@ -148,13 +178,7 @@ const drawLoopIcon = (
     ctx.stroke();
 };
 
-export const drawResizeHandles = (
-    ctx: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    w: number,
-    h: number
-): void => {
+export const drawResizeHandles = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): void => {
     const handleW = 4;
     const handleH = Math.min(h * 0.4, 16);
     const handleY = y + (h - handleH) / 2;

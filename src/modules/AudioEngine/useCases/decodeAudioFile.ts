@@ -30,11 +30,7 @@ export async function decodeAudioFile(file: File): Promise<{ id: string; buffer:
             };
 
             const ctx = audioEngine.context;
-            const buffer = ctx.createBuffer(
-                result.channels,
-                result.samples[0]?.length ?? 0,
-                result.sample_rate
-            );
+            const buffer = ctx.createBuffer(result.channels, result.samples[0]?.length ?? 0, result.sample_rate);
             for (let ch = 0; ch < result.channels; ch++) {
                 const channelData = result.samples[ch];
                 if (channelData) {

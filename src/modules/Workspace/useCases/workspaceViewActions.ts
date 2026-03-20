@@ -8,18 +8,53 @@
  */
 
 // ── Track: clip editing ───────────────────────────────────────────
-export { normalizeClip, reverseClip, splitClip, trimClipStart, trimClipEnd, setClipFade, setClipColor, renameClip, muteClip, lockClip, setClipGain } from '#/modules/Track/useCases/clipEditingUseCases';
+export {
+    normalizeClip,
+    reverseClip,
+    splitClip,
+    trimClipStart,
+    trimClipEnd,
+    setClipFade,
+    setClipColor,
+    renameClip,
+    muteClip,
+    lockClip,
+    setClipGain,
+} from '#/modules/Track/useCases/clipEditingUseCases';
 
 // ── Track: clip operations ────────────────────────────────────────
 export { addClip, removeClip } from '#/modules/Track/useCases/clipUseCases';
 
 // ── Track: clipboard ──────────────────────────────────────────────
-export { copySelectedClip, cutSelectedClip, pasteClip, copySelectedNotes, pasteNotes } from '#/modules/Track/useCases/clipboardUseCases';
+export {
+    copySelectedClip,
+    cutSelectedClip,
+    pasteClip,
+    copySelectedNotes,
+    pasteNotes,
+} from '#/modules/Track/useCases/clipboardUseCases';
 
 // ── Track: general ────────────────────────────────────────────────
-export { selectTrack, setTrackOutput, muteTrack, soloTrack, soloTrackExclusive, toggleInputMonitoring, toggleSoloSafe } from '#/modules/Track/useCases/toggleTrackState';
+export {
+    selectTrack,
+    setTrackOutput,
+    muteTrack,
+    soloTrack,
+    soloTrackExclusive,
+    toggleInputMonitoring,
+    toggleSoloSafe,
+} from '#/modules/Track/useCases/toggleTrackState';
 export { addTrack } from '#/modules/Track/useCases/addTrack';
-export { bypassDevice, addDevice, removeDevice, reorderDevices, setDeviceParameter, setSend, toggleSendPreFader, addExternalDevice } from '#/modules/Track/useCases/deviceUseCases';
+export {
+    bypassDevice,
+    addDevice,
+    removeDevice,
+    reorderDevices,
+    setDeviceParameter,
+    setSend,
+    toggleSendPreFader,
+    addExternalDevice,
+} from '#/modules/Track/useCases/deviceUseCases';
 export { renameTrack } from '#/modules/Track/useCases/renameTrack';
 export { removeTrack } from '#/modules/Track/useCases/removeTrack';
 export { setTrackGain, setTrackPan, setTrackColor, setTrackNotes } from '#/modules/Track/useCases/setTrackGainPan';
@@ -31,29 +66,78 @@ export { assignToVca, removeFromVca, getVcaGroups, createVcaGroup } from '#/modu
 export { setCompRegion, selectTake, flattenComp } from '#/modules/Track/useCases/compingUseCases';
 
 // ── Track: automation ─────────────────────────────────────────────
-export { addAutomationLane, removeAutomationLane, toggleAutomationVisibility, addAutomationPoint, removeAutomationPoint, updateAutomationPoint, batchAddAutomationPoints, setAutomationPointCurve, scaleAutomationValues, stretchAutomationTime, invertAutomation, reverseAutomation, thinAutomationPoints, quantizeAutomationBeats, getAutomationValueAtBeat } from '#/modules/Track/useCases/automationUseCases';
+export {
+    addAutomationLane,
+    removeAutomationLane,
+    toggleAutomationVisibility,
+    addAutomationPoint,
+    removeAutomationPoint,
+    updateAutomationPoint,
+    batchAddAutomationPoints,
+    setAutomationPointCurve,
+    scaleAutomationValues,
+    stretchAutomationTime,
+    invertAutomation,
+    reverseAutomation,
+    thinAutomationPoints,
+    quantizeAutomationBeats,
+    getAutomationValueAtBeat,
+} from '#/modules/Track/useCases/automationUseCases';
 
 // ── Track: MIDI ───────────────────────────────────────────────────
-export { addMidiCC, removeMidiCC, moveMidiCC, addPitchBend, removePitchBend, movePitchBend, setNotePressure, setNoteSlide, setNoteVelocity, addMidiNote, removeMidiNote, moveMidiNote, getNotesForClip, quantizeNotes, transposeNotes, humanizeNotes } from '#/modules/Track/useCases/midiUseCases';
+export {
+    addMidiCC,
+    removeMidiCC,
+    moveMidiCC,
+    addPitchBend,
+    removePitchBend,
+    movePitchBend,
+    setNotePressure,
+    setNoteSlide,
+    setNoteVelocity,
+    addMidiNote,
+    removeMidiNote,
+    moveMidiNote,
+    getNotesForClip,
+    quantizeNotes,
+    transposeNotes,
+    humanizeNotes,
+} from '#/modules/Track/useCases/midiUseCases';
 
 // ── Track: presets ────────────────────────────────────────────────
 export { getFactoryPresets } from '#/modules/Track/useCases/soundPresetLibrary';
 
 // ── Track: warp ───────────────────────────────────────────────────
 
-
 // ── AiRuntime ─────────────────────────────────────────────────────
 export { getProjectContext } from '#/modules/AiRuntime/useCases/getProjectContext';
-export { isLlmAvailable, initEngine, resolveBackend, unloadEngine } from '#/modules/AiRuntime/useCases/llmOrchestration';
+export {
+    isLlmAvailable,
+    initEngine,
+    resolveBackend,
+    unloadEngine,
+} from '#/modules/AiRuntime/useCases/llmOrchestration';
 export { parsePromptToActions, isComplexPrompt } from '#/modules/AiRuntime/useCases/parsePromptToActions';
 
 // ── AudioEngine ───────────────────────────────────────────────────
 export { decodeAudioFile } from '#/modules/AudioEngine/useCases/decodeAudioFile';
-export { getAudioContext, getEngineState, getMasterPeakLevel, setMasterGainValue } from '#/modules/AudioEngine/useCases/engineAccess';
+export {
+    getAudioContext,
+    getEngineState,
+    getMasterPeakLevel,
+    setMasterGainValue,
+} from '#/modules/AudioEngine/useCases/engineAccess';
 export { initializeAudioEngine } from '#/modules/AudioEngine/useCases/initializeAudioEngine';
 export { getTrackPeakLevel, setTrackMute } from '#/modules/AudioEngine/useCases/trackAudioControls';
 export { initWebMidi } from '#/modules/AudioEngine/useCases/webMidiInput';
-export { getAllSidechainRoutes, addSidechainRoute, removeSidechainRoute, getSidechainRoutesForTrack, getSidechainSource, setSidechainRoutes } from '#/modules/AudioEngine/useCases/sidechainUseCases';
+export {
+    getAllSidechainRoutes,
+    addSidechainRoute,
+    removeSidechainRoute,
+    getSidechainRoutesForTrack,
+    getSidechainSource,
+    setSidechainRoutes,
+} from '#/modules/AudioEngine/useCases/sidechainUseCases';
 
 // ── Command ───────────────────────────────────────────────────────
 export { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
@@ -79,17 +163,70 @@ export { defaultTransportState, type TempoChange } from '#/modules/Transport/use
 
 // ── Re-exports from query layers ──────────────────────────────────
 export { BUILTIN_PLUGINS } from '#/modules/Track/useCases/trackQueries';
-export { NATIVE_MODEL_INFO, WEBLLM_MODEL_INFO, searchPresets, getAvailablePresets, type FuzzyResult, type IntentResult, type PresetCategory, type PresetContext } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
+export {
+    NATIVE_MODEL_INFO,
+    WEBLLM_MODEL_INFO,
+    searchPresets,
+    getAvailablePresets,
+    type FuzzyResult,
+    type IntentResult,
+    type PresetCategory,
+    type PresetContext,
+} from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
 export { generateGroupId, type AppAction, type UndoEntry } from '#/modules/Command/useCases/commandQueries';
-export { type SoundPreset, type MidiCC, type MidiPitchBend, type Device, type WarpState } from '#/modules/Track/useCases/trackQueries';
+export {
+    type SoundPreset,
+    type MidiCC,
+    type MidiPitchBend,
+    type Device,
+    type WarpState,
+} from '#/modules/Track/useCases/trackQueries';
 export { type SidechainRoute } from '#/modules/AudioEngine/useCases/sidechainUseCases';
 
 // Track presets
-export { getUserPresets, saveUserPreset, deleteUserPreset, createTrackFromPreset, loadPresetToTrack, saveCurrentAsPreset, type SaveCurrentAsPresetInput } from '#/modules/Track/useCases/presetUseCases';
-export { getWarpState, enableWarp, disableWarp, setStretchMode, addWarpMarker, removeWarpMarker, moveWarpMarker } from '#/modules/Track/useCases/warpUseCases';
+export {
+    getUserPresets,
+    saveUserPreset,
+    deleteUserPreset,
+    createTrackFromPreset,
+    loadPresetToTrack,
+    saveCurrentAsPreset,
+    type SaveCurrentAsPresetInput,
+} from '#/modules/Track/useCases/presetUseCases';
+export {
+    getWarpState,
+    enableWarp,
+    disableWarp,
+    setStretchMode,
+    addWarpMarker,
+    removeWarpMarker,
+    moveWarpMarker,
+} from '#/modules/Track/useCases/warpUseCases';
 
 // Transport
-export { togglePlayback, startPlayback, stopPlayback, seekPlayhead, toggleLoop, toggleMetronome, setMetronomeVolume, setLoopRegion, setPunchIn, setPunchOut, togglePunchEnabled, toggleCountIn, setCountInBars, togglePreRoll, setPreRollBars, toggleRecording } from '#/modules/Transport/useCases/transportControls';
+export {
+    togglePlayback,
+    startPlayback,
+    stopPlayback,
+    seekPlayhead,
+    toggleLoop,
+    toggleMetronome,
+    setMetronomeVolume,
+    setLoopRegion,
+    setPunchIn,
+    setPunchOut,
+    togglePunchEnabled,
+    toggleCountIn,
+    setCountInBars,
+    togglePreRoll,
+    setPreRollBars,
+    toggleRecording,
+} from '#/modules/Transport/useCases/transportControls';
 
 // Command: track alternatives
-export { handleCreateTrackAlternative, handleSwitchTrackAlternative, handleDeleteTrackAlternative, handleRenameTrackAlternative } from '#/modules/Command/useCases/trackAlternativeHandlers';
+export {
+    handleCreateTrackAlternative,
+    handleSwitchTrackAlternative,
+    handleDeleteTrackAlternative,
+    handleRenameTrackAlternative,
+} from '#/modules/Command/useCases/trackAlternativeHandlers';

@@ -747,7 +747,10 @@ const generationTools: ToolSchema[] = [
                     properties: {
                         pitch: { type: 'number', description: 'MIDI note number (60=C4, 64=E4, 67=G4)' },
                         startBeat: { type: 'number', description: 'Start position in beats within the clip' },
-                        duration: { type: 'number', description: 'Note length in beats (0.25=16th, 0.5=8th, 1=quarter)' },
+                        duration: {
+                            type: 'number',
+                            description: 'Note length in beats (0.25=16th, 0.5=8th, 1=quarter)',
+                        },
                         velocity: { type: 'number', description: '1-127, default 100' },
                     },
                 },
@@ -789,7 +792,11 @@ const generationTools: ToolSchema[] = [
         'generateAudio',
         'Generate audio from a text description using AI (MusicGen). Creates an audio clip on a track. Requires AI Audio Server running.',
         {
-            prompt: { type: 'string', description: 'Text description of the audio to generate (e.g. "funky bass guitar in C minor", "ambient pad with reverb")' },
+            prompt: {
+                type: 'string',
+                description:
+                    'Text description of the audio to generate (e.g. "funky bass guitar in C minor", "ambient pad with reverb")',
+            },
             durationSeconds: { type: 'number', description: 'Duration in seconds (1-30, default 8)' },
             trackId: { type: 'string', description: 'Optional: place on existing audio track' },
         },

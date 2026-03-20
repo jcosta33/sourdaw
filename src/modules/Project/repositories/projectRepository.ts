@@ -33,12 +33,16 @@ export async function downloadProjectFile(data: ProjectData): Promise<void> {
     // Try File System Access API for a proper native Save dialog
     if ('showSaveFilePicker' in window) {
         try {
-            const handle = await (window as unknown as { showSaveFilePicker: (opts: unknown) => Promise<FileSystemFileHandle> }).showSaveFilePicker({
+            const handle = await (
+                window as unknown as { showSaveFilePicker: (opts: unknown) => Promise<FileSystemFileHandle> }
+            ).showSaveFilePicker({
                 suggestedName: filename,
-                types: [{
-                    description: 'WebDAW Project',
-                    accept: { 'application/json': ['.webdaw'] },
-                }],
+                types: [
+                    {
+                        description: 'WebDAW Project',
+                        accept: { 'application/json': ['.webdaw'] },
+                    },
+                ],
             });
             const writable = await handle.createWritable();
             await writable.write(blob);

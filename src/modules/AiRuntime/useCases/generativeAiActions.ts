@@ -70,7 +70,7 @@ export const removeTask = (id: string) => {
 
 // ── Orchestrators ──
 
-export const handleGenerateMidiPrompt = async (prompt: string, numNotes: number = 32) => {
+export async function handleGenerateMidiPrompt(prompt: string, numNotes: number = 32) {
     const taskId = addTask({ type: 'midi-generation', status: 'processing', prompt });
     try {
         const start = performance.now();
@@ -95,7 +95,7 @@ export const handleGenerateMidiPrompt = async (prompt: string, numNotes: number 
                 finalNotes.push({ pitch, velocity: 70 + Math.random() * 30, start_beat: currentBeat, duration_beats: duration });
                 currentBeat += duration;
             }
-            await new Promise((r) => setTimeout(r, 600)); // Simulate think time
+            await new Promise((resolve) => setTimeout(resolve, 600)); // Simulate think time
         }
         
         updateTask(taskId, {
@@ -106,9 +106,9 @@ export const handleGenerateMidiPrompt = async (prompt: string, numNotes: number 
     } catch (err: unknown) {
         updateTask(taskId, { status: 'error', error: err instanceof Error ? err.message : 'Generation failed' });
     }
-};
+}
 
-export const handleAiDenoiseClip = async (clipId: string, strength: number = 0.7) => {
+export async function handleAiDenoiseClip(clipId: string, strength: number = 0.7) {
     const taskId = addTask({ type: 'denoise', status: 'processing' });
     try {
         const start = performance.now();
@@ -141,6 +141,12 @@ export const handleAiDenoiseClip = async (clipId: string, strength: number = 0.7
             source.start();
             
             const rendered = await ctx.startRendering();
+            
+            // Explicit WebAudio Node cleanup for Garbage Collection
+            source.disconnect();
+            filter.disconnect();
+            comp.disconnect();
+            
             audioBufferCache.set(`${clipId}-denoised`, rendered);
             outNoiseFloor = -80; // Estimated simulation
         }
@@ -153,9 +159,9 @@ export const handleAiDenoiseClip = async (clipId: string, strength: number = 0.7
     } catch (err: unknown) {
         updateTask(taskId, { status: 'error', error: err instanceof Error ? err.message : 'Denoise failed' });
     }
-};
+}
 
-export const handleStemSeparationPreview = async (clipId: string) => {
+export async function handleStemSeparationPreview(clipId: string) {
     const taskId = addTask({ type: 'stem-separation', status: 'processing', prompt: 'Extracting: Drums, Bass, Vocals, Other' });
     try {
         const start = performance.now();
@@ -189,6 +195,13 @@ export const handleStemSeparationPreview = async (clipId: string) => {
                 
                 source.start();
                 const rendered = await ctx.startRendering();
+                
+                // Explicit WebAudio Node cleanup for Garbage Collection
+                source.disconnect();
+                splitter.disconnect();
+                merger.disconnect();
+                gainInvert.disconnect();
+                
                 audioBufferCache.set(`${clipId}-mid`, rendered);
                 audioBufferCache.set(`${clipId}-side`, rendered);
                 outStems = ['Center (Vocals)', 'Sides (Instruments)'];
@@ -204,9 +217,9 @@ export const handleStemSeparationPreview = async (clipId: string) => {
     } catch (err: unknown) {
         updateTask(taskId, { status: 'error', error: err instanceof Error ? err.message : 'Stem separation failed' });
     }
-};
+}
 
-export const handleGenerateAudioFallback = async (prompt: string, durationStr: string) => {
+export async function handleGenerateAudioFallback(prompt: string, durationStr: string) {
     const taskId = addTask({ type: 'audio-generation', status: 'processing', prompt });
     try {
         const start = performance.now();
@@ -222,7 +235,7 @@ export const handleGenerateAudioFallback = async (prompt: string, durationStr: s
             data: { format: 'wav', lengthSeconds: parseInt(durationStr) || 4 },
             durationMs: Math.round(performance.now() - start),
         });
-    } catch (err: any) {
-        updateTask(taskId, { status: 'error', error: err.message || 'Generation failed' });
+    } catch (error: unknown) {
+        updateTask(taskId, { status: 'error', error: error instanceof Error ? error.message : 'Generation failed' });
     }
-};
+}

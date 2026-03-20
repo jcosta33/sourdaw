@@ -63,6 +63,7 @@ export type Clip = {
     stretchRatio?: number;
     loopEnabled?: boolean;
     loopLength?: number;
+    generating?: boolean;
 };
 
 export type Device = {

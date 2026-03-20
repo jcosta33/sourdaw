@@ -4,11 +4,7 @@
  */
 import { type ReactElement, useRef, useEffect, useState } from 'react';
 import { audioEngine } from '#/modules/AudioEngine/repositories/audioEngineInstance';
-import {
-    computeMomentaryLUFS,
-    ShortTermLUFS,
-    IntegratedLUFS,
-} from '#/modules/AudioEngine/useCases/advancedMetering';
+import { computeMomentaryLUFS, ShortTermLUFS, IntegratedLUFS } from '#/modules/AudioEngine/useCases/advancedMetering';
 
 type LUFSMeterProps = {
     height?: number;
@@ -58,7 +54,8 @@ export const LUFSMeter = ({ height = 160, width = 48, target = -14 }: LUFSMeterP
             const minLUFS = -60;
             const maxLUFS = 0;
             const range = maxLUFS - minLUFS;
-            const lufsToY = (lufs: number): number => height - ((Math.max(minLUFS, Math.min(maxLUFS, lufs)) - minLUFS) / range) * height;
+            const lufsToY = (lufs: number): number =>
+                height - ((Math.max(minLUFS, Math.min(maxLUFS, lufs)) - minLUFS) / range) * height;
 
             // Background gradient
             ctx.fillStyle = '#0a0a0a';

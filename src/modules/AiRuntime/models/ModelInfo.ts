@@ -28,6 +28,7 @@ export const NATIVE_MODEL_INFO: NativeModelInfo = {
     description: 'Native inference via Metal GPU. Near 100% GPU utilization. Requires llama-server.',
     downloadSize: '~4.9 GB',
     ramUsage: '~5.2 GB',
-    downloadUrl: 'https://huggingface.co/NousResearch/Hermes-3-Llama-3.1-8B-GGUF/resolve/main/Hermes-3-Llama-3.1-8B.Q4_K_M.gguf',
+    downloadUrl:
+        'https://huggingface.co/NousResearch/Hermes-3-Llama-3.1-8B-GGUF/resolve/main/Hermes-3-Llama-3.1-8B.Q4_K_M.gguf',
     fileName: 'Hermes-3-Llama-3.1-8B.Q4_K_M.gguf',
 };

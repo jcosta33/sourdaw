@@ -84,7 +84,7 @@ export const PhaseCorrelationDisplay = ({ width = 160, height = 24 }: PhaseCorre
             // Bar from center to correlation value
             const barStart = Math.min(midX, indicatorX);
             const barW = Math.abs(indicatorX - midX);
-            ctx.fillStyle = color + '99';
+            ctx.fillStyle = `${color}99`;
             ctx.fillRect(barStart, barY + 1, barW, barH - 2);
 
             // Indicator dot

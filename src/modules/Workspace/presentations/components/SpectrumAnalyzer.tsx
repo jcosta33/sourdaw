@@ -35,7 +35,7 @@ export const SpectrumAnalyzer = ({
 
         const draw = (): void => {
             const analyser = trackId
-                ? audioEngine.getTrackStrip(trackId)?.analyserNode ?? audioEngine.masterAnalyser
+                ? (audioEngine.getTrackStrip(trackId)?.analyserNode ?? audioEngine.masterAnalyser)
                 : audioEngine.masterAnalyser;
 
             const fftSize = analyser.frequencyBinCount;

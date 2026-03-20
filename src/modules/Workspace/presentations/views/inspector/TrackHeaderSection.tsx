@@ -7,10 +7,7 @@ import { setTrackNotes, setTrackColor } from '../../../useCases/workspaceViewAct
 import { freezeTrack, unfreezeTrack } from '../../../useCases/workspaceViewActions';
 import { type Track } from '../../../useCases/workspaceViewActions';
 import { TRACK_COLOR_PRESETS } from './colorPresets';
-import {
-    createTrackAlternative,
-    switchTrackAlternative,
-} from '#/modules/Track/useCases/trackAlternativeUseCases';
+import { createTrackAlternative, switchTrackAlternative } from '#/modules/Track/useCases/trackAlternativeUseCases';
 import { Plus } from 'lucide-react';
 
 export type TrackHeaderSectionProps = {

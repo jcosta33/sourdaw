@@ -10,8 +10,7 @@ import { type Preferences, defaultPreferences } from '#/modules/Workspace/useCas
 export type { Preferences };
 export { defaultPreferences };
 
-export const setWorkspaceMode = (mode: Parameters<typeof _setWorkspaceMode>[0]): void =>
-    _setWorkspaceMode(mode);
+export const setWorkspaceMode = (mode: Parameters<typeof _setWorkspaceMode>[0]): void => _setWorkspaceMode(mode);
 
 // ── AudioEngine ───────────────────────────────────────────────────
 import {

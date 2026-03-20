@@ -179,7 +179,12 @@ export async function executeAppAction(action: AppAction, options?: ExecuteOptio
     }
 
     if (undoResult) {
-        const entry = createUndoEntry(undoResult.label, action, undoResult.inverseAction ?? null, options?.source ?? 'manual');
+        const entry = createUndoEntry(
+            undoResult.label,
+            action,
+            undoResult.inverseAction ?? null,
+            options?.source ?? 'manual'
+        );
         if (options?.groupId) {
             entry.groupId = options.groupId;
             entry.groupLabel = options.groupLabel;

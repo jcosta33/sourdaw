@@ -35,7 +35,7 @@ export const Oscilloscope = ({
 
         const draw = (): void => {
             const analyser = trackId
-                ? audioEngine.getTrackStrip(trackId)?.analyserNode ?? audioEngine.masterAnalyser
+                ? (audioEngine.getTrackStrip(trackId)?.analyserNode ?? audioEngine.masterAnalyser)
                 : audioEngine.masterAnalyser;
 
             const bufferLength = analyser.frequencyBinCount;
@@ -97,7 +97,7 @@ export const Oscilloscope = ({
             ctx.stroke();
 
             // Glow effect
-            ctx.strokeStyle = color + '40';
+            ctx.strokeStyle = `${color}40`;
             ctx.lineWidth = 4;
             ctx.beginPath();
             x = 0;

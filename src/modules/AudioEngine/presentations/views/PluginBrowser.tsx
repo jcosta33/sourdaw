@@ -44,12 +44,8 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
                     <TooltipTrigger asChild>
                         <div className="px-2 py-3 text-center opacity-50 cursor-not-allowed" aria-disabled="true">
                             <Monitor className="size-5 text-muted-foreground mx-auto mb-1" aria-hidden="true" />
-                            <p className="text-[10px] text-muted-foreground">
-                                VST / AU / CLAP plugins
-                            </p>
-                            <p className="text-[9px] text-muted-foreground/60 mt-0.5">
-                                Desktop app required
-                            </p>
+                            <p className="text-[10px] text-muted-foreground">VST / AU / CLAP plugins</p>
+                            <p className="text-[9px] text-muted-foreground/60 mt-0.5">Desktop app required</p>
                         </div>
                     </TooltipTrigger>
                     <TooltipContent side="top" className="max-w-64 text-center">

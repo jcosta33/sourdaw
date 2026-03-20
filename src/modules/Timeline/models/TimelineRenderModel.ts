@@ -47,6 +47,7 @@ export type ClipRenderModel = {
     loopLength?: number;
     fadeInBeats: number;
     fadeOutBeats: number;
+    generating?: boolean;
 };
 
 export const createDefaultTimelineRenderModel = (): TimelineRenderModel => ({

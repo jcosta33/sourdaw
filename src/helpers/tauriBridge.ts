@@ -15,8 +15,7 @@ import { listen as tauriListenRaw } from '@tauri-apps/api/event';
  * Whether we're running inside a Tauri webview.
  * Uses the official Tauri v2 internal marker.
  */
-export const isTauri = (): boolean =>
-    typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+export const isTauri = (): boolean => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
 /**
  * Invoke a Tauri command. Wrapper around the official @tauri-apps/api invoke.
@@ -30,10 +29,7 @@ export async function tauriInvoke(cmd: string, args?: Record<string, unknown>): 
  * Listen to a Tauri event. Returns an unlisten function.
  * Wrapper around the official @tauri-apps/api listen.
  */
-export async function tauriListen(
-    event: string,
-    handler: (payload: unknown) => void,
-): Promise<() => void> {
+export async function tauriListen(event: string, handler: (payload: unknown) => void): Promise<() => void> {
     return tauriListenRaw(event, handler);
 }
 
@@ -65,7 +61,7 @@ export type TauriChannel<T> = {
  * ```
  */
 export async function createChannel<T>(): Promise<TauriChannel<T>> {
-    const mod = await import('@tauri-apps/api/core') as Record<string, unknown>;
-    const ChannelClass = mod['Channel'] as new <U>() => TauriChannel<U>;
+    const mod = (await import('@tauri-apps/api/core')) as Record<string, unknown>;
+    const ChannelClass = mod.Channel as new <U>() => TauriChannel<U>;
     return new ChannelClass<T>();
 }

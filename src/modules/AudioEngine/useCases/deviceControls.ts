@@ -5,7 +5,12 @@
  */
 import { audioEngine } from '../repositories/audioEngineInstance';
 
-export const addDeviceToStrip = (trackId: string, deviceId: string, deviceType: string, externalInstanceId?: string): void => {
+export const addDeviceToStrip = (
+    trackId: string,
+    deviceId: string,
+    deviceType: string,
+    externalInstanceId?: string
+): void => {
     audioEngine.addDeviceToStrip(trackId, deviceId, deviceType, externalInstanceId);
 };
 
@@ -13,11 +18,6 @@ export const removeDeviceFromStrip = (trackId: string, deviceId: string): void =
     audioEngine.removeDeviceFromStrip(trackId, deviceId);
 };
 
-export const updateDeviceParam = (
-    trackId: string,
-    deviceId: string,
-    paramId: string,
-    value: number,
-): void => {
+export const updateDeviceParam = (trackId: string, deviceId: string, paramId: string, value: number): void => {
     audioEngine.updateDeviceParam(trackId, deviceId, paramId, value);
 };

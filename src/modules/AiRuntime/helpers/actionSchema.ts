@@ -26,22 +26,23 @@ function formatTrackLine(t: ProjectContext['tracks'][number], index: number): st
     if (t.clips.length > 0) {
         const shown = t.clips.slice(0, MAX_CLIPS_PER_TRACK);
         const clipStr = shown
-            .map((c) => `${c.id}:${c.name}(${String(c.startBeat)}-${String(c.endBeat)}${c.noteCount > 0 ? `,${String(c.noteCount)}notes` : ''})`)
+            .map(
+                (c) =>
+                    `${c.id}:${c.name}(${String(c.startBeat)}-${String(c.endBeat)}${c.noteCount > 0 ? `,${String(c.noteCount)}notes` : ''})`
+            )
             .join(',');
-        const overflow = t.clips.length > MAX_CLIPS_PER_TRACK
-            ? `...+${String(t.clips.length - MAX_CLIPS_PER_TRACK)}more`
-            : '';
+        const overflow =
+            t.clips.length > MAX_CLIPS_PER_TRACK ? `...+${String(t.clips.length - MAX_CLIPS_PER_TRACK)}more` : '';
         line += ` clips:[${clipStr}${overflow}]`;
     }
 
     if (t.devices.length > 0) {
         const shown = t.devices.slice(0, MAX_DEVICES_PER_TRACK);
-        const devStr = shown
-            .map((d) => `${d.id}:${d.type}${d.bypassed ? '(BYP)' : ''}`)
-            .join(',');
-        const overflow = t.devices.length > MAX_DEVICES_PER_TRACK
-            ? `...+${String(t.devices.length - MAX_DEVICES_PER_TRACK)}more`
-            : '';
+        const devStr = shown.map((d) => `${d.id}:${d.type}${d.bypassed ? '(BYP)' : ''}`).join(',');
+        const overflow =
+            t.devices.length > MAX_DEVICES_PER_TRACK
+                ? `...+${String(t.devices.length - MAX_DEVICES_PER_TRACK)}more`
+                : '';
         line += ` devices:[${devStr}${overflow}]`;
     }
 
@@ -54,15 +55,12 @@ function buildProjectState(context: ProjectContext): string {
 
     const trackList =
         truncated.length > 0
-            ? truncated
-                  .map((t, i) => formatTrackLine(t, i))
-                  .join('\n') +
+            ? truncated.map((t, i) => formatTrackLine(t, i)).join('\n') +
               (overflow ? `\n(+${String(context.tracks.length - MAX_TRACKS)} more tracks not shown)` : '')
             : '(empty session — no tracks yet)';
 
-    const selectedClips = context.selectedClipIds.length > 0
-        ? ` | All Selected Clips: ${context.selectedClipIds.join(',')}`
-        : '';
+    const selectedClips =
+        context.selectedClipIds.length > 0 ? ` | All Selected Clips: ${context.selectedClipIds.join(',')}` : '';
 
     return `PROJECT STATE:
 Tempo: ${String(context.tempo)} BPM | Time: ${String(context.timeSignature[0])}/${String(context.timeSignature[1])} | Playhead: beat ${String(Math.round(context.playheadPosition))} | View: ${context.activeView}

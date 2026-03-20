@@ -8,10 +8,7 @@ import {
 } from '#/modules/AudioEngine/useCases/trackAudioControls';
 import { ensureBusStrip, setBusGain, setSend } from '#/modules/AudioEngine/useCases/busControls';
 import { resumeEngine, getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
-import {
-    stopAllScheduled,
-    scheduleClick,
-} from '#/modules/AudioEngine/useCases/scheduling';
+import { stopAllScheduled, scheduleClick } from '#/modules/AudioEngine/useCases/scheduling';
 import { startPlayheadScheduler, stopPlayheadScheduler } from './playheadScheduler';
 import { startAudioRecording, stopAudioRecording } from '#/modules/AudioEngine/useCases/audioRecorder';
 import { startRecording, stopRecording } from '#/modules/Track/useCases/recordingUseCases';

@@ -6,7 +6,10 @@
  * Transport/repositories/transportRepository directly.
  */
 
-import { getTransportState as repoGetTransportState, updateTransportState as repoUpdateTransportState } from '../repositories/transportRepository';
+import {
+    getTransportState as repoGetTransportState,
+    updateTransportState as repoUpdateTransportState,
+} from '../repositories/transportRepository';
 import { type TransportState, defaultTransportState } from '../models/TransportState';
 import { type TempoChange, getTempoAtBeat as modelGetTempoAtBeat } from '../models/TempoMap';
 import {

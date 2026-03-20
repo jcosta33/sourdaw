@@ -110,7 +110,6 @@ export const RecentProjectsMenu = (): ReactElement => {
         });
     };
 
-
     const handleLoad = (entry: RecentProjectEntry) => {
         saveProject();
         void loadRecentProject(entry.key);
@@ -275,4 +274,3 @@ export const RecentProjectsMenu = (): ReactElement => {
         </div>
     );
 };
-

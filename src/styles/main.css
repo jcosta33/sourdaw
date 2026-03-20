@@ -1,56 +1,67 @@
 @import 'tailwindcss';
 
 @theme {
-    --color-background: oklch(0.145 0 0);
-    --color-foreground: oklch(0.985 0 0);
-    --color-card: oklch(0.145 0 0);
-    --color-card-foreground: oklch(0.985 0 0);
-    --color-popover: oklch(0.145 0 0);
-    --color-popover-foreground: oklch(0.985 0 0);
-    --color-primary: oklch(0.985 0 0);
-    --color-primary-foreground: oklch(0.205 0 0);
-    --color-secondary: oklch(0.269 0 0);
-    --color-secondary-foreground: oklch(0.985 0 0);
-    --color-muted: oklch(0.269 0 0);
-    --color-muted-foreground: oklch(0.708 0 0);
-    --color-accent: oklch(0.269 0 0);
-    --color-accent-foreground: oklch(0.985 0 0);
-    --color-destructive: oklch(0.396 0.141 25.723);
-    --color-destructive-foreground: oklch(0.637 0.237 25.331);
-    --color-border: oklch(0.269 0 0);
-    --color-input: oklch(0.269 0 0);
-    --color-ring: oklch(0.556 0 0);
-    --color-chart-1: oklch(0.488 0.243 264.376);
-    --color-chart-2: oklch(0.696 0.17 162.48);
-    --color-chart-3: oklch(0.769 0.188 70.08);
-    --color-chart-4: oklch(0.627 0.265 303.9);
-    --color-chart-5: oklch(0.645 0.246 16.439);
-    --color-sidebar: oklch(0.145 0 0);
-    --color-sidebar-foreground: oklch(0.985 0 0);
-    --color-sidebar-primary: oklch(0.488 0.243 264.376);
-    --color-sidebar-primary-foreground: oklch(0.985 0 0);
-    --color-sidebar-accent: oklch(0.269 0 0);
-    --color-sidebar-accent-foreground: oklch(0.985 0 0);
-    --color-sidebar-border: oklch(0.269 0 0);
-    --color-sidebar-ring: oklch(0.556 0 0);
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Mono', monospace;
 
-    --radius-lg: 0.5rem;
-    --radius-md: calc(var(--radius-lg) - 2px);
-    --radius-sm: calc(var(--radius-lg) - 4px);
+    /* Base Surfaces */
+    --color-surface-0: #121212;
+    --color-surface-1: #1E1E1E;
+    --color-surface-2: #252525;
+    --color-surface-3: #2C2C2C;
+    --color-surface-4: #333333;
+    --color-surface-5: #3A3A3A;
 
-    --color-surface-base: oklch(0.12 0 0);
-    --color-surface-raised: oklch(0.16 0 0);
-    --color-surface-overlay: oklch(0.2 0 0);
+    /* Shadcn Overrides mapped to Base Surfaces */
+    --color-background: var(--color-surface-0);
+    --color-foreground: #E8E8E8;
+    --color-card: var(--color-surface-1);
+    --color-card-foreground: #E8E8E8;
+    --color-popover: var(--color-surface-3);
+    --color-popover-foreground: #E8E8E8;
 
+    --color-primary: #4EA8F6;
+    --color-primary-foreground: #121212;
+
+    --color-secondary: #F7A738;
+    --color-secondary-foreground: #121212;
+
+    --color-muted: var(--color-surface-4);
+    --color-muted-foreground: #A0A0A0;
+
+    --color-accent: var(--color-surface-5);
+    --color-accent-foreground: #E8E8E8;
+
+    --color-destructive: #CF6679;
+    --color-destructive-foreground: #FFFFFF;
+
+    --color-success: #4CAF50;
+    --color-recording: #FF4444;
+
+    --color-border: var(--color-surface-4);
+    --color-input: var(--color-surface-4);
+    --color-ring: #4EA8F6;
+
+    /* Text */
+    --color-text-primary: #E8E8E8;
+    --color-text-secondary: #A0A0A0;
+    --color-text-disabled: #666666;
+
+    /* Tracks */
     --color-track-audio: oklch(0.65 0.15 145);
     --color-track-midi: oklch(0.65 0.15 260);
     --color-track-bus: oklch(0.65 0.15 50);
     --color-track-master: oklch(0.65 0.15 0);
 
+    /* Base Layout Spacing */
     --spacing-track-height: 4rem;
-    --spacing-transport-height: 3rem;
-    --spacing-sidebar-width: 14rem;
-    --spacing-inspector-width: 16rem;
+    --spacing-transport-height: 48px;
+    --spacing-sidebar-width: 280px;
+    --spacing-inspector-width: 240px;
+
+    --radius-lg: 0.5rem;
+    --radius-md: calc(var(--radius-lg) - 2px);
+    --radius-sm: calc(var(--radius-lg) - 4px);
 }
 
 @layer base {
@@ -63,5 +74,13 @@
         font-feature-settings:
             'rlig' 1,
             'calt' 1;
+        -webkit-font-smoothing: antialiased;
     }
+}
+
+/* Tauri specific font-weight compensation for Linux WebKitGTK */
+[data-platform='linux'] {
+    --weight-normal: 300; 
+    --weight-medium: 400; 
+    --weight-semibold: 500; 
 }

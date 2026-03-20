@@ -3,11 +3,7 @@ import { Button } from '#/components/ui/button';
 import { ChevronRight, Power } from 'lucide-react';
 import { BUILTIN_PLUGINS } from '../../../useCases/workspaceViewActions';
 import { bypassDevice } from '../../../useCases/workspaceViewActions';
-import {
-    getSidechainSource,
-    addSidechainRoute,
-    removeSidechainRoute,
-} from '../../../useCases/workspaceViewActions';
+import { getSidechainSource, addSidechainRoute, removeSidechainRoute } from '../../../useCases/workspaceViewActions';
 import { useTracks } from '../../hooks/useTracks';
 import { type Device } from '../../../useCases/workspaceViewActions';
 import { DeviceParameterControl } from './DeviceParameterControl';

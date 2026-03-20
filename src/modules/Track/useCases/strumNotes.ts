@@ -26,7 +26,7 @@ export function strumNotes(
     clipId: string,
     noteIds: string[],
     strumAmount = 0.04,
-    direction: StrumDirection = 'up',
+    direction: StrumDirection = 'up'
 ): Map<string, number> | null {
     const state = midiStore.value;
     if (!state) {
@@ -58,9 +58,7 @@ export function strumNotes(
     const offsets = new Map<string, number>();
     for (let i = 0; i < sorted.length; i++) {
         const note = sorted[i]!;
-        const offset = direction === 'random'
-            ? (Math.random() - 0.3) * strumAmount * sorted.length
-            : i * strumAmount;
+        const offset = direction === 'random' ? (Math.random() - 0.3) * strumAmount * sorted.length : i * strumAmount;
         offsets.set(note.id, offset);
     }
 

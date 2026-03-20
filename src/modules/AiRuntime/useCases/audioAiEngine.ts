@@ -29,10 +29,7 @@ export async function isAudioAiServerRunning(): Promise<boolean> {
  * Generate audio from a text prompt using MusicGen.
  * Returns an AudioBuffer decoded from the WAV response.
  */
-export async function generateAudio(
-    prompt: string,
-    durationSeconds: number = 8,
-): Promise<AudioBuffer> {
+export async function generateAudio(prompt: string, durationSeconds: number = 8): Promise<AudioBuffer> {
     logger.info(`[Audio AI] Generating audio: "${prompt}" (${String(durationSeconds)}s)`);
 
     const response = await fetch(`${BASE_URL}/generate`, {
@@ -68,10 +65,7 @@ type StemResult = {
  * Separate audio into stems using Demucs.
  * Accepts raw WAV data, returns decoded AudioBuffers for each stem.
  */
-export async function separateStems(
-    audioData: ArrayBuffer,
-    stems: string[] = ['all'],
-): Promise<StemResult> {
+export async function separateStems(audioData: ArrayBuffer, stems: string[] = ['all']): Promise<StemResult> {
     logger.info(`[Audio AI] Separating stems: ${stems.join(', ')}`);
 
     // Encode audio as base64 for JSON transport
@@ -123,5 +117,5 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
     for (let i = 0; i < binary.length; i++) {
         bytes[i] = binary.charCodeAt(i);
     }
-    return bytes.buffer as ArrayBuffer;
+    return bytes.buffer;
 }

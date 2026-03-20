@@ -83,13 +83,9 @@ export function getSpeakers(format: SurroundFormat): SpeakerPosition[] {
 /**
  * VBAP pan coefficients for a source → speaker feeds.
  */
-export function calculatePanCoefficients(
-    azimuth: number,
-    elevation: number,
-    format: SurroundFormat
-): number[] {
+export function calculatePanCoefficients(azimuth: number, elevation: number, format: SurroundFormat): number[] {
     const speakers = FORMAT_SPEAKERS[format];
-    const coeffs = new Array(speakers.length).fill(0) as number[];
+    const coeffs = Array.from({ length: speakers.length }).fill(0) as number[];
     const azRad = (azimuth * Math.PI) / 180;
     const elRad = (elevation * Math.PI) / 180;
     const sx = Math.cos(elRad) * Math.sin(azRad);

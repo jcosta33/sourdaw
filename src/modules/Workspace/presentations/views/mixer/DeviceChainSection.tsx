@@ -67,7 +67,10 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                                 <span className="text-[6px] text-muted-foreground/50 mr-0.5">≡</span>
                                 {d.name}
                                 {getAllModulationRoutes().some((r) => r.target.deviceId === d.id) && (
-                                    <span className="ml-0.5 inline-block size-1.5 rounded-full bg-purple-400" title="Modulated" />
+                                    <span
+                                        className="ml-0.5 inline-block size-1.5 rounded-full bg-purple-400"
+                                        title="Modulated"
+                                    />
                                 )}
                             </span>
                         </button>
@@ -102,7 +105,9 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                             + {p.name}
                         </button>
                     ))}
-                    <div className="px-3 py-0.5 text-[7px] text-muted-foreground/60 uppercase tracking-wider border-t border-border/20 mt-0.5">MIDI FX</div>
+                    <div className="px-3 py-0.5 text-[7px] text-muted-foreground/60 uppercase tracking-wider border-t border-border/20 mt-0.5">
+                        MIDI FX
+                    </div>
                     {MIDI_EFFECT_FACTORIES.map((fx) => (
                         <button
                             type="button"

@@ -13,11 +13,7 @@ type SpectrogramProps = {
     height?: number;
 };
 
-export const Spectrogram = ({
-    trackId,
-    width = 300,
-    height = 100,
-}: SpectrogramProps): ReactElement => {
+export const Spectrogram = ({ trackId, width = 300, height = 100 }: SpectrogramProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const columnRef = useRef(0);
 
@@ -73,7 +69,7 @@ export const Spectrogram = ({
 
         const draw = (): void => {
             const analyser = trackId
-                ? audioEngine.getTrackStrip(trackId)?.analyserNode ?? audioEngine.masterAnalyser
+                ? (audioEngine.getTrackStrip(trackId)?.analyserNode ?? audioEngine.masterAnalyser)
                 : audioEngine.masterAnalyser;
 
             const fftSize = analyser.frequencyBinCount;

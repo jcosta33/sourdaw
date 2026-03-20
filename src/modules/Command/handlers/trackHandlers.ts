@@ -74,7 +74,9 @@ export const trackHandlers = {
                         midiSnapshots.ccByClipId[cid] = JSON.parse(JSON.stringify(midiState.ccByClipId[cid]));
                     }
                     if (midiState.pitchBendByClipId[cid]) {
-                        midiSnapshots.pitchBendByClipId[cid] = JSON.parse(JSON.stringify(midiState.pitchBendByClipId[cid]));
+                        midiSnapshots.pitchBendByClipId[cid] = JSON.parse(
+                            JSON.stringify(midiState.pitchBendByClipId[cid])
+                        );
                     }
                 }
             }

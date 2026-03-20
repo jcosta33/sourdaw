@@ -9,6 +9,7 @@ import { MixerPanel } from './MixerPanel';
 import { SessionView } from './SessionView';
 import { RoutingMatrix } from './RoutingMatrix';
 import { AutomationView } from './AutomationView';
+import { ClipView } from './ClipView';
 import { ResizeHandle } from '../components/ResizeHandle';
 import { CommandPalette } from '#/modules/Command/presentations/views/CommandPalette';
 import { VoiceCommandOverlay } from '#/modules/AiRuntime/presentations/views/VoiceCommandOverlay';
@@ -82,10 +83,22 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         collaborationPanelOpen,
         chatPanelOpen,
         chatPanelWidth,
+        selectedClipId,
     } = useWorkspaceState();
     const [exportOpen, setExportOpen] = useState(false);
     const [prefsOpen, setPrefsOpen] = useState(false);
-    const [bottomTab, setBottomTab] = useState<'mixer' | 'session' | 'routing'>('mixer');
+    const [bottomTab, setBottomTab] = useState<'editor' | 'mixer' | 'session' | 'routing'>('mixer');
+
+    // Auto-switch bottom tab when clip selected
+    useEffect(() => {
+        if (selectedClipId) {
+            setBottomTab('editor');
+            const ws = workspaceStore.value;
+            if (ws && !ws.mixerOpen) {
+                workspaceStore.set({ ...ws, mixerOpen: true });
+            }
+        }
+    }, [selectedClipId]);
 
     const [localSidebarWidth, setLocalSidebarWidth] = useState(sidebarWidth);
     const [localInspectorWidth, setLocalInspectorWidth] = useState(inspectorWidth);
@@ -366,16 +379,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                     </>
                 )}
 
-                {inspectorOpen && (
-                    <>
-                        <InspectorPanel style={{ width: localInspectorWidth }} />
-                        <ResizeHandle
-                            direction="vertical"
-                            onResize={handleInspectorResize}
-                            onResizeEnd={handleInspectorResizeEnd}
-                        />
-                    </>
-                )}
+
 
                 <main id="main-content" className={cn('flex-1 overflow-hidden', 'border-x border-border/50')}>
                     {children}
@@ -407,7 +411,18 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                         <ChatPanel style={{ width: localChatPanelWidth }} />
                     </>
                 )}
-                
+
+                {inspectorOpen && (
+                    <>
+                        <ResizeHandle
+                            direction="vertical"
+                            onResize={handleInspectorResize}
+                            onResizeEnd={handleInspectorResizeEnd}
+                        />
+                        <InspectorPanel style={{ width: localInspectorWidth }} />
+                    </>
+                )}
+
                 <GenerativeAiPanel />
             </div>
 
@@ -421,6 +436,30 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                     <div style={{ height: localMixerHeight }} className="flex flex-col">
                         {/* Bottom panel tab bar */}
                         <div className="flex items-center gap-0.5 px-2 py-0.5 border-b border-border/30 bg-surface-overlay/50 shrink-0">
+                            <button
+                                type="button"
+                                className={cn(
+                                    'px-2 py-0.5 text-[9px] rounded transition-colors',
+                                    bottomTab === 'mixer'
+                                        ? 'bg-primary/20 text-primary font-semibold'
+                                        : 'text-muted-foreground hover:text-foreground'
+                                )}
+                                onClick={() => setBottomTab('mixer')}
+                            >
+                                Mixer
+                            </button>
+                            <button
+                                type="button"
+                                className={cn(
+                                    'px-2 py-0.5 text-[9px] rounded transition-colors',
+                                    bottomTab === 'editor'
+                                        ? 'bg-blue-500/20 text-blue-400 font-semibold'
+                                        : 'text-muted-foreground hover:text-foreground'
+                                )}
+                                onClick={() => setBottomTab('editor')}
+                            >
+                                Editor
+                            </button>
                             <button
                                 type="button"
                                 className={cn(
@@ -460,7 +499,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                         </div>
                         {/* Panel content */}
                         <div className="flex-1 overflow-hidden">
-                            {bottomTab === 'mixer' ? (
+                            {bottomTab === 'editor' ? (
+                                <ClipView />
+                            ) : bottomTab === 'mixer' ? (
                                 <MixerPanel style={{ height: '100%' }} />
                             ) : bottomTab === 'session' ? (
                                 <SessionView />

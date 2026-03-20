@@ -1,11 +1,7 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { Cpu, Download, HardDrive, Loader2, Power, Zap } from 'lucide-react';
 
-import {
-    isLlmAvailable,
-    resolveBackend,
-    unloadEngine,
-} from '../../../useCases/workspaceViewActions';
+import { isLlmAvailable, resolveBackend, unloadEngine } from '../../../useCases/workspaceViewActions';
 import { NATIVE_MODEL_INFO, WEBLLM_MODEL_INFO } from '../../../useCases/workspaceViewActions';
 import { type LlmEngineStatus } from '#/modules/AiRuntime/stores/llmStatusStore';
 import { Button } from '#/components/ui/button';
@@ -16,13 +12,7 @@ export type LlmStatusBadgeProps = {
 };
 
 /** Small dropdown panel that appears below the badge. */
-const DropdownPanel = ({
-    children,
-    onClose,
-}: {
-    children: React.ReactNode;
-    onClose: () => void;
-}): ReactElement => {
+const DropdownPanel = ({ children, onClose }: { children: React.ReactNode; onClose: () => void }): ReactElement => {
     const ref = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -81,9 +71,7 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                                     {backend === 'native' ? (
                                         <Zap className="size-3 text-purple-400" aria-hidden="true" />
                                     ) : null}
-                                    <span className="text-xs font-medium text-foreground">
-                                        {modelInfo.displayName}
-                                    </span>
+                                    <span className="text-xs font-medium text-foreground">{modelInfo.displayName}</span>
                                     <span className="text-[9px] text-muted-foreground/60 ml-auto">
                                         {backend === 'native' ? 'Native' : 'Browser'}
                                     </span>
@@ -143,18 +131,14 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                     className="text-[9px] text-emerald-400/70 hover:text-emerald-400 whitespace-nowrap transition-colors flex items-center gap-1"
                     title="AI model loaded — click to manage"
                 >
-                    {backend === 'native' ? (
-                        <Zap className="size-2.5" aria-hidden="true" />
-                    ) : null}
+                    {backend === 'native' ? <Zap className="size-2.5" aria-hidden="true" /> : null}
                     AI Ready
                 </button>
                 {showPanel ? (
                     <DropdownPanel onClose={() => setShowPanel(false)}>
                         <div className="w-52 space-y-2.5">
                             <div className="flex items-center justify-between">
-                                <div className="text-xs font-medium text-foreground">
-                                    {modelInfo.displayName}
-                                </div>
+                                <div className="text-xs font-medium text-foreground">{modelInfo.displayName}</div>
                                 <span className="text-[9px] text-emerald-400 font-medium">
                                     {backend === 'native' ? 'Native' : 'Browser'}
                                 </span>

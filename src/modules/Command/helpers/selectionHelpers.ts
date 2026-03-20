@@ -10,8 +10,7 @@ import { seekPlayhead } from '#/modules/Transport/useCases/transportControls';
 
 // ── Track / clip selection readers ──────────────────────────────────────
 
-export const getSelectedTrackId = (): string | null =>
-    getTrackStoreState()?.selectedTrackId ?? null;
+export const getSelectedTrackId = (): string | null => getTrackStoreState()?.selectedTrackId ?? null;
 
 export const getSelectedClipId = (): string | null => {
     const ws = getWorkspaceStoreValue();
@@ -95,4 +94,3 @@ export const goToPreviousMarker = (): void => {
         seekPlayhead(prev.beat);
     }
 };
-

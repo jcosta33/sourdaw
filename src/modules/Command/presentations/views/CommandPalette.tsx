@@ -76,7 +76,7 @@ export const CommandPalette = (): ReactElement | null => {
                         onChange={(e) => setQuery(e.target.value)}
                         onKeyDown={handleKeyDown}
                         placeholder="Type a command..."
-                        className="h-10 border-0 bg-transparent shadow-none focus-visible:ring-0 text-sm"
+                        className="h-12 border-0 bg-transparent shadow-none focus-visible:ring-0 text-base"
                         autoFocus
                     />
                 </div>
@@ -89,9 +89,10 @@ export const CommandPalette = (): ReactElement | null => {
                             role="option"
                             aria-selected={i === selectedIndex}
                             className={cn(
-                                'flex w-full items-center justify-between px-3 py-2 text-left text-sm',
-                                'hover:bg-accent/50',
-                                i === selectedIndex && 'bg-accent'
+                                'flex w-full items-center justify-between px-4 py-3 text-left text-sm transition-colors border-l-2',
+                                i === selectedIndex 
+                                    ? 'bg-accent/80 border-primary shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]' 
+                                    : 'border-transparent text-muted-foreground hover:bg-surface-overlay/50'
                             )}
                             onClick={() => execute(cmd)}
                             onMouseEnter={() => setSelectedIndex(i)}

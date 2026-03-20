@@ -14,6 +14,8 @@ import { type ActionHandler } from '../models/ActionHandler';
 import { type AppAction } from '../models/AppAction';
 import { addMidiNote, getNotesForClip } from '#/modules/Track/useCases/midiNoteCrud';
 import { addTrack } from '#/modules/Track/useCases/addTrack';
+import { stripSilence } from '#/modules/Track/useCases/stripSilence';
+import { detectTempo, detectKey, audioToMidi } from '#/modules/Track/useCases/audioAnalysisUseCases';
 import { generateToolCalls } from '#/modules/AiRuntime/useCases/llmOrchestration';
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
@@ -28,20 +30,25 @@ function notePitchToName(pitch: number): string {
     return `${names[pitch % 12]}${String(octave)}`;
 }
 
-function formatNotesForLlm(notes: Array<{ pitch: number; startBeat: number; duration: number; velocity: number }>): string {
+function formatNotesForLlm(
+    notes: Array<{ pitch: number; startBeat: number; duration: number; velocity: number }>
+): string {
     if (notes.length === 0) {
         return '(empty clip — no notes)';
     }
     const sorted = [...notes].sort((a, b) => a.startBeat - b.startBeat);
     return sorted
-        .map((n) => `${notePitchToName(n.pitch)}(${String(n.startBeat)}-${String(n.startBeat + n.duration)},v${String(n.velocity)})`)
+        .map(
+            (n) =>
+                `${notePitchToName(n.pitch)}(${String(n.startBeat)}-${String(n.startBeat + n.duration)},v${String(n.velocity)})`
+        )
         .join(' ');
 }
 
 async function llmGenerateNotes(
     instruction: string,
     existingNotes: Array<{ pitch: number; startBeat: number; duration: number; velocity: number }>,
-    clipId: string,
+    clipId: string
 ): Promise<Array<{ pitch: number; startBeat: number; duration: number; velocity?: number }>> {
     const noteContext = formatNotesForLlm(existingNotes);
 
@@ -66,7 +73,12 @@ Generate the MIDI notes now. Output ONLY the tool call.`;
     const results = await generateToolCalls(systemPrompt, userMessage);
     const addNotesCall = results.find((r) => r.name === 'addNotes');
     if (addNotesCall && Array.isArray(addNotesCall.arguments.notes)) {
-        return addNotesCall.arguments.notes as Array<{ pitch: number; startBeat: number; duration: number; velocity?: number }>;
+        return addNotesCall.arguments.notes as Array<{
+            pitch: number;
+            startBeat: number;
+            duration: number;
+            velocity?: number;
+        }>;
     }
 
     return [];
@@ -100,9 +112,10 @@ export const aiMidiHandlers = {
 
             const maxBeat = existing.length > 0 ? Math.max(...existing.map((n) => n.startBeat + n.duration)) : 0;
 
-            const instruction = direction === 'forward'
-                ? `Continue this melody/pattern for ${String(bars)} more bars (${String(bars * 4)} beats), starting from beat ${String(maxBeat)}. Match the style, rhythm, and key of the existing notes.`
-                : `Write ${String(bars)} bars of content BEFORE beat 0 as a lead-in/intro, matching the style.`;
+            const instruction =
+                direction === 'forward'
+                    ? `Continue this melody/pattern for ${String(bars)} more bars (${String(bars * 4)} beats), starting from beat ${String(maxBeat)}. Match the style, rhythm, and key of the existing notes.`
+                    : `Write ${String(bars)} bars of content BEFORE beat 0 as a lead-in/intro, matching the style.`;
 
             const notes = await llmGenerateNotes(instruction, existing, a.payload.clipId);
             for (const note of notes) {
@@ -149,7 +162,6 @@ export const aiMidiHandlers = {
                 return;
             }
 
-
             const instruction = `Generate a ${style} bassline that harmonically fits these chord/melody notes. The bass should be in octave 2-3 (MIDI 36-59). Use a "${style}" pattern. Output the bass notes using addNotes.`;
 
             const notes = await llmGenerateNotes(instruction, referenceNotes, a.payload.clipId);
@@ -165,18 +177,18 @@ export const aiMidiHandlers = {
     // ── Audio analysis (DSP-based, no model needed) ──────────────────────
 
     detectTempo: {
-        execute: (a) => {
-            // TODO: implement onset detection via Web Audio API AnalyserNode
-            logger.info(`[Analysis] Tempo detection requested for clip ${a.payload.clipId} — not yet implemented`);
+        execute: async (a) => {
+            const bpm = await detectTempo(a.payload.clipId);
+            logger.info(`[Analysis] Tempo detected for clip ${a.payload.clipId}: ~${String(bpm)} BPM`);
         },
         describe: () => ({ label: 'Detect tempo' }),
         undoable: false,
     } satisfies ActionHandler<Extract<AppAction, 'detectTempo'>>,
 
     detectKey: {
-        execute: (a) => {
-            // TODO: implement chromagram via Web Audio API FFT
-            logger.info(`[Analysis] Key detection requested for clip ${a.payload.clipId} — not yet implemented`);
+        execute: async (a) => {
+            const key = await detectKey(a.payload.clipId);
+            logger.info(`[Analysis] Key detected for clip ${a.payload.clipId}: ${String(key)}`);
         },
         describe: () => ({ label: 'Detect key' }),
         undoable: false,
@@ -184,17 +196,17 @@ export const aiMidiHandlers = {
 
     stripSilence: {
         execute: (a) => {
-            // TODO: implement amplitude threshold splitting
-            logger.info(`[Analysis] Strip silence requested for clip ${a.payload.clipId} — not yet implemented`);
+            stripSilence(a.payload.clipId, a.payload.threshold || -40);
+            logger.info(`[Analysis] Strip silence executed for clip ${a.payload.clipId}`);
         },
         describe: () => ({ label: 'Strip silence' }),
         undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'stripSilence'>>,
 
     audioToMidi: {
-        execute: (a) => {
-            // TODO: implement via Crepe ONNX model or basic pitch detection
-            logger.info(`[Analysis] Audio-to-MIDI requested for clip ${a.payload.clipId} — not yet implemented`);
+        execute: async (a) => {
+            await audioToMidi(a.payload.clipId);
+            logger.info(`[Analysis] Audio-to-MIDI mapped for clip ${a.payload.clipId}`);
         },
         describe: () => ({ label: 'Convert audio to MIDI' }),
         undoable: true,
@@ -204,9 +216,8 @@ export const aiMidiHandlers = {
 
     generateAudio: {
         execute: async (a) => {
-            const { generateAudio: genAudio, isAudioAiServerRunning } = await import(
-                '#/modules/AiRuntime/useCases/audioAiEngine'
-            );
+            const { generateAudio: genAudio, isAudioAiServerRunning } =
+                await import('#/modules/AiRuntime/useCases/audioAiEngine');
 
             const running = await isAudioAiServerRunning();
             if (!running) {
@@ -245,9 +256,8 @@ export const aiMidiHandlers = {
 
     stemSeparate: {
         execute: async (a) => {
-            const { separateStems: _separateStems, isAudioAiServerRunning } = await import(
-                '#/modules/AiRuntime/useCases/audioAiEngine'
-            );
+            const { separateStems: _separateStems, isAudioAiServerRunning } =
+                await import('#/modules/AiRuntime/useCases/audioAiEngine');
 
             const running = await isAudioAiServerRunning();
             if (!running) {

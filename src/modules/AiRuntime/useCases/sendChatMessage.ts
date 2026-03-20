@@ -64,10 +64,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                 content: m.content,
             }));
 
-        const completionMessages = [
-            { role: 'system' as const, content: systemPrompt },
-            ...conversationHistory,
-        ].filter(
+        const completionMessages = [{ role: 'system' as const, content: systemPrompt }, ...conversationHistory].filter(
             (m) => m.role === 'system' || m.role === 'user' || m.role === 'assistant'
         ) as Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
 
@@ -81,7 +78,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                     fullContent += token;
                     updateChatMessage(assistantMsgId, { content: fullContent });
                 },
-                { temperature: 0.7, maxTokens: 2048 },
+                { temperature: 0.7, maxTokens: 2048 }
             );
         } else {
             // WebLLM: streaming completion via the in-browser engine
@@ -114,4 +111,3 @@ export async function sendChatMessage(userText: string): Promise<void> {
         setChatGenerating(false);
     }
 }
-

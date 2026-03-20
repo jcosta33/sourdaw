@@ -172,7 +172,7 @@ type LlmStreamEvent =
 export async function streamNativeCompletion(
     messages: Array<{ role: string; content: string }>,
     onToken: (text: string) => void,
-    options?: { temperature?: number; maxTokens?: number },
+    options?: { temperature?: number; maxTokens?: number }
 ): Promise<void> {
     if (isTauri()) {
         const channel = await createChannel<LlmStreamEvent>();

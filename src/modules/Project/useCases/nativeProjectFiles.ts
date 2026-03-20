@@ -62,7 +62,9 @@ export async function loadProjectFromFile(path: string): Promise<ProjectData> {
  * @returns Array of .webdaw file paths
  */
 export async function listProjectFiles(dirPath: string): Promise<Array<{ name: string; path: string }>> {
-    const entries = await tauriInvoke<Array<{ name: string; path: string; is_directory: boolean }>>('list_directory', { path: dirPath });
+    const entries = await tauriInvoke<Array<{ name: string; path: string; is_directory: boolean }>>('list_directory', {
+        path: dirPath,
+    });
     return entries
         .filter((e) => !e.is_directory && e.name.endsWith('.webdaw'))
         .map((e) => ({ name: e.name, path: e.path }));

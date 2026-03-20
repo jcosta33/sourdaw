@@ -45,10 +45,7 @@ export const zoomTracksVertical = (delta: number): void => _zoomTracksVertical(d
 
 // ── Workspace ─────────────────────────────────────────────────────
 import { setEditingTool as _setEditingTool } from '#/modules/Workspace/useCases/setEditingTool';
-import {
-    zoomToFit as _zoomToFit,
-    zoomToSelection as _zoomToSelection,
-} from '#/modules/Workspace/useCases/togglePanel';
+import { zoomToFit as _zoomToFit, zoomToSelection as _zoomToSelection } from '#/modules/Workspace/useCases/togglePanel';
 
 // Re-export EditingTool type and constants so the hook doesn't need models/
 import { TOOL_SHORTCUTS, type EditingTool } from '#/modules/Workspace/useCases/workspaceQueries';

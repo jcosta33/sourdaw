@@ -44,7 +44,7 @@ export function stampChord(
     startBeat: number,
     duration: number,
     velocity: number,
-    chordType: ChordType,
+    chordType: ChordType
 ): MidiNote[] {
     const state = midiStore.value;
     if (!state) {

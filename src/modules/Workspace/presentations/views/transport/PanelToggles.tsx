@@ -1,5 +1,14 @@
 import { type ReactElement } from 'react';
-import { PanelLeft, PanelRight, LayoutPanelTop, ListOrdered, MessageSquare, Settings2, TrendingUp, Sparkles } from 'lucide-react';
+import {
+    PanelLeft,
+    PanelRight,
+    LayoutPanelTop,
+    ListOrdered,
+    MessageSquare,
+    Settings2,
+    TrendingUp,
+    Sparkles,
+} from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import {
@@ -10,7 +19,11 @@ import {
     toggleAutomationPanel,
     toggleTrackList,
 } from '../../../useCases/togglePanel';
-import { subscribeGenerativeAi, getGenerativeAiSnapshot, toggleGenerativeAiPanel } from '#/modules/AiRuntime/useCases/generativeAiActions';
+import {
+    subscribeGenerativeAi,
+    getGenerativeAiSnapshot,
+    toggleGenerativeAiPanel,
+} from '#/modules/AiRuntime/useCases/generativeAiActions';
 import { useSyncExternalStore } from 'react';
 
 export type PanelTogglesProps = {
@@ -126,7 +139,7 @@ export const PanelToggles = ({
                         aria-label="Toggle Generative AI Dashboard"
                         aria-pressed={aiState.isPanelOpen}
                         onClick={toggleGenerativeAiPanel}
-                        className={aiState.isPanelOpen ? "text-purple-400" : ""}
+                        className={aiState.isPanelOpen ? 'text-purple-400' : ''}
                     >
                         <Sparkles className="size-3.5" aria-hidden="true" />
                     </Button>

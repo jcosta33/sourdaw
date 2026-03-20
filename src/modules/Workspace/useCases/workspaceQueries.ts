@@ -6,7 +6,13 @@
 import { workspaceStore } from '../stores/workspaceStore';
 import { type WorkspaceState } from '../models/WorkspaceState';
 import { type EditingTool, TOOL_SHORTCUTS, TOOL_LABELS } from '../models/EditingTool';
-import { type Preferences, defaultPreferences, TRACK_HEIGHT_VALUES, gridSnapBeats, type GridSnapOption } from '../models/Preferences';
+import {
+    type Preferences,
+    defaultPreferences,
+    TRACK_HEIGHT_VALUES,
+    gridSnapBeats,
+    type GridSnapOption,
+} from '../models/Preferences';
 
 export type { WorkspaceState, EditingTool, Preferences, GridSnapOption };
 export { TOOL_SHORTCUTS, TOOL_LABELS, defaultPreferences, TRACK_HEIGHT_VALUES, gridSnapBeats };

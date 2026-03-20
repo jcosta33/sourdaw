@@ -111,7 +111,11 @@ export const SessionView = (): ReactElement => {
                                         key={sceneIndex}
                                         className={cn(
                                             'h-10 flex items-center justify-center border-b border-border/10 transition-colors cursor-pointer',
-                                            clipId ? (isActive ? 'bg-green-500/20' : 'bg-muted/20 hover:bg-muted/30') : 'hover:bg-muted/10'
+                                            clipId
+                                                ? isActive
+                                                    ? 'bg-green-500/20'
+                                                    : 'bg-muted/20 hover:bg-muted/30'
+                                                : 'hover:bg-muted/10'
                                         )}
                                         onClick={() => {
                                             if (clipId) {
@@ -123,13 +127,23 @@ export const SessionView = (): ReactElement => {
                                     >
                                         {clipId ? (
                                             <div className="flex items-center gap-1">
-                                                {isActive && <Play className="size-2.5 text-green-400 fill-green-400" />}
+                                                {isActive && (
+                                                    <Play className="size-2.5 text-green-400 fill-green-400" />
+                                                )}
                                                 <span
                                                     className={cn(
                                                         'text-[8px] rounded px-1 py-0.5',
-                                                        isActive ? 'bg-green-500/30 text-green-300' : 'bg-muted/30 text-muted-foreground'
+                                                        isActive
+                                                            ? 'bg-green-500/30 text-green-300'
+                                                            : 'bg-muted/30 text-muted-foreground'
                                                     )}
-                                                    style={{ backgroundColor: isActive ? undefined : track.color ? `${track.color}20` : undefined }}
+                                                    style={{
+                                                        backgroundColor: isActive
+                                                            ? undefined
+                                                            : track.color
+                                                              ? `${track.color}20`
+                                                              : undefined,
+                                                    }}
                                                 >
                                                     Clip
                                                 </span>

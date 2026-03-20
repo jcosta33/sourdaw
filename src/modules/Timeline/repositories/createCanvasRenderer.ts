@@ -9,7 +9,6 @@ import { getTimeSignatureAtBeat } from '#/modules/Transport/useCases/transportQu
 import { takeLaneStore } from '#/modules/Track/stores/takeLaneStore';
 import { drawClip } from '../helpers/clipDrawing';
 
-
 export function createCanvasRenderer(canvas: HTMLCanvasElement): TimelineRenderer {
     const ctx = canvas.getContext('2d')!;
     let width = canvas.width;
@@ -267,8 +266,6 @@ function drawTracks(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, w
         }
     }
 }
-
-
 
 function drawPlayhead(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, height: number): void {
     const { playheadPosition, viewportStartBeat, pixelsPerBeat } = model;

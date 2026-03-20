@@ -10,12 +10,18 @@ async function triggerBlobDownload(blob: Blob, filename: string): Promise<void> 
                 '.webdaw': 'application/json',
                 '.json': 'application/json',
             };
-            const handle = await (window as unknown as { showSaveFilePicker: (opts: unknown) => Promise<FileSystemFileHandle> }).showSaveFilePicker({
+            const handle = await (
+                window as unknown as { showSaveFilePicker: (opts: unknown) => Promise<FileSystemFileHandle> }
+            ).showSaveFilePicker({
                 suggestedName: filename,
-                types: ext ? [{
-                    description: ext.slice(1).toUpperCase() + ' file',
-                    accept: { [mimeMap[ext] ?? 'application/octet-stream']: [ext] },
-                }] : undefined,
+                types: ext
+                    ? [
+                          {
+                              description: `${ext.slice(1).toUpperCase()} file`,
+                              accept: { [mimeMap[ext] ?? 'application/octet-stream']: [ext] },
+                          },
+                      ]
+                    : undefined,
             });
             const writable = await handle.createWritable();
             await writable.write(blob);
@@ -112,7 +118,11 @@ export function audioBufferToWav(buffer: AudioBuffer, bitDepth: 16 | 24 | 32 = 1
     return arrayBuffer;
 }
 
-export async function downloadWav(buffer: AudioBuffer, filename = 'export.wav', bitDepth: 16 | 24 | 32 = 16): Promise<void> {
+export async function downloadWav(
+    buffer: AudioBuffer,
+    filename = 'export.wav',
+    bitDepth: 16 | 24 | 32 = 16
+): Promise<void> {
     const wav = audioBufferToWav(buffer, bitDepth);
     const blob = new Blob([wav], { type: 'audio/wav' });
     await triggerBlobDownload(blob, filename);

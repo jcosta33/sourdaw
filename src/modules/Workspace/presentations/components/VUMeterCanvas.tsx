@@ -41,7 +41,7 @@ export const VUMeterCanvas = ({ trackId, size = 100 }: VUMeterCanvasProps): Reac
             lastTimeRef.current = now;
 
             const analyser = trackId
-                ? audioEngine.getTrackStrip(trackId)?.analyserNode ?? audioEngine.masterAnalyser
+                ? (audioEngine.getTrackStrip(trackId)?.analyserNode ?? audioEngine.masterAnalyser)
                 : audioEngine.masterAnalyser;
 
             const data = new Float32Array(analyser.frequencyBinCount);

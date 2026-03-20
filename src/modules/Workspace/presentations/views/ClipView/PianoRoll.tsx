@@ -30,7 +30,11 @@ import { copySelectedNotes, pasteNotes } from '../../../useCases/workspaceViewAc
 import { type MidiNote } from '../../../useCases/workspaceViewActions';
 import { stampChord, removeNotesByIds, CHORD_TYPE_KEYS, type ChordType } from '#/modules/Track/useCases/chordStamps';
 import { strumNotes, restoreStrumOriginals } from '#/modules/Track/useCases/strumNotes';
-import { extractGrooveFromClip, applyGrooveToClip, restoreGrooveOriginals } from '#/modules/Track/useCases/grooveExtraction';
+import {
+    extractGrooveFromClip,
+    applyGrooveToClip,
+    restoreGrooveOriginals,
+} from '#/modules/Track/useCases/grooveExtraction';
 import { generateMidiAI, isTauri } from '#/modules/AudioEngine/useCases/nativeAIBridge';
 
 interface GestureEvent extends UIEvent {
@@ -82,7 +86,12 @@ type PianoRollProps = {
     onSelectedNoteIdsChange: Dispatch<SetStateAction<Set<string>>>;
 };
 
-export const PianoRoll = ({ clipId, trackId, selectedNoteIds, onSelectedNoteIdsChange }: PianoRollProps): ReactElement => {
+export const PianoRoll = ({
+    clipId,
+    trackId,
+    selectedNoteIds,
+    onSelectedNoteIdsChange,
+}: PianoRollProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [zoom, setZoom] = useState(1);
     const [_scrollX, setScrollX] = useState(0);
@@ -291,7 +300,7 @@ export const PianoRoll = ({ clipId, trackId, selectedNoteIds, onSelectedNoteIdsC
                         const y = row * ROW_HEIGHT;
                         const w = gn.duration * beatWidth;
 
-                        ctx.fillStyle = trackColor + '26'; // ~15% opacity hex
+                        ctx.fillStyle = `${trackColor}26`; // ~15% opacity hex
                         ctx.beginPath();
                         ctx.roundRect(x + 1, y + 1, Math.max(4, w - 2), ROW_HEIGHT - 2, 2);
                         ctx.fill();
@@ -396,7 +405,26 @@ export const PianoRoll = ({ clipId, trackId, selectedNoteIds, onSelectedNoteIdsC
 
     useEffect(() => {
         draw();
-    }, [notes, clipId, zoom, selectedNoteIds, beatWidth, gridSnap, scaleType, scaleRoot, stepInput, stepBeat, showGhostNotes, trackState, trackId, midiState, chordMode, chordType, paintMode, lassoMode]);
+    }, [
+        notes,
+        clipId,
+        zoom,
+        selectedNoteIds,
+        beatWidth,
+        gridSnap,
+        scaleType,
+        scaleRoot,
+        stepInput,
+        stepBeat,
+        showGhostNotes,
+        trackState,
+        trackId,
+        midiState,
+        chordMode,
+        chordType,
+        paintMode,
+        lassoMode,
+    ]);
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -737,9 +765,8 @@ export const PianoRoll = ({ clipId, trackId, selectedNoteIds, onSelectedNoteIdsC
             const deltaRow = Math.round((noteY - drag.startY) / ROW_HEIGHT);
             const deltaPitch = -deltaRow;
             // Move ALL selected notes (or just the dragged one if none selected)
-            const idsToMove = selectedNoteIds.size > 0 && selectedNoteIds.has(drag.noteId!)
-                ? [...selectedNoteIds]
-                : [drag.noteId!];
+            const idsToMove =
+                selectedNoteIds.size > 0 && selectedNoteIds.has(drag.noteId!) ? [...selectedNoteIds] : [drag.noteId!];
             for (const id of idsToMove) {
                 const n = notes.find((nn) => nn.id === id);
                 if (!n) {
@@ -748,7 +775,10 @@ export const PianoRoll = ({ clipId, trackId, selectedNoteIds, onSelectedNoteIdsC
                 // Compute original position for this note based on the delta from the anchor note
                 const origN = n; // current position is being updated each move
                 const newBeat = Math.max(0, origN.startBeat + deltaBeat - (dragRef.current._prevDeltaBeat ?? 0));
-                const newPitch = Math.max(0, Math.min(127, origN.pitch + deltaPitch - (dragRef.current._prevDeltaPitch ?? 0)));
+                const newPitch = Math.max(
+                    0,
+                    Math.min(127, origN.pitch + deltaPitch - (dragRef.current._prevDeltaPitch ?? 0))
+                );
                 moveMidiNote(clipId, id, newPitch, newBeat);
             }
             // Track cumulative delta for incremental moves
@@ -844,9 +874,8 @@ export const PianoRoll = ({ clipId, trackId, selectedNoteIds, onSelectedNoteIdsC
                 const { noteId, origBeat, origPitch, origDuration, mode } = drag;
                 if (mode === 'move') {
                     // Bulk move undo: snapshot all moved notes
-                    const movedIds = selectedNoteIds.size > 0 && selectedNoteIds.has(noteId)
-                        ? [...selectedNoteIds]
-                        : [noteId];
+                    const movedIds =
+                        selectedNoteIds.size > 0 && selectedNoteIds.has(noteId) ? [...selectedNoteIds] : [noteId];
                     const currentPositions = movedIds.map((id) => {
                         const n = notes.find((nn) => nn.id === id);
                         return { id, beat: n?.startBeat ?? 0, pitch: n?.pitch ?? 0 };
@@ -912,8 +941,7 @@ export const PianoRoll = ({ clipId, trackId, selectedNoteIds, onSelectedNoteIdsC
                 for (let i = 0, j = path.length - 1; i < path.length; j = i++) {
                     const pi = path[i]!;
                     const pj = path[j]!;
-                    if ((pi.y > cy) !== (pj.y > cy) &&
-                        cx < ((pj.x - pi.x) * (cy - pi.y)) / (pj.y - pi.y) + pi.x) {
+                    if (pi.y > cy !== pj.y > cy && cx < ((pj.x - pi.x) * (cy - pi.y)) / (pj.y - pi.y) + pi.x) {
                         inside = !inside;
                     }
                 }
@@ -1170,8 +1198,13 @@ export const PianoRoll = ({ clipId, trackId, selectedNoteIds, onSelectedNoteIdsC
     const handleAIGenerate = async () => {
         try {
             const clipNotes = getNotesForClip(clipId);
-            const seed = clipNotes.slice(-8).map((n) => [Math.floor(n.pitch), n.velocity, n.startBeat, n.duration] as [number, number, number, number]);
-            
+            const seed = clipNotes
+                .slice(-8)
+                .map(
+                    (n) =>
+                        [Math.floor(n.pitch), n.velocity, n.startBeat, n.duration] as [number, number, number, number]
+                );
+
             const res = await generateMidiAI(seed, 16);
             if (res && res.notes) {
                 for (const note of res.notes) {
@@ -1572,7 +1605,9 @@ export const PianoRoll = ({ clipId, trackId, selectedNoteIds, onSelectedNoteIdsC
                         onClick={ctxAct(handleAIGenerate)}
                     >
                         <span>AI Auto-Complete</span>
-                        <span className="text-[9px] opacity-60 border border-current rounded px-1 ml-2">{isTauri() ? 'Desktop' : 'Web'}</span>
+                        <span className="text-[9px] opacity-60 border border-current rounded px-1 ml-2">
+                            {isTauri() ? 'Desktop' : 'Web'}
+                        </span>
                     </button>
                     <div className="my-1 border-t border-border/50" />
                     <div className="px-3 py-1 text-[10px] text-muted-foreground">Groove</div>
@@ -1583,7 +1618,7 @@ export const PianoRoll = ({ clipId, trackId, selectedNoteIds, onSelectedNoteIdsC
                         onClick={ctxAct(() => {
                             const groove = extractGrooveFromClip(clipId);
                             if (groove) {
-                                ((window as unknown) as Record<string, unknown>).__lastGrooveTemplate = groove;
+                                (window as unknown as Record<string, unknown>).__lastGrooveTemplate = groove;
                             }
                         })}
                     >
@@ -1593,16 +1628,25 @@ export const PianoRoll = ({ clipId, trackId, selectedNoteIds, onSelectedNoteIdsC
                         type="button"
                         className="flex w-full items-center px-3 py-1.5 text-xs hover:bg-accent disabled:opacity-40"
                         role="menuitem"
-                        disabled={!((window as unknown) as Record<string, unknown>).__lastGrooveTemplate}
+                        disabled={!(window as unknown as Record<string, unknown>).__lastGrooveTemplate}
                         onClick={ctxAct(() => {
-                            const groove = ((window as unknown) as Record<string, unknown>).__lastGrooveTemplate;
+                            const groove = (window as unknown as Record<string, unknown>).__lastGrooveTemplate;
                             if (groove) {
-                                const originals = applyGrooveToClip(clipId, groove as Parameters<typeof applyGrooveToClip>[1], 0.5);
+                                const originals = applyGrooveToClip(
+                                    clipId,
+                                    groove as Parameters<typeof applyGrooveToClip>[1],
+                                    0.5
+                                );
                                 if (originals) {
                                     pushUndoEntry(
                                         'Apply groove',
                                         () => restoreGrooveOriginals(clipId, originals),
-                                        () => applyGrooveToClip(clipId, groove as Parameters<typeof applyGrooveToClip>[1], 0.5)
+                                        () =>
+                                            applyGrooveToClip(
+                                                clipId,
+                                                groove as Parameters<typeof applyGrooveToClip>[1],
+                                                0.5
+                                            )
                                     );
                                 }
                             }

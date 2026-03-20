@@ -117,7 +117,7 @@ export function parseSFZ(name: string, sfzContent: string): SFZInstrument {
     }
 
     const inst: SFZInstrument = {
-        id: `sfz-${name.toLowerCase().replace(/\s+/g, '-')}`,
+        id: `sfz-${name.toLowerCase().replaceAll(/\s+/g, '-')}`,
         name,
         format: 'sfz',
         regions,
@@ -149,11 +149,7 @@ function fillDefaults(partial: Partial<SampleRegion>): SampleRegion {
 /**
  * Load all samples for an SFZ instrument.
  */
-export async function loadSFZSamples(
-    instrumentId: string,
-    ctx: AudioContext,
-    baseUrl: string
-): Promise<boolean> {
+export async function loadSFZSamples(instrumentId: string, ctx: AudioContext, baseUrl: string): Promise<boolean> {
     const inst = instruments.get(instrumentId);
     if (!inst) {
         return false;
@@ -170,8 +166,8 @@ export async function loadSFZSamples(
             const arrayBuffer = await response.arrayBuffer();
             const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
             inst.sampleBuffers.set(sampleUrl, audioBuffer);
-        } catch (err) {
-            console.warn(`[SFZ] Failed to load sample: ${sampleUrl}`, err);
+        } catch (error) {
+            console.warn(`[SFZ] Failed to load sample: ${sampleUrl}`, error);
         }
     }
 
@@ -182,19 +178,14 @@ export async function loadSFZSamples(
 /**
  * Find the matching region for a note event.
  */
-export function findRegion(
-    instrumentId: string,
-    note: number,
-    velocity: number
-): SampleRegion | null {
+export function findRegion(instrumentId: string, note: number, velocity: number): SampleRegion | null {
     const inst = instruments.get(instrumentId);
     if (!inst) {
         return null;
     }
     return (
-        inst.regions.find(
-            (r) => note >= r.keyLo && note <= r.keyHi && velocity >= r.velLo && velocity <= r.velHi
-        ) ?? null
+        inst.regions.find((r) => note >= r.keyLo && note <= r.keyHi && velocity >= r.velLo && velocity <= r.velHi) ??
+        null
     );
 }
 
@@ -228,7 +219,7 @@ export function playNote(
 
     // Pitch shift based on note vs root key
     const semitoneDiff = note - region.rootKey + region.tuning / 100;
-    source.playbackRate.value = Math.pow(2, semitoneDiff / 12);
+    source.playbackRate.value = 2 ** (semitoneDiff / 12);
 
     // Loop
     if (region.loopStart !== undefined && region.loopEnd !== undefined) {
@@ -239,7 +230,7 @@ export function playNote(
 
     // Volume
     const gain = ctx.createGain();
-    gain.gain.value = (velocity / 127) * Math.pow(10, region.volume / 20);
+    gain.gain.value = (velocity / 127) * 10 ** (region.volume / 20);
 
     // Pan
     const panner = ctx.createStereoPanner();
@@ -264,7 +255,7 @@ export function getLoadedInstruments(): SFZInstrument[] {
  */
 export function createSF2Instrument(name: string, sf2Url: string): SFZInstrument {
     const inst: SFZInstrument = {
-        id: `sf2-${name.toLowerCase().replace(/\s+/g, '-')}`,
+        id: `sf2-${name.toLowerCase().replaceAll(/\s+/g, '-')}`,
         name,
         format: 'sf2',
         regions: [],

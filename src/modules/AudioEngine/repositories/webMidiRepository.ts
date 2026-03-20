@@ -4,7 +4,13 @@
  */
 import { audioEngine } from '#/modules/AudioEngine/repositories/audioEngineInstance';
 import { tauriInvoke, isTauri } from '#/helpers/tauriBridge';
-import { getMidiStoreState, setMidiStoreState, getTrackStoreState, getMidiLearnState, createMidiNote } from '#/modules/Track/useCases/trackQueries';
+import {
+    getMidiStoreState,
+    setMidiStoreState,
+    getTrackStoreState,
+    getMidiLearnState,
+    createMidiNote,
+} from '#/modules/Track/useCases/trackQueries';
 import { getTransportStoreValue } from '#/modules/Transport/useCases/transportQueries';
 import { completeMidiLearn, handleMidiMessage as applyMidiMappings } from '#/modules/Track/useCases/midiLearnUseCases';
 import { getSynthParamsForTrack, scheduleNote } from '#/modules/AudioEngine/useCases/builtinSynth';
@@ -14,8 +20,6 @@ export type MidiInputInfo = {
     name: string;
     manufacturer: string;
 };
-
-
 
 type TauriMidiDevice = { index: number; name: string };
 

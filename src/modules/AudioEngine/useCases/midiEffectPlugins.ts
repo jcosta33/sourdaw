@@ -64,12 +64,11 @@ const SCALES: Record<string, number[]> = {
 };
 
 export function createScaleFilter(root = 0, scaleName = 'major'): MidiEffect {
-    const scaleNotes = SCALES[scaleName] ?? SCALES['major']!;
+    const scaleNotes = SCALES[scaleName] ?? SCALES.major!;
     return {
         id: 'midi-fx-scale-filter',
         name: `Scale Filter (${scaleName}, root ${root})`,
-        process: (notes) =>
-            notes.filter((n) => scaleNotes.includes((n.pitch - root + 12) % 12)),
+        process: (notes) => notes.filter((n) => scaleNotes.includes((n.pitch - root + 12) % 12)),
     };
 }
 
@@ -157,11 +156,7 @@ export function createTranspose(semitones = 0): MidiEffect {
 
 // ─── CC Map ───────────────────────────────────────────────
 
-export function createCCMap(
-    inputCC: number,
-    outputCC: number,
-    _invert = false
-): MidiEffect {
+export function createCCMap(inputCC: number, outputCC: number, _invert = false): MidiEffect {
     return {
         id: 'midi-fx-cc-map',
         name: `CC Map (${inputCC} → ${outputCC})`,

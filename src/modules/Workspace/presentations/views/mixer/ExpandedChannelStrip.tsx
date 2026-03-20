@@ -99,8 +99,8 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
             className={cn(
                 'flex shrink-0 flex-col items-center gap-1.5 rounded-lg p-2',
                 widthClass,
-                'bg-surface-overlay',
-                isSelected && 'ring-1 ring-ring'
+                'bg-surface-0 border border-border shadow-sm',
+                isSelected && 'ring-1 ring-ring border-transparent'
             )}
             onClick={() => selectTrack(track.id)}
             onContextMenu={handleContextMenu}
@@ -108,7 +108,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
             aria-label={`${track.name} channel`}
         >
             {/* Color bar */}
-            <div className="h-1 w-full rounded-full" style={{ backgroundColor: track.color }} />
+            <div className="h-1.5 w-full rounded-t-sm -mt-2 mb-1" style={{ backgroundColor: track.color }} />
 
             {/* Track name */}
             {isRenaming ? (
@@ -141,9 +141,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
             )}
 
             <span className="text-[8px] text-muted-foreground capitalize">{track.kind}</span>
-            {track.vcaGroupId && (
-                <span className="text-[7px] text-cyan-400/80 font-mono">VCA</span>
-            )}
+            {track.vcaGroupId && <span className="text-[7px] text-cyan-400/80 font-mono">VCA</span>}
 
             {/* Mute / Solo / Arm / Monitor */}
             <div className="flex flex-wrap justify-center gap-0.5">
@@ -232,7 +230,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
             </div>
 
             {/* Fader + meter */}
-            <div className="flex gap-2 h-32 mt-1 mb-1 items-end justify-center w-full">
+            <div className="flex gap-2 h-40 mt-2 mb-1 items-end justify-center w-full">
                 <Slider
                     orientation="vertical"
                     value={[track.gain * 100]}

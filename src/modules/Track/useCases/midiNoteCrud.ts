@@ -159,4 +159,3 @@ export function shiftClipMidiNotes(clipId: string, beatDelta: number): void {
             : state.pitchBendByClipId,
     });
 }
-

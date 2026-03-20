@@ -22,12 +22,7 @@ import { undo, redo } from '../../useCases/undoRedo';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { trackStore } from '#/modules/Track/stores/trackStore';
 import { zoomTimeline } from '#/modules/Timeline/stores/timelineViewStore';
-import {
-    getAllClipIds,
-    getLastClipEndBeat,
-    goToNextMarker,
-    goToPreviousMarker,
-} from '../../helpers/selectionHelpers';
+import { getAllClipIds, getLastClipEndBeat, goToNextMarker, goToPreviousMarker } from '../../helpers/selectionHelpers';
 
 const ZOOM_STEP = 4;
 
@@ -38,8 +33,6 @@ const NUMBER_TOOL_MAP: Record<string, EditingTool> = {
     '4': 'automation',
     '5': 'stretch',
 };
-
-
 
 const toggleWorkspaceMode = (): void => {
     const ws = workspaceStore.value;

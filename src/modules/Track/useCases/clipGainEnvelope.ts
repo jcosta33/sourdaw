@@ -6,8 +6,6 @@
  * Envelope points are relative to clip start (beat offset 0 = clip start).
  */
 
-
-
 export type GainEnvelopePoint = {
     id: string;
     beatOffset: number; // relative to clip start
@@ -31,9 +29,7 @@ export function getClipGainEnvelope(clipId: string): ClipGainEnvelope {
     if (!envelope) {
         envelope = {
             clipId,
-            points: [
-                { id: `gep-${crypto.randomUUID().slice(0, 6)}`, beatOffset: 0, gainDb: 0 },
-            ],
+            points: [{ id: `gep-${crypto.randomUUID().slice(0, 6)}`, beatOffset: 0, gainDb: 0 }],
             enabled: true,
         };
         envelopes.set(clipId, envelope);

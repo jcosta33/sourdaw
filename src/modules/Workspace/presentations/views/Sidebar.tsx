@@ -129,21 +129,21 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
             style={style}
             aria-label="Browser panel"
         >
-            <div className="flex items-center gap-1 border-b border-border/50 p-2">
-                <Search className="size-3.5 text-muted-foreground" aria-hidden="true" />
+            <div className="flex items-center gap-1.5 border-b border-border/50 p-2 bg-surface-base px-3">
+                <Search className="size-4 text-muted-foreground" aria-hidden="true" />
                 <Input
                     type="search"
-                    placeholder="Search..."
+                    placeholder="Search library..."
                     value={searchQuery}
                     onChange={(e) => {
                         setSearchQuery(e.target.value);
                     }}
-                    className="h-6 border-0 bg-transparent text-xs shadow-none focus-visible:ring-0"
+                    className="h-7 border-0 bg-transparent text-xs shadow-none focus-visible:ring-0 px-1"
                     aria-label="Search browser"
                 />
             </div>
 
-            <div className="flex border-b border-border/50" role="tablist" aria-label="Browser categories">
+            <div className="flex border-b border-border/50 bg-surface-overlay" role="tablist" aria-label="Browser categories">
                 {TABS.map((tab) => (
                     <Button
                         key={tab.id}
@@ -152,12 +152,15 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                         role="tab"
                         aria-selected={activeTab === tab.id}
                         aria-controls={`browser-panel-${tab.id}`}
-                        className={cn('flex-1 rounded-none', activeTab === tab.id ? 'bg-accent' : '')}
-                        onClick={() => {
-                            setActiveTab(tab.id);
-                        }}
+                        className={cn(
+                            'flex-1 rounded-none border-b-2 transition-colors py-3 h-auto',
+                            activeTab === tab.id
+                                ? 'border-primary text-primary bg-surface-base'
+                                : 'border-transparent text-muted-foreground hover:bg-surface-overlay hover:text-foreground'
+                        )}
+                        onClick={() => setActiveTab(tab.id)}
                     >
-                        <tab.Icon className="size-3.5" aria-hidden="true" />
+                        <tab.Icon className="size-4" aria-hidden="true" />
                     </Button>
                 ))}
             </div>

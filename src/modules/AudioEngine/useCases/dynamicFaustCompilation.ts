@@ -36,10 +36,7 @@ export async function loadFaustCompiler(): Promise<boolean> {
 /**
  * Compile user-provided Faust DSP code to a WASM module.
  */
-export async function compileDSP(
-    name: string,
-    dspCode: string
-): Promise<CompilationResult> {
+export async function compileDSP(name: string, dspCode: string): Promise<CompilationResult> {
     const startTime = performance.now();
     const errors: string[] = [];
     const warnings: string[] = [];

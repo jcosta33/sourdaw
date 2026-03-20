@@ -384,7 +384,9 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                         onClick={waveAct(() => handleAiDenoiseClip(clipId))}
                     >
                         <span>AI Denoise</span>
-                        <span className="text-[9px] opacity-60 border border-current rounded px-1 ml-2">{isTauri() ? 'Desktop' : 'Web'}</span>
+                        <span className="text-[9px] opacity-60 border border-current rounded px-1 ml-2">
+                            {isTauri() ? 'Desktop' : 'Web'}
+                        </span>
                     </button>
                     <div className="my-1 border-t border-border/50" />
                     <button

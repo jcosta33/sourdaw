@@ -4,7 +4,17 @@ import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { cn } from '#/helpers/Styles/cn';
 import { isTauri } from '#/modules/AudioEngine/useCases/nativeAIBridge';
-import { subscribeGenerativeAi, getGenerativeAiSnapshot, toggleGenerativeAiPanel, handleGenerateMidiPrompt, handleGenerateAudioFallback, handleStemSeparationPreview, removeTask, type AiTaskResult, type GenerativeAiState } from '../../useCases/generativeAiActions';
+import {
+    subscribeGenerativeAi,
+    getGenerativeAiSnapshot,
+    toggleGenerativeAiPanel,
+    handleGenerateMidiPrompt,
+    handleGenerateAudioFallback,
+    handleStemSeparationPreview,
+    removeTask,
+    type AiTaskResult,
+    type GenerativeAiState,
+} from '../../useCases/generativeAiActions';
 
 export const GenerativeAiPanel = (): ReactElement | null => {
     const state = useSyncExternalStore<GenerativeAiState>(subscribeGenerativeAi, getGenerativeAiSnapshot);
@@ -16,18 +26,24 @@ export const GenerativeAiPanel = (): ReactElement | null => {
     const [audioDuration, setAudioDuration] = useState(4);
     const [midiNotes, setMidiNotes] = useState(32);
 
-    if (!state.isPanelOpen) return null;
+    if (!state.isPanelOpen) {
+        return null;
+    }
 
     const handleGenerate = () => {
         const metadata = [
             genre && `Genre: ${genre}`,
             instrument && `Instrument: ${instrument}`,
-            mood && `Mood: ${mood}`
-        ].filter(Boolean).join(', ');
+            mood && `Mood: ${mood}`,
+        ]
+            .filter(Boolean)
+            .join(', ');
 
         const finalPrompt = metadata ? `[${metadata}] ${prompt}`.trim() : prompt.trim();
-        if (!finalPrompt) return;
-        
+        if (!finalPrompt) {
+            return;
+        }
+
         if (activeTab === 'audio') {
             handleGenerateAudioFallback(finalPrompt, audioDuration.toString());
         } else if (activeTab === 'midi') {
@@ -58,8 +74,10 @@ export const GenerativeAiPanel = (): ReactElement | null => {
             <div className="flex p-2 gap-1 border-b border-border/20 shrink-0">
                 <button
                     className={cn(
-                        "flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 text-[11px] rounded-md font-medium transition-colors",
-                        activeTab === 'audio' ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"
+                        'flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 text-[11px] rounded-md font-medium transition-colors',
+                        activeTab === 'audio'
+                            ? 'bg-accent text-accent-foreground'
+                            : 'text-muted-foreground hover:bg-surface-raised hover:text-foreground'
                     )}
                     onClick={() => setActiveTab('audio')}
                 >
@@ -67,8 +85,10 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                 </button>
                 <button
                     className={cn(
-                        "flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 text-[11px] rounded-md font-medium transition-colors",
-                        activeTab === 'midi' ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"
+                        'flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 text-[11px] rounded-md font-medium transition-colors',
+                        activeTab === 'midi'
+                            ? 'bg-accent text-accent-foreground'
+                            : 'text-muted-foreground hover:bg-surface-raised hover:text-foreground'
                     )}
                     onClick={() => setActiveTab('midi')}
                 >
@@ -76,8 +96,10 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                 </button>
                 <button
                     className={cn(
-                        "flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 text-[11px] rounded-md font-medium transition-colors",
-                        activeTab === 'stems' ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"
+                        'flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 text-[11px] rounded-md font-medium transition-colors',
+                        activeTab === 'stems'
+                            ? 'bg-accent text-accent-foreground'
+                            : 'text-muted-foreground hover:bg-surface-raised hover:text-foreground'
                     )}
                     onClick={() => setActiveTab('stems')}
                 >
@@ -90,17 +112,23 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                 {activeTab === 'stems' ? (
                     <div className="space-y-3">
                         <p className="text-[10px] text-muted-foreground leading-relaxed">
-                            Drop an audio clip here or select one from the arrangement to separate it into 4 distinct stems (Vocals, Drums, Bass, Other) using HTDemucs.
+                            Drop an audio clip here or select one from the arrangement to separate it into 4 distinct
+                            stems (Vocals, Drums, Bass, Other) using HTDemucs.
                         </p>
                         <div className="border-2 border-dashed border-border/50 rounded-lg p-6 flex flex-col items-center justify-center gap-2 bg-surface-base/50 text-muted-foreground hover:border-purple-500/50 hover:text-purple-400 transition-colors cursor-pointer">
                             <Mic2 className="size-6" />
                             <span className="text-[11px] font-medium">Drop Audio File</span>
                         </div>
-                        <Button className="w-full h-8 text-xs bg-purple-600 hover:bg-purple-500 text-white flex justify-between" onClick={handleStemSep}>
+                        <Button
+                            className="w-full h-8 text-xs bg-purple-600 hover:bg-purple-500 text-white flex justify-between"
+                            onClick={handleStemSep}
+                        >
                             <div className="flex items-center">
                                 <RefreshCw className="size-3.5 mr-2" /> Extract Stems
                             </div>
-                            <span className="text-[9px] opacity-70 border border-white/40 rounded px-1">{isTauri() ? 'Desktop' : 'Web Audio'}</span>
+                            <span className="text-[9px] opacity-70 border border-white/40 rounded px-1">
+                                {isTauri() ? 'Desktop' : 'Web Audio'}
+                            </span>
                         </Button>
                     </div>
                 ) : (
@@ -110,15 +138,19 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                             <textarea
                                 value={prompt}
                                 onChange={(e) => setPrompt(e.target.value)}
-                                placeholder={activeTab === 'audio' ? "e.g. vintage vinyl crackle, 85bpm" : "e.g. syncopated rhythm, D minor"}
+                                placeholder={
+                                    activeTab === 'audio'
+                                        ? 'e.g. vintage vinyl crackle, 85bpm'
+                                        : 'e.g. syncopated rhythm, D minor'
+                                }
                                 className="w-full h-12 bg-surface-base border border-border/60 rounded-md p-2 text-xs placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-purple-500/50 resize-none"
                             />
                         </div>
-                        
+
                         <div className="grid grid-cols-2 gap-2">
                             <div className="space-y-1 text-[10px]">
                                 <label className="font-medium text-foreground/80">Genre</label>
-                                <select 
+                                <select
                                     className="w-full h-7 bg-surface-base border border-border/60 rounded px-1.5 focus:outline-none focus:border-purple-500/50 text-foreground"
                                     value={genre}
                                     onChange={(e) => setGenre(e.target.value)}
@@ -133,7 +165,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                             </div>
                             <div className="space-y-1 text-[10px]">
                                 <label className="font-medium text-foreground/80">Mood</label>
-                                <select 
+                                <select
                                     className="w-full h-7 bg-surface-base border border-border/60 rounded px-1.5 focus:outline-none focus:border-purple-500/50 text-foreground"
                                     value={mood}
                                     onChange={(e) => setMood(e.target.value)}
@@ -148,7 +180,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                             </div>
                             <div className="space-y-1 text-[10px] col-span-2">
                                 <label className="font-medium text-foreground/80">Instrument Focus</label>
-                                <select 
+                                <select
                                     className="w-full h-7 bg-surface-base border border-border/60 rounded px-1.5 focus:outline-none focus:border-purple-500/50 text-foreground"
                                     value={instrument}
                                     onChange={(e) => setInstrument(e.target.value)}
@@ -162,7 +194,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                 </select>
                             </div>
                         </div>
-                        
+
                         {activeTab === 'audio' && (
                             <div className="space-y-2">
                                 <div className="flex justify-between items-center">
@@ -172,12 +204,14 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                 <Slider
                                     value={[audioDuration]}
                                     onValueChange={([v]) => setAudioDuration(v!)}
-                                    min={1} max={30} step={1}
+                                    min={1}
+                                    max={30}
+                                    step={1}
                                     className="pt-1"
                                 />
                             </div>
                         )}
-                        
+
                         {activeTab === 'midi' && (
                             <div className="space-y-2">
                                 <div className="flex justify-between items-center">
@@ -187,22 +221,26 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                 <Slider
                                     value={[midiNotes]}
                                     onValueChange={([v]) => setMidiNotes(v!)}
-                                    min={4} max={128} step={4}
+                                    min={4}
+                                    max={128}
+                                    step={4}
                                     className="pt-1"
                                 />
                             </div>
                         )}
 
-                        <Button 
-                            className="w-full h-8 text-xs bg-purple-600 hover:bg-purple-500 text-white flex justify-between items-center" 
+                        <Button
+                            className="w-full h-8 text-xs bg-purple-600 hover:bg-purple-500 text-white flex justify-between items-center"
                             onClick={handleGenerate}
                             disabled={!prompt.trim() && !genre && !instrument && !mood}
                         >
                             <div className="flex items-center gap-2">
-                                <Sparkles className="size-3.5" /> 
+                                <Sparkles className="size-3.5" />
                                 Generate {activeTab === 'audio' ? 'Audio' : 'MIDI'}
                             </div>
-                            <span className="text-[9px] opacity-70 border border-white/40 rounded px-1">{isTauri() ? 'Desktop' : 'Web'}</span>
+                            <span className="text-[9px] opacity-70 border border-white/40 rounded px-1">
+                                {isTauri() ? 'Desktop' : 'Web'}
+                            </span>
                         </Button>
                     </div>
                 )}
@@ -210,7 +248,9 @@ export const GenerativeAiPanel = (): ReactElement | null => {
 
             {/* Results Library */}
             <div className="flex-1 overflow-y-auto p-2">
-                <h3 className="text-[10px] font-semibold text-muted-foreground mb-2 px-1 uppercase tracking-wider">Library</h3>
+                <h3 className="text-[10px] font-semibold text-muted-foreground mb-2 px-1 uppercase tracking-wider">
+                    Library
+                </h3>
                 {state.tasks.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-10 text-muted-foreground opacity-60">
                         <Sparkles className="size-8 mb-2 opacity-50" />
@@ -233,39 +273,60 @@ const TaskResultCard = ({ task }: { task: AiTaskResult }) => {
         <div className="group relative bg-surface-raised border border-border/40 rounded-md p-2 text-xs flex flex-col gap-1.5 hover:border-purple-500/40 transition-colors">
             <div className="flex items-start justify-between">
                 <div className="flex items-center gap-1.5">
-                    {task.type === 'midi-generation' ? <Music4 className="size-3 text-emerald-400" /> : 
-                     task.type === 'stem-separation' ? <RefreshCw className="size-3 text-orange-400" /> : 
-                     <AudioWaveform className="size-3 text-purple-400" />}
+                    {task.type === 'midi-generation' ? (
+                        <Music4 className="size-3 text-emerald-400" />
+                    ) : task.type === 'stem-separation' ? (
+                        <RefreshCw className="size-3 text-orange-400" />
+                    ) : (
+                        <AudioWaveform className="size-3 text-purple-400" />
+                    )}
                     <span className="font-medium capitalize text-foreground/90 leading-none">
                         {task.type.replace('-', ' ')}
                     </span>
                 </div>
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Button variant="ghost" size="icon-xs" className="h-5 w-5 hover:bg-destructive/20 hover:text-destructive" onClick={() => removeTask(task.id)}>
+                    <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        className="h-5 w-5 hover:bg-destructive/20 hover:text-destructive"
+                        onClick={() => removeTask(task.id)}
+                    >
                         <X className="size-3" />
                     </Button>
                 </div>
             </div>
-            
-            {task.prompt && <div className="text-[10px] text-muted-foreground italic line-clamp-2">"{task.prompt}"</div>}
-            
+
+            {task.prompt && (
+                <div className="text-[10px] text-muted-foreground italic line-clamp-2">"{task.prompt}"</div>
+            )}
+
             <div className="mt-1">
                 {task.status === 'processing' && (
                     <div className="flex items-center gap-1.5 text-[10px] text-purple-400">
                         <Loader2 className="size-3 animate-spin" /> Processing...
                     </div>
                 )}
-                {task.status === 'error' && (
-                    <div className="text-[10px] text-destructive">Error: {task.error}</div>
-                )}
+                {task.status === 'error' && <div className="text-[10px] text-destructive">Error: {task.error}</div>}
                 {task.status === 'success' && (
                     <div className="flex items-center justify-between mt-1 pt-1 border-t border-border/30">
-                        <span className="text-[9px] text-muted-foreground/70">{task.durationMs ? `${(task.durationMs / 1000).toFixed(1)}s` : 'Done'}</span>
+                        <span className="text-[9px] text-muted-foreground/70">
+                            {task.durationMs ? `${(task.durationMs / 1000).toFixed(1)}s` : 'Done'}
+                        </span>
                         <div className="flex items-center gap-1">
-                            <Button variant="secondary" size="icon-xs" className="h-5 w-5 bg-surface-base" title="Preview">
+                            <Button
+                                variant="secondary"
+                                size="icon-xs"
+                                className="h-5 w-5 bg-surface-base"
+                                title="Preview"
+                            >
                                 <Play className="size-3 text-foreground" />
                             </Button>
-                            <Button variant="secondary" size="icon-xs" className="h-5 w-5 bg-surface-base" title="Drag to arrangement">
+                            <Button
+                                variant="secondary"
+                                size="icon-xs"
+                                className="h-5 w-5 bg-surface-base"
+                                title="Drag to arrangement"
+                            >
                                 <Plus className="size-3 text-foreground" />
                             </Button>
                         </div>

@@ -589,7 +589,12 @@ export function createWebAudioEngine(): AudioEngine {
         };
     }
 
-    function addDeviceToStrip(trackId: string, deviceId: string, deviceType: string, externalInstanceId?: string): void {
+    function addDeviceToStrip(
+        trackId: string,
+        deviceId: string,
+        deviceType: string,
+        externalInstanceId?: string
+    ): void {
         const strip = trackStrips.get(trackId);
         if (!strip) {
             return;

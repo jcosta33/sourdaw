@@ -91,11 +91,7 @@ export function getVideoElement(): HTMLVideoElement | null {
 /**
  * Sync video playback to DAW transport.
  */
-export function syncVideoToTransport(
-    playheadBeats: number,
-    tempo: number,
-    isPlaying: boolean
-): void {
+export function syncVideoToTransport(playheadBeats: number, tempo: number, isPlaying: boolean): void {
     if (!videoElement || !activeVideoTrack) {
         return;
     }

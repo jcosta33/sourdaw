@@ -37,14 +37,15 @@ const routes = new Map<string, ModulationRoute>();
 // ─── Source Management ────────────────────────────────────
 
 export function createModulationSource(type: ModulationSourceType, name?: string): ModulationSource {
-    const defaultParams: Record<string, number> = {
-        lfo: { rate: 1, depth: 1, phase: 0, waveform: 0 },
-        envelope: { attack: 0.01, decay: 0.3, sustain: 0.7, release: 0.5 },
-        'midi-cc': { cc: 1, channel: 0 },
-        macro: { value: 0.5 },
-        random: { rate: 4, smoothing: 0.5 },
-        'step-seq': { steps: 8, rate: 1 },
-    }[type] ?? {};
+    const defaultParams: Record<string, number> =
+        {
+            lfo: { rate: 1, depth: 1, phase: 0, waveform: 0 },
+            envelope: { attack: 0.01, decay: 0.3, sustain: 0.7, release: 0.5 },
+            'midi-cc': { cc: 1, channel: 0 },
+            macro: { value: 0.5 },
+            random: { rate: 4, smoothing: 0.5 },
+            'step-seq': { steps: 8, rate: 1 },
+        }[type] ?? {};
 
     const source: ModulationSource = {
         id: `mod-src-${crypto.randomUUID().slice(0, 8)}`,
@@ -170,12 +171,7 @@ export function getModulationRange(deviceId: string, parameterName: string): [nu
  * @param parameterName - Target parameter
  * @param time - Current time in seconds for LFO phase
  */
-export function getModulatedValue(
-    baseValue: number,
-    deviceId: string,
-    parameterName: string,
-    time: number
-): number {
+export function getModulatedValue(baseValue: number, deviceId: string, parameterName: string, time: number): number {
     const paramRoutes = getModulationRoutesForParam(deviceId, parameterName);
     let modulated = baseValue;
 
@@ -188,23 +184,23 @@ export function getModulatedValue(
         let sourceValue = 0;
         switch (source.type) {
             case 'lfo': {
-                const rate = source.parameters['rate'] ?? 1;
-                const phase = source.parameters['phase'] ?? 0;
-                const waveform = source.parameters['waveform'] ?? 0;
+                const rate = source.parameters.rate ?? 1;
+                const phase = source.parameters.phase ?? 0;
+                const waveform = source.parameters.waveform ?? 0;
                 const t = time * rate + phase;
                 if (waveform === 0) {
                     sourceValue = Math.sin(t * Math.PI * 2); // Sine
                 } else if (waveform === 1) {
                     sourceValue = ((t % 1) - 0.5) * 2; // Saw
                 } else if (waveform === 2) {
-                    sourceValue = (t % 1) < 0.5 ? 1 : -1; // Square
+                    sourceValue = t % 1 < 0.5 ? 1 : -1; // Square
                 } else {
-                    sourceValue = 1 - Math.abs(((t % 1) * 2) - 1) * 2; // Triangle
+                    sourceValue = 1 - Math.abs((t % 1) * 2 - 1) * 2; // Triangle
                 }
                 break;
             }
             case 'macro':
-                sourceValue = (source.parameters['value'] ?? 0.5) * 2 - 1; // -1 to +1
+                sourceValue = (source.parameters.value ?? 0.5) * 2 - 1; // -1 to +1
                 break;
             case 'random':
                 sourceValue = Math.random() * 2 - 1;

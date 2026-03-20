@@ -89,8 +89,6 @@ const TAG_ICONS = {
     clips: Disc3,
 } as const;
 
-
-
 // ── Sub-components ──────────────────────────────────────────────────────
 
 const SelectionTagChip = ({ tag, onRemove }: { tag: SelectionTag; onRemove: () => void }): ReactElement => {

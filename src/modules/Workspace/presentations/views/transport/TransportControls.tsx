@@ -42,7 +42,9 @@ export const TransportControls = ({
     const [linkEnabled, setLinkEnabled] = useState(false);
 
     useEffect(() => {
-        getLinkStatus().then((status) => setLinkEnabled(status.enabled)).catch(() => {});
+        getLinkStatus()
+            .then((status) => setLinkEnabled(status.enabled))
+            .catch(() => {});
     }, []);
 
     const handleLinkToggle = async () => {

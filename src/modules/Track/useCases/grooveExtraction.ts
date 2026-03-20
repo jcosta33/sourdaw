@@ -67,9 +67,7 @@ export function extractGrooveFromClip(clipId: string, gridDivision = 0.25): Groo
         }
 
         // Average timing offset
-        const avgOffset =
-            nearbyNotes.reduce((sum, n) => sum + (n.startBeat - gridBeat), 0) /
-            nearbyNotes.length;
+        const avgOffset = nearbyNotes.reduce((sum, n) => sum + (n.startBeat - gridBeat), 0) / nearbyNotes.length;
 
         // Average velocity relative to 100 (default)
         const avgVelocity = nearbyNotes.reduce((sum, n) => sum + n.velocity, 0) / nearbyNotes.length;

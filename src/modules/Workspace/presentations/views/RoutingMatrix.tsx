@@ -27,7 +27,7 @@ export const RoutingMatrix = (): ReactElement => {
             if (next.has(key)) {
                 next.delete(key);
             } else {
-                next.set(key, { sourceId: srcId, destId: destId, level: 1.0 });
+                next.set(key, { sourceId: srcId, destId, level: 1.0 });
             }
             return next;
         });
@@ -58,7 +58,10 @@ export const RoutingMatrix = (): ReactElement => {
                                     key={d.id}
                                     className="p-1 text-muted-foreground font-normal text-center min-w-[40px] border-l border-border/20"
                                 >
-                                    <span className="writing-mode-vertical block rotate-180" style={{ writingMode: 'vertical-rl' }}>
+                                    <span
+                                        className="writing-mode-vertical block rotate-180"
+                                        style={{ writingMode: 'vertical-rl' }}
+                                    >
                                         {d.name}
                                     </span>
                                 </th>

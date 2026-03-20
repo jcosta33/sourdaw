@@ -88,7 +88,7 @@ export class ShortTermLUFS {
         // Average the linear powers
         let sum = 0;
         for (const lufs of this.blocks) {
-            sum += Math.pow(10, lufs / 10);
+            sum += 10 ** (lufs / 10);
         }
         const avg = sum / this.blocks.length;
         if (avg <= 0) {
@@ -118,7 +118,7 @@ export class IntegratedLUFS {
         }
         let sum = 0;
         for (const lufs of this.allBlocks) {
-            sum += Math.pow(10, lufs / 10);
+            sum += 10 ** (lufs / 10);
         }
         const avg = sum / this.allBlocks.length;
         return avg <= 0 ? -70 : Math.max(-70, 10 * Math.log10(avg));

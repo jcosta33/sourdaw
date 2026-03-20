@@ -140,9 +140,7 @@ export function deleteTrackAlternative(trackId: string, alternativeId: string): 
             setTrackState({
                 ...updated,
                 tracks: updated.tracks.map((t) =>
-                    t.id === trackId
-                        ? { ...t, alternatives: t.alternatives.filter((a) => a.id !== alternativeId) }
-                        : t
+                    t.id === trackId ? { ...t, alternatives: t.alternatives.filter((a) => a.id !== alternativeId) } : t
                 ),
             });
         }
@@ -150,9 +148,7 @@ export function deleteTrackAlternative(trackId: string, alternativeId: string): 
         setTrackState({
             ...state,
             tracks: state.tracks.map((t) =>
-                t.id === trackId
-                    ? { ...t, alternatives: t.alternatives.filter((a) => a.id !== alternativeId) }
-                    : t
+                t.id === trackId ? { ...t, alternatives: t.alternatives.filter((a) => a.id !== alternativeId) } : t
             ),
         });
     }
@@ -175,9 +171,7 @@ export function renameTrackAlternative(trackId: string, alternativeId: string, n
             t.id === trackId
                 ? {
                       ...t,
-                      alternatives: t.alternatives.map((a) =>
-                          a.id === alternativeId ? { ...a, name } : a
-                      ),
+                      alternatives: t.alternatives.map((a) => (a.id === alternativeId ? { ...a, name } : a)),
                   }
                 : t
         ),
