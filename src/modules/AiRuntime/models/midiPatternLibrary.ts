@@ -1,506 +1,256 @@
 /**
- * MIDI Pattern Library — Curated preset patterns for quick insertion.
+ * MIDI Pattern Library — Algorithmic pattern generation from templates.
  *
- * Categories: chords, bass, drums, melody
- * Each pattern stores raw note data that can be directly inserted as a clip.
+ * Templates define abstract musical recipes. The generator applies user
+ * parameters (key, scale, density, complexity) to produce concrete MIDI on-the-fly.
  */
+
+// ── Scale / Key Theory ──
+
+export const ALL_KEYS = ['C','C#','D','Eb','E','F','F#','G','Ab','A','Bb','B'] as const;
+export type KeyName = typeof ALL_KEYS[number];
+
+export const SCALE_TYPES = ['major','minor','pentatonic-major','pentatonic-minor','blues','dorian','mixolydian','harmonic-minor','chromatic'] as const;
+export type ScaleType = typeof SCALE_TYPES[number];
+
+export const SCALE_LABELS: Record<ScaleType, string> = {
+    'major': 'Major', 'minor': 'Natural Minor', 'pentatonic-major': 'Pentatonic Maj',
+    'pentatonic-minor': 'Pentatonic Min', 'blues': 'Blues', 'dorian': 'Dorian',
+    'mixolydian': 'Mixolydian', 'harmonic-minor': 'Harmonic Minor', 'chromatic': 'Chromatic',
+};
+
+const KEY_SEMITONES: Record<string, number> = {
+    'C':0,'C#':1,'D':2,'Eb':3,'E':4,'F':5,'F#':6,'G':7,'Ab':8,'A':9,'Bb':10,'B':11,
+};
+
+/** Interval patterns (semitones from root) for each scale */
+const SCALE_INTERVALS: Record<ScaleType, number[]> = {
+    'major': [0,2,4,5,7,9,11],
+    'minor': [0,2,3,5,7,8,10],
+    'pentatonic-major': [0,2,4,7,9],
+    'pentatonic-minor': [0,3,5,7,10],
+    'blues': [0,3,5,6,7,10],
+    'dorian': [0,2,3,5,7,9,10],
+    'mixolydian': [0,2,4,5,7,9,10],
+    'harmonic-minor': [0,2,3,5,7,8,11],
+    'chromatic': [0,1,2,3,4,5,6,7,8,9,10,11],
+};
+
+/** Get MIDI pitches for a scale across a note range */
+export function getScalePitches(key: KeyName, scale: ScaleType, low = 36, high = 96): number[] {
+    const root = KEY_SEMITONES[key] ?? 0;
+    const intervals = SCALE_INTERVALS[scale];
+    const pitches: number[] = [];
+    for (let midi = low; midi <= high; midi++) {
+        if (intervals.includes((midi - root + 120) % 12)) pitches.push(midi);
+    }
+    return pitches;
+}
+
+/** Snap a pitch to the nearest scale tone */
+function snapToScale(pitch: number, scalePitches: number[]): number {
+    let best = scalePitches[0]!;
+    for (const sp of scalePitches) {
+        if (Math.abs(sp - pitch) < Math.abs(best - pitch)) best = sp;
+    }
+    return best;
+}
 
 // ── Types ──
 
 export type PatternCategory = 'chords' | 'bass' | 'drums' | 'melody';
+export type PatternGenre = 'pop'|'rock'|'jazz'|'blues'|'edm'|'hip-hop'|'r&b'|'funk'|'latin'|'reggae'|'country'|'metal'|'classical'|'ambient'|'lo-fi'|'trap'|'house'|'techno'|'disco'|'soul'|'gospel'|'cinematic'|'synthwave'|'dnb'|'afrobeat'|'world';
 
-export type PatternNote = {
-    pitch: number;
-    velocity: number;
-    startBeat: number;
-    durationBeats: number;
+export type PatternNote = { pitch: number; velocity: number; startBeat: number; durationBeats: number };
+
+export type GenerationParams = {
+    key: KeyName;
+    scale: ScaleType;
+    density: number;   // 1-10, how many notes
+    complexity: number; // 1-10, rhythmic/harmonic complexity
 };
 
-export type MidiPattern = {
+/** Abstract template — degree-based, key-agnostic */
+export type PatternTemplate = {
     id: string;
     name: string;
     category: PatternCategory;
+    genres: PatternGenre[];
     tags: string[];
-    key?: string;
-    timeSignature?: string;
+    description: string;
+    /** Generator: produces notes given params. */
+    generate: (params: GenerationParams) => PatternNote[];
     lengthBeats: number;
-    notes: PatternNote[];
 };
 
-// ── Helpers ──
-
-/** Build a chord (simultaneous notes) at a given beat */
-const chord = (pitches: number[], startBeat: number, duration: number, velocity = 80): PatternNote[] =>
-    pitches.map((pitch) => ({ pitch, velocity, startBeat, durationBeats: duration }));
-
-/** Build a single note */
-const n = (pitch: number, startBeat: number, duration: number, velocity = 80): PatternNote => ({
-    pitch,
-    velocity,
-    startBeat,
-    durationBeats: duration,
-});
-
-// ── Chord Progression Patterns ──
-
-const CHORD_PATTERNS: MidiPattern[] = [
-    {
-        id: 'chord-pop-1564',
-        name: 'Pop I–V–vi–IV',
-        category: 'chords',
-        tags: ['pop', 'common', 'major'],
-        key: 'C',
-        timeSignature: '4/4',
-        lengthBeats: 16,
-        notes: [
-            // I — C major (bars 1)
-            ...chord([60, 64, 67], 0, 4),
-            // V — G major (bar 2)
-            ...chord([55, 59, 62], 4, 4),
-            // vi — A minor (bar 3)
-            ...chord([57, 60, 64], 8, 4),
-            // IV — F major (bar 4)
-            ...chord([53, 57, 60], 12, 4),
-        ],
-    },
-    {
-        id: 'chord-jazz-251',
-        name: 'Jazz ii–V–I',
-        category: 'chords',
-        tags: ['jazz', 'classic', 'major'],
-        key: 'C',
-        timeSignature: '4/4',
-        lengthBeats: 12,
-        notes: [
-            // ii — Dm7
-            ...chord([62, 65, 69, 72], 0, 4, 75),
-            // V — G7
-            ...chord([55, 59, 62, 65], 4, 4, 75),
-            // I — Cmaj7
-            ...chord([60, 64, 67, 71], 8, 4, 75),
-        ],
-    },
-    {
-        id: 'chord-minor-1-4-5',
-        name: 'Minor i–iv–v',
-        category: 'chords',
-        tags: ['minor', 'dark', 'emotional'],
-        key: 'Am',
-        timeSignature: '4/4',
-        lengthBeats: 12,
-        notes: [
-            // i — Am
-            ...chord([57, 60, 64], 0, 4),
-            // iv — Dm
-            ...chord([62, 65, 69], 4, 4),
-            // v — Em
-            ...chord([64, 67, 71], 8, 4),
-        ],
-    },
-    {
-        id: 'chord-12bar-blues',
-        name: '12-Bar Blues',
-        category: 'chords',
-        tags: ['blues', 'classic', 'rock'],
-        key: 'C',
-        timeSignature: '4/4',
-        lengthBeats: 48,
-        notes: [
-            // I I I I  (bars 1-4)
-            ...chord([60, 64, 67], 0, 4), ...chord([60, 64, 67], 4, 4),
-            ...chord([60, 64, 67], 8, 4), ...chord([60, 64, 67], 12, 4),
-            // IV IV I I  (bars 5-8)
-            ...chord([65, 69, 72], 16, 4), ...chord([65, 69, 72], 20, 4),
-            ...chord([60, 64, 67], 24, 4), ...chord([60, 64, 67], 28, 4),
-            // V IV I V  (bars 9-12)
-            ...chord([67, 71, 74], 32, 4), ...chord([65, 69, 72], 36, 4),
-            ...chord([60, 64, 67], 40, 4), ...chord([67, 71, 74], 44, 4),
-        ],
-    },
-    {
-        id: 'chord-sad-6415',
-        name: 'Sad vi–IV–I–V',
-        category: 'chords',
-        tags: ['emotional', 'ballad', 'pop'],
-        key: 'C',
-        timeSignature: '4/4',
-        lengthBeats: 16,
-        notes: [
-            ...chord([57, 60, 64], 0, 4),   // vi — Am
-            ...chord([53, 57, 60], 4, 4),   // IV — F
-            ...chord([60, 64, 67], 8, 4),   // I  — C
-            ...chord([55, 59, 62], 12, 4),  // V  — G
-        ],
-    },
-    {
-        id: 'chord-edm-power',
-        name: 'EDM Power Chords',
-        category: 'chords',
-        tags: ['edm', 'electronic', 'big'],
-        key: 'Am',
-        timeSignature: '4/4',
-        lengthBeats: 16,
-        notes: [
-            // A5
-            ...chord([45, 57, 64], 0, 2, 100), ...chord([45, 57, 64], 2, 2, 90),
-            // F5
-            ...chord([41, 53, 60], 4, 2, 100), ...chord([41, 53, 60], 6, 2, 90),
-            // C5
-            ...chord([48, 60, 67], 8, 2, 100), ...chord([48, 60, 67], 10, 2, 90),
-            // G5
-            ...chord([43, 55, 62], 12, 2, 100), ...chord([43, 55, 62], 14, 2, 90),
-        ],
-    },
-];
-
-// ── Bass Line Patterns ──
-
-const BASS_PATTERNS: MidiPattern[] = [
-    {
-        id: 'bass-walking',
-        name: 'Walking Bass',
-        category: 'bass',
-        tags: ['jazz', 'walking', 'classic'],
-        key: 'C',
-        timeSignature: '4/4',
-        lengthBeats: 8,
-        notes: [
-            n(36, 0, 1, 90), n(38, 1, 1, 80), n(40, 2, 1, 85), n(41, 3, 1, 80),
-            n(43, 4, 1, 90), n(41, 5, 1, 80), n(40, 6, 1, 85), n(38, 7, 1, 80),
-        ],
-    },
-    {
-        id: 'bass-octave-pump',
-        name: 'Octave Pump',
-        category: 'bass',
-        tags: ['rock', 'driving', 'simple'],
-        key: 'E',
-        timeSignature: '4/4',
-        lengthBeats: 8,
-        notes: [
-            n(28, 0, 0.5, 100), n(40, 0.5, 0.5, 85),
-            n(28, 1, 0.5, 100), n(40, 1.5, 0.5, 85),
-            n(28, 2, 0.5, 100), n(40, 2.5, 0.5, 85),
-            n(28, 3, 0.5, 100), n(40, 3.5, 0.5, 85),
-            n(28, 4, 0.5, 100), n(40, 4.5, 0.5, 85),
-            n(28, 5, 0.5, 100), n(40, 5.5, 0.5, 85),
-            n(28, 6, 0.5, 100), n(40, 6.5, 0.5, 85),
-            n(28, 7, 0.5, 100), n(40, 7.5, 0.5, 85),
-        ],
-    },
-    {
-        id: 'bass-funk-slap',
-        name: 'Funk Slap',
-        category: 'bass',
-        tags: ['funk', 'groove', 'syncopated'],
-        key: 'E',
-        timeSignature: '4/4',
-        lengthBeats: 8,
-        notes: [
-            n(28, 0, 0.25, 110), n(28, 0.5, 0.25, 60), n(40, 0.75, 0.25, 95),
-            n(28, 1.5, 0.25, 100), n(40, 2, 0.5, 85),
-            n(28, 3, 0.25, 110), n(31, 3.5, 0.25, 80), n(33, 3.75, 0.25, 75),
-            n(28, 4, 0.25, 110), n(28, 4.5, 0.25, 60), n(40, 4.75, 0.25, 95),
-            n(28, 5.5, 0.25, 100), n(40, 6, 0.5, 85),
-            n(28, 7, 0.25, 110), n(31, 7.5, 0.25, 80),
-        ],
-    },
-    {
-        id: 'bass-reggae-one-drop',
-        name: 'Reggae One-Drop',
-        category: 'bass',
-        tags: ['reggae', 'dub', 'relaxed'],
-        key: 'Am',
-        timeSignature: '4/4',
-        lengthBeats: 8,
-        notes: [
-            n(33, 2.5, 0.5, 90),
-            n(33, 3, 1, 85),
-            n(33, 6.5, 0.5, 90),
-            n(33, 7, 1, 85),
-        ],
-    },
-    {
-        id: 'bass-edm-sub',
-        name: 'EDM Sub Bass',
-        category: 'bass',
-        tags: ['edm', 'electronic', 'sub'],
-        key: 'A',
-        timeSignature: '4/4',
-        lengthBeats: 16,
-        notes: [
-            n(33, 0, 4, 100),  // A1 sustained
-            n(29, 4, 4, 100),  // F1
-            n(36, 8, 4, 100),  // C2
-            n(31, 12, 4, 100), // G1
-        ],
-    },
-];
-
-// ── Drum Patterns ──
-
-// GM drum map constants (used in patterns above)
-const KICK = 36;
-const SNARE = 38;
-const CLOSED_HH = 42;
-const OPEN_HH = 46;
-const CLAP = 39;
-const RIDE = 51;
-
-const DRUM_PATTERNS: MidiPattern[] = [
-    {
-        id: 'drums-four-on-floor',
-        name: '4-on-the-Floor',
-        category: 'drums',
-        tags: ['house', 'disco', 'edm', 'dance'],
-        timeSignature: '4/4',
-        lengthBeats: 8,
-        notes: [
-            // Kick on every beat
-            n(KICK, 0, 0.25, 100), n(KICK, 1, 0.25, 100), n(KICK, 2, 0.25, 100), n(KICK, 3, 0.25, 100),
-            n(KICK, 4, 0.25, 100), n(KICK, 5, 0.25, 100), n(KICK, 6, 0.25, 100), n(KICK, 7, 0.25, 100),
-            // Clap on 2 & 4
-            n(CLAP, 1, 0.25, 95), n(CLAP, 3, 0.25, 95), n(CLAP, 5, 0.25, 95), n(CLAP, 7, 0.25, 95),
-            // Hihats on 8ths
-            n(CLOSED_HH, 0, 0.25, 70), n(CLOSED_HH, 0.5, 0.25, 55),
-            n(CLOSED_HH, 1, 0.25, 70), n(CLOSED_HH, 1.5, 0.25, 55),
-            n(CLOSED_HH, 2, 0.25, 70), n(CLOSED_HH, 2.5, 0.25, 55),
-            n(CLOSED_HH, 3, 0.25, 70), n(OPEN_HH, 3.5, 0.25, 65),
-            n(CLOSED_HH, 4, 0.25, 70), n(CLOSED_HH, 4.5, 0.25, 55),
-            n(CLOSED_HH, 5, 0.25, 70), n(CLOSED_HH, 5.5, 0.25, 55),
-            n(CLOSED_HH, 6, 0.25, 70), n(CLOSED_HH, 6.5, 0.25, 55),
-            n(CLOSED_HH, 7, 0.25, 70), n(OPEN_HH, 7.5, 0.25, 65),
-        ],
-    },
-    {
-        id: 'drums-breakbeat',
-        name: 'Classic Breakbeat',
-        category: 'drums',
-        tags: ['breakbeat', 'hip-hop', 'funk'],
-        timeSignature: '4/4',
-        lengthBeats: 8,
-        notes: [
-            // Kick
-            n(KICK, 0, 0.25, 100), n(KICK, 2.5, 0.25, 90),
-            n(KICK, 4, 0.25, 100), n(KICK, 6.5, 0.25, 90),
-            // Snare on 2 & 4
-            n(SNARE, 1, 0.25, 100), n(SNARE, 3, 0.25, 100),
-            n(SNARE, 5, 0.25, 100), n(SNARE, 7, 0.25, 100),
-            // Hihats
-            n(CLOSED_HH, 0, 0.25, 80), n(CLOSED_HH, 0.5, 0.25, 60),
-            n(CLOSED_HH, 1, 0.25, 80), n(CLOSED_HH, 1.5, 0.25, 60),
-            n(CLOSED_HH, 2, 0.25, 80), n(CLOSED_HH, 2.5, 0.25, 60),
-            n(CLOSED_HH, 3, 0.25, 80), n(CLOSED_HH, 3.5, 0.25, 60),
-            n(CLOSED_HH, 4, 0.25, 80), n(CLOSED_HH, 4.5, 0.25, 60),
-            n(CLOSED_HH, 5, 0.25, 80), n(CLOSED_HH, 5.5, 0.25, 60),
-            n(CLOSED_HH, 6, 0.25, 80), n(CLOSED_HH, 6.5, 0.25, 60),
-            n(CLOSED_HH, 7, 0.25, 80), n(CLOSED_HH, 7.5, 0.25, 60),
-        ],
-    },
-    {
-        id: 'drums-bossa-nova',
-        name: 'Bossa Nova',
-        category: 'drums',
-        tags: ['bossa', 'latin', 'jazz', 'chill'],
-        timeSignature: '4/4',
-        lengthBeats: 8,
-        notes: [
-            // Cross-stick on 2 & 4
-            n(SNARE, 1, 0.25, 60), n(SNARE, 3, 0.25, 60),
-            n(SNARE, 5, 0.25, 60), n(SNARE, 7, 0.25, 60),
-            // Kick (bossa pattern)
-            n(KICK, 0, 0.25, 80), n(KICK, 2.5, 0.25, 70),
-            n(KICK, 4, 0.25, 80), n(KICK, 6.5, 0.25, 70),
-            // Ride 8ths
-            n(RIDE, 0, 0.25, 65), n(RIDE, 0.5, 0.25, 50),
-            n(RIDE, 1, 0.25, 65), n(RIDE, 1.5, 0.25, 50),
-            n(RIDE, 2, 0.25, 65), n(RIDE, 2.5, 0.25, 50),
-            n(RIDE, 3, 0.25, 65), n(RIDE, 3.5, 0.25, 50),
-            n(RIDE, 4, 0.25, 65), n(RIDE, 4.5, 0.25, 50),
-            n(RIDE, 5, 0.25, 65), n(RIDE, 5.5, 0.25, 50),
-            n(RIDE, 6, 0.25, 65), n(RIDE, 6.5, 0.25, 50),
-            n(RIDE, 7, 0.25, 65), n(RIDE, 7.5, 0.25, 50),
-        ],
-    },
-    {
-        id: 'drums-trap-hihats',
-        name: 'Trap Hi-Hats',
-        category: 'drums',
-        tags: ['trap', 'hip-hop', 'modern'],
-        timeSignature: '4/4',
-        lengthBeats: 8,
-        notes: [
-            // 808 Kick
-            n(KICK, 0, 0.25, 110), n(KICK, 3.75, 0.25, 100),
-            n(KICK, 4, 0.25, 110), n(KICK, 7.75, 0.25, 100),
-            // Snare/Clap on 2 & 4
-            n(CLAP, 1, 0.25, 100), n(CLAP, 3, 0.25, 100),
-            n(CLAP, 5, 0.25, 100), n(CLAP, 7, 0.25, 100),
-            // Rapid hi-hats (16ths with rolls)
-            ...[0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3, 3.25, 3.5, 3.75,
-                4, 4.25, 4.5, 4.75, 5, 5.25, 5.5, 5.75, 6, 6.25, 6.5, 6.75, 7, 7.25, 7.5, 7.75,
-            ].map((beat) => n(CLOSED_HH, beat, 0.125, 50 + Math.round(Math.random() * 40))),
-        ],
-    },
-    {
-        id: 'drums-jazz-swing',
-        name: 'Jazz Swing',
-        category: 'drums',
-        tags: ['jazz', 'swing', 'classic'],
-        timeSignature: '4/4',
-        lengthBeats: 8,
-        notes: [
-            // Ride pattern (swing feel — quarter + swung 8th)
-            n(RIDE, 0, 0.25, 80), n(RIDE, 0.67, 0.25, 55),
-            n(RIDE, 1, 0.25, 80), n(RIDE, 1.67, 0.25, 55),
-            n(RIDE, 2, 0.25, 80), n(RIDE, 2.67, 0.25, 55),
-            n(RIDE, 3, 0.25, 80), n(RIDE, 3.67, 0.25, 55),
-            n(RIDE, 4, 0.25, 80), n(RIDE, 4.67, 0.25, 55),
-            n(RIDE, 5, 0.25, 80), n(RIDE, 5.67, 0.25, 55),
-            n(RIDE, 6, 0.25, 80), n(RIDE, 6.67, 0.25, 55),
-            n(RIDE, 7, 0.25, 80), n(RIDE, 7.67, 0.25, 55),
-            // Hi-hat foot on 2 & 4
-            n(CLOSED_HH, 1, 0.25, 50), n(CLOSED_HH, 3, 0.25, 50),
-            n(CLOSED_HH, 5, 0.25, 50), n(CLOSED_HH, 7, 0.25, 50),
-            // Kick ghosting
-            n(KICK, 0, 0.25, 70), n(KICK, 4, 0.25, 70),
-        ],
-    },
-    {
-        id: 'drums-halftime',
-        name: 'Half-Time Feel',
-        category: 'drums',
-        tags: ['cinematic', 'ambient', 'slow'],
-        timeSignature: '4/4',
-        lengthBeats: 8,
-        notes: [
-            n(KICK, 0, 0.25, 100),
-            n(SNARE, 2, 0.25, 95),
-            n(KICK, 4, 0.25, 100),
-            n(SNARE, 6, 0.25, 95),
-            // Ride 8ths
-            n(RIDE, 0, 0.25, 60), n(RIDE, 0.5, 0.25, 45),
-            n(RIDE, 1, 0.25, 60), n(RIDE, 1.5, 0.25, 45),
-            n(RIDE, 2, 0.25, 60), n(RIDE, 2.5, 0.25, 45),
-            n(RIDE, 3, 0.25, 60), n(RIDE, 3.5, 0.25, 45),
-            n(RIDE, 4, 0.25, 60), n(RIDE, 4.5, 0.25, 45),
-            n(RIDE, 5, 0.25, 60), n(RIDE, 5.5, 0.25, 45),
-            n(RIDE, 6, 0.25, 60), n(RIDE, 6.5, 0.25, 45),
-            n(RIDE, 7, 0.25, 60), n(RIDE, 7.5, 0.25, 45),
-        ],
-    },
-];
-
-// ── Melody / Arpeggio Patterns ──
-
-const MELODY_PATTERNS: MidiPattern[] = [
-    {
-        id: 'melody-arp-cmaj',
-        name: 'C Maj Arpeggio',
-        category: 'melody',
-        tags: ['arpeggio', 'major', 'simple'],
-        key: 'C',
-        timeSignature: '4/4',
-        lengthBeats: 8,
-        notes: [
-            n(60, 0, 0.5, 80), n(64, 0.5, 0.5, 75), n(67, 1, 0.5, 70), n(72, 1.5, 0.5, 75),
-            n(67, 2, 0.5, 70), n(64, 2.5, 0.5, 75), n(60, 3, 0.5, 80), n(64, 3.5, 0.5, 75),
-            n(60, 4, 0.5, 80), n(64, 4.5, 0.5, 75), n(67, 5, 0.5, 70), n(72, 5.5, 0.5, 75),
-            n(67, 6, 0.5, 70), n(64, 6.5, 0.5, 75), n(60, 7, 0.5, 80), n(64, 7.5, 0.5, 75),
-        ],
-    },
-    {
-        id: 'melody-pentatonic-riff',
-        name: 'Pentatonic Riff',
-        category: 'melody',
-        tags: ['riff', 'pentatonic', 'rock'],
-        key: 'Am',
-        timeSignature: '4/4',
-        lengthBeats: 8,
-        notes: [
-            n(57, 0, 0.5, 85), n(60, 0.5, 0.5, 80), n(62, 1, 1, 90),
-            n(64, 2, 0.5, 85), n(67, 2.5, 0.5, 80), n(64, 3, 0.5, 75), n(62, 3.5, 0.5, 80),
-            n(60, 4, 1, 85), n(57, 5, 0.5, 80), n(60, 5.5, 0.5, 75),
-            n(62, 6, 1, 90), n(60, 7, 1, 85),
-        ],
-    },
-    {
-        id: 'melody-scale-c-major',
-        name: 'C Major Scale',
-        category: 'melody',
-        tags: ['scale', 'major', 'educational'],
-        key: 'C',
-        timeSignature: '4/4',
-        lengthBeats: 8,
-        notes: [
-            n(60, 0, 1, 80), n(62, 1, 1, 80), n(64, 2, 1, 80), n(65, 3, 1, 80),
-            n(67, 4, 1, 80), n(69, 5, 1, 80), n(71, 6, 1, 80), n(72, 7, 1, 80),
-        ],
-    },
-    {
-        id: 'melody-minor-arp',
-        name: 'Am Arpeggio',
-        category: 'melody',
-        tags: ['arpeggio', 'minor', 'emotional'],
-        key: 'Am',
-        timeSignature: '4/4',
-        lengthBeats: 8,
-        notes: [
-            n(57, 0, 0.5, 80), n(60, 0.5, 0.5, 75), n(64, 1, 0.5, 70), n(69, 1.5, 0.5, 75),
-            n(64, 2, 0.5, 70), n(60, 2.5, 0.5, 75), n(57, 3, 0.5, 80), n(60, 3.5, 0.5, 75),
-            n(57, 4, 0.5, 80), n(60, 4.5, 0.5, 75), n(64, 5, 0.5, 70), n(69, 5.5, 0.5, 75),
-            n(64, 6, 0.5, 70), n(60, 6.5, 0.5, 75), n(57, 7, 0.5, 80), n(60, 7.5, 0.5, 75),
-        ],
-    },
-    {
-        id: 'melody-lofi-phrase',
-        name: 'Lo-Fi Melody',
-        category: 'melody',
-        tags: ['lofi', 'chill', 'jazzy'],
-        key: 'Dm',
-        timeSignature: '4/4',
-        lengthBeats: 8,
-        notes: [
-            n(65, 0, 1, 70), n(69, 1, 0.5, 65), n(72, 1.5, 1.5, 60),
-            n(70, 3, 0.5, 65), n(69, 3.5, 0.5, 70),
-            n(65, 4, 1, 75), n(67, 5, 0.5, 65), n(69, 5.5, 1, 60),
-            n(67, 6.5, 0.5, 65), n(65, 7, 1, 70),
-        ],
-    },
-];
-
-// ── Exports ──
-
-export const ALL_PATTERNS: MidiPattern[] = [
-    ...CHORD_PATTERNS,
-    ...BASS_PATTERNS,
-    ...DRUM_PATTERNS,
-    ...MELODY_PATTERNS,
-];
-
 export const PATTERN_CATEGORIES: { id: PatternCategory; label: string }[] = [
-    { id: 'chords', label: 'Chords' },
-    { id: 'bass', label: 'Bass' },
-    { id: 'drums', label: 'Drums' },
-    { id: 'melody', label: 'Melody' },
+    { id: 'chords', label: 'Chords' }, { id: 'bass', label: 'Bass' },
+    { id: 'drums', label: 'Drums' }, { id: 'melody', label: 'Melody' },
 ];
 
-export function searchPatterns(query: string, category?: PatternCategory): MidiPattern[] {
-    const q = query.toLowerCase().trim();
-    let results = ALL_PATTERNS;
+export const ALL_GENRES: { id: PatternGenre; label: string }[] = [
+    { id:'pop', label:'Pop' },{ id:'rock', label:'Rock' },{ id:'jazz', label:'Jazz' },
+    { id:'blues', label:'Blues' },{ id:'edm', label:'EDM' },{ id:'hip-hop', label:'Hip-Hop' },
+    { id:'r&b', label:'R&B' },{ id:'funk', label:'Funk' },{ id:'latin', label:'Latin' },
+    { id:'reggae', label:'Reggae' },{ id:'country', label:'Country' },{ id:'metal', label:'Metal' },
+    { id:'classical', label:'Classical' },{ id:'ambient', label:'Ambient' },{ id:'lo-fi', label:'Lo-Fi' },
+    { id:'trap', label:'Trap' },{ id:'house', label:'House' },{ id:'techno', label:'Techno' },
+    { id:'disco', label:'Disco' },{ id:'soul', label:'Soul' },{ id:'gospel', label:'Gospel' },
+    { id:'cinematic', label:'Cinematic' },{ id:'synthwave', label:'Synthwave' },
+    { id:'dnb', label:'DnB' },{ id:'afrobeat', label:'Afrobeat' },{ id:'world', label:'World' },
+];
 
-    if (category) {
-        results = results.filter((p) => p.category === category);
+// ── Generator helpers ──
+
+/** Build chord from scale degrees (0-indexed) at a beat */
+function chordFromDegrees(degrees: number[], scalePitches: number[], octaveBase: number, beat: number, dur: number, vel = 80): PatternNote[] {
+    return degrees.map((deg) => {
+        const idx = Math.min(deg + octaveBase, scalePitches.length - 1);
+        return { pitch: scalePitches[Math.max(0, idx)]!, velocity: vel, startBeat: beat, durationBeats: dur };
+    });
+}
+
+/** GM Drum constants */
+const KK = 36, SN = 38, CH = 42, OH = 46, CL = 39, RD = 51;
+
+// ══════════════════════════════════════════════════════════════════════════
+// TEMPLATES
+// ══════════════════════════════════════════════════════════════════════════
+
+export const PATTERN_TEMPLATES: PatternTemplate[] = [
+    // ── CHORDS ──
+    { id:'ch-1564', name:'I–V–vi–IV (Pop)', category:'chords', genres:['pop','rock'], tags:['anthem','common'], description:'The most common pop progression', lengthBeats:16,
+      generate: (p) => { const sp = getScalePitches(p.key, p.scale, 48, 84); const o = Math.max(0, sp.indexOf(snapToScale(60, sp)) - 0); const d = p.density > 5 ? 2 : 4;
+        const beats = Array.from({length: 16/d}, (_,i) => i*d); const degs = [[0,2,4],[4,6,8],[5,7,9],[3,5,7]]; return beats.flatMap((b,i) => chordFromDegrees(p.complexity>5 ? [...degs[i%4]!,degs[i%4]![0]!+7] : degs[i%4]!, sp, o, b, d, 75+p.density*2)); }},
+    { id:'ch-251', name:'ii–V–I (Jazz)', category:'chords', genres:['jazz','lo-fi','soul'], tags:['classic','smooth'], description:'Classic jazz cadence', lengthBeats:12,
+      generate: (p) => { const sp = getScalePitches(p.key, p.scale, 48, 84); const o = Math.max(0,sp.indexOf(snapToScale(60,sp))-0); return [[1,3,5,7],[4,6,8,10],[0,2,4,6]].flatMap((deg,i) => chordFromDegrees(p.complexity>5? deg : deg.slice(0,3), sp, o, i*4, 4, 72+p.density*2)); }},
+    { id:'ch-minor145', name:'i–iv–v (Minor)', category:'chords', genres:['rock','pop','metal'], tags:['dark','moody'], description:'Classic minor progression', lengthBeats:12,
+      generate: (p) => { const sp = getScalePitches(p.key, p.scale==='major'?'minor':p.scale, 48, 84); const o = Math.max(0,sp.indexOf(snapToScale(57,sp))-0); return [[0,2,4],[3,5,7],[4,6,8]].flatMap((deg,i) => chordFromDegrees(deg, sp, o, i*4, 4, 78)); }},
+    { id:'ch-blues12', name:'12-Bar Blues', category:'chords', genres:['blues','rock','jazz'], tags:['classic','shuffle'], description:'12-bar blues form', lengthBeats:48,
+      generate: (p) => { const sp = getScalePitches(p.key, 'blues', 48, 84); const o = Math.max(0,sp.indexOf(snapToScale(60,sp))-0); const pat = [0,0,0,0,3,3,0,0,4,3,0,4]; return pat.flatMap((root,i) => chordFromDegrees([root,root+2,root+4], sp, o, i*4, 4, 78)); }},
+    { id:'ch-sad', name:'vi–IV–I–V (Sad)', category:'chords', genres:['pop','r&b','soul'], tags:['ballad','emotional'], description:'Emotional descending progression', lengthBeats:16,
+      generate: (p) => { const sp = getScalePitches(p.key, p.scale, 48, 84); const o = Math.max(0,sp.indexOf(snapToScale(60,sp))-0); return [[5,7,9],[3,5,7],[0,2,4],[4,6,8]].flatMap((deg,i) => chordFromDegrees(deg, sp, o, i*4, 4, 75)); }},
+    { id:'ch-andalusian', name:'Andalusian Cadence', category:'chords', genres:['classical','world','metal'], tags:['flamenco','dramatic'], description:'Spanish cadence i–VII–VI–V', lengthBeats:16,
+      generate: (p) => { const sp = getScalePitches(p.key, 'harmonic-minor', 48, 84); const o = Math.max(0,sp.indexOf(snapToScale(57,sp))-0); return [[0,2,4],[6,8,10],[5,7,9],[4,6,8]].flatMap((deg,i) => chordFromDegrees(deg, sp, o, i*4, 4, 80)); }},
+    { id:'ch-dorian', name:'Dorian Vamp', category:'chords', genres:['funk','jazz','r&b'], tags:['groove','modal'], description:'Two-chord dorian groove', lengthBeats:8,
+      generate: (p) => { const sp = getScalePitches(p.key, 'dorian', 48, 84); const o = Math.max(0,sp.indexOf(snapToScale(62,sp))-0); return [[0,2,4,6],[5,7,9,11]].flatMap((deg,i) => chordFromDegrees(p.complexity>5?deg:deg.slice(0,3), sp, o, i*4, 4, 78)); }},
+    { id:'ch-edm', name:'EDM Power', category:'chords', genres:['edm','house','techno'], tags:['big','anthem'], description:'Big EDM chord stabs', lengthBeats:16,
+      generate: (p) => { const sp = getScalePitches(p.key, p.scale==='major'?'minor':p.scale, 36, 84); const o = Math.max(0,sp.indexOf(snapToScale(45,sp))-0); return [0,3,5,4].flatMap((root,i) => { const deg = [root,root+2,root+4]; const b=i*4; return [...chordFromDegrees(deg,sp,o,b,2,100),...chordFromDegrees(deg,sp,o,b+2,2,90)]; }); }},
+    { id:'ch-gospel', name:'Gospel IV–vi–iii', category:'chords', genres:['gospel','soul','r&b'], tags:['worship','uplifting'], description:'Gospel praise progression', lengthBeats:12,
+      generate: (p) => { const sp = getScalePitches(p.key, p.scale, 48, 84); const o = Math.max(0,sp.indexOf(snapToScale(60,sp))-0); return [[3,5,7,9],[5,7,9,11],[2,4,6,8]].flatMap((deg,i) => chordFromDegrees(p.complexity>5?deg:deg.slice(0,3), sp, o, i*4, 4, 82)); }},
+    { id:'ch-trap', name:'Trap Minor', category:'chords', genres:['trap','hip-hop'], tags:['dark','808'], description:'Dark minor trap chords', lengthBeats:16,
+      generate: (p) => { const sp = getScalePitches(p.key, 'minor', 36, 84); const o = Math.max(0,sp.indexOf(snapToScale(48,sp))-0); return [0,6,5,4].flatMap((root,i) => chordFromDegrees([root,root+2,root+4], sp, o, i*4, 4, 85)); }},
+    { id:'ch-synthpad', name:'Synthwave Pad', category:'chords', genres:['synthwave','ambient','cinematic'], tags:['pad','atmospheric'], description:'Atmospheric synth pads', lengthBeats:16,
+      generate: (p) => { const sp = getScalePitches(p.key, 'minor', 48, 84); const o = Math.max(0,sp.indexOf(snapToScale(57,sp))-0); return [[0,2,4,7],[3,5,7,10],[4,6,8,11],[2,4,6,9]].flatMap((deg,i) => chordFromDegrees(deg, sp, o, i*4, 4, 68)); }},
+    { id:'ch-reggae', name:'Reggae Skank', category:'chords', genres:['reggae','world'], tags:['offbeat','island'], description:'Offbeat reggae chords', lengthBeats:8,
+      generate: (p) => { const sp = getScalePitches(p.key, p.scale, 60, 84); const o = 0; return [[0,2,4],[4,6,8],[5,7,9],[3,5,7]].flatMap((deg,i) => chordFromDegrees(deg, sp, o, i*2+0.5, 0.5, 75)); }},
+    { id:'ch-country', name:'Country I–IV–V', category:'chords', genres:['country','rock','pop'], tags:['simple','classic'], description:'Simple three-chord country', lengthBeats:16,
+      generate: (p) => { const sp = getScalePitches(p.key, p.scale, 48, 84); const o = Math.max(0,sp.indexOf(snapToScale(55,sp))-0); return [[0,2,4],[0,2,4],[3,5,7],[4,6,8]].flatMap((deg,i) => chordFromDegrees(deg, sp, o, i*4, 4, 80)); }},
+    { id:'ch-disco', name:'Disco Groove', category:'chords', genres:['disco','funk','house'], tags:['danceable','retro'], description:'Rhythmic disco chords', lengthBeats:8,
+      generate: (p) => { const sp = getScalePitches(p.key, p.scale, 60, 84); const o = 0; const notes: PatternNote[] = []; [[0,2,4],[5,7,9],[3,5,7],[4,6,8]].forEach((deg,i) => { notes.push(...chordFromDegrees(deg,sp,o,i*2,1,80)); notes.push(...chordFromDegrees(deg,sp,o,i*2+1,0.5,65)); }); return notes; }},
+    { id:'ch-dnb', name:'DnB Stab', category:'chords', genres:['dnb','edm'], tags:['stab','energy'], description:'Quick synth stabs', lengthBeats:8,
+      generate: (p) => { const sp = getScalePitches(p.key, 'minor', 60, 84); const o = 0; return [[0,2,4],[3,5,7],[4,6,8]].flatMap((deg,i) => [...chordFromDegrees(deg,sp,o,i*2.5,0.25,100), ...chordFromDegrees(deg,sp,o,i*2.5+1.5,0.25,85)]); }},
+
+    // ── BASS ──
+    { id:'bs-walking', name:'Walking Bass', category:'bass', genres:['jazz','blues'], tags:['classic','smooth'], description:'Stepwise jazz walking bass', lengthBeats:8,
+      generate: (p) => { const sp = getScalePitches(p.key, p.scale, 28, 55); const mid = Math.floor(sp.length/2); const notes: PatternNote[] = []; let idx = mid; for (let b=0; b<8; b++) { notes.push({pitch:sp[idx]!,velocity:80+Math.round(p.density*2),startBeat:b,durationBeats:1}); idx += (b<4?1:-1); idx = Math.max(0,Math.min(sp.length-1,idx)); } return notes; }},
+    { id:'bs-octpump', name:'Octave Pump', category:'bass', genres:['rock','metal'], tags:['driving','power'], description:'Root-octave pump pattern', lengthBeats:4,
+      generate: (p) => { const root = (KEY_SEMITONES[p.key]??0)+28; const step = p.density>5 ? 0.25 : 0.5; const notes: PatternNote[] = []; for (let b=0; b<4; b+=step) { notes.push({pitch: b%(step*2)<step ? root : root+12, velocity: b%(step*2)<step ? 100 : 85, startBeat:b, durationBeats:step}); } return notes; }},
+    { id:'bs-funkslap', name:'Funk Slap', category:'bass', genres:['funk','r&b','disco'], tags:['groove','slap'], description:'Syncopated funk bass', lengthBeats:4,
+      generate: (p) => { const sp = getScalePitches(p.key, 'pentatonic-minor', 28, 48); const r = sp[0]!; return [{pitch:r,velocity:110,startBeat:0,durationBeats:0.25}, {pitch:r+12,velocity:95,startBeat:0.75,durationBeats:0.25}, {pitch:r,velocity:100,startBeat:1.5,durationBeats:0.25}, {pitch:r+12,velocity:85,startBeat:2,durationBeats:0.5}, {pitch:r,velocity:110,startBeat:3,durationBeats:0.25}, {pitch:sp[1]!,velocity:80,startBeat:3.5,durationBeats:0.25}]; }},
+    { id:'bs-sub', name:'Sub Bass', category:'bass', genres:['edm','house','techno','trap'], tags:['sub','sustained'], description:'Long sustained sub bass notes', lengthBeats:16,
+      generate: (p) => { const sp = getScalePitches(p.key, p.scale, 28, 48); return [0,3,5,4].map((deg,i) => ({pitch:sp[Math.min(deg,sp.length-1)]!,velocity:100,startBeat:i*4,durationBeats:4})); }},
+    { id:'bs-hiphop', name:'Hip-Hop Bounce', category:'bass', genres:['hip-hop','trap','r&b'], tags:['bounce','808'], description:'808-style bouncy bass', lengthBeats:4,
+      generate: (p) => { const root = (KEY_SEMITONES[p.key]??0)+36; return [{pitch:root,velocity:110,startBeat:0,durationBeats:1.5},{pitch:root,velocity:90,startBeat:2,durationBeats:0.25},{pitch:root-2,velocity:85,startBeat:2.5,durationBeats:0.5},{pitch:root,velocity:100,startBeat:3,durationBeats:1}]; }},
+    { id:'bs-latin', name:'Latin Tumbao', category:'bass', genres:['latin','afrobeat','world'], tags:['tumbao','salsa'], description:'Salsa/Latin tumbao bass', lengthBeats:4,
+      generate: (p) => { const sp = getScalePitches(p.key, p.scale, 28, 55); const r = sp[0]!; return [{pitch:r,velocity:90,startBeat:0,durationBeats:0.5},{pitch:sp[3]!,velocity:80,startBeat:1.5,durationBeats:0.5},{pitch:sp[4]!,velocity:85,startBeat:2.5,durationBeats:0.5},{pitch:r,velocity:90,startBeat:3,durationBeats:1}]; }},
+    { id:'bs-reggae', name:'Reggae Drop', category:'bass', genres:['reggae','world'], tags:['offbeat','dub'], description:'Reggae one-drop bass', lengthBeats:4,
+      generate: (p) => { const root = (KEY_SEMITONES[p.key]??0)+33; return [{pitch:root,velocity:90,startBeat:2.5,durationBeats:0.5},{pitch:root,velocity:85,startBeat:3,durationBeats:1}]; }},
+    { id:'bs-metal', name:'Metal Gallop', category:'bass', genres:['metal','rock'], tags:['aggressive','chug'], description:'Galloping metal bass', lengthBeats:4,
+      generate: (p) => { const root = (KEY_SEMITONES[p.key]??0)+28; const notes: PatternNote[] = []; for (let b=0;b<4;b++) { notes.push({pitch:root,velocity:110,startBeat:b,durationBeats:0.25}); notes.push({pitch:root,velocity:80,startBeat:b+0.25,durationBeats:0.25}); notes.push({pitch:root,velocity:110,startBeat:b+0.5,durationBeats:0.25}); } return notes; }},
+    { id:'bs-ambient', name:'Ambient Drone', category:'bass', genres:['ambient','cinematic'], tags:['pad','atmospheric'], description:'Single sustained drone note', lengthBeats:16,
+      generate: (p) => { const root = (KEY_SEMITONES[p.key]??0)+36; return [{pitch:root,velocity:55+p.density*3,startBeat:0,durationBeats:16}]; }},
+    { id:'bs-disco', name:'Disco Bass', category:'bass', genres:['disco','funk','house'], tags:['groove','danceable'], description:'Groovy disco bass line', lengthBeats:4,
+      generate: (p) => { const sp = getScalePitches(p.key, p.scale, 28, 55); const r = sp[0]!; return [{pitch:r,velocity:95,startBeat:0,durationBeats:0.5},{pitch:r,velocity:70,startBeat:0.5,durationBeats:0.5},{pitch:r,velocity:95,startBeat:1,durationBeats:0.5},{pitch:r,velocity:70,startBeat:1.5,durationBeats:0.5},{pitch:r,velocity:95,startBeat:2,durationBeats:0.5},{pitch:sp[3]!,velocity:80,startBeat:2.5,durationBeats:0.5},{pitch:sp[4]!,velocity:85,startBeat:3,durationBeats:0.5},{pitch:sp[5]||sp[4]!,velocity:80,startBeat:3.5,durationBeats:0.5}]; }},
+    { id:'bs-country', name:'Country Root-Fifth', category:'bass', genres:['country','pop'], tags:['simple','classic'], description:'Simple root-fifth alternation', lengthBeats:4,
+      generate: (p) => { const sp = getScalePitches(p.key, p.scale, 28, 55); return [{pitch:sp[0]!,velocity:90,startBeat:0,durationBeats:1},{pitch:sp[0]!,velocity:80,startBeat:1,durationBeats:1},{pitch:sp[4]||sp[3]!,velocity:85,startBeat:2,durationBeats:1},{pitch:sp[4]||sp[3]!,velocity:80,startBeat:3,durationBeats:1}]; }},
+    { id:'bs-dnb', name:'DnB Reese', category:'bass', genres:['dnb','edm'], tags:['reese','dark'], description:'Aggressive DnB bass pattern', lengthBeats:8,
+      generate: (p) => { const sp = getScalePitches(p.key, 'minor', 28, 48); return [{pitch:sp[0]!,velocity:100,startBeat:0,durationBeats:1.5},{pitch:sp[Math.min(6,sp.length-1)]!,velocity:85,startBeat:2,durationBeats:0.5},{pitch:sp[0]!,velocity:90,startBeat:3,durationBeats:1},{pitch:sp[Math.min(3,sp.length-1)]!,velocity:100,startBeat:4,durationBeats:1.5},{pitch:sp[0]!,velocity:85,startBeat:6,durationBeats:0.5},{pitch:sp[Math.min(6,sp.length-1)]!,velocity:90,startBeat:7,durationBeats:1}]; }},
+
+    // ── DRUMS (key-agnostic) ──
+    { id:'dr-4floor', name:'4-on-the-Floor', category:'drums', genres:['house','disco','edm','techno'], tags:['dance','classic'], description:'Standard dance beat', lengthBeats:4,
+      generate: (p) => { const notes: PatternNote[] = []; for(let b=0;b<4;b++){notes.push({pitch:KK,velocity:100,startBeat:b,durationBeats:0.25}); if(b%2===1)notes.push({pitch:CL,velocity:95,startBeat:b,durationBeats:0.25});} const step=p.density>7?0.25:0.5; for(let b=0;b<4;b+=step)notes.push({pitch:CH,velocity:b%1===0?70:55,startBeat:b,durationBeats:step/2}); return notes; }},
+    { id:'dr-breakbeat', name:'Breakbeat', category:'drums', genres:['hip-hop','funk','breakbeat' as PatternGenre], tags:['funky','classic'], description:'Classic breakbeat groove', lengthBeats:4,
+      generate: () => [{pitch:KK,velocity:100,startBeat:0,durationBeats:0.25},{pitch:KK,velocity:90,startBeat:2.5,durationBeats:0.25},{pitch:SN,velocity:100,startBeat:1,durationBeats:0.25},{pitch:SN,velocity:100,startBeat:3,durationBeats:0.25},{pitch:CH,velocity:80,startBeat:0,durationBeats:0.25},{pitch:CH,velocity:60,startBeat:0.5,durationBeats:0.25},{pitch:CH,velocity:80,startBeat:1,durationBeats:0.25},{pitch:CH,velocity:60,startBeat:1.5,durationBeats:0.25},{pitch:CH,velocity:80,startBeat:2,durationBeats:0.25},{pitch:CH,velocity:60,startBeat:2.5,durationBeats:0.25},{pitch:CH,velocity:80,startBeat:3,durationBeats:0.25},{pitch:CH,velocity:60,startBeat:3.5,durationBeats:0.25}] },
+    { id:'dr-trap', name:'Trap Beat', category:'drums', genres:['trap','hip-hop'], tags:['808','modern'], description:'Trap with rapid hi-hats', lengthBeats:4,
+      generate: (p) => { const notes: PatternNote[] = [{pitch:KK,velocity:110,startBeat:0,durationBeats:0.25},{pitch:KK,velocity:100,startBeat:3.75,durationBeats:0.25},{pitch:CL,velocity:100,startBeat:1,durationBeats:0.25},{pitch:CL,velocity:100,startBeat:3,durationBeats:0.25}]; const step = p.density>7?0.125:0.25; for(let b=0;b<4;b+=step)notes.push({pitch:CH,velocity:50+Math.round(p.complexity*4),startBeat:b,durationBeats:step/2}); return notes; }},
+    { id:'dr-jazz', name:'Jazz Swing', category:'drums', genres:['jazz'], tags:['swing','ride'], description:'Swing ride pattern', lengthBeats:4,
+      generate: () => [{pitch:RD,velocity:80,startBeat:0,durationBeats:0.25},{pitch:RD,velocity:55,startBeat:0.67,durationBeats:0.25},{pitch:RD,velocity:80,startBeat:1,durationBeats:0.25},{pitch:RD,velocity:55,startBeat:1.67,durationBeats:0.25},{pitch:RD,velocity:80,startBeat:2,durationBeats:0.25},{pitch:RD,velocity:55,startBeat:2.67,durationBeats:0.25},{pitch:RD,velocity:80,startBeat:3,durationBeats:0.25},{pitch:RD,velocity:55,startBeat:3.67,durationBeats:0.25},{pitch:CH,velocity:50,startBeat:1,durationBeats:0.25},{pitch:CH,velocity:50,startBeat:3,durationBeats:0.25},{pitch:KK,velocity:70,startBeat:0,durationBeats:0.25}] },
+    { id:'dr-bossa', name:'Bossa Nova', category:'drums', genres:['latin','jazz'], tags:['brazilian','chill'], description:'Bossa nova groove', lengthBeats:4,
+      generate: () => [{pitch:KK,velocity:80,startBeat:0,durationBeats:0.25},{pitch:KK,velocity:70,startBeat:2.5,durationBeats:0.25},{pitch:SN,velocity:60,startBeat:1,durationBeats:0.25},{pitch:SN,velocity:60,startBeat:3,durationBeats:0.25},{pitch:RD,velocity:65,startBeat:0,durationBeats:0.25},{pitch:RD,velocity:50,startBeat:0.5,durationBeats:0.25},{pitch:RD,velocity:65,startBeat:1,durationBeats:0.25},{pitch:RD,velocity:50,startBeat:1.5,durationBeats:0.25},{pitch:RD,velocity:65,startBeat:2,durationBeats:0.25},{pitch:RD,velocity:50,startBeat:2.5,durationBeats:0.25},{pitch:RD,velocity:65,startBeat:3,durationBeats:0.25},{pitch:RD,velocity:50,startBeat:3.5,durationBeats:0.25}] },
+    { id:'dr-halftime', name:'Half-Time', category:'drums', genres:['cinematic','ambient','pop'], tags:['slow','spacious'], description:'Half-time feel', lengthBeats:4,
+      generate: () => [{pitch:KK,velocity:100,startBeat:0,durationBeats:0.25},{pitch:SN,velocity:95,startBeat:2,durationBeats:0.25},{pitch:RD,velocity:60,startBeat:0,durationBeats:0.25},{pitch:RD,velocity:45,startBeat:0.5,durationBeats:0.25},{pitch:RD,velocity:60,startBeat:1,durationBeats:0.25},{pitch:RD,velocity:45,startBeat:1.5,durationBeats:0.25},{pitch:RD,velocity:60,startBeat:2,durationBeats:0.25},{pitch:RD,velocity:45,startBeat:2.5,durationBeats:0.25},{pitch:RD,velocity:60,startBeat:3,durationBeats:0.25},{pitch:RD,velocity:45,startBeat:3.5,durationBeats:0.25}] },
+    { id:'dr-reggae', name:'Reggae One-Drop', category:'drums', genres:['reggae','world'], tags:['offbeat','island'], description:'Reggae one-drop groove', lengthBeats:4,
+      generate: () => [{pitch:KK,velocity:90,startBeat:2,durationBeats:0.25},{pitch:SN,velocity:70,startBeat:2,durationBeats:0.25},{pitch:CH,velocity:65,startBeat:0.5,durationBeats:0.25},{pitch:CH,velocity:65,startBeat:1.5,durationBeats:0.25},{pitch:CH,velocity:65,startBeat:2.5,durationBeats:0.25},{pitch:CH,velocity:65,startBeat:3.5,durationBeats:0.25}] },
+    { id:'dr-dnb', name:'DnB Two-Step', category:'drums', genres:['dnb','edm'], tags:['fast','energy'], description:'Fast DnB two-step beat', lengthBeats:4,
+      generate: (p) => { const notes: PatternNote[] = [{pitch:KK,velocity:110,startBeat:0,durationBeats:0.25},{pitch:KK,velocity:100,startBeat:2.75,durationBeats:0.25},{pitch:SN,velocity:100,startBeat:0.5,durationBeats:0.25},{pitch:SN,velocity:100,startBeat:2,durationBeats:0.25}]; const step=p.density>5?0.25:0.5; for(let b=0;b<4;b+=step)notes.push({pitch:CH,velocity:75,startBeat:b,durationBeats:step/2}); return notes; }},
+    { id:'dr-metal', name:'Blast Beat', category:'drums', genres:['metal'], tags:['extreme','fast'], description:'Extreme blast beat', lengthBeats:4,
+      generate: () => Array.from({length:16},(_,i)=>[{pitch:KK,velocity:100,startBeat:i*0.25,durationBeats:0.125},{pitch:SN,velocity:95,startBeat:i*0.25,durationBeats:0.125},{pitch:CH,velocity:80,startBeat:i*0.25,durationBeats:0.125}]).flat() },
+    { id:'dr-afrobeat', name:'Afrobeat', category:'drums', genres:['afrobeat','world'], tags:['african','polyrhythmic'], description:'Afrobeat polyrhythmic groove', lengthBeats:4,
+      generate: () => [{pitch:KK,velocity:90,startBeat:0,durationBeats:0.25},{pitch:KK,velocity:85,startBeat:2,durationBeats:0.25},{pitch:KK,velocity:80,startBeat:3,durationBeats:0.25},{pitch:SN,velocity:90,startBeat:1,durationBeats:0.25},{pitch:SN,velocity:75,startBeat:3.5,durationBeats:0.25},{pitch:CH,velocity:70,startBeat:0,durationBeats:0.25},{pitch:OH,velocity:60,startBeat:0.5,durationBeats:0.25},{pitch:CH,velocity:70,startBeat:1,durationBeats:0.25},{pitch:CH,velocity:55,startBeat:1.5,durationBeats:0.25},{pitch:CH,velocity:70,startBeat:2,durationBeats:0.25},{pitch:OH,velocity:60,startBeat:2.5,durationBeats:0.25},{pitch:CH,velocity:70,startBeat:3,durationBeats:0.25},{pitch:CH,velocity:55,startBeat:3.5,durationBeats:0.25}] },
+    { id:'dr-synthwave', name:'Synthwave Beat', category:'drums', genres:['synthwave','pop','cinematic'], tags:['retro','80s'], description:'80s-style electronic beat', lengthBeats:4,
+      generate: () => [{pitch:KK,velocity:100,startBeat:0,durationBeats:0.25},{pitch:KK,velocity:90,startBeat:3,durationBeats:0.25},{pitch:CL,velocity:95,startBeat:1,durationBeats:0.25},{pitch:CL,velocity:95,startBeat:3,durationBeats:0.25},{pitch:CH,velocity:50,startBeat:0,durationBeats:0.25},{pitch:CH,velocity:50,startBeat:0.5,durationBeats:0.25},{pitch:CH,velocity:50,startBeat:1,durationBeats:0.25},{pitch:CH,velocity:50,startBeat:1.5,durationBeats:0.25},{pitch:CH,velocity:50,startBeat:2,durationBeats:0.25},{pitch:CH,velocity:50,startBeat:2.5,durationBeats:0.25},{pitch:CH,velocity:50,startBeat:3,durationBeats:0.25},{pitch:CH,velocity:50,startBeat:3.5,durationBeats:0.25}] },
+    { id:'dr-gospel', name:'Gospel Groove', category:'drums', genres:['gospel','soul','r&b'], tags:['worship','ride'], description:'Gospel ride pattern', lengthBeats:4,
+      generate: () => [{pitch:KK,velocity:95,startBeat:0,durationBeats:0.25},{pitch:KK,velocity:80,startBeat:1.75,durationBeats:0.25},{pitch:KK,velocity:85,startBeat:2.5,durationBeats:0.25},{pitch:SN,velocity:95,startBeat:1,durationBeats:0.25},{pitch:SN,velocity:95,startBeat:3,durationBeats:0.25},{pitch:RD,velocity:70,startBeat:0,durationBeats:0.25},{pitch:RD,velocity:55,startBeat:0.5,durationBeats:0.25},{pitch:RD,velocity:70,startBeat:1,durationBeats:0.25},{pitch:RD,velocity:55,startBeat:1.5,durationBeats:0.25},{pitch:RD,velocity:70,startBeat:2,durationBeats:0.25},{pitch:RD,velocity:55,startBeat:2.5,durationBeats:0.25},{pitch:RD,velocity:70,startBeat:3,durationBeats:0.25},{pitch:RD,velocity:55,startBeat:3.5,durationBeats:0.25}] },
+    { id:'dr-country', name:'Country Train', category:'drums', genres:['country','rock'], tags:['train','twang'], description:'Country train beat', lengthBeats:4,
+      generate: () => [{pitch:KK,velocity:90,startBeat:0,durationBeats:0.25},{pitch:KK,velocity:85,startBeat:2,durationBeats:0.25},{pitch:SN,velocity:95,startBeat:1,durationBeats:0.25},{pitch:SN,velocity:95,startBeat:3,durationBeats:0.25},{pitch:CH,velocity:80,startBeat:0,durationBeats:0.25},{pitch:CH,velocity:65,startBeat:0.5,durationBeats:0.25},{pitch:CH,velocity:80,startBeat:1,durationBeats:0.25},{pitch:CH,velocity:65,startBeat:1.5,durationBeats:0.25},{pitch:CH,velocity:80,startBeat:2,durationBeats:0.25},{pitch:CH,velocity:65,startBeat:2.5,durationBeats:0.25},{pitch:CH,velocity:80,startBeat:3,durationBeats:0.25},{pitch:CH,velocity:65,startBeat:3.5,durationBeats:0.25}] },
+    { id:'dr-blues', name:'Blues Shuffle', category:'drums', genres:['blues','rock'], tags:['shuffle','triplet'], description:'Shuffled blues beat', lengthBeats:4,
+      generate: () => [{pitch:KK,velocity:90,startBeat:0,durationBeats:0.25},{pitch:KK,velocity:85,startBeat:2,durationBeats:0.25},{pitch:SN,velocity:95,startBeat:1,durationBeats:0.25},{pitch:SN,velocity:95,startBeat:3,durationBeats:0.25},{pitch:CH,velocity:70,startBeat:0,durationBeats:0.25},{pitch:CH,velocity:50,startBeat:0.67,durationBeats:0.25},{pitch:CH,velocity:70,startBeat:1,durationBeats:0.25},{pitch:CH,velocity:50,startBeat:1.67,durationBeats:0.25},{pitch:CH,velocity:70,startBeat:2,durationBeats:0.25},{pitch:CH,velocity:50,startBeat:2.67,durationBeats:0.25},{pitch:CH,velocity:70,startBeat:3,durationBeats:0.25},{pitch:CH,velocity:50,startBeat:3.67,durationBeats:0.25}] },
+
+    // ── MELODY ──
+    { id:'ml-arpmaj', name:'Major Arpeggio', category:'melody', genres:['pop','edm','classical'], tags:['arpeggio','bright'], description:'Ascending/descending arpeggio', lengthBeats:4,
+      generate: (p) => { const sp = getScalePitches(p.key, p.scale, 60, 84); const pattern = p.complexity>5 ? [0,2,4,7,4,2,0,2] : [0,2,4,7,4,2,0,2]; return pattern.map((deg,i) => ({pitch:sp[Math.min(deg,sp.length-1)]!,velocity:75+p.density,startBeat:i*0.5,durationBeats:0.5})); }},
+    { id:'ml-arpmin', name:'Minor Arpeggio', category:'melody', genres:['pop','r&b','cinematic'], tags:['arpeggio','dark'], description:'Minor arpeggio pattern', lengthBeats:4,
+      generate: (p) => { const sp = getScalePitches(p.key, p.scale==='major'?'minor':p.scale, 57, 84); return [0,2,4,7,4,2,0,2].map((deg,i) => ({pitch:sp[Math.min(deg,sp.length-1)]!,velocity:75+p.density,startBeat:i*0.5,durationBeats:0.5})); }},
+    { id:'ml-scale', name:'Scale Run', category:'melody', genres:['classical','pop'], tags:['scale','educational'], description:'Ascending scale run', lengthBeats:8,
+      generate: (p) => { const sp = getScalePitches(p.key, p.scale, 60, 84); return sp.slice(0,8).map((pitch,i) => ({pitch,velocity:80,startBeat:i,durationBeats:1})); }},
+    { id:'ml-pent', name:'Pentatonic Riff', category:'melody', genres:['rock','blues'], tags:['riff','guitar'], description:'Pentatonic rock riff', lengthBeats:4,
+      generate: (p) => { const sp = getScalePitches(p.key, 'pentatonic-minor', 57, 79); return [{pitch:sp[0]!,velocity:85,startBeat:0,durationBeats:0.5},{pitch:sp[2]!,velocity:80,startBeat:0.5,durationBeats:0.5},{pitch:sp[3]!,velocity:90,startBeat:1,durationBeats:1},{pitch:sp[4]!,velocity:85,startBeat:2,durationBeats:0.5},{pitch:sp[Math.min(6,sp.length-1)]!,velocity:80,startBeat:2.5,durationBeats:0.5},{pitch:sp[4]!,velocity:75,startBeat:3,durationBeats:0.5},{pitch:sp[3]!,velocity:80,startBeat:3.5,durationBeats:0.5}]; }},
+    { id:'ml-blues', name:'Blues Lick', category:'melody', genres:['blues','rock'], tags:['lick','classic'], description:'Classic blues guitar lick', lengthBeats:4,
+      generate: (p) => { const sp = getScalePitches(p.key, 'blues', 57, 79); return [{pitch:sp[2]!,velocity:85,startBeat:0,durationBeats:0.25},{pitch:sp[3]!,velocity:80,startBeat:0.25,durationBeats:0.25},{pitch:sp[4]!,velocity:90,startBeat:0.5,durationBeats:0.5},{pitch:sp[2]!,velocity:75,startBeat:1,durationBeats:0.5},{pitch:sp[0]!,velocity:80,startBeat:1.5,durationBeats:1},{pitch:sp[2]!,velocity:75,startBeat:2.5,durationBeats:0.5},{pitch:sp[0]!,velocity:85,startBeat:3,durationBeats:1}]; }},
+    { id:'ml-edm', name:'EDM Arp', category:'melody', genres:['edm','house','techno'], tags:['arpeggio','electronic'], description:'Fast electronic arpeggio', lengthBeats:4,
+      generate: (p) => { const sp = getScalePitches(p.key, p.scale==='major'?'minor':p.scale, 57, 84); const step = p.density>7 ? 0.125 : 0.25; const notes: PatternNote[] = []; const degs = [0,2,4,7]; for (let b=0; b<4; b+=step) { notes.push({pitch:sp[Math.min(degs[Math.floor(b/step)%4]!,sp.length-1)]!,velocity:75+p.density*2,startBeat:b,durationBeats:step}); } return notes; }},
+    { id:'ml-lofi', name:'Lo-Fi Melody', category:'melody', genres:['lo-fi','jazz','hip-hop'], tags:['chill','jazzy'], description:'Relaxed lo-fi jazz melody', lengthBeats:4,
+      generate: (p) => { const sp = getScalePitches(p.key, 'dorian', 60, 84); return [{pitch:sp[4]!,velocity:70,startBeat:0,durationBeats:1},{pitch:sp[6]!,velocity:65,startBeat:1,durationBeats:0.5},{pitch:sp[8]||sp[7]!,velocity:60,startBeat:1.5,durationBeats:1.5},{pitch:sp[7]!,velocity:65,startBeat:3,durationBeats:0.5},{pitch:sp[6]!,velocity:70,startBeat:3.5,durationBeats:0.5}]; }},
+    { id:'ml-synthwave', name:'Synthwave Lead', category:'melody', genres:['synthwave','cinematic'], tags:['retro','80s'], description:'80s-style synth lead', lengthBeats:8,
+      generate: (p) => { const sp = getScalePitches(p.key, 'minor', 60, 84); return [{pitch:sp[7]||sp[6]!,velocity:85,startBeat:0,durationBeats:1.5},{pitch:sp[8]||sp[7]!,velocity:80,startBeat:1.5,durationBeats:0.5},{pitch:sp[7]||sp[6]!,velocity:75,startBeat:2,durationBeats:1},{pitch:sp[6]!,velocity:80,startBeat:3,durationBeats:1},{pitch:sp[4]!,velocity:85,startBeat:4,durationBeats:1.5},{pitch:sp[6]!,velocity:80,startBeat:5.5,durationBeats:0.5},{pitch:sp[7]||sp[6]!,velocity:90,startBeat:6,durationBeats:2}]; }},
+    { id:'ml-trap', name:'Trap Melody', category:'melody', genres:['trap','hip-hop'], tags:['dark','bell'], description:'Dark trap bell melody', lengthBeats:4,
+      generate: (p) => { const sp = getScalePitches(p.key, 'minor', 60, 84); return [{pitch:sp[8]||sp[7]!,velocity:90,startBeat:0,durationBeats:0.25},{pitch:sp[9]||sp[8]!,velocity:85,startBeat:0.25,durationBeats:0.25},{pitch:sp[8]||sp[7]!,velocity:80,startBeat:0.5,durationBeats:0.5},{pitch:sp[7]!,velocity:85,startBeat:1.5,durationBeats:0.5},{pitch:sp[5]!,velocity:80,startBeat:2,durationBeats:0.5},{pitch:sp[3]!,velocity:75,startBeat:2.5,durationBeats:0.5},{pitch:sp[0]!,velocity:90,startBeat:3,durationBeats:1}]; }},
+    { id:'ml-classical', name:'Classical Phrase', category:'melody', genres:['classical','cinematic'], tags:['elegant','period'], description:'Classical melodic phrase', lengthBeats:8,
+      generate: (p) => { const sp = getScalePitches(p.key, p.scale, 60, 84); return [{pitch:sp[7]||sp[6]!,velocity:75,startBeat:0,durationBeats:0.5},{pitch:sp[6]!,velocity:70,startBeat:0.5,durationBeats:0.5},{pitch:sp[7]||sp[6]!,velocity:80,startBeat:1,durationBeats:1},{pitch:sp[5]!,velocity:75,startBeat:2,durationBeats:0.5},{pitch:sp[4]!,velocity:70,startBeat:2.5,durationBeats:0.5},{pitch:sp[5]!,velocity:80,startBeat:3,durationBeats:1},{pitch:sp[7]||sp[6]!,velocity:85,startBeat:4,durationBeats:0.5},{pitch:sp[8]||sp[7]!,velocity:80,startBeat:4.5,durationBeats:0.5},{pitch:sp[9]||sp[8]!,velocity:85,startBeat:5,durationBeats:1},{pitch:sp[8]||sp[7]!,velocity:75,startBeat:6,durationBeats:0.5},{pitch:sp[7]||sp[6]!,velocity:70,startBeat:6.5,durationBeats:0.5},{pitch:sp[6]!,velocity:80,startBeat:7,durationBeats:1}]; }},
+    { id:'ml-gospel', name:'Gospel Run', category:'melody', genres:['gospel','soul','r&b'], tags:['run','flashy'], description:'Fast gospel piano run', lengthBeats:4,
+      generate: (p) => { const sp = getScalePitches(p.key, p.scale, 60, 84); const notes: PatternNote[] = []; for (let i=0; i<8 && i<sp.length; i++) notes.push({pitch:sp[i]!,velocity:80+i,startBeat:i*0.25,durationBeats:0.25}); if (sp[8]) notes.push({pitch:sp[8],velocity:90,startBeat:2,durationBeats:0.5}); for (let i=7; i>=5 && i<sp.length; i--) notes.push({pitch:sp[i]!,velocity:75,startBeat:2.75+(7-i)*0.25,durationBeats:0.25}); return notes; }},
+    { id:'ml-country', name:'Country Picking', category:'melody', genres:['country','rock'], tags:['fingerpick','acoustic'], description:'Fingerpicking pattern', lengthBeats:4,
+      generate: (p) => { const sp = getScalePitches(p.key, p.scale, 48, 72); return [{pitch:sp[0]!,velocity:85,startBeat:0,durationBeats:0.5},{pitch:sp[4]!,velocity:75,startBeat:0.5,durationBeats:0.5},{pitch:sp[2]!,velocity:80,startBeat:1,durationBeats:0.5},{pitch:sp[4]!,velocity:75,startBeat:1.5,durationBeats:0.5},{pitch:sp[0]!,velocity:85,startBeat:2,durationBeats:0.5},{pitch:sp[4]!,velocity:75,startBeat:2.5,durationBeats:0.5},{pitch:sp[2]!,velocity:80,startBeat:3,durationBeats:0.5},{pitch:sp[4]!,velocity:75,startBeat:3.5,durationBeats:0.5}]; }},
+    { id:'ml-afrobeat', name:'Afrobeat Lick', category:'melody', genres:['afrobeat','world'], tags:['african','rhythmic'], description:'Afrobeat melodic lick', lengthBeats:4,
+      generate: (p) => { const sp = getScalePitches(p.key, 'pentatonic-major', 60, 84); return [{pitch:sp[7]||sp[6]!,velocity:85,startBeat:0,durationBeats:0.5},{pitch:sp[5]!,velocity:80,startBeat:0.5,durationBeats:0.5},{pitch:sp[4]!,velocity:75,startBeat:1,durationBeats:0.25},{pitch:sp[3]!,velocity:80,startBeat:1.5,durationBeats:0.5},{pitch:sp[4]!,velocity:85,startBeat:2,durationBeats:0.5},{pitch:sp[7]||sp[6]!,velocity:80,startBeat:2.5,durationBeats:0.5},{pitch:sp[5]!,velocity:85,startBeat:3,durationBeats:0.5},{pitch:sp[4]!,velocity:80,startBeat:3.5,durationBeats:0.5}]; }},
+];
+
+// ── Search / Filter ──
+
+export type PatternFilters = {
+    query?: string;
+    category?: PatternCategory;
+    genre?: PatternGenre;
+};
+
+export function filterTemplates(filters: PatternFilters): PatternTemplate[] {
+    let results = PATTERN_TEMPLATES;
+    if (filters.category) results = results.filter((t) => t.category === filters.category);
+    if (filters.genre) results = results.filter((t) => t.genres.includes(filters.genre!));
+    if (filters.query) {
+        const q = filters.query.toLowerCase().trim();
+        results = results.filter((t) => t.name.toLowerCase().includes(q) || t.tags.some((tag) => tag.includes(q)) || t.description.toLowerCase().includes(q) || t.genres.some((g) => g.includes(q)));
     }
-
-    if (q) {
-        results = results.filter(
-            (p) =>
-                p.name.toLowerCase().includes(q) ||
-                p.tags.some((t) => t.includes(q)) ||
-                (p.key && p.key.toLowerCase().includes(q))
-        );
-    }
-
     return results;
 }

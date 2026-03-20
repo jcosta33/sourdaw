@@ -11,7 +11,7 @@ import { generateWebLlmCompletion } from '../repositories/webLlmRepository';
 import { generateNativeCompletion } from '../repositories/llamaServerEngine';
 import { isLlamaServerRunning } from '../repositories/llamaServerEngine';
 import { type GeneratedNote } from '#/modules/AudioEngine/useCases/nativeAIBridge';
-import { ALL_PATTERNS } from '../models/midiPatternLibrary';
+import { PATTERN_TEMPLATES, filterTemplates } from '../models/midiPatternLibrary';
 
 // ── System prompt for music generation ──
 
@@ -69,7 +69,6 @@ export async function generateMidiViaLlm(
     const notes = parseMidiResponse(rawResponse);
 
     if (notes.length === 0) {
-        // Fallback: try to match a pattern from the library
         return fallbackToPatternMatch(prompt);
     }
 
@@ -94,19 +93,12 @@ function buildUserMessage(prompt: string, numNotes: number, creativity: number):
 
 function parseMidiResponse(raw: string): GeneratedNote[] {
     try {
-        // Extract JSON from the response (model might include markdown fences)
         const jsonMatch = raw.match(/\{[\s\S]*"notes"[\s\S]*\}/);
-        if (!jsonMatch) {
-            return [];
-        }
+        if (!jsonMatch) return [];
 
         const parsed = JSON.parse(jsonMatch[0]) as LlmMidiResponse;
+        if (!Array.isArray(parsed.notes)) return [];
 
-        if (!Array.isArray(parsed.notes)) {
-            return [];
-        }
-
-        // Validate and sanitize each note
         return parsed.notes
             .filter(
                 (note) =>
@@ -119,7 +111,7 @@ function parseMidiResponse(raw: string): GeneratedNote[] {
                 pitch: clamp(Math.round(note.pitch), 0, 127),
                 velocity: clamp(Math.round(note.velocity), 1, 127),
                 start_beat: Math.max(0, note.start_beat),
-                duration_beats: Math.max(0.0625, note.duration_beats), // min 64th note
+                duration_beats: Math.max(0.0625, note.duration_beats),
             }));
     } catch {
         return [];
@@ -131,21 +123,19 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /**
- * When LLM output fails, try to find the closest matching pattern from the library.
+ * When LLM output fails, try to find the closest matching template from the library
+ * and generate notes from it with default parameters.
  */
 function fallbackToPatternMatch(prompt: string): GeneratedNote[] {
     const q = prompt.toLowerCase();
 
-    // Try to match tags from our library
-    const matched = ALL_PATTERNS.find(
-        (p) =>
-            p.tags.some((t) => q.includes(t)) ||
-            p.name.toLowerCase().includes(q) ||
-            (p.key && q.includes(p.key.toLowerCase()))
-    );
+    // Try tag/name match from templates
+    const matched = filterTemplates({ query: q })[0]
+        ?? PATTERN_TEMPLATES.find((t) => t.tags.some((tag) => q.includes(tag)) || t.name.toLowerCase().includes(q));
 
     if (matched) {
-        return matched.notes.map((note) => ({
+        const notes = matched.generate({ key: 'C', scale: 'minor', density: 5, complexity: 5 });
+        return notes.map((note) => ({
             pitch: note.pitch,
             velocity: note.velocity,
             start_beat: note.startBeat,
@@ -153,7 +143,7 @@ function fallbackToPatternMatch(prompt: string): GeneratedNote[] {
         }));
     }
 
-    // Absolute fallback: return a simple C major arpeggio
+    // Absolute fallback: simple C major arpeggio
     return [
         { pitch: 60, velocity: 80, start_beat: 0, duration_beats: 0.5 },
         { pitch: 64, velocity: 75, start_beat: 0.5, duration_beats: 0.5 },

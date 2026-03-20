@@ -1,14 +1,22 @@
-import { type ReactElement, useState, useRef, useEffect } from 'react';
-import { Search, Music, Plus } from 'lucide-react';
+import { type ReactElement, useState, useRef, useEffect, useMemo } from 'react';
+import { Search, Music, Plus, SlidersHorizontal } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { cn } from '#/helpers/Styles/cn';
 import {
-    ALL_PATTERNS,
     PATTERN_CATEGORIES,
-    searchPatterns,
-    type MidiPattern,
+    PATTERN_TEMPLATES,
+    ALL_KEYS,
+    SCALE_TYPES,
+    SCALE_LABELS,
+    ALL_GENRES,
+    filterTemplates,
+    type PatternTemplate,
     type PatternCategory,
+    type PatternGenre,
     type PatternNote,
+    type KeyName,
+    type ScaleType,
+    type GenerationParams,
 } from '../../models/midiPatternLibrary';
 import { trackStore } from '#/modules/Track/stores/trackStore';
 import { addClip } from '#/modules/Track/useCases/clipUseCases';
@@ -25,14 +33,9 @@ const MiniPianoRoll = ({ notes, lengthBeats }: { notes: PatternNote[]; lengthBea
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas || notes.length === 0) {
-            return;
-        }
-
+        if (!canvas || notes.length === 0) return;
         const ctx = canvas.getContext('2d');
-        if (!ctx) {
-            return;
-        }
+        if (!ctx) return;
 
         const dpr = window.devicePixelRatio || 1;
         const width = canvas.clientWidth;
@@ -40,27 +43,21 @@ const MiniPianoRoll = ({ notes, lengthBeats }: { notes: PatternNote[]; lengthBea
         canvas.width = width * dpr;
         canvas.height = height * dpr;
         ctx.scale(dpr, dpr);
-
-        // Clear
         ctx.clearRect(0, 0, width, height);
 
-        // Compute pitch range
         const pitches = notes.map((n) => n.pitch);
         const minPitch = Math.min(...pitches) - 1;
         const maxPitch = Math.max(...pitches) + 1;
         const pitchRange = maxPitch - minPitch || 1;
-
         const pxPerBeat = (width - PREVIEW_PADDING * 2) / lengthBeats;
         const noteHeight = Math.max(2, (height - PREVIEW_PADDING * 2) / pitchRange);
 
-        // Draw notes
-        ctx.fillStyle = 'rgb(168, 85, 247)'; // purple-500
+        ctx.fillStyle = 'rgb(168, 85, 247)';
         for (const note of notes) {
             const x = PREVIEW_PADDING + note.startBeat * pxPerBeat;
             const y = PREVIEW_PADDING + (maxPitch - note.pitch) * noteHeight;
             const w = Math.max(1, note.durationBeats * pxPerBeat - 0.5);
             const h = Math.max(1.5, noteHeight - 0.5);
-
             ctx.globalAlpha = 0.3 + (note.velocity / 127) * 0.7;
             ctx.beginPath();
             ctx.roundRect(x, y, w, h, 1);
@@ -69,70 +66,105 @@ const MiniPianoRoll = ({ notes, lengthBeats }: { notes: PatternNote[]; lengthBea
         ctx.globalAlpha = 1;
     }, [notes, lengthBeats]);
 
-    return (
-        <canvas
-            ref={canvasRef}
-            className="w-full"
-            style={{ height: PREVIEW_HEIGHT }}
-            aria-hidden="true"
-        />
-    );
+    return <canvas ref={canvasRef} className="w-full" style={{ height: PREVIEW_HEIGHT }} aria-hidden="true" />;
 };
+
+// ── Compact select component ──
+
+const CompactSelect = <T extends string>({
+    label, value, options, onChange, allLabel = 'All',
+}: {
+    label: string;
+    value: T | undefined;
+    options: { id: T; label: string }[];
+    onChange: (v: T | undefined) => void;
+    allLabel?: string;
+}): ReactElement => (
+    <div className="flex flex-col gap-0.5">
+        <span className="text-[9px] uppercase tracking-wider text-muted-foreground/60 font-medium">{label}</span>
+        <select
+            value={value ?? ''}
+            onChange={(e) => onChange(e.target.value ? (e.target.value as T) : undefined)}
+            className="h-6 bg-surface-base border border-border/60 rounded text-[11px] text-foreground/90 px-1 focus:outline-none focus:ring-1 focus:ring-purple-500/50 appearance-none cursor-pointer"
+            aria-label={label}
+        >
+            <option value="">{allLabel}</option>
+            {options.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+        </select>
+    </div>
+);
+
+// ── Slider control ──
+
+const ParamSlider = ({
+    label, value, onChange, min = 1, max = 10,
+}: {
+    label: string;
+    value: number;
+    onChange: (v: number) => void;
+    min?: number;
+    max?: number;
+}): ReactElement => (
+    <div className="flex flex-col gap-0.5">
+        <div className="flex items-center justify-between">
+            <span className="text-[9px] uppercase tracking-wider text-muted-foreground/60 font-medium">{label}</span>
+            <span className="text-[9px] text-muted-foreground/50 tabular-nums">{value}</span>
+        </div>
+        <input
+            type="range" min={min} max={max} value={value}
+            onChange={(e) => onChange(Number(e.target.value))}
+            className="w-full h-1 accent-purple-500 cursor-pointer"
+            aria-label={label}
+        />
+    </div>
+);
 
 // ── Pattern Card ──
 
-const PatternCard = ({ pattern, onInsert }: { pattern: MidiPattern; onInsert: (p: MidiPattern) => void }): ReactElement => {
-    const categoryColors: Record<PatternCategory, string> = {
-        chords: 'text-blue-400',
-        bass: 'text-rose-400',
-        drums: 'text-amber-400',
-        melody: 'text-emerald-400',
-    };
+const categoryColors: Record<PatternCategory, string> = {
+    chords: 'text-blue-400', bass: 'text-rose-400', drums: 'text-amber-400', melody: 'text-emerald-400',
+};
+const categoryBgColors: Record<PatternCategory, string> = {
+    chords: 'bg-blue-500/10 border-blue-500/20', bass: 'bg-rose-500/10 border-rose-500/20',
+    drums: 'bg-amber-500/10 border-amber-500/20', melody: 'bg-emerald-500/10 border-emerald-500/20',
+};
 
-    const categoryBgColors: Record<PatternCategory, string> = {
-        chords: 'bg-blue-500/10 border-blue-500/20',
-        bass: 'bg-rose-500/10 border-rose-500/20',
-        drums: 'bg-amber-500/10 border-amber-500/20',
-        melody: 'bg-emerald-500/10 border-emerald-500/20',
-    };
+const TemplateCard = ({
+    template, genParams, onInsert,
+}: {
+    template: PatternTemplate;
+    genParams: GenerationParams;
+    onInsert: (t: PatternTemplate) => void;
+}): ReactElement => {
+    const notes = useMemo(() => template.generate(genParams), [template, genParams]);
 
     return (
         <div className="group relative bg-surface-raised border border-border/40 rounded-lg overflow-hidden hover:border-purple-500/40 transition-all duration-200">
-            {/* Mini preview */}
             <div className="bg-surface-base/80 border-b border-border/20 px-1.5 pt-1.5 pb-1">
-                <MiniPianoRoll notes={pattern.notes} lengthBeats={pattern.lengthBeats} />
+                <MiniPianoRoll notes={notes} lengthBeats={template.lengthBeats} />
             </div>
-
-            {/* Info */}
             <div className="p-2 space-y-1.5">
                 <div className="flex items-center justify-between">
                     <span className="text-[11px] font-medium text-foreground/90 leading-none truncate pr-1">
-                        {pattern.name}
+                        {template.name}
                     </span>
                     <Button
-                        variant="ghost"
-                        size="icon-xs"
+                        variant="ghost" size="icon-xs"
                         className="h-5 w-5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-purple-600/20 hover:text-purple-300"
-                        onClick={() => onInsert(pattern)}
+                        onClick={() => onInsert(template)}
                         title="Insert at playhead"
-                        aria-label={`Insert ${pattern.name} at playhead`}
+                        aria-label={`Insert ${template.name} at playhead`}
                     >
                         <Plus className="size-3" />
                     </Button>
                 </div>
                 <div className="flex items-center gap-1 flex-wrap">
-                    <span className={cn('text-[9px] font-medium px-1.5 py-0.5 rounded-full border', categoryBgColors[pattern.category], categoryColors[pattern.category])}>
-                        {pattern.category}
+                    <span className={cn('text-[9px] font-medium px-1.5 py-0.5 rounded-full border', categoryBgColors[template.category], categoryColors[template.category])}>
+                        {template.category}
                     </span>
-                    {pattern.key && (
-                        <span className="text-[9px] text-muted-foreground/70 px-1 py-0.5 bg-surface-base rounded">
-                            {pattern.key}
-                        </span>
-                    )}
-                    <span className="text-[9px] text-muted-foreground/50">
-                        {pattern.lengthBeats}b
-                    </span>
+                    <span className="text-[9px] text-muted-foreground/50">{template.lengthBeats}b</span>
                 </div>
+                <p className="text-[9px] text-muted-foreground/60 leading-tight line-clamp-1">{template.description}</p>
             </div>
         </div>
     );
@@ -143,102 +175,129 @@ const PatternCard = ({ pattern, onInsert }: { pattern: MidiPattern; onInsert: (p
 export const PatternBrowser = (): ReactElement => {
     const [searchQuery, setSearchQuery] = useState('');
     const [activeCategory, setActiveCategory] = useState<PatternCategory | undefined>(undefined);
+    const [activeGenre, setActiveGenre] = useState<PatternGenre | undefined>(undefined);
+    const [showControls, setShowControls] = useState(true);
 
-    const filteredPatterns = searchQuery || activeCategory
-        ? searchPatterns(searchQuery, activeCategory)
-        : ALL_PATTERNS;
+    // Generation params
+    const [key, setKey] = useState<KeyName>('C');
+    const [scale, setScale] = useState<ScaleType>('minor');
+    const [density, setDensity] = useState(5);
+    const [complexity, setComplexity] = useState(5);
 
-    const handleInsertPattern = (pattern: MidiPattern): void => {
+    const genParams: GenerationParams = useMemo(
+        () => ({ key, scale, density, complexity }),
+        [key, scale, density, complexity],
+    );
+
+    const filteredTemplates = useMemo(
+        () => filterTemplates({ query: searchQuery || undefined, category: activeCategory, genre: activeGenre }),
+        [searchQuery, activeCategory, activeGenre],
+    );
+
+    const handleInsertTemplate = (template: PatternTemplate): void => {
         const tState = trackStore.value;
         const selectedTrackId = tState?.selectedTrackId;
         let targetTrack = tState?.tracks.find((t) => t.id === selectedTrackId && t.kind === 'midi');
-        if (!targetTrack) {
-            targetTrack = tState?.tracks.find((t) => t.kind === 'midi');
-        }
-
-        if (!targetTrack) {
-            return;
-        }
+        if (!targetTrack) targetTrack = tState?.tracks.find((t) => t.kind === 'midi');
+        if (!targetTrack) return;
 
         const transport = getTransportState();
         const startBeat = transport ? transport.playheadPosition : 0;
-        const endBeat = startBeat + pattern.lengthBeats;
+        const notes = template.generate(genParams);
+        const endBeat = startBeat + template.lengthBeats;
 
         const clip = addClip({
-            trackId: targetTrack.id,
-            startBeat,
-            endBeat,
-            name: `🎵 ${pattern.name}`,
-            type: 'midi',
-            isGhost: true,
+            trackId: targetTrack.id, startBeat, endBeat,
+            name: `🎵 ${template.name} (${key})`,
+            type: 'midi', isGhost: true,
         });
 
         if (clip) {
-            for (const note of pattern.notes) {
+            for (const note of notes) {
                 addMidiNote(clip.id, note.pitch, note.startBeat, note.durationBeats, note.velocity);
             }
         }
     };
 
+    const keyOptions = ALL_KEYS.map((k) => ({ id: k, label: k }));
+    const scaleOptions = SCALE_TYPES.map((s) => ({ id: s, label: SCALE_LABELS[s] }));
+    const genreOptions = ALL_GENRES;
+
     return (
-        <div className="space-y-3">
-            {/* Search */}
-            <div className="relative">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3 text-muted-foreground/50" />
-                <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search patterns..."
-                    className="w-full h-7 bg-surface-base border border-border/60 rounded-md pl-7 pr-2 text-xs placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-purple-500/50"
-                    aria-label="Search MIDI patterns"
-                />
+        <div className="space-y-2">
+            {/* Search + controls toggle */}
+            <div className="flex gap-1">
+                <div className="relative flex-1">
+                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3 text-muted-foreground/50" />
+                    <input
+                        type="text" value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search patterns..."
+                        className="w-full h-7 bg-surface-base border border-border/60 rounded-md pl-7 pr-2 text-xs placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-purple-500/50"
+                        aria-label="Search MIDI patterns"
+                    />
+                </div>
+                <Button
+                    variant="ghost" size="icon-xs"
+                    className={cn('h-7 w-7 shrink-0', showControls && 'bg-accent text-accent-foreground')}
+                    onClick={() => setShowControls(!showControls)}
+                    title="Toggle generation controls"
+                    aria-label="Toggle generation controls"
+                >
+                    <SlidersHorizontal className="size-3.5" />
+                </Button>
             </div>
+
+            {/* Generation controls */}
+            {showControls && (
+                <div className="bg-surface-base/60 border border-border/40 rounded-lg p-2 space-y-2">
+                    <div className="grid grid-cols-3 gap-2">
+                        <CompactSelect label="Key" value={key} options={keyOptions} onChange={(v) => setKey(v ?? 'C')} allLabel="C" />
+                        <CompactSelect label="Scale" value={scale} options={scaleOptions} onChange={(v) => setScale(v ?? 'minor')} allLabel="Minor" />
+                        <CompactSelect label="Genre" value={activeGenre} options={genreOptions} onChange={setActiveGenre} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <ParamSlider label="Density" value={density} onChange={setDensity} />
+                        <ParamSlider label="Complexity" value={complexity} onChange={setComplexity} />
+                    </div>
+                </div>
+            )}
 
             {/* Category filter */}
-            <div className="flex gap-1">
+            <div className="flex gap-1 flex-wrap">
                 <button
                     type="button"
-                    className={cn(
-                        'px-2 py-1 text-[10px] rounded-md font-medium transition-colors',
-                        !activeCategory
-                            ? 'bg-accent text-accent-foreground'
-                            : 'text-muted-foreground hover:bg-surface-raised hover:text-foreground'
-                    )}
+                    className={cn('px-2 py-1 text-[10px] rounded-md font-medium transition-colors',
+                        !activeCategory ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-surface-raised hover:text-foreground')}
                     onClick={() => setActiveCategory(undefined)}
-                >
-                    All
-                </button>
+                >All</button>
                 {PATTERN_CATEGORIES.map((cat) => (
                     <button
-                        key={cat.id}
-                        type="button"
-                        className={cn(
-                            'px-2 py-1 text-[10px] rounded-md font-medium transition-colors',
-                            activeCategory === cat.id
-                                ? 'bg-accent text-accent-foreground'
-                                : 'text-muted-foreground hover:bg-surface-raised hover:text-foreground'
-                        )}
+                        key={cat.id} type="button"
+                        className={cn('px-2 py-1 text-[10px] rounded-md font-medium transition-colors',
+                            activeCategory === cat.id ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-surface-raised hover:text-foreground')}
                         onClick={() => setActiveCategory(activeCategory === cat.id ? undefined : cat.id)}
-                    >
-                        {cat.label}
-                    </button>
+                    >{cat.label}</button>
                 ))}
+                <span className="text-[9px] text-muted-foreground/40 self-center ml-auto">
+                    {filteredTemplates.length}/{PATTERN_TEMPLATES.length}
+                </span>
             </div>
 
-            {/* Pattern grid */}
-            {filteredPatterns.length === 0 ? (
+            {/* Template grid */}
+            {filteredTemplates.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-8 text-muted-foreground opacity-60">
                     <Music className="size-6 mb-2 opacity-50" />
-                    <span className="text-[11px]">No patterns found</span>
+                    <span className="text-[11px]">No patterns match your filters</span>
                 </div>
             ) : (
                 <div className="grid grid-cols-2 gap-2">
-                    {filteredPatterns.map((pattern) => (
-                        <PatternCard
-                            key={pattern.id}
-                            pattern={pattern}
-                            onInsert={handleInsertPattern}
+                    {filteredTemplates.map((template) => (
+                        <TemplateCard
+                            key={template.id}
+                            template={template}
+                            genParams={genParams}
+                            onInsert={handleInsertTemplate}
                         />
                     ))}
                 </div>
