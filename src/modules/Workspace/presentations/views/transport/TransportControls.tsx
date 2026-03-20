@@ -1,5 +1,5 @@
-import { type ReactElement } from 'react';
-import { Play, Pause, Square, Circle, Repeat, Scissors, ListOrdered } from 'lucide-react';
+import { type ReactElement, useState, useEffect } from 'react';
+import { Play, Pause, Square, Circle, Repeat, Scissors, ListOrdered, Link as LinkIcon } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { cn } from '#/helpers/Styles/cn';
@@ -14,6 +14,7 @@ import {
     toggleCountIn,
     togglePreRoll,
 } from '../../../useCases/workspaceViewActions';
+import { enableLink, disableLink, getLinkStatus } from '#/modules/AudioEngine/useCases/linkBridge';
 
 export type TransportControlsProps = {
     isPlaying: boolean;
@@ -38,6 +39,26 @@ export const TransportControls = ({
     preRollEnabled,
     anyTrackArmed,
 }: TransportControlsProps): ReactElement => {
+    const [linkEnabled, setLinkEnabled] = useState(false);
+
+    useEffect(() => {
+        getLinkStatus().then((status) => setLinkEnabled(status.enabled)).catch(() => {});
+    }, []);
+
+    const handleLinkToggle = async () => {
+        try {
+            if (linkEnabled) {
+                await disableLink();
+                setLinkEnabled(false);
+            } else {
+                await enableLink();
+                setLinkEnabled(true);
+            }
+        } catch {
+            // Ignore if tauri bridge fails
+        }
+    };
+
     return (
         <div className="flex items-center gap-0.5" role="group" aria-label="Playback controls">
             <span className="sr-only" aria-live="polite" role="status">
@@ -104,6 +125,22 @@ export const TransportControls = ({
                     </Button>
                 </TooltipTrigger>
                 <TooltipContent>Loop (L)</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <Button
+                        variant={linkEnabled ? 'secondary' : 'ghost'}
+                        size="icon-sm"
+                        aria-label="Ableton Link"
+                        aria-pressed={linkEnabled}
+                        onClick={handleLinkToggle}
+                        className={cn(linkEnabled && 'text-yellow-400')}
+                    >
+                        <LinkIcon className="size-3.5" aria-hidden="true" />
+                    </Button>
+                </TooltipTrigger>
+                <TooltipContent>Ableton Link Sync</TooltipContent>
             </Tooltip>
 
             <Tooltip>

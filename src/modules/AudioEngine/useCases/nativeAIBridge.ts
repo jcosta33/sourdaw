@@ -4,7 +4,7 @@
  * and audio denoising via Tauri IPC.
  */
 
-function isTauri(): boolean {
+export function isTauri(): boolean {
     return typeof window !== 'undefined' && '__TAURI__' in window;
 }
 

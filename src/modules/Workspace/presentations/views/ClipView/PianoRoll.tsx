@@ -31,6 +31,7 @@ import { type MidiNote } from '../../../useCases/workspaceViewActions';
 import { stampChord, removeNotesByIds, CHORD_TYPE_KEYS, type ChordType } from '#/modules/Track/useCases/chordStamps';
 import { strumNotes, restoreStrumOriginals } from '#/modules/Track/useCases/strumNotes';
 import { extractGrooveFromClip, applyGrooveToClip, restoreGrooveOriginals } from '#/modules/Track/useCases/grooveExtraction';
+import { generateMidiAI, isTauri } from '#/modules/AudioEngine/useCases/nativeAIBridge';
 
 interface GestureEvent extends UIEvent {
     readonly scale: number;
@@ -1166,6 +1167,22 @@ export const PianoRoll = ({ clipId, trackId, selectedNoteIds, onSelectedNoteIdsC
         };
     }, [ctxMenu]);
 
+    const handleAIGenerate = async () => {
+        try {
+            const clipNotes = getNotesForClip(clipId);
+            const seed = clipNotes.slice(-8).map((n) => [Math.floor(n.pitch), n.velocity, n.startBeat, n.duration] as [number, number, number, number]);
+            
+            const res = await generateMidiAI(seed, 16);
+            if (res && res.notes) {
+                for (const note of res.notes) {
+                    addMidiNote(clipId, note.pitch, note.start_beat, note.duration_beats, note.velocity);
+                }
+            }
+        } catch {
+            console.error('AI Generation requires native backend');
+        }
+    };
+
     const ctxAct = (fn: () => void) => () => {
         fn();
         setCtxMenu(null);
@@ -1547,6 +1564,16 @@ export const PianoRoll = ({ clipId, trackId, selectedNoteIds, onSelectedNoteIdsC
                             </button>
                         ))}
                     </div>
+                    <div className="my-1 border-t border-border/50" />
+                    <button
+                        type="button"
+                        className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-purple-400 font-medium hover:bg-accent"
+                        role="menuitem"
+                        onClick={ctxAct(handleAIGenerate)}
+                    >
+                        <span>AI Auto-Complete</span>
+                        <span className="text-[9px] opacity-60 border border-current rounded px-1 ml-2">{isTauri() ? 'Desktop' : 'Web'}</span>
+                    </button>
                     <div className="my-1 border-t border-border/50" />
                     <div className="px-3 py-1 text-[10px] text-muted-foreground">Groove</div>
                     <button

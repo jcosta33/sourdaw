@@ -3,6 +3,7 @@ import { useWorkspaceState } from '../hooks/useWorkspaceState';
 import { TransportBar } from './TransportBar';
 import { Sidebar } from './Sidebar';
 import { InspectorPanel } from './InspectorPanel';
+import { GenerativeAiPanel } from '#/modules/AiRuntime/presentations/views/GenerativeAiPanel';
 import { ChatPanel } from '#/modules/AiRuntime/presentations/views/ChatPanel';
 import { MixerPanel } from './MixerPanel';
 import { SessionView } from './SessionView';
@@ -406,6 +407,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                         <ChatPanel style={{ width: localChatPanelWidth }} />
                     </>
                 )}
+                
+                <GenerativeAiPanel />
             </div>
 
             {mixerOpen && (
