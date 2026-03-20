@@ -5,6 +5,14 @@ import { setMasterGainValue } from '../../../useCases/workspaceViewActions';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { useMeterLevel } from '../../hooks/useMeterLevel';
 import { LevelMeter } from '../../components/LevelMeter';
+import { LUFSMeter } from '../../components/LUFSMeter';
+import { PhaseCorrelationDisplay } from '../../components/PhaseCorrelationDisplay';
+import { Oscilloscope } from '../../components/Oscilloscope';
+import { SpectrumAnalyzer } from '../../components/SpectrumAnalyzer';
+import { Goniometer } from '../../components/Goniometer';
+import { Spectrogram } from '../../components/Spectrogram';
+import { SpatialPanner } from '../../components/SpatialPanner';
+import { Wavetable3D } from '../../components/Wavetable3D';
 
 export type MasterChannelStripProps = {
     widthClass: string;
@@ -58,6 +66,17 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
             <span className="text-[8px] font-mono text-muted-foreground">
                 {masterGain === 0 ? '-∞' : `${((masterGain / 80 - 1) * 12).toFixed(1)} dB`}
             </span>
+
+            <div className="w-full border-t border-border/30 pt-1 mt-1 flex flex-col items-center gap-1">
+                <LUFSMeter height={80} width={44} />
+                <PhaseCorrelationDisplay width={44} height={14} />
+                <Oscilloscope width={44} height={28} color="#22c55e" />
+                <SpectrumAnalyzer width={44} height={32} color="#3b82f6" />
+                <Spectrogram width={44} height={28} />
+                <Goniometer size={44} color="#a855f7" />
+                <SpatialPanner size={44} />
+                <Wavetable3D width={44} height={34} />
+            </div>
         </div>
     );
 };

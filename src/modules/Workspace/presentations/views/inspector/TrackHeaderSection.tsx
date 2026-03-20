@@ -7,6 +7,11 @@ import { setTrackNotes, setTrackColor } from '../../../useCases/workspaceViewAct
 import { freezeTrack, unfreezeTrack } from '../../../useCases/workspaceViewActions';
 import { type Track } from '../../../useCases/workspaceViewActions';
 import { TRACK_COLOR_PRESETS } from './colorPresets';
+import {
+    createTrackAlternative,
+    switchTrackAlternative,
+} from '#/modules/Track/useCases/trackAlternativeUseCases';
+import { Plus } from 'lucide-react';
 
 export type TrackHeaderSectionProps = {
     track: Track;
@@ -99,6 +104,34 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                         >
                             {track.frozen ? <Zap className="size-3 mr-1" /> : <Snowflake className="size-3 mr-1" />}
                             {track.frozen ? 'Unfreeze' : 'Freeze'}
+                        </Button>
+                    </div>
+                )}
+
+                {/* Track alternatives */}
+                {track.alternatives.length > 0 && (
+                    <div className="flex items-center gap-1">
+                        <label className="text-[10px] text-muted-foreground shrink-0">Alt</label>
+                        <select
+                            value={track.activeAlternativeId}
+                            onChange={(e) => switchTrackAlternative(track.id, e.target.value)}
+                            className="h-5 flex-1 rounded border border-border/50 bg-surface-overlay px-1 text-[9px] text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            aria-label="Track alternative"
+                        >
+                            {track.alternatives.map((alt) => (
+                                <option key={alt.id} value={alt.id}>
+                                    {alt.name}
+                                </option>
+                            ))}
+                        </select>
+                        <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            title="New alternative"
+                            aria-label="Create new track alternative"
+                            onClick={() => createTrackAlternative(track.id, undefined, true)}
+                        >
+                            <Plus className="size-3" />
                         </Button>
                     </div>
                 )}

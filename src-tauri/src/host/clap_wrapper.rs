@@ -9,13 +9,22 @@ use clap_sys::entry::clap_plugin_entry;
 use clap_sys::plugin_factory::{clap_plugin_factory, CLAP_PLUGIN_FACTORY_ID};
 use clap_sys::host::clap_host;
 use clap_sys::plugin::clap_plugin;
-use clap_sys::process::{clap_process, clap_process_status, CLAP_PROCESS_CONTINUE};
+use clap_sys::process::clap_process;
 use clap_sys::audio_buffer::clap_audio_buffer;
-use clap_sys::events::{clap_input_events, clap_output_events, clap_event_header};
+use clap_sys::events::{
+    clap_input_events, clap_output_events, clap_event_header,
+    clap_event_param_value, CLAP_EVENT_PARAM_VALUE, CLAP_CORE_EVENT_SPACE_ID,
+};
+use clap_sys::ext::params::{
+    clap_plugin_params, clap_param_info, CLAP_EXT_PARAMS,
+    CLAP_PARAM_IS_AUTOMATABLE, CLAP_PARAM_IS_HIDDEN, CLAP_PARAM_IS_READONLY,
+};
+use clap_sys::ext::state::{clap_plugin_state, CLAP_EXT_STATE};
+use clap_sys::stream::{clap_istream, clap_ostream};
 use libloading::Library;
-use std::ffi::{CStr, CString};
-use std::os::raw::c_void;
+use std::ffi::{CStr, CString, c_void};
 use std::ptr;
+use std::mem;
 
 /// Holds a loaded CLAP plugin instance and its associated resources.
 pub struct ClapWrapper {
@@ -31,6 +40,10 @@ pub struct ClapWrapper {
     name: String,
     /// Sample rate the plugin was activated with.
     sample_rate: f64,
+    /// Cached pointer to the plugin's params extension (may be null).
+    params_ext: *const clap_plugin_params,
+    /// Cached pointer to the plugin's state extension (may be null).
+    state_ext: *const clap_plugin_state,
 }
 
 // SAFETY: The clap_plugin is required to be thread-safe by the CLAP spec.
@@ -67,6 +80,60 @@ unsafe extern "C" fn output_events_try_push(
     _event: *const clap_event_header,
 ) -> bool {
     true // Accept but discard
+}
+
+// ── Single-event input list for param flush ─────────────────────────────
+
+/// Context for a single-event input list used during param flush.
+struct SingleEventCtx {
+    event: clap_event_param_value,
+}
+
+unsafe extern "C" fn single_event_size(_list: *const clap_input_events) -> u32 {
+    1
+}
+
+unsafe extern "C" fn single_event_get(
+    list: *const clap_input_events,
+    _index: u32,
+) -> *const clap_event_header {
+    let ctx = (*list).ctx as *const SingleEventCtx;
+    &(*ctx).event.header as *const clap_event_header
+}
+
+// ── Stream helpers for state save/load ──────────────────────────────────
+
+unsafe extern "C" fn ostream_write(
+    stream: *const clap_ostream,
+    buffer: *const c_void,
+    size: u64,
+) -> i64 {
+    let vec = &mut *((*stream).ctx as *mut Vec<u8>);
+    let slice = std::slice::from_raw_parts(buffer as *const u8, size as usize);
+    vec.extend_from_slice(slice);
+    size as i64
+}
+
+unsafe extern "C" fn istream_read(
+    stream: *const clap_istream,
+    buffer: *mut c_void,
+    size: u64,
+) -> i64 {
+    let cursor = &mut *((*stream).ctx as *mut StreamCursor);
+    let remaining = cursor.data.len() - cursor.pos;
+    let to_read = (size as usize).min(remaining);
+    if to_read == 0 {
+        return 0;
+    }
+    let src = &cursor.data[cursor.pos..cursor.pos + to_read];
+    ptr::copy_nonoverlapping(src.as_ptr(), buffer as *mut u8, to_read);
+    cursor.pos += to_read;
+    to_read as i64
+}
+
+struct StreamCursor {
+    data: Vec<u8>,
+    pos: usize,
 }
 
 impl ClapWrapper {
@@ -157,7 +224,18 @@ impl ClapWrapper {
                 plugin_id.to_string()
             };
 
-            // 8. Activate the plugin
+            // 8. Query extensions BEFORE activation
+            let params_ext = Self::query_extension::<clap_plugin_params>(plugin_ref, CLAP_EXT_PARAMS);
+            let state_ext = Self::query_extension::<clap_plugin_state>(plugin_ref, CLAP_EXT_STATE);
+
+            if !params_ext.is_null() {
+                eprintln!("[CLAP] Plugin '{}' supports CLAP_EXT_PARAMS", name);
+            }
+            if !state_ext.is_null() {
+                eprintln!("[CLAP] Plugin '{}' supports CLAP_EXT_STATE", name);
+            }
+
+            // 9. Activate the plugin
             let sample_rate = 44100.0;
             let mut activated = false;
             if let Some(activate_fn) = plugin_ref.activate {
@@ -182,7 +260,22 @@ impl ClapWrapper {
                 activated,
                 name,
                 sample_rate,
+                params_ext,
+                state_ext,
             })
+        }
+    }
+
+    /// Query a plugin extension by ID. Returns null if not supported.
+    unsafe fn query_extension<T>(plugin_ref: &clap_plugin, ext_id: &CStr) -> *const T {
+        if let Some(get_ext) = plugin_ref.get_extension {
+            let ptr = get_ext(plugin_ref as *const clap_plugin, ext_id.as_ptr());
+            if ptr.is_null() {
+                return ptr::null();
+            }
+            ptr as *const T
+        } else {
+            ptr::null()
         }
     }
 
@@ -274,23 +367,161 @@ impl AudioPlugin for ClapWrapper {
         }
     }
 
-    fn set_parameter(&mut self, _param_id: u32, _value: f64) {
-        // TODO: Implement via CLAP_EXT_PARAMS extension
-        // Would need to query the params extension during init and cache it
+    fn set_parameter(&mut self, param_id: u32, value: f64) {
+        if self.params_ext.is_null() || self.plugin.is_null() {
+            return;
+        }
+
+        unsafe {
+            let params = &*self.params_ext;
+
+            // Build a single param-value event
+            let mut ctx = SingleEventCtx {
+                event: clap_event_param_value {
+                    header: clap_event_header {
+                        size: mem::size_of::<clap_event_param_value>() as u32,
+                        time: 0,
+                        space_id: CLAP_CORE_EVENT_SPACE_ID,
+                        type_: CLAP_EVENT_PARAM_VALUE,
+                        flags: 0,
+                    },
+                    param_id,
+                    cookie: ptr::null_mut(),
+                    note_id: -1,
+                    port_index: -1,
+                    channel: -1,
+                    key: -1,
+                    value,
+                },
+            };
+
+            let input_events = clap_input_events {
+                ctx: &mut ctx as *mut SingleEventCtx as *mut c_void,
+                size: Some(single_event_size),
+                get: Some(single_event_get),
+            };
+
+            if let Some(flush) = params.flush {
+                flush(self.plugin, &input_events, &EMPTY_OUTPUT_EVENTS);
+            }
+        }
     }
 
     fn get_parameters(&self) -> Vec<PluginParameter> {
-        // TODO: Query CLAP_EXT_PARAMS for parameter list
-        vec![]
+        if self.params_ext.is_null() || self.plugin.is_null() {
+            return vec![];
+        }
+
+        unsafe {
+            let params = &*self.params_ext;
+            let count_fn = match params.count {
+                Some(f) => f,
+                None => return vec![],
+            };
+            let get_info_fn = match params.get_info {
+                Some(f) => f,
+                None => return vec![],
+            };
+
+            let count = count_fn(self.plugin);
+            let mut result = Vec::with_capacity(count as usize);
+
+            for i in 0..count {
+                let mut info: clap_param_info = mem::zeroed();
+                if !get_info_fn(self.plugin, i, &mut info) {
+                    continue;
+                }
+
+                // Skip hidden or read-only params
+                if info.flags & CLAP_PARAM_IS_HIDDEN != 0 {
+                    continue;
+                }
+
+                // Read the current value
+                let mut current_value = info.default_value;
+                if let Some(get_value) = params.get_value {
+                    get_value(self.plugin, info.id, &mut current_value);
+                }
+
+                // Extract the name from the fixed-size C char array
+                let name = CStr::from_ptr(info.name.as_ptr())
+                    .to_string_lossy()
+                    .into_owned();
+
+                let is_automatable = info.flags & CLAP_PARAM_IS_AUTOMATABLE != 0;
+                let is_readonly = info.flags & CLAP_PARAM_IS_READONLY != 0;
+
+                result.push(PluginParameter {
+                    id: info.id,
+                    name,
+                    value: current_value,
+                    default_value: info.default_value,
+                    min_value: info.min_value,
+                    max_value: info.max_value,
+                    unit: String::new(), // CLAP doesn't expose units in param_info directly
+                    is_automatable: is_automatable && !is_readonly,
+                });
+            }
+
+            result
+        }
     }
 
     fn get_state(&self) -> Vec<u8> {
-        // TODO: Implement via CLAP_EXT_STATE extension
-        vec![]
+        if self.state_ext.is_null() || self.plugin.is_null() {
+            return vec![];
+        }
+
+        unsafe {
+            let state = &*self.state_ext;
+            let save_fn = match state.save {
+                Some(f) => f,
+                None => return vec![],
+            };
+
+            let mut buffer: Vec<u8> = Vec::new();
+            let ostream = clap_ostream {
+                ctx: &mut buffer as *mut Vec<u8> as *mut c_void,
+                write: Some(ostream_write),
+            };
+
+            let ok = save_fn(self.plugin, &ostream);
+            if ok {
+                buffer
+            } else {
+                eprintln!("[CLAP] state.save() failed for {}", self.name);
+                vec![]
+            }
+        }
     }
 
-    fn set_state(&mut self, _state: &[u8]) {
-        // TODO: Implement via CLAP_EXT_STATE extension
+    fn set_state(&mut self, state_data: &[u8]) {
+        if self.state_ext.is_null() || self.plugin.is_null() {
+            return;
+        }
+
+        unsafe {
+            let state = &*self.state_ext;
+            let load_fn = match state.load {
+                Some(f) => f,
+                None => return,
+            };
+
+            let mut cursor = StreamCursor {
+                data: state_data.to_vec(),
+                pos: 0,
+            };
+
+            let istream = clap_istream {
+                ctx: &mut cursor as *mut StreamCursor as *mut c_void,
+                read: Some(istream_read),
+            };
+
+            let ok = load_fn(self.plugin, &istream);
+            if !ok {
+                eprintln!("[CLAP] state.load() failed for {}", self.name);
+            }
+        }
     }
 }
 

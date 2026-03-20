@@ -32,6 +32,7 @@ export type WorkspaceState = {
     collaborationPanelOpen: boolean;
     chatPanelOpen: boolean;
     chatPanelWidth: number;
+    rippleEditing: boolean;
 };
 
 export const defaultWorkspaceState: WorkspaceState = {
@@ -58,4 +59,5 @@ export const defaultWorkspaceState: WorkspaceState = {
     collaborationPanelOpen: false,
     chatPanelOpen: false,
     chatPanelWidth: 320,
+    rippleEditing: false,
 };

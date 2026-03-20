@@ -23,10 +23,17 @@ import {
 } from '../../../useCases/workspaceViewActions';
 import { useMeterLevel } from '../../hooks/useMeterLevel';
 import { LevelMeter } from '../../components/LevelMeter';
+import { VUMeterCanvas } from '../../components/VUMeterCanvas';
 import { DeviceChainSection } from './DeviceChainSection';
 import { SendsSection } from './SendsSection';
 import { IOSection } from './IOSection';
 import { type Track } from '../../../useCases/workspaceViewActions';
+import {
+    getAllVCAGroups,
+    assignTrackToVCA,
+    removeTrackFromVCA,
+    createVCAGroup,
+} from '#/modules/Track/useCases/vcaFaderUseCases';
 
 type MixerMenu = { x: number; y: number } | null;
 
@@ -134,6 +141,9 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
             )}
 
             <span className="text-[8px] text-muted-foreground capitalize">{track.kind}</span>
+            {track.vcaGroupId && (
+                <span className="text-[7px] text-cyan-400/80 font-mono">VCA</span>
+            )}
 
             {/* Mute / Solo / Arm / Monitor */}
             <div className="flex flex-wrap justify-center gap-0.5">
@@ -239,6 +249,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                     title="Gain"
                 />
                 <LevelMeter peak={peak} rms={rms} peakHold={peakHold} width="w-2" />
+                <VUMeterCanvas trackId={track.id} size={80} />
             </div>
 
             <span className="text-[8px] font-mono text-muted-foreground">
@@ -334,6 +345,46 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                             />
                         ))}
                     </div>
+                    <div className="my-1 border-t border-border/50" />
+                    <div className="px-3 py-1 text-[10px] text-muted-foreground">VCA Group</div>
+                    {getAllVCAGroups().map((g) => (
+                        <button
+                            type="button"
+                            key={g.id}
+                            className={`${menuBtnClass} ${track.vcaGroupId === g.id ? 'text-cyan-400' : ''}`}
+                            role="menuitem"
+                            onClick={act(() => {
+                                if (track.vcaGroupId === g.id) {
+                                    removeTrackFromVCA(track.id);
+                                } else {
+                                    assignTrackToVCA(track.id, g.id);
+                                }
+                            })}
+                        >
+                            {track.vcaGroupId === g.id ? `✓ ${g.name}` : g.name}
+                        </button>
+                    ))}
+                    <button
+                        type="button"
+                        className={menuBtnClass}
+                        role="menuitem"
+                        onClick={act(() => {
+                            const group = createVCAGroup(`VCA ${getAllVCAGroups().length + 1}`);
+                            assignTrackToVCA(track.id, group.id);
+                        })}
+                    >
+                        + New VCA Group
+                    </button>
+                    {track.vcaGroupId && (
+                        <button
+                            type="button"
+                            className={`${menuBtnClass} text-muted-foreground`}
+                            role="menuitem"
+                            onClick={act(() => removeTrackFromVCA(track.id))}
+                        >
+                            Remove from VCA
+                        </button>
+                    )}
                     <div className="my-1 border-t border-border/50" />
                     <button
                         type="button"

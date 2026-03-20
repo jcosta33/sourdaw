@@ -5,6 +5,8 @@ import { bypassDevice, addDevice, removeDevice, reorderDevices } from '../../../
 import { BUILTIN_PLUGINS } from '../../../useCases/workspaceViewActions';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { type Track } from '../../../useCases/workspaceViewActions';
+import { getAllModulationRoutes } from '#/modules/AudioEngine/useCases/modulationSystem';
+import { MIDI_EFFECT_FACTORIES } from '#/modules/AudioEngine/useCases/midiEffectPlugins';
 
 export type DeviceChainSectionProps = {
     track: Track;
@@ -64,6 +66,9 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                             <span className="text-[7px] text-muted-foreground">
                                 <span className="text-[6px] text-muted-foreground/50 mr-0.5">≡</span>
                                 {d.name}
+                                {getAllModulationRoutes().some((r) => r.target.deviceId === d.id) && (
+                                    <span className="ml-0.5 inline-block size-1.5 rounded-full bg-purple-400" title="Modulated" />
+                                )}
                             </span>
                         </button>
                         <button
@@ -95,6 +100,21 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                             }}
                         >
                             + {p.name}
+                        </button>
+                    ))}
+                    <div className="px-3 py-0.5 text-[7px] text-muted-foreground/60 uppercase tracking-wider border-t border-border/20 mt-0.5">MIDI FX</div>
+                    {MIDI_EFFECT_FACTORIES.map((fx) => (
+                        <button
+                            type="button"
+                            key={fx.id}
+                            className="w-full rounded bg-purple-500/10 px-1 py-0.5 text-center hover:bg-purple-500/20 text-[7px] text-foreground transition-colors"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                addDevice(track.id, fx.name);
+                                setShowAdd(false);
+                            }}
+                        >
+                            ♪ {fx.name}
                         </button>
                     ))}
                     <button

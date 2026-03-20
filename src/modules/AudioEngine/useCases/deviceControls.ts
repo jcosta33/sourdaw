@@ -5,8 +5,8 @@
  */
 import { audioEngine } from '../repositories/audioEngineInstance';
 
-export const addDeviceToStrip = (trackId: string, deviceId: string, deviceType: string): void => {
-    audioEngine.addDeviceToStrip(trackId, deviceId, deviceType);
+export const addDeviceToStrip = (trackId: string, deviceId: string, deviceType: string, externalInstanceId?: string): void => {
+    audioEngine.addDeviceToStrip(trackId, deviceId, deviceType, externalInstanceId);
 };
 
 export const removeDeviceFromStrip = (trackId: string, deviceId: string): void => {

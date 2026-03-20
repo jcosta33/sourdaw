@@ -578,8 +578,8 @@ export function createWebAudioEngine(): AudioEngine {
         return { deviceId, type: 'builtin-limiter', nodes: [comp, ceiling], inputNode: comp, outputNode: ceiling };
     }
 
-    function createNativePluginDevice(deviceId: string): BuiltinDeviceNode {
-        const workletNode = new PluginHostNode(context, deviceId);
+    function createNativePluginDevice(deviceId: string, externalInstanceId: string): BuiltinDeviceNode {
+        const workletNode = new PluginHostNode(context, externalInstanceId);
         return {
             deviceId,
             type: 'external-plugin',
@@ -589,7 +589,7 @@ export function createWebAudioEngine(): AudioEngine {
         };
     }
 
-    function addDeviceToStrip(trackId: string, deviceId: string, deviceType: string): void {
+    function addDeviceToStrip(trackId: string, deviceId: string, deviceType: string, externalInstanceId?: string): void {
         const strip = trackStrips.get(trackId);
         if (!strip) {
             return;
@@ -631,7 +631,7 @@ export function createWebAudioEngine(): AudioEngine {
                 dn = createLimiterDevice(deviceId);
                 break;
             case 'external-plugin':
-                dn = createNativePluginDevice(deviceId);
+                dn = createNativePluginDevice(deviceId, externalInstanceId ?? deviceId);
                 break;
             default:
                 return;

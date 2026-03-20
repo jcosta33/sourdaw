@@ -5,6 +5,8 @@ import { Sidebar } from './Sidebar';
 import { InspectorPanel } from './InspectorPanel';
 import { ChatPanel } from '#/modules/AiRuntime/presentations/views/ChatPanel';
 import { MixerPanel } from './MixerPanel';
+import { SessionView } from './SessionView';
+import { RoutingMatrix } from './RoutingMatrix';
 import { AutomationView } from './AutomationView';
 import { ResizeHandle } from '../components/ResizeHandle';
 import { CommandPalette } from '#/modules/Command/presentations/views/CommandPalette';
@@ -17,6 +19,10 @@ import { ExportDialog } from '#/modules/Project/presentations/views/ExportDialog
 import { PreferencesDialog } from '../components/PreferencesDialog';
 import { useGlobalKeyboardShortcuts } from '#/modules/Command/presentations/views/keyboardShortcutsContract';
 import { initializeAudioEngine } from '../../useCases/workspaceViewActions';
+import { registerBuiltinPlugins } from '#/modules/AudioEngine/useCases/wamPluginHost';
+import { registerBuiltinFaustDSP } from '#/modules/AudioEngine/useCases/faustEngine';
+import { registerProModulationEffects } from '#/modules/AudioEngine/useCases/proModulationEffects';
+import { registerProSynthInstruments } from '#/modules/AudioEngine/useCases/proSynthInstruments';
 import { initWebMidi } from '../../useCases/workspaceViewActions';
 import { loadProject, saveProject, newProject } from '../../useCases/workspaceViewActions';
 import { undo, redo } from '../../useCases/workspaceViewActions';
@@ -78,6 +84,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     } = useWorkspaceState();
     const [exportOpen, setExportOpen] = useState(false);
     const [prefsOpen, setPrefsOpen] = useState(false);
+    const [bottomTab, setBottomTab] = useState<'mixer' | 'session' | 'routing'>('mixer');
 
     const [localSidebarWidth, setLocalSidebarWidth] = useState(sidebarWidth);
     const [localInspectorWidth, setLocalInspectorWidth] = useState(inspectorWidth);
@@ -186,6 +193,10 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                 audioInitialized.current = true;
                 void initializeAudioEngine();
                 void initWebMidi();
+                registerBuiltinPlugins();
+                registerBuiltinFaustDSP();
+                registerProModulationEffects();
+                registerProSynthInstruments();
             }
         };
         window.addEventListener('click', init, { once: true });
@@ -404,7 +415,57 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                         onResize={handleMixerResize}
                         onResizeEnd={handleMixerResizeEnd}
                     />
-                    <MixerPanel style={{ height: localMixerHeight }} />
+                    <div style={{ height: localMixerHeight }} className="flex flex-col">
+                        {/* Bottom panel tab bar */}
+                        <div className="flex items-center gap-0.5 px-2 py-0.5 border-b border-border/30 bg-surface-overlay/50 shrink-0">
+                            <button
+                                type="button"
+                                className={cn(
+                                    'px-2 py-0.5 text-[9px] rounded transition-colors',
+                                    bottomTab === 'mixer'
+                                        ? 'bg-primary/20 text-primary font-semibold'
+                                        : 'text-muted-foreground hover:text-foreground'
+                                )}
+                                onClick={() => setBottomTab('mixer')}
+                            >
+                                Mixer
+                            </button>
+                            <button
+                                type="button"
+                                className={cn(
+                                    'px-2 py-0.5 text-[9px] rounded transition-colors',
+                                    bottomTab === 'session'
+                                        ? 'bg-green-500/20 text-green-400 font-semibold'
+                                        : 'text-muted-foreground hover:text-foreground'
+                                )}
+                                onClick={() => setBottomTab('session')}
+                            >
+                                Session
+                            </button>
+                            <button
+                                type="button"
+                                className={cn(
+                                    'px-2 py-0.5 text-[9px] rounded transition-colors',
+                                    bottomTab === 'routing'
+                                        ? 'bg-orange-500/20 text-orange-400 font-semibold'
+                                        : 'text-muted-foreground hover:text-foreground'
+                                )}
+                                onClick={() => setBottomTab('routing')}
+                            >
+                                Routing
+                            </button>
+                        </div>
+                        {/* Panel content */}
+                        <div className="flex-1 overflow-hidden">
+                            {bottomTab === 'mixer' ? (
+                                <MixerPanel style={{ height: '100%' }} />
+                            ) : bottomTab === 'session' ? (
+                                <SessionView />
+                            ) : (
+                                <RoutingMatrix />
+                            )}
+                        </div>
+                    </div>
                 </>
             )}
 

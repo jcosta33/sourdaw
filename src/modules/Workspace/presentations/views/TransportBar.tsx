@@ -18,6 +18,8 @@ import { PromptBar } from './PromptBar';
 import { ToolSelector } from './ToolSelector';
 import { TempoEditor } from './TempoEditor';
 import { RecentProjectsMenu } from '#/modules/Project/presentations/views/RecentProjectsMenu';
+import { toggleRippleEditing } from '../../useCases/rippleEditing';
+import { Button } from '#/components/ui/button';
 
 const subscribeTrackStore = (cb: () => void) => trackStore.subscribe(() => cb());
 const getTrackStoreSnapshot = (): Track[] => trackStore.value?.tracks ?? [];
@@ -32,6 +34,7 @@ export const TransportBar = (): ReactElement => {
         trackListOpen,
         soloMode,
         timeDisplayMode,
+        rippleEditing,
     } = useWorkspaceState();
     const transport = useTransportState();
     const undoState = useUndoState();
@@ -91,6 +94,18 @@ export const TransportBar = (): ReactElement => {
             <Separator orientation="vertical" className="mx-0.5 h-5" />
 
             <ToolSelector />
+
+            <Button
+                variant={rippleEditing ? 'secondary' : 'ghost'}
+                size="xs"
+                onClick={toggleRippleEditing}
+                className={rippleEditing ? 'text-orange-400 border-orange-400/30 px-1.5' : 'px-1.5'}
+                aria-pressed={rippleEditing}
+                aria-label="Toggle ripple editing"
+                title="Ripple Editing (auto-shift clips on delete)"
+            >
+                <span className="text-[10px] font-bold">R</span>
+            </Button>
 
             <Separator orientation="vertical" className="mx-0.5 h-5" />
 

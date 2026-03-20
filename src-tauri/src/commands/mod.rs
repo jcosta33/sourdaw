@@ -4,3 +4,7 @@ pub mod midi;
 pub mod plugins;
 pub mod speech;
 pub mod audio_ipc;
+pub mod audio_decode;
+pub mod link;
+pub mod native_llm;
+pub mod ai_audio;

@@ -70,6 +70,7 @@ export const ClipView = (): ReactElement => {
                 {selectedTrack.kind === 'midi' && selectedClip ? (
                     <PianoRoll
                         clipId={selectedClip.id}
+                        trackId={selectedTrack.id}
                         selectedNoteIds={selectedNoteIds}
                         onSelectedNoteIdsChange={setSelectedNoteIds}
                     />

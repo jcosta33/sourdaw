@@ -14,6 +14,7 @@ import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { cn } from '#/helpers/Styles/cn';
 import { midiStore } from '#/modules/Track/stores/midiStore';
+import { trackStore } from '#/modules/Track/stores/trackStore';
 import { pushUndoEntry } from '../../../useCases/workspaceViewActions';
 import {
     addMidiNote,
@@ -27,6 +28,9 @@ import {
 } from '../../../useCases/workspaceViewActions';
 import { copySelectedNotes, pasteNotes } from '../../../useCases/workspaceViewActions';
 import { type MidiNote } from '../../../useCases/workspaceViewActions';
+import { stampChord, removeNotesByIds, CHORD_TYPE_KEYS, type ChordType } from '#/modules/Track/useCases/chordStamps';
+import { strumNotes, restoreStrumOriginals } from '#/modules/Track/useCases/strumNotes';
+import { extractGrooveFromClip, applyGrooveToClip, restoreGrooveOriginals } from '#/modules/Track/useCases/grooveExtraction';
 
 interface GestureEvent extends UIEvent {
     readonly scale: number;
@@ -40,7 +44,7 @@ const ROW_HEIGHT = 16;
 const GRID_BEATS = 32;
 const RULER_HEIGHT = 22;
 
-type DragMode = 'none' | 'move' | 'resize-left' | 'resize-right' | 'draw' | 'rubber-band';
+type DragMode = 'none' | 'move' | 'resize-left' | 'resize-right' | 'draw' | 'rubber-band' | 'paint' | 'lasso';
 type DragState = {
     mode: DragMode;
     noteId: string | null;
@@ -72,11 +76,12 @@ const SCALE_ROOT_LABELS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A',
 
 type PianoRollProps = {
     clipId: string;
+    trackId: string;
     selectedNoteIds: Set<string>;
     onSelectedNoteIdsChange: Dispatch<SetStateAction<Set<string>>>;
 };
 
-export const PianoRoll = ({ clipId, selectedNoteIds, onSelectedNoteIdsChange }: PianoRollProps): ReactElement => {
+export const PianoRoll = ({ clipId, trackId, selectedNoteIds, onSelectedNoteIdsChange }: PianoRollProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [zoom, setZoom] = useState(1);
     const [_scrollX, setScrollX] = useState(0);
@@ -98,11 +103,18 @@ export const PianoRoll = ({ clipId, selectedNoteIds, onSelectedNoteIdsChange }: 
     });
     const rubberBandRef = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
     const drawPreviewRef = useRef<{ beat: number; pitch: number; duration: number } | null>(null);
+    const paintNotesRef = useRef<Set<string>>(new Set());
+    const lassoPathRef = useRef<Array<{ x: number; y: number }>>([]);
 
     const [scaleRoot, setScaleRoot] = useState(0);
     const [scaleType, setScaleType] = useState<string>('chromatic');
     const [stepInput, setStepInput] = useState(false);
     const [stepBeat, setStepBeat] = useState(0);
+    const [showGhostNotes, setShowGhostNotes] = useState(true);
+    const [chordMode, setChordMode] = useState(false);
+    const [chordType, setChordType] = useState<ChordType>('major');
+    const [paintMode, setPaintMode] = useState(false);
+    const [lassoMode, setLassoMode] = useState(false);
 
     const beatWidth = Math.max(1, 40 * zoom);
 
@@ -110,6 +122,12 @@ export const PianoRoll = ({ clipId, selectedNoteIds, onSelectedNoteIdsChange }: 
         (cb) => midiStore.subscribe(() => cb()),
         () => midiStore.value,
         () => midiStore.value
+    );
+
+    const trackState = useSyncExternalStore(
+        (cb) => trackStore.subscribe(() => cb()),
+        () => trackStore.value,
+        () => trackStore.value
     );
 
     const notes = midiState?.notesByClipId[clipId] ?? [];
@@ -250,6 +268,37 @@ export const PianoRoll = ({ clipId, selectedNoteIds, onSelectedNoteIdsChange }: 
             }
         }
 
+        // ── Ghost notes (from other MIDI tracks) ─────────────────────
+        if (showGhostNotes && trackState) {
+            const otherMidiTracks = trackState.tracks.filter((t) => t.kind === 'midi' && t.id !== trackId);
+            for (const otherTrack of otherMidiTracks) {
+                const trackColor = otherTrack.color ?? '#888';
+                for (const otherClip of otherTrack.clips) {
+                    if (otherClip.type !== 'midi') {
+                        continue;
+                    }
+                    const otherNotes = midiState?.notesByClipId[otherClip.id];
+                    if (!otherNotes) {
+                        continue;
+                    }
+                    for (const gn of otherNotes) {
+                        const row = BASE_PITCH + TOTAL_ROWS - 1 - gn.pitch;
+                        if (row < 0 || row >= TOTAL_ROWS) {
+                            continue;
+                        }
+                        const x = gn.startBeat * beatWidth;
+                        const y = row * ROW_HEIGHT;
+                        const w = gn.duration * beatWidth;
+
+                        ctx.fillStyle = trackColor + '26'; // ~15% opacity hex
+                        ctx.beginPath();
+                        ctx.roundRect(x + 1, y + 1, Math.max(4, w - 2), ROW_HEIGHT - 2, 2);
+                        ctx.fill();
+                    }
+                }
+            }
+        }
+
         for (const note of notes) {
             const row = BASE_PITCH + TOTAL_ROWS - 1 - note.pitch;
             if (row < 0 || row >= TOTAL_ROWS) {
@@ -346,7 +395,7 @@ export const PianoRoll = ({ clipId, selectedNoteIds, onSelectedNoteIdsChange }: 
 
     useEffect(() => {
         draw();
-    }, [notes, clipId, zoom, selectedNoteIds, beatWidth, gridSnap, scaleType, scaleRoot, stepInput, stepBeat]);
+    }, [notes, clipId, zoom, selectedNoteIds, beatWidth, gridSnap, scaleType, scaleRoot, stepInput, stepBeat, showGhostNotes, trackState, trackId, midiState, chordMode, chordType, paintMode, lassoMode]);
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -498,6 +547,22 @@ export const PianoRoll = ({ clipId, selectedNoteIds, onSelectedNoteIdsChange }: 
                     _prevDeltaPitch: 0,
                 };
                 return;
+            } else if (lassoMode) {
+                // Lasso mode — start freeform selection path
+                lassoPathRef.current = [{ x, y: noteY }];
+                setSelectedNoteIds(new Set());
+                dragRef.current = {
+                    mode: 'lasso',
+                    noteId: null,
+                    startX: x,
+                    startY: noteY,
+                    origBeat: 0,
+                    origPitch: 0,
+                    origDuration: 0,
+                    _prevDeltaBeat: 0,
+                    _prevDeltaPitch: 0,
+                };
+                return;
             }
 
             const row = Math.floor(noteY / ROW_HEIGHT);
@@ -512,6 +577,36 @@ export const PianoRoll = ({ clipId, selectedNoteIds, onSelectedNoteIdsChange }: 
                         () => addMidiNote(clipId, pitch, stepBeat, gridSnap, 100)
                     );
                     setStepBeat((prev) => prev + gridSnap);
+                    setSelectedNoteIds(new Set());
+                } else if (chordMode) {
+                    // Chord stamp mode — place a full chord
+                    const beat = snap(x / beatWidth);
+                    const created = stampChord(clipId, pitch, beat, gridSnap, 100, chordType);
+                    if (created.length > 0) {
+                        const createdIds = created.map((n) => n.id);
+                        pushUndoEntry(
+                            `Stamp ${chordType} chord`,
+                            () => removeNotesByIds(clipId, createdIds),
+                            () => stampChord(clipId, pitch, beat, gridSnap, 100, chordType)
+                        );
+                        setSelectedNoteIds(new Set(createdIds));
+                    }
+                } else if (paintMode) {
+                    // Paint mode — place first note, track painted beats
+                    const beat = snap(x / beatWidth);
+                    const note = addMidiNote(clipId, pitch, beat, gridSnap, 100);
+                    paintNotesRef.current = new Set([note.id]);
+                    dragRef.current = {
+                        mode: 'paint',
+                        noteId: null,
+                        startX: x,
+                        startY: noteY,
+                        origBeat: beat,
+                        origPitch: pitch,
+                        origDuration: gridSnap,
+                        _prevDeltaBeat: 0,
+                        _prevDeltaPitch: 0,
+                    };
                     setSelectedNoteIds(new Set());
                 } else {
                     // Start draw mode — drag to set note length
@@ -575,6 +670,55 @@ export const PianoRoll = ({ clipId, selectedNoteIds, onSelectedNoteIdsChange }: 
             const rbH = Math.abs(noteY - drag.startY);
             rubberBandRef.current = { x: rbX, y: rbY, w: rbW, h: rbH };
             draw();
+            return;
+        }
+
+        if (drag.mode === 'lasso') {
+            // Append to freeform lasso path and draw it
+            lassoPathRef.current.push({ x, y: noteY });
+            draw();
+
+            // Draw lasso path overlay
+            const canvas = canvasRef.current;
+            if (canvas) {
+                const ctx = canvas.getContext('2d');
+                if (ctx && lassoPathRef.current.length > 1) {
+                    ctx.strokeStyle = '#a855f7';
+                    ctx.lineWidth = 1.5;
+                    ctx.setLineDash([4, 3]);
+                    ctx.beginPath();
+                    const p0 = lassoPathRef.current[0]!;
+                    ctx.moveTo(p0.x, p0.y + RULER_HEIGHT);
+                    for (let i = 1; i < lassoPathRef.current.length; i++) {
+                        const pt = lassoPathRef.current[i]!;
+                        ctx.lineTo(pt.x, pt.y + RULER_HEIGHT);
+                    }
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+            }
+            return;
+        }
+
+        if (drag.mode === 'paint') {
+            // Fill notes at every grid position between start and current X
+            const currentBeat = snap(x / beatWidth);
+            const startBeat = drag.origBeat;
+            const lowBeat = Math.min(startBeat, currentBeat);
+            const highBeat = Math.max(startBeat, currentBeat);
+
+            // Find which grid beats don't have notes yet and add them
+            for (let b = lowBeat; b <= highBeat; b += gridSnap) {
+                const snappedB = snap(b);
+                // Check if a note already exists at this beat + pitch
+                const exists = notes.some(
+                    (n) => Math.abs(n.startBeat - snappedB) < 0.001 && n.pitch === drag.origPitch
+                );
+                if (!exists) {
+                    const note = addMidiNote(clipId, drag.origPitch, snappedB, gridSnap, 100);
+                    paintNotesRef.current.add(note.id);
+                }
+            }
             return;
         }
 
@@ -752,6 +896,57 @@ export const PianoRoll = ({ clipId, selectedNoteIds, onSelectedNoteIdsChange }: 
             }
         }
         drawPreviewRef.current = null;
+
+        if (drag.mode === 'lasso' && lassoPathRef.current.length > 2) {
+            // Point-in-polygon selection — select notes whose center falls inside the lasso
+            const path = lassoPathRef.current;
+            const enclosed = new Set<string>();
+
+            for (const note of notes) {
+                const cx = (note.startBeat + note.duration / 2) * beatWidth;
+                const cy = (TOTAL_ROWS - 1 - (note.pitch - BASE_PITCH)) * ROW_HEIGHT + ROW_HEIGHT / 2;
+
+                // Ray-casting point-in-polygon
+                let inside = false;
+                for (let i = 0, j = path.length - 1; i < path.length; j = i++) {
+                    const pi = path[i]!;
+                    const pj = path[j]!;
+                    if ((pi.y > cy) !== (pj.y > cy) &&
+                        cx < ((pj.x - pi.x) * (cy - pi.y)) / (pj.y - pi.y) + pi.x) {
+                        inside = !inside;
+                    }
+                }
+                if (inside) {
+                    enclosed.add(note.id);
+                }
+            }
+
+            setSelectedNoteIds(enclosed);
+            lassoPathRef.current = [];
+        }
+
+        if (drag.mode === 'paint') {
+            // Finalize paint: create undo entry for all painted notes
+            const paintedIds = [...paintNotesRef.current];
+            if (paintedIds.length > 0) {
+                const paintedNotes = notes.filter((n) => paintNotesRef.current.has(n.id)).map((n) => ({ ...n }));
+                pushUndoEntry(
+                    `Paint ${paintedIds.length} note${paintedIds.length > 1 ? 's' : ''}`,
+                    () => {
+                        for (const id of paintedIds) {
+                            removeMidiNote(clipId, id);
+                        }
+                    },
+                    () => {
+                        for (const n of paintedNotes) {
+                            addMidiNote(clipId, n.pitch, n.startBeat, n.duration, n.velocity);
+                        }
+                    }
+                );
+            }
+            paintNotesRef.current = new Set();
+        }
+
         dragRef.current = {
             mode: 'none',
             noteId: null,
@@ -1033,6 +1228,67 @@ export const PianoRoll = ({ clipId, selectedNoteIds, onSelectedNoteIdsChange }: 
                     Step
                 </Button>
 
+                <div className="w-px h-4 bg-border/40 mx-1" />
+
+                <Button
+                    variant={showGhostNotes ? 'secondary' : 'ghost'}
+                    size="xs"
+                    onClick={() => setShowGhostNotes((prev) => !prev)}
+                    className={cn('text-[10px] px-2', showGhostNotes && 'text-purple-400 border-purple-400/30')}
+                    aria-pressed={showGhostNotes}
+                    aria-label="Toggle ghost notes"
+                >
+                    Ghost
+                </Button>
+
+                <Button
+                    variant={chordMode ? 'secondary' : 'ghost'}
+                    size="xs"
+                    onClick={() => setChordMode((prev) => !prev)}
+                    className={cn('text-[10px] px-2', chordMode && 'text-emerald-400 border-emerald-400/30')}
+                    aria-pressed={chordMode}
+                    aria-label="Toggle chord stamp mode"
+                >
+                    Chord
+                </Button>
+
+                {chordMode && (
+                    <select
+                        value={chordType}
+                        onChange={(e) => setChordType(e.target.value as ChordType)}
+                        className="h-5 rounded border border-border/50 bg-surface-overlay px-1 text-[9px] text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        aria-label="Chord type"
+                    >
+                        {CHORD_TYPE_KEYS.map((key) => (
+                            <option key={key} value={key}>
+                                {key}
+                            </option>
+                        ))}
+                    </select>
+                )}
+
+                <Button
+                    variant={paintMode ? 'secondary' : 'ghost'}
+                    size="xs"
+                    onClick={() => setPaintMode((prev) => !prev)}
+                    className={cn('text-[10px] px-2', paintMode && 'text-amber-400 border-amber-400/30')}
+                    aria-pressed={paintMode}
+                    aria-label="Toggle paint mode"
+                >
+                    Paint
+                </Button>
+
+                <Button
+                    variant={lassoMode ? 'secondary' : 'ghost'}
+                    size="xs"
+                    onClick={() => setLassoMode((prev) => !prev)}
+                    className={cn('text-[10px] px-2', lassoMode && 'text-purple-400 border-purple-400/30')}
+                    aria-pressed={lassoMode}
+                    aria-label="Toggle magic lasso selection"
+                >
+                    Lasso
+                </Button>
+
                 <div className="flex-1" />
                 <span className="text-[10px] text-muted-foreground">Zoom:</span>
                 <Slider
@@ -1266,6 +1522,67 @@ export const PianoRoll = ({ clipId, selectedNoteIds, onSelectedNoteIdsChange }: 
                             Humanize ({label})
                         </button>
                     ))}
+                    <div className="my-1 border-t border-border/50" />
+                    <div className="px-3 py-1 text-[10px] text-muted-foreground">Strum</div>
+                    <div className="flex gap-1 px-3 py-0.5">
+                        {(['up', 'down'] as const).map((dir) => (
+                            <button
+                                type="button"
+                                key={dir}
+                                className="rounded bg-accent/50 px-1.5 py-0.5 text-[9px] hover:bg-accent disabled:opacity-40"
+                                disabled={selectedNoteIds.size < 2}
+                                onClick={ctxAct(() => {
+                                    const ids = [...selectedNoteIds];
+                                    const originals = strumNotes(clipId, ids, 0.04, dir);
+                                    if (originals) {
+                                        pushUndoEntry(
+                                            `Strum ${dir}`,
+                                            () => restoreStrumOriginals(clipId, originals),
+                                            () => strumNotes(clipId, ids, 0.04, dir)
+                                        );
+                                    }
+                                })}
+                            >
+                                {dir === 'up' ? '↑ Up' : '↓ Down'}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="my-1 border-t border-border/50" />
+                    <div className="px-3 py-1 text-[10px] text-muted-foreground">Groove</div>
+                    <button
+                        type="button"
+                        className="flex w-full items-center px-3 py-1.5 text-xs hover:bg-accent"
+                        role="menuitem"
+                        onClick={ctxAct(() => {
+                            const groove = extractGrooveFromClip(clipId);
+                            if (groove) {
+                                ((window as unknown) as Record<string, unknown>).__lastGrooveTemplate = groove;
+                            }
+                        })}
+                    >
+                        Extract Groove
+                    </button>
+                    <button
+                        type="button"
+                        className="flex w-full items-center px-3 py-1.5 text-xs hover:bg-accent disabled:opacity-40"
+                        role="menuitem"
+                        disabled={!((window as unknown) as Record<string, unknown>).__lastGrooveTemplate}
+                        onClick={ctxAct(() => {
+                            const groove = ((window as unknown) as Record<string, unknown>).__lastGrooveTemplate;
+                            if (groove) {
+                                const originals = applyGrooveToClip(clipId, groove as Parameters<typeof applyGrooveToClip>[1], 0.5);
+                                if (originals) {
+                                    pushUndoEntry(
+                                        'Apply groove',
+                                        () => restoreGrooveOriginals(clipId, originals),
+                                        () => applyGrooveToClip(clipId, groove as Parameters<typeof applyGrooveToClip>[1], 0.5)
+                                    );
+                                }
+                            }
+                        })}
+                    >
+                        Apply Groove (50%)
+                    </button>
                     <div className="my-1 border-t border-border/50" />
                     <button
                         type="button"
