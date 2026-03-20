@@ -35,84 +35,120 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
 
     const isChoice = param.type === 'choice' && param.choices && param.choices.length > 0;
 
+    const isSlider = param.unit === 'dB';
+
     return (
-        <div>
-            <div className="flex items-center justify-between mb-1">
-                <label className="text-[10px] text-muted-foreground">{param.name}</label>
-                <div className="flex items-center gap-1">
+        <div className={cn("flex w-full min-w-0", isSlider ? "flex-col gap-2" : "flex-row items-center gap-3")}>
+            {isSlider ? (
+                <div className="flex items-center justify-between w-full">
+                    <label className="text-[10px] font-medium text-foreground truncate" title={param.name}>
+                        {param.name}
+                    </label>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[10px] font-mono text-muted-foreground shrink-0">
+                            {value.toFixed(param.type === 'int' ? 0 : 1)}
+                            {param.unit ? ` ${param.unit}` : ''}
+                        </span>
+                        <MidiLearnButton
+                            targetType="deviceParam"
+                            trackId={trackId}
+                            deviceId={device.id}
+                            paramId={param.id}
+                        />
+                        {param.automatable && (
+                            <button
+                                type="button"
+                                className={cn(
+                                    'size-3 rounded-full border shrink-0 transition-colors',
+                                    hasAutomation ? 'border-orange-400 bg-orange-400/20' : 'border-muted-foreground/30 hover:bg-muted'
+                                )}
+                                onClick={() => addAutomationLane(trackId, param.id, param.name)}
+                                aria-label={`Automate ${param.name}`}
+                                title={hasAutomation ? 'Automation active' : 'Add automation lane'}
+                            />
+                        )}
+                    </div>
+                </div>
+            ) : (
+                <div className="flex flex-col flex-1 min-w-0 overflow-hidden justify-center gap-1.5">
+                    <label className="text-[10px] font-medium text-foreground truncate w-full" title={param.name}>
+                        {param.name}
+                    </label>
                     {!isChoice && (
                         <span className="text-[10px] font-mono text-muted-foreground">
                             {value.toFixed(param.type === 'int' ? 0 : 1)}
                             {param.unit ? ` ${param.unit}` : ''}
                         </span>
                     )}
-                    <MidiLearnButton
-                        targetType="deviceParam"
-                        trackId={trackId}
-                        deviceId={device.id}
-                        paramId={param.id}
-                    />
-                    {param.automatable && (
-                        <button
-                            type="button"
-                            className={cn(
-                                'size-3 rounded-full border',
-                                hasAutomation ? 'border-orange-400 bg-orange-400/20' : 'border-muted-foreground/30'
-                            )}
-                            onClick={() => addAutomationLane(trackId, param.id, param.name)}
-                            aria-label={`Automate ${param.name}`}
-                            title={hasAutomation ? 'Automation active' : 'Add automation lane'}
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                        <MidiLearnButton
+                            targetType="deviceParam"
+                            trackId={trackId}
+                            deviceId={device.id}
+                            paramId={param.id}
                         />
-                    )}
-                </div>
-            </div>
-            {isChoice ? (
-                <select
-                    className="w-full rounded bg-surface px-2 py-1 text-xs text-foreground border border-border/50 focus:outline-none focus:ring-1 focus:ring-primary"
-                    value={Math.round(value)}
-                    onChange={handleChoiceChange}
-                    aria-label={param.name}
-                >
-                    {param.choices!.map((label, i) => (
-                        <option key={label} value={i}>
-                            {label}
-                        </option>
-                    ))}
-                </select>
-            ) : (
-                <div className="flex justify-center mt-3 pb-1 w-full px-1">
-                    {param.unit === 'dB' ? (
-                        <BipolarSlider
-                            value={value}
-                            onValueChange={handleKnobChange}
-                            min={param.minValue}
-                            max={param.maxValue}
-                            step={param.type === 'int' ? 1 : 0.1}
-                            defaultValue={param.defaultValue ?? param.value}
-                            formatValue={(v) => `${v.toFixed(1)} dB`}
-                        />
-                    ) : (
-                        <Knob
-                            value={value}
-                            onValueChange={handleKnobChange}
-                            min={param.minValue}
-                            max={param.maxValue}
-                            step={param.type === 'int' ? 1 : 0}
-                            defaultValue={param.defaultValue ?? param.value}
-                            size={
-                                param.name.toLowerCase().includes('mix') ||
-                                param.name.toLowerCase().includes('dry/wet') ||
-                                param.name.toLowerCase().includes('threshold') ||
-                                param.name.toLowerCase().includes('time') ||
-                                param.name.toLowerCase().includes('rate')
-                                    ? 64
-                                    : 48
-                            }
-                            aria-label={param.name}
-                        />
-                    )}
+                        {param.automatable && (
+                            <button
+                                type="button"
+                                className={cn(
+                                    'size-3 rounded-full border shrink-0 transition-colors',
+                                    hasAutomation ? 'border-orange-400 bg-orange-400/20' : 'border-muted-foreground/30 hover:bg-muted'
+                                )}
+                                onClick={() => addAutomationLane(trackId, param.id, param.name)}
+                                aria-label={`Automate ${param.name}`}
+                                title={hasAutomation ? 'Automation active' : 'Add automation lane'}
+                            />
+                        )}
+                    </div>
                 </div>
             )}
+
+            <div className={cn("flex items-center justify-center", isSlider ? "w-full px-1" : "shrink-0")}>
+                {isChoice ? (
+                    <select
+                        className="w-[80px] rounded bg-surface px-1.5 py-1 text-xs text-foreground border border-border/50 focus:outline-none focus:ring-1 focus:ring-primary"
+                        value={Math.round(value)}
+                        onChange={handleChoiceChange}
+                        aria-label={param.name}
+                    >
+                        {param.choices!.map((label, i) => (
+                            <option key={label} value={i}>
+                                {label}
+                            </option>
+                        ))}
+                    </select>
+                ) : isSlider ? (
+                    <BipolarSlider
+                        value={value}
+                        onValueChange={handleKnobChange}
+                        min={param.minValue}
+                        max={param.maxValue}
+                        step={param.type === 'int' ? 1 : 0.1}
+                        defaultValue={param.defaultValue ?? param.value}
+                        formatValue={(v) => `${v.toFixed(1)} dB`}
+                        className="w-full"
+                    />
+                ) : (
+                    <Knob
+                        value={value}
+                        onValueChange={handleKnobChange}
+                        min={param.minValue}
+                        max={param.maxValue}
+                        step={param.type === 'int' ? 1 : 0}
+                        defaultValue={param.defaultValue ?? param.value}
+                        size={
+                            param.name.toLowerCase().includes('mix') ||
+                            param.name.toLowerCase().includes('dry/wet') ||
+                            param.name.toLowerCase().includes('threshold') ||
+                            param.name.toLowerCase().includes('time') ||
+                            param.name.toLowerCase().includes('rate')
+                                ? 64
+                                : 48
+                        }
+                        aria-label={param.name}
+                    />
+                )}
+            </div>
         </div>
     );
 };

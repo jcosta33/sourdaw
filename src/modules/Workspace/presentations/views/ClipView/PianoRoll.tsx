@@ -1370,7 +1370,7 @@ export const PianoRoll = ({
                             <div
                                 key={row}
                                 className={cn(
-                                    'flex items-center justify-end pr-1 text-[8px]',
+                                    'flex items-center justify-end pr-1 text-[10px]',
                                     isBlack ? 'bg-surface-base text-muted-foreground/40' : 'text-muted-foreground/60'
                                 )}
                                 style={{ height: ROW_HEIGHT }}

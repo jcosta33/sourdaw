@@ -1,6 +1,6 @@
 import { type ReactElement, useSyncExternalStore } from 'react';
+import { Card } from '#/components/ui/card';
 import { Button } from '#/components/ui/button';
-import { Separator } from '#/components/ui/separator';
 import { cn } from '#/helpers/Styles/cn';
 import { takeLaneStore } from '#/modules/Track/stores/takeLaneStore';
 import { setCompRegion, selectTake, flattenComp } from '../../../useCases/workspaceViewActions';
@@ -34,47 +34,47 @@ export const TakesSection = ({ trackId }: TakesSectionProps): ReactElement | nul
     };
 
     return (
-        <>
-            <Separator />
-            <section>
-                <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                        Takes ({lane.takes.length})
-                    </h3>
-                    <Button variant="ghost" size="xs" onClick={() => flattenComp(trackId)} aria-label="Flatten comp">
-                        Flatten
-                    </Button>
+        <div className="pt-2">
+            <div className="px-1 mb-2 flex flex-row items-center justify-between">
+                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                    Takes ({lane.takes.length})
                 </div>
-                <div className="space-y-1">
-                    {lane.takes.map((take) => (
-                        <div
-                            key={take.id}
-                            className={cn(
-                                'flex items-center justify-between rounded px-2 py-1.5',
-                                take.selected ? 'bg-primary/15 ring-1 ring-primary/30' : 'bg-surface-overlay'
-                            )}
-                        >
+                <Button variant="ghost" size="xs" onClick={() => flattenComp(trackId)} aria-label="Flatten comp">
+                    Flatten
+                </Button>
+            </div>
+            <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
+                {lane.takes.map((take) => (
+                    <Card
+                        key={take.id}
+                        className={cn(
+                            'flex flex-col justify-center rounded-md shadow-none bg-surface-base border-border/50 p-2 gap-2',
+                            take.selected ? 'ring-1 ring-primary/30' : ''
+                        )}
+                    >
+                        <div className="flex items-center justify-between w-full">
                             <div className="min-w-0 flex-1">
-                                <span className="text-xs text-foreground truncate block">{take.name}</span>
+                                <span className="text-xs text-foreground font-medium truncate block">{take.name}</span>
                                 <span className="text-[10px] text-muted-foreground">
                                     beat {take.startBeat}–{take.endBeat}
                                 </span>
                             </div>
-                            {!take.selected && (
-                                <Button
-                                    variant="ghost"
-                                    size="xs"
-                                    onClick={() => handleSetActive(take.id)}
-                                    aria-label={`Set ${take.name} as active take`}
-                                >
-                                    Set Active
-                                </Button>
-                            )}
-                            {take.selected && <span className="text-[10px] font-medium text-primary">Active</span>}
+                            {take.selected && <span className="text-[10px] font-medium text-primary ml-2 shrink-0">Active</span>}
                         </div>
-                    ))}
-                </div>
-            </section>
-        </>
+                        {!take.selected && (
+                            <Button
+                                variant="secondary"
+                                size="xs"
+                                className="w-full"
+                                onClick={() => handleSetActive(take.id)}
+                                aria-label={`Set ${take.name} as active take`}
+                            >
+                                Set Active
+                            </Button>
+                        )}
+                    </Card>
+                ))}
+            </div>
+        </div>
     );
 };

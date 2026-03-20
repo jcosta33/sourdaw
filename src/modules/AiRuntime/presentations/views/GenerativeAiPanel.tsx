@@ -2,6 +2,7 @@ import { type ReactElement, useState, useSyncExternalStore } from 'react';
 import { X, Sparkles, Music, Mic2, RefreshCw, AudioWaveform, Play, Plus, Loader2, Music4 } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
+import { DisabledFeatureWrapper } from '#/components/ui/disabled-feature-wrapper';
 import { cn } from '#/helpers/Styles/cn';
 import { isTauri } from '#/modules/AudioEngine/useCases/nativeAIBridge';
 import {
@@ -15,6 +16,7 @@ import {
     type AiTaskResult,
     type GenerativeAiState,
 } from '../../useCases/generativeAiActions';
+import { GenreGrid, MoodGrid, InstrumentGrid } from '../components/GenerativeParamGrids';
 
 export const GenerativeAiPanel = (): ReactElement | null => {
     const state = useSyncExternalStore<GenerativeAiState>(subscribeGenerativeAi, getGenerativeAiSnapshot);
@@ -119,17 +121,23 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                             <Mic2 className="size-6" />
                             <span className="text-[11px] font-medium">Drop Audio File</span>
                         </div>
-                        <Button
-                            className="w-full h-8 text-xs bg-purple-600 hover:bg-purple-500 text-white flex justify-between"
-                            onClick={handleStemSep}
+                        <DisabledFeatureWrapper
+                            disabled={!isTauri()}
+                            reason="Stem Separation requires the Tauri Desktop version of WebDAW to run HTDemucs natively."
+                            className="w-full flex"
                         >
-                            <div className="flex items-center">
-                                <RefreshCw className="size-3.5 mr-2" /> Extract Stems
-                            </div>
-                            <span className="text-[9px] opacity-70 border border-white/40 rounded px-1">
-                                {isTauri() ? 'Desktop' : 'Web Audio'}
-                            </span>
-                        </Button>
+                            <Button
+                                className="w-full h-8 text-xs bg-purple-600 hover:bg-purple-500 text-white flex justify-between"
+                                onClick={handleStemSep}
+                            >
+                                <div className="flex items-center">
+                                    <RefreshCw className="size-3.5 mr-2" /> Extract Stems
+                                </div>
+                                <span className="text-[9px] opacity-70 border border-white/40 rounded px-1">
+                                    {isTauri() ? 'Desktop' : 'Web'}
+                                </span>
+                            </Button>
+                        </DisabledFeatureWrapper>
                     </div>
                 ) : (
                     <div className="space-y-3">
@@ -147,51 +155,29 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                             />
                         </div>
 
-                        <div className="grid grid-cols-2 gap-2">
-                            <div className="space-y-1 text-[10px]">
-                                <label className="font-medium text-foreground/80">Genre</label>
-                                <select
-                                    className="w-full h-7 bg-surface-base border border-border/60 rounded px-1.5 focus:outline-none focus:border-purple-500/50 text-foreground"
-                                    value={genre}
-                                    onChange={(e) => setGenre(e.target.value)}
-                                >
-                                    <option value="">Any</option>
-                                    <option value="Lo-Fi Hip Hop">Lo-Fi Hip Hop</option>
-                                    <option value="EDM / House">EDM / House</option>
-                                    <option value="Cinematic Orchestral">Cinematic</option>
-                                    <option value="Synthwave">Synthwave</option>
-                                    <option value="Rock">Rock</option>
-                                </select>
+                        <div className="space-y-4 pt-1 pb-2">
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-semibold text-foreground/90 uppercase tracking-wider flex items-center justify-between">
+                                    Genre
+                                    {genre && <Button variant="link" size="xs" className="h-4 p-0 text-[9px] text-muted-foreground hover:text-foreground" onClick={() => setGenre('')}>Clear</Button>}
+                                </label>
+                                <GenreGrid value={genre} onChange={setGenre} />
                             </div>
-                            <div className="space-y-1 text-[10px]">
-                                <label className="font-medium text-foreground/80">Mood</label>
-                                <select
-                                    className="w-full h-7 bg-surface-base border border-border/60 rounded px-1.5 focus:outline-none focus:border-purple-500/50 text-foreground"
-                                    value={mood}
-                                    onChange={(e) => setMood(e.target.value)}
-                                >
-                                    <option value="">Any</option>
-                                    <option value="Chill / Relaxed">Chill / Relaxed</option>
-                                    <option value="Aggressive / Dark">Aggressive / Dark</option>
-                                    <option value="Upbeat / Happy">Upbeat / Happy</option>
-                                    <option value="Melancholy">Melancholy</option>
-                                    <option value="Epic">Epic</option>
-                                </select>
+                            
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-semibold text-foreground/90 uppercase tracking-wider flex items-center justify-between">
+                                    Mood
+                                    {mood && <Button variant="link" size="xs" className="h-4 p-0 text-[9px] text-muted-foreground hover:text-foreground" onClick={() => setMood('')}>Clear</Button>}
+                                </label>
+                                <MoodGrid value={mood} onChange={setMood} />
                             </div>
-                            <div className="space-y-1 text-[10px] col-span-2">
-                                <label className="font-medium text-foreground/80">Instrument Focus</label>
-                                <select
-                                    className="w-full h-7 bg-surface-base border border-border/60 rounded px-1.5 focus:outline-none focus:border-purple-500/50 text-foreground"
-                                    value={instrument}
-                                    onChange={(e) => setInstrument(e.target.value)}
-                                >
-                                    <option value="">Full Mix / Default</option>
-                                    <option value="Acoustic Piano">Acoustic Piano</option>
-                                    <option value="Analog Synthesizer">Analog Synthesizer</option>
-                                    <option value="Drum Kit">Drum Kit</option>
-                                    <option value="Electric Bass">Electric Bass</option>
-                                    <option value="String Section">String Section</option>
-                                </select>
+                            
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-semibold text-foreground/90 uppercase tracking-wider flex items-center justify-between">
+                                    Instrument Focus
+                                    {instrument && <Button variant="link" size="xs" className="h-4 p-0 text-[9px] text-muted-foreground hover:text-foreground" onClick={() => setInstrument('')}>Clear</Button>}
+                                </label>
+                                <InstrumentGrid value={instrument} onChange={setInstrument} />
                             </div>
                         </div>
 
@@ -229,19 +215,25 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                             </div>
                         )}
 
-                        <Button
-                            className="w-full h-8 text-xs bg-purple-600 hover:bg-purple-500 text-white flex justify-between items-center"
-                            onClick={handleGenerate}
-                            disabled={!prompt.trim() && !genre && !instrument && !mood}
+                        <DisabledFeatureWrapper
+                            disabled={!isTauri()}
+                            reason="AI Generation requires the Tauri Desktop version of WebDAW to execute local inference models."
+                            className="w-full flex"
                         >
-                            <div className="flex items-center gap-2">
-                                <Sparkles className="size-3.5" />
-                                Generate {activeTab === 'audio' ? 'Audio' : 'MIDI'}
-                            </div>
-                            <span className="text-[9px] opacity-70 border border-white/40 rounded px-1">
-                                {isTauri() ? 'Desktop' : 'Web'}
-                            </span>
-                        </Button>
+                            <Button
+                                className="w-full h-8 text-xs bg-purple-600 hover:bg-purple-500 text-white flex justify-between items-center"
+                                onClick={handleGenerate}
+                                disabled={!prompt.trim() && !genre && !instrument && !mood}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <Sparkles className="size-3.5" />
+                                    Generate {activeTab === 'audio' ? 'Audio' : 'MIDI'}
+                                </div>
+                                <span className="text-[9px] opacity-70 border border-white/40 rounded px-1">
+                                    {isTauri() ? 'Desktop' : 'Web'}
+                                </span>
+                            </Button>
+                        </DisabledFeatureWrapper>
                     </div>
                 )}
             </div>

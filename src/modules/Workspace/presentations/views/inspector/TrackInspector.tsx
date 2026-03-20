@@ -1,5 +1,4 @@
 import { type ReactElement } from 'react';
-import { Separator } from '#/components/ui/separator';
 import { type Track } from '../../../useCases/workspaceViewActions';
 import { TrackHeaderSection } from './TrackHeaderSection';
 import { TrackAlternativesSection } from './TrackAlternativesSection';
@@ -13,7 +12,6 @@ import { TrackRoutingSection } from './TrackRoutingSection';
 import { TrackClipsSection } from './TrackClipsSection';
 import { TakesSection } from './TakesSection';
 import { SignalFlowSection } from './SignalFlowSection';
-import { MasterVisualizationsSection } from './MasterVisualizationsSection';
 
 export type TrackInspectorProps = {
     track: Track;
@@ -44,9 +42,6 @@ export const TrackInspector = ({
             <TrackClipsSection track={track} onSelectClip={onSelectClip} />
             <TakesSection trackId={track.id} />
             <SignalFlowSection />
-            {track.id === 'master' && (
-                <MasterVisualizationsSection />
-            )}
         </div>
     );
 };

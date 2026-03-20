@@ -3,7 +3,6 @@ import { ScrollArea } from '#/components/ui/scroll-area';
 import { Input } from '#/components/ui/input';
 import { Button } from '#/components/ui/button';
 import { Search, Music, FileAudio, Waves, Upload, X } from 'lucide-react';
-import { cn } from '#/helpers/Styles/cn';
 import { toggleSidebar } from '../../useCases/togglePanel';
 import { BUILTIN_PLUGINS } from '../../useCases/workspaceViewActions';
 import { useTracks } from '../hooks/useTracks';
@@ -13,7 +12,11 @@ import { SamplesTab } from './sidebar/SamplesTab';
 import { InstrumentsTab } from './sidebar/InstrumentsTab';
 import { EffectsTab } from './sidebar/EffectsTab';
 
-type BrowserTab = 'samples' | 'instruments' | 'effects';
+export type SidebarRoute = {
+    id: string;
+    title: string;
+    payload?: Record<string, any>;
+};
 
 type UserSample = {
     id: string;
@@ -28,17 +31,37 @@ type SidebarProps = {
     style?: CSSProperties;
 };
 
-const TABS: { id: BrowserTab; label: string; Icon: typeof FileAudio }[] = [
-    { id: 'samples', label: 'Samples', Icon: FileAudio },
-    { id: 'instruments', label: 'Instruments', Icon: Music },
-    { id: 'effects', label: 'Effects', Icon: Waves },
-];
-
 /** User-imported samples only — no placeholder data */
 const SAMPLE_LIBRARY: { id: string; name: string; category: string; duration: string }[] = [];
 
 export const Sidebar = ({ style }: SidebarProps): ReactElement => {
-    const [activeTab, setActiveTab] = useState<BrowserTab>('samples');
+    const [activeTab, setActiveTab] = useState<'library' | 'instruments' | 'effects'>('library');
+    const [navStacks, setNavStacks] = useState<Record<string, SidebarRoute[]>>({
+        library: [{ id: 'library', title: 'Library' }],
+        instruments: [{ id: 'instruments', title: 'Instruments' }],
+        effects: [{ id: 'effects', title: 'Audio Effects' }],
+    });
+    
+    const currentStack = navStacks[activeTab] ?? [];
+    const currentRoute = currentStack[currentStack.length - 1] as SidebarRoute;
+    
+    const pushRoute = (route: SidebarRoute) => {
+        setNavStacks(prev => ({
+            ...prev,
+            [activeTab]: [...prev[activeTab] ?? [], route]
+        }));
+    };
+    
+    const popRoute = () => {
+        setNavStacks(prev => {
+            const stack = prev[activeTab] ?? [];
+            if (stack.length > 1) {
+                return { ...prev, [activeTab]: stack.slice(0, -1) };
+            }
+            return prev;
+        });
+    };
+    
     const [searchQuery, setSearchQuery] = useState('');
     const [userSamples, setUserSamples] = useState<UserSample[]>([]);
     const [favorites, setFavorites] = useState<Set<string>>(() => {
@@ -147,37 +170,49 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                 </Button>
             </div>
 
-            <div className="flex border-b border-border/50 bg-surface-overlay" role="tablist" aria-label="Browser categories">
-                {TABS.map((tab) => (
-                    <Button
-                        key={tab.id}
-                        variant="ghost"
-                        size="xs"
-                        role="tab"
-                        aria-selected={activeTab === tab.id}
-                        aria-controls={`browser-panel-${tab.id}`}
-                        className={cn(
-                            'flex-1 rounded-none border-b-2 transition-colors py-2 h-auto flex flex-col items-center justify-center gap-1',
-                            activeTab === tab.id
-                                ? 'border-primary text-primary bg-surface-base'
-                                : 'border-transparent text-muted-foreground hover:bg-surface-overlay hover:text-foreground'
-                        )}
-                        onClick={() => setActiveTab(tab.id)}
-                    >
-                        <tab.Icon className="size-4" aria-hidden="true" />
-                        <span className="text-[8px] uppercase tracking-wider font-semibold">{tab.label}</span>
-                    </Button>
-                ))}
+            <div className="flex border-b border-border/20 p-2 gap-1 shrink-0 bg-surface-base/80">
+                <Button 
+                    variant={activeTab === 'library' ? 'secondary' : 'ghost'} 
+                    size="xs" 
+                    className="flex-1 gap-1.5 h-7 text-[10px]"
+                    onClick={() => setActiveTab('library')}
+                >
+                    <FileAudio className="size-3" /> Library
+                </Button>
+                <Button 
+                    variant={activeTab === 'instruments' ? 'secondary' : 'ghost'} 
+                    size="xs" 
+                    className="flex-1 gap-1.5 h-7 text-[10px]"
+                    onClick={() => setActiveTab('instruments')}
+                >
+                    <Music className="size-3" /> Insts
+                </Button>
+                <Button 
+                    variant={activeTab === 'effects' ? 'secondary' : 'ghost'} 
+                    size="xs" 
+                    className="flex-1 gap-1.5 h-7 text-[10px]"
+                    onClick={() => setActiveTab('effects')}
+                >
+                    <Waves className="size-3" /> Effects
+                </Button>
             </div>
 
+            {currentStack.length > 1 && (
+                <div className="flex items-center gap-1 border-b border-border/50 bg-surface-overlay px-2 py-1.5 h-[34px] shrink-0">
+                    <Button variant="ghost" size="icon-xs" onClick={popRoute} className="h-5 w-5 shrink-0 text-muted-foreground hover:text-foreground hover:bg-surface-raised">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                    </Button>
+                    <span className="text-[10px] font-semibold tracking-wide uppercase text-muted-foreground truncate ml-1">{currentRoute.title}</span>
+                </div>
+            )}
+            
             <ScrollArea className="flex-1">
                 <div
-                    id={`browser-panel-${activeTab}`}
-                    role="tabpanel"
-                    className="p-1"
-                    aria-label={`${activeTab} browser`}
+                    id={`browser-panel-${currentRoute.id}`}
+                    className="p-1 h-full"
+                    aria-label={`${currentRoute.title} browser`}
                 >
-                    {activeTab === 'samples' ? (
+                    {currentRoute.id === 'library' && (
                         <>
                             <div className="flex items-center justify-between px-1 pb-1">
                                 <span className="text-[9px] text-muted-foreground">
@@ -187,9 +222,7 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                                     variant="ghost"
                                     size="xs"
                                     className="h-5 gap-1 text-[10px]"
-                                    onClick={() => {
-                                        fileInputRef.current?.click();
-                                    }}
+                                    onClick={() => fileInputRef.current?.click()}
                                 >
                                     <Upload className="size-3" aria-hidden="true" />
                                     Import
@@ -214,8 +247,9 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                                 preview={preview}
                             />
                         </>
-                    ) : null}
-                    {activeTab === 'instruments' ? (
+                    )}
+                    
+                    {currentRoute.id.startsWith('instruments') && (
                         <InstrumentsTab
                             plugins={filteredPlugins}
                             selectedTrackId={selectedTrackId}
@@ -224,15 +258,18 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                             favorites={favorites}
                             onToggleFavorite={toggleFavorite}
                             preview={preview}
+                            currentRoute={currentRoute}
+                            pushRoute={pushRoute}
                         />
-                    ) : null}
-                    {activeTab === 'effects' ? (
+                    )}
+                    
+                    {currentRoute.id === 'effects' && (
                         <EffectsTab
                             plugins={filteredPlugins}
                             selectedTrackId={selectedTrackId}
                             searchQuery={searchQuery}
                         />
-                    ) : null}
+                    )}
                 </div>
             </ScrollArea>
         </aside>

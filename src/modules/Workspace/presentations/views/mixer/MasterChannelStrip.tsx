@@ -55,7 +55,7 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
                 <LevelMeter peak={peak} rms={rms} peakHold={peakHold} width="w-2" />
             </div>
 
-            <span className="text-[8px] font-mono text-muted-foreground">
+            <span className="text-[10px] font-mono text-muted-foreground">
                 {masterGain === 0 ? '-∞' : `${((masterGain / 80 - 1) * 12).toFixed(1)} dB`}
             </span>
 

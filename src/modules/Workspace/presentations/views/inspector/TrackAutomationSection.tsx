@@ -1,4 +1,5 @@
 import { type ReactElement, useState, useEffect, useRef, useSyncExternalStore } from 'react';
+import { Card } from '#/components/ui/card';
 import { Button } from '#/components/ui/button';
 import { Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
 import { BUILTIN_PLUGINS } from '../../../useCases/workspaceViewActions';
@@ -41,9 +42,9 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
     }, [showAutoMenu]);
 
     return (
-        <section>
-            <div className="flex items-center justify-between mb-2">
-                <h3 className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Automation</h3>
+        <div className="overflow-visible">
+            <div className="px-1 mb-2 flex flex-row items-center justify-between">
+                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Automation</div>
                 <div className="relative" ref={autoMenuRef}>
                     <Button
                         variant="ghost"
@@ -57,7 +58,7 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                     </Button>
                     {showAutoMenu && (
                         <div
-                            className="absolute right-0 top-full z-50 mt-1 w-48 rounded-md border border-border/50 bg-surface-raised py-1 shadow-lg"
+                            className="absolute right-0 top-full z-50 mt-1 w-48 rounded-md border border-border/50 bg-popover py-1 shadow-lg"
                             role="menu"
                         >
                             <p className="px-3 py-1 text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">
@@ -132,17 +133,18 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                 </div>
             </div>
             {trackLanes.length > 0 ? (
-                <div className="space-y-1">
+                <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
                     {trackLanes.map((lane) => (
-                        <div
+                        <Card
                             key={lane.id}
-                            className="flex items-center justify-between rounded bg-surface-overlay px-2 py-1.5"
+                            className="flex items-center justify-between rounded-md shadow-none bg-surface-base border-border/50 p-2"
                         >
-                            <span className="text-xs text-foreground">{lane.parameterName}</span>
-                            <div className="flex gap-0.5">
+                            <span className="text-[10px] text-foreground font-medium truncate pr-2" title={lane.parameterName}>{lane.parameterName}</span>
+                            <div className="flex gap-0.5 shrink-0">
                                 <Button
                                     variant="ghost"
                                     size="icon-xs"
+                                    className="h-6 w-6"
                                     aria-label={lane.visible ? 'Hide' : 'Show'}
                                     onClick={() => {
                                         toggleAutomationVisibility(lane.id);
@@ -157,6 +159,7 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                                 <Button
                                     variant="ghost"
                                     size="icon-xs"
+                                    className="h-6 w-6"
                                     aria-label="Remove lane"
                                     onClick={() => {
                                         removeAutomationLane(lane.id);
@@ -165,12 +168,12 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                                     <Trash2 className="size-3 text-muted-foreground" />
                                 </Button>
                             </div>
-                        </div>
+                        </Card>
                     ))}
                 </div>
             ) : (
-                <p className="text-[10px] text-muted-foreground">No automation lanes.</p>
+                <p className="text-[10px] text-muted-foreground px-1">No automation lanes.</p>
             )}
-        </section>
+        </div>
     );
 };

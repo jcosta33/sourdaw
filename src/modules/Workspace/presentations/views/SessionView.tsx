@@ -74,7 +74,7 @@ export const SessionView = (): ReactElement => {
                 <div className="flex min-w-max">
                     {/* Scene triggers column */}
                     <div className="flex flex-col w-10 shrink-0 border-r border-border/30">
-                        <div className="h-6 flex items-center justify-center text-[7px] text-muted-foreground border-b border-border/20">
+                        <div className="h-6 flex items-center justify-center text-[10px] text-muted-foreground border-b border-border/20">
                             Scene
                         </div>
                         {Array.from({ length: SCENE_COUNT }, (_, i) => (
@@ -95,7 +95,7 @@ export const SessionView = (): ReactElement => {
                         <div key={track.id} className="flex flex-col w-24 shrink-0 border-r border-border/20">
                             {/* Track header */}
                             <div
-                                className="h-6 flex items-center justify-center text-[8px] font-medium text-foreground border-b border-border/20 truncate px-1"
+                                className="h-6 flex items-center justify-center text-[10px] font-medium text-foreground border-b border-border/20 truncate px-1"
                                 style={{ borderTopColor: track.color, borderTopWidth: track.color ? 2 : 0 }}
                             >
                                 {track.name}
@@ -132,7 +132,7 @@ export const SessionView = (): ReactElement => {
                                                 )}
                                                 <span
                                                     className={cn(
-                                                        'text-[8px] rounded px-1 py-0.5',
+                                                        'text-[10px] rounded px-1 py-0.5',
                                                         isActive
                                                             ? 'bg-green-500/30 text-green-300'
                                                             : 'bg-muted/30 text-muted-foreground'

@@ -1,5 +1,5 @@
 import { type ReactElement, useState, useEffect, useRef, useSyncExternalStore } from 'react';
-import { Card, CardHeader, CardTitle, CardContent } from '#/components/ui/card';
+import { Card } from '#/components/ui/card';
 import { Button } from '#/components/ui/button';
 import { Plus, Power, Trash2, Monitor } from 'lucide-react';
 import { BUILTIN_PLUGINS } from '../../../useCases/workspaceViewActions';
@@ -14,6 +14,7 @@ import { pluginScanStore, defaultPluginScanState } from '#/modules/AudioEngine/s
 import { type Track } from '../../../useCases/workspaceViewActions';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/helpers/platformCapabilities';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
+import { cn } from '#/helpers/Styles/cn';
 
 export type TrackDevicesSectionProps = {
     track: Track;
@@ -45,9 +46,9 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
     }, [showDeviceMenu]);
 
     return (
-        <Card className="rounded-md shadow-none bg-surface-base border-border/50 overflow-visible">
-            <CardHeader className="p-2 pl-3 pb-2 border-b border-border/30 flex flex-row items-center justify-between space-y-0">
-                <CardTitle className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Devices</CardTitle>
+        <div className="overflow-visible">
+            <div className="px-1 mb-2 flex flex-row items-center justify-between">
+                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Devices</div>
                 <div className="relative" ref={deviceMenuRef}>
                     <Button
                         variant="ghost"
@@ -61,7 +62,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                     </Button>
                     {showDeviceMenu && (
                         <div
-                            className="absolute right-0 top-full z-50 mt-1 w-48 rounded-md border border-border/50 bg-surface-raised py-1 shadow-lg"
+                            className="absolute right-0 top-full z-50 mt-1 w-48 rounded-md border border-border/50 bg-popover py-1 shadow-lg"
                             role="menu"
                         >
                             <p className="px-3 py-1 text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">
@@ -117,7 +118,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                             }}
                                         >
                                             <span className="truncate">{plugin.name}</span>
-                                            <span className="ml-1 shrink-0 rounded px-1 py-px text-[7px] font-bold uppercase text-muted-foreground bg-muted">
+                                            <span className="ml-1 shrink-0 rounded px-1 py-px text-[10px] font-bold uppercase text-muted-foreground bg-muted">
                                                 {plugin.format}
                                             </span>
                                         </button>
@@ -151,14 +152,16 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                         </div>
                     )}
                 </div>
-            </CardHeader>
-            <CardContent className="p-2 pt-3">
+            </div>
             {track.devices.length > 0 ? (
-                <div className="space-y-1">
+                <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
                     {track.devices.map((device, deviceIndex) => (
-                        <div
+                        <Card
                             key={device.id}
-                            className="flex items-center justify-between rounded bg-surface-overlay px-2 py-1.5 cursor-grab active:cursor-grabbing hover:bg-accent/50"
+                            className={cn(
+                                "flex items-center justify-between rounded-md shadow-none bg-surface-base border-border/50 p-2 cursor-grab active:cursor-grabbing hover:bg-surface-raised transition-colors",
+                                device.bypassed ? "opacity-50" : ""
+                            )}
                             onClick={() => {
                                 onSelectDevice(device.id);
                             }}
@@ -179,14 +182,21 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                 }
                             }}
                         >
-                            <div className="flex items-center gap-1">
-                                <span className="text-[10px] text-muted-foreground/50 select-none">≡</span>
-                                <span className="text-xs text-foreground">{device.name}</span>
+                            <div className="flex items-center gap-1.5 min-w-0 pr-2">
+                                <span className="text-[10px] text-muted-foreground/50 select-none shrink-0" aria-hidden="true">
+                                    <div className="flex flex-col gap-0.5">
+                                        <div className="w-1 h-1 bg-muted rounded-full"></div>
+                                        <div className="w-1 h-1 bg-muted rounded-full"></div>
+                                        <div className="w-1 h-1 bg-muted rounded-full"></div>
+                                    </div>
+                                </span>
+                                <span className="text-xs text-foreground font-medium truncate">{device.name}</span>
                             </div>
-                            <div className="flex gap-0.5">
+                            <div className="flex items-center gap-0.5 shrink-0">
                                 <Button
                                     variant="ghost"
                                     size="icon-xs"
+                                    className="h-6 w-6"
                                     aria-label={`${device.bypassed ? 'Enable' : 'Bypass'} ${device.name}`}
                                     aria-pressed={device.bypassed}
                                     onClick={(e) => {
@@ -201,6 +211,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                 <Button
                                     variant="ghost"
                                     size="icon-xs"
+                                    className="h-6 w-6"
                                     aria-label={`Remove ${device.name}`}
                                     onClick={(e) => {
                                         e.stopPropagation();
@@ -210,13 +221,12 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                     <Trash2 className="size-3 text-muted-foreground" />
                                 </Button>
                             </div>
-                        </div>
+                        </Card>
                     ))}
                 </div>
             ) : (
-                <p className="text-[10px] text-muted-foreground px-1 pb-1">No devices. Click + to add.</p>
+                <p className="text-[10px] text-muted-foreground px-1">No devices. Click + to add.</p>
             )}
-            </CardContent>
-        </Card>
+        </div>
     );
 };

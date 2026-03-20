@@ -540,7 +540,7 @@ export const PromptBar = (): ReactElement => {
                     id="prompt-results"
                     role="listbox"
                     aria-label="Command suggestions"
-                    className="absolute top-full left-0 right-0 mt-1 z-50 rounded-md border border-border bg-surface-overlay shadow-lg py-1 max-h-80 overflow-y-auto"
+                    className="absolute top-full left-0 right-0 mt-1 z-50 rounded-md border border-border bg-popover shadow-lg py-1 max-h-80 overflow-y-auto"
                 >
                     {value.trim().length === 0 ? (
                         <div className="px-3 py-1 text-[9px] uppercase tracking-wider text-muted-foreground/50 font-medium">

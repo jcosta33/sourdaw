@@ -1,4 +1,5 @@
 import { type ReactElement, useSyncExternalStore } from 'react';
+import { Card } from '#/components/ui/card';
 import { audioGraphStore } from '#/modules/AudioEngine/stores/audioGraphStore';
 import { type Track } from '../../../useCases/workspaceViewActions';
 
@@ -15,14 +16,16 @@ export const TrackRoutingSection = ({ track }: TrackRoutingSectionProps): ReactE
     const trackRoutes = graphState?.routes.filter((r) => r.sourceId === track.id || r.destinationId === track.id) ?? [];
 
     return (
-        <section>
-            <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Routing</h3>
+        <div>
+            <div className="px-1 mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                Routing
+            </div>
             {trackRoutes.length > 0 ? (
-                <div className="space-y-1">
+                <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
                     {trackRoutes.map((route) => (
-                        <div
+                        <Card
                             key={route.id}
-                            className="flex items-center justify-between rounded bg-surface-overlay px-2 py-1"
+                            className="rounded-md shadow-none bg-surface-base border-border/50 p-2 flex items-center justify-between"
                         >
                             <span className="text-[10px] text-muted-foreground">
                                 {route.sourceId === track.id ? `→ ${route.destinationId}` : `← ${route.sourceId}`}
@@ -30,12 +33,12 @@ export const TrackRoutingSection = ({ track }: TrackRoutingSectionProps): ReactE
                             <span className="text-[10px] font-mono text-muted-foreground">
                                 {(route.gain * 100).toFixed(0)}%
                             </span>
-                        </div>
+                        </Card>
                     ))}
                 </div>
             ) : (
-                <p className="text-[10px] text-muted-foreground">Default routing to master.</p>
+                <p className="text-[10px] text-muted-foreground px-1">Default routing to master.</p>
             )}
-        </section>
+        </div>
     );
 };

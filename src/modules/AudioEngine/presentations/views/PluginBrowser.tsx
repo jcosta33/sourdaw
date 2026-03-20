@@ -174,7 +174,7 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
                                     )}
                                     <span
                                         className={cn(
-                                            'shrink-0 rounded px-1 py-px text-[8px] font-bold uppercase',
+                                            'shrink-0 rounded px-1 py-px text-[10px] font-bold uppercase',
                                             FORMAT_COLORS[format] ?? 'bg-muted text-muted-foreground'
                                         )}
                                     >
@@ -239,7 +239,7 @@ const PluginRow = ({
                     <span className="text-xs text-foreground truncate">{plugin.name}</span>
                     <span
                         className={cn(
-                            'shrink-0 rounded px-1 py-px text-[7px] font-bold uppercase',
+                            'shrink-0 rounded px-1 py-px text-[10px] font-bold uppercase',
                             FORMAT_COLORS[plugin.format.toLowerCase()] ?? 'bg-muted text-muted-foreground'
                         )}
                     >

@@ -1,4 +1,5 @@
 import { type ReactElement } from 'react';
+import { Card } from '#/components/ui/card';
 import { Button } from '#/components/ui/button';
 import { Plus, Trash2 } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
@@ -15,9 +16,9 @@ export type TrackAlternativesSectionProps = {
 
 export const TrackAlternativesSection = ({ track }: TrackAlternativesSectionProps): ReactElement => {
     return (
-        <section>
-            <div className="flex items-center justify-between mb-2">
-                <h3 className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Alternatives</h3>
+        <div>
+            <div className="px-1 mb-2 flex flex-row items-center justify-between">
+                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Alternatives</div>
                 <Button
                     variant="ghost"
                     size="icon-xs"
@@ -34,15 +35,15 @@ export const TrackAlternativesSection = ({ track }: TrackAlternativesSectionProp
                     <Plus className="size-3" />
                 </Button>
             </div>
-            <div className="space-y-1">
+            <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
                 {track.alternatives.map((alt) => (
-                    <div
+                    <Card
                         key={alt.id}
                         className={cn(
-                            'flex items-center justify-between rounded px-2 py-1 text-xs cursor-pointer transition-colors',
+                            'flex flex-col justify-center rounded-md shadow-none bg-surface-base border-border/50 p-2 cursor-pointer transition-colors',
                             alt.id === track.activeAlternativeId
-                                ? 'bg-primary/20 text-primary'
-                                : 'text-muted-foreground hover:bg-accent/50'
+                                ? 'ring-1 ring-primary/30'
+                                : 'hover:bg-surface-raised'
                         )}
                         onClick={() => {
                             if (alt.id !== track.activeAlternativeId) {
@@ -53,30 +54,32 @@ export const TrackAlternativesSection = ({ track }: TrackAlternativesSectionProp
                             }
                         }}
                     >
-                        <span className="truncate">{alt.name}</span>
-                        <div className="flex items-center gap-0.5 shrink-0">
-                            <span className="text-[9px] text-muted-foreground/60">{alt.clips.length}c</span>
-                            {track.alternatives.length > 1 && (
-                                <Button
-                                    variant="ghost"
-                                    size="icon-xs"
-                                    className="size-4"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleDeleteTrackAlternative({
-                                            type: 'deleteTrackAlternative',
-                                            payload: { trackId: track.id, alternativeId: alt.id },
-                                        });
-                                    }}
-                                    aria-label={`Delete ${alt.name}`}
-                                >
-                                    <Trash2 className="size-2.5" />
-                                </Button>
-                            )}
+                        <div className="flex items-center justify-between w-full">
+                            <span className="truncate text-xs font-medium text-foreground">{alt.name}</span>
+                            <div className="flex items-center gap-0.5 shrink-0">
+                                <span className="text-[10px] text-muted-foreground mr-1">{alt.clips.length}c</span>
+                                {track.alternatives.length > 1 && (
+                                    <Button
+                                        variant="ghost"
+                                        size="icon-xs"
+                                        className="h-6 w-6"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDeleteTrackAlternative({
+                                                type: 'deleteTrackAlternative',
+                                                payload: { trackId: track.id, alternativeId: alt.id },
+                                            });
+                                        }}
+                                        aria-label={`Delete ${alt.name}`}
+                                    >
+                                        <Trash2 className="size-3 text-muted-foreground" />
+                                    </Button>
+                                )}
+                            </div>
                         </div>
-                    </div>
+                    </Card>
                 ))}
             </div>
-        </section>
+        </div>
     );
 };

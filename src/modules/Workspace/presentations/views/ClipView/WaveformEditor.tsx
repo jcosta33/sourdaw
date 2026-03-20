@@ -8,6 +8,7 @@ import {
 } from 'react';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
+import { DisabledFeatureWrapper } from '#/components/ui/disabled-feature-wrapper';
 import { cn } from '#/helpers/Styles/cn';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { decodeAudioFile } from '../../../useCases/workspaceViewActions';
@@ -377,17 +378,23 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                     >
                         Reverse
                     </button>
-                    <button
-                        type="button"
-                        className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-purple-400 hover:bg-accent"
-                        role="menuitem"
-                        onClick={waveAct(() => handleAiDenoiseClip(clipId))}
+                    <DisabledFeatureWrapper
+                        disabled={!isTauri()}
+                        reason="AI Denoise requires the Tauri Desktop version of WebDAW to run."
+                        className="w-full flex"
                     >
-                        <span>AI Denoise</span>
-                        <span className="text-[9px] opacity-60 border border-current rounded px-1 ml-2">
-                            {isTauri() ? 'Desktop' : 'Web'}
-                        </span>
-                    </button>
+                        <button
+                            type="button"
+                            className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-purple-400 hover:bg-accent"
+                            role="menuitem"
+                            onClick={waveAct(() => handleAiDenoiseClip(clipId))}
+                        >
+                            <span>AI Denoise</span>
+                            <span className="text-[9px] opacity-60 border border-current rounded px-1 ml-2">
+                                {isTauri() ? 'Desktop' : 'Web'}
+                            </span>
+                        </button>
+                    </DisabledFeatureWrapper>
                     <div className="my-1 border-t border-border/50" />
                     <button
                         type="button"

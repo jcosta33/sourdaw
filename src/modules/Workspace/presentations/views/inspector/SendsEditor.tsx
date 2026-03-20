@@ -1,4 +1,5 @@
 import { type ReactElement } from 'react';
+import { Card } from '#/components/ui/card';
 import { Slider } from '#/components/ui/slider';
 import { Button } from '#/components/ui/button';
 import { Plus } from 'lucide-react';
@@ -17,58 +18,65 @@ export const SendsEditor = ({ track }: SendsEditorProps): ReactElement => {
     const buses = allTracks.filter((t) => t.kind === 'bus');
 
     return (
-        <section>
-            <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Sends</h3>
+        <div>
+            <div className="px-1 mb-2 flex flex-row items-center justify-between">
+                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Sends</div>
+            </div>
             {buses.length > 0 ? (
-                <div className="space-y-1.5">
+                <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
                     {buses.map((bus) => {
                         const send = track.sends.find((s) => s.busId === bus.id);
                         const level = send?.level ?? 0;
                         const isPreFader = send?.preFader ?? false;
                         return (
-                            <div key={bus.id} className="space-y-0.5">
-                                <div className="flex items-center justify-between">
-                                    <span className="text-xs text-muted-foreground">{bus.name}</span>
-                                    <div className="flex items-center gap-1">
-                                        <button
-                                            type="button"
-                                            className={cn(
-                                                'shrink-0 rounded px-1 py-0.5 text-[9px] font-bold leading-tight',
-                                                isPreFader
-                                                    ? 'bg-yellow-500/20 text-yellow-400'
-                                                    : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
-                                            )}
-                                            onClick={() => toggleSendPreFader(track.id, bus.id)}
-                                            aria-label={`Toggle send to ${bus.name} ${isPreFader ? 'post' : 'pre'}-fader`}
-                                            title={
-                                                isPreFader ? 'Pre-fader (click for post)' : 'Post-fader (click for pre)'
-                                            }
-                                        >
-                                            {isPreFader ? 'PRE' : 'POST'}
-                                        </button>
-                                        <span className="text-[10px] font-mono text-muted-foreground">
-                                            {(level * 100).toFixed(0)}%
-                                        </span>
+                            <Card key={bus.id} className="rounded-md shadow-none bg-surface-base border-border/50 p-3 w-full">
+                                <div className="flex flex-col w-full gap-2">
+                                    <div className="flex items-center justify-between w-full">
+                                        <label className="text-[10px] font-medium text-foreground truncate max-w-[50%]" title={bus.name}>{bus.name}</label>
+                                        <div className="flex items-center gap-1.5 mt-0.5">
+                                            <span className="text-[10px] font-mono text-muted-foreground w-8 text-right">
+                                                {(level * 100).toFixed(0)}%
+                                            </span>
+                                            <button
+                                                type="button"
+                                                className={cn(
+                                                    'shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold leading-tight transition-colors',
+                                                    isPreFader
+                                                        ? 'bg-yellow-500/20 text-yellow-500'
+                                                        : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
+                                                )}
+                                                onClick={() => toggleSendPreFader(track.id, bus.id)}
+                                                aria-label={`Toggle send to ${bus.name} ${isPreFader ? 'post' : 'pre'}-fader`}
+                                                title={
+                                                    isPreFader ? 'Pre-fader (click for post)' : 'Post-fader (click for pre)'
+                                                }
+                                            >
+                                                {isPreFader ? 'PRE' : 'POST'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="w-full px-1 flex items-center justify-center">
+                                        <Slider
+                                            value={[level * 100]}
+                                            onValueChange={([v]) => {
+                                                if (v !== undefined) {
+                                                    setSend(track.id, bus.id, v / 100);
+                                                }
+                                            }}
+                                            max={100}
+                                            step={1}
+                                            aria-label={`Send to ${bus.name}`}
+                                            className="w-full"
+                                        />
                                     </div>
                                 </div>
-                                <Slider
-                                    value={[level * 100]}
-                                    onValueChange={([v]) => {
-                                        if (v !== undefined) {
-                                            setSend(track.id, bus.id, v / 100);
-                                        }
-                                    }}
-                                    max={100}
-                                    step={1}
-                                    aria-label={`Send to ${bus.name}`}
-                                />
-                            </div>
+                            </Card>
                         );
                     })}
                 </div>
             ) : (
-                <div className="space-y-1">
-                    <p className="text-[10px] text-muted-foreground">No bus tracks. Create a bus to add sends.</p>
+                <div className="px-1">
+                    <p className="text-[10px] text-muted-foreground mb-2">No bus tracks. Create a bus to add sends.</p>
                     <Button
                         variant="outline"
                         size="xs"
@@ -81,6 +89,6 @@ export const SendsEditor = ({ track }: SendsEditorProps): ReactElement => {
                     </Button>
                 </div>
             )}
-        </section>
+        </div>
     );
 };

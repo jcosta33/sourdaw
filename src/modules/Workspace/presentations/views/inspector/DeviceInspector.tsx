@@ -1,4 +1,5 @@
 import { type ReactElement } from 'react';
+import { Card } from '#/components/ui/card';
 import { Button } from '#/components/ui/button';
 import { ChevronRight, Power } from 'lucide-react';
 import { BUILTIN_PLUGINS } from '../../../useCases/workspaceViewActions';
@@ -25,12 +26,13 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
 
     return (
         <div className="space-y-4 p-3">
-            <div className="flex items-center gap-1">
-                <Button variant="ghost" size="icon-xs" onClick={onBack} aria-label="Back to track">
-                    <ChevronRight className="size-3 rotate-180" />
-                </Button>
-                <h3 className="text-xs font-medium text-foreground">{device.name}</h3>
-                <div className="flex-1" />
+            <div className="flex flex-row items-center justify-between mb-4">
+                <div className="flex items-center gap-1">
+                    <Button variant="ghost" size="icon-xs" onClick={onBack} aria-label="Back to track">
+                        <ChevronRight className="size-3 rotate-180" />
+                    </Button>
+                    <h3 className="text-xs font-medium text-foreground">{device.name}</h3>
+                </div>
                 <Button
                     variant="ghost"
                     size="icon-xs"
@@ -42,80 +44,88 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
             </div>
 
             {isSidechainComp && (
-                <section>
-                    <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                        Sidechain Source
-                    </h3>
-                    <select
-                        className="w-full rounded border border-border bg-background px-2 py-1.5 text-xs"
-                        value={sidechainSource?.sourceTrackId ?? ''}
-                        onChange={(e) => {
-                            const srcId = e.target.value;
-                            if (srcId) {
-                                addSidechainRoute(srcId, trackId, device.id);
-                            } else if (sidechainSource) {
-                                removeSidechainRoute(sidechainSource.id);
-                            }
-                        }}
-                    >
-                        <option value="">None</option>
-                        {sourceTracks.map((t) => (
-                            <option key={t.id} value={t.id}>
-                                {t.name}
-                            </option>
-                        ))}
-                    </select>
-                </section>
+                <div>
+                    <div className="px-1 mb-2">
+                        <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Sidechain Source</div>
+                    </div>
+                    <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
+                        <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-2">
+                            <select
+                                className="w-full rounded border border-border bg-surface-overlay px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                                value={sidechainSource?.sourceTrackId ?? ''}
+                                onChange={(e) => {
+                                    const srcId = e.target.value;
+                                    if (srcId) {
+                                        addSidechainRoute(srcId, trackId, device.id);
+                                    } else if (sidechainSource) {
+                                        removeSidechainRoute(sidechainSource.id);
+                                    }
+                                }}
+                            >
+                                <option value="">None</option>
+                                {sourceTracks.map((t) => (
+                                    <option key={t.id} value={t.id}>
+                                        {t.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </Card>
+                    </div>
+                </div>
             )}
 
             {plugin?.id === 'builtin-eq' && parameters.length > 0 ? (
-                <section>
-                    <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                        EQ Graphic
-                    </h3>
-                    <div className="grid grid-cols-[repeat(auto-fit,minmax(80px,1fr))] gap-2 bg-surface-base p-2 rounded border border-border/50">
+                <div>
+                    <div className="px-1 mb-2">
+                        <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">EQ Graphic</div>
+                    </div>
+                    <div className="grid grid-cols-1 @md:grid-cols-3 gap-2">
                         {/* Low Band */}
-                        <div className="flex flex-col items-center gap-1">
+                        <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-2 flex flex-col items-center gap-1">
                             <span className="text-[9px] text-muted-foreground font-semibold uppercase mb-2">Low</span>
                             <div className="w-full space-y-4">
                                 {parameters.filter(p => p.name.includes('Low')).map(param => (
                                     <DeviceParameterControl key={param.id} param={param} device={device} trackId={trackId} />
                                 ))}
                             </div>
-                        </div>
+                        </Card>
                         {/* Mid Band */}
-                        <div className="flex flex-col items-center gap-1 border-l border-r border-border/30 px-1">
+                        <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-2 flex flex-col items-center gap-1">
                             <span className="text-[9px] text-muted-foreground font-semibold uppercase mb-2">Mid</span>
                             <div className="w-full space-y-4">
                                 {parameters.filter(p => p.name.includes('Mid')).map(param => (
                                     <DeviceParameterControl key={param.id} param={param} device={device} trackId={trackId} />
                                 ))}
                             </div>
-                        </div>
+                        </Card>
                         {/* High Band */}
-                        <div className="flex flex-col items-center gap-1">
+                        <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-2 flex flex-col items-center gap-1">
                             <span className="text-[9px] text-muted-foreground font-semibold uppercase mb-2">High</span>
                             <div className="w-full space-y-4">
                                 {parameters.filter(p => p.name.includes('High')).map(param => (
                                     <DeviceParameterControl key={param.id} param={param} device={device} trackId={trackId} />
                                 ))}
                             </div>
-                        </div>
+                        </Card>
                     </div>
-                </section>
+                </div>
             ) : parameters.length > 0 ? (
-                <section>
-                    <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                        Parameters
-                    </h3>
-                    <div className="grid grid-cols-[repeat(auto-fit,minmax(90px,1fr))] gap-x-2 gap-y-4">
+                <div>
+                    <div className="px-1 mb-2">
+                        <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Parameters</div>
+                    </div>
+                    <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
                         {parameters.map((param) => (
-                            <DeviceParameterControl key={param.id} param={param} device={device} trackId={trackId} />
+                            <Card key={param.id} className="rounded-md shadow-none bg-surface-base border-border/50 p-3 w-full pb-4">
+                                <DeviceParameterControl param={param} device={device} trackId={trackId} />
+                            </Card>
                         ))}
                     </div>
-                </section>
+                </div>
             ) : (
-                <p className="text-[10px] text-muted-foreground">No parameters available for this device.</p>
+                <div className="px-1">
+                    <p className="text-[10px] text-muted-foreground">No parameters available for this device.</p>
+                </div>
             )}
         </div>
     );

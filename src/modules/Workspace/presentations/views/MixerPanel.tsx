@@ -122,7 +122,7 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
                     </Button>
 
                     {showSnapshots && snapshots.length > 0 && (
-                        <div className="absolute top-full right-0 z-50 mt-1 min-w-[140px] rounded-lg border border-border bg-surface-overlay p-1 shadow-lg">
+                        <div className="absolute top-full right-0 z-50 mt-1 min-w-[140px] rounded-lg border border-border bg-popover p-1 shadow-lg">
                             {snapshots.map((snap) => (
                                 <div key={snap.id} className="flex items-center gap-1">
                                     <button

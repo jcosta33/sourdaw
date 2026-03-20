@@ -28,7 +28,7 @@ const DropdownPanel = ({ children, onClose }: { children: React.ReactNode; onClo
     return (
         <div
             ref={ref}
-            className="absolute top-full right-0 mt-1.5 z-50 rounded-lg border border-border bg-surface-overlay shadow-xl p-3"
+            className="absolute top-full right-0 mt-1.5 z-50 rounded-lg border border-border bg-popover shadow-xl p-3"
         >
             {children}
         </div>

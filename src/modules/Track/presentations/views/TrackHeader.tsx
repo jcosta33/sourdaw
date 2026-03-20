@@ -1,9 +1,6 @@
 import { type ReactElement } from 'react';
 import { Button } from '#/components/ui/button';
 import {
-    Volume2,
-    VolumeX,
-    Headphones,
     Circle,
     ChevronRight,
     ChevronDown,
@@ -118,7 +115,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
 
                 <InlineTrackName track={track} />
 
-                {track.frozen ? <span className="text-[8px] text-blue-400 font-medium">FRZ</span> : null}
+                {track.frozen ? <span className="text-[10px] text-blue-400 font-medium">FRZ</span> : null}
 
                 {track.kind === 'audio' && isSelected ? (
                     <InputSelector trackId={track.id} inputId={track.inputId} />
@@ -133,7 +130,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                                     size="icon-xs"
                                     aria-label={`Input monitoring: ${INPUT_MONITORING_LABEL[track.inputMonitoring]}`}
                                     className={cn(
-                                        'size-5 text-[7px] font-bold',
+                                        'size-5 text-[10px] font-bold',
                                         track.inputMonitoring === 'on' ? 'text-green-400' : ''
                                     )}
                                     onClick={(e) => {
@@ -179,18 +176,14 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                                 size="icon-xs"
                                 aria-label={track.muted ? `Unmute ${track.name}` : `Mute ${track.name}`}
                                 aria-pressed={track.muted}
-                                className={cn('size-5', track.muted ? 'text-destructive-foreground' : '')}
+                                className={cn('size-5 text-[9px] font-bold', track.muted ? 'text-amber-500 bg-amber-500/20' : '')}
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     muteTrack(track.id, !track.muted);
                                     engineSetTrackMute(track.id, !track.muted, track.gain);
                                 }}
                             >
-                                {track.muted ? (
-                                    <VolumeX className="size-3" aria-hidden="true" />
-                                ) : (
-                                    <Volume2 className="size-3" aria-hidden="true" />
-                                )}
+                                M
                             </Button>
                         </TooltipTrigger>
                         <TooltipContent side="bottom">{track.muted ? 'Unmute' : 'Mute'}</TooltipContent>
@@ -203,7 +196,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                                 size="icon-xs"
                                 aria-label={track.soloed ? `Unsolo ${track.name}` : `Solo ${track.name}`}
                                 aria-pressed={track.soloed}
-                                className={cn('size-5', track.soloed ? 'text-yellow-400' : '')}
+                                className={cn('size-5 text-[9px] font-bold', track.soloed ? 'text-blue-500 bg-blue-500/20' : '')}
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     if (e.metaKey || e.ctrlKey) {
@@ -213,7 +206,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                                     }
                                 }}
                             >
-                                <Headphones className="size-3" aria-hidden="true" />
+                                S
                             </Button>
                         </TooltipTrigger>
                         <TooltipContent side="bottom">

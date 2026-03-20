@@ -157,7 +157,7 @@ export const CollaborationPanel = (): ReactElement | null => {
                                             {peer.id === state.localPeerId ? ' (you)' : ''}
                                         </span>
                                         {peer.isHost && (
-                                            <span className="ml-auto shrink-0 rounded bg-muted/40 px-1 text-[8px] text-muted-foreground">
+                                            <span className="ml-auto shrink-0 rounded bg-muted/40 px-1 text-[10px] text-muted-foreground">
                                                 host
                                             </span>
                                         )}

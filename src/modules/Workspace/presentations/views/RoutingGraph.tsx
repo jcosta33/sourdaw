@@ -143,7 +143,7 @@ const ConnectionLine = ({
                     x={midX}
                     y={(from.y + to.y) / 2 - 6}
                     textAnchor="middle"
-                    className="fill-muted-foreground text-[7px] pointer-events-none select-none"
+                    className="fill-muted-foreground text-[10px] pointer-events-none select-none"
                 >
                     {label}
                 </text>
@@ -296,17 +296,17 @@ export const RoutingGraph = (): ReactElement => {
             {/* Legend */}
             <g transform={`translate(${PAD}, ${height - 28})`}>
                 <line x1={0} y1={0} x2={16} y2={0} stroke="#64748b" strokeWidth={1} />
-                <text x={20} y={0} dominantBaseline="central" className="fill-muted-foreground text-[7px]">
+                <text x={20} y={0} dominantBaseline="central" className="fill-muted-foreground text-[10px]">
                     Output
                 </text>
 
                 <line x1={60} y1={0} x2={76} y2={0} stroke="#64748b" strokeWidth={1} strokeDasharray="4 3" />
-                <text x={80} y={0} dominantBaseline="central" className="fill-muted-foreground text-[7px]">
+                <text x={80} y={0} dominantBaseline="central" className="fill-muted-foreground text-[10px]">
                     Send
                 </text>
 
                 <line x1={110} y1={0} x2={126} y2={0} stroke="#ef4444" strokeWidth={1} strokeDasharray="2 3" />
-                <text x={130} y={0} dominantBaseline="central" className="fill-muted-foreground text-[7px]">
+                <text x={130} y={0} dominantBaseline="central" className="fill-muted-foreground text-[10px]">
                     Sidechain
                 </text>
             </g>

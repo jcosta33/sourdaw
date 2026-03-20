@@ -25,20 +25,20 @@ export const IOSection = ({ track }: IOSectionProps): ReactElement => {
 
     return (
         <div className="w-full space-y-0.5 border-t border-border/30 pt-1.5 mt-1">
-            <label className="text-[7px] text-muted-foreground/60 block text-center uppercase tracking-wider">
+            <label className="text-[10px] text-muted-foreground/60 block text-center uppercase tracking-wider">
                 I/O
             </label>
 
             <div className="flex items-center justify-between px-0.5">
                 <span className="text-[6px] text-muted-foreground/50 uppercase">In</span>
-                <span className="text-[7px] text-muted-foreground truncate max-w-16 text-right">{inputLabel}</span>
+                <span className="text-[10px] text-muted-foreground truncate max-w-16 text-right">{inputLabel}</span>
             </div>
 
             <div className="relative flex items-center justify-between px-0.5">
                 <span className="text-[6px] text-muted-foreground/50 uppercase">Out</span>
                 <button
                     type="button"
-                    className="flex items-center gap-0.5 rounded px-1 py-0.5 text-[7px] text-foreground hover:bg-muted/30 transition-colors max-w-16 truncate"
+                    className="flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] text-foreground hover:bg-muted/30 transition-colors max-w-16 truncate"
                     onClick={(e) => {
                         e.stopPropagation();
                         setOutputOpen(!outputOpen);
@@ -63,7 +63,7 @@ export const IOSection = ({ track }: IOSectionProps): ReactElement => {
                                 role="option"
                                 aria-selected={track.outputId === target.id}
                                 className={cn(
-                                    'w-full px-2 py-1 text-left text-[8px] hover:bg-accent transition-colors',
+                                    'w-full px-2 py-1 text-left text-[10px] hover:bg-accent transition-colors',
                                     track.outputId === target.id && 'text-primary font-medium'
                                 )}
                                 onClick={(e) => {

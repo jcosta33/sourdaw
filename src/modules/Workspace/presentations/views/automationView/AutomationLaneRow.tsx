@@ -254,7 +254,7 @@ export const AutomationLaneRow = ({
                                 <text
                                     x={cx + 7}
                                     y={cy - 7}
-                                    className="text-[7px] fill-muted-foreground pointer-events-none"
+                                    className="text-[10px] fill-muted-foreground pointer-events-none"
                                 >
                                     {point.curve === 's-curve' ? 'S' : point.curve === 'exponential' ? 'E' : '⌐'}
                                 </text>
@@ -268,7 +268,7 @@ export const AutomationLaneRow = ({
                 <>
                     <div className="fixed inset-0 z-50" onClick={() => setContextMenu(null)} />
                     <div
-                        className="fixed z-50 bg-surface-overlay border border-border rounded-md shadow-xl py-1 min-w-[140px]"
+                        className="fixed z-50 bg-popover border border-border rounded-md shadow-xl py-1 min-w-[140px]"
                         style={{ left: contextMenu.x, top: contextMenu.y }}
                     >
                         <div className="px-2 py-1 text-[9px] text-muted-foreground uppercase tracking-wider">

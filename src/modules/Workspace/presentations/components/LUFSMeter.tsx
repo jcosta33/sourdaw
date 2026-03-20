@@ -122,7 +122,7 @@ export const LUFSMeter = ({ height = 160, width = 48, target = -14 }: LUFSMeterP
                 className="rounded border border-border/30"
                 aria-label={`LUFS: Momentary ${momentary > -70 ? momentary.toFixed(1) : '-∞'}, Short-term ${shortTerm > -70 ? shortTerm.toFixed(1) : '-∞'}, Integrated ${integrated > -70 ? integrated.toFixed(1) : '-∞'}`}
             />
-            <span className="text-[8px] text-muted-foreground tabular-nums">
+            <span className="text-[10px] text-muted-foreground tabular-nums">
                 {integrated > -70 ? integrated.toFixed(1) : '-∞'} LUFS
             </span>
         </div>

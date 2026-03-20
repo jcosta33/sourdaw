@@ -8,6 +8,7 @@ export async function createDemoProject(): Promise<void> {
     const audioTrack = createTrack({ name: 'Drums', kind: 'audio' });
     const midiTrack = createTrack({ name: 'Synth Lead', kind: 'midi' });
     const bassTrack = createTrack({ name: 'Bass', kind: 'midi' });
+    const masterTrack = createTrack({ name: 'Master', kind: 'master' });
 
     const drumBufferId = 'demo-drum-buffer';
     await generateDemoDrumBuffer(drumBufferId);
@@ -63,7 +64,7 @@ export async function createDemoProject(): Promise<void> {
     bassTrack.clips = [bassClip];
 
     trackStore.set({
-        tracks: [audioTrack, midiTrack, bassTrack],
+        tracks: [masterTrack, audioTrack, midiTrack, bassTrack],
         selectedTrackId: midiTrack.id,
     });
 

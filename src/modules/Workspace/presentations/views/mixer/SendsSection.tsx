@@ -18,7 +18,7 @@ export const SendsSection = ({ track }: SendsSectionProps): ReactElement | null 
 
     return (
         <div className="w-full space-y-0.5">
-            <label className="text-[7px] text-muted-foreground/60 block text-center uppercase tracking-wider">
+            <label className="text-[10px] text-muted-foreground/60 block text-center uppercase tracking-wider">
                 Sends
             </label>
             {buses.map((bus) => {

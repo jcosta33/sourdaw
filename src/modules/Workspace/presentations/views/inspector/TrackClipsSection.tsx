@@ -1,4 +1,5 @@
 import { type ReactElement } from 'react';
+import { Card } from '#/components/ui/card';
 import { type Track } from '../../../useCases/workspaceViewActions';
 
 export type TrackClipsSectionProps = {
@@ -8,30 +9,30 @@ export type TrackClipsSectionProps = {
 
 export const TrackClipsSection = ({ track, onSelectClip }: TrackClipsSectionProps): ReactElement => {
     return (
-        <section>
-            <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                Clips ({track.clips.length})
-            </h3>
+        <div>
+            <div className="px-1 mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center justify-between">
+                <span>Clips ({track.clips.length})</span>
+            </div>
             {track.clips.length > 0 ? (
-                <div className="space-y-1">
+                <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
                     {track.clips.map((clip) => (
-                        <div
+                        <Card
                             key={clip.id}
-                            className="rounded bg-surface-overlay px-2 py-1.5 cursor-pointer hover:bg-accent/50"
+                            className="rounded-md shadow-none bg-surface-base border-border/50 p-2 cursor-pointer hover:bg-surface-raised flex flex-col justify-center"
                             onClick={() => {
                                 onSelectClip(clip.id);
                             }}
                         >
-                            <span className="text-xs text-foreground">{clip.name}</span>
-                            <span className="ml-1 text-[10px] text-muted-foreground">
+                            <span className="text-xs text-foreground font-medium truncate">{clip.name}</span>
+                            <span className="text-[10px] text-muted-foreground">
                                 bar {Math.floor(clip.startBeat / 4) + 1}–{Math.floor(clip.endBeat / 4) + 1}
                             </span>
-                        </div>
+                        </Card>
                     ))}
                 </div>
             ) : (
-                <p className="text-[10px] text-muted-foreground">No clips on this track.</p>
+                <p className="text-[10px] text-muted-foreground px-1">No clips on this track.</p>
             )}
-        </section>
+        </div>
     );
 };

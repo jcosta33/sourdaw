@@ -25,7 +25,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
 
     return (
         <div className="w-full space-y-0.5">
-            <label className="text-[7px] text-muted-foreground/60 block text-center uppercase tracking-wider">
+            <label className="text-[10px] text-muted-foreground/60 block text-center uppercase tracking-wider">
                 Devices
             </label>
             <div className="max-h-[100px] overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-white/10 space-y-0.5">
@@ -63,8 +63,8 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                                 }
                             }}
                         >
-                            <span className="text-[7px] text-muted-foreground">
-                                <span className="text-[6px] text-muted-foreground/50 mr-0.5">≡</span>
+                            <span className="text-[10px] text-muted-foreground">
+                                <span className="text-[9px] text-muted-foreground/50 mr-0.5">≡</span>
                                 {d.name}
                                 {getAllModulationRoutes().some((r) => r.target.deviceId === d.id) && (
                                     <span
@@ -76,7 +76,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                         </button>
                         <button
                             type="button"
-                            className="absolute -right-0.5 -top-0.5 hidden size-3.5 items-center justify-center rounded-full bg-destructive/80 text-[8px] text-destructive-foreground hover:bg-destructive group-hover:flex"
+                            className="absolute -right-0.5 -top-0.5 hidden size-3.5 items-center justify-center rounded-full bg-destructive/80 text-[10px] text-destructive-foreground hover:bg-destructive group-hover:flex"
                             onClick={(e) => {
                                 e.stopPropagation();
                                 removeDevice(d.id);
@@ -95,7 +95,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                         <button
                             type="button"
                             key={p.id}
-                            className="w-full rounded bg-primary/10 px-1 py-0.5 text-center hover:bg-primary/20 text-[7px] text-foreground transition-colors"
+                            className="w-full rounded bg-primary/10 px-1 py-0.5 text-center hover:bg-primary/20 text-[10px] text-foreground transition-colors"
                             onClick={(e) => {
                                 e.stopPropagation();
                                 addDevice(track.id, p.name);
@@ -105,14 +105,14 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                             + {p.name}
                         </button>
                     ))}
-                    <div className="px-3 py-0.5 text-[7px] text-muted-foreground/60 uppercase tracking-wider border-t border-border/20 mt-0.5">
+                    <div className="px-3 py-0.5 text-[10px] text-muted-foreground/60 uppercase tracking-wider border-t border-border/20 mt-0.5">
                         MIDI FX
                     </div>
                     {MIDI_EFFECT_FACTORIES.map((fx) => (
                         <button
                             type="button"
                             key={fx.id}
-                            className="w-full rounded bg-purple-500/10 px-1 py-0.5 text-center hover:bg-purple-500/20 text-[7px] text-foreground transition-colors"
+                            className="w-full rounded bg-purple-500/10 px-1 py-0.5 text-center hover:bg-purple-500/20 text-[10px] text-foreground transition-colors"
                             onClick={(e) => {
                                 e.stopPropagation();
                                 addDevice(track.id, fx.name);
@@ -124,7 +124,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                     ))}
                     <button
                         type="button"
-                        className="w-full text-[7px] text-muted-foreground hover:text-foreground"
+                        className="w-full text-[10px] text-muted-foreground hover:text-foreground"
                         onClick={(e) => {
                             e.stopPropagation();
                             setShowAdd(false);
@@ -142,7 +142,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                         setShowAdd(true);
                     }}
                 >
-                    <span className="text-[7px] text-muted-foreground/50">+ add</span>
+                    <span className="text-[10px] text-muted-foreground/50">+ add</span>
                 </button>
             )}
         </div>

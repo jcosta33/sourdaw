@@ -47,7 +47,7 @@ export const RoutingMatrix = (): ReactElement => {
             </div>
 
             <div className="overflow-auto flex-1 p-2">
-                <table className="border-collapse text-[8px]">
+                <table className="border-collapse text-[10px]">
                     <thead>
                         <tr>
                             <th className="p-1 text-muted-foreground font-normal text-left sticky left-0 bg-surface-base z-10">

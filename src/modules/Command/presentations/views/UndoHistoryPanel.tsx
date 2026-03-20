@@ -100,7 +100,7 @@ export const UndoHistoryPanel = (): ReactElement | null => {
                                 >
                                     <span className="truncate">{entry.label}</span>
                                     {entry.source !== 'manual' && (
-                                        <span className="ml-auto shrink-0 rounded bg-muted/40 px-1 text-[8px] text-muted-foreground">
+                                        <span className="ml-auto shrink-0 rounded bg-muted/40 px-1 text-[10px] text-muted-foreground">
                                             {entry.source}
                                         </span>
                                     )}

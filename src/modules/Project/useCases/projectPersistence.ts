@@ -16,6 +16,7 @@ import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
 import { undoStore } from '#/modules/Command/stores/undoStore';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { getAllSidechainRoutes, setSidechainRoutes } from '#/modules/AudioEngine/useCases/sidechainUseCases';
+import { addTrack as addTrackUseCase } from '#/modules/Track/useCases/addTrack';
 import {
     readProjectJson,
     writeProjectJson,
@@ -176,6 +177,9 @@ export function newProject(name = 'Untitled Project'): void {
     markerStore.set({ markers: [], sections: [] });
     takeLaneStore.set({ lanes: [] });
     setSidechainRoutes([]);
+
+    // Always seed a master track
+    addTrackUseCase({ name: 'Master', kind: 'master' });
     projectStore.set({
         name,
         createdAt: Date.now(),

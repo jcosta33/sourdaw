@@ -3,7 +3,7 @@ import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { Knob } from '#/components/ui/knob';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { Volume2, VolumeX, Headphones, Circle, Ear, ShieldCheck } from 'lucide-react';
+import { Circle, Ear, ShieldCheck } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
 import {
     muteTrack,
@@ -141,8 +141,8 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                 </span>
             )}
 
-            <span className="text-[8px] text-muted-foreground capitalize">{track.kind}</span>
-            {track.vcaGroupId && <span className="text-[7px] text-cyan-400/80 font-mono">VCA</span>}
+            <span className="text-[10px] text-muted-foreground capitalize">{track.kind}</span>
+            {track.vcaGroupId && <span className="text-[9px] text-cyan-400/80 font-mono">VCA</span>}
 
             {/* Mute / Solo / Arm / Monitor */}
             <div className="flex flex-wrap justify-center gap-0.5">
@@ -153,14 +153,14 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                             size="icon-xs"
                             aria-pressed={track.muted}
                             aria-label={track.muted ? 'Unmute' : 'Mute'}
-                            className={cn('size-5', track.muted && 'text-amber-500 bg-amber-500/20')}
+                            className={cn('size-5 text-[9px] font-bold', track.muted && 'text-amber-500 bg-amber-500/20')}
                             onClick={(e) => {
                                 e.stopPropagation();
                                 muteTrack(track.id, !track.muted);
                                 engineSetTrackMute(track.id, !track.muted);
                             }}
                         >
-                            {track.muted ? <VolumeX className="size-2.5" /> : <Volume2 className="size-2.5" />}
+                            M
                         </Button>
                     </TooltipTrigger>
                     <TooltipContent>{track.muted ? 'Unmute' : 'Mute'}</TooltipContent>
@@ -172,7 +172,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                             size="icon-xs"
                             aria-pressed={track.soloed}
                             aria-label={track.soloed ? 'Unsolo' : 'Solo'}
-                            className={cn('size-5', track.soloed && 'text-blue-500 bg-blue-500/20')}
+                            className={cn('size-5 text-[9px] font-bold', track.soloed && 'text-blue-500 bg-blue-500/20')}
                             onClick={(e) => {
                                 e.stopPropagation();
                                 if (e.metaKey || e.ctrlKey) {
@@ -182,7 +182,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                                 }
                             }}
                         >
-                            <Headphones className="size-2.5" />
+                            S
                         </Button>
                     </TooltipTrigger>
                     <TooltipContent>{track.soloed ? 'Unsolo' : 'Solo (⌘ click for additive)'}</TooltipContent>
@@ -251,7 +251,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                 <VUMeterCanvas trackId={track.id} size={80} />
             </div>
 
-            <span className="text-[8px] font-mono text-muted-foreground">
+            <span className="text-[10px] font-mono text-muted-foreground">
                 {track.gain === 0 ? '-∞' : `${((track.gain - 0.8) * 40).toFixed(1)}`} dB
             </span>
 

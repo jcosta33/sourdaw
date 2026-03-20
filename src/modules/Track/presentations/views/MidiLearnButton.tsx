@@ -62,7 +62,7 @@ export const MidiLearnButton = ({ targetType, trackId, deviceId, paramId }: Midi
                     aria-label={label}
                     aria-pressed={isLearningThis}
                     className={cn(
-                        'size-5 text-[8px] font-bold',
+                        'size-5 text-[10px] font-bold',
                         isLearningThis && 'animate-pulse text-orange-400',
                         !isLearningThis && existingMapping && 'text-cyan-400'
                     )}

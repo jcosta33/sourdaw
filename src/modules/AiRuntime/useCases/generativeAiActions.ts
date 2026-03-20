@@ -2,6 +2,10 @@ import { Store } from '#/helpers/Store/Store';
 import { Logger } from '#/helpers/Logger/Logger';
 import { generateMidiAI, denoiseAudio, type GeneratedNote, isTauri } from '#/modules/AudioEngine/useCases/nativeAIBridge';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
+import { trackStore } from '#/modules/Track/stores/trackStore';
+import { addClip } from '#/modules/Track/useCases/clipUseCases';
+import { addMidiNote } from '#/modules/Track/useCases/midiNoteCrud';
+import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
 
 // ── Types ──
 
@@ -98,11 +102,45 @@ export async function handleGenerateMidiPrompt(prompt: string, numNotes: number 
             await new Promise((resolve) => setTimeout(resolve, 600)); // Simulate think time
         }
         
-        updateTask(taskId, {
-            status: 'success',
-            data: finalNotes,
-            durationMs: Math.round(performance.now() - start),
-        });
+        
+        // Auto-insert into timeline
+        if (finalNotes.length > 0) {
+            const tState = trackStore.value;
+            const selectedTrackId = tState?.selectedTrackId;
+            let targetTrack = tState?.tracks.find(t => t.id === selectedTrackId && t.kind === 'midi');
+            if (!targetTrack) {
+                targetTrack = tState?.tracks.find(t => t.kind === 'midi');
+            }
+            
+            if (targetTrack) {
+                const transport = getTransportState();
+                const startBeat = transport ? transport.playheadPosition : 0;
+                const endBeat = startBeat + Math.max(...finalNotes.map(n => n.start_beat + n.duration_beats));
+                
+                const clip = addClip({
+                    trackId: targetTrack.id,
+                    startBeat,
+                    endBeat,
+                    name: prompt ? `AI: ${prompt.slice(0, 15)}...` : 'AI Generation',
+                    type: 'midi'
+                });
+                
+                if (clip) {
+                    finalNotes.forEach(n => {
+                        addMidiNote(clip.id, n.pitch, n.start_beat, n.duration_beats, n.velocity);
+                    });
+                }
+            }
+            
+            // Remove the task so it doesn't linger in the Generative AI Library
+            removeTask(taskId);
+        } else {
+            updateTask(taskId, {
+                status: 'success',
+                data: finalNotes,
+                durationMs: Math.round(performance.now() - start),
+            });
+        }
     } catch (err: unknown) {
         updateTask(taskId, { status: 'error', error: err instanceof Error ? err.message : 'Generation failed' });
     }

@@ -84,7 +84,7 @@ export const TrackAutomationSection = ({
                             {showParamPicker && (
                                 <>
                                     <div className="fixed inset-0 z-40" onClick={() => setShowParamPicker(false)} />
-                                    <div className="absolute left-0 top-full mt-1 z-50 bg-surface-overlay border border-border rounded-md shadow-xl py-1 min-w-[200px] max-h-[300px] overflow-y-auto">
+                                    <div className="absolute left-0 top-full mt-1 z-50 bg-popover border border-border rounded-md shadow-xl py-1 min-w-[200px] max-h-[300px] overflow-y-auto">
                                         {availableParams
                                             .filter((p) => !trackLanes.some((l) => l.parameterId === p.id))
                                             .map((param) => (

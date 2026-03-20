@@ -15,9 +15,7 @@ type InspectorPanelProps = {
 
 export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => {
     const { tracks, selectedTrackId } = useTracks();
-    const selectedTrack = selectedTrackId 
-        ? tracks.find((t) => t.id === selectedTrackId) 
-        : tracks.find((t) => t.id === 'master');
+    const selectedTrack = selectedTrackId ? tracks.find((t) => t.id === selectedTrackId) : null;
     const wsSelectedClipId = useSyncExternalStore(
         (cb) => workspaceStore.subscribe(cb),
         () => workspaceStore.value?.selectedClipId ?? null
@@ -27,13 +25,15 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
     const selectedClip = selectedTrack?.clips.find((c) => c.id === wsSelectedClipId) ?? null;
     const selectedDevice = selectedTrack?.devices.find((d) => d.id === selectedDeviceId) ?? null;
 
+    const masterTrack = tracks.find((t) => t.kind === 'master');
+
     return (
         <aside
-            className="flex shrink-0 flex-col border-r border-border/50 bg-surface-raised"
+            className="flex shrink-0 flex-col border-l border-border/50 bg-surface-raised"
             style={style}
             aria-label="Inspector panel"
         >
-            <div className="flex items-center justify-between border-b border-border/50 px-3 py-2">
+            <div className="flex flex-row items-center justify-between border-b border-border/50 px-3 py-2">
                 <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Inspector</h2>
                 <Button variant="ghost" size="icon-xs" onClick={toggleInspector} aria-label="Close inspector">
                     <X className="size-3.5" />
@@ -70,10 +70,22 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
                         }}
                         onSelectDevice={setSelectedDeviceId}
                     />
+                ) : masterTrack ? (
+                    <TrackInspector
+                        track={masterTrack}
+                        allTracks={tracks}
+                        onSelectClip={(id) => {
+                            const ws = workspaceStore.value;
+                            if (ws) {
+                                workspaceStore.set({ ...ws, selectedClipId: id, selectedClipIds: [id] });
+                            }
+                        }}
+                        onSelectDevice={setSelectedDeviceId}
+                    />
                 ) : (
-                    <div className="p-3">
-                        <p className="text-xs text-muted-foreground">
-                            Select a track, clip, or device to inspect its properties.
+                    <div className="flex items-center justify-center h-full p-6">
+                        <p className="text-xs text-muted-foreground text-center">
+                            Select a track to inspect its properties.
                         </p>
                     </div>
                 )}
@@ -81,3 +93,4 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
         </aside>
     );
 };
+

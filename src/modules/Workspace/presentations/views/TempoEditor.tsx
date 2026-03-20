@@ -274,7 +274,7 @@ export const TempoEditor = (): ReactElement => {
                     ref={mapPanelRef}
                     role="dialog"
                     aria-label="Tempo map editor"
-                    className="absolute left-0 top-full z-50 mt-1 w-72 rounded-md border border-border bg-surface-overlay p-2 shadow-lg"
+                    className="absolute left-0 top-full z-50 mt-1 w-72 rounded-md border border-border bg-popover p-2 shadow-lg"
                 >
                     <h3 className="mb-1.5 text-xs font-semibold text-foreground">Tempo Map</h3>
 
