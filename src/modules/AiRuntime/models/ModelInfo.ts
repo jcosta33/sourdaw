@@ -15,17 +15,18 @@ export type NativeModelInfo = ModelInfo & {
 };
 
 /**
- * WebLLM model: Phi-3.5-mini (1.8 GB) — best speed/quality ratio for browser inference.
- * Previous: Hermes-3-Llama-3.1-8B-q4f16_1-MLC (~4 GB, slower, required Hermes XML prompts).
+ * WebLLM model: Hermes-3-Llama-3.1-8B (~4.9 GB) — same generation as the native GGUF backend.
+ * Supports native OpenAI-compatible tool calling (tools + tool_choice) via WebGPU.
+ * Used for the command-prompt action engine when the native llama-server tier is unavailable.
  */
-export const WEBLLM_MODEL_ID = 'Phi-3.5-mini-instruct-q4f16_1-MLC';
+export const WEBLLM_MODEL_ID = 'Hermes-3-Llama-3.1-8B-q4f16_1-MLC';
 
 export const WEBLLM_MODEL_INFO: ModelInfo = {
-    displayName: 'Phi 3.5 Mini',
-    downloadSize: '~1.8 GB',
-    ramUsage: '~3 GB',
+    displayName: 'Hermes 3 Llama 3.1 8B',
+    downloadSize: '~4.9 GB',
+    ramUsage: '~6 GB',
     description:
-        'Compact local AI model for natural language DAW commands. Runs entirely on your device via WebGPU. Fast responses with good quality.',
+        'Browser-local AI via WebGPU. Same Hermes-3 model family as the native tier — reliable tool calling for DAW commands, no internet required after first download.',
 };
 
 export const NATIVE_MODEL_INFO: NativeModelInfo = {

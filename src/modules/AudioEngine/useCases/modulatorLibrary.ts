@@ -1,6 +1,14 @@
 /**
  * Modulator Library — Factory presets for the modulation system.
  * Pre-built modulation source configurations for common effects.
+ *
+ * TODO: DATA MODEL ONLY — no Web Audio engine connection exists yet.
+ *   createFromPreset() writes a ModulationSource into an in-memory Map
+ *   (modulationSystem.ts), but that Map has no AudioParam.setValueAtTime()
+ *   calls, no requestAnimationFrame loop, and no connection to any AudioNode.
+ *   getModulatedValue() math exists but is never invoked during playback.
+ *   To implement: connect ModulationRoute targets to live AudioParams via
+ *   an AudioWorklet or rAF render loop in the web-audio-engine.
  */
 import {
     createModulationSource,

@@ -18,7 +18,7 @@
 | **AI EQ / spectral matching** | Rust | Web | `realfft` + custom algorithm | <500ms |
 | **Reference mastering** | Rust | Cloud | `realfft` + loudness matching | <5s |
 | **Intelligent gain staging** | Rust | Web | `realfft` + EBU R128 | <1s |
-| **NL → DAW tool calls** | Rust | Cloud → Web | `mistral.rs` Qwen3-8B / Claude API / WebLLM | <3s |
+| **NL → DAW tool calls** | Rust | Cloud → Web | `mistral.rs` Qwen3-8B / Claude API / WebLLM (Hermes-2-Pro) | <3s |
 | **MIDI generation** | Web | Cloud | Magenta.js MusicVAE / Claude tool use | <2s |
 
 **Priority order for implementation** (maximum user impact first): spectrum analysis → BPM/key detection → stem separation → audio-to-MIDI → NL→tool calls → pitch detection → MIDI generation → AI EQ → gain staging → pitch correction → reference mastering.
@@ -35,40 +35,59 @@
 npm install @mlc-ai/web-llm
 ```
 
-Tool calling support is **work-in-progress** — limited to one-round function calling with Hermes-2-Pro models only. For DAW integration, use **JSON mode** (`response_format: { type: "json_object" }`) with structured prompts instead of native function calling. The engine supports streaming via async iterators and runs inference in a Web Worker to avoid blocking the UI thread.
-
-**Supported models and memory requirements:**
-
-| Model | Quantized Size | VRAM | Tokens/sec (M3 Max) |
-|---|---|---|---|
-| TinyLlama-1.1B q4f16_1 | ~600 MB | ~1.5 GB | ~100+ |
-| Phi-3.5-mini-instruct q4f16_1 | ~1.8 GB | ~3 GB | ~71 |
-| Llama-3.1-8B-Instruct q4f16_1 | ~4 GB | ~6 GB | ~41 |
-| Mistral-7B q4f16_1 | ~3.5 GB | ~5 GB | ~45 |
-
-Models are cached via the browser's **Cache API** after first download. For the DAW use case, **Phi-3.5-mini** offers the best speed/quality tradeoff. Use `CreateWebWorkerMLCEngine` to run inference off the main thread:
+**DAW implementation uses `Hermes-2-Pro-Llama-3-8B-q4f16_1-MLC`** — this model supports native one-round function calling via the `tools` + `tool_choice` API. Use `CreateWebWorkerMLCEngine` to run inference off the main thread, then pass tools and read `tool_calls` from the last streamed chunk:
 
 ```typescript
-import { CreateWebWorkerMLCEngine } from "@mlc-ai/web-llm";
+import { CreateWebWorkerMLCEngine, type ChatCompletionTool } from "@mlc-ai/web-llm";
 
 const engine = await CreateWebWorkerMLCEngine(
   new Worker(new URL("./webllm-worker.ts", import.meta.url), { type: "module" }),
-  "Phi-3.5-mini-instruct-q4f16_1-MLC",
-  { initProgressCallback: (p) => setLoadProgress(p.progress) }
+  "Hermes-2-Pro-Llama-3-8B-q4f16_1-MLC",
+  { initProgressCallback: (p) => setLoadProgress(p.progress) },
+  { context_window_size: 4096 }
 );
 
-const chunks = await engine.chat.completions.create({
+const dawTools: ChatCompletionTool[] = [
+  {
+    type: "function",
+    function: {
+      name: "addTrack",
+      description: "Add a new track",
+      parameters: { type: "object", properties: { name: { type: "string" }, kind: { type: "string" } }, required: ["name", "kind"] }
+    }
+  },
+  // ... all DAW tools
+];
+
+const asyncChunks = await engine.chat.completions.create({
   messages: [
-    { role: "system", content: "You are a DAW assistant. Return JSON tool calls." },
+    { role: "system", content: dawSystemPrompt },
     { role: "user", content: userMessage }
   ],
+  tools: dawTools,
+  tool_choice: "auto",
   stream: true,
-  response_format: { type: "json_object" }
+  stream_options: { include_usage: true },
+  temperature: 0.1,
+  seed: 0,
 });
-for await (const chunk of chunks) {
-  // stream tokens to React state
+
+let lastChunk;
+for await (const chunk of asyncChunks) {
+  if (!chunk.usage) lastChunk = chunk; // usage chunk is always last
 }
+// lastChunk.choices[0].delta.tool_calls → array of tool calls
 ```
+
+**Supported models and memory requirements:**
+
+| Model | Quantized Size | VRAM | Tokens/sec (M3 Max) | Tool Calling |
+|---|---|---|---|---|
+| **Hermes-2-Pro-Llama-3-8B q4f16_1** | **~4 GB** | **~6 GB** | **~41** | **✅ Native (recommended)** |
+| TinyLlama-1.1B q4f16_1 | ~600 MB | ~1.5 GB | ~100+ | ❌ No |
+| Phi-3.5-mini-instruct q4f16_1 | ~1.8 GB | ~3 GB | ~71 | ❌ JSON mode only |
+| Llama-3.1-8B-Instruct q4f16_1 | ~4 GB | ~6 GB | ~41 | ⚠️ Limited |
+| Mistral-7B q4f16_1 | ~3.5 GB | ~5 GB | ~45 | ❌ No |
 
 The worker file is minimal:
 
@@ -844,7 +863,7 @@ Similar to AI EQ but extended to loudness (EBU R128), stereo width, and dynamic 
 
 **Recommended fallback chain: Rust (mistral.rs) → Cloud (Claude) → Web (WebLLM).**
 
-The Rust tier using mistral.rs with **Qwen3-8B** (Q4K, ~4.5 GB) provides the best balance of quality, latency, and offline capability. It supports native tool calling, MCP, and structured output via llguidance. For machines with <16 GB RAM, fall back to Claude API (best tool-calling quality) or GPT-5.4. WebLLM serves as a last resort for offline-only scenarios on Windows/macOS where the Rust tier isn't loaded, using Phi-3.5-mini with JSON mode.
+The Rust tier using mistral.rs with **Qwen3-8B** (Q4K, ~4.5 GB) provides the best balance of quality, latency, and offline capability. It supports native tool calling, MCP, and structured output via llguidance. For machines with <16 GB RAM, fall back to Claude API (best tool-calling quality) or GPT-5.4. WebLLM serves as a fallback for offline-only scenarios on Windows/macOS where the native tier isn't loaded, using **Hermes-2-Pro-Llama-3-8B** (~4 GB) with native OpenAI-compatible tool calling (no JSON mode prompt engineering required).
 
 ### MIDI generation and completion
 

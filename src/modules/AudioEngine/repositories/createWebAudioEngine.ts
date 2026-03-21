@@ -226,10 +226,9 @@ export function createWebAudioEngine(): AudioEngine {
     }
 
     function setTrackMute(trackId: string, muted: boolean, restoreGain?: number): void {
-        const strip = trackStrips.get(trackId);
-        if (!strip) {
-            return;
-        }
+        // Ensure the strip exists — it may not have been created yet if playback hasn't started.
+        // We still need to apply the mute state so it takes effect as soon as audio is produced.
+        const strip = ensureTrackStrip(trackId);
         strip.muted = muted;
         if (muted) {
             strip.gainNode.gain.setTargetAtTime(0, context.currentTime, 0.005);

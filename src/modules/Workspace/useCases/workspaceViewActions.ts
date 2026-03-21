@@ -301,3 +301,31 @@ export {
     setMpeEnabled,
     getMpeEnabled,
 } from '#/modules/AudioEngine/repositories/webMidiRepository';
+
+// ── Command: action classification ───────────────────────────────
+export { DESTRUCTIVE_ACTIONS, REQUIRES_CONFIRMATION } from '#/modules/Command/models/AppAction';
+
+// ── Transport: bar/beat mapping ───────────────────────────────────
+export { getBarBeatAtPosition } from '#/modules/Transport/models/TimeSignatureMap';
+export { getTimeSignatureChanges } from '#/modules/Transport/useCases/timeSignatureChanges';
+
+// ── Workspace: editing mode queries ──────────────────────────────
+export { isRippleEditing } from '#/modules/Workspace/useCases/rippleEditing';
+
+// ── Track: automation UI helpers ─────────────────────────────────
+export { isDrawSessionActive } from '#/modules/Track/useCases/automationDrawMode';
+export { resetYZoom, adjustYZoom, zoomToUsedRange } from '#/modules/Track/useCases/automationZoom';
+export { transformSelectedPoints } from '#/modules/Track/useCases/automationSelection';
+export { createAutomationObject } from '#/modules/Track/models/Automation';
+
+// ── AudioEngine: drum kit registry ───────────────────────────────
+export { getFactoryDrumKits } from '#/modules/AudioEngine/helpers/factoryDrumKits';
+
+// ── Track: batch clip ops ─────────────────────────────────────────
+export { updateClipsOnAllTracks } from '#/modules/Track/repositories/trackRepository';
+
+// ── Track: plugin device registry ────────────────────────────────
+export { getPluginById } from '#/modules/Track/models/DeviceParameter';
+
+// ── AudioEngine: audio file info ─────────────────────────────────
+export { getAudioFileInfo } from '#/modules/AudioEngine/repositories/audioDecodingRepository';

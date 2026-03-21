@@ -4,6 +4,13 @@
  * before they reach an instrument.
  *
  * Each effect takes MIDI notes/events and outputs transformed notes/events.
+ *
+ * TODO: These are DATA-LAYER FACTORIES ONLY — not yet wired into the engine.
+ *   The objects returned by .create() are never stored on any track, and
+ *   .process() is never invoked during MIDI clip playback.
+ *   To implement: tracks need a MidiEffect[] chain, and the scheduler must
+ *   pipe notes through it before sending to the WAM instrument.
+ *   See web-audio-engine SKILL.md for scheduling architecture.
  */
 
 export type MidiNote = {

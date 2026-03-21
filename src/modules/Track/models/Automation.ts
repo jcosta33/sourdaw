@@ -57,7 +57,7 @@ export const createAutomationLane = (
     parameterName,
     points: [],
     objects: [],
-    visible: false,
+    visible: true,
     enabled: true,
     collapsed: false,
     virginTerritory: true,

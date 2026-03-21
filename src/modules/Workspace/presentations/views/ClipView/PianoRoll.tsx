@@ -46,8 +46,8 @@ interface GestureEvent extends UIEvent {
 }
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
-const TOTAL_ROWS = 48;
-const BASE_PITCH = 36;
+const TOTAL_ROWS = 60;
+const BASE_PITCH = 24;
 const ROW_HEIGHT = 16;
 const GRID_BEATS = 32;
 const RULER_HEIGHT = 22;

@@ -281,11 +281,13 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                         />
                     )}
 
-                    {currentRoute.id === 'effects' && (
+                    {currentRoute.id.startsWith('effects') && (
                         <EffectsTab
                             plugins={filteredPlugins}
                             selectedTrackId={selectedTrackId}
                             searchQuery={searchQuery}
+                            currentRoute={currentRoute}
+                            pushRoute={pushRoute}
                         />
                     )}
                 </div>

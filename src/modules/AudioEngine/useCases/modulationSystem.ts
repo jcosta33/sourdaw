@@ -5,6 +5,16 @@
  *
  * This provides the data model and routing; rendering of halos/indicators
  * is done in the UI layer.
+ *
+ * TODO: NEEDS AudioParam WIRING — no audio effect currently.
+ *   The in-memory `sources` and `routes` Maps are populated correctly, but
+ *   nothing reads them at audio rate. getModulatedValue() is correct math
+ *   but is never called in a render loop or AudioWorklet processor.
+ *   To implement:
+ *     1. Add a ModulationWorklet that runs at audio rate (128-sample blocks)
+ *     2. Map ModulationRoute.target → deviceId/parameterName → AudioParam ref
+ *     3. Drive AudioParam.value via the worklet output or setValueAtTime()
+ *   Until then, LFO / Envelope / Random / Macro presets have no audible effect.
  */
 
 export type ModulationSourceType = 'lfo' | 'envelope' | 'midi-cc' | 'macro' | 'random' | 'step-seq';

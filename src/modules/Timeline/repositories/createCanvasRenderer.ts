@@ -213,11 +213,15 @@ function drawTracks(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, w
 
     for (const track of tracks) {
         const y = yOffsets[track.index]!;
-        const h = track.height;
+        const isFolder = track.kind === 'folder';
+        const h = isFolder ? 26 : track.height;
         const isSelected = track.id === selectedTrackId;
         const isEven = track.index % 2 === 0;
 
-        if (isSelected) {
+        // Background
+        if (isFolder) {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+        } else if (isSelected) {
             ctx.fillStyle = 'rgba(100, 160, 255, 0.08)';
         } else if (isEven) {
             ctx.fillStyle = 'rgba(255, 255, 255, 0.015)';
@@ -226,8 +230,15 @@ function drawTracks(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, w
         }
         ctx.fillRect(0, y, width, h);
 
-        ctx.fillStyle = track.color;
-        ctx.globalAlpha = isSelected ? 0.5 : 0.25;
+        // Left accent bar
+        if (isFolder) {
+            // Amber/gold accent for folder
+            ctx.fillStyle = 'rgba(251, 191, 36, 0.5)';
+            ctx.globalAlpha = 1;
+        } else {
+            ctx.fillStyle = track.color;
+            ctx.globalAlpha = isSelected ? 0.5 : 0.25;
+        }
         ctx.fillRect(0, y, 3, h);
         ctx.globalAlpha = 1;
 
@@ -236,7 +247,8 @@ function drawTracks(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, w
             ctx.fillRect(0, y, width, h);
         }
 
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+        // Bottom separator
+        ctx.strokeStyle = isFolder ? 'rgba(255, 255, 255, 0.12)' : 'rgba(255, 255, 255, 0.06)';
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(0, y + h);
@@ -252,20 +264,27 @@ function drawTracks(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, w
             ctx.stroke();
         }
 
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
-        ctx.font = '9px system-ui, sans-serif';
-        const kindLabel = TRACK_KIND_LABELS[track.kind] ?? '';
-        if (track.clips.length === 0) {
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
-            ctx.fillText(`${track.name}  ·  ${kindLabel}`, 8, y + h / 2 + 3);
+        if (isFolder) {
+            // Folder label
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+            ctx.font = 'bold 9px system-ui, sans-serif';
+            ctx.fillText(track.name.toUpperCase(), 10, y + h / 2 + 3);
+        } else {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
+            ctx.font = '9px system-ui, sans-serif';
+            const kindLabel = TRACK_KIND_LABELS[track.kind] ?? '';
+            if (track.clips.length === 0) {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+                ctx.fillText(`${track.name}  ·  ${kindLabel}`, 8, y + h / 2 + 3);
 
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
-            ctx.font = '8px system-ui, sans-serif';
-            ctx.fillText('Drop audio/MIDI here or use Draw tool', 8, y + h / 2 + 14);
-        }
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
+                ctx.font = '8px system-ui, sans-serif';
+                ctx.fillText('Drop audio/MIDI here or use Draw tool', 8, y + h / 2 + 14);
+            }
 
-        for (const clip of track.clips) {
-            drawClip(ctx, clip, model, y, h);
+            for (const clip of track.clips) {
+                drawClip(ctx, clip, model, y, h);
+            }
         }
     }
 }

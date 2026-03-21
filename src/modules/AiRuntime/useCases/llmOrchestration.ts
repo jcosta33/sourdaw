@@ -2,16 +2,22 @@
  * Use case: LLM engine orchestration.
  *
  * Resolves the best backend with tiered fallback:
- *   native (llama-server) → WebLLM (browser) → cloud (Claude API)
+ *   native (llama-server) → WebLLM (browser, Hermes-2-Pro native tool calling) → cloud (Claude API)
  *
  * Manages lifecycle and routes inference requests.
  * This is the single entry point for all LLM operations.
+ *
+ * Backend capabilities:
+ * - native:  Hermes-3-Llama-3.1-8B via llama-server; parses Hermes XML tool calls
+ * - webllm:  Hermes-2-Pro-Llama-3-8B via WebGPU; uses native OpenAI tool calling API
+ * - cloud:   Claude API; uses native tool-use API
  */
 
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
 import { isTauri } from '#/helpers/tauriBridge';
 
+import { DAW_CHAT_TOOLS } from '../helpers/toolDefinitions';
 import { WEBLLM_MODEL_ID } from '../models/ModelInfo';
 import { llmStatusStore } from '../stores/llmStatusStore';
 import {
@@ -24,7 +30,7 @@ import {
     initWebLlmEngine,
     unloadWebLlmEngine,
     isWebLlmLoaded,
-    generateWebLlmCompletion,
+    generateWebLlmToolCalls,
 } from '../repositories/webLlmRepository';
 import { isCloudAvailable, generateCloudToolCalls } from '../repositories/cloudLlmRepository';
 import { parseToolCallXml, type ToolCallResult } from '../transformers/toolCallParser';
@@ -41,7 +47,7 @@ const logger = Container.getInstance().get(Logger);
 /**
  * Returns the preferred primary backend:
  * - native: when running in Tauri or on localhost (dev mode)
- * - webllm: when WebGPU is available in the browser
+ * - webllm: when WebGPU is available in the browser (Hermes-2-Pro native tool calling)
  * - cloud: when Claude API key is configured but no local options exist
  * - none: no backend available
  */
@@ -127,34 +133,18 @@ export async function unloadEngine(): Promise<void> {
 // ── Inference with tiered fallback ──────────────────────────────────────
 
 /**
- * Try to generate a completion on the given backend.
- * Returns the raw response string, or throws on failure.
- * Used for native and WebLLM backends (which return raw text).
- */
-async function tryTextBackend(backend: AiBackend, systemPrompt: string, userMessage: string): Promise<string> {
-    if (backend === 'native') {
-        if (!isLlamaServerRunning()) {
-            throw new Error('Native AI engine not running');
-        }
-        return generateNativeCompletion(systemPrompt, userMessage);
-    }
-
-    if (backend === 'webllm') {
-        if (!isWebLlmLoaded()) {
-            await initWebLlmEngine();
-        }
-        return generateWebLlmCompletion(systemPrompt, userMessage);
-    }
-
-    throw new Error(`Unknown text backend: ${String(backend)}`);
-}
-
-/**
  * Send a prompt to the model and get parsed tool calls.
  * Uses a tiered fallback chain: tries each backend in order until one succeeds.
  *
- * Cloud backend (Claude) uses native tool-use API directly, bypassing text parsing.
- * Native/WebLLM backends parse tool calls from text output (XML or JSON).
+ * Backend dispatch:
+ * - cloud:  Claude native tool-use API (no text parsing)
+ * - webllm: Hermes-2-Pro native OpenAI tool calling API (no text parsing)
+ * - native: llama-server Hermes XML output → parsed via parseToolCallXml + parseNativeToolCalls
+ *
+ * @param systemPrompt - The assembled system prompt (DAW context + production knowledge).
+ *                       For native it includes Hermes XML schema; for webllm/cloud it is
+ *                       just the DAW assistant role context (tools passed natively).
+ * @param userMessage - The natural language user request.
  */
 export async function generateToolCalls(systemPrompt: string, userMessage: string): Promise<ToolCallResult[]> {
     const chain = getBackendChain();
@@ -174,16 +164,24 @@ export async function generateToolCalls(systemPrompt: string, userMessage: strin
             if (backend === 'cloud') {
                 // Cloud uses native tool-use API — no text parsing needed
                 results = await generateCloudToolCalls(systemPrompt, userMessage);
+            } else if (backend === 'webllm') {
+                // Hermes-2-Pro via WebLLM supports native OpenAI tool calling —
+                // pass DAW_CHAT_TOOLS directly, no prompt engineering needed.
+                if (!isWebLlmLoaded()) {
+                    await initWebLlmEngine();
+                }
+                results = await generateWebLlmToolCalls(systemPrompt, userMessage, DAW_CHAT_TOOLS);
             } else {
-                // Native/WebLLM return raw text that we parse
-                const content = await tryTextBackend(backend, systemPrompt, userMessage);
+                // native: llama-server with Hermes-3 XML tool call format
+                if (!isLlamaServerRunning()) {
+                    throw new Error('Native AI engine not running');
+                }
+                const content = await generateNativeCompletion(systemPrompt, userMessage);
                 logger.info(
-                    `[AI Engine] (${backend}) Raw response (${String(content.length)} chars): ${content.slice(0, 500)}`
+                    `[AI Engine] (native) Raw response (${String(content.length)} chars): ${content.slice(0, 500)}`
                 );
                 const tsParsed = parseToolCallXml(content);
                 const nativeParsed = await parseNativeToolCalls(content);
-
-                // Combine results from both parsers
                 results = [...tsParsed, ...nativeParsed];
             }
 

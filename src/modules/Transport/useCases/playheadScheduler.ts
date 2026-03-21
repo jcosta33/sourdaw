@@ -494,7 +494,7 @@ export function startPlayheadScheduler(): void {
     const ctx = getAudioContext();
     lastTickTime = ctx.currentTime;
     accumulatedPosition = state.playheadPosition;
-    lastScheduledBeat = state.playheadPosition;
+    lastScheduledBeat = state.playheadPosition - 0.0001;
     lastMetronomeBeat = Math.floor(state.playheadPosition) - 1;
 
     const grainMs = state.scheduleGrainMs ?? DEFAULT_SCHEDULE_GRAIN_MS;
@@ -537,7 +537,7 @@ export function startPlayheadScheduler(): void {
 
             const loopLength = current.loopEnd - current.loopStart;
             newPosition = current.loopStart + ((newPosition - current.loopStart) % loopLength);
-            lastScheduledBeat = newPosition;
+            lastScheduledBeat = newPosition - 0.0001;
             lastMetronomeBeat = Math.floor(newPosition) - 1;
             stopAllScheduled();
             for (const src of activeAudioSources) {
@@ -677,9 +677,9 @@ export function startPlayheadScheduler(): void {
         const lookAheadBeats = SCHEDULE_AHEAD_SECONDS * beatsPerSecond;
         const scheduleUpTo = newPosition + lookAheadBeats;
 
-        scheduleMetronome(newPosition, scheduleUpTo, current, currentTempo);
-        scheduleMidiNotes(newPosition, scheduleUpTo, current, currentTempo);
-        scheduleAudioClips(newPosition, scheduleUpTo, current, currentTempo);
+        scheduleMetronome(lastScheduledBeat, scheduleUpTo, current, currentTempo);
+        scheduleMidiNotes(lastScheduledBeat, scheduleUpTo, current, currentTempo);
+        scheduleAudioClips(lastScheduledBeat, scheduleUpTo, current, currentTempo);
         applyVcaGains();
         applyAutomation(newPosition);
 

@@ -22,6 +22,7 @@ import { trackStore } from '#/modules/Track/stores/trackStore';
 import { addClip } from '#/modules/Track/useCases/clipUseCases';
 import { addMidiNote } from '#/modules/Track/useCases/midiNoteCrud';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
+import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 
 // ── Mini piano-roll preview ──
 
@@ -249,12 +250,16 @@ export const PatternBrowser = (): ReactElement => {
             endBeat,
             name: `🎵 ${template.name} (${key})`,
             type: 'midi',
-            isGhost: true,
         });
 
         if (clip) {
             for (const note of notes) {
                 addMidiNote(clip.id, note.pitch, note.startBeat, note.durationBeats, note.velocity);
+            }
+            // Open the new clip in the clip editor
+            const ws = workspaceStore.value;
+            if (ws) {
+                workspaceStore.set({ ...ws, selectedClipId: clip.id });
             }
         }
     };

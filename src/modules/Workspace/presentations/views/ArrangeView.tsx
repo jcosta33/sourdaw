@@ -68,7 +68,7 @@ export const ArrangeView = (): ReactElement => {
         <div className="flex h-full">
             {trackListOpen && (
                 <>
-                    <TrackListView style={{ width: localTrackListWidth }} />
+                    <TrackListView style={{ width: localTrackListWidth }} extraHeaderHeight={hasMarkers ? 20 : 0} />
                     <ResizeHandle
                         direction="vertical"
                         onResize={handleTrackListResize}

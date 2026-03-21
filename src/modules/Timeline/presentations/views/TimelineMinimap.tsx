@@ -7,7 +7,7 @@ import {
     useSyncExternalStore,
 } from 'react';
 import { trackStore } from '#/modules/Track/stores/trackStore';
-import { timelineViewStore, scrollTimeline } from '../../stores/timelineViewStore';
+import { timelineViewStore } from '../../stores/timelineViewStore';
 
 const MINIMAP_HEIGHT = 28;
 const MIN_PROJECT_BEATS = 64;
@@ -152,11 +152,6 @@ export const TimelineMinimap = (): ReactElement => {
         return { canvasWidth, totalBeats, beatsToPixels, viewportWidthPx, viewportStartPx };
     };
 
-    const scrollToBeat = (beat: number) => {
-        const newScrollX = beat * pixelsPerBeat;
-        const current = scrollX;
-        scrollTimeline(newScrollX - current);
-    };
 
     const handleMouseDown = (e: ReactMouseEvent<HTMLDivElement>) => {
         if (e.button !== 0) {
@@ -173,19 +168,33 @@ export const TimelineMinimap = (): ReactElement => {
         const clickX = e.clientX - rect.left;
         const { viewportStartPx, viewportWidthPx, beatsToPixels } = metrics;
 
+        // Capture absolute scroll at drag start
+        const dragStartScrollX = viewState?.scrollX ?? 0;
+
+        let dragOffsetInMinimapPx: number;
+
         if (clickX >= viewportStartPx && clickX <= viewportStartPx + viewportWidthPx) {
-            isDraggingRef.current = true;
-            dragOffsetRef.current = clickX - viewportStartPx;
+            // Click inside viewport — drag from current offset within it
+            dragOffsetInMinimapPx = clickX - viewportStartPx;
         } else {
-            const containerWidth = rect.width;
-            const visibleBeats = containerWidth / pixelsPerBeat;
+            // Click outside viewport — jump to center on that point
+            const visibleBeats = rect.width / pixelsPerBeat;
             const clickedBeat = clickX / beatsToPixels;
-            const targetBeat = clickedBeat - visibleBeats / 2;
-            scrollToBeat(Math.max(0, targetBeat));
-            isDraggingRef.current = true;
-            const newViewportStart = ((Math.max(0, targetBeat) * pixelsPerBeat) / pixelsPerBeat) * beatsToPixels;
-            dragOffsetRef.current = clickX - newViewportStart;
+            const targetBeat = Math.max(0, clickedBeat - visibleBeats / 2);
+            const newScrollX = targetBeat * pixelsPerBeat;
+            const currentViewState = timelineViewStore.value;
+            if (currentViewState) {
+                timelineViewStore.set({ ...currentViewState, scrollX: newScrollX });
+            }
+            // After jump, the viewport starts at newScrollX in minimap coords
+            dragOffsetInMinimapPx = clickX - (newScrollX / pixelsPerBeat) * beatsToPixels;
         }
+
+        isDraggingRef.current = true;
+        dragOffsetRef.current = dragOffsetInMinimapPx;
+
+        // Remember the scroll at the moment drag started, so we can compute deltas
+        const scrollAtDragStart = dragStartScrollX;
 
         const handleMouseMove = (moveEvent: MouseEvent) => {
             if (!isDraggingRef.current) {
@@ -196,9 +205,13 @@ export const TimelineMinimap = (): ReactElement => {
                 return;
             }
             const moveX = moveEvent.clientX - rect.left;
-            const newViewportStart = moveX - dragOffsetRef.current;
-            const beat = newViewportStart / currentMetrics.beatsToPixels;
-            scrollToBeat(Math.max(0, beat));
+            const newViewportStartPx = moveX - dragOffsetRef.current;
+            const targetScrollX = Math.max(0, (newViewportStartPx / currentMetrics.beatsToPixels) * pixelsPerBeat);
+            const currentViewState = timelineViewStore.value;
+            if (currentViewState) {
+                timelineViewStore.set({ ...currentViewState, scrollX: targetScrollX });
+            }
+            void scrollAtDragStart;
         };
 
         const handleMouseUp = () => {

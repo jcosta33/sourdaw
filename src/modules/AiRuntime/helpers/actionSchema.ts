@@ -13,7 +13,7 @@ let cachedNativeToolsPrompt: string | null = null;
  */
 export async function buildActionSystemPromptAsync(
     context: ProjectContext,
-    format: PromptFormat = 'json'
+    format: PromptFormat = 'api'
 ): Promise<string> {
     const toolsJson = mcpToCompactPromptText();
 

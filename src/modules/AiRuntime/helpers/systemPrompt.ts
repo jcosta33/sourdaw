@@ -1,29 +1,22 @@
 /**
  * System prompt template for AI tool calling.
  *
- * Supports two output formats depending on the backend:
- * - JSON mode (WebLLM / Phi-3.5 / cloud APIs): produces {"actions":[...]}
- * - Hermes XML (native llama-server / Hermes models): produces <tool_call> blocks
+ * Two formats are supported depending on the backend:
  *
- * The prompt includes production knowledge (beat math, gain/pan values,
+ * - 'native' (llama-server + Hermes-3 GGUF):
+ *     Hermes XML format — produces <tool_call> blocks.
+ *     Tools are embedded in the system prompt via <tools>...</tools>.
+ *
+ * - 'api' (WebLLM Hermes-2-Pro + Claude cloud):
+ *     Native tool calling API (tools + tool_choice passed at request time).
+ *     System prompt only needs the DAW role context; tools are NOT embedded here.
+ *
+ * Both paths share the same production knowledge blocks (beat math, gain/pan,
  * chord references) so the model can resolve natural-language descriptions
  * into concrete parameters.
  */
 
-// ── JSON-mode preamble (for WebLLM / Phi-3.5 / cloud APIs) ─────────────
-
-const JSON_PREAMBLE = `You are an expert music producer and mix engineer embedded in a DAW (Digital Audio Workstation). You are a function calling AI model.
-
-You will be provided with a list of available tool definitions. When the user asks you to do something, respond ONLY with a JSON object containing an "actions" array. Each action has a "name" (the tool name) and "arguments" (an object with the parameters).
-
-Response format: {"actions":[{"name":"toolName","arguments":{"param":"value"}}]}
-
-IMPORTANT:
-- Output ONLY valid JSON. No explanation, no markdown, no text before or after.
-- Multiple actions = multiple objects in the "actions" array.
-- Never describe what you would do — just output the JSON.`;
-
-// ── Hermes XML preamble (for native llama-server with Hermes models) ────
+// ── Hermes XML preamble (for native llama-server with Hermes-3 GGUF) ───
 
 const HERMES_PREAMBLE = `You are a function calling AI model. You are an expert music producer and mix engineer embedded in a DAW (Digital Audio Workstation). You are provided with function signatures within <tools></tools> XML tags. You may call one or more functions to assist with the user query. Don't make assumptions about what values to plug into functions. Here are the available tools:`;
 
@@ -31,6 +24,18 @@ const HERMES_SCHEMA = `Use the following pydantic model json schema for each too
 <tool_call>
 {"arguments": <args-dict>, "name": <function-name>}
 </tool_call>`;
+
+// ── API-mode role preamble (WebLLM Hermes-2-Pro + Cloud) ────────────────
+// Tools are passed via the native API (tools + tool_choice), not embedded here.
+
+const API_ROLE_PREAMBLE = `You are an expert music producer and mix engineer embedded in a DAW (Digital Audio Workstation). You are a function calling AI model.
+
+When the user asks you to do something, call the appropriate tool(s) with the correct parameters. You may call multiple tools in a single response when needed for compound requests.
+
+IMPORTANT:
+- Always call tools — never describe what you would do without calling them.
+- For compound requests (e.g. "set up a hip-hop session"), call ALL needed tools.
+- Infer track IDs and clip IDs from the project state provided below.`;
 
 // ── Production knowledge blocks ─────────────────────────────────────────
 
@@ -103,23 +108,33 @@ When asked to "create a variation" → use variationMidi.
 When asked to "add a bassline" → use generateBassline.
 For standard patterns → use generateDrumPattern, generateMelody, or generateChordProgression.`;
 
-const CLOSING = `ALWAYS generate every action needed. Do not explain — just output the actions. Multiple actions = multiple entries in the array.`;
+const CLOSING = `ALWAYS generate every action needed. Do not explain — just call the tools.`;
 
 // ── Public API ──────────────────────────────────────────────────────────
 
-export type PromptFormat = 'json' | 'hermes';
+/**
+ * Format selects the rendering strategy:
+ * - 'hermes': native llama-server with Hermes-3 GGUF — tools embedded in XML prompt
+ * - 'api':    WebLLM Hermes-2-Pro or Cloud — tools passed natively, prompt is role-only
+ *
+ * @deprecated 'json' is an alias for 'api' kept for backwards compatibility.
+ */
+export type PromptFormat = 'api' | 'hermes' | 'json';
 
 /**
- * Assemble the full system prompt from template parts + tool JSON.
+ * Assemble the full system prompt.
  *
- * @param format - 'json' for WebLLM/cloud (JSON object output),
- *                 'hermes' for native llama-server (XML blocks output)
+ * @param toolsJson - JSON string of tool definitions. Used only for 'hermes' format;
+ *                    ignored for 'api'/'json' (tools passed natively to the API).
+ * @param projectState - Current DAW state string (tempo, tracks, clips, devices).
+ * @param format - Output format; defaults to 'api'.
  */
-export function buildSystemPrompt(toolsJson: string, projectState: string, format: PromptFormat = 'json'): string {
-    const preamble =
-        format === 'hermes'
-            ? `${HERMES_PREAMBLE} <tools> ${toolsJson} </tools> ${HERMES_SCHEMA}`
-            : `${JSON_PREAMBLE}\n\nAvailable tools:\n${toolsJson}`;
+export function buildSystemPrompt(toolsJson: string, projectState: string, format: PromptFormat = 'api'): string {
+    const isHermes = format === 'hermes';
+
+    const preamble = isHermes
+        ? `${HERMES_PREAMBLE} <tools> ${toolsJson} </tools> ${HERMES_SCHEMA}`
+        : API_ROLE_PREAMBLE;
 
     return [
         preamble,

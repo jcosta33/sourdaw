@@ -114,7 +114,12 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                 }
             } else {
                 const currentY = timelineViewStore.value?.scrollY ?? 0;
-                setScrollY(Math.max(0, currentY + e.deltaY));
+                const trackState = trackStore.value;
+                const canvas = canvasRef.current;
+                const totalTrackH = (trackState?.tracks ?? []).reduce((s, t) => s + (t.height ?? 64), 0);
+                const viewH = canvas ? canvas.clientHeight - RULER_HEIGHT : 600;
+                const maxY = Math.max(0, totalTrackH - viewH);
+                setScrollY(Math.min(maxY, Math.max(0, currentY + e.deltaY)));
             }
         };
 

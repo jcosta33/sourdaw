@@ -137,12 +137,6 @@ export function moveClipPreview(clipId: string, targetTrackId: string, startBeat
             t.id === movedClip!.trackId ? { ...t, clips: [...t.clips, movedClip!] } : t
         ),
     });
-
-    const beatDelta = startBeat - oldStartBeat;
-    if (beatDelta !== 0) {
-        shiftClipAutomation(clipId, beatDelta);
-        shiftClipMidiNotes(clipId, beatDelta);
-    }
 }
 
 export function duplicateClip(clipId: string): void {

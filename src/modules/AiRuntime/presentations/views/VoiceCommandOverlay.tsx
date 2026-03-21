@@ -180,20 +180,9 @@ export const VoiceCommandOverlay = (): ReactElement | null => {
 
     // ── Browser SpeechRecognition ────────────────────────────────────────
 
-    const startBrowserRecognition = async (): Promise<boolean> => {
+    const startBrowserRecognition = (): boolean => {
         if (recognitionRef.current) {
             return true;
-        }
-
-        // Request mic permission explicitly
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            for (const track of stream.getTracks()) {
-                track.stop();
-            }
-        } catch {
-            showError('Microphone access denied. Allow mic in browser settings.');
-            return false;
         }
 
         const recognition = getSpeechRecognition();
@@ -301,11 +290,10 @@ export const VoiceCommandOverlay = (): ReactElement | null => {
         const mode = resolveVoiceMode();
 
         if (mode === 'browser') {
-            void startBrowserRecognition().then((started) => {
-                if (!started && isTauriAvailable()) {
-                    void startWhisperRecording();
-                }
-            });
+            const started = startBrowserRecognition();
+            if (!started && isTauriAvailable()) {
+                void startWhisperRecording();
+            }
             return;
         }
 

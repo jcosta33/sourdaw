@@ -92,15 +92,16 @@ export async function parsePromptToActions(
     return { actions: [], confidence: 0, rawText: prompt, requiresConfirmation: false };
 }
 
-// ── LLM path (Hermes function calling) ──────────────────────────────────
+// ── LLM path (native tool calling / Hermes function calling) ─────────────
 
 async function parseLlmPath(prompt: string, context: ProjectContext, signal?: AbortSignal): Promise<IntentResult> {
     if (signal?.aborted) {
         return { actions: [], confidence: 0, rawText: prompt, requiresConfirmation: false };
     }
 
-    // Use 'hermes' XML format for native Hermes GGUF model, 'json' for WebLLM Phi-3.5
-    const format = resolveBackend() === 'native' ? ('hermes' as const) : ('json' as const);
+    // 'hermes' = native llama-server with Hermes-3 GGUF (XML tool call parsing)
+    // 'api'    = WebLLM Hermes-2-Pro or Cloud — tools passed natively, no XML parsing
+    const format = resolveBackend() === 'native' ? ('hermes' as const) : ('api' as const);
     const systemPrompt = await buildActionSystemPromptAsync(context, format);
     const toolCalls = await generateToolCalls(systemPrompt, prompt);
 
@@ -118,3 +119,4 @@ async function parseLlmPath(prompt: string, context: ProjectContext, signal?: Ab
         requiresConfirmation: requiresConfirmation(validated),
     };
 }
+

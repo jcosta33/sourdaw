@@ -1,5 +1,5 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
-import { Cpu, Download, HardDrive, Loader2, Power, Zap } from 'lucide-react';
+import { Cpu, Download, HardDrive, Loader2, Power, Sparkles, Zap } from 'lucide-react';
 
 import { isLlmAvailable, resolveBackend, unloadEngine } from '../../../useCases/workspaceViewActions';
 import { NATIVE_MODEL_INFO, WEBLLM_MODEL_INFO, CLOUD_MODEL_INFO } from '../../../useCases/workspaceViewActions';
@@ -10,6 +10,13 @@ type LlmStatusBadgeProps = {
     status: LlmEngineStatus;
     onLoad: () => void;
 };
+
+/** Tier badge color */
+const TIER_COLORS = {
+    native: 'bg-violet-500/20 text-violet-400 border-violet-500/30',
+    cloud: 'bg-sky-500/20 text-sky-400 border-sky-500/30',
+    webllm: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30',
+} as const;
 
 /** Small dropdown panel that appears below the badge. */
 const DropdownPanel = ({ children, onClose }: { children: React.ReactNode; onClose: () => void }): ReactElement => {
@@ -28,7 +35,8 @@ const DropdownPanel = ({ children, onClose }: { children: React.ReactNode; onClo
     return (
         <div
             ref={ref}
-            className="absolute top-full right-0 mt-1.5 z-50 rounded-lg border border-border bg-popover shadow-xl p-3"
+            className="absolute top-full right-0 mt-2 z-50 rounded-xl border border-border bg-popover shadow-2xl overflow-hidden"
+            style={{ width: '230px' }}
         >
             {children}
         </div>
@@ -41,6 +49,7 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
     const modelInfo =
         backend === 'native' ? NATIVE_MODEL_INFO : backend === 'cloud' ? CLOUD_MODEL_INFO : WEBLLM_MODEL_INFO;
     const backendLabel = backend === 'native' ? 'Native' : backend === 'cloud' ? 'Cloud' : 'Browser';
+    const tierKey = backend === 'native' ? 'native' : backend === 'cloud' ? 'cloud' : 'webllm';
 
     if (!isLlmAvailable()) {
         return (
@@ -53,47 +62,63 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
         );
     }
 
-    // ── Idle: "Load AI" with model info ──────────────────────────────────
+    // ── Idle: styled pill + info popup ──────────────────────────────────────
     if (!status || status.state === 'idle') {
         return (
             <div className="relative">
-                <button
+                <Button
+                    variant="outline"
+                    size="xs"
                     type="button"
                     onClick={() => setShowPanel((prev) => !prev)}
-                    className="text-[9px] text-purple-400/70 hover:text-purple-400 whitespace-nowrap transition-colors"
+                    className="h-6 gap-1 px-2 text-[10px] font-medium border-purple-500/30 text-purple-400/80 hover:text-purple-300 hover:bg-purple-500/10 hover:border-purple-500/50 transition-all"
                     title="Load AI model"
                 >
+                    <Sparkles className="size-2.5" aria-hidden="true" />
                     Load AI
-                </button>
+                </Button>
+
                 {showPanel ? (
                     <DropdownPanel onClose={() => setShowPanel(false)}>
-                        <div className="w-56 space-y-3">
-                            <div className="space-y-1.5">
+                        {/* Header */}
+                        <div className="px-3 pt-3 pb-2 border-b border-border/50 bg-surface-raised/50">
+                            <div className="flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-1.5">
                                     {backend === 'native' ? (
-                                        <Zap className="size-3 text-purple-400" aria-hidden="true" />
-                                    ) : null}
-                                    <span className="text-xs font-medium text-foreground">{modelInfo.displayName}</span>
-                                    <span className="text-[9px] text-muted-foreground/60 ml-auto">{backendLabel}</span>
-                                </div>
-                                <p className="text-[10px] text-muted-foreground leading-relaxed">
-                                    {modelInfo.description}
-                                </p>
-                                <div className="flex gap-3 text-[10px] text-muted-foreground">
-                                    <span className="inline-flex items-center gap-1">
-                                        <Download className="size-3 opacity-60" aria-hidden="true" />
-                                        {modelInfo.downloadSize}
-                                    </span>
-                                    <span className="inline-flex items-center gap-1">
-                                        <Cpu className="size-3 opacity-60" aria-hidden="true" />
-                                        {modelInfo.ramUsage} RAM
+                                        <Zap className="size-3 text-violet-400" aria-hidden="true" />
+                                    ) : (
+                                        <Sparkles className="size-3 text-indigo-400" aria-hidden="true" />
+                                    )}
+                                    <span className="text-xs font-semibold text-foreground truncate">
+                                        {modelInfo.displayName}
                                     </span>
                                 </div>
+                                <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full border ${TIER_COLORS[tierKey]} shrink-0`}>
+                                    {backendLabel}
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* Body */}
+                        <div className="px-3 py-2.5 space-y-2.5">
+                            <p className="text-[10px] text-muted-foreground leading-relaxed">
+                                {modelInfo.description}
+                            </p>
+
+                            <div className="flex gap-3 text-[10px] text-muted-foreground">
+                                <span className="inline-flex items-center gap-1">
+                                    <Download className="size-3 opacity-60" aria-hidden="true" />
+                                    {modelInfo.downloadSize}
+                                </span>
+                                <span className="inline-flex items-center gap-1">
+                                    <Cpu className="size-3 opacity-60" aria-hidden="true" />
+                                    {modelInfo.ramUsage} RAM
+                                </span>
                             </div>
 
                             <Button
                                 size="sm"
-                                className="w-full text-xs h-7"
+                                className="w-full text-xs h-7 bg-purple-600 hover:bg-purple-500 text-white border-0"
                                 onClick={() => {
                                     setShowPanel(false);
                                     onLoad();
@@ -113,48 +138,59 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
         );
     }
 
-    // ── Loading: progress indicator ─────────────────────────────────────
+    // ── Loading: progress indicator ─────────────────────────────────────────
     if (status.state === 'loading') {
         return (
-            <div className="flex items-center gap-1" title={status.text}>
-                <Loader2 className="size-3 animate-spin text-purple-400" />
-                <span className="text-[9px] text-purple-400 whitespace-nowrap">
+            <div className="flex items-center gap-1.5" title={status.text}>
+                <Loader2 className="size-3 animate-spin text-purple-400" aria-hidden="true" />
+                <span className="text-[10px] text-purple-400 whitespace-nowrap tabular-nums">
                     {Math.round(status.progress * 100)}%
                 </span>
             </div>
         );
     }
 
-    // ── Ready: badge with unload panel ──────────────────────────────────
+    // ── Ready: compact pill + unload panel ──────────────────────────────────
     if (status.state === 'ready') {
         return (
             <div className="relative">
-                <button
+                <Button
+                    variant="outline"
+                    size="xs"
                     type="button"
                     onClick={() => setShowPanel((prev) => !prev)}
-                    className="text-[9px] text-emerald-400/70 hover:text-emerald-400 whitespace-nowrap transition-colors flex items-center gap-1"
+                    className="h-6 gap-1 px-2 text-[10px] font-medium border-emerald-500/30 text-emerald-400/80 hover:text-emerald-300 hover:bg-emerald-500/10 hover:border-emerald-500/50 transition-all"
                     title="AI model loaded — click to manage"
                 >
-                    {backend === 'native' ? <Zap className="size-2.5" aria-hidden="true" /> : null}
+                    {backend === 'native' ? <Zap className="size-2.5" aria-hidden="true" /> : <Sparkles className="size-2.5" aria-hidden="true" />}
                     AI Ready
-                </button>
+                </Button>
+
                 {showPanel ? (
                     <DropdownPanel onClose={() => setShowPanel(false)}>
-                        <div className="w-52 space-y-2.5">
-                            <div className="flex items-center justify-between">
-                                <div className="text-xs font-medium text-foreground">{modelInfo.displayName}</div>
-                                <span className="text-[9px] text-emerald-400 font-medium">{backendLabel}</span>
-                            </div>
-                            <div className="text-[10px] text-muted-foreground">
-                                <span className="inline-flex items-center gap-1">
-                                    <Cpu className="size-3 opacity-60" aria-hidden="true" />
-                                    Using {modelInfo.ramUsage} RAM
+                        {/* Header */}
+                        <div className="px-3 pt-3 pb-2 border-b border-border/50 bg-surface-raised/50">
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="text-xs font-semibold text-foreground truncate">
+                                    {modelInfo.displayName}
+                                </span>
+                                <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full border ${TIER_COLORS[tierKey]} shrink-0`}>
+                                    {backendLabel}
                                 </span>
                             </div>
+                        </div>
+
+                        {/* Body */}
+                        <div className="px-3 py-2.5 space-y-2.5">
+                            <div className="flex items-center gap-1.5 text-[10px] text-emerald-400">
+                                <div className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                <span>Active · Using {modelInfo.ramUsage} RAM</span>
+                            </div>
+
                             <Button
                                 size="sm"
                                 variant="outline"
-                                className="w-full text-xs h-7 text-destructive hover:text-destructive"
+                                className="w-full text-xs h-7 text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/30"
                                 onClick={() => {
                                     setShowPanel(false);
                                     void unloadEngine();
@@ -170,27 +206,29 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
         );
     }
 
-    // ── Generating ──────────────────────────────────────────────────────
+    // ── Generating ──────────────────────────────────────────────────────────
     if (status.state === 'generating') {
         return (
-            <div className="flex items-center gap-1">
-                <Loader2 className="size-3 animate-spin text-purple-400" />
-                <span className="text-[9px] text-purple-400 whitespace-nowrap">Thinking</span>
+            <div className="flex items-center gap-1.5">
+                <Loader2 className="size-3 animate-spin text-purple-400" aria-hidden="true" />
+                <span className="text-[10px] text-purple-400 whitespace-nowrap">Thinking…</span>
             </div>
         );
     }
 
-    // ── Error: retry ────────────────────────────────────────────────────
+    // ── Error: retry ────────────────────────────────────────────────────────
     if (status.state === 'error') {
         return (
-            <button
+            <Button
+                variant="outline"
+                size="xs"
                 type="button"
                 onClick={onLoad}
-                className="text-[9px] text-destructive whitespace-nowrap"
+                className="h-6 gap-1 px-2 text-[10px] font-medium border-destructive/30 text-destructive/80 hover:text-destructive hover:bg-destructive/10"
                 title={status.message}
             >
-                AI Error
-            </button>
+                AI Error — retry
+            </Button>
         );
     }
 

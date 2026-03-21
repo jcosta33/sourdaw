@@ -8,7 +8,7 @@ import { muteTrack, soloTrack, soloTrackExclusive, selectTrack } from '../../use
 import { armTrack } from '../../useCases/recordingUseCases';
 import { toggleFolderCollapse } from '../../useCases/folderUseCases';
 import { setInputMonitoring } from '../../useCases/setTrackGainPan';
-import { engineSetTrackMute } from '../../useCases/trackViewActions';
+
 import { TrackContextMenu } from './TrackContextMenu';
 import { Tooltip, TooltipTrigger, TooltipContent } from '#/components/ui/tooltip';
 import { InlineTrackName } from './trackHeader/InlineTrackName';
@@ -47,12 +47,12 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
             <TrackContextMenu track={track}>
                 <div
                     className={cn(
-                        'relative flex shrink-0 items-center gap-1 border-b border-border-soft px-1 cursor-pointer transition-colors duration-fast',
+                        'relative flex shrink-0 items-center gap-1 border-b border-border-soft px-1 cursor-pointer transition-colors',
                         isSelected
-                            ? 'bg-surface-base shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)]'
-                            : 'hover:bg-surface-panel'
+                            ? 'bg-surface-overlay shadow-[inset_0_1px_3px_rgba(0,0,0,0.5)]'
+                            : 'bg-surface-tray hover:bg-surface-base'
                     )}
-                    style={{ height: trackHeight }}
+                    style={{ height: 26 }}
                     role="row"
                     aria-selected={isSelected}
                     onClick={() => selectTrack(track.id)}
@@ -65,7 +65,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                             e.stopPropagation();
                             toggleFolderCollapse(track.id);
                         }}
-                        className="size-5"
+                        className="size-5 shrink-0"
                     >
                         {track.collapsed ? (
                             <ChevronRight className="size-3" aria-hidden="true" />
@@ -73,8 +73,10 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                             <ChevronDown className="size-3" aria-hidden="true" />
                         )}
                     </Button>
-                    <Folder className="size-3 text-muted-foreground" aria-hidden="true" />
-                    <InlineTrackName track={track} />
+                    <Folder className="size-3 shrink-0 text-amber-400/70" aria-hidden="true" />
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground truncate flex-1 min-w-0 select-none">
+                        {track.name}
+                    </span>
                     <ResizeHandle trackId={track.id} />
                 </div>
             </TrackContextMenu>
@@ -86,7 +88,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
             <div
                 className={cn(
                     'relative flex shrink-0 items-center gap-1 border-b border-border-soft px-2 cursor-pointer transition-colors duration-fast',
-                    track.parentId ? 'pl-5' : '',
+                    track.parentId ? 'pl-7 border-l-2 border-l-white/5' : '',
                     isSelected ? 'bg-surface-base shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)]' : 'hover:bg-surface-panel'
                 )}
                 style={{ height: trackHeight }}
@@ -171,7 +173,6 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     muteTrack(track.id, !track.muted);
-                                    engineSetTrackMute(track.id, !track.muted, track.gain);
                                 }}
                             >
                                 M
