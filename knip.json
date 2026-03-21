@@ -3,6 +3,8 @@
   "entry": ["src/routes/**/*.tsx"],
   "project": ["src/**/*.{ts,tsx}", "!src/**/*.spec.{ts,tsx}", "!src/**/*.test.{ts,tsx}"],
   "ignore": [
+    "src/components/ui/dialog.tsx",
+    "src/modules/Track/useCases/soundPresetLibrary.ts",
     "src/helpers/DependencyInjector/inject.ts",
     "src/helpers/Store/ReadonlyStore.ts",
     "src/helpers/DOM/KeyPressNotifier.ts",

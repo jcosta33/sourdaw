@@ -65,4 +65,3 @@ export const generateGroupId = (label: string): { groupId: string; groupLabel: s
 
 export const isActionEntry = (entry: UndoEntry): entry is ActionUndoEntry => entry.kind === 'action';
 
-export const isCallbackEntry = (entry: UndoEntry): entry is CallbackUndoEntry => entry.kind === 'callback';

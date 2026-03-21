@@ -59,5 +59,4 @@ export type ProjectData = {
 };
 
 export const PROJECT_STORAGE_KEY = 'webdaw-project';
-export const PROJECT_LIST_KEY = 'webdaw-project-list';
 export const RECENT_PROJECTS_KEY = 'webdaw:recent-projects';

@@ -26,7 +26,7 @@ export const defaultWarpState: WarpState = {
     originalTempo: null,
 };
 
-export function getWarpedPosition(markers: WarpMarker[], originalBeat: number): number {
+function getWarpedPosition(markers: WarpMarker[], originalBeat: number): number {
     if (markers.length === 0) {
         return originalBeat;
     }

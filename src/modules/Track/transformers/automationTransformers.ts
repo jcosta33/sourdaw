@@ -218,7 +218,7 @@ export function getAutomationRegions(points: AutomationPoint[], maxGap = 0): { s
  * Additive: trackValue + clipValue (clipValue is an offset, typically -0.5 to +0.5)
  * Multiplicative: trackValue * clipValue (clipValue 0..1 scales from mute to pass-through)
  */
-export function resolveClipAutomation(
+function resolveClipAutomation(
     trackValue: number,
     clipValue: number,
     mode: 'additive' | 'multiplicative'

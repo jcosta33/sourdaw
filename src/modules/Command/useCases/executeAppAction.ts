@@ -1,6 +1,6 @@
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
-import { type AppAction, type AppActionType } from '../models/AppAction';
+import { type AppAction } from '../models/AppAction';
 import { getCollaborationStoreValue } from '#/modules/Collaboration/useCases/collaborationQueries';
 import { broadcastAction } from '#/modules/Collaboration/useCases/collaborationUseCases';
 
@@ -195,4 +195,3 @@ export async function executeAppAction(action: AppAction, options?: ExecuteOptio
     }
 }
 
-export const isRegisteredAction = (type: string): type is AppActionType => type in handlerRegistry;

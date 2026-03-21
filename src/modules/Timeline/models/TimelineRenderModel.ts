@@ -53,19 +53,3 @@ export type ClipRenderModel = {
     isGhost?: boolean;
 };
 
-export const createDefaultTimelineRenderModel = (): TimelineRenderModel => ({
-    tracks: [],
-    selectedTrackId: null,
-    selectedClipId: null,
-    selectedClipIds: [],
-    playheadPosition: 0,
-    viewportStartBeat: 0,
-    viewportEndBeat: 64,
-    beatsPerPixel: 0.1,
-    pixelsPerBeat: 10,
-    trackHeight: 64,
-    scrollY: 0,
-    tempo: 120,
-    timeSignatureNumerator: 4,
-    timeSignatureDenominator: 4,
-});
