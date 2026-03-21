@@ -165,8 +165,6 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             const { x, y } = getCanvasCoords(e);
             const tool = getActiveTool();
 
-
-
             // Check sub-lane click when automation is visible (any tool)
             const wsState = workspaceStore.value;
             if (wsState && wsState.automationVisibility !== 'hidden') {
@@ -572,12 +570,11 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                     const leftBeat = left / viewState.pixelsPerBeat + viewportStartBeat;
                     const rightBeat = right / viewState.pixelsPerBeat + viewportStartBeat;
 
-                    const allTracks = trackStore.value?.tracks ?? [];
                     const hitIds: string[] = [];
                     let trackYOffset = 0;
 
                     for (let ti = 0; ti < model.tracks.length; ti++) {
-                        const perTrackHeight = allTracks[ti]?.height ?? model.trackHeight;
+                        const perTrackHeight = model.tracks[ti]!.height;
                         const trackTop = trackYOffset;
                         const trackBottom = trackYOffset + perTrackHeight;
                         trackYOffset += perTrackHeight;
@@ -909,7 +906,6 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         handleMouseDown,
         handleMouseMove,
         handleMouseUp,
-
         handleDoubleClick,
         handleContextMenu,
         handlePointerDown,

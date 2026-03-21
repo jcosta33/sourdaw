@@ -190,7 +190,7 @@ export function generateShapePoints(
  * Returns beat ranges where automation data has been explicitly written.
  * Adjacent points (within maxGap beats) are considered part of the same region.
  */
-export function getAutomationRegions(points: AutomationPoint[], maxGap = 0): { startBeat: number; endBeat: number }[] {
+export function getAutomationRegions(points: AutomationPoint[], maxGap = Infinity): { startBeat: number; endBeat: number }[] {
     if (points.length === 0) {
         return [];
     }

@@ -3,6 +3,7 @@ import { trackStore } from '#/modules/Track/stores/trackStore';
 import { timelineViewStore } from '../stores/timelineViewStore';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { automationStore } from '#/modules/Track/stores/automationStore';
+import { buildTimelineRenderModel } from './buildTimelineRenderModel';
 
 const getTrackState = () => trackStore.value;
 const getAllTracks = () => trackStore.value?.tracks ?? [];
@@ -12,7 +13,7 @@ import { preferencesStore } from '#/modules/Workspace/stores/preferencesStore';
 import { AUTOMATION_SUB_LANE_HEIGHT } from '../models/automationConstants';
 import { gridSnapBeats } from '#/modules/Workspace/models/Preferences';
 
-const RULER_HEIGHT = 24;
+const RULER_HEIGHT = 0;
 
 function getGridSnap(): number {
     const prefs = preferencesStore.value;
@@ -80,22 +81,18 @@ export function getTrackAtY(
 
 export function hitTestClip(canvasX: number, canvasY: number): { clipId: string; trackId: string } | null {
     const viewState = timelineViewStore.value;
-    const trackState = getTrackState();
-    if (!viewState || !trackState) {
+    const model = buildTimelineRenderModel();
+    if (!viewState || !model) {
         return null;
     }
 
-    const contentY = canvasY - RULER_HEIGHT + (viewState.scrollY ?? 0);
-    if (contentY < 0) {
-        return null;
-    }
-
-    const hit = getTrackAtY(trackState.tracks, contentY);
+    const contentY = Math.max(0, canvasY - RULER_HEIGHT + (viewState.scrollY ?? 0));
+    const hit = getTrackAtY(model.tracks, contentY);
     if (!hit) {
         return null;
     }
 
-    const track = trackState.tracks[hit.index];
+    const track = model.tracks[hit.index];
     if (!track) {
         return null;
     }
@@ -114,17 +111,13 @@ export function hitTestClip(canvasX: number, canvasY: number): { clipId: string;
 
 export function hitTestTrack(canvasY: number): string | null {
     const viewState = timelineViewStore.value;
-    const trackState = getTrackState();
-    if (!trackState) {
+    const model = buildTimelineRenderModel();
+    if (!model) {
         return null;
     }
 
-    const contentY = canvasY - RULER_HEIGHT + (viewState?.scrollY ?? 0);
-    if (contentY < 0) {
-        return null;
-    }
-
-    const hit = getTrackAtY(trackState.tracks, contentY);
+    const contentY = Math.max(0, canvasY - RULER_HEIGHT + (viewState?.scrollY ?? 0));
+    const hit = getTrackAtY(model.tracks, contentY);
     return hit?.id ?? null;
 }
 
@@ -146,22 +139,18 @@ export function hitTestClipEdge(
     canvasY: number
 ): { clipId: string; trackId: string; edge: ClipEdge } | null {
     const viewState = timelineViewStore.value;
-    const trackState = getTrackState();
-    if (!viewState || !trackState) {
+    const model = buildTimelineRenderModel();
+    if (!viewState || !model) {
         return null;
     }
 
-    const contentY = canvasY - RULER_HEIGHT + (viewState.scrollY ?? 0);
-    if (contentY < 0) {
-        return null;
-    }
-
-    const hit = getTrackAtY(trackState.tracks, contentY);
+    const contentY = Math.max(0, canvasY - RULER_HEIGHT + (viewState.scrollY ?? 0));
+    const hit = getTrackAtY(model.tracks, contentY);
     if (!hit) {
         return null;
     }
 
-    const track = trackState.tracks[hit.index];
+    const track = model.tracks[hit.index];
     if (!track) {
         return null;
     }
@@ -247,9 +236,10 @@ export function commitClipDrag(drag: DragState, canvasX: number, canvasY: number
         return;
     }
 
-    const contentY = canvasY - RULER_HEIGHT + (viewState.scrollY ?? 0);
-    const hit = getTrackAtY(trackState.tracks, Math.max(0, contentY));
-    let targetTrackId = hit ? trackState.tracks[hit.index]!.id : drag.sourceTrackId;
+    const contentY = Math.max(0, canvasY - RULER_HEIGHT + (viewState.scrollY ?? 0));
+    const model = buildTimelineRenderModel();
+    const hit = model ? getTrackAtY(model.tracks, contentY) : null;
+    let targetTrackId = hit && model ? model.tracks[hit.index]!.id : drag.sourceTrackId;
 
     // Prevent moving a clip to an incompatible track kind
     const clip = trackState.tracks.flatMap((t) => t.clips).find((c) => c.id === drag.clipId);
@@ -287,16 +277,15 @@ export function hitTestAutomationSubLane(canvasX: number, canvasY: number): Auto
         return null;
     }
 
-    const contentY = canvasY - RULER_HEIGHT + (viewState.scrollY ?? 0);
-    if (contentY < 0) {
-        return null;
-    }
+    const contentY = Math.max(0, canvasY - RULER_HEIGHT + (viewState.scrollY ?? 0));
 
     const subLaneMap = workspace.automationSubLanes;
-    const tracks = trackState.tracks;
+    const model = buildTimelineRenderModel();
+    if (!model) return null;
+    
     let trackYOffset = 0;
 
-    for (const track of tracks) {
+    for (const track of model.tracks) {
         const paramIds = subLaneMap[track.id] ?? [];
         const totalHeight = track.height; // Already includes sub-lane expansion from build model
         const baseHeight = totalHeight - paramIds.length * AUTOMATION_SUB_LANE_HEIGHT;
