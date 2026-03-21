@@ -385,13 +385,25 @@ let model = TextModelBuilder::new("Qwen/Qwen3-8B-Instruct".to_string())
     .build().await?;
 ```
 
-**Memory requirements for tool-calling models:**
+**Model benchmark for tool calling** (Docker 2025, 3,570 scenarios):
 
-| Model | Q4_K Size | RAM Needed | Recommendation |
+| Model | Tool Selection F1 | Q4_K_M Size | Recommendation |
 |---|---|---|---|
+| **Qwen3-8B** | **0.919** | ~4.9 GB | **Primary recommendation** — near GPT-4 (0.974) accuracy |
+| Llama-3.1-8B | 0.793 | ~4.9 GB | Good fallback |
+| Qwen2.5-7B | 0.753 | ~4.7 GB | Lighter option |
+| Phi-3.5-mini (3.8B) | — | ~2.2 GB | Low RAM machines |
+| Mistral-Small-3.1-24B | — | ~14 GB | 32 GB machines only |
+
+**Qwen3-8B at Q4_K_M is the top recommendation** — it produces reliable structured JSON, handles complex multi-step tool calling, and fits on 16 GB machines alongside a running DAW session (~3-6 GB) + OS (~3 GB). Use `Q5_K_M` (~5.5 GB) for higher fidelity when RAM permits. GGUF files: `bartowski/Qwen3-8B-GGUF` on HuggingFace (imatrix quantizations); Qwen also publishes official GGUFs. Load with ISQ instead to skip GGUF hunting: `.with_isq(IsqType::Q4K)` quantizes on load from any HuggingFace repo.
+
+**Memory requirements summary:**
+
+| Model | Q4_K_M Size | RAM Needed | Use When |
+|---|---|---|---|
+| Qwen3-8B | ~4.9 GB | ~7 GB | Default — best tool calling |
+| Qwen2.5-7B | ~4.7 GB | ~6 GB | Slightly lighter |
 | Phi-3.5-mini (3.8B) | ~2.2 GB | ~4 GB | 16 GB machines, fast responses |
-| Qwen3-8B | ~4.5 GB | ~7 GB | 16 GB machines, best quality/size ratio |
-| Llama-3.1-8B | ~4.5 GB | ~7 GB | 16 GB machines, strong tool calling |
 | Mistral-Small-3.1-24B | ~14 GB | ~16+ GB | 32 GB machines only |
 
 **Comparison with llama-cpp alternatives:** The `llama-cpp-2` crate (v0.1.133) provides lower-level control and GBNF grammar-constrained output, but requires manual tool-calling implementation and has a more complex API. The `llama_cpp` crate (v0.3.2) is safer but less feature-rich. **mistral.rs is strongly recommended** for the DAW use case due to built-in tool calling, MCP, agent loops, and streaming — all with an ergonomic async API. It also re-exports **llguidance** (Microsoft's constrained decoding engine, ~50μs/token overhead) for enforcing JSON schemas, which is the same engine used by OpenAI's Structured Outputs.
@@ -946,3 +958,12 @@ The two critical licensing risks are **Essentia.js (AGPL)** and **pitchfinder (G
 ## Conclusion
 
 The three-tier architecture maps cleanly to the constraints of a desktop DAW: real-time visualization and lightweight analysis run in the browser's Web Audio API and ONNX Runtime Web with zero IPC overhead; heavy inference (stem separation, LLM tool calling) runs natively in Rust via `ort` and `mistral.rs` with GPU acceleration and progress streaming through Tauri Channels; and cloud APIs provide state-of-the-art quality for optional premium features. The single most important architectural decision is **making MCP the universal tool definition layer** — define your DAW actions once as MCP tools, and they work identically with mistral.rs locally, Claude/GPT in the cloud, and potentially WebLLM in the browser. The biggest risk factor is platform fragmentation: WebGPU availability varies by OS and WebView, making the Rust tier essential as the universal fallback. Start implementation with spectrum analysis (pure Web Audio, zero dependencies), BPM/key detection (Essentia.js or MIT alternatives), and stem separation (demucs-rs or stem-splitter-core) — these three features deliver the most visible impact with the most proven libraries.
+
+---
+
+## See Also
+
+- **[audio-ai-runtime SKILL.md](./.agents/skills/audio-ai-runtime/SKILL.md)** — Authoritative rules for agents writing AI inference code in this codebase
+- **[llm-action-bridge SKILL.md](./.agents/skills/llm-action-bridge/SKILL.md)** — Rules for connecting LLM output to typed, reversible DAW actions
+- **[tauri-platform SKILL.md](./.agents/skills/tauri-platform/SKILL.md)** — COOP/COEP headers and Web vs Rust API decisions
+- **[ai-ux.md](./ai-ux.md)** — Producer adoption data and UX trust patterns; read before designing AI feature UI

@@ -41,19 +41,19 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
         instruments: [{ id: 'instruments', title: 'Instruments' }],
         effects: [{ id: 'effects', title: 'Audio Effects' }],
     });
-    
+
     const currentStack = navStacks[activeTab] ?? [];
     const currentRoute = currentStack[currentStack.length - 1] as SidebarRoute;
-    
+
     const pushRoute = (route: SidebarRoute) => {
-        setNavStacks(prev => ({
+        setNavStacks((prev) => ({
             ...prev,
-            [activeTab]: [...prev[activeTab] ?? [], route]
+            [activeTab]: [...(prev[activeTab] ?? []), route],
         }));
     };
-    
+
     const popRoute = () => {
-        setNavStacks(prev => {
+        setNavStacks((prev) => {
             const stack = prev[activeTab] ?? [];
             if (stack.length > 1) {
                 return { ...prev, [activeTab]: stack.slice(0, -1) };
@@ -61,7 +61,7 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
             return prev;
         });
     };
-    
+
     const [searchQuery, setSearchQuery] = useState('');
     const [userSamples, setUserSamples] = useState<UserSample[]>([]);
     const [favorites, setFavorites] = useState<Set<string>>(() => {
@@ -171,25 +171,25 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
             </div>
 
             <div className="flex border-b border-border/20 p-2 gap-1 shrink-0 bg-surface-base/80">
-                <Button 
-                    variant={activeTab === 'library' ? 'secondary' : 'ghost'} 
-                    size="xs" 
+                <Button
+                    variant={activeTab === 'library' ? 'secondary' : 'ghost'}
+                    size="xs"
                     className="flex-1 gap-1.5 h-7 text-[10px]"
                     onClick={() => setActiveTab('library')}
                 >
                     <FileAudio className="size-3" /> Library
                 </Button>
-                <Button 
-                    variant={activeTab === 'instruments' ? 'secondary' : 'ghost'} 
-                    size="xs" 
+                <Button
+                    variant={activeTab === 'instruments' ? 'secondary' : 'ghost'}
+                    size="xs"
                     className="flex-1 gap-1.5 h-7 text-[10px]"
                     onClick={() => setActiveTab('instruments')}
                 >
                     <Music className="size-3" /> Insts
                 </Button>
-                <Button 
-                    variant={activeTab === 'effects' ? 'secondary' : 'ghost'} 
-                    size="xs" 
+                <Button
+                    variant={activeTab === 'effects' ? 'secondary' : 'ghost'}
+                    size="xs"
                     className="flex-1 gap-1.5 h-7 text-[10px]"
                     onClick={() => setActiveTab('effects')}
                 >
@@ -199,13 +199,32 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
 
             {currentStack.length > 1 && (
                 <div className="flex items-center gap-1 border-b border-border/50 bg-surface-overlay px-2 py-1.5 h-[34px] shrink-0">
-                    <Button variant="ghost" size="icon-xs" onClick={popRoute} className="h-5 w-5 shrink-0 text-muted-foreground hover:text-foreground hover:bg-surface-raised">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                    <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={popRoute}
+                        className="h-5 w-5 shrink-0 text-muted-foreground hover:text-foreground hover:bg-surface-raised"
+                    >
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                        >
+                            <path d="m15 18-6-6 6-6" />
+                        </svg>
                     </Button>
-                    <span className="text-[10px] font-semibold tracking-wide uppercase text-muted-foreground truncate ml-1">{currentRoute.title}</span>
+                    <span className="text-[10px] font-semibold tracking-wide uppercase text-muted-foreground truncate ml-1">
+                        {currentRoute.title}
+                    </span>
                 </div>
             )}
-            
+
             <ScrollArea className="flex-1">
                 <div
                     id={`browser-panel-${currentRoute.id}`}
@@ -248,7 +267,7 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                             />
                         </>
                     )}
-                    
+
                     {currentRoute.id.startsWith('instruments') && (
                         <InstrumentsTab
                             plugins={filteredPlugins}
@@ -262,7 +281,7 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                             pushRoute={pushRoute}
                         />
                     )}
-                    
+
                     {currentRoute.id === 'effects' && (
                         <EffectsTab
                             plugins={filteredPlugins}

@@ -1,19 +1,24 @@
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
+import { Store } from '#/helpers/Store/Store';
 import { audioEngine } from '../repositories/audioEngineInstance';
 import { getSelectedInputId } from './audioDeviceSelection';
 
 const logger = Container.getInstance().get(Logger);
+
+export type AudioRecordingState = {
+    isRecording: boolean;
+};
+
+export const audioRecordingStore = new Store<AudioRecordingState>(logger, {
+    initialData: { isRecording: false },
+});
 
 let mediaStream: MediaStream | null = null;
 let mediaRecorder: MediaRecorder | null = null;
 let recordedChunks: Blob[] = [];
 let sourceNode: MediaStreamAudioSourceNode | null = null;
 let onRecordingComplete: ((buffer: AudioBuffer) => void) | null = null;
-
-export function isRecordingSupported(): boolean {
-    return typeof navigator.mediaDevices?.getUserMedia === 'function';
-}
 
 export async function startAudioRecording(
     trackId: string,
@@ -47,6 +52,8 @@ export async function startAudioRecording(
             mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm',
         });
 
+        audioRecordingStore.set({ isRecording: true });
+
         mediaRecorder.ondataavailable = (event) => {
             if (event.data.size > 0) {
                 recordedChunks.push(event.data);
@@ -72,6 +79,8 @@ export async function startAudioRecording(
             onRecordingComplete?.(buffer);
             onRecordingComplete = null;
             recordedChunks = [];
+
+            audioRecordingStore.set({ isRecording: false });
         };
 
         mediaRecorder.start(100);
@@ -87,10 +96,7 @@ export function stopAudioRecording(): void {
         mediaRecorder.stop();
     }
     mediaRecorder = null;
-}
-
-export function isCurrentlyRecording(): boolean {
-    return mediaRecorder?.state === 'recording';
+    audioRecordingStore.set({ isRecording: false });
 }
 
 let monitorStream: MediaStream | null = null;
@@ -134,8 +140,4 @@ export function stopInputMonitoring(): void {
         }
         monitorStream = null;
     }
-}
-
-export function isMonitoring(): boolean {
-    return monitorSource !== null;
 }

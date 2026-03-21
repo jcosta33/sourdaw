@@ -2,8 +2,9 @@ import { addTrack } from '#/modules/Track/useCases/addTrack';
 import { addDevice } from '#/modules/Track/useCases/deviceUseCases';
 import { trackStore } from '#/modules/Track/stores/trackStore';
 import { newProject } from './projectPersistence';
+import { demo1_TheCompleteMix, demo2_ElectronicBeat, demo3_AcousticSession } from './demoProjects';
 
-export type TemplateCategory = 'empty' | 'music' | 'podcast' | 'film';
+export type TemplateCategory = 'empty' | 'music' | 'podcast' | 'film' | 'demo';
 
 export type ProjectTemplate = {
     id: string;
@@ -127,6 +128,33 @@ const templates: ProjectTemplate[] = [
             addTrackWithDevices('Acoustic Guitar', 'audio', ['EQ']);
             addTrackWithDevices('Vocals', 'audio', ['Compressor', 'EQ']);
             addTrackWithDevices('Piano', 'midi', ['Reverb'], { withSynth: true });
+        },
+    },
+    {
+        id: 'demo-complete',
+        name: 'The Complete Mix',
+        description: 'A fully arranged 30-second electronic/pop production featuring automation, markers, and mixed stems. Loads by default on first boot.',
+        category: 'demo',
+        create: () => {
+            void demo1_TheCompleteMix();
+        },
+    },
+    {
+        id: 'demo-electronic',
+        name: 'Electronic Beat',
+        description: 'A 128 BPM synthesizer and arpeggiator heavy track demonstrating high-tempo MIDI handling.',
+        category: 'demo',
+        create: () => {
+            void demo2_ElectronicBeat();
+        },
+    },
+    {
+        id: 'demo-acoustic',
+        name: 'Acoustic Session',
+        description: 'A 90 BPM session with panned guitars, synthetic vocal harmony testing, and shaker loops.',
+        category: 'demo',
+        create: () => {
+            void demo3_AcousticSession();
         },
     },
 ];

@@ -4,9 +4,9 @@ import { timelineViewStore } from '../stores/timelineViewStore';
 import { midiStore } from '#/modules/Track/stores/midiStore';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { preferencesStore } from '#/modules/Workspace/stores/preferencesStore';
-import { TRACK_HEIGHT_VALUES } from '#/modules/Workspace/useCases/workspaceQueries';
 import { type TimelineRenderModel } from '../models/TimelineRenderModel';
 import { AUTOMATION_SUB_LANE_HEIGHT } from '../models/automationConstants';
+import { TRACK_HEIGHT_VALUES } from '#/modules/Workspace/models/Preferences';
 
 export function buildTimelineRenderModel(): TimelineRenderModel {
     const trackState = trackStore.value;

@@ -1,16 +1,7 @@
 import { type ReactElement } from 'react';
 import { Button } from '#/components/ui/button';
 import { LatchButton } from '#/components/daw/LatchButton';
-import {
-    Circle,
-    ChevronRight,
-    ChevronDown,
-    Folder,
-    Music,
-    AudioLines,
-    Radio,
-    Monitor,
-} from 'lucide-react';
+import { Circle, ChevronRight, ChevronDown, Folder, Music, AudioLines, Radio, Monitor } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
 import { type Track, type InputMonitoring } from '../../models/Track';
 import { muteTrack, soloTrack, soloTrackExclusive, selectTrack } from '../../useCases/toggleTrackState';
@@ -57,7 +48,9 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                 <div
                     className={cn(
                         'relative flex shrink-0 items-center gap-1 border-b border-border-soft px-1 cursor-pointer transition-colors duration-fast',
-                        isSelected ? 'bg-surface-base shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)]' : 'hover:bg-surface-panel'
+                        isSelected
+                            ? 'bg-surface-base shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)]'
+                            : 'hover:bg-surface-panel'
                     )}
                     style={{ height: trackHeight }}
                     role="row"
@@ -94,7 +87,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                 className={cn(
                     'relative flex shrink-0 items-center gap-1 border-b border-border-soft px-2 cursor-pointer transition-colors duration-fast',
                     track.parentId ? 'pl-5' : '',
-                        isSelected ? 'bg-surface-base shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)]' : 'hover:bg-surface-panel'
+                    isSelected ? 'bg-surface-base shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)]' : 'hover:bg-surface-panel'
                 )}
                 style={{ height: trackHeight }}
                 role="row"

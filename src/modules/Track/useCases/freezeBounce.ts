@@ -26,7 +26,7 @@ async function renderTrackOffline(track: Track, startBeat: number, endBeat: numb
         trackGain.gain.value = track.gain;
         const trackPan = offlineCtx.createStereoPanner();
         trackPan.pan.value = track.pan / 50;
-        buildDeviceChain(offlineCtx, track.devices, trackGain, trackPan);
+        await buildDeviceChain(offlineCtx, track.devices, trackGain, trackPan);
         trackPan.connect(offlineCtx.destination);
 
         for (const clip of track.clips) {
@@ -70,7 +70,7 @@ async function renderTrackOffline(track: Track, startBeat: number, endBeat: numb
         trackGain.gain.value = track.gain;
         const trackPan = offlineCtx.createStereoPanner();
         trackPan.pan.value = track.pan / 50;
-        buildDeviceChain(offlineCtx, track.devices, trackGain, trackPan);
+        await buildDeviceChain(offlineCtx, track.devices, trackGain, trackPan);
         trackPan.connect(offlineCtx.destination);
 
         for (const clip of track.clips) {

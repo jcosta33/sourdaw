@@ -5,7 +5,7 @@
  * All store access goes through the Track repository.
  */
 
-import { getAllTracks, updateTrack } from '../repositories/trackRepository';
+import { updateTrack } from '../repositories/trackRepository';
 
 /**
  * Set the MIDI output of a source track to route to a destination track.
@@ -19,13 +19,4 @@ export function setMidiOutput(trackId: string, destinationTrackId: string): void
  */
 export function clearMidiOutput(trackId: string): void {
     updateTrack(trackId, (t) => ({ ...t, midiOutputTrackId: null }));
-}
-
-/**
- * Get all tracks that are routing MIDI to a given destination track.
- */
-export function getMidiSources(destinationTrackId: string): string[] {
-    return getAllTracks()
-        .filter((t) => t.midiOutputTrackId === destinationTrackId)
-        .map((t) => t.id);
 }

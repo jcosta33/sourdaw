@@ -50,11 +50,6 @@ export function quantizeNoteLengths(clipId: string, gridSize: number): void {
     });
 }
 
-export function quantizeNotesAndLengths(clipId: string, gridSize: number): void {
-    quantizeNotes(clipId, gridSize);
-    quantizeNoteLengths(clipId, gridSize);
-}
-
 export function transposeNotes(clipId: string, semitones: number): void {
     const state = midiStore.value;
     if (!state) {

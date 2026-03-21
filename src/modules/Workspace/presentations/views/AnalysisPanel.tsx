@@ -55,13 +55,13 @@ type AnalysisCardProps = {
 };
 
 const AnalysisCard = ({ title, children, className = '' }: AnalysisCardProps): ReactElement => (
-    <div className={`bg-surface-well border border-border-soft rounded-lg overflow-hidden flex flex-col min-w-0 min-h-0 shadow-[inset_0_1px_3px_rgba(0,0,0,0.4)] ${className}`}>
+    <div
+        className={`bg-surface-well border border-border-soft rounded-lg overflow-hidden flex flex-col min-w-0 min-h-0 shadow-[inset_0_1px_3px_rgba(0,0,0,0.4)] ${className}`}
+    >
         <div className="px-2.5 py-1 border-b border-border-hairline bg-surface-base/50 shrink-0">
             <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{title}</h3>
         </div>
-        <div className="flex-1 flex items-center justify-center min-h-0 min-w-0 overflow-hidden">
-            {children}
-        </div>
+        <div className="flex-1 flex items-center justify-center min-h-0 min-w-0 overflow-hidden">{children}</div>
     </div>
 );
 
@@ -74,33 +74,25 @@ export const AnalysisPanel = (): ReactElement => {
                     {/* Wide cards: min 280, max 600, h-[140px] */}
                     <AnalysisCard title="Spectrum Analyzer" className="min-w-[280px] max-w-[600px] flex-1 h-[140px]">
                         <Measured className="w-full h-full">
-                            {({ width, height }) => (
-                                <SpectrumAnalyzer width={width} height={height} color="#3b82f6" />
-                            )}
+                            {({ width, height }) => <SpectrumAnalyzer width={width} height={height} color="#3b82f6" />}
                         </Measured>
                     </AnalysisCard>
 
                     <AnalysisCard title="Oscilloscope" className="min-w-[280px] max-w-[600px] flex-1 h-[140px]">
                         <Measured className="w-full h-full">
-                            {({ width, height }) => (
-                                <Oscilloscope width={width} height={height} color="#22c55e" />
-                            )}
+                            {({ width, height }) => <Oscilloscope width={width} height={height} color="#22c55e" />}
                         </Measured>
                     </AnalysisCard>
 
                     <AnalysisCard title="Spectrogram" className="min-w-[280px] max-w-[600px] flex-1 h-[140px]">
                         <Measured className="w-full h-full">
-                            {({ width, height }) => (
-                                <Spectrogram width={width} height={height} />
-                            )}
+                            {({ width, height }) => <Spectrogram width={width} height={height} />}
                         </Measured>
                     </AnalysisCard>
 
                     <AnalysisCard title="Wavetable 3D" className="min-w-[280px] max-w-[600px] flex-1 h-[140px]">
                         <Measured className="w-full h-full">
-                            {({ width, height }) => (
-                                <Wavetable3D width={width} height={height} />
-                            )}
+                            {({ width, height }) => <Wavetable3D width={width} height={height} />}
                         </Measured>
                     </AnalysisCard>
 
@@ -126,18 +118,14 @@ export const AnalysisPanel = (): ReactElement => {
                     {/* Tall narrow: LUFS */}
                     <AnalysisCard title="LUFS" className="w-[80px] shrink-0 h-[140px]">
                         <Measured className="w-full h-full">
-                            {({ width, height }) => (
-                                <LUFSMeter width={Math.min(width, 60)} height={height} />
-                            )}
+                            {({ width, height }) => <LUFSMeter width={Math.min(width, 60)} height={height} />}
                         </Measured>
                     </AnalysisCard>
 
                     {/* Full-width bar: Phase Correlation */}
                     <AnalysisCard title="Phase Correlation" className="w-full h-[48px]">
                         <Measured className="w-full h-full">
-                            {({ width }) => (
-                                <PhaseCorrelationDisplay width={width} height={20} />
-                            )}
+                            {({ width }) => <PhaseCorrelationDisplay width={width} height={20} />}
                         </Measured>
                     </AnalysisCard>
                 </div>

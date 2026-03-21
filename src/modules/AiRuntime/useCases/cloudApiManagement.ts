@@ -6,7 +6,7 @@
  * and optionally persisted via the preferences store.
  */
 
-import { setCloudApiKey, clearCloudApiKey, isCloudAvailable } from '../repositories/cloudLlmRepository';
+import { setCloudApiKey, clearCloudApiKey } from '../repositories/cloudLlmRepository';
 
 // Re-export for UI consumers
 export { isCloudAvailable } from '../repositories/cloudLlmRepository';
@@ -27,14 +27,4 @@ export function configureCloudApi(apiKey: string): void {
  */
 export function removeCloudApi(): void {
     clearCloudApiKey();
-}
-
-/**
- * Check if cloud AI is configured and available.
- */
-export function getCloudStatus(): { available: boolean; provider: string } {
-    return {
-        available: isCloudAvailable(),
-        provider: isCloudAvailable() ? 'Claude (Anthropic)' : 'Not configured',
-    };
 }

@@ -7,7 +7,6 @@ import { type MixAnalysis } from '../models/MixAnalysis';
 
 // Re-export model types and formatMixAnalysis for consumers
 export type { MixAnalysis, MixIssue } from '../models/MixAnalysis';
-export { formatMixAnalysis } from '../transformers/mixAnalysisTransformers';
 
 export type AnalyzeMixOutput = MixAnalysis;
 

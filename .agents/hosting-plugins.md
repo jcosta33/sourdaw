@@ -506,3 +506,11 @@ Building plugin GUI hosting in a Tauri v2 DAW is architecturally feasible today,
 The critical insight that simplifies everything: Tauri v2's `unstable` feature enables bare native windows without WebView, giving you direct access to HWND/NSView/X11 handles. This sidesteps the airspace problem entirely. The plugin gets a real native window, the WebView UI stays in its own window, and IPC between them flows through Tauri's command system and `rtrb` ring buffers.
 
 The biggest risks are not in the plugin hosting itself but in the platform edge cases: Windows DPI scaling, macOS entitlements, Linux GTK conflicts, and the immaturity of the Rust VST3 ecosystem. Design the plugin interface behind a trait from day one — `trait PluginHost { fn process(); fn show_gui(); fn hide_gui(); }` — to allow swapping between in-process and sandboxed implementations later. Start with CLAP in-process, ship that, and iterate.
+
+---
+
+## See Also
+
+- **[plugin-hosting SKILL.md](./.agents/skills/plugin-hosting/SKILL.md)** — Authoritative implementation rules for agents writing plugin hosting code
+- **[native-apis.md](./native-apis.md)** — Full "Web vs Rust" verdict table for all DAW subsystems
+- **[tauri-platform SKILL.md](./.agents/skills/tauri-platform/SKILL.md)** — Platform API compat, MIDI, voice dictation, FS patterns

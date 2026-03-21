@@ -3,17 +3,17 @@
  * keyboard-shortcut handlers.
  */
 import { getTrackStoreState } from '#/modules/Track/useCases/trackQueries';
-import { getWorkspaceStoreValue } from '#/modules/Workspace/useCases/workspaceQueries';
 import { getMarkerState } from '#/modules/Timeline/useCases/timelineQueries';
 import { getTransportStoreValue } from '#/modules/Transport/useCases/transportQueries';
 import { seekPlayhead } from '#/modules/Transport/useCases/transportControls';
+import { getWorkspaceState } from '#/modules/Workspace/repositories/workspaceRepository';
 
 // ── Track / clip selection readers ──────────────────────────────────────
 
 export const getSelectedTrackId = (): string | null => getTrackStoreState()?.selectedTrackId ?? null;
 
 export const getSelectedClipId = (): string | null => {
-    const ws = getWorkspaceStoreValue();
+    const ws = getWorkspaceState();
     if (!ws) {
         return null;
     }
@@ -24,7 +24,7 @@ export const getSelectedClipId = (): string | null => {
 };
 
 export const getSelectedClipIds = (): string[] => {
-    const ws = getWorkspaceStoreValue();
+    const ws = getWorkspaceState();
     if (!ws) {
         return [];
     }

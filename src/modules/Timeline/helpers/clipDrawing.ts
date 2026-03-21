@@ -34,20 +34,20 @@ export const drawClip = (
         ctx.strokeStyle = clip.color;
         ctx.lineWidth = 1.5;
         ctx.setLineDash([4, 4]);
-        
+
         const time = Date.now() / 1000;
         ctx.lineDashOffset = -time * 20;
 
         ctx.beginPath();
         ctx.roundRect(x, trackY + padding, w, trackHeight - padding * 2, 3);
         ctx.stroke();
-        
+
         ctx.setLineDash([]);
         ctx.lineDashOffset = 0;
-        
+
         ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
         ctx.font = 'italic 10px system-ui, sans-serif';
-        ctx.fillText("Generating...", x + 6, trackY + 14, w - 12);
+        ctx.fillText('Generating...', x + 6, trackY + 14, w - 12);
         return;
     }
 
@@ -62,12 +62,12 @@ export const drawClip = (
     }
 
     ctx.fillStyle = clip.color;
-    const baseAlpha = isGhost ? 0.35 : (isMuted ? 0.35 : 1);
+    const baseAlpha = isGhost ? 0.35 : isMuted ? 0.35 : 1;
     ctx.globalAlpha = baseAlpha * (isSelected ? 0.75 : 0.55);
     ctx.beginPath();
     ctx.roundRect(x, trackY + padding, w, trackHeight - padding * 2, 3);
     ctx.fill();
-    ctx.globalAlpha = isGhost ? 0.6 : (isMuted ? 0.35 : 1);
+    ctx.globalAlpha = isGhost ? 0.6 : isMuted ? 0.35 : 1;
 
     if (isGhost) {
         // Ghost clips get a dashed purple border

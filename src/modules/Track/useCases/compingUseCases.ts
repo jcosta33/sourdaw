@@ -17,16 +17,6 @@ export function addTakeLane(trackId: string): void {
     });
 }
 
-export function removeTakeLane(laneId: string): void {
-    const state = takeLaneStore.value;
-    if (!state) {
-        return;
-    }
-    takeLaneStore.set({
-        lanes: state.lanes.filter((l) => l.id !== laneId),
-    });
-}
-
 export function addTake(trackId: string, clipId: string, name: string, startBeat: number, endBeat: number): void {
     const state = takeLaneStore.value;
     if (!state) {

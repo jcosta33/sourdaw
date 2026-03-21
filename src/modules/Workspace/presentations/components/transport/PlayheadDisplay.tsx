@@ -14,7 +14,7 @@ const toggleTimeDisplayMode = (): void => {
     });
 };
 
-export type PlayheadDisplayProps = {
+type PlayheadDisplayProps = {
     position: number;
     tempo: number;
     numerator: number;
@@ -43,7 +43,9 @@ export const PlayheadDisplay = ({
                         onClick={toggleTimeDisplayMode}
                         aria-label="Playhead position — click to switch to wall-clock time"
                     >
-                        <span className="text-[10px] text-muted-foreground/60 uppercase mr-1 font-sans font-normal">Bars</span>
+                        <span className="text-[10px] text-muted-foreground/60 uppercase mr-1 font-sans font-normal">
+                            Bars
+                        </span>
                         <span className="text-xl text-foreground min-w-8 text-right">{bar}</span>
                         <span className="text-sm text-muted-foreground mt-1">:</span>
                         <span className="text-xl text-foreground min-w-6">{beat}</span>
@@ -72,7 +74,9 @@ export const PlayheadDisplay = ({
                     onClick={toggleTimeDisplayMode}
                     aria-label="Playhead position — click to switch to bars and beats"
                 >
-                    <span className="text-[10px] text-muted-foreground/60 uppercase mr-1 font-sans font-normal">Time</span>
+                    <span className="text-[10px] text-muted-foreground/60 uppercase mr-1 font-sans font-normal">
+                        Time
+                    </span>
                     <span className="text-xl text-foreground min-w-8 text-right">{String(mins).padStart(2, '0')}</span>
                     <span className="text-sm text-muted-foreground mt-1">:</span>
                     <span className="text-xl text-foreground min-w-6">{String(secs).padStart(2, '0')}</span>

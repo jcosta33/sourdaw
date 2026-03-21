@@ -9,7 +9,7 @@ import { setSend, toggleSendPreFader } from '../../../useCases/workspaceViewActi
 import { addTrack } from '../../../useCases/workspaceViewActions';
 import { type Track } from '../../../useCases/workspaceViewActions';
 
-export type SendsEditorProps = {
+type SendsEditorProps = {
     track: Track;
 };
 
@@ -29,10 +29,18 @@ export const SendsEditor = ({ track }: SendsEditorProps): ReactElement => {
                         const level = send?.level ?? 0;
                         const isPreFader = send?.preFader ?? false;
                         return (
-                            <Card key={bus.id} className="rounded-md shadow-none bg-surface-base border-border/50 p-3 w-full">
+                            <Card
+                                key={bus.id}
+                                className="rounded-md shadow-none bg-surface-base border-border/50 p-3 w-full"
+                            >
                                 <div className="flex flex-col w-full gap-2">
                                     <div className="flex items-center justify-between w-full">
-                                        <label className="text-[10px] font-medium text-foreground truncate max-w-[50%]" title={bus.name}>{bus.name}</label>
+                                        <label
+                                            className="text-[10px] font-medium text-foreground truncate max-w-[50%]"
+                                            title={bus.name}
+                                        >
+                                            {bus.name}
+                                        </label>
                                         <div className="flex items-center gap-1.5 mt-0.5">
                                             <span className="text-[10px] font-mono text-muted-foreground w-8 text-right">
                                                 {(level * 100).toFixed(0)}%
@@ -48,7 +56,9 @@ export const SendsEditor = ({ track }: SendsEditorProps): ReactElement => {
                                                 onClick={() => toggleSendPreFader(track.id, bus.id)}
                                                 aria-label={`Toggle send to ${bus.name} ${isPreFader ? 'post' : 'pre'}-fader`}
                                                 title={
-                                                    isPreFader ? 'Pre-fader (click for post)' : 'Post-fader (click for pre)'
+                                                    isPreFader
+                                                        ? 'Pre-fader (click for post)'
+                                                        : 'Post-fader (click for pre)'
                                                 }
                                             >
                                                 {isPreFader ? 'PRE' : 'POST'}

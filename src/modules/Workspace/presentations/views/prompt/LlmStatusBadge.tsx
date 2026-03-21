@@ -6,7 +6,7 @@ import { NATIVE_MODEL_INFO, WEBLLM_MODEL_INFO, CLOUD_MODEL_INFO } from '../../..
 import { type LlmEngineStatus } from '#/modules/AiRuntime/stores/llmStatusStore';
 import { Button } from '#/components/ui/button';
 
-export type LlmStatusBadgeProps = {
+type LlmStatusBadgeProps = {
     status: LlmEngineStatus;
     onLoad: () => void;
 };
@@ -38,11 +38,8 @@ const DropdownPanel = ({ children, onClose }: { children: React.ReactNode; onClo
 export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactElement | null => {
     const [showPanel, setShowPanel] = useState(false);
     const backend = resolveBackend();
-    const modelInfo = backend === 'native'
-        ? NATIVE_MODEL_INFO
-        : backend === 'cloud'
-        ? CLOUD_MODEL_INFO
-        : WEBLLM_MODEL_INFO;
+    const modelInfo =
+        backend === 'native' ? NATIVE_MODEL_INFO : backend === 'cloud' ? CLOUD_MODEL_INFO : WEBLLM_MODEL_INFO;
     const backendLabel = backend === 'native' ? 'Native' : backend === 'cloud' ? 'Cloud' : 'Browser';
 
     if (!isLlmAvailable()) {
@@ -77,9 +74,7 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                                         <Zap className="size-3 text-purple-400" aria-hidden="true" />
                                     ) : null}
                                     <span className="text-xs font-medium text-foreground">{modelInfo.displayName}</span>
-                                    <span className="text-[9px] text-muted-foreground/60 ml-auto">
-                                        {backendLabel}
-                                    </span>
+                                    <span className="text-[9px] text-muted-foreground/60 ml-auto">{backendLabel}</span>
                                 </div>
                                 <p className="text-[10px] text-muted-foreground leading-relaxed">
                                     {modelInfo.description}
@@ -105,9 +100,11 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                                 }}
                             >
                                 <HardDrive className="size-3 mr-1.5" aria-hidden="true" />
-                                {backend === 'native' ? 'Start Native Engine'
-                                    : backend === 'cloud' ? 'Connect Cloud AI'
-                                    : 'Load Browser Model'}
+                                {backend === 'native'
+                                    ? 'Start Native Engine'
+                                    : backend === 'cloud'
+                                      ? 'Connect Cloud AI'
+                                      : 'Load Browser Model'}
                             </Button>
                         </div>
                     </DropdownPanel>
@@ -146,9 +143,7 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                         <div className="w-52 space-y-2.5">
                             <div className="flex items-center justify-between">
                                 <div className="text-xs font-medium text-foreground">{modelInfo.displayName}</div>
-                                <span className="text-[9px] text-emerald-400 font-medium">
-                                    {backendLabel}
-                                </span>
+                                <span className="text-[9px] text-emerald-400 font-medium">{backendLabel}</span>
                             </div>
                             <div className="text-[10px] text-muted-foreground">
                                 <span className="inline-flex items-center gap-1">

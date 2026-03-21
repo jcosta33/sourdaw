@@ -1,6 +1,11 @@
 import { Store } from '#/helpers/Store/Store';
 import { Logger } from '#/helpers/Logger/Logger';
-import { generateMidiAI, denoiseAudio, type GeneratedNote, isTauri } from '#/modules/AudioEngine/useCases/nativeAIBridge';
+import {
+    generateMidiAI,
+    denoiseAudio,
+    type GeneratedNote,
+    isTauri,
+} from '#/modules/AudioEngine/useCases/nativeAIBridge';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { trackStore } from '#/modules/Track/stores/trackStore';
 import { addClip } from '#/modules/Track/useCases/clipUseCases';
@@ -80,14 +85,14 @@ export async function handleGenerateMidiPrompt(prompt: string, numNotes: number 
     try {
         const start = performance.now();
         let finalNotes: GeneratedNote[] = [];
-        
+
         if (isTauri()) {
             // Native path: use the Tauri sidecar MIDI AI model
             const seedNotes: Array<[number, number, number, number]> = [
                 [60, 80, 0, 0.5],
                 [62, 75, 0.5, 0.5],
                 [64, 85, 1.0, 0.5],
-                [65, 80, 1.5, 0.5]
+                [65, 80, 1.5, 0.5],
             ];
             const res = await generateMidiAI(seedNotes, numNotes, creativity, 40);
             finalNotes = res.notes;
@@ -95,22 +100,21 @@ export async function handleGenerateMidiPrompt(prompt: string, numNotes: number 
             // Web path: use WebLLM for structured MIDI generation
             finalNotes = await generateMidiViaLlm(prompt, numNotes, creativity);
         }
-        
-        
+
         // Auto-insert into timeline
         if (finalNotes.length > 0) {
             const tState = trackStore.value;
             const selectedTrackId = tState?.selectedTrackId;
-            let targetTrack = tState?.tracks.find(t => t.id === selectedTrackId && t.kind === 'midi');
+            let targetTrack = tState?.tracks.find((t) => t.id === selectedTrackId && t.kind === 'midi');
             if (!targetTrack) {
-                targetTrack = tState?.tracks.find(t => t.kind === 'midi');
+                targetTrack = tState?.tracks.find((t) => t.kind === 'midi');
             }
-            
+
             if (targetTrack) {
                 const transport = getTransportState();
                 const startBeat = transport ? transport.playheadPosition : 0;
-                const endBeat = startBeat + Math.max(...finalNotes.map(n => n.start_beat + n.duration_beats));
-                
+                const endBeat = startBeat + Math.max(...finalNotes.map((n) => n.start_beat + n.duration_beats));
+
                 const clip = addClip({
                     trackId: targetTrack.id,
                     startBeat,
@@ -119,14 +123,14 @@ export async function handleGenerateMidiPrompt(prompt: string, numNotes: number 
                     type: 'midi',
                     isGhost: true,
                 });
-                
+
                 if (clip) {
-                    finalNotes.forEach(n => {
+                    for (const n of finalNotes) {
                         addMidiNote(clip.id, n.pitch, n.start_beat, n.duration_beats, n.velocity);
-                    });
+                    }
                 }
             }
-            
+
             // Remove the task so it doesn't linger in the Generative AI Library
             removeTask(taskId);
         } else {
@@ -136,8 +140,8 @@ export async function handleGenerateMidiPrompt(prompt: string, numNotes: number 
                 durationMs: Math.round(performance.now() - start),
             });
         }
-    } catch (err: unknown) {
-        updateTask(taskId, { status: 'error', error: err instanceof Error ? err.message : 'Generation failed' });
+    } catch (error: unknown) {
+        updateTask(taskId, { status: 'error', error: error instanceof Error ? error.message : 'Generation failed' });
     }
 }
 
@@ -146,10 +150,12 @@ export async function handleAiDenoiseClip(clipId: string, strength: number = 0.7
     try {
         const start = performance.now();
         const buffer = audioBufferCache.get(clipId);
-        if (!buffer) throw new Error('Audio buffer not found for clip');
+        if (!buffer) {
+            throw new Error('Audio buffer not found for clip');
+        }
 
         let outNoiseFloor = -60;
-        
+
         if (isTauri()) {
             const samples = buffer.getChannelData(0);
             const res = await denoiseAudio(samples, buffer.sampleRate, buffer.numberOfChannels, strength);
@@ -159,48 +165,52 @@ export async function handleAiDenoiseClip(clipId: string, strength: number = 0.7
             const ctx = new OfflineAudioContext(buffer.numberOfChannels, buffer.length, buffer.sampleRate);
             const source = ctx.createBufferSource();
             source.buffer = buffer;
-            
+
             const filter = ctx.createBiquadFilter();
             filter.type = 'lowpass';
-            filter.frequency.value = 6000 - (strength * 2000); // More strength = lower cutoff
-            
+            filter.frequency.value = 6000 - strength * 2000; // More strength = lower cutoff
+
             const comp = ctx.createDynamicsCompressor();
-            comp.threshold.value = -30 - (strength * 10);
+            comp.threshold.value = -30 - strength * 10;
             comp.ratio.value = 4;
-            
+
             source.connect(filter);
             filter.connect(comp);
             comp.connect(ctx.destination);
             source.start();
-            
+
             const rendered = await ctx.startRendering();
-            
+
             // Explicit WebAudio Node cleanup for Garbage Collection
             source.disconnect();
             filter.disconnect();
             comp.disconnect();
-            
+
             audioBufferCache.set(`${clipId}-denoised`, rendered);
             outNoiseFloor = -80; // Estimated simulation
         }
-        
+
         updateTask(taskId, {
             status: 'success',
             data: { clipId, noiseFloorDb: outNoiseFloor },
             durationMs: Math.round(performance.now() - start),
         });
-    } catch (err: unknown) {
-        updateTask(taskId, { status: 'error', error: err instanceof Error ? err.message : 'Denoise failed' });
+    } catch (error: unknown) {
+        updateTask(taskId, { status: 'error', error: error instanceof Error ? error.message : 'Denoise failed' });
     }
 }
 
 export async function handleStemSeparationPreview(clipId: string) {
-    const taskId = addTask({ type: 'stem-separation', status: 'processing', prompt: 'Extracting: Drums, Bass, Vocals, Other' });
+    const taskId = addTask({
+        type: 'stem-separation',
+        status: 'processing',
+        prompt: 'Extracting: Drums, Bass, Vocals, Other',
+    });
     try {
         const start = performance.now();
-        
+
         let outStems: string[] = ['Drums', 'Bass', 'Vocals', 'Other'];
-        
+
         if (isTauri()) {
             // Simulate native IPC call to HTDemucs
             await new Promise((resolve) => setTimeout(resolve, 3500));
@@ -211,44 +221,47 @@ export async function handleStemSeparationPreview(clipId: string) {
                 const ctx = new OfflineAudioContext(2, buffer.length, buffer.sampleRate);
                 const source = ctx.createBufferSource();
                 source.buffer = buffer;
-                
+
                 // M/S Matrix simulation (Left + Right vs Left - Right)
                 const splitter = ctx.createChannelSplitter(2);
                 const merger = ctx.createChannelMerger(2);
                 const gainInvert = ctx.createGain();
                 gainInvert.gain.value = -1;
-                
+
                 source.connect(splitter);
                 splitter.connect(merger, 0, 0); // L -> M
                 splitter.connect(merger, 1, 0); // R -> M
-                
+
                 splitter.connect(merger, 0, 1); // L -> S
                 splitter.connect(gainInvert, 0, 0); // L invert
                 gainInvert.connect(merger, 1, 1); // -L -> S ? This is just a basic hacky routing simulation
-                
+
                 source.start();
                 const rendered = await ctx.startRendering();
-                
+
                 // Explicit WebAudio Node cleanup for Garbage Collection
                 source.disconnect();
                 splitter.disconnect();
                 merger.disconnect();
                 gainInvert.disconnect();
-                
+
                 audioBufferCache.set(`${clipId}-mid`, rendered);
                 audioBufferCache.set(`${clipId}-side`, rendered);
                 outStems = ['Center (Vocals)', 'Sides (Instruments)'];
             }
             await new Promise((resolve) => setTimeout(resolve, 1500));
         }
-        
+
         updateTask(taskId, {
             status: 'success',
             data: { clipId, stems: outStems },
             durationMs: Math.round(performance.now() - start),
         });
-    } catch (err: unknown) {
-        updateTask(taskId, { status: 'error', error: err instanceof Error ? err.message : 'Stem separation failed' });
+    } catch (error: unknown) {
+        updateTask(taskId, {
+            status: 'error',
+            error: error instanceof Error ? error.message : 'Stem separation failed',
+        });
     }
 }
 
@@ -262,7 +275,7 @@ export async function handleGenerateAudioFallback(prompt: string, durationStr: s
             // [Web Fallback]: Mocked completion. True web test-to-audio is too heavy right now.
             await new Promise((resolve) => setTimeout(resolve, 1500));
         }
-        
+
         updateTask(taskId, {
             status: 'success',
             data: { format: 'wav', lengthSeconds: parseInt(durationStr) || 4 },

@@ -3,7 +3,7 @@ import { Card } from '#/components/ui/card';
 import { audioGraphStore } from '#/modules/AudioEngine/stores/audioGraphStore';
 import { type Track } from '../../../useCases/workspaceViewActions';
 
-export type TrackRoutingSectionProps = {
+type TrackRoutingSectionProps = {
     track: Track;
 };
 

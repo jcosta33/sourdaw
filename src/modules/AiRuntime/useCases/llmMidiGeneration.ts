@@ -102,10 +102,14 @@ function buildUserMessage(prompt: string, numNotes: number, creativity: number):
 function parseMidiResponse(raw: string): GeneratedNote[] {
     try {
         const jsonMatch = raw.match(/\{[\s\S]*"notes"[\s\S]*\}/);
-        if (!jsonMatch) return [];
+        if (!jsonMatch) {
+            return [];
+        }
 
         const parsed = JSON.parse(jsonMatch[0]) as LlmMidiResponse;
-        if (!Array.isArray(parsed.notes)) return [];
+        if (!Array.isArray(parsed.notes)) {
+            return [];
+        }
 
         return parsed.notes
             .filter(
@@ -138,8 +142,9 @@ function fallbackToPatternMatch(prompt: string): GeneratedNote[] {
     const q = prompt.toLowerCase();
 
     // Try tag/name match from templates
-    const matched = filterTemplates({ query: q })[0]
-        ?? PATTERN_TEMPLATES.find((t) => t.tags.some((tag) => q.includes(tag)) || t.name.toLowerCase().includes(q));
+    const matched =
+        filterTemplates({ query: q })[0] ??
+        PATTERN_TEMPLATES.find((t) => t.tags.some((tag) => q.includes(tag)) || t.name.toLowerCase().includes(q));
 
     if (matched) {
         const notes = matched.generate({ key: 'C', scale: 'minor', density: 5, complexity: 5 });

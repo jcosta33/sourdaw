@@ -1,7 +1,7 @@
 ---
 name: audio-ai-runtime
 description: >
-  Apply when creating, editing, or reviewing the browser audio engine, AudioWorklet processors, DSP modules, timeline playback integration, local inference runtimes, voice-command pipelines, prompt-to-command execution, or the bridge between the React UI and native/local AI processes. Enforces the project’s audio and AI stack: Web Audio API + AudioWorklet for real-time browser audio, WASM DSP modules for hot-path processing, ONNX Runtime Web and Transformers.js for browser-local inference, bundled llama.cpp and whisper.cpp sidecars for heavier desktop-local LLM/ASR workloads, and Tauri commands/events for the UI-native bridge. Treat this as the authoritative skill for all audio-engine and local-AI implementation work.
+  Apply when creating, editing, or reviewing the browser audio engine, AudioWorklet processors, DSP modules, timeline playback integration, local inference runtimes, voice-command pipelines, prompt-to-command execution, or the bridge between the React UI and native/local AI processes. Enforces the project’s audio and AI stack: Web Audio API + AudioWorklet for real-time browser audio, WASM DSP modules for hot-path processing, ONNX Runtime Web and Transformers.js for browser-local inference, mistral.rs and whisper-rs for heavier desktop-local LLM/ASR workloads (running in-process in Rust), and Tauri commands/events for the UI-native bridge. Treat this as the authoritative skill for all audio-engine and local-AI implementation work.
 ---
 
 ## Setup
@@ -143,36 +143,51 @@ export const createBrowserIntentRuntime =
 
 ```rust
 // src-tauri/src/commands/llm.rs
+// mistral.rs runs IN-PROCESS (as a Rust library) — no subprocess or sidecar needed
+use mistralrs::{TextModelBuilder, IsqType, PagedAttentionMetaBuilder};
+use tauri::ipc::Channel;
+use serde::Serialize;
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase", tag = "event", content = "data")]
+enum LlmEvent {
+    Token { text: String },
+    Done { full_text: String },
+}
+
 #[tauri::command]
-pub async fn run_local_llm(app: tauri::AppHandle, prompt: String) -> Result<String, String> {
-    use tauri_plugin_shell::ShellExt;
-
-    let output = app
-        .shell()
-        .sidecar("llama")
-        .map_err(|error| error.to_string())?
-        .args([
-            "-m",
-            "models/command-intent.gguf",
-            "-p",
-            &prompt,
-            "--temp",
-            "0.1",
-        ])
-        .output()
-        .await
-        .map_err(|error| error.to_string())?;
-
-    String::from_utf8(output.stdout).map_err(|error| error.to_string())
+pub async fn run_local_llm(
+    prompt: String,
+    on_token: Channel<LlmEvent>,
+) -> Result<(), String> {
+    // Model is loaded once at startup and stored in app state (OnceLock / Arc<Model>)
+    // Pattern: TextModelBuilder::new("Qwen/Qwen3-8B-Instruct")
+    //              .with_isq(IsqType::Q4K)
+    //              .with_paged_attn(|| PagedAttentionMetaBuilder::default().build())?
+    //              .build().await?
+    let model = get_loaded_model(); // from app state
+    // Stream tokens back via Tauri Channel (ordered, low-latency)
+    tokio::task::spawn_blocking(move || {
+        // run inference with tool calling / structured output
+        // emit LlmEvent::Token per chunk, LlmEvent::Done at end
+    }).await.map_err(|e| e.to_string())
 }
 ```
 
 ```ts
 // src/modules/AiRuntime/repositories/runLocalLlm.ts
 import { invoke } from "@tauri-apps/api/core";
+import { Channel } from "@tauri-apps/api/core";
 
-export const runLocalLlm = async (prompt: string): Promise<string> => {
-  return invoke<string>("run_local_llm", { prompt });
+export const runLocalLlm = async (
+  prompt: string,
+  onToken: (text: string) => void,
+): Promise<void> => {
+  const channel = new Channel<{ event: string; data: { text?: string; full_text?: string } }>();
+  channel.onmessage = (msg) => {
+    if (msg.event === "Token") onToken(msg.data.text ?? "");
+  };
+  return invoke("run_local_llm", { prompt, onToken: channel });
 };
 ```
 
@@ -341,7 +356,7 @@ The UI owns:
 
 Do not collapse engine state into generic React UI state.
 
-### Use Tauri commands for native control and sidecars for bundled binaries
+### Use Tauri commands for native control of in-process AI
 
 ```rust
 // src-tauri/src/lib.rs
@@ -350,7 +365,6 @@ mod commands;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             commands::llm::run_local_llm,
             commands::speech::run_local_asr
@@ -360,48 +374,51 @@ pub fn run() {
 }
 ```
 
-For desktop-local AI, the default pattern is:
-
-- bundle local binaries as Tauri sidecars
-- call them from Rust or JS through Tauri
-- expose stable Rust commands for the frontend
-
-Use Tauri sidecars for:
-
-- `llama.cpp`
-- `whisper.cpp`
-- other heavyweight local inference binaries
+For desktop-local AI, the legacy pattern was to use `llama.cpp` and `whisper.cpp` as sidecar subprocesses. The **current architecture** runs models **in-process within the Rust backend** to avoid IPC overhead and subprocess lifecycle issues.
 
 Use Tauri `invoke` for:
 
-- request/response commands
+- request/response commands (e.g., ASR)
+- setting up Tauri Channels for streaming (e.g., LLM tokens)
 - structured execution
 - settings updates
 - model lifecycle control
 - file/model management
 
-### Use `llama.cpp` for desktop-local LLM inference
+### Use `mistral.rs` for desktop-local LLM inference
 
-```ts
-// src/modules/AiRuntime/useCases/parsePromptToCommand.ts
-export type ParsePromptToCommand = (prompt: string) => Promise<string>;
+For desktop/local LLMs, **`mistral.rs`** is the standard runtime. It runs **in-process as a Rust library** — no sidecar subprocess needed.
+
+Cargo.toml:
+```toml
+[dependencies]
+mistralrs = { version = "0.7.0", features = ["metal"] }  # macOS; use "cuda" for NVIDIA
 ```
-
-For desktop/local LLMs, `llama.cpp` is the default runtime.
 
 Use it for:
 
-- prompt-to-command parsing
-- structured JSON generation
-- command clarification
+- prompt-to-command parsing via tool calling
+- structured JSON generation (llguidance enforces schema)
 - local chat/copilot behavior
 - offline reasoning for creative actions
+- streaming token output to the UI via Tauri Channels
 
-Run it as a sidecar or dedicated native subprocess.
+**Recommended model**: Qwen3-8B at Q4_K_M (~4.9 GB) — F1=0.919 on tool-calling benchmarks (near GPT-4). Load via `.with_isq(IsqType::Q4K)` — no manual GGUF download needed.
 
-Use quantized GGUF models and low temperature for deterministic command generation.
+Load once at app startup and store in `Arc<Model>` in app state. Do not reload per-request.
 
 Do not run large desktop-grade LLM inference on the browser main thread.
+
+For voice/ASR, use the `whisper-rs` crate:
+```toml
+[dependencies]
+whisper-rs = { version = "0.15", features = ["metal"] }
+cpal = "0.15"   # mic capture
+rubato = "0.15" # resample to 16kHz mono
+```
+
+See [tauri-platform SKILL.md](./../tauri-platform/SKILL.md) for the whisper-rs implementation pattern.
+
 
 ### Use browser-local inference only for small/fast tasks
 
@@ -569,12 +586,12 @@ const transportState = useSyncExternalStore(
 
 Polling the engine from `useEffect` at 60 fps causes unnecessary React renders and couples React scheduling to audio timing. Use `useSyncExternalStore` so the engine drives updates only when state actually changes.
 
-### CRITICAL Using cloud AI APIs instead of local inference
+### CRITICAL Using cloud AI APIs instead of local inference for audio data
 
 Wrong:
 
 ```ts
-// Sending audio data to a remote API — requires network, leaks data
+// Sending raw user audio to a remote API — leaks user project data
 const transcript = await fetch('https://api.openai.com/v1/audio/transcriptions', {
     method: 'POST',
     body: audioBlob,
@@ -584,11 +601,12 @@ const transcript = await fetch('https://api.openai.com/v1/audio/transcriptions',
 Correct:
 
 ```ts
-// Use whisper.cpp sidecar (desktop) or Transformers.js (browser)
+// Use whisper-rs (desktop) or Transformers.js whisper-tiny (browser)
 const transcript = await invoke<string>('run_local_asr', { audioPath });
 ```
 
-The project uses desktop-local and browser-local inference for all AI tasks. Cloud API calls are not acceptable for audio or prompt processing — they require network access, add latency, and leak user audio/project data.
+For **audio and project data**, always use local inference — cloud APIs add latency and expose user content. For heavy AI tasks like MIDI generation or reference mastering where quality matters more, the cloud tier (Claude API, Replicate) is acceptable as the third tier. See `.agents/ai-implementation.md` for the three-tier decision table.
+
 
 ### HIGH Running large LLMs in the browser main thread
 
@@ -603,14 +621,14 @@ const generator = await pipeline('text-generation', 'large-model');
 Correct:
 
 ```ts
-// Use a Tauri sidecar for heavy desktop-local LLM work
-const result = await invoke<string>('run_local_llm', { prompt });
+// Use mistral.rs (in-process Rust library) for heavy desktop-local LLM work
+const result = await invoke<void>('run_local_llm', { prompt, onToken: channel });
 
 // Use a Web Worker for any browser-local inference that takes >50ms
 const worker = new Worker(new URL('./inferenceWorker.ts', import.meta.url));
 ```
 
-Heavy model inference blocks the JavaScript main thread and freezes the UI. For desktop, delegate to the `llama.cpp` sidecar via Tauri. For browser-local tasks that are non-trivial, run inference in a dedicated Web Worker.
+Heavy model inference blocks the JavaScript main thread and freezes the UI. For desktop, delegate to `mistral.rs` running in a Tauri background tokio task. For browser-local tasks that are non-trivial, run inference in a dedicated Web Worker.
 
 ### HIGH Calling new AudioContext() in React render
 
@@ -659,27 +677,17 @@ node.connect(audioContext.destination);
 
 ### HIGH Not providing a WASM fallback for browser inference
 
-Wrong:
+**Rule**: Always provide a WASM fallback. **WebGPU is not available on Linux (WebKitGTK)** — onnxruntime-web/webgpu will fail silently or throw. Always check `navigator.gpu` before using the WebGPU backend:
 
 ```ts
-// Assuming WebGPU is always available
-import * as ort from 'onnxruntime-web/webgpu';
-const session = await ort.InferenceSession.create(modelPath);
-```
-
-Correct:
-
-```ts
-// Detect WebGPU and fall back to WASM
-const hasWebGpu = 'gpu' in navigator;
+// Detect WebGPU and fall back to WASM — required for cross-platform support
+const hasWebGpu = 'gpu' in navigator && await navigator.gpu.requestAdapter() !== null;
 const ort = hasWebGpu
     ? await import('onnxruntime-web/webgpu')
     : await import('onnxruntime-web');
 
 const session = await ort.InferenceSession.create(modelPath);
 ```
-
-WebGPU is not yet available in all browsers or all Tauri WebView configurations. Always test for its presence and fall back to the WASM backend.
 
 ### HIGH Directly mutating engine state from LLM output
 

@@ -2,7 +2,7 @@ import { type ReactElement } from 'react';
 import { Slider } from '#/components/ui/slider';
 import { cn } from '#/helpers/Styles/cn';
 
-export type BipolarSliderProps = {
+type BipolarSliderProps = {
     value: number;
     onValueChange: (val: number) => void;
     min: number;
@@ -29,12 +29,14 @@ export const BipolarSlider = ({
     // assuming min is negative and max is positive and symmetric, or close to it.
     const range = max - min;
     const normalized = range === 0 ? 50 : ((value - min) / range) * 100;
-    
+
     // Default position
     const normalizedDefault = range === 0 ? 50 : ((defaultValue - min) / range) * 100;
 
     const handleChange = ([v]: number[]) => {
-        if (v === undefined) return;
+        if (v === undefined) {
+            return;
+        }
         const mapped = min + (v / 100) * range;
         onValueChange(mapped);
     };
@@ -48,7 +50,7 @@ export const BipolarSlider = ({
     };
 
     return (
-        <div className={cn("flex flex-col gap-1 w-full", className)}>
+        <div className={cn('flex flex-col gap-1 w-full', className)}>
             {label && (
                 <div className="flex justify-between items-center px-1">
                     <span className="text-[10px] text-muted-foreground">{label}</span>
@@ -57,11 +59,11 @@ export const BipolarSlider = ({
             )}
             <div className="relative pt-2 pb-1 px-1 h-6 flex items-center" onPointerDownCapture={handlePointerDown}>
                 {/* Center tick */}
-                <div 
-                    className="absolute top-1 bottom-1 w-[2px] bg-border z-0 transform -translate-x-1/2 pointer-events-none" 
-                    style={{ left: `${normalizedDefault}%` }} 
+                <div
+                    className="absolute top-1 bottom-1 w-[2px] bg-border z-0 transform -translate-x-1/2 pointer-events-none"
+                    style={{ left: `${normalizedDefault}%` }}
                 />
-                
+
                 <Slider
                     value={[normalized]}
                     onValueChange={handleChange}

@@ -1,24 +1,34 @@
 import { type ProjectContext } from '../models/ProjectContext';
 import { type PromptFormat, buildSystemPrompt } from './systemPrompt';
 import { mcpToCompactPromptText } from './mcpToolAdapter';
+import { getNativeToolsPrompt } from '../repositories/nativeToolRegistry';
+
+// Cache native tools prompt — it doesn't change at runtime
+let cachedNativeToolsPrompt: string | null = null;
 
 /**
- * Build the system prompt for tool calling.
+ * Async version that includes native (Rust-side) plugin tool schemas.
  *
- * @param format - 'json' for WebLLM/cloud (JSON output),
- *                 'hermes' for native llama-server (XML output).
- *                 Defaults to 'json' for broader model compatibility.
+ * Prefer this when the caller can await (use cases, event handlers).
  */
-export function buildActionSystemPrompt(context: ProjectContext, format: PromptFormat = 'json'): string {
+export async function buildActionSystemPromptAsync(
+    context: ProjectContext,
+    format: PromptFormat = 'json'
+): Promise<string> {
     const toolsJson = mcpToCompactPromptText();
-    const projectState = buildProjectState(context);
-    return buildSystemPrompt(toolsJson, projectState, format);
-}
 
-/**
- * @deprecated Use buildActionSystemPrompt instead.
- */
-export { buildActionSystemPrompt as buildSystemPrompt };
+    // Fetch native tools once and cache
+    if (cachedNativeToolsPrompt === null) {
+        cachedNativeToolsPrompt = await getNativeToolsPrompt();
+    }
+
+    const combinedTools = cachedNativeToolsPrompt
+        ? `${toolsJson}\n\n# Native Plugin Tools\n${cachedNativeToolsPrompt}`
+        : toolsJson;
+
+    const projectState = buildProjectState(context);
+    return buildSystemPrompt(combinedTools, projectState, format);
+}
 
 // ── Project state serialisation ─────────────────────────────────────────
 
@@ -34,7 +44,7 @@ function formatTrackLine(t: ProjectContext['tracks'][number], index: number): st
         const clipStr = shown
             .map(
                 (c) =>
-                    `${c.id}:${c.name}(${String(c.startBeat)}-${String(c.endBeat)}${c.noteCount > 0 ? `,${String(c.noteCount)}notes` : ''})`,
+                    `${c.id}:${c.name}(${String(c.startBeat)}-${String(c.endBeat)}${c.noteCount > 0 ? `,${String(c.noteCount)}notes` : ''})`
             )
             .join(',');
         const overflow =

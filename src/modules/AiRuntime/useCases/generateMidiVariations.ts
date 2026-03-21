@@ -6,12 +6,14 @@ import { type Clip } from '#/modules/Track/models/Track';
 
 export async function generateMidiVariations(clipId: string): Promise<void> {
     const state = getTrackState();
-    if (!state) return;
+    if (!state) {
+        return;
+    }
 
     let targetClip: Clip | null = null;
 
     for (const track of state.tracks) {
-        const clip = track.clips.find(c => c.id === clipId);
+        const clip = track.clips.find((c) => c.id === clipId);
         if (clip) {
             targetClip = clip;
             break;
@@ -19,12 +21,12 @@ export async function generateMidiVariations(clipId: string): Promise<void> {
     }
 
     if (!targetClip || targetClip.type !== 'midi') {
-        throw new Error("Target clip must be a MIDI clip.");
+        throw new Error('Target clip must be a MIDI clip.');
     }
 
     const notes = getNotesForClip(targetClip.id);
     if (!notes || notes.length === 0) {
-        throw new Error("MIDI clip has no notes to vary.");
+        throw new Error('MIDI clip has no notes to vary.');
     }
 
     const startBeat = targetClip.startBeat;
@@ -32,9 +34,12 @@ export async function generateMidiVariations(clipId: string): Promise<void> {
     const duration = endBeat - startBeat;
 
     // Build representation of current notes (relative to clip start)
-    const noteStrings = notes.map((n: any) => 
-        `[pitch=${n.pitch}, start=${(n.startBeat - startBeat).toFixed(2)}, duration=${n.duration.toFixed(2)}, velocity=${n.velocity.toFixed(2)}]`
-    ).join(', ');
+    const noteStrings = notes
+        .map(
+            (n: any) =>
+                `[pitch=${n.pitch}, start=${(n.startBeat - startBeat).toFixed(2)}, duration=${n.duration.toFixed(2)}, velocity=${n.velocity.toFixed(2)}]`
+        )
+        .join(', ');
 
     const projectContext = `We have a MIDI clip of length ${duration} beats. Current notes (relative to start): ${noteStrings}`;
 
@@ -46,24 +51,29 @@ Variation 2: Add passing notes and embellishments.
 Variation 3: Simplify the rhythm but keep the core harmonic rhythm.
 ONLY output raw JSON, no markdown blocks.`;
 
-    let responseStr = "";
+    let responseStr = '';
     await streamCloudChatCompletion(
         [
-            { role: 'system', content: "You are a world-class generative MIDI AI." },
-            { role: 'user', content: projectContext + "\\n\\n" + prompt }
+            { role: 'system', content: 'You are a world-class generative MIDI AI.' },
+            { role: 'user', content: `${projectContext}\\n\\n${prompt}` },
         ],
-        (token: string) => { responseStr += token; },
+        (token: string) => {
+            responseStr += token;
+        },
         { maxTokens: 4000 }
     );
 
     try {
-        const cleanedStr = responseStr.trim().replace(/^```json/, '').replace(/```$/, '');
+        const cleanedStr = responseStr
+            .trim()
+            .replace(/^```json/, '')
+            .replace(/```$/, '');
         const data = JSON.parse(cleanedStr);
         if (data && Array.isArray(data.variations)) {
             createAlternativeClips(targetClip.id, data.variations);
         }
-    } catch (err) {
-        console.error("Failed to parse AI variations:", err);
-        throw new Error("Failed to parse variations from AI.");
+    } catch (error) {
+        console.error('Failed to parse AI variations:', error);
+        throw new Error('Failed to parse variations from AI.');
     }
 }

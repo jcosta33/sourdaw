@@ -19,14 +19,6 @@ export const resumeEngine = (): Promise<void> => {
     return audioEngine.resume();
 };
 
-export const suspendEngine = (): Promise<void> => {
-    return audioEngine.suspend();
-};
-
-export const getMasterGainNode = (): GainNode => {
-    return audioEngine.masterGainNode;
-};
-
 export const getMasterAnalyser = (): AnalyserNode => {
     return audioEngine.masterAnalyser;
 };

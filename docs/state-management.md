@@ -1,6 +1,6 @@
 # State management
 
-This document explains our approach to client-side state management for UI and domain state. For server state, use [TanStack Query](./data-fetching.md). For cross-domain UI updates, use [domain events](./events.md).
+This document explains our approach to client-side state management for UI and domain state. For server state, use TanStack Query. For cross-domain UI updates, use [domain events](./events.md).
 
 ---
 
@@ -23,24 +23,24 @@ This section provides a practical guide to creating, persisting, and subscribing
 A store is a singleton instance of the `Store<T>` class. It holds the state and provides methods to update and subscribe to it.
 
 ```typescript
-// UserPreference/presentations/stores/userSettingsStore.ts
+// Workspace/stores/workspacePreferencesStore.ts
 
-export type UserSettingsStore = {
+export type WorkspacePreferencesStore = {
     theme: 'light' | 'dark';
-    language: string;
-    featureFlags: Map<string, boolean>;
+    defaultSampleRate: 44100 | 48000 | 96000;
+    showMetrics: boolean;
 };
 
-let instance: Store<UserSettingsStore>;
+let instance: Store<WorkspacePreferencesStore>;
 
-export function getUserSettingsStore(): Store<UserSettingsStore> {
+export function getWorkspacePreferencesStore(): Store<WorkspacePreferencesStore> {
     if (!instance) {
         const logger = Container.getInstance().get(Logger);
-        instance = new Store<UserSettingsStore>(logger, {
+        instance = new Store<WorkspacePreferencesStore>(logger, {
             initialData: {
-                theme: 'light',
-                language: 'en',
-                featureFlags: new Map(),
+                theme: 'dark',
+                defaultSampleRate: 48000,
+                showMetrics: false,
             },
         });
     }
@@ -53,14 +53,14 @@ export function getUserSettingsStore(): Store<UserSettingsStore> {
 Create a custom hook that uses `useSyncExternalStore` to subscribe to your store instance. This hook will provide the component with the current state and trigger re-renders when the state changes.
 
 ```tsx
-// UserPreference/presentations/hooks/useUserPreferences.ts
+// Workspace/presentations/hooks/useWorkspacePreferences.ts
 
 import { useSyncExternalStore } from 'react';
 
-import { getUserPreferencesStore, type UserPreferencesStore } from '../stores/userPreferencesStore';
+import { getWorkspacePreferencesStore, type WorkspacePreferencesStore } from '../stores/workspacePreferencesStore';
 
-export const useUserPreferences = (): UserPreferencesStore => {
-    const store = getUserPreferencesStore();
+export const useWorkspacePreferences = (): WorkspacePreferencesStore => {
+    const store = getWorkspacePreferencesStore();
     const state = useSyncExternalStore(store.subscribe, store.get, store.get);
     return state;
 };
@@ -71,23 +71,25 @@ export const useUserPreferences = (): UserPreferencesStore => {
 To persist state to `localStorage`, inject a `LocalStorageStorage` instance when creating your store. This is the only permitted way to interact with `localStorage`.
 
 ```typescript
-// UserPreference/presentations/stores/themeStore.ts
+// Workspace/stores/dawLayoutStore.ts
 
-const THEME_STORAGE_KEY = 'user-theme';
+const LAYOUT_STORAGE_KEY = 'daw-layout-state';
 
-export type ThemeState = 'light' | 'dark' | 'system';
+export type LayoutState = 'arrange' | 'mixer' | 'piano-roll';
 
-export const getThemeStore = (initialState: ThemeState): Store<ThemeState> => {
-    if (!themeStoreInstance) {
+let layoutStoreInstance: Store<LayoutState>;
+
+export const getDawLayoutStore = (initialState: LayoutState): Store<LayoutState> => {
+    if (!layoutStoreInstance) {
         const logger = Container.getInstance().get(Logger);
-        const storage = new LocalStorageStorage<ThemeState>(THEME_STORAGE_KEY);
+        const storage = new LocalStorageStorage<LayoutState>(LAYOUT_STORAGE_KEY);
         const storedValue = storage.get();
-        themeStoreInstance = new Store<ThemeState>(logger, {
+        layoutStoreInstance = new Store<LayoutState>(logger, {
             initialData: storedValue ?? initialState,
             storage,
         });
     }
-    return themeStoreInstance;
+    return layoutStoreInstance;
 };
 ```
 
@@ -96,20 +98,17 @@ export const getThemeStore = (initialState: ThemeState): Store<ThemeState> => {
 Stores are often updated in response to domain events. Subscribe to an event and call the store's `set` method to update its value.
 
 ```typescript
-// User/useCases/handleFeatureFlagUpdated.ts
+// Workspace/useCases/handleMetricsToggled.ts
 
-getEventBus().on(FeatureFlagUpdatedEvent, (event) => {
-    const store = getUserSettingsStore();
+getEventBus().on(MetricsToggledEvent, (event) => {
+    const store = getWorkspacePreferencesStore();
     const current = store.value;
 
     if (!current) {
         return;
     }
 
-    const newFlags = new Map(current.featureFlags);
-    newFlags.set(event.payload.flagName, event.payload.isEnabled);
-
-    store.set({ ...current, featureFlags: newFlags });
+    store.set({ ...current, showMetrics: event.payload.isEnabled });
 });
 ```
 

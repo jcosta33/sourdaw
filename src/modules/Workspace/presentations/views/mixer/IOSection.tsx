@@ -6,7 +6,7 @@ import { useTracks } from '../../hooks/useTracks';
 import { setTrackOutput } from '../../../useCases/workspaceViewActions';
 import { type Track } from '../../../useCases/workspaceViewActions';
 
-export type IOSectionProps = {
+type IOSectionProps = {
     track: Track;
 };
 

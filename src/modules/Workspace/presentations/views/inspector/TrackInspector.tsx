@@ -12,8 +12,9 @@ import { TrackRoutingSection } from './TrackRoutingSection';
 import { TrackClipsSection } from './TrackClipsSection';
 import { TakesSection } from './TakesSection';
 import { SignalFlowSection } from './SignalFlowSection';
+import { MasterVisualizationsSection } from './MasterVisualizationsSection';
 
-export type TrackInspectorProps = {
+type TrackInspectorProps = {
     track: Track;
     allTracks: Track[];
     onSelectClip: (id: string) => void;
@@ -35,12 +36,11 @@ export const TrackInspector = ({
             <TrackAutomationSection track={track} />
             <SendsEditor track={track} />
             <TrackVcaSection track={track} />
-            {track.kind === 'midi' && (
-                <TrackMidiOutputSection track={track} allTracks={allTracks} />
-            )}
+            {track.kind === 'midi' && <TrackMidiOutputSection track={track} allTracks={allTracks} />}
             <TrackRoutingSection track={track} />
             <TrackClipsSection track={track} onSelectClip={onSelectClip} />
             <TakesSection trackId={track.id} />
+            {track.kind === 'master' && <MasterVisualizationsSection />}
             <SignalFlowSection />
         </div>
     );

@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test": "vitest",
+    "test:run": "vitest run",
     "typecheck": "tsgo --noEmit",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,json,md}\"",
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
@@ -17,6 +19,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
+    "@grame/faustwasm": "^0.15.7",
     "@mlc-ai/web-llm": "^0.2.82",
     "@spotify/basic-pitch": "^1.0.1",
     "@tailwindcss/vite": "^4.2.1",
@@ -35,7 +38,6 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-markdown": "^10.1.0",
-    "react-resizable-panels": "^4.7.3",
     "remark-gfm": "^4.0.1",
     "superjson": "^2.2.6",
     "tailwind-merge": "^3.5.0",
@@ -52,9 +54,13 @@
     "@eslint/js": "^10.0.1",
     "@stylistic/eslint-plugin": "^5.10.0",
     "@tanstack/router-plugin": "^1.166.10",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^25.5.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@types/sinon": "^21.0.0",
     "@typescript/native-preview": "7.0.0-dev.20260315.1",
     "@vitejs/plugin-react": "^6.0.1",
     "@webgpu/types": "^0.1.69",
@@ -68,9 +74,12 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-unicorn": "^63.0.0",
     "globals": "^17.4.0",
+    "jsdom": "^29.0.1",
     "knip": "^5.87.0",
+    "sinon": "^21.0.3",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.57.1",
-    "vite": "^8.0.0"
+    "vite": "^8.0.0",
+    "vitest": "^4.1.0"
   }
 }

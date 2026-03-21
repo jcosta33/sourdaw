@@ -11,7 +11,7 @@ import {
 import { automationStore } from '#/modules/Track/stores/automationStore';
 import { type Track } from '../../../useCases/workspaceViewActions';
 
-export type TrackAutomationSectionProps = {
+type TrackAutomationSectionProps = {
     track: Track;
 };
 
@@ -139,7 +139,12 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                             key={lane.id}
                             className="flex items-center justify-between rounded-md shadow-none bg-surface-base border-border/50 p-2"
                         >
-                            <span className="text-[10px] text-foreground font-medium truncate pr-2" title={lane.parameterName}>{lane.parameterName}</span>
+                            <span
+                                className="text-[10px] text-foreground font-medium truncate pr-2"
+                                title={lane.parameterName}
+                            >
+                                {lane.parameterName}
+                            </span>
                             <div className="flex gap-0.5 shrink-0">
                                 <Button
                                     variant="ghost"

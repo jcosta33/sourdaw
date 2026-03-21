@@ -54,7 +54,7 @@ export async function renderOffline(durationBeats: number, sampleRate = 44100): 
                 continue;
             }
 
-            const deviceEntries = buildDeviceChain(offlineCtx, track.devices, trackGain, trackPan);
+            const deviceEntries = await buildDeviceChain(offlineCtx, track.devices, trackGain, trackPan);
             trackPan.connect(masterGain);
 
             scheduleTrackAutomation(
@@ -244,7 +244,7 @@ export async function exportStems(durationBeats: number, sampleRate = 44100): Pr
             continue;
         }
 
-        const deviceEntries = buildDeviceChain(offlineCtx, track.devices, trackGain, trackPan);
+        const deviceEntries = await buildDeviceChain(offlineCtx, track.devices, trackGain, trackPan);
         trackPan.connect(offlineCtx.destination);
 
         scheduleTrackAutomation(

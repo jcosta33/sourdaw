@@ -3,11 +3,17 @@ import { Card } from '#/components/ui/card';
 import { Input } from '#/components/ui/input';
 import { Button } from '#/components/ui/button';
 import { Snowflake, Zap } from 'lucide-react';
-import { renameTrack, setTrackNotes, setTrackColor, freezeTrack, unfreezeTrack } from '../../../useCases/workspaceViewActions';
+import {
+    renameTrack,
+    setTrackNotes,
+    setTrackColor,
+    freezeTrack,
+    unfreezeTrack,
+} from '../../../useCases/workspaceViewActions';
 import { type Track } from '../../../useCases/workspaceViewActions';
 import { TRACK_COLOR_PRESETS } from './colorPresets';
 
-export type TrackHeaderSectionProps = {
+type TrackHeaderSectionProps = {
     track: Track;
 };
 
@@ -59,13 +65,13 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                             </Button>
                         )}
                     </div>
-                    
+
                     <div className="flex items-center gap-2 justify-between">
                         <div className="flex items-center gap-2">
                             <span className="text-[10px] text-muted-foreground">Kind:</span>
                             <span className="text-[10px] font-medium text-foreground capitalize">{track.kind}</span>
                         </div>
-                        
+
                         {track.kind !== 'folder' && (
                             <Button
                                 variant={track.frozen ? 'secondary' : 'ghost'}
@@ -106,7 +112,7 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                         </div>
                     </div>
                 </Card>
-                
+
                 <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-2 flex flex-col">
                     <label className="text-[10px] text-muted-foreground mb-1">Notes</label>
                     <textarea

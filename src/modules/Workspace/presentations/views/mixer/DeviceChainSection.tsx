@@ -8,7 +8,7 @@ import { type Track } from '../../../useCases/workspaceViewActions';
 import { getAllModulationRoutes } from '#/modules/AudioEngine/useCases/modulationSystem';
 import { MIDI_EFFECT_FACTORIES } from '#/modules/AudioEngine/useCases/midiEffectPlugins';
 
-export type DeviceChainSectionProps = {
+type DeviceChainSectionProps = {
     track: Track;
 };
 

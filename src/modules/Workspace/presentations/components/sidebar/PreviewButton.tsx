@@ -2,7 +2,7 @@ import { type ReactElement } from 'react';
 import { Play, Square } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
 
-export type PreviewButtonProps = {
+type PreviewButtonProps = {
     isPlaying: boolean;
     onPlay: () => void;
     onStop: () => void;

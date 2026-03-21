@@ -44,14 +44,6 @@ export function toggleMixer(): void {
     updateWorkspaceState({ mixerOpen: !current.mixerOpen });
 }
 
-export function openMixer(): void {
-    const current = getWorkspaceState();
-    if (!current) {
-        return;
-    }
-    updateWorkspaceState({ mixerOpen: true });
-}
-
 export function toggleAutomationPanel(): void {
     const current = getWorkspaceState();
     if (!current) {

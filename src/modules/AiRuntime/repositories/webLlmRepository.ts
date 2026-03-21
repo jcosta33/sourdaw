@@ -31,7 +31,7 @@ export function initWebLlmEngine(): Promise<WebLlmEngine> {
     // WebGPU is required — absent on Linux (WebKitGTK) and older browsers
     if (typeof navigator === 'undefined' || !('gpu' in navigator)) {
         return Promise.reject(
-            new Error('WebGPU not available — WebLLM requires WebGPU. Use native or cloud backend instead.'),
+            new Error('WebGPU not available — WebLLM requires WebGPU. Use native or cloud backend instead.')
         );
     }
 

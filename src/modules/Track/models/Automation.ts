@@ -42,8 +42,6 @@ export type AutomationLane = {
     color?: string; // Defaults to track color if unset
 };
 
-
-
 export const createAutomationLane = (
     trackId: string,
     parameterId: string,

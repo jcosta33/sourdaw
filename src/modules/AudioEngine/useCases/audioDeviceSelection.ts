@@ -71,9 +71,6 @@ export function setInputDevice(deviceId: string): void {
     notify();
 }
 
-export function getSelectedOutputId(): string | null {
-    return selectedOutputId;
-}
 export function getSelectedInputId(): string | null {
     return selectedInputId;
 }

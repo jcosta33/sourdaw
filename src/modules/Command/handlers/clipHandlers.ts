@@ -37,6 +37,7 @@ import { stripSilence } from '#/modules/Track/useCases/stripSilence';
 import { midiStore } from '#/modules/Track/stores/midiStore';
 import { updateTrack } from '#/modules/Track/repositories/trackRepository';
 import { pushUndoEntry } from '../useCases/pushUndoEntry';
+import { rippleDeleteClips, undoRippleDelete } from '#/modules/Workspace/useCases/rippleEditing';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 
@@ -111,18 +112,28 @@ export const clipHandlers = {
                 ? JSON.parse(JSON.stringify(midiState.pitchBendByClipId[a.payload.clipId]))
                 : null;
 
-            // Execute the removal
-            removeClip(a.payload.clipId);
+            // Execute the removal with optional ripple-shift
+            const rippleResult = trackId ? rippleDeleteClips(trackId, [a.payload.clipId]) : null;
+
+            // Fallback: if ripple returned null (clip already gone), do plain remove
+            if (!rippleResult) {
+                removeClip(a.payload.clipId);
+            }
 
             // Push callback undo entry
             if (clipSnapshot && trackId) {
                 const savedTrackId = trackId;
                 const savedClip = clipSnapshot;
+                const savedRipple = rippleResult;
                 pushUndoEntry(
                     'Remove clip',
                     () => {
-                        // Undo: restore clip to its track
-                        updateTrack(savedTrackId, (t) => ({ ...t, clips: [...t.clips, savedClip as never] }));
+                        // Undo: restore clip (and reverse any ripple shift)
+                        if (savedRipple) {
+                            undoRippleDelete(savedTrackId, savedRipple.removedClips, savedRipple.shiftedClips);
+                        } else {
+                            updateTrack(savedTrackId, (t) => ({ ...t, clips: [...t.clips, savedClip as never] }));
+                        }
                         // Restore MIDI data
                         const currentMidi = midiStore.value;
                         if (currentMidi && (notesSnapshot || ccSnapshot || pbSnapshot)) {
@@ -140,8 +151,8 @@ export const clipHandlers = {
                         }
                     },
                     () => {
-                        // Redo: remove again
-                        removeClip(a.payload.clipId);
+                        // Redo: remove again with ripple
+                        rippleDeleteClips(savedTrackId, [a.payload.clipId]);
                     }
                 );
             }

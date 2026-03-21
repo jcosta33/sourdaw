@@ -39,11 +39,6 @@ export function getTransportStoreValue(): TransportState | null {
     return transportStore.value;
 }
 
-/** Get tempo map changes. */
-export function getTempoMapChanges(): TempoChange[] {
-    return tempoMapStore.value?.changes ?? [];
-}
-
 /** Get tempo map store state snapshot. */
 export function getTempoMapState(): { changes: TempoChange[] } | null {
     return tempoMapStore.value;

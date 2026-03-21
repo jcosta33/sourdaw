@@ -10,7 +10,7 @@ import {
     setTrackGain as engineSetTrackGain,
     setTrackOutput as engineSetTrackOutput,
 } from '#/modules/AudioEngine/useCases/trackAudioControls';
-import { getWorkspaceStoreValue as getWorkspaceState } from '#/modules/Workspace/useCases/workspaceQueries';
+import { getWorkspaceState } from '#/modules/Workspace/repositories/workspaceRepository';
 import { startInputMonitoring, stopInputMonitoring } from '#/modules/AudioEngine/useCases/audioRecorder';
 import { setMidiInputTrack } from '#/modules/AudioEngine/useCases/webMidiInput';
 import { type Track } from '../models/Track';
@@ -34,7 +34,20 @@ export function clearSolos(): void {
 }
 
 export function soloTrackExclusive(trackId: string): void {
-    mapAllTracks((t) => ({ ...t, soloed: t.id === trackId }));
+    const state = getTrackState();
+    if (!state) {
+        return;
+    }
+
+    const soloedTracks = state.tracks.filter((t) => t.soloed);
+    const isOnlySoloed = soloedTracks.length === 1 && soloedTracks[0]!.id === trackId;
+
+    if (isOnlySoloed) {
+        mapAllTracks((t) => ({ ...t, soloed: false }));
+    } else {
+        mapAllTracks((t) => ({ ...t, soloed: t.id === trackId }));
+    }
+    
     applySoloLogic();
 }
 

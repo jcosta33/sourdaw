@@ -344,8 +344,8 @@ Every feature listed here must also be AI-promptable via the AppAction system.
 | Groove templates | DONE | 6 factory grooves (Straight, Swing, MPC 60, SP-1200, Live Drummer), extract/apply groove |
 | Tempo detection | DONE | Onset-based BPM detection with IOI histogram clustering, 60-200 BPM range |
 | Key/scale detection | DONE | Chroma feature extraction (Goertzel), Krumhansl-Schmuckler key profile correlation |
-| AI stem separation (Demucs) | PARTIAL | Client code exists in `audioAiEngine.ts` (HTTP to Python sidecar at port 8848), but Python sidecar (`ai_audio_server.py`) is not implemented. See [native-ai.md](native-ai.md) for Rust-native alternative (`stem-splitter-core`) |
-| AI audio generation (MusicGen) | PARTIAL | Same client exists in `audioAiEngine.ts`, Python sidecar not implemented. See [native-ai.md](native-ai.md). Note: MusicGen is CC-BY-NC; consider Stable Audio Open (see [native-ai.md](native-ai.md)) |
+| AI stem separation (Demucs) | PARTIAL | Client code exists in `audioAiEngine.ts` (HTTP to Python sidecar at port 8848), but Python sidecar (`ai_audio_server.py`) is not implemented. See [ai-implementation.md](ai-implementation.md) for Rust-native alternative (`stem-splitter-core`) |
+| AI audio generation (MusicGen) | PARTIAL | Same client exists in `audioAiEngine.ts`, Python sidecar not implemented. See [ai-implementation.md](ai-implementation.md). Note: MusicGen is CC-BY-NC; consider Stable Audio Open (see [ai-implementation.md](ai-implementation.md)) |
 | Native LLM inference (mistral.rs) | DONE | `native_llm.rs`: In-process Rust LLM inference via `mistral.rs` for tool calling without external sidecar |
 | Native tool calling pipeline | DONE | `native_llm.rs`: Structured tool call execution with JSON schemas, sequential tool arrays, reasoning with grammar-constrained decoding over mistral.rs |
 | AI MIDI generation (SkyTNT) | DONE | `ai_audio.rs`: Specialized MIDI model for note generation via ONNX Runtime in Rust `ort` crate |
@@ -507,7 +507,7 @@ These items unblock the most downstream features and should be built first:
 | 20 | **Spectrogram (waterfall)** | Viz | WebGPU | [ui-ux.md](ui-ux.md) |
 | 21 | **Native plugin host binary (VST3/CLAP/AU)** | Plugins | Tauri, Rust | [hosting-plugins.md](hosting-plugins.md) |
 | 22 | **Plugin GUI hosting (floating windows)** | Plugins | Native host | [hosting-plugins.md](hosting-plugins.md) |
-| 23 | **Native LLM inference (mistral.rs)** | AI | Tauri, Rust | [native-ai.md](native-ai.md), [native-tool-calling.md](native-tool-calling.md) |
+| 23 | **Native LLM inference (mistral.rs)** | AI | Tauri, Rust | [ai-implementation.md](ai-implementation.md) |
 | 24 | **AI stem separation (Rust-native)** | AI | Tauri, Rust | [native-ai.md](native-ai.md) |
 | 25 | **Orchestral instruments (VSCO 2 CE)** | Instruments | sfizz | [instruments.md](instruments.md) |
 | 26 | **Routing matrix** | Mixer | HTML grid + SVG | [ui-ux.md](ui-ux.md) |
@@ -519,9 +519,9 @@ These items unblock the most downstream features and should be built first:
 | # | Feature | Category | Dependencies | Doc Reference |
 |---|---------|----------|-------------|---------------|
 | 29 | **Plugin sandboxing / crash isolation** | Plugins | Native host | [hosting-plugins.md](hosting-plugins.md) |
-| 30 | **AI MIDI generation (SkyTNT)** | AI | ONNX Runtime, Rust | [native-ai.md](native-ai.md) |
-| 31 | **AI audio generation (Stable Audio Open)** | AI | Python sidecar | [native-ai.md](native-ai.md) |
-| 32 | **Audio denoising (DeepFilterNet)** | AI | Rust | [native-ai.md](native-ai.md) |
+| 30 | **AI MIDI generation (SkyTNT)** | AI | ONNX Runtime, Rust | [ai-implementation.md](ai-implementation.md) |
+| 31 | **AI audio generation (Stable Audio Open)** | AI | Python sidecar | [ai-implementation.md](ai-implementation.md) |
+| 32 | **Audio denoising (DeepFilterNet)** | AI | Rust | [ai-implementation.md](ai-implementation.md) |
 | 33 | **Native audio I/O (cpal)** | Engine | Tauri, Rust | [native-apis.md](native-apis.md) |
 | 34 | **Ableton Link sync** | Engine | Rust | [native-apis.md](native-apis.md) |
 | 35 | **Spectral editing (in-timeline)** | Clips | WebGPU | [ui-ux.md](ui-ux.md) |

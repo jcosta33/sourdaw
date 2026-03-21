@@ -39,8 +39,8 @@ function applyTension(t: number, tension: number): number {
     if (Math.abs(tension) < 0.01) {
         return t;
     }
-    const power = Math.pow(2, tension * 3);
-    return Math.pow(Math.max(0, Math.min(1, t)), power);
+    const power = 2 ** (tension * 3);
+    return Math.max(0, Math.min(1, t)) ** power;
 }
 
 /**
@@ -104,10 +104,7 @@ export const buildCurvePath = (
             const t3 = t2 * t;
             const interpValue =
                 0.5 *
-                (2 * v1 +
-                    (-v0 + v2) * t +
-                    (2 * v0 - 5 * v1 + 4 * v2 - v3) * t2 +
-                    (-v0 + 3 * v1 - 3 * v2 + v3) * t3);
+                (2 * v1 + (-v0 + v2) * t + (2 * v0 - 5 * v1 + 4 * v2 - v3) * t2 + (-v0 + 3 * v1 - 3 * v2 + v3) * t3);
             const sx = x1 + (x2 - x1) * t;
             const sy = valueToY(interpValue);
             path += `L ${sx} ${sy}`;

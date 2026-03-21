@@ -2,7 +2,7 @@ import { type ReactElement, useState, useRef, useEffect } from 'react';
 import { type Track } from '#/modules/Track/models/Track';
 import { renameTrack } from '#/modules/Track/useCases/renameTrack';
 
-export type InlineTrackNameProps = {
+type InlineTrackNameProps = {
     track: Track;
 };
 

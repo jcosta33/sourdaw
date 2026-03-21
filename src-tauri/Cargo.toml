@@ -30,4 +30,4 @@ cpal = "0.15"
 rubato = "0.15"
 symphonia = { version = "0.5", features = ["all"] }
 rusty_link = "0.4"
-ort = { version = "2", features = ["load-dynamic"] }
+ort = { version = "2.0.0-rc.12", features = ["load-dynamic"] }

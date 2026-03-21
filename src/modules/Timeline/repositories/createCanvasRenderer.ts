@@ -499,7 +499,10 @@ function drawAutomation(ctx: CanvasRenderingContext2D, model: TimelineRenderMode
                     const t3 = t2 * t;
                     const iv =
                         0.5 *
-                        (2 * v1 + (-v0 + v2) * t + (2 * v0 - 5 * v1 + 4 * v2 - v3) * t2 + (-v0 + 3 * v1 - 3 * v2 + v3) * t3);
+                        (2 * v1 +
+                            (-v0 + v2) * t +
+                            (2 * v0 - 5 * v1 + 4 * v2 - v3) * t2 +
+                            (-v0 + 3 * v1 - 3 * v2 + v3) * t3);
                     pathPoints.push({ x: prevX + (px - prevX) * t, y: valueToY(iv) });
                 }
             } else {
@@ -515,8 +518,8 @@ function drawAutomation(ctx: CanvasRenderingContext2D, model: TimelineRenderMode
                         curved = t + (st - t) * Math.abs(tension);
                     } else {
                         // Exponential with tension
-                        const power = Math.pow(2, tension * 3);
-                        curved = Math.pow(t, power);
+                        const power = 2 ** (tension * 3);
+                        curved = t ** power;
                     }
                     const iv = prev.value + (p.value - prev.value) * curved;
                     pathPoints.push({ x: prevX + (px - prevX) * t, y: valueToY(iv) });
@@ -731,12 +734,12 @@ function drawInlineSubLanes(ctx: CanvasRenderingContext2D, model: TimelineRender
             };
 
             // Build curve using virgin territory segments
-            const regions = lane.virginTerritory ? getAutomationRegions(lane.points) : [{ startBeat: -Infinity, endBeat: Infinity }];
+            const regions = lane.virginTerritory
+                ? getAutomationRegions(lane.points)
+                : [{ startBeat: -Infinity, endBeat: Infinity }];
 
             for (const region of regions) {
-                const regionPts = lane.points.filter((p) =>
-                    p.beat >= region.startBeat && p.beat <= region.endBeat
-                );
+                const regionPts = lane.points.filter((p) => p.beat >= region.startBeat && p.beat <= region.endBeat);
                 if (regionPts.length < 2) {
                     continue;
                 }
@@ -771,13 +774,18 @@ function drawInlineSubLanes(ctx: CanvasRenderingContext2D, model: TimelineRender
                                 const st = Math.floor(t * steps) / steps;
                                 iv = prev.value + (p.value - prev.value) * st;
                             } else if (prev.curve === 'smooth') {
-                                const v0 = i >= 2 ? regionPts[i - 2]?.value ?? prev.value : prev.value;
+                                const v0 = i >= 2 ? (regionPts[i - 2]?.value ?? prev.value) : prev.value;
                                 const v1 = prev.value;
                                 const v2 = p.value;
-                                const v3 = i < regionPts.length - 1 ? regionPts[i + 1]?.value ?? p.value : p.value;
+                                const v3 = i < regionPts.length - 1 ? (regionPts[i + 1]?.value ?? p.value) : p.value;
                                 const t2 = t * t;
                                 const t3 = t2 * t;
-                                iv = 0.5 * (2 * v1 + (-v0 + v2) * t + (2 * v0 - 5 * v1 + 4 * v2 - v3) * t2 + (-v0 + 3 * v1 - 3 * v2 + v3) * t3);
+                                iv =
+                                    0.5 *
+                                    (2 * v1 +
+                                        (-v0 + v2) * t +
+                                        (2 * v0 - 5 * v1 + 4 * v2 - v3) * t2 +
+                                        (-v0 + 3 * v1 - 3 * v2 + v3) * t3);
                             } else {
                                 const tension = prev.tension ?? 0;
                                 if (prev.curve === 's-curve') {
@@ -785,8 +793,8 @@ function drawInlineSubLanes(ctx: CanvasRenderingContext2D, model: TimelineRender
                                     const curved = t + (st - t) * Math.abs(tension);
                                     iv = prev.value + (p.value - prev.value) * curved;
                                 } else {
-                                    const power = Math.pow(2, tension * 3);
-                                    iv = prev.value + (p.value - prev.value) * Math.pow(t, power);
+                                    const power = 2 ** (tension * 3);
+                                    iv = prev.value + (p.value - prev.value) * t ** power;
                                 }
                             }
                             pathPoints.push({ x: prevX + (px - prevX) * t, y: valueToY(iv) });

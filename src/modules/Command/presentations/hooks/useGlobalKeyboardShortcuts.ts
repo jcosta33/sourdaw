@@ -15,8 +15,6 @@ import {
     duplicateClip,
     duplicateClipToNextBar,
     zoomTracksVertical,
-    TOOL_SHORTCUTS,
-    type EditingTool,
 } from '../../useCases/keyboardShortcutActions';
 import { undo, redo } from '../../useCases/undoRedo';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
@@ -24,6 +22,7 @@ import { trackStore } from '#/modules/Track/stores/trackStore';
 import { zoomTimeline } from '#/modules/Timeline/stores/timelineViewStore';
 import { getAllClipIds, getLastClipEndBeat, goToNextMarker, goToPreviousMarker } from '../../helpers/selectionHelpers';
 import { cycleAutomationVisibility } from '#/modules/Workspace/useCases/togglePanel';
+import { type EditingTool, TOOL_SHORTCUTS } from '#/modules/Workspace/models/EditingTool';
 
 const ZOOM_STEP = 4;
 

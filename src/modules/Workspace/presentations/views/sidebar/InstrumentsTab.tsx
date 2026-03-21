@@ -19,7 +19,8 @@ import { PRESET_CATEGORIES, CATEGORY_ICONS } from '../../components/sidebar/side
 import { type PreviewHandle } from '../../hooks/usePreviewAudio';
 import { type SidebarRoute } from '../Sidebar';
 
-export type InstrumentsTabProps = {
+
+type InstrumentsTabProps = {
     plugins: typeof BUILTIN_PLUGINS;
     selectedTrackId: string | null;
     searchQuery: string;
@@ -125,7 +126,9 @@ export const InstrumentsTab = ({
                     <>
                         <div className="flex items-center gap-1 px-1 py-0.5">
                             <Piano className="size-3 text-muted-foreground" aria-hidden="true" />
-                            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Instruments</span>
+                            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                                Instruments
+                            </span>
                         </div>
                         {instruments.map((plugin) => (
                             <div
@@ -149,6 +152,7 @@ export const InstrumentsTab = ({
                     </>
                 )}
 
+{/* Instrument Library removed to avoid duplicates and fake synths */}
                 {/* Save Preset */}
                 {selectedTrack && (
                     <div className="border-t border-border/30 pt-1.5 mt-2 mb-1">
@@ -172,7 +176,9 @@ export const InstrumentsTab = ({
                                         onChange={(e) => setSaveFormName(e.target.value)}
                                         className="h-6 text-xs flex-1 bg-surface-base border-border/50"
                                         onKeyDown={(e) => {
-                                            if (e.key === 'Enter') handleSavePreset();
+                                            if (e.key === 'Enter') {
+                                                handleSavePreset();
+                                            }
                                         }}
                                         autoFocus
                                     />
@@ -196,7 +202,9 @@ export const InstrumentsTab = ({
                                         className="h-6 flex-1 rounded border border-border/50 bg-surface-base text-[10px] text-foreground px-1"
                                     >
                                         {PRESET_CATEGORIES.map((cat) => (
-                                            <option key={cat} value={cat}>{cat}</option>
+                                            <option key={cat} value={cat}>
+                                                {cat}
+                                            </option>
                                         ))}
                                     </select>
                                     <Button
@@ -217,9 +225,11 @@ export const InstrumentsTab = ({
                 {/* Categories Section */}
                 <div className="flex items-center gap-1 px-1 py-0.5 pt-2 mb-1">
                     <Headphones className="size-3 text-muted-foreground" aria-hidden="true" />
-                    <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Categories</span>
+                    <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                        Categories
+                    </span>
                 </div>
-                
+
                 <div className="flex flex-col gap-[1px]">
                     <Button
                         variant="ghost"
@@ -232,7 +242,9 @@ export const InstrumentsTab = ({
                             <span className="text-[11px] font-medium text-foreground/90 capitalize">My Presets</span>
                         </div>
                         <div className="flex items-center gap-1">
-                            <span className="text-[10px] text-muted-foreground group-hover:text-foreground/70 transition-colors">{filteredUser.length}</span>
+                            <span className="text-[10px] text-muted-foreground group-hover:text-foreground/70 transition-colors">
+                                {filteredUser.length}
+                            </span>
                             <ChevronRight className="size-3.5 text-muted-foreground opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
                         </div>
                     </Button>
@@ -240,7 +252,7 @@ export const InstrumentsTab = ({
                     {categoriesWithPresets.map((cat) => {
                         const presetsInCat = filteredFactory.filter((p) => p.category === cat);
                         const CatIcon = CATEGORY_ICONS[cat] ?? Folder;
-                        
+
                         return (
                             <Button
                                 key={cat}
@@ -250,11 +262,16 @@ export const InstrumentsTab = ({
                                 onClick={() => pushRoute({ id: `instruments-${cat}`, title: cat })}
                             >
                                 <div className="flex items-center gap-2">
-                                    <CatIcon className="size-3.5 text-muted-foreground group-hover:text-foreground/80 transition-colors" aria-hidden="true" />
+                                    <CatIcon
+                                        className="size-3.5 text-muted-foreground group-hover:text-foreground/80 transition-colors"
+                                        aria-hidden="true"
+                                    />
                                     <span className="text-[11px] font-medium text-foreground/90 capitalize">{cat}</span>
                                 </div>
                                 <div className="flex items-center gap-1">
-                                    <span className="text-[10px] text-muted-foreground group-hover:text-foreground/70 transition-colors">{presetsInCat.length}</span>
+                                    <span className="text-[10px] text-muted-foreground group-hover:text-foreground/70 transition-colors">
+                                        {presetsInCat.length}
+                                    </span>
                                     <ChevronRight className="size-3.5 text-muted-foreground opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
                                 </div>
                             </Button>

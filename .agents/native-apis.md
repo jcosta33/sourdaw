@@ -4,6 +4,8 @@
 
 This report covers every subsystem with a clear verdict (✅ Web API works cross-platform, ⚠️ partial/WebView2-only, ❌ Rust required), specific crate versions, and Tauri v2 integration patterns.
 
+> **See also**: [tauri-platform SKILL.md](./.agents/skills/tauri-platform/SKILL.md) — the enforcement layer for agents implementing any of the Rust-based subsystems below. [hosting-plugins.md](./hosting-plugins.md) — deep-dive on CLAP/VST3 plugin GUI hosting.
+
 ---
 
 ## 1. Real-time audio engine

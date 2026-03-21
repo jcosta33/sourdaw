@@ -4,7 +4,7 @@ import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { undo, redo } from '../../../useCases/workspaceViewActions';
 
-export type UndoRedoButtonsProps = {
+type UndoRedoButtonsProps = {
     canUndo: boolean;
     canRedo: boolean;
 };

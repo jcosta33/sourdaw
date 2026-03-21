@@ -37,6 +37,7 @@ import {
     restoreGrooveOriginals,
 } from '#/modules/Track/useCases/grooveExtraction';
 import { generateMidiAI, isTauri } from '#/modules/AudioEngine/useCases/nativeAIBridge';
+import { playAuditionNote } from '#/modules/AudioEngine/useCases/audition';
 
 interface GestureEvent extends UIEvent {
     readonly scale: number;
@@ -116,6 +117,7 @@ export const PianoRoll = ({
     const drawPreviewRef = useRef<{ beat: number; pitch: number; duration: number } | null>(null);
     const paintNotesRef = useRef<Set<string>>(new Set());
     const lassoPathRef = useRef<Array<{ x: number; y: number }>>([]);
+    const auditionRef = useRef<(() => void) | null>(null);
 
     const [scaleRoot, setScaleRoot] = useState(0);
     const [scaleType, setScaleType] = useState<string>('chromatic');
@@ -162,7 +164,7 @@ export const PianoRoll = ({
         }
 
         const dpr = window.devicePixelRatio || 1;
-        
+
         const scaleIntervals = SCALES[scaleType] ?? SCALES.chromatic!;
 
         const visiblePitches = [];
@@ -173,7 +175,7 @@ export const PianoRoll = ({
                 visiblePitches.push(pitch);
             }
         }
-        
+
         const noteAreaHeight = visiblePitches.length * ROW_HEIGHT;
         const width = canvas.parentElement?.clientWidth ?? GRID_BEATS * beatWidth;
         const height = noteAreaHeight + RULER_HEIGHT;
@@ -481,7 +483,7 @@ export const PianoRoll = ({
         const scaleIntervals = SCALES[scaleType] ?? SCALES.chromatic!;
         const visiblePitches: number[] = [];
         for (let pitch = BASE_PITCH + TOTAL_ROWS - 1; pitch >= BASE_PITCH; pitch--) {
-            const relativeNote = (pitch % 12 - scaleRoot + 12) % 12;
+            const relativeNote = ((pitch % 12) - scaleRoot + 12) % 12;
             if (!isFolded || scaleIntervals.includes(relativeNote)) {
                 visiblePitches.push(pitch);
             }
@@ -490,8 +492,10 @@ export const PianoRoll = ({
         for (let i = notes.length - 1; i >= 0; i--) {
             const note = notes[i]!;
             const row = visiblePitches.indexOf(note.pitch);
-            if (row === -1) continue;
-            
+            if (row === -1) {
+                continue;
+            }
+
             const nx = note.startBeat * beatWidth;
             const ny = row * ROW_HEIGHT;
             const nw = note.duration * beatWidth;
@@ -571,6 +575,7 @@ export const PianoRoll = ({
                     _prevDeltaPitch: 0,
                 };
             } else {
+                auditionRef.current = playAuditionNote(trackId, hit.note.pitch, hit.note.velocity);
                 dragRef.current = {
                     mode: 'move',
                     noteId: hit.note.id,
@@ -621,11 +626,11 @@ export const PianoRoll = ({
             }
 
             const row = Math.floor(noteY / ROW_HEIGHT);
-            
+
             const scaleIntervals = SCALES[scaleType] ?? SCALES.chromatic!;
             const visiblePitches: number[] = [];
             for (let p = BASE_PITCH + TOTAL_ROWS - 1; p >= BASE_PITCH; p--) {
-                const relativeNote = (p % 12 - scaleRoot + 12) % 12;
+                const relativeNote = ((p % 12) - scaleRoot + 12) % 12;
                 if (!isFolded || scaleIntervals.includes(relativeNote)) {
                     visiblePitches.push(p);
                 }
@@ -635,64 +640,65 @@ export const PianoRoll = ({
                 const pitch = visiblePitches[row]!;
                 if (pitch >= 0 && pitch < 128) {
                     if (stepInput) {
-                    const note = addMidiNote(clipId, pitch, stepBeat, gridSnap, 100);
-                    pushUndoEntry(
-                        'Add MIDI note',
-                        () => removeMidiNote(clipId, note.id),
-                        () => addMidiNote(clipId, pitch, stepBeat, gridSnap, 100)
-                    );
-                    setStepBeat((prev) => prev + gridSnap);
-                    setSelectedNoteIds(new Set());
-                } else if (chordMode) {
-                    // Chord stamp mode — place a full chord
-                    const beat = snap(x / beatWidth);
-                    const created = stampChord(clipId, pitch, beat, gridSnap, 100, chordType);
-                    if (created.length > 0) {
-                        const createdIds = created.map((n) => n.id);
+                        const note = addMidiNote(clipId, pitch, stepBeat, gridSnap, 100);
                         pushUndoEntry(
-                            `Stamp ${chordType} chord`,
-                            () => removeNotesByIds(clipId, createdIds),
-                            () => stampChord(clipId, pitch, beat, gridSnap, 100, chordType)
+                            'Add MIDI note',
+                            () => removeMidiNote(clipId, note.id),
+                            () => addMidiNote(clipId, pitch, stepBeat, gridSnap, 100)
                         );
-                        setSelectedNoteIds(new Set(createdIds));
+                        setStepBeat((prev) => prev + gridSnap);
+                        setSelectedNoteIds(new Set());
+                    } else if (chordMode) {
+                        // Chord stamp mode — place a full chord
+                        const beat = snap(x / beatWidth);
+                        const created = stampChord(clipId, pitch, beat, gridSnap, 100, chordType);
+                        if (created.length > 0) {
+                            const createdIds = created.map((n) => n.id);
+                            pushUndoEntry(
+                                `Stamp ${chordType} chord`,
+                                () => removeNotesByIds(clipId, createdIds),
+                                () => stampChord(clipId, pitch, beat, gridSnap, 100, chordType)
+                            );
+                            setSelectedNoteIds(new Set(createdIds));
+                        }
+                    } else if (paintMode) {
+                        // Paint mode — place first note, track painted beats
+                        const beat = snap(x / beatWidth);
+                        const note = addMidiNote(clipId, pitch, beat, gridSnap, 100);
+                        paintNotesRef.current = new Set([note.id]);
+                        dragRef.current = {
+                            mode: 'paint',
+                            noteId: null,
+                            startX: x,
+                            startY: noteY,
+                            origBeat: beat,
+                            origPitch: pitch,
+                            origDuration: gridSnap,
+                            _prevDeltaBeat: 0,
+                            _prevDeltaPitch: 0,
+                        };
+                        setSelectedNoteIds(new Set());
+                    } else {
+                        // Start draw mode — drag to set note length
+                        auditionRef.current = playAuditionNote(trackId, pitch, 100);
+                        const beat = snap(x / beatWidth);
+                        drawPreviewRef.current = { beat, pitch, duration: gridSnap };
+                        dragRef.current = {
+                            mode: 'draw',
+                            noteId: null,
+                            startX: x,
+                            startY: noteY,
+                            origBeat: beat,
+                            origPitch: pitch,
+                            origDuration: gridSnap,
+                            _prevDeltaBeat: 0,
+                            _prevDeltaPitch: 0,
+                        };
+                        setSelectedNoteIds(new Set());
+                        draw();
                     }
-                } else if (paintMode) {
-                    // Paint mode — place first note, track painted beats
-                    const beat = snap(x / beatWidth);
-                    const note = addMidiNote(clipId, pitch, beat, gridSnap, 100);
-                    paintNotesRef.current = new Set([note.id]);
-                    dragRef.current = {
-                        mode: 'paint',
-                        noteId: null,
-                        startX: x,
-                        startY: noteY,
-                        origBeat: beat,
-                        origPitch: pitch,
-                        origDuration: gridSnap,
-                        _prevDeltaBeat: 0,
-                        _prevDeltaPitch: 0,
-                    };
-                    setSelectedNoteIds(new Set());
-                } else {
-                    // Start draw mode — drag to set note length
-                    const beat = snap(x / beatWidth);
-                    drawPreviewRef.current = { beat, pitch, duration: gridSnap };
-                    dragRef.current = {
-                        mode: 'draw',
-                        noteId: null,
-                        startX: x,
-                        startY: noteY,
-                        origBeat: beat,
-                        origPitch: pitch,
-                        origDuration: gridSnap,
-                        _prevDeltaBeat: 0,
-                        _prevDeltaPitch: 0,
-                    };
-                    setSelectedNoteIds(new Set());
-                    draw();
                 }
             }
-        }
         }
     };
 
@@ -801,7 +807,7 @@ export const PianoRoll = ({
             const scaleIntervals = SCALES[scaleType] ?? SCALES.chromatic!;
             const visiblePitches: number[] = [];
             for (let p = BASE_PITCH + TOTAL_ROWS - 1; p >= BASE_PITCH; p--) {
-                const relativeNote = (p % 12 - scaleRoot + 12) % 12;
+                const relativeNote = ((p % 12) - scaleRoot + 12) % 12;
                 if (!isFolded || scaleIntervals.includes(relativeNote)) {
                     visiblePitches.push(p);
                 }
@@ -809,7 +815,7 @@ export const PianoRoll = ({
 
             const deltaBeat = snap((x - drag.startX) / beatWidth);
             const deltaRow = Math.round((noteY - drag.startY) / ROW_HEIGHT);
-            
+
             const anchorOrigRow = visiblePitches.indexOf(drag.origPitch);
             let targetPitch = drag.origPitch;
             if (anchorOrigRow !== -1) {
@@ -859,6 +865,11 @@ export const PianoRoll = ({
     };
 
     const handleMouseUp = (e: ReactMouseEvent<HTMLCanvasElement>) => {
+        if (auditionRef.current) {
+            auditionRef.current();
+            auditionRef.current = null;
+        }
+
         const drag = dragRef.current;
 
         if (drag.mode === 'rubber-band') {
@@ -872,7 +883,7 @@ export const PianoRoll = ({
                 const scaleIntervals = SCALES[scaleType] ?? SCALES.chromatic!;
                 const visiblePitches: number[] = [];
                 for (let p = BASE_PITCH + TOTAL_ROWS - 1; p >= BASE_PITCH; p--) {
-                    const relativeNote = (p % 12 - scaleRoot + 12) % 12;
+                    const relativeNote = ((p % 12) - scaleRoot + 12) % 12;
                     if (!isFolded || scaleIntervals.includes(relativeNote)) {
                         visiblePitches.push(p);
                     }
@@ -991,7 +1002,7 @@ export const PianoRoll = ({
             const scaleIntervals = SCALES[scaleType] ?? SCALES.chromatic!;
             const visiblePitches: number[] = [];
             for (let p = BASE_PITCH + TOTAL_ROWS - 1; p >= BASE_PITCH; p--) {
-                const relativeNote = (p % 12 - scaleRoot + 12) % 12;
+                const relativeNote = ((p % 12) - scaleRoot + 12) % 12;
                 if (!isFolded || scaleIntervals.includes(relativeNote)) {
                     visiblePitches.push(p);
                 }
@@ -1003,7 +1014,9 @@ export const PianoRoll = ({
 
             for (const note of notes) {
                 const row = visiblePitches.indexOf(note.pitch);
-                if (row === -1) continue;
+                if (row === -1) {
+                    continue;
+                }
 
                 const cx = (note.startBeat + note.duration / 2) * beatWidth;
                 const cy = row * ROW_HEIGHT + ROW_HEIGHT / 2;
@@ -1449,12 +1462,12 @@ export const PianoRoll = ({
                         const scaleIntervals = SCALES[scaleType] ?? SCALES.chromatic!;
                         const visiblePitches: number[] = [];
                         for (let p = BASE_PITCH + TOTAL_ROWS - 1; p >= BASE_PITCH; p--) {
-                            const relativeNote = (p % 12 - scaleRoot + 12) % 12;
+                            const relativeNote = ((p % 12) - scaleRoot + 12) % 12;
                             if (!isFolded || scaleIntervals.includes(relativeNote)) {
                                 visiblePitches.push(p);
                             }
                         }
-                        
+
                         return visiblePitches.map((pitch, row) => {
                             const noteIndex = pitch % 12;
                             const isBlack = [1, 3, 6, 8, 10].includes(noteIndex);
@@ -1463,7 +1476,9 @@ export const PianoRoll = ({
                                     key={row}
                                     className={cn(
                                         'flex items-center justify-end pr-1 text-[10px]',
-                                        isBlack ? 'bg-surface-base text-muted-foreground/40' : 'text-muted-foreground/60'
+                                        isBlack
+                                            ? 'bg-surface-base text-muted-foreground/40'
+                                            : 'text-muted-foreground/60'
                                     )}
                                     style={{ height: ROW_HEIGHT }}
                                 >

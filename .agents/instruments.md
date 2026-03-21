@@ -461,4 +461,11 @@ Built correctly, this instrument suite delivers a **genuinely impressive first i
 
 The honest shortfalls are in orchestral instruments (limited velocity layers, no true legato, single mic position), choir (synthesis-only, no sample-based option), guitar strumming (fundamentally impossible with note-by-note sampling), and Mellotron (requires the creative workaround of tape-processing clean CC0 samples). These gaps are structural — they reflect the cost of professional sample recording, which runs tens of thousands of dollars per instrument. Logic Pro's ~72 GB library represents millions of dollars in recording investment amortized across millions of users.
 
-The strategic insight is that **synthesis closes most of the "wow factor" gap.** A well-programmed Faust Moog lead, a realistic tonewheel organ with Leslie, a punchy 808 kit, and a lush supersaw pad create the emotional impact that makes users feel they're working with a professional tool. The sampled instruments fill in what synthesis cannot — and at the CC0/CC-BY tier, they do so adequately for most production contexts outside exposed orchestral writing.
+The strategic insight is that **synthesis closes most of the \"wow factor\" gap.** A well-programmed Faust Moog lead, a realistic tonewheel organ with Leslie, a punchy 808 kit, and a lush supersaw pad create the emotional impact that makes users feel they're working with a professional tool. The sampled instruments fill in what synthesis cannot — and at the CC0/CC-BY tier, they do so adequately for most production contexts outside exposed orchestral writing.
+
+---
+
+## See Also
+
+- **[faust-wam-plugins SKILL.md](./.agents/skills/faust-wam-plugins/SKILL.md)** — Authoritative rules for agents building Faust/WAM/SFZ instruments: hosting lifecycle, WAM SDK, sfizz opcodes, license matrix
+- **[plugins.md](./plugins.md)** — WAM 2.0 plugin suite architecture and the Faust→WAM compilation pipeline

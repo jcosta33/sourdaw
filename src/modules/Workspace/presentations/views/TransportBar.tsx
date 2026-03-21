@@ -2,6 +2,7 @@ import { type ReactElement, useSyncExternalStore } from 'react';
 import { Separator } from '#/components/ui/separator';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
 import { useTransportState } from '../hooks/useTransportState';
+import { useAudioRecordingState } from '../hooks/useAudioRecordingState';
 import { useUndoState } from '../hooks/useUndoState';
 import { useProjectState } from '../hooks/useProjectState';
 import { trackStore } from '#/modules/Track/stores/trackStore';
@@ -38,6 +39,7 @@ export const TransportBar = (): ReactElement => {
         rippleEditing,
     } = useWorkspaceState();
     const transport = useTransportState();
+    const audioState = useAudioRecordingState();
     const undoState = useUndoState();
     const project = useProjectState();
 
@@ -66,6 +68,7 @@ export const TransportBar = (): ReactElement => {
                 <TransportControls
                     isPlaying={transport.isPlaying}
                     isRecording={transport.isRecording}
+                    isAudioRecording={audioState.isRecording}
                     isLooping={transport.isLooping}
                     overdubEnabled={transport.overdubEnabled}
                     metronomeEnabled={transport.metronomeEnabled}

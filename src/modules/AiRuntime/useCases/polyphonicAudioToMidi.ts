@@ -47,9 +47,7 @@ let basicPitchModel: BasicPitch | null = null;
 function getBasicPitchModel(): BasicPitch {
     if (!basicPitchModel) {
         // Uses the bundled TF.js model from the package
-        basicPitchModel = new BasicPitch(
-            'https://tfhub.dev/google/tfjs-model/spice/2/default/1',
-        );
+        basicPitchModel = new BasicPitch('https://tfhub.dev/google/tfjs-model/spice/2/default/1');
     }
     return basicPitchModel;
 }
@@ -64,16 +62,9 @@ function getBasicPitchModel(): BasicPitch {
  * @returns The generated notes and the IDs of the created clip/track.
  */
 export async function polyphonicAudioToMidi(
-    options: PolyphonicAudioToMidiOptions,
+    options: PolyphonicAudioToMidiOptions
 ): Promise<PolyphonicAudioToMidiResult | null> {
-    const {
-        clipId,
-        trackId,
-        onsetThreshold = 0.5,
-        frameThreshold = 0.3,
-        minNoteLength = 11,
-        onProgress,
-    } = options;
+    const { clipId, trackId, onsetThreshold = 0.5, frameThreshold = 0.3, minNoteLength = 11, onProgress } = options;
 
     // Find the source clip and its audio buffer
     const clip = getAllTracks()
@@ -91,7 +82,9 @@ export async function polyphonicAudioToMidi(
         return null;
     }
 
-    logger.info(`[Basic Pitch] Starting polyphonic analysis on "${clip.name}" (${String(buffer.duration.toFixed(1))}s)`);
+    logger.info(
+        `[Basic Pitch] Starting polyphonic analysis on "${clip.name}" (${String(buffer.duration.toFixed(1))}s)`
+    );
 
     // Run the neural network inference
     const model = getBasicPitchModel();
@@ -100,21 +93,21 @@ export async function polyphonicAudioToMidi(
     let contours: number[][] = [];
 
     let evaluationBuffer = buffer;
-    
+
     // Basic Pitch requires exactly 22050Hz sample rate.
     // If our DAW engine is running at 44.1kHz or 48kHz, we must downsample first.
     if (buffer.sampleRate !== 22050) {
         logger.info(`[Basic Pitch] Resampling input from ${buffer.sampleRate}Hz to 22050Hz`);
-        
+
         // Calculate the exact number of frames needed at 22050Hz
         const targetLength = Math.ceil((buffer.length * 22050) / buffer.sampleRate);
-        const offlineCtx = new OfflineAudioContext(1, targetLength, 22050); 
-        
+        const offlineCtx = new OfflineAudioContext(1, targetLength, 22050);
+
         const source = offlineCtx.createBufferSource();
         source.buffer = buffer;
         source.connect(offlineCtx.destination);
         source.start();
-        
+
         evaluationBuffer = await offlineCtx.startRendering();
     }
 
@@ -128,10 +121,10 @@ export async function polyphonicAudioToMidi(
             },
             (percent) => {
                 onProgress?.(percent);
-            },
+            }
         );
-    } catch (err) {
-        logger.error(new Error('[Basic Pitch] Model evaluation failed: ' + String(err)));
+    } catch (error) {
+        logger.error(new Error(`[Basic Pitch] Model evaluation failed: ${String(error)}`));
         return null;
     }
 
@@ -146,7 +139,7 @@ export async function polyphonicAudioToMidi(
         null, // maxFreq
         null, // minFreq
         true, // melodiaTrick
-        5, // energyTolerance
+        5 // energyTolerance
     );
 
     // Add pitch bends for expressive playing
@@ -164,9 +157,7 @@ export async function polyphonicAudioToMidi(
 
     // Create a MIDI track and clip with the detected notes
     const result = insertNotesIntoTimeline(notesWithTime, clip, trackId);
-    return result
-        ? { notes: notesWithTime, clipId: result.clipId, trackId: result.trackId }
-        : null;
+    return result ? { notes: notesWithTime, clipId: result.clipId, trackId: result.trackId } : null;
 }
 
 // ── Timeline insertion ──────────────────────────────────────────────────
@@ -180,7 +171,7 @@ type SourceClip = {
 function insertNotesIntoTimeline(
     notes: NoteEventTime[],
     sourceClip: SourceClip,
-    trackId: string,
+    trackId: string
 ): { clipId: string; trackId: string } | null {
     const tempo = getTransportState()?.tempo ?? 120;
     const beatsPerSecond = tempo / 60;

@@ -11,14 +11,12 @@ export {
     setNoteVelocity,
     setNoteProbability,
     getNotesForClip,
-    duplicateNotes,
 } from './midiNoteCrud';
 
 // Note transforms
 export {
     quantizeNotes,
     quantizeNoteLengths,
-    quantizeNotesAndLengths,
     transposeNotes,
     humanizeNotes,
     invertNotes,
@@ -39,5 +37,4 @@ export {
     movePitchBend,
     setNotePressure,
     setNoteSlide,
-    setNotePitchBend,
 } from './midiEventUseCases';

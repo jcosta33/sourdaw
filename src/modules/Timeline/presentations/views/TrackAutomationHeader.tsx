@@ -31,22 +31,22 @@ export const TrackAutomationHeaders = ({ containerHeight }: TrackAutomationHeade
     const ws = useSyncExternalStore(
         (cb) => workspaceStore.subscribe(() => cb()),
         () => workspaceStore.value,
-        () => workspaceStore.value,
+        () => workspaceStore.value
     );
     const tracks = useSyncExternalStore(
         (cb) => trackStore.subscribe(() => cb()),
         () => trackStore.value,
-        () => trackStore.value,
+        () => trackStore.value
     );
     const autoState = useSyncExternalStore(
         (cb) => automationStore.subscribe(() => cb()),
         () => automationStore.value,
-        () => automationStore.value,
+        () => automationStore.value
     );
     const viewState = useSyncExternalStore(
         (cb) => timelineViewStore.subscribe(() => cb()),
         () => timelineViewStore.value,
-        () => timelineViewStore.value,
+        () => timelineViewStore.value
     );
 
     if (!ws || ws.automationVisibility === 'hidden' || !tracks || !viewState) {
@@ -74,9 +74,7 @@ export const TrackAutomationHeaders = ({ containerHeight }: TrackAutomationHeade
                     continue;
                 }
 
-                const lane = autoState?.lanes.find(
-                    (l) => l.trackId === track.id && l.parameterId === paramId,
-                );
+                const lane = autoState?.lanes.find((l) => l.trackId === track.id && l.parameterId === paramId);
                 const paramLabel = PARAMETER_OPTIONS.find((p) => p.id === paramId)?.label ?? paramId;
 
                 headers.push(
@@ -96,7 +94,7 @@ export const TrackAutomationHeaders = ({ containerHeight }: TrackAutomationHeade
                                 className={cn(
                                     'flex items-center gap-0.5 text-[9px] font-mono px-1.5 py-0.5 rounded',
                                     'bg-surface-raised/60 border border-border/30 hover:border-border/60',
-                                    'text-muted-foreground hover:text-foreground transition-colors',
+                                    'text-muted-foreground hover:text-foreground transition-colors'
                                 )}
                                 aria-label={`Select parameter for automation lane ${si + 1}`}
                             >
@@ -111,7 +109,7 @@ export const TrackAutomationHeaders = ({ containerHeight }: TrackAutomationHeade
                                         type="button"
                                         className={cn(
                                             'w-full text-left text-[9px] px-2 py-1 hover:bg-surface-overlay/50 transition-colors',
-                                            opt.id === paramId ? 'text-foreground font-medium' : 'text-muted-foreground',
+                                            opt.id === paramId ? 'text-foreground font-medium' : 'text-muted-foreground'
                                         )}
                                         onClick={() => {
                                             // Swap parameter for this sub-lane
@@ -125,7 +123,11 @@ export const TrackAutomationHeaders = ({ containerHeight }: TrackAutomationHeade
                                                 },
                                             });
                                             // Ensure lane exists
-                                            if (!autoState?.lanes.find((l) => l.trackId === track.id && l.parameterId === opt.id)) {
+                                            if (
+                                                !autoState?.lanes.find(
+                                                    (l) => l.trackId === track.id && l.parameterId === opt.id
+                                                )
+                                            ) {
                                                 addAutomationLane(track.id, opt.id, opt.label);
                                             }
                                         }}
@@ -162,13 +164,13 @@ export const TrackAutomationHeaders = ({ containerHeight }: TrackAutomationHeade
                                     'text-[7px] font-mono px-1 py-0.5 rounded',
                                     lane.enabled === false
                                         ? 'text-muted-foreground/40 bg-muted/10'
-                                        : 'text-primary/60 bg-primary/10',
+                                        : 'text-primary/60 bg-primary/10'
                                 )}
                             >
                                 {lane.enabled === false ? 'OFF' : 'R'}
                             </span>
                         )}
-                    </div>,
+                    </div>
                 );
             }
         }
@@ -196,7 +198,9 @@ export const TrackAutomationHeaders = ({ containerHeight }: TrackAutomationHeade
                                 },
                             });
                             // Ensure lane exists
-                            if (!autoState?.lanes.find((l) => l.trackId === track.id && l.parameterId === nextParam.id)) {
+                            if (
+                                !autoState?.lanes.find((l) => l.trackId === track.id && l.parameterId === nextParam.id)
+                            ) {
                                 addAutomationLane(track.id, nextParam.id, nextParam.label);
                             }
                         }
@@ -204,7 +208,7 @@ export const TrackAutomationHeaders = ({ containerHeight }: TrackAutomationHeade
                     aria-label="Add automation lane"
                 >
                     <Plus className="size-3" />
-                </button>,
+                </button>
             );
         }
 

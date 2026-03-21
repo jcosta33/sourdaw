@@ -139,15 +139,14 @@ Command/                # Cross-cutting: undo/redo, keyboard shortcut dispatch
 
 ## State ownership in detail
 
-### Project state — the Zustand store
+### Project state — the Vanilla Store
 
 The project store is the single source of truth for everything that gets serialized. It is a **pure data model** — no AudioNode references, no class instances, no functions.
 
 ```typescript
 // src/modules/Project/stores/projectStore.ts
 
-import { create } from 'zustand';
-import { subscribeWithSelector } from 'zustand/middleware';
+import { Store } from '#/helpers/Store/Store';
 
 // The complete serializable project state
 export type ProjectState = {
@@ -160,7 +159,7 @@ export type ProjectState = {
     automation: ReadonlyArray<AutomationLane>;
 };
 
-export const useProjectStore = create<ProjectState>()(subscribeWithSelector(() => defaultProjectState));
+export const projectStore = new Store<ProjectState>(defaultProjectState);
 
 // Engine reconciliation subscribes to specific slices
 // This is the key pattern: engine reacts to state changes without re-renders
@@ -200,7 +199,7 @@ export class AudioEngine {
         await this.context.audioWorklet.addModule('/worklets/transport-processor.js');
     }
 
-    // Called by Zustand subscription when tracks change
+    // Called by store subscription when tracks change
     reconcileTracks(next: ReadonlyArray<Track>, prev: ReadonlyArray<Track>): void {
         const added = next.filter((t) => !prev.find((p) => p.id === t.id));
         const removed = prev.filter((t) => !next.find((n) => n.id === t.id));
@@ -556,13 +555,16 @@ export const addClip = async (input: AddClipInput): Promise<Clip> => {
 };
 ```
 
-### Pattern C: Zustand selector (read-only, presentation layer)
+### Pattern C: Store selector (read-only, presentation layer)
 
-Presentations read cross-domain state directly via the shared project store.
+Presentations read cross-domain state directly via the shared project store using `useSyncExternalStore`.
 
 ```typescript
 // Transport bar showing track count (Transport domain reading Track domain state)
-const trackCount = useProjectStore((s) => s.tracks.length);
+const trackCount = useSyncExternalStore(
+    projectStore.subscribe,
+    () => projectStore.value.tracks.length
+);
 ```
 
 ### Pattern D: Tauri IPC (Rust services)

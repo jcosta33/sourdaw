@@ -66,74 +66,8 @@ export function removeTrackFromVCA(trackId: string): void {
 }
 
 /**
- * Set the gain of a VCA group.
- * This scales the gain of all tracks assigned to this group.
- */
-export function setVCAGroupGain(vcaGroupId: string, gain: number): void {
-    const group = vcaGroups.get(vcaGroupId);
-    if (!group) {
-        return;
-    }
-    group.gain = Math.max(0, Math.min(1.5, gain));
-    vcaGroups.set(vcaGroupId, group);
-}
-
-/**
- * Get the effective gain for a track (track gain × VCA gain).
- */
-export function getEffectiveGain(trackId: string): number {
-    const state = getTrackState();
-    if (!state) {
-        return 1.0;
-    }
-    const track = state.tracks.find((t) => t.id === trackId);
-    if (!track) {
-        return 1.0;
-    }
-
-    if (!track.vcaGroupId) {
-        return track.gain;
-    }
-
-    const group = vcaGroups.get(track.vcaGroupId);
-    if (!group) {
-        return track.gain;
-    }
-
-    return track.gain * group.gain;
-}
-
-/**
  * Get all VCA groups.
  */
 export function getAllVCAGroups(): VCAGroup[] {
     return [...vcaGroups.values()];
-}
-
-/**
- * Delete a VCA group and unassign all tracks.
- */
-export function deleteVCAGroup(vcaGroupId: string): void {
-    vcaGroups.delete(vcaGroupId);
-
-    const state = getTrackState();
-    if (!state) {
-        return;
-    }
-
-    setTrackState({
-        ...state,
-        tracks: state.tracks.map((t) => (t.vcaGroupId === vcaGroupId ? { ...t, vcaGroupId: null } : t)),
-    });
-}
-
-/**
- * Get tracks assigned to a VCA group.
- */
-export function getVCAGroupTracks(vcaGroupId: string): string[] {
-    const state = getTrackState();
-    if (!state) {
-        return [];
-    }
-    return state.tracks.filter((t) => t.vcaGroupId === vcaGroupId).map((t) => t.id);
 }

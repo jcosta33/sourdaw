@@ -133,10 +133,3 @@ export function buildSystemPrompt(toolsJson: string, projectState: string, forma
         CLOSING,
     ].join('\n\n');
 }
-
-/**
- * @deprecated Use buildSystemPrompt with format parameter instead.
- */
-export function buildHermesSystemPrompt(toolsJson: string, projectState: string): string {
-    return buildSystemPrompt(toolsJson, projectState, 'hermes');
-}

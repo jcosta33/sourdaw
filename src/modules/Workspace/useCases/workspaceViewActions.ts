@@ -11,14 +11,11 @@
 export {
     normalizeClip,
     reverseClip,
-    splitClip,
     trimClipStart,
     trimClipEnd,
     setClipFade,
     setClipColor,
     renameClip,
-    muteClip,
-    lockClip,
     setClipGain,
     setClipFollowAction,
 } from '#/modules/Track/useCases/clipEditingUseCases';
@@ -71,18 +68,6 @@ export {
     addAutomationLane,
     removeAutomationLane,
     toggleAutomationVisibility,
-    addAutomationPoint,
-    removeAutomationPoint,
-    updateAutomationPoint,
-    batchAddAutomationPoints,
-    setAutomationPointCurve,
-    scaleAutomationValues,
-    stretchAutomationTime,
-    invertAutomation,
-    reverseAutomation,
-    thinAutomationPoints,
-    quantizeAutomationBeats,
-    getAutomationValueAtBeat,
 } from '#/modules/Track/useCases/automationUseCases';
 
 // ── Track: MIDI ───────────────────────────────────────────────────
@@ -131,14 +116,20 @@ export {
 } from '#/modules/AudioEngine/useCases/engineAccess';
 export { initializeAudioEngine } from '#/modules/AudioEngine/useCases/initializeAudioEngine';
 export { getTrackPeakLevel, setTrackMute } from '#/modules/AudioEngine/useCases/trackAudioControls';
+export {
+    parseSFZ,
+    loadSFZSamples,
+    playNote,
+    findRegion,
+    getLoadedInstruments,
+    createSF2Instrument,
+} from '#/modules/AudioEngine/useCases/samplePlayer';
 export { initWebMidi } from '#/modules/AudioEngine/useCases/webMidiInput';
 export {
     getAllSidechainRoutes,
     addSidechainRoute,
     removeSidechainRoute,
-    getSidechainRoutesForTrack,
     getSidechainSource,
-    setSidechainRoutes,
 } from '#/modules/AudioEngine/useCases/sidechainUseCases';
 
 // ── Command ───────────────────────────────────────────────────────
@@ -155,13 +146,12 @@ export { setTempo } from '#/modules/Transport/useCases/setTempo';
 export { addTempoChange, removeTempoChange, updateTempoChange } from '#/modules/Transport/useCases/tempoMapUseCases';
 
 // ── Re-export types from private models via queries ───────────────
-export { type DeviceParameter, type DeviceParameterType } from '#/modules/Track/useCases/trackQueries';
-export { type AutomationLane, type AutomationPoint } from '#/modules/Track/useCases/trackQueries';
+export { type DeviceParameter } from '#/modules/Track/useCases/trackQueries';
 export { type Clip, type Track } from '#/modules/Track/useCases/trackQueries';
 export { type MidiNote } from '#/modules/Track/useCases/trackQueries';
 export { type SoundPresetCategory } from '#/modules/Track/useCases/trackQueries';
 export { type TransportState } from '#/modules/Transport/useCases/transportQueries';
-export { defaultTransportState, type TempoChange } from '#/modules/Transport/useCases/transportQueries';
+export { defaultTransportState } from '#/modules/Transport/useCases/transportQueries';
 
 // ── Re-exports from query layers ──────────────────────────────────
 export { BUILTIN_PLUGINS } from '#/modules/Track/useCases/trackQueries';
@@ -176,19 +166,18 @@ export {
     type PresetCategory,
     type PresetContext,
 } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
-export { generateGroupId, type AppAction, type UndoEntry } from '#/modules/Command/useCases/commandQueries';
+export { generateGroupId, type AppAction } from '#/modules/Command/useCases/commandQueries';
 
 // ── AiRuntime: Cloud API management ──────────────────────────────
 export {
     configureCloudApi,
     removeCloudApi,
-    getCloudStatus,
     isCloudAvailable as isCloudApiAvailable,
 } from '#/modules/AiRuntime/useCases/cloudApiManagement';
 
 // ── AiRuntime: Audio analysis ────────────────────────────────────
 export { polyphonicAudioToMidi } from '#/modules/AiRuntime/useCases/polyphonicAudioToMidi';
-export { trackPitch, detectDominantPitch } from '#/modules/AiRuntime/useCases/pitchDetection';
+export { detectDominantPitch } from '#/modules/AiRuntime/useCases/pitchDetection';
 export { summarizeFeatures } from '#/modules/AiRuntime/useCases/audioFeatures';
 export {
     type SoundPreset,
@@ -202,12 +191,10 @@ export { type SidechainRoute } from '#/modules/AudioEngine/useCases/sidechainUse
 // Track presets
 export {
     getUserPresets,
-    saveUserPreset,
     deleteUserPreset,
     createTrackFromPreset,
     loadPresetToTrack,
     saveCurrentAsPreset,
-    type SaveCurrentAsPresetInput,
 } from '#/modules/Track/useCases/presetUseCases';
 export {
     getWarpState,
@@ -216,27 +203,19 @@ export {
     setStretchMode,
     addWarpMarker,
     removeWarpMarker,
-    moveWarpMarker,
 } from '#/modules/Track/useCases/warpUseCases';
 
 // Transport
 export {
     togglePlayback,
-    startPlayback,
     stopPlayback,
-    seekPlayhead,
     toggleLoop,
     toggleOverdub,
     toggleMetronome,
     setMetronomeVolume,
-    setLoopRegion,
-    setPunchIn,
-    setPunchOut,
     togglePunchEnabled,
     toggleCountIn,
-    setCountInBars,
     togglePreRoll,
-    setPreRollBars,
     toggleRecording,
 } from '#/modules/Transport/useCases/transportControls';
 
@@ -245,5 +224,78 @@ export {
     handleCreateTrackAlternative,
     handleSwitchTrackAlternative,
     handleDeleteTrackAlternative,
-    handleRenameTrackAlternative,
 } from '#/modules/Command/useCases/trackAlternativeHandlers';
+
+// ── AudioEngine: plugin management ───────────────────────────────
+export {
+    startPluginScan,
+    scanCustomPaths,
+    getScannedPlugins,
+    getScannedPluginsByFormat,
+    findPluginByName,
+    addScanPath,
+    removeScanPath,
+} from '#/modules/AudioEngine/useCases/pluginScanUseCases';
+export {
+    scanPlugins,
+    getDefaultPluginPaths,
+    loadPlugin,
+    unloadPlugin,
+    setPluginParameter,
+    getPluginParameters,
+    isTauriAvailable,
+} from '#/modules/AudioEngine/useCases/pluginBridge';
+
+// ── AudioEngine: WAM & Faust ─────────────────────────────────────
+export {
+    getRegisteredPlugins,
+    getPluginsByCategory,
+    registerWAMPlugin,
+} from '#/modules/AudioEngine/useCases/wamPluginHost';
+export { getFaustModules, getFaustModule, compileFaustDSP } from '#/modules/AudioEngine/useCases/faustEngine';
+
+// ── AudioEngine: modulation ──────────────────────────────────────
+export {
+    createModulationSource,
+    updateModulationSourceParam,
+    deleteModulationSource,
+    getAllModulationSources,
+    createModulationRoute,
+    setModulationAmount,
+    deleteModulationRoute,
+    getAllModulationRoutes,
+    getModulationRoutesForParam,
+    getModulatedValue,
+} from '#/modules/AudioEngine/useCases/modulationSystem';
+
+// ── AudioEngine: latency compensation ────────────────────────────
+export {
+    reportLatency,
+    clearReportedLatency,
+    getTrackLatency,
+    getMaxTrackLatency,
+    getCompensationDelay,
+    getLatencyReport,
+} from '#/modules/AudioEngine/useCases/latencyCompensation';
+
+// ── AudioEngine: native AI bridge ────────────────────────────────
+export {
+    loadNativeModel,
+    nativeInference,
+    unloadNativeModel,
+    executeToolCalling,
+    generateMidiAI,
+    denoiseAudio,
+} from '#/modules/AudioEngine/useCases/nativeAIBridge';
+
+// ── AudioEngine: MIDI device management ──────────────────────────
+export {
+    getAvailableMidiInputs,
+    selectMidiInput,
+    setMidiInputTrack,
+    startMidiLearnLegacy,
+    stopMidiLearnLegacy,
+    resetMidiState,
+    setMpeEnabled,
+    getMpeEnabled,
+} from '#/modules/AudioEngine/repositories/webMidiRepository';

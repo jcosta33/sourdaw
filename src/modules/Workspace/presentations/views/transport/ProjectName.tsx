@@ -2,7 +2,7 @@ import { type ReactElement, useState } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { renameProject, saveProject } from '../../../useCases/workspaceViewActions';
 
-export type ProjectNameProps = {
+type ProjectNameProps = {
     name: string;
     dirty: boolean;
 };

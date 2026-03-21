@@ -1,7 +1,7 @@
 import { type ReactElement } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 
-export interface LEDProps {
+interface LEDProps {
     on: boolean;
     variant?: 'cyan' | 'mint' | 'amber' | 'red';
     size?: 'sm' | 'md' | 'lg';

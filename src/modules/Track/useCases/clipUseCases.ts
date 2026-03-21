@@ -48,9 +48,7 @@ export function addClip(input: {
 export function acceptGhostClip(clipId: string): void {
     mapAllTracks((t) => ({
         ...t,
-        clips: t.clips.map((c) =>
-            c.id === clipId ? { ...c, isGhost: undefined } : c
-        ),
+        clips: t.clips.map((c) => (c.id === clipId ? { ...c, isGhost: undefined } : c)),
     }));
 }
 

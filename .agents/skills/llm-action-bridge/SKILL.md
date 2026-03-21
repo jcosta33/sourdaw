@@ -98,6 +98,9 @@ export const useAiCommand = () => {
 };
 ```
 
+> **Runtime note**: For the underlying inference infrastructure (mistral.rs in-process LLM, whisper-rs ASR, ONNX Runtime Web for browser inference), see [audio-ai-runtime SKILL.md](./../audio-ai-runtime/SKILL.md). This skill covers the **action contract layer** on top of that infrastructure.
+
+
 ## Core Patterns
 
 ### The model outputs actions, not arbitrary mutations
@@ -238,143 +241,60 @@ Use structured output constraints whenever possible.
 For local models, prefer:
 
 - JSON-only output
-- grammar-constrained output
-- schema-constrained payloads
+- **llguidance** (Microsoft's constrained decoding, built into mistral.rs) for enforcing JSON schemas
+- grammar-constrained output (GBNF format supported by mistral.rs)
 - deterministic temperature settings for command parsing
 
-`llama.cpp` explicitly supports grammar-constrained output, including forcing JSON through grammar files. :contentReference[oaicite:4]{index=4}
+llguidance enforces structured output at ~50μs/token overhead — effectively zero cost in the context of LLM inference. This is the same engine used by OpenAI's Structured Outputs feature.
 
 This is one of the most important reliability features in the whole AI stack.
 
 ### Use browser-local inference for lightweight intent tasks
 
-```ts
-// src/modules/AiRuntime/repositories/createBrowserIntentRuntime.ts
-import { pipeline } from "@huggingface/transformers";
+For browser-local intent classification, embeddings, or reranking, use `@huggingface/transformers` (Transformers.js). See [audio-ai-runtime SKILL.md](./../audio-ai-runtime/SKILL.md) for the full browser inference setup pattern, WebGPU/WASM fallback requirement, and Linux caveat.
 
-export const createBrowserIntentRuntime = async () => {
-  const classifier = await pipeline(
-    "text-classification",
-    "Xenova/distilbert-base-uncased-finetuned-sst-2-english",
-    {
-      device: "webgpu",
-      dtype: "q4",
-    },
-  );
+Key rule for the action bridge layer: browser-local inference routes through the same `parsePromptToAction` use case as the native runtime. The UI never knows which backend ran.
 
-  return {
-    classifyIntent: async (input: string) => {
-      return classifier(input);
-    },
-  };
-};
-```
 
-Use browser-local inference for:
+### Use native `mistral.rs` for heavier local models
 
-- intent classification
-- reranking
-- command suggestion
-- lightweight embeddings
-- browser-only fallback modes
-- small voice/text helpers
+For desktop-local LLM inference, **`mistral.rs` runs in-process as a Rust library** — no sidecar subprocess. The recommended model is Qwen3-8B at Q4_K_M (F1=0.919 on tool-calling benchmarks). Tokens stream to the UI via Tauri Channels.
 
-Default browser inference stack:
+See [audio-ai-runtime SKILL.md](./../audio-ai-runtime/SKILL.md) for the full Rust implementation pattern (`run_local_llm` command, Channel setup, model loading at startup).
 
-- `@huggingface/transformers`
-- `onnxruntime-web`
-- `onnxruntime-web/webgpu` when available
-- WASM fallback otherwise
+Preferred runtime for the action bridge layer:
 
-ONNX Runtime Web officially supports WebGPU and WASM, and recommends WebGPU for more compute-intensive models while keeping WASM for lighter or smaller deployments. :contentReference[oaicite:5]{index=5}
+- `mistral.rs` for LLM reasoning / structured action generation (tool calling built-in)
+- `whisper-rs` for local ASR / voice commands (Rust crate, not a subprocess)
 
-### Use native sidecars for heavier local models
+Tauri Channels are preferred over the legacy invoke/response pattern for LLM streaming.
 
-```rust
-// src-tauri/src/commands/llm.rs
-#[tauri::command]
-pub async fn run_local_llm(app: tauri::AppHandle, prompt: String) -> Result<String, String> {
-    use tauri_plugin_shell::ShellExt;
 
-    let output = app
-        .shell()
-        .sidecar("llama")
-        .map_err(|error| error.to_string())?
-        .args([
-            "-m",
-            "models/command-intent.gguf",
-            "-p",
-            &prompt,
-            "--temp",
-            "0.1",
-        ])
-        .output()
-        .await
-        .map_err(|error| error.to_string())?;
+### Use `mistral.rs` for prompt-to-action conversion on desktop
 
-    String::from_utf8(output.stdout).map_err(|error| error.to_string())
-}
-```
+Use `mistral.rs` for:
 
-For heavier desktop-local inference, bundle native binaries as Tauri sidecars.
-
-Preferred sidecars:
-
-- `llama.cpp` for LLM reasoning / structured command generation
-- `whisper.cpp` for local ASR / voice commands
-
-Tauri supports bundling external binaries and invoking them as sidecars, and also supports emitting events back to the frontend when needed. :contentReference[oaicite:6]{index=6}
-
-### Use `llama.cpp` for prompt-to-action conversion on desktop
-
-```ts
-// src/modules/AiRuntime/repositories/runLocalLlm.ts
-import { invoke } from "@tauri-apps/api/core";
-
-export const runLocalLlm = async (prompt: string): Promise<string> => {
-  return invoke<string>("run_local_llm", { prompt });
-};
-```
-
-Use `llama.cpp` for:
-
-- prompt-to-action parsing
+- prompt-to-action parsing via **tool calling** (native to mistral.rs, no prompt engineering needed)
 - action sequence generation
 - local copilot chat
 - structured command planning
-- command explanation/rewrite when needed
 
-Use:
+Key advantages over the old llama.cpp sidecar approach:
+- built-in tool calling — define DAW actions as tools, model selects them directly
+- **llguidance** for constrained JSON output (same engine as OpenAI Structured Outputs)
+- Tauri Channel streaming — no blocking `invoke`
+- in-process — no subprocess startup latency
 
-- quantized GGUF models
-- low temperature
-- constrained output
-- short context windows for command tasks unless long context is truly needed
 
-### Use `whisper.cpp` or equivalent local ASR for voice commands
+### Use `whisper-rs` for voice command ASR
 
-```rust
-// src-tauri/src/commands/speech.rs
-#[tauri::command]
-pub async fn run_local_asr(app: tauri::AppHandle, audio_path: String) -> Result<String, String> {
-    use tauri_plugin_shell::ShellExt;
+For voice-to-action on desktop, use the `whisper-rs` Rust crate — **not** a whisper.cpp subprocess:
 
-    let output = app
-        .shell()
-        .sidecar("whisper")
-        .map_err(|error| error.to_string())?
-        .args([
-            "-m",
-            "models/whisper-base.en.bin",
-            "-f",
-            &audio_path,
-        ])
-        .output()
-        .await
-        .map_err(|error| error.to_string())?;
-
-    String::from_utf8(output.stdout).map_err(|error| error.to_string())
-}
+```toml
+[dependencies]
+whisper-rs = { version = "0.15", features = ["metal"] }  # macOS; use "cuda" for NVIDIA
+cpal = "0.15"    # real-time mic capture
+rubato = "0.15" # resample mic audio to 16kHz mono
 ```
 
 Use local ASR for:
@@ -384,7 +304,8 @@ Use local ASR for:
 - hands-free transport control
 - command palette by voice
 
-`whisper.cpp` is appropriate because it supports local inference, realtime microphone usage, and browser/WASM examples as well as native CLI execution. :contentReference[oaicite:7]{index=7}
+See [tauri-platform SKILL.md](./../tauri-platform/SKILL.md) for the full `whisper-rs` implementation (mic capture loop, VAD, resampling, transcript-to-action pipeline).
+
 
 ### The UI should talk to the AI layer through stable use cases
 
@@ -398,7 +319,7 @@ The UI should not know:
 - which model is used
 - whether inference is browser or native
 - how grammar constraints are built
-- whether output came from ONNX or llama.cpp
+- whether output came from ONNX or mistral.rs
 
 The UI should only know about:
 
@@ -462,7 +383,7 @@ That means:
 ```ts
 // conceptual runtime choice
 if (isDesktop && hasBundledLlm) {
-    use llama.cpp sidecar;
+    use native mistral.rs;
 } else {
     use browser-local ONNX/Transformers runtime;
 }
@@ -545,16 +466,17 @@ Always validate model output before execution.
 Wrong:
 
 - giant local LLM in browser main thread
-- no native sidecar option
+- no native runtime
 - slow startup and poor UX on desktop
 
 Correct:
 
-- browser-local models for small tasks
-- native sidecars for heavier inference
-- shared action contract across both
+- browser-local models for small tasks (`@huggingface/transformers`, ONNX Runtime Web)
+- `mistral.rs` in-process for heavier desktop-local reasoning
+- shared action contract across both runtimes
 
-ONNX Runtime Web is great for browser inference, but heavier local desktop reasoning should usually move to native sidecars. :contentReference[oaicite:8]{index=8}
+Heavy local desktop reasoning must move to the Rust tier via `mistral.rs`. ONNX Runtime Web is great for browser inference but cannot handle multi-gigabyte tool-calling models.
+
 
 ### HIGH Designing the app around model-specific output formats
 

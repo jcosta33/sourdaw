@@ -42,7 +42,7 @@ const TRACK_COLORS = ['', '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4',
 
 const menuBtnClass = 'flex w-full items-center px-3 py-1.5 text-xs hover:bg-accent text-left';
 
-export type ExpandedChannelStripProps = {
+type ExpandedChannelStripProps = {
     track: Track;
     isSelected: boolean;
     widthClass: string;
@@ -219,9 +219,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                                     toggleInputMonitoring(track.id);
                                 }}
                             >
-                                <Ear
-                                    className={cn('size-3', track.inputMonitoring === 'on' && 'fill-state-play/30')}
-                                />
+                                <Ear className={cn('size-3', track.inputMonitoring === 'on' && 'fill-state-play/30')} />
                             </LatchButton>
                         </TooltipTrigger>
                         <TooltipContent>Input monitoring</TooltipContent>
@@ -268,7 +266,11 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                     bipolar
                 />
                 <span className="text-[9px] font-mono text-text-secondary mt-1">
-                    {track.pan === 0 ? 'C' : track.pan > 0 ? `R${Math.round(track.pan)}` : `L${Math.abs(Math.round(track.pan))}`}
+                    {track.pan === 0
+                        ? 'C'
+                        : track.pan > 0
+                          ? `R${Math.round(track.pan)}`
+                          : `L${Math.abs(Math.round(track.pan))}`}
                 </span>
             </div>
 

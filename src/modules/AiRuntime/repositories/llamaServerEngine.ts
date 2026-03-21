@@ -86,34 +86,6 @@ export function isLlamaServerRunning(): boolean {
     return sidecarRunning;
 }
 
-// ── Model management ────────────────────────────────────────────────────
-
-/**
- * Check if the native model file exists on disk (Tauri only).
- */
-export async function isNativeModelDownloaded(): Promise<boolean> {
-    if (!isTauri()) {
-        return sidecarRunning;
-    }
-    try {
-        const modelDir = (await tauriInvoke('get_model_dir')) as string;
-        const result = (await tauriInvoke('list_directory', { path: modelDir })) as Array<{ name: string }>;
-        return result.some((entry) => entry.name === NATIVE_MODEL_INFO.fileName);
-    } catch {
-        return false;
-    }
-}
-
-/**
- * Get the model directory path for display.
- */
-export async function getModelDir(): Promise<string> {
-    if (!isTauri()) {
-        return '(start llama-server manually)';
-    }
-    return (await tauriInvoke('get_model_dir')) as string;
-}
-
 // ── Completions ─────────────────────────────────────────────────────────
 
 /**

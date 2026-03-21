@@ -37,7 +37,12 @@ import {
     isCloudApiAvailable,
     resolveBackend,
 } from '../../useCases/workspaceViewActions';
-import { shortcutStore, updateShortcutBinding, resetShortcutsToDefault, formatKeyBinding } from '../../models/Shortcuts';
+import {
+    shortcutStore,
+    updateShortcutBinding,
+    resetShortcutsToDefault,
+    formatKeyBinding,
+} from '../../models/Shortcuts';
 import { cn } from '#/helpers/Styles/cn';
 
 // ── Types ─────────────────────────────────────────────────────────────
@@ -47,14 +52,7 @@ type PreferencesDialogProps = {
     onClose: () => void;
 };
 
-type PreferencesSection =
-    | 'general'
-    | 'appearance'
-    | 'audio'
-    | 'midi'
-    | 'performance'
-    | 'ai'
-    | 'shortcuts';
+type PreferencesSection = 'general' | 'appearance' | 'audio' | 'midi' | 'performance' | 'ai' | 'shortcuts';
 
 type NavItem = {
     id: PreferencesSection;
@@ -187,10 +185,7 @@ const GeneralSection = ({ prefs, update }: SectionProps): ReactElement => {
                 </div>
             </FieldGroup>
 
-            <GridSubdivisionSection
-                value={prefs.gridSubdivision}
-                onChange={(v) => update({ gridSubdivision: v })}
-            />
+            <GridSubdivisionSection value={prefs.gridSubdivision} onChange={(v) => update({ gridSubdivision: v })} />
 
             <Separator />
 
@@ -429,17 +424,22 @@ const AiSection = (): ReactElement => {
                             backend === 'none' && 'bg-muted text-muted-foreground'
                         )}
                     >
-                        <span className={cn(
-                            'size-1.5 rounded-full',
-                            backend === 'native' && 'bg-emerald-400',
-                            backend === 'webllm' && 'bg-blue-400',
-                            backend === 'cloud' && 'bg-purple-400',
-                            backend === 'none' && 'bg-muted-foreground'
-                        )} />
-                        {backend === 'native' ? 'Native (llama-server)'
-                            : backend === 'cloud' ? 'Cloud (Claude)'
-                            : backend === 'webllm' ? 'Browser (WebLLM)'
-                            : 'None'}
+                        <span
+                            className={cn(
+                                'size-1.5 rounded-full',
+                                backend === 'native' && 'bg-emerald-400',
+                                backend === 'webllm' && 'bg-blue-400',
+                                backend === 'cloud' && 'bg-purple-400',
+                                backend === 'none' && 'bg-muted-foreground'
+                            )}
+                        />
+                        {backend === 'native'
+                            ? 'Native (llama-server)'
+                            : backend === 'cloud'
+                              ? 'Cloud (Claude)'
+                              : backend === 'webllm'
+                                ? 'Browser (WebLLM)'
+                                : 'None'}
                     </span>
                 </div>
             </FieldGroup>
@@ -448,9 +448,8 @@ const AiSection = (): ReactElement => {
 
             <FieldGroup label="Cloud AI (Anthropic API)">
                 <p className="text-[10px] text-muted-foreground mb-2 leading-relaxed">
-                    Enter your Anthropic API key to enable cloud AI features.
-                    Uses Claude Sonnet for the highest quality tool calling.
-                    Keys are stored in memory only — not persisted.
+                    Enter your Anthropic API key to enable cloud AI features. Uses Claude Sonnet for the highest quality
+                    tool calling. Keys are stored in memory only — not persisted.
                 </p>
                 <div className="flex gap-1.5">
                     <div className="relative flex-1">
@@ -508,8 +507,8 @@ const AiSection = (): ReactElement => {
 
             <FieldGroup label="Audio Analysis">
                 <p className="text-[10px] text-muted-foreground leading-relaxed">
-                    Audio analysis features (pitch detection, spectral analysis, polyphonic audio-to-MIDI)
-                    run entirely in the browser. No API key required.
+                    Audio analysis features (pitch detection, spectral analysis, polyphonic audio-to-MIDI) run entirely
+                    in the browser. No API key required.
                 </p>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-1.5 text-[10px]">
                     <span className="text-muted-foreground">Polyphonic MIDI</span>
@@ -554,7 +553,9 @@ const ShortcutsSection = (): ReactElement => {
     const [editingAction, setEditingAction] = useState<import('../../models/Shortcuts').ShortcutAction | null>(null);
 
     useEffect(() => {
-        if (!editingAction) return;
+        if (!editingAction) {
+            return;
+        }
 
         const handleGlobalKey = (e: KeyboardEvent) => {
             e.preventDefault();
@@ -579,13 +580,20 @@ const ShortcutsSection = (): ReactElement => {
         return () => window.removeEventListener('keydown', handleGlobalKey, true);
     }, [editingAction]);
 
-    if (!shortcutState) return <></>;
+    if (!shortcutState) {
+        return <></>;
+    }
 
     return (
         <>
             <div className="flex items-center justify-between mb-4">
                 <SectionTitle icon={<Keyboard className="size-4" />} title="Keyboard Shortcuts" />
-                <Button variant="ghost" size="xs" onClick={resetShortcutsToDefault} className="text-[10px] text-muted-foreground">
+                <Button
+                    variant="ghost"
+                    size="xs"
+                    onClick={resetShortcutsToDefault}
+                    className="text-[10px] text-muted-foreground"
+                >
                     Reset to Defaults
                 </Button>
             </div>
@@ -603,8 +611,8 @@ const ShortcutsSection = (): ReactElement => {
                                 type="button"
                                 className={cn(
                                     'min-w-[80px] text-right rounded px-2 py-1 text-xs font-mono border transition-colors',
-                                    isEditing 
-                                        ? 'border-primary bg-primary/10 text-primary animate-pulse' 
+                                    isEditing
+                                        ? 'border-primary bg-primary/10 text-primary animate-pulse'
                                         : 'border-transparent hover:border-border bg-surface-overlay text-foreground'
                                 )}
                                 onClick={() => setEditingAction(action)}
@@ -640,17 +648,9 @@ const SectionTitle = ({ icon, title }: { icon: ReactElement; title: string }): R
     </div>
 );
 
-const FieldGroup = ({
-    label,
-    children,
-}: {
-    label: string;
-    children: React.ReactNode;
-}): ReactElement => (
+const FieldGroup = ({ label, children }: { label: string; children: React.ReactNode }): ReactElement => (
     <section className="space-y-1.5">
-        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider block">
-            {label}
-        </label>
+        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider block">{label}</label>
         {children}
     </section>
 );

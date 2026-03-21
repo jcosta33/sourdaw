@@ -10,7 +10,7 @@ import {
 } from '../../../useCases/workspaceViewActions';
 import { type Track } from '../../../useCases/workspaceViewActions';
 
-export type TrackAlternativesSectionProps = {
+type TrackAlternativesSectionProps = {
     track: Track;
 };
 
@@ -18,7 +18,9 @@ export const TrackAlternativesSection = ({ track }: TrackAlternativesSectionProp
     return (
         <div>
             <div className="px-1 mb-2 flex flex-row items-center justify-between">
-                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Alternatives</div>
+                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                    Alternatives
+                </div>
                 <Button
                     variant="ghost"
                     size="icon-xs"
@@ -41,9 +43,7 @@ export const TrackAlternativesSection = ({ track }: TrackAlternativesSectionProp
                         key={alt.id}
                         className={cn(
                             'flex flex-col justify-center rounded-md shadow-none bg-surface-base border-border/50 p-2 cursor-pointer transition-colors',
-                            alt.id === track.activeAlternativeId
-                                ? 'ring-1 ring-primary/30'
-                                : 'hover:bg-surface-raised'
+                            alt.id === track.activeAlternativeId ? 'ring-1 ring-primary/30' : 'hover:bg-surface-raised'
                         )}
                         onClick={() => {
                             if (alt.id !== track.activeAlternativeId) {

@@ -32,15 +32,18 @@ export function startRecording(): Clip[] {
     for (const track of armedTracks) {
         if (track.kind === 'midi' && transportState.overdubEnabled) {
             const ph = transportState.playheadPosition;
-            const intersecting = track.clips.find(
-                (c) => c.type === 'midi' && ph >= c.startBeat && ph < c.endBeat
-            );
-            
+            const intersecting = track.clips.find((c) => c.type === 'midi' && ph >= c.startBeat && ph < c.endBeat);
+
             const inLoop = transportState.isLooping && ph >= transportState.loopStart && ph <= transportState.loopEnd;
-            const loopClip = inLoop 
-                ? track.clips.find((c) => c.type === 'midi' && c.startBeat >= transportState.loopStart && c.endBeat <= transportState.loopEnd)
+            const loopClip = inLoop
+                ? track.clips.find(
+                      (c) =>
+                          c.type === 'midi' &&
+                          c.startBeat >= transportState.loopStart &&
+                          c.endBeat <= transportState.loopEnd
+                  )
                 : undefined;
-                
+
             if (intersecting || loopClip) {
                 // Skip creating a new clip (overdub merges into existing clip)
                 continue;

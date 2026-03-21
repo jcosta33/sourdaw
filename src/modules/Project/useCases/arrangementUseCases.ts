@@ -29,21 +29,33 @@ function loadSnapshot(data: ArrangementData): void {
     trackStore.set(data.tracks);
     automationStore.set(data.automation);
     midiStore.set(data.midi);
-    if (data.tempoMap) tempoMapStore.set(data.tempoMap);
-    if (data.timeSignatureMap) timeSignatureMapStore.set(data.timeSignatureMap);
-    if (data.markers) markerStore.set(data.markers);
-    if (data.takeLanes) takeLaneStore.set(data.takeLanes);
+    if (data.tempoMap) {
+        tempoMapStore.set(data.tempoMap);
+    }
+    if (data.timeSignatureMap) {
+        timeSignatureMapStore.set(data.timeSignatureMap);
+    }
+    if (data.markers) {
+        markerStore.set(data.markers);
+    }
+    if (data.takeLanes) {
+        takeLaneStore.set(data.takeLanes);
+    }
 }
 
 export function syncCurrentArrangementToStore(): void {
     const state = arrangementStore.value;
-    if (!state) return;
+    if (!state) {
+        return;
+    }
 
     const currentArrangement = state.arrangements.find((a) => a.id === state.activeArrangementId);
-    if (!currentArrangement) return;
+    if (!currentArrangement) {
+        return;
+    }
 
     const snapshot = takeSnapshot(state.activeArrangementId, currentArrangement.name);
-    
+
     arrangementStore.set({
         ...state,
         arrangements: state.arrangements.map((a) => (a.id === state.activeArrangementId ? snapshot : a)),
@@ -52,19 +64,23 @@ export function syncCurrentArrangementToStore(): void {
 
 export function switchArrangement(id: string): void {
     const state = arrangementStore.value;
-    if (!state || state.activeArrangementId === id) return;
+    if (!state || state.activeArrangementId === id) {
+        return;
+    }
 
     const target = state.arrangements.find((a) => a.id === id);
-    if (!target) return;
+    if (!target) {
+        return;
+    }
 
     stopPlayback(); // Stop playback to avoid glitches
-    
+
     // Save current
     syncCurrentArrangementToStore();
-    
+
     // Load target
     loadSnapshot(target);
-    
+
     // Clear undo history because IDs might have been reused or destroyed
     undoStore.set({ past: [], future: [] });
 
@@ -72,18 +88,20 @@ export function switchArrangement(id: string): void {
         ...arrangementStore.value!,
         activeArrangementId: id,
     });
-    
+
     markDirty();
 }
 
 export function createArrangement(name: string): void {
     const state = arrangementStore.value;
-    if (!state) return;
+    if (!state) {
+        return;
+    }
 
     const id = `arr-${crypto.randomUUID().slice(0, 8)}`;
-    
+
     syncCurrentArrangementToStore(); // Save current to its slot before switching
-    
+
     const newArrangement: ArrangementData = {
         id,
         name,
@@ -96,7 +114,7 @@ export function createArrangement(name: string): void {
         arrangements: [...state.arrangements, newArrangement],
         activeArrangementId: id,
     });
-    
+
     loadSnapshot(newArrangement);
     undoStore.set({ past: [], future: [] });
     markDirty();
@@ -104,12 +122,16 @@ export function createArrangement(name: string): void {
 
 export function duplicateArrangement(id: string, newName?: string): void {
     const state = arrangementStore.value;
-    if (!state) return;
+    if (!state) {
+        return;
+    }
 
     syncCurrentArrangementToStore(); // Ensure latest state is snapshotted
-    
+
     const sourceArrangement = arrangementStore.value!.arrangements.find((a) => a.id === id);
-    if (!sourceArrangement) return;
+    if (!sourceArrangement) {
+        return;
+    }
 
     // Deep clone to avoid mutating shared object references
     const clone = JSON.parse(JSON.stringify(sourceArrangement)) as ArrangementData;
@@ -128,7 +150,9 @@ export function duplicateArrangement(id: string, newName?: string): void {
 
 export function renameArrangement(id: string, name: string): void {
     const state = arrangementStore.value;
-    if (!state) return;
+    if (!state) {
+        return;
+    }
 
     arrangementStore.set({
         ...state,

@@ -15,10 +15,6 @@ export const getTrackStrip = (trackId: string): TrackChannelStrip | undefined =>
     return audioEngine.getTrackStrip(trackId);
 };
 
-export const removeTrackStrip = (trackId: string): void => {
-    audioEngine.removeTrackStrip(trackId);
-};
-
 export const setTrackGain = (trackId: string, gain: number): void => {
     audioEngine.setTrackGain(trackId, gain);
 };

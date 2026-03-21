@@ -6,7 +6,7 @@ import { MidiLearnButton } from '#/modules/Track/presentations/views/MidiLearnBu
 import { setTrackGain, setTrackPan } from '../../../useCases/workspaceViewActions';
 import { type Track } from '../../../useCases/workspaceViewActions';
 
-export type TrackLevelSectionProps = {
+type TrackLevelSectionProps = {
     track: Track;
 };
 

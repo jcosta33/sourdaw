@@ -48,16 +48,6 @@ export function toggleLaneCollapsed(laneId: string): void {
     });
 }
 
-export function toggleLaneEnabled(laneId: string): void {
-    const state = automationStore.value;
-    if (!state) {
-        return;
-    }
-    automationStore.set({
-        lanes: state.lanes.map((l) => (l.id === laneId ? { ...l, enabled: !l.enabled } : l)),
-    });
-}
-
 export function addAutomationPoint(laneId: string, point: AutomationPoint): void {
     const state = automationStore.value;
     if (!state) {
@@ -126,27 +116,6 @@ export function batchAddAutomationPoints(laneId: string, points: AutomationPoint
             }
             return { ...l, points: merged.sort((a, b) => a.beat - b.beat) };
         }),
-    });
-}
-
-export function addClipAutomationLane(
-    trackId: string,
-    clipId: string,
-    parameterId: string,
-    parameterName: string
-): void {
-    const state = automationStore.value;
-    if (!state) {
-        return;
-    }
-
-    const exists = state.lanes.some((l) => l.clipId === clipId && l.parameterId === parameterId);
-    if (exists) {
-        return;
-    }
-
-    automationStore.set({
-        lanes: [...state.lanes, createAutomationLane(trackId, parameterId, parameterName, 0, 1, clipId)],
     });
 }
 

@@ -8,7 +8,7 @@ import { PreviewButton } from '../../components/sidebar/PreviewButton';
 import { type SampleItem } from '../../components/sidebar/sidebarConstants';
 import { type PreviewHandle } from '../../hooks/usePreviewAudio';
 
-export type SamplesTabProps = {
+type SamplesTabProps = {
     samples: SampleItem[];
     favorites: Set<string>;
     onToggleFavorite: (id: string) => void;

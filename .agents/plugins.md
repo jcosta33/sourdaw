@@ -691,3 +691,11 @@ async fn decode_audio_file(path: String) -> Result<Vec<f32>, String> {
 The architecture converges on a clear stack: **Faust→faust2wam for DSP, WAM 2.0 for the plugin API, sfizz for sample playback, Rust for file I/O and decode**. This combination provides commercial-friendly licensing throughout (LGPL+exception, BSD-2-Clause, MIT, Apache-2.0, CC0), avoids GPL contamination, and works across all three Tauri WebView engines with known WebKitGTK caveats.
 
 The most impactful architectural decision is making every built-in plugin a WAM 2.0 plugin. This creates a single code path for built-in and third-party plugins, standardizes parameter automation and state management, and means every plugin developed for the DAW is automatically distributable as a standalone WAM. Faust's library coverage is comprehensive enough that an AI coding agent can implement the entire effects suite (reverb, compression, EQ, delay, chorus, phaser, distortion, limiting) plus multiple synthesizer types (subtractive, FM, wavetable, physical modeling, additive) from existing, well-tested DSP algorithms — each compiling to a compact WASM module in the tens-of-kilobytes range. The only components requiring Rust backend support are audio file decoding (symphonia), large sample library streaming (native file I/O), and potentially convolution reverb with very long impulse responses that exceed the ~2.9 ms AudioWorklet render quantum budget.
+
+---
+
+## See Also
+
+- **[faust-wam-plugins SKILL.md](./.agents/skills/faust-wam-plugins/SKILL.md)** — Authoritative rules for agents building Faust/WAM/SFZ plugins: WAM hosting lifecycle, SDK patterns, sfizz opcode support, license matrix
+- **[instruments.md](./instruments.md)** — Instrument-by-instrument quality assessment vs Logic Pro, SFZ structures, Faust synthesis examples
+- **[tauri-platform SKILL.md](./.agents/skills/tauri-platform/SKILL.md)** — COOP/COEP headers required for SharedArrayBuffer on all platforms

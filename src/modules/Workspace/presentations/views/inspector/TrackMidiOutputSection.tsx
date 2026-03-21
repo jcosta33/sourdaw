@@ -3,7 +3,7 @@ import { Card } from '#/components/ui/card';
 import { setMidiOutput, clearMidiOutput } from '../../../useCases/workspaceViewActions';
 import { type Track } from '../../../useCases/workspaceViewActions';
 
-export type TrackMidiOutputSectionProps = {
+type TrackMidiOutputSectionProps = {
     track: Track;
     allTracks: Track[];
 };
@@ -12,7 +12,9 @@ export const TrackMidiOutputSection = ({ track, allTracks }: TrackMidiOutputSect
     return (
         <div>
             <div className="px-1 mb-2">
-                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">MIDI Output</div>
+                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                    MIDI Output
+                </div>
             </div>
             <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
                 <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-2">

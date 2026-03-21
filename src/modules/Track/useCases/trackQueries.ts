@@ -54,26 +54,9 @@ export function getTrackById(trackId: string): Track | undefined {
     return repoGetTrackById(trackId);
 }
 
-/** Find a clip by id across all tracks. */
-export function findClipById(clipId: string): Clip | undefined {
-    const tracks = repoGetAllTracks();
-    for (const track of tracks) {
-        const clip = track.clips.find((c) => c.id === clipId);
-        if (clip) {
-            return clip;
-        }
-    }
-    return undefined;
-}
-
 /** Get the raw track store state snapshot. */
 export function getTrackStoreState(): { tracks: Track[]; selectedTrackId: string | null } | null {
     return trackStore.value;
-}
-
-/** Get midi notes by clip id. */
-export function getMidiNotesByClipId(): Record<string, MidiNote[]> {
-    return midiStore.value?.notesByClipId ?? {};
 }
 
 /** Get the full midi store state snapshot. */
@@ -109,9 +92,4 @@ export function createMidiNote(pitch: number, startBeat: number, duration: numbe
 /** Set the track store state (for undo/redo handlers). */
 export function setTrackStoreState(state: NonNullable<typeof trackStore.value>): void {
     trackStore.set(state);
-}
-
-/** Subscribe to track store changes. */
-export function subscribeToTrackStore(callback: () => void): () => void {
-    return trackStore.subscribe(callback);
 }

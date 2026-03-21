@@ -72,16 +72,6 @@ export async function redo(): Promise<void> {
     });
 }
 
-export function canUndo(): boolean {
-    const state = undoStore.value;
-    return (state?.past.length ?? 0) > 0;
-}
-
-export function canRedo(): boolean {
-    const state = undoStore.value;
-    return (state?.future.length ?? 0) > 0;
-}
-
 export async function undoToIndex(targetIndex: number): Promise<void> {
     const state = undoStore.value;
     if (!state) {

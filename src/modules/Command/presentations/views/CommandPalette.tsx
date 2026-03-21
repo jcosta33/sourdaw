@@ -90,8 +90,8 @@ export const CommandPalette = (): ReactElement | null => {
                             aria-selected={i === selectedIndex}
                             className={cn(
                                 'flex w-full items-center justify-between px-4 py-3 text-left text-sm transition-colors border-l-2',
-                                i === selectedIndex 
-                                    ? 'bg-accent/80 border-primary shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]' 
+                                i === selectedIndex
+                                    ? 'bg-accent/80 border-primary shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]'
                                     : 'border-transparent text-muted-foreground hover:bg-surface-overlay/50'
                             )}
                             onClick={() => execute(cmd)}

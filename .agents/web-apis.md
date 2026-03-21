@@ -207,3 +207,10 @@ The research reveals a clean division. **Use Web APIs** for the audio graph (Web
 Three APIs are the most surprising gaps: **Web MIDI** (explicitly declined by Apple), **File System Access pickers** (opposed by both Apple and Mozilla), and **WebGPU on Linux** (no WebKitGTK implementation exists). These are not temporary omissions — they reflect deliberate platform decisions unlikely to change.
 
 The minimum viable platform targets for this architecture are **Safari 16.4 / macOS Ventura** (stable AudioWorklet + WASM SIMD + SharedArrayBuffer), **WebKitGTK 2.42+** (matching feature set), and **WebView2 latest**. Targeting Safari 18.4+ unlocks `outputLatency`, PCM/ALAC MediaRecorder, and Ogg container support — a worthwhile upgrade target. The single biggest risk is **WebKitGTK version fragmentation on Linux**, which makes minimizing Web API dependencies and maximizing Tauri's native layer on that platform the safest strategy.
+
+---
+
+## See Also
+
+- **[tauri-platform SKILL.md](./.agents/skills/tauri-platform/SKILL.md)** — Authoritative implementation rules: MIDI via `midir`, voice dictation via `whisper-rs`, file access patterns, COOP/COEP config
+- **[native-apis.md](./native-apis.md)** — Per-subsystem "Web vs Rust" verdict with crate recommendations

@@ -7,12 +7,7 @@ import {
     useSyncExternalStore,
 } from 'react';
 import { markerStore } from '../../stores/markerStore';
-import {
-    addMarker,
-    removeMarker,
-    renameMarker,
-    setMarkerColor,
-} from '../../useCases/markerUseCases';
+import { addMarker, removeMarker, renameMarker, setMarkerColor } from '../../useCases/markerUseCases';
 import { type Marker } from '../../models/Marker';
 import { Flag } from 'lucide-react';
 
@@ -91,27 +86,35 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
     };
 
     const handleAddMarker = () => {
-        if (contextMenu.kind !== 'empty') return;
-        
+        if (contextMenu.kind !== 'empty') {
+            return;
+        }
+
         const beat = Math.floor(contextMenu.beat); // Snap to beat
         addMarker(beat, 'New Marker');
         setContextMenu({ kind: 'none' });
     };
 
     const handleDeleteMarker = () => {
-        if (contextMenu.kind !== 'marker') return;
+        if (contextMenu.kind !== 'marker') {
+            return;
+        }
         removeMarker(contextMenu.marker.id);
         setContextMenu({ kind: 'none' });
     };
 
     const handleStartRename = () => {
-        if (contextMenu.kind !== 'marker') return;
+        if (contextMenu.kind !== 'marker') {
+            return;
+        }
         setEditing({ markerId: contextMenu.marker.id, name: contextMenu.marker.name });
         setContextMenu({ kind: 'none' });
     };
 
     const commitRename = () => {
-        if (!editing) return;
+        if (!editing) {
+            return;
+        }
         const trimmed = editing.name.trim();
         if (trimmed) {
             renameMarker(editing.markerId, trimmed);
@@ -129,7 +132,9 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
         >
             {markers.map((marker) => {
                 const left = marker.beat * pixelsPerBeat - scrollX;
-                if (left < -50 || left > 4000) return null;
+                if (left < -50 || left > 4000) {
+                    return null;
+                }
 
                 const isEditing = editing?.markerId === marker.id;
 
@@ -141,9 +146,9 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                         title={marker.name}
                         onDoubleClick={() => setEditing({ markerId: marker.id, name: marker.name })}
                     >
-                        <div 
+                        <div
                             className="flex flex-col h-full w-[2px] cursor-ew-resize hover:w-[4px] hover:-ml-[1px] transition-all"
-                            style={{ backgroundColor: marker.color }} 
+                            style={{ backgroundColor: marker.color }}
                         />
                         <div
                             className="flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-white/90 cursor-default hover:bg-white/10"
@@ -158,14 +163,16 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                                     onChange={(e) => setEditing({ ...editing, name: e.target.value })}
                                     onBlur={commitRename}
                                     onKeyDown={(e) => {
-                                        if (e.key === 'Enter') commitRename();
-                                        if (e.key === 'Escape') setEditing(null);
+                                        if (e.key === 'Enter') {
+                                            commitRename();
+                                        }
+                                        if (e.key === 'Escape') {
+                                            setEditing(null);
+                                        }
                                     }}
                                 />
                             ) : (
-                                <span className="text-[9px] font-medium truncate max-w-[120px]">
-                                    {marker.name}
-                                </span>
+                                <span className="text-[9px] font-medium truncate max-w-[120px]">{marker.name}</span>
                             )}
                         </div>
                     </div>

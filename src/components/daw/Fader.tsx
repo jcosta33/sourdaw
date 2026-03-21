@@ -1,7 +1,7 @@
 import { type ReactElement, useState, useRef, useCallback } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 
-export interface FaderProps {
+interface FaderProps {
     value: number;
     onChange: (val: number) => void;
     min?: number;
@@ -30,7 +30,7 @@ export const Fader = ({
     defaultValue = 0,
     bipolar = false,
     height = 150,
-    className
+    className,
 }: FaderProps): ReactElement => {
     const [isDragging, setIsDragging] = useState(false);
     const trackRef = useRef<HTMLDivElement>(null);
@@ -40,20 +40,25 @@ export const Fader = ({
     // Calculate normalized value [0, 1] for positioning
     const normalized = Math.max(0, Math.min(1, (value - min) / (max - min)));
 
-    const clampAndSnap = useCallback((v: number) => {
-        let clamped = Math.max(min, Math.min(max, v));
-        
-        // Zero detent magnetism (unity/center) if bipolar
-        if (bipolar && Math.abs(clamped - defaultValue) < (max - min) * 0.05) {
-            clamped = defaultValue;
-        }
+    const clampAndSnap = useCallback(
+        (v: number) => {
+            let clamped = Math.max(min, Math.min(max, v));
 
-        return clamped;
-    }, [min, max, defaultValue, bipolar]);
+            // Zero detent magnetism (unity/center) if bipolar
+            if (bipolar && Math.abs(clamped - defaultValue) < (max - min) * 0.05) {
+                clamped = defaultValue;
+            }
+
+            return clamped;
+        },
+        [min, max, defaultValue, bipolar]
+    );
 
     const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-        if (e.button !== 0 || !trackRef.current) return;
-        
+        if (e.button !== 0 || !trackRef.current) {
+            return;
+        }
+
         e.currentTarget.setPointerCapture(e.pointerId);
         setIsDragging(true);
 
@@ -65,10 +70,10 @@ export const Fader = ({
             // Jump to position
             const rect = trackRef.current.getBoundingClientRect();
             // invert Y because bottom is min
-            const percent = 1 - ((e.clientY - rect.top) / rect.height);
+            const percent = 1 - (e.clientY - rect.top) / rect.height;
             const newValue = clampAndSnap(min + percent * (max - min));
             onChange(newValue);
-            
+
             // start dragging from here
             startValue.current = newValue;
             startY.current = e.clientY;
@@ -78,22 +83,29 @@ export const Fader = ({
         }
     };
 
-    const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-        if (!isDragging) return;
-        
-        const deltaY = startY.current - e.clientY;
-        const currentStep = e.shiftKey ? fineStep : step;
-        
-        // Scalar sensitivity relative to fader height
-        const pxPerUnit = height / (max - min);
-        let sensitivity = 1 / pxPerUnit;
-        if (e.shiftKey) sensitivity *= 0.1; // 10x finer 
+    const handlePointerMove = useCallback(
+        (e: React.PointerEvent<HTMLDivElement>) => {
+            if (!isDragging) {
+                return;
+            }
 
-        let newValue = startValue.current + (deltaY * sensitivity);
-        newValue = Math.round(newValue / currentStep) * currentStep;
-        
-        onChange(clampAndSnap(newValue));
-    }, [isDragging, step, fineStep, max, min, height, clampAndSnap, onChange]);
+            const deltaY = startY.current - e.clientY;
+            const currentStep = e.shiftKey ? fineStep : step;
+
+            // Scalar sensitivity relative to fader height
+            const pxPerUnit = height / (max - min);
+            let sensitivity = 1 / pxPerUnit;
+            if (e.shiftKey) {
+                sensitivity *= 0.1;
+            } // 10x finer
+
+            let newValue = startValue.current + deltaY * sensitivity;
+            newValue = Math.round(newValue / currentStep) * currentStep;
+
+            onChange(clampAndSnap(newValue));
+        },
+        [isDragging, step, fineStep, max, min, height, clampAndSnap, onChange]
+    );
 
     const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
         setIsDragging(false);
@@ -108,7 +120,7 @@ export const Fader = ({
     const capBottomPct = normalized * 100;
 
     return (
-        <div 
+        <div
             className={cn('relative flex flex-col items-center select-none group', className)}
             style={{ height }}
             onPointerDown={handlePointerDown}
@@ -117,14 +129,14 @@ export const Fader = ({
             onDoubleClick={handleDoubleClick}
         >
             {/* Background Track (Slot) */}
-            <div 
+            <div
                 ref={trackRef}
                 className="absolute top-0 bottom-0 w-2.5 bg-bg-slot shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] rounded-full overflow-hidden"
             >
                 {/* Track ticks (optional unity line) */}
-                <div 
-                    className="absolute w-full h-px bg-border-soft opacity-50 z-0" 
-                    style={{ bottom: `${Math.max(0, Math.min(100, ((defaultValue - min) / (max - min)) * 100))}%` }} 
+                <div
+                    className="absolute w-full h-px bg-border-soft opacity-50 z-0"
+                    style={{ bottom: `${Math.max(0, Math.min(100, ((defaultValue - min) / (max - min)) * 100))}%` }}
                 />
             </div>
 
@@ -134,16 +146,18 @@ export const Fader = ({
                 className={cn(
                     'absolute w-8 h-10 -ml-4 left-1/2 rounded-sm cursor-grab z-10',
                     'transition-all duration-instant',
-                    isDragging ? 'shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] cursor-grabbing' : 'shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_1px_2px_rgba(0,0,0,0.5)]',
+                    isDragging
+                        ? 'shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] cursor-grabbing'
+                        : 'shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_1px_2px_rgba(0,0,0,0.5)]',
                     'bg-bg-panel border border-border-soft',
                     'flex flex-col items-center justify-center gap-[2px]'
                 )}
                 style={{ bottom: `calc(${capBottomPct}% - 20px)` }}
             >
                 {/* Grip marks */}
-                <div className={cn("w-4 h-px", isDragging ? "bg-accent-cyan" : "bg-border-soft")} />
+                <div className={cn('w-4 h-px', isDragging ? 'bg-accent-cyan' : 'bg-border-soft')} />
                 <div className="w-5 h-px bg-border-active opacity-50" />
-                <div className={cn("w-4 h-px", isDragging ? "bg-accent-cyan" : "bg-border-soft")} />
+                <div className={cn('w-4 h-px', isDragging ? 'bg-accent-cyan' : 'bg-border-soft')} />
             </div>
         </div>
     );

@@ -9,8 +9,9 @@ import { getSidechainSource, addSidechainRoute, removeSidechainRoute } from '../
 import { useTracks } from '../../hooks/useTracks';
 import { type Device } from '../../../useCases/workspaceViewActions';
 import { DeviceParameterControl } from './DeviceParameterControl';
+import { CompressorGainReduction } from '../../components/CompressorGainReduction';
 
-export type DeviceInspectorProps = {
+type DeviceInspectorProps = {
     device: Device;
     trackId: string;
     onBack: () => void;
@@ -22,6 +23,12 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
     const parameters = plugin?.parameters ?? [];
     const isSidechainComp =
         device.type?.toLowerCase().includes('sidechain') ?? device.name?.toLowerCase().includes('sidechain');
+    const isCompressorLimiter =
+        device.type?.toLowerCase().includes('compressor') ||
+        device.type?.toLowerCase().includes('limiter') ||
+        device.name?.toLowerCase().includes('compressor') ||
+        device.name?.toLowerCase().includes('limiter') ||
+        isSidechainComp;
     const sidechainSource = getSidechainSource(device.id);
     const sourceTracks = allTracks.filter((t) => t.kind !== 'master' && t.kind !== 'folder' && t.id !== trackId);
 
@@ -34,17 +41,15 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
                     </Button>
                     <h3 className="text-xs font-medium text-foreground">{device.name}</h3>
                 </div>
-                <MechanicalSwitch
-                    checked={!device.bypassed}
-                    onChange={(c) => bypassDevice(device.id, !c)}
-                    size="sm"
-                />
+                <MechanicalSwitch checked={!device.bypassed} onChange={(c) => bypassDevice(device.id, !c)} size="sm" />
             </div>
 
             {isSidechainComp && (
                 <div>
                     <div className="px-1 mb-2">
-                        <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Sidechain Source</div>
+                        <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                            Sidechain Source
+                        </div>
                     </div>
                     <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
                         <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-2">
@@ -72,37 +77,77 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
                 </div>
             )}
 
+            {isCompressorLimiter && (
+                <div>
+                    <div className="px-1 mb-2">
+                        <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                            Gain Reduction
+                        </div>
+                    </div>
+                    <div className="flex justify-center">
+                        <CompressorGainReduction
+                            trackId={trackId}
+                            threshold={device.parameterValues?.threshold ?? -12}
+                            ratio={device.parameterValues?.ratio ?? 4}
+                        />
+                    </div>
+                </div>
+            )}
+
             {plugin?.id === 'builtin-eq' && parameters.length > 0 ? (
                 <div>
                     <div className="px-1 mb-2">
-                        <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">EQ Graphic</div>
+                        <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                            EQ Graphic
+                        </div>
                     </div>
                     <div className="grid grid-cols-1 @md:grid-cols-3 gap-2">
                         {/* Low Band */}
                         <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-2 flex flex-col items-center gap-1">
                             <span className="text-[9px] text-muted-foreground font-semibold uppercase mb-2">Low</span>
                             <div className="w-full space-y-4">
-                                {parameters.filter(p => p.name.includes('Low')).map(param => (
-                                    <DeviceParameterControl key={param.id} param={param} device={device} trackId={trackId} />
-                                ))}
+                                {parameters
+                                    .filter((p) => p.name.includes('Low'))
+                                    .map((param) => (
+                                        <DeviceParameterControl
+                                            key={param.id}
+                                            param={param}
+                                            device={device}
+                                            trackId={trackId}
+                                        />
+                                    ))}
                             </div>
                         </Card>
                         {/* Mid Band */}
                         <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-2 flex flex-col items-center gap-1">
                             <span className="text-[9px] text-muted-foreground font-semibold uppercase mb-2">Mid</span>
                             <div className="w-full space-y-4">
-                                {parameters.filter(p => p.name.includes('Mid')).map(param => (
-                                    <DeviceParameterControl key={param.id} param={param} device={device} trackId={trackId} />
-                                ))}
+                                {parameters
+                                    .filter((p) => p.name.includes('Mid'))
+                                    .map((param) => (
+                                        <DeviceParameterControl
+                                            key={param.id}
+                                            param={param}
+                                            device={device}
+                                            trackId={trackId}
+                                        />
+                                    ))}
                             </div>
                         </Card>
                         {/* High Band */}
                         <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-2 flex flex-col items-center gap-1">
                             <span className="text-[9px] text-muted-foreground font-semibold uppercase mb-2">High</span>
                             <div className="w-full space-y-4">
-                                {parameters.filter(p => p.name.includes('High')).map(param => (
-                                    <DeviceParameterControl key={param.id} param={param} device={device} trackId={trackId} />
-                                ))}
+                                {parameters
+                                    .filter((p) => p.name.includes('High'))
+                                    .map((param) => (
+                                        <DeviceParameterControl
+                                            key={param.id}
+                                            param={param}
+                                            device={device}
+                                            trackId={trackId}
+                                        />
+                                    ))}
                             </div>
                         </Card>
                     </div>
@@ -110,11 +155,16 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
             ) : parameters.length > 0 ? (
                 <div>
                     <div className="px-1 mb-2">
-                        <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Parameters</div>
+                        <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                            Parameters
+                        </div>
                     </div>
                     <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
                         {parameters.map((param) => (
-                            <Card key={param.id} className="rounded-md shadow-none bg-surface-base border-border/50 p-3 w-full pb-4">
+                            <Card
+                                key={param.id}
+                                className="rounded-md shadow-none bg-surface-base border-border/50 p-3 w-full pb-4"
+                            >
                                 <DeviceParameterControl param={param} device={device} trackId={trackId} />
                             </Card>
                         ))}

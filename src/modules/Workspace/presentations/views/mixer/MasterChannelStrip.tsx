@@ -6,7 +6,7 @@ import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { useMeterLevel } from '../../hooks/useMeterLevel';
 import { LevelMeter } from '../../components/LevelMeter';
 
-export type MasterChannelStripProps = {
+type MasterChannelStripProps = {
     widthClass: string;
 };
 
@@ -51,7 +51,6 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
             <span className="text-[10px] font-mono text-text-secondary mt-1">
                 {masterGain === 0 ? '-∞' : `${((masterGain / 80 - 1) * 12).toFixed(1)} dB`}
             </span>
-
         </div>
     );
 };

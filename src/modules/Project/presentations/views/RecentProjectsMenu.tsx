@@ -1,5 +1,5 @@
 import { type ReactElement, useState, useRef, useEffect } from 'react';
-import { ChevronDown, Clock, FileDown, FileUp, LayoutTemplate, Music, Plus, Save, Trash2 } from 'lucide-react';
+import { ChevronDown, Clock, FileDown, FileUp, LayoutTemplate, Music, Plus, Save, Trash2, Sparkles } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import {
@@ -8,6 +8,7 @@ import {
     loadRecentProject,
     type RecentProjectEntry,
 } from '../../useCases/recentProjects';
+import { type TemplateCategory } from '../../useCases/projectTemplates';
 import { newProject, saveProject, exportProjectFile, importProjectFile } from '../../useCases/projectPersistence';
 import { TemplateChooser } from './TemplateChooser';
 import { pickFiles } from '../../useCases/nativeFileDialog';
@@ -39,6 +40,7 @@ export const RecentProjectsMenu = (): ReactElement => {
     const [open, setOpen] = useState(false);
     const [entries, setEntries] = useState<RecentProjectEntry[]>([]);
     const [templateChooserOpen, setTemplateChooserOpen] = useState(false);
+    const [templateChooserCategory, setTemplateChooserCategory] = useState<TemplateCategory | 'all'>('all');
     const menuRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -80,6 +82,13 @@ export const RecentProjectsMenu = (): ReactElement => {
 
     const handleNewFromTemplate = () => {
         setOpen(false);
+        setTemplateChooserCategory('all');
+        setTemplateChooserOpen(true);
+    };
+
+    const handleLoadDemo = () => {
+        setOpen(false);
+        setTemplateChooserCategory('demo');
         setTemplateChooserOpen(true);
     };
 
@@ -165,6 +174,16 @@ export const RecentProjectsMenu = (): ReactElement => {
                     >
                         <LayoutTemplate className="size-3 text-muted-foreground" aria-hidden="true" />
                         New from Template…
+                    </button>
+
+                    <button
+                        type="button"
+                        className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
+                        role="menuitem"
+                        onClick={handleLoadDemo}
+                    >
+                        <Sparkles className="size-3 text-emerald-400" aria-hidden="true" />
+                        Load Demo Project…
                     </button>
 
                     <div className="mx-2 my-1 h-px bg-border" role="separator" />
@@ -267,6 +286,7 @@ export const RecentProjectsMenu = (): ReactElement => {
 
             <TemplateChooser
                 open={templateChooserOpen}
+                initialCategory={templateChooserCategory}
                 onClose={() => {
                     setTemplateChooserOpen(false);
                 }}

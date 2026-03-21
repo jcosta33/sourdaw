@@ -12,8 +12,7 @@ type DragResizeHandleProps = {
     className?: string;
 };
 
-const isVertical = (side: DragResizeHandleProps['side']): boolean =>
-    side === 'left' || side === 'right';
+const isVertical = (side: DragResizeHandleProps['side']): boolean => side === 'left' || side === 'right';
 
 /**
  * A thin bar that can be dragged to resize a neighboring panel.
@@ -51,7 +50,7 @@ export const DragResizeHandle = ({ side, onResize, className }: DragResizeHandle
             document.addEventListener('mousemove', onMouseMove);
             document.addEventListener('mouseup', onMouseUp);
         },
-        [side, onResize, vertical],
+        [side, onResize, vertical]
     );
 
     return (
@@ -70,7 +69,7 @@ export const DragResizeHandle = ({ side, onResize, className }: DragResizeHandle
                           // groove center line
                           'relative after:absolute after:inset-x-4 after:top-1/2 after:-translate-y-1/2 after:h-px after:bg-white/[0.04]',
                       ],
-                className,
+                className
             )}
             role="separator"
             aria-orientation={vertical ? 'vertical' : 'horizontal'}

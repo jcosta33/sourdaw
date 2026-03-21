@@ -26,7 +26,7 @@ const loadExportSettings = (): { formats: ExportFormat[]; sampleRate: number; bi
         if (stored) {
             const parsed = JSON.parse(stored);
             return {
-                formats: Array.isArray(parsed.formats) ? parsed.formats : (parsed.format ? [parsed.format] : ['wav']),
+                formats: Array.isArray(parsed.formats) ? parsed.formats : parsed.format ? [parsed.format] : ['wav'],
                 sampleRate: parsed.sampleRate ?? 44100,
                 bitDepth: parsed.bitDepth ?? 24,
             };
@@ -66,7 +66,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             return next;
         });
     };
-    
+
     const updateSampleRate = (sr: number) => {
         setSampleRate(sr);
         saveExportSettings({ formats: Array.from(formats), sampleRate: sr, bitDepth });

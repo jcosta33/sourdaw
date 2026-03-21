@@ -40,25 +40,6 @@ export type McpPropertySchema = {
     default?: unknown;
 };
 
-/**
- * MCP Tool call result, returned after tool execution.
- */
-export type McpToolCallResult = {
-    content: Array<{
-        type: 'text';
-        text: string;
-    }>;
-    isError?: boolean;
-};
-
-/**
- * MCP Tool call request from the model.
- */
-export type McpToolCallRequest = {
-    name: string;
-    arguments: Record<string, unknown>;
-};
-
 // ── Conversion ──────────────────────────────────────────────────────────
 
 /**
@@ -72,9 +53,7 @@ export function toMcpTools(): McpToolDefinition[] {
         inputSchema: {
             type: 'object' as const,
             properties: schema.function.parameters.properties as Record<string, McpPropertySchema>,
-            required: schema.function.parameters.required.length > 0
-                ? schema.function.parameters.required
-                : undefined,
+            required: schema.function.parameters.required.length > 0 ? schema.function.parameters.required : undefined,
         },
     }));
 }
@@ -131,28 +110,4 @@ export function mcpToCompactPromptText(): string {
             return `${tool.name}(${params}) - ${tool.description}`;
         })
         .join('\n');
-}
-
-/**
- * Serialize MCP tools as full JSON Schema for injection into system prompts.
- * Higher token usage but gives the model full type information.
- */
-export function mcpToJsonPromptText(): string {
-    return JSON.stringify(getMcpTools(), null, 2);
-}
-
-// ── Tool lookup ─────────────────────────────────────────────────────────
-
-/**
- * Look up an MCP tool definition by name.
- */
-export function getMcpToolByName(name: string): McpToolDefinition | undefined {
-    return getMcpTools().find((t) => t.name === name);
-}
-
-/**
- * Get all tool names for validation.
- */
-export function getMcpToolNames(): Set<string> {
-    return new Set(getMcpTools().map((t) => t.name));
 }

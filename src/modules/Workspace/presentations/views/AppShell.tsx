@@ -308,7 +308,10 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 side="top"
                                 onResize={(d) => setMixerHeight((h) => clamp(h + d, 120, 800))}
                             />
-                            <div className="flex flex-col bg-surface-base overflow-hidden shrink-0" style={{ height: mixerHeight }}>
+                            <div
+                                className="flex flex-col bg-surface-base overflow-hidden shrink-0"
+                                style={{ height: mixerHeight }}
+                            >
                                 {/* Bottom panel tab bar */}
                                 <div className="flex items-center gap-0.5 px-2 py-0.5 border-b border-border-hairline bg-surface-tray shrink-0">
                                     <Button

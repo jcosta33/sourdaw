@@ -109,7 +109,11 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                     <Button
                         variant={midiSubTab === 'patterns' ? 'secondary' : 'ghost'}
                         size="xs"
-                        className={midiSubTab === 'patterns' ? 'text-purple-300 drop-shadow-[0_0_4px_theme(colors.purple.500/50)]' : ''}
+                        className={
+                            midiSubTab === 'patterns'
+                                ? 'text-purple-300 drop-shadow-[0_0_4px_theme(colors.purple.500/50)]'
+                                : ''
+                        }
                         onClick={() => setMidiSubTab('patterns')}
                     >
                         <Library className="size-3" /> Patterns
@@ -117,7 +121,11 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                     <Button
                         variant={midiSubTab === 'ai' ? 'secondary' : 'ghost'}
                         size="xs"
-                        className={midiSubTab === 'ai' ? 'text-purple-300 drop-shadow-[0_0_4px_theme(colors.purple.500/50)]' : ''}
+                        className={
+                            midiSubTab === 'ai'
+                                ? 'text-purple-300 drop-shadow-[0_0_4px_theme(colors.purple.500/50)]'
+                                : ''
+                        }
                         onClick={() => setMidiSubTab('ai')}
                     >
                         <Sparkles className="size-3" /> AI Generate
@@ -184,23 +192,50 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                 <div className="space-y-2">
                                     <label className="text-[10px] font-semibold text-foreground/90 uppercase tracking-wider flex items-center justify-between">
                                         Genre
-                                        {genre && <Button variant="link" size="xs" className="h-4 p-0 text-[9px] text-muted-foreground hover:text-foreground" onClick={() => setGenre('')}>Clear</Button>}
+                                        {genre && (
+                                            <Button
+                                                variant="link"
+                                                size="xs"
+                                                className="h-4 p-0 text-[9px] text-muted-foreground hover:text-foreground"
+                                                onClick={() => setGenre('')}
+                                            >
+                                                Clear
+                                            </Button>
+                                        )}
                                     </label>
                                     <GenreGrid value={genre} onChange={setGenre} />
                                 </div>
-                                
+
                                 <div className="space-y-2">
                                     <label className="text-[10px] font-semibold text-foreground/90 uppercase tracking-wider flex items-center justify-between">
                                         Mood
-                                        {mood && <Button variant="link" size="xs" className="h-4 p-0 text-[9px] text-muted-foreground hover:text-foreground" onClick={() => setMood('')}>Clear</Button>}
+                                        {mood && (
+                                            <Button
+                                                variant="link"
+                                                size="xs"
+                                                className="h-4 p-0 text-[9px] text-muted-foreground hover:text-foreground"
+                                                onClick={() => setMood('')}
+                                            >
+                                                Clear
+                                            </Button>
+                                        )}
                                     </label>
                                     <MoodGrid value={mood} onChange={setMood} />
                                 </div>
-                                
+
                                 <div className="space-y-2">
                                     <label className="text-[10px] font-semibold text-foreground/90 uppercase tracking-wider flex items-center justify-between">
                                         Instrument Focus
-                                        {instrument && <Button variant="link" size="xs" className="h-4 p-0 text-[9px] text-muted-foreground hover:text-foreground" onClick={() => setInstrument('')}>Clear</Button>}
+                                        {instrument && (
+                                            <Button
+                                                variant="link"
+                                                size="xs"
+                                                className="h-4 p-0 text-[9px] text-muted-foreground hover:text-foreground"
+                                                onClick={() => setInstrument('')}
+                                            >
+                                                Clear
+                                            </Button>
+                                        )}
                                     </label>
                                     <InstrumentGrid value={instrument} onChange={setInstrument} />
                                 </div>
@@ -208,69 +243,81 @@ export const GenerativeAiPanel = (): ReactElement | null => {
 
                             {activeTab === 'audio' && (
                                 <>
-                                <div className="space-y-2">
-                                    <div className="flex justify-between items-center">
-                                        <label className="text-[10px] font-medium text-foreground/80">Duration</label>
-                                        <span className="text-[10px] text-muted-foreground">{audioDuration}s</span>
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between items-center">
+                                            <label className="text-[10px] font-medium text-foreground/80">
+                                                Duration
+                                            </label>
+                                            <span className="text-[10px] text-muted-foreground">{audioDuration}s</span>
+                                        </div>
+                                        <Slider
+                                            value={[audioDuration]}
+                                            onValueChange={([v]) => setAudioDuration(v!)}
+                                            min={1}
+                                            max={30}
+                                            step={1}
+                                            className="pt-1"
+                                        />
                                     </div>
-                                    <Slider
-                                        value={[audioDuration]}
-                                        onValueChange={([v]) => setAudioDuration(v!)}
-                                        min={1}
-                                        max={30}
-                                        step={1}
-                                        className="pt-1"
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <div className="flex justify-between items-center">
-                                        <label className="text-[10px] font-medium text-foreground/80">Strength</label>
-                                        <span className="text-[10px] text-muted-foreground">{audioStrength}%</span>
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between items-center">
+                                            <label className="text-[10px] font-medium text-foreground/80">
+                                                Strength
+                                            </label>
+                                            <span className="text-[10px] text-muted-foreground">{audioStrength}%</span>
+                                        </div>
+                                        <Slider
+                                            value={[audioStrength]}
+                                            onValueChange={([v]) => setAudioStrength(v!)}
+                                            min={10}
+                                            max={100}
+                                            step={5}
+                                            className="pt-1"
+                                        />
+                                        <p className="text-[9px] text-muted-foreground/60">
+                                            Lower = subtle, higher = aggressive
+                                        </p>
                                     </div>
-                                    <Slider
-                                        value={[audioStrength]}
-                                        onValueChange={([v]) => setAudioStrength(v!)}
-                                        min={10}
-                                        max={100}
-                                        step={5}
-                                        className="pt-1"
-                                    />
-                                    <p className="text-[9px] text-muted-foreground/60">Lower = subtle, higher = aggressive</p>
-                                </div>
                                 </>
                             )}
 
                             {activeTab === 'midi' && midiSubTab === 'ai' && (
                                 <>
-                                <div className="space-y-2">
-                                    <div className="flex justify-between items-center">
-                                        <label className="text-[10px] font-medium text-foreground/80">Max Notes</label>
-                                        <span className="text-[10px] text-muted-foreground">{midiNotes}</span>
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between items-center">
+                                            <label className="text-[10px] font-medium text-foreground/80">
+                                                Max Notes
+                                            </label>
+                                            <span className="text-[10px] text-muted-foreground">{midiNotes}</span>
+                                        </div>
+                                        <Slider
+                                            value={[midiNotes]}
+                                            onValueChange={([v]) => setMidiNotes(v!)}
+                                            min={4}
+                                            max={128}
+                                            step={4}
+                                            className="pt-1"
+                                        />
                                     </div>
-                                    <Slider
-                                        value={[midiNotes]}
-                                        onValueChange={([v]) => setMidiNotes(v!)}
-                                        min={4}
-                                        max={128}
-                                        step={4}
-                                        className="pt-1"
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <div className="flex justify-between items-center">
-                                        <label className="text-[10px] font-medium text-foreground/80">Creativity</label>
-                                        <span className="text-[10px] text-muted-foreground">{creativity}%</span>
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between items-center">
+                                            <label className="text-[10px] font-medium text-foreground/80">
+                                                Creativity
+                                            </label>
+                                            <span className="text-[10px] text-muted-foreground">{creativity}%</span>
+                                        </div>
+                                        <Slider
+                                            value={[creativity]}
+                                            onValueChange={([v]) => setCreativity(v!)}
+                                            min={10}
+                                            max={100}
+                                            step={5}
+                                            className="pt-1"
+                                        />
+                                        <p className="text-[9px] text-muted-foreground/60">
+                                            Lower = predictable, higher = experimental
+                                        </p>
                                     </div>
-                                    <Slider
-                                        value={[creativity]}
-                                        onValueChange={([v]) => setCreativity(v!)}
-                                        min={10}
-                                        max={100}
-                                        step={5}
-                                        className="pt-1"
-                                    />
-                                    <p className="text-[9px] text-muted-foreground/60">Lower = predictable, higher = experimental</p>
-                                </div>
                                 </>
                             )}
 

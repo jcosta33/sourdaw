@@ -17,10 +17,11 @@ import { addTrack } from '../../useCases/addTrack';
 import { createFolder } from '../../useCases/folderUseCases';
 import { reorderTrack, selectTrack } from '../../useCases/toggleTrackState';
 import { removeTrack } from '../../useCases/removeTrack';
-import { setWorkspaceMode, defaultPreferences, type Preferences } from '../../useCases/trackViewActions';
+import { setWorkspaceMode } from '../../useCases/trackViewActions';
 import { preferencesStore } from '#/modules/Workspace/stores/preferencesStore';
 import { timelineViewStore, setScrollY } from '#/modules/Timeline/stores/timelineViewStore';
 import { injectPromptCommand } from '#/modules/AiRuntime/presentations/views/VoiceCommandOverlay';
+import { defaultPreferences, type Preferences } from '#/modules/Workspace/models/Preferences';
 
 const HEIGHT_CYCLE: Preferences['trackHeight'][] = ['compact', 'normal', 'large'];
 const HEIGHT_LABELS: Record<Preferences['trackHeight'], string> = {
@@ -167,7 +168,9 @@ export const TrackListView = ({ style }: { style?: CSSProperties }): ReactElemen
                                 size="icon-xs"
                                 aria-label="Auto-organize with AI"
                                 onClick={() =>
-                                    injectPromptCommand('Auto-organize my project into color-coded instrument folders and standardized names.')
+                                    injectPromptCommand(
+                                        'Auto-organize my project into color-coded instrument folders and standardized names.'
+                                    )
                                 }
                             >
                                 <Wand2 className="size-3 text-purple-400" aria-hidden="true" />

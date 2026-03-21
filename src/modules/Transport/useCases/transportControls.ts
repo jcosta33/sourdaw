@@ -49,10 +49,22 @@ export function togglePlayback(): void {
     }
 
     if (state.isPlaying) {
-        stopPlayback();
+        pausePlayback();
     } else {
         startPlayback();
     }
+}
+
+export function pausePlayback(): void {
+    const state = getTransportState();
+    if (!state) {
+        return;
+    }
+
+    stopPlayheadScheduler();
+    stopAllScheduled();
+    resetMidiState();
+    updateTransportState({ isPlaying: false, isRecording: false });
 }
 
 export function startPlayback(): void {

@@ -3,7 +3,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '#/components/ui/tooltip
 import { getAudioDevices, type AudioDeviceInfo } from '../../../useCases/trackViewActions';
 import { setTrackInput } from '#/modules/Track/useCases/setTrackInput';
 
-export type InputSelectorProps = {
+type InputSelectorProps = {
     trackId: string;
     inputId: string | null;
 };

@@ -33,9 +33,13 @@ const MiniPianoRoll = ({ notes, lengthBeats }: { notes: PatternNote[]; lengthBea
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas || notes.length === 0) return;
+        if (!canvas || notes.length === 0) {
+            return;
+        }
         const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        if (!ctx) {
+            return;
+        }
 
         const dpr = window.devicePixelRatio || 1;
         const width = canvas.clientWidth;
@@ -72,7 +76,11 @@ const MiniPianoRoll = ({ notes, lengthBeats }: { notes: PatternNote[]; lengthBea
 // ── Compact select component ──
 
 const CompactSelect = <T extends string>({
-    label, value, options, onChange, allLabel = 'All',
+    label,
+    value,
+    options,
+    onChange,
+    allLabel = 'All',
 }: {
     label: string;
     value: T | undefined;
@@ -89,7 +97,11 @@ const CompactSelect = <T extends string>({
             aria-label={label}
         >
             <option value="">{allLabel}</option>
-            {options.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+            {options.map((o) => (
+                <option key={o.id} value={o.id}>
+                    {o.label}
+                </option>
+            ))}
         </select>
     </div>
 );
@@ -97,7 +109,11 @@ const CompactSelect = <T extends string>({
 // ── Slider control ──
 
 const ParamSlider = ({
-    label, value, onChange, min = 1, max = 10,
+    label,
+    value,
+    onChange,
+    min = 1,
+    max = 10,
 }: {
     label: string;
     value: number;
@@ -111,7 +127,10 @@ const ParamSlider = ({
             <span className="text-[9px] text-muted-foreground/50 tabular-nums">{value}</span>
         </div>
         <input
-            type="range" min={min} max={max} value={value}
+            type="range"
+            min={min}
+            max={max}
+            value={value}
             onChange={(e) => onChange(Number(e.target.value))}
             className="w-full h-1 accent-purple-500 cursor-pointer"
             aria-label={label}
@@ -122,15 +141,22 @@ const ParamSlider = ({
 // ── Pattern Card ──
 
 const categoryColors: Record<PatternCategory, string> = {
-    chords: 'text-blue-400', bass: 'text-rose-400', drums: 'text-amber-400', melody: 'text-emerald-400',
+    chords: 'text-blue-400',
+    bass: 'text-rose-400',
+    drums: 'text-amber-400',
+    melody: 'text-emerald-400',
 };
 const categoryBgColors: Record<PatternCategory, string> = {
-    chords: 'bg-blue-500/10 border-blue-500/20', bass: 'bg-rose-500/10 border-rose-500/20',
-    drums: 'bg-amber-500/10 border-amber-500/20', melody: 'bg-emerald-500/10 border-emerald-500/20',
+    chords: 'bg-blue-500/10 border-blue-500/20',
+    bass: 'bg-rose-500/10 border-rose-500/20',
+    drums: 'bg-amber-500/10 border-amber-500/20',
+    melody: 'bg-emerald-500/10 border-emerald-500/20',
 };
 
 const TemplateCard = ({
-    template, genParams, onInsert,
+    template,
+    genParams,
+    onInsert,
 }: {
     template: PatternTemplate;
     genParams: GenerationParams;
@@ -149,7 +175,8 @@ const TemplateCard = ({
                         {template.name}
                     </span>
                     <Button
-                        variant="ghost" size="icon-xs"
+                        variant="ghost"
+                        size="icon-xs"
                         className="h-5 w-5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-purple-600/20 hover:text-purple-300"
                         onClick={() => onInsert(template)}
                         title="Insert at playhead"
@@ -159,7 +186,13 @@ const TemplateCard = ({
                     </Button>
                 </div>
                 <div className="flex items-center gap-1 flex-wrap">
-                    <span className={cn('text-[9px] font-medium px-1.5 py-0.5 rounded-full border', categoryBgColors[template.category], categoryColors[template.category])}>
+                    <span
+                        className={cn(
+                            'text-[9px] font-medium px-1.5 py-0.5 rounded-full border',
+                            categoryBgColors[template.category],
+                            categoryColors[template.category]
+                        )}
+                    >
                         {template.category}
                     </span>
                     <span className="text-[9px] text-muted-foreground/50">{template.lengthBeats}b</span>
@@ -186,20 +219,24 @@ export const PatternBrowser = (): ReactElement => {
 
     const genParams: GenerationParams = useMemo(
         () => ({ key, scale, density, complexity }),
-        [key, scale, density, complexity],
+        [key, scale, density, complexity]
     );
 
     const filteredTemplates = useMemo(
         () => filterTemplates({ query: searchQuery || undefined, category: activeCategory, genre: activeGenre }),
-        [searchQuery, activeCategory, activeGenre],
+        [searchQuery, activeCategory, activeGenre]
     );
 
     const handleInsertTemplate = (template: PatternTemplate): void => {
         const tState = trackStore.value;
         const selectedTrackId = tState?.selectedTrackId;
         let targetTrack = tState?.tracks.find((t) => t.id === selectedTrackId && t.kind === 'midi');
-        if (!targetTrack) targetTrack = tState?.tracks.find((t) => t.kind === 'midi');
-        if (!targetTrack) return;
+        if (!targetTrack) {
+            targetTrack = tState?.tracks.find((t) => t.kind === 'midi');
+        }
+        if (!targetTrack) {
+            return;
+        }
 
         const transport = getTransportState();
         const startBeat = transport ? transport.playheadPosition : 0;
@@ -207,9 +244,12 @@ export const PatternBrowser = (): ReactElement => {
         const endBeat = startBeat + template.lengthBeats;
 
         const clip = addClip({
-            trackId: targetTrack.id, startBeat, endBeat,
+            trackId: targetTrack.id,
+            startBeat,
+            endBeat,
             name: `🎵 ${template.name} (${key})`,
-            type: 'midi', isGhost: true,
+            type: 'midi',
+            isGhost: true,
         });
 
         if (clip) {
@@ -230,7 +270,8 @@ export const PatternBrowser = (): ReactElement => {
                 <div className="relative flex-1">
                     <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3 text-muted-foreground/50" />
                     <input
-                        type="text" value={searchQuery}
+                        type="text"
+                        value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         placeholder="Search patterns..."
                         className="w-full h-7 bg-surface-base border border-border/60 rounded-md pl-7 pr-2 text-xs placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-purple-500/50"
@@ -238,7 +279,8 @@ export const PatternBrowser = (): ReactElement => {
                     />
                 </div>
                 <Button
-                    variant="ghost" size="icon-xs"
+                    variant="ghost"
+                    size="icon-xs"
                     className={cn('h-7 w-7 shrink-0', showControls && 'bg-accent text-accent-foreground')}
                     onClick={() => setShowControls(!showControls)}
                     title="Toggle generation controls"
@@ -252,9 +294,26 @@ export const PatternBrowser = (): ReactElement => {
             {showControls && (
                 <div className="bg-surface-base/60 border border-border/40 rounded-lg p-2 space-y-2">
                     <div className="grid grid-cols-3 gap-2">
-                        <CompactSelect label="Key" value={key} options={keyOptions} onChange={(v) => setKey(v ?? 'C')} allLabel="C" />
-                        <CompactSelect label="Scale" value={scale} options={scaleOptions} onChange={(v) => setScale(v ?? 'minor')} allLabel="Minor" />
-                        <CompactSelect label="Genre" value={activeGenre} options={genreOptions} onChange={setActiveGenre} />
+                        <CompactSelect
+                            label="Key"
+                            value={key}
+                            options={keyOptions}
+                            onChange={(v) => setKey(v ?? 'C')}
+                            allLabel="C"
+                        />
+                        <CompactSelect
+                            label="Scale"
+                            value={scale}
+                            options={scaleOptions}
+                            onChange={(v) => setScale(v ?? 'minor')}
+                            allLabel="Minor"
+                        />
+                        <CompactSelect
+                            label="Genre"
+                            value={activeGenre}
+                            options={genreOptions}
+                            onChange={setActiveGenre}
+                        />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                         <ParamSlider label="Density" value={density} onChange={setDensity} />
@@ -267,17 +326,30 @@ export const PatternBrowser = (): ReactElement => {
             <div className="flex gap-1 flex-wrap">
                 <button
                     type="button"
-                    className={cn('px-2 py-1 text-[10px] rounded-md font-medium transition-colors',
-                        !activeCategory ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-surface-raised hover:text-foreground')}
+                    className={cn(
+                        'px-2 py-1 text-[10px] rounded-md font-medium transition-colors',
+                        !activeCategory
+                            ? 'bg-accent text-accent-foreground'
+                            : 'text-muted-foreground hover:bg-surface-raised hover:text-foreground'
+                    )}
                     onClick={() => setActiveCategory(undefined)}
-                >All</button>
+                >
+                    All
+                </button>
                 {PATTERN_CATEGORIES.map((cat) => (
                     <button
-                        key={cat.id} type="button"
-                        className={cn('px-2 py-1 text-[10px] rounded-md font-medium transition-colors',
-                            activeCategory === cat.id ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-surface-raised hover:text-foreground')}
+                        key={cat.id}
+                        type="button"
+                        className={cn(
+                            'px-2 py-1 text-[10px] rounded-md font-medium transition-colors',
+                            activeCategory === cat.id
+                                ? 'bg-accent text-accent-foreground'
+                                : 'text-muted-foreground hover:bg-surface-raised hover:text-foreground'
+                        )}
                         onClick={() => setActiveCategory(activeCategory === cat.id ? undefined : cat.id)}
-                    >{cat.label}</button>
+                    >
+                        {cat.label}
+                    </button>
                 ))}
                 <span className="text-[9px] text-muted-foreground/40 self-center ml-auto">
                     {filteredTemplates.length}/{PATTERN_TEMPLATES.length}

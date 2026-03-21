@@ -1,8 +1,20 @@
 import { type ReactElement } from 'react';
-import { 
-    Coffee, Headphones, Film, Sunset, Zap,
-    Cloud, Flame, Sun, CloudRain, Mountain,
-    Piano, Sliders, Disc3, Music2, Music4,
+import {
+    Coffee,
+    Headphones,
+    Film,
+    Sunset,
+    Zap,
+    Cloud,
+    Flame,
+    Sun,
+    CloudRain,
+    Mountain,
+    Piano,
+    Sliders,
+    Disc3,
+    Music2,
+    Music4,
 } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
 
@@ -18,11 +30,7 @@ type OptionDef = {
     colorClass: string;
 };
 
-const GridContainer = ({ 
-    options, 
-    value, 
-    onChange 
-}: GridProps & { options: OptionDef[] }): ReactElement => {
+const GridContainer = ({ options, value, onChange }: GridProps & { options: OptionDef[] }): ReactElement => {
     return (
         <div className="grid grid-cols-2 gap-2">
             {options.map((opt) => {
@@ -34,28 +42,36 @@ const GridContainer = ({
                         onClick={() => onChange(isSelected ? '' : opt.id)}
                         className={cn(
                             'relative overflow-hidden flex flex-col items-center justify-center p-3 gap-2 rounded-lg border transition-all duration-300 ease-out group',
-                            isSelected 
-                                ? `border-${opt.colorClass}-500/50 bg-${opt.colorClass}-500/10 shadow-[0_0_15px_rgba(0,0,0,0.1)] ring-1 ring-${opt.colorClass}-500/30` 
+                            isSelected
+                                ? `border-${opt.colorClass}-500/50 bg-${opt.colorClass}-500/10 shadow-[0_0_15px_rgba(0,0,0,0.1)] ring-1 ring-${opt.colorClass}-500/30`
                                 : 'border-border/40 bg-surface-base hover:bg-surface-raised hover:border-border/80'
                         )}
                     >
                         {/* Glow effect for selected state */}
                         {isSelected && (
-                            <div className={cn(
-                                "absolute inset-0 opacity-20 bg-gradient-to-t pb-[10px]",
-                                `from-${opt.colorClass}-500 to-transparent`
-                            )} />
+                            <div
+                                className={cn(
+                                    'absolute inset-0 opacity-20 bg-gradient-to-t pb-[10px]',
+                                    `from-${opt.colorClass}-500 to-transparent`
+                                )}
+                            />
                         )}
-                        <opt.Icon 
+                        <opt.Icon
                             className={cn(
-                                "size-5 transition-colors duration-300 relative z-10",
-                                isSelected ? `text-${opt.colorClass}-400 drop-shadow-sm` : 'text-muted-foreground group-hover:text-foreground/80'
-                            )} 
+                                'size-5 transition-colors duration-300 relative z-10',
+                                isSelected
+                                    ? `text-${opt.colorClass}-400 drop-shadow-sm`
+                                    : 'text-muted-foreground group-hover:text-foreground/80'
+                            )}
                         />
-                        <span className={cn(
-                            "text-[10px] font-medium text-center leading-tight relative z-10 transition-colors duration-300",
-                            isSelected ? "text-foreground drop-shadow-sm" : "text-muted-foreground group-hover:text-foreground/90"
-                        )}>
+                        <span
+                            className={cn(
+                                'text-[10px] font-medium text-center leading-tight relative z-10 transition-colors duration-300',
+                                isSelected
+                                    ? 'text-foreground drop-shadow-sm'
+                                    : 'text-muted-foreground group-hover:text-foreground/90'
+                            )}
+                        >
                             {opt.label}
                         </span>
                     </button>

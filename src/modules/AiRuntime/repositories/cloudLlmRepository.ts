@@ -77,10 +77,7 @@ Key rules:
  * @param projectState - Project context string to include in the user message
  * @param userMessage - The user's natural language request
  */
-export async function generateCloudToolCalls(
-    projectState: string,
-    userMessage: string,
-): Promise<ToolCallResult[]> {
+export async function generateCloudToolCalls(projectState: string, userMessage: string): Promise<ToolCallResult[]> {
     if (!client) {
         throw new Error('Cloud AI not configured. Set API key first.');
     }
@@ -110,7 +107,7 @@ export async function generateCloudToolCalls(
     }
 
     logger.info(
-        `[Cloud AI] Claude returned ${String(results.length)} tool call(s): ${results.map((r) => r.name).join(', ')}`,
+        `[Cloud AI] Claude returned ${String(results.length)} tool call(s): ${results.map((r) => r.name).join(', ')}`
     );
 
     return results;
@@ -124,7 +121,7 @@ export async function generateCloudToolCalls(
 export async function streamCloudChatCompletion(
     messages: Array<{ role: string; content: string }>,
     onToken: (text: string) => void,
-    options?: { temperature?: number; maxTokens?: number },
+    options?: { temperature?: number; maxTokens?: number }
 ): Promise<void> {
     if (!client) {
         throw new Error('Cloud AI not configured. Set API key first.');

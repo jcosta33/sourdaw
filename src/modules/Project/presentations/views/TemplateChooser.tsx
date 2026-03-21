@@ -1,5 +1,5 @@
-import { type ReactElement, useState } from 'react';
-import { Music, Mic, Film, FileText, Layers, Guitar, Piano, Headphones } from 'lucide-react';
+import React, { type ReactElement, useState } from 'react';
+import { Music, Mic, Film, FileText, Layers, Guitar, Piano, Headphones, Sparkles } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '#/components/ui/dialog';
 import { Button } from '#/components/ui/button';
 import {
@@ -13,6 +13,7 @@ import { saveProject } from '../../useCases/projectPersistence';
 type TemplateChooserProps = {
     open: boolean;
     onClose: () => void;
+    initialCategory?: TemplateCategory | 'all';
 };
 
 const CATEGORY_LABELS: Record<TemplateCategory, string> = {
@@ -20,9 +21,10 @@ const CATEGORY_LABELS: Record<TemplateCategory, string> = {
     music: 'Music',
     podcast: 'Podcast',
     film: 'Film',
+    demo: 'Demos',
 };
 
-const CATEGORY_ORDER: TemplateCategory[] = ['empty', 'music', 'podcast', 'film'];
+const CATEGORY_ORDER: TemplateCategory[] = ['empty', 'demo', 'music', 'podcast', 'film'];
 
 const TEMPLATE_ICONS: Record<string, ReactElement> = {
     empty: <FileText className="size-5" aria-hidden="true" />,
@@ -35,6 +37,7 @@ const TEMPLATE_ICONS: Record<string, ReactElement> = {
 
 const CATEGORY_ICONS: Record<TemplateCategory, ReactElement> = {
     empty: <Layers className="size-3.5" aria-hidden="true" />,
+    demo: <Sparkles className="size-3.5" aria-hidden="true" />,
     music: <Music className="size-3.5" aria-hidden="true" />,
     podcast: <Mic className="size-3.5" aria-hidden="true" />,
     film: <Film className="size-3.5" aria-hidden="true" />,
@@ -42,6 +45,8 @@ const CATEGORY_ICONS: Record<TemplateCategory, ReactElement> = {
 
 const getCategoryColor = (category: TemplateCategory): string => {
     switch (category) {
+        case 'demo':
+            return 'text-emerald-400';
         case 'music':
             return 'text-violet-400';
         case 'podcast':
@@ -83,9 +88,15 @@ const TemplateCard = ({
     );
 };
 
-export const TemplateChooser = ({ open, onClose }: TemplateChooserProps): ReactElement => {
-    const [activeFilter, setActiveFilter] = useState<TemplateCategory | 'all'>('all');
+export const TemplateChooser = ({ open, onClose, initialCategory = 'all' }: TemplateChooserProps): ReactElement => {
+    const [activeFilter, setActiveFilter] = useState<TemplateCategory | 'all'>(initialCategory);
     const templates = getTemplates();
+
+    React.useEffect(() => {
+        if (open) {
+            setActiveFilter(initialCategory);
+        }
+    }, [open, initialCategory]);
 
     const filtered = activeFilter === 'all' ? templates : templates.filter((t) => t.category === activeFilter);
 

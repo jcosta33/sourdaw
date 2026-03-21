@@ -22,7 +22,7 @@ const SOLO_MODES: { value: SoloMode; label: string; description: string }[] = [
     },
 ];
 
-export type SoloModeSelectorProps = {
+type SoloModeSelectorProps = {
     soloMode: SoloMode;
 };
 

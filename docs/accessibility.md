@@ -1,6 +1,6 @@
 # Accessibility (a11y)
 
-This guide provides a process for building accessible user interfaces that conform to [WCAG 2.x AA](https://www.w3.org/WAI/standards-guidelines/wcag/) and [WAI-ARIA Authoring Practices](https://www.w3.org/WAI/ARIA/apg/). For more information on best practices, see [Webdaw a11y](https://weare.frontify.com/document/2399).
+This guide provides a process for building accessible user interfaces that conform to [WCAG 2.x AA](https://www.w3.org/WAI/standards-guidelines/wcag/) and [WAI-ARIA Authoring Practices](https://www.w3.org/WAI/ARIA/apg/).
 
 ## How to build an accessible component
 
@@ -16,41 +16,43 @@ Before writing code, familiarize yourself with the foundational principles of ac
 
 ### 2. Implement with accessibility in mind
 
-#### Prefer Fondue components
+#### Prefer Shadcn UI components
 
-Your first and best option is to use components from `@frontify/fondue/components`. They are designed to be accessible out of the box, handling complex interactions like keyboard handling, ARIA roles, focus management, and announcements.
+Your first and best option is to use Shadcn UI components (built on Radix UI primitives). They are designed to be accessible out of the box, handling complex interactions like keyboard handling, ARIA roles, focus management, and announcements.
 
 ```tsx
-// Brand/presentations/components/CreateBrandDialog.tsx
+// Project/presentations/components/ProjectSettingsDialog.tsx
 
-export const CreateBrandDialog = () => (
-    <Dialog.Root>
-        <Dialog.Trigger>
-            <Button>Create brand</Button>
-        </Dialog.Trigger>
-        <Dialog.Content showUnderlay padding="comfortable">
-            <Dialog.Header>
-                <Dialog.Title>Create brand</Dialog.Title>
-            </Dialog.Header>
-            <Dialog.Body>
-                <Label htmlFor="name" required>
-                    Name
-                </Label>
-                <TextInput id="name" placeholder="Brand name" />
-            </Dialog.Body>
-            <Dialog.Footer>
-                <Button type="submit">Create</Button>
-            </Dialog.Footer>
-        </Dialog.Content>
-    </Dialog.Root>
+export const ProjectSettingsDialog = () => (
+    <Dialog>
+        <DialogTrigger asChild>
+            <Button variant="outline">Project Settings</Button>
+        </DialogTrigger>
+        <DialogContent>
+            <DialogHeader>
+                <DialogTitle>Project Settings</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="bpm" className="text-right">
+                        Tempo (BPM)
+                    </Label>
+                    <Input id="bpm" type="number" defaultValue="120" className="col-span-3" />
+                </div>
+            </div>
+            <DialogFooter>
+                <Button type="submit">Save changes</Button>
+            </DialogFooter>
+        </DialogContent>
+    </Dialog>
 );
 ```
 
-Why: Fondue manages focus trapping, escape/underlay behavior, roles, and aria attributes for dialogs and many other components. **Using Fondue is the best way to avoid common pitfalls like forgetting focus management or using non-semantic elements like a `<div>` for a button.**
+Why: Shadcn UI manages focus trapping, escape/underlay behavior, roles, and aria attributes for dialogs and many other components. **Using Shadcn is the best way to avoid common pitfalls like forgetting focus management or using non-semantic elements like a `<div>` for a button.**
 
 #### Follow authoring guidance for custom elements
 
-If a Fondue component is not available, you must manually ensure your custom components are accessible by following these guidelines.
+If a Shadcn component is not available, you must manually ensure your custom components are accessible by following these guidelines.
 
 - ✅ **Labels**: Always associate a visible `<Label>` with form controls using `htmlFor`. Relying on the `placeholder` attribute is not a substitute for a proper label.
 - ✅ **Buttons**: Ensure `type` is set. **Icon-only buttons require an `aria-label` to provide an accessible name.**
@@ -59,11 +61,11 @@ If a Fondue component is not available, you must manually ensure your custom com
 - ✅ **Forms**: Bind error messages via `aria-describedby` and manage `aria-invalid`. For more detailed patterns, see the main [forms](./forms.md) guide.
 
 ```tsx
-// Library/presentations/components/RemoveButton.tsx
+// Track/presentations/components/RemoveTrackButton.tsx
 
-export const RemoveButton = () => (
-    <Button aria-label={t('LibraryList_remove')}>
-        <IconTrashBin />
+export const RemoveTrackButton = () => (
+    <Button aria-label={t('TrackControls_remove')} variant="ghost" size="icon">
+        <Trash2Icon className="h-4 w-4" aria-hidden="true" />
     </Button>
 );
 ```
@@ -73,7 +75,7 @@ export const RemoveButton = () => (
 - All interactive elements must be reachable via `Tab`/`Shift+Tab` and operable with `Enter`/`Space`.
 - Focus must be visibly indicated and logically managed after UI changes (e.g., opening a dialog). It's critical to trap focus within modal dialogs and return focus to the trigger element when they close.
 - In React 19, `ref` is a regular prop -- pass it directly to components that need imperative focus management without `forwardRef`.
-- Provide visible focus styles (Fondue + Tailwind classes).
+- Provide visible focus styles (Shadcn + Tailwind classes).
 
 #### Maintain color and contrast
 
@@ -87,11 +89,11 @@ For content that updates without a page reload (like status messages, live chat 
 The `aria-atomic="true"` attribute ensures that the entire content of the region is announced as a whole, even if only a small part of it changes. This is crucial for notifications and status messages, as it provides the full context to the user instead of just announcing the changed words.
 
 ```tsx
-// Common/presentations/components/Notifications.tsx
+// AiRuntime/presentations/components/AiStatusBanner.tsx
 
-const Notifications = ({ messages }) => {
+const AiStatusBanner = ({ messages }) => {
     return (
-        <div aria-live="polite" aria-atomic="true">
+        <div aria-live="polite" aria-atomic="true" className="text-sm text-text-secondary">
             {messages.map((msg) => (
                 <div key={msg.id}>{msg.text}</div>
             ))}
@@ -117,14 +119,13 @@ After building your component, verify its accessibility through a combination of
 
 ### When to build custom components
 
-Always prefer using Fondue. If a required pattern is missing:
+Always prefer using Shadcn. If a required pattern is missing:
 
 - Start with semantic HTML as a base.
 - Follow the official WAI-ARIA Authoring Practices for roles, states, and keyboard support.
 - Ensure you provide proper focus management and that dynamic content updates are announced to screen readers.
-- Propose the new component to the Fondue library for future reuse.
+- Propose the new component to the UI library for future reuse.
 
-### Fondue
+### Shadcn UI
 
-- Fondue docs: [fondue-components.frontify.com](https://fondue-components.frontify.com/)
-- Fondue repo: [github.com/Webdaw/fondue](https://github.com/Webdaw/fondue)
+- Shadcn docs: [ui.shadcn.com](https://ui.shadcn.com/)

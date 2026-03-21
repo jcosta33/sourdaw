@@ -52,7 +52,7 @@ export type ProjectData = {
     markers?: MarkerStoreState;
     takeLanes?: TakeLaneStoreState;
     sidechainRoutes?: SidechainRoute[];
-    
+
     // New arrangement fields
     arrangements?: ArrangementData[];
     activeArrangementId?: string;

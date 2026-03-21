@@ -5,10 +5,6 @@
 
 // ── Workspace ─────────────────────────────────────────────────────
 import { setWorkspaceMode as _setWorkspaceMode } from '#/modules/Workspace/useCases/setWorkspaceMode';
-import { type Preferences, defaultPreferences } from '#/modules/Workspace/useCases/workspaceQueries';
-
-export type { Preferences };
-export { defaultPreferences };
 
 export const setWorkspaceMode = (mode: Parameters<typeof _setWorkspaceMode>[0]): void => _setWorkspaceMode(mode);
 

@@ -61,7 +61,9 @@ export const ArrangementSelector = (): ReactElement | null => {
         }
     }, [editingId]);
 
-    if (!state) return null;
+    if (!state) {
+        return null;
+    }
 
     const currentArrangement = state.arrangements.find((a) => a.id === state.activeArrangementId);
 
@@ -123,16 +125,20 @@ export const ArrangementSelector = (): ReactElement | null => {
                                     key={arr.id}
                                     className={cn(
                                         'group flex items-center gap-2 px-2 py-1 mx-1 rounded-sm cursor-pointer',
-                                        isActive ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-accent/50 text-foreground transition-colors'
+                                        isActive
+                                            ? 'bg-primary/10 text-primary font-medium'
+                                            : 'hover:bg-accent/50 text-foreground transition-colors'
                                     )}
                                     onClick={() => {
-                                        if (!isEditing && !isActive) switchArrangement(arr.id);
+                                        if (!isEditing && !isActive) {
+                                            switchArrangement(arr.id);
+                                        }
                                     }}
                                 >
                                     <div className="w-4 flex items-center justify-center shrink-0">
                                         {isActive && !isEditing && <Check className="size-3" />}
                                     </div>
-                                    
+
                                     {isEditing ? (
                                         <input
                                             ref={inputRef}
@@ -141,18 +147,23 @@ export const ArrangementSelector = (): ReactElement | null => {
                                             value={editName}
                                             onChange={(e) => setEditName(e.target.value)}
                                             onKeyDown={(e) => {
-                                                if (e.key === 'Enter') handleRenameSubmit(arr.id);
+                                                if (e.key === 'Enter') {
+                                                    handleRenameSubmit(arr.id);
+                                                }
                                                 e.stopPropagation();
                                             }}
                                             onBlur={() => handleRenameSubmit(arr.id)}
                                             onClick={(e) => e.stopPropagation()}
                                         />
                                     ) : (
-                                        <div className="flex-1 min-w-0 text-xs truncate" onDoubleClick={(e) => {
-                                            e.stopPropagation();
-                                            setEditName(arr.name);
-                                            setEditingId(arr.id);
-                                        }}>
+                                        <div
+                                            className="flex-1 min-w-0 text-xs truncate"
+                                            onDoubleClick={(e) => {
+                                                e.stopPropagation();
+                                                setEditName(arr.name);
+                                                setEditingId(arr.id);
+                                            }}
+                                        >
                                             {arr.name}
                                         </div>
                                     )}
@@ -161,8 +172,8 @@ export const ArrangementSelector = (): ReactElement | null => {
                                         <button
                                             type="button"
                                             className={cn(
-                                                "p-0.5 rounded hover:bg-background/80 transition-all",
-                                                isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                                                'p-0.5 rounded hover:bg-background/80 transition-all',
+                                                isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
                                             )}
                                             onClick={(e) => {
                                                 e.stopPropagation();

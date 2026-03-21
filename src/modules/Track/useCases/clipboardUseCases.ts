@@ -1,10 +1,10 @@
 import { getTrackState } from '../repositories/trackRepository';
-import { getWorkspaceStoreValue as getWorkspaceState } from '#/modules/Workspace/useCases/workspaceQueries';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { midiStore } from '#/modules/Track/stores/midiStore';
 import { addClip, removeClip } from '#/modules/Track/useCases/clipUseCases';
 import { type Clip } from '#/modules/Track/models/Track';
 import { type MidiNote, createMidiNote } from '#/modules/Track/models/MidiNote';
+import { getWorkspaceState } from '#/modules/Workspace/repositories/workspaceRepository';
 
 type ClipboardEntry = {
     clip: Clip;

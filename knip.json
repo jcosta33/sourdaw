@@ -1,9 +1,8 @@
 {
   "$schema": "https://unpkg.com/knip@latest/schema.json",
-  "entry": ["src/app/main.tsx", "src/routes/**/*.tsx"],
+  "entry": ["src/routes/**/*.tsx"],
   "project": ["src/**/*.{ts,tsx}", "!src/**/*.spec.{ts,tsx}", "!src/**/*.test.{ts,tsx}"],
   "ignore": [
-    "src/routeTree.gen.ts",
     "src/helpers/DependencyInjector/inject.ts",
     "src/helpers/Store/ReadonlyStore.ts",
     "src/helpers/DOM/KeyPressNotifier.ts",
@@ -15,11 +14,37 @@
     "src/helpers/React/useKeyPressNotifier.ts",
     "src/helpers/React/slots/slots.ts",
     "src/helpers/Styles/merge.ts",
-    "src/helpers/UI/getKeyWithModifier.ts"
+    "src/helpers/UI/getKeyWithModifier.ts",
+
+    "src/modules/AudioEngine/useCases/instrumentLibrary.ts",
+    "src/modules/AudioEngine/useCases/modulatorLibrary.ts",
+    "src/modules/AudioEngine/useCases/samplePlayer.ts",
+    "src/modules/AudioEngine/useCases/modulationSystem.ts",
+    "src/modules/AudioEngine/useCases/wamPluginHost.ts",
+    "src/modules/AudioEngine/useCases/pluginBridge.ts",
+    "src/modules/AudioEngine/useCases/faustEngine.ts",
+    "src/modules/AudioEngine/useCases/nativeAIBridge.ts",
+    "src/modules/AudioEngine/useCases/latencyCompensation.ts",
+    "src/modules/AudioEngine/useCases/linkBridge.ts",
+    "src/modules/AudioEngine/useCases/pluginScanUseCases.ts",
+    "src/modules/AudioEngine/repositories/webMidiRepository.ts",
+
+    "src/modules/Collaboration/useCases/collaborationUseCases.ts",
+    "src/modules/Collaboration/useCases/operationLog.ts",
+    "src/modules/Collaboration/useCases/vectorClock.ts",
+    "src/modules/Collaboration/useCases/webSocketTransport.ts",
+
+    "src/modules/Track/useCases/clipGainEnvelope.ts",
+
+    "src/modules/Project/useCases/nativeProjectFiles.ts"
   ],
+  "ignoreExportsUsedInFile": true,
   "ignoreDependencies": [
-    "@tailwindcss/vite",
-    "babel-plugin-react-compiler",
-    "@tanstack/router-plugin"
+    "@tauri-apps/plugin-fs",
+    "tailwindcss"
+  ],
+  "ignoreBinaries": [
+    "tauri",
+    "prettier"
   ]
 }

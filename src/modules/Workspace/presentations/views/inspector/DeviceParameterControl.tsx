@@ -9,7 +9,7 @@ import { setDeviceParameter } from '../../../useCases/workspaceViewActions';
 import { automationStore } from '#/modules/Track/stores/automationStore';
 import { type Device } from '../../../useCases/workspaceViewActions';
 
-export type DeviceParameterControlProps = {
+type DeviceParameterControlProps = {
     param: DeviceParameter;
     device: Device;
     trackId: string;
@@ -39,7 +39,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
     const isSlider = param.unit === 'dB';
 
     return (
-        <div className={cn("flex w-full min-w-0", isSlider ? "flex-col gap-2" : "flex-row items-center gap-3")}>
+        <div className={cn('flex w-full min-w-0', isSlider ? 'flex-col gap-2' : 'flex-row items-center gap-3')}>
             {isSlider ? (
                 <div className="flex items-center justify-between w-full">
                     <label className="text-[10px] font-medium text-foreground truncate" title={param.name}>
@@ -61,7 +61,9 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                                 type="button"
                                 className={cn(
                                     'size-3 rounded-full border shrink-0 transition-colors cursor-pointer',
-                                    hasAutomation ? 'border-orange-400 bg-orange-400/20' : 'border-muted-foreground/30 hover:bg-muted'
+                                    hasAutomation
+                                        ? 'border-orange-400 bg-orange-400/20'
+                                        : 'border-muted-foreground/30 hover:bg-muted'
                                 )}
                                 onClick={() => {
                                     if (activeLane) {
@@ -99,7 +101,9 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                                 type="button"
                                 className={cn(
                                     'size-3 rounded-full border shrink-0 transition-colors cursor-pointer',
-                                    hasAutomation ? 'border-orange-400 bg-orange-400/20' : 'border-muted-foreground/30 hover:bg-muted'
+                                    hasAutomation
+                                        ? 'border-orange-400 bg-orange-400/20'
+                                        : 'border-muted-foreground/30 hover:bg-muted'
                                 )}
                                 onClick={() => {
                                     if (activeLane) {
@@ -116,7 +120,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                 </div>
             )}
 
-            <div className={cn("flex items-center justify-center", isSlider ? "w-full px-1" : "shrink-0")}>
+            <div className={cn('flex items-center justify-center', isSlider ? 'w-full px-1' : 'shrink-0')}>
                 {isChoice ? (
                     <select
                         className="w-[80px] rounded bg-surface px-1.5 py-1 text-xs text-foreground border border-border/50 focus:outline-none focus:ring-1 focus:ring-primary"

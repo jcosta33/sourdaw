@@ -7,14 +7,14 @@
     /* == Layer 1: Core Design Tokens == */
 
     /* Surfaces (Extreme deep blacks) */
-    --color-bg-app: #030303;      /* Small perceptible gap to total #000 */
+    --color-bg-app: #030303; /* Small perceptible gap to total #000 */
     --color-bg-canvas: #080808;
-    --color-bg-tray: #0a0a0a;     /* Sidebar/inspector container */
-    --color-bg-well: #0c0c0c;     /* Channel strip / track‑list well */
-    --color-bg-recess: #0e0e0e;   /* Transport/tempo recessed bay */
-    --color-bg-panel: #111111;    /* Resting hardware surface */
-    --color-bg-panelRaised: #1A1A1A;
-    --color-bg-panelInset: #050505;  /* Deep pushed-in state */
+    --color-bg-tray: #0a0a0a; /* Sidebar/inspector container */
+    --color-bg-well: #0c0c0c; /* Channel strip / track‑list well */
+    --color-bg-recess: #0e0e0e; /* Transport/tempo recessed bay */
+    --color-bg-panel: #111111; /* Resting hardware surface */
+    --color-bg-panelRaised: #1a1a1a;
+    --color-bg-panelInset: #050505; /* Deep pushed-in state */
     --color-bg-slot: #000000;
     --color-bg-overlay: #151515;
     --color-bg-scrim: rgba(0, 0, 0, 0.85);
@@ -26,34 +26,34 @@
     --color-border-active: rgba(255, 255, 255, 0.25);
 
     /* Text */
-    --color-text-primary: #EAEAEA;
-    --color-text-secondary: #A3A3A3;
+    --color-text-primary: #eaeaea;
+    --color-text-secondary: #a3a3a3;
     --color-text-tertiary: #737373;
     --color-text-disabled: #404040;
 
     /* Accents (Muted pastels for dark contexts) */
-    --color-accent-cyan: #67E8F9;
-    --color-accent-mint: #6EE7B7;
-    --color-accent-lavender: #C4B5FD;
-    --color-accent-peach: #FDBA74;
-    --color-accent-amber: #FCD34D;
-    --color-accent-red: #FCA5A5;
+    --color-accent-cyan: #67e8f9;
+    --color-accent-mint: #6ee7b7;
+    --color-accent-lavender: #c4b5fd;
+    --color-accent-peach: #fdba74;
+    --color-accent-amber: #fcd34d;
+    --color-accent-red: #fca5a5;
 
     /* UI States */
     --color-state-success: var(--color-accent-mint);
     --color-state-warning: var(--color-accent-amber);
     --color-state-danger: var(--color-accent-red);
-    --color-state-record: #E53935;
-    --color-state-clip: #FF1744;
+    --color-state-record: #e53935;
+    --color-state-clip: #ff1744;
     --color-state-solo: var(--color-accent-amber);
     --color-state-mute: var(--color-accent-mint);
     --color-state-bypass: var(--color-text-disabled);
     --color-state-linked: var(--color-accent-cyan);
 
     /* Meter Displays */
-    --color-meter-safe: #34C759;
-    --color-meter-hot: #FFCC00;
-    --color-meter-clip: #FF3B30;
+    --color-meter-safe: #34c759;
+    --color-meter-hot: #ffcc00;
+    --color-meter-clip: #ff3b30;
     --color-meter-grid: rgba(255, 255, 255, 0.1);
     --color-meter-peakHold: rgba(255, 255, 255, 0.5);
 
@@ -67,18 +67,21 @@
     /* Elevation / Material Shadows */
     /* Flush: Flat surface with a hairline seam */
     --shadow-elevation-flush: inset 0 0 0 1px var(--color-border-soft);
-    
+
     /* Raised: Button/control that stands out, top inner light + bottom outer shadow */
-    --shadow-elevation-raised: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 4px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--color-border-soft);
-    
+    --shadow-elevation-raised:
+        inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 4px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--color-border-soft);
+
     /* Inset: Mechanically pressed states, slots, grooves */
     --shadow-elevation-inset: inset 0 2px 4px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.05);
-    
+
     /* Floating: Dropdowns, tooltips, dragging items */
-    --shadow-elevation-floating: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 8px 16px rgba(0, 0, 0, 0.8), 0 0 0 1px var(--color-border-soft);
-    
+    --shadow-elevation-floating:
+        inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 8px 16px rgba(0, 0, 0, 0.8), 0 0 0 1px var(--color-border-soft);
+
     /* Modal: Large dialog windows above the scrim */
-    --shadow-elevation-modal: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 24px 48px rgba(0, 0, 0, 0.9), 0 0 0 1px var(--color-border-soft);
+    --shadow-elevation-modal:
+        inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 24px 48px rgba(0, 0, 0, 0.9), 0 0 0 1px var(--color-border-soft);
 
     /* Animation */
     --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
@@ -91,7 +94,7 @@
 
     /* Easing Curves */
     --ease-press: cubic-bezier(0.2, 0, 0.6, 1);
-    --ease-release: cubic-bezier(0.0, 0, 0.2, 1);
+    --ease-release: cubic-bezier(0, 0, 0.2, 1);
     --ease-panel: cubic-bezier(0.22, 1, 0.36, 1);
     --ease-snap: cubic-bezier(0.5, 1.25, 0.75, 1);
 
@@ -130,31 +133,31 @@
     /* ======================================= */
     /* Shadcn Overrides mapped to Base Tokens */
     /* ======================================= */
-    
+
     --color-background: var(--color-bg-app);
     --color-foreground: var(--color-text-primary);
-    
+
     --color-card: var(--color-bg-panel);
     --color-card-foreground: var(--color-text-primary);
-    
+
     --color-popover: var(--color-bg-overlay);
     --color-popover-foreground: var(--color-text-primary);
-    
+
     --color-primary: var(--color-accent-cyan);
     --color-primary-foreground: var(--color-bg-app);
-    
+
     --color-secondary: var(--color-bg-panelRaised);
     --color-secondary-foreground: var(--color-text-primary);
-    
+
     --color-muted: var(--color-bg-slot);
     --color-muted-foreground: var(--color-text-secondary);
-    
+
     --color-accent: var(--color-bg-panelRaised);
     --color-accent-foreground: var(--color-text-primary);
-    
+
     --color-destructive: var(--color-state-danger);
-    --color-destructive-foreground: #FFFFFF;
-    
+    --color-destructive-foreground: #ffffff;
+
     --color-border: var(--color-border-soft);
     --color-input: var(--color-bg-panelInset);
     --color-ring: var(--color-border-focus);
@@ -176,7 +179,7 @@
 
 /* Tauri specific font-weight compensation for Linux WebKitGTK */
 [data-platform='linux'] {
-    --weight-normal: 300; 
-    --weight-medium: 400; 
-    --weight-semibold: 500; 
+    --weight-normal: 300;
+    --weight-medium: 400;
+    --weight-semibold: 500;
 }

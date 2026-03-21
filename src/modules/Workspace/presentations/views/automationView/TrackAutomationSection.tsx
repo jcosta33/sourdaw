@@ -31,7 +31,15 @@ const MODE_OPTIONS: { value: AutomationMode; label: string }[] = [
 const SPARKLINE_HEIGHT = 24;
 
 /** Render a mini sparkline SVG for collapsed automation lanes. */
-const LaneSparkline = ({ lane, trackColor, width }: { lane: AutomationLane; trackColor: string; width: number }): ReactElement => {
+const LaneSparkline = ({
+    lane,
+    trackColor,
+    width,
+}: {
+    lane: AutomationLane;
+    trackColor: string;
+    width: number;
+}): ReactElement => {
     const color = lane.color ?? trackColor;
     const { points, minValue, maxValue } = lane;
     if (points.length < 2) {
@@ -55,9 +63,7 @@ const LaneSparkline = ({ lane, trackColor, width }: { lane: AutomationLane; trac
         >
             <div className="absolute top-0.5 left-1 flex items-center gap-1 z-10">
                 <ChevronRight className="size-2.5 text-muted-foreground/50" />
-                <span className="text-[8px] text-muted-foreground/60 truncate max-w-[80px]">
-                    {lane.parameterName}
-                </span>
+                <span className="text-[8px] text-muted-foreground/60 truncate max-w-[80px]">{lane.parameterName}</span>
             </div>
             <svg width={width} height={SPARKLINE_HEIGHT} className="absolute inset-0">
                 <path d={pathData} fill="none" stroke={color} strokeWidth={1} strokeOpacity={0.5} />
@@ -131,7 +137,13 @@ export const TrackAutomationSection = ({
 
                     {showModePicker && (
                         <>
-                            <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setShowModePicker(false); }} />
+                            <div
+                                className="fixed inset-0 z-40"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setShowModePicker(false);
+                                }}
+                            />
                             <div className="absolute right-0 top-full mt-1 z-50 bg-popover border border-border rounded-md shadow-xl py-1 min-w-[100px]">
                                 {MODE_OPTIONS.map((opt) => {
                                     const cfg = AUTOMATION_MODE_CONFIG[opt.value];
@@ -149,8 +161,15 @@ export const TrackAutomationSection = ({
                                                 setShowModePicker(false);
                                             }}
                                         >
-                                            <span className="size-2 rounded-full" style={{ backgroundColor: cfg.color }} />
-                                            <span style={{ color: automationMode === opt.value ? cfg.textColor : undefined }}>
+                                            <span
+                                                className="size-2 rounded-full"
+                                                style={{ backgroundColor: cfg.color }}
+                                            />
+                                            <span
+                                                style={{
+                                                    color: automationMode === opt.value ? cfg.textColor : undefined,
+                                                }}
+                                            >
                                                 {opt.label}
                                             </span>
                                         </button>
@@ -170,12 +189,7 @@ export const TrackAutomationSection = ({
                 <div>
                     {trackLanes.map((lane) =>
                         lane.collapsed ? (
-                            <LaneSparkline
-                                key={lane.id}
-                                lane={lane}
-                                trackColor={trackColor}
-                                width={containerWidth}
-                            />
+                            <LaneSparkline key={lane.id} lane={lane} trackColor={trackColor} width={containerWidth} />
                         ) : (
                             <AutomationLaneRow
                                 key={lane.id}

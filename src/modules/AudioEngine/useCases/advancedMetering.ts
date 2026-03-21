@@ -256,38 +256,3 @@ export class PhaseCorrelationMeter {
         this.current = 1;
     }
 }
-
-// ─── Oscilloscope ──────────────────────────────────────────────────
-
-/**
- * Get oscilloscope-ready waveform data from an AnalyserNode.
- * Returns a copy of the time-domain data for Canvas2D rendering.
- *
- * @param analyserNode - Web Audio AnalyserNode
- * @returns Float32Array of samples (-1 to +1)
- */
-export function getOscilloscopeData(analyserNode: AnalyserNode): Float32Array {
-    const data = new Float32Array(analyserNode.frequencyBinCount);
-    analyserNode.getFloatTimeDomainData(data);
-    return data;
-}
-
-/**
- * Get stereo oscilloscope data (for Lissajous/goniometer display).
- * Splits interleaved stereo data into L/R channels.
- *
- * For a standard AnalyserNode (mono sum), this returns duplicated data.
- * For proper stereo, use a ChannelSplitterNode before two AnalyserNodes.
- *
- * @param analyserNode - AnalyserNode to read from
- * @returns Object with left and right channel arrays
- */
-export function getStereoOscilloscopeData(analyserNode: AnalyserNode): { left: Float32Array; right: Float32Array } {
-    const data = new Float32Array(analyserNode.frequencyBinCount);
-    analyserNode.getFloatTimeDomainData(data);
-
-    // AnalyserNode is mono (downmixed) — for true L/R, callers should
-    // use two AnalyserNodes connected via a ChannelSplitter.
-    // This returns the same data for both as a fallback.
-    return { left: data, right: new Float32Array(data) };
-}

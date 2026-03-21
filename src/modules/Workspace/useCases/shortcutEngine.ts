@@ -1,5 +1,11 @@
 import { type ShortcutAction, shortcutStore } from '../models/Shortcuts';
-import { togglePlayback, stopPlayback, toggleRecording, toggleLoop, duplicateClipToNextBar } from '#/modules/Command/useCases/keyboardShortcutActions';
+import {
+    togglePlayback,
+    stopPlayback,
+    toggleRecording,
+    toggleLoop,
+    duplicateClipToNextBar,
+} from '#/modules/Command/useCases/keyboardShortcutActions';
 import { undo, redo, copySelectedClip, pasteClip, removeClip, saveProject } from './workspaceViewActions';
 import { toggleMixer, toggleInspector, toggleChatPanel } from './togglePanel';
 import { workspaceStore } from '../stores/workspaceStore';
@@ -23,39 +29,74 @@ const actionHandlers: Partial<Record<ShortcutAction, ShortcutHandler>> = {
         e.preventDefault();
         toggleLoop();
     },
-    UNDO: (e) => { e.preventDefault(); void undo(); },
-    REDO: (e) => { e.preventDefault(); void redo(); },
-    COPY: (e) => { e.preventDefault(); copySelectedClip(); },
-    PASTE: (e) => { e.preventDefault(); pasteClip(); },
+    UNDO: (e) => {
+        e.preventDefault();
+        void undo();
+    },
+    REDO: (e) => {
+        e.preventDefault();
+        void redo();
+    },
+    COPY: (e) => {
+        e.preventDefault();
+        copySelectedClip();
+    },
+    PASTE: (e) => {
+        e.preventDefault();
+        pasteClip();
+    },
     DELETE: (e) => {
         const ws = workspaceStore.value;
-        if (!ws) return;
+        if (!ws) {
+            return;
+        }
         const ids = ws.selectedClipIds.length > 0 ? ws.selectedClipIds : ws.selectedClipId ? [ws.selectedClipId] : [];
         if (ids.length > 0) {
             e.preventDefault();
-            for (const id of ids) removeClip(id);
+            for (const id of ids) {
+                removeClip(id);
+            }
             workspaceStore.set({ ...ws, selectedClipId: null, selectedClipIds: [] });
         }
     },
     DUPLICATE: (e) => {
         e.preventDefault();
         const clipId = workspaceStore.value?.selectedClipId;
-        if (clipId) duplicateClipToNextBar(clipId);
+        if (clipId) {
+            duplicateClipToNextBar(clipId);
+        }
     },
-    SAVE_PROJECT: (e) => { e.preventDefault(); saveProject(); },
-    TOGGLE_MIXER: (e) => { e.preventDefault(); toggleMixer(); },
-    TOGGLE_INSPECTOR: (e) => { e.preventDefault(); toggleInspector(); },
-    TOGGLE_AI_ASSISTANT: (e) => { e.preventDefault(); toggleChatPanel(); },
+    SAVE_PROJECT: (e) => {
+        e.preventDefault();
+        saveProject();
+    },
+    TOGGLE_MIXER: (e) => {
+        e.preventDefault();
+        toggleMixer();
+    },
+    TOGGLE_INSPECTOR: (e) => {
+        e.preventDefault();
+        toggleInspector();
+    },
+    TOGGLE_AI_ASSISTANT: (e) => {
+        e.preventDefault();
+        toggleChatPanel();
+    },
 };
 
 export function startShortcutEngine(): () => void {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
-        if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName) || (e.target as HTMLElement).isContentEditable) {
+        if (
+            ['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName) ||
+            (e.target as HTMLElement).isContentEditable
+        ) {
             return;
         }
 
         const state = shortcutStore.value;
-        if (!state) return;
+        if (!state) {
+            return;
+        }
 
         for (const [action, binding] of Object.entries(state.bindings)) {
             const matchesKey = e.key.toLowerCase() === binding.key.toLowerCase();

@@ -4,7 +4,33 @@ description: >
   Apply when creating, editing, or reviewing the timeline renderer, piano-roll renderer, waveform/spectrogram views, metering surfaces, GPU drawing pipelines, worker-based canvas rendering, zoom/pan interactions, hit-testing layers, or any high-density editor surface that should not be rendered as ordinary React DOM. Enforces a renderer architecture where React owns layout and orchestration, while WebGPU/Canvas/OffscreenCanvas own dense drawing and interaction hot paths. Use WebGPU for primary high-performance rendering when available, with canvas-based fallback paths where required.
 ---
 
+## ⚠️ Cross-Platform Caveat: WebGPU Does Not Exist on Linux
+
+**WebGPU is not available on WebKitGTK (Linux).** No implementation exists and no public roadmap has been announced. On macOS, WebGPU requires Safari 26+ (macOS Tahoe), so it's not universally available there either. WebView2 (Windows) has supported it since Edge 113.
+
+This skill applies to all renderer surfaces, but the underlying GPU API must be chosen carefully:
+
+| Platform | Primary renderer | Notes |
+|---|---|---|
+| Windows (WebView2) | WebGPU | Available since Edge 113 |
+| macOS (WKWebView) | WebGPU | macOS Tahoe (26+) only; use WebGL2 on older macOS |
+| Linux (WebKitGTK) | **WebGL2** | WebGPU does not exist; Canvas2D for simple surfaces |
+
+**Rule**: Always check `navigator.gpu` before initializing a WebGPU context, and fall back to a WebGL2 renderer:
+
+```typescript
+async function createTimelineRenderer(canvas: HTMLCanvasElement) {
+  if (navigator.gpu) {
+    return await createWebGPURenderer(canvas);  // macOS/Windows
+  }
+  return createWebGL2Renderer(canvas);            // Linux + older macOS fallback
+}
+```
+
+Design every renderer with a `WebGL2Renderer` fallback from the start. Do not treat the WebGL2 path as negligible — it is the primary path for all Linux users.
+
 ## Setup
+
 
 ```tsx
 // src/modules/Timeline/presentations/components/TimelineSurface.tsx

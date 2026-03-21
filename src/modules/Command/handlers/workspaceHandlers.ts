@@ -1,6 +1,5 @@
 import { type ActionHandler } from '../models/ActionHandler';
 import { type AppAction } from '../models/AppAction';
-import { type EditingTool } from '#/modules/Workspace/useCases/workspaceQueries';
 import { setWorkspaceMode } from '#/modules/Workspace/useCases/setWorkspaceMode';
 import {
     toggleMixer,
@@ -43,6 +42,7 @@ import { exportMidiClip } from '#/modules/Track/useCases/exportMidiFile';
 import { pickFiles } from '#/modules/Project/useCases/nativeFileDialog';
 import { importMidiFile } from '#/modules/Track/useCases/importMidiFile';
 import { importAudioFile } from '#/modules/Track/useCases/importAudioFile';
+import { type EditingTool } from '#/modules/Workspace/models/EditingTool';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 

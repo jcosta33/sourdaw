@@ -554,22 +554,32 @@ export function startPlayheadScheduler(): void {
                     } else if (clip.followAction === 'play_next') {
                         const nextClips = track.clips.filter((c) => c.startBeat >= clip.endBeat && c.id !== clip.id);
                         nextClips.sort((a, b) => a.startBeat - b.startBeat);
-                        if (nextClips[0]) jumpToPosition = nextClips[0].startBeat;
+                        if (nextClips[0]) {
+                            jumpToPosition = nextClips[0].startBeat;
+                        }
                     } else if (clip.followAction === 'play_previous') {
                         const prevClips = track.clips.filter((c) => c.endBeat <= clip.startBeat && c.id !== clip.id);
                         prevClips.sort((a, b) => a.startBeat - b.startBeat);
-                        if (prevClips[prevClips.length - 1]) jumpToPosition = prevClips[prevClips.length - 1]!.startBeat;
+                        if (prevClips[prevClips.length - 1]) {
+                            jumpToPosition = prevClips[prevClips.length - 1]!.startBeat;
+                        }
                     } else if (clip.followAction === 'play_first') {
                         const firstClip = [...track.clips].sort((a, b) => a.startBeat - b.startBeat)[0];
-                        if (firstClip) jumpToPosition = firstClip.startBeat;
+                        if (firstClip) {
+                            jumpToPosition = firstClip.startBeat;
+                        }
                     } else if (clip.followAction === 'play_last') {
                         const lastClip = [...track.clips].sort((a, b) => b.startBeat - a.startBeat)[0];
-                        if (lastClip) jumpToPosition = lastClip.startBeat;
+                        if (lastClip) {
+                            jumpToPosition = lastClip.startBeat;
+                        }
                     } else if (clip.followAction === 'play_random') {
                         const otherClips = track.clips.filter((c) => c.id !== clip.id);
                         if (otherClips.length > 0) {
                             const randomClip = otherClips[Math.floor(Math.random() * otherClips.length)];
-                            if (randomClip) jumpToPosition = randomClip.startBeat;
+                            if (randomClip) {
+                                jumpToPosition = randomClip.startBeat;
+                            }
                         }
                     }
                 }

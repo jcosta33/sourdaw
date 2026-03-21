@@ -2,6 +2,7 @@ import { type ReactElement, useState, useEffect } from 'react';
 import { Play, Pause, Square, Circle, Repeat, Scissors, ListOrdered, Link as LinkIcon, Layers } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { LatchButton } from '#/components/daw/LatchButton';
+import { LED } from '#/components/daw/LED';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { cn } from '#/helpers/Styles/cn';
 import {
@@ -18,9 +19,10 @@ import {
 } from '../../../useCases/workspaceViewActions';
 import { enableLink, disableLink, getLinkStatus } from '#/modules/AudioEngine/useCases/linkBridge';
 
-export type TransportControlsProps = {
+type TransportControlsProps = {
     isPlaying: boolean;
     isRecording: boolean;
+    isAudioRecording: boolean;
     isLooping: boolean;
     overdubEnabled: boolean;
     metronomeEnabled: boolean;
@@ -34,6 +36,7 @@ export type TransportControlsProps = {
 export const TransportControls = ({
     isPlaying,
     isRecording,
+    isAudioRecording,
     isLooping,
     overdubEnabled,
     metronomeEnabled,
@@ -66,7 +69,11 @@ export const TransportControls = ({
     };
 
     return (
-        <div className="flex items-center gap-1 bg-surface-recess px-1.5 py-1 rounded-sm shadow-[inset_0_1px_3px_rgba(0,0,0,0.6),0_1px_0_rgba(255,255,255,0.03)] border border-black/60" role="group" aria-label="Playback controls">
+        <div
+            className="flex items-center gap-1 bg-surface-recess px-1.5 py-1 rounded-sm shadow-[inset_0_1px_3px_rgba(0,0,0,0.6),0_1px_0_rgba(255,255,255,0.03)] border border-black/60"
+            role="group"
+            aria-label="Playback controls"
+        >
             <span className="sr-only" aria-live="polite" role="status">
                 {isRecording ? 'Recording' : isPlaying ? 'Playing' : 'Stopped'}
             </span>
@@ -119,6 +126,7 @@ export const TransportControls = ({
                     {isRecording ? 'Stop Recording' : anyTrackArmed ? 'Record (tracks armed)' : 'Record'} (R)
                 </TooltipContent>
             </Tooltip>
+            <LED on={isAudioRecording} variant="red" size="sm" />
 
             <Tooltip>
                 <TooltipTrigger asChild>
@@ -167,6 +175,7 @@ export const TransportControls = ({
                 </TooltipTrigger>
                 <TooltipContent>Ableton Link Sync</TooltipContent>
             </Tooltip>
+            <LED on={linkEnabled} variant="amber" size="sm" />
 
             <Tooltip>
                 <TooltipTrigger asChild>

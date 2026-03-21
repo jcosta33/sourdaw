@@ -5,16 +5,18 @@ import { streamCloudChatCompletion } from '../repositories/cloudLlmRepository';
 export async function mixHealthAnalysis(onToken: (text: string) => void): Promise<void> {
     const tracks = getTrackState()?.tracks;
     if (!tracks || tracks.length === 0) {
-        onToken("No tracks found in the session to analyze.");
+        onToken('No tracks found in the session to analyze.');
         return;
     }
 
-    let reportPayload = "Mix Data Overview:\\n\\n";
+    let reportPayload = 'Mix Data Overview:\\n\\n';
 
     for (const track of tracks) {
-        if (track.kind === 'folder') continue;
+        if (track.kind === 'folder') {
+            continue;
+        }
 
-        let trackSummary = "";
+        let trackSummary = '';
         let audioAnalyzed = false;
 
         // Try to analyze the first audio clip
@@ -54,7 +56,7 @@ Keep your response concise. Do not mention the raw numbers heavily unless necess
     await streamCloudChatCompletion(
         [
             { role: 'system', content: systemPrompt },
-            { role: 'user', content: reportPayload }
+            { role: 'user', content: reportPayload },
         ],
         onToken,
         { maxTokens: 1000 }

@@ -131,8 +131,6 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         };
     }, [canvasRef]);
 
-
-
     const getCanvasCoords = useCallback(
         (e: ReactMouseEvent<HTMLCanvasElement> | ReactDragEvent<HTMLDivElement>): { x: number; y: number } => {
             const rect = canvasRef.current?.getBoundingClientRect();
@@ -177,7 +175,12 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             if (wsState && wsState.automationVisibility !== 'hidden') {
                 const subLaneHit = hitTestAutomationSubLane(x, y);
                 if (subLaneHit) {
-                    const point: AutomationPoint = { beat: subLaneHit.beat, value: subLaneHit.value, curve: 'linear', tension: 0 };
+                    const point: AutomationPoint = {
+                        beat: subLaneHit.beat,
+                        value: subLaneHit.value,
+                        curve: 'linear',
+                        tension: 0,
+                    };
                     addAutomationPoint(subLaneHit.laneId, point);
                     autoDragRef.current = { laneId: subLaneHit.laneId, trackId: subLaneHit.trackId, points: [point] };
                     selectTrack(subLaneHit.trackId);
@@ -248,7 +251,12 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                 // Check sub-lane first
                 const subLaneHit = hitTestAutomationSubLane(x, y);
                 if (subLaneHit) {
-                    const point: AutomationPoint = { beat: subLaneHit.beat, value: subLaneHit.value, curve: 'linear', tension: 0 };
+                    const point: AutomationPoint = {
+                        beat: subLaneHit.beat,
+                        value: subLaneHit.value,
+                        curve: 'linear',
+                        tension: 0,
+                    };
                     addAutomationPoint(subLaneHit.laneId, point);
                     autoDragRef.current = { laneId: subLaneHit.laneId, trackId: subLaneHit.trackId, points: [point] };
                     selectTrack(subLaneHit.trackId);

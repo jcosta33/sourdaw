@@ -194,7 +194,10 @@ const trackTools: ToolSchema[] = [
                         trackId: { type: 'string' },
                         newName: { type: 'string', description: 'Standardized name (e.g., "Bass", "Kick")' },
                         color: { type: 'string', description: 'CSS color (e.g., "blue", "#ff0000")' },
-                        folderName: { type: 'string', description: 'Optional folder group to move this track into (e.g., "Drums").' },
+                        folderName: {
+                            type: 'string',
+                            description: 'Optional folder group to move this track into (e.g., "Drums").',
+                        },
                     },
                     required: ['trackId'],
                 },
@@ -952,28 +955,3 @@ export const DAW_TOOL_SCHEMAS: ToolSchema[] = [
     ...timeTools,
     ...workspaceTools,
 ];
-
-/**
- * Serialize a single tool to a compact function-signature string.
- * Instead of verbose JSON schema, uses: `name(param:type, ...) - description`
- * This dramatically reduces token count (~40 chars vs ~150+ chars per tool).
- */
-function serializeTool(t: ToolSchema): string {
-    const fn = t.function;
-    const params = Object.entries(fn.parameters.properties)
-        .map(([key, val]) => {
-            const v = val as { type?: string; enum?: string[]; description?: string };
-            const typeStr = v.enum ? v.enum.join('|') : (v.type ?? 'string');
-            return `${key}:${typeStr}`;
-        })
-        .join(', ');
-    return `${fn.name}(${params}) - ${fn.description}`;
-}
-
-/**
- * Serialize all tool schemas as compact function signatures for the system prompt.
- * Uses Hermes `<tools>` XML wrapper with one tool per line for readability.
- */
-export function serializeToolsForPrompt(): string {
-    return DAW_TOOL_SCHEMAS.map(serializeTool).join('\n');
-}

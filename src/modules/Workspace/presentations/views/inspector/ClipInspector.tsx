@@ -4,7 +4,25 @@ import { Separator } from '#/components/ui/separator';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { ChevronRight, Sparkles, Volume2, VolumeX, Loader2, Music, BarChart3 } from 'lucide-react';
+import {
+    ChevronRight,
+    Sparkles,
+    Volume2,
+    VolumeX,
+    Loader2,
+    Music,
+    BarChart3,
+    Activity,
+    Plus,
+    RotateCcw,
+} from 'lucide-react';
+import {
+    getClipGainEnvelope,
+    toggleClipGainEnvelope,
+    addGainEnvelopePoint,
+    removeGainEnvelopePoint,
+    resetClipGainEnvelope,
+} from '#/modules/Track/useCases/clipGainEnvelope';
 import {
     trimClipStart,
     trimClipEnd,
@@ -24,7 +42,7 @@ import { audioToMidi } from '#/modules/AiRuntime/useCases/audioToMidi';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { generateMidiVariations } from '#/modules/AiRuntime/useCases/generateMidiVariations';
 
-export type ClipInspectorProps = {
+type ClipInspectorProps = {
     clip: Clip;
     trackId: string;
     onBack: () => void;
@@ -44,6 +62,8 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
     const [isGeneratingVariations, setIsGeneratingVariations] = useState(false);
     const [analysisResult, setAnalysisResult] = useState<string | null>(null);
     const [pitchResult, setPitchResult] = useState<string | null>(null);
+    const [envKey, setEnvKey] = useState(0);
+    void envKey; // used to force re-render when envelope mutates
 
     const hasDenoised = clip.audioBufferId ? audioBufferCache.has(`${clip.audioBufferId}-denoised`) : false;
 
@@ -244,6 +264,95 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
             <Separator />
 
             <section>
+                <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <Activity className="size-3" aria-hidden="true" />
+                    Gain Envelope
+                </h3>
+                {(() => {
+                    const envelope = getClipGainEnvelope(clip.id);
+                    return (
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                                <span className="text-[10px] text-muted-foreground">
+                                    {envelope.enabled ? 'Enabled' : 'Disabled'} · {envelope.points.length} point
+                                    {envelope.points.length !== 1 ? 's' : ''}
+                                </span>
+                                <div className="flex items-center gap-1">
+                                    <Button
+                                        variant="ghost"
+                                        size="icon-xs"
+                                        onClick={() => {
+                                            toggleClipGainEnvelope(clip.id);
+                                            setEnvKey((k) => k + 1);
+                                        }}
+                                        aria-label={envelope.enabled ? 'Disable gain envelope' : 'Enable gain envelope'}
+                                        title={envelope.enabled ? 'Disable' : 'Enable'}
+                                    >
+                                        <Activity
+                                            className={`size-3 ${envelope.enabled ? 'text-emerald-400' : 'text-muted-foreground'}`}
+                                        />
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon-xs"
+                                        onClick={() => {
+                                            addGainEnvelopePoint(clip.id, duration / 2, 0);
+                                            setEnvKey((k) => k + 1);
+                                        }}
+                                        aria-label="Add breakpoint"
+                                        title="Add breakpoint at midpoint"
+                                    >
+                                        <Plus className="size-3" />
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon-xs"
+                                        onClick={() => {
+                                            resetClipGainEnvelope(clip.id);
+                                            setEnvKey((k) => k + 1);
+                                        }}
+                                        aria-label="Reset gain envelope"
+                                        title="Reset to flat 0 dB"
+                                    >
+                                        <RotateCcw className="size-3" />
+                                    </Button>
+                                </div>
+                            </div>
+                            {envelope.enabled && envelope.points.length > 0 && (
+                                <div className="rounded-md bg-surface-well border border-border-hairline shadow-[inset_0_1px_3px_rgba(0,0,0,0.4)] p-2 space-y-1">
+                                    {envelope.points.map((pt) => (
+                                        <div key={pt.id} className="flex items-center justify-between gap-2">
+                                            <span className="text-[9px] font-mono text-muted-foreground w-12 shrink-0">
+                                                @{pt.beatOffset.toFixed(1)}
+                                            </span>
+                                            <span className="text-[9px] font-mono text-foreground flex-1 text-right">
+                                                {pt.gainDb > 0 ? '+' : ''}
+                                                {pt.gainDb.toFixed(1)} dB
+                                            </span>
+                                            <Button
+                                                variant="ghost"
+                                                size="icon-xs"
+                                                className="h-4 w-4"
+                                                onClick={() => {
+                                                    removeGainEnvelopePoint(clip.id, pt.id);
+                                                    setEnvKey((k) => k + 1);
+                                                }}
+                                                aria-label={`Remove breakpoint at beat ${pt.beatOffset}`}
+                                            >
+                                                <span className="text-[9px] text-muted-foreground">×</span>
+                                            </Button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })()}
+            </section>
+
+            <Separator />
+
+            <section>
                 <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Color</h3>
                 <div className="flex gap-1">
                     {CLIP_COLOR_PRESETS.map((c) => (
@@ -279,7 +388,9 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                         <span className="text-[10px] font-mono text-foreground">{clip.trackId}</span>
                     </div>
                     <div className="flex items-center justify-between">
-                        <label className="text-[10px] text-muted-foreground" htmlFor="follow-action-select">Follow Action</label>
+                        <label className="text-[10px] text-muted-foreground" htmlFor="follow-action-select">
+                            Follow Action
+                        </label>
                         <select
                             id="follow-action-select"
                             className="rounded bg-surface-overlay text-[10px] text-foreground text-right outline-none focus:ring-1 focus:ring-ring border border-border-hairline px-1 py-0.5 cursor-pointer hover:bg-surface-raised transition-colors"
@@ -289,13 +400,27 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                                 setClipFollowAction(clip.id, val);
                             }}
                         >
-                            <option className="bg-bg-overlay" value="none">None</option>
-                            <option className="bg-bg-overlay" value="stop">Stop</option>
-                            <option className="bg-bg-overlay" value="play_next">Play Next</option>
-                            <option className="bg-bg-overlay" value="play_previous">Play Previous</option>
-                            <option className="bg-bg-overlay" value="play_first">Play First</option>
-                            <option className="bg-bg-overlay" value="play_last">Play Last</option>
-                            <option className="bg-bg-overlay" value="play_random">Play Random</option>
+                            <option className="bg-bg-overlay" value="none">
+                                None
+                            </option>
+                            <option className="bg-bg-overlay" value="stop">
+                                Stop
+                            </option>
+                            <option className="bg-bg-overlay" value="play_next">
+                                Play Next
+                            </option>
+                            <option className="bg-bg-overlay" value="play_previous">
+                                Play Previous
+                            </option>
+                            <option className="bg-bg-overlay" value="play_first">
+                                Play First
+                            </option>
+                            <option className="bg-bg-overlay" value="play_last">
+                                Play Last
+                            </option>
+                            <option className="bg-bg-overlay" value="play_random">
+                                Play Random
+                            </option>
                         </select>
                     </div>
                     {clip.type === 'audio' && (
@@ -377,9 +502,13 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                                     disabled={isDenoising}
                                 >
                                     {isDenoising ? (
-                                        <><Loader2 className="size-3 mr-1 animate-spin" /> Denoising…</>
+                                        <>
+                                            <Loader2 className="size-3 mr-1 animate-spin" /> Denoising…
+                                        </>
                                     ) : (
-                                        <><Sparkles className="size-3 mr-1" /> Apply Denoise</>
+                                        <>
+                                            <Sparkles className="size-3 mr-1" /> Apply Denoise
+                                        </>
                                     )}
                                 </Button>
                             </div>
@@ -408,7 +537,9 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                             <div className="bg-surface-raised/50 rounded-md p-2 space-y-1.5 border border-border/30">
                                 <div className="flex items-center gap-1.5">
                                     <Music className="size-3 text-purple-400" aria-hidden="true" />
-                                    <span className="text-[10px] font-medium text-foreground/90">Polyphonic MIDI (AI)</span>
+                                    <span className="text-[10px] font-medium text-foreground/90">
+                                        Polyphonic MIDI (AI)
+                                    </span>
                                 </div>
                                 <p className="text-[9px] text-muted-foreground leading-relaxed">
                                     Neural network detects chords, melodies, and pitch bends.
@@ -428,9 +559,13 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                                     disabled={isConvertingPoly}
                                 >
                                     {isConvertingPoly ? (
-                                        <><Loader2 className="size-3 mr-1 animate-spin" /> Converting…</>
+                                        <>
+                                            <Loader2 className="size-3 mr-1 animate-spin" /> Converting…
+                                        </>
                                     ) : (
-                                        <><Music className="size-3 mr-1" /> Audio → MIDI (Poly)</>
+                                        <>
+                                            <Music className="size-3 mr-1" /> Audio → MIDI (Poly)
+                                        </>
                                     )}
                                 </Button>
                             </div>
@@ -457,7 +592,9 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                                                 );
                                             }
                                             if (pitch) {
-                                                setPitchResult(`Dominant: ${pitch.noteName} (${pitch.frequency.toFixed(1)} Hz, ${(pitch.clarity * 100).toFixed(0)}% clarity)`);
+                                                setPitchResult(
+                                                    `Dominant: ${pitch.noteName} (${pitch.frequency.toFixed(1)} Hz, ${(pitch.clarity * 100).toFixed(0)}% clarity)`
+                                                );
                                             }
                                         } finally {
                                             setIsAnalyzing(false);
@@ -466,9 +603,13 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                                     disabled={isAnalyzing}
                                 >
                                     {isAnalyzing ? (
-                                        <><Loader2 className="size-3 mr-1 animate-spin" /> Analyzing…</>
+                                        <>
+                                            <Loader2 className="size-3 mr-1 animate-spin" /> Analyzing…
+                                        </>
                                     ) : (
-                                        <><BarChart3 className="size-3 mr-1" /> Analyze Clip</>
+                                        <>
+                                            <BarChart3 className="size-3 mr-1" /> Analyze Clip
+                                        </>
                                     )}
                                 </Button>
                                 {analysisResult ? (
@@ -477,9 +618,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                                     </p>
                                 ) : null}
                                 {pitchResult ? (
-                                    <p className="text-[9px] text-emerald-400/80 font-mono">
-                                        {pitchResult}
-                                    </p>
+                                    <p className="text-[9px] text-emerald-400/80 font-mono">{pitchResult}</p>
                                 ) : null}
                             </div>
                         </div>
@@ -520,9 +659,13 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                                     disabled={isGeneratingVariations}
                                 >
                                     {isGeneratingVariations ? (
-                                        <><Loader2 className="size-3 mr-1 animate-spin" /> Generating…</>
+                                        <>
+                                            <Loader2 className="size-3 mr-1 animate-spin" /> Generating…
+                                        </>
                                     ) : (
-                                        <><Sparkles className="size-3 mr-1" /> Generate</>
+                                        <>
+                                            <Sparkles className="size-3 mr-1" /> Generate
+                                        </>
                                     )}
                                 </Button>
                             </div>

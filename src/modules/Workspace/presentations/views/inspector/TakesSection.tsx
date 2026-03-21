@@ -5,7 +5,7 @@ import { cn } from '#/helpers/Styles/cn';
 import { takeLaneStore } from '#/modules/Track/stores/takeLaneStore';
 import { setCompRegion, selectTake, flattenComp } from '../../../useCases/workspaceViewActions';
 
-export type TakesSectionProps = {
+type TakesSectionProps = {
     trackId: string;
 };
 
@@ -59,7 +59,9 @@ export const TakesSection = ({ trackId }: TakesSectionProps): ReactElement | nul
                                     beat {take.startBeat}–{take.endBeat}
                                 </span>
                             </div>
-                            {take.selected && <span className="text-[10px] font-medium text-primary ml-2 shrink-0">Active</span>}
+                            {take.selected && (
+                                <span className="text-[10px] font-medium text-primary ml-2 shrink-0">Active</span>
+                            )}
                         </div>
                         {!take.selected && (
                             <Button

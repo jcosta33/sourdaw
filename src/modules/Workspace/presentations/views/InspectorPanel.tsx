@@ -93,4 +93,3 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
         </aside>
     );
 };
-

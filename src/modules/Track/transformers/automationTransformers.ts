@@ -66,8 +66,8 @@ function applyTension(t: number, tension: number): number {
         return t;
     }
     // Use power curve with tension mapping
-    const power = Math.pow(2, tension * 3); // Maps -1..+1 to 0.125..8
-    return Math.pow(t, power);
+    const power = 2 ** (tension * 3); // Maps -1..+1 to 0.125..8
+    return t ** power;
 }
 
 /**
@@ -122,11 +122,7 @@ export function interpolateAutomationValue(
 
         // Catmull-Rom coefficients
         const result =
-            0.5 *
-            (2 * v1 +
-                (-v0 + v2) * t +
-                (2 * v0 - 5 * v1 + 4 * v2 - v3) * t2 +
-                (-v0 + 3 * v1 - 3 * v2 + v3) * t3);
+            0.5 * (2 * v1 + (-v0 + v2) * t + (2 * v0 - 5 * v1 + 4 * v2 - v3) * t2 + (-v0 + 3 * v1 - 3 * v2 + v3) * t3);
 
         return result;
     }
@@ -194,10 +190,7 @@ export function generateShapePoints(
  * Returns beat ranges where automation data has been explicitly written.
  * Adjacent points (within maxGap beats) are considered part of the same region.
  */
-export function getAutomationRegions(
-    points: AutomationPoint[],
-    maxGap = 0
-): { startBeat: number; endBeat: number }[] {
+export function getAutomationRegions(points: AutomationPoint[], maxGap = 0): { startBeat: number; endBeat: number }[] {
     if (points.length === 0) {
         return [];
     }

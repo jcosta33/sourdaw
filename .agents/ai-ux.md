@@ -355,5 +355,12 @@ Forum research across Reddit, KVR Audio, and producer surveys reveals a consiste
 
 The AI music production landscape in 2026 reveals a clear hierarchy of value. **Assistive AI that handles technical drudgery — stem separation, spectral analysis, reference matching, audio-to-MIDI conversion — has achieved near-universal adoption**. Generative AI that attempts creative decisions remains controversial, with only 3% of producers using it for complete songs. The winning UX formula across iZotope Ozone, Sonible smart:EQ 4, Gullfoss, and Logic Pro is consistent: show the work, let users override everything, default to conservative settings, and integrate AI so seamlessly it doesn't feel like AI.
 
-For a Tauri v2 DAW, the optimal path is clear. Start with Demucs stem separation and Basic Pitch audio-to-MIDI — both MIT-licensed, ONNX-ready, and addressing the two most-requested AI features. Implement beat/key detection and spectral analysis in pure Rust — these are baseline expectations, not differentiators. Build the "learn" button pattern for EQ and mastering, powered by DSP algorithms rather than large models. Use the `ort` crate for ONNX inference on background threads with Tauri event-based progress reporting. And above all, follow the creative friction principle: eliminate technical barriers, preserve artistic ones. As the AI Journal put it in 2026: "The tools earning a permanent place in professional workflows are the ones that handle the technical work and stop where creative decisions start."
+For a Tauri v2 DAW, the optimal path is clear. Start with Demucs stem separation and Basic Pitch audio-to-MIDI — both MIT-licensed, ONNX-ready, and addressing the two most-requested AI features. Implement beat/key detection and spectral analysis in pure Rust — these are baseline expectations, not differentiators. Build the "learn" button pattern for EQ and mastering, powered by DSP algorithms rather than large models. And above all, follow the creative friction principle: eliminate technical barriers, preserve artistic ones.
+
+---
+
+## See Also
+
+- **[ai-implementation.md](./ai-implementation.md)** — Library versions, ONNX models, mistral.rs + Qwen3-8B, Tauri streaming patterns, and full feature-by-feature implementation guides (authoritative technical reference for everything in this doc's "integration paths")
+- **[killer-features.md](./killer-features.md)** — Product strategy and competitive differentiation context for AI feature prioritization
 

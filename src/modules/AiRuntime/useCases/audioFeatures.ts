@@ -56,10 +56,7 @@ export type AnalysisOptions = {
  * Extract per-frame audio features from a buffer using Meyda.
  * Returns an array of feature snapshots, one per analysis window.
  */
-export function extractFeatures(
-    audioBufferId: string,
-    options: AnalysisOptions = {},
-): AudioFeatures[] {
+export function extractFeatures(audioBufferId: string, options: AnalysisOptions = {}): AudioFeatures[] {
     const { bufferSize = 2048, hopSize = 512 } = options;
 
     const buffer = audioBufferCache.get(audioBufferId);
@@ -78,8 +75,18 @@ export function extractFeatures(
         const window = data.slice(offset, offset + bufferSize);
 
         const features = Meyda.extract(
-            ['rms', 'energy', 'spectralCentroid', 'spectralFlatness', 'spectralRolloff', 'zcr', 'loudness', 'mfcc', 'chroma'],
-            window,
+            [
+                'rms',
+                'energy',
+                'spectralCentroid',
+                'spectralFlatness',
+                'spectralRolloff',
+                'zcr',
+                'loudness',
+                'mfcc',
+                'chroma',
+            ],
+            window
         );
 
         if (features) {
@@ -90,7 +97,10 @@ export function extractFeatures(
                 spectralFlatness: (features.spectralFlatness as number) ?? 0,
                 spectralRolloff: (features.spectralRolloff as number) ?? 0,
                 zcr: (features.zcr as number) ?? 0,
-                loudness: (features.loudness as { total: number; specific: Float32Array }) ?? { total: 0, specific: new Float32Array(0) },
+                loudness: (features.loudness as { total: number; specific: Float32Array }) ?? {
+                    total: 0,
+                    specific: new Float32Array(0),
+                },
                 mfcc: (features.mfcc as number[]) ?? [],
                 chroma: (features.chroma as number[]) ?? [],
             });
@@ -104,10 +114,7 @@ export function extractFeatures(
  * Compute a summary of audio features across the entire buffer.
  * Useful for quick analysis and comparison between clips.
  */
-export function summarizeFeatures(
-    audioBufferId: string,
-    options?: AnalysisOptions,
-): AudioFeaturesSummary | null {
+export function summarizeFeatures(audioBufferId: string, options?: AnalysisOptions): AudioFeaturesSummary | null {
     const frames = extractFeatures(audioBufferId, options);
     if (frames.length === 0) {
         return null;
@@ -122,7 +129,7 @@ export function summarizeFeatures(
     const avgZcr = frames.reduce((sum, f) => sum + f.zcr, 0) / n;
 
     // Average chroma profile
-    const chromaProfile = new Array<number>(12).fill(0);
+    const chromaProfile: number[] = new Array(12).fill(0);
     for (const f of frames) {
         for (let i = 0; i < 12; i++) {
             const chromaVal = f.chroma[i] ?? 0;

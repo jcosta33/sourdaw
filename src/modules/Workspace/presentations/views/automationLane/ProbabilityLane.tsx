@@ -73,7 +73,9 @@ export const ProbabilityLane = ({ clipId, selectedNoteIds }: ProbabilityLaneProp
                         key={note.id}
                         className={cn(
                             'w-3 rounded-t cursor-ns-resize transition-colors',
-                            isSelected ? 'bg-amber-400/80 hover:bg-amber-400' : 'bg-emerald-400/30 hover:bg-emerald-400/50'
+                            isSelected
+                                ? 'bg-amber-400/80 hover:bg-amber-400'
+                                : 'bg-emerald-400/30 hover:bg-emerald-400/50'
                         )}
                         style={{
                             height: `${prob}%`,

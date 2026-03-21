@@ -72,17 +72,13 @@ function tryParseJsonMode(content: string): ToolCallResult[] {
         const parsed = JSON.parse(candidate) as unknown;
 
         // {"actions":[...]} wrapper
-        if (isObject(parsed) && Array.isArray((parsed as Record<string, unknown>).actions)) {
-            return ((parsed as Record<string, unknown>).actions as unknown[])
-                .map(coerceToolCall)
-                .filter((r): r is ToolCallResult => r !== null);
+        if (isObject(parsed) && Array.isArray(parsed.actions)) {
+            return (parsed.actions as unknown[]).map(coerceToolCall).filter((r): r is ToolCallResult => r !== null);
         }
 
         // {"tool_calls":[...]} wrapper
-        if (isObject(parsed) && Array.isArray((parsed as Record<string, unknown>).tool_calls)) {
-            return ((parsed as Record<string, unknown>).tool_calls as unknown[])
-                .map(coerceToolCall)
-                .filter((r): r is ToolCallResult => r !== null);
+        if (isObject(parsed) && Array.isArray(parsed.tool_calls)) {
+            return (parsed.tool_calls as unknown[]).map(coerceToolCall).filter((r): r is ToolCallResult => r !== null);
         }
 
         // Top-level array
@@ -110,7 +106,7 @@ function coerceToolCall(raw: unknown): ToolCallResult | null {
     if (!isObject(raw)) {
         return null;
     }
-    const obj = raw as Record<string, unknown>;
+    const obj = raw;
     const name = obj.name;
     if (typeof name !== 'string' || name.length === 0) {
         return null;

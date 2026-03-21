@@ -5,7 +5,7 @@ import { Plus } from 'lucide-react';
 import { assignToVca, removeFromVca, getVcaGroups, createVcaGroup } from '../../../useCases/workspaceViewActions';
 import { type Track } from '../../../useCases/workspaceViewActions';
 
-export type TrackVcaSectionProps = {
+type TrackVcaSectionProps = {
     track: Track;
 };
 

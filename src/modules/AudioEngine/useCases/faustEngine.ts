@@ -1,21 +1,35 @@
 /**
- * Faust DSP Engine.
- * Framework for compiling and loading Faust .dsp files as WASM WAM plugins.
- * Provides the bridge between Faust source → WASM → AudioWorklet.
+ * Faust DSP Engine — real WASM compilation bridge.
  *
- * In production, uses faust2wam or the Faust WASM compiler.
- * This module provides the TS-side infrastructure.
+ * Compiles Faust DSP code to WASM at runtime using @grame/faustwasm,
+ * producing AudioWorkletNodes that integrate with the Web Audio graph.
+ *
+ * Flow: DSP source → FaustCompiler → FaustMonoDspGenerator → AudioWorkletNode
+ *
+ * The compiler + WASM module are loaded lazily on first use.
+ * Compiled factories are cached by the FaustCompiler (SHA256-based).
  */
 
+import {
+    instantiateFaustModuleFromFile,
+    FaustCompiler,
+    FaustMonoDspGenerator,
+    LibFaust,
+    type IFaustCompiler,
+    type IFaustMonoWebAudioNode,
+} from '@grame/faustwasm';
 import { registerWAMPlugin, type WAMDescriptor } from './wamPluginHost';
+
+// ── Types ───────────────────────────────────────────────────────────────
 
 export type FaustModule = {
     id: string;
     name: string;
     dspCode: string;
-    wasmModule: WebAssembly.Module | null;
     paramDescriptors: FaustParamDescriptor[];
     compiled: boolean;
+    /** Cached generator for node instantiation after compilation */
+    generator: FaustMonoDspGenerator | null;
 };
 
 export type FaustParamDescriptor = {
@@ -28,7 +42,44 @@ export type FaustParamDescriptor = {
     type: 'hslider' | 'vslider' | 'nentry' | 'button' | 'checkbox';
 };
 
+// ── Module registry ─────────────────────────────────────────────────────
+
 const modules = new Map<string, FaustModule>();
+
+// ── Compiler singleton (lazy init) ──────────────────────────────────────
+
+let compilerPromise: Promise<IFaustCompiler> | null = null;
+let compilerReady = false;
+
+/**
+ * Initialize the Faust compiler from the bundled libfaust-wasm files.
+ * The .js, .data, and .wasm files must be in `/faust/` (public directory).
+ *
+ * This is called lazily on first compile — not at app startup — to avoid
+ * blocking initial load with the ~15MB WASM download.
+ */
+async function getCompiler(): Promise<IFaustCompiler> {
+    if (!compilerPromise) {
+        compilerPromise = (async () => {
+            const module = await instantiateFaustModuleFromFile('/faust/libfaust-wasm.js');
+            const libFaust = new LibFaust(module);
+            const compiler = new FaustCompiler(libFaust);
+            compilerReady = true;
+            console.info(`[Faust] Compiler ready — version ${compiler.version()}`);
+            return compiler;
+        })();
+    }
+    return compilerPromise;
+}
+
+/**
+ * Check if the Faust compiler has been initialized.
+ */
+export function isFaustCompilerReady(): boolean {
+    return compilerReady;
+}
+
+// ── Public API: Registration ────────────────────────────────────────────
 
 /**
  * Register a Faust DSP source for compilation.
@@ -38,13 +89,13 @@ export function registerFaustDSP(name: string, dspCode: string, params: FaustPar
         id: `faust-${name.toLowerCase().replaceAll(/\s+/g, '-')}`,
         name,
         dspCode,
-        wasmModule: null,
         paramDescriptors: params,
         compiled: false,
+        generator: null,
     };
     modules.set(mod.id, mod);
 
-    // Also register as WAM plugin
+    // Also register as WAM plugin for the plugin browser
     const descriptor: WAMDescriptor = {
         id: `faust.${mod.id}`,
         name: `[Faust] ${name}`,
@@ -59,26 +110,100 @@ export function registerFaustDSP(name: string, dspCode: string, params: FaustPar
     return mod;
 }
 
+// ── Public API: Compilation ─────────────────────────────────────────────
+
 /**
- * Compile a Faust DSP source to WASM.
- * In production, this would use the Faust WASM compiler SDK.
+ * Compile a registered Faust DSP module to WASM.
+ *
+ * On success, the module's `generator` is populated and can be used
+ * with `createFaustNode()` to instantiate AudioWorkletNodes.
+ *
+ * @returns true if compilation succeeded, false on failure
  */
 export async function compileFaustDSP(moduleId: string): Promise<boolean> {
     const mod = modules.get(moduleId);
     if (!mod) {
+        console.warn(`[Faust] Module ${moduleId} not found`);
         return false;
     }
 
-    // Stub: In production, this calls faust2wasm or the Faust compiler SDK
-    // which compiles .dsp → .wasm → AudioWorkletProcessor
-    console.info(`[Faust] Compiling ${mod.name}...`);
+    if (mod.compiled && mod.generator) {
+        return true; // Already compiled
+    }
 
-    // Mark as compiled (WASM module would be stored here)
-    mod.compiled = true;
-    modules.set(moduleId, mod);
+    try {
+        const compiler = await getCompiler();
+        const generator = new FaustMonoDspGenerator();
+        const result = await generator.compile(
+            compiler,
+            mod.name.replaceAll(/\s+/g, '_'),
+            mod.dspCode,
+            '-I libraries/'
+        );
 
-    return true;
+        if (!result) {
+            console.error(`[Faust] Compilation failed for ${mod.name}`);
+            return false;
+        }
+
+        mod.generator = generator;
+        mod.compiled = true;
+        modules.set(moduleId, mod);
+        console.info(`[Faust] Compiled ${mod.name}`);
+        return true;
+    } catch (error) {
+        console.error(`[Faust] Compilation error for ${mod.name}:`, error);
+        return false;
+    }
 }
+
+/**
+ * Compile all registered (uncompiled) Faust modules.
+ * Returns the number of successfully compiled modules.
+ */
+export async function compileAllFaustModules(): Promise<number> {
+    let compiled = 0;
+    for (const [id, mod] of modules) {
+        if (mod.compiled) {
+            compiled++;
+            continue;
+        }
+        const success = await compileFaustDSP(id);
+        if (success) {
+            compiled++;
+        }
+    }
+    return compiled;
+}
+
+// ── Public API: Node creation ───────────────────────────────────────────
+
+/**
+ * Create a Faust AudioWorkletNode from a compiled module.
+ *
+ * The module must have been compiled first via `compileFaustDSP()`.
+ * Returns null if the module isn't compiled or node creation fails.
+ */
+export async function createFaustNode(
+    moduleId: string,
+    context: BaseAudioContext
+): Promise<IFaustMonoWebAudioNode | null> {
+    const mod = modules.get(moduleId);
+    if (!mod?.generator || !mod.compiled) {
+        console.warn(`[Faust] Module ${moduleId} not compiled — call compileFaustDSP first`);
+        return null;
+    }
+
+    try {
+        const node = await mod.generator.createNode(context);
+        return node;
+    } catch (error) {
+        console.error(`[Faust] Node creation failed for ${mod.name}:`, error);
+        return null;
+    }
+}
+
+// ── Public API: Queries ─────────────────────────────────────────────────
 
 /**
  * Get all registered Faust modules.
@@ -94,11 +219,18 @@ export function getFaustModule(moduleId: string): FaustModule | null {
     return modules.get(moduleId) ?? null;
 }
 
-// ─── Built-in Faust DSP definitions ──────────────────────
+/**
+ * Check if a module ID corresponds to a registered Faust module.
+ */
+export function isFaustModule(moduleId: string): boolean {
+    return modules.has(moduleId);
+}
+
+// ── Built-in Faust DSP definitions ──────────────────────────────────────
 
 /**
  * Register all built-in Faust DSP effects.
- * These represent the Faust source code that would be compiled to WASM.
+ * These represent the Faust source code that will be compiled to WASM.
  */
 export function registerBuiltinFaustDSP(): void {
     // Zita-Rev1 algorithmic reverb

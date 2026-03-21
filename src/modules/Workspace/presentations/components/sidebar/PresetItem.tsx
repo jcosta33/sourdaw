@@ -6,7 +6,7 @@ import { PreviewButton } from './PreviewButton';
 import { CATEGORY_COLORS } from './sidebarConstants';
 import { type PreviewHandle } from '../../hooks/usePreviewAudio';
 
-export type PresetItemProps = {
+type PresetItemProps = {
     preset: SoundPreset;
     selectedTrackId: string | null;
     favorites: Set<string>;
@@ -42,7 +42,9 @@ export const PresetItem = ({
                         onStop={preview.stop}
                     />
                 </div>
-                <span className="flex-1 text-[11px] font-medium text-foreground/90 truncate drop-shadow-sm">{preset.name}</span>
+                <span className="flex-1 text-[11px] font-medium text-foreground/90 truncate drop-shadow-sm">
+                    {preset.name}
+                </span>
                 <span
                     className={cn(
                         'shrink-0 rounded px-1.5 py-[2px] text-[9px] font-semibold tracking-wide uppercase opacity-80',
@@ -66,7 +68,9 @@ export const PresetItem = ({
                     <Star
                         className={cn(
                             'size-3 transition-colors',
-                            favorites.has(preset.id) ? 'text-yellow-400 fill-yellow-400 drop-shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                            favorites.has(preset.id)
+                                ? 'text-yellow-400 fill-yellow-400 drop-shadow-sm'
+                                : 'text-muted-foreground hover:text-foreground'
                         )}
                     />
                 </button>
@@ -77,7 +81,9 @@ export const PresetItem = ({
                 ) : (
                     <Waves className="size-3 text-emerald-400 shrink-0" aria-label="Audio track" />
                 )}
-                <span className="text-[9px] text-muted-foreground group-hover:text-foreground/80 transition-colors truncate">{chain}</span>
+                <span className="text-[9px] text-muted-foreground group-hover:text-foreground/80 transition-colors truncate">
+                    {chain}
+                </span>
             </div>
         </div>
     );

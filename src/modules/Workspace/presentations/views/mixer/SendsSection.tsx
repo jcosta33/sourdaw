@@ -5,7 +5,7 @@ import { useTracks } from '../../hooks/useTracks';
 import { setSend, toggleSendPreFader } from '../../../useCases/workspaceViewActions';
 import { type Track } from '../../../useCases/workspaceViewActions';
 
-export type SendsSectionProps = {
+type SendsSectionProps = {
     track: Track;
 };
 

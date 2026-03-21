@@ -6,30 +6,31 @@ import ReactMarkdown from 'react-markdown';
 import { mixHealthAnalysis } from '#/modules/AiRuntime/useCases/mixHealthAnalysis';
 import { streamCloudChatCompletion } from '#/modules/AiRuntime/repositories/cloudLlmRepository';
 
-export type MixHealthDialogProps = {
+type MixHealthDialogProps = {
     open: boolean;
     onOpenChange: (open: boolean) => void;
 };
 
 export const MixHealthDialog = ({ open, onOpenChange }: MixHealthDialogProps): ReactElement => {
     const [isAnalyzing, setIsAnalyzing] = useState(false);
-    const [report, setReport] = useState("");
-    const reportRef = useRef("");
+    const [report, setReport] = useState('');
+    const reportRef = useRef('');
 
     useEffect(() => {
         if (open) {
-            setReport("");
-            reportRef.current = "";
+            setReport('');
+            reportRef.current = '';
             setIsAnalyzing(true);
-            
+
             const runAnalysis = async () => {
                 try {
                     await mixHealthAnalysis((token) => {
                         reportRef.current += token;
                         setReport(reportRef.current);
                     });
-                } catch (e) {
-                    setReport("Error generating mix health report. Make sure Cloud AI is connected.");
+                } catch (error) {
+                    console.error(error);
+                    setReport('Error generating mix health report. Make sure Cloud AI is connected.');
                 } finally {
                     setIsAnalyzing(false);
                 }
@@ -37,31 +38,37 @@ export const MixHealthDialog = ({ open, onOpenChange }: MixHealthDialogProps): R
 
             void runAnalysis();
         } else {
-            setReport("");
+            setReport('');
         }
     }, [open]);
 
     const handleELI5 = async () => {
-        if (isAnalyzing || !report) return;
-        
+        if (isAnalyzing || !report) {
+            return;
+        }
+
         setIsAnalyzing(true);
         const originalReport = report;
-        reportRef.current = report + "\n\n---\n\n### ELI5 Translation\n\n";
+        reportRef.current = `${report}\n\n---\n\n### ELI5 Translation\n\n`;
         setReport(reportRef.current);
 
         try {
             await streamCloudChatCompletion(
                 [
                     { role: 'system', content: 'You are a patient music teacher for beginners.' },
-                    { role: 'user', content: `Here is a technical mix analysis:\n\n${originalReport}\n\nPlease explain this to me like I am a 5 year old beginner. Focus entirely on simple analogies.` }
+                    {
+                        role: 'user',
+                        content: `Here is a technical mix analysis:\n\n${originalReport}\n\nPlease explain this to me like I am a 5 year old beginner. Focus entirely on simple analogies.`,
+                    },
                 ],
                 (token) => {
                     reportRef.current += token;
                     setReport(reportRef.current);
                 }
             );
-        } catch (e) {
-            reportRef.current += "\n[Error generating ELI5 explanation]";
+        } catch (error) {
+            console.error(error);
+            reportRef.current += '\n[Error generating ELI5 explanation]';
             setReport(reportRef.current);
         } finally {
             setIsAnalyzing(false);
@@ -84,7 +91,7 @@ export const MixHealthDialog = ({ open, onOpenChange }: MixHealthDialogProps): R
                             <ReactMarkdown>{report}</ReactMarkdown>
                         </div>
                     ) : null}
-                    
+
                     {isAnalyzing && (
                         <div className="flex items-center gap-2 text-muted-foreground pt-4">
                             <Loader2 className="size-4 animate-spin" />
@@ -94,9 +101,9 @@ export const MixHealthDialog = ({ open, onOpenChange }: MixHealthDialogProps): R
                 </div>
 
                 <div className="flex justify-between items-center pt-2 border-t border-border/50">
-                    <Button 
-                        variant="secondary" 
-                        size="sm" 
+                    <Button
+                        variant="secondary"
+                        size="sm"
                         onClick={handleELI5}
                         disabled={isAnalyzing || !report}
                         className="bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 border-purple-500/20"

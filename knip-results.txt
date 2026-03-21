@@ -1,0 +1,99 @@
+Unused devDependencies (1)
+@typescript/native-preview  package.json:58:6
+Unused exports (88)
+DialogClose                                 src/components/ui/dialog.tsx:127:5                                    
+DialogFooter                                src/components/ui/dialog.tsx:130:5                                    
+DialogTrigger                               src/components/ui/dialog.tsx:135:5                                    
+buildActionSystemPromptAsync      function  src/modules/AiRuntime/helpers/actionSchema.ts:33:23                   
+mcpToJsonPromptText               function  src/modules/AiRuntime/helpers/mcpToolAdapter.ts:138:17                
+getMcpToolByName                  function  src/modules/AiRuntime/helpers/mcpToolAdapter.ts:147:17                
+getMcpToolNames                   function  src/modules/AiRuntime/helpers/mcpToolAdapter.ts:154:17                
+serializeToolsForPrompt           function  src/modules/AiRuntime/helpers/toolDefinitions.ts:980:17               
+isNativeModelDownloaded           function  src/modules/AiRuntime/repositories/llamaServerEngine.ts:94:23         
+getModelDir                       function  src/modules/AiRuntime/repositories/llamaServerEngine.ts:110:23        
+getNativeToolSchemas              function  src/modules/AiRuntime/repositories/nativeToolRegistry.ts:88:23        
+parseNativeToolCalls              function  src/modules/AiRuntime/repositories/nativeToolRegistry.ts:117:23       
+formatMixAnalysis                 function  src/modules/AiRuntime/transformers/mixAnalysisTransformers.ts:136:17  
+getCloudStatus                    function  src/modules/AiRuntime/useCases/cloudApiManagement.ts:35:17            
+parseLlmJsonToActions             function  src/modules/AiRuntime/useCases/validateLlmOutput.ts:214:17            
+generateWaveformPeaks             function  src/modules/AudioEngine/repositories/audioDecodingRepository.ts:124:23
+getOscilloscopeData               function  src/modules/AudioEngine/useCases/advancedMetering.ts:269:17           
+getStereoOscilloscopeData         function  src/modules/AudioEngine/useCases/advancedMetering.ts:285:17           
+getSelectedOutputId               function  src/modules/AudioEngine/useCases/audioDeviceSelection.ts:74:17        
+isRecordingSupported              function  src/modules/AudioEngine/useCases/audioRecorder.ts:14:17               
+isCurrentlyRecording              function  src/modules/AudioEngine/useCases/audioRecorder.ts:92:17               
+isMonitoring                      function  src/modules/AudioEngine/useCases/audioRecorder.ts:139:17              
+removeBusStrip                              src/modules/AudioEngine/useCases/busControls.ts:13:14                 
+removeSend                                  src/modules/AudioEngine/useCases/busControls.ts:25:14                 
+getBusPeakLevel                             src/modules/AudioEngine/useCases/busControls.ts:29:14                 
+importAudioFromPath               function  src/modules/AudioEngine/useCases/decodeAudioFile.ts:63:23             
+generateSyntheticBuffer           function  src/modules/AudioEngine/useCases/decodeAudioFile.ts:87:17             
+suspendEngine                               src/modules/AudioEngine/useCases/engineAccess.ts:22:14                
+getMasterGainNode                           src/modules/AudioEngine/useCases/engineAccess.ts:26:14                
+removeTrackStrip                            src/modules/AudioEngine/useCases/trackAudioControls.ts:18:14          
+DESTRUCTIVE_ACTIONS                         src/modules/Command/models/AppAction.ts:225:14                        
+REQUIRES_CONFIRMATION                       src/modules/Command/models/AppAction.ts:234:14                        
+isCallbackEntry                             src/modules/Command/models/UndoEntry.ts:68:14                         
+getUndoStoreValue                 function  src/modules/Command/useCases/commandQueries.ts:14:17                  
+isRegisteredAction                          src/modules/Command/useCases/executeAppAction.ts:198:14               
+canUndo                           function  src/modules/Command/useCases/undoRedo.ts:75:17                        
+canRedo                           function  src/modules/Command/useCases/undoRedo.ts:80:17                        
+PROJECT_LIST_KEY                            src/modules/Project/models/ProjectData.ts:62:14                       
+openFileDialog                    function  src/modules/Project/useCases/nativeFileDialog.ts:25:23                
+saveFileDialog                    function  src/modules/Project/useCases/nativeFileDialog.ts:37:23                
+getTemplatesByCategory            function  src/modules/Project/useCases/projectTemplates.ts:138:17               
+createDefaultTimelineRenderModel            src/modules/Timeline/models/TimelineRenderModel.ts:56:14              
+getTrackYOffset                   function  src/modules/Timeline/useCases/timelineInteractions.ts:81:17           
+getTimelineViewState              function  src/modules/Timeline/useCases/timelineQueries.ts:12:17                
+getTimelineViewStoreValue         function  src/modules/Timeline/useCases/timelineQueries.ts:17:17                
+subscribeToTimelineView           function  src/modules/Timeline/useCases/timelineQueries.ts:22:17                
+zoomTimeline                      function  src/modules/Timeline/useCases/timelineQueries.ts:32:17                
+createAutomationObject                      src/modules/Track/models/Automation.ts:68:14                          
+getPluginById                     function  src/modules/Track/models/DeviceParameter.ts:1251:17                   
+getWarpedPosition                 function  src/modules/Track/models/WarpMarker.ts:29:17                          
+updateClipsOnAllTracks            function  src/modules/Track/repositories/trackRepository.ts:97:17               
+resolveClipAutomation             function  src/modules/Track/transformers/automationTransformers.ts:221:17       
+isDrawSessionActive               function  src/modules/Track/useCases/automationDrawMode.ts:136:17               
+releaseTouchAutomation            function  src/modules/Track/useCases/automationRecording.ts:193:17              
+transformSelectedPoints           function  src/modules/Track/useCases/automationSelection.ts:38:17               
+toggleLaneEnabled                 function  src/modules/Track/useCases/automationUseCases.ts:51:17                
+addClipAutomationLane             function  src/modules/Track/useCases/automationUseCases.ts:132:17               
+resetYZoom                        function  src/modules/Track/useCases/automationZoom.ts:39:17                    
+resizeClip                        function  src/modules/Track/useCases/clipEditingUseCases.ts:106:17              
+removeTakeLane                    function  src/modules/Track/useCases/compingUseCases.ts:20:17                   
+moveToFolder                      function  src/modules/Track/useCases/folderUseCases.ts:17:17                    
+getVisibleTracks                  function  src/modules/Track/useCases/folderUseCases.ts:25:17                    
+setNotePitchBend                  function  src/modules/Track/useCases/midiEventUseCases.ts:170:17                
+removeMidiMapping                 function  src/modules/Track/useCases/midiLearnUseCases.ts:100:17                
+duplicateNotes                    function  src/modules/Track/useCases/midiNoteCrud.ts:122:17                     
+quantizeNotesAndLengths           function  src/modules/Track/useCases/midiNoteTransforms.ts:53:17                
+getMidiSources                    function  src/modules/Track/useCases/midiRoutingUseCases.ts:27:17               
+renameMixerSnapshot               function  src/modules/Track/useCases/mixerSnapshotUseCases.ts:146:17            
+getPresetsByCategory              function  src/modules/Track/useCases/soundPresetLibrary.ts:18:17                
+findClipById                      function  src/modules/Track/useCases/trackQueries.ts:58:17                      
+getMidiNotesByClipId              function  src/modules/Track/useCases/trackQueries.ts:75:17                      
+subscribeToTrackStore             function  src/modules/Track/useCases/trackQueries.ts:115:17                     
+setVCAGroupGain                   function  src/modules/Track/useCases/vcaFaderUseCases.ts:72:17                  
+getEffectiveGain                  function  src/modules/Track/useCases/vcaFaderUseCases.ts:84:17                  
+deleteVCAGroup                    function  src/modules/Track/useCases/vcaFaderUseCases.ts:116:17                 
+getVCAGroupTracks                 function  src/modules/Track/useCases/vcaFaderUseCases.ts:133:17                 
+getEffectiveGain                  function  src/modules/Track/useCases/vcaUseCases.ts:75:17                       
+moveWarpMarker                    function  src/modules/Track/useCases/warpUseCases.ts:41:17                      
+getBarBeatAtPosition                        src/modules/Transport/models/TimeSignatureMap.ts:42:14                
+getTimeSignatureChanges           function  src/modules/Transport/useCases/timeSignatureChanges.ts:38:17          
+getTempoMapChanges                function  src/modules/Transport/useCases/transportQueries.ts:43:17              
+isRippleEditing                   function  src/modules/Workspace/useCases/rippleEditing.ts:27:17                 
+rippleDeleteClips                 function  src/modules/Workspace/useCases/rippleEditing.ts:37:17                 
+undoRippleDelete                  function  src/modules/Workspace/useCases/rippleEditing.ts:98:17                 
+openMixer                         function  src/modules/Workspace/useCases/togglePanel.ts:47:17                   
+getWorkspaceState                 function  src/modules/Workspace/useCases/workspaceQueries.ts:21:17              
+subscribeToWorkspace              function  src/modules/Workspace/useCases/workspaceQueries.ts:31:17              
+setWorkspaceStoreValue            function  src/modules/Workspace/useCases/workspaceQueries.ts:36:17              
+Unused exported types (7)
+DisabledReason         type  src/helpers/platformCapabilities.ts:72:13                 
+McpToolCallResult      type  src/modules/AiRuntime/helpers/mcpToolAdapter.ts:46:13     
+McpToolCallRequest     type  src/modules/AiRuntime/helpers/mcpToolAdapter.ts:57:13     
+AiRuntimeStatus        type  src/modules/AiRuntime/models/IntentResult.ts:10:13        
+BuildDeviceChainInput  type  src/modules/AudioEngine/useCases/buildDeviceChain.ts:14:13
+ActionHandlerMap       type  src/modules/Command/models/ActionHandler.ts:14:13         
+MidiEvent              type  src/modules/Track/models/MidiNote.ts:28:13                

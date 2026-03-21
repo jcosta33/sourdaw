@@ -97,18 +97,6 @@ export function completeMidiLearn(channel: number, cc: number): void {
     });
 }
 
-export function removeMidiMapping(mappingId: string): void {
-    const state = midiLearnStore.value;
-    if (!state) {
-        return;
-    }
-
-    midiLearnStore.set({
-        ...state,
-        mappings: state.mappings.filter((m) => m.id !== mappingId),
-    });
-}
-
 export function handleMidiMessage(channel: number, cc: number, value: number): void {
     const state = midiLearnStore.value;
     if (!state) {

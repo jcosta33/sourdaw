@@ -2,7 +2,7 @@ import { Store } from '#/helpers/Store/Store';
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
 
-export type ShortcutAction = 
+export type ShortcutAction =
     | 'PLAY_PAUSE'
     | 'STOP_RETURN'
     | 'RECORD_TOGGLE'
@@ -73,7 +73,9 @@ export const shortcutStore = new Store<ShortcutState>(logger, {
 
 export function updateShortcutBinding(action: ShortcutAction, binding: KeyBinding): void {
     const state = shortcutStore.value;
-    if (!state) return;
+    if (!state) {
+        return;
+    }
 
     const newBindings = { ...state.bindings, [action]: binding };
     shortcutStore.set({ bindings: newBindings });
@@ -87,16 +89,30 @@ export function resetShortcutsToDefault(): void {
 
 export const formatKeyBinding = (binding: KeyBinding): string => {
     const parts = [];
-    if (binding.metaKey) parts.push('⌘');
-    if (binding.ctrlKey) parts.push('Ctrl');
-    if (binding.altKey) parts.push('⌥');
-    if (binding.shiftKey) parts.push('⇧');
-    
+    if (binding.metaKey) {
+        parts.push('⌘');
+    }
+    if (binding.ctrlKey) {
+        parts.push('Ctrl');
+    }
+    if (binding.altKey) {
+        parts.push('⌥');
+    }
+    if (binding.shiftKey) {
+        parts.push('⇧');
+    }
+
     let keyName = binding.key.toUpperCase();
-    if (keyName === ' ') keyName = 'Space';
-    if (keyName === 'BACKSPACE') keyName = '⌫';
-    if (keyName === 'ENTER') keyName = '⏎';
-    
+    if (keyName === ' ') {
+        keyName = 'Space';
+    }
+    if (keyName === 'BACKSPACE') {
+        keyName = '⌫';
+    }
+    if (keyName === 'ENTER') {
+        keyName = '⏎';
+    }
+
     parts.push(keyName);
     return parts.join(binding.metaKey || binding.altKey || binding.shiftKey ? '' : '+');
 };

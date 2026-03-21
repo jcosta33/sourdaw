@@ -1,6 +1,6 @@
 # Events
 
-Cross-module communication via domain events enables loose coupling. This guide explains how to define, publish, and subscribe to events. The base classes and APIs documented here match `src/helpers/Event/DomainEvent.ts` and `src/helpers/Event/EventBus.ts`. Event payloads often inform cache invalidations or UI updates in [data fetching](./data-fetching.md) and [state management](./state-management.md).
+Cross-module communication via domain events enables loose coupling. This guide explains how to define, publish, and subscribe to events. The base classes and APIs documented here match `src/helpers/Event/DomainEvent.ts` and `src/helpers/Event/EventBus.ts`. Event payloads often inform cache invalidations or UI updates in TanStack Query and [state management](./state-management.md).
 
 ## Core workflow
 
@@ -18,10 +18,10 @@ Domain events enable modules to communicate without direct dependencies:
 
 ```mermaid
 graph TB
-    A[ProductCatalog] -->|ProductUpdated| B[Event Bus]
-    B --> C[ShoppingCart]
-    B --> D[Analytics]
-    B --> E[Inventory]
+    A[Track Module] -->|TrackAddedEvent| B[Event Bus]
+    B --> C[Mixer Module]
+    B --> D[AudioEngine Module]
+    B --> E[Timeline Module]
 
     style B fill:#e8f5e9
 ```
@@ -51,9 +51,9 @@ export abstract class DomainEvent<TPayload = unknown> {
     // readonly timestamp: number (milliseconds)
 }
 
-// ProductCatalog/events/ProductUpdatedEvent.ts
-export class ProductUpdatedEvent extends DomainEvent<{ id: number; changes: Record<string, unknown> }> {
-    constructor(payload: ProductUpdatedEvent['payload']) {
+// Track/events/TrackAddedEvent.ts
+export class TrackAddedEvent extends DomainEvent<{ trackId: string; name: string; kind: 'audio' | 'midi' }> {
+    constructor(payload: TrackAddedEvent['payload']) {
         super(payload);
     }
 }
@@ -65,12 +65,12 @@ Follow consistent naming patterns for clarity, using verbs in their past tense f
 
 ```typescript
 // Clear, descriptive names
-export class OrderCompletedEvent extends DomainEvent<OrderCompletedPayload> {}
-export class UserRegisteredEvent extends DomainEvent<UserRegisteredPayload> {}
-export class PaymentProcessedEvent extends DomainEvent<PaymentProcessedPayload> {}
+export class TransportStartedEvent extends DomainEvent<TransportStartedPayload> {}
+export class PluginLoadedEvent extends DomainEvent<PluginLoadedPayload> {}
+export class TrackMutedEvent extends DomainEvent<TrackMutedPayload> {}
 
 // ❌ Vague or unclear names
-export class OrderEvent extends DomainEvent<OrderPayload> {}
+export class TransportEvent extends DomainEvent<TransportPayload> {}
 export class UpdateEvent extends DomainEvent<UpdatePayload> {}
 export class DataChangedEvent extends DomainEvent<DataPayload> {}
 ```
@@ -84,26 +84,24 @@ Publish events from business operations, typically at the end of a use case afte
 Publish events from business operations:
 
 ```typescript
-// ProductCatalog/useCases/updateProductPrice.ts
+// Track/useCases/addTrack.ts
 
-type UpdateProductPriceOutput = Promise<Product>;
+type AddTrackOutput = Promise<Track>;
 
-export const updateProductPrice = inject({ patchProductApi, eventBus: EventBus }, ({ patchProductApi, eventBus }) => {
-    return async function ({ id, newPrice, reason, updatedBy }: UpdateProductPriceInput): UpdateProductPriceOutput {
-        const updatedProduct = await patchProductApi({ id, price: newPrice, reason, updatedBy });
+export const addTrack = inject({ createTrackApi, eventBus: EventBus }, ({ createTrackApi, eventBus }) => {
+    return async function ({ projectId, name, kind }: AddTrackInput): AddTrackOutput {
+        const track = await createTrackApi({ projectId, name, kind });
 
         // Publish domain event
         eventBus.emit(
-            new ProductPriceChangedEvent({
-                productId: updatedProduct.id,
-                previousPrice,
-                newPrice,
-                reason,
-                effectiveDate: new Date(),
+            new TrackAddedEvent({
+                trackId: track.id,
+                name: track.name,
+                kind: track.kind,
             })
         );
 
-        return updatedProduct;
+        return track;
     };
 });
 ```
@@ -119,29 +117,21 @@ Subscribe to events in other domains to trigger side effects, such as updating a
 Subscribe to events from other domains:
 
 ```typescript
-// ShoppingCart/useCases/productEventHandlers.ts
+// Mixer/useCases/trackEventHandlers.ts
 
-type HandlePriceChangedOutput = Promise<void>;
+type HandleTrackAddedOutput = Promise<void>;
 
-export const handlePriceChanged = inject({ findByProductId, updateProduct }, ({ findByProductId, updateProduct }) => {
-    return async function (event: PriceChangedEvent): HandlePriceChangedOutput {
-        const cartProducts = await findByProductId(event.payload.productId);
-
-        // Update cart products with new price
-        for (const cartProduct of cartProducts) {
-            const updatedProduct = {
-                ...cartProduct,
-                unitPrice: event.payload.newPrice,
-                lastUpdated: new Date(),
-            };
-
-            await updateProduct(updatedProduct);
-        }
+export const handleTrackAdded = inject({ queryClient: QueryClient }, ({ queryClient }) => {
+    return async function (event: TrackAddedEvent): HandleTrackAddedOutput {
+        // Invalidate the mixer tracks cache so the new track fader appears
+        await queryClient.invalidateQueries({
+            queryKey: ['mixer-tracks', event.payload.projectId],
+        });
     };
 });
 
 // Register event handlers
-eventBus.on(PriceChangedEvent, handlePriceChanged);
+eventBus.on(TrackAddedEvent, handleTrackAdded);
 ```
 
 #### Creating reusable subscription helpers
@@ -211,28 +201,26 @@ export const useFlagSubscription = (callback: () => void) => {
 Structure event handlers for maintainability:
 
 ```typescript
-// Analytics/useCases/registerAnalyticsEventHandlers.ts
+// AiRuntime/useCases/registerAiEventHandlers.ts
 
-export const registerAnalyticsEventHandlers = (eventBus: EventBus) => {
-    // User activity events
-    eventBus.on(UserRegisteredEvent, trackUserRegistration);
-    eventBus.on(UserLoggedInEvent, trackUserLogin);
+export const registerAiEventHandlers = (eventBus: EventBus) => {
+    // Track activity events
+    eventBus.on(TrackAddedEvent, syncAiTrackContext);
+    eventBus.on(TrackRemovedEvent, removeAiTrackContext);
 
-    // Product interaction events
-    eventBus.on(ProductViewedEvent, trackProductView);
-    eventBus.on(ProductAddedToCartEvent, trackCartAddition);
+    // Transport interaction events
+    eventBus.on(TransportStartedEvent, handleTransportPlay);
+    eventBus.on(TransportStoppedEvent, handleTransportStop);
 
-    // Purchase events
-    eventBus.on(OrderCompletedEvent, trackPurchase);
-    eventBus.on(PaymentProcessedEvent, trackPaymentMethod);
+    // Audio engine events
+    eventBus.on(PluginLoadedEvent, analyzeNewPluginParameters);
 
     return () => {
-        eventBus.off(UserRegisteredEvent, trackUserRegistration);
-        eventBus.off(UserLoggedInEvent, trackUserLogin);
-        eventBus.off(ProductViewedEvent, trackProductView);
-        eventBus.off(ProductAddedToCartEvent, trackCartAddition);
-        eventBus.off(OrderCompletedEvent, trackPurchase);
-        eventBus.off(PaymentProcessedEvent, trackPaymentMethod);
+        eventBus.off(TrackAddedEvent, syncAiTrackContext);
+        eventBus.off(TrackRemovedEvent, removeAiTrackContext);
+        eventBus.off(TransportStartedEvent, handleTransportPlay);
+        eventBus.off(TransportStoppedEvent, handleTransportStop);
+        eventBus.off(PluginLoadedEvent, analyzeNewPluginParameters);
     };
 };
 ```
@@ -246,34 +234,30 @@ For a complete guide on our testing philosophy and patterns, see the [testing](.
 Test event handlers in isolation:
 
 ```typescript
-// ShoppingCart/useCases/productEventHandlers.spec.ts
+// Mixer/useCases/trackEventHandlers.spec.ts
 
-vi.mock('#/modules/ShoppingCart/repositories/shoppingCartApi');
+vi.mock('@tanstack/react-query');
 
-describe('handleProductPriceChanged', () => {
-    it('updates cart products when product price changes', async () => {
+describe('handleTrackAdded', () => {
+    it('invalidates mixer tracks query when a track is added', async () => {
         // Arrange
-        const productId = 'product-123';
-        const cartProducts = [
-            CartProductDummy.create({ cartId: 'c1', productId, unitPrice: 100 }),
-            CartProductDummy.create({ cartId: 'c2', productId, unitPrice: 100 }),
-        ];
-        vi.mocked(findByProductId).mockResolvedValue(cartProducts);
-
-        const event = new ProductPriceChangedEvent({
-            productId,
-            previousPrice: 100,
-            newPrice: 120,
-            reason: 'market_adjustment',
-            effectiveDate: new Date(),
+        const queryClientMock = { invalidateQueries: vi.fn() };
+        
+        const event = new TrackAddedEvent({
+            projectId: 'proj-123',
+            trackId: 'track-456',
+            name: 'Bass',
+            kind: 'audio',
         });
 
         // Act
-        await handleProductPriceChanged(event);
+        await handleTrackAdded(event);
 
         // Assert
-        expect(updateProduct).toHaveBeenCalledTimes(2);
-        expect(updateProduct).toHaveBeenCalledWith(expect.objectContaining({ unitPrice: 120 }));
+        expect(queryClientMock.invalidateQueries).toHaveBeenCalledTimes(1);
+        expect(queryClientMock.invalidateQueries).toHaveBeenCalledWith({
+            queryKey: ['mixer-tracks', 'proj-123'],
+        });
     });
 });
 ```
@@ -283,26 +267,24 @@ describe('handleProductPriceChanged', () => {
 Test event publishing from use cases:
 
 ```typescript
-// ProductCatalog/useCases/updateProductPrice.spec.ts
+// Track/useCases/addTrack.spec.ts
 
-describe('updateProductPrice', () => {
+describe('addTrack', () => {
     beforeEach(() => {
         vi.resetAllMocks();
     });
 
-    it('publishes ProductPriceChangedEvent after successful update', async () => {
-        const product = ProductDummy.create({ id: 'product-123', price: new Money(100, 'USD') });
-        vi.mocked(getProductById).mockResolvedValue(product);
-        vi.mocked(updateProduct).mockResolvedValue(undefined);
+    it('publishes TrackAddedEvent after successful creation', async () => {
+        const track = TrackDummy.create({ id: 'track-123', name: 'Vocals', kind: 'audio' });
+        vi.mocked(createTrackApi).mockResolvedValue(track);
 
-        await updateProductPrice({
-            productId: 'product-123',
-            newPrice: new Money(120, 'USD'),
-            reason: 'market_adjustment',
-            updatedBy: 'user-456',
+        await addTrack({
+            projectId: 'proj-123',
+            name: 'Vocals',
+            kind: 'audio',
         });
 
-        expect(eventBus.emit).toHaveBeenCalledWith(expect.any(ProductPriceChangedEvent));
+        expect(eventBus.emit).toHaveBeenCalledWith(expect.any(TrackAddedEvent));
     });
 });
 ```
@@ -312,22 +294,20 @@ describe('updateProductPrice', () => {
 Include sufficient context for event handlers:
 
 ```typescript
-// Authorization/events/UserPermissionChangedEvent.ts
+// Project/events/ProjectSettingsChangedEvent.ts
 
 // ✅ Event provides rich context, enabling subscribers to act without needing to perform additional lookups.
-export class UserPermissionChangedEvent extends DomainEvent<{
-    readonly userId: UserId;
-    readonly previousPermissions: Permission[];
-    readonly newPermissions: Permission[];
-    readonly changedBy: UserId;
-    readonly reason: string;
-    readonly effectiveDate: Date;
-    readonly affectedResources: ResourceId[];
+export class ProjectSettingsChangedEvent extends DomainEvent<{
+    readonly projectId: string;
+    readonly previousBpm: number;
+    readonly newBpm: number;
+    readonly sampleRate: number;
+    readonly changedBy: string;
 }> {}
 
 // ❌ Minimal context requires additional lookups
-export class UserPermissionChangedEvent extends DomainEvent<{
-    readonly userId: UserId;
-    readonly newPermissions: Permission[];
+export class ProjectSettingsChangedEvent extends DomainEvent<{
+    readonly projectId: string;
+    readonly newBpm: number;
 }> {}
 ```

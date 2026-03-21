@@ -5,7 +5,7 @@ import { Check, X, Sparkles } from 'lucide-react';
 import { type Track } from '../../../useCases/workspaceViewActions';
 import { acceptGhostClip, dismissGhostClip } from '#/modules/Track/useCases/clipUseCases';
 
-export type TrackClipsSectionProps = {
+type TrackClipsSectionProps = {
     track: Track;
     onSelectClip: (id: string) => void;
 };
@@ -22,9 +22,7 @@ export const TrackClipsSection = ({ track, onSelectClip }: TrackClipsSectionProp
                         <Card
                             key={clip.id}
                             className={`rounded-md shadow-none bg-surface-base p-2 cursor-pointer hover:bg-surface-raised flex flex-col justify-center ${
-                                clip.isGhost
-                                    ? 'border-purple-500/60 border-dashed'
-                                    : 'border-border/50'
+                                clip.isGhost ? 'border-purple-500/60 border-dashed' : 'border-border/50'
                             }`}
                             onClick={() => {
                                 onSelectClip(clip.id);

@@ -52,16 +52,8 @@ function freqToNoteName(freq: number): string {
  * Track pitch over time for an audio buffer using the McLeod Pitch Method.
  * Returns an array of detected pitches with timestamps, frequencies, and quality.
  */
-export function trackPitch(
-    audioBufferId: string,
-    options: PitchTrackingOptions = {},
-): PitchResult[] {
-    const {
-        windowSize = 2048,
-        hopSize = 512,
-        clarityThreshold = 0.8,
-        minVolumeDb = -40,
-    } = options;
+export function trackPitch(audioBufferId: string, options: PitchTrackingOptions = {}): PitchResult[] {
+    const { windowSize = 2048, hopSize = 512, clarityThreshold = 0.8, minVolumeDb = -40 } = options;
 
     const buffer = audioBufferCache.get(audioBufferId);
     if (!buffer) {
@@ -102,10 +94,7 @@ export function trackPitch(
  * Detect the dominant pitch of an entire audio buffer.
  * Returns the most frequently occurring pitch.
  */
-export function detectDominantPitch(
-    audioBufferId: string,
-    options?: PitchTrackingOptions,
-): PitchResult | null {
+export function detectDominantPitch(audioBufferId: string, options?: PitchTrackingOptions): PitchResult | null {
     const pitches = trackPitch(audioBufferId, options);
     if (pitches.length === 0) {
         return null;

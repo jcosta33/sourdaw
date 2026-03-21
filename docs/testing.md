@@ -2,23 +2,23 @@
 
 Reliable tests increase confidence and speed. This guide shows how to test the architecture effectively.
 
-For event-driven flows, use patterns from [events](./events.md). For React components that suspend on data, wrap in `SuspenseGuard` as shown in [data fetching](./data-fetching.md).
+For event-driven flows, use patterns from [events](./events.md). For React components that suspend on data, wrap them in a `SuspenseGuard`.
 
 ---
 
 ## Test organization
 
 ```text
-src/modules/Library/
+src/modules/Track/
 ├── _tests/                    # Test utilities and shared mocks
-│   ├── LibraryDummy.ts
+│   ├── TrackDummy.ts
 │   ├── getEventBus.mock.ts
 │   └── WrapperQueryClient.tsx
 ├── useCases/
-│   └── createLibrary.spec.ts
+│   └── addTrack.spec.ts
 └── presentations/
     └── helpers/
-        └── libraryValidator.spec.ts
+        └── trackValidator.spec.ts
 ```
 
 **Co-location is key** - tests live next to the code they test.
@@ -47,48 +47,48 @@ Test pure business logic found in use cases. This is the simplest and fastest fo
 - **Method**: Import the use case function and call it directly in your test.
 
 ```typescript
-// useCases/createLibrary.spec.ts
+// useCases/addTrack.spec.ts
 
 import { injectDependencies } from '#/helpers/DependencyInjector/injectDependencies';
 import { Prophecy } from '#/helpers/Prophecy/Prophecy';
 
-describe('createLibrary', () => {
-    it('should create library and emit event on success', async () => {
+describe('addTrack', () => {
+    it('should create track and emit event on success', async () => {
         const prophecy = new Prophecy();
-        const input = { name: 'test-library', type: 'design' };
-        const mockLibrary = LibraryDummy.create(input);
+        const input = { name: 'Lead Vocals', kind: 'audio' as const };
+        const mockTrack = TrackDummy.create(input);
 
         // Prophesize dependencies
-        const createLibraryApiMock = prophecy.prophesize(createLibraryApi).mockResolvedValue(mockLibrary);
+        const addTrackApiMock = prophecy.prophesize(addTrackApi).mockResolvedValue(mockTrack);
         const eventBusMock = prophecy.prophesize(EventBus);
 
         // Inject mocked dependencies
-        injectDependencies(createLibrary, {
-            createLibraryApi: createLibraryApiMock.reveal(),
+        injectDependencies(addTrack, {
+            addTrackApi: addTrackApiMock.reveal(),
             eventBus: eventBusMock.reveal(),
         });
 
-        const result = await createLibrary(input);
+        const result = await addTrack(input);
 
-        expect(result).toEqual(mockLibrary);
-        expect(createLibraryApiMock).toHaveBeenCalledWith(input);
-        expect(eventBusMock.emit).toHaveBeenCalledWith(new LibraryCreatedEvent(mockLibrary));
+        expect(result).toEqual(mockTrack);
+        expect(addTrackApiMock).toHaveBeenCalledWith(input);
+        expect(eventBusMock.emit).toHaveBeenCalledWith(new TrackAddedEvent(mockTrack));
     });
 
     it('should throw error when repository fails', async () => {
         const prophecy = new Prophecy();
-        const input = { name: 'test-library', type: 'design' };
+        const input = { name: 'Lead Vocals', kind: 'audio' as const };
         const error = new Error('API Error');
 
-        const createLibraryApiMock = prophecy.prophesize(createLibraryApi).mockRejectedValue(error);
+        const addTrackApiMock = prophecy.prophesize(addTrackApi).mockRejectedValue(error);
         const eventBusMock = prophecy.prophesize(EventBus);
 
-        injectDependencies(createLibrary, {
-            createLibraryApi: createLibraryApiMock.reveal(),
+        injectDependencies(addTrack, {
+            addTrackApi: addTrackApiMock.reveal(),
             eventBus: eventBusMock.reveal(),
         });
 
-        await expect(createLibrary(input)).rejects.toThrow('API Error');
+        await expect(addTrack(input)).rejects.toThrow('API Error');
         expect(eventBusMock.emit).not.toHaveBeenCalled();
     });
 });
@@ -102,54 +102,55 @@ Repositories are the bridge to external data sources. The goal is to verify that
 - **Method**: Mock the external dependency (like the GraphQL executor) and the transformer function. Call the repository and assert that the mocks were called with the expected arguments.
 
 ```typescript
-// repositories/createLibraryApi.spec.ts
+// repositories/addTrackApi.spec.ts
 
 import { injectDependencies } from '#/helpers/DependencyInjector/injectDependencies';
 import { Prophecy } from '#/helpers/Prophecy/Prophecy';
 
-describe('createLibraryApi', () => {
-    const BRAND_ID = 123;
-    const ITEM_NAME = 'Test Library';
-    const DUMMY_ITEM = LibraryDummy.create();
-    const MOCKED_ITEM_FROM_API = LibraryApiResponseDummy.create();
-    const CREATE_ITEM_INPUT: CreateLibraryApiInput = { brandId: BRAND_ID, name: ITEM_NAME };
+describe('addTrackApi', () => {
+    const PROJECT_ID = 'proj-123';
+    const ITEM_NAME = 'Lead Vocals';
+    const DUMMY_ITEM = TrackDummy.create();
+    const MOCKED_ITEM_FROM_API = TrackApiResponseDummy.create();
+    const CREATE_ITEM_INPUT: AddTrackApiInput = { projectId: PROJECT_ID, name: ITEM_NAME, kind: 'audio' };
     const MOCK_SIGNAL = new AbortController().signal;
 
     it('should call the executor with the correct parameters and return the transformed item', async () => {
         const prophecy = new Prophecy();
-        const createLibraryExecutorMock = prophecy
-            .prophesize(createLibraryExecutor)
-            .mockResolvedValue({ data: { createLibrary: MOCKED_ITEM_FROM_API } });
-        const libraryApiToModelMock = prophecy.prophesize(libraryApiToModel).mockResolvedValue(DUMMY_ITEM);
+        const addTrackExecutorMock = prophecy
+            .prophesize(addTrackExecutor)
+            .mockResolvedValue({ data: { addTrack: MOCKED_ITEM_FROM_API } });
+        const trackApiToModelMock = prophecy.prophesize(trackApiToModel).mockResolvedValue(DUMMY_ITEM);
 
-        injectDependencies(createLibraryApi, {
-            createLibraryExecutor: createLibraryExecutorMock.reveal(),
-            libraryApiToModel: libraryApiToModelMock.reveal(),
+        injectDependencies(addTrackApi, {
+            addTrackExecutor: addTrackExecutorMock.reveal(),
+            trackApiToModel: trackApiToModelMock.reveal(),
         });
 
-        const result = await createLibraryApi(CREATE_ITEM_INPUT, MOCK_SIGNAL);
+        const result = await addTrackApi(CREATE_ITEM_INPUT, MOCK_SIGNAL);
 
-        expect(createLibraryExecutorMock).toHaveBeenCalledWith({
+        expect(addTrackExecutorMock).toHaveBeenCalledWith({
             input: {
-                parentId: BRAND_ID.toString(),
+                projectId: PROJECT_ID,
                 name: ITEM_NAME,
+                kind: 'audio',
             },
         });
-        expect(libraryApiToModelMock).toHaveBeenCalledWith(MOCKED_ITEM_FROM_API);
+        expect(trackApiToModelMock).toHaveBeenCalledWith(MOCKED_ITEM_FROM_API);
         expect(result).toEqual(DUMMY_ITEM);
     });
 
     it('should return null when creation fails', async () => {
         const prophecy = new Prophecy();
-        const createLibraryExecutorMock = prophecy
-            .prophesize(createLibraryExecutor)
-            .mockResolvedValue({ data: { createLibrary: null } });
+        const addTrackExecutorMock = prophecy
+            .prophesize(addTrackExecutor)
+            .mockResolvedValue({ data: { addTrack: null } });
 
-        injectDependencies(createLibraryApi, {
-            createLibraryExecutor: createLibraryExecutorMock.reveal(),
+        injectDependencies(addTrackApi, {
+            addTrackExecutor: addTrackExecutorMock.reveal(),
         });
 
-        const result = await createLibraryApi(CREATE_ITEM_INPUT, MOCK_SIGNAL);
+        const result = await addTrackApi(CREATE_ITEM_INPUT, MOCK_SIGNAL);
 
         expect(result).toBeNull();
     });
@@ -164,34 +165,27 @@ Transformers are pure functions that map data from one shape to another (e.g., f
 - **Method**: Provide an input object representing the source data and assert that the output of the transformer function matches the expected shape and values.
 
 ```typescript
-// transformers/libraryApiToModel.spec.ts
+// transformers/trackApiToModel.spec.ts
 
-describe('libraryApiToModel', () => {
+describe('trackApiToModel', () => {
     it('should return a correct domain model from an API response', () => {
-        const apiResponse: LibraryApiResponse = {
-            id: '123',
-            name: 'my-library',
+        const apiResponse: TrackApiResponse = {
+            id: 'track-123',
+            name: 'Lead Vocals',
+            kind: 'audio',
+            color: '#ff0000',
             createdAt: new Date('2024-01-01T12:00:00Z'),
-            creator: {
-                email: 'creator@webdaw.com',
-            },
-            modifiedAt: null,
-            modifier: null,
         };
 
-        const expectedModel: Library = {
-            id: 123,
-            name: 'my-library',
-            created: new Date('2024-01-01T12:00:00Z'),
-            creator: 'creator@webdaw.com',
-            modified: null,
-            modifier: null,
+        const expectedModel: Track = {
+            id: 'track-123',
+            name: 'Lead Vocals',
+            kind: 'audio',
+            color: '#ff0000',
+            createdAt: new Date('2024-01-01T12:00:00Z'),
         };
 
-        // Mock for decodeBase64Id is usually needed here
-        vi.mocked(decodeBase64Id).mockReturnValue({ identifier: 123 });
-
-        const result = libraryApiToModel(apiResponse);
+        const result = trackApiToModel(apiResponse);
 
         expect(result).toEqual(expectedModel);
     });
@@ -203,43 +197,43 @@ describe('libraryApiToModel', () => {
 Use React Testing Library to test components from a user's perspective. Assert that the correct content is rendered and that user interactions trigger the expected outcomes.
 
 ```tsx
-// Library/presentations/components/LibraryList.spec.tsx
+// Track/presentations/components/TrackList.spec.tsx
 
-describe('LibraryList', () => {
-    it('should render libraries when loaded', () => {
-        const libraries = [LibraryDummy.create({ name: 'Library 1' })];
+describe('TrackList', () => {
+    it('should render tracks when loaded', () => {
+        const tracks = [TrackDummy.create({ name: 'Drums' })];
 
         render(
             <SuspenseGuard>
-                <LibraryList libraries={libraries} />
+                <TrackList tracks={tracks} />
             </SuspenseGuard>
         );
 
-        expect(screen.getByText('Library 1')).toBeInTheDocument();
+        expect(screen.getByText('Drums')).toBeInTheDocument();
     });
 
-    it('should handle library creation', async () => {
-        const onCreateLibrary = vi.fn();
+    it('should handle track creation', async () => {
+        const onAddTrack = vi.fn();
 
-        render(<CreateLibraryDialog onSubmit={onCreateLibrary} />);
+        render(<AddTrackDialog onSubmit={onAddTrack} />);
 
         fireEvent.change(screen.getByLabelText('Name'), {
-            target: { value: 'New Library' },
+            target: { value: 'New Synth' },
         });
-        fireEvent.click(screen.getByText('Create'));
+        fireEvent.click(screen.getByText('Add'));
 
         await waitFor(() => {
-            expect(onCreateLibrary).toHaveBeenCalledWith({
-                name: 'New Library',
-                type: 'design',
+            expect(onAddTrack).toHaveBeenCalledWith({
+                name: 'New Synth',
+                kind: 'midi',
             });
         });
     });
 
     it('should display the component with the correct data', () => {
-        const mockBrand = BrandDummy.create();
-        render(<BrandCard brand={mockBrand} />);
-        expect(screen.getByText(mockBrand.name)).toBeInTheDocument();
+        const mockTrack = TrackDummy.create();
+        render(<TrackHeader track={mockTrack} />);
+        expect(screen.getByText(mockTrack.name)).toBeInTheDocument();
     });
 });
 ```
@@ -252,35 +246,35 @@ Use the mock event bus to test how components or hooks react to domain events. Y
 - **Method**: Render the component, publish an event using the mock bus, and assert the expected change.
 
 ```typescript
-// events/subscribeToLibraryCreated.spec.ts
+// events/subscribeToTrackAdded.spec.ts
 
 import { injectDependencies } from '#/helpers/DependencyInjector/injectDependencies';
 import { Prophecy } from '#/helpers/Prophecy/Prophecy';
 
-describe('subscribeToLibraryCreated', () => {
+describe('subscribeToTrackAdded', () => {
     it('should subscribe to the event bus and call the callback when the event is triggered', () => {
         const prophecy = new Prophecy();
         const callback = vi.fn();
-        const dummyLibrary = LibraryDummy.create();
+        const dummyTrack = TrackDummy.create();
         const eventBusMock = prophecy.prophesize(EventBus);
 
         // Inject the mocked event bus
-        injectDependencies(subscribeToLibraryCreated, {
+        injectDependencies(subscribeToTrackAdded, {
             eventBus: eventBusMock.reveal(),
         });
 
         // Call the subscription helper
-        subscribeToLibraryCreated(callback);
+        subscribeToTrackAdded(callback);
 
         // Verify that eventBus.on was called correctly
-        expect(eventBusMock.on).toHaveBeenCalledWith(LibraryCreatedEvent, expect.any(Function));
+        expect(eventBusMock.on).toHaveBeenCalledWith(TrackAddedEvent, expect.any(Function));
 
         // Simulate the event being fired by calling the handler passed to eventBus.on
         const handler = (eventBusMock.on as any).mock.calls[0][1];
-        handler({ payload: dummyLibrary });
+        handler({ payload: dummyTrack });
 
         // Assert that the original callback was called with the event payload
-        expect(callback).toHaveBeenCalledWith(dummyLibrary);
+        expect(callback).toHaveBeenCalledWith(dummyTrack);
     });
 });
 ```
@@ -294,16 +288,16 @@ describe('subscribeToLibraryCreated', () => {
 Tests should be co-located with the code they are testing. Shared test utilities, such as dummy data factories or mock setups, can be placed in a `_tests/` directory at the module root.
 
 ```text
-src/modules/Library/
+src/modules/Track/
 ├── _tests/                    # Test utilities and shared mocks
-│   ├── LibraryDummy.ts
+│   ├── TrackDummy.ts
 │   ├── getEventBus.mock.ts
 │   └── WrapperQueryClient.tsx
 ├── useCases/
-│   └── createLibrary.spec.ts
+│   └── addTrack.spec.ts
 └── presentations/
     └── helpers/
-        └── libraryValidator.spec.ts
+        └── trackValidator.spec.ts
 ```
 
 ### Testing helpers and validation
@@ -311,27 +305,27 @@ src/modules/Library/
 Pure functions, like helpers and validation schemas, are excellent candidates for unit tests.
 
 ```typescript
-// presentations/helpers/libraryListMutator.spec.ts
+// presentations/helpers/trackListMutator.spec.ts
 
-describe('libraryListMutator', () => {
-    const DUMMY_LIBRARIES = LibrariesDummy.create({ length: 5 });
-    const DUMMY_NEW_LIBRARY = LibraryDummy.create();
+describe('trackListMutator', () => {
+    const DUMMY_TRACKS = TracksDummy.create({ length: 5 });
+    const DUMMY_NEW_TRACK = TrackDummy.create();
 
-    it('should update the libraries list when a new library has been created', () => {
-        const expectedLibraries = [...DUMMY_LIBRARIES, DUMMY_NEW_LIBRARY];
+    it('should update the tracks list when a new track has been added', () => {
+        const expectedTracks = [...DUMMY_TRACKS, DUMMY_NEW_TRACK];
 
-        const libraries = getLibraryListWithAddedLibrary(DUMMY_LIBRARIES, DUMMY_NEW_LIBRARY);
+        const tracks = getTrackListWithAddedTrack(DUMMY_TRACKS, DUMMY_NEW_TRACK);
 
-        expect(libraries).toEqual(expectedLibraries);
+        expect(tracks).toEqual(expectedTracks);
     });
 
-    it('should update the libraries list when a library has been removed', () => {
-        const libraryToRemove = DUMMY_LIBRARIES[2];
-        const expectedLibraries = DUMMY_LIBRARIES.filter((library) => library.id !== libraryToRemove.id);
+    it('should update the tracks list when a track has been removed', () => {
+        const trackToRemove = DUMMY_TRACKS[2];
+        const expectedTracks = DUMMY_TRACKS.filter((track) => track.id !== trackToRemove.id);
 
-        const libraries = getLibraryListWithDeletedLibrary(DUMMY_LIBRARIES, libraryToRemove);
+        const tracks = getTrackListWithDeletedTrack(DUMMY_TRACKS, trackToRemove);
 
-        expect(libraries).toEqual(expectedLibraries);
+        expect(tracks).toEqual(expectedTracks);
     });
 });
 ```
@@ -339,17 +333,17 @@ describe('libraryListMutator', () => {
 ### Validation testing
 
 ```typescript
-// presentations/helpers/validateLibraryDeletionForm.spec.ts
+// presentations/helpers/validateTrackDeletionForm.spec.ts
 
-describe('validateLibraryDeletionForm', () => {
-    const libraryDeletionFormSchema = getLibraryDeletionFormSchema((key) => key);
+describe('validateTrackDeletionForm', () => {
+    const trackDeletionFormSchema = getTrackDeletionFormSchema((key) => key);
 
     it('should validate a correct form input', async () => {
         const validInput = {
-            confirmation: 'DeleteLibrary_form_confirmationText',
+            confirmation: 'DeleteTrack_form_confirmationText',
         };
 
-        const result = await libraryDeletionFormSchema.validate(validInput);
+        const result = await trackDeletionFormSchema.validate(validInput);
         expect(result).toEqual(validInput);
     });
 
@@ -358,8 +352,8 @@ describe('validateLibraryDeletionForm', () => {
             confirmation: 'not good',
         };
 
-        await expect(libraryDeletionFormSchema.validate(invalidInput)).rejects.toThrow(
-            'DeleteLibrary_form_confirmationTextError'
+        await expect(trackDeletionFormSchema.validate(invalidInput)).rejects.toThrow(
+            'DeleteTrack_form_confirmationTextError'
         );
     });
 });
@@ -372,25 +366,26 @@ describe('validateLibraryDeletionForm', () => {
 Create dummy data factories to generate consistent and realistic test data.
 
 ```typescript
-// Library/_tests/LibraryDummy.ts
+// Track/_tests/TrackDummy.ts
 
-export const LibraryDummy = {
-    create: (overrides?: Partial<Library>): Library => ({
-        id: Math.floor(Math.random() * 1000),
-        name: 'test-library',
-        type: 'design',
+export const TrackDummy = {
+    create: (overrides?: Partial<Track>): Track => ({
+        id: `track-${Math.floor(Math.random() * 1000)}`,
+        name: 'Lead Vocals',
+        kind: 'audio',
+        color: '#ff0000',
         createdAt: new Date(),
         ...overrides,
     }),
 };
 
-export const LibrariesDummy = {
-    create: ({ length }: { length: number }): Library[] =>
+export const TracksDummy = {
+    create: ({ length }: { length: number }): Track[] =>
         Array.from({ length }, (_, index) =>
-            LibraryDummy.create({
-                id: index + 1,
-                name: `library-${index + 1}`,
-                type: 'design',
+            TrackDummy.create({
+                id: `track-${index + 1}`,
+                name: `Track ${index + 1}`,
+                kind: 'audio',
             })
         ),
 };
@@ -401,7 +396,7 @@ export const LibrariesDummy = {
 Use `vi.mock` to provide controlled, fake implementations of dependencies like the event bus.
 
 ```typescript
-// Library/_tests/getEventBus.mock.ts
+// Track/_tests/getEventBus.mock.ts
 
 export const onMock = vi.fn();
 export const emitMock = vi.fn();
@@ -420,7 +415,7 @@ vi.mock('#/helpers/Event/EventBus', () => ({
 When testing components that use TanStack Query, wrap them in a `QueryClientProvider` to provide the necessary context.
 
 ```tsx
-// Library/_tests/WrapperQueryClient.tsx
+// Track/_tests/WrapperQueryClient.tsx
 
 export const WrapperQueryClient = ({ children }: { children: ReactNode }) => {
     const [queryClient] = useState(

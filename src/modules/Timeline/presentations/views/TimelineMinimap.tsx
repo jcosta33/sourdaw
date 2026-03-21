@@ -1,4 +1,4 @@
-import { type ReactElement, type MouseEvent as ReactMouseEvent, useRef, useEffect, useSyncExternalStore } from 'react';
+import { type ReactElement, type MouseEvent as ReactMouseEvent, useRef, useEffect, useState, useSyncExternalStore } from 'react';
 import { trackStore } from '#/modules/Track/stores/trackStore';
 import { timelineViewStore, scrollTimeline } from '../../stores/timelineViewStore';
 
@@ -11,6 +11,7 @@ export const TimelineMinimap = (): ReactElement => {
     const containerRef = useRef<HTMLDivElement>(null);
     const isDraggingRef = useRef(false);
     const dragOffsetRef = useRef(0);
+    const [containerWidth, setContainerWidth] = useState(0);
 
     const trackState = useSyncExternalStore(
         (cb) => trackStore.subscribe(() => cb()),
@@ -98,7 +99,7 @@ export const TimelineMinimap = (): ReactElement => {
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
         ctx.lineWidth = 1;
         ctx.strokeRect(viewportStartPx + 0.5, 0.5, viewportWidthPx - 1, MINIMAP_HEIGHT - 1);
-    }, [tracks, pixelsPerBeat, scrollX]);
+    }, [tracks, pixelsPerBeat, scrollX, containerWidth]);
 
     useEffect(() => {
         const container = containerRef.current;
@@ -106,18 +107,16 @@ export const TimelineMinimap = (): ReactElement => {
             return;
         }
 
-        const observer = new ResizeObserver(() => {
-            const canvas = canvasRef.current;
-            if (!canvas) {
-                return;
+        const observer = new ResizeObserver((entries) => {
+            if (entries[0]) {
+                setContainerWidth(entries[0].contentRect.width);
             }
-            const rect = container.getBoundingClientRect();
-            const dpr = window.devicePixelRatio || 1;
-            canvas.width = rect.width * dpr;
-            canvas.height = MINIMAP_HEIGHT * dpr;
         });
 
         observer.observe(container);
+        // Set initial width
+        setContainerWidth(container.getBoundingClientRect().width);
+
         return () => observer.disconnect();
     }, []);
 

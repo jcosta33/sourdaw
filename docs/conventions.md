@@ -10,26 +10,26 @@ All control flow must be explicit. Use guard clauses for early returns and alway
 
 ```typescript
 // ✅ Good: Guard clauses and block conditionals
-export const publishAsset = (asset: Asset): void => {
-    if (!asset) {
-        throw new Error('Missing brand');
+export const renderTrack = (track: Track): void => {
+    if (!track) {
+        throw new Error('Missing track');
     }
 
-    if (asset.isArchived) {
+    if (track.isMuted) {
         return;
     }
 
-    if (asset.isPublished) {
+    if (track.isBypassed) {
         return;
     }
 
-    publishAssetApi(asset.id);
+    renderTrackAudio(track.id);
 };
 
 // ❌ Bad: Short-circuit invocation and collapsed ifs
-export const publishAsset = (asset: Asset): void => {
-    if (!asset) throw new Error('Missing asset');
-    asset && !asset.isArchived && !asset.isPublished && publishAssetApi(asset.id);
+export const renderTrack = (track: Track): void => {
+    if (!track) throw new Error('Missing track');
+    track && !track.isMuted && !track.isBypassed && renderTrackAudio(track.id);
 };
 ```
 
@@ -56,25 +56,25 @@ if (user) {
 
 ```tsx
 // ✅ Good: Pure function + thin view wrapper
-export const computeFinalPrice = ({ price, discount }: ProductCost): number => {
-    return Math.max(0, price - discount);
+export const computeStereoPan = ({ panLeft, panRight }: PanAmount): number => {
+    return Math.max(-1, Math.min(1, panRight - panLeft));
 };
 
-export const Price = ({ price, discount }: ProductCost): ReactElement => {
-    const value = computeFinalPrice({ price, discount });
-    return <span>${value}</span>;
+export const PanKnob = ({ panLeft, panRight }: PanAmount): ReactElement => {
+    const value = computeStereoPan({ panLeft, panRight });
+    return <span>Pan: {value}</span>;
 };
 
 // ❌ Bad: Embedding domain logic in the component
-export const Price = ({ price, discount }: ProductCost): ReactElement => {
-    const value = Math.max(0, price - discount);
-    return <span>${value}</span>;
+export const PanKnob = ({ panLeft, panRight }: PanAmount): ReactElement => {
+    const value = Math.max(-1, Math.min(1, panRight - panLeft));
+    return <span>Pan: {value}</span>;
 };
 ```
 
 ### React anti-patterns
 
-- **No `useEffect` for data fetching**: This is a critical pattern. Data fetching must be handled by [TanStack Query](./data-fetching.md).
+- **No `useEffect` for data fetching**: This is a critical pattern. Data fetching must be handled by TanStack Query.
 - **No `useEffect` for derived state**: Compute derived state directly during rendering.
 - **No manual memoization**: The [React Compiler](https://react.dev/learn/react-compiler) handles memoization automatically at build time. Do not use `useMemo`, `useCallback`, or `React.memo` manually -- the compiler inserts optimal memoization for you. Existing manual calls are harmless (the compiler skips already-memoized code) but should be removed when touching a file.
 - **No `forwardRef`**: In React 19, `ref` is a regular prop. Destructure it directly instead of wrapping with `forwardRef`.
@@ -112,16 +112,16 @@ export const Badge = ({ count }: { count: number }) => {
 };
 
 // ❌ Bad: useEffect for data fetching
-export const BrandDetails = ({ id }: { id: number }) => {
-    const [data, setData] = useState<Brand | null>(null);
+export const ProjectDetails = ({ id }: { id: string }) => {
+    const [data, setData] = useState<Project | null>(null);
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
         let isMounted = true;
         setIsLoading(true);
-        fetch(`/api/brands/${id}`)
+        fetch(`/api/projects/${id}`)
             .then((r) => r.json())
-            .then((json: Brand) => {
+            .then((json: Project) => {
                 if (isMounted) {
                     setData(json);
                     setIsLoading(false);
@@ -139,48 +139,48 @@ export const BrandDetails = ({ id }: { id: number }) => {
 };
 
 // ✅ Good: TanStack Query for data fetching (non-suspense)
-// Brand/presentations/hooks/useBrandDetails.ts
+// Project/presentations/hooks/useProjectDetails.ts
 
 import { useQuery } from '@tanstack/react-query';
 
-export const useBrandDetails = (id: number) => {
-    const { data: brand, isLoading } = useQuery({
-        queryKey: ['brand', id],
-        queryFn: () => api.brands.getById(id),
+export const useProjectDetails = (id: string) => {
+    const { data: project, isLoading } = useQuery({
+        queryKey: ['project', id],
+        queryFn: () => api.projects.getById(id),
     });
 
-    return { brand, isLoading };
+    return { project, isLoading };
 };
 
-useBrandDetails.getKey = (id: number) => ['brand', id];
+useProjectDetails.getKey = (id: string) => ['project', id];
 
-export const BrandDetails = ({ id }: { id: number }) => {
-    const { brand, isLoading } = useBrandDetails(id);
+export const ProjectDetails = ({ id }: { id: string }) => {
+    const { project, isLoading } = useProjectDetails(id);
 
     if (isLoading) {
         return <Spinner />;
     }
-    return <div>{brand?.name}</div>;
+    return <div>{project?.name}</div>;
 };
 
 // ✅ Good: Suspense-enabled TanStack Query
-// Brand/presentations/hooks/useBrandDetailsSuspense.ts
+// Project/presentations/hooks/useProjectDetailsSuspense.ts
 
 import { useSuspenseQuery } from '@tanstack/react-query';
 
-export const useBrandDetailsSuspense = (id: number) => {
-    const { data: brand } = useSuspenseQuery({
-        queryKey: ['brand', id],
-        queryFn: () => api.brands.getById(id),
+export const useProjectDetailsSuspense = (id: string) => {
+    const { data: project } = useSuspenseQuery({
+        queryKey: ['project', id],
+        queryFn: () => api.projects.getById(id),
     });
-    return { brand };
+    return { project };
 };
 
-useBrandDetailsSuspense.getKey = (id: number) => ['brand', id];
+useProjectDetailsSuspense.getKey = (id: string) => ['project', id];
 
-export const BrandDetailsSuspense = ({ id }: { id: number }) => {
-    const { brand } = useBrandDetailsSuspense(id);
-    return <div>{brand.name}</div>;
+export const ProjectDetailsSuspense = ({ id }: { id: string }) => {
+    const { project } = useProjectDetailsSuspense(id);
+    return <div>{project.name}</div>;
 };
 
 // ❌ Bad: Managing forms with custom state
@@ -213,16 +213,16 @@ export const EmailForm = () => {
 
 ```text
 ✅ Good
-components/BrandCard.tsx        # PascalCase for components
-views/BrandListView.tsx         # PascalCase for views
-helpers/formatPrice.ts            # camelCase for utilities
-models/Brand.ts                 # PascalCase for models
-useCases/createBrand.ts         # camelCase for use cases
+components/TrackCard.tsx        # PascalCase for components
+views/TrackListView.tsx         # PascalCase for views
+helpers/formatTime.ts           # camelCase for utilities
+models/Track.ts                 # PascalCase for models
+useCases/addTrack.ts            # camelCase for use cases
 
 ❌ Bad
-components/brand-card.tsx       # kebab-case
-components/brandcard.tsx        # lowercase
-helpers/format_price.ts           # snake_case
+components/track-card.tsx       # kebab-case
+components/trackcard.tsx        # lowercase
+helpers/format_time.ts          # snake_case
 ```
 
 ### Variable and function names
@@ -230,13 +230,13 @@ helpers/format_price.ts           # snake_case
 ```typescript
 // ✅ Good: Descriptive, verbose names
 const currentUserPermissions = getUserPermissions();
-const isAssetPublished = asset.status === 'published';
-const calculateTotalPriceWithTax = (basePrice: number) => basePrice * 1.2;
+const isTrackMuted = track.status === 'muted';
+const calculateFadeOutDuration = (baseDuration: number) => baseDuration * 1.2;
 
 // ❌ Bad: Abbreviated, unclear names
 const usrPerms = getUserPermissions();
-const isPub = asset.status === 'published';
-const calcTot = (p: number) => p * 1.2;
+const isMut = track.status === 'muted';
+const calcFade = (d: number) => d * 1.2;
 ```
 
 ### Component and class names
@@ -246,21 +246,21 @@ const calcTot = (p: number) => p * 1.2;
 
 ```typescript
 // ✅ Good: PascalCase for components and classes
-export const BrandCard = (): ReactElement => {
+export const TrackCard = (): ReactElement => {
     /* */
 };
-export class BrandRepository {
+export class TrackRepository {
     /* */
 }
-export class UserNotFoundError extends Error {
+export class ProjectNotFoundError extends Error {
     /* */
 }
 
 // ❌ Bad: camelCase or other patterns
-export const brandCard = (): ReactElement => {
+export const trackCard = (): ReactElement => {
     /* */
 };
-export class brandRepository {
+export class trackRepository {
     /* */
 }
 ```
@@ -275,15 +275,15 @@ export class brandRepository {
 // ✅ Good: Type the return value
 import { type ReactElement } from 'react';
 
-export const BrandCard = ({ name, price }: BrandCardProps): ReactElement => {
-    return <div>{name} - ${price}</div>;
+export const TrackCard = ({ name, color }: TrackCardProps): ReactElement => {
+    return <div style={{ backgroundColor: color }}>{name}</div>;
 };
 
 // ❌ Bad: Type the component itself
 import { type FC } from 'react';
 
-export const BrandCard: FC<BrandCardProps> = ({ name, price }) => {
-    return <div>{name} - ${price}</div>;
+export const TrackCard: FC<TrackCardProps> = ({ name, color }) => {
+    return <div style={{ backgroundColor: color }}>{name}</div>;
 };
 ```
 
@@ -317,9 +317,9 @@ import { type ReactElement, type MouseEvent, useState, use } from 'react';
 // ❌ Bad: Import React and use dot notation
 import React from 'react';
 
-export const BrandCard = (): React.ReactElement => {
-    const [count, setCount] = React.useState(0);
-    return <div>{count}</div>;
+export const TrackCard = (): React.ReactElement => {
+    const [volume, setVolume] = React.useState(0);
+    return <div>{volume}</div>;
 };
 ```
 
@@ -341,11 +341,11 @@ export const BrandCard = (): React.ReactElement => {
 // ✅ Good
 import { useState, type ReactElement } from 'react';
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { getBrand } from '#/modules/Brand/useCases/getBrand';
+import { getTrack } from '#/modules/Track/useCases/getTrack';
 
 // ❌ Bad: Mixed order and missing type-only imports
 import { ReactElement } from 'react';
-import { getBrand } from '../../../../../modules/Brand/useCases/getBrand';
+import { getTrack } from '../../../../../modules/Track/useCases/getTrack';
 import { useSuspenseQuery } from '@tanstack/react-query';
 ```
 
@@ -353,21 +353,21 @@ import { useSuspenseQuery } from '@tanstack/react-query';
 
 ```typescript
 // ✅ Good: Named exports
-export const BrandCard = (): ReactElement => {
+export const TrackCard = (): ReactElement => {
     /* */
 };
-export const useBrand = (id: number) => {
+export const useTrack = (id: string) => {
     /* */
 };
-export const formatPrice = (price: number) => {
+export const formatTime = (seconds: number) => {
     /* */
 };
 
 // ❌ Bad: Default exports
-const BrandCard = (): ReactElement => {
+const TrackCard = (): ReactElement => {
     /* */
 };
-export default BrandCard;
+export default TrackCard;
 
 // ⚠️ Barrel exports: Prefer direct imports from files for internal code
 ```
@@ -388,20 +388,20 @@ export default BrandCard;
 
 ```typescript
 // ✅ Good: Block statements always
-export const validateBrand = (brand: Brand): void => {
-    if (!brand.name) {
-        throw new Error('Brand name is required');
+export const validateTrackSettings = (track: Track): void => {
+    if (!track.name) {
+        throw new Error('Track name is required');
     }
 
-    if (brand.price <= 0) {
-        throw new Error('Brand price must be positive');
+    if (track.volume > 1) {
+        throw new Error('Track volume cannot exceed 1.0');
     }
 };
 
 // ❌ Bad: Collapsed if statements
-export const validateBrand = (brand: Brand): void => {
-    if (!brand.name) throw new Error('Brand name is required');
-    if (brand.price <= 0) throw new Error('Brand price must be positive');
+export const validateTrackSettings = (track: Track): void => {
+    if (!track.name) throw new Error('Track name is required');
+    if (track.volume > 1) throw new Error('Track volume cannot exceed 1.0');
 };
 ```
 
@@ -409,41 +409,41 @@ export const validateBrand = (brand: Brand): void => {
 
 ```typescript
 // ✅ Good: Early return pattern
-export const BrandCard = ({ brand }: BrandCardProps): ReactElement => {
-    if (!brand) {
+export const TrackCard = ({ track }: TrackCardProps): ReactElement => {
+    if (!track) {
         return <div>Loading...</div>;
     }
 
-    if (brand.isDeleted) {
-        return <div>Brand no longer available</div>;
+    if (track.isDeleted) {
+        return <div>Track no longer available</div>;
     }
 
-    if (!brand.isPublished) {
-        return <div>Brand is not published</div>;
+    if (!track.isLoaded) {
+        return <div>Track is not loaded</div>;
     }
 
     return (
         <div>
-            <h3>{brand.name}</h3>
-            <p>${brand.price}</p>
+            <h3>{track.name}</h3>
+            <p>Volume: {track.volume}</p>
         </div>
     );
 };
 
 // ❌ Bad: Complex nested ternaries
-export const BrandCard = ({ brand }: BrandCardProps): ReactElement => {
+export const TrackCard = ({ track }: TrackCardProps): ReactElement => {
     return (
         <div>
-            {!brand ? (
+            {!track ? (
                 <div>Loading...</div>
-            ) : brand.isDeleted ? (
-                <div>Brand no longer available</div>
-            ) : !brand.isPublished ? (
-                <div>Brand is not published</div>
+            ) : track.isDeleted ? (
+                <div>Track no longer available</div>
+            ) : !track.isLoaded ? (
+                <div>Track is not loaded</div>
             ) : (
                 <div>
-                    <h3>{brand.name}</h3>
-                    <p>${brand.price}</p>
+                    <h3>{track.name}</h3>
+                    <p>Volume: {track.volume}</p>
                 </div>
             )}
         </div>
@@ -459,7 +459,7 @@ export const BrandCard = ({ brand }: BrandCardProps): ReactElement => {
 
 ```typescript
 // ✅ Good: Early returns and full ternaries
-export const AssetActions = ({ asset, canEdit }: AssetActionsProps): ReactElement => {
+export const TrackActions = ({ track, canEdit }: TrackActionsProps): ReactElement => {
     if (!canEdit) {
         return <div>View only</div>;
     }
@@ -467,35 +467,35 @@ export const AssetActions = ({ asset, canEdit }: AssetActionsProps): ReactElemen
     return (
         <div>
             <button>Edit</button>
-            {asset.isPublished ? <button>Unpublish</button> : <button>Publish</button>}
-            {asset.hasComments ? <span>Has comments</span> : null}
-            {asset.pages.length > 0 ? <AssetPages pages={asset.pages} /> : undefined}
+            {track.isMuted ? <button>Unmute</button> : <button>Mute</button>}
+            {track.hasPlugins ? <span>Has plugins</span> : null}
+            {track.clips.length > 0 ? <TrackClips clips={track.clips} /> : undefined}
         </div>
     );
 };
 
 // ❌ Bad: Logical AND operators for conditional rendering
-export const AssetActions = ({ asset, canEdit }: BrandActionsProps): ReactElement => {
+export const TrackActions = ({ track, canEdit }: TrackActionsProps): ReactElement => {
     return (
         <div>
             {canEdit && <button>Edit</button>}
-            {asset.hasComments && <span>Has comments</span>}
-            {asset.pages.length > 0 && <AssetPages pages={asset.pages} />}
+            {track.hasPlugins && <span>Has plugins</span>}
+            {track.clips.length > 0 && <TrackClips clips={track.clips} />}
         </div>
     );
 };
 
 // ❌ Bad: Complex inline ternaries
-export const AssetActions = ({ asset, canEdit }: BrandActionsProps): ReactElement => {
+export const TrackActions = ({ track, canEdit }: TrackActionsProps): ReactElement => {
     return (
         <div>
             {canEdit ? (
                 <div>
                     <button>Edit</button>
-                    {asset.isPublished ? (
-                        <button>Unpublish</button>
+                    {track.isMuted ? (
+                        <button>Unmute</button>
                     ) : (
-                        <button>Publish</button>
+                        <button>Mute</button>
                     )}
                 </div>
             ) : (
@@ -532,18 +532,18 @@ The [React Compiler](https://react.dev/learn/react-compiler) (v1.0, stable since
 
 ```typescript
 // ✅ Good: Plain code; the compiler memoizes automatically
-export const ProductCard = ({ product, discount }: ProductCardProps): ReactElement => {
+export const PluginCard = ({ plugin, inputGain }: PluginCardProps): ReactElement => {
     const [isExpanded, setIsExpanded] = useState(false);
 
-    const discountedPrice = product.price * (1 - discount);
-    const formattedPrice = `$${discountedPrice.toFixed(2)}`;
-    const isOnSale = discount > 0;
+    const effectiveGain = plugin.baseGain * inputGain;
+    const formattedGain = `${effectiveGain.toFixed(2)} dB`;
+    const isClipping = effectiveGain > 0;
 
     return (
         <div>
-            <h3>{product.name}</h3>
-            <p>{formattedPrice}</p>
-            {isOnSale ? <span>On Sale!</span> : undefined}
+            <h3>{plugin.name}</h3>
+            <p>{formattedGain}</p>
+            {isClipping ? <span>Clipping!</span> : undefined}
             <button onClick={() => setIsExpanded(!isExpanded)}>
                 {isExpanded ? 'Collapse' : 'Expand'}
             </button>
@@ -552,11 +552,11 @@ export const ProductCard = ({ product, discount }: ProductCardProps): ReactEleme
 };
 
 // ❌ Bad: Manual memoization is unnecessary with the React Compiler
-export const ProductCard = ({ product, discount }: ProductCardProps): ReactElement => {
+export const PluginCard = ({ plugin, inputGain }: PluginCardProps): ReactElement => {
     const [isExpanded, setIsExpanded] = useState(false);
 
-    const discountedPrice = useMemo(() =>
-        product.price * (1 - discount), [product.price, discount]
+    const effectiveGain = useMemo(() =>
+        plugin.baseGain * inputGain, [plugin.baseGain, inputGain]
     );
 
     const toggleExpanded = useCallback(() => {
@@ -565,8 +565,8 @@ export const ProductCard = ({ product, discount }: ProductCardProps): ReactEleme
 
     return (
         <div>
-            <h3>{product.name}</h3>
-            <p>{`$${discountedPrice.toFixed(2)}`}</p>
+            <h3>{plugin.name}</h3>
+            <p>{`${effectiveGain.toFixed(2)} dB`}</p>
             <button onClick={toggleExpanded}>
                 {isExpanded ? 'Collapse' : 'Expand'}
             </button>
@@ -629,28 +629,28 @@ if (a) {
 
 ```typescript
 // ✅ Good: Clear, descriptive function names
-export const calculateProductPriceWithTax = ({ basePrice, taxRate }): number => {
-    return basePrice * (1 + taxRate);
+export const calculateTrackFadeDuration = ({ baseDuration, fadeMultiplier }): number => {
+    return baseDuration * fadeMultiplier;
 };
 
-export const validateBrandCreationInput = (input: CreateBrandInput): void => {
+export const validateTrackCreationInput = (input: CreateTrackInput): void => {
     if (!input.name || input.name.length < 3) {
-        throw new Error('Brand name must be at least 3 characters');
+        throw new Error('Track name must be at least 3 characters');
     }
 
-    if (input.price <= 0) {
-        throw new Error('Brand price must be positive');
+    if (input.volume < 0) {
+        throw new Error('Track volume cannot be negative');
     }
 };
 
 // ❌ Bad: Abbreviated, unclear names
-export const calcPrice = (p: number, t: number): number => {
-    return p * (1 + t);
+export const calcDuration = (d: number, m: number): number => {
+    return d * m;
 };
 
 export const validate = (input: any): void => {
     if (!input.n || input.n.length < 3) throw new Error('Name too short');
-    if (input.p <= 0) throw new Error('Bad price');
+    if (input.v < 0) throw new Error('Bad volume');
 };
 ```
 
@@ -662,16 +662,16 @@ export const validate = (input: any): void => {
 
 ```typescript
 // Strategy pattern (choose implementation at runtime)
-type SortStrategy = (brands: Brand[]) => Brand[];
+type SortStrategy = (tracks: Track[]) => Track[];
 
-const sortByName: SortStrategy = (brands) => [...brands].sort((a, b) => a.name.localeCompare(b.name));
-const sortByDate: SortStrategy = (brands) => [...brands].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+const sortByName: SortStrategy = (tracks) => [...tracks].sort((a, b) => a.name.localeCompare(b.name));
+const sortByDate: SortStrategy = (tracks) => [...tracks].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 
-export const getSortedBrands = (brands: Brand[], strategy: 'name' | 'date'): Brand[] => {
+export const getSortedTracks = (tracks: Track[], strategy: 'name' | 'date'): Track[] => {
     if (strategy === 'name') {
-        return sortByName(brands);
+        return sortByName(tracks);
     }
-    return sortByDate(brands);
+    return sortByDate(tracks);
 };
 
 // Singleton via DI container (already used for Store, Logger, EventBus)
@@ -694,8 +694,8 @@ type User = { id: number; name: string };
 export const mapUserFromApiToModel = (api: ApiUser): User => ({ id: api.user_id, name: api.full_name });
 
 // Observer pattern (domain events)
-eventBus.on(UserRegisteredEvent, (event) => {
-    auditUseCase.recordRegistration(event.payload.userId);
+eventBus.on(PluginAddedEvent, (event) => {
+    auditUseCase.recordPluginAdded(event.payload.pluginId);
 });
 ```
 
@@ -720,34 +720,34 @@ Guidelines:
 
 ```typescript
 // ✅ Good: Descriptive parameter names
-export const createBrandNotification = ({ brandName, recipientEmail, notificationType }): void => {
+export const createMixerNotification = ({ trackName, alertLevel, notificationType }): void => {
     // Implementation
 };
 
 // ❌ Bad: Single letter or abbreviated parameters
-export const createNotif = (n: string, e: string, t: string): void => {
+export const createNotif = (t: string, a: string, n: string): void => {
     // Implementation
 };
 
 // ✅ Good: Single object with descriptive properties
-export const updateAssetVisibility = ({ assetId, isPublic, notifyUsers, updateMetadata }): void => {
+export const updateTrackVisibility = ({ trackId, isVisible, notifyMixer, updateMetrics }): void => {
     // Implementation
 };
 
 // ❌ Bad: Multiple boolean parameters - unclear what each does
-export const updateAsset = (assetId: string, isPublic: boolean, notify: boolean, updateMeta: boolean): void => {
+export const updateTrack = (trackId: string, isVisible: boolean, notify: boolean, updateMeta: boolean): void => {
     // Implementation
 };
 
 // ❌ Bad: Function call is unclear without checking the signature
-updateAsset('asset-123', true, false, true); // What do these booleans mean?
+updateTrack('track-123', true, false, true); // What do these booleans mean?
 
 // ✅ Good: Function call is self-documenting
-updateAssetVisibility({
-    assetId: 'asset-123',
-    isPublic: true,
-    notifyUsers: false,
-    updateMetadata: true,
+updateTrackVisibility({
+    trackId: 'track-123',
+    isVisible: true,
+    notifyMixer: false,
+    updateMetrics: true,
 });
 ```
 
@@ -759,34 +759,34 @@ updateAssetVisibility({
 // ✅ Good: Following all conventions
 import { type ReactElement, useState } from 'react';
 
-type BrandCardProps = {
-    brand: Brand;
-    onBrandSelect: (brandId: string) => void;
+type TrackCardProps = {
+    track: Track;
+    onTrackSelect: (trackId: string) => void;
 };
 
-export const BrandCard = ({ brand, onBrandSelect }: BrandCardProps): ReactElement => {
+export const TrackCard = ({ track, onTrackSelect }: TrackCardProps): ReactElement => {
     const [isExpanded, setIsExpanded] = useState(false);
 
-    if (!brand) {
-        return <div>No brand data available</div>;
+    if (!track) {
+        return <div>No track data available</div>;
     }
 
-    if (brand.isDeleted) {
-        return <div>This brand has been removed</div>;
+    if (track.isDeleted) {
+        return <div>This track has been removed</div>;
     }
 
-    const handleBrandClick = () => {
-        onBrandSelect(brand.id);
+    const handleTrackClick = () => {
+        onTrackSelect(track.id);
     };
 
-    const formattedPrice = formatCurrency(brand.price);
+    const formattedVolume = `${track.volume.toFixed(2)} dB`;
 
     return (
-        <div onClick={handleBrandClick}>
-            <h3>{brand.name}</h3>
-            <p>{formattedPrice}</p>
+        <div onClick={handleTrackClick}>
+            <h3>{track.name}</h3>
+            <p>{formattedVolume}</p>
             {isExpanded ? (
-                <div>{brand.description}</div>
+                <div>{track.kind}</div>
             ) : undefined}
         </div>
     );

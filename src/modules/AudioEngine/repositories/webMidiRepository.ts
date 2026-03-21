@@ -142,19 +142,21 @@ function findActiveRecordingClip(trackId: string): string | null {
     if (midiClips.length === 0) {
         return null;
     }
-    
+
     if (transport.isRecording && transport.overdubEnabled) {
         const ph = transport.playheadPosition;
         const intersecting = midiClips.find((c) => ph >= c.startBeat && ph <= c.endBeat);
         if (intersecting) {
             return intersecting.id;
         }
-        
+
         if (transport.isLooping && ph >= transport.loopStart && ph <= transport.loopEnd) {
-             const loopClip = midiClips.find((c) => c.startBeat >= transport.loopStart && c.endBeat <= transport.loopEnd);
-             if (loopClip) {
-                 return loopClip.id;
-             }
+            const loopClip = midiClips.find(
+                (c) => c.startBeat >= transport.loopStart && c.endBeat <= transport.loopEnd
+            );
+            if (loopClip) {
+                return loopClip.id;
+            }
         }
     }
 

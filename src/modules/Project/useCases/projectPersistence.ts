@@ -11,7 +11,7 @@ import { syncCurrentArrangementToStore } from './arrangementUseCases';
 import { defaultTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { type ProjectData } from '../models/ProjectData';
 import { projectStore } from '../stores/projectStore';
-import { createDemoProject } from './createDemoProject';
+import { demo1_TheCompleteMix } from './demoProjects';
 import { addToRecentProjects } from './recentProjects';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
@@ -26,6 +26,12 @@ import {
     writeNamedProjectJson,
     downloadProjectFile,
 } from '../repositories/projectRepository';
+import {
+    isNativeFileSystemAvailable,
+    saveProjectToFile,
+    loadProjectFromFile,
+    getProjectDirectory,
+} from './nativeProjectFiles';
 
 function clearUndoHistory(): void {
     undoStore.set({ past: [], future: [] });
@@ -58,7 +64,7 @@ function verifyAudioBufferReferences(): void {
 export function saveProject(): void {
     // Make sure the active arrangement reflects recent track changes in the project file
     syncCurrentArrangementToStore();
-    
+
     const tracks = trackStore.value;
     const transport = transportStore.value;
     const automation = automationStore.value;
@@ -111,6 +117,15 @@ export function saveProject(): void {
         writeProjectJson(json);
         writeNamedProjectJson(project.name, json);
 
+        // Also save to native file system when available (Tauri)
+        if (isNativeFileSystemAvailable()) {
+            getProjectDirectory()
+                .then((dir) => saveProjectToFile(`${dir}/${project.name}.webdaw`, data))
+                .catch(() => {
+                    /* native save is best-effort */
+                });
+        }
+
         projectStore.set({ ...project, updatedAt: data.updatedAt, dirty: false });
         addToRecentProjects(project.name, `webdaw:project:${project.name}`);
     } catch {
@@ -121,15 +136,32 @@ export function saveProject(): void {
 
 export async function loadProject(): Promise<boolean> {
     try {
+        // Try native file system first (Tauri)
+        if (isNativeFileSystemAvailable()) {
+            try {
+                const dir = await getProjectDirectory();
+                const projectState = projectStore.value;
+                if (projectState?.name) {
+                    const nativeData = await loadProjectFromFile(`${dir}/${projectState.name}.webdaw`);
+                    if (nativeData?.version === 1) {
+                        // Write into localStorage so the existing load path processes it
+                        writeProjectJson(JSON.stringify(nativeData));
+                    }
+                }
+            } catch {
+                // Fall through to localStorage
+            }
+        }
+
         const raw = readProjectJson();
         if (!raw) {
-            await createDemoProject();
+            await demo1_TheCompleteMix();
             return true;
         }
 
         const data = JSON.parse(raw) as ProjectData;
         if (data.version !== 1) {
-            await createDemoProject();
+            await demo1_TheCompleteMix();
             return true;
         }
 
@@ -172,17 +204,19 @@ export async function loadProject(): Promise<boolean> {
             });
         } else {
             arrangementStore.set({
-                arrangements: [{
-                    id: defaultArrangementId,
-                    name: 'Arrangement 1',
-                    tracks: data.tracks,
-                    automation: data.automation,
-                    midi: data.midi,
-                    tempoMap: data.tempoMap,
-                    timeSignatureMap: data.timeSignatureMap,
-                    markers: data.markers,
-                    takeLanes: data.takeLanes,
-                }],
+                arrangements: [
+                    {
+                        id: defaultArrangementId,
+                        name: 'Arrangement 1',
+                        tracks: data.tracks,
+                        automation: data.automation,
+                        midi: data.midi,
+                        tempoMap: data.tempoMap,
+                        timeSignatureMap: data.timeSignatureMap,
+                        markers: data.markers,
+                        takeLanes: data.takeLanes,
+                    },
+                ],
                 activeArrangementId: defaultArrangementId,
             });
         }
@@ -193,7 +227,7 @@ export async function loadProject(): Promise<boolean> {
 
         return true;
     } catch {
-        await createDemoProject();
+        await demo1_TheCompleteMix();
         clearUndoHistory();
         return true;
     }
@@ -211,13 +245,15 @@ export function newProject(name = 'Untitled Project'): void {
     setSidechainRoutes([]);
 
     arrangementStore.set({
-        arrangements: [{
-            id: defaultArrangementId,
-            name: 'Arrangement 1',
-            tracks: { tracks: [], selectedTrackId: null },
-            automation: { lanes: [] },
-            midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
-        }],
+        arrangements: [
+            {
+                id: defaultArrangementId,
+                name: 'Arrangement 1',
+                tracks: { tracks: [], selectedTrackId: null },
+                automation: { lanes: [] },
+                midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+            },
+        ],
         activeArrangementId: defaultArrangementId,
     });
 
@@ -254,7 +290,7 @@ export function markDirty(): void {
 
 export async function exportProjectFile(): Promise<void> {
     syncCurrentArrangementToStore();
-    
+
     const tracks = trackStore.value;
     const transport = transportStore.value;
     const automation = automationStore.value;
@@ -354,17 +390,19 @@ export async function importProjectFile(file: File): Promise<boolean> {
             });
         } else {
             arrangementStore.set({
-                arrangements: [{
-                    id: defaultArrangementId,
-                    name: 'Arrangement 1',
-                    tracks: data.tracks,
-                    automation: data.automation,
-                    midi: data.midi,
-                    tempoMap: data.tempoMap,
-                    timeSignatureMap: data.timeSignatureMap,
-                    markers: data.markers,
-                    takeLanes: data.takeLanes,
-                }],
+                arrangements: [
+                    {
+                        id: defaultArrangementId,
+                        name: 'Arrangement 1',
+                        tracks: data.tracks,
+                        automation: data.automation,
+                        midi: data.midi,
+                        tempoMap: data.tempoMap,
+                        timeSignatureMap: data.timeSignatureMap,
+                        markers: data.markers,
+                        takeLanes: data.takeLanes,
+                    },
+                ],
                 activeArrangementId: defaultArrangementId,
             });
         }

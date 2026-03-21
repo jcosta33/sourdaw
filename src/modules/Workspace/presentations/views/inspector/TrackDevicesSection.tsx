@@ -16,7 +16,7 @@ import { getPlatformCapabilities, DISABLED_REASONS } from '#/helpers/platformCap
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { cn } from '#/helpers/Styles/cn';
 
-export type TrackDevicesSectionProps = {
+type TrackDevicesSectionProps = {
     track: Track;
     onSelectDevice: (id: string) => void;
 };
@@ -159,8 +159,8 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                         <Card
                             key={device.id}
                             className={cn(
-                                "flex items-center justify-between rounded-md shadow-none bg-surface-base border-border/50 p-2 cursor-grab active:cursor-grabbing hover:bg-surface-raised transition-colors",
-                                device.bypassed ? "opacity-50" : ""
+                                'flex items-center justify-between rounded-md shadow-none bg-surface-base border-border/50 p-2 cursor-grab active:cursor-grabbing hover:bg-surface-raised transition-colors',
+                                device.bypassed ? 'opacity-50' : ''
                             )}
                             onClick={() => {
                                 onSelectDevice(device.id);
@@ -183,7 +183,10 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                             }}
                         >
                             <div className="flex items-center gap-1.5 min-w-0 pr-2">
-                                <span className="text-[10px] text-muted-foreground/50 select-none shrink-0" aria-hidden="true">
+                                <span
+                                    className="text-[10px] text-muted-foreground/50 select-none shrink-0"
+                                    aria-hidden="true"
+                                >
                                     <div className="flex flex-col gap-0.5">
                                         <div className="w-1 h-1 bg-muted rounded-full"></div>
                                         <div className="w-1 h-1 bg-muted rounded-full"></div>

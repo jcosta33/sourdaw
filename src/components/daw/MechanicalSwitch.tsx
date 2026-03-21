@@ -1,7 +1,7 @@
 import { type ReactElement } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 
-export interface MechanicalSwitchProps {
+interface MechanicalSwitchProps {
     checked: boolean;
     onChange: (checked: boolean) => void;
     className?: string;
@@ -11,23 +11,22 @@ export interface MechanicalSwitchProps {
 
 /**
  * MechanicalSwitch
- * 
+ *
  * A tactile rocker switch component for binary states.
  * Uses strict Layer 1 elevation tokens and gradient trickery to simulate
  * a physical switch pivoting on an axis.
  */
-export function MechanicalSwitch({ 
-    checked, 
-    onChange, 
-    className, 
+export function MechanicalSwitch({
+    checked,
+    onChange,
+    className,
     label,
-    size = 'md'
+    size = 'md',
 }: MechanicalSwitchProps): ReactElement {
-    
     const sizeConfig = {
         sm: 'w-4 h-7',
         md: 'w-6 h-10',
-        lg: 'w-8 h-12'
+        lg: 'w-8 h-12',
     };
 
     return (
@@ -43,12 +42,12 @@ export function MechanicalSwitch({
                     sizeConfig[size]
                 )}
             >
-                <div 
+                <div
                     className={cn(
                         'absolute inset-[1px] rounded-[2px] transition-all duration-100 ease-in-out',
                         'bg-gradient-to-b from-surface-raised to-surface-base border border-black/50',
-                        checked 
-                            ? 'translate-y-[-1px] shadow-[inset_0_4px_4px_rgba(0,0,0,0.8),inset_0_-1px_1px_rgba(255,255,255,0.1)]' 
+                        checked
+                            ? 'translate-y-[-1px] shadow-[inset_0_4px_4px_rgba(0,0,0,0.8),inset_0_-1px_1px_rgba(255,255,255,0.1)]'
                             : 'translate-y-[1px] shadow-[inset_0_1px_1px_rgba(255,255,255,0.1),inset_0_-4px_4px_rgba(0,0,0,0.8)]'
                     )}
                 >
@@ -60,11 +59,13 @@ export function MechanicalSwitch({
                         <div className="w-[40%] h-[1px] bg-white rounded-full" />
                         <div className="w-[40%] h-[1px] bg-white rounded-full" />
                     </div>
-                    
-                    <div className={cn(
-                        'absolute top-[3px] left-1/2 -translate-x-1/2 w-1.5 h-0.5 rounded-full transition-colors duration-200',
-                        checked ? 'bg-state-danger drop-shadow-[0_0_2px_var(--color-state-danger)]' : 'bg-black/50'
-                    )} />
+
+                    <div
+                        className={cn(
+                            'absolute top-[3px] left-1/2 -translate-x-1/2 w-1.5 h-0.5 rounded-full transition-colors duration-200',
+                            checked ? 'bg-state-danger drop-shadow-[0_0_2px_var(--color-state-danger)]' : 'bg-black/50'
+                        )}
+                    />
                 </div>
             </button>
             {label && <span className="text-[9px] font-medium text-text-secondary">{label}</span>}

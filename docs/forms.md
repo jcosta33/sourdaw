@@ -15,24 +15,24 @@ Our forms follow a schema-driven approach that ensures consistency, type safety,
 First, define a Zod schema to specify the shape and validation rules for your form data. This schema is the single source of truth for validation.
 
 ```typescript
-// Library/presentations/helpers/getLibraryCreationFormSchema.ts
+// Project/presentations/helpers/getProjectSettingsFormSchema.ts
 
-export const getLibraryCreationFormSchema = (t: TFunction) => {
+export const getProjectSettingsFormSchema = (t: TFunction) => {
     return z.object({
         name: z
             .string()
             .trim()
-            .min(1, t('CreateLibrary_form_nameRequired'))
-            .min(3, t('CreateLibrary_form_nameMinLength'))
-            .max(50, t('CreateLibrary_form_nameMaxLength')),
-        type: z.enum(['design', 'brand', 'content'], {
-            errorMap: () => ({ message: t('CreateLibrary_form_typeRequired') }),
+            .min(1, t('ProjectSettings_form_nameRequired'))
+            .min(3, t('ProjectSettings_form_nameMinLength'))
+            .max(50, t('ProjectSettings_form_nameMaxLength')),
+        sampleRate: z.enum(['44100', '48000', '96000'], {
+            errorMap: () => ({ message: t('ProjectSettings_form_sampleRateRequired') }),
         }),
-        budget: z.number().min(0, t('CreateLibrary_form_budgetMinimum')).nullish(),
+        bpm: z.number().min(20, t('ProjectSettings_form_bpmMinimum')).nullish(),
     });
 };
 
-export type LibraryCreationFormData = z.infer<ReturnType<typeof getLibraryCreationFormSchema>>;
+export type ProjectSettingsFormData = z.infer<ReturnType<typeof getProjectSettingsFormSchema>>;
 ```
 
 ### 2. Implement the form component
@@ -40,58 +40,59 @@ export type LibraryCreationFormData = z.infer<ReturnType<typeof getLibraryCreati
 Use the `<Form />` component wrapper to build your form UI. The `<Form />` component handles all React Hook Form setup internally, including schema validation, form state management, and submission handling.
 
 ```tsx
-// Library/presentations/views/CreateLibraryDialogContent.tsx
+// Project/presentations/views/ProjectSettingsDialogContent.tsx
 
 import { Form } from 'Common/Form/Form';
 import { FormTextInput } from 'Common/Form/TextInput/TextInput';
 import { FormDropdown } from 'Common/Form/Dropdown/Dropdown';
 
-type CreateLibraryDialogContentProps = {
-    brandId: number;
+type ProjectSettingsDialogContentProps = {
+    projectId: string;
     closeDialog: () => void;
 };
 
-export const CreateLibraryDialogContent = ({ brandId, closeDialog }: CreateLibraryDialogContentProps) => {
+export const ProjectSettingsDialogContent = ({ projectId, closeDialog }: ProjectSettingsDialogContentProps) => {
     const { t } = useTranslation();
-    const { createLibrary, isPending } = useCreateLibrary();
+    const { updateProjectSettings, isPending } = useUpdateProjectSettings();
 
-    const handleCreateLibrarySubmit = async (formData: LibraryCreationFormData) => {
-        await createLibrary({
+    const handleProjectSettingsSubmit = async (formData: ProjectSettingsFormData) => {
+        await updateProjectSettings({
+            projectId,
             name: formData.name,
-            type: formData.type,
-            brandId,
+            sampleRate: formData.sampleRate,
+            bpm: formData.bpm ?? 120,
         });
         closeDialog();
     };
 
     return (
         <Dialog.Content>
-            <Dialog.Header>{t('CreateLibrary_dialogTitle')}</Dialog.Header>
+            <Dialog.Header>{t('ProjectSettings_dialogTitle')}</Dialog.Header>
             <Form
-                id="library-creation-form"
-                schema={getLibraryCreationFormSchema(t)}
+                id="project-settings-form"
+                schema={getProjectSettingsFormSchema(t)}
                 initialValues={{
                     name: '',
-                    type: undefined,
-                    budget: null,
+                    sampleRate: undefined,
+                    bpm: 120,
                 }}
-                onSubmit={handleCreateLibrarySubmit}
+                onSubmit={handleProjectSettingsSubmit}
             >
                 <Dialog.Body>
                     <div className="tw-flex tw-flex-col tw-gap-2">
                         <FormTextInput
                             name="name"
-                            label={{ children: t('CreateLibrary_form_libraryName'), required: true }}
+                            label={{ children: t('ProjectSettings_form_projectName'), required: true }}
                         />
                     </div>
                     <div className="tw-flex tw-flex-col tw-gap-2">
                         <FormDropdown
-                            name="type"
-                            label={{ children: t('CreateLibrary_form_libraryType'), required: true }}
+                            name="sampleRate"
+                            label={{ children: t('ProjectSettings_form_sampleRate'), required: true }}
                             options={[
-                                { label: t('CreateLibrary_form_typeDesign'), value: 'design' },
-                                { label: t('CreateLibrary_form_typeBrand'), value: 'brand' },
-                                { label: t('CreateLibrary_form_typeContent'), value: 'content' },
+                                { label: '44.1 kHz', value: '44100' },
+                                { label: '48.0 kHz', value: '48000' },
+                                { label: '96.0 kHz', value: '96000' },
                             ]}
                         />
                     </div>
@@ -100,8 +101,8 @@ export const CreateLibraryDialogContent = ({ brandId, closeDialog }: CreateLibra
                     <Button type="button" onClick={closeDialog} disabled={isPending}>
                         {t('Form_cancel')}
                     </Button>
-                    <Button type="submit" form="library-creation-form" disabled={isPending}>
-                        {t('CreateLibrary_form_submit')}
+                    <Button type="submit" form="project-settings-form" disabled={isPending}>
+                        {t('ProjectSettings_form_submit')}
                     </Button>
                 </Dialog.Footer>
             </Form>
@@ -131,7 +132,7 @@ The following sections provide additional details, advanced patterns, and best p
 - **[Zod](https://zod.dev)**: Provides schema validation and type safety (Zod is the only supported validation library).
 - **TypeScript integration**: Types are inferred directly from your Zod schema.
 
-> **Note on React 19 form actions:** React 19 introduces native `<form action={fn}>`, `useActionState`, and `useFormStatus` APIs. Our `<Form />` wrapper + React Hook Form + Zod remains the standard for all forms because it provides schema-driven validation, integrated Fondue field components, and a consistent architecture. Do not use the native React 19 form action APIs directly.
+> **Note on React 19 form actions:** React 19 introduces native `<form action={fn}>`, `useActionState`, and `useFormStatus` APIs. Our `<Form />` wrapper + React Hook Form + Zod remains the standard for all forms because it provides schema-driven validation, integrated field components, and a consistent architecture. Do not use the native React 19 form action APIs directly.
 
 ### Advanced patterns
 
@@ -160,24 +161,24 @@ For deeply nested components that need access to form methods without prop drill
 ```tsx
 import { useFormContext } from 'Common/Form/Context/FormContext';
 
-const NestedFormComponent = () => {
+const SampleRateField = () => {
     const { setValue, watch } = useFormContext();
-    const iconUrl = watch('icon.url');
+    const rate = watch('sampleRate');
 
-    const handleIconChange = (newIcon) => {
-        setValue('icon', newIcon);
+    const handleRatePreset = (newRate: string) => {
+        setValue('sampleRate', newRate);
     };
 
     return <div>{/* Component that interacts with form */}</div>;
 };
 
 // Parent form
-export const ParentForm = () => {
+export const ProjectSettingsForm = () => {
     return (
         <Form schema={schema} onSubmit={handleSubmit}>
             <FormTextInput name="name" label={{ children: 'Name' }} />
-            <NestedFormComponent />
-            <Button type="submit">Submit</Button>
+            <SampleRateField />
+            <Button type="submit">Save</Button>
         </Form>
     );
 };
@@ -205,43 +206,41 @@ import { Form } from 'Common/Form/Form';
 import { useFormContext } from 'Common/Form/Context/FormContext';
 import { FormTextInput } from 'Common/Form/TextInput/TextInput';
 
-export const UserRegistrationForm = () => {
-    const handleSubmit = (formData: UserRegistrationFormData) => {
+export const AudioExportForm = () => {
+    const handleSubmit = (formData: AudioExportFormData) => {
         // Handle submission
     };
 
     return (
-        <Form schema={userRegistrationSchema} initialValues={{ userType: 'personal' }} onSubmit={handleSubmit}>
-            <FormTextInput name="userType" label={{ children: 'User Type', required: true }} />
+        <Form schema={audioExportSchema} initialValues={{ format: 'wav' }} onSubmit={handleSubmit}>
+            <FormTextInput name="format" label={{ children: 'Format', required: true }} />
 
-            <ConditionalCompanyFields />
+            <ConditionalAudioFields />
 
-            <Button type="submit">Register</Button>
+            <Button type="submit">Export</Button>
         </Form>
     );
 };
 
-const ConditionalCompanyFields = () => {
-    const { watch, setValue } = useFormContext<UserRegistrationFormData>();
-    const userType = watch('userType');
-    const showCompanyFields = userType === 'business';
+const ConditionalAudioFields = () => {
+    const { watch, setValue } = useFormContext<AudioExportFormData>();
+    const format = watch('format');
+    const showMp3Fields = format === 'mp3';
 
-    // Clear company fields when switching away from 'business'
+    // Clear mp3 fields when switching away from 'mp3'
     useEffect(() => {
-        if (userType !== 'business') {
-            setValue('companyName', '');
-            setValue('companySize', undefined);
+        if (format !== 'mp3') {
+            setValue('bitrate', undefined);
         }
-    }, [userType, setValue]);
+    }, [format, setValue]);
 
-    if (!showCompanyFields) {
+    if (!showMp3Fields) {
         return null;
     }
 
     return (
         <>
-            <FormTextInput name="companyName" label={{ children: 'Company Name', required: true }} />
-            <FormTextInput name="companySize" label={{ children: 'Company Size' }} />
+            <FormTextInput name="bitrate" label={{ children: 'Bitrate (kbps)', required: true }} />
         </>
     );
 };
@@ -249,68 +248,65 @@ const ConditionalCompanyFields = () => {
 
 #### Dynamic form arrays (`useFieldArray`)
 
-Use the `useFieldArray` hook to manage dynamic lists of inputs, such as adding multiple team members to a project. Extract the `control` prop from the `Form` component using the function-as-children pattern and pass it to `useFieldArray` at the component level.
+Use the `useFieldArray` hook to manage dynamic lists of inputs, such as inserting multiple plugins into a track's effects chain. Extract the `control` prop from the `Form` component using the function-as-children pattern and pass it to `useFieldArray` at the component level.
 
 ```tsx
 import { useFieldArray, type Control } from 'react-hook-form';
 import { Form } from 'Common/Form/Form';
 import { FormTextInput } from 'Common/Form/TextInput/TextInput';
 
-type TeamMemberData = {
-    name: string;
-    email: string;
-    role: string;
+type PluginData = {
+    pluginId: string;
+    presets: string;
+    active: boolean;
 };
 
-type TeamMembersFormData = {
-    members: TeamMemberData[];
+type PluginChainFormData = {
+    plugins: PluginData[];
 };
 
-export const TeamMembersForm = () => {
-    const handleSubmit = (formData: TeamMembersFormData) => {
+export const PluginChainForm = () => {
+    const handleSubmit = (formData: PluginChainFormData) => {
         // Handle submission
     };
 
     return (
         <Form
-            schema={teamMembersSchema}
+            schema={pluginChainSchema}
             initialValues={{
-                members: [{ name: '', email: '', role: 'member' }],
+                plugins: [{ pluginId: 'eq-1', presets: 'default', active: true }],
             }}
             onSubmit={handleSubmit}
         >
-            {({ control }) => <TeamMembersFieldArray control={control} />}
+            {({ control }) => <PluginEffectsFieldArray control={control} />}
         </Form>
     );
 };
 
-const TeamMembersFieldArray = ({ control }: { control: Control<TeamMembersFormData> }) => {
+const PluginEffectsFieldArray = ({ control }: { control: Control<PluginChainFormData> }) => {
     const { fields, append, remove } = useFieldArray({
         control,
-        name: 'members',
+        name: 'plugins',
     });
 
     return (
         <>
             {fields.map((field, index) => (
                 <div key={field.id} className="tw-flex tw-flex-col tw-gap-2">
-                    <FormTextInput name={`members.${index}.name`} label={{ children: 'Name', required: true }} />
-                    <FormTextInput name={`members.${index}.email`} label={{ children: 'Email', required: true }} />
-                    <FormTextInput name={`members.${index}.role`} label={{ children: 'Role' }} />
+                    <FormTextInput name={`plugins.${index}.pluginId`} label={{ children: 'Plugin ID', required: true }} />
+                    <FormTextInput name={`plugins.${index}.presets`} label={{ children: 'Preset' }} />
 
-                    {fields.length > 1 ? (
-                        <Button type="button" onClick={() => remove(index)}>
-                            Remove Member
-                        </Button>
-                    ) : null}
+                    <Button type="button" onClick={() => remove(index)}>
+                        Remove Plugin
+                    </Button>
                 </div>
             ))}
 
-            <Button type="button" onClick={() => append({ name: '', email: '', role: 'member' })}>
-                Add Member
+            <Button type="button" onClick={() => append({ pluginId: '', presets: '', active: true })}>
+                Add Plugin
             </Button>
 
-            <Button type="submit">Save Team</Button>
+            <Button type="submit">Save Chain</Button>
         </>
     );
 };
@@ -349,24 +345,24 @@ const userSchema = z.discriminatedUnion('userType', [
 
 ### Server integration
 
-Connect your form's submission handler to a TanStack Query mutation to process the data and handle server-side responses. For more details on this pattern, see the [data fetching](./data-fetching.md#modifying-data-with-mutations) guide.
+Connect your form's submission handler to a TanStack Query mutation to process the data and handle server-side responses. For more details on this pattern, see the [state management](./state-management.md) guide.
 
 ```tsx
-// Library/presentations/views/CreateLibraryDialogContent.tsx
+// Project/presentations/views/ProjectSettingsDialogContent.tsx
 
 import { Form } from 'Common/Form/Form';
 import { FormTextInput } from 'Common/Form/TextInput/TextInput';
 import { FormDropdown } from 'Common/Form/Dropdown/Dropdown';
 
-export const CreateLibraryDialogContent = ({ brandId, closeDialog }: CreateLibraryDialogContentProps) => {
+export const ProjectSettingsDialogContent = ({ projectId, closeDialog }: ProjectSettingsDialogContentProps) => {
     const { t } = useTranslation();
-    const { createLibrary, isPending } = useCreateLibrary();
+    const { saveProjectSettings, isPending } = useSaveProjectSettings();
 
-    const handleCreateLibrarySubmit = async (formData: LibraryCreationFormData) => {
-        await createLibrary({
+    const handleFormSubmit = async (formData: ProjectSettingsFormData) => {
+        await saveProjectSettings({
+            projectId,
             name: formData.name,
-            type: formData.type,
-            brandId,
+            sampleRate: formData.sampleRate,
         });
 
         closeDialog();
@@ -376,32 +372,30 @@ export const CreateLibraryDialogContent = ({ brandId, closeDialog }: CreateLibra
         <Dialog.Content showUnderlay padding="comfortable">
             <Dialog.Header>
                 <Dialog.Title>
-                    <Heading size="x-large">{t('CreateLibrary_dialogTitle')}</Heading>
+                    <Heading size="x-large">{t('ProjectSettings_dialogTitle')}</Heading>
                 </Dialog.Title>
             </Dialog.Header>
 
             <Form
-                id="library-creation-form"
-                schema={getLibraryCreationFormSchema(t)}
+                id="project-settings-form"
+                schema={getProjectSettingsFormSchema(t)}
                 initialValues={{
                     name: '',
-                    type: undefined,
-                    budget: null,
+                    sampleRate: undefined,
                 }}
-                onSubmit={handleCreateLibrarySubmit}
+                onSubmit={handleFormSubmit}
             >
                 <Dialog.Body>
                     <FormTextInput
                         name="name"
-                        label={{ children: t('CreateLibrary_form_libraryName'), required: true }}
+                        label={{ children: t('ProjectSettings_form_projectName'), required: true }}
                     />
                     <FormDropdown
-                        name="type"
-                        label={{ children: t('CreateLibrary_form_libraryType'), required: true }}
+                        name="sampleRate"
+                        label={{ children: t('ProjectSettings_form_sampleRate'), required: true }}
                         options={[
-                            { label: t('CreateLibrary_form_typeDesign'), value: 'design' },
-                            { label: t('CreateLibrary_form_typeBrand'), value: 'brand' },
-                            { label: t('CreateLibrary_form_typeContent'), value: 'content' },
+                            { label: '44.1 kHz', value: '44100' },
+                            { label: '48.0 kHz', value: '48000' },
                         ]}
                     />
                 </Dialog.Body>
@@ -410,8 +404,8 @@ export const CreateLibraryDialogContent = ({ brandId, closeDialog }: CreateLibra
                     <Button type="button" emphasis="default" disabled={isPending} onClick={closeDialog}>
                         {t('Form_cancel')}
                     </Button>
-                    <Button type="submit" form="library-creation-form" disabled={isPending}>
-                        {t('CreateLibrary_form_submit')}
+                    <Button type="submit" form="project-settings-form" disabled={isPending}>
+                        {t('ProjectSettings_form_submit')}
                     </Button>
                 </Dialog.Footer>
             </Form>
@@ -430,7 +424,7 @@ Always use our schema-driven approach with the `<Form />` component. Managing fo
 import { type FormEvent, useState } from 'react';
 
 // ❌ Bad: Managing form state manually
-export const ManualForm = () => {
+export const LegacyManualProjectForm = () => {
     const [name, setName] = useState('');
     const [error, setError] = useState<string | null>(null);
     const onSubmit = (event: FormEvent) => {
@@ -455,15 +449,15 @@ import * as z from 'zod';
 import { Form } from 'Common/Form/Form';
 import { FormTextInput } from 'Common/Form/TextInput/TextInput';
 
-const schemaFormSchema = z.object({ name: z.string().min(1, 'Name required') });
+const schemaProjectFormSchema = z.object({ name: z.string().min(1, 'Name required') });
 
-export const SchemaForm = () => {
-    const handleSubmit = (data: z.infer<typeof schemaFormSchema>) => {
+export const SchemaProjectForm = () => {
+    const handleSubmit = (data: z.infer<typeof schemaProjectFormSchema>) => {
         // ... submit
     };
 
     return (
-        <Form schema={schemaFormSchema} onSubmit={handleSubmit}>
+        <Form schema={schemaProjectFormSchema} onSubmit={handleSubmit}>
             <FormTextInput name="name" label={{ children: 'Name', required: true }} />
             <Button type="submit">Submit</Button>
         </Form>
@@ -559,7 +553,7 @@ The `<Form />` component accepts several configuration options:
     // Validation
     schema={zodSchema} // Zod schema for validation
     // Initial values
-    initialValues={{ name: '', email: '' }}
+    initialValues={{ name: '', sampleRate: '48000' }}
     resetOnInitialValueChange // Reset form when initialValues change (default: true)
     // Field change handling
     onValidFieldChange={handleFieldChange} // Called when a field changes and is valid
@@ -651,9 +645,9 @@ If you're updating an existing form that uses manual state management, follow th
 ```tsx
 import { type FormEvent, useState } from 'react';
 
-export const LegacyForm = () => {
+export const LegacyProjectSettingsForm = () => {
     const [name, setName] = useState('');
-    const [email, setEmail] = useState('');
+    const [sampleRate, setSampleRate] = useState('');
     const [errors, setErrors] = useState<Record<string, string>>({});
 
     const handleSubmit = (event: FormEvent) => {
@@ -661,7 +655,7 @@ export const LegacyForm = () => {
         const newErrors: Record<string, string> = {};
 
         if (!name) newErrors.name = 'Name is required';
-        if (!email) newErrors.email = 'Email is required';
+        if (!sampleRate) newErrors.sampleRate = 'Sample Rate is required';
 
         if (Object.keys(newErrors).length > 0) {
             setErrors(newErrors);
@@ -679,9 +673,9 @@ export const LegacyForm = () => {
                 status={errors.name ? 'error' : 'neutral'}
             />
             <TextInput
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                status={errors.email ? 'error' : 'neutral'}
+                value={sampleRate}
+                onChange={(event) => setSampleRate(event.target.value)}
+                status={errors.sampleRate ? 'error' : 'neutral'}
             />
             <Button type="submit">Submit</Button>
         </form>
@@ -698,20 +692,20 @@ import { FormTextInput } from 'Common/Form/TextInput/TextInput';
 
 const modernFormSchema = z.object({
     name: z.string().min(1, 'Name is required'),
-    email: z.string().email('Valid email is required'),
+    sampleRate: z.string().min(1, 'Sample rate required'),
 });
 
 type FormData = z.infer<typeof modernFormSchema>;
 
-export const ModernForm = () => {
+export const ModernProjectSettingsForm = () => {
     const handleSubmit = (data: FormData) => {
         // Submit logic - data is already validated
     };
 
     return (
-        <Form schema={modernFormSchema} initialValues={{ name: '', email: '' }} onSubmit={handleSubmit}>
+        <Form schema={modernFormSchema} initialValues={{ name: '', sampleRate: '' }} onSubmit={handleSubmit}>
             <FormTextInput name="name" label={{ children: 'Name', required: true }} />
-            <FormTextInput name="email" label={{ children: 'Email', required: true }} />
+            <FormTextInput name="sampleRate" label={{ children: 'Sample Rate', required: true }} />
             <Button type="submit">Submit</Button>
         </Form>
     );
@@ -730,8 +724,8 @@ export const ModernForm = () => {
 **Before: Custom form hook**
 
 ```tsx
-const useMyForm = () => {
-    const [formData, setFormData] = useState({ name: '', email: '' });
+const useLegacyProjectForm = () => {
+    const [formData, setFormData] = useState({ name: '', sampleRate: '' });
 
     const updateField = (field: string, value: string) => {
         setFormData((prev) => ({ ...prev, [field]: value }));
@@ -740,8 +734,8 @@ const useMyForm = () => {
     return { formData, updateField };
 };
 
-export const ComponentWithCustomHook = () => {
-    const { formData, updateField } = useMyForm();
+export const LegacyProjectSettingsComponent = () => {
+    const { formData, updateField } = useLegacyProjectForm();
     // ...
 };
 ```
@@ -755,18 +749,18 @@ import { FormTextInput } from 'Common/Form/TextInput/TextInput';
 
 const modernComponentSchema = z.object({
     name: z.string().min(1),
-    email: z.string().email(),
+    sampleRate: z.string().min(1),
 });
 
-export const ModernComponent = () => {
+export const ModernComponentSettings = () => {
     const handleSubmit = (data: z.infer<typeof modernComponentSchema>) => {
         // Submit logic
     };
 
     return (
-        <Form schema={modernComponentSchema} initialValues={{ name: '', email: '' }} onSubmit={handleSubmit}>
+        <Form schema={modernComponentSchema} initialValues={{ name: '', sampleRate: '' }} onSubmit={handleSubmit}>
             <FormTextInput name="name" label={{ children: 'Name' }} />
-            <FormTextInput name="email" label={{ children: 'Email' }} />
+            <FormTextInput name="sampleRate" label={{ children: 'Sample Rate' }} />
         </Form>
     );
 };

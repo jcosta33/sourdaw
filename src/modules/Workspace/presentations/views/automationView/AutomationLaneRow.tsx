@@ -1,4 +1,11 @@
-import { type ReactElement, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent, useState, useRef, useSyncExternalStore } from 'react';
+import {
+    type ReactElement,
+    type MouseEvent as ReactMouseEvent,
+    type WheelEvent as ReactWheelEvent,
+    useState,
+    useRef,
+    useSyncExternalStore,
+} from 'react';
 import { cn } from '#/helpers/Styles/cn';
 import { automationStore } from '#/modules/Track/stores/automationStore';
 import { type AutomationLane, type AutomationPoint, type AutomationCurveType } from '#/modules/Track/models/Automation';
@@ -11,7 +18,11 @@ import {
 } from '#/modules/Track/useCases/automationUseCases';
 import { insertAutomationShape, type AutomationShapeType } from '#/modules/Track/useCases/automationShapes';
 import { beginDrawSession, paintDrawPoint, endDrawSession } from '#/modules/Track/useCases/automationDrawMode';
-import { selectPointsInRange, deleteSelectedPoints, getSelectionBounds } from '#/modules/Track/useCases/automationSelection';
+import {
+    selectPointsInRange,
+    deleteSelectedPoints,
+    getSelectionBounds,
+} from '#/modules/Track/useCases/automationSelection';
 import { adjustYZoom, zoomToUsedRange, toggleVirginTerritory } from '#/modules/Track/useCases/automationZoom';
 import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
 import { LANE_HEIGHT, buildCurvePath } from './automationViewHelpers';
@@ -148,7 +159,7 @@ export const AutomationLaneRow = ({
         // Build separate path per region
         for (const region of vtRegions) {
             const regionPoints = visiblePoints.filter((p) => p.beat >= region.startBeat && p.beat <= region.endBeat);
-            if (regionPoints.length < 1) {
+            if (regionPoints.length === 0) {
                 continue;
             }
             let segPath = `M ${beatToX(regionPoints[0]!.beat)} ${valueToY(regionPoints[0]!.value)}`;
@@ -158,9 +169,10 @@ export const AutomationLaneRow = ({
                 const nextPt = allIdx < lane.points.length - 2 ? lane.points[allIdx + 2] : undefined;
                 segPath += ` ${buildCurvePath(regionPoints[i]!, regionPoints[i + 1]!, beatToX, valueToY, prevPt, nextPt)}`;
             }
-            const segFill = regionPoints.length > 1
-                ? `${segPath} L ${beatToX(regionPoints[regionPoints.length - 1]!.beat)} ${LANE_HEIGHT} L ${beatToX(regionPoints[0]!.beat)} ${LANE_HEIGHT} Z`
-                : '';
+            const segFill =
+                regionPoints.length > 1
+                    ? `${segPath} L ${beatToX(regionPoints[regionPoints.length - 1]!.beat)} ${LANE_HEIGHT} L ${beatToX(regionPoints[0]!.beat)} ${LANE_HEIGHT} Z`
+                    : '';
             pathSegments.push({ pathD: segPath, fillD: segFill });
         }
     } else if (visiblePoints.length > 0) {
@@ -209,7 +221,10 @@ export const AutomationLaneRow = ({
 
     // ─── RUBBER-BAND SELECTION HANDLERS ───
     const handleRubberBandStart = (e: ReactMouseEvent<SVGSVGElement>) => {
-        if ((e.target as Element).closest('[data-auto-point]') || (e.target as Element).closest('[data-tension-handle]')) {
+        if (
+            (e.target as Element).closest('[data-auto-point]') ||
+            (e.target as Element).closest('[data-tension-handle]')
+        ) {
             return;
         }
         const rect = svgRef.current?.getBoundingClientRect();
@@ -228,7 +243,7 @@ export const AutomationLaneRow = ({
         const onMove = (me: MouseEvent) => {
             const mx = me.clientX - rect.left;
             const my = me.clientY - rect.top;
-            setRubberBand((prev) => prev ? { ...prev, x2: mx, y2: my } : null);
+            setRubberBand((prev) => (prev ? { ...prev, x2: mx, y2: my } : null));
         };
 
         const onUp = (me: MouseEvent) => {
@@ -521,9 +536,7 @@ export const AutomationLaneRow = ({
             {/* Lane controls */}
             <div className="absolute top-1 right-2 z-10 flex items-center gap-0.5">
                 {selectedPoints.length > 0 && (
-                    <span className="text-[8px] text-muted-foreground mr-1">
-                        {selectedPoints.length} sel
-                    </span>
+                    <span className="text-[8px] text-muted-foreground mr-1">{selectedPoints.length} sel</span>
                 )}
                 <button
                     type="button"
@@ -575,7 +588,15 @@ export const AutomationLaneRow = ({
                 {Array.from({ length: 5 }).map((_, i) => {
                     const y = (LANE_HEIGHT / 4) * i;
                     return (
-                        <line key={i} x1={0} y1={y} x2={containerWidth} y2={y} stroke="rgba(255,255,255,0.04)" strokeWidth={1} />
+                        <line
+                            key={i}
+                            x1={0}
+                            y1={y}
+                            x2={containerWidth}
+                            y2={y}
+                            stroke="rgba(255,255,255,0.04)"
+                            strokeWidth={1}
+                        />
                     );
                 })}
 
@@ -586,7 +607,10 @@ export const AutomationLaneRow = ({
                     return (
                         <line
                             key={`beat-${beat}`}
-                            x1={x} y1={0} x2={x} y2={LANE_HEIGHT}
+                            x1={x}
+                            y1={0}
+                            x2={x}
+                            y2={LANE_HEIGHT}
                             stroke={beat % 4 === 0 ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.03)'}
                             strokeWidth={1}
                         />
@@ -595,23 +619,34 @@ export const AutomationLaneRow = ({
 
                 {showZeroLine && (
                     <line
-                        x1={0} y1={valueToY(0)} x2={containerWidth} y2={valueToY(0)}
-                        stroke="rgba(255,255,255,0.15)" strokeWidth={1} strokeDasharray="4 3"
+                        x1={0}
+                        y1={valueToY(0)}
+                        x2={containerWidth}
+                        y2={valueToY(0)}
+                        stroke="rgba(255,255,255,0.15)"
+                        strokeWidth={1}
+                        strokeDasharray="4 3"
                     />
                 )}
 
                 {/* Fill under curve segments */}
                 {pathSegments.map((seg, i) =>
-                    seg.fillD ? <path key={`fill-${i}`} d={seg.fillD} fill={curveColor} fillOpacity={isDisabled ? 0.04 : 0.1} /> : null
+                    seg.fillD ? (
+                        <path key={`fill-${i}`} d={seg.fillD} fill={curveColor} fillOpacity={isDisabled ? 0.04 : 0.1} />
+                    ) : null
                 )}
 
                 {/* Curve line segments */}
                 {pathSegments.map((seg, i) => (
                     <path
                         key={`curve-${i}`}
-                        d={seg.pathD} fill="none" stroke={curveColor}
-                        strokeOpacity={isDisabled ? 0.3 : 0.8} strokeWidth={2}
-                        strokeLinecap="round" strokeLinejoin="round"
+                        d={seg.pathD}
+                        fill="none"
+                        stroke={curveColor}
+                        strokeOpacity={isDisabled ? 0.3 : 0.8}
+                        strokeWidth={2}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
                         strokeDasharray={isDisabled ? '4 4' : undefined}
                     />
                 ))}
@@ -626,16 +661,24 @@ export const AutomationLaneRow = ({
                     return (
                         <g key={obj.id}>
                             <rect
-                                x={objX} y={2} width={objW} height={LANE_HEIGHT - 4}
-                                rx={4} fill={`${curveColor}08`}
-                                stroke={curveColor} strokeWidth={1} strokeOpacity={0.4}
+                                x={objX}
+                                y={2}
+                                width={objW}
+                                height={LANE_HEIGHT - 4}
+                                rx={4}
+                                fill={`${curveColor}08`}
+                                stroke={curveColor}
+                                strokeWidth={1}
+                                strokeOpacity={0.4}
                                 strokeDasharray={obj.loopLength ? '6 3' : undefined}
                             />
                             <text
-                                x={objX + 4} y={14}
+                                x={objX + 4}
+                                y={14}
                                 className="text-[7px] fill-muted-foreground/50 pointer-events-none font-mono"
                             >
-                                {obj.poolId ? '🔗 ' : ''}{obj.name}
+                                {obj.poolId ? '🔗 ' : ''}
+                                {obj.name}
                             </text>
                         </g>
                     );
@@ -647,21 +690,29 @@ export const AutomationLaneRow = ({
                     return (
                         <g key={`tension-${th.beat}`} data-tension-handle="true">
                             <circle
-                                cx={th.cx} cy={th.cy} r={12}
-                                fill="transparent" className="cursor-ns-resize"
+                                cx={th.cx}
+                                cy={th.cy}
+                                r={12}
+                                fill="transparent"
+                                className="cursor-ns-resize"
                                 onMouseDown={(e) => handleTensionMouseDown(th.beat, e)}
                             />
                             <circle
-                                cx={th.cx} cy={th.cy} r={isActive ? 5 : 3.5}
+                                cx={th.cx}
+                                cy={th.cy}
+                                r={isActive ? 5 : 3.5}
                                 fill={isActive ? 'white' : 'rgba(255,255,255,0.3)'}
-                                stroke={curveColor} strokeWidth={1.5}
+                                stroke={curveColor}
+                                strokeWidth={1.5}
                                 pointerEvents="none"
                                 style={{ filter: isActive ? `drop-shadow(0 0 6px ${curveColor})` : undefined }}
                             />
                             {isActive && (
                                 <text
-                                    x={th.cx + 10} y={th.cy + 4}
-                                    className="text-[8px] fill-white font-mono" pointerEvents="none"
+                                    x={th.cx + 10}
+                                    y={th.cy + 4}
+                                    className="text-[8px] fill-white font-mono"
+                                    pointerEvents="none"
                                 >
                                     {(th.tension >= 0 ? '+' : '') + th.tension.toFixed(2)}
                                 </text>
@@ -682,8 +733,11 @@ export const AutomationLaneRow = ({
                     return (
                         <g key={`${point.beat}-${point.value}`} data-auto-point="true">
                             <circle
-                                cx={cx} cy={cy} r={10}
-                                fill="transparent" className="cursor-grab"
+                                cx={cx}
+                                cy={cy}
+                                r={10}
+                                fill="transparent"
+                                className="cursor-grab"
                                 onMouseDown={(e) => handlePointMouseDown(point.beat, e)}
                                 onDoubleClick={(e) => handlePointDoubleClick(point.beat, e)}
                                 onContextMenu={(e) => handlePointContextMenu(point.beat, e)}
@@ -691,10 +745,19 @@ export const AutomationLaneRow = ({
                                 onMouseLeave={() => setHoveredBeat(null)}
                             />
                             {(isDragging || isHovered || isSelected) && (
-                                <circle cx={cx} cy={cy} r={nodeSize + 3} fill={curveColor} fillOpacity={0.15} pointerEvents="none" />
+                                <circle
+                                    cx={cx}
+                                    cy={cy}
+                                    r={nodeSize + 3}
+                                    fill={curveColor}
+                                    fillOpacity={0.15}
+                                    pointerEvents="none"
+                                />
                             )}
                             <circle
-                                cx={cx} cy={cy} r={nodeSize}
+                                cx={cx}
+                                cy={cy}
+                                r={nodeSize}
                                 fill={isDragging || isSelected ? 'white' : curveColor}
                                 stroke={isSelected ? curveColor : 'white'}
                                 strokeWidth={isDragging || isSelected ? 2 : 1.5}
@@ -708,14 +771,40 @@ export const AutomationLaneRow = ({
                                 }}
                             />
                             {point.curve !== 'linear' && !isDragging && (
-                                <text x={cx + 8} y={cy - 8} className="text-[8px] fill-muted-foreground/60 pointer-events-none font-mono">
-                                    {point.curve === 's-curve' ? 'S' : point.curve === 'exponential' ? 'E' : point.curve === 'step' ? '⌐' : point.curve === 'stairs' ? '⊏' : '~'}
+                                <text
+                                    x={cx + 8}
+                                    y={cy - 8}
+                                    className="text-[8px] fill-muted-foreground/60 pointer-events-none font-mono"
+                                >
+                                    {point.curve === 's-curve'
+                                        ? 'S'
+                                        : point.curve === 'exponential'
+                                          ? 'E'
+                                          : point.curve === 'step'
+                                            ? '⌐'
+                                            : point.curve === 'stairs'
+                                              ? '⊏'
+                                              : '~'}
                                 </text>
                             )}
                             {isHovered && !isDragging && (
                                 <g pointerEvents="none">
-                                    <rect x={cx - 24} y={cy - 22} width={48} height={14} rx={3} fill="rgba(0,0,0,0.8)" stroke="rgba(255,255,255,0.2)" strokeWidth={0.5} />
-                                    <text x={cx} y={cy - 12} textAnchor="middle" className="text-[8px] fill-white font-mono">
+                                    <rect
+                                        x={cx - 24}
+                                        y={cy - 22}
+                                        width={48}
+                                        height={14}
+                                        rx={3}
+                                        fill="rgba(0,0,0,0.8)"
+                                        stroke="rgba(255,255,255,0.2)"
+                                        strokeWidth={0.5}
+                                    />
+                                    <text
+                                        x={cx}
+                                        y={cy - 12}
+                                        textAnchor="middle"
+                                        className="text-[8px] fill-white font-mono"
+                                    >
                                         {formatValue(point.value)}
                                     </text>
                                 </g>
@@ -762,9 +851,12 @@ export const AutomationLaneRow = ({
                         ].map((h, i) => (
                             <rect
                                 key={`handle-${i}`}
-                                x={h.x - 3} y={h.y - 3}
-                                width={6} height={6}
-                                fill="white" stroke={curveColor}
+                                x={h.x - 3}
+                                y={h.y - 3}
+                                width={6}
+                                height={6}
+                                fill="white"
+                                stroke={curveColor}
                                 strokeWidth={1}
                             />
                         ))}
@@ -787,10 +879,12 @@ export const AutomationLaneRow = ({
                                 </div>
                                 {CURVE_OPTIONS.map((opt) => (
                                     <button
-                                        type="button" key={opt.value}
+                                        type="button"
+                                        key={opt.value}
                                         className={cn(
                                             'w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors',
-                                            lane.points.find((p) => Math.abs(p.beat - contextMenu.beat) < 0.05)?.curve === opt.value && 'text-primary font-medium'
+                                            lane.points.find((p) => Math.abs(p.beat - contextMenu.beat) < 0.05)
+                                                ?.curve === opt.value && 'text-primary font-medium'
                                         )}
                                         onClick={() => handleCurveSelect(opt.value)}
                                     >
@@ -805,7 +899,8 @@ export const AutomationLaneRow = ({
                         </div>
                         {SHAPE_OPTIONS.map((opt) => (
                             <button
-                                type="button" key={opt.value}
+                                type="button"
+                                key={opt.value}
                                 className="w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
                                 onClick={() => handleShapeInsert(opt.value)}
                             >

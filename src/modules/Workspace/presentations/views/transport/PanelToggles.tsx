@@ -26,7 +26,7 @@ import {
 } from '#/modules/AiRuntime/useCases/generativeAiActions';
 import { useSyncExternalStore } from 'react';
 
-export type PanelTogglesProps = {
+type PanelTogglesProps = {
     sidebarOpen: boolean;
     inspectorOpen: boolean;
     automationPanelOpen: boolean;

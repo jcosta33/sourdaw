@@ -26,11 +26,9 @@ import {
     isWebLlmLoaded,
     generateWebLlmCompletion,
 } from '../repositories/webLlmRepository';
-import {
-    isCloudAvailable,
-    generateCloudToolCalls,
-} from '../repositories/cloudLlmRepository';
+import { isCloudAvailable, generateCloudToolCalls } from '../repositories/cloudLlmRepository';
 import { parseToolCallXml, type ToolCallResult } from '../transformers/toolCallParser';
+import { parseNativeToolCalls } from '../repositories/nativeToolRegistry';
 
 export type { ToolCallResult } from '../transformers/toolCallParser';
 
@@ -180,20 +178,24 @@ export async function generateToolCalls(systemPrompt: string, userMessage: strin
                 // Native/WebLLM return raw text that we parse
                 const content = await tryTextBackend(backend, systemPrompt, userMessage);
                 logger.info(
-                    `[AI Engine] (${backend}) Raw response (${String(content.length)} chars): ${content.slice(0, 500)}`,
+                    `[AI Engine] (${backend}) Raw response (${String(content.length)} chars): ${content.slice(0, 500)}`
                 );
-                results = parseToolCallXml(content);
+                const tsParsed = parseToolCallXml(content);
+                const nativeParsed = await parseNativeToolCalls(content);
+
+                // Combine results from both parsers
+                results = [...tsParsed, ...nativeParsed];
             }
 
             logger.info(
-                `[AI Engine] (${backend}) ${String(results.length)} tool call(s): ${results.map((r) => r.name).join(', ')}`,
+                `[AI Engine] (${backend}) ${String(results.length)} tool call(s): ${results.map((r) => r.name).join(', ')}`
             );
 
             const modelId = backend === 'native' ? 'native' : backend === 'cloud' ? 'claude' : WEBLLM_MODEL_ID;
             llmStatusStore.set({ state: 'ready', modelId });
             return results;
-        } catch (err) {
-            lastError = err instanceof Error ? err : new Error(String(err));
+        } catch (error) {
+            lastError = error instanceof Error ? error : new Error(String(error));
             logger.warn(`[AI Engine] Backend "${backend}" failed: ${lastError.message}. Trying next...`);
         }
     }

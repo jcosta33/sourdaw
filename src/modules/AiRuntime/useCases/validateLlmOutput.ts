@@ -2,7 +2,7 @@ import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
 import { type AppAction } from '#/modules/Command/useCases/commandQueries';
 import { type ToolCallResult } from '../transformers/toolCallParser';
-import { validateSingleAction, extractJsonString } from '../transformers/actionValidator';
+import { validateSingleAction } from '../transformers/actionValidator';
 
 const logger = Container.getInstance().get(Logger);
 
@@ -205,50 +205,4 @@ export function parseToolCallsToActions(toolCalls: ToolCallResult[]): AppAction[
 
     logger.info(`[AI] Parsed ${String(toolCalls.length)} tool calls → ${String(actions.length)} validated actions`);
     return actions;
-}
-
-/**
- * Parse raw JSON text from LLM output into validated AppActions.
- * Kept as fallback for non-function-calling models.
- */
-export function parseLlmJsonToActions(raw: string): AppAction[] {
-    logger.info(`[AI] Raw LLM output (${String(raw.length)} chars): ${raw.slice(0, 500)}`);
-
-    const jsonStr = extractJsonString(raw);
-    if (!jsonStr) {
-        logger.warn('[AI] Could not extract valid JSON from LLM output');
-        return [];
-    }
-
-    try {
-        const parsed = JSON.parse(jsonStr) as unknown;
-        if (typeof parsed !== 'object' || parsed === null) {
-            logger.warn('[AI] Parsed JSON is not an object or array');
-            return [];
-        }
-
-        const obj = parsed as Record<string, unknown>;
-        const actionsRaw = Array.isArray(obj.actions) ? obj.actions : Array.isArray(parsed) ? parsed : [];
-
-        if (actionsRaw.length === 0) {
-            logger.warn('[AI] LLM output parsed but contained no actions array');
-            return [];
-        }
-
-        const validated: AppAction[] = [];
-        for (const item of actionsRaw) {
-            const action = validateSingleAction(item);
-            if (action) {
-                validated.push(action);
-            } else {
-                logger.warn(`[AI] Action rejected by validation: ${JSON.stringify(item)}`);
-            }
-        }
-
-        logger.info(`[AI] Parsed ${String(actionsRaw.length)} raw actions → ${String(validated.length)} validated`);
-        return validated;
-    } catch (error) {
-        logger.warn(`[AI] JSON parse failed after extraction: ${String(error)}`);
-        return [];
-    }
 }

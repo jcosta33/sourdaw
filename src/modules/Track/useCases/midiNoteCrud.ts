@@ -119,37 +119,6 @@ export function getNotesForClip(clipId: string): MidiNote[] {
     return state.notesByClipId[clipId] ?? [];
 }
 
-export function duplicateNotes(clipId: string, noteIds: string[]): void {
-    const state = midiStore.value;
-    if (!state) {
-        return;
-    }
-
-    const existing = state.notesByClipId[clipId];
-    if (!existing) {
-        return;
-    }
-
-    const toDuplicate = existing.filter((n) => noteIds.includes(n.id));
-    if (toDuplicate.length === 0) {
-        return;
-    }
-
-    const maxEnd = Math.max(...toDuplicate.map((n) => n.startBeat + n.duration));
-    const minStart = Math.min(...toDuplicate.map((n) => n.startBeat));
-    const offset = maxEnd - minStart;
-
-    const newNotes = toDuplicate.map((n) => createMidiNote(n.pitch, n.startBeat + offset, n.duration, n.velocity));
-
-    midiStore.set({
-        ...state,
-        notesByClipId: {
-            ...state.notesByClipId,
-            [clipId]: [...existing, ...newNotes],
-        },
-    });
-}
-
 /**
  * Shifts all MIDI data (notes, CCs, pitch bends) for a clip by a beat delta.
  * Called when a clip is moved so MIDI positions stay in sync with the clip.
@@ -184,7 +153,9 @@ export function shiftClipMidiNotes(clipId: string, beatDelta: number): void {
 
 export function setNotesForClip(clipId: string, notes: MidiNote[]): void {
     const state = midiStore.value;
-    if (!state) return;
+    if (!state) {
+        return;
+    }
 
     midiStore.set({
         ...state,

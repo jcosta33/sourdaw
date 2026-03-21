@@ -9,8 +9,8 @@ const getAllTracks = () => trackStore.value?.tracks ?? [];
 import { moveClip } from '#/modules/Track/useCases/clipUseCases';
 import { trimClipStart, trimClipEnd } from '#/modules/Track/useCases/clipEditingUseCases';
 import { preferencesStore } from '#/modules/Workspace/stores/preferencesStore';
-import { gridSnapBeats } from '#/modules/Workspace/useCases/workspaceQueries';
 import { AUTOMATION_SUB_LANE_HEIGHT } from '../models/automationConstants';
+import { gridSnapBeats } from '#/modules/Workspace/models/Preferences';
 
 const RULER_HEIGHT = 24;
 
@@ -76,14 +76,6 @@ export function getTrackAtY(
         offset += h;
     }
     return null;
-}
-
-export function getTrackYOffset(tracks: { height: number }[], trackIndex: number): number {
-    let y = 0;
-    for (let i = 0; i < trackIndex; i++) {
-        y += tracks[i]!.height ?? 64;
-    }
-    return y;
 }
 
 export function hitTestClip(canvasX: number, canvasY: number): { clipId: string; trackId: string } | null {
@@ -286,10 +278,7 @@ export type AutomationSubLaneHit = {
 /**
  * Hit-test whether a canvas coordinate falls inside an inline automation sub-lane.
  */
-export function hitTestAutomationSubLane(
-    canvasX: number,
-    canvasY: number
-): AutomationSubLaneHit | null {
+export function hitTestAutomationSubLane(canvasX: number, canvasY: number): AutomationSubLaneHit | null {
     const viewState = timelineViewStore.value;
     const trackState = getTrackState();
     // Import stores at the top-level of the file instead
@@ -326,8 +315,7 @@ export function hitTestAutomationSubLane(
 
                     const autoState = automationStore.value;
                     const lane = autoState?.lanes.find(
-                        (l) =>
-                            l.trackId === track.id && l.parameterId === paramIds[subLaneIndex]
+                        (l) => l.trackId === track.id && l.parameterId === paramIds[subLaneIndex]
                     );
 
                     if (lane) {

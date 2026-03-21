@@ -11,7 +11,9 @@ export const aiOrganizationHandlers = {
     autoOrganizeProject: {
         execute: async (a) => {
             const trackState = getTrackStoreState();
-            if (!trackState) return;
+            if (!trackState) {
+                return;
+            }
 
             // Group requested folders to avoid creating duplicates
             const folderGroups = new Map<string, string[]>();
@@ -20,7 +22,7 @@ export const aiOrganizationHandlers = {
                 if (update.newName) {
                     renameTrack(update.trackId, update.newName);
                 }
-                
+
                 if (update.color) {
                     setTrackColor(update.trackId, update.color);
                 }

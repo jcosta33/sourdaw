@@ -68,6 +68,10 @@ export function getPluginsByCategory(category: WAMDescriptor['category']): WAMDe
 
 /**
  * Load and instantiate a WAM plugin.
+ *
+ * For Faust-based plugins (id starts with 'faust.'), compiles and
+ * creates a real AudioWorkletNode. For other plugins, creates a
+ * passthrough GainNode (external WAM SDK integration pending).
  */
 export async function loadWAMPlugin(
     pluginId: string,
@@ -80,9 +84,29 @@ export async function loadWAMPlugin(
         return null;
     }
 
-    // Create a passthrough node as placeholder for real WAM instantiation
-    const node = context.createGain();
-    node.gain.value = 1.0;
+    let node: AudioNode;
+
+    // Check if this WAM plugin is backed by a Faust module
+    if (pluginId.startsWith('faust.')) {
+        const faustModuleId = pluginId.replace('faust.', '');
+        const { compileFaustDSP, createFaustNode } = await import('./faustEngine');
+        const compiled = await compileFaustDSP(faustModuleId);
+        if (compiled) {
+            const faustNode = await createFaustNode(faustModuleId, context);
+            if (faustNode) {
+                node = faustNode as unknown as AudioNode;
+            } else {
+                console.warn(`[WAM] Faust node creation failed for ${pluginId}, using passthrough`);
+                node = context.createGain();
+            }
+        } else {
+            console.warn(`[WAM] Faust compilation failed for ${pluginId}, using passthrough`);
+            node = context.createGain();
+        }
+    } else {
+        // Non-Faust WAM: passthrough placeholder
+        node = context.createGain();
+    }
 
     const instance: WAMInstance = {
         descriptor,

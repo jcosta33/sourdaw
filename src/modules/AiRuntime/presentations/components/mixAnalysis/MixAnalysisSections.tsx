@@ -49,7 +49,7 @@ export const BAND_LABELS: Array<{ key: keyof MixAnalysis['frequencyBalance']; la
 
 // ── FrequencyBar ────────────────────────────────────────────────────────
 
-export type FrequencyBarProps = { label: string; range: string; db: number };
+type FrequencyBarProps = { label: string; range: string; db: number };
 
 export const FrequencyBar = ({ label, range, db }: FrequencyBarProps): ReactElement => {
     const normalizedWidth = Math.max(0, Math.min(100, ((db + 100) / 100) * 100));
@@ -73,7 +73,7 @@ export const FrequencyBar = ({ label, range, db }: FrequencyBarProps): ReactElem
 
 // ── OverallLevel ────────────────────────────────────────────────────────
 
-export type OverallLevelProps = { level: MixAnalysis['overallLevel'] };
+type OverallLevelProps = { level: MixAnalysis['overallLevel'] };
 
 export const OverallLevel = ({ level }: OverallLevelProps): ReactElement => (
     <section>
@@ -98,7 +98,7 @@ export const OverallLevel = ({ level }: OverallLevelProps): ReactElement => (
 
 // ── FrequencyBalance ────────────────────────────────────────────────────
 
-export type FrequencyBalanceProps = { bands: MixAnalysis['frequencyBalance'] };
+type FrequencyBalanceProps = { bands: MixAnalysis['frequencyBalance'] };
 
 export const FrequencyBalance = ({ bands }: FrequencyBalanceProps): ReactElement => (
     <section>
@@ -115,7 +115,7 @@ export const FrequencyBalance = ({ bands }: FrequencyBalanceProps): ReactElement
 
 // ── TrackLevelsList ─────────────────────────────────────────────────────
 
-export type TrackLevelsListProps = { trackLevels: MixAnalysis['trackLevels'] };
+type TrackLevelsListProps = { trackLevels: MixAnalysis['trackLevels'] };
 
 export const TrackLevelsList = ({ trackLevels }: TrackLevelsListProps): ReactElement => (
     <section>
@@ -154,7 +154,7 @@ export const TrackLevelsList = ({ trackLevels }: TrackLevelsListProps): ReactEle
 
 // ── IssuesList ──────────────────────────────────────────────────────────
 
-export type IssuesListProps = { issues: MixIssue[] };
+type IssuesListProps = { issues: MixIssue[] };
 
 export const IssuesList = ({ issues }: IssuesListProps): ReactElement | null => {
     if (issues.length === 0) {
@@ -179,7 +179,7 @@ export const IssuesList = ({ issues }: IssuesListProps): ReactElement | null => 
 
 // ── SuggestionsList ─────────────────────────────────────────────────────
 
-export type SuggestionsListProps = { suggestions: string[] };
+type SuggestionsListProps = { suggestions: string[] };
 
 export const SuggestionsList = ({ suggestions }: SuggestionsListProps): ReactElement | null => {
     if (suggestions.length === 0) {
