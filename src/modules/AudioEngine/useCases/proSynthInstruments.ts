@@ -1,6 +1,8 @@
 /**
  * Pro Synth Instruments (Faust-based).
  * DSP definitions for professional synthesizer instruments.
+ *
+ * NOTE: FM Synth and Rhodes are registered in faustEngine.ts — do NOT re-register here.
  */
 
 import { registerFaustDSP, type FaustParamDescriptor } from './faustEngine';
@@ -9,27 +11,6 @@ import { registerFaustDSP, type FaustParamDescriptor } from './faustEngine';
  * Register all pro synth instruments.
  */
 export function registerProSynthInstruments(): void {
-    // FM Synth (DX7-style 6-operator)
-    registerFaustDSP(
-        'FM Synth',
-        `
-        import("stdfaust.lib");
-        // 6-operator FM synthesis (simplified DX7 model)
-        freq = hslider("freq", 440, 20, 12000, 0.01);
-        gate = button("gate");
-        ratio1 = hslider("op1_ratio", 1, 0.5, 16, 0.001);
-        ratio2 = hslider("op2_ratio", 2, 0.5, 16, 0.001);
-        index = hslider("fm_index", 5, 0, 20, 0.01);
-        process = os.osc(freq * ratio1 + index * os.osc(freq * ratio2)) * en.adsr(0.01, 0.2, 0.7, 0.3, gate) <: _, _;
-    `,
-        makeSynthParams([
-            { address: '/fm/op1_ratio', label: 'Op1 Ratio', min: 0.5, max: 16, defaultValue: 1, step: 0.001 },
-            { address: '/fm/op2_ratio', label: 'Op2 Ratio', min: 0.5, max: 16, defaultValue: 2, step: 0.001 },
-            { address: '/fm/fm_index', label: 'FM Index', min: 0, max: 20, defaultValue: 5, step: 0.01 },
-            { address: '/fm/brightness', label: 'Brightness', min: 0, max: 1, defaultValue: 0.7, step: 0.01 },
-        ])
-    );
-
     // Wavetable Synth
     registerFaustDSP(
         'Wavetable Synth',
@@ -52,35 +33,50 @@ export function registerProSynthInstruments(): void {
         ])
     );
 
-    // Granular Synth
+    // Supersaw Unison Synth — 7 detuned sawtooth oscillators summed and normalised.
+    // Classic trance/EDM supersaw texture. detune controls spread (cents between voices).
     registerFaustDSP(
-        'Granular Synth',
+        'Supersaw Unison',
         `
         import("stdfaust.lib");
-        // Simplified granular: overlapping grains from oscillator
-        freq = hslider("freq", 440, 20, 12000, 0.01);
-        gate = button("gate");
-        grain_size = hslider("grain_size", 0.05, 0.001, 0.5, 0.001);
-        spray = hslider("spray", 0, 0, 1, 0.001);
-        density = hslider("density", 10, 1, 100, 1);
-        process = os.osc(freq) * en.ar(grain_size/2, grain_size/2, gate) <: _, _;
+        freq  = hslider("freq", 440, 20, 12000, 0.01);
+        gate  = button("gate");
+        det   = hslider("detune", 15, 0, 100, 0.1);
+        mix   = hslider("center_mix", 0.7, 0, 1, 0.01);
+        // 7 voices: center + 3 pairs spread above/below in cents
+        spread(n) = pow(2, n * det / 1200);
+        v0 =  os.sawtooth(freq)             * mix;
+        v1 =  os.sawtooth(freq * spread(1)) * (1-mix) * 0.5;
+        v2 =  os.sawtooth(freq / spread(1)) * (1-mix) * 0.5;
+        v3 =  os.sawtooth(freq * spread(2)) * (1-mix) * 0.4;
+        v4 =  os.sawtooth(freq / spread(2)) * (1-mix) * 0.4;
+        v5 =  os.sawtooth(freq * spread(3)) * (1-mix) * 0.3;
+        v6 =  os.sawtooth(freq / spread(3)) * (1-mix) * 0.3;
+        raw = (v0 + v1 + v2 + v3 + v4 + v5 + v6) / 3.4;
+        cutoff = hslider("cutoff", 6000, 100, 20000, 1);
+        resonance = hslider("resonance", 0.3, 0, 0.99, 0.01);
+        filtered = fi.resonlp(cutoff, 1 + resonance * 8, raw);
+        process = filtered * en.adsr(
+            hslider("attack",  0.01,  0.001, 5, 0.001),
+            hslider("decay",   0.3,   0.01,  5, 0.01),
+            hslider("sustain", 0.8,   0,     1, 0.01),
+            hslider("release", 0.5,   0.01, 10, 0.01),
+            gate
+        ) <: _, _;
     `,
-        makeSynthParams([
-            {
-                address: '/granular/grain_size',
-                label: 'Grain Size',
-                min: 0.001,
-                max: 0.5,
-                defaultValue: 0.05,
-                step: 0.001,
-            },
-            { address: '/granular/spray', label: 'Spray', min: 0, max: 1, defaultValue: 0, step: 0.001 },
-            { address: '/granular/density', label: 'Density', min: 1, max: 100, defaultValue: 10, step: 1 },
-            { address: '/granular/pitch_var', label: 'Pitch Variance', min: 0, max: 24, defaultValue: 0, step: 0.1 },
-        ])
+        [
+            { address: '/supersaw/detune',     label: 'Detune (cents)', min: 0,   max: 100,   defaultValue: 15,   step: 0.1,  type: 'hslider' },
+            { address: '/supersaw/center_mix', label: 'Center Mix',     min: 0,   max: 1,     defaultValue: 0.7,  step: 0.01, type: 'hslider' },
+            { address: '/supersaw/cutoff',     label: 'Cutoff',         min: 100, max: 20000, defaultValue: 6000, step: 1,    type: 'hslider' },
+            { address: '/supersaw/resonance',  label: 'Resonance',      min: 0,   max: 0.99,  defaultValue: 0.3,  step: 0.01, type: 'hslider' },
+            { address: '/synth/attack',        label: 'Attack',         min: 0.001, max: 5,   defaultValue: 0.01, step: 0.001, type: 'hslider' },
+            { address: '/synth/decay',         label: 'Decay',          min: 0.01,  max: 5,   defaultValue: 0.3,  step: 0.01,  type: 'hslider' },
+            { address: '/synth/sustain',       label: 'Sustain',        min: 0,     max: 1,   defaultValue: 0.8,  step: 0.01,  type: 'hslider' },
+            { address: '/synth/release',       label: 'Release',        min: 0.01,  max: 10,  defaultValue: 0.5,  step: 0.01,  type: 'hslider' },
+        ]
     );
 
-    // Physical Modeling (STK-based)
+    // Physical Modeling (Karplus-Strong string)
     registerFaustDSP(
         'Physical Model String',
         `

@@ -6,11 +6,9 @@ import { MarkerLane } from '#/modules/Timeline/presentations/views/MarkerLane';
 import { timelineViewStore } from '#/modules/Timeline/stores/timelineViewStore';
 import { TrackListView } from '#/modules/Track/presentations/views/TrackListView';
 import { useTracks } from '../hooks/useTracks';
-import { addTrack } from '../../useCases/workspaceViewActions';
-import { addClip } from '../../useCases/workspaceViewActions';
-import { decodeAudioFile } from '../../useCases/workspaceViewActions';
-import { importMidiFile } from '../../useCases/workspaceViewActions';
+import { addTrack, addClip, decodeAudioFile, importMidiFile } from '../../useCases/workspaceViewActions';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
+import { markerStore } from '#/modules/Timeline/stores/markerStore';
 import { useWorkspaceState } from '#/modules/Workspace/presentations/hooks/useWorkspaceState';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { ResizeHandle } from '#/modules/Workspace/presentations/components/ResizeHandle';
@@ -56,6 +54,13 @@ export const ArrangeView = (): ReactElement => {
         () => timelineViewStore.value
     );
 
+    const markerState = useSyncExternalStore(
+        (cb) => markerStore.subscribe(() => cb()),
+        () => markerStore.value,
+        () => markerStore.value
+    );
+
+    const hasMarkers = (markerState?.markers.length ?? 0) > 0;
     const pixelsPerBeat = viewState?.pixelsPerBeat ?? 12;
     const scrollX = viewState?.scrollX ?? 0;
 
@@ -73,7 +78,7 @@ export const ArrangeView = (): ReactElement => {
             )}
             <div className="flex flex-1 flex-col overflow-hidden relative">
                 <ArrangementBar pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} />
-                <MarkerLane pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} />
+                {hasMarkers && <MarkerLane pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} />}
                 <TimelineMinimap />
                 <TimelineSurface />
                 {tracks.length === 0 && <EmptyArrangeOverlay />}

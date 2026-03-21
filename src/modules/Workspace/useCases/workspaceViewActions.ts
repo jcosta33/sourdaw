@@ -85,6 +85,7 @@ export {
     addMidiNote,
     removeMidiNote,
     moveMidiNote,
+    resizeMidiNote,
     getNotesForClip,
     quantizeNotes,
     transposeNotes,

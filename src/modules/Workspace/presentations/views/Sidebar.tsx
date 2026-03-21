@@ -270,7 +270,6 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
 
                     {currentRoute.id.startsWith('instruments') && (
                         <InstrumentsTab
-                            plugins={filteredPlugins}
                             selectedTrackId={selectedTrackId}
                             searchQuery={searchQuery}
                             selectedTrack={selectedTrack}

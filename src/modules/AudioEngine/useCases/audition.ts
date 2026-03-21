@@ -10,7 +10,7 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
     const strip = engine.ensureTrackStrip(trackId);
     const synthParams = getSynthParamsForTrack(trackId);
     const now = engine.context.currentTime;
-    
+
     // Schedule a very long note, return a closure to kill it
     const osc = scheduleNote(
         engine.context,
@@ -21,7 +21,7 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
         velocity,
         synthParams
     ) as OscillatorNode & { _env?: GainNode };
-    
+
     return () => {
         const killTime = engine.context.currentTime;
         const releaseTime = synthParams?.release ?? 0.3;

@@ -133,7 +133,8 @@ const templates: ProjectTemplate[] = [
     {
         id: 'demo-complete',
         name: 'The Complete Mix',
-        description: 'A fully arranged 30-second electronic/pop production featuring automation, markers, and mixed stems. Loads by default on first boot.',
+        description:
+            'A fully arranged 30-second electronic/pop production featuring automation, markers, and mixed stems. Loads by default on first boot.',
         category: 'demo',
         create: () => {
             void demo1_TheCompleteMix();

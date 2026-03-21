@@ -1,10 +1,7 @@
 import { useEffect } from 'react';
 import {
-    togglePlayback,
     stopPlayback,
-    toggleLoop,
     toggleMetronome,
-    toggleRecording,
     seekPlayhead,
     clearSolos,
     setEditingTool,
@@ -16,7 +13,7 @@ import {
     duplicateClipToNextBar,
     zoomTracksVertical,
 } from '../../useCases/keyboardShortcutActions';
-import { undo, redo } from '../../useCases/undoRedo';
+
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { trackStore } from '#/modules/Track/stores/trackStore';
 import { zoomTimeline } from '#/modules/Timeline/stores/timelineViewStore';
@@ -59,15 +56,7 @@ export const useGlobalKeyboardShortcuts = (): void => {
                 return;
             }
 
-            if (e.key.toLowerCase() === 'z' && mod) {
-                e.preventDefault();
-                if (e.shiftKey) {
-                    void redo();
-                } else {
-                    void undo();
-                }
-                return;
-            }
+
 
             if (mod && e.key === 'a' && !e.shiftKey) {
                 if (isInput) {
@@ -179,10 +168,6 @@ export const useGlobalKeyboardShortcuts = (): void => {
             }
 
             switch (e.key) {
-                case ' ':
-                    e.preventDefault();
-                    togglePlayback();
-                    break;
                 case 'Escape': {
                     const ws = workspaceStore.value;
                     if (ws && (ws.selectedClipIds.length > 0 || ws.selectedClipId)) {
@@ -192,17 +177,11 @@ export const useGlobalKeyboardShortcuts = (): void => {
                     }
                     break;
                 }
-                case 'l':
-                    toggleLoop();
-                    break;
                 case 'L':
                     document.dispatchEvent(new CustomEvent('webdaw:scroll-to-playhead'));
                     break;
                 case 'm':
                     toggleMetronome();
-                    break;
-                case 'r':
-                    toggleRecording();
                     break;
                 case 'Home':
                     e.preventDefault();

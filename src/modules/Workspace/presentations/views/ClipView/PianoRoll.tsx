@@ -21,6 +21,7 @@ import {
     addMidiNote,
     removeMidiNote,
     moveMidiNote,
+    resizeMidiNote,
     setNoteVelocity,
     humanizeNotes,
     quantizeNotes,
@@ -848,19 +849,11 @@ export const PianoRoll = ({
             // Clamp so note doesn't go past its original end
             const clampedBeat = Math.min(newBeat, endBeat - gridSnap);
             const clampedDuration = endBeat - clampedBeat;
-            const note = notes.find((n) => n.id === drag.noteId);
-            if (note) {
-                removeMidiNote(clipId, drag.noteId!);
-                addMidiNote(clipId, note.pitch, clampedBeat, clampedDuration, note.velocity);
-            }
+            resizeMidiNote(clipId, drag.noteId!, clampedBeat, clampedDuration);
         } else if (drag.mode === 'resize-right') {
             const deltaBeat = snap((x - drag.startX) / beatWidth);
             const newDuration = Math.max(gridSnap, drag.origDuration + deltaBeat);
-            const note = notes.find((n) => n.id === drag.noteId);
-            if (note) {
-                removeMidiNote(clipId, drag.noteId!);
-                addMidiNote(clipId, note.pitch, note.startBeat, newDuration, note.velocity);
-            }
+            resizeMidiNote(clipId, drag.noteId!, undefined, newDuration);
         }
     };
 

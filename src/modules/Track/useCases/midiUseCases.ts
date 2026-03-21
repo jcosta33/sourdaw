@@ -8,6 +8,7 @@ export {
     addMidiNote,
     removeMidiNote,
     moveMidiNote,
+    resizeMidiNote,
     setNoteVelocity,
     setNoteProbability,
     getNotesForClip,

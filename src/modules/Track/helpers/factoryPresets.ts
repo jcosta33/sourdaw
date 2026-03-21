@@ -139,6 +139,12 @@ const autopan = (
     parameterValues: { 'autopan-rate': 2, 'autopan-depth': 0.7, 'autopan-shape': 0, ...params },
 });
 
+const faustInstrument = (faustModuleId: string, name: string, params: Record<string, number> = {}): DevicePreset => ({
+    type: faustModuleId,
+    name,
+    parameterValues: params,
+});
+
 // --- Synth preset helpers (waveform: 0=sine,1=tri,2=saw,3=square; filterType: 0=lp,1=hp,2=bp) ---
 
 const FACTORY_PRESETS: SoundPreset[] = [
@@ -568,27 +574,32 @@ const FACTORY_PRESETS: SoundPreset[] = [
         name: 'Electric Piano',
         category: 'keys',
         subcategory: 'digital',
-        description: 'Classic electric piano tone with gentle mid-range presence.',
+        description: 'Classic electric piano tone using Faust DSP.',
         trackKind: 'midi',
         devices: [
-            synth('Electric Piano', {
-                waveform: 0,
-                attack: 0.005,
-                decay: 0.8,
-                sustain: 0.3,
-                release: 0.4,
-                filterCutoff: 3000,
-                filterResonance: 0.5,
-                filterType: 0,
-                detune: 0,
-                gain: 0.3,
-                osc2Waveform: 1,
-                osc2Mix: 0.3,
-                osc2Detune: 3,
-            }),
+            faustInstrument('faust-rhodes', 'Rhodes Piano', {}),
             eq('EQ', { 'eq-mid-gain': 2, 'eq-mid-freq': 1200, 'eq-mid-q': 1.5 }),
         ],
         tags: ['electric-piano', 'keys', 'rhodes', 'classic'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-keys-fmpiano',
+        name: 'FM Piano',
+        category: 'keys',
+        subcategory: 'digital',
+        description: 'Classic DX7-style FM electric piano using Faust DSP.',
+        trackKind: 'midi',
+        devices: [
+            faustInstrument('faust-fm-synth', 'FM Synth', {
+                '/fm_synth/ratio': 2,
+                '/fm_synth/index': 5
+            }),
+            delay('Delay', { 'delay-time': 300, 'delay-feedback': 0.3, 'delay-mix': 0.15 }),
+            reverb('Reverb', { 'rev-size': 0.5, 'rev-decay': 2, 'rev-mix': 0.2 }),
+        ],
+        tags: ['fm', 'keys', 'dx7', 'digital'],
         author: AUTHOR,
         isFactory: true,
     },

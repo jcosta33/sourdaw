@@ -1,4 +1,11 @@
-import { type ReactElement, type MouseEvent as ReactMouseEvent, useRef, useEffect, useState, useSyncExternalStore } from 'react';
+import {
+    type ReactElement,
+    type MouseEvent as ReactMouseEvent,
+    useRef,
+    useEffect,
+    useState,
+    useSyncExternalStore,
+} from 'react';
 import { trackStore } from '#/modules/Track/stores/trackStore';
 import { timelineViewStore, scrollTimeline } from '../../stores/timelineViewStore';
 

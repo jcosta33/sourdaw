@@ -1,5 +1,16 @@
 import { type ReactElement, useState, useRef, useEffect } from 'react';
-import { ChevronDown, Clock, FileDown, FileUp, LayoutTemplate, Music, Plus, Save, Trash2, Sparkles } from 'lucide-react';
+import {
+    ChevronDown,
+    Clock,
+    FileDown,
+    FileUp,
+    LayoutTemplate,
+    Music,
+    Plus,
+    Save,
+    Trash2,
+    Sparkles,
+} from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import {

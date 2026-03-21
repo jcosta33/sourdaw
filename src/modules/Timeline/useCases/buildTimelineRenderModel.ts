@@ -22,7 +22,15 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
     const autoVisible = ws?.automationVisibility !== 'hidden';
     const autoSubLanes = ws?.automationSubLanes ?? {};
 
-    const tracks = (trackState?.tracks ?? []).map((track, index) => {
+    const collapsedFolders = new Set(
+        (trackState?.tracks ?? []).filter((t) => t.kind === 'folder' && t.collapsed).map((t) => t.id)
+    );
+    const visibleTracks = (trackState?.tracks ?? []).filter((t) => {
+        if (!t.parentId) return true;
+        return !collapsedFolders.has(t.parentId);
+    });
+
+    const tracks = visibleTracks.map((track, index) => {
         const subLaneCount = autoVisible ? (autoSubLanes[track.id]?.length ?? 0) : 0;
         const effectiveHeight = track.height + subLaneCount * AUTOMATION_SUB_LANE_HEIGHT;
 

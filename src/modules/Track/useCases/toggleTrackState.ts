@@ -47,7 +47,7 @@ export function soloTrackExclusive(trackId: string): void {
     } else {
         mapAllTracks((t) => ({ ...t, soloed: t.id === trackId }));
     }
-    
+
     applySoloLogic();
 }
 

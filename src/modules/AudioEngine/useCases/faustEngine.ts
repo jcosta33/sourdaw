@@ -555,4 +555,41 @@ export function registerBuiltinFaustDSP(): void {
             { address: '/spring/mix', label: 'Mix', min: 0, max: 1, defaultValue: 0.25, step: 0.01, type: 'hslider' },
         ]
     );
+    // FM Synth
+    registerFaustDSP(
+        'FM Synth',
+        `
+        import("stdfaust.lib");
+        freq = hslider("freq", 440, 20, 10000, 0.1);
+        gate = button("gate");
+        ratio = hslider("ratio", 2, 0.5, 10, 0.1);
+        index = hslider("index", 5, 0, 20, 0.1);
+        process = os.osc(freq + os.osc(freq * ratio) * freq * index) * en.adsr(0.01, 0.1, 0.8, 0.5, gate) <: _, _;
+    `,
+        [
+            { address: '/fm_synth/ratio', label: 'Ratio', min: 0.5, max: 10, defaultValue: 2, step: 0.1, type: 'hslider' },
+            { address: '/fm_synth/index', label: 'Mod Index', min: 0, max: 20, defaultValue: 5, step: 0.1, type: 'hslider' },
+        ]
+    );
+
+    // Rhodes Electric Piano
+    registerFaustDSP(
+        'Rhodes',
+        `
+        import("stdfaust.lib");
+        freq = hslider("freq", 440, 20, 10000, 0.1);
+        gate = button("gate");
+        velocity = hslider("velocity", 0.8, 0, 1, 0.01);
+        
+        // Rhodes-like FM tone
+        index = 2 * velocity * en.ar(0.005, 0.5, gate);
+        ratio = 1; 
+        mod = os.osc(freq * ratio) * freq * index;
+        carrier = os.osc(freq + mod);
+        
+        env = en.adsr(0.005, 1.5, 0.2, 0.5, gate);
+        process = carrier * env * velocity * 0.5 <: _, _;
+    `,
+        []
+    );
 }
