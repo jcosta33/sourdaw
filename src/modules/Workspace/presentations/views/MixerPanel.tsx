@@ -1,7 +1,7 @@
-import { type CSSProperties, type ReactElement, useState, useCallback } from 'react';
+import { type CSSProperties, type ReactElement, useState, useCallback, useRef } from 'react';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { Button } from '#/components/ui/button';
-import { Columns3, Save, RotateCcw, Sparkles } from 'lucide-react';
+import { Columns3, Save, RotateCcw, Sparkles, Pencil } from 'lucide-react';
 import { useTracks } from '../hooks/useTracks';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
@@ -13,6 +13,7 @@ import {
     recallMixerSnapshot,
     getMixerSnapshots,
     deleteMixerSnapshot,
+    renameMixerSnapshot,
     restoreMixerChannels,
     type MixerSnapshot,
 } from '#/modules/Track/useCases/mixerSnapshotUseCases';
@@ -54,6 +55,8 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
     const [snapshots, setSnapshots] = useState<MixerSnapshot[]>(getMixerSnapshots);
     const [showSnapshots, setShowSnapshots] = useState(false);
     const [showMixHealth, setShowMixHealth] = useState(false);
+    const [editingSnapshotId, setEditingSnapshotId] = useState<string | null>(null);
+    const renameInputRef = useRef<HTMLInputElement>(null);
 
     const handleSaveSnapshot = useCallback(() => {
         const name = `Snapshot ${snapshots.length + 1}`;
@@ -76,6 +79,14 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
     const handleDeleteSnapshot = useCallback((id: string) => {
         deleteMixerSnapshot(id);
         setSnapshots(getMixerSnapshots());
+    }, []);
+
+    const handleRenameCommit = useCallback((id: string, name: string) => {
+        if (name.trim()) {
+            renameMixerSnapshot(id, name.trim());
+            setSnapshots(getMixerSnapshots());
+        }
+        setEditingSnapshotId(null);
     }, []);
 
     return (
@@ -138,12 +149,37 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
                         <div className="absolute top-full right-0 z-50 mt-1 min-w-[140px] rounded-lg border border-border bg-popover p-1 shadow-lg">
                             {snapshots.map((snap) => (
                                 <div key={snap.id} className="flex items-center gap-1">
+                                    {editingSnapshotId === snap.id ? (
+                                        <input
+                                            ref={renameInputRef}
+                                            autoFocus
+                                            defaultValue={snap.name}
+                                            className="flex-1 rounded px-2 py-0.5 text-[10px] bg-surface-base border border-ring outline-none"
+                                            onBlur={(e) => handleRenameCommit(snap.id, e.currentTarget.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    handleRenameCommit(snap.id, e.currentTarget.value);
+                                                } else if (e.key === 'Escape') {
+                                                    setEditingSnapshotId(null);
+                                                }
+                                            }}
+                                        />
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            className="flex-1 rounded px-2 py-1 text-left text-[10px] hover:bg-accent"
+                                            onClick={() => handleRecallSnapshot(snap.id)}
+                                        >
+                                            {snap.name}
+                                        </button>
+                                    )}
                                     <button
                                         type="button"
-                                        className="flex-1 rounded px-2 py-1 text-left text-[10px] hover:bg-accent"
-                                        onClick={() => handleRecallSnapshot(snap.id)}
+                                        className="rounded px-1 py-0.5 text-[9px] text-muted-foreground hover:text-foreground hover:bg-accent"
+                                        onClick={() => setEditingSnapshotId(snap.id)}
+                                        aria-label={`Rename ${snap.name}`}
                                     >
-                                        {snap.name}
+                                        <Pencil className="size-2.5" />
                                     </button>
                                     <button
                                         type="button"

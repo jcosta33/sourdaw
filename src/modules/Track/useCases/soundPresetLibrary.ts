@@ -1,5 +1,5 @@
 import { type SoundPreset, type SoundPresetCategory } from '#/modules/Track/models/SoundPreset';
-import { FACTORY_PRESETS, DRUM_KIT_PRESETS } from '#/modules/Track/helpers/factoryPresets';
+import { FACTORY_PRESETS, DRUM_KIT_PRESETS, FAUST_SYNTH_PRESETS } from '#/modules/Track/helpers/factoryPresets';
 
 let cachedPresets: SoundPreset[] | null = null;
 
@@ -7,7 +7,7 @@ export type GetFactoryPresetsOutput = SoundPreset[];
 
 export function getFactoryPresets(): GetFactoryPresetsOutput {
     if (!cachedPresets) {
-        cachedPresets = [...FACTORY_PRESETS, ...DRUM_KIT_PRESETS];
+        cachedPresets = [...FACTORY_PRESETS, ...DRUM_KIT_PRESETS, ...FAUST_SYNTH_PRESETS];
     }
     return cachedPresets;
 }

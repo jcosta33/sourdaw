@@ -204,6 +204,7 @@ export {
     setStretchMode,
     addWarpMarker,
     removeWarpMarker,
+    moveWarpMarker,
 } from '#/modules/Track/useCases/warpUseCases';
 
 // Transport

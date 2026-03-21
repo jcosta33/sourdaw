@@ -139,6 +139,24 @@ const autopan = (
     parameterValues: { 'autopan-rate': 2, 'autopan-depth': 0.7, 'autopan-shape': 0, ...params },
 });
 
+const chorus = (
+    name: string,
+    params: Partial<Record<'chorus-rate' | 'chorus-depth' | 'chorus-feedback' | 'chorus-mix', number>>
+): DevicePreset => ({
+    type: 'builtin-chorus',
+    name,
+    parameterValues: { 'chorus-rate': 1.5, 'chorus-depth': 7, 'chorus-feedback': 0.2, 'chorus-mix': 0.5, ...params },
+});
+
+const phaser = (
+    name: string,
+    params: Partial<Record<'phaser-rate' | 'phaser-depth' | 'phaser-feedback' | 'phaser-stages', number>>
+): DevicePreset => ({
+    type: 'builtin-phaser',
+    name,
+    parameterValues: { 'phaser-rate': 0.5, 'phaser-depth': 0.5, 'phaser-feedback': 0.3, 'phaser-stages': 4, ...params },
+});
+
 const faustInstrument = (faustModuleId: string, name: string, params: Record<string, number> = {}): DevicePreset => ({
     type: faustModuleId,
     name,
@@ -1650,6 +1668,147 @@ const FACTORY_PRESETS: SoundPreset[] = [
         author: AUTHOR,
         isFactory: true,
     },
+
+    // ─── Chorus presets ──────────────────────────────────────────────────
+    {
+        id: 'factory-lead-chorus',
+        name: 'Chorus Lead',
+        category: 'lead',
+        subcategory: 'analog',
+        description: 'Warm sawtooth lead thickened by a slow chorus. Classic vintage synth character.',
+        trackKind: 'midi',
+        devices: [
+            synth('Chorus Lead', {
+                waveform: 2,
+                attack: 0.02,
+                decay: 0.2,
+                sustain: 0.7,
+                release: 0.3,
+                filterCutoff: 3500,
+                filterResonance: 1,
+                filterType: 0,
+                detune: 5,
+                gain: 0.28,
+            }),
+            chorus('Chorus', { 'chorus-rate': 1.2, 'chorus-depth': 8, 'chorus-feedback': 0.15, 'chorus-mix': 0.5 }),
+        ],
+        tags: ['chorus', 'thick', 'vintage', 'lead'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-pad-chorus',
+        name: 'Chorus Pad',
+        category: 'pad',
+        subcategory: 'analog',
+        description: 'Lush detuned pad with deep chorus and long reverb. Rich stereo texture.',
+        trackKind: 'midi',
+        devices: [
+            synth('Chorus Pad', {
+                waveform: 2,
+                attack: 0.4,
+                decay: 0.3,
+                sustain: 0.8,
+                release: 1.8,
+                filterCutoff: 3000,
+                filterResonance: 0.5,
+                filterType: 0,
+                detune: 10,
+                gain: 0.22,
+                osc2Waveform: 2,
+                osc2Mix: 0.45,
+                osc2Detune: 7,
+            }),
+            chorus('Chorus', { 'chorus-rate': 0.8, 'chorus-depth': 10, 'chorus-feedback': 0.25, 'chorus-mix': 0.55 }),
+            reverb('Reverb', { 'rev-size': 0.8, 'rev-decay': 5, 'rev-damping': 0.4, 'rev-mix': 0.45 }),
+        ],
+        tags: ['chorus', 'lush', 'pad', 'ambient'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-guitar-chorus',
+        name: 'Chorus Guitar',
+        category: 'guitar',
+        description: '80s clean chorus guitar. Subtle shimmer with a warm room reverb.',
+        trackKind: 'audio',
+        devices: [
+            chorus('Chorus', { 'chorus-rate': 1.5, 'chorus-depth': 6, 'chorus-feedback': 0.1, 'chorus-mix': 0.45 }),
+            reverb('Reverb', { 'rev-size': 0.3, 'rev-decay': 1.0, 'rev-mix': 0.15 }),
+        ],
+        tags: ['guitar', 'chorus', '80s', 'clean'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+
+    // ─── Phaser presets ──────────────────────────────────────────────────
+    {
+        id: 'factory-lead-phaser',
+        name: 'Phaser Lead',
+        category: 'lead',
+        subcategory: 'analog',
+        description: 'Sweeping sawtooth lead with a slow four-stage phaser. Vintage funk character.',
+        trackKind: 'midi',
+        devices: [
+            synth('Phaser Lead', {
+                waveform: 2,
+                attack: 0.01,
+                decay: 0.2,
+                sustain: 0.6,
+                release: 0.25,
+                filterCutoff: 4000,
+                filterResonance: 2,
+                filterType: 0,
+                detune: 8,
+                gain: 0.28,
+            }),
+            phaser('Phaser', { 'phaser-rate': 0.4, 'phaser-depth': 0.6, 'phaser-feedback': 0.35, 'phaser-stages': 4 }),
+        ],
+        tags: ['phaser', 'sweep', 'funk', 'lead'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-pad-phaser',
+        name: 'Phaser Pad',
+        category: 'pad',
+        subcategory: 'digital',
+        description: 'Dreamy triangle pad with slow phaser sweep and hall reverb.',
+        trackKind: 'midi',
+        devices: [
+            synth('Phaser Pad', {
+                waveform: 1,
+                attack: 0.5,
+                decay: 0.4,
+                sustain: 0.8,
+                release: 2.0,
+                filterCutoff: 5000,
+                filterResonance: 0.5,
+                filterType: 0,
+                detune: 4,
+                gain: 0.22,
+            }),
+            phaser('Phaser', { 'phaser-rate': 0.2, 'phaser-depth': 0.4, 'phaser-feedback': 0.25 }),
+            reverb('Reverb', { 'rev-size': 0.9, 'rev-decay': 6, 'rev-damping': 0.3, 'rev-mix': 0.5 }),
+        ],
+        tags: ['phaser', 'dreamy', 'pad', 'sweep'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-guitar-phaser',
+        name: 'Phased Guitar',
+        category: 'guitar',
+        description: 'Classic phased electric guitar. Fast jet-sweep phaser with subtle reverb.',
+        trackKind: 'audio',
+        devices: [
+            phaser('Phaser', { 'phaser-rate': 1.0, 'phaser-depth': 0.7, 'phaser-feedback': 0.4, 'phaser-stages': 4 }),
+            reverb('Reverb', { 'rev-size': 0.25, 'rev-decay': 0.8, 'rev-mix': 0.12 }),
+        ],
+        tags: ['guitar', 'phaser', 'jet', 'classic'],
+        author: AUTHOR,
+        isFactory: true,
+    },
 ];
 
 const DRUM_KIT_PRESETS: SoundPreset[] = [
@@ -1717,3 +1876,327 @@ const DRUM_KIT_PRESETS: SoundPreset[] = [
     },
 ];
 export { FACTORY_PRESETS, DRUM_KIT_PRESETS };
+
+// ── Faust synthesizer presets ─────────────────────────────────────────────
+// Factory presets for Faust-compiled instruments registered in faustEngine.ts
+// and proSynthInstruments.ts. Each uses faustInstrument() to route to the
+// correct Faust AudioWorkletNode identified by module slug.
+
+export const FAUST_SYNTH_PRESETS: SoundPreset[] = [
+
+    // ─── Hammond B3 Organ ────────────────────────────────────────────────
+    {
+        id: 'factory-faust-hammond-full',
+        name: 'Full Organ',
+        category: 'keys',
+        subcategory: 'digital',
+        description: 'Classic Hammond B3 with both 16\' and 8\' drawbars fully open. Big, full organ sound with slow Leslie rotation.',
+        trackKind: 'midi',
+        devices: [
+            faustInstrument('faust-hammond-b-3', 'Hammond B3', {
+                '/Hammond_B3/drawbar_16': 8,
+                '/Hammond_B3/drawbar_8':  8,
+                '/Hammond_B3/drawbar_513': 0,
+                '/Hammond_B3/drawbar_4':  0,
+                '/Hammond_B3/drawbar_223': 0,
+                '/Hammond_B3/drawbar_2':  0,
+                '/Hammond_B3/drawbar_135': 0,
+                '/Hammond_B3/drawbar_113': 0,
+                '/Hammond_B3/drawbar_1':  0,
+                '/Hammond_B3/leslie_speed': 5.5,
+                '/Hammond_B3/leslie_depth': 0.25,
+            }),
+            reverb('Reverb', { 'rev-size': 0.3, 'rev-decay': 1.5, 'rev-mix': 0.15 }),
+        ],
+        tags: ['organ', 'hammond', 'keys', 'drawbar', 'full'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-hammond-jazz',
+        name: 'Jazz Organ',
+        category: 'keys',
+        subcategory: 'digital',
+        description: 'Jimmy Smith-style jazz organ — 8\' + 4\' + 2\' for that cutting mid-range presence with fast Leslie.',
+        trackKind: 'midi',
+        devices: [
+            faustInstrument('faust-hammond-b-3', 'Hammond B3', {
+                '/Hammond_B3/drawbar_16': 0,
+                '/Hammond_B3/drawbar_8':  8,
+                '/Hammond_B3/drawbar_513': 0,
+                '/Hammond_B3/drawbar_4':  6,
+                '/Hammond_B3/drawbar_223': 0,
+                '/Hammond_B3/drawbar_2':  5,
+                '/Hammond_B3/drawbar_135': 0,
+                '/Hammond_B3/drawbar_113': 0,
+                '/Hammond_B3/drawbar_1':  0,
+                '/Hammond_B3/leslie_speed': 8.0,
+                '/Hammond_B3/leslie_depth': 0.4,
+            }),
+        ],
+        tags: ['organ', 'hammond', 'jazz', 'keys', 'leslie'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-hammond-gospel',
+        name: 'Gospel Organ',
+        category: 'keys',
+        subcategory: 'digital',
+        description: 'Thick gospel organ with all drawbars engaged for a dense, harmonically rich sound.',
+        trackKind: 'midi',
+        devices: [
+            faustInstrument('faust-hammond-b-3', 'Hammond B3', {
+                '/Hammond_B3/drawbar_16': 8,
+                '/Hammond_B3/drawbar_8':  8,
+                '/Hammond_B3/drawbar_513': 6,
+                '/Hammond_B3/drawbar_4':  5,
+                '/Hammond_B3/drawbar_223': 4,
+                '/Hammond_B3/drawbar_2':  3,
+                '/Hammond_B3/drawbar_135': 2,
+                '/Hammond_B3/drawbar_113': 1,
+                '/Hammond_B3/drawbar_1':  0,
+                '/Hammond_B3/leslie_speed': 6.5,
+                '/Hammond_B3/leslie_depth': 0.3,
+            }),
+            comp('Compressor', { 'comp-threshold': -18, 'comp-ratio': 3, 'comp-attack': 10, 'comp-release': 150 }),
+        ],
+        tags: ['organ', 'hammond', 'gospel', 'soul', 'rich'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+
+    // ─── Minimoog Lead ───────────────────────────────────────────────────
+    {
+        id: 'factory-faust-moog-classic',
+        name: 'Moog Lead',
+        category: 'lead',
+        subcategory: 'analog',
+        description: 'Classic Minimoog-style mono lead. Dual sawtooth through resonant lowpass with envelope filter sweep.',
+        trackKind: 'midi',
+        devices: [
+            faustInstrument('faust-minimoog-lead', 'Minimoog Lead', {
+                '/Minimoog_Lead/detune': 7,
+                '/Minimoog_Lead/osc2': 0.6,
+                '/Minimoog_Lead/cutoff': 1800,
+                '/Minimoog_Lead/resonance': 0.4,
+                '/Minimoog_Lead/env_amount': 0.5,
+                '/Minimoog_Lead/attack': 0.005,
+                '/Minimoog_Lead/decay': 0.25,
+                '/Minimoog_Lead/sustain': 0.6,
+                '/Minimoog_Lead/release': 0.3,
+            }),
+            delay('Delay', { 'delay-time': 250, 'delay-feedback': 0.25, 'delay-mix': 0.18 }),
+        ],
+        tags: ['moog', 'lead', 'analog', 'fat', 'subtractive'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-moog-resonant',
+        name: 'Resonant Lead',
+        category: 'lead',
+        subcategory: 'analog',
+        description: 'High-resonance Moog filter with strong envelope sweep. Cuts through the mix.',
+        trackKind: 'midi',
+        devices: [
+            faustInstrument('faust-minimoog-lead', 'Minimoog Lead', {
+                '/Minimoog_Lead/detune': 3,
+                '/Minimoog_Lead/osc2': 0.4,
+                '/Minimoog_Lead/cutoff': 800,
+                '/Minimoog_Lead/resonance': 0.75,
+                '/Minimoog_Lead/env_amount': 0.8,
+                '/Minimoog_Lead/attack': 0.005,
+                '/Minimoog_Lead/decay': 0.4,
+                '/Minimoog_Lead/sustain': 0.3,
+                '/Minimoog_Lead/release': 0.2,
+            }),
+        ],
+        tags: ['moog', 'resonant', 'lead', 'filter', 'cutting'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-moog-bass-lead',
+        name: 'Moog Bass Lead',
+        category: 'lead',
+        subcategory: 'analog',
+        description: 'Low-cutoff Moog lead that doubles as a filter bass. Dark and thick.',
+        trackKind: 'midi',
+        devices: [
+            faustInstrument('faust-minimoog-lead', 'Minimoog Lead', {
+                '/Minimoog_Lead/detune': 12,
+                '/Minimoog_Lead/osc2': 0.8,
+                '/Minimoog_Lead/cutoff': 600,
+                '/Minimoog_Lead/resonance': 0.35,
+                '/Minimoog_Lead/env_amount': 0.3,
+                '/Minimoog_Lead/attack': 0.01,
+                '/Minimoog_Lead/decay': 0.5,
+                '/Minimoog_Lead/sustain': 0.7,
+                '/Minimoog_Lead/release': 0.4,
+            }),
+            comp('Compressor', { 'comp-threshold': -15, 'comp-ratio': 4, 'comp-attack': 5, 'comp-release': 80 }),
+        ],
+        tags: ['moog', 'bass', 'lead', 'dark', 'thick'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+
+    // ─── Wavetable Synth ─────────────────────────────────────────────────
+    {
+        id: 'factory-faust-wavetable-morph',
+        name: 'Wavetable Morph',
+        category: 'synth',
+        subcategory: 'digital',
+        description: 'Smooth crossfade between sine, sawtooth, and square. Evolves from pure to buzzy to harsh.',
+        trackKind: 'midi',
+        devices: [
+            faustInstrument('faust-wavetable-synth', 'Wavetable Synth', {
+                '/wt/morph': 0.4,
+            }),
+            reverb('Reverb', { 'rev-size': 0.5, 'rev-decay': 2.5, 'rev-mix': 0.3 }),
+        ],
+        tags: ['wavetable', 'morphing', 'digital', 'evolving'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-wavetable-digital-lead',
+        name: 'Digital Lead',
+        category: 'lead',
+        subcategory: 'digital',
+        description: 'Bright sawtooth-biased wavetable lead with a short delay for rhythmic presence.',
+        trackKind: 'midi',
+        devices: [
+            faustInstrument('faust-wavetable-synth', 'Wavetable Synth', {
+                '/wt/morph': 0.7,
+            }),
+            delay('Delay', { 'delay-time': 200, 'delay-feedback': 0.3, 'delay-mix': 0.22 }),
+        ],
+        tags: ['wavetable', 'lead', 'digital', 'bright'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+
+    // ─── Supersaw Unison ─────────────────────────────────────────────────
+    {
+        id: 'factory-faust-supersaw-trance',
+        name: 'Trance Supersaw',
+        category: 'synth',
+        subcategory: 'digital',
+        description: '7-voice detuned supersaw with wide spread. Classic trance / EDM lead/pad texture.',
+        trackKind: 'midi',
+        devices: [
+            faustInstrument('faust-supersaw-unison', 'Supersaw Unison', {
+                '/supersaw/detune': 18,
+                '/supersaw/center_mix': 0.65,
+                '/supersaw/cutoff': 7000,
+                '/supersaw/resonance': 0.25,
+                '/synth/attack': 0.02,
+                '/synth/decay': 0.3,
+                '/synth/sustain': 0.85,
+                '/synth/release': 0.8,
+            }),
+            reverb('Reverb', { 'rev-size': 0.7, 'rev-decay': 3, 'rev-mix': 0.35 }),
+            delay('Delay', { 'delay-time': 375, 'delay-feedback': 0.35, 'delay-mix': 0.2 }),
+        ],
+        tags: ['supersaw', 'trance', 'edm', 'wide', 'unison'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-supersaw-pad',
+        name: 'Supersaw Pad',
+        category: 'pad',
+        subcategory: 'digital',
+        description: 'Slow-attack supersaw pad with large reverb. Fills the stereo field completely.',
+        trackKind: 'midi',
+        devices: [
+            faustInstrument('faust-supersaw-unison', 'Supersaw Unison', {
+                '/supersaw/detune': 22,
+                '/supersaw/center_mix': 0.6,
+                '/supersaw/cutoff': 4500,
+                '/supersaw/resonance': 0.15,
+                '/synth/attack': 0.6,
+                '/synth/decay': 0.4,
+                '/synth/sustain': 0.9,
+                '/synth/release': 2.0,
+            }),
+            reverb('Reverb', { 'rev-size': 0.9, 'rev-decay': 6, 'rev-damping': 0.4, 'rev-mix': 0.55 }),
+        ],
+        tags: ['supersaw', 'pad', 'wide', 'ambient', 'lush'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+
+    // ─── Physical Model String ───────────────────────────────────────────
+    {
+        id: 'factory-faust-plucked-string',
+        name: 'Plucked String',
+        category: 'strings',
+        subcategory: 'acoustic',
+        description: 'Karplus-Strong plucked string simulation. Natural decay, acoustic feel.',
+        trackKind: 'midi',
+        devices: [
+            faustInstrument('faust-physical-model-string', 'Physical Model String', {}),
+            reverb('Reverb', { 'rev-size': 0.35, 'rev-decay': 1.5, 'rev-mix': 0.2 }),
+        ],
+        tags: ['physical-model', 'pluck', 'string', 'acoustic', 'karplus-strong'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-nylon-guitar',
+        name: 'Nylon Guitar',
+        category: 'guitar',
+        subcategory: 'acoustic',
+        description: 'Physical model approximation of a plucked nylon string guitar. Warm and organic.',
+        trackKind: 'midi',
+        devices: [
+            faustInstrument('faust-physical-model-string', 'Physical Model String', {}),
+            eq('Warm EQ', { 'eq-low-gain': 2, 'eq-low-freq': 200, 'eq-high-gain': -3, 'eq-high-freq': 8000 }),
+            reverb('Reverb', { 'rev-size': 0.25, 'rev-decay': 1.0, 'rev-mix': 0.18 }),
+        ],
+        tags: ['physical-model', 'guitar', 'nylon', 'acoustic', 'warm'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+
+    // ─── Additive Synth ──────────────────────────────────────────────────
+    {
+        id: 'factory-faust-additive-brass',
+        name: 'Additive Brass',
+        category: 'synth',
+        subcategory: 'digital',
+        description: '16 harmonic partials with low rolloff. Bright, brass-like timbre with attack transient.',
+        trackKind: 'midi',
+        devices: [
+            faustInstrument('faust-additive-synth', 'Additive Synth', {
+                '/additive/rolloff': 1.2,
+            }),
+            comp('Compressor', { 'comp-threshold': -18, 'comp-ratio': 3, 'comp-attack': 5, 'comp-release': 100 }),
+            eq('Presence', { 'eq-mid-gain': 3, 'eq-mid-freq': 2500, 'eq-mid-q': 1.5 }),
+        ],
+        tags: ['additive', 'brass', 'harmonics', 'bright', 'full'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-additive-bell',
+        name: 'Additive Bell',
+        category: 'keys',
+        subcategory: 'digital',
+        description: 'High harmonic rolloff creates a bell-like, percussive additive tone. Crystal clear.',
+        trackKind: 'midi',
+        devices: [
+            faustInstrument('faust-additive-synth', 'Additive Synth', {
+                '/additive/rolloff': 2.8,
+            }),
+            reverb('Reverb', { 'rev-size': 0.5, 'rev-decay': 3, 'rev-mix': 0.3 }),
+        ],
+        tags: ['additive', 'bell', 'crystalline', 'percussive', 'harmonics'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+];
+

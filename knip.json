@@ -16,7 +16,7 @@
     "src/helpers/Styles/merge.ts",
     "src/helpers/UI/getKeyWithModifier.ts",
 
-    "src/modules/AudioEngine/useCases/instrumentLibrary.ts",
+    "src/modules/AudioEngine/useCases/drumKitSynth.ts",
     "src/modules/AudioEngine/useCases/modulatorLibrary.ts",
     "src/modules/AudioEngine/useCases/samplePlayer.ts",
     "src/modules/AudioEngine/useCases/modulationSystem.ts",
@@ -36,7 +36,8 @@
 
     "src/modules/Track/useCases/clipGainEnvelope.ts",
 
-    "src/modules/Project/useCases/nativeProjectFiles.ts"
+    "src/modules/Project/useCases/nativeProjectFiles.ts",
+    "src/modules/Project/useCases/nativeFileDialog.ts"
   ],
   "ignoreExportsUsedInFile": true,
   "ignoreDependencies": [

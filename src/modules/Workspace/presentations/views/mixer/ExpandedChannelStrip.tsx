@@ -35,6 +35,7 @@ import {
     removeTrackFromVCA,
     createVCAGroup,
 } from '#/modules/Track/useCases/vcaFaderUseCases';
+import { releaseTouchAutomation } from '#/modules/Track/useCases/automationRecording';
 
 type MixerMenu = { x: number; y: number } | null;
 
@@ -230,19 +231,27 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
 
             {/* Fader + meter */}
             <div className="flex gap-2 h-40 shrink-0 mt-3 mb-1 items-end justify-center w-[85%]">
-                <Fader
-                    value={track.gain}
-                    onChange={(v) => {
-                        setTrackGain(track.id, v);
-                        engineSetTrackGain(track.id, v);
+                <div
+                    onPointerUp={() => {
+                        if (track.automationMode === 'touch') {
+                            releaseTouchAutomation(track.id, 'gain');
+                        }
                     }}
-                    min={0}
-                    max={1.5}
-                    step={0.01}
-                    fineStep={0.001}
-                    defaultValue={0.8}
-                    aria-label={`${track.name} gain`}
-                />
+                >
+                    <Fader
+                        value={track.gain}
+                        onChange={(v) => {
+                            setTrackGain(track.id, v);
+                            engineSetTrackGain(track.id, v);
+                        }}
+                        min={0}
+                        max={1.5}
+                        step={0.01}
+                        fineStep={0.001}
+                        defaultValue={0.8}
+                        aria-label={`${track.name} gain`}
+                    />
+                </div>
                 <LevelMeter peak={peak} rms={rms} peakHold={peakHold} width="w-2.5" />
                 <VUMeterCanvas trackId={track.id} size={80} />
             </div>
@@ -253,18 +262,26 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
 
             {/* Pan */}
             <div className="w-full px-1 flex flex-col items-center mt-2 mb-2">
-                <RotaryKnob
-                    value={track.pan}
-                    onChange={(v) => {
-                        setTrackPan(track.id, v);
-                        engineSetTrackPan(track.id, v);
+                <div
+                    onPointerUp={() => {
+                        if (track.automationMode === 'touch') {
+                            releaseTouchAutomation(track.id, 'pan');
+                        }
                     }}
-                    min={-50}
-                    max={50}
-                    size={28}
-                    aria-label={`${track.name} pan`}
-                    bipolar
-                />
+                >
+                    <RotaryKnob
+                        value={track.pan}
+                        onChange={(v) => {
+                            setTrackPan(track.id, v);
+                            engineSetTrackPan(track.id, v);
+                        }}
+                        min={-50}
+                        max={50}
+                        size={28}
+                        aria-label={`${track.name} pan`}
+                        bipolar
+                    />
+                </div>
                 <span className="text-[9px] font-mono text-text-secondary mt-1">
                     {track.pan === 0
                         ? 'C'

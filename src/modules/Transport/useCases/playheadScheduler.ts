@@ -12,6 +12,7 @@ import {
     stopAutomationRecording,
     isRecordingAutomation,
 } from '#/modules/Track/useCases/automationRecording';
+import { getEffectiveGain } from '#/modules/Track/useCases/vcaUseCases';
 import {
     ensureTrackStrip,
     setTrackGain as engineSetTrackGain,
@@ -419,6 +420,20 @@ function scheduleAudioClips(
     }
 }
 
+function applyVcaGains(): void {
+    const tracks = trackStore.value?.tracks;
+    if (!tracks) {
+        return;
+    }
+    for (const track of tracks) {
+        if (!track.vcaGroupId || track.muted) {
+            continue;
+        }
+        const effective = getEffectiveGain(track.id, track.gain);
+        engineSetTrackGain(track.id, effective);
+    }
+}
+
 function applyAutomation(currentBeat: number): void {
     const autoState = automationStore.value;
     if (!autoState) {
@@ -665,6 +680,7 @@ export function startPlayheadScheduler(): void {
         scheduleMetronome(newPosition, scheduleUpTo, current, currentTempo);
         scheduleMidiNotes(newPosition, scheduleUpTo, current, currentTempo);
         scheduleAudioClips(newPosition, scheduleUpTo, current, currentTempo);
+        applyVcaGains();
         applyAutomation(newPosition);
 
         lastScheduledBeat = scheduleUpTo;

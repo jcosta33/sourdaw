@@ -592,4 +592,112 @@ export function registerBuiltinFaustDSP(): void {
     `,
         []
     );
+
+    // ── Hammond B3 tonewheel organ ───────────────────────────────────────
+    // 9 drawbars controlling harmonic partials at the classical Hammond
+    // interval ratios (16', 8', 5⅓', 4', 2⅔', 2', 1⅗', 1⅓', 1').
+    // Leslie cabinet simulated as slow amplitude tremolo + gentle pitch shimmer.
+    registerFaustDSP(
+        'Hammond B3',
+        `
+        import("stdfaust.lib");
+        freq = hslider("freq", 440, 20, 6000, 0.01);
+        gate = button("gate");
+
+        // Drawbars 0-8 (Hammond footage labels)
+        d1 = hslider("drawbar_16",  8, 0, 8, 1);
+        d2 = hslider("drawbar_8",   8, 0, 8, 1);
+        d3 = hslider("drawbar_513", 0, 0, 8, 1);
+        d4 = hslider("drawbar_4",   0, 0, 8, 1);
+        d5 = hslider("drawbar_223", 0, 0, 8, 1);
+        d6 = hslider("drawbar_2",   0, 0, 8, 1);
+        d7 = hslider("drawbar_135", 0, 0, 8, 1);
+        d8 = hslider("drawbar_113", 0, 0, 8, 1);
+        d9 = hslider("drawbar_1",   0, 0, 8, 1);
+
+        // Tonewheel sum — each drawbar controls one harmonic partial
+        organ =
+            os.osc(freq * 0.5)  * d1 +
+            os.osc(freq)        * d2 +
+            os.osc(freq * 1.5)  * d3 +
+            os.osc(freq * 2.0)  * d4 +
+            os.osc(freq * 3.0)  * d5 +
+            os.osc(freq * 4.0)  * d6 +
+            os.osc(freq * 5.0)  * d7 +
+            os.osc(freq * 6.0)  * d8 +
+            os.osc(freq * 8.0)  * d9;
+
+        // Normalise: max drawbar sum is 9 * 8 = 72
+        tonewheel = organ / 72.0;
+
+        // Leslie rotation: amplitude modulation at chosen speed
+        leslie_speed = hslider("leslie_speed", 6.0, 0.1, 12.0, 0.1);
+        leslie_depth = hslider("leslie_depth", 0.25, 0.0, 0.8, 0.01);
+        leslie = tonewheel * (1.0 + leslie_depth * os.osc(leslie_speed));
+
+        // Organ envelope: fast attack, no decay, full sustain while held
+        env = en.adsr(0.005, 0.0, 1.0, 0.03, gate);
+        process = leslie * env * 0.7 <: _, _;
+    `,
+        [
+            { address: '/Hammond_B3/drawbar_16',  label: '16\'',           min: 0, max: 8, defaultValue: 8,    step: 1,    type: 'hslider' },
+            { address: '/Hammond_B3/drawbar_8',   label: '8\'',            min: 0, max: 8, defaultValue: 8,    step: 1,    type: 'hslider' },
+            { address: '/Hammond_B3/drawbar_513', label: '5⅓\'',          min: 0, max: 8, defaultValue: 0,    step: 1,    type: 'hslider' },
+            { address: '/Hammond_B3/drawbar_4',   label: '4\'',            min: 0, max: 8, defaultValue: 0,    step: 1,    type: 'hslider' },
+            { address: '/Hammond_B3/drawbar_223', label: '2⅔\'',          min: 0, max: 8, defaultValue: 0,    step: 1,    type: 'hslider' },
+            { address: '/Hammond_B3/drawbar_2',   label: '2\'',            min: 0, max: 8, defaultValue: 0,    step: 1,    type: 'hslider' },
+            { address: '/Hammond_B3/drawbar_135', label: '1⅗\'',          min: 0, max: 8, defaultValue: 0,    step: 1,    type: 'hslider' },
+            { address: '/Hammond_B3/drawbar_113', label: '1⅓\'',          min: 0, max: 8, defaultValue: 0,    step: 1,    type: 'hslider' },
+            { address: '/Hammond_B3/drawbar_1',   label: '1\'',            min: 0, max: 8, defaultValue: 0,    step: 1,    type: 'hslider' },
+            { address: '/Hammond_B3/leslie_speed', label: 'Leslie Speed',  min: 0.1, max: 12, defaultValue: 6, step: 0.1,  type: 'hslider' },
+            { address: '/Hammond_B3/leslie_depth', label: 'Leslie Depth',  min: 0, max: 0.8, defaultValue: 0.25, step: 0.01, type: 'hslider' },
+        ]
+    );
+
+    // ── Minimoog-style filter lead ───────────────────────────────────────
+    // Two detunable sawtooth oscillators fed through a 2-pole resonant
+    // lowpass (fi.resonlp) for a Moog-like subtractive character.
+    // The filter envelope amount allows the classic bright-to-dark sweep.
+    registerFaustDSP(
+        'Minimoog Lead',
+        `
+        import("stdfaust.lib");
+        freq    = hslider("freq",    440,  20, 12000, 0.01);
+        gate    = button("gate");
+        detune  = hslider("detune",  7,    0,  50,    0.1);
+        osc2lvl = hslider("osc2", 0.6,    0,   1,    0.01);
+        cutoff  = hslider("cutoff", 1800, 80, 18000,  1);
+        res     = hslider("resonance", 0.4, 0, 0.95,  0.01);
+        env_amt = hslider("env_amount", 0.5, 0,  1,    0.01);
+        atk     = hslider("attack",  0.005, 0.001, 5, 0.001);
+        dec     = hslider("decay",   0.25,  0.01,  5, 0.01);
+        sus     = hslider("sustain", 0.6,   0,     1, 0.01);
+        rel     = hslider("release", 0.3,   0.01,  5, 0.01);
+
+        // Oscillators: primary + slightly detuned copy
+        osc1 = os.sawtooth(freq);
+        osc2 = os.sawtooth(freq * pow(2, detune / 1200));
+        mixed = osc1 + osc2 * osc2lvl;
+
+        // ADSR shared by both filter and amplitude
+        env = en.adsr(atk, dec, sus, rel, gate);
+
+        // Filter: cutoff opens proportionally to env amount
+        dyn_cutoff = cutoff * (1 + env_amt * env * 3);
+        filtered = fi.resonlp(dyn_cutoff, 1 + res * 12, mixed * 0.4);
+
+        process = filtered * env * 0.8 <: _, _;
+    `,
+        [
+            { address: '/Minimoog_Lead/detune',     label: 'Osc2 Detune (¢)', min: 0,   max: 50,    defaultValue: 7,    step: 0.1,  type: 'hslider' },
+            { address: '/Minimoog_Lead/osc2',       label: 'Osc2 Level',      min: 0,   max: 1,     defaultValue: 0.6,  step: 0.01, type: 'hslider' },
+            { address: '/Minimoog_Lead/cutoff',     label: 'Filter Cutoff',   min: 80,  max: 18000, defaultValue: 1800, step: 1,    type: 'hslider' },
+            { address: '/Minimoog_Lead/resonance',  label: 'Resonance',       min: 0,   max: 0.95,  defaultValue: 0.4,  step: 0.01, type: 'hslider' },
+            { address: '/Minimoog_Lead/env_amount', label: 'Filter Env Amt',  min: 0,   max: 1,     defaultValue: 0.5,  step: 0.01, type: 'hslider' },
+            { address: '/Minimoog_Lead/attack',     label: 'Attack',          min: 0.001, max: 5,   defaultValue: 0.005, step: 0.001, type: 'hslider' },
+            { address: '/Minimoog_Lead/decay',      label: 'Decay',           min: 0.01,  max: 5,   defaultValue: 0.25,  step: 0.01,  type: 'hslider' },
+            { address: '/Minimoog_Lead/sustain',    label: 'Sustain',         min: 0,     max: 1,   defaultValue: 0.6,   step: 0.01,  type: 'hslider' },
+            { address: '/Minimoog_Lead/release',    label: 'Release',         min: 0.01,  max: 5,   defaultValue: 0.3,   step: 0.01,  type: 'hslider' },
+        ]
+    );
 }

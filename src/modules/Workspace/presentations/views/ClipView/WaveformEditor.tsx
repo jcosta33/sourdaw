@@ -22,6 +22,7 @@ import {
     setStretchMode,
     addWarpMarker,
     removeWarpMarker,
+    moveWarpMarker,
 } from '../../../useCases/workspaceViewActions';
 import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiRuntime/useCases/generativeAiActions';
 import { audioToMidi } from '#/modules/AiRuntime/useCases/audioToMidi';
@@ -44,6 +45,9 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
     const [warpState, setWarpState] = useState<WarpState>(() => getWarpState(clipId));
     const [waveCtxMenu, setWaveCtxMenu] = useState<WaveformMenu>(null);
     const waveCtxRef = useRef<HTMLDivElement>(null);
+    // Warp marker drag state
+    const draggingMarker = useRef<{ id: string; startX: number; startBeat: number } | null>(null);
+    const didDrag = useRef(false);
 
     const refreshWarp = () => setWarpState(getWarpState(clipId));
 
@@ -215,25 +219,63 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
         return () => observer.disconnect();
     }, [draw]);
 
-    const handleDoubleClick = (e: ReactMouseEvent<HTMLCanvasElement>) => {
+    const getCanvasX = (e: { clientX: number }): number => {
+        const canvas = canvasRef.current;
+        if (!canvas) {
+            return 0;
+        }
+        const rect = canvas.getBoundingClientRect();
+        return e.clientX - rect.left + (containerRef.current?.scrollLeft ?? 0);
+    };
+
+    const hitTestMarker = (x: number) =>
+        warpState.markers.find((m) => Math.abs(m.warpedBeat * beatWidth - x) < 8) ?? null;
+
+    const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
         if (!warpState.enabled) {
+            return;
+        }
+        const x = getCanvasX(e);
+        const hit = hitTestMarker(x);
+        if (hit) {
+            draggingMarker.current = { id: hit.id, startX: x, startBeat: hit.warpedBeat };
+            didDrag.current = false;
+            (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
+            e.preventDefault();
+        }
+    };
+
+    const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+        if (!draggingMarker.current) {
+            return;
+        }
+        const x = getCanvasX(e);
+        const dx = Math.abs(x - draggingMarker.current.startX);
+        if (dx > 4) {
+            didDrag.current = true;
+        }
+        if (didDrag.current) {
+            const newBeat = Math.max(0, x / beatWidth);
+            moveWarpMarker(clipId, draggingMarker.current.id, newBeat);
+            refreshWarp();
+        }
+    };
+
+    const handlePointerUp = () => {
+        draggingMarker.current = null;
+    };
+
+    const handleDoubleClick = (e: ReactMouseEvent<HTMLCanvasElement>) => {
+        if (!warpState.enabled || didDrag.current) {
             return;
         }
         const canvas = canvasRef.current;
         if (!canvas) {
             return;
         }
-        const rect = canvas.getBoundingClientRect();
-        const scrollX = containerRef.current?.scrollLeft ?? 0;
-        const x = e.clientX - rect.left + scrollX;
+        const x = getCanvasX(e);
         const beat = x / beatWidth;
-
-        const hitThreshold = 8;
-        const hitMarker = warpState.markers.find((m) => {
-            const mx = m.warpedBeat * beatWidth;
-            return Math.abs(mx - (e.clientX - rect.left + scrollX)) < hitThreshold;
-        });
-
+        const hitMarker = hitTestMarker(x);
         if (hitMarker) {
             removeWarpMarker(clipId, hitMarker.id);
         } else {
@@ -342,10 +384,13 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                 onDragLeave={() => setIsDragging(false)}
                 onDrop={handleDrop}
             >
-                <canvas
+<canvas
                     ref={canvasRef}
-                    className="cursor-crosshair"
+                    className={draggingMarker.current ? 'cursor-ew-resize' : 'cursor-crosshair'}
                     aria-label="Waveform editor"
+                    onPointerDown={handlePointerDown}
+                    onPointerMove={handlePointerMove}
+                    onPointerUp={handlePointerUp}
                     onDoubleClick={handleDoubleClick}
                     onContextMenu={handleWaveContextMenu}
                 />
