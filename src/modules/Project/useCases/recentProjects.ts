@@ -107,6 +107,9 @@ export async function loadRecentProject(key: string): Promise<boolean> {
         localStorage.setItem(PROJECT_STORAGE_KEY, raw);
 
         await audioBufferCache.restoreFromIdb(getAudioContext());
+        if (trackStore.value) {
+            trackStore.set({ ...trackStore.value });
+        }
         verifyAudioBufferReferences();
         undoStore.set({ past: [], future: [] });
 

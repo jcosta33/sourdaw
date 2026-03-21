@@ -1,11 +1,8 @@
 import { type TimelineRenderer } from '../models/RendererBackend';
 import { type TimelineRenderModel } from '../models/TimelineRenderModel';
-import { markerStore } from '../stores/markerStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { automationStore } from '#/modules/Track/stores/automationStore';
-import { tempoMapStore } from '#/modules/Transport/stores/tempoMapStore';
 import { timeSignatureMapStore } from '#/modules/Transport/stores/timeSignatureMapStore';
-import { getTimeSignatureAtBeat } from '#/modules/Transport/useCases/transportQueries';
 import { takeLaneStore } from '#/modules/Track/stores/takeLaneStore';
 import { drawClip } from '../helpers/clipDrawing';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
@@ -23,12 +20,7 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): TimelineRendere
         ctx.save();
         ctx.scale(dpr, dpr);
 
-        drawBeatRuler(ctx, model, width);
-        drawTempoMap(ctx, model, width);
-        drawMarkers(ctx, model, width);
-        ctx.save();
-        ctx.translate(0, 24);
-        const contentHeight = height - 24;
+        const contentHeight = height;
         ctx.save();
         ctx.beginPath();
         ctx.rect(0, 0, width, contentHeight);
@@ -40,7 +32,6 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): TimelineRendere
         drawTakeLanes(ctx, model);
         drawAutomation(ctx, model, contentHeight + model.scrollY);
         drawPlayhead(ctx, model, contentHeight + model.scrollY);
-        ctx.restore();
         ctx.restore();
 
         ctx.restore();
@@ -61,87 +52,6 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): TimelineRendere
     return { backend: 'canvas2d', render, resize, dispose };
 }
 
-function drawBeatRuler(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, width: number): void {
-    const { pixelsPerBeat, viewportStartBeat, timeSignatureNumerator, timeSignatureDenominator } = model;
-    const startBeat = Math.floor(viewportStartBeat);
-    const tsChanges = timeSignatureMapStore.value?.changes ?? [];
-
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
-    ctx.fillRect(0, 0, width, 20);
-
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, 20);
-    ctx.lineTo(width, 20);
-    ctx.stroke();
-
-    let barNumber = 1;
-    let barStartBeat = 0;
-    let currentNumerator = timeSignatureNumerator;
-
-    for (const change of [...tsChanges].sort((a, b) => a.beat - b.beat)) {
-        if (change.beat >= startBeat) {
-            break;
-        }
-        const beatsInSegment = change.beat - barStartBeat;
-        barNumber += Math.floor(beatsInSegment / currentNumerator);
-        barStartBeat = change.beat;
-        currentNumerator = change.numerator;
-    }
-    const beatsToStart = startBeat - barStartBeat;
-    barNumber += Math.floor(beatsToStart / currentNumerator);
-    barStartBeat += Math.floor(beatsToStart / currentNumerator) * currentNumerator;
-
-    for (let beat = startBeat; (beat - viewportStartBeat) * pixelsPerBeat < width; beat++) {
-        const x = (beat - viewportStartBeat) * pixelsPerBeat;
-        const ts = getTimeSignatureAtBeat(tsChanges, beat, timeSignatureNumerator, timeSignatureDenominator);
-
-        const tsChange = tsChanges.find((c) => c.beat === beat);
-        if (tsChange) {
-            barStartBeat = beat;
-            currentNumerator = tsChange.numerator;
-        }
-
-        const beatInBar = (beat - barStartBeat) % currentNumerator;
-        const isBarLine = beatInBar === 0;
-
-        if (isBarLine) {
-            if (beat > startBeat || beatInBar === 0) {
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-                ctx.font = '9px system-ui, sans-serif';
-                ctx.fillText(String(barNumber), x + 3, 13);
-            }
-
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-            ctx.beginPath();
-            ctx.moveTo(x, 14);
-            ctx.lineTo(x, 20);
-            ctx.stroke();
-
-            barNumber++;
-        } else if (pixelsPerBeat > 8) {
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
-            ctx.beginPath();
-            ctx.moveTo(x, 16);
-            ctx.lineTo(x, 20);
-            ctx.stroke();
-        }
-
-        void ts;
-    }
-
-    for (const change of tsChanges) {
-        const x = (change.beat - viewportStartBeat) * pixelsPerBeat;
-        if (x < -20 || x > width + 20) {
-            continue;
-        }
-
-        ctx.fillStyle = 'rgba(100, 200, 255, 0.8)';
-        ctx.font = '7px system-ui';
-        ctx.fillText(`${change.numerator}/${change.denominator}`, x + 2, 8);
-    }
-}
 
 function drawGrid(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, width: number, height: number): void {
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
@@ -309,78 +219,7 @@ function drawPlayhead(ctx: CanvasRenderingContext2D, model: TimelineRenderModel,
     ctx.fill();
 }
 
-function drawMarkers(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, _width: number): void {
-    const state = markerStore.value;
-    if (!state) {
-        return;
-    }
 
-    const { pixelsPerBeat, viewportStartBeat } = model;
-
-    for (const marker of state.markers) {
-        const x = (marker.beat - viewportStartBeat) * pixelsPerBeat;
-        if (x < -20 || x > _width + 20) {
-            continue;
-        }
-
-        ctx.fillStyle = marker.color;
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x + 6, 0);
-        ctx.lineTo(x + 6, 10);
-        ctx.lineTo(x + 3, 14);
-        ctx.lineTo(x, 10);
-        ctx.closePath();
-        ctx.fill();
-
-        ctx.fillStyle = 'rgba(255,255,255,0.8)';
-        ctx.font = '8px system-ui';
-        ctx.fillText(marker.name, x + 8, 10);
-    }
-
-    for (const section of state.sections) {
-        const x1 = (section.startBeat - viewportStartBeat) * pixelsPerBeat;
-        const x2 = (section.endBeat - viewportStartBeat) * pixelsPerBeat;
-
-        ctx.fillStyle = section.color;
-        ctx.globalAlpha = 0.15;
-        ctx.fillRect(x1, 0, x2 - x1, 20);
-        ctx.globalAlpha = 1;
-
-        ctx.fillStyle = 'rgba(255,255,255,0.6)';
-        ctx.font = '8px system-ui';
-        ctx.fillText(section.name, x1 + 4, 10);
-    }
-}
-
-function drawTempoMap(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, width: number): void {
-    const tempoState = tempoMapStore.value;
-    if (!tempoState || tempoState.changes.length === 0) {
-        return;
-    }
-
-    const { pixelsPerBeat, viewportStartBeat } = model;
-
-    for (const change of tempoState.changes) {
-        const x = (change.beat - viewportStartBeat) * pixelsPerBeat;
-        if (x < -20 || x > width + 20) {
-            continue;
-        }
-
-        ctx.strokeStyle = 'rgba(255, 100, 100, 0.4)';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([2, 2]);
-        ctx.beginPath();
-        ctx.moveTo(x, 14);
-        ctx.lineTo(x, 20);
-        ctx.stroke();
-        ctx.setLineDash([]);
-
-        ctx.fillStyle = 'rgba(255, 100, 100, 0.8)';
-        ctx.font = '7px system-ui';
-        ctx.fillText(`${change.tempo}`, x + 2, 19);
-    }
-}
 
 function drawTakeLanes(ctx: CanvasRenderingContext2D, model: TimelineRenderModel): void {
     const takeState = takeLaneStore.value;

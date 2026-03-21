@@ -222,6 +222,9 @@ export async function loadProject(): Promise<boolean> {
         }
 
         await audioBufferCache.restoreFromIdb(getAudioContext());
+        if (trackStore.value) {
+            trackStore.set({ ...trackStore.value });
+        }
         verifyAudioBufferReferences();
         clearUndoHistory();
 
@@ -408,6 +411,9 @@ export async function importProjectFile(file: File): Promise<boolean> {
         }
 
         await audioBufferCache.restoreFromIdb(getAudioContext());
+        if (trackStore.value) {
+            trackStore.set({ ...trackStore.value });
+        }
         verifyAudioBufferReferences();
         clearUndoHistory();
         return true;

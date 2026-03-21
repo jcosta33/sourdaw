@@ -138,8 +138,8 @@ export const TrackListView = ({ style, extraHeaderHeight = 0 }: { style?: CSSPro
 
     return (
         <div className="flex h-full shrink-0 flex-col border-r border-border/30 bg-surface-well" style={style}>
-            <div className="flex items-center justify-between border-b border-border/30 px-2 py-1 shrink-0 bg-surface-tray" style={{ height: 50 + extraHeaderHeight }}>
-                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Tracks</span>
+            <div className="flex items-end justify-between border-b border-border/30 px-2 pb-1 pt-2 shrink-0 bg-surface-tray" style={{ height: extraHeaderHeight }}>
+                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Tracks</span>
                 <div className="flex items-center gap-0.5">
                     <Tooltip>
                         <TooltipTrigger asChild>

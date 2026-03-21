@@ -59,7 +59,7 @@ interface GestureEvent extends UIEvent {
     readonly rotation: number;
 }
 
-const RULER_HEIGHT = 24;
+const RULER_HEIGHT = 0;
 
 type ClipMenuState = { kind: 'clip'; x: number; y: number; clipId: string; trackId: string; splitBeat: number };
 type EmptyMenuState = { kind: 'empty'; x: number; y: number; trackId: string | null; beat: number };
@@ -117,7 +117,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                 const trackState = trackStore.value;
                 const canvas = canvasRef.current;
                 const totalTrackH = (trackState?.tracks ?? []).reduce((s, t) => s + (t.height ?? 64), 0);
-                const viewH = canvas ? canvas.clientHeight - RULER_HEIGHT : 600;
+                const viewH = canvas ? canvas.clientHeight : 600;
                 const maxY = Math.max(0, totalTrackH - viewH);
                 setScrollY(Math.min(maxY, Math.max(0, currentY + e.deltaY)));
             }
@@ -165,15 +165,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             const { x, y } = getCanvasCoords(e);
             const tool = getActiveTool();
 
-            if (y < RULER_HEIGHT) {
-                if (e.shiftKey || e.altKey) {
-                    const beat = getBeatFromX(x);
-                    loopDragRef.current = { startBeat: beat };
-                    return;
-                }
-                setPlayheadFromClick(x);
-                return;
-            }
+
 
             // Check sub-lane click when automation is visible (any tool)
             const wsState = workspaceStore.value;

@@ -95,7 +95,18 @@ export function stopPlayback(): void {
     stopPlayheadScheduler();
     stopAllScheduled();
     resetMidiState();
-    updateTransportState({ isPlaying: false, isRecording: false, playheadPosition: 0 });
+
+    let playheadPosition = 0;
+    if (state.loopEnd > state.loopStart) {
+        playheadPosition = state.loopStart;
+        
+        // Optional DAW standard UX: if already stopped at the loop start, double-stopping jumps to 0
+        if (!state.isPlaying && state.playheadPosition === state.loopStart) {
+            playheadPosition = 0;
+        }
+    }
+
+    updateTransportState({ isPlaying: false, isRecording: false, playheadPosition });
 }
 
 export function toggleLoop(): void {
@@ -135,7 +146,7 @@ export function setLoopRegion(startBeat: number, endBeat: number): void {
     if (!state) {
         return;
     }
-    updateTransportState({ loopStart: startBeat, loopEnd: endBeat });
+    updateTransportState({ loopStart: startBeat, loopEnd: endBeat, isLooping: true });
 }
 
 export function setPunchIn(beat: number): void {
@@ -292,5 +303,19 @@ export function seekPlayhead(beat: number): void {
     if (!state) {
         return;
     }
-    updateTransportState({ playheadPosition: Math.max(0, beat) });
+
+    const wasPlaying = state.isPlaying;
+    const targetBeat = Math.max(0, beat);
+
+    if (wasPlaying) {
+        stopPlayheadScheduler();
+        stopAllScheduled();
+        resetMidiState();
+    }
+
+    updateTransportState({ playheadPosition: targetBeat });
+
+    if (wasPlaying) {
+        startPlayheadScheduler();
+    }
 }

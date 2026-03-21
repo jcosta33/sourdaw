@@ -1,5 +1,6 @@
 import { type TimelineRenderer } from '../models/RendererBackend';
 import { type TimelineRenderModel } from '../models/TimelineRenderModel';
+import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 
 // ─── WGSL shaders ────────────────────────────────────────────────────────────
 // Each vertex carries: xy (NDC) + rgba (f32 × 4) = 6 floats = 24 bytes
@@ -31,8 +32,8 @@ const FLOATS_PER_VERTEX = 6;
 // 2 triangles per rect = 6 vertices
 const VERTICES_PER_RECT = 6;
 const FLOATS_PER_RECT = VERTICES_PER_RECT * FLOATS_PER_VERTEX;
-// Upper bound: many tracks × many clips + track rows + playhead + bar lines
-const MAX_RECTS = 4096;
+// Upper bound: many tracks × many clips + track rows + playhead + bar lines, now + waveform rects
+const MAX_RECTS = 32768;
 
 // ─── Colour helpers ───────────────────────────────────────────────────────────
 function hexToRgba(hex: string, alpha = 1): [number, number, number, number] {
@@ -248,6 +249,34 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                                 '#ffffff',
                                 alpha * 0.8,
                             );
+                        }
+                    }
+
+                    // AUDIO waveform peaks
+                    if (clip.type === 'audio' && clip.audioBufferId && audioBufferCache.has(clip.audioBufferId)) {
+                        const w = cx2 - cx1;
+                        if (w >= 4) {
+                            // At least 1 rect per pixel, up to max ~2000 bins to balance perf
+                            const numBins = Math.min(Math.floor(w * dpr), 2000);
+                            const peaks = audioBufferCache.getWaveformPeaks(clip.audioBufferId, numBins);
+                            
+                            const midY = clipTop + (clipBottom - clipTop) / 2;
+                            const padding = 2 * dpr;
+                            const amplitude = ((clipBottom - clipTop) - padding * 2) * 0.35;
+                            const binWidth = w / numBins;
+                            
+                            // Color analogous to canvas renderer's 'rgba(120, 200, 160, 0.5)'
+                            const wfColor = '#78c8a0';
+                            
+                            for (let i = 0; i < numBins; i++) {
+                                const peakHeight = peaks[i]! * amplitude;
+                                if (peakHeight > 0.5) {
+                                    const bx1 = cx1 + i * binWidth;
+                                    const bx2 = bx1 + binWidth;
+                                    // Draw thin vertical rect for this bin's peak
+                                    addRect(bx1, midY - peakHeight, bx2, midY + peakHeight, wfColor, alpha * 0.6);
+                                }
+                            }
                         }
                     }
                 }

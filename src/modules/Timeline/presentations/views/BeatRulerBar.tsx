@@ -2,7 +2,8 @@ import { useRef, useCallback, type MouseEvent as ReactMouseEvent } from 'react';
 import { useSyncExternalStore } from 'react';
 import { timelineViewStore } from '../../stores/timelineViewStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { setPlayheadFromClick, setLoopRegion } from '../../useCases/timelineViewActions';
+import { seekPlayhead } from '#/modules/Transport/useCases/transportControls';
+import { setLoopRegion } from '#/modules/Transport/useCases/transportControls';
 
 const HEIGHT = 22;
 
@@ -161,12 +162,12 @@ export const BeatRulerBar = (): React.ReactElement => {
         (e: ReactMouseEvent<HTMLDivElement>) => {
             if (e.button !== 0) return;
             const beat = getBeat(e.clientX);
-            if (e.shiftKey || e.altKey) {
-                // Start loop drag
-                loopDragRef.current = { startBeat: beat };
-            } else {
-                setPlayheadFromClick(e.clientX - (containerRef.current?.getBoundingClientRect().left ?? 0));
-            }
+            
+            // Set playhead immediately on click
+            seekPlayhead(beat);
+            
+            // But also prepare for a drag to create a loop region
+            loopDragRef.current = { startBeat: beat };
         },
         // eslint-disable-next-line react-hooks/exhaustive-deps
         [pixelsPerBeat, scrollX]
@@ -175,11 +176,18 @@ export const BeatRulerBar = (): React.ReactElement => {
     const handleMouseMove = useCallback(
         (e: ReactMouseEvent<HTMLDivElement>) => {
             if (!loopDragRef.current) return;
+            // Only consider it a drag if mouse is actually down (buttons === 1)
+            if (e.buttons !== 1) {
+                loopDragRef.current = null;
+                return;
+            }
             const beat = getBeat(e.clientX);
             const start = loopDragRef.current.startBeat;
             const lo = Math.min(start, beat);
             const hi = Math.max(start, beat);
-            if (hi - lo > 0.25) {
+            
+            // Require at least a 0.25 beat drag to establish a loop region
+            if (hi - lo >= 0.25) {
                 setLoopRegion(Math.floor(lo), Math.ceil(hi));
             }
         },
@@ -202,6 +210,7 @@ export const BeatRulerBar = (): React.ReactElement => {
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
+            onDoubleClick={() => { if (transportStore.value) transportStore.set({ ...transportStore.value, isLooping: false }); }}
             title="Drag to set loop region · Shift+drag to extend · Click to move playhead"
         >
             <canvas

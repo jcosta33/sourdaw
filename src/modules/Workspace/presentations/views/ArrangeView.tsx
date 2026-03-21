@@ -3,6 +3,7 @@ import { TimelineSurface } from '#/modules/Timeline/presentations/views/Timeline
 import { TimelineMinimap } from '#/modules/Timeline/presentations/views/TimelineMinimap';
 import { ArrangementBar } from '#/modules/Timeline/presentations/views/ArrangementBar';
 import { MarkerLane } from '#/modules/Timeline/presentations/views/MarkerLane';
+import { BeatRulerBar } from '#/modules/Timeline/presentations/views/BeatRulerBar';
 import { timelineViewStore } from '#/modules/Timeline/stores/timelineViewStore';
 import { TrackListView } from '#/modules/Track/presentations/views/TrackListView';
 import { useTracks } from '../hooks/useTracks';
@@ -68,7 +69,10 @@ export const ArrangeView = (): ReactElement => {
         <div className="flex h-full">
             {trackListOpen && (
                 <>
-                    <TrackListView style={{ width: localTrackListWidth }} extraHeaderHeight={hasMarkers ? 20 : 0} />
+                    <TrackListView 
+                        style={{ width: localTrackListWidth }} 
+                        extraHeaderHeight={22 + (hasMarkers ? 20 : 0) + 28 + 22} 
+                    />
                     <ResizeHandle
                         direction="vertical"
                         onResize={handleTrackListResize}
@@ -80,6 +84,7 @@ export const ArrangeView = (): ReactElement => {
                 <ArrangementBar pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} />
                 {hasMarkers && <MarkerLane pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} />}
                 <TimelineMinimap />
+                <BeatRulerBar />
                 <TimelineSurface />
                 {tracks.length === 0 && <EmptyArrangeOverlay />}
             </div>

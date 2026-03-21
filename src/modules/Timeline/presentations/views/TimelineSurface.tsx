@@ -277,8 +277,8 @@ export const TimelineSurface = (): ReactElement => {
             if (rendererRef.current) {
                 const model = buildTimelineRenderModel();
                 rendererRef.current.render(model);
+                dirty = false;
             }
-            dirty = false;
         });
         resizeObserver.observe(container);
 
