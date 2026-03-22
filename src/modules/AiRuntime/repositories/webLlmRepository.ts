@@ -13,7 +13,6 @@
 import {
     type ChatCompletionMessageParam,
     type ChatCompletionTool,
-    type ChatCompletionChunk,
     CreateWebWorkerMLCEngine,
 } from '@mlc-ai/web-llm';
 
@@ -109,50 +108,103 @@ export async function generateWebLlmToolCalls(
         { role: 'user', content: userMessage },
     ];
 
-    // Stream the response — the last chunk before the usage chunk holds tool_calls
-    const asyncChunkGenerator = await eng.chat.completions.create({
-        messages,
-        tools,
-        tool_choice: 'auto',
-        stream: true,
-        stream_options: { include_usage: true },
-        temperature: 0.1,
-        seed: 0,
-    });
+    // Use non-streaming for tool calls — streaming with tool_choice causes
+    // ToolCallOutputParseError when the model generates raw function syntax
+    // instead of structured JSON tool calls.
+    try {
+        const response = await eng.chat.completions.create({
+            messages,
+            tools,
+            tool_choice: 'auto',
+            stream: false,
+            temperature: 0.1,
+            seed: 0,
+        });
 
-    let lastContentChunk: ChatCompletionChunk | undefined;
+        const toolCallsRaw = response.choices[0]?.message?.tool_calls;
 
-    for await (const chunk of asyncChunkGenerator) {
-        // Usage chunk is always last and has no choices content
-        if (!chunk.usage) {
-            lastContentChunk = chunk;
+        if (!toolCallsRaw || toolCallsRaw.length === 0) {
+            // Model may have produced text instead of tool calls — try to parse it
+            const textContent = response.choices[0]?.message?.content;
+            if (textContent) {
+                logger.warn(`[WebLLM] No tool calls, got text: ${textContent.slice(0, 200)}`);
+                return tryParseRawFunctionCalls(textContent, tools);
+            }
+            logger.warn('[WebLLM] No tool calls returned by model.');
+            return [];
         }
-    }
 
-    const toolCallsRaw = lastContentChunk?.choices[0]?.delta?.tool_calls;
+        // Map WebLLM tool_calls → ToolCallResult[]
+        const results: ToolCallResult[] = [];
+        for (const tc of toolCallsRaw) {
+            if (tc.function?.name) {
+                let args: Record<string, unknown> = {};
+                try {
+                    args = JSON.parse(tc.function.arguments ?? '{}') as Record<string, unknown>;
+                } catch {
+                    logger.warn(
+                        `[WebLLM] Failed to parse tool call args for "${tc.function.name}": ${tc.function.arguments}`
+                    );
+                }
+                results.push({ name: tc.function.name, arguments: args });
+            }
+        }
 
-    if (!toolCallsRaw || toolCallsRaw.length === 0) {
-        logger.warn('[WebLLM] No tool calls returned by model — model may have produced text instead.');
+        logger.info(`[WebLLM] ${String(results.length)} tool call(s): ${results.map((r) => r.name).join(', ')}`);
+        return results;
+    } catch (error) {
+        // ToolCallOutputParseError — model generated raw text instead of JSON tool calls
+        const errMsg = error instanceof Error ? error.message : String(error);
+        logger.warn(`[WebLLM] Tool call API failed: ${errMsg.slice(0, 300)}`);
+
+        // Try to extract the raw output from the error message and parse it
+        const rawMatch = errMsg.match(/Got outputMessage:\s*(.+?)(?:\s*Got error:|$)/s);
+        if (rawMatch?.[1]) {
+            return tryParseRawFunctionCalls(rawMatch[1].trim(), tools);
+        }
+
         return [];
     }
+}
 
-    // Map WebLLM tool_calls → ToolCallResult[]
+/**
+ * Fallback parser for when the model generates raw function call text
+ * like `addTrack(name="wow", kind="midi")` instead of JSON tool calls.
+ */
+function tryParseRawFunctionCalls(text: string, tools: ChatCompletionTool[]): ToolCallResult[] {
     const results: ToolCallResult[] = [];
-    for (const tc of toolCallsRaw) {
-        if (tc.function?.name) {
-            let args: Record<string, unknown> = {};
-            try {
-                args = JSON.parse(tc.function.arguments ?? '{}') as Record<string, unknown>;
-            } catch {
-                logger.warn(
-                    `[WebLLM] Failed to parse tool call args for "${tc.function.name}": ${tc.function.arguments}`
-                );
-            }
-            results.push({ name: tc.function.name, arguments: args });
+    const validNames = new Set(tools.map((t) => t.function.name));
+
+    // Match patterns like: functionName(key="value", key2=value2)
+    const callPattern = /(\w+)\(([^)]*)\)/g;
+    let match;
+
+    while ((match = callPattern.exec(text)) !== null) {
+        const name = match[1]!;
+        const argsStr = match[2] ?? '';
+
+        if (!validNames.has(name)) continue;
+
+        const args: Record<string, unknown> = {};
+        // Parse key=value or key="value" pairs
+        const argPattern = /(\w+)\s*=\s*(?:"([^"]*)"|([\w.]+))/g;
+        let argMatch;
+        while ((argMatch = argPattern.exec(argsStr)) !== null) {
+            const key = argMatch[1]!;
+            const val = argMatch[2] ?? argMatch[3]!;
+            // Try to parse as number or boolean
+            if (val === 'true') args[key] = true;
+            else if (val === 'false') args[key] = false;
+            else if (!isNaN(Number(val)) && val !== '') args[key] = Number(val);
+            else args[key] = val;
         }
+
+        results.push({ name, arguments: args });
     }
 
-    logger.info(`[WebLLM] ${String(results.length)} tool call(s): ${results.map((r) => r.name).join(', ')}`);
+    if (results.length > 0) {
+        logger.info(`[WebLLM] Parsed ${String(results.length)} raw function call(s): ${results.map((r) => r.name).join(', ')}`);
+    }
     return results;
 }
 
