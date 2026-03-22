@@ -96,7 +96,7 @@ Colored arcs around knobs showing modulation range. Real-time animation showing 
 
 ```css
 .knob-halo {
-    background: conic-gradient(from 225deg, transparent 0%, #00ff88 var(--mod-amount), transparent var(--mod-amount));
+    background: conic-gradient(from 225deg, transparent 0%, oklch(0.58 0.09 150) var(--mod-amount), transparent var(--mod-amount));
     border-radius: 50%;
 }
 ```
@@ -490,7 +490,7 @@ Implement DaVinci Resolve's page-based workflow as switchable layout presets: **
 
 ### Dark themes win overwhelmingly
 
-Approximately **80–90% of DAW users prefer dark themes**, consistent with broader data showing 82% of desktop users choosing dark mode. The preference is even stronger among music producers who work in dimmed studio environments. One Gearspace user captured the counter-view: "I never liked the PT7 visuals, it was like staring at a lightbulb." However, dark theme implementation matters enormously — pure black backgrounds create halation (light text bleeding), while colored tints like Bitwig's brownish-orange are polarizing ("staring at brown and dull orange is not what I would choose"). **Dark gray (#1E1E1E to #2D2D2D) is the consensus sweet spot.**
+Approximately **80–90% of DAW users prefer dark themes**, consistent with broader data showing 82% of desktop users choosing dark mode. The preference is even stronger among music producers who work in dimmed studio environments. One Gearspace user captured the counter-view: "I never liked the PT7 visuals, it was like staring at a lightbulb." However, dark theme implementation matters enormously — pure black backgrounds create halation (light text bleeding), while colored tints like Bitwig's brownish-orange are polarizing ("staring at brown and dull orange is not what I would choose"). **Dark gray (`oklch(0.15 0 0)` to `oklch(0.22 0 0)`) is the consensus sweet spot.**
 
 ### Scalability over fixed density
 
@@ -542,7 +542,7 @@ For reference, existing DAWs use: Ableton has a custom "Ableton Sans" by Letters
 
 ### Critical dark-theme typography rules
 
-On dark backgrounds, thin font weights (100–300) "disappear or become hard to read" due to halation — light pixels bleeding outward. **Use Regular (400) minimum for all body text, Medium (500) for emphasis.** Use off-white text `#E0E0E0` for primary content rather than pure white `#FFFFFF`, which creates excessive contrast. Reserve pure white for headings and active emphasis only.
+On dark backgrounds, thin font weights (100–300) "disappear or become hard to read" due to halation — light pixels bleeding outward. **Use Regular (400) minimum for all body text, Medium (500) for emphasis.** Use off-white text `oklch(0.92 0 0)` for primary content rather than pure white, which creates excessive contrast. Reserve pure white for headings and active emphasis only.
 
 ### Tauri cross-platform font rendering (critical)
 
@@ -560,60 +560,75 @@ Always bundle Inter and JetBrains Mono as WOFF2 files — never rely on system f
 
 ---
 
-## 4. Color system: dark gray foundations with purposeful accent colors
+## 4. Color system: muted industrial aesthetic with oklch
 
 ### Core palette
 
-Build the entire color system from Material Design 3's dark theme elevation model, using `#1A1A1A` as the base surface (not pure black `#000000`, which causes halation and makes elevation shadows invisible):
+The entire color system uses **oklch** (perceptually uniform lightness, chroma, hue) for consistent, muted tones. Base surface uses `oklch(0.14 0 0)` (not pure black, which causes halation and makes elevation shadows invisible):
 
-| Token                | Hex       | Usage                                |
-| -------------------- | --------- | ------------------------------------ |
-| `--surface-0`        | `#121212` | Deepest background (app frame)       |
-| `--surface-1`        | `#1E1E1E` | Primary panels (arrangement, mixer)  |
-| `--surface-2`        | `#252525` | Elevated panels (inspector, browser) |
-| `--surface-3`        | `#2C2C2C` | Cards, popovers, dropdowns           |
-| `--surface-4`        | `#333333` | Hover states, active panel headers   |
-| `--surface-5`        | `#3A3A3A` | Buttons, interactive elements        |
-| `--text-primary`     | `#E8E8E8` | Primary text (87% white)             |
-| `--text-secondary`   | `#A0A0A0` | Secondary labels (60% white)         |
-| `--text-disabled`    | `#666666` | Disabled/inactive (~38% white)       |
-| `--accent-primary`   | `#4EA8F6` | Primary accent (accessible blue)     |
-| `--accent-secondary` | `#F7A738` | Secondary accent (warm amber)        |
-| `--destructive`      | `#CF6679` | Error/delete (M3 dark error)         |
-| `--success`          | `#4CAF50` | Success states, connected            |
-| `--recording`        | `#FF4444` | Record armed/active                  |
+| Token                | Value                   | Usage                                |
+| -------------------- | ----------------------- | ------------------------------------ |
+| `--surface-0`        | `oklch(0.11 0 0)`       | Deepest background (app frame)       |
+| `--surface-1`        | `oklch(0.15 0 0)`       | Primary panels (arrangement, mixer)  |
+| `--surface-2`        | `oklch(0.19 0 0)`       | Elevated panels (inspector, browser) |
+| `--surface-3`        | `oklch(0.22 0 0)`       | Cards, popovers, dropdowns           |
+| `--surface-4`        | `oklch(0.25 0 0)`       | Hover states, active panel headers   |
+| `--surface-5`        | `oklch(0.28 0 0)`       | Buttons, interactive elements        |
+| `--text-primary`     | `oklch(0.92 0 0)`       | Primary text (87% white)             |
+| `--text-secondary`   | `oklch(0.65 0 0)`       | Secondary labels (60% white)         |
+| `--text-disabled`    | `oklch(0.42 0 0)`       | Disabled/inactive (~38% white)       |
+| `--accent-primary`   | `oklch(0.58 0.09 250)`  | Primary accent (steel blue)          |
+| `--accent-secondary` | `oklch(0.58 0.09 70)`   | Secondary accent (dusty amber)       |
+| `--destructive`      | `oklch(0.55 0.10 20)`   | Error/delete (muted coral)           |
+| `--success`          | `oklch(0.58 0.09 150)`  | Success states, connected            |
+| `--recording`        | `oklch(0.55 0.12 25)`   | Record armed/active                  |
 
-The accent color choice matters for brand identity. Ableton uses orange `#F7A738`, FL Studio uses golden amber `#FDB200`, Logic uses blue, Bitwig uses mint-blue `#37ACFB`. A **blue primary accent** (`#4EA8F6`) is recommended because it provides the highest contrast against warm track colors while remaining accessible for color-blind users (blue is distinguishable by all common color vision deficiency types).
+The accent color choice matters for brand identity. A **steel blue primary accent** (`oklch(0.58 0.09 250)`) is recommended because it provides the highest contrast against warm track colors while remaining accessible for color-blind users (blue is distinguishable by all common color vision deficiency types). All accent colors use **low chroma (0.08–0.10)** to maintain the muted, professional industrial aesthetic.
 
 ### Track color palette
 
-Provide **24 distinct, accessible track colors** organized by hue for quick recognition. The most common genre-based organization: drums/percussion in blues, vocals in purples/pinks, bass in oranges/reds, keys/synths in greens/teals, guitars in ambers/yellows. Ableton auto-assigns from a 17-color subset of its 70-color palette; Logic offers 24 or 96 auto-assign modes. The sweet spot for practical categorization is 16–24 colors.
+Provide **12 distinct, accessible track colors** using oklch with low chroma (0.08–0.10) for a desaturated, professional feel. The palette spans hue evenly to maintain distinguishability while staying muted:
+
+| Color           | Value                   | Name              |
+| --------------- | ----------------------- | ----------------- |
+| Steel blue      | `oklch(0.58 0.09 250)`  | drums/percussion  |
+| Muted coral     | `oklch(0.55 0.10 20)`   | vocals            |
+| Sage green      | `oklch(0.58 0.09 150)`  | bass              |
+| Dusty amber     | `oklch(0.58 0.09 70)`   | keys/synths       |
+| Muted plum      | `oklch(0.55 0.09 300)`  | pads/strings      |
+| Dusty rose      | `oklch(0.55 0.09 340)`  | vocals (alt)      |
+| Slate teal      | `oklch(0.58 0.08 200)`  | FX/ambience       |
+| Warm terracotta | `oklch(0.56 0.09 45)`   | guitars           |
+| Muted mint      | `oklch(0.58 0.08 170)`  | leads             |
+| Muted indigo    | `oklch(0.55 0.09 270)`  | sub-bass          |
+| Olive sage      | `oklch(0.56 0.08 110)`  | acoustic          |
+| Muted brick     | `oklch(0.55 0.10 0)`    | percussion (alt)  |
 
 ### State colors — never use color alone
 
 Every state must communicate through **shape + color + text/icon** to accommodate the ~8% of males with color vision deficiency (and the music production industry skews male, making this even more critical):
 
-| State             | Color                     | Additional indicator                  |
-| ----------------- | ------------------------- | ------------------------------------- |
-| Muted             | `#FFA726` (amber)         | "M" text label dims track content     |
-| Soloed            | `#42A5F5` (blue)          | "S" text label, non-soloed tracks dim |
-| Record armed      | `#FF4444` (red)           | Pulsing record icon, "R" label        |
-| Selected          | `--accent-primary` border | Highlight border + background tint    |
-| Frozen            | `#90CAF9` (light blue)    | Snowflake icon, hatched waveform      |
-| Disabled/bypassed | `#666666` (gray)          | Strikethrough or reduced opacity      |
+| State             | Color                                    | Additional indicator                  |
+| ----------------- | ---------------------------------------- | ------------------------------------- |
+| Muted             | `oklch(0.58 0.09 70)` (dusty amber)      | "M" text label dims track content     |
+| Soloed            | `oklch(0.58 0.09 250)` (steel blue)      | "S" text label, non-soloed tracks dim |
+| Record armed      | `oklch(0.55 0.12 25)` (muted red)        | Pulsing record icon, "R" label        |
+| Selected          | `--accent-primary` border                | Highlight border + background tint    |
+| Frozen            | `oklch(0.65 0.06 250)` (pale steel)      | Snowflake icon, hatched waveform      |
+| Disabled/bypassed | `oklch(0.42 0 0)` (gray)                 | Strikethrough or reduced opacity      |
 
 ### Audio meter colors
 
 Standard LED bargraph metering uses three zones with these transition points:
 
-| Zone           | dB range (dBFS) | Color        | Hex       |
-| -------------- | --------------- | ------------ | --------- |
-| Safe           | −∞ to −12       | Green        | `#4CAF50` |
-| Caution        | −12 to −6       | Yellow/Amber | `#FF9800` |
-| Danger         | −6 to 0         | Red          | `#F44336` |
-| Clip           | 0 (sticky)      | Bright red   | `#FF0000` |
-| Background/off | —               | Dark gray    | `#1A1A1A` |
-| Peak hold line | —               | White        | `#FFFFFF` |
+| Zone           | dB range (dBFS) | Color        | Value                          |
+| -------------- | --------------- | ------------ | ------------------------------ |
+| Safe           | −∞ to −12       | Green        | `oklch(0.58 0.09 150)`         |
+| Caution        | −12 to −6       | Amber        | `oklch(0.58 0.09 70)`          |
+| Danger         | −6 to 0         | Red          | `oklch(0.55 0.10 20)`          |
+| Clip           | 0 (sticky)      | Bright red   | `oklch(0.55 0.12 25)`          |
+| Background/off | —               | Dark gray    | `oklch(0.14 0 0)`              |
+| Peak hold line | —               | White        | `oklch(0.92 0 0)`              |
 
 The clip indicator should remain lit until the user clicks to reset. RMS is shown as a translucent shade within the peak bar. Meter width: **6–8px minimum per channel** (stereo = 12–16px), **12–20px comfortable**.
 
@@ -762,7 +777,7 @@ Always visible: track color indicator strip, track name, pan knob, mute/solo/rec
 
 ### Color coding
 
-Use both a **vivid color header bar** at the top of each strip and a **subtle background tint** for maximum scannability. Mirror arrangement track colors exactly — the most requested mixer improvement across forums is better color coding. Differentiate track types: audio, instrument, bus/group (wider strip or distinct header), send/return (different indicator style), master (separate section).
+Use both a **muted color header bar** (from the oklch track palette) at the top of each strip and a **subtle background tint** for maximum scannability. Mirror arrangement track colors exactly — the most requested mixer improvement across forums is better color coding. Differentiate track types: audio, instrument, bus/group (wider strip or distinct header), send/return (different indicator style), master (separate section).
 
 ### Master bus
 
@@ -774,7 +789,7 @@ Always far right in a **visually separated section**. **1.5–2× standard chann
 
 ### Dark theme ergonomics
 
-The critical factor for eye strain is **matching screen brightness to ambient room brightness**, not the theme itself. Pure black backgrounds create excessive 21:1 contrast with white text, causing halation. Recommended range: **#1E1E1E to #2D2D2D** backgrounds with **#E0E0E0** primary text achieves 10:1–13:1 contrast — well above WCAG minimums but below the harshness threshold. Roughly 50% of the population has astigmatism, which is aggravated by white text on dark backgrounds due to wider iris opening. Medium font weight (400–500) partially compensates for this effect.
+The critical factor for eye strain is **matching screen brightness to ambient room brightness**, not the theme itself. Pure black backgrounds create excessive 21:1 contrast with white text, causing halation. Recommended range: **`oklch(0.15 0 0)` to `oklch(0.22 0 0)`** backgrounds with **`oklch(0.92 0 0)`** primary text achieves 10:1–13:1 contrast — well above WCAG minimums but below the harshness threshold. Roughly 50% of the population has astigmatism, which is aggravated by white text on dark backgrounds due to wider iris opening. Medium font weight (400–500) partially compensates for this effect.
 
 ### HiDPI and display scaling
 
@@ -839,7 +854,7 @@ AI operations should be **grouped as single undo steps** — "Undo AI generation
 These elements, ranked by their impact on first-impression quality perception and long-term user satisfaction, should guide implementation order:
 
 1. **Consistent interaction patterns** — modifier keys, click behaviors, and state feedback must be predictable everywhere. This is the #1 frustration when it fails and invisible when it succeeds.
-2. **Dark theme color system** — the first thing every user sees. Get the surface hierarchy, contrast ratios, and accent colors right immediately. Use #1E1E1E base, not black.
+2. **Dark theme color system** — the first thing every user sees. Get the surface hierarchy, contrast ratios, and accent colors right immediately. Use `oklch(0.15 0 0)` base, not black.
 3. **Typography rendering** — crisp, well-weighted Inter + JetBrains Mono at correct sizes communicates "professional" instantly. Bundle fonts, don't rely on system.
 4. **Transport and playback responsiveness** — millisecond-level visual response to play/stop/record. The transport is the heartbeat of the application.
 5. **Mixer meter animation quality** — smooth, correctly ballistic meters with proper color transitions signal audio engineering credibility.
@@ -852,7 +867,7 @@ These elements, ranked by their impact on first-impression quality perception an
 ### What to avoid — known bad patterns
 
 - **FL Studio's Ctrl+Z toggle** undo/redo behavior
-- **Pure black backgrounds** (#000000) — use dark gray
+- **Pure black backgrounds** (`oklch(0 0 0)`) — use dark gray (`oklch(0.15 0 0)`)
 - **Scroll wheel controlling parameters by default** without requiring focus
 - **Floating panels as the primary layout** paradigm (Figma's UI3 reversal is definitive evidence)
 - **Icon-only interfaces** without tooltips or text labels for non-universal icons

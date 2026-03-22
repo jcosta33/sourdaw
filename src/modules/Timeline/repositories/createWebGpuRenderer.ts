@@ -36,8 +36,36 @@ const FLOATS_PER_RECT = VERTICES_PER_RECT * FLOATS_PER_VERTEX;
 const MAX_RECTS = 32768;
 
 // ─── Colour helpers ───────────────────────────────────────────────────────────
-function hexToRgba(hex: string, alpha = 1): [number, number, number, number] {
-    const clean = hex.replace('#', '');
+/** Parse hex (#rrggbb / #rgb) OR oklch(L C H) into [r, g, b, a] with values in 0..1 */
+function colorToRgba(color: string, alpha = 1): [number, number, number, number] {
+    // oklch(L C H) → OKLab → linear sRGB → sRGB
+    const oklchMatch = color.match(/oklch\(([\d.]+)\s+([\d.]+)\s+([\d.]+)\)/);
+    if (oklchMatch) {
+        const L = parseFloat(oklchMatch[1]!);
+        const C = parseFloat(oklchMatch[2]!);
+        const H = parseFloat(oklchMatch[3]!) * (Math.PI / 180);
+        const a_ = C * Math.cos(H);
+        const b_ = C * Math.sin(H);
+        // OKLab → linear sRGB (approximate via LMS)
+        const l_ = L + 0.3963377774 * a_ + 0.2158037573 * b_;
+        const m_ = L - 0.1055613458 * a_ - 0.0638541728 * b_;
+        const s_ = L - 0.0894841775 * a_ - 1.2914855480 * b_;
+        const l3 = l_ * l_ * l_;
+        const m3 = m_ * m_ * m_;
+        const s3 = s_ * s_ * s_;
+        const lr = +4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
+        const lg = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
+        const lb = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.7076147010 * s3;
+        // Linear → sRGB gamma, clamped to [0,1]
+        const gamma = (x: number): number => {
+            const v = x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
+            return Math.max(0, Math.min(1, v));
+        };
+        return [gamma(lr), gamma(lg), gamma(lb), alpha];
+    }
+
+    // Hex fallback
+    const clean = color.replace('#', '');
     if (clean.length === 3) {
         const r = parseInt(clean[0]! + clean[0]!, 16) / 255;
         const g = parseInt(clean[1]! + clean[1]!, 16) / 255;
@@ -215,7 +243,7 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                 if (rectCount >= MAX_RECTS) {
                     return;
                 }
-                const [r, g, b] = hexToRgba(color, alpha);
+                const [r, g, b] = colorToRgba(color, alpha);
                 offset = pushRect(cpuBuf, offset, x1, y1, x2, y2, r, g, b, alpha, w, h);
                 rectCount++;
             }
@@ -249,7 +277,7 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                     const alpha = clip.muted ? 0.35 : 1.0;
 
                     // Clip body
-                    const color = clip.color || track.color || '#3B82F6';
+                    const color = clip.color || track.color || 'oklch(0.58 0.09 250)';
                     addRect(cx1, clipTop, cx2, clipBottom, color, alpha * 0.65);
 
                     // Clip top accent stripe
@@ -284,7 +312,7 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                                 Math.min(nx2, cx2 - 2),
                                 noteY + 2 * dpr,
                                 '#ffffff',
-                                alpha * 0.8
+                                alpha * 0.35
                             );
                         }
                     }

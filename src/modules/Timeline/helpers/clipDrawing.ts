@@ -298,7 +298,7 @@ const drawMidiNotePreview = (
         return;
     }
 
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
     for (const note of notes) {
         const relStart = note.startBeat - clip.startBeat;
         const nx = clipX + (relStart / clipDuration) * clipW;

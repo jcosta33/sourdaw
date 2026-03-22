@@ -17,11 +17,13 @@ type MarkerLaneProps = {
 };
 
 const MARKER_COLORS = [
-    'oklch(0.7 0.15 200)',
-    'oklch(0.7 0.15 150)',
-    'oklch(0.7 0.15 30)',
-    'oklch(0.7 0.15 330)',
-    'oklch(0.7 0.15 80)',
+    'oklch(0.58 0.08 200)', // slate teal
+    'oklch(0.58 0.09 150)', // sage green
+    'oklch(0.58 0.09 70)',  // dusty amber
+    'oklch(0.55 0.09 340)', // dusty rose
+    'oklch(0.55 0.09 270)', // muted indigo
+    'oklch(0.55 0.10 20)',  // muted coral
+    'oklch(0.58 0.09 250)', // steel blue
 ];
 
 type ContextMenuState =

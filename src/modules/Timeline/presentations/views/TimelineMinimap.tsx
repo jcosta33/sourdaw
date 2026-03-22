@@ -85,7 +85,7 @@ export const TimelineMinimap = (): ReactElement => {
                 for (const clip of track.clips) {
                     const x = clip.startBeat * beatsToPixels;
                     const w = Math.max(1, (clip.endBeat - clip.startBeat) * beatsToPixels);
-                    const color = clip.color || track.color || 'oklch(0.65 0.15 260)';
+                    const color = clip.color || track.color || 'oklch(0.58 0.09 250)';
 
                     ctx.fillStyle = color;
                     ctx.globalAlpha = 0.85;

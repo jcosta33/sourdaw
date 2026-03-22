@@ -34,7 +34,20 @@ import { releaseTouchAutomation } from '#/modules/Track/useCases/automationRecor
 
 type MixerMenu = { x: number; y: number } | null;
 
-const TRACK_COLORS = ['', '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'];
+const TRACK_COLORS = [
+    'oklch(0.58 0.09 250)',
+    'oklch(0.55 0.10 20)',
+    'oklch(0.58 0.09 150)',
+    'oklch(0.58 0.09 70)',
+    'oklch(0.55 0.09 300)',
+    'oklch(0.55 0.09 340)',
+    'oklch(0.58 0.08 200)',
+    'oklch(0.56 0.09 45)',
+    'oklch(0.58 0.08 170)',
+    'oklch(0.55 0.09 270)',
+    'oklch(0.56 0.08 110)',
+    'oklch(0.55 0.10 0)',
+];
 
 const menuBtnClass = 'flex w-full items-center px-3 py-1.5 text-xs hover:bg-white/[0.06] text-left transition-colors';
 
@@ -347,11 +360,11 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                         {TRACK_COLORS.map((c) => (
                             <button
                                 type="button"
-                                key={c || 'default'}
+                                key={c}
                                 className="size-3.5 rounded-full border border-border/50 hover:ring-1 hover:ring-foreground/30"
-                                style={{ backgroundColor: c || 'var(--color-muted)' }}
+                                style={{ backgroundColor: c, outline: c === track.color ? '2px solid white' : 'none', outlineOffset: '1px' }}
                                 onClick={act(() => setTrackColor(track.id, c))}
-                                aria-label={c || 'Default color'}
+                                aria-label={`Set color`}
                             />
                         ))}
                     </div>

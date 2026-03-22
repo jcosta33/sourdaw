@@ -14,16 +14,18 @@ import { importMidiFile } from '../../useCases/importMidiFile';
 import { type Track, type InputMonitoring } from '../../models/Track';
 
 const TRACK_COLORS = [
-    'oklch(0.65 0.15 145)',
-    'oklch(0.65 0.15 260)',
-    'oklch(0.65 0.15 50)',
-    'oklch(0.65 0.15 0)',
-    'oklch(0.65 0.15 310)',
-    'oklch(0.65 0.15 180)',
-    'oklch(0.65 0.15 90)',
-    'oklch(0.65 0.15 30)',
-    'oklch(0.65 0.15 220)',
-    'oklch(0.65 0.08 200)',
+    'oklch(0.58 0.09 250)',
+    'oklch(0.55 0.10 20)',
+    'oklch(0.58 0.09 150)',
+    'oklch(0.58 0.09 70)',
+    'oklch(0.55 0.09 300)',
+    'oklch(0.55 0.09 340)',
+    'oklch(0.58 0.08 200)',
+    'oklch(0.56 0.09 45)',
+    'oklch(0.58 0.08 170)',
+    'oklch(0.55 0.09 270)',
+    'oklch(0.56 0.08 110)',
+    'oklch(0.55 0.10 0)',
 ];
 
 const INPUT_MON_OPTIONS: { value: InputMonitoring; label: string }[] = [

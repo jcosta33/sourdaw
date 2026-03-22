@@ -20,7 +20,7 @@ export const createMarker = (beat: number, name: string): Marker => ({
     id: `marker-${nextMarkerId++}`,
     beat,
     name,
-    color: 'oklch(0.7 0.15 200)',
+    color: 'oklch(0.58 0.08 200)',
 });
 
 export const createSection = (startBeat: number, endBeat: number, name: string): ArrangementSection => ({
@@ -28,5 +28,5 @@ export const createSection = (startBeat: number, endBeat: number, name: string):
     startBeat,
     endBeat,
     name,
-    color: 'oklch(0.5 0.1 260)',
+    color: 'oklch(0.50 0.07 260)',
 });
