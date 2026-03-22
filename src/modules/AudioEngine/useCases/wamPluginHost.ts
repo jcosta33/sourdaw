@@ -15,6 +15,7 @@ export type WAMDescriptor = {
     sdkVersion: string;
     thumbnail?: string;
     keywords?: string[];
+    isHighEnd?: boolean;
 };
 
 export type WAMInstance = {
@@ -101,6 +102,19 @@ export async function loadWAMPlugin(
             }
         } else {
             console.warn(`[WAM] Faust compilation failed for ${pluginId}, using passthrough`);
+            node = context.createGain();
+        }
+    } else if (descriptor.isHighEnd) {
+        // High-End WAM: Needs the WebAssembly + SharedArrayBuffer bridge processor
+        try {
+            // In a real app we'd fetch the worklet URL properly, for now we assume it's registered
+            // or we're running in an environment where the AudioContext knows about 'HighEndPluginProcessor'
+            node = new AudioWorkletNode(context, 'HighEndPluginProcessor', {
+                numberOfInputs: 1,
+                numberOfOutputs: 1,
+            });
+        } catch (e) {
+            console.warn(`[WAM] HighEndPluginProcessor not registered or failed for ${pluginId}, using passthrough`, e);
             node = context.createGain();
         }
     } else {
@@ -234,6 +248,36 @@ const BUILTIN_WAM_DESCRIPTORS: WAMDescriptor[] = [
         category: 'instrument',
         sdkVersion: '2.0',
         keywords: ['sampler', 'sample'],
+    },
+    {
+        id: 'webdaw.alchemy',
+        name: 'Alchemy',
+        vendor: 'WebDAW',
+        version: '1.0',
+        category: 'instrument',
+        sdkVersion: '2.0',
+        keywords: ['synth', 'additive', 'spectral', 'virtual analog'],
+        isHighEnd: true,
+    },
+    {
+        id: 'webdaw.space-designer',
+        name: 'Space Designer',
+        vendor: 'WebDAW',
+        version: '1.0',
+        category: 'effect',
+        sdkVersion: '2.0',
+        keywords: ['reverb', 'convolution', 'impulse response'],
+        isHighEnd: true,
+    },
+    {
+        id: 'webdaw.pro-eq',
+        name: 'Pro EQ',
+        vendor: 'WebDAW',
+        version: '1.0',
+        category: 'effect',
+        sdkVersion: '2.0',
+        keywords: ['eq', 'parametric', 'mastering'],
+        isHighEnd: true,
     },
 ];
 

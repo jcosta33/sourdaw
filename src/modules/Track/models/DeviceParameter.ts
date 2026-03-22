@@ -1300,6 +1300,54 @@ export const BUILTIN_PLUGINS: PluginDescriptor[] = [
     },
 ];
 
+function createSynthVariant(id: string, name: string, overrides: Record<string, number>): PluginDescriptor {
+    const base = BUILTIN_PLUGINS.find((p) => p.id === 'builtin-synth')!;
+    return {
+        id,
+        name,
+        vendor: 'WebDAW',
+        format: 'builtin',
+        category: 'instrument',
+        hasCustomUI: false,
+        parameters: base.parameters.map((p) => {
+            const val = overrides[p.id] !== undefined ? overrides[p.id]! : p.defaultValue as number;
+            return { ...p, deviceId: id, value: val, defaultValue: val };
+        }),
+    };
+}
+
+BUILTIN_PLUGINS.push(
+    createSynthVariant('builtin-synth-mellotron', 'Mellotron', { waveform: 3, attack: 0.1, decay: 0.4, release: 0.3, filterCutoff: 2500, vibratoRate: 5.5, vibratoDepth: 20, noiseLevel: 0.05 }),
+    createSynthVariant('builtin-synth-strings', 'Analog Strings', { waveform: 2, attack: 0.3, release: 1.2, osc2Mix: 0.5, osc2Detune: 15, stereoSpread: 1 }),
+    createSynthVariant('builtin-synth-808bass', '808 Bass', { waveform: 0, attack: 0.01, decay: 1.2, sustain: 0, subOscLevel: 1.0, filterCutoff: 800, filterEnvAmount: 1200 }),
+    createSynthVariant('builtin-synth-brass', 'Classic Brass', { waveform: 2, attack: 0.05, filterEnvAmount: 3000, osc2Waveform: 3, osc2Mix: 0.3, filterCutoff: 500, filterResonance: 3, stereoSpread: 0.5 })
+);
+
+function createDrumVariant(id: string, name: string, kitIndex: number): PluginDescriptor {
+    const base = BUILTIN_PLUGINS.find((p) => p.id === 'builtin-drum-kit')!;
+    return {
+        id,
+        name,
+        vendor: 'WebDAW',
+        format: 'builtin',
+        category: 'instrument',
+        hasCustomUI: false,
+        parameters: base.parameters.map((p) => {
+            if (p.id === 'kit') {
+                return { ...p, deviceId: id, value: kitIndex, defaultValue: kitIndex };
+            }
+            return { ...p, deviceId: id };
+        }),
+    };
+}
+
+BUILTIN_PLUGINS.push(
+    createDrumVariant('builtin-drum-machine-808', '808 Drum Machine', 0),
+    createDrumVariant('builtin-drum-machine-analog', 'Analog Drum Machine', 1),
+    createDrumVariant('builtin-drum-machine-electronic', 'Electronic Drum Machine', 2),
+    createDrumVariant('builtin-drum-machine-acoustic', 'Acoustic Drum Kit', 3)
+);
+
 export function getPluginById(pluginId: string): PluginDescriptor | undefined {
     return BUILTIN_PLUGINS.find((p) => p.id === pluginId);
 }

@@ -1,0 +1,16 @@
+[package]
+name = "audio-core"
+version = "0.1.0"
+edition = "2021"
+description = "High-fidelity DSP engine for dual-target native and WebAssembly bindings."
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# DSP Ecosystem dependencies
+fundsp = "0.23"
+rustfft = "6"
+realfft = "3"
+wasm-bindgen = "0.2.114"
+js-sys = "0.3.91"

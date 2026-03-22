@@ -9,6 +9,7 @@ import {
     type SendNode,
 } from '../models/AudioEngineState';
 import { PluginHostNode } from '../models/PluginHostNode';
+import audioCoreProcessorUrl from '../worklets/audioCoreProcessor.ts?worker&url';
 
 const logger = Container.getInstance().get(Logger);
 
@@ -104,6 +105,7 @@ export function createWebAudioEngine(): AudioEngine {
     const sidechainConnections = new Map<string, GainNode>();
     const scheduledNodes: AudioScheduledSourceNode[] = [];
     const masterMeterBuffer = new Float32Array(masterAnalyser.frequencyBinCount);
+    const pendingFaustParams = new Map<string, Map<string, number>>();
 
     let workletReady = false;
 
@@ -111,6 +113,7 @@ export function createWebAudioEngine(): AudioEngine {
         try {
             await context.audioWorklet.addModule('/audio/worklets/sidechain-compressor-processor.js');
             await context.audioWorklet.addModule('/audio/worklets/native-plugin-host-processor.js');
+            await context.audioWorklet.addModule(audioCoreProcessorUrl);
             workletReady = true;
         } catch (error) {
             logger.warn(`AudioWorklet modules failed to load: ${error}`);
@@ -642,6 +645,47 @@ export function createWebAudioEngine(): AudioEngine {
             case 'builtin-limiter':
                 dn = createLimiterDevice(deviceId);
                 break;
+            case 'faust-noise-gate':
+            case 'faust-gain-utility': {
+                const loadingBypassNode = context.createGain();
+                dn = {
+                    deviceId,
+                    type: deviceType,
+                    nodes: [loadingBypassNode],
+                    inputNode: loadingBypassNode,
+                    outputNode: loadingBypassNode,
+                };
+                
+                import('./faustDeviceFactory').then(({ createFaustDevice }) => {
+                    createFaustDevice(context, deviceType).then(realDn => {
+                        if (!realDn) return;
+                        const stripToUpdate = trackStrips.get(trackId);
+                        if (!stripToUpdate) return;
+                        
+                        const idx = stripToUpdate.deviceNodes.findIndex(d => d.deviceId === deviceId);
+                        if (idx !== -1) {
+                            const builtinDn = realDn as BuiltinDeviceNode;
+                            builtinDn.deviceId = deviceId;
+                            builtinDn.type = deviceType;
+                            stripToUpdate.deviceNodes[idx] = builtinDn;
+                            rebuildStripChain(stripToUpdate);
+                            
+                            const pending = pendingFaustParams.get(deviceId);
+                            if (pending) {
+                                const worklet = builtinDn.nodes[0] as AudioWorkletNode;
+                                for (const [pId, val] of pending) {
+                                    const param = worklet.parameters.get(pId);
+                                    if (param) param.setTargetAtTime(val, context.currentTime, 0.01);
+                                }
+                                pendingFaustParams.delete(deviceId);
+                            }
+                        }
+                    });
+                }).catch(err => {
+                    console.error('[WebAudioEngine] Failed to load Faust factory:', err);
+                });
+                break;
+            }
             case 'external-plugin':
                 dn = createNativePluginDevice(deviceId, externalInstanceId ?? deviceId);
                 break;
@@ -665,6 +709,7 @@ export function createWebAudioEngine(): AudioEngine {
             n.disconnect();
         }
         strip.deviceNodes = strip.deviceNodes.filter((d) => d.deviceId !== deviceId);
+        pendingFaustParams.delete(deviceId);
         rebuildStripChain(strip);
     }
 
@@ -675,6 +720,23 @@ export function createWebAudioEngine(): AudioEngine {
         }
         const dn = strip.deviceNodes.find((d) => d.deviceId === deviceId);
         if (!dn) {
+            return;
+        }
+
+        if (dn.type.startsWith('faust-')) {
+            if (dn.nodes.length === 1 && dn.nodes[0] instanceof GainNode) {
+                let map = pendingFaustParams.get(deviceId);
+                if (!map) {
+                    map = new Map();
+                    pendingFaustParams.set(deviceId, map);
+                }
+                map.set(paramId, value);
+                return;
+            }
+            
+            const worklet = dn.nodes[0] as AudioWorkletNode;
+            const param = worklet.parameters.get(paramId);
+            if (param) param.setTargetAtTime(value, context.currentTime, 0.01);
             return;
         }
 

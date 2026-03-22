@@ -1,3 +1,9 @@
+[workspace]
+members = [
+    ".",
+    "audio-core"
+]
+
 [package]
 name = "webdaw"
 version = "0.1.0"

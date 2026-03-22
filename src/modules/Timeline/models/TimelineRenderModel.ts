@@ -1,4 +1,5 @@
 export type TimelineRenderModel = {
+    dataDirty: boolean;
     tracks: TrackRenderModel[];
     selectedTrackId: string | null;
     selectedClipId: string | null;

@@ -3,7 +3,7 @@ import { type DevicePreset, type SoundPreset } from '#/modules/Track/models/Soun
 const AUTHOR = 'WebDAW';
 
 const synth = (name: string, params: Record<string, number>): DevicePreset => ({
-    type: 'synth',
+    type: 'builtin-synth',
     name,
     parameterValues: params,
 });
@@ -1798,6 +1798,57 @@ const FACTORY_PRESETS: SoundPreset[] = [
         author: AUTHOR,
         isFactory: true,
     },
+    // ─── Pro Factory Synths (Phase 2) ────────────────────────────────────
+    {
+        id: 'factory-keys-mellotron',
+        name: 'Mellotron',
+        category: 'keys',
+        subcategory: 'digital',
+        description: 'Tape-style flute/keys emulator with heavy vibrato and noise.',
+        trackKind: 'midi',
+        devices: [
+            synth('Mellotron', { waveform: 3, attack: 0.1, decay: 0.4, release: 0.3, filterCutoff: 2500, vibratoRate: 5.5, vibratoDepth: 20, noiseLevel: 0.05 }),
+        ],
+        tags: ['mellotron', 'tape', 'vintage', 'keys'], author: AUTHOR, isFactory: true,
+    },
+    {
+        id: 'factory-strings-analog',
+        name: 'Analog Strings',
+        category: 'strings',
+        subcategory: 'analog',
+        description: 'Lush dual-oscillator string ensemble with wide stereo spread.',
+        trackKind: 'midi',
+        devices: [
+            synth('Analog Strings', { waveform: 2, attack: 0.3, release: 1.2, osc2Mix: 0.5, osc2Detune: 15, stereoSpread: 1 }),
+            reverb('Reverb', { 'rev-size': 0.8, 'rev-decay': 4.0, 'rev-mix': 0.4 }),
+        ],
+        tags: ['strings', 'analog', 'ensemble', 'lush'], author: AUTHOR, isFactory: true,
+    },
+    {
+        id: 'factory-bass-808-sub',
+        name: '808 Bass',
+        category: 'bass',
+        subcategory: 'analog',
+        description: 'Deep 808-style subwoofer bass with a tuned decay.',
+        trackKind: 'midi',
+        devices: [
+            synth('808 Bass', { waveform: 0, attack: 0.01, decay: 1.2, sustain: 0, subOscLevel: 1.0, filterCutoff: 800, filterEnvAmount: 1200 }),
+            comp('Compressor', { 'comp-threshold': -10, 'comp-ratio': 4, 'comp-attack': 5, 'comp-release': 100 }),
+        ],
+        tags: ['808', 'bass', 'sub', 'trap'], author: AUTHOR, isFactory: true,
+    },
+    {
+        id: 'factory-brass-classic',
+        name: 'Classic Brass',
+        category: 'synth',
+        subcategory: 'analog',
+        description: '80s pop synth brass with a bright, biting filter envelope attack.',
+        trackKind: 'midi',
+        devices: [
+            synth('Classic Brass', { waveform: 2, attack: 0.05, filterEnvAmount: 3000, osc2Waveform: 3, osc2Mix: 0.3, filterCutoff: 500, filterResonance: 3, stereoSpread: 0.5 }),
+        ],
+        tags: ['brass', '80s', 'synth', 'classic'], author: AUTHOR, isFactory: true,
+    },
 ];
 
 const DRUM_KIT_PRESETS: SoundPreset[] = [
@@ -1809,7 +1860,7 @@ const DRUM_KIT_PRESETS: SoundPreset[] = [
         description: 'Classic 808-style drum kit with deep kick, snappy snare, and crisp hats',
         trackKind: 'midi',
         devices: [
-            { type: 'drum-kit', name: '808 Kit', parameterValues: { kitId: 0 } },
+            { type: 'builtin-drum-kit', name: '808 Kit', parameterValues: { kit: 0 } },
             comp('Drum Comp', { 'comp-threshold': -15, 'comp-ratio': 4, 'comp-attack': 1, 'comp-release': 80 }),
         ],
         tags: ['808', 'trap', 'hip-hop', 'electronic', 'drum-kit'],
@@ -1824,7 +1875,7 @@ const DRUM_KIT_PRESETS: SoundPreset[] = [
         description: 'Warm analog-style drum kit with round kick and soft hats',
         trackKind: 'midi',
         devices: [
-            { type: 'drum-kit', name: 'Analog Kit', parameterValues: { kitId: 1 } },
+            { type: 'builtin-drum-kit', name: 'Analog Kit', parameterValues: { kit: 1 } },
             eq('Drum EQ', { 'eq-low-gain': 3, 'eq-low-freq': 80, 'eq-high-gain': 2, 'eq-high-freq': 10000 }),
         ],
         tags: ['analog', 'vintage', 'warm', 'drum-kit'],
@@ -1839,7 +1890,7 @@ const DRUM_KIT_PRESETS: SoundPreset[] = [
         description: 'Aggressive electronic drum kit with high resonance and punchy transients',
         trackKind: 'midi',
         devices: [
-            { type: 'drum-kit', name: 'Electronic Kit', parameterValues: { kitId: 2 } },
+            { type: 'builtin-drum-kit', name: 'Electronic Kit', parameterValues: { kit: 2 } },
             comp('Punch Comp', { 'comp-threshold': -10, 'comp-ratio': 6, 'comp-attack': 0.5, 'comp-release': 60 }),
             eq('Presence EQ', { 'eq-mid-gain': 3, 'eq-mid-freq': 3000, 'eq-high-gain': 4, 'eq-high-freq': 8000 }),
         ],
@@ -1855,7 +1906,7 @@ const DRUM_KIT_PRESETS: SoundPreset[] = [
         description: 'Natural-sounding synthesized acoustic drum kit with room character',
         trackKind: 'midi',
         devices: [
-            { type: 'drum-kit', name: 'Acoustic Kit', parameterValues: { kitId: 3 } },
+            { type: 'builtin-drum-kit', name: 'Acoustic Kit', parameterValues: { kit: 3 } },
             reverb('Room', { 'rev-size': 0.3, 'rev-decay': 1.2, 'rev-mix': 0.15 }),
             eq('Natural EQ', { 'eq-low-gain': 2, 'eq-low-freq': 100, 'eq-mid-gain': -1, 'eq-mid-freq': 500 }),
         ],

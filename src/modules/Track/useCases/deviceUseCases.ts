@@ -42,6 +42,11 @@ export function addDevice(trackId: string, deviceType: string): Device | null {
     updateTrack(trackId, (t) => ({ ...t, devices: [...t.devices, device] }));
 
     if (plugin) {
+        if (plugin.id.startsWith('faust-')) {
+            import('#/modules/AudioEngine/useCases/faustEngine')
+                .then(({ compileFaustDSP }) => compileFaustDSP(plugin.id))
+                .catch(console.error);
+        }
         addDeviceToStrip(trackId, device.id, plugin.id);
         for (const param of plugin.parameters) {
             updateDeviceParam(trackId, device.id, param.id, param.value);

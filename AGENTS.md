@@ -22,7 +22,7 @@ The `docs/` folder contains high-level, human-readable overviews. Skills (see be
 
 Consult these before implementing features in their domain. They contain API verdicts, library benchmarks, UX research, and design specifications.
 
-- **[gap-analysis.md](./.agents/gap-analysis.md)** — Feature parity tracker. **Check this first** before implementing any DAW feature to confirm its status (DONE / PARTIAL / MISSING).
+- **[gap-analysis.md](./.agents/gap/gap-analysis.md)** — Feature parity tracker. **Check this first** before implementing any DAW feature to confirm its status (DONE / PARTIAL / MISSING).
 - **[ai-implementation.md](./.agents/ai-implementation.md)** — Three-tier AI inference architecture (Web/Rust/Cloud), library versions, ONNX models, mistral.rs + Qwen3-8B for tool calling, Tauri streaming patterns.
 - **[ai-ux.md](./.agents/ai-ux.md)** — Producer survey data, AI feature priority ranking, UX trust patterns (transparency, control, reversibility).
 - **[automation.md](./.agents/automation.md)** — Unified automation system design (track, clip, object tiers), interaction spec, rendering requirements, implementation plan.

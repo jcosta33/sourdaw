@@ -609,6 +609,50 @@ export function registerBuiltinFaustDSP(): void {
         []
     );
 
+    // Noise Gate
+    registerFaustDSP(
+        'Noise Gate',
+        `
+        import("stdfaust.lib");
+        process = co.gate_stereo(thresh, attack, hold, release)
+        with {
+            thresh = hslider("threshold", -60, -90, 0, 0.1);
+            attack = hslider("attack", 0.001, 0.0001, 0.1, 0.0001);
+            hold = hslider("hold", 0.01, 0, 0.5, 0.001);
+            release = hslider("release", 0.1, 0.01, 1, 0.001);
+        };
+    `,
+        [
+            { address: '/Noise_Gate/threshold', label: 'Threshold', min: -90, max: 0, defaultValue: -60, step: 0.1, type: 'hslider' },
+            { address: '/Noise_Gate/attack', label: 'Attack', min: 0.0001, max: 0.1, defaultValue: 0.001, step: 0.0001, type: 'hslider' },
+            { address: '/Noise_Gate/hold', label: 'Hold', min: 0, max: 0.5, defaultValue: 0.01, step: 0.001, type: 'hslider' },
+            { address: '/Noise_Gate/release', label: 'Release', min: 0.01, max: 1, defaultValue: 0.1, step: 0.001, type: 'hslider' }
+        ]
+    );
+
+    // Gain / Utility
+    registerFaustDSP(
+        'Gain Utility',
+        `
+        import("stdfaust.lib");
+        gain = hslider("gain", 0, -36, 36, 0.1) : ba.db2linear;
+        invert = checkbox("invert_phase") : ba.if(-1, 1);
+        width = hslider("width", 1, 0, 2, 0.01);
+        // Mid-side stereo width control
+        width_ctrl(L,R) = mid + side*width, mid - side*width
+        with {
+            mid = (L+R)*0.5;
+            side = (L-R)*0.5;
+        };
+        process = _,_ : *(gain) * invert, *(gain) * invert : width_ctrl;
+    `,
+        [
+            { address: '/Gain_Utility/gain', label: 'Gain (dB)', min: -36, max: 36, defaultValue: 0, step: 0.1, type: 'hslider' },
+            { address: '/Gain_Utility/invert_phase', label: 'Invert Phase', min: 0, max: 1, defaultValue: 0, step: 1, type: 'checkbox' },
+            { address: '/Gain_Utility/width', label: 'Stereo Width', min: 0, max: 2, defaultValue: 1, step: 0.01, type: 'hslider' }
+        ]
+    );
+
     // ── Hammond B3 tonewheel organ ───────────────────────────────────────
     // 9 drawbars controlling harmonic partials at the classical Hammond
     // interval ratios (16', 8', 5⅓', 4', 2⅔', 2', 1⅗', 1⅓', 1').

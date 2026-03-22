@@ -295,7 +295,7 @@ export function getSynthParamsForTrack(trackId: string): SynthParams {
         return { ...defaultSynthParams };
     }
 
-    const synthDevice = track.devices.find((d) => d.type === 'synth' || d.type === 'builtin-synth');
+    const synthDevice = track.devices.find((d) => d.type === 'synth' || d.type.startsWith('builtin-synth'));
     if (!synthDevice) {
         return { ...defaultSynthParams };
     }

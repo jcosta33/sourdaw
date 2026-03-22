@@ -15,6 +15,7 @@ import { getTransportStoreValue } from '#/modules/Transport/useCases/transportQu
 import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
 import { completeMidiLearn, handleMidiMessage as applyMidiMappings } from '#/modules/Track/useCases/midiLearnUseCases';
 import { getSynthParamsForTrack, scheduleNote } from '#/modules/AudioEngine/useCases/builtinSynth';
+import { getDrumKitByIndex, scheduleKitNote } from '#/modules/AudioEngine/useCases/drumKitSynth';
 
 export type MidiInputInfo = {
     id: string;
@@ -200,18 +201,40 @@ function handleNoteOn(channel: number, note: number, velocity: number): void {
 
     if (!(isRecording && isArmed)) {
         const strip = engine.ensureTrackStrip(targetTrackId);
-        const synthParams = getSynthParamsForTrack(targetTrackId);
-        // For live monitoring, start a note with a long duration; it'll be stopped on note-off
-        const osc = scheduleNote(
-            engine.context,
-            strip.gainNode,
-            note,
-            engine.context.currentTime,
-            60, // very long — stopped manually on note-off
-            velocity,
-            synthParams
-        ) as OscillatorNode & { _env?: GainNode };
-        noteData.osc = osc;
+        
+        let osc: OscillatorNode | null = null;
+        const synthDevice = track?.devices.find((d) => d.type === 'builtin-drum-kit' || d.type.startsWith('builtin-drum-machine') || d.type.startsWith('builtin-synth'));
+        
+        if (synthDevice?.type === 'builtin-drum-kit' || synthDevice?.type.startsWith('builtin-drum-machine')) {
+            const kitIndex = synthDevice.parameterValues['kit'] ?? 0;
+            const kit = getDrumKitByIndex(kitIndex);
+            if (kit) {
+                osc = scheduleKitNote(
+                    engine.context,
+                    strip.gainNode,
+                    kit,
+                    note,
+                    engine.context.currentTime,
+                    60, 
+                    velocity
+                ) as OscillatorNode & { _env?: GainNode };
+            }
+        } else {
+            const synthParams = getSynthParamsForTrack(targetTrackId);
+            osc = scheduleNote(
+                engine.context,
+                strip.gainNode,
+                note,
+                engine.context.currentTime,
+                60, 
+                velocity,
+                synthParams
+            ) as OscillatorNode & { _env?: GainNode };
+        }
+        
+        if (osc) {
+            noteData.osc = osc;
+        }
     }
 }
 

@@ -104,6 +104,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
         const trackHeight = TRACK_HEIGHT_VALUES[prefs?.trackHeight ?? 'normal'];
 
         cachedModel = {
+            dataDirty: true,
             tracks,
             selectedTrackId: trackState?.selectedTrackId ?? null,
             selectedClipId: ws?.selectedClipId ?? null,
@@ -121,6 +122,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
         };
     } else {
         // Fast path: only playhead has changed (or nothing at all)
+        cachedModel!.dataDirty = false;
         cachedModel!.playheadPosition = playheadPositionRef.current;
     }
 

@@ -34,7 +34,7 @@ export function beatToSeconds(beat: number, defaultTempo: number, changes: Tempo
 }
 
 export function resolveDrumKit(devices: { type: string; parameterValues: Record<string, number> }[]): DrumKit | null {
-    const kitDevice = devices.find((d) => d.type === 'drum-kit');
+    const kitDevice = devices.find((d) => d.type === 'builtin-drum-kit' || d.type.startsWith('builtin-drum-machine'));
     if (!kitDevice) {
         return null;
     }
