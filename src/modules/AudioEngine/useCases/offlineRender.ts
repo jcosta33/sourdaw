@@ -4,6 +4,7 @@ import { audioBufferCache } from '../stores/audioBufferCache';
 import { buildDeviceChain } from './buildDeviceChain';
 import { scheduleNote, getSynthParamsForTrack } from './builtinSynth';
 import { scheduleKitNote } from './drumKitSynth';
+import { getDrumKitDefByIndex, scheduleDrumKitNote } from './drumSynthEngine';
 import { resolveClipsWithComping } from '#/modules/Track/useCases/resolveComping';
 import { beatToSeconds, resolveDrumKit, scheduleTrackAutomation } from '../repositories/offlineScheduler';
 
@@ -82,7 +83,10 @@ export async function renderOffline(durationBeats: number, sampleRate = 44100): 
                     }
 
                     const drumKit = resolveDrumKit(track.devices);
-                    const synthParams = drumKit ? null : getSynthParamsForTrack(track.id);
+                    const kitDef = getDrumKitDefByIndex(
+                        track.devices.find((d) => d.type === 'builtin-drum-kit' || d.type === 'drum-kit')?.parameterValues.kit ?? 0
+                    );
+                    const synthParams = (drumKit || kitDef) ? null : getSynthParamsForTrack(track.id);
 
                     for (let iter = 0; iter < maxIterations; iter++) {
                         const iterOffset = iter * loopLen;
@@ -108,7 +112,16 @@ export async function renderOffline(durationBeats: number, sampleRate = 44100): 
                                 continue;
                             }
 
-                            if (drumKit) {
+                            if (kitDef) {
+                                scheduleDrumKitNote(
+                                    offlineCtx,
+                                    trackGain,
+                                    kitDef,
+                                    note.pitch,
+                                    startTime,
+                                    note.velocity
+                                );
+                            } else if (drumKit) {
                                 scheduleKitNote(
                                     offlineCtx,
                                     trackGain,
@@ -272,7 +285,10 @@ export async function exportStems(durationBeats: number, sampleRate = 44100): Pr
                 }
 
                 const drumKit = resolveDrumKit(track.devices);
-                const synthParams = drumKit ? null : getSynthParamsForTrack(track.id);
+                const kitDef = getDrumKitDefByIndex(
+                    track.devices.find((d) => d.type === 'builtin-drum-kit' || d.type === 'drum-kit')?.parameterValues.kit ?? 0
+                );
+                const synthParams = (drumKit || kitDef) ? null : getSynthParamsForTrack(track.id);
 
                 for (let iter = 0; iter < maxIterations; iter++) {
                     const iterOffset = iter * loopLen;
@@ -295,7 +311,16 @@ export async function exportStems(durationBeats: number, sampleRate = 44100): Pr
                             continue;
                         }
 
-                        if (drumKit) {
+                        if (kitDef) {
+                            scheduleDrumKitNote(
+                                offlineCtx,
+                                trackGain,
+                                kitDef,
+                                note.pitch,
+                                startTime,
+                                note.velocity
+                            );
+                        } else if (drumKit) {
                             scheduleKitNote(
                                 offlineCtx,
                                 trackGain,

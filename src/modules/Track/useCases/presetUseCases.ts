@@ -11,7 +11,7 @@ const userPresetStorage = new LocalStorageStorage<SoundPreset[]>('webdaw-user-pr
 let nextUserPresetId = 1;
 let nextPresetDeviceId = 1;
 
-const INSTRUMENT_TYPES = new Set(['synth', 'builtin-synth', 'drum-kit']);
+const INSTRUMENT_TYPES = new Set(['synth', 'builtin-synth', 'drum-kit', 'builtin-drum-kit', 'builtin-drum-machine']);
 
 function readStoredPresets(): SoundPreset[] {
     return userPresetStorage.get() ?? [];

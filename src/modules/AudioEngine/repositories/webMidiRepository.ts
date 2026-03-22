@@ -16,6 +16,7 @@ import { playheadPositionRef } from '#/modules/Transport/stores/playheadPosition
 import { completeMidiLearn, handleMidiMessage as applyMidiMappings } from '#/modules/Track/useCases/midiLearnUseCases';
 import { getSynthParamsForTrack, scheduleNote } from '#/modules/AudioEngine/useCases/builtinSynth';
 import { getDrumKitByIndex, scheduleKitNote } from '#/modules/AudioEngine/useCases/drumKitSynth';
+import { getDrumKitDefByIndex, scheduleDrumKitNote } from '#/modules/AudioEngine/useCases/drumSynthEngine';
 
 export type MidiInputInfo = {
     id: string;
@@ -207,17 +208,32 @@ function handleNoteOn(channel: number, note: number, velocity: number): void {
         
         if (synthDevice?.type === 'builtin-drum-kit' || synthDevice?.type.startsWith('builtin-drum-machine')) {
             const kitIndex = synthDevice.parameterValues['kit'] ?? 0;
-            const kit = getDrumKitByIndex(kitIndex);
-            if (kit) {
-                osc = scheduleKitNote(
+            // Try the new dedicated drum synthesis engine first
+            const kitDef = getDrumKitDefByIndex(kitIndex);
+            if (kitDef) {
+                scheduleDrumKitNote(
                     engine.context,
                     strip.gainNode,
-                    kit,
+                    kitDef,
                     note,
                     engine.context.currentTime,
-                    60, 
                     velocity
-                ) as OscillatorNode & { _env?: GainNode };
+                );
+                // Drums are one-shots, no note-off needed
+            } else {
+                // Fallback to legacy synth-based kits for non-808 kits
+                const kit = getDrumKitByIndex(kitIndex);
+                if (kit) {
+                    osc = scheduleKitNote(
+                        engine.context,
+                        strip.gainNode,
+                        kit,
+                        note,
+                        engine.context.currentTime,
+                        60,
+                        velocity
+                    ) as OscillatorNode & { _env?: GainNode };
+                }
             }
         } else {
             const synthParams = getSynthParamsForTrack(targetTrackId);

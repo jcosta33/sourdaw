@@ -38,7 +38,7 @@ export function resolveDrumKit(devices: { type: string; parameterValues: Record<
     if (!kitDevice) {
         return null;
     }
-    const kitIndex = kitDevice.parameterValues.kitId ?? 0;
+    const kitIndex = kitDevice.parameterValues.kit ?? kitDevice.parameterValues.kitId ?? 0;
     return getDrumKitByIndex(kitIndex);
 }
 

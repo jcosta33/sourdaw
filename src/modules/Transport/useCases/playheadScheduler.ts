@@ -31,6 +31,7 @@ import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache'
 import { resolveClipsWithComping } from '#/modules/Track/useCases/resolveComping';
 import { scheduleNote, getSynthParamsForTrack } from '#/modules/AudioEngine/useCases/builtinSynth';
 import { getDrumKitByIndex, scheduleKitNote, type DrumKit } from '#/modules/AudioEngine/useCases/drumKitSynth';
+import { getDrumKitDefByIndex, scheduleDrumKitNote, type DrumKitDef } from '#/modules/AudioEngine/useCases/drumSynthEngine';
 import { getCompensationDelay } from '#/modules/AudioEngine/useCases/latencyCompensation';
 import { startAudioRecording, stopAudioRecording } from '#/modules/AudioEngine/useCases/audioRecorder';
 import { startRecording, stopRecording } from '#/modules/Track/useCases/recordingUseCases';
@@ -87,12 +88,21 @@ function scheduleMetronome(
 }
 
 function resolveDrumKit(devices: { type: string; parameterValues: Record<string, number> }[]): DrumKit | null {
-    const kitDevice = devices.find((d) => d.type === 'drum-kit');
+    const kitDevice = devices.find((d) => d.type === 'builtin-drum-kit' || d.type === 'drum-kit');
     if (!kitDevice) {
         return null;
     }
-    const kitIndex = kitDevice.parameterValues.kitId ?? 0;
+    const kitIndex = kitDevice.parameterValues.kit ?? kitDevice.parameterValues.kitId ?? 0;
     return getDrumKitByIndex(kitIndex);
+}
+
+function resolveDrumKitDef(devices: { type: string; parameterValues: Record<string, number> }[]): DrumKitDef | null {
+    const kitDevice = devices.find((d) => d.type === 'builtin-drum-kit' || d.type === 'drum-kit');
+    if (!kitDevice) {
+        return null;
+    }
+    const kitIndex = kitDevice.parameterValues.kit ?? kitDevice.parameterValues.kitId ?? 0;
+    return getDrumKitDefByIndex(kitIndex);
 }
 
 function scheduleFrozenTrack(
@@ -170,7 +180,8 @@ function scheduleMidiNotes(
             continue;
         }
 
-        const drumKit = resolveDrumKit(track.devices);
+        const drumKitDef = resolveDrumKitDef(track.devices);
+        const drumKit = drumKitDef ? null : resolveDrumKit(track.devices);
         const resolvedClips = resolveClipsWithComping(track.id, track.clips);
 
         for (const clip of resolvedClips) {
@@ -185,7 +196,7 @@ function scheduleMidiNotes(
                 continue;
             }
 
-            const synthParams = drumKit ? null : getSynthParamsForTrack(track.id);
+            const synthParams = (drumKit || drumKitDef) ? null : getSynthParamsForTrack(track.id);
             const compensation = getCompensationDelay(track.id);
             const clipVisualLength = clip.endBeat - clip.startBeat;
             const loopLen = clip.loopEnabled ? (clip.loopLength ?? clipVisualLength) : clipVisualLength;
@@ -219,7 +230,18 @@ function scheduleMidiNotes(
 
                         const strip = ensureTrackStrip(track.id);
 
-                        if (drumKit) {
+                        if (drumKitDef) {
+                            // New dedicated drum synthesis engine (808-quality)
+                            scheduleDrumKitNote(
+                                getAudioContext(),
+                                strip.gainNode,
+                                drumKitDef,
+                                note.pitch,
+                                time,
+                                note.velocity
+                            );
+                        } else if (drumKit) {
+                            // Legacy synth-based fallback
                             scheduleKitNote(
                                 getAudioContext(),
                                 strip.gainNode,

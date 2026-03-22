@@ -75,19 +75,18 @@ function createMidiClip(trackId: string, name: string, startBeat: number, endBea
 
 // ---------------------------------------------------------------------------
 // Demo Project 1: Kiasmos-style Ambient/IDM — "Resonance"
-// Key: D minor | BPM: 120 | ~2:40
-// Structure: Intro(0-32) → Emergence(32-64) → Groove(64-128) →
-//            Catharsis(128-192) → Breakdown(192-224) → Rise(224-288) → Outro(288-320)
+// Key: D minor | BPM: 120 | ~5:20 (640 beats)
+// Structure: Intro(0-32) → Emergence(32-64) → Build(64-128) →
+//            Groove(128-224) → Catharsis(224-320) → Breakdown(320-384) →
+//            Final Rise(384-512) → Outro(512-640)
 // ---------------------------------------------------------------------------
 
 export async function demo1_TheCompleteMix(): Promise<void> {
     const bpm = 120;
-    const TB = 320; // totalBeats
+    const TB = 640; // totalBeats — ~5:20
 
     // D minor aeolian: D E F G A Bb C
     // Chord cycle (16 beats each): Dm7 → Gm7 → Am7 → Bbmaj7
-    // Roots (octave 2): D2=38, G2=43, A2=45, Bb2=46
-    // Sub roots (octave 1): D1=26, G1=31, A1=33, Bb1=34
     const CHORDS = [
         { sub: 26, root: 38, third: 41, fifth: 45, seventh: 48, ninth: 52 }, // Dm7(9)
         { sub: 31, root: 43, third: 46, fifth: 50, seventh: 53, ninth: 55 }, // Gm7(9)
@@ -97,303 +96,493 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     const ch = (beat: number) => CHORDS[Math.floor(beat / 16) % 4]!;
     const hv = (base: number, r = 8) => Math.max(10, Math.min(127, Math.round(base + (Math.random() - 0.5) * r * 2)));
 
-    // ---- TRACKS ----
+    // ── TRACKS: 28 tracks in 6 folders ────────────────────────────────────
     const masterTrack = createTrack({ name: 'Master', kind: 'master' });
-    const kickTrack = createTrack({ name: 'Kick', kind: 'audio' });
-    const snareTrack = createTrack({ name: 'Clap', kind: 'audio' });
-    const hatCTrack = createTrack({ name: 'HH Closed', kind: 'audio' });
-    const hatOTrack = createTrack({ name: 'HH Open', kind: 'audio' });
-    const percTrack = createTrack({ name: 'Perc / Shaker', kind: 'audio' });
-    const subTrack = createTrack({ name: 'Sub Bass', kind: 'midi' });
-    const pulseTrack = createTrack({ name: 'Pulse Bass', kind: 'midi' });
-    const padTrack = createTrack({ name: 'Atmos Pad', kind: 'midi' });
-    const stringsTrack = createTrack({ name: 'Strings', kind: 'midi' });
-    const arpTrack = createTrack({ name: 'Arpeggio', kind: 'midi' });
-    const leadTrack = createTrack({ name: 'Lead', kind: 'midi' });
-    const pianoTrack = createTrack({ name: 'Piano', kind: 'midi' });
 
-    applyPreset(subTrack, 'factory-bass-sub');
-    applyPreset(pulseTrack, 'factory-bass-analog');
-    applyPreset(padTrack, 'factory-pad-warm');
-    applyPreset(stringsTrack, 'factory-pad-warm');
-    applyPreset(arpTrack, 'factory-keys-pluck');
-    applyPreset(leadTrack, 'factory-lead-classic');
-    applyPreset(pianoTrack, 'factory-keys-epiano');
+    // 🥁 Drums folder
+    const drumFolder = createTrack({ name: '🥁 Drums', kind: 'folder' });
+    const drumKitTrack = createTrack({ name: '808 Kit', kind: 'midi', parentId: drumFolder.id });
+    const percShakerTrack = createTrack({ name: 'Perc Shaker', kind: 'audio', parentId: drumFolder.id });
+    const percHitsTrack = createTrack({ name: 'Perc Hits', kind: 'audio', parentId: drumFolder.id });
 
-    // Gain / Pan — stereo field and mix balance
-    kickTrack.gain = 0.95;
-    kickTrack.pan = 0.0;
-    snareTrack.gain = 0.72;
-    snareTrack.pan = 0.04;
-    hatCTrack.gain = 0.52;
-    hatCTrack.pan = 0.22;
-    hatOTrack.gain = 0.48;
-    hatOTrack.pan = -0.2;
-    percTrack.gain = 0.42;
-    percTrack.pan = 0.38;
-    subTrack.gain = 0.92;
-    subTrack.pan = 0.0;
-    pulseTrack.gain = 0.68;
-    pulseTrack.pan = 0.08;
-    padTrack.gain = 0.78;
-    padTrack.pan = 0.14;
-    stringsTrack.gain = 0.62;
-    stringsTrack.pan = -0.18;
-    arpTrack.gain = 0.58;
-    arpTrack.pan = 0.36;
-    leadTrack.gain = 0.72;
-    leadTrack.pan = -0.1;
-    pianoTrack.gain = 0.68;
-    pianoTrack.pan = -0.26;
+    // 🎸 Bass folder
+    const bassFolder = createTrack({ name: '🎸 Bass', kind: 'folder' });
+    const subBassTrack = createTrack({ name: 'Sub Bass', kind: 'midi', parentId: bassFolder.id });
+    const bassSynthTrack = createTrack({ name: '808 Bass', kind: 'midi', parentId: bassFolder.id });
+    const pulseBassTrack = createTrack({ name: 'Pulse Bass', kind: 'midi', parentId: bassFolder.id });
 
-    // ---- DRUM BUFFERS ----
+    // 🎹 Keys folder
+    const keysFolder = createTrack({ name: '🎹 Keys', kind: 'folder' });
+    const pianoTrack = createTrack({ name: 'Piano', kind: 'midi', parentId: keysFolder.id });
+    const rhodesTrack = createTrack({ name: 'Rhodes', kind: 'midi', parentId: keysFolder.id });
+    const organTrack = createTrack({ name: 'Organ', kind: 'midi', parentId: keysFolder.id });
+
+    // 🎻 Strings & Pads folder
+    const strPadFolder = createTrack({ name: '🎻 Strings & Pads', kind: 'folder' });
+    const warmPadTrack = createTrack({ name: 'Warm Pad', kind: 'midi', parentId: strPadFolder.id });
+    const shimmerPadTrack = createTrack({ name: 'Shimmer Pad', kind: 'midi', parentId: strPadFolder.id });
+    const darkPadTrack = createTrack({ name: 'Dark Pad', kind: 'midi', parentId: strPadFolder.id });
+    const stringsSoftTrack = createTrack({ name: 'Strings Soft', kind: 'midi', parentId: strPadFolder.id });
+    const stringsBrightTrack = createTrack({ name: 'Strings Bright', kind: 'midi', parentId: strPadFolder.id });
+
+    // 🎵 Leads folder
+    const leadsFolder = createTrack({ name: '🎵 Leads & Melody', kind: 'folder' });
+    const leadClassicTrack = createTrack({ name: 'Lead Classic', kind: 'midi', parentId: leadsFolder.id });
+    const leadSoftTrack = createTrack({ name: 'Lead Soft', kind: 'midi', parentId: leadsFolder.id });
+    const brassTrack = createTrack({ name: 'Brass', kind: 'midi', parentId: leadsFolder.id });
+    const arpTrack = createTrack({ name: 'Arp Pluck', kind: 'midi', parentId: leadsFolder.id });
+
+    // 🔊 FX folder
+    const fxFolder = createTrack({ name: '🔊 FX & Mix', kind: 'folder' });
+    const riserTrack = createTrack({ name: 'Riser', kind: 'midi', parentId: fxFolder.id });
+    const noiseSweepTrack = createTrack({ name: 'Noise Sweep', kind: 'midi', parentId: fxFolder.id });
+    const reverbBusTrack = createTrack({ name: 'Reverb Bus', kind: 'bus' });
+
+    // ── PRESETS ────────────────────────────────────────────────────────────
+    // 808 Kit: type must be builtin-drum-kit for the drum engine
+    drumKitTrack.devices = [{
+        id: `dev-${crypto.randomUUID()}`, name: '808 Kit', type: 'builtin-drum-kit',
+        bypassed: false, parameterValues: { kit: 0 },
+    }];
+    applyPreset(subBassTrack, 'factory-bass-sub');
+    applyPreset(bassSynthTrack, 'factory-bass-acid');
+    applyPreset(pulseBassTrack, 'factory-bass-analog');
+    applyPreset(pianoTrack, 'factory-keys-pluck');
+    applyPreset(rhodesTrack, 'factory-keys-bell');
+    applyPreset(organTrack, 'factory-keys-organ');
+    applyPreset(warmPadTrack, 'factory-pad-warm');
+    applyPreset(shimmerPadTrack, 'factory-pad-shimmer');
+    applyPreset(darkPadTrack, 'factory-pad-dark');
+    applyPreset(stringsSoftTrack, 'factory-strings-soft');
+    applyPreset(stringsBrightTrack, 'factory-strings-bright');
+    applyPreset(leadClassicTrack, 'factory-lead-classic');
+    applyPreset(leadSoftTrack, 'factory-lead-soft');
+    applyPreset(brassTrack, 'factory-synth-brass');
+    applyPreset(arpTrack, 'factory-synth-arp');
+    applyPreset(riserTrack, 'factory-fx-riser');
+    applyPreset(noiseSweepTrack, 'factory-fx-noise-sweep');
+
+    // ── GAIN / PAN — stereo field ─────────────────────────────────────────
+    drumKitTrack.gain = 0.88; drumKitTrack.pan = 0;
+    percShakerTrack.gain = 0.38; percShakerTrack.pan = 35;
+    percHitsTrack.gain = 0.42; percHitsTrack.pan = -25;
+    subBassTrack.gain = 0.90; subBassTrack.pan = 0;
+    bassSynthTrack.gain = 0.72; bassSynthTrack.pan = 5;
+    pulseBassTrack.gain = 0.65; pulseBassTrack.pan = 8;
+    pianoTrack.gain = 0.68; pianoTrack.pan = -22;
+    rhodesTrack.gain = 0.55; rhodesTrack.pan = 18;
+    organTrack.gain = 0.45; organTrack.pan = -8;
+    warmPadTrack.gain = 0.72; warmPadTrack.pan = 12;
+    shimmerPadTrack.gain = 0.48; shimmerPadTrack.pan = -30;
+    darkPadTrack.gain = 0.55; darkPadTrack.pan = 20;
+    stringsSoftTrack.gain = 0.58; stringsSoftTrack.pan = -15;
+    stringsBrightTrack.gain = 0.52; stringsBrightTrack.pan = 25;
+    leadClassicTrack.gain = 0.72; leadClassicTrack.pan = -8;
+    leadSoftTrack.gain = 0.58; leadSoftTrack.pan = 15;
+    brassTrack.gain = 0.62; brassTrack.pan = 5;
+    arpTrack.gain = 0.55; arpTrack.pan = 32;
+    riserTrack.gain = 0.50; riserTrack.pan = 0;
+    noiseSweepTrack.gain = 0.40; noiseSweepTrack.pan = 0;
+
+    // ── AUDIO DRUM BUFFERS ────────────────────────────────────────────────
     const cx = Date.now();
-    const bK = `d1k-${cx}`,
-        bS = `d1s-${cx}`,
-        bHC = `d1hc-${cx}`;
-    const bHO = `d1ho-${cx}`,
-        bP = `d1p-${cx}`;
+    const bShaker = `d1-shaker-${cx}`, bPerc = `d1-perc-${cx}`;
     await Promise.all([
-        generateDemoDrumBuffer(bK, TB, bpm, 'kick'),
-        generateDemoDrumBuffer(bS, TB, bpm, 'snare'),
-        generateDemoDrumBuffer(bHC, TB, bpm, 'hat'),
-        generateDemoDrumBuffer(bHO, TB, bpm, 'hat'),
-        generateDemoDrumBuffer(bP, TB, bpm, 'shaker'),
+        generateDemoDrumBuffer(bShaker, TB, bpm, 'shaker'),
+        generateDemoDrumBuffer(bPerc, TB, bpm, 'hat'),
     ]);
 
-    // ---- AUDIO CLIPS (drums enter in stages) ----
-    // Kick: ghost at 32, main at 64, full force at 128, returns at 256
-    const kA = createAudioClip(kickTrack.id, 'Kick Ghost', 32, 64, bK, kickTrack.color);
-    const kB = createAudioClip(kickTrack.id, 'Kick Build', 64, 128, bK, kickTrack.color);
-    const kC = createAudioClip(kickTrack.id, 'Kick Drop', 128, 224, bK, kickTrack.color);
-    const kD = createAudioClip(kickTrack.id, 'Kick Rise', 256, TB, bK, kickTrack.color);
-    kickTrack.clips = [kA, kB, kC, kD];
+    // ── CLIPS ─────────────────────────────────────────────────────────────
+    // 808 Kit MIDI clips (multiple clips per section for arrangement control)
+    const dk1 = createMidiClip(drumKitTrack.id, 'Kit Build', 64, 128, drumKitTrack.color);
+    const dk2 = createMidiClip(drumKitTrack.id, 'Kit Groove', 128, 224, drumKitTrack.color);
+    const dk3 = createMidiClip(drumKitTrack.id, 'Kit Catharsis', 224, 320, drumKitTrack.color);
+    const dk4 = createMidiClip(drumKitTrack.id, 'Kit Rise', 384, 512, drumKitTrack.color);
+    const dk5 = createMidiClip(drumKitTrack.id, 'Kit Outro', 512, 576, drumKitTrack.color);
+    drumKitTrack.clips = [dk1, dk2, dk3, dk4, dk5];
 
-    const sA = createAudioClip(snareTrack.id, 'Clap A', 64, 192, bS, snareTrack.color);
-    const sB = createAudioClip(snareTrack.id, 'Clap B', 224, TB, bS, snareTrack.color);
-    snareTrack.clips = [sA, sB];
+    // Audio perc
+    const shakerA = createAudioClip(percShakerTrack.id, 'Shaker A', 96, 320, bShaker, percShakerTrack.color);
+    const shakerB = createAudioClip(percShakerTrack.id, 'Shaker B', 384, 576, bShaker, percShakerTrack.color);
+    percShakerTrack.clips = [shakerA, shakerB];
 
-    hatCTrack.clips = [createAudioClip(hatCTrack.id, 'HH 16th', 64, TB, bHC, hatCTrack.color)];
+    const percA = createAudioClip(percHitsTrack.id, 'Perc Hits A', 128, 320, bPerc, percHitsTrack.color);
+    const percB = createAudioClip(percHitsTrack.id, 'Perc Hits B', 384, 512, bPerc, percHitsTrack.color);
+    percHitsTrack.clips = [percA, percB];
 
-    const hA = createAudioClip(hatOTrack.id, 'HH Open A', 96, 192, bHO, hatOTrack.color);
-    const hB = createAudioClip(hatOTrack.id, 'HH Open B', 240, TB, bHO, hatOTrack.color);
-    hatOTrack.clips = [hA, hB];
+    // Bass clips
+    const subClip = createMidiClip(subBassTrack.id, 'Sub Drone', 0, TB, subBassTrack.color);
+    const bass808Clip = createMidiClip(bassSynthTrack.id, '808 Bass Line', 64, TB, bassSynthTrack.color);
+    const pulseClip = createMidiClip(pulseBassTrack.id, 'Pulse Seq', 32, TB, pulseBassTrack.color);
+    subBassTrack.clips = [subClip];
+    bassSynthTrack.clips = [bass808Clip];
+    pulseBassTrack.clips = [pulseClip];
 
-    const pA = createAudioClip(percTrack.id, 'Shaker A', 96, 192, bP, percTrack.color);
-    const pB = createAudioClip(percTrack.id, 'Shaker B', 256, TB, bP, percTrack.color);
-    percTrack.clips = [pA, pB];
+    // Keys clips
+    const pianoIntro = createMidiClip(pianoTrack.id, 'Piano Intro', 0, 64, pianoTrack.color);
+    pianoIntro.fadeInBeats = 2;
+    const pianoBD = createMidiClip(pianoTrack.id, 'Piano Breakdown', 320, 384, pianoTrack.color);
+    const pianoOutro = createMidiClip(pianoTrack.id, 'Piano Outro', 512, TB, pianoTrack.color);
+    pianoOutro.fadeOutBeats = 8;
+    pianoTrack.clips = [pianoIntro, pianoBD, pianoOutro];
 
-    // ---- MIDI CLIPS (all start at 0 — notes stored absolute) ----
-    const subClip = createMidiClip(subTrack.id, 'Sub Drone', 0, TB, subTrack.color);
-    const pulseClip = createMidiClip(pulseTrack.id, 'Pulse Seq', 0, TB, pulseTrack.color);
-    const padClip = createMidiClip(padTrack.id, 'Atmos', 0, TB, padTrack.color);
-    const strClip = createMidiClip(stringsTrack.id, 'Strings', 0, TB, stringsTrack.color);
-    const arpClip = createMidiClip(arpTrack.id, 'Arp 16th', 0, TB, arpTrack.color);
-    const leadClip = createMidiClip(leadTrack.id, 'Lead Motif', 0, TB, leadTrack.color);
-    const pianoClip = createMidiClip(pianoTrack.id, 'Piano', 0, TB, pianoTrack.color);
-    subTrack.clips = [subClip];
-    pulseTrack.clips = [pulseClip];
-    padTrack.clips = [padClip];
-    stringsTrack.clips = [strClip];
+    const rhodesClip = createMidiClip(rhodesTrack.id, 'Rhodes Chords', 64, 512, rhodesTrack.color);
+    rhodesTrack.clips = [rhodesClip];
+
+    const organClip = createMidiClip(organTrack.id, 'Organ Sustain', 128, 320, organTrack.color);
+    organTrack.clips = [organClip];
+
+    // Strings & Pads clips
+    const warmPadClip = createMidiClip(warmPadTrack.id, 'Warm Pad', 0, TB, warmPadTrack.color);
+    warmPadTrack.clips = [warmPadClip];
+
+    const shimmerClip = createMidiClip(shimmerPadTrack.id, 'Shimmer', 128, 512, shimmerPadTrack.color);
+    shimmerPadTrack.clips = [shimmerClip];
+
+    const darkClip = createMidiClip(darkPadTrack.id, 'Dark Tension', 192, 384, darkPadTrack.color);
+    darkPadTrack.clips = [darkClip];
+
+    const strSoftClip = createMidiClip(stringsSoftTrack.id, 'Strings Soft', 64, TB, stringsSoftTrack.color);
+    stringsSoftTrack.clips = [strSoftClip];
+
+    const strBrightClip = createMidiClip(stringsBrightTrack.id, 'Strings Catharsis', 224, 320, stringsBrightTrack.color);
+    stringsBrightTrack.clips = [strBrightClip];
+
+    // Lead clips
+    const leadClip = createMidiClip(leadClassicTrack.id, 'Lead Motif', 160, TB, leadClassicTrack.color);
+    leadClassicTrack.clips = [leadClip];
+
+    const leadSoftClip = createMidiClip(leadSoftTrack.id, 'Lead Answer', 224, 512, leadSoftTrack.color);
+    leadSoftTrack.clips = [leadSoftClip];
+
+    const brassClip = createMidiClip(brassTrack.id, 'Brass Fanfare', 224, 320, brassTrack.color);
+    brassTrack.clips = [brassClip];
+
+    const arpClip = createMidiClip(arpTrack.id, 'Arp 16th', 64, TB, arpTrack.color);
     arpTrack.clips = [arpClip];
-    leadTrack.clips = [leadClip];
-    pianoTrack.clips = [pianoClip];
 
-    // ---- MIDI NOTE GENERATION ----
+    // FX clips
+    const riserClip1 = createMidiClip(riserTrack.id, 'Pre-Catharsis Rise', 192, 224, riserTrack.color);
+    riserClip1.fadeInBeats = 16;
+    const riserClip2 = createMidiClip(riserTrack.id, 'Pre-Final Rise', 352, 384, riserTrack.color);
+    riserClip2.fadeInBeats = 16;
+    riserTrack.clips = [riserClip1, riserClip2];
+
+    const noiseClip1 = createMidiClip(noiseSweepTrack.id, 'Sweep Build', 192, 224, noiseSweepTrack.color);
+    const noiseClip2 = createMidiClip(noiseSweepTrack.id, 'Sweep Final', 352, 384, noiseSweepTrack.color);
+    noiseSweepTrack.clips = [noiseClip1, noiseClip2];
+
+    // ── MIDI NOTE GENERATION ──────────────────────────────────────────────
+    // 808 DRUM KIT NOTES — using GM drum map (kick=36, snare=38, clap=39, etc.)
+    const drumN: MidiNote[] = [];
+    // Sections where drums play: Build(64-128 sparse), Groove(128-224), Catharsis(224-320),
+    //                            Rise(384-512), Outro(512-576 fading)
+    for (let b = 64; b < 576; b += 0.25) {
+        if (b >= 320 && b < 384) continue; // breakdown silence
+        const pos = b % 4;
+        const inBuild = b < 128;
+        const inCatharsis = b >= 224 && b < 320;
+        const inOutro = b >= 512;
+
+        // Kick: 4-on-floor (every beat), or half-time in build/outro
+        if (pos === 0 || (!inBuild && !inOutro && pos === 2)) {
+            drumN.push(note(36, b, 0.5, hv(inBuild ? 70 : inCatharsis ? 110 : 95, 8)));
+        }
+        // Ghost kick on "and" of 3 in groove/catharsis
+        if (!inBuild && !inOutro && pos === 2.75) {
+            drumN.push(note(36, b, 0.25, hv(55, 10)));
+        }
+        // Snare/Clap on 1 and 3
+        if (!inBuild && (pos === 1 || pos === 3)) {
+            drumN.push(note(inCatharsis ? 39 : 38, b, 0.5, hv(inCatharsis ? 105 : 90, 8)));
+        }
+        // Build: snare only on 3
+        if (inBuild && pos === 3) {
+            drumN.push(note(38, b, 0.5, hv(72, 8)));
+        }
+        // Closed HH: 16ths in groove/catharsis, 8ths in build
+        if (!inBuild && pos % 0.25 === 0) {
+            const isAccent = pos % 1 === 0;
+            drumN.push(note(42, b, 0.15, hv(isAccent ? 75 : 50, 12)));
+        } else if (inBuild && pos % 0.5 === 0) {
+            drumN.push(note(42, b, 0.2, hv(62, 10)));
+        }
+        // Open HH: beats 0.5, 2.5 (offbeats) in catharsis only
+        if (inCatharsis && (pos === 0.5 || pos === 2.5)) {
+            drumN.push(note(46, b, 0.3, hv(68, 8)));
+        }
+        // Toms: fills at phrase boundaries (every 32 beats, last 2 beats)
+        if (b % 32 >= 30 && pos % 0.5 === 0 && !inOutro) {
+            const tomPitches = [43, 47, 50]; // low, mid, high
+            drumN.push(note(tomPitches[Math.floor(((b % 2) / 0.5)) % 3]!, b, 0.25, hv(85, 10)));
+        }
+        // Cowbell: sparse accents in catharsis
+        if (inCatharsis && b % 8 === 0) {
+            drumN.push(note(56, b + 0.5, 0.25, hv(60, 8)));
+        }
+    }
+
+    // SUB BASS — deep root drone every 2 beats
     const subN: MidiNote[] = [];
-    const pulseN: MidiNote[] = [];
-    const padN: MidiNote[] = [];
-    const strN: MidiNote[] = [];
-    const arpN: MidiNote[] = [];
-    const leadN: MidiNote[] = [];
-    const pianoN: MidiNote[] = [];
-
-    // --- SUB BASS: deep root drone every 2 beats ---
-    // Sections: quiet intro(0-32), emergence(32-64), groove(64-192),
-    //           soft breakdown(192-224), full rise(224-288), decay(288-320)
     for (let b = 0; b < TB; b += 2) {
         const c = ch(b);
-        const inBreakdown = b >= 192 && b < 224;
-        const velBase = b < 16 ? 40 : b < 32 ? 55 : b < 64 ? 68 : inBreakdown ? 50 : b >= 288 ? 60 : 82;
-        subN.push(note(c.sub, b, 1.95, hv(velBase, 5)));
-        // Octave upper accent on last beat of phrases
-        if (b % 16 === 14 && !inBreakdown && b >= 64 && b < 288) {
+        const inBD = b >= 320 && b < 384;
+        const vel = b < 16 ? 40 : b < 32 ? 55 : b < 64 ? 68 : inBD ? 45 : b >= 512 ? 55 : 82;
+        subN.push(note(c.sub, b, 1.95, hv(vel, 5)));
+        if (b % 16 === 14 && !inBD && b >= 64 && b < 512) {
             subN.push(note(c.sub + 12, b + 0.5, 0.4, hv(85, 10)));
         }
     }
 
-    // --- PULSE BASS: syncopated 8th-note seq, enters at beat 32 ---
-    // Pattern within 4-beat bar: hit on 0, 0.5, 1.5, 2, 3, 3.5
+    // 808 BASS — melodic acid-style line, enters at build
+    const bass808N: MidiNote[] = [];
+    for (let b = 64; b < TB; b += 4) {
+        if (b >= 320 && b < 384) continue;
+        const c = ch(b);
+        const vel = b >= 224 && b < 320 ? 95 : b >= 512 ? 60 : 78;
+        bass808N.push(note(c.root, b, 0.8, hv(vel, 6)));
+        bass808N.push(note(c.fifth, b + 1.5, 0.4, hv(vel - 10, 8)));
+        bass808N.push(note(c.root, b + 2, 0.6, hv(vel - 5, 6)));
+        bass808N.push(note(c.third, b + 3, 0.8, hv(vel - 8, 8)));
+    }
+
+    // PULSE BASS — syncopated 8th-note pattern
+    const pulseN: MidiNote[] = [];
     const pulseOffsets = [0, 0.5, 1.5, 2, 3, 3.5];
     for (let bar = 8; bar < TB / 4; bar++) {
         const b = bar * 4;
-        if (b >= 192 && b < 224) {
-            continue;
-        } // silence in breakdown
+        if (b >= 320 && b < 384) continue;
         const c = ch(b);
-        const velMult = b < 64 ? 0.75 : b >= 288 ? 0.8 : 1.0;
+        const vel = b < 64 ? 0.7 : b >= 512 ? 0.75 : 1.0;
         for (const off of pulseOffsets) {
             const bt = b + off;
             const isAcc = off === 0 || off === 2;
             const pitch = off === 0.5 || off === 1.5 ? c.fifth : c.root;
-            pulseN.push(note(pitch, bt, 0.4, hv(Math.round((isAcc ? 90 : 68) * velMult), 10)));
+            pulseN.push(note(pitch, bt, 0.4, hv(Math.round((isAcc ? 88 : 65) * vel), 10)));
         }
     }
 
-    // --- ATMOS PAD: lush wide chords starting from bar 1 ---
-    // 4-voice voicing, long sustain, upper octave +12
-    for (let b = 0; b < TB; b += 16) {
-        const c = ch(b);
-        const inBD = b >= 192 && b < 224;
-        const velBase = b < 16 ? 35 : b < 32 ? 48 : b < 64 ? 58 : inBD ? 42 : b >= 288 ? 55 : 70;
-        const dur = inBD ? 14 : 15.8;
-        // Root voicing (D3 area): root, third, fifth, seventh
-        padN.push(note(c.root + 12, b, dur, hv(velBase, 6))); // D3
-        padN.push(note(c.third + 12, b, dur, hv(velBase - 4, 6))); // F3
-        padN.push(note(c.fifth + 12, b, dur, hv(velBase - 8, 8))); // A3
-        padN.push(note(c.seventh + 12, b, dur, hv(velBase - 12, 8))); // C4
-        // High shimmer — enters at catharsis
-        if (b >= 128 && !inBD) {
-            padN.push(note(c.root + 24, b, dur, hv(velBase - 20, 10))); // D4 shimmer
-        }
-    }
-
-    // --- STRINGS: enter at groove(64), rest in breakdown, return at rise(224) ---
-    // Counter-voice: moves in contrary motion to pad
-    for (let b = 64; b < TB; b += 16) {
-        if (b >= 192 && b < 224) {
-            continue;
-        }
-        const c = ch(b);
-        const velBase = b < 128 ? 52 : b >= 256 ? 62 : 65;
-        const dur = 15.6;
-        // Voice the strings above the pad but with 5th and octave
-        strN.push(note(c.fifth + 12, b + 0.5, dur, hv(velBase, 8))); // counter-voice
-        strN.push(note(c.ninth + 12, b + 0.5, dur, hv(velBase - 6, 8))); // 9th colour
-        // 2-bar answer phrase on beat 8
-        strN.push(note(c.root + 24, b + 8, 7.5, hv(velBase - 10, 10)));
-    }
-
-    // --- ARPEGGIO: chord-tone sequence, D-minor-scale-only notes ---
-    // Each chord has a pre-defined set of pitches in octave 4-5, all in D minor
-    // Dm7(9): D4, F4, A4, C5, D5    Gm7(9): G4, Bb4, D5, F5
-    // Am7(9): A4, C5, E5, G5        Bbmaj7: Bb4, D5, F5, A5
-    const ARP_POOLS: number[][] = [
-        [62, 65, 69, 72, 74], // Dm7: D4 F4 A4 C5 D5
-        [67, 70, 74, 77], // Gm7: G4 Bb4 D5 F5
-        [69, 72, 76, 79], // Am7: A4 C5 E5 G5
-        [70, 74, 77, 81], // Bbmaj7: Bb4 D5 F5 A5
-    ];
-    // Step pattern: 0,2,1,3,2,4,3,1 (cycling through pool indices)
-    const ARP_STEPS = [0, 2, 1, 3, 2, 4, 3, 1];
-    let arpStep = 0;
-    for (let b = 64; b < 256; b += 0.25) {
-        if (b >= 192 && b < 224) {
-            continue;
-        }
-        const chordIdx = Math.floor(b / 16) % 4;
-        const pool = ARP_POOLS[chordIdx]!;
-        const pitch = pool[ARP_STEPS[arpStep % ARP_STEPS.length]! % pool.length]!;
-        const velBase = b < 128 ? 58 : 65;
-        const acc = b % 1 === 0;
-        arpN.push(note(pitch, b, 0.22, hv(acc ? velBase : velBase - 12, 8)));
-        arpStep++;
-    }
-    // Arp returns at rise (240-288)
-    arpStep = 0;
-    for (let b = 240; b < 288; b += 0.25) {
-        const chordIdx = Math.floor(b / 16) % 4;
-        const pool = ARP_POOLS[chordIdx]!;
-        const pitch = pool[ARP_STEPS[arpStep % ARP_STEPS.length]! % pool.length]!;
-        arpN.push(note(pitch, b, 0.22, hv(62, 10)));
-        arpStep++;
-    }
-
-    // --- LEAD MELODY: sparse emotional motif ---
-    // Appears in catharsis(128-192) and final rise(256-288)
-    // D minor pentatonic: D(62), F(65), G(67), A(69), C(72) in octave 4
-    const leadMotif = [
-        [0, 62, 2.0, 92],
-        [2, 65, 1.0, 80],
-        [3, 67, 0.5, 75],
-        [3.5, 69, 1.5, 88],
-        [5, 67, 1.0, 70],
-        [6, 65, 2.0, 82],
-        [8, 72, 3.0, 95],
-        [11, 69, 1.0, 78],
-        [12, 67, 0.5, 72],
-        [12.5, 65, 3.5, 85], // phrase end
-    ] as const;
-
-    // Catharsis section — lead plays in full
-    for (let phrase = 0; phrase < 4; phrase++) {
-        const base = 128 + phrase * 16;
-        for (const [off, pitch, dur, vel] of leadMotif) {
-            leadN.push(note(pitch, base + off, dur, hv(vel, 8)));
-        }
-    }
-    // Return in finale with octave variation
-    for (let phrase = 0; phrase < 2; phrase++) {
-        const base = 256 + phrase * 16;
-        const shift = phrase === 1 ? 12 : 0; // octave up on final phrase
-        for (const [off, pitch, dur, vel] of leadMotif) {
-            leadN.push(note(pitch + shift, base + off, dur, hv(vel - 5, 10)));
-        }
-    }
-
-    // --- PIANO: sparse, emotional, bookend the song ---
-    // Intro (0-32): single notes, very sparse
-    // Bridge (192-224): stripped down — piano + sub only
-    // Outro (288-320): slow farewell chords
+    // PIANO — sparse bookend, breakdown solo
+    const pianoN: MidiNote[] = [];
     const pianoSparse = (startBeat: number, c: (typeof CHORDS)[0], velBase: number) => {
         pianoN.push(note(c.root + 24, startBeat, 1.5, hv(velBase, 8)));
         pianoN.push(note(c.fifth + 24, startBeat + 2, 1.0, hv(velBase - 8, 8)));
         pianoN.push(note(c.third + 24, startBeat + 4, 2.0, hv(velBase - 4, 10)));
         pianoN.push(note(c.seventh + 24, startBeat + 7, 1.5, hv(velBase - 12, 10)));
     };
-    // Intro — very soft, single notes
-    for (let b = 2; b < 32; b += 8) {
-        pianoSparse(b, ch(b), 48);
-    }
-    // Breakdown bridge — piano solo, most exposed moment
-    for (let b = 192; b < 224; b += 8) {
-        pianoSparse(b, ch(b), 60);
-    }
-    // Outro — slower, more harmonic
-    for (let b = 288; b < TB; b += 16) {
+    for (let b = 2; b < 64; b += 8) pianoSparse(b, ch(b), 48);
+    for (let b = 320; b < 384; b += 8) pianoSparse(b, ch(b), 62);
+    for (let b = 512; b < TB; b += 16) {
         const c = ch(b);
         pianoN.push(note(c.root + 24, b, 7.5, hv(55, 6)));
         pianoN.push(note(c.third + 24, b + 0.1, 7.5, hv(48, 6)));
         pianoN.push(note(c.seventh + 24, b + 0.2, 7.5, hv(42, 6)));
     }
 
-    // ---- TRACK ASSEMBLY ----
+    // RHODES — warm chords in groove sections
+    const rhodesN: MidiNote[] = [];
+    for (let b = 64; b < 512; b += 16) {
+        if (b >= 320 && b < 384) continue;
+        const c = ch(b);
+        const vel = b < 128 ? 52 : b >= 224 ? 65 : 58;
+        rhodesN.push(note(c.root + 12, b + 0.05, 15.5, hv(vel, 6)));
+        rhodesN.push(note(c.third + 12, b + 0.08, 15.5, hv(vel - 4, 6)));
+        rhodesN.push(note(c.fifth + 12, b + 0.12, 15.5, hv(vel - 8, 8)));
+        rhodesN.push(note(c.seventh + 12, b + 0.15, 15.5, hv(vel - 12, 8)));
+    }
+
+    // ORGAN — sustained texture in mid-sections
+    const organN: MidiNote[] = [];
+    for (let b = 128; b < 320; b += 32) {
+        const c = ch(b);
+        organN.push(note(c.root + 12, b, 31, hv(42, 6)));
+        organN.push(note(c.fifth + 12, b, 31, hv(38, 6)));
+    }
+
+    // WARM PAD — evolving from intro to outro
+    const warmPadN: MidiNote[] = [];
+    for (let b = 0; b < TB; b += 16) {
+        const c = ch(b);
+        const inBD = b >= 320 && b < 384;
+        const vel = b < 16 ? 32 : b < 64 ? 48 : inBD ? 38 : b >= 512 ? 50 : 68;
+        const dur = inBD ? 14 : 15.8;
+        warmPadN.push(note(c.root + 12, b, dur, hv(vel, 6)));
+        warmPadN.push(note(c.third + 12, b, dur, hv(vel - 4, 6)));
+        warmPadN.push(note(c.fifth + 12, b, dur, hv(vel - 8, 8)));
+        warmPadN.push(note(c.seventh + 12, b, dur, hv(vel - 12, 8)));
+        if (b >= 128 && !inBD) {
+            warmPadN.push(note(c.root + 24, b, dur, hv(vel - 20, 10)));
+        }
+    }
+
+    // SHIMMER PAD — high ethereal in intense sections
+    const shimmerN: MidiNote[] = [];
+    for (let b = 128; b < 512; b += 16) {
+        if (b >= 320 && b < 384) continue;
+        const c = ch(b);
+        const vel = b >= 224 && b < 320 ? 58 : 45;
+        shimmerN.push(note(c.ninth + 24, b, 15.8, hv(vel, 10)));
+        shimmerN.push(note(c.root + 36, b, 15.8, hv(vel - 15, 10)));
+    }
+
+    // DARK PAD — tension builder before catharsis & final rise
+    const darkN: MidiNote[] = [];
+    for (let b = 192; b < 384; b += 8) {
+        const c = ch(b);
+        const vel = b < 224 ? 35 + Math.floor((b - 192) * 1.5) : b >= 320 ? 45 : 55;
+        darkN.push(note(c.root, b, 7.5, hv(vel, 8)));
+        darkN.push(note(c.fifth, b, 7.5, hv(vel - 10, 8)));
+    }
+
+    // STRINGS SOFT — counter-voice, enters at build
+    const strSoftN: MidiNote[] = [];
+    for (let b = 64; b < TB; b += 16) {
+        if (b >= 320 && b < 384) continue;
+        if (b >= 576) continue;
+        const c = ch(b);
+        const vel = b < 128 ? 48 : b >= 384 ? 58 : 62;
+        strSoftN.push(note(c.fifth + 12, b + 0.5, 15, hv(vel, 8)));
+        strSoftN.push(note(c.ninth + 12, b + 0.5, 15, hv(vel - 6, 8)));
+        strSoftN.push(note(c.root + 24, b + 8, 7, hv(vel - 10, 10)));
+    }
+
+    // STRINGS BRIGHT — catharsis power
+    const strBrightN: MidiNote[] = [];
+    for (let b = 224; b < 320; b += 8) {
+        const c = ch(b);
+        strBrightN.push(note(c.root + 24, b, 7.5, hv(72, 8)));
+        strBrightN.push(note(c.third + 24, b, 7.5, hv(68, 8)));
+        strBrightN.push(note(c.fifth + 24, b, 7.5, hv(64, 8)));
+        strBrightN.push(note(c.seventh + 24, b, 7.5, hv(60, 8)));
+    }
+
+    // LEAD CLASSIC — main melody in catharsis and finale
+    const leadMotif = [
+        [0, 62, 2.0, 92], [2, 65, 1.0, 80], [3, 67, 0.5, 75], [3.5, 69, 1.5, 88],
+        [5, 67, 1.0, 70], [6, 65, 2.0, 82], [8, 72, 3.0, 95], [11, 69, 1.0, 78],
+        [12, 67, 0.5, 72], [12.5, 65, 3.5, 85],
+    ] as const;
+    const leadN: MidiNote[] = [];
+    // First appearance: groove entry (beat 160)
+    for (let phrase = 0; phrase < 4; phrase++) {
+        const base = 160 + phrase * 16;
+        for (const [off, pitch, dur, vel] of leadMotif) {
+            leadN.push(note(pitch, base + off, dur, hv(vel, 8)));
+        }
+    }
+    // Catharsis: full lead + higher register
+    for (let phrase = 0; phrase < 6; phrase++) {
+        const base = 224 + phrase * 16;
+        const shift = phrase >= 4 ? 12 : 0;
+        for (const [off, pitch, dur, vel] of leadMotif) {
+            leadN.push(note(pitch + shift, base + off, dur, hv(vel + 5, 8)));
+        }
+    }
+    // Final rise: octave up
+    for (let phrase = 0; phrase < 4; phrase++) {
+        const base = 416 + phrase * 16;
+        for (const [off, pitch, dur, vel] of leadMotif) {
+            leadN.push(note(pitch + 12, base + off, dur, hv(vel, 10)));
+        }
+    }
+
+    // LEAD SOFT — answer phrase, fills between classic lead
+    const leadSoftN: MidiNote[] = [];
+    const answerMotif = [
+        [0, 69, 1.5, 68], [2, 72, 2.0, 75], [4, 74, 1.0, 65],
+        [5, 72, 1.5, 70], [7, 69, 2.5, 60],
+    ] as const;
+    for (let b = 232; b < 512; b += 32) {
+        if (b >= 320 && b < 384) continue;
+        for (const [off, pitch, dur, vel] of answerMotif) {
+            leadSoftN.push(note(pitch, b + off, dur, hv(vel, 10)));
+        }
+    }
+
+    // BRASS — catharsis fanfare only
+    const brassN: MidiNote[] = [];
+    for (let b = 224; b < 320; b += 16) {
+        const c = ch(b);
+        brassN.push(note(c.root + 24, b + 4, 3.5, hv(80, 8)));
+        brassN.push(note(c.fifth + 24, b + 4, 3.5, hv(75, 8)));
+        brassN.push(note(c.root + 24, b + 8, 7.5, hv(90, 10)));
+        brassN.push(note(c.third + 24, b + 8, 7.5, hv(85, 10)));
+    }
+
+    // ARP — chord-tone 16th-note sequence
+    const ARP_POOLS: number[][] = [
+        [62, 65, 69, 72, 74], [67, 70, 74, 77],
+        [69, 72, 76, 79], [70, 74, 77, 81],
+    ];
+    const ARP_STEPS = [0, 2, 1, 3, 2, 4, 3, 1];
+    const arpN: MidiNote[] = [];
+    let arpStep = 0;
+    for (let b = 64; b < TB; b += 0.25) {
+        if (b >= 320 && b < 384) continue;
+        if (b >= 576) continue;
+        const chordIdx = Math.floor(b / 16) % 4;
+        const pool = ARP_POOLS[chordIdx]!;
+        const pitch = pool[ARP_STEPS[arpStep % ARP_STEPS.length]! % pool.length]!;
+        const vel = b < 128 ? 55 : b >= 224 && b < 320 ? 68 : 60;
+        const acc = b % 1 === 0;
+        arpN.push(note(pitch, b, 0.22, hv(acc ? vel : vel - 15, 8)));
+        arpStep++;
+    }
+
+    // RISER FX — rising tone before transitions
+    const riserN: MidiNote[] = [];
+    for (let b = 192; b < 224; b += 4) {
+        riserN.push(note(50 + Math.floor((b - 192) * 0.7), b, 3.8, hv(40 + (b - 192) * 2, 5)));
+    }
+    for (let b = 352; b < 384; b += 4) {
+        riserN.push(note(50 + Math.floor((b - 352) * 0.7), b, 3.8, hv(40 + (b - 352) * 2, 5)));
+    }
+
+    // NOISE SWEEP — filtered noise texture
+    const noiseN: MidiNote[] = [];
+    for (let b = 196; b < 224; b += 2) noiseN.push(note(60, b, 1.8, hv(30 + (b - 196) * 2, 5)));
+    for (let b = 356; b < 384; b += 2) noiseN.push(note(60, b, 1.8, hv(30 + (b - 356) * 2, 5)));
+
+    // ── TRACK ASSEMBLY ────────────────────────────────────────────────────
     const tracks = [
         masterTrack,
-        kickTrack,
-        snareTrack,
-        hatCTrack,
-        hatOTrack,
-        percTrack,
-        subTrack,
-        pulseTrack,
-        padTrack,
-        stringsTrack,
-        arpTrack,
-        leadTrack,
-        pianoTrack,
+        drumFolder, drumKitTrack, percShakerTrack, percHitsTrack,
+        bassFolder, subBassTrack, bassSynthTrack, pulseBassTrack,
+        keysFolder, pianoTrack, rhodesTrack, organTrack,
+        strPadFolder, warmPadTrack, shimmerPadTrack, darkPadTrack, stringsSoftTrack, stringsBrightTrack,
+        leadsFolder, leadClassicTrack, leadSoftTrack, brassTrack, arpTrack,
+        fxFolder, riserTrack, noiseSweepTrack, reverbBusTrack,
     ];
-    trackStore.set({ tracks, selectedTrackId: padTrack.id });
+    trackStore.set({ tracks, selectedTrackId: warmPadTrack.id });
 
     midiStore.set({
         notesByClipId: {
+            [dk1.id]: drumN.filter(n => n.startBeat >= 64 && n.startBeat < 128).map(n => ({ ...n, startBeat: n.startBeat - 64 })),
+            [dk2.id]: drumN.filter(n => n.startBeat >= 128 && n.startBeat < 224).map(n => ({ ...n, startBeat: n.startBeat - 128 })),
+            [dk3.id]: drumN.filter(n => n.startBeat >= 224 && n.startBeat < 320).map(n => ({ ...n, startBeat: n.startBeat - 224 })),
+            [dk4.id]: drumN.filter(n => n.startBeat >= 384 && n.startBeat < 512).map(n => ({ ...n, startBeat: n.startBeat - 384 })),
+            [dk5.id]: drumN.filter(n => n.startBeat >= 512 && n.startBeat < 576).map(n => ({ ...n, startBeat: n.startBeat - 512 })),
             [subClip.id]: subN,
-            [pulseClip.id]: pulseN,
-            [padClip.id]: padN,
-            [strClip.id]: strN,
-            [arpClip.id]: arpN,
-            [leadClip.id]: leadN,
-            [pianoClip.id]: pianoN,
+            [bass808Clip.id]: bass808N.map(n => ({ ...n, startBeat: n.startBeat - 64 })),
+            [pulseClip.id]: pulseN.map(n => ({ ...n, startBeat: n.startBeat - 32 })),
+            [pianoIntro.id]: pianoN.filter(n => n.startBeat < 64),
+            [pianoBD.id]: pianoN.filter(n => n.startBeat >= 320 && n.startBeat < 384).map(n => ({ ...n, startBeat: n.startBeat - 320 })),
+            [pianoOutro.id]: pianoN.filter(n => n.startBeat >= 512).map(n => ({ ...n, startBeat: n.startBeat - 512 })),
+            [rhodesClip.id]: rhodesN.map(n => ({ ...n, startBeat: n.startBeat - 64 })),
+            [organClip.id]: organN.map(n => ({ ...n, startBeat: n.startBeat - 128 })),
+            [warmPadClip.id]: warmPadN,
+            [shimmerClip.id]: shimmerN.map(n => ({ ...n, startBeat: n.startBeat - 128 })),
+            [darkClip.id]: darkN.map(n => ({ ...n, startBeat: n.startBeat - 192 })),
+            [strSoftClip.id]: strSoftN.map(n => ({ ...n, startBeat: n.startBeat - 64 })),
+            [strBrightClip.id]: strBrightN.map(n => ({ ...n, startBeat: n.startBeat - 224 })),
+            [leadClip.id]: leadN.map(n => ({ ...n, startBeat: n.startBeat - 160 })),
+            [leadSoftClip.id]: leadSoftN.map(n => ({ ...n, startBeat: n.startBeat - 224 })),
+            [brassClip.id]: brassN.map(n => ({ ...n, startBeat: n.startBeat - 224 })),
+            [arpClip.id]: arpN.map(n => ({ ...n, startBeat: n.startBeat - 64 })),
+            [riserClip1.id]: riserN.filter(n => n.startBeat < 224).map(n => ({ ...n, startBeat: n.startBeat - 192 })),
+            [riserClip2.id]: riserN.filter(n => n.startBeat >= 352).map(n => ({ ...n, startBeat: n.startBeat - 352 })),
+            [noiseClip1.id]: noiseN.filter(n => n.startBeat < 224).map(n => ({ ...n, startBeat: n.startBeat - 192 })),
+            [noiseClip2.id]: noiseN.filter(n => n.startBeat >= 352).map(n => ({ ...n, startBeat: n.startBeat - 352 })),
         },
         ccByClipId: {},
         pitchBendByClipId: {},
@@ -401,150 +590,201 @@ export async function demo1_TheCompleteMix(): Promise<void> {
 
     transportStore.set({ ...defaultTransportState, tempo: bpm, loopEnd: TB, isLooping: true });
 
-    // ---- AUTOMATION ----
-    // Sub bass: swells from silence → full over intro, dips in breakdown
-    const subVolLane = createAutomationLane(subTrack.id, 'volume', 'Volume', 0, 1);
-    subVolLane.points = [
-        { beat: 0, value: 0.1, curve: 'linear', tension: 0 },
-        { beat: 16, value: 0.5, curve: 'linear', tension: 0 },
-        { beat: 32, value: 0.8, curve: 'linear', tension: 0 },
-        { beat: 64, value: 1.0, curve: 'linear', tension: 0 },
-        { beat: 192, value: 0.45, curve: 'linear', tension: 0 },
-        { beat: 224, value: 0.9, curve: 'linear', tension: 0 },
-        { beat: 288, value: 0.75, curve: 'linear', tension: 0 },
-        { beat: TB, value: 0.1, curve: 'linear', tension: 0 },
-    ];
+    // ── AUTOMATION (15+ lanes) ────────────────────────────────────────────
+    const mkLane = (trackId: string, param: string, label: string, min: number, max: number) =>
+        createAutomationLane(trackId, param, label, min, max);
 
-    // Atmospheric pad: gradual swell, sidechain-style dip at kick drops
-    const padVolLane = createAutomationLane(padTrack.id, 'volume', 'Volume', 0, 1);
-    padVolLane.points = [
-        { beat: 0, value: 0.15, curve: 'linear', tension: 0 },
-        { beat: 32, value: 0.55, curve: 'linear', tension: 0 },
-        { beat: 64, value: 0.7, curve: 'linear', tension: 0 },
-        { beat: 128, value: 0.85, curve: 'linear', tension: 0 },
-        { beat: 192, value: 0.6, curve: 'linear', tension: 0 },
-        { beat: 224, value: 0.8, curve: 'linear', tension: 0 },
-        { beat: 288, value: 0.65, curve: 'linear', tension: 0 },
+    const subVol = mkLane(subBassTrack.id, 'volume', 'Volume', 0, 1);
+    subVol.points = [
+        { beat: 0, value: 0.1, curve: 'linear', tension: 0 },
+        { beat: 32, value: 0.5, curve: 'linear', tension: 0 },
+        { beat: 64, value: 0.85, curve: 'linear', tension: 0 },
+        { beat: 128, value: 1.0, curve: 'linear', tension: 0 },
+        { beat: 320, value: 0.35, curve: 'linear', tension: 0 },
+        { beat: 384, value: 0.9, curve: 'linear', tension: 0 },
+        { beat: 512, value: 0.7, curve: 'linear', tension: 0 },
         { beat: TB, value: 0.05, curve: 'linear', tension: 0 },
     ];
 
-    // Kick volume: ghost → full
-    const kickVolLane = createAutomationLane(kickTrack.id, 'volume', 'Volume', 0, 1);
-    kickVolLane.points = [
-        { beat: 32, value: 0.3, curve: 'linear', tension: 0 },
+    const warmVol = mkLane(warmPadTrack.id, 'volume', 'Volume', 0, 1);
+    warmVol.points = [
+        { beat: 0, value: 0.12, curve: 'linear', tension: 0 },
+        { beat: 32, value: 0.45, curve: 'linear', tension: 0 },
         { beat: 64, value: 0.65, curve: 'linear', tension: 0 },
-        { beat: 128, value: 1.0, curve: 'linear', tension: 0 },
-        { beat: 224, value: 0, curve: 'linear', tension: 0 }, // hard cut at breakdown
-        { beat: 256, value: 0.8, curve: 'linear', tension: 0 },
-        { beat: 288, value: 0.9, curve: 'linear', tension: 0 },
+        { beat: 224, value: 0.88, curve: 'linear', tension: 0 },
+        { beat: 320, value: 0.5, curve: 'linear', tension: 0 },
+        { beat: 384, value: 0.75, curve: 'linear', tension: 0 },
+        { beat: 512, value: 0.6, curve: 'linear', tension: 0 },
+        { beat: TB, value: 0.03, curve: 'linear', tension: 0 },
     ];
 
-    // Strings: fade in, prominent in catharsis, fade out
-    const strVolLane = createAutomationLane(stringsTrack.id, 'volume', 'Volume', 0, 1);
-    strVolLane.points = [
-        { beat: 64, value: 0.0, curve: 'linear', tension: 0 },
-        { beat: 96, value: 0.5, curve: 'linear', tension: 0 },
-        { beat: 128, value: 0.85, curve: 'linear', tension: 0 },
-        { beat: 192, value: 0, curve: 'linear', tension: 0 },
-        { beat: 224, value: 0.6, curve: 'linear', tension: 0 },
-        { beat: 288, value: 0.4, curve: 'linear', tension: 0 },
-        { beat: TB, value: 0, curve: 'linear', tension: 0 },
+    const drumVol = mkLane(drumKitTrack.id, 'volume', 'Volume', 0, 1);
+    drumVol.points = [
+        { beat: 64, value: 0.3, curve: 'linear', tension: 0 },
+        { beat: 128, value: 0.7, curve: 'linear', tension: 0 },
+        { beat: 224, value: 1.0, curve: 'linear', tension: 0 },
+        { beat: 320, value: 0, curve: 'linear', tension: 0 },
+        { beat: 384, value: 0.75, curve: 'linear', tension: 0 },
+        { beat: 512, value: 0.85, curve: 'linear', tension: 0 },
+        { beat: 576, value: 0.15, curve: 'linear', tension: 0 },
     ];
 
-    // Arp: enters crisply, silent in breakdown
-    const arpVolLane = createAutomationLane(arpTrack.id, 'volume', 'Volume', 0, 1);
-    arpVolLane.points = [
+    const strSoftVol = mkLane(stringsSoftTrack.id, 'volume', 'Volume', 0, 1);
+    strSoftVol.points = [
         { beat: 64, value: 0, curve: 'linear', tension: 0 },
-        { beat: 80, value: 0.7, curve: 'linear', tension: 0 },
-        { beat: 128, value: 0.85, curve: 'linear', tension: 0 },
-        { beat: 192, value: 0, curve: 'linear', tension: 0 },
-        { beat: 240, value: 0.65, curve: 'linear', tension: 0 },
-        { beat: 288, value: 0.5, curve: 'linear', tension: 0 },
+        { beat: 96, value: 0.45, curve: 'linear', tension: 0 },
+        { beat: 224, value: 0.8, curve: 'linear', tension: 0 },
+        { beat: 320, value: 0, curve: 'linear', tension: 0 },
+        { beat: 384, value: 0.55, curve: 'linear', tension: 0 },
+        { beat: 512, value: 0.35, curve: 'linear', tension: 0 },
         { beat: TB, value: 0, curve: 'linear', tension: 0 },
     ];
 
-    // Lead: appears and disappears
-    const leadVolLane = createAutomationLane(leadTrack.id, 'volume', 'Volume', 0, 1);
-    leadVolLane.points = [
+    const arpVol = mkLane(arpTrack.id, 'volume', 'Volume', 0, 1);
+    arpVol.points = [
+        { beat: 64, value: 0, curve: 'linear', tension: 0 },
+        { beat: 96, value: 0.65, curve: 'linear', tension: 0 },
+        { beat: 224, value: 0.82, curve: 'linear', tension: 0 },
+        { beat: 320, value: 0, curve: 'linear', tension: 0 },
+        { beat: 400, value: 0.6, curve: 'linear', tension: 0 },
+        { beat: 512, value: 0.45, curve: 'linear', tension: 0 },
+        { beat: 576, value: 0, curve: 'linear', tension: 0 },
+    ];
+
+    const leadVol = mkLane(leadClassicTrack.id, 'volume', 'Volume', 0, 1);
+    leadVol.points = [
+        { beat: 160, value: 0, curve: 'linear', tension: 0 },
+        { beat: 168, value: 0.85, curve: 'linear', tension: 0 },
+        { beat: 320, value: 0, curve: 'linear', tension: 0 },
+        { beat: 416, value: 0.75, curve: 'linear', tension: 0 },
+        { beat: 512, value: 0.35, curve: 'linear', tension: 0 },
+        { beat: TB, value: 0, curve: 'linear', tension: 0 },
+    ];
+
+    const pianoVol = mkLane(pianoTrack.id, 'volume', 'Volume', 0, 1);
+    pianoVol.points = [
+        { beat: 0, value: 0.65, curve: 'linear', tension: 0 },
+        { beat: 64, value: 0, curve: 'linear', tension: 0 },
+        { beat: 320, value: 0.82, curve: 'linear', tension: 0 },
+        { beat: 384, value: 0.25, curve: 'linear', tension: 0 },
+        { beat: 512, value: 0.7, curve: 'linear', tension: 0 },
+        { beat: TB, value: 0, curve: 'linear', tension: 0 },
+    ];
+
+    const brassVol = mkLane(brassTrack.id, 'volume', 'Volume', 0, 1);
+    brassVol.points = [
+        { beat: 224, value: 0, curve: 'linear', tension: 0 },
+        { beat: 232, value: 0.85, curve: 'linear', tension: 0 },
+        { beat: 310, value: 0.9, curve: 'linear', tension: 0 },
+        { beat: 320, value: 0, curve: 'linear', tension: 0 },
+    ];
+
+    const darkVol = mkLane(darkPadTrack.id, 'volume', 'Volume', 0, 1);
+    darkVol.points = [
+        { beat: 192, value: 0, curve: 'linear', tension: 0 },
+        { beat: 224, value: 0.65, curve: 'linear', tension: 0 },
+        { beat: 280, value: 0.8, curve: 'linear', tension: 0 },
+        { beat: 320, value: 0.55, curve: 'linear', tension: 0 },
+        { beat: 384, value: 0, curve: 'linear', tension: 0 },
+    ];
+
+    const rhodesVol = mkLane(rhodesTrack.id, 'volume', 'Volume', 0, 1);
+    rhodesVol.points = [
+        { beat: 64, value: 0, curve: 'linear', tension: 0 },
+        { beat: 96, value: 0.55, curve: 'linear', tension: 0 },
+        { beat: 224, value: 0.7, curve: 'linear', tension: 0 },
+        { beat: 320, value: 0, curve: 'linear', tension: 0 },
+        { beat: 384, value: 0.5, curve: 'linear', tension: 0 },
+        { beat: 512, value: 0.3, curve: 'linear', tension: 0 },
+    ];
+
+    const shimmerVol = mkLane(shimmerPadTrack.id, 'volume', 'Volume', 0, 1);
+    shimmerVol.points = [
         { beat: 128, value: 0, curve: 'linear', tension: 0 },
-        { beat: 132, value: 0.9, curve: 'linear', tension: 0 },
-        { beat: 192, value: 0, curve: 'linear', tension: 0 },
-        { beat: 256, value: 0.75, curve: 'linear', tension: 0 },
-        { beat: 288, value: 0.4, curve: 'linear', tension: 0 },
-        { beat: TB, value: 0, curve: 'linear', tension: 0 },
+        { beat: 160, value: 0.5, curve: 'linear', tension: 0 },
+        { beat: 224, value: 0.7, curve: 'linear', tension: 0 },
+        { beat: 320, value: 0, curve: 'linear', tension: 0 },
+        { beat: 384, value: 0.45, curve: 'linear', tension: 0 },
+        { beat: 512, value: 0, curve: 'linear', tension: 0 },
     ];
 
-    // Piano: very soft bookend, solo in breakdown
-    const pianoVolLane = createAutomationLane(pianoTrack.id, 'volume', 'Volume', 0, 1);
-    pianoVolLane.points = [
-        { beat: 0, value: 0.7, curve: 'linear', tension: 0 },
-        { beat: 32, value: 0, curve: 'linear', tension: 0 }, // fades as groove enters
-        { beat: 192, value: 0.85, curve: 'linear', tension: 0 }, // solo in breakdown
-        { beat: 224, value: 0.3, curve: 'linear', tension: 0 },
-        { beat: 288, value: 0.7, curve: 'linear', tension: 0 }, // returns in outro
-        { beat: TB, value: 0, curve: 'linear', tension: 0 },
-    ];
-
-    // Hat panning sweep — slow wide auto-pan
-    const hatPanLane = createAutomationLane(hatCTrack.id, 'pan', 'Pan', -1, 1);
-    hatPanLane.points = [];
+    const hatPan = mkLane(drumKitTrack.id, 'pan', 'Pan', -1, 1);
+    hatPan.points = [];
     for (let b = 64; b <= TB; b += 8) {
-        hatPanLane.points.push({ beat: b, value: (b / 8) % 2 === 0 ? 0.28 : -0.28, curve: 'linear', tension: 0 });
+        hatPan.points.push({ beat: b, value: (b / 8) % 2 === 0 ? 0.22 : -0.22, curve: 'linear', tension: 0 });
     }
 
-    // Pulse bass filter sweep — filter opens up over the song
-    const pulseFilterLane = createAutomationLane(pulseTrack.id, 'filterCutoff', 'Filter Cutoff', 20, 20000);
-    pulseFilterLane.points = [
+    const pulseFilter = mkLane(pulseBassTrack.id, 'filterCutoff', 'Filter', 20, 20000);
+    pulseFilter.points = [
         { beat: 32, value: 180, curve: 'linear', tension: 0 },
         { beat: 64, value: 500, curve: 'linear', tension: 0 },
         { beat: 128, value: 2400, curve: 'linear', tension: 0 },
-        { beat: 160, value: 4800, curve: 'linear', tension: 0 },
-        { beat: 192, value: 300, curve: 'linear', tension: 0 },
-        { beat: 224, value: 1200, curve: 'linear', tension: 0 },
-        { beat: 256, value: 6000, curve: 'linear', tension: 0 },
-        { beat: 288, value: 2000, curve: 'linear', tension: 0 },
-        { beat: TB, value: 200, curve: 'linear', tension: 0 },
+        { beat: 224, value: 5200, curve: 'linear', tension: 0 },
+        { beat: 320, value: 250, curve: 'linear', tension: 0 },
+        { beat: 384, value: 1800, curve: 'linear', tension: 0 },
+        { beat: 448, value: 6500, curve: 'linear', tension: 0 },
+        { beat: 512, value: 2200, curve: 'linear', tension: 0 },
+        { beat: TB, value: 150, curve: 'linear', tension: 0 },
+    ];
+
+    const leadSoftVol = mkLane(leadSoftTrack.id, 'volume', 'Volume', 0, 1);
+    leadSoftVol.points = [
+        { beat: 224, value: 0, curve: 'linear', tension: 0 },
+        { beat: 240, value: 0.6, curve: 'linear', tension: 0 },
+        { beat: 320, value: 0, curve: 'linear', tension: 0 },
+        { beat: 384, value: 0.5, curve: 'linear', tension: 0 },
+        { beat: 512, value: 0, curve: 'linear', tension: 0 },
+    ];
+
+    const strBrightVol = mkLane(stringsBrightTrack.id, 'volume', 'Volume', 0, 1);
+    strBrightVol.points = [
+        { beat: 224, value: 0, curve: 'linear', tension: 0 },
+        { beat: 240, value: 0.8, curve: 'linear', tension: 0 },
+        { beat: 310, value: 0.9, curve: 'linear', tension: 0 },
+        { beat: 320, value: 0, curve: 'linear', tension: 0 },
     ];
 
     automationStore.set({
         lanes: [
-            subVolLane,
-            padVolLane,
-            kickVolLane,
-            strVolLane,
-            arpVolLane,
-            leadVolLane,
-            pianoVolLane,
-            hatPanLane,
-            pulseFilterLane,
+            subVol, warmVol, drumVol, strSoftVol, arpVol, leadVol,
+            pianoVol, brassVol, darkVol, rhodesVol, shimmerVol,
+            hatPan, pulseFilter, leadSoftVol, strBrightVol,
         ],
     });
 
-    // ---- MARKERS ----
+    // ── MARKERS (12 markers, distinct from section boundaries) ────────────
+    // ── SECTIONS (8 sections) ─────────────────────────────────────────────
     markerStore.set({
         markers: [
             { id: crypto.randomUUID(), beat: 0, name: 'Intro', color: 'oklch(0.38 0.08 270)' },
-            { id: crypto.randomUUID(), beat: 32, name: 'Emergence', color: 'oklch(0.38 0.08 300)' },
-            { id: crypto.randomUUID(), beat: 64, name: 'Groove', color: 'oklch(0.40 0.08 250)' },
-            { id: crypto.randomUUID(), beat: 128, name: 'Catharsis', color: 'oklch(0.38 0.09 20)' },
-            { id: crypto.randomUUID(), beat: 192, name: 'Breakdown', color: 'oklch(0.40 0.08 70)' },
-            { id: crypto.randomUUID(), beat: 224, name: 'Rise', color: 'oklch(0.40 0.08 150)' },
-            { id: crypto.randomUUID(), beat: 288, name: 'Outro', color: 'oklch(0.38 0.08 270)' },
+            { id: crypto.randomUUID(), beat: 16, name: 'Pad Entry', color: 'oklch(0.40 0.07 200)' },
+            { id: crypto.randomUUID(), beat: 32, name: 'Sub Enters', color: 'oklch(0.38 0.08 300)' },
+            { id: crypto.randomUUID(), beat: 64, name: 'Drums In', color: 'oklch(0.40 0.08 250)' },
+            { id: crypto.randomUUID(), beat: 128, name: 'Full Groove', color: 'oklch(0.40 0.08 150)' },
+            { id: crypto.randomUUID(), beat: 160, name: 'Lead Entry', color: 'oklch(0.38 0.09 20)' },
+            { id: crypto.randomUUID(), beat: 224, name: 'DROP', color: 'oklch(0.38 0.09 0)' },
+            { id: crypto.randomUUID(), beat: 288, name: 'Peak', color: 'oklch(0.38 0.08 340)' },
+            { id: crypto.randomUUID(), beat: 320, name: 'Breakdown', color: 'oklch(0.40 0.08 70)' },
+            { id: crypto.randomUUID(), beat: 384, name: 'Rebuild', color: 'oklch(0.40 0.08 150)' },
+            { id: crypto.randomUUID(), beat: 448, name: 'Lead Returns', color: 'oklch(0.39 0.08 45)' },
+            { id: crypto.randomUUID(), beat: 512, name: 'Farewell', color: 'oklch(0.38 0.08 270)' },
         ],
         sections: [
             { id: crypto.randomUUID(), startBeat: 0, endBeat: 32, name: 'Intro', color: 'oklch(0.38 0.08 270)' },
             { id: crypto.randomUUID(), startBeat: 32, endBeat: 64, name: 'Emergence', color: 'oklch(0.38 0.08 300)' },
-            { id: crypto.randomUUID(), startBeat: 64, endBeat: 128, name: 'Groove', color: 'oklch(0.40 0.08 250)' },
-            { id: crypto.randomUUID(), startBeat: 128, endBeat: 192, name: 'Catharsis', color: 'oklch(0.38 0.09 20)' },
-            { id: crypto.randomUUID(), startBeat: 192, endBeat: 224, name: 'Breakdown', color: 'oklch(0.40 0.08 70)' },
-            { id: crypto.randomUUID(), startBeat: 224, endBeat: 288, name: 'Rise', color: 'oklch(0.40 0.08 150)' },
-            { id: crypto.randomUUID(), startBeat: 288, endBeat: TB, name: 'Outro', color: 'oklch(0.38 0.08 270)' },
+            { id: crypto.randomUUID(), startBeat: 64, endBeat: 128, name: 'Build', color: 'oklch(0.40 0.08 250)' },
+            { id: crypto.randomUUID(), startBeat: 128, endBeat: 224, name: 'Groove', color: 'oklch(0.40 0.08 150)' },
+            { id: crypto.randomUUID(), startBeat: 224, endBeat: 320, name: 'Catharsis', color: 'oklch(0.38 0.09 20)' },
+            { id: crypto.randomUUID(), startBeat: 320, endBeat: 384, name: 'Breakdown', color: 'oklch(0.40 0.08 70)' },
+            { id: crypto.randomUUID(), startBeat: 384, endBeat: 512, name: 'Final Rise', color: 'oklch(0.40 0.08 150)' },
+            { id: crypto.randomUUID(), startBeat: 512, endBeat: TB, name: 'Outro', color: 'oklch(0.38 0.08 270)' },
         ],
     });
 
     syncArrangement(tracks);
     projectStore.set({ name: 'Resonance (Demo)', createdAt: Date.now(), updatedAt: Date.now(), dirty: false });
 }
+
 
 // ---------------------------------------------------------------------------
 // Demo Project 2: Electronic Beat
