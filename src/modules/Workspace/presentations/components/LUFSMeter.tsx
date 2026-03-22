@@ -62,7 +62,7 @@ export const LUFSMeter = ({ height = 160, width = 48, target = -14 }: LUFSMeterP
             ctx.fillRect(0, 0, width, height);
 
             // Scale marks
-            ctx.fillStyle = '#444';
+            ctx.fillStyle = '#3a3a3a';
             ctx.font = '8px monospace';
             ctx.textAlign = 'right';
             for (let db = 0; db >= minLUFS; db -= 6) {
@@ -73,7 +73,7 @@ export const LUFSMeter = ({ height = 160, width = 48, target = -14 }: LUFSMeterP
 
             // Target line
             const targetY = lufsToY(target);
-            ctx.strokeStyle = '#3b82f6';
+            ctx.strokeStyle = '#5a80a8';
             ctx.lineWidth = 1;
             ctx.setLineDash([3, 3]);
             ctx.beginPath();
@@ -85,17 +85,17 @@ export const LUFSMeter = ({ height = 160, width = 48, target = -14 }: LUFSMeterP
             // Momentary bar
             const barW = 10;
             const momY = lufsToY(mom);
-            ctx.fillStyle = mom > -3 ? '#ef4444' : mom > -14 ? '#eab308' : '#22c55e';
+            ctx.fillStyle = mom > -3 ? '#b05050' : mom > -14 ? '#b09040' : '#4a9060';
             ctx.fillRect(2, momY, barW, height - momY);
 
             // Short-term bar
             const stY = lufsToY(st);
-            ctx.fillStyle = st > -3 ? '#ef444499' : st > -14 ? '#eab30899' : '#22c55e99';
+            ctx.fillStyle = st > -3 ? '#b0505099' : st > -14 ? '#b0904099' : '#4a906099';
             ctx.fillRect(14, stY, barW, height - stY);
 
             // Integrated bar
             const integY = lufsToY(integ);
-            ctx.fillStyle = '#3b82f6';
+            ctx.fillStyle = '#5a80a8';
             ctx.fillRect(26, integY, barW, height - integY);
 
             // Labels

@@ -124,7 +124,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
         canvas.style.height = `${height}px`;
         ctx.scale(dpr, dpr);
 
-        ctx.fillStyle = '#1a1a2e';
+        ctx.fillStyle = '#141418';
         ctx.fillRect(0, 0, width, height);
 
         const midY = height / 2;
@@ -139,7 +139,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
         const hasRealData = peaks.some((v) => v > 0);
 
         if (hasRealData) {
-            ctx.fillStyle = 'rgba(120, 200, 160, 0.6)';
+            ctx.fillStyle = 'rgba(90, 150, 115, 0.5)';
             ctx.beginPath();
             ctx.moveTo(0, midY);
             for (let i = 0; i < peaks.length; i++) {
@@ -181,7 +181,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                 if (x < 0 || x > width) {
                     continue;
                 }
-                ctx.strokeStyle = 'rgba(255, 160, 40, 0.85)';
+                ctx.strokeStyle = 'rgba(176, 128, 48, 0.75)';
                 ctx.lineWidth = 2;
                 ctx.setLineDash([4, 3]);
                 ctx.beginPath();
@@ -191,7 +191,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                 ctx.setLineDash([]);
                 ctx.lineWidth = 1;
 
-                ctx.fillStyle = 'rgba(255, 160, 40, 0.9)';
+                ctx.fillStyle = 'rgba(176, 128, 48, 0.85)';
                 ctx.beginPath();
                 ctx.moveTo(x - 5, 0);
                 ctx.lineTo(x + 5, 0);
@@ -200,7 +200,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                 ctx.fill();
 
                 ctx.font = '9px system-ui';
-                ctx.fillStyle = 'rgba(255, 160, 40, 0.8)';
+                ctx.fillStyle = 'rgba(176, 128, 48, 0.7)';
                 ctx.textAlign = 'center';
                 ctx.fillText(marker.originalBeat.toFixed(1), x, height - 4);
             }

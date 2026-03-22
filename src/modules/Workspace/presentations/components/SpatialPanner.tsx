@@ -20,7 +20,7 @@ export const SpatialPanner = ({
     azimuth: initialAzimuth = 0,
     distance: initialDistance = 0.5,
     onChange,
-    color = '#3b82f6',
+    color = '#5a80a8',
 }: SpatialPannerProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [azimuth, setAzimuth] = useState(initialAzimuth);
@@ -67,7 +67,7 @@ export const SpatialPanner = ({
         ctx.stroke();
 
         // Labels
-        ctx.fillStyle = '#444';
+        ctx.fillStyle = '#3a3a3a';
         ctx.font = '7px monospace';
         ctx.textAlign = 'center';
         ctx.fillText('F', cx, cy - maxRadius - 2);

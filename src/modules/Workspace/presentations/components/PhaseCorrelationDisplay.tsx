@@ -65,7 +65,7 @@ export const PhaseCorrelationDisplay = ({ width = 160, height = 24 }: PhaseCorre
             ctx.fillRect(2, barY, width - 4, barH);
 
             // Center line
-            ctx.strokeStyle = '#444';
+            ctx.strokeStyle = '#3a3a3a';
             ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.moveTo(midX, barY);
@@ -76,10 +76,10 @@ export const PhaseCorrelationDisplay = ({ width = 160, height = 24 }: PhaseCorre
             const indicatorX = midX + correlation * (midX - 4);
             const color =
                 correlation > 0.5
-                    ? '#22c55e' // Good mono compatibility
+                    ? '#4a9060' // Good mono compatibility
                     : correlation > 0
-                      ? '#eab308' // Moderate
-                      : '#ef4444'; // Phase issues
+                      ? '#b09040' // Moderate
+                      : '#b05050'; // Phase issues
 
             // Bar from center to correlation value
             const barStart = Math.min(midX, indicatorX);

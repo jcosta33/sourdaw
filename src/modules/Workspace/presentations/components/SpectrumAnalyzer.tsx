@@ -17,7 +17,7 @@ export const SpectrumAnalyzer = ({
     trackId,
     width = 300,
     height = 120,
-    color = '#3b82f6',
+    color = '#5a80a8',
 }: SpectrumAnalyzerProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -68,7 +68,7 @@ export const SpectrumAnalyzer = ({
 
             // Grid lines (dB)
             const dbMarks = [-60, -48, -36, -24, -12, 0];
-            ctx.fillStyle = '#333';
+            ctx.fillStyle = '#2a2a2a';
             ctx.font = '7px monospace';
             for (const db of dbMarks) {
                 const y = dbToY(db, height);
@@ -80,7 +80,7 @@ export const SpectrumAnalyzer = ({
             }
 
             // Frequency labels
-            ctx.fillStyle = '#444';
+            ctx.fillStyle = '#3a3a3a';
             ctx.textAlign = 'center';
             for (const f of [100, 1000, 10000]) {
                 const x = freqToX(f, width, sampleRate);

@@ -71,7 +71,7 @@ export const drawClip = (
 
     if (isGhost) {
         // Ghost clips get a dashed purple border
-        ctx.strokeStyle = 'rgba(168, 85, 247, 0.8)';
+        ctx.strokeStyle = 'rgba(128, 104, 152, 0.7)';
         ctx.lineWidth = 1.5;
         ctx.setLineDash([4, 3]);
         ctx.beginPath();
@@ -328,7 +328,7 @@ const drawWaveformPeaks = (
     const amplitude = (trackHeight - padding * 2) * 0.35;
     const binWidth = w / numBins;
 
-    ctx.fillStyle = 'rgba(120, 200, 160, 0.5)';
+    ctx.fillStyle = 'rgba(100, 160, 120, 0.45)';
     ctx.beginPath();
     ctx.moveTo(x + padding, midY);
     for (let i = 0; i < numBins; i++) {

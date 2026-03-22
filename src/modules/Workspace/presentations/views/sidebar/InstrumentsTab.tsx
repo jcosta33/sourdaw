@@ -312,7 +312,7 @@ export const InstrumentsTab = ({
                         <select
                             value={saveFormCategory}
                             onChange={(e) => setSaveFormCategory(e.target.value as SoundPresetCategory)}
-                            className="h-6 flex-1 rounded border border-border/50 bg-surface-base text-[10px] text-foreground px-1"
+                            className="h-6 flex-1 rounded border border-border-soft bg-surface-inset shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)] text-[10px] text-foreground px-1"
                         >
                             {PRESET_CATEGORIES.map((cat) => (
                                 <option key={cat} value={cat}>

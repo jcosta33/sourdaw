@@ -65,7 +65,7 @@ export const SamplesTab = ({
                         .map((sample) => (
                             <div
                                 key={sample.id}
-                                className="flex items-center gap-1 rounded px-2 py-1 hover:bg-accent/50 cursor-grab active:cursor-grabbing group"
+                                className="flex items-center gap-1 rounded px-2 py-1 hover:bg-white/[0.06] cursor-grab active:cursor-grabbing group"
                                 draggable
                                 onDragStart={(e) => {
                                     const data = {

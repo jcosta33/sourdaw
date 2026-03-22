@@ -33,29 +33,29 @@ export const Spectrogram = ({ trackId, width = 300, height = 100 }: SpectrogramP
             const t = i / 255;
             let r: number, g: number, b: number;
             if (t < 0.25) {
-                // Dark blue → blue
+                // Dark slate → slate blue
                 const s = t / 0.25;
                 r = 0;
                 g = 0;
-                b = Math.round(40 + s * 180);
+                b = Math.round(30 + s * 120);
             } else if (t < 0.5) {
-                // Blue → cyan
+                // Slate blue → muted teal
                 const s = (t - 0.25) / 0.25;
                 r = 0;
-                g = Math.round(s * 220);
-                b = 220;
+                g = Math.round(s * 150);
+                b = Math.round(150 - s * 20);
             } else if (t < 0.75) {
-                // Cyan → yellow
+                // Muted teal → dusty amber
                 const s = (t - 0.5) / 0.25;
-                r = Math.round(s * 255);
-                g = 220;
-                b = Math.round(220 * (1 - s));
+                r = Math.round(s * 180);
+                g = Math.round(150 + s * 10);
+                b = Math.round(130 * (1 - s));
             } else {
-                // Yellow → white
+                // Dusty amber → warm gray
                 const s = (t - 0.75) / 0.25;
-                r = 255;
-                g = Math.round(220 + s * 35);
-                b = Math.round(s * 255);
+                r = Math.round(180 + s * 40);
+                g = Math.round(160 + s * 50);
+                b = Math.round(s * 180);
             }
             colorLUT.push(`rgb(${r},${g},${b})`);
         }
@@ -98,7 +98,7 @@ export const Spectrogram = ({ trackId, width = 300, height = 100 }: SpectrogramP
 
             // Draw cursor line
             const nextCol = (col + 1) % width;
-            ctx.fillStyle = '#fff';
+            ctx.fillStyle = '#ccc';
             ctx.fillRect(nextCol, 0, 1, height);
 
             columnRef.current++;

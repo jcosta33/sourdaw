@@ -51,10 +51,10 @@ export const BeatRulerBar = (): React.ReactElement => {
             if (isLooping && loopEnd > loopStart) {
                 const lx = loopStart * pixelsPerBeat - scrollX;
                 const lw = (loopEnd - loopStart) * pixelsPerBeat;
-                ctx.fillStyle = 'rgba(99, 102, 241, 0.28)';
+                ctx.fillStyle = 'rgba(80, 88, 136, 0.25)';
                 ctx.fillRect(lx, 0, lw, h);
                 // Loop region handles
-                ctx.fillStyle = 'rgba(99, 102, 241, 0.85)';
+                ctx.fillStyle = 'rgba(80, 88, 136, 0.75)';
                 ctx.fillRect(lx, 0, 2, h);
                 ctx.fillRect(lx + lw - 2, 0, 2, h);
             }

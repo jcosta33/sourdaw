@@ -33,39 +33,39 @@
     --color-text-tertiary: #737373;
     --color-text-disabled: #404040;
 
-    /* Accents (Muted pastels for dark contexts) */
-    --color-accent-cyan: #67e8f9;
-    --color-accent-mint: #6ee7b7;
-    --color-accent-lavender: #c4b5fd;
-    --color-accent-peach: #fdba74;
-    --color-accent-amber: #fcd34d;
-    --color-accent-red: #fca5a5;
+    /* Accents (Dusty pastels — muted industrial machinery palette) */
+    --color-accent-cyan: #7fb8c4;
+    --color-accent-mint: #7db8a0;
+    --color-accent-lavender: #a89bc4;
+    --color-accent-peach: #c9a07a;
+    --color-accent-amber: #c4aa5f;
+    --color-accent-red: #c49090;
 
-    /* UI States (spec-aligned DAW conventions) */
+    /* UI States (muted DAW conventions — readable but not screaming) */
     --color-state-success: var(--color-accent-mint);
     --color-state-warning: var(--color-accent-amber);
     --color-state-danger: var(--color-accent-red);
-    --color-state-record: #FF4032;
-    --color-state-clip: #ff1744;
-    --color-state-solo: #F7A738;
-    --color-state-mute: #FF6446;
-    --color-state-play: #00FF81;
+    --color-state-record: #c45040;
+    --color-state-clip: #c43850;
+    --color-state-solo: #c49840;
+    --color-state-mute: #c46848;
+    --color-state-play: #50b878;
     --color-state-bypass: var(--color-text-disabled);
     --color-state-linked: var(--color-accent-cyan);
-    --color-state-selection: #4A90D9;
+    --color-state-selection: #5a88b4;
 
     /* LED tinted off-states (colored dark, not flat gray) */
-    --color-led-off-green: #0A2A0A;
-    --color-led-off-amber: #2A1E0A;
-    --color-led-off-red: #2A0A0A;
-    --color-led-off-cyan: #0A1E2A;
+    --color-led-off-green: #0d1e0d;
+    --color-led-off-amber: #1e180d;
+    --color-led-off-red: #1e0d0d;
+    --color-led-off-cyan: #0d181e;
 
-    /* Meter Displays */
-    --color-meter-safe: #34c759;
-    --color-meter-hot: #ffcc00;
-    --color-meter-clip: #ff3b30;
-    --color-meter-grid: rgba(255, 255, 255, 0.1);
-    --color-meter-peakHold: rgba(255, 255, 255, 0.5);
+    /* Meter Displays (muted industrial — still reads clearly) */
+    --color-meter-safe: #4a9960;
+    --color-meter-hot: #b8993a;
+    --color-meter-clip: #b84a40;
+    --color-meter-grid: rgba(255, 255, 255, 0.08);
+    --color-meter-peakHold: rgba(255, 255, 255, 0.40);
 
     /* Interaction Metrics */
     --radius-micro: 2px;
@@ -129,29 +129,29 @@
     --color-surface-overlay: var(--color-bg-overlay);
     --color-surface-dialog: var(--color-bg-dialog);
 
-    /* Tracks Specifics */
-    --color-track-audio: oklch(0.65 0.15 145);
-    --color-track-midi: oklch(0.65 0.15 260);
-    --color-track-bus: oklch(0.65 0.15 50);
-    --color-track-master: oklch(0.65 0.15 0);
+    /* Tracks Specifics (desaturated) */
+    --color-track-audio: oklch(0.60 0.08 145);
+    --color-track-midi: oklch(0.60 0.08 260);
+    --color-track-bus: oklch(0.60 0.08 50);
+    --color-track-master: oklch(0.60 0.08 0);
 
-    /* 16-color Track Palette */
-    --color-palette-red: #DC4848;
-    --color-palette-coral: #FF5F80;
-    --color-palette-orange: #D66B18;
-    --color-palette-amber: #E0AA2A;
-    --color-palette-yellow: #FFEC75;
-    --color-palette-yellow-green: #AFB95B;
-    --color-palette-green: #52BA46;
-    --color-palette-lime: #81D24C;
-    --color-palette-teal: #4CB8B8;
-    --color-palette-sky: #6BAACE;
-    --color-palette-steel: #4881AA;
-    --color-palette-blue: #3B5ECC;
-    --color-palette-purple: #954EB2;
-    --color-palette-sage: #B8CE93;
-    --color-palette-gray: #A0A0A0;
-    --color-palette-light-gray: #E7E6E6;
+    /* 16-color Track Palette (dusty industrial — desaturated 30-40%) */
+    --color-palette-red: #b05050;
+    --color-palette-coral: #c06070;
+    --color-palette-orange: #a86838;
+    --color-palette-amber: #b09040;
+    --color-palette-yellow: #c8b860;
+    --color-palette-yellow-green: #8a9450;
+    --color-palette-green: #4a8a42;
+    --color-palette-lime: #6a9844;
+    --color-palette-teal: #4a9090;
+    --color-palette-sky: #5a8aaa;
+    --color-palette-steel: #4a7090;
+    --color-palette-blue: #4a60a0;
+    --color-palette-purple: #7a4a90;
+    --color-palette-sage: #90a878;
+    --color-palette-gray: #888888;
+    --color-palette-light-gray: #c0bebe;
 
     /* Rim-lighting edges (consistent top-left light model) */
     --color-light-edge: rgba(255, 255, 255, 0.08);
@@ -194,6 +194,78 @@
     --color-border: var(--color-border-soft);
     --color-input: var(--color-bg-panelInset);
     --color-ring: var(--color-border-focus);
+
+    /* ======================================= */
+    /* Muted Tailwind Overrides                */
+    /* (Desaturated industrial palette so      */
+    /* hardcoded text-green-400 etc render     */
+    /* muted without touching every file)      */
+    /* ======================================= */
+
+    /* Greens → mossy/olive industrial */
+    --color-green-300: #7aad7a;
+    --color-green-400: #5c9a5c;
+    --color-green-500: #4a804a;
+    --color-green-600: #3a6a3a;
+
+    /* Emeralds → sage/teal industrial */
+    --color-emerald-300: #6aaa8a;
+    --color-emerald-400: #5a9878;
+    --color-emerald-500: #4a8068;
+
+    /* Blues → steel/slate */
+    --color-blue-300: #7a90b8;
+    --color-blue-400: #6880a8;
+    --color-blue-500: #506898;
+
+    /* Purples → dusty lavender */
+    --color-purple-100: #c0b8c8;
+    --color-purple-200: #a898b8;
+    --color-purple-300: #9080a0;
+    --color-purple-400: #806898;
+    --color-purple-500: #685080;
+    --color-purple-600: #504068;
+    --color-purple-900: #201828;
+
+    /* Ambers → warm tan */
+    --color-amber-400: #b09050;
+    --color-amber-500: #987840;
+
+    /* Yellows → dull gold */
+    --color-yellow-400: #b8a050;
+    --color-yellow-500: #a08840;
+
+    /* Oranges → terracotta */
+    --color-orange-400: #b07848;
+    --color-orange-500: #986040;
+
+    /* Reds → brick/rust */
+    --color-red-400: #b06060;
+    --color-red-500: #984848;
+
+    /* Cyans → cool steel */
+    --color-cyan-400: #6898a0;
+    --color-cyan-500: #508088;
+
+    /* Violets → muted grape */
+    --color-violet-400: #7a6898;
+    --color-violet-500: #605080;
+
+    /* Indigos → deep slate-blue */
+    --color-indigo-400: #6870a0;
+    --color-indigo-500: #505888;
+
+    /* Teals → weathered copper */
+    --color-teal-400: #4a8a88;
+    --color-teal-500: #3a7270;
+
+    /* Pinks → faded rose */
+    --color-pink-400: #a06878;
+    --color-pink-500: #885060;
+
+    /* Grays → slightly warm industrial */
+    --color-gray-400: #808080;
+    --color-gray-500: #686868;
 }
 
 @layer base {

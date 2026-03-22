@@ -17,7 +17,7 @@ export const Oscilloscope = ({
     trackId,
     width = 200,
     height = 80,
-    color = '#22c55e',
+    color = '#4a9060',
 }: OscilloscopeProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
 

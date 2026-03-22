@@ -117,7 +117,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                     <InputSelector trackId={track.id} inputId={track.inputId} />
                 ) : null}
 
-                <div className="flex items-center gap-0.5">
+                <div className="flex items-center gap-1">
                     {track.kind === 'audio' || track.kind === 'midi' ? (
                         <Tooltip>
                             <TooltipTrigger asChild>

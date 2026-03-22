@@ -72,11 +72,11 @@ export const VUMeterCanvas = ({ trackId, size = 100 }: VUMeterCanvasProps): Reac
 
             // Gradient: green → amber → red
             const grad = ctx.createLinearGradient(0, barY + barHeight, 0, barY);
-            grad.addColorStop(0, '#22c55e');
-            grad.addColorStop(0.6, '#22c55e');
-            grad.addColorStop(0.75, '#eab308');
-            grad.addColorStop(0.9, '#ef4444');
-            grad.addColorStop(1, '#ef4444');
+            grad.addColorStop(0, '#4a9060');
+            grad.addColorStop(0.6, '#4a9060');
+            grad.addColorStop(0.75, '#b09040');
+            grad.addColorStop(0.9, '#b05050');
+            grad.addColorStop(1, '#b05050');
 
             ctx.fillStyle = grad;
             ctx.fillRect(barX + 1, barY + barHeight - levelH, barWidth - 2, levelH);
@@ -85,7 +85,7 @@ export const VUMeterCanvas = ({ trackId, size = 100 }: VUMeterCanvasProps): Reac
             const peakDb = linearToDb(peakHold);
             const peakPct = Math.max(0, Math.min(1, (peakDb + 60) / 60));
             const peakY = barY + barHeight - peakPct * barHeight;
-            ctx.strokeStyle = peakDb > -3 ? '#ef4444' : '#eab308';
+            ctx.strokeStyle = peakDb > -3 ? '#b05050' : '#b09040';
             ctx.lineWidth = 2;
             ctx.beginPath();
             ctx.moveTo(barX + 1, peakY);
@@ -104,7 +104,7 @@ export const VUMeterCanvas = ({ trackId, size = 100 }: VUMeterCanvasProps): Reac
             }
 
             // Current dB readout
-            ctx.fillStyle = levelDb > -3 ? '#ef4444' : '#aaa';
+            ctx.fillStyle = levelDb > -3 ? '#b05050' : '#888';
             ctx.font = '9px monospace';
             ctx.textAlign = 'center';
             ctx.fillText(levelDb > -60 ? `${levelDb.toFixed(1)}` : '-∞', size / 2, size - 1);

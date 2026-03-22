@@ -188,11 +188,11 @@ export const PianoRoll = ({
 
         const totalWidth = Math.max(width, GRID_BEATS * beatWidth);
 
-        ctx.fillStyle = '#1a1a2e';
+        ctx.fillStyle = '#141418';
         ctx.fillRect(0, 0, totalWidth, height);
 
         // Beat ruler
-        ctx.fillStyle = '#16162a';
+        ctx.fillStyle = '#111114';
         ctx.fillRect(0, 0, totalWidth, RULER_HEIGHT);
         ctx.strokeStyle = 'rgba(255,255,255,0.08)';
         ctx.beginPath();
@@ -337,9 +337,9 @@ export const PianoRoll = ({
             const alpha = 0.4 + (note.velocity / 127) * 0.6;
 
             if (isSelected) {
-                ctx.fillStyle = `rgba(255, 200, 80, ${alpha})`;
+                ctx.fillStyle = `rgba(176, 144, 72, ${alpha})`;
             } else {
-                ctx.fillStyle = `rgba(120, 160, 255, ${alpha})`;
+                ctx.fillStyle = `rgba(90, 120, 168, ${alpha})`;
             }
 
             ctx.beginPath();
@@ -347,14 +347,14 @@ export const PianoRoll = ({
             ctx.fill();
 
             if (isSelected) {
-                ctx.strokeStyle = 'rgba(255, 200, 80, 0.8)';
+                ctx.strokeStyle = 'rgba(176, 144, 72, 0.7)';
                 ctx.lineWidth = 1;
                 ctx.stroke();
             }
 
             // Velocity bar at bottom of note
             const velH = Math.max(1, (note.velocity / 127) * (ROW_HEIGHT - 4));
-            ctx.fillStyle = isSelected ? 'rgba(255, 200, 80, 0.35)' : 'rgba(100, 180, 255, 0.3)';
+            ctx.fillStyle = isSelected ? 'rgba(176, 144, 72, 0.3)' : 'rgba(80, 120, 160, 0.25)';
             ctx.fillRect(x + 2, y + ROW_HEIGHT - 2 - velH, Math.max(2, w - 4), velH);
 
             // Resize handles (left + right edges)
@@ -371,7 +371,7 @@ export const PianoRoll = ({
 
         if (stepInput) {
             const sx = stepBeat * beatWidth;
-            ctx.strokeStyle = 'rgba(255, 120, 200, 0.7)';
+            ctx.strokeStyle = 'rgba(160, 90, 120, 0.6)';
             ctx.lineWidth = 2;
             ctx.setLineDash([4, 3]);
             ctx.beginPath();
@@ -381,7 +381,7 @@ export const PianoRoll = ({
             ctx.setLineDash([]);
             ctx.lineWidth = 1;
 
-            ctx.fillStyle = 'rgba(255, 120, 200, 0.08)';
+            ctx.fillStyle = 'rgba(160, 90, 120, 0.06)';
             const stepW = gridSnap * beatWidth;
             ctx.fillRect(sx, 0, stepW, noteAreaHeight);
         }
@@ -395,11 +395,11 @@ export const PianoRoll = ({
                 const dpY = dpRow * ROW_HEIGHT;
                 const dpW = dp.duration * beatWidth;
 
-                ctx.fillStyle = 'rgba(100, 220, 140, 0.35)';
+                ctx.fillStyle = 'rgba(80, 160, 110, 0.3)';
                 ctx.beginPath();
                 ctx.roundRect(dpX + 1, dpY + 1, Math.max(4, dpW - 2), ROW_HEIGHT - 2, 2);
                 ctx.fill();
-                ctx.strokeStyle = 'rgba(100, 220, 140, 0.8)';
+                ctx.strokeStyle = 'rgba(80, 160, 110, 0.7)';
                 ctx.lineWidth = 1;
                 ctx.stroke();
             }
@@ -408,9 +408,9 @@ export const PianoRoll = ({
         // Rubber-band selection rectangle
         const rb = rubberBandRef.current;
         if (rb) {
-            ctx.fillStyle = 'rgba(59, 130, 246, 0.15)';
+            ctx.fillStyle = 'rgba(80, 100, 140, 0.12)';
             ctx.fillRect(rb.x, rb.y, rb.w, rb.h);
-            ctx.strokeStyle = 'rgba(59, 130, 246, 0.6)';
+            ctx.strokeStyle = 'rgba(80, 100, 140, 0.5)';
             ctx.lineWidth = 1;
             ctx.setLineDash([4, 4]);
             ctx.strokeRect(rb.x, rb.y, rb.w, rb.h);
@@ -756,7 +756,7 @@ export const PianoRoll = ({
             if (canvas) {
                 const ctx = canvas.getContext('2d');
                 if (ctx && lassoPathRef.current.length > 1) {
-                    ctx.strokeStyle = '#a855f7';
+                    ctx.strokeStyle = 'rgba(128, 104, 152, 0.8)';
                     ctx.lineWidth = 1.5;
                     ctx.setLineDash([4, 3]);
                     ctx.beginPath();

@@ -10,7 +10,7 @@ type GoniometerProps = {
     color?: string;
 };
 
-export const Goniometer = ({ size = 120, color = '#22c55e' }: GoniometerProps): ReactElement => {
+export const Goniometer = ({ size = 120, color = '#4a9060' }: GoniometerProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const trailRef = useRef<ImageData | null>(null);
 
@@ -97,7 +97,7 @@ export const Goniometer = ({ size = 120, color = '#22c55e' }: GoniometerProps): 
             trailRef.current = ctx.getImageData(0, 0, size, size);
 
             // Labels
-            ctx.fillStyle = '#444';
+            ctx.fillStyle = '#3a3a3a';
             ctx.font = '8px monospace';
             ctx.textAlign = 'center';
             ctx.fillText('M', cx, 10);

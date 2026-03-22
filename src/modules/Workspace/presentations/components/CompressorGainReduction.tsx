@@ -84,14 +84,14 @@ export const CompressorGainReduction = ({
             // Gradient for GR: amber at top, red at bottom
             if (barH > 0) {
                 const grad = ctx.createLinearGradient(0, 4, 0, 4 + barH);
-                grad.addColorStop(0, '#eab308');
-                grad.addColorStop(1, gr > 12 ? '#ef4444' : '#f59e0b');
+                grad.addColorStop(0, '#b09040');
+                grad.addColorStop(1, gr > 12 ? '#b05050' : '#c09030');
                 ctx.fillStyle = grad;
                 ctx.fillRect(4, 4, width - 8, barH);
             }
 
             // Scale marks
-            ctx.fillStyle = '#444';
+            ctx.fillStyle = '#3a3a3a';
             ctx.font = '7px monospace';
             ctx.textAlign = 'right';
             for (const db of [0, -6, -12, -18, -24]) {
@@ -101,7 +101,7 @@ export const CompressorGainReduction = ({
             }
 
             // GR readout
-            ctx.fillStyle = gr > 6 ? '#ef4444' : '#eab308';
+            ctx.fillStyle = gr > 6 ? '#b05050' : '#b09040';
             ctx.font = '8px monospace';
             ctx.textAlign = 'center';
             ctx.fillText(gr > 0.1 ? `-${gr.toFixed(1)}` : '0.0', width / 2, height - 2);

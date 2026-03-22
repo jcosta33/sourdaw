@@ -23,18 +23,18 @@ const dbToPercent = (db: number): number => Math.max(0, Math.min(100, ((db - MIN
 
 const getMeterColor = (db: number): string => {
     if (db > -3) {
-        return 'var(--color-destructive, #ef4444)';
+        return 'var(--color-destructive, #b05050)';
     }
     if (db > -12) {
-        return 'var(--color-accent-warning, #eab308)';
+        return 'var(--color-accent-warning, #b09040)';
     }
-    return 'var(--color-accent-success, #22c55e)';
+    return 'var(--color-accent-success, #4a9060)';
 };
 
 const buildGradient = (): string => {
     const redPct = dbToPercent(-3);
     const yellowPct = dbToPercent(-12);
-    return `linear-gradient(to top, #22c55e 0%, #22c55e ${yellowPct}%, #eab308 ${yellowPct}%, #eab308 ${redPct}%, #ef4444 ${redPct}%, #ef4444 100%)`;
+    return `linear-gradient(to top, #4a9060 0%, #4a9060 ${yellowPct}%, #b09040 ${yellowPct}%, #b09040 ${redPct}%, #b05050 ${redPct}%, #b05050 100%)`;
 };
 
 const METER_GRADIENT = buildGradient();
