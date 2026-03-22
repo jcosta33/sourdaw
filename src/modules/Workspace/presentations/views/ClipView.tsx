@@ -8,7 +8,6 @@ import { PianoRoll } from './ClipView/PianoRoll';
 import { WaveformEditor } from './ClipView/WaveformEditor';
 import { AutomationLane } from './ClipView/AutomationLane';
 
-const GRID_BEATS = 32;
 
 export const ClipView = (): ReactElement => {
     const { tracks, selectedTrackId } = useTracks();
@@ -16,6 +15,7 @@ export const ClipView = (): ReactElement => {
     const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set());
     // beatWidth is reported by PianoRoll when its zoom changes
     const [pianoRollBeatWidth, setPianoRollBeatWidth] = useState(40);
+    const [pianoRollContentWidth, setPianoRollContentWidth] = useState(0);
     const automationScrollRef = useRef<HTMLDivElement>(null);
 
     const wsState = useSyncExternalStore(
@@ -45,7 +45,7 @@ export const ClipView = (): ReactElement => {
         workspaceStore.set({ ...wsState, selectedClipId: clipId });
     };
 
-    const contentWidth = GRID_BEATS * pianoRollBeatWidth;
+    const contentWidth = pianoRollContentWidth;
 
     const handlePianoRollScroll = (sl: number) => {
         // Sync automation lane scroll
@@ -89,6 +89,7 @@ export const ClipView = (): ReactElement => {
                         onSelectedNoteIdsChange={setSelectedNoteIds}
                         onScrollChange={handlePianoRollScroll}
                         onBeatWidthChange={setPianoRollBeatWidth}
+                        onContentWidthChange={setPianoRollContentWidth}
                     />
                 ) : selectedClip ? (
                     <WaveformEditor clipId={selectedClip.audioBufferId ?? selectedClip.id} />
@@ -102,6 +103,7 @@ export const ClipView = (): ReactElement => {
             <div className="h-28 border-t border-border/50">
                 <AutomationLane
                     clipId={selectedClip?.id ?? null}
+                    trackId={selectedTrack.id}
                     selectedNoteIds={selectedNoteIds}
                     beatWidth={pianoRollBeatWidth}
                     contentWidth={contentWidth}

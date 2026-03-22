@@ -114,6 +114,7 @@ type PianoRollProps = {
     onSelectedNoteIdsChange: Dispatch<SetStateAction<Set<string>>>;
     onScrollChange?: (scrollLeft: number) => void;
     onBeatWidthChange?: (beatWidth: number) => void;
+    onContentWidthChange?: (contentWidth: number) => void;
 };
 
 export const PianoRoll = ({
@@ -123,6 +124,7 @@ export const PianoRoll = ({
     onSelectedNoteIdsChange,
     onScrollChange,
     onBeatWidthChange,
+    onContentWidthChange,
 }: PianoRollProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [zoom, setZoom] = useState(1);
@@ -165,6 +167,29 @@ export const PianoRoll = ({
     useEffect(() => {
         onBeatWidthChange?.(beatWidth);
     }, [beatWidth, onBeatWidthChange]);
+
+    // Report the actual canvas content width to the parent so the automation lane
+    // can match it exactly. This reacts to both zoom (beatWidth) changes and
+    // container resize events.
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        const parent = canvas?.parentElement;
+        if (!parent) {
+            return;
+        }
+
+        const report = (): void => {
+            const parentWidth = parent.clientWidth;
+            const totalWidth = Math.max(parentWidth, GRID_BEATS * beatWidth);
+            onContentWidthChange?.(totalWidth);
+        };
+
+        report();
+
+        const ro = new ResizeObserver(report);
+        ro.observe(parent);
+        return () => ro.disconnect();
+    }, [beatWidth, onContentWidthChange]);
 
     const midiState = useSyncExternalStore(
         (cb) => midiStore.subscribe(() => cb()),

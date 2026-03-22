@@ -32,6 +32,7 @@ const PIANO_KEY_GUTTER = 40;
 
 type AutomationLaneProps = {
     clipId: string | null;
+    trackId: string;
     selectedNoteIds: Set<string>;
     beatWidth: number;
     contentWidth: number;
@@ -40,6 +41,7 @@ type AutomationLaneProps = {
 
 export const AutomationLane = ({
     clipId,
+    trackId,
     selectedNoteIds,
     beatWidth,
     contentWidth,
@@ -55,6 +57,7 @@ export const AutomationLane = ({
             return (
                 <VelocityLane
                     clipId={clipId}
+                    trackId={trackId}
                     selectedNoteIds={selectedNoteIds}
                     beatWidth={beatWidth}
                     contentWidth={contentWidth}
@@ -65,6 +68,7 @@ export const AutomationLane = ({
             return (
                 <ProbabilityLane
                     clipId={clipId}
+                    trackId={trackId}
                     selectedNoteIds={selectedNoteIds}
                     beatWidth={beatWidth}
                     contentWidth={contentWidth}
@@ -75,6 +79,7 @@ export const AutomationLane = ({
             return (
                 <PressureLane
                     clipId={clipId}
+                    trackId={trackId}
                     selectedNoteIds={selectedNoteIds}
                     beatWidth={beatWidth}
                     contentWidth={contentWidth}
@@ -85,6 +90,7 @@ export const AutomationLane = ({
             return (
                 <SlideLane
                     clipId={clipId}
+                    trackId={trackId}
                     selectedNoteIds={selectedNoteIds}
                     beatWidth={beatWidth}
                     contentWidth={contentWidth}
