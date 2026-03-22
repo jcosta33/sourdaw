@@ -67,7 +67,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
             {/* Header */}
             <div className="flex h-[38px] items-center justify-between border-b border-border/40 px-3 shrink-0 bg-surface-raised/50">
                 <div className="flex items-center gap-2">
-                    <Sparkles className="size-4 text-purple-400" />
+                    <Sparkles className="size-4 text-[var(--color-accent-lavender)]" />
                     <h2 className="text-xs font-semibold text-foreground tracking-tight">Generation</h2>
                 </div>
                 <Button variant="ghost" size="icon-xs" onClick={toggleGenerativeAiPanel} className="h-6 w-6">
@@ -111,7 +111,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                         size="xs"
                         className={
                             midiSubTab === 'patterns'
-                                ? 'text-purple-300 drop-shadow-[0_0_4px_theme(colors.purple.500/50)]'
+                                ? 'text-[var(--color-accent-lavender)] drop-shadow-[0_0_4px_var(--color-accent-lavender)]'
                                 : ''
                         }
                         onClick={() => setMidiSubTab('patterns')}
@@ -123,7 +123,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                         size="xs"
                         className={
                             midiSubTab === 'ai'
-                                ? 'text-purple-300 drop-shadow-[0_0_4px_theme(colors.purple.500/50)]'
+                                ? 'text-[var(--color-accent-lavender)] drop-shadow-[0_0_4px_var(--color-accent-lavender)]'
                                 : ''
                         }
                         onClick={() => setMidiSubTab('ai')}
@@ -147,7 +147,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                             Drop an audio clip here or select one from the arrangement to separate it into 4 distinct
                             stems (Vocals, Drums, Bass, Other) using HTDemucs.
                         </p>
-                        <div className="border-2 border-dashed border-border/50 rounded-lg p-6 flex flex-col items-center justify-center gap-2 bg-surface-base/50 text-muted-foreground hover:border-purple-500/50 hover:text-purple-400 transition-colors cursor-pointer">
+                        <div className="border-2 border-dashed border-border/50 rounded-lg p-6 flex flex-col items-center justify-center gap-2 bg-surface-base/50 text-muted-foreground hover:border-[var(--color-accent-lavender)]/50 hover:text-[var(--color-accent-lavender)] transition-colors cursor-pointer">
                             <Mic2 className="size-6" />
                             <span className="text-[11px] font-medium">Drop Audio File</span>
                         </div>
@@ -157,7 +157,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                             className="w-full flex"
                         >
                             <Button
-                                className="w-full h-8 text-xs bg-purple-600 hover:bg-purple-500 text-white flex justify-between"
+                                className="w-full h-8 text-xs bg-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)] text-white flex justify-between"
                                 onClick={handleStemSep}
                             >
                                 <div className="flex items-center">
@@ -322,7 +322,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                             )}
 
                             <Button
-                                className="w-full h-8 text-xs bg-purple-600 hover:bg-purple-500 text-white flex justify-between items-center"
+                                className="w-full h-8 text-xs bg-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)] text-white flex justify-between items-center"
                                 onClick={handleGenerate}
                                 disabled={!prompt.trim() && !genre && !instrument && !mood}
                             >
@@ -358,15 +358,15 @@ export const GenerativeAiPanel = (): ReactElement | null => {
 
 const TaskResultCard = ({ task }: { task: AiTaskResult }): ReactElement => {
     return (
-        <div className="group relative bg-surface-raised border border-border/40 rounded-md p-2 text-xs flex flex-col gap-1.5 hover:border-purple-500/40 transition-colors">
+        <div className="group relative bg-surface-raised border border-border/40 rounded-md p-2 text-xs flex flex-col gap-1.5 hover:border-[var(--color-accent-lavender)]/40 transition-colors">
             <div className="flex items-start justify-between">
                 <div className="flex items-center gap-1.5">
                     {task.type === 'midi-generation' ? (
-                        <Music4 className="size-3 text-emerald-400" />
+                        <Music4 className="size-3 text-[var(--color-accent-mint)]" />
                     ) : task.type === 'stem-separation' ? (
-                        <RefreshCw className="size-3 text-orange-400" />
+                        <RefreshCw className="size-3 text-[var(--color-accent-peach)]" />
                     ) : (
-                        <AudioWaveform className="size-3 text-purple-400" />
+                        <AudioWaveform className="size-3 text-[var(--color-accent-lavender)]" />
                     )}
                     <span className="font-medium capitalize text-foreground/90 leading-none">
                         {task.type.replace('-', ' ')}
@@ -390,7 +390,7 @@ const TaskResultCard = ({ task }: { task: AiTaskResult }): ReactElement => {
 
             <div className="mt-1">
                 {task.status === 'processing' && (
-                    <div className="flex items-center gap-1.5 text-[10px] text-purple-400">
+                    <div className="flex items-center gap-1.5 text-[10px] text-[var(--color-accent-lavender)]">
                         <Loader2 className="size-3 animate-spin" /> Processing...
                     </div>
                 )}

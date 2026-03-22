@@ -293,7 +293,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                     </button>
                     <div className={menuSep} />
                     <div className="px-3 py-1 text-[10px] font-medium text-muted-foreground/70 flex items-center gap-1">
-                        <span className="inline-block size-2.5 rounded-full bg-blue-500/60" />
+                        <span className="inline-block size-2.5 rounded-full bg-[var(--color-accent-cyan)]/60" />
                         AI
                     </div>
                     <button
@@ -312,7 +312,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                             }
                         })}
                     >
-                        <span className="text-blue-400 mr-1.5">✦</span>
+                        <span className="text-[var(--color-accent-cyan)] mr-1.5">✦</span>
                         Separate Stems
                     </button>
                     <button
@@ -331,7 +331,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                             }
                         })}
                     >
-                        <span className="text-blue-400 mr-1.5">✦</span>
+                        <span className="text-[var(--color-accent-cyan)] mr-1.5">✦</span>
                         Convert to MIDI
                     </button>
                 </>
@@ -356,7 +356,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                     </button>
                     <div className={menuSep} />
                     <div className="px-3 py-1 text-[10px] font-medium text-muted-foreground/70 flex items-center gap-1">
-                        <span className="inline-block size-2.5 rounded-full bg-blue-500/60" />
+                        <span className="inline-block size-2.5 rounded-full bg-[var(--color-accent-cyan)]/60" />
                         AI
                     </div>
                     <button
@@ -378,7 +378,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                             }
                         })}
                     >
-                        <span className="text-blue-400 mr-1.5">✦</span>
+                        <span className="text-[var(--color-accent-cyan)] mr-1.5">✦</span>
                         Continue MIDI…
                     </button>
                     <button
@@ -400,7 +400,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                             }
                         })}
                     >
-                        <span className="text-blue-400 mr-1.5">✦</span>
+                        <span className="text-[var(--color-accent-cyan)] mr-1.5">✦</span>
                         Create Variation
                     </button>
                 </>

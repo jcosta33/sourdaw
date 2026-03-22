@@ -77,7 +77,7 @@ export const AiActionHistoryPanel = (): ReactElement | null => {
     return (
         <div className="fixed right-4 bottom-16 z-50 w-80 max-h-[60vh] rounded-lg border border-border bg-surface-raised shadow-xl flex flex-col animate-in slide-in-from-right-5">
             <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
-                <History className="size-3.5 text-purple-400" />
+                <History className="size-3.5 text-[var(--color-accent-lavender)]" />
                 <span className="text-xs font-medium text-foreground flex-1">AI Action History</span>
                 {state.groups.length > 0 && (
                     <Button

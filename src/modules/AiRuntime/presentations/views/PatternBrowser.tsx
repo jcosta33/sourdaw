@@ -142,16 +142,16 @@ const ParamSlider = ({
 // ── Pattern Card ──
 
 const categoryColors: Record<PatternCategory, string> = {
-    chords: 'text-blue-400',
-    bass: 'text-rose-400',
-    drums: 'text-amber-400',
-    melody: 'text-emerald-400',
+    chords: 'text-[var(--color-accent-cyan)]',
+    bass: 'text-[var(--color-state-danger)]',
+    drums: 'text-[var(--color-accent-peach)]',
+    melody: 'text-[var(--color-accent-mint)]',
 };
 const categoryBgColors: Record<PatternCategory, string> = {
-    chords: 'bg-blue-500/10 border-blue-500/20',
-    bass: 'bg-rose-500/10 border-rose-500/20',
-    drums: 'bg-amber-500/10 border-amber-500/20',
-    melody: 'bg-emerald-500/10 border-emerald-500/20',
+    chords: 'bg-[var(--color-accent-cyan)]/10 border-[var(--color-accent-cyan)]/20',
+    bass: 'bg-[var(--color-state-danger)]/10 border-[var(--color-state-danger)]/20',
+    drums: 'bg-[var(--color-accent-peach)]/10 border-[var(--color-accent-peach)]/20',
+    melody: 'bg-[var(--color-accent-mint)]/10 border-[var(--color-accent-mint)]/20',
 };
 
 const TemplateCard = ({
@@ -166,7 +166,7 @@ const TemplateCard = ({
     const notes = useMemo(() => template.generate(genParams), [template, genParams]);
 
     return (
-        <div className="group relative bg-surface-raised border border-border/40 rounded-lg overflow-hidden hover:border-purple-500/40 transition-all duration-200">
+        <div className="group relative bg-surface-raised border border-border/40 rounded-lg overflow-hidden hover:border-[var(--color-accent-lavender)]/40 transition-all duration-200">
             <div className="bg-surface-base/80 border-b border-border/20 px-1.5 pt-1.5 pb-1">
                 <MiniPianoRoll notes={notes} lengthBeats={template.lengthBeats} />
             </div>
@@ -178,7 +178,7 @@ const TemplateCard = ({
                     <Button
                         variant="ghost"
                         size="icon-xs"
-                        className="h-5 w-5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-purple-600/20 hover:text-purple-300"
+                        className="h-5 w-5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-[var(--color-accent-lavender)]/20 hover:text-[var(--color-accent-lavender)]"
                         onClick={() => onInsert(template)}
                         title="Insert at playhead"
                         aria-label={`Insert ${template.name} at playhead`}

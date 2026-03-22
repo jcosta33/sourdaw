@@ -43,7 +43,7 @@ export const MixAnalysisPanel = (): ReactElement | null => {
     return (
         <div className="fixed right-4 bottom-16 z-50 w-80 max-h-[70vh] rounded-lg border border-border bg-surface-raised shadow-xl flex flex-col animate-in slide-in-from-right-5">
             <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
-                <Activity className="size-3.5 text-emerald-400" />
+                <Activity className="size-3.5 text-[var(--color-state-success)]" />
                 <span className="text-xs font-medium text-foreground flex-1">Mix Analysis</span>
                 <Button
                     variant="ghost"

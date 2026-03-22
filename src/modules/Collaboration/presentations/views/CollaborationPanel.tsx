@@ -72,11 +72,11 @@ export const CollaborationPanel = (): ReactElement | null => {
     const statusIcon = (() => {
         switch (state.connectionStatus) {
             case 'connected':
-                return <Wifi className="size-3 text-emerald-500" />;
+                return <Wifi className="size-3 text-[var(--color-state-success)]" />;
             case 'connecting':
-                return <Loader2 className="size-3 animate-spin text-yellow-500" />;
+                return <Loader2 className="size-3 animate-spin text-[var(--color-state-warning)]" />;
             case 'error':
-                return <WifiOff className="size-3 text-red-500" />;
+                return <WifiOff className="size-3 text-[var(--color-state-danger)]" />;
             default:
                 return <WifiOff className="size-3 text-muted-foreground" />;
         }
@@ -130,7 +130,7 @@ export const CollaborationPanel = (): ReactElement | null => {
                                     aria-label="Copy session ID"
                                 >
                                     {copied ? (
-                                        <Check className="size-3 text-emerald-500" />
+                                        <Check className="size-3 text-[var(--color-state-success)]" />
                                     ) : (
                                         <Copy className="size-3" />
                                     )}
@@ -210,7 +210,7 @@ export const CollaborationPanel = (): ReactElement | null => {
                     </>
                 )}
 
-                {state.error && <p className="text-[10px] text-red-400">{state.error}</p>}
+                {state.error && <p className="text-[10px] text-[var(--color-state-danger)]">{state.error}</p>}
             </div>
         </div>
     );

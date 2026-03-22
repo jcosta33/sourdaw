@@ -60,8 +60,8 @@ export const AiChangeToast = (): ReactElement | null => {
             aria-live="polite"
         >
             <div className="flex items-start gap-2">
-                <div className="mt-0.5 size-5 rounded-full bg-emerald-500/20 flex items-center justify-center shrink-0">
-                    <Check className="size-3 text-emerald-400" />
+                <div className="mt-0.5 size-5 rounded-full bg-[var(--color-state-success)]/20 flex items-center justify-center shrink-0">
+                    <Check className="size-3 text-[var(--color-state-success)]" />
                 </div>
                 <div className="flex-1 min-w-0">
                     <p className="text-xs font-medium text-foreground">{latest.summary}</p>

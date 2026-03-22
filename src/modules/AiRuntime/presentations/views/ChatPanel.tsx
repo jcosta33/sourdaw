@@ -71,7 +71,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
             <div className="flex items-center justify-between px-3 h-10 border-b border-border/50 bg-surface-tray sticky top-0 shrink-0 z-10">
                 <div className="flex items-center gap-2">
                     <span className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase flex items-center gap-1.5">
-                        <Bot className="size-3.5 text-purple-400" />
+                        <Bot className="size-3.5 text-[var(--color-accent-lavender)]" />
                         AI Chat
                     </span>
                     {!isLlmAvailable() && (
@@ -126,7 +126,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                             >
                                 <div className="flex items-center gap-1.5 mb-1 opacity-70">
                                     {msg.role === 'assistant' ? (
-                                        <Bot className="size-3 text-purple-400" />
+                                        <Bot className="size-3 text-[var(--color-accent-lavender)]" />
                                     ) : (
                                         <User className="size-3" />
                                     )}
@@ -145,10 +145,10 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                                     )}
                                 >
                                     {msg.role === 'assistant' ? (
-                                        <div className="prose prose-invert prose-xs max-w-none prose-p:my-1.5 prose-pre:my-2 prose-pre:bg-black/40 prose-pre:border prose-pre:border-white/5 prose-a:text-purple-400 hover:prose-a:text-purple-300 prose-ul:my-1.5 prose-ul:pl-4 prose-li:my-0.5 prose-strong:text-purple-300 prose-code:text-purple-200 prose-code:bg-purple-500/10 prose-code:px-1 prose-code:rounded-sm">
+                                        <div className="prose prose-invert prose-xs max-w-none prose-p:my-1.5 prose-pre:my-2 prose-pre:bg-black/40 prose-pre:border prose-pre:border-white/5 prose-a:text-[var(--color-accent-lavender)] hover:prose-a:text-[var(--color-accent-lavender)] prose-ul:my-1.5 prose-ul:pl-4 prose-li:my-0.5 prose-strong:text-[var(--color-accent-lavender)] prose-code:text-[var(--color-accent-lavender)] prose-code:bg-[var(--color-accent-lavender)]/10 prose-code:px-1 prose-code:rounded-sm">
                                             <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                                             {msg.isStreaming && (
-                                                <span className="inline-block w-1.5 h-3.5 bg-purple-400 ml-1 translate-y-[2px] animate-pulse" />
+                                                <span className="inline-block w-1.5 h-3.5 bg-[var(--color-accent-lavender)] ml-1 translate-y-[2px] animate-pulse" />
                                             )}
                                         </div>
                                     ) : (
@@ -164,7 +164,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
 
             {/* Input Footer */}
             <div className="p-3 bg-surface-tray border-t border-border/50 shrink-0">
-                <div className="relative rounded-lg bg-surface-base border border-border focus-within:ring-1 focus-within:ring-purple-500/50 focus-within:border-purple-500/50 transition-all flex shadow-sm">
+                <div className="relative rounded-lg bg-surface-base border border-border focus-within:ring-1 focus-within:ring-[var(--color-accent-lavender)]/50 focus-within:border-[var(--color-accent-lavender)]/50 transition-all flex shadow-sm">
                     <textarea
                         ref={textareaRef}
                         value={inputValue}
@@ -185,12 +185,12 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                             className={cn(
                                 'h-7 w-7 transition-all rounded-[6px]',
                                 inputValue.trim() && !chatState.isGenerating
-                                    ? 'bg-purple-600 hover:bg-purple-500 text-white shadow-md shadow-purple-900/20'
+                                    ? 'bg-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)] text-white shadow-md shadow-[var(--color-accent-lavender)]/20'
                                     : 'bg-transparent text-muted-foreground hover:bg-white/5'
                             )}
                         >
                             {chatState.isGenerating ? (
-                                <Loader2 className="size-3.5 animate-spin text-purple-400" />
+                                <Loader2 className="size-3.5 animate-spin text-[var(--color-accent-lavender)]" />
                             ) : (
                                 <Send className="size-3.5" />
                             )}

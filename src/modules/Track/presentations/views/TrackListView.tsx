@@ -187,7 +187,7 @@ export const TrackListView = ({
                                     )
                                 }
                             >
-                                <Wand2 className="size-3 text-purple-400" aria-hidden="true" />
+                                <Wand2 className="size-3 text-[var(--color-accent-lavender)]" aria-hidden="true" />
                             </Button>
                         </TooltipTrigger>
                         <TooltipContent>Auto-organize with AI</TooltipContent>
@@ -317,7 +317,7 @@ const AddTrackMenu = ({ trackCount }: { trackCount: number }): ReactElement => {
                         role="menuitem"
                         onClick={() => createTrackOfKind('audio')}
                     >
-                        <Mic2 className="size-3 text-blue-400" />
+                        <Mic2 className="size-3 text-[var(--color-accent-cyan)]" />
                         Audio Track
                     </button>
                     <button
@@ -326,7 +326,7 @@ const AddTrackMenu = ({ trackCount }: { trackCount: number }): ReactElement => {
                         role="menuitem"
                         onClick={() => createTrackOfKind('midi')}
                     >
-                        <Music className="size-3 text-green-400" />
+                        <Music className="size-3 text-[var(--color-accent-mint)]" />
                         MIDI Track
                     </button>
                     <button
@@ -335,7 +335,7 @@ const AddTrackMenu = ({ trackCount }: { trackCount: number }): ReactElement => {
                         role="menuitem"
                         onClick={() => createTrackOfKind('bus')}
                     >
-                        <GitBranch className="size-3 text-orange-400" />
+                        <GitBranch className="size-3 text-[var(--color-accent-peach)]" />
                         Bus Track
                     </button>
                     {templates.length > 0 && (
@@ -355,7 +355,7 @@ const AddTrackMenu = ({ trackCount }: { trackCount: number }): ReactElement => {
                                         setOpen(false);
                                     }}
                                 >
-                                    <FileStack className="size-3 text-purple-400" />
+                                    <FileStack className="size-3 text-[var(--color-accent-lavender)]" />
                                     {tmpl.name}
                                 </button>
                             ))}

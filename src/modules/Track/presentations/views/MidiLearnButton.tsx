@@ -63,8 +63,8 @@ export const MidiLearnButton = ({ targetType, trackId, deviceId, paramId }: Midi
                     aria-pressed={isLearningThis}
                     className={cn(
                         'size-5 text-[10px] font-bold',
-                        isLearningThis && 'animate-pulse text-orange-400',
-                        !isLearningThis && existingMapping && 'text-cyan-400'
+                        isLearningThis && 'animate-pulse text-[var(--color-accent-peach)]',
+                        !isLearningThis && existingMapping && 'text-[var(--color-accent-cyan)]'
                     )}
                     onClick={handleClick}
                 >

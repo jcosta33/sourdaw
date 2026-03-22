@@ -358,7 +358,7 @@ export const VoiceCommandOverlay = (): ReactElement | null => {
             <div
                 className={cn(
                     'pointer-events-auto flex items-center gap-3 rounded-full bg-surface-overlay/95 border px-4 py-2 shadow-xl backdrop-blur-sm',
-                    errorText ? 'border-amber-500/40' : 'border-red-500/30'
+                    errorText ? 'border-[var(--color-state-warning)]/40' : 'border-[var(--color-state-danger)]/30'
                 )}
             >
                 <button
@@ -366,12 +366,12 @@ export const VoiceCommandOverlay = (): ReactElement | null => {
                     onClick={stopListening}
                     className={cn(
                         'flex size-8 items-center justify-center rounded-full transition-colors',
-                        errorText ? 'bg-amber-500/20' : 'bg-red-500/20 hover:bg-red-500/30'
+                        errorText ? 'bg-[var(--color-state-warning)]/20' : 'bg-[var(--color-state-danger)]/20 hover:bg-[var(--color-state-danger)]/30'
                     )}
                     aria-label="Stop voice input"
                 >
                     {isListening && !errorText ? (
-                        <Mic className="size-4 text-red-400 animate-pulse" />
+                        <Mic className="size-4 text-[var(--color-state-danger)] animate-pulse" />
                     ) : (
                         <MicOff className="size-4 text-muted-foreground" />
                     )}
@@ -380,7 +380,7 @@ export const VoiceCommandOverlay = (): ReactElement | null => {
                     {transcribing ? (
                         <p className="text-xs text-muted-foreground animate-pulse">Transcribing...</p>
                     ) : errorText ? (
-                        <p className="text-xs text-amber-400">{errorText}</p>
+                        <p className="text-xs text-[var(--color-state-warning)]">{errorText}</p>
                     ) : displayText ? (
                         <p className="text-xs text-foreground truncate">{displayText}</p>
                     ) : (

@@ -35,18 +35,18 @@ import { releaseTouchAutomation } from '#/modules/Track/useCases/automationRecor
 type MixerMenu = { x: number; y: number } | null;
 
 const TRACK_COLORS = [
-    'oklch(0.58 0.09 250)',
-    'oklch(0.55 0.10 20)',
-    'oklch(0.58 0.09 150)',
-    'oklch(0.58 0.09 70)',
-    'oklch(0.55 0.09 300)',
-    'oklch(0.55 0.09 340)',
-    'oklch(0.58 0.08 200)',
-    'oklch(0.56 0.09 45)',
-    'oklch(0.58 0.08 170)',
-    'oklch(0.55 0.09 270)',
-    'oklch(0.56 0.08 110)',
-    'oklch(0.55 0.10 0)',
+    'oklch(0.40 0.07 250)',
+    'oklch(0.38 0.08 20)',
+    'oklch(0.40 0.07 150)',
+    'oklch(0.40 0.07 70)',
+    'oklch(0.38 0.07 300)',
+    'oklch(0.38 0.07 340)',
+    'oklch(0.40 0.06 200)',
+    'oklch(0.39 0.07 45)',
+    'oklch(0.40 0.06 170)',
+    'oklch(0.38 0.07 270)',
+    'oklch(0.39 0.06 110)',
+    'oklch(0.38 0.08 0)',
 ];
 
 const menuBtnClass = 'flex w-full items-center px-3 py-1.5 text-xs hover:bg-white/[0.06] text-left transition-colors';

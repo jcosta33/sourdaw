@@ -354,7 +354,7 @@ export const TimelineSurface = (): ReactElement => {
 
             {rubberBand && (
                 <div
-                    className="absolute border border-blue-400/60 bg-blue-400/10 pointer-events-none z-10"
+                    className="absolute border border-[var(--color-accent-cyan)]/60 bg-[var(--color-accent-cyan)]/10 pointer-events-none z-10"
                     style={{
                         left: Math.min(rubberBand.startX, rubberBand.endX),
                         top: Math.min(rubberBand.startY, rubberBand.endY),

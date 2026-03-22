@@ -6,35 +6,35 @@ import { type MixAnalysis, type MixIssue } from '#/modules/AiRuntime/models/MixA
 
 export const levelColor = (db: number): string => {
     if (db > -0.5) {
-        return 'bg-red-500';
+        return 'bg-[var(--color-state-danger)]';
     }
     if (db > -3) {
-        return 'bg-amber-500';
+        return 'bg-[var(--color-state-warning)]';
     }
     if (db > -12) {
-        return 'bg-emerald-500';
+        return 'bg-[var(--color-state-success)]';
     }
-    return 'bg-emerald-700';
+    return 'bg-[var(--color-state-success)]';
 };
 
 export const levelTextColor = (db: number): string => {
     if (db > -0.5) {
-        return 'text-red-400';
+        return 'text-[var(--color-state-danger)]';
     }
     if (db > -3) {
-        return 'text-amber-400';
+        return 'text-[var(--color-state-warning)]';
     }
-    return 'text-emerald-400';
+    return 'text-[var(--color-state-success)]';
 };
 
 export const severityIcon = (severity: MixIssue['severity']): ReactElement => {
     switch (severity) {
         case 'critical':
-            return <AlertCircle className="size-3 shrink-0 text-red-400" />;
+            return <AlertCircle className="size-3 shrink-0 text-[var(--color-state-danger)]" />;
         case 'warning':
-            return <AlertTriangle className="size-3 shrink-0 text-amber-400" />;
+            return <AlertTriangle className="size-3 shrink-0 text-[var(--color-state-warning)]" />;
         case 'info':
-            return <Info className="size-3 shrink-0 text-blue-400" />;
+            return <Info className="size-3 shrink-0 text-[var(--color-accent-cyan)]" />;
     }
 };
 
@@ -133,11 +133,11 @@ export const TrackLevelsList = ({ trackLevels }: TrackLevelsListProps): ReactEle
                             <Volume2 className="size-3 shrink-0 text-muted-foreground" />
                             <span className="text-xs text-foreground truncate">{tl.trackName}</span>
                             {tl.isMuted ? <span className="text-[9px] text-muted-foreground">M</span> : null}
-                            {tl.isSoloed ? <span className="text-[9px] text-amber-400">S</span> : null}
+                            {tl.isSoloed ? <span className="text-[9px] text-[var(--color-state-warning)]">S</span> : null}
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                             <span
-                                className={`text-[10px] font-mono ${tl.isClipping ? 'text-red-400 font-bold' : 'text-muted-foreground'}`}
+                                className={`text-[10px] font-mono ${tl.isClipping ? 'text-[var(--color-state-danger)] font-bold' : 'text-muted-foreground'}`}
                             >
                                 {tl.peakDb.toFixed(1)} dB
                             </span>
