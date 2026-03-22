@@ -13,7 +13,7 @@ type TrackLevelSectionProps = {
 export const TrackLevelSection = ({ track }: TrackLevelSectionProps): ReactElement => {
     return (
         <div>
-            <div className="px-1 mb-2">
+            <div className="px-1 mb-2 border-b border-border-hairline pb-1">
                 <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Level</div>
             </div>
             <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">

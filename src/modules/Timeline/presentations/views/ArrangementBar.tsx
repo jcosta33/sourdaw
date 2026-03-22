@@ -13,6 +13,8 @@ import {
     renameSection,
     setSectionColor,
     reorderSection,
+    moveSection,
+    resizeSection,
 } from '../../useCases/markerUseCases';
 import { type ArrangementSection } from '../../models/Marker';
 import { cn } from '#/helpers/Styles/cn';
@@ -38,7 +40,18 @@ type ContextMenuState =
 
 type EditingState = { sectionId: string; name: string } | null;
 
+type DragMode = 'move' | 'resize-left' | 'resize-right';
+
+type DragState = {
+    sectionId: string;
+    mode: DragMode;
+    startClientX: number;
+    originalStart: number;
+    originalEnd: number;
+} | null;
+
 const BAR_HEIGHT = 22;
+const EDGE_ZONE = 6; // px from edge to detect resize handle
 
 export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps): ReactElement => {
     const markerState = useSyncExternalStore(
@@ -50,8 +63,18 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
     const sections = markerState?.sections ?? [];
     const [contextMenu, setContextMenu] = useState<ContextMenuState>({ kind: 'none' });
     const [editing, setEditing] = useState<EditingState>(null);
+    const [dragPreview, setDragPreview] = useState<{
+        sectionId: string;
+        startBeat: number;
+        endBeat: number;
+    } | null>(null);
+    const [hoverEdge, setHoverEdge] = useState<{
+        sectionId: string;
+        edge: 'left' | 'right';
+    } | null>(null);
     const menuRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
+    const dragRef = useRef<DragState>(null);
 
     useEffect(() => {
         if (editing && inputRef.current) {
@@ -73,7 +96,120 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
         return () => window.removeEventListener('mousedown', handleClick);
     }, [contextMenu.kind]);
 
+    const detectEdge = (
+        e: ReactMouseEvent,
+        section: ArrangementSection
+    ): 'left' | 'right' | null => {
+        const parentRect = (e.currentTarget.parentElement ?? e.currentTarget).getBoundingClientRect();
+        const localX = e.clientX - parentRect.left;
+        const sectionLeftPx = section.startBeat * pixelsPerBeat - scrollX;
+        const sectionRightPx = section.endBeat * pixelsPerBeat - scrollX;
+
+        if (Math.abs(localX - sectionLeftPx) <= EDGE_ZONE) {
+            return 'left';
+        }
+        if (Math.abs(localX - sectionRightPx) <= EDGE_ZONE) {
+            return 'right';
+        }
+        return null;
+    };
+
+    const handleSectionMouseDown = (e: ReactMouseEvent, section: ArrangementSection) => {
+        if (e.button !== 0 || editing) {
+            return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+
+        // Detect which part was clicked: edge (resize) or body (move)
+        const parentRect = e.currentTarget.parentElement!.getBoundingClientRect();
+        const localX = e.clientX - parentRect.left;
+        const sectionLeftPx = section.startBeat * pixelsPerBeat - scrollX;
+        const sectionRightPx = section.endBeat * pixelsPerBeat - scrollX;
+
+        let mode: DragMode = 'move';
+        if (Math.abs(localX - sectionLeftPx) <= EDGE_ZONE) {
+            mode = 'resize-left';
+        } else if (Math.abs(localX - sectionRightPx) <= EDGE_ZONE) {
+            mode = 'resize-right';
+        }
+
+        const startX = e.clientX;
+        const origStart = section.startBeat;
+        const origEnd = section.endBeat;
+        let lastStart = origStart;
+        let lastEnd = origEnd;
+
+        dragRef.current = {
+            sectionId: section.id,
+            mode,
+            startClientX: startX,
+            originalStart: origStart,
+            originalEnd: origEnd,
+        };
+
+        const handleMouseMove = (moveEvent: MouseEvent) => {
+            const deltaPx = moveEvent.clientX - startX;
+            const deltaBeats = deltaPx / pixelsPerBeat;
+
+            if (mode === 'move') {
+                const newStart = Math.max(0, Math.round(origStart + deltaBeats));
+                const duration = origEnd - origStart;
+                lastStart = newStart;
+                lastEnd = newStart + duration;
+            } else if (mode === 'resize-left') {
+                lastStart = Math.max(0, Math.round(origStart + deltaBeats));
+                lastEnd = origEnd;
+                // Enforce minimum duration
+                if (lastEnd - lastStart < 4) {
+                    lastStart = lastEnd - 4;
+                }
+            } else {
+                lastStart = origStart;
+                lastEnd = Math.max(origStart + 4, Math.round(origEnd + deltaBeats));
+            }
+
+            setDragPreview({ sectionId: section.id, startBeat: lastStart, endBeat: lastEnd });
+        };
+
+        const handleMouseUp = () => {
+            if (mode === 'move' && lastStart !== origStart) {
+                moveSection(section.id, lastStart);
+            } else if ((mode === 'resize-left' || mode === 'resize-right') && (lastStart !== origStart || lastEnd !== origEnd)) {
+                resizeSection(section.id, lastStart, lastEnd);
+            }
+            dragRef.current = null;
+            setDragPreview(null);
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+    };
+
+    const handleSectionMouseMove = (e: ReactMouseEvent, section: ArrangementSection) => {
+        if (dragRef.current) {
+            return;
+        }
+        const edge = detectEdge(e, section);
+        if (edge) {
+            setHoverEdge({ sectionId: section.id, edge });
+        } else if (hoverEdge?.sectionId === section.id) {
+            setHoverEdge(null);
+        }
+    };
+
+    const handleSectionMouseLeave = (section: ArrangementSection) => {
+        if (hoverEdge?.sectionId === section.id && !dragRef.current) {
+            setHoverEdge(null);
+        }
+    };
+
     const handleBarContextMenu = (e: ReactMouseEvent<HTMLDivElement>) => {
+        if (dragRef.current) {
+            return;
+        }
         e.preventDefault();
         const rect = e.currentTarget.getBoundingClientRect();
         const localX = e.clientX - rect.left;
@@ -137,6 +273,17 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
         return SECTION_COLORS[index % SECTION_COLORS.length]!;
     };
 
+    const getCursorForSection = (section: ArrangementSection): string => {
+        if (dragRef.current?.sectionId === section.id) {
+            const mode = dragRef.current.mode;
+            return mode === 'move' ? 'grabbing' : 'col-resize';
+        }
+        if (hoverEdge?.sectionId === section.id) {
+            return 'col-resize';
+        }
+        return 'grab';
+    };
+
     return (
         <div
             className="relative shrink-0 border-b border-border/40 bg-surface-base overflow-hidden select-none"
@@ -146,8 +293,11 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
             aria-label="Arrangement sections"
         >
             {sections.map((section, i) => {
-                const left = section.startBeat * pixelsPerBeat - scrollX;
-                const width = (section.endBeat - section.startBeat) * pixelsPerBeat;
+                const isDragging = dragPreview?.sectionId === section.id;
+                const displayStart = isDragging ? dragPreview.startBeat : section.startBeat;
+                const displayEnd = isDragging ? dragPreview.endBeat : section.endBeat;
+                const left = displayStart * pixelsPerBeat - scrollX;
+                const width = (displayEnd - displayStart) * pixelsPerBeat;
 
                 if (left + width < 0 || left > 4000) {
                     return null;
@@ -161,15 +311,30 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                         key={section.id}
                         className={cn(
                             'absolute top-0.5 bottom-0.5 rounded-sm flex items-center overflow-hidden',
-                            'border border-white/10 cursor-default'
+                            'border border-white/10'
                         )}
                         style={{
                             left: Math.max(0, left),
                             width: left < 0 ? width + left : width,
                             backgroundColor: color,
+                            cursor: getCursorForSection(section),
+                            opacity: isDragging ? 0.7 : 1,
+                            transition: isDragging ? 'none' : undefined,
                         }}
                         title={section.name}
+                        onMouseDown={(e) => handleSectionMouseDown(e, section)}
+                        onMouseMove={(e) => handleSectionMouseMove(e, section)}
+                        onMouseLeave={() => handleSectionMouseLeave(section)}
+                        onDoubleClick={() => {
+                            setEditing({ sectionId: section.id, name: section.name });
+                        }}
                     >
+                        {/* Left resize handle visual */}
+                        <div
+                            className="absolute left-0 top-0 bottom-0 w-[3px] hover:bg-white/20 transition-colors"
+                            style={{ cursor: 'col-resize' }}
+                        />
+
                         {isEditing ? (
                             <input
                                 ref={inputRef}
@@ -177,6 +342,7 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                                 value={editing.name}
                                 onChange={(e) => setEditing({ ...editing, name: e.target.value })}
                                 onBlur={commitRename}
+                                onMouseDown={(e) => e.stopPropagation()}
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter') {
                                         commitRename();
@@ -191,6 +357,12 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                                 {section.name}
                             </span>
                         )}
+
+                        {/* Right resize handle visual */}
+                        <div
+                            className="absolute right-0 top-0 bottom-0 w-[3px] hover:bg-white/20 transition-colors"
+                            style={{ cursor: 'col-resize' }}
+                        />
                     </div>
                 );
             })}

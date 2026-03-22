@@ -8,7 +8,7 @@ export const SignalFlowSection = (): ReactElement => {
 
     return (
         <div>
-            <div className="px-1 mb-2">
+            <div className="px-1 mb-2 border-b border-border-hairline pb-1">
                 <button
                     type="button"
                     className="flex w-full items-center gap-1"

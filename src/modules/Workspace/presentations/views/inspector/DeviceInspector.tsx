@@ -52,7 +52,7 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
 
             {isSidechainComp && (
                 <div>
-                    <div className="px-1 mb-2">
+                    <div className="px-1 mb-2 border-b border-border-hairline pb-1">
                         <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
                             Sidechain Source
                         </div>
@@ -85,7 +85,7 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
 
             {isCompressorLimiter && (
                 <div>
-                    <div className="px-1 mb-2">
+                    <div className="px-1 mb-2 border-b border-border-hairline pb-1">
                         <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
                             Gain Reduction
                         </div>
@@ -102,7 +102,7 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
 
             {plugin?.id === 'builtin-eq' && parameters.length > 0 ? (
                 <div>
-                    <div className="px-1 mb-2">
+                    <div className="px-1 mb-2 border-b border-border-hairline pb-1">
                         <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
                             EQ Graphic
                         </div>
@@ -160,7 +160,7 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
                 </div>
             ) : parameters.length > 0 ? (
                 <div>
-                    <div className="px-1 mb-2">
+                    <div className="px-1 mb-2 border-b border-border-hairline pb-1">
                         <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
                             Parameters
                         </div>

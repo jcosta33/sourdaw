@@ -1,4 +1,4 @@
-import { type ReactElement, useState } from 'react';
+import { type ReactElement, type RefObject, useState } from 'react';
 import { VelocityLane } from '../automationLane/VelocityLane';
 import { ProbabilityLane } from '../automationLane/ProbabilityLane';
 import { PressureLane } from '../automationLane/PressureLane';
@@ -27,16 +27,75 @@ const LANE_OPTIONS: { value: string; label: string; mode: LaneMode }[] = [
     { value: 'pitchBend', label: 'Pitch Bend', mode: { kind: 'pitchBend' } },
 ];
 
+/** Width of the piano-key gutter in PianoRoll (w-10 = 2.5rem = 40px) */
+const PIANO_KEY_GUTTER = 40;
+
 type AutomationLaneProps = {
     clipId: string | null;
     selectedNoteIds: Set<string>;
+    beatWidth: number;
+    contentWidth: number;
+    scrollRef: RefObject<HTMLDivElement | null>;
 };
 
-export const AutomationLane = ({ clipId, selectedNoteIds }: AutomationLaneProps): ReactElement => {
+export const AutomationLane = ({
+    clipId,
+    selectedNoteIds,
+    beatWidth,
+    contentWidth,
+    scrollRef,
+}: AutomationLaneProps): ReactElement => {
     const [selectedLane, setSelectedLane] = useState('velocity');
 
     const laneOption = LANE_OPTIONS.find((o) => o.value === selectedLane) ?? LANE_OPTIONS[0]!;
     const mode = laneOption.mode;
+
+    const renderLane = (): ReactElement => {
+        if (mode.kind === 'velocity') {
+            return (
+                <VelocityLane
+                    clipId={clipId}
+                    selectedNoteIds={selectedNoteIds}
+                    beatWidth={beatWidth}
+                    contentWidth={contentWidth}
+                />
+            );
+        }
+        if (mode.kind === 'probability') {
+            return (
+                <ProbabilityLane
+                    clipId={clipId}
+                    selectedNoteIds={selectedNoteIds}
+                    beatWidth={beatWidth}
+                    contentWidth={contentWidth}
+                />
+            );
+        }
+        if (mode.kind === 'pressure') {
+            return (
+                <PressureLane
+                    clipId={clipId}
+                    selectedNoteIds={selectedNoteIds}
+                    beatWidth={beatWidth}
+                    contentWidth={contentWidth}
+                />
+            );
+        }
+        if (mode.kind === 'slide') {
+            return (
+                <SlideLane
+                    clipId={clipId}
+                    selectedNoteIds={selectedNoteIds}
+                    beatWidth={beatWidth}
+                    contentWidth={contentWidth}
+                />
+            );
+        }
+        if (mode.kind === 'cc') {
+            return <CCLane clipId={clipId} controller={mode.controller} beatWidth={beatWidth} contentWidth={contentWidth} />;
+        }
+        return <PitchBendLane clipId={clipId} beatWidth={beatWidth} contentWidth={contentWidth} />;
+    };
 
     return (
         <div className="flex h-full flex-col">
@@ -59,20 +118,20 @@ export const AutomationLane = ({ clipId, selectedNoteIds }: AutomationLaneProps)
                 </select>
             </div>
 
-            <div className="flex-1 min-h-0">
-                {mode.kind === 'velocity' ? (
-                    <VelocityLane clipId={clipId} selectedNoteIds={selectedNoteIds} />
-                ) : mode.kind === 'probability' ? (
-                    <ProbabilityLane clipId={clipId} selectedNoteIds={selectedNoteIds} />
-                ) : mode.kind === 'pressure' ? (
-                    <PressureLane clipId={clipId} selectedNoteIds={selectedNoteIds} />
-                ) : mode.kind === 'slide' ? (
-                    <SlideLane clipId={clipId} selectedNoteIds={selectedNoteIds} />
-                ) : mode.kind === 'cc' ? (
-                    <CCLane clipId={clipId} controller={mode.controller} />
-                ) : (
-                    <PitchBendLane clipId={clipId} />
-                )}
+            <div className="flex flex-1 min-h-0">
+                {/* Piano-key gutter spacer — matches PianoRoll's w-10 column */}
+                <div
+                    className="shrink-0 border-r border-border/30 bg-surface-raised"
+                    style={{ width: PIANO_KEY_GUTTER }}
+                />
+                {/* Scrollable lane area — synced to PianoRoll scroll */}
+                <div
+                    ref={scrollRef}
+                    className="flex-1 overflow-x-auto overflow-y-hidden"
+                    style={{ scrollbarWidth: 'none' }}
+                >
+                    <div style={{ width: contentWidth, height: '100%' }}>{renderLane()}</div>
+                </div>
             </div>
         </div>
     );

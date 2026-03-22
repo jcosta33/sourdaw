@@ -4,6 +4,7 @@
  */
 import { type ReactElement, useRef, useEffect } from 'react';
 import { audioEngine } from '#/modules/AudioEngine/repositories/audioEngineInstance';
+import { resolveToken } from '#/helpers/UI/resolveToken';
 import { VUMeter as VUMeterProcessor } from '#/modules/AudioEngine/useCases/advancedMetering';
 
 type VUMeterCanvasProps = {
@@ -60,7 +61,7 @@ export const VUMeterCanvas = ({ trackId, size = 100 }: VUMeterCanvasProps): Reac
             const barY = size * 0.05;
 
             // Background
-            ctx.fillStyle = '#111';
+            ctx.fillStyle = resolveToken('--color-bg-panel', '#111');
             ctx.beginPath();
             ctx.roundRect(barX, barY, barWidth, barHeight, 3);
             ctx.fill();
@@ -72,11 +73,11 @@ export const VUMeterCanvas = ({ trackId, size = 100 }: VUMeterCanvasProps): Reac
 
             // Gradient: green → amber → red
             const grad = ctx.createLinearGradient(0, barY + barHeight, 0, barY);
-            grad.addColorStop(0, '#4a9060');
-            grad.addColorStop(0.6, '#4a9060');
-            grad.addColorStop(0.75, '#b09040');
-            grad.addColorStop(0.9, '#b05050');
-            grad.addColorStop(1, '#b05050');
+            grad.addColorStop(0, resolveToken('--color-meter-safe', '#4a9060'));
+            grad.addColorStop(0.6, resolveToken('--color-meter-safe', '#4a9060'));
+            grad.addColorStop(0.75, resolveToken('--color-meter-hot', '#b09040'));
+            grad.addColorStop(0.9, resolveToken('--color-meter-clip', '#b05050'));
+            grad.addColorStop(1, resolveToken('--color-meter-clip', '#b05050'));
 
             ctx.fillStyle = grad;
             ctx.fillRect(barX + 1, barY + barHeight - levelH, barWidth - 2, levelH);
@@ -85,7 +86,7 @@ export const VUMeterCanvas = ({ trackId, size = 100 }: VUMeterCanvasProps): Reac
             const peakDb = linearToDb(peakHold);
             const peakPct = Math.max(0, Math.min(1, (peakDb + 60) / 60));
             const peakY = barY + barHeight - peakPct * barHeight;
-            ctx.strokeStyle = peakDb > -3 ? '#b05050' : '#b09040';
+            ctx.strokeStyle = peakDb > -3 ? resolveToken('--color-meter-clip', '#b05050') : resolveToken('--color-meter-hot', '#b09040');
             ctx.lineWidth = 2;
             ctx.beginPath();
             ctx.moveTo(barX + 1, peakY);
@@ -93,7 +94,7 @@ export const VUMeterCanvas = ({ trackId, size = 100 }: VUMeterCanvasProps): Reac
             ctx.stroke();
 
             // dB labels
-            ctx.fillStyle = '#666';
+            ctx.fillStyle = resolveToken('--color-text-tertiary', '#666');
             ctx.font = '7px monospace';
             ctx.textAlign = 'left';
             const labelX = barX + barWidth + 3;
@@ -104,7 +105,7 @@ export const VUMeterCanvas = ({ trackId, size = 100 }: VUMeterCanvasProps): Reac
             }
 
             // Current dB readout
-            ctx.fillStyle = levelDb > -3 ? '#b05050' : '#888';
+            ctx.fillStyle = levelDb > -3 ? resolveToken('--color-meter-clip', '#b05050') : resolveToken('--color-palette-gray', '#888');
             ctx.font = '9px monospace';
             ctx.textAlign = 'center';
             ctx.fillText(levelDb > -60 ? `${levelDb.toFixed(1)}` : '-∞', size / 2, size - 1);

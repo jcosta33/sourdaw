@@ -1,16 +1,19 @@
-import { type ReactElement, type MouseEvent as ReactMouseEvent, useSyncExternalStore } from 'react';
-import { cn } from '#/helpers/Styles/cn';
+import { type ReactElement, type MouseEvent as ReactMouseEvent, useRef, useEffect, useSyncExternalStore } from 'react';
 import { midiStore } from '#/modules/Track/stores/midiStore';
 import { pushUndoEntry } from '../../../useCases/workspaceViewActions';
 import { setNotePressure } from '../../../useCases/workspaceViewActions';
-import { NOTE_NAMES } from './laneConstants';
 
 type PressureLaneProps = {
     clipId: string | null;
     selectedNoteIds: Set<string>;
+    beatWidth: number;
+    contentWidth: number;
 };
 
-export const PressureLane = ({ clipId, selectedNoteIds }: PressureLaneProps): ReactElement => {
+export const PressureLane = ({ clipId, selectedNoteIds, beatWidth, contentWidth }: PressureLaneProps): ReactElement => {
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
+
     const midiState = useSyncExternalStore(
         (cb) => midiStore.subscribe(() => cb()),
         () => midiStore.value,
@@ -19,29 +22,95 @@ export const PressureLane = ({ clipId, selectedNoteIds }: PressureLaneProps): Re
 
     const notes = clipId ? (midiState?.notesByClipId[clipId] ?? []) : [];
 
-    if (notes.length === 0) {
-        return (
-            <div className="flex h-full items-center justify-center">
-                <p className="text-[10px] text-muted-foreground">No notes — add MIDI notes to edit pressure</p>
-            </div>
-        );
-    }
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        const container = containerRef.current;
+        if (!canvas || !container) {
+            return;
+        }
+        const dpr = window.devicePixelRatio || 1;
+        const w = contentWidth;
+        const h = container.getBoundingClientRect().height;
+        canvas.width = w * dpr;
+        canvas.height = h * dpr;
+        canvas.style.width = `${w}px`;
+        canvas.style.height = `${h}px`;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+            return;
+        }
+        ctx.scale(dpr, dpr);
+        ctx.clearRect(0, 0, w, h);
 
-    const handlePressureDrag = (noteId: string, e: ReactMouseEvent<HTMLDivElement>) => {
+        if (notes.length === 0) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.font = '10px system-ui';
+            ctx.textAlign = 'center';
+            ctx.fillText('No notes — add MIDI to edit pressure', w / 2, h / 2 + 4);
+            return;
+        }
+
+        for (const note of notes) {
+            const pressure = note.pressure ?? 0;
+            const x = note.startBeat * beatWidth;
+            const barW = Math.max(3, note.duration * beatWidth - 2);
+            const barH = (pressure / 127) * (h - 4);
+            const barY = h - barH - 2;
+            const isSelected = selectedNoteIds.has(note.id);
+
+            ctx.fillStyle = isSelected ? 'rgba(255, 180, 140, 0.8)' : 'rgba(160, 140, 220, 0.45)';
+            ctx.beginPath();
+            ctx.roundRect(x + 1, barY, barW, barH, [2, 2, 0, 0]);
+            ctx.fill();
+
+            ctx.strokeStyle = isSelected ? 'rgba(255, 180, 140, 0.6)' : 'rgba(160, 140, 220, 0.25)';
+            ctx.lineWidth = 0.5;
+            ctx.stroke();
+
+            if (barW > 14) {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                ctx.font = '7px system-ui';
+                ctx.textAlign = 'center';
+                ctx.fillText(String(pressure), x + 1 + barW / 2, barY - 2);
+            }
+        }
+    }, [notes, selectedNoteIds, beatWidth, contentWidth]);
+
+    const handleMouseDown = (e: ReactMouseEvent<HTMLCanvasElement>) => {
         if (!clipId) {
             return;
         }
-        const container = e.currentTarget.parentElement;
-        if (!container) {
+        const canvas = canvasRef.current;
+        const container = containerRef.current;
+        if (!canvas || !container) {
             return;
         }
-        const rect = container.getBoundingClientRect();
-        const origPressure = notes.find((n) => n.id === noteId)?.pressure ?? 0;
+        const canvasRect = canvas.getBoundingClientRect();
+        const mx = e.clientX - canvasRect.left;
+        const h = container.getBoundingClientRect().height;
+
+        let hitNote: (typeof notes)[0] | null = null;
+        for (const note of notes) {
+            const x = note.startBeat * beatWidth;
+            const barW = Math.max(3, note.duration * beatWidth - 2);
+            if (mx >= x + 1 && mx <= x + 1 + barW) {
+                hitNote = note;
+                break;
+            }
+        }
+
+        if (!hitNote) {
+            return;
+        }
+
+        const noteId = hitNote.id;
+        const origPressure = hitNote.pressure ?? 0;
 
         const onMove = (me: MouseEvent) => {
-            const y = me.clientY - rect.top;
-            const ratio = 1 - Math.max(0, Math.min(1, y / rect.height));
-            const pressure = Math.round(ratio * 127);
+            const containerRect = container.getBoundingClientRect();
+            const ry = me.clientY - containerRect.top;
+            const r = 1 - Math.max(0, Math.min(1, (ry - 2) / (h - 4)));
+            const pressure = Math.round(r * 127);
             setNotePressure(clipId, noteId, pressure);
         };
 
@@ -59,34 +128,18 @@ export const PressureLane = ({ clipId, selectedNoteIds }: PressureLaneProps): Re
             }
         };
 
+        onMove(e.nativeEvent);
         window.addEventListener('mousemove', onMove);
         window.addEventListener('mouseup', onUp);
     };
 
     return (
-        <div className="flex h-full items-end gap-px px-1 pb-1 relative" role="group" aria-label="Pressure lane">
-            {notes.map((note) => {
-                const pressure = note.pressure ?? 0;
-                const isSelected = selectedNoteIds.has(note.id);
-                return (
-                    <div
-                        key={note.id}
-                        className={cn(
-                            'w-3 rounded-t cursor-ns-resize transition-colors',
-                            isSelected
-                                ? 'bg-[var(--color-accent-lavender)]/80 hover:bg-[var(--color-accent-lavender)]'
-                                : 'bg-[var(--color-accent-lavender)]/30 hover:bg-[var(--color-accent-lavender)]/50'
-                        )}
-                        style={{
-                            height: `${(pressure / 127) * 100}%`,
-                            minHeight: pressure > 0 ? '2px' : undefined,
-                            marginLeft: `${note.startBeat * 3}px`,
-                        }}
-                        title={`${NOTE_NAMES[note.pitch % 12]}${Math.floor(note.pitch / 12) - 1}: pressure ${pressure}`}
-                        onMouseDown={(e) => handlePressureDrag(note.id, e)}
-                    />
-                );
-            })}
+        <div ref={containerRef} className="relative h-full w-full" role="group" aria-label="Pressure lane">
+            <canvas
+                ref={canvasRef}
+                className="cursor-ns-resize"
+                onMouseDown={handleMouseDown}
+            />
         </div>
     );
 };

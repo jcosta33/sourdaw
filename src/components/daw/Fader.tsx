@@ -143,7 +143,7 @@ export const Fader = ({
                 ref={trackRef}
                 className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-[5px] rounded-full overflow-hidden"
                 style={{
-                    background: '#0A0A0A',
+                    background: 'var(--color-bg-tray)',
                     boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.8)',
                 }}
             >

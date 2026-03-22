@@ -44,11 +44,11 @@ export const Oscilloscope = ({
             analyser.getFloatTimeDomainData(data);
 
             // Clear
-            ctx.fillStyle = '#0a0a0a';
+            ctx.fillStyle = resolveToken('--color-bg-tray', '#0a0a0a');
             ctx.fillRect(0, 0, width, height);
 
             // Grid lines
-            ctx.strokeStyle = '#1a1a1a';
+            ctx.strokeStyle = resolveToken('--color-bg-panelRaised', '#1a1a1a');
             ctx.lineWidth = 0.5;
             const midY = height / 2;
 
@@ -59,7 +59,7 @@ export const Oscilloscope = ({
             ctx.stroke();
 
             // Quarter lines
-            ctx.strokeStyle = '#141414';
+            ctx.strokeStyle = resolveToken('--color-bg-overlay', '#141414');
             ctx.beginPath();
             ctx.moveTo(0, midY / 2);
             ctx.lineTo(width, midY / 2);

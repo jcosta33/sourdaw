@@ -126,3 +126,52 @@ export function reorderSection(sectionId: string, direction: 'left' | 'right'): 
 
     markerStore.set({ ...state, sections });
 }
+
+export function moveMarker(markerId: string, newBeat: number): void {
+    const state = markerStore.value;
+    if (!state) {
+        return;
+    }
+    const beat = Math.max(0, Math.round(newBeat));
+    markerStore.set({
+        ...state,
+        markers: state.markers.map((m) => (m.id === markerId ? { ...m, beat } : m)),
+    });
+}
+
+export function moveSection(sectionId: string, newStartBeat: number): void {
+    const state = markerStore.value;
+    if (!state) {
+        return;
+    }
+    markerStore.set({
+        ...state,
+        sections: state.sections.map((s) => {
+            if (s.id !== sectionId) {
+                return s;
+            }
+            const duration = s.endBeat - s.startBeat;
+            const startBeat = Math.max(0, Math.round(newStartBeat));
+            return { ...s, startBeat, endBeat: startBeat + duration };
+        }),
+    });
+}
+
+export function resizeSection(sectionId: string, newStartBeat: number, newEndBeat: number): void {
+    const state = markerStore.value;
+    if (!state) {
+        return;
+    }
+    const MIN_DURATION = 4;
+    markerStore.set({
+        ...state,
+        sections: state.sections.map((s) => {
+            if (s.id !== sectionId) {
+                return s;
+            }
+            const startBeat = Math.max(0, Math.round(newStartBeat));
+            const endBeat = Math.max(startBeat + MIN_DURATION, Math.round(newEndBeat));
+            return { ...s, startBeat, endBeat };
+        }),
+    });
+}

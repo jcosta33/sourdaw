@@ -4,6 +4,7 @@
  * Listener is at the center. Shows azimuth circle, distance rings, and L/R labels.
  */
 import { type ReactElement, useRef, useState, useEffect } from 'react';
+import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type SpatialPannerProps = {
     size?: number;
@@ -20,7 +21,7 @@ export const SpatialPanner = ({
     azimuth: initialAzimuth = 0,
     distance: initialDistance = 0.5,
     onChange,
-    color = '#4a7090',
+    color = resolveToken('--color-palette-steel', '#4a7090'),
 }: SpatialPannerProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [azimuth, setAzimuth] = useState(initialAzimuth);
@@ -44,13 +45,13 @@ export const SpatialPanner = ({
         ctx.clearRect(0, 0, size, size);
 
         // Background
-        ctx.fillStyle = '#0a0a0a';
+        ctx.fillStyle = resolveToken('--color-bg-tray', '#0a0a0a');
         ctx.beginPath();
         ctx.arc(cx, cy, maxRadius + 4, 0, Math.PI * 2);
         ctx.fill();
 
         // Distance rings
-        ctx.strokeStyle = '#1a1a1a';
+        ctx.strokeStyle = resolveToken('--color-bg-panelRaised', '#1a1a1a');
         ctx.lineWidth = 0.5;
         for (const r of [0.25, 0.5, 0.75, 1.0]) {
             ctx.beginPath();
@@ -67,7 +68,7 @@ export const SpatialPanner = ({
         ctx.stroke();
 
         // Labels
-        ctx.fillStyle = '#3a3a3a';
+        ctx.fillStyle = resolveToken('--color-text-disabled', '#3a3a3a');
         ctx.font = '7px monospace';
         ctx.textAlign = 'center';
         ctx.fillText('F', cx, cy - maxRadius - 2);
@@ -78,7 +79,7 @@ export const SpatialPanner = ({
         ctx.fillText('R', cx + maxRadius + 8, cy + 3);
 
         // Listener icon (small circle at center)
-        ctx.fillStyle = '#666';
+        ctx.fillStyle = resolveToken('--color-text-tertiary', '#666');
         ctx.beginPath();
         ctx.arc(cx, cy, 3, 0, Math.PI * 2);
         ctx.fill();
@@ -106,7 +107,7 @@ export const SpatialPanner = ({
         ctx.shadowBlur = 0;
 
         // Readout
-        ctx.fillStyle = '#888';
+        ctx.fillStyle = resolveToken('--color-palette-gray', '#888');
         ctx.font = '7px monospace';
         ctx.textAlign = 'center';
         ctx.fillText(`${azimuth.toFixed(0)}° ${(distance * 100).toFixed(0)}%`, cx, size - 2);

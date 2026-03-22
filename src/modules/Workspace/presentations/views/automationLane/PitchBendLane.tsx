@@ -8,9 +8,11 @@ import { PITCH_BEND_CENTER } from './laneConstants';
 
 type PitchBendLaneProps = {
     clipId: string | null;
+    beatWidth: number;
+    contentWidth: number;
 };
 
-export const PitchBendLane = ({ clipId }: PitchBendLaneProps): ReactElement => {
+export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactElement => {
     const containerRef = useRef<HTMLDivElement>(null);
     const [dragId, setDragId] = useState<string | null>(null);
 
@@ -23,9 +25,7 @@ export const PitchBendLane = ({ clipId }: PitchBendLaneProps): ReactElement => {
     const allPb = clipId ? (midiState?.pitchBendByClipId[clipId] ?? []) : [];
     const points = [...allPb].sort((a: MidiPitchBend, b: MidiPitchBend) => a.beat - b.beat);
 
-    const beatScale = 3;
-
-    const beatToX = (beat: number): number => beat * beatScale + 8;
+    const beatToX = (beat: number): number => beat * beatWidth + 8;
     const valueToY = (value: number, height: number): number => height - (value / 127) * (height - 8) - 4;
 
     const handleContainerClick = (e: ReactMouseEvent<HTMLDivElement>) => {
@@ -46,7 +46,7 @@ export const PitchBendLane = ({ clipId }: PitchBendLaneProps): ReactElement => {
         const y = e.clientY - rect.top;
         const height = rect.height;
 
-        const beat = Math.max(0, (x - 8) / beatScale);
+        const beat = Math.max(0, (x - 8) / beatWidth);
         const value = Math.round(Math.max(0, Math.min(127, ((height - y - 4) / (height - 8)) * 127)));
 
         const pb = addPitchBend(clipId, value, beat);
@@ -79,7 +79,7 @@ export const PitchBendLane = ({ clipId }: PitchBendLaneProps): ReactElement => {
             const mx = me.clientX - rect.left;
             const my = me.clientY - rect.top;
 
-            const beat = Math.max(0, (mx - 8) / beatScale);
+            const beat = Math.max(0, (mx - 8) / beatWidth);
             const value = Math.round(Math.max(0, Math.min(127, ((height - my - 4) / (height - 8)) * 127)));
 
             movePitchBend(clipId, pbId, beat, value);

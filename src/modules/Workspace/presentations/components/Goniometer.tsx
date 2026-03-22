@@ -38,7 +38,7 @@ export const Goniometer = ({ size = 120, color = resolveToken('--color-accent-la
                 ctx.fillStyle = 'rgba(0, 0, 0, 0.12)';
                 ctx.fillRect(0, 0, size, size);
             } else {
-                ctx.fillStyle = '#0a0a0a';
+                ctx.fillStyle = resolveToken('--color-bg-tray', '#0a0a0a');
                 ctx.fillRect(0, 0, size, size);
             }
 
@@ -47,7 +47,7 @@ export const Goniometer = ({ size = 120, color = resolveToken('--color-accent-la
             const scale = size * 0.35;
 
             // Axis lines (rotated 45°)
-            ctx.strokeStyle = '#1a1a1a';
+            ctx.strokeStyle = resolveToken('--color-bg-panelRaised', '#1a1a1a');
             ctx.lineWidth = 0.5;
 
             // L axis (top-left to bottom-right)
@@ -98,7 +98,7 @@ export const Goniometer = ({ size = 120, color = resolveToken('--color-accent-la
             trailRef.current = ctx.getImageData(0, 0, size, size);
 
             // Labels
-            ctx.fillStyle = '#3a3a3a';
+            ctx.fillStyle = resolveToken('--color-text-disabled', '#3a3a3a');
             ctx.font = '8px monospace';
             ctx.textAlign = 'center';
             ctx.fillText('M', cx, 10);

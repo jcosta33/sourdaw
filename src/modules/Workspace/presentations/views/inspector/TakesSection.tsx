@@ -35,7 +35,7 @@ export const TakesSection = ({ trackId }: TakesSectionProps): ReactElement | nul
 
     return (
         <div className="pt-2">
-            <div className="px-1 mb-2 flex flex-row items-center justify-between">
+            <div className="px-1 mb-2 border-b border-border-hairline pb-1 flex flex-row items-center justify-between">
                 <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
                     Takes ({lane.takes.length})
                 </div>

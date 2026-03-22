@@ -12,7 +12,7 @@ import { zoomTimeline, setAutoScroll, timelineViewStore } from '../../stores/tim
 import { ClipContextMenu, TimelineEmptyMenu } from './TimelineContextMenus';
 import { useTimelineInteractions } from './hooks/useTimelineInteractions';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { TrackAutomationHeaders } from './TrackAutomationHeader';
+
 import { automationStore } from '#/modules/Track/stores/automationStore';
 import { trackStore } from '#/modules/Track/stores/trackStore';
 import { takeLaneStore } from '#/modules/Track/stores/takeLaneStore';
@@ -364,7 +364,7 @@ export const TimelineSurface = (): ReactElement => {
                 />
             )}
 
-            <TrackAutomationHeaders containerHeight={containerRef.current?.getBoundingClientRect().height ?? 600} />
+
 
             {contextMenu?.kind === 'clip' && (
                 <ClipContextMenu

@@ -132,8 +132,8 @@ export const StatusBar = (): ReactElement => {
                         <span className="text-[10px] font-mono text-muted-foreground/50">idle</span>
                     )}
                 </div>
-                <span className="text-[10px] text-muted-foreground">{engineInfo.sampleRate / 1000}kHz</span>
-                <span className="text-[10px] text-muted-foreground">{latencyMs}ms</span>
+                <span className="text-[10px] font-mono tabular-nums text-muted-foreground">{engineInfo.sampleRate / 1000}kHz</span>
+                <span className="text-[10px] font-mono tabular-nums text-muted-foreground">{latencyMs}ms</span>
                 <div className="flex items-center gap-1">
                     <div className="h-2 w-16 rounded-full bg-muted/30 overflow-hidden">
                         <div

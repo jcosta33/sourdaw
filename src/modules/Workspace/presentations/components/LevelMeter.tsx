@@ -1,5 +1,6 @@
 import { type ReactElement } from 'react';
 import { cn } from '#/helpers/Styles/cn';
+import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type LevelMeterProps = {
     peak: number;
@@ -34,7 +35,10 @@ const getMeterColor = (db: number): string => {
 const buildGradient = (): string => {
     const redPct = dbToPercent(-3);
     const yellowPct = dbToPercent(-12);
-    return `linear-gradient(to top, #4a9060 0%, #4a9060 ${yellowPct}%, #b09040 ${yellowPct}%, #b09040 ${redPct}%, #b05050 ${redPct}%, #b05050 100%)`;
+    const safe = resolveToken('--color-meter-safe', '#4a9060');
+    const hot = resolveToken('--color-meter-hot', '#b09040');
+    const clip = resolveToken('--color-meter-clip', '#b05050');
+    return `linear-gradient(to top, ${safe} 0%, ${safe} ${yellowPct}%, ${hot} ${yellowPct}%, ${hot} ${redPct}%, ${clip} ${redPct}%, ${clip} 100%)`;
 };
 
 const METER_GRADIENT = buildGradient();

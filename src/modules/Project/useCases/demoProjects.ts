@@ -37,7 +37,7 @@ function applyPreset(track: any, presetId: string) {
     }
 }
 
-function createAudioClip(trackId: string, name: string, startBeat: number, endBeat: number, bufferId: string) {
+function createAudioClip(trackId: string, name: string, startBeat: number, endBeat: number, bufferId: string, color = '') {
     return {
         id: `clip-${crypto.randomUUID()}`,
         trackId,
@@ -49,14 +49,14 @@ function createAudioClip(trackId: string, name: string, startBeat: number, endBe
         fadeInBeats: 0,
         fadeOutBeats: 0,
         gain: 1.0,
-        color: '',
+        color,
         locked: false,
         muted: false,
         stretchMode: 'repitch' as StretchMode,
     };
 }
 
-function createMidiClip(trackId: string, name: string, startBeat: number, endBeat: number) {
+function createMidiClip(trackId: string, name: string, startBeat: number, endBeat: number, color = '') {
     return {
         id: `clip-${crypto.randomUUID()}`,
         trackId,
@@ -67,7 +67,7 @@ function createMidiClip(trackId: string, name: string, startBeat: number, endBea
         fadeInBeats: 0,
         fadeOutBeats: 0,
         gain: 1.0,
-        color: '',
+        color,
         locked: false,
         muted: false,
     };
@@ -163,34 +163,34 @@ export async function demo1_TheCompleteMix(): Promise<void> {
 
     // ---- AUDIO CLIPS (drums enter in stages) ----
     // Kick: ghost at 32, main at 64, full force at 128, returns at 256
-    const kA = createAudioClip(kickTrack.id, 'Kick Ghost', 32, 64, bK);
-    const kB = createAudioClip(kickTrack.id, 'Kick Build', 64, 128, bK);
-    const kC = createAudioClip(kickTrack.id, 'Kick Drop', 128, 224, bK);
-    const kD = createAudioClip(kickTrack.id, 'Kick Rise', 256, TB, bK);
+    const kA = createAudioClip(kickTrack.id, 'Kick Ghost', 32, 64, bK, kickTrack.color);
+    const kB = createAudioClip(kickTrack.id, 'Kick Build', 64, 128, bK, kickTrack.color);
+    const kC = createAudioClip(kickTrack.id, 'Kick Drop', 128, 224, bK, kickTrack.color);
+    const kD = createAudioClip(kickTrack.id, 'Kick Rise', 256, TB, bK, kickTrack.color);
     kickTrack.clips = [kA, kB, kC, kD];
 
-    const sA = createAudioClip(snareTrack.id, 'Clap A', 64, 192, bS);
-    const sB = createAudioClip(snareTrack.id, 'Clap B', 224, TB, bS);
+    const sA = createAudioClip(snareTrack.id, 'Clap A', 64, 192, bS, snareTrack.color);
+    const sB = createAudioClip(snareTrack.id, 'Clap B', 224, TB, bS, snareTrack.color);
     snareTrack.clips = [sA, sB];
 
-    hatCTrack.clips = [createAudioClip(hatCTrack.id, 'HH 16th', 64, TB, bHC)];
+    hatCTrack.clips = [createAudioClip(hatCTrack.id, 'HH 16th', 64, TB, bHC, hatCTrack.color)];
 
-    const hA = createAudioClip(hatOTrack.id, 'HH Open A', 96, 192, bHO);
-    const hB = createAudioClip(hatOTrack.id, 'HH Open B', 240, TB, bHO);
+    const hA = createAudioClip(hatOTrack.id, 'HH Open A', 96, 192, bHO, hatOTrack.color);
+    const hB = createAudioClip(hatOTrack.id, 'HH Open B', 240, TB, bHO, hatOTrack.color);
     hatOTrack.clips = [hA, hB];
 
-    const pA = createAudioClip(percTrack.id, 'Shaker A', 96, 192, bP);
-    const pB = createAudioClip(percTrack.id, 'Shaker B', 256, TB, bP);
+    const pA = createAudioClip(percTrack.id, 'Shaker A', 96, 192, bP, percTrack.color);
+    const pB = createAudioClip(percTrack.id, 'Shaker B', 256, TB, bP, percTrack.color);
     percTrack.clips = [pA, pB];
 
     // ---- MIDI CLIPS (all start at 0 — notes stored absolute) ----
-    const subClip = createMidiClip(subTrack.id, 'Sub Drone', 0, TB);
-    const pulseClip = createMidiClip(pulseTrack.id, 'Pulse Seq', 0, TB);
-    const padClip = createMidiClip(padTrack.id, 'Atmos', 0, TB);
-    const strClip = createMidiClip(stringsTrack.id, 'Strings', 0, TB);
-    const arpClip = createMidiClip(arpTrack.id, 'Arp 16th', 0, TB);
-    const leadClip = createMidiClip(leadTrack.id, 'Lead Motif', 0, TB);
-    const pianoClip = createMidiClip(pianoTrack.id, 'Piano', 0, TB);
+    const subClip = createMidiClip(subTrack.id, 'Sub Drone', 0, TB, subTrack.color);
+    const pulseClip = createMidiClip(pulseTrack.id, 'Pulse Seq', 0, TB, pulseTrack.color);
+    const padClip = createMidiClip(padTrack.id, 'Atmos', 0, TB, padTrack.color);
+    const strClip = createMidiClip(stringsTrack.id, 'Strings', 0, TB, stringsTrack.color);
+    const arpClip = createMidiClip(arpTrack.id, 'Arp 16th', 0, TB, arpTrack.color);
+    const leadClip = createMidiClip(leadTrack.id, 'Lead Motif', 0, TB, leadTrack.color);
+    const pianoClip = createMidiClip(pianoTrack.id, 'Piano', 0, TB, pianoTrack.color);
     subTrack.clips = [subClip];
     pulseTrack.clips = [pulseClip];
     padTrack.clips = [padClip];
@@ -596,10 +596,10 @@ export async function demo2_ElectronicBeat(): Promise<void> {
     ]);
 
     // We reuse buffers for some
-    const kickClip = createAudioClip(kickTrack.id, 'Synthwave Kick', 0, totalBeats, `d2-kick-${ctxId}`);
-    const snareClip = createAudioClip(snareTrack.id, 'Gated Snare', 0, totalBeats, `d2-snare-${ctxId}`);
-    const hatClip = createAudioClip(hatClosedTrack.id, '16th Hats', 0, totalBeats, `d2-hat-${ctxId}`);
-    const riserClip = createAudioClip(riserTrack.id, 'Riser', 48, 64, `d2-riser-${ctxId}`);
+    const kickClip = createAudioClip(kickTrack.id, 'Synthwave Kick', 0, totalBeats, `d2-kick-${ctxId}`, kickTrack.color);
+    const snareClip = createAudioClip(snareTrack.id, 'Gated Snare', 0, totalBeats, `d2-snare-${ctxId}`, snareTrack.color);
+    const hatClip = createAudioClip(hatClosedTrack.id, '16th Hats', 0, totalBeats, `d2-hat-${ctxId}`, hatClosedTrack.color);
+    const riserClip = createAudioClip(riserTrack.id, 'Riser', 48, 64, `d2-riser-${ctxId}`, riserTrack.color);
     riserClip.fadeInBeats = 16;
 
     kickTrack.clips = [kickClip];
@@ -607,11 +607,11 @@ export async function demo2_ElectronicBeat(): Promise<void> {
     hatClosedTrack.clips = [hatClip];
     riserTrack.clips = [riserClip];
 
-    const subClip = createMidiClip(subBassTrack.id, 'Rolling Bass', 0, totalBeats);
-    const midBassClip = createMidiClip(midBassTrack.id, 'Stabs', 0, totalBeats);
-    const padClip = createMidiClip(padTrack.id, 'Chord Progression', 0, totalBeats);
-    const arpClip = createMidiClip(arp1Track.id, 'Arp Pattern', 16, totalBeats);
-    const leadClip = createMidiClip(lead1Track.id, 'Nostalgic Melody', 32, totalBeats);
+    const subClip = createMidiClip(subBassTrack.id, 'Rolling Bass', 0, totalBeats, subBassTrack.color);
+    const midBassClip = createMidiClip(midBassTrack.id, 'Stabs', 0, totalBeats, midBassTrack.color);
+    const padClip = createMidiClip(padTrack.id, 'Chord Progression', 0, totalBeats, padTrack.color);
+    const arpClip = createMidiClip(arp1Track.id, 'Arp Pattern', 16, totalBeats, arp1Track.color);
+    const leadClip = createMidiClip(lead1Track.id, 'Nostalgic Melody', 32, totalBeats, lead1Track.color);
 
     subBassTrack.clips = [subClip];
     midBassTrack.clips = [midBassClip];
@@ -768,10 +768,10 @@ export async function demo3_AcousticSession(): Promise<void> {
         generateSyntheticToneBuffer(`d3-vinyl-${ctxId}`, totalBeats, bpm, 100),
     ]);
 
-    const kickClip = createAudioClip(kickTrack.id, 'LoFi Kick', 0, totalBeats, `d3-kick-${ctxId}`);
-    const snareClip = createAudioClip(snareTrack.id, 'Rim Shot', 0, totalBeats, `d3-snare-${ctxId}`);
-    const hatClip = createAudioClip(hatClosedTrack.id, 'Lazy Hats', 0, totalBeats, `d3-hat-${ctxId}`);
-    const vinylClip = createAudioClip(vinylNoiseTrack.id, 'Crackle Loop', 0, totalBeats, `d3-vinyl-${ctxId}`);
+    const kickClip = createAudioClip(kickTrack.id, 'LoFi Kick', 0, totalBeats, `d3-kick-${ctxId}`, kickTrack.color);
+    const snareClip = createAudioClip(snareTrack.id, 'Rim Shot', 0, totalBeats, `d3-snare-${ctxId}`, snareTrack.color);
+    const hatClip = createAudioClip(hatClosedTrack.id, 'Lazy Hats', 0, totalBeats, `d3-hat-${ctxId}`, hatClosedTrack.color);
+    const vinylClip = createAudioClip(vinylNoiseTrack.id, 'Crackle Loop', 0, totalBeats, `d3-vinyl-${ctxId}`, vinylNoiseTrack.color);
     vinylClip.gain = 0.4;
 
     kickTrack.clips = [kickClip];
@@ -779,9 +779,9 @@ export async function demo3_AcousticSession(): Promise<void> {
     hatClosedTrack.clips = [hatClip];
     vinylNoiseTrack.clips = [vinylClip];
 
-    const subClip = createMidiClip(subBassTrack.id, 'Smooth Bass', 0, totalBeats);
-    const rhodesClip = createMidiClip(rhodesTrack.id, 'Chords.tape', 0, totalBeats);
-    const pianoClip = createMidiClip(pianoTrack.id, 'Muted Melody', 16, totalBeats);
+    const subClip = createMidiClip(subBassTrack.id, 'Smooth Bass', 0, totalBeats, subBassTrack.color);
+    const rhodesClip = createMidiClip(rhodesTrack.id, 'Chords.tape', 0, totalBeats, rhodesTrack.color);
+    const pianoClip = createMidiClip(pianoTrack.id, 'Muted Melody', 16, totalBeats, pianoTrack.color);
 
     subBassTrack.clips = [subClip];
     rhodesTrack.clips = [rhodesClip];

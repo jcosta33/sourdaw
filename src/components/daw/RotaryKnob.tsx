@@ -109,10 +109,8 @@ export const RotaryKnob = ({
             {/* Outer bezel (well) */}
             <div
                 className={cn(
-                    'relative rounded-full bg-bg-panelInset flex items-center justify-center p-[2px]',
-                    isDragging
-                        ? 'shadow-[inset_0_2px_4px_rgba(0,0,0,0.6),0_0_0_1px_var(--color-border-focus)]'
-                        : 'shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)]'
+                    'relative rounded-full bg-bg-panelInset flex items-center justify-center p-[2px] channel-inset',
+                    isDragging && 'ring-1 ring-border-focus'
                 )}
                 style={{ width: px, height: px }}
             >

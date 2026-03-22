@@ -4,6 +4,7 @@
  * Shows multiple waveform cycles stacked in depth.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type Wavetable3DProps = {
     /** Wavetable data: array of waveform frames (each frame is Float32Array of samples) */
@@ -33,7 +34,7 @@ export const Wavetable3D = ({
     frames: inputFrames,
     width = 200,
     height = 150,
-    color = '#4a7090',
+    color = resolveToken('--color-palette-steel', '#4a7090'),
 }: Wavetable3DProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const frames = inputFrames ?? generateDefaultFrames();
@@ -49,7 +50,7 @@ export const Wavetable3D = ({
         }
 
         ctx.clearRect(0, 0, width, height);
-        ctx.fillStyle = '#0a0a0a';
+        ctx.fillStyle = resolveToken('--color-bg-tray', '#0a0a0a');
         ctx.fillRect(0, 0, width, height);
 
         const frameCount = frames.length;
@@ -90,7 +91,7 @@ export const Wavetable3D = ({
         }
 
         // Labels
-        ctx.fillStyle = '#666';
+        ctx.fillStyle = resolveToken('--color-text-tertiary', '#666');
         ctx.font = '8px monospace';
         ctx.fillText(`${frameCount} frames`, 4, height - 4);
     }, [frames, width, height, color]);

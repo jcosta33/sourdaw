@@ -48,13 +48,13 @@ export const SpectrumAnalyzer = ({
             ctx.clearRect(0, 0, width, height);
 
             // Background
-            ctx.fillStyle = '#0a0a0a';
+            ctx.fillStyle = resolveToken('--color-bg-tray', '#0a0a0a');
             ctx.beginPath();
             ctx.roundRect(0, 0, width, height, 4);
             ctx.fill();
 
             // Grid lines (frequency)
-            ctx.strokeStyle = '#1a1a1a';
+            ctx.strokeStyle = resolveToken('--color-bg-panelRaised', '#1a1a1a');
             ctx.lineWidth = 0.5;
             const freqMarks = [50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
             for (const f of freqMarks) {
@@ -69,7 +69,7 @@ export const SpectrumAnalyzer = ({
 
             // Grid lines (dB)
             const dbMarks = [-60, -48, -36, -24, -12, 0];
-            ctx.fillStyle = '#2a2a2a';
+            ctx.fillStyle = resolveToken('--color-text-disabled', '#2a2a2a');
             ctx.font = '7px monospace';
             for (const db of dbMarks) {
                 const y = dbToY(db, height);
@@ -81,7 +81,7 @@ export const SpectrumAnalyzer = ({
             }
 
             // Frequency labels
-            ctx.fillStyle = '#3a3a3a';
+            ctx.fillStyle = resolveToken('--color-text-disabled', '#3a3a3a');
             ctx.textAlign = 'center';
             for (const f of [100, 1000, 10000]) {
                 const x = freqToX(f, width, sampleRate);

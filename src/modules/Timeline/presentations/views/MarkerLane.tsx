@@ -7,7 +7,7 @@ import {
     useSyncExternalStore,
 } from 'react';
 import { markerStore } from '../../stores/markerStore';
-import { addMarker, removeMarker, renameMarker, setMarkerColor } from '../../useCases/markerUseCases';
+import { addMarker, removeMarker, renameMarker, setMarkerColor, moveMarker } from '../../useCases/markerUseCases';
 import { type Marker } from '../../models/Marker';
 import { Flag } from 'lucide-react';
 
@@ -33,6 +33,12 @@ type ContextMenuState =
 
 type EditingState = { markerId: string; name: string } | null;
 
+type DragState = {
+    markerId: string;
+    startClientX: number;
+    originalBeat: number;
+} | null;
+
 const LANE_HEIGHT = 20;
 
 export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactElement => {
@@ -45,8 +51,11 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
     const markers = markerState?.markers ?? [];
     const [contextMenu, setContextMenu] = useState<ContextMenuState>({ kind: 'none' });
     const [editing, setEditing] = useState<EditingState>(null);
+    const [dragPreview, setDragPreview] = useState<{ markerId: string; beat: number } | null>(null);
     const menuRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
+    const dragRef = useRef<DragState>(null);
+    const laneRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         if (editing && inputRef.current) {
@@ -68,7 +77,50 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
         return () => window.removeEventListener('mousedown', handleClick);
     }, [contextMenu.kind]);
 
+    // Compute final beat on mouseup by reading the last mousemove position
+    // We use a ref-based approach for the final commit to avoid stale closure
+    const handleMarkerDragStartStable = (e: ReactMouseEvent, marker: Marker) => {
+        if (e.button !== 0) {
+            return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+
+        const startX = e.clientX;
+        const originalBeat = marker.beat;
+        let lastBeat = originalBeat;
+
+        dragRef.current = {
+            markerId: marker.id,
+            startClientX: startX,
+            originalBeat,
+        };
+
+        const handleMouseMove = (moveEvent: MouseEvent) => {
+            const deltaPx = moveEvent.clientX - startX;
+            const deltaBeats = deltaPx / pixelsPerBeat;
+            lastBeat = Math.max(0, Math.round(originalBeat + deltaBeats));
+            setDragPreview({ markerId: marker.id, beat: lastBeat });
+        };
+
+        const handleMouseUp = () => {
+            if (lastBeat !== originalBeat) {
+                moveMarker(marker.id, lastBeat);
+            }
+            dragRef.current = null;
+            setDragPreview(null);
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+    };
+
     const handleLaneContextMenu = (e: ReactMouseEvent<HTMLDivElement>) => {
+        if (dragRef.current) {
+            return;
+        }
         e.preventDefault();
         const rect = e.currentTarget.getBoundingClientRect();
         const localX = e.clientX - rect.left;
@@ -126,6 +178,7 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
 
     return (
         <div
+            ref={laneRef}
             className="relative shrink-0 border-b border-border/40 bg-surface-base/50 overflow-hidden select-none"
             style={{ height: LANE_HEIGHT }}
             onContextMenu={handleLaneContextMenu}
@@ -133,7 +186,9 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
             aria-label="Timeline markers"
         >
             {markers.map((marker) => {
-                const left = marker.beat * pixelsPerBeat - scrollX;
+                const isDragging = dragPreview?.markerId === marker.id;
+                const displayBeat = isDragging ? dragPreview.beat : marker.beat;
+                const left = displayBeat * pixelsPerBeat - scrollX;
                 if (left < -50 || left > 4000) {
                     return null;
                 }
@@ -144,17 +199,23 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                     <div
                         key={marker.id}
                         className="absolute top-0 bottom-0 flex items-center gap-1 group"
-                        style={{ left: Math.max(0, left) }}
+                        style={{
+                            left: Math.max(0, left),
+                            opacity: isDragging ? 0.7 : 1,
+                            transition: isDragging ? 'none' : 'left 0.1s ease-out',
+                        }}
                         title={marker.name}
                         onDoubleClick={() => setEditing({ markerId: marker.id, name: marker.name })}
                     >
                         <div
                             className="flex flex-col h-full w-[2px] cursor-ew-resize hover:w-[4px] hover:-ml-[1px] transition-all"
                             style={{ backgroundColor: marker.color }}
+                            onMouseDown={(e) => handleMarkerDragStartStable(e, marker)}
                         />
                         <div
-                            className="flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-white/90 cursor-default hover:bg-white/10"
+                            className="flex items-center gap-1 rounded-sm px-1.5 py-0.5 cursor-grab active:cursor-grabbing hover:bg-white/10"
                             style={{ backgroundColor: `${marker.color}33`, color: marker.color }}
+                            onMouseDown={(e) => handleMarkerDragStartStable(e, marker)}
                         >
                             <Flag className="size-2.5" />
                             {isEditing ? (

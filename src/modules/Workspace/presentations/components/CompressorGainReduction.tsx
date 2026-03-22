@@ -5,6 +5,7 @@
  */
 import { type ReactElement, useRef, useEffect } from 'react';
 import { audioEngine } from '#/modules/AudioEngine/repositories/audioEngineInstance';
+import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type CompressorGainReductionProps = {
     trackId?: string;
@@ -72,7 +73,7 @@ export const CompressorGainReduction = ({
             ctx.clearRect(0, 0, width, height);
 
             // Background
-            ctx.fillStyle = '#0a0a0a';
+            ctx.fillStyle = resolveToken('--color-bg-tray', '#0a0a0a');
             ctx.beginPath();
             ctx.roundRect(0, 0, width, height, 3);
             ctx.fill();
@@ -84,14 +85,14 @@ export const CompressorGainReduction = ({
             // Gradient for GR: amber at top, red at bottom
             if (barH > 0) {
                 const grad = ctx.createLinearGradient(0, 4, 0, 4 + barH);
-                grad.addColorStop(0, '#b09040');
-                grad.addColorStop(1, gr > 12 ? '#b05050' : '#c09030');
+                grad.addColorStop(0, resolveToken('--color-meter-hot', '#b09040'));
+                grad.addColorStop(1, gr > 12 ? resolveToken('--color-meter-clip', '#b05050') : resolveToken('--color-palette-amber', '#c09030'));
                 ctx.fillStyle = grad;
                 ctx.fillRect(4, 4, width - 8, barH);
             }
 
             // Scale marks
-            ctx.fillStyle = '#3a3a3a';
+            ctx.fillStyle = resolveToken('--color-text-disabled', '#3a3a3a');
             ctx.font = '7px monospace';
             ctx.textAlign = 'right';
             for (const db of [0, -6, -12, -18, -24]) {
@@ -101,7 +102,7 @@ export const CompressorGainReduction = ({
             }
 
             // GR readout
-            ctx.fillStyle = gr > 6 ? '#b05050' : '#b09040';
+            ctx.fillStyle = gr > 6 ? resolveToken('--color-meter-clip', '#b05050') : resolveToken('--color-meter-hot', '#b09040');
             ctx.font = '8px monospace';
             ctx.textAlign = 'center';
             ctx.fillText(gr > 0.1 ? `-${gr.toFixed(1)}` : '0.0', width / 2, height - 2);

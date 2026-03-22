@@ -8,9 +8,11 @@ import { type MidiCC } from '../../../useCases/workspaceViewActions';
 type CCLaneProps = {
     clipId: string | null;
     controller: number;
+    beatWidth: number;
+    contentWidth: number;
 };
 
-export const CCLane = ({ clipId, controller }: CCLaneProps): ReactElement => {
+export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactElement => {
     const containerRef = useRef<HTMLDivElement>(null);
     const [dragId, setDragId] = useState<string | null>(null);
 
@@ -25,9 +27,7 @@ export const CCLane = ({ clipId, controller }: CCLaneProps): ReactElement => {
         (a: MidiCC, b: MidiCC) => a.beat - b.beat
     );
 
-    const beatScale = 3;
-
-    const beatToX = (beat: number): number => beat * beatScale + 8;
+    const beatToX = (beat: number): number => beat * beatWidth + 8;
     const valueToY = (value: number, height: number): number => height - (value / 127) * (height - 8) - 4;
 
     const handleContainerClick = (e: ReactMouseEvent<HTMLDivElement>) => {
@@ -46,7 +46,7 @@ export const CCLane = ({ clipId, controller }: CCLaneProps): ReactElement => {
         const y = e.clientY - rect.top;
         const height = rect.height;
 
-        const beat = Math.max(0, (x - 8) / beatScale);
+        const beat = Math.max(0, (x - 8) / beatWidth);
         const value = Math.round(Math.max(0, Math.min(127, ((height - y - 4) / (height - 8)) * 127)));
 
         const cc = addMidiCC(clipId, controller, value, beat);
@@ -78,7 +78,7 @@ export const CCLane = ({ clipId, controller }: CCLaneProps): ReactElement => {
             const mx = me.clientX - rect.left;
             const my = me.clientY - rect.top;
 
-            const beat = Math.max(0, (mx - 8) / beatScale);
+            const beat = Math.max(0, (mx - 8) / beatWidth);
             const value = Math.round(Math.max(0, Math.min(127, ((height - my - 4) / (height - 8)) * 127)));
 
             moveMidiCC(clipId, ccId, beat, value);

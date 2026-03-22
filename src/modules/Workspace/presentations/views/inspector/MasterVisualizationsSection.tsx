@@ -11,7 +11,7 @@ import { Wavetable3D } from '../../components/Wavetable3D';
 export const MasterVisualizationsSection = (): ReactElement => {
     return (
         <div>
-            <div className="px-1 mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+            <div className="px-1 mb-2 border-b border-border-hairline pb-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
                 Analysis & Metering
             </div>
             <div className="flex flex-col gap-3">

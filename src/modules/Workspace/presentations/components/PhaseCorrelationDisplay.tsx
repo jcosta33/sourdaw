@@ -6,6 +6,7 @@
 import { type ReactElement, useRef, useEffect } from 'react';
 import { audioEngine } from '#/modules/AudioEngine/repositories/audioEngineInstance';
 import { PhaseCorrelationMeter as PhaseMeter } from '#/modules/AudioEngine/useCases/advancedMetering';
+import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type PhaseCorrelationDisplayProps = {
     width?: number;
@@ -50,7 +51,7 @@ export const PhaseCorrelationDisplay = ({ width = 160, height = 24 }: PhaseCorre
             ctx.clearRect(0, 0, width, height);
 
             // Background
-            ctx.fillStyle = '#111';
+            ctx.fillStyle = resolveToken('--color-bg-panel', '#111');
             ctx.beginPath();
             ctx.roundRect(0, 0, width, height, 3);
             ctx.fill();
@@ -61,11 +62,11 @@ export const PhaseCorrelationDisplay = ({ width = 160, height = 24 }: PhaseCorre
             const barH = height - 8;
 
             // Background bar
-            ctx.fillStyle = '#222';
+            ctx.fillStyle = resolveToken('--color-bg-dialog', '#222');
             ctx.fillRect(2, barY, width - 4, barH);
 
             // Center line
-            ctx.strokeStyle = '#3a3a3a';
+            ctx.strokeStyle = resolveToken('--color-text-disabled', '#3a3a3a');
             ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.moveTo(midX, barY);
@@ -76,10 +77,10 @@ export const PhaseCorrelationDisplay = ({ width = 160, height = 24 }: PhaseCorre
             const indicatorX = midX + correlation * (midX - 4);
             const color =
                 correlation > 0.5
-                    ? '#4a9060' // Good mono compatibility
+                    ? resolveToken('--color-meter-safe', '#4a9060') // Good mono compatibility
                     : correlation > 0
-                      ? '#b09040' // Moderate
-                      : '#b05050'; // Phase issues
+                      ? resolveToken('--color-meter-hot', '#b09040') // Moderate
+                      : resolveToken('--color-meter-clip', '#b05050'); // Phase issues
 
             // Bar from center to correlation value
             const barStart = Math.min(midX, indicatorX);
@@ -94,7 +95,7 @@ export const PhaseCorrelationDisplay = ({ width = 160, height = 24 }: PhaseCorre
             ctx.fill();
 
             // Labels
-            ctx.fillStyle = '#666';
+            ctx.fillStyle = resolveToken('--color-text-tertiary', '#666');
             ctx.font = '7px monospace';
             ctx.textAlign = 'left';
             ctx.fillText('-1', 4, height - 2);

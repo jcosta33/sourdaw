@@ -1,16 +1,19 @@
-import { type ReactElement, type MouseEvent as ReactMouseEvent, useSyncExternalStore } from 'react';
-import { cn } from '#/helpers/Styles/cn';
+import { type ReactElement, type MouseEvent as ReactMouseEvent, useRef, useEffect, useSyncExternalStore } from 'react';
 import { midiStore } from '#/modules/Track/stores/midiStore';
 import { pushUndoEntry } from '../../../useCases/workspaceViewActions';
 import { setNoteProbability } from '../../../useCases/workspaceViewActions';
-import { NOTE_NAMES } from './laneConstants';
 
 type ProbabilityLaneProps = {
     clipId: string | null;
     selectedNoteIds: Set<string>;
+    beatWidth: number;
+    contentWidth: number;
 };
 
-export const ProbabilityLane = ({ clipId, selectedNoteIds }: ProbabilityLaneProps): ReactElement => {
+export const ProbabilityLane = ({ clipId, selectedNoteIds, beatWidth, contentWidth }: ProbabilityLaneProps): ReactElement => {
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
+
     const midiState = useSyncExternalStore(
         (cb) => midiStore.subscribe(() => cb()),
         () => midiStore.value,
@@ -19,29 +22,95 @@ export const ProbabilityLane = ({ clipId, selectedNoteIds }: ProbabilityLaneProp
 
     const notes = clipId ? (midiState?.notesByClipId[clipId] ?? []) : [];
 
-    if (notes.length === 0) {
-        return (
-            <div className="flex h-full items-center justify-center">
-                <p className="text-[10px] text-muted-foreground">No notes — add MIDI notes to edit probability</p>
-            </div>
-        );
-    }
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        const container = containerRef.current;
+        if (!canvas || !container) {
+            return;
+        }
+        const dpr = window.devicePixelRatio || 1;
+        const w = contentWidth;
+        const h = container.getBoundingClientRect().height;
+        canvas.width = w * dpr;
+        canvas.height = h * dpr;
+        canvas.style.width = `${w}px`;
+        canvas.style.height = `${h}px`;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+            return;
+        }
+        ctx.scale(dpr, dpr);
+        ctx.clearRect(0, 0, w, h);
 
-    const handleProbabilityDrag = (noteId: string, e: ReactMouseEvent<HTMLDivElement>) => {
+        if (notes.length === 0) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.font = '10px system-ui';
+            ctx.textAlign = 'center';
+            ctx.fillText('No notes — add MIDI to edit probability', w / 2, h / 2 + 4);
+            return;
+        }
+
+        for (const note of notes) {
+            const prob = note.probability ?? 100;
+            const x = note.startBeat * beatWidth;
+            const barW = Math.max(3, note.duration * beatWidth - 2);
+            const barH = (prob / 100) * (h - 4);
+            const barY = h - barH - 2;
+            const isSelected = selectedNoteIds.has(note.id);
+
+            ctx.fillStyle = isSelected ? 'rgba(255, 180, 140, 0.8)' : 'rgba(120, 220, 180, 0.45)';
+            ctx.beginPath();
+            ctx.roundRect(x + 1, barY, barW, barH, [2, 2, 0, 0]);
+            ctx.fill();
+
+            ctx.strokeStyle = isSelected ? 'rgba(255, 180, 140, 0.6)' : 'rgba(120, 220, 180, 0.25)';
+            ctx.lineWidth = 0.5;
+            ctx.stroke();
+
+            if (barW > 14) {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                ctx.font = '7px system-ui';
+                ctx.textAlign = 'center';
+                ctx.fillText(`${prob}%`, x + 1 + barW / 2, barY - 2);
+            }
+        }
+    }, [notes, selectedNoteIds, beatWidth, contentWidth]);
+
+    const handleMouseDown = (e: ReactMouseEvent<HTMLCanvasElement>) => {
         if (!clipId) {
             return;
         }
-        const container = e.currentTarget.parentElement;
-        if (!container) {
+        const canvas = canvasRef.current;
+        const container = containerRef.current;
+        if (!canvas || !container) {
             return;
         }
-        const rect = container.getBoundingClientRect();
-        const origProbability = notes.find((n) => n.id === noteId)?.probability ?? 100;
+        const canvasRect = canvas.getBoundingClientRect();
+        const mx = e.clientX - canvasRect.left;
+        const h = container.getBoundingClientRect().height;
+
+        let hitNote: (typeof notes)[0] | null = null;
+        for (const note of notes) {
+            const x = note.startBeat * beatWidth;
+            const barW = Math.max(3, note.duration * beatWidth - 2);
+            if (mx >= x + 1 && mx <= x + 1 + barW) {
+                hitNote = note;
+                break;
+            }
+        }
+
+        if (!hitNote) {
+            return;
+        }
+
+        const noteId = hitNote.id;
+        const origProbability = hitNote.probability ?? 100;
 
         const onMove = (me: MouseEvent) => {
-            const y = me.clientY - rect.top;
-            const ratio = 1 - Math.max(0, Math.min(1, y / rect.height));
-            const prob = Math.round(ratio * 100);
+            const containerRect = container.getBoundingClientRect();
+            const ry = me.clientY - containerRect.top;
+            const r = 1 - Math.max(0, Math.min(1, (ry - 2) / (h - 4)));
+            const prob = Math.round(r * 100);
             setNoteProbability(clipId, noteId, prob);
         };
 
@@ -59,33 +128,18 @@ export const ProbabilityLane = ({ clipId, selectedNoteIds }: ProbabilityLaneProp
             }
         };
 
+        onMove(e.nativeEvent);
         window.addEventListener('mousemove', onMove);
         window.addEventListener('mouseup', onUp);
     };
 
     return (
-        <div className="flex h-full items-end gap-px px-1 pb-1 relative" role="group" aria-label="Probability lane">
-            {notes.map((note) => {
-                const isSelected = selectedNoteIds.has(note.id);
-                const prob = note.probability ?? 100;
-                return (
-                    <div
-                        key={note.id}
-                        className={cn(
-                            'w-3 rounded-t cursor-ns-resize transition-colors',
-                            isSelected
-                                ? 'bg-[var(--color-accent-peach)]/80 hover:bg-[var(--color-accent-peach)]'
-                                : 'bg-[var(--color-accent-mint)]/30 hover:bg-[var(--color-accent-mint)]/50'
-                        )}
-                        style={{
-                            height: `${prob}%`,
-                            marginLeft: `${note.startBeat * 3}px`,
-                        }}
-                        title={`${NOTE_NAMES[note.pitch % 12]}${Math.floor(note.pitch / 12) - 1}: ${prob}%`}
-                        onMouseDown={(e) => handleProbabilityDrag(note.id, e)}
-                    />
-                );
-            })}
+        <div ref={containerRef} className="relative h-full w-full" role="group" aria-label="Probability lane">
+            <canvas
+                ref={canvasRef}
+                className="cursor-ns-resize"
+                onMouseDown={handleMouseDown}
+            />
         </div>
     );
 };

@@ -83,11 +83,37 @@ const SCALES: Record<string, number[]> = {
 
 const SCALE_ROOT_LABELS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
 
+/** Inject an alpha value into an oklch() color string, e.g. 'oklch(0.4 0.08 250)' → 'oklch(0.4 0.08 250 / 0.6)'. */
+const colorWithAlpha = (color: string, alpha: number): string => {
+    const match = color.match(/oklch\(([^)]+)\)/);
+    if (match) {
+        // Strip any existing alpha ("/ 0.x") before adding the new one
+        const base = match[1]!.replace(/\s*\/\s*[\d.]+\s*$/, '').trim();
+        return `oklch(${base} / ${alpha})`;
+    }
+    // Fallback: if not oklch, try to use it as-is with globalAlpha later
+    return color;
+};
+
+/** Return a brighter version of an oklch color (for selected notes). */
+const brightenColor = (color: string, amount: number = 0.18): string => {
+    const match = color.match(/oklch\(([\d.]+)\s+([\d.]+)\s+([\d.]+)/);
+    if (match) {
+        const l = Math.min(1, parseFloat(match[1]!) + amount);
+        const c = parseFloat(match[2]!);
+        const h = parseFloat(match[3]!);
+        return `oklch(${l.toFixed(3)} ${c} ${h})`;
+    }
+    return color;
+};
+
 type PianoRollProps = {
     clipId: string;
     trackId: string;
     selectedNoteIds: Set<string>;
     onSelectedNoteIdsChange: Dispatch<SetStateAction<Set<string>>>;
+    onScrollChange?: (scrollLeft: number) => void;
+    onBeatWidthChange?: (beatWidth: number) => void;
 };
 
 export const PianoRoll = ({
@@ -95,6 +121,8 @@ export const PianoRoll = ({
     trackId,
     selectedNoteIds,
     onSelectedNoteIdsChange,
+    onScrollChange,
+    onBeatWidthChange,
 }: PianoRollProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [zoom, setZoom] = useState(1);
@@ -133,6 +161,10 @@ export const PianoRoll = ({
     const [isFolded, setIsFolded] = useState(false);
 
     const beatWidth = Math.max(1, 40 * zoom);
+
+    useEffect(() => {
+        onBeatWidthChange?.(beatWidth);
+    }, [beatWidth, onBeatWidthChange]);
 
     const midiState = useSyncExternalStore(
         (cb) => midiStore.subscribe(() => cb()),
@@ -296,9 +328,9 @@ export const PianoRoll = ({
 
         // ── Ghost notes (from other MIDI tracks) ─────────────────────
         if (showGhostNotes && trackState) {
+            // Ghost notes from other tracks
             const otherMidiTracks = trackState.tracks.filter((t) => t.kind === 'midi' && t.id !== trackId);
             for (const otherTrack of otherMidiTracks) {
-                const trackColor = otherTrack.color ?? '#888';
                 for (const otherClip of otherTrack.clips) {
                     if (otherClip.type !== 'midi') {
                         continue;
@@ -307,6 +339,7 @@ export const PianoRoll = ({
                     if (!otherNotes) {
                         continue;
                     }
+                    const ghostClipColor = otherClip.color || otherTrack.color;
                     for (const gn of otherNotes) {
                         const row = visiblePitches.indexOf(gn.pitch);
                         if (row === -1) {
@@ -316,14 +349,57 @@ export const PianoRoll = ({
                         const y = row * ROW_HEIGHT;
                         const w = gn.duration * beatWidth;
 
-                        ctx.fillStyle = `${trackColor}26`; // ~15% opacity hex
+                        ctx.fillStyle = colorWithAlpha(ghostClipColor, 0.06);
                         ctx.beginPath();
                         ctx.roundRect(x + 1, y + 1, Math.max(4, w - 2), ROW_HEIGHT - 2, 2);
                         ctx.fill();
+
+                        ctx.strokeStyle = colorWithAlpha(ghostClipColor, 0.10);
+                        ctx.lineWidth = 0.5;
+                        ctx.stroke();
+                    }
+                }
+            }
+
+            // Ghost notes from non-selected clips on the SAME track
+            const activeTrackForGhosts = trackState.tracks.find((t) => t.id === trackId);
+            if (activeTrackForGhosts) {
+                for (const sameTrackClip of activeTrackForGhosts.clips) {
+                    if (sameTrackClip.id === clipId || sameTrackClip.type !== 'midi') {
+                        continue;
+                    }
+                    const ghostNotes = midiState?.notesByClipId[sameTrackClip.id];
+                    if (!ghostNotes) {
+                        continue;
+                    }
+                    const ghostColor = sameTrackClip.color || activeTrackForGhosts.color;
+                    for (const gn of ghostNotes) {
+                        const row = visiblePitches.indexOf(gn.pitch);
+                        if (row === -1) {
+                            continue;
+                        }
+                        const x = gn.startBeat * beatWidth;
+                        const y = row * ROW_HEIGHT;
+                        const w = gn.duration * beatWidth;
+
+                        ctx.fillStyle = colorWithAlpha(ghostColor, 0.08);
+                        ctx.beginPath();
+                        ctx.roundRect(x + 1, y + 1, Math.max(4, w - 2), ROW_HEIGHT - 2, 2);
+                        ctx.fill();
+
+                        ctx.strokeStyle = colorWithAlpha(ghostColor, 0.12);
+                        ctx.lineWidth = 0.5;
+                        ctx.stroke();
                     }
                 }
             }
         }
+
+        // Resolve active clip color from track state
+        const activeTrack = trackState?.tracks.find((t) => t.id === trackId);
+        const activeClip = activeTrack?.clips.find((c) => c.id === clipId);
+        const clipColor = activeClip?.color || activeTrack?.color || 'oklch(0.45 0.06 250)';
+        const selectedColor = brightenColor(clipColor, 0.22);
 
         for (const note of notes) {
             const row = visiblePitches.indexOf(note.pitch);
@@ -336,26 +412,23 @@ export const PianoRoll = ({
 
             const isSelected = selectedNoteIds.has(note.id);
             const alpha = 0.4 + (note.velocity / 127) * 0.6;
+            const noteColor = isSelected ? selectedColor : clipColor;
 
-            if (isSelected) {
-                ctx.fillStyle = `rgba(176, 144, 72, ${alpha})`;
-            } else {
-                ctx.fillStyle = `rgba(180, 175, 165, ${alpha})`;
-            }
+            ctx.fillStyle = colorWithAlpha(noteColor, alpha);
 
             ctx.beginPath();
             ctx.roundRect(x + 1, y + 1, Math.max(4, w - 2), ROW_HEIGHT - 2, 2);
             ctx.fill();
 
             if (isSelected) {
-                ctx.strokeStyle = 'rgba(176, 144, 72, 0.7)';
+                ctx.strokeStyle = colorWithAlpha(selectedColor, 0.7);
                 ctx.lineWidth = 1;
                 ctx.stroke();
             }
 
             // Velocity bar at bottom of note
             const velH = Math.max(1, (note.velocity / 127) * (ROW_HEIGHT - 4));
-            ctx.fillStyle = isSelected ? 'rgba(176, 144, 72, 0.3)' : 'rgba(180, 175, 165, 0.25)';
+            ctx.fillStyle = colorWithAlpha(noteColor, isSelected ? 0.3 : 0.25);
             ctx.fillRect(x + 2, y + ROW_HEIGHT - 2 - velH, Math.max(2, w - 4), velH);
 
             // Resize handles (left + right edges)
@@ -1448,7 +1521,11 @@ export const PianoRoll = ({
 
             <div
                 className="flex flex-1 overflow-auto"
-                onScroll={(e) => setScrollX((e.target as HTMLElement).scrollLeft)}
+                onScroll={(e) => {
+                    const sl = (e.target as HTMLElement).scrollLeft;
+                    setScrollX(sl);
+                    onScrollChange?.(sl);
+                }}
             >
                 <div className="w-10 shrink-0 border-r border-border/30 bg-surface-raised sticky left-0 z-10">
                     <div className="bg-surface-raised border-b border-border/30" style={{ height: RULER_HEIGHT }} />

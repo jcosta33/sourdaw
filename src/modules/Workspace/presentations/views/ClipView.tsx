@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useSyncExternalStore } from 'react';
+import { type ReactElement, useState, useRef, useSyncExternalStore } from 'react';
 import { useTracks } from '../hooks/useTracks';
 import { Button } from '#/components/ui/button';
 import { setWorkspaceMode } from '../../useCases/setWorkspaceMode';
@@ -8,10 +8,15 @@ import { PianoRoll } from './ClipView/PianoRoll';
 import { WaveformEditor } from './ClipView/WaveformEditor';
 import { AutomationLane } from './ClipView/AutomationLane';
 
+const GRID_BEATS = 32;
+
 export const ClipView = (): ReactElement => {
     const { tracks, selectedTrackId } = useTracks();
     const selectedTrack = tracks.find((t) => t.id === selectedTrackId);
     const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set());
+    // beatWidth is reported by PianoRoll when its zoom changes
+    const [pianoRollBeatWidth, setPianoRollBeatWidth] = useState(40);
+    const automationScrollRef = useRef<HTMLDivElement>(null);
 
     const wsState = useSyncExternalStore(
         (cb) => workspaceStore.subscribe(() => cb()),
@@ -38,6 +43,15 @@ export const ClipView = (): ReactElement => {
             return;
         }
         workspaceStore.set({ ...wsState, selectedClipId: clipId });
+    };
+
+    const contentWidth = GRID_BEATS * pianoRollBeatWidth;
+
+    const handlePianoRollScroll = (sl: number) => {
+        // Sync automation lane scroll
+        if (automationScrollRef.current) {
+            automationScrollRef.current.scrollLeft = sl;
+        }
     };
 
     return (
@@ -73,6 +87,8 @@ export const ClipView = (): ReactElement => {
                         trackId={selectedTrack.id}
                         selectedNoteIds={selectedNoteIds}
                         onSelectedNoteIdsChange={setSelectedNoteIds}
+                        onScrollChange={handlePianoRollScroll}
+                        onBeatWidthChange={setPianoRollBeatWidth}
                     />
                 ) : selectedClip ? (
                     <WaveformEditor clipId={selectedClip.audioBufferId ?? selectedClip.id} />
@@ -84,7 +100,13 @@ export const ClipView = (): ReactElement => {
             </div>
 
             <div className="h-28 border-t border-border/50">
-                <AutomationLane clipId={selectedClip?.id ?? null} selectedNoteIds={selectedNoteIds} />
+                <AutomationLane
+                    clipId={selectedClip?.id ?? null}
+                    selectedNoteIds={selectedNoteIds}
+                    beatWidth={pianoRollBeatWidth}
+                    contentWidth={contentWidth}
+                    scrollRef={automationScrollRef}
+                />
             </div>
         </div>
     );

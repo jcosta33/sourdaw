@@ -12,7 +12,7 @@ type TrackVcaSectionProps = {
 export const TrackVcaSection = ({ track }: TrackVcaSectionProps): ReactElement => {
     return (
         <div>
-            <div className="px-1 mb-2 flex flex-row items-center justify-between">
+            <div className="px-1 mb-2 border-b border-border-hairline pb-1 flex flex-row items-center justify-between">
                 <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">VCA Group</div>
                 <Button
                     variant="ghost"

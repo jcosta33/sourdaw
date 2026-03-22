@@ -13,7 +13,7 @@ type TrackClipsSectionProps = {
 export const TrackClipsSection = ({ track, onSelectClip }: TrackClipsSectionProps): ReactElement => {
     return (
         <div>
-            <div className="px-1 mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center justify-between">
+            <div className="px-1 mb-2 border-b border-border-hairline pb-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center justify-between">
                 <span>Clips ({track.clips.length})</span>
             </div>
             {track.clips.length > 0 ? (

@@ -17,7 +17,7 @@ export const TrackRoutingSection = ({ track }: TrackRoutingSectionProps): ReactE
 
     return (
         <div>
-            <div className="px-1 mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+            <div className="px-1 mb-2 border-b border-border-hairline pb-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
                 Routing
             </div>
             {trackRoutes.length > 0 ? (
