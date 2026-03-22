@@ -49,13 +49,13 @@ function colorToRgba(color: string, alpha = 1): [number, number, number, number]
         // OKLab → linear sRGB (approximate via LMS)
         const l_ = L + 0.3963377774 * a_ + 0.2158037573 * b_;
         const m_ = L - 0.1055613458 * a_ - 0.0638541728 * b_;
-        const s_ = L - 0.0894841775 * a_ - 1.2914855480 * b_;
+        const s_ = L - 0.0894841775 * a_ - 1.291485548 * b_;
         const l3 = l_ * l_ * l_;
         const m3 = m_ * m_ * m_;
         const s3 = s_ * s_ * s_;
         const lr = +4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
         const lg = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
-        const lb = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.7076147010 * s3;
+        const lb = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.707614701 * s3;
         // Linear → sRGB gamma, clamped to [0,1]
         const gamma = (x: number): number => {
             const v = x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
@@ -253,7 +253,7 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
             for (const track of model.tracks) {
                 const th = track.height * dpr;
                 const isSelected = track.id === selectedTrackId;
-                const bg = isSelected ? '#1e2a3a' : '#131313';
+                const bg = isSelected ? '#0d0d0d' : '#0a0a0a';
                 addRect(0, trackY, w, trackY + th, bg);
                 // Row separator line
                 addRect(0, trackY + th - dpr, w, trackY + th, '#000000', 0.6);
@@ -277,18 +277,22 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                     const alpha = clip.muted ? 0.35 : 1.0;
 
                     // Clip body
-                    const color = clip.color || track.color || 'oklch(0.58 0.09 250)';
-                    addRect(cx1, clipTop, cx2, clipBottom, color, alpha * 0.65);
+                    const color = clip.color || track.color || 'oklch(0.40 0.08 250)';
+                    addRect(cx1, clipTop, cx2, clipBottom, color, alpha * 1);
 
                     // Clip top accent stripe
                     addRect(cx1, clipTop, cx2, clipTop + 3 * dpr, color, alpha);
 
-                    // Selection highlight border (2px inside edges)
+                    // Selection highlight — warm metallic border + inner brightening
                     if (isSelected) {
-                        addRect(cx1, clipTop, cx2, clipTop + 2 * dpr, '#ffffff', 0.9);
-                        addRect(cx1, clipTop, cx1 + 2 * dpr, clipBottom, '#ffffff', 0.9);
-                        addRect(cx2 - 2 * dpr, clipTop, cx2, clipBottom, '#ffffff', 0.9);
-                        addRect(cx1, clipBottom - 2 * dpr, cx2, clipBottom, '#ffffff', 0.9);
+                        // Inner brightening overlay to make clip pop
+                        addRect(cx1, clipTop, cx2, clipBottom, '#ffffff', 0.06);
+                        // Warm metallic border (2px, high alpha)
+                        const bw = 2 * dpr;
+                        addRect(cx1, clipTop, cx2, clipTop + bw, 'oklch(0.62 0.05 55)', 0.75);
+                        addRect(cx1, clipTop, cx1 + bw, clipBottom, 'oklch(0.62 0.05 55)', 0.75);
+                        addRect(cx2 - bw, clipTop, cx2, clipBottom, 'oklch(0.62 0.05 55)', 0.75);
+                        addRect(cx1, clipBottom - bw, cx2, clipBottom, 'oklch(0.62 0.05 55)', 0.75);
                     }
 
                     // MIDI mini-notes
@@ -330,8 +334,8 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                             const amplitude = (clipBottom - clipTop - padding * 2) * 0.35;
                             const binWidth = w / numBins;
 
-                            // Color analogous to canvas renderer's 'rgba(120, 200, 160, 0.5)'
-                            const wfColor = '#6a9e80';
+                            // White with transparency — matches MIDI note style
+                            const wfColor = '#ffffff';
 
                             for (let i = 0; i < numBins; i++) {
                                 const peakHeight = peaks[i]! * amplitude;
@@ -339,7 +343,7 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                                     const bx1 = cx1 + i * binWidth;
                                     const bx2 = bx1 + binWidth;
                                     // Draw thin vertical rect for this bin's peak
-                                    addRect(bx1, midY - peakHeight, bx2, midY + peakHeight, wfColor, alpha * 0.6);
+                                    addRect(bx1, midY - peakHeight, bx2, midY + peakHeight, wfColor, alpha * 0.18);
                                 }
                             }
                         }

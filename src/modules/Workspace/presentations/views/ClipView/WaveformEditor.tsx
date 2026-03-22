@@ -10,6 +10,7 @@ import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { DisabledFeatureWrapper } from '#/components/ui/disabled-feature-wrapper';
 import { cn } from '#/helpers/Styles/cn';
+import { resolveToken } from '#/helpers/UI/resolveToken';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { decodeAudioFile } from '../../../useCases/workspaceViewActions';
 import { trackStore } from '#/modules/Track/stores/trackStore';
@@ -124,7 +125,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
         canvas.style.height = `${height}px`;
         ctx.scale(dpr, dpr);
 
-        ctx.fillStyle = '#141418';
+        ctx.fillStyle = resolveToken('--color-bg-overlay', '#151515');
         ctx.fillRect(0, 0, width, height);
 
         const midY = height / 2;

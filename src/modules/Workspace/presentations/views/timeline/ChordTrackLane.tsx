@@ -44,18 +44,18 @@ const LANE_HEIGHT = 26;
  * the deep-black theme, with enough saturation to be distinguishable.
  */
 const ROOT_COLORS = [
-    'oklch(0.60 0.13 250)', // C  - steel blue
-    'oklch(0.55 0.13 280)', // C# - indigo
-    'oklch(0.55 0.13 300)', // D  - violet
-    'oklch(0.55 0.13 320)', // D# - purple
-    'oklch(0.58 0.13 350)', // E  - rose
-    'oklch(0.58 0.13 25)',  // F  - red/coral
-    'oklch(0.60 0.13 55)',  // F# - orange
-    'oklch(0.62 0.13 80)',  // G  - amber
-    'oklch(0.60 0.13 100)', // G# - gold
-    'oklch(0.55 0.13 150)', // A  - emerald
-    'oklch(0.55 0.13 175)', // A# - teal
-    'oklch(0.58 0.13 200)', // B  - cyan
+    'oklch(0.42 0.08 250)', // C  - steel blue
+    'oklch(0.38 0.08 280)', // C# - indigo
+    'oklch(0.38 0.08 300)', // D  - violet
+    'oklch(0.38 0.08 320)', // D# - purple
+    'oklch(0.40 0.08 350)', // E  - rose
+    'oklch(0.40 0.08 25)',  // F  - red/coral
+    'oklch(0.42 0.08 55)',  // F# - orange
+    'oklch(0.42 0.08 80)',  // G  - amber
+    'oklch(0.42 0.08 100)', // G# - gold
+    'oklch(0.38 0.08 150)', // A  - emerald
+    'oklch(0.38 0.08 175)', // A# - teal
+    'oklch(0.40 0.08 200)', // B  - cyan
 ] as const;
 
 /** Chord qualities offered in the quick-add menu. */

@@ -14,16 +14,16 @@ import { createSection, type ArrangementSection } from '#/modules/Timeline/model
 
 /** Standard song section names with associated colors */
 const SECTION_PALETTE = [
-    { name: 'Intro', color: 'oklch(0.65 0.15 200)' },
-    { name: 'Verse', color: 'oklch(0.60 0.15 140)' },
-    { name: 'Pre-Chorus', color: 'oklch(0.65 0.15 60)' },
-    { name: 'Chorus', color: 'oklch(0.70 0.20 330)' },
-    { name: 'Bridge', color: 'oklch(0.60 0.15 280)' },
-    { name: 'Outro', color: 'oklch(0.55 0.12 200)' },
-    { name: 'Break', color: 'oklch(0.50 0.10 100)' },
-    { name: 'Drop', color: 'oklch(0.75 0.22 20)' },
-    { name: 'Build', color: 'oklch(0.65 0.18 40)' },
-    { name: 'Solo', color: 'oklch(0.70 0.18 90)' },
+    { name: 'Intro', color: 'oklch(0.42 0.10 200)' },
+    { name: 'Verse', color: 'oklch(0.40 0.10 140)' },
+    { name: 'Pre-Chorus', color: 'oklch(0.42 0.10 60)' },
+    { name: 'Chorus', color: 'oklch(0.45 0.12 330)' },
+    { name: 'Bridge', color: 'oklch(0.40 0.10 280)' },
+    { name: 'Outro', color: 'oklch(0.38 0.08 200)' },
+    { name: 'Break', color: 'oklch(0.35 0.07 100)' },
+    { name: 'Drop', color: 'oklch(0.45 0.14 20)' },
+    { name: 'Build', color: 'oklch(0.42 0.12 40)' },
+    { name: 'Solo', color: 'oklch(0.45 0.12 90)' },
 ] as const;
 
 type DetectedSection = {

@@ -63,7 +63,7 @@ export const drawClip = (
 
     ctx.fillStyle = clip.color;
     const baseAlpha = isGhost ? 0.35 : isMuted ? 0.35 : 1;
-    ctx.globalAlpha = baseAlpha * (isSelected ? 0.75 : 0.55);
+    ctx.globalAlpha = baseAlpha * (isSelected ? 0.85 : 0.55);
     ctx.beginPath();
     ctx.roundRect(x, trackY + padding, w, trackHeight - padding * 2, 3);
     ctx.fill();
@@ -79,7 +79,7 @@ export const drawClip = (
         ctx.stroke();
         ctx.setLineDash([]);
     } else if (isSelected) {
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+        ctx.strokeStyle = 'rgba(220, 210, 190, 0.55)';
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.roundRect(x, trackY + padding, w, trackHeight - padding * 2, 3);
@@ -328,7 +328,7 @@ const drawWaveformPeaks = (
     const amplitude = (trackHeight - padding * 2) * 0.35;
     const binWidth = w / numBins;
 
-    ctx.fillStyle = 'rgba(106, 158, 128, 0.45)';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
     ctx.beginPath();
     ctx.moveTo(x + padding, midY);
     for (let i = 0; i < numBins; i++) {

@@ -16,18 +16,18 @@ export const MasterVisualizationsSection = (): ReactElement => {
             </div>
             <div className="flex flex-col gap-3">
                 <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-surface-base border border-border/50 rounded-md p-3 flex items-center justify-center">
+                    <div className="bg-surface-base border border-border/50 border-t-[var(--color-light-edge)] rounded-md p-3 flex items-center justify-center">
                         <LUFSMeter height={160} width={60} />
                     </div>
-                    <div className="bg-surface-base border border-border/50 rounded-md p-3 flex items-center justify-center">
-                        <Goniometer size={140} color="#a89bc4" />
+                    <div className="bg-surface-base border border-border/50 border-t-[var(--color-light-edge)] rounded-md p-3 flex items-center justify-center">
+                        <Goniometer size={140} />
                     </div>
                 </div>
                 <div className="bg-surface-base border border-border/50 rounded-md p-3 flex items-center justify-center">
-                    <Oscilloscope width={280} height={100} color="#4a9960" />
+                    <Oscilloscope width={280} height={100} />
                 </div>
                 <div className="bg-surface-base border border-border/50 rounded-md p-3 flex items-center justify-center">
-                    <SpectrumAnalyzer width={280} height={100} color="#4a7090" />
+                    <SpectrumAnalyzer width={280} height={100} />
                 </div>
                 <div className="bg-surface-base border border-border/50 rounded-md p-3 flex items-center justify-center">
                     <Spectrogram width={280} height={100} />
@@ -36,10 +36,10 @@ export const MasterVisualizationsSection = (): ReactElement => {
                     <PhaseCorrelationDisplay width={280} height={30} />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-surface-base border border-border/50 rounded-md p-3 flex items-center justify-center">
+                    <div className="bg-surface-base border border-border/50 border-t-[var(--color-light-edge)] rounded-md p-3 flex items-center justify-center">
                         <SpatialPanner size={120} />
                     </div>
-                    <div className="bg-surface-base border border-border/50 rounded-md p-3 flex items-center justify-center">
+                    <div className="bg-surface-base border border-border/50 border-t-[var(--color-light-edge)] rounded-md p-3 flex items-center justify-center">
                         <Wavetable3D width={140} height={100} />
                     </div>
                 </div>

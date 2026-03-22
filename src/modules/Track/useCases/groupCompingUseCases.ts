@@ -59,8 +59,8 @@ let takeSetId = 1;
 let regionId = 1;
 
 const GROUP_COLORS = [
-    'oklch(0.70 0.14 150)', 'oklch(0.70 0.14 210)', 'oklch(0.70 0.14 290)',
-    'oklch(0.70 0.14 340)', 'oklch(0.70 0.14 50)', 'oklch(0.70 0.14 80)',
+    'oklch(0.42 0.10 150)', 'oklch(0.42 0.10 210)', 'oklch(0.42 0.10 290)',
+    'oklch(0.42 0.10 340)', 'oklch(0.42 0.10 50)', 'oklch(0.42 0.10 80)',
 ];
 
 export function createCompGroup(name: string, trackIds: string[]): void {

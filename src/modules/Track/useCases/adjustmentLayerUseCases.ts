@@ -121,8 +121,8 @@ const EFFECT_PRESETS: Record<AdjustmentEffectType, AdjustmentParameter[]> = {
 };
 
 const LAYER_COLORS = [
-    'oklch(0.60 0.15 180)', 'oklch(0.60 0.15 240)', 'oklch(0.60 0.15 300)',
-    'oklch(0.60 0.15 60)', 'oklch(0.60 0.15 120)', 'oklch(0.60 0.15 30)',
+    'oklch(0.40 0.10 180)', 'oklch(0.40 0.10 240)', 'oklch(0.40 0.10 300)',
+    'oklch(0.40 0.10 60)', 'oklch(0.40 0.10 120)', 'oklch(0.40 0.10 30)',
 ];
 
 // ── Layer CRUD ────────────────────────────────────────────────────────

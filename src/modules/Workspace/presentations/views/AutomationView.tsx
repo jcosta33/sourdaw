@@ -58,7 +58,7 @@ export const AutomationView = (): ReactElement => {
                             key={track.id}
                             trackId={track.id}
                             trackName={track.name}
-                            trackColor={track.color ?? '#4a7090'}
+                            trackColor={track.color ?? 'var(--color-palette-steel)'}
                             automationMode={track.automationMode}
                             devices={track.devices.map((d) => ({ type: d.type, name: d.name }))}
                             pixelsPerBeat={pixelsPerBeat}

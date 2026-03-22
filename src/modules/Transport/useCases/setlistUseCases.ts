@@ -63,8 +63,8 @@ export const setlistStore = new Store<SetlistState>(logger, {
 let itemId = 1;
 
 const ITEM_COLORS = [
-    'oklch(0.65 0.12 200)', 'oklch(0.65 0.12 140)', 'oklch(0.65 0.12 280)',
-    'oklch(0.65 0.12 340)', 'oklch(0.65 0.12 60)', 'oklch(0.65 0.12 20)',
+    'oklch(0.42 0.08 200)', 'oklch(0.42 0.08 140)', 'oklch(0.42 0.08 280)',
+    'oklch(0.42 0.08 340)', 'oklch(0.42 0.08 60)', 'oklch(0.42 0.08 20)',
 ];
 
 // ── CRUD ──────────────────────────────────────────────────────────────

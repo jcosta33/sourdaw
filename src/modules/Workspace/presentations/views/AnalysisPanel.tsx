@@ -74,13 +74,13 @@ export const AnalysisPanel = (): ReactElement => {
                     {/* Wide cards: min 280, max 600, h-[140px] */}
                     <AnalysisCard title="Spectrum Analyzer" className="min-w-[280px] max-w-[600px] flex-1 h-[140px]">
                         <Measured className="w-full h-full">
-                            {({ width, height }) => <SpectrumAnalyzer width={width} height={height} color="#4a7090" />}
+                            {({ width, height }) => <SpectrumAnalyzer width={width} height={height} />}
                         </Measured>
                     </AnalysisCard>
 
                     <AnalysisCard title="Oscilloscope" className="min-w-[280px] max-w-[600px] flex-1 h-[140px]">
                         <Measured className="w-full h-full">
-                            {({ width, height }) => <Oscilloscope width={width} height={height} color="#4a9960" />}
+                            {({ width, height }) => <Oscilloscope width={width} height={height} />}
                         </Measured>
                     </AnalysisCard>
 
@@ -101,7 +101,7 @@ export const AnalysisPanel = (): ReactElement => {
                         <Measured className="w-full h-full">
                             {({ width, height }) => {
                                 const s = Math.min(width, height);
-                                return <Goniometer size={s} color="#a89bc4" />;
+                                return <Goniometer size={s} />;
                             }}
                         </Measured>
                     </AnalysisCard>

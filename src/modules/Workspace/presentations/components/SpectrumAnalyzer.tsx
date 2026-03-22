@@ -5,6 +5,7 @@
  */
 import { type ReactElement, useRef, useEffect } from 'react';
 import { audioEngine } from '#/modules/AudioEngine/repositories/audioEngineInstance';
+import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type SpectrumAnalyzerProps = {
     trackId?: string;
@@ -17,7 +18,7 @@ export const SpectrumAnalyzer = ({
     trackId,
     width = 300,
     height = 120,
-    color = '#4a7090',
+    color = resolveToken('--color-palette-steel', '#4a7090'),
 }: SpectrumAnalyzerProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
 

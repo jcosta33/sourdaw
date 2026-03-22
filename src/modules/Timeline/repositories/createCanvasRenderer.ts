@@ -129,13 +129,13 @@ function drawTracks(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, w
 
         // Background
         if (isFolder) {
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
         } else if (isSelected) {
-            ctx.fillStyle = 'rgba(90, 120, 160, 0.08)';
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.012)';
         } else if (isEven) {
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.015)';
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.008)';
         } else {
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.02)';
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
         }
         ctx.fillRect(0, y, width, h);
 
@@ -165,7 +165,7 @@ function drawTracks(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, w
         ctx.stroke();
 
         if (isSelected) {
-            ctx.strokeStyle = 'rgba(90, 120, 160, 0.18)';
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
             ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.moveTo(0, y);
@@ -243,10 +243,10 @@ function drawTakeLanes(ctx: CanvasRenderingContext2D, model: TimelineRenderModel
             const w = (take.endBeat - take.startBeat) * pixelsPerBeat;
             const y = trackY + h - laneHeight * (i + 1) - 2;
 
-            ctx.fillStyle = take.selected ? 'rgba(90, 130, 170, 0.25)' : 'rgba(90, 130, 170, 0.08)';
+            ctx.fillStyle = take.selected ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 255, 255, 0.03)';
             ctx.fillRect(x, y, w, laneHeight - 1);
 
-            ctx.strokeStyle = take.selected ? 'rgba(90, 130, 170, 0.5)' : 'rgba(90, 130, 170, 0.15)';
+            ctx.strokeStyle = take.selected ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.08)';
             ctx.lineWidth = 1;
             ctx.strokeRect(x, y, w, laneHeight - 1);
 
@@ -493,10 +493,10 @@ function drawLoopRegion(ctx: CanvasRenderingContext2D, model: TimelineRenderMode
     const x1 = (transport.loopStart - viewportStartBeat) * pixelsPerBeat;
     const x2 = (transport.loopEnd - viewportStartBeat) * pixelsPerBeat;
 
-    ctx.fillStyle = 'rgba(80, 120, 160, 0.05)';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
     ctx.fillRect(x1, 0, x2 - x1, height);
 
-    ctx.strokeStyle = 'rgba(80, 120, 160, 0.25)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 4]);
     ctx.beginPath();

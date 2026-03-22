@@ -14,6 +14,7 @@ import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { useMemo } from 'react';
 import { cn } from '#/helpers/Styles/cn';
+import { resolveToken } from '#/helpers/UI/resolveToken';
 import { midiStore } from '#/modules/Track/stores/midiStore';
 import { trackStore } from '#/modules/Track/stores/trackStore';
 import { pushUndoEntry } from '../../../useCases/workspaceViewActions';
@@ -188,11 +189,11 @@ export const PianoRoll = ({
 
         const totalWidth = Math.max(width, GRID_BEATS * beatWidth);
 
-        ctx.fillStyle = '#141418';
+        ctx.fillStyle = resolveToken('--color-bg-overlay', '#151515');
         ctx.fillRect(0, 0, totalWidth, height);
 
         // Beat ruler
-        ctx.fillStyle = '#111114';
+        ctx.fillStyle = resolveToken('--color-bg-panel', '#111111');
         ctx.fillRect(0, 0, totalWidth, RULER_HEIGHT);
         ctx.strokeStyle = 'rgba(255,255,255,0.08)';
         ctx.beginPath();
@@ -339,7 +340,7 @@ export const PianoRoll = ({
             if (isSelected) {
                 ctx.fillStyle = `rgba(176, 144, 72, ${alpha})`;
             } else {
-                ctx.fillStyle = `rgba(90, 120, 168, ${alpha})`;
+                ctx.fillStyle = `rgba(180, 175, 165, ${alpha})`;
             }
 
             ctx.beginPath();
@@ -354,7 +355,7 @@ export const PianoRoll = ({
 
             // Velocity bar at bottom of note
             const velH = Math.max(1, (note.velocity / 127) * (ROW_HEIGHT - 4));
-            ctx.fillStyle = isSelected ? 'rgba(176, 144, 72, 0.3)' : 'rgba(80, 120, 160, 0.25)';
+            ctx.fillStyle = isSelected ? 'rgba(176, 144, 72, 0.3)' : 'rgba(180, 175, 165, 0.25)';
             ctx.fillRect(x + 2, y + ROW_HEIGHT - 2 - velH, Math.max(2, w - 4), velH);
 
             // Resize handles (left + right edges)
@@ -395,11 +396,11 @@ export const PianoRoll = ({
                 const dpY = dpRow * ROW_HEIGHT;
                 const dpW = dp.duration * beatWidth;
 
-                ctx.fillStyle = 'rgba(80, 160, 110, 0.3)';
+                ctx.fillStyle = 'rgba(200, 190, 170, 0.3)';
                 ctx.beginPath();
                 ctx.roundRect(dpX + 1, dpY + 1, Math.max(4, dpW - 2), ROW_HEIGHT - 2, 2);
                 ctx.fill();
-                ctx.strokeStyle = 'rgba(80, 160, 110, 0.7)';
+                ctx.strokeStyle = 'rgba(200, 190, 170, 0.7)';
                 ctx.lineWidth = 1;
                 ctx.stroke();
             }
@@ -408,9 +409,9 @@ export const PianoRoll = ({
         // Rubber-band selection rectangle
         const rb = rubberBandRef.current;
         if (rb) {
-            ctx.fillStyle = 'rgba(80, 100, 140, 0.12)';
+            ctx.fillStyle = 'rgba(180, 170, 160, 0.12)';
             ctx.fillRect(rb.x, rb.y, rb.w, rb.h);
-            ctx.strokeStyle = 'rgba(80, 100, 140, 0.5)';
+            ctx.strokeStyle = 'rgba(180, 170, 160, 0.5)';
             ctx.lineWidth = 1;
             ctx.setLineDash([4, 4]);
             ctx.strokeRect(rb.x, rb.y, rb.w, rb.h);

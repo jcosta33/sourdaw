@@ -523,22 +523,22 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     // ---- MARKERS ----
     markerStore.set({
         markers: [
-            { id: crypto.randomUUID(), beat: 0, name: 'Intro', color: 'oklch(0.55 0.09 270)' },
-            { id: crypto.randomUUID(), beat: 32, name: 'Emergence', color: 'oklch(0.55 0.09 300)' },
-            { id: crypto.randomUUID(), beat: 64, name: 'Groove', color: 'oklch(0.58 0.09 250)' },
-            { id: crypto.randomUUID(), beat: 128, name: 'Catharsis', color: 'oklch(0.55 0.10 20)' },
-            { id: crypto.randomUUID(), beat: 192, name: 'Breakdown', color: 'oklch(0.58 0.09 70)' },
-            { id: crypto.randomUUID(), beat: 224, name: 'Rise', color: 'oklch(0.58 0.09 150)' },
-            { id: crypto.randomUUID(), beat: 288, name: 'Outro', color: 'oklch(0.55 0.09 270)' },
+            { id: crypto.randomUUID(), beat: 0, name: 'Intro', color: 'oklch(0.38 0.08 270)' },
+            { id: crypto.randomUUID(), beat: 32, name: 'Emergence', color: 'oklch(0.38 0.08 300)' },
+            { id: crypto.randomUUID(), beat: 64, name: 'Groove', color: 'oklch(0.40 0.08 250)' },
+            { id: crypto.randomUUID(), beat: 128, name: 'Catharsis', color: 'oklch(0.38 0.09 20)' },
+            { id: crypto.randomUUID(), beat: 192, name: 'Breakdown', color: 'oklch(0.40 0.08 70)' },
+            { id: crypto.randomUUID(), beat: 224, name: 'Rise', color: 'oklch(0.40 0.08 150)' },
+            { id: crypto.randomUUID(), beat: 288, name: 'Outro', color: 'oklch(0.38 0.08 270)' },
         ],
         sections: [
-            { id: crypto.randomUUID(), startBeat: 0, endBeat: 32, name: 'Intro', color: 'oklch(0.55 0.09 270)' },
-            { id: crypto.randomUUID(), startBeat: 32, endBeat: 64, name: 'Emergence', color: 'oklch(0.55 0.09 300)' },
-            { id: crypto.randomUUID(), startBeat: 64, endBeat: 128, name: 'Groove', color: 'oklch(0.58 0.09 250)' },
-            { id: crypto.randomUUID(), startBeat: 128, endBeat: 192, name: 'Catharsis', color: 'oklch(0.55 0.10 20)' },
-            { id: crypto.randomUUID(), startBeat: 192, endBeat: 224, name: 'Breakdown', color: 'oklch(0.58 0.09 70)' },
-            { id: crypto.randomUUID(), startBeat: 224, endBeat: 288, name: 'Rise', color: 'oklch(0.58 0.09 150)' },
-            { id: crypto.randomUUID(), startBeat: 288, endBeat: TB, name: 'Outro', color: 'oklch(0.55 0.09 270)' },
+            { id: crypto.randomUUID(), startBeat: 0, endBeat: 32, name: 'Intro', color: 'oklch(0.38 0.08 270)' },
+            { id: crypto.randomUUID(), startBeat: 32, endBeat: 64, name: 'Emergence', color: 'oklch(0.38 0.08 300)' },
+            { id: crypto.randomUUID(), startBeat: 64, endBeat: 128, name: 'Groove', color: 'oklch(0.40 0.08 250)' },
+            { id: crypto.randomUUID(), startBeat: 128, endBeat: 192, name: 'Catharsis', color: 'oklch(0.38 0.09 20)' },
+            { id: crypto.randomUUID(), startBeat: 192, endBeat: 224, name: 'Breakdown', color: 'oklch(0.40 0.08 70)' },
+            { id: crypto.randomUUID(), startBeat: 224, endBeat: 288, name: 'Rise', color: 'oklch(0.40 0.08 150)' },
+            { id: crypto.randomUUID(), startBeat: 288, endBeat: TB, name: 'Outro', color: 'oklch(0.38 0.08 270)' },
         ],
     });
 
@@ -714,12 +714,12 @@ export async function demo2_ElectronicBeat(): Promise<void> {
 
     markerStore.set({
         markers: [
-            { id: crypto.randomUUID(), beat: 0, name: 'Intro', color: 'oklch(0.58 0.09 70)' },
-            { id: crypto.randomUUID(), beat: 32, name: 'Main Theme', color: 'oklch(0.55 0.10 20)' },
+            { id: crypto.randomUUID(), beat: 0, name: 'Intro', color: 'oklch(0.40 0.08 70)' },
+            { id: crypto.randomUUID(), beat: 32, name: 'Main Theme', color: 'oklch(0.38 0.09 20)' },
         ],
         sections: [
-            { id: crypto.randomUUID(), startBeat: 0, endBeat: 32, name: 'Intro', color: 'oklch(0.58 0.09 70)' },
-            { id: crypto.randomUUID(), startBeat: 32, endBeat: 128, name: 'Main Theme', color: 'oklch(0.55 0.10 20)' },
+            { id: crypto.randomUUID(), startBeat: 0, endBeat: 32, name: 'Intro', color: 'oklch(0.40 0.08 70)' },
+            { id: crypto.randomUUID(), startBeat: 32, endBeat: 128, name: 'Main Theme', color: 'oklch(0.38 0.09 20)' },
         ],
     });
 
@@ -864,12 +864,12 @@ export async function demo3_AcousticSession(): Promise<void> {
 
     markerStore.set({
         markers: [
-            { id: crypto.randomUUID(), beat: 0, name: 'Intro', color: 'oklch(0.56 0.09 45)' },
-            { id: crypto.randomUUID(), beat: 16, name: 'Vibe', color: 'oklch(0.58 0.09 150)' },
+            { id: crypto.randomUUID(), beat: 0, name: 'Intro', color: 'oklch(0.39 0.08 45)' },
+            { id: crypto.randomUUID(), beat: 16, name: 'Vibe', color: 'oklch(0.40 0.08 150)' },
         ],
         sections: [
-            { id: crypto.randomUUID(), startBeat: 0, endBeat: 16, name: 'Intro', color: 'oklch(0.56 0.09 45)' },
-            { id: crypto.randomUUID(), startBeat: 16, endBeat: 128, name: 'Vibe', color: 'oklch(0.58 0.09 150)' },
+            { id: crypto.randomUUID(), startBeat: 0, endBeat: 16, name: 'Intro', color: 'oklch(0.39 0.08 45)' },
+            { id: crypto.randomUUID(), startBeat: 16, endBeat: 128, name: 'Vibe', color: 'oklch(0.40 0.08 150)' },
         ],
     });
 

@@ -4,13 +4,14 @@
  */
 import { type ReactElement, useRef, useEffect } from 'react';
 import { audioEngine } from '#/modules/AudioEngine/repositories/audioEngineInstance';
+import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type GoniometerProps = {
     size?: number;
     color?: string;
 };
 
-export const Goniometer = ({ size = 120, color = '#a89bc4' }: GoniometerProps): ReactElement => {
+export const Goniometer = ({ size = 120, color = resolveToken('--color-accent-lavender', '#a89bc4') }: GoniometerProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const trailRef = useRef<ImageData | null>(null);
 

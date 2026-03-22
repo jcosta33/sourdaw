@@ -85,16 +85,16 @@ let nodeId = 1;
 let connectionId = 1;
 
 const NODE_COLORS: Record<ProcessingNodeType, string> = {
-    input: 'oklch(0.65 0.12 140)',
-    output: 'oklch(0.65 0.12 280)',
-    effect: 'oklch(0.65 0.12 200)',
-    instrument: 'oklch(0.65 0.12 60)',
-    mixer: 'oklch(0.65 0.12 330)',
-    splitter: 'oklch(0.55 0.08 200)',
-    merger: 'oklch(0.55 0.08 200)',
-    send: 'oklch(0.60 0.10 100)',
-    return: 'oklch(0.60 0.10 140)',
-    sidechain: 'oklch(0.60 0.10 20)',
+    input: 'oklch(0.45 0.08 140)',
+    output: 'oklch(0.45 0.08 280)',
+    effect: 'oklch(0.45 0.08 200)',
+    instrument: 'oklch(0.45 0.08 60)',
+    mixer: 'oklch(0.45 0.08 330)',
+    splitter: 'oklch(0.40 0.06 200)',
+    merger: 'oklch(0.40 0.06 200)',
+    send: 'oklch(0.42 0.07 100)',
+    return: 'oklch(0.42 0.07 140)',
+    sidechain: 'oklch(0.42 0.07 20)',
 };
 
 export function toggleNodeView(): void {

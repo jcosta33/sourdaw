@@ -34,12 +34,12 @@ import { cn } from '#/helpers/Styles/cn';
 const defaultState: ScratchPadStoreState = { sections: [] };
 
 const SECTION_COLORS = [
-    'oklch(0.55 0.12 260)',
-    'oklch(0.55 0.12 150)',
-    'oklch(0.55 0.12 30)',
-    'oklch(0.55 0.12 330)',
-    'oklch(0.55 0.12 200)',
-    'oklch(0.55 0.12 80)',
+    'oklch(0.40 0.08 260)',
+    'oklch(0.40 0.08 150)',
+    'oklch(0.40 0.08 30)',
+    'oklch(0.40 0.08 330)',
+    'oklch(0.40 0.08 200)',
+    'oklch(0.40 0.08 80)',
 ];
 
 type ContextMenuState =

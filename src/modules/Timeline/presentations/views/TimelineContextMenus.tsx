@@ -426,14 +426,14 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
             <div className="flex gap-1 px-3 py-1">
                 {[
                     '',
-                    'oklch(0.58 0.09 250)',
-                    'oklch(0.55 0.10 20)',
-                    'oklch(0.58 0.09 150)',
-                    'oklch(0.58 0.09 70)',
-                    'oklch(0.55 0.09 300)',
-                    'oklch(0.55 0.09 340)',
-                    'oklch(0.58 0.08 200)',
-                    'oklch(0.56 0.09 45)',
+                    'oklch(0.40 0.08 250)',
+                    'oklch(0.38 0.09 20)',
+                    'oklch(0.40 0.08 150)',
+                    'oklch(0.40 0.08 70)',
+                    'oklch(0.38 0.08 300)',
+                    'oklch(0.38 0.08 340)',
+                    'oklch(0.40 0.07 200)',
+                    'oklch(0.39 0.08 45)',
                 ].map(
                     (c) => (
                         <button
@@ -608,15 +608,15 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
 };
 
 const MARKER_COLOR_PRESETS = [
-    'oklch(0.58 0.08 200)',
-    'oklch(0.58 0.09 150)',
-    'oklch(0.58 0.09 70)',
-    'oklch(0.55 0.09 340)',
-    'oklch(0.55 0.09 270)',
-    'oklch(0.55 0.10 20)',
-    'oklch(0.58 0.09 250)',
-    'oklch(0.56 0.09 45)',
-    'oklch(0.55 0.09 300)',
+    'oklch(0.40 0.07 200)',
+    'oklch(0.40 0.08 150)',
+    'oklch(0.40 0.08 70)',
+    'oklch(0.38 0.08 340)',
+    'oklch(0.38 0.08 270)',
+    'oklch(0.38 0.09 20)',
+    'oklch(0.40 0.08 250)',
+    'oklch(0.39 0.08 45)',
+    'oklch(0.38 0.08 300)',
 ];
 
 type NearbyMarkerColorMenuProps = {

@@ -141,9 +141,9 @@ export const buildCurvePath = (
  * Automation mode display configuration.
  */
 export const AUTOMATION_MODE_CONFIG = {
-    off: { label: 'OFF', color: '#404040', textColor: '#737373' },
-    read: { label: 'R', color: '#7db8a0', textColor: '#a0d4be' },
-    touch: { label: 'TCH', color: '#c4aa5f', textColor: '#dcc88a' },
-    latch: { label: 'LCH', color: '#c9a07a', textColor: '#e0c0a0' },
-    write: { label: 'W', color: '#c45040', textColor: '#d88070' },
+    off: { label: 'OFF', color: 'var(--color-text-disabled)', textColor: 'var(--color-text-tertiary)' },
+    read: { label: 'R', color: 'var(--color-accent-mint)', textColor: 'color-mix(in oklch, var(--color-accent-mint) 70%, white)' },
+    touch: { label: 'TCH', color: 'var(--color-accent-amber)', textColor: 'color-mix(in oklch, var(--color-accent-amber) 70%, white)' },
+    latch: { label: 'LCH', color: 'var(--color-accent-peach)', textColor: 'color-mix(in oklch, var(--color-accent-peach) 70%, white)' },
+    write: { label: 'W', color: 'var(--color-state-record)', textColor: 'color-mix(in oklch, var(--color-state-record) 70%, white)' },
 } as const;

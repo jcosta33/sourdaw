@@ -5,6 +5,7 @@
  */
 import { type ReactElement, useRef, useEffect } from 'react';
 import { audioEngine } from '#/modules/AudioEngine/repositories/audioEngineInstance';
+import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type OscilloscopeProps = {
     trackId?: string;
@@ -17,7 +18,7 @@ export const Oscilloscope = ({
     trackId,
     width = 200,
     height = 80,
-    color = '#4a9060',
+    color = resolveToken('--color-meter-safe', '#4a9960'),
 }: OscilloscopeProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
