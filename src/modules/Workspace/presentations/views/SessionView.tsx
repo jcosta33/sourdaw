@@ -92,10 +92,10 @@ export const SessionView = (): ReactElement => {
 
                     {/* Track columns */}
                     {tracks.map((track: Track) => (
-                        <div key={track.id} className="flex flex-col w-24 shrink-0 border-r border-border/20">
+                        <div key={track.id} className="flex flex-col w-24 shrink-0 border-r border-border-hairline">
                             {/* Track header */}
                             <div
-                                className="h-6 flex items-center justify-center text-[10px] font-medium text-foreground border-b border-border/20 truncate px-1"
+                                className="h-6 flex items-center justify-center text-[10px] font-medium text-foreground border-b border-border-hairline bg-surface-tray truncate px-1"
                                 style={{ borderTopColor: track.color, borderTopWidth: track.color ? 2 : 0 }}
                             >
                                 {track.name}
@@ -110,12 +110,12 @@ export const SessionView = (): ReactElement => {
                                     <div
                                         key={sceneIndex}
                                         className={cn(
-                                            'h-10 flex items-center justify-center border-b border-border/10 transition-colors cursor-pointer',
+                                            'h-10 flex items-center justify-center border-b border-border-hairline transition-colors cursor-pointer',
                                             clipId
                                                 ? isActive
-                                                    ? 'bg-green-500/20'
-                                                    : 'bg-muted/20 hover:bg-muted/30'
-                                                : 'hover:bg-muted/10'
+                                                    ? 'bg-green-500/20 shadow-[inset_0_0_8px_rgba(0,255,100,0.1)]'
+                                                    : 'bg-surface-inset shadow-[inset_0_1px_2px_rgba(0,0,0,0.3)] hover:bg-surface-raised'
+                                                : 'hover:bg-white/[0.03]'
                                         )}
                                         onClick={() => {
                                             if (clipId) {

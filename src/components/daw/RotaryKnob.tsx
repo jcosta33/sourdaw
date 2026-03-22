@@ -9,15 +9,17 @@ interface RotaryKnobProps {
     step?: number;
     fineStep?: number;
     defaultValue?: number;
-    bipolar?: boolean; // if true, centers the visual arc
-    size?: number; // px diameter
+    bipolar?: boolean;
+    size?: 'sm' | 'md' | 'lg' | 'xl';
     className?: string;
 }
 
+const SIZES = { sm: 24, md: 32, lg: 40, xl: 72 } as const;
+
 /**
  * RotaryKnob
- * Skeuomorphic detented dial. Dark satin metal cap with a luminescent line.
- * Vertical drag sets value. Shift for fine control.
+ * Skeuomorphic metallic dome with conic value arc.
+ * Vertical drag sets value. Shift for fine control. Double-click resets.
  */
 export const RotaryKnob = ({
     value,
@@ -28,17 +30,17 @@ export const RotaryKnob = ({
     fineStep = 0.1,
     defaultValue = 50,
     bipolar = false,
-    size = 32,
+    size = 'md',
     className,
 }: RotaryKnobProps): ReactElement => {
     const [isDragging, setIsDragging] = useState(false);
     const startY = useRef(0);
     const startValue = useRef(value);
+    const px = SIZES[size];
 
     const clampAndSnap = useCallback(
         (v: number) => {
             let clamped = Math.max(min, Math.min(max, v));
-            // Soft magnetism to default only if bipolar
             if (bipolar && Math.abs(clamped - defaultValue) < (max - min) * 0.05) {
                 clamped = defaultValue;
             }
@@ -62,20 +64,15 @@ export const RotaryKnob = ({
             if (!isDragging) {
                 return;
             }
-
             const deltaY = startY.current - e.clientY;
             const currentStep = e.shiftKey ? fineStep : step;
-
-            // Scalar sensitivity: about 150px drag for full sweep generally
             const sweepPx = 150;
             let sensitivity = (max - min) / sweepPx;
             if (e.shiftKey) {
                 sensitivity *= 0.1;
             }
-
             let newValue = startValue.current + deltaY * sensitivity;
             newValue = Math.round(newValue / currentStep) * currentStep;
-
             onChange(clampAndSnap(newValue));
         },
         [isDragging, step, fineStep, max, min, clampAndSnap, onChange]
@@ -90,49 +87,90 @@ export const RotaryKnob = ({
         onChange(defaultValue);
     };
 
-    // Visual rotation (-135deg to +135deg is a 270deg sweep)
+    // Visual rotation (-135deg to +135deg → 270deg sweep)
     const normalized = Math.max(0, Math.min(1, (value - min) / (max - min)));
     const rotation = -135 + normalized * 270;
 
+    // Conic arc gradient for the value ring
+    const arcAngleDeg = normalized * 270;
+    const arcColor = isDragging ? 'var(--color-accent-cyan)' : 'rgba(103, 232, 249, 0.6)';
+    const arcBg = bipolar
+        ? buildBipolarArc(normalized, arcColor)
+        : `conic-gradient(from 225deg, ${arcColor} 0deg, ${arcColor} ${arcAngleDeg}deg, transparent ${arcAngleDeg}deg, transparent 270deg, transparent 270deg)`;
+
     return (
         <div
-            className={cn(
-                'relative flex flex-col items-center select-none group touch-none cursor-ns-resize',
-                className
-            )}
+            className={cn('relative flex flex-col items-center select-none touch-none cursor-ns-resize', className)}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onDoubleClick={handleDoubleClick}
         >
-            {/* Outer well / bezel */}
+            {/* Outer bezel (well) */}
             <div
                 className={cn(
-                    'relative rounded-full bg-bg-panelInset shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] flex items-center justify-center p-[2px]',
-                    isDragging && 'ring-1 ring-border-focus'
+                    'relative rounded-full bg-bg-panelInset flex items-center justify-center p-[2px]',
+                    isDragging
+                        ? 'shadow-[inset_0_2px_4px_rgba(0,0,0,0.6),0_0_0_1px_var(--color-border-focus)]'
+                        : 'shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)]'
                 )}
-                style={{ width: size, height: size }}
+                style={{ width: px, height: px }}
             >
-                {/* Knob Cap (satin metal) */}
+                {/* Value arc ring */}
+                <div
+                    className="absolute inset-0 rounded-full pointer-events-none transition-opacity duration-fast"
+                    style={{
+                        background: arcBg,
+                        mask: 'radial-gradient(circle, transparent 55%, black 57%)',
+                        WebkitMask: 'radial-gradient(circle, transparent 55%, black 57%)',
+                        opacity: isDragging ? 1 : 0.85,
+                    }}
+                />
+
+                {/* Metallic dome cap */}
                 <div
                     className={cn(
-                        'w-full h-full rounded-full bg-surface-raised border border-border-soft shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_1px_2px_rgba(0,0,0,0.5)] relative',
-                        isDragging && 'shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] bg-bg-panel'
+                        'w-full h-full rounded-full relative border transition-all duration-fast',
+                        isDragging ? 'border-black/50' : 'border-border-soft'
                     )}
-                    style={{ transform: `rotate(${rotation}deg)` }}
+                    style={{
+                        background: isDragging
+                            ? 'radial-gradient(ellipse 60% 40% at 50% 35%, rgba(255,255,255,0.18) 0%, transparent 70%), radial-gradient(circle at 50% 40%, #555 0%, #333 40%, #222 100%)'
+                            : 'radial-gradient(ellipse 60% 40% at 50% 35%, rgba(255,255,255,0.12) 0%, transparent 70%), radial-gradient(circle at 50% 40%, #444 0%, #2a2a2a 40%, #1a1a1a 100%)',
+                        boxShadow: isDragging
+                            ? 'inset 0 2px 4px rgba(0,0,0,0.6)'
+                            : 'inset 0 1px 0 rgba(255,255,255,0.08), 0 1px 2px rgba(0,0,0,0.5)',
+                        transform: `rotate(${rotation}deg)`,
+                    }}
                 >
-                    {/* Tiny luminous line indicator */}
+                    {/* Position indicator line */}
                     <div
                         className={cn(
-                            'absolute top-[10%] left-1/2 -translate-x-1/2 rounded-full',
+                            'absolute left-1/2 -translate-x-1/2 rounded-full transition-all duration-fast',
                             isDragging
-                                ? 'bg-accent-cyan shadow-[0_0_4px_var(--color-accent-cyan)]'
-                                : 'bg-text-secondary',
-                            'w-[2px] h-[30%]'
+                                ? 'bg-accent-cyan shadow-[0_0_6px_var(--color-accent-cyan)]'
+                                : 'bg-text-secondary'
                         )}
+                        style={{
+                            top: '12%',
+                            width: px >= 72 ? 3 : 2,
+                            height: px >= 72 ? '25%' : '28%',
+                        }}
                     />
                 </div>
             </div>
         </div>
     );
 };
+
+/** Build a bipolar conic arc that fills outward from center (50% = 135deg from start) */
+function buildBipolarArc(normalized: number, color: string): string {
+    const centerDeg = 135; // 50% of 270° sweep
+    const valueDeg = normalized * 270;
+    if (valueDeg >= centerDeg) {
+        // Fill from center to value (clockwise)
+        return `conic-gradient(from 225deg, transparent 0deg, transparent ${centerDeg}deg, ${color} ${centerDeg}deg, ${color} ${valueDeg}deg, transparent ${valueDeg}deg)`;
+    }
+    // Fill from value to center (counter-clockwise visual)
+    return `conic-gradient(from 225deg, transparent 0deg, transparent ${valueDeg}deg, ${color} ${valueDeg}deg, ${color} ${centerDeg}deg, transparent ${centerDeg}deg)`;
+}

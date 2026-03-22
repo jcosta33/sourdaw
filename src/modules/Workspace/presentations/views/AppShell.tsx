@@ -313,7 +313,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 style={{ height: mixerHeight }}
                             >
                                 {/* Bottom panel tab bar */}
-                                <div className="flex items-center gap-0.5 px-2 py-0.5 border-b border-border-hairline bg-surface-tray shrink-0">
+                                <div className="flex items-center gap-0.5 px-2 py-0.5 border-b border-black/40 bg-surface-app shrink-0">
                                     <Button
                                         variant={bottomTab === 'mixer' ? 'secondary' : 'ghost'}
                                         size="xs"

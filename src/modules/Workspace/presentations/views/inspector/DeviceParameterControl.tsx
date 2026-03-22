@@ -160,8 +160,8 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                             param.name.toLowerCase().includes('threshold') ||
                             param.name.toLowerCase().includes('time') ||
                             param.name.toLowerCase().includes('rate')
-                                ? 64
-                                : 48
+                                ? 'xl'
+                                : 'lg'
                         }
                     />
                 )}

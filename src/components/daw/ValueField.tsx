@@ -100,9 +100,9 @@ export const ValueField = ({
                 className={cn(
                     'flex items-center justify-center font-mono cursor-ns-resize select-none',
                     'transition-colors duration-fast rounded-micro px-1.5 py-0.5',
-                    'bg-bg-panelInset shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)] border border-transparent',
+                    'bg-surface-inset shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)] border border-border-hairline',
                     isDragging
-                        ? 'text-accent-cyan border-border-focus'
+                        ? 'text-accent-cyan ring-1 ring-border-focus'
                         : 'text-text-primary hover:text-accent-cyan hover:border-border-soft',
                     'text-[10px]'
                 )}

@@ -96,7 +96,7 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
             role="region"
             aria-label="Mixer panel"
         >
-            <div className="flex items-center justify-between border-b border-border/50 px-3 py-1">
+            <div className="flex items-center justify-between border-b border-black/40 px-3 py-1 bg-surface-tray">
                 <h2 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                     Mixer — {tracks.filter((t) => t.kind !== 'folder').length} channels
                 </h2>

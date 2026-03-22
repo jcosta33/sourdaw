@@ -10,22 +10,22 @@ const buttonVariants = cva(
         variants: {
             variant: {
                 default:
-                    'bg-surface-panel text-text-primary border border-border-soft shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_1px_2px_rgba(0,0,0,0.5)] hover:bg-surface-raised active:bg-surface-inset active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] active:border-black',
+                    'bg-surface-panel text-text-primary border border-border-soft border-t-[var(--color-light-edge)] border-b-[var(--color-shadow-edge)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_1px_2px_rgba(0,0,0,0.5)] hover:bg-surface-raised active:bg-surface-inset active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] active:border-black active:translate-y-px',
                 destructive:
-                    'bg-state-danger text-white border border-red-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_1px_2px_rgba(0,0,0,0.5)] hover:brightness-110 active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] active:border-black',
+                    'bg-state-danger text-white border border-red-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_1px_2px_rgba(0,0,0,0.5)] hover:brightness-110 active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] active:border-black active:translate-y-px',
                 outline:
-                    'border border-border-soft bg-transparent hover:bg-surface-raised active:bg-surface-inset active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)]',
+                    'border border-border-soft border-t-[var(--color-light-edge)] bg-transparent hover:bg-surface-raised active:bg-surface-inset active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] active:translate-y-px',
                 secondary:
                     'bg-surface-inset text-white border border-black shadow-[inset_0_2px_4px_rgba(0,0,0,0.6),0_1px_0_rgba(255,255,255,0.03)]',
-                ghost: 'hover:bg-surface-raised hover:text-text-primary text-text-secondary active:bg-surface-inset active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)]',
+                ghost: 'hover:bg-surface-raised hover:text-text-primary text-text-secondary active:bg-surface-inset active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] active:translate-y-px',
                 link: 'text-accent-cyan underline-offset-4 hover:underline',
 
                 // --- DAW Specific Custom Variants ---
                 surface:
-                    'bg-surface-panel text-text-primary border border-border-soft shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_1px_2px_rgba(0,0,0,0.5)] hover:bg-surface-raised active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] active:border-black',
+                    'bg-surface-panel text-text-primary border border-border-soft border-t-[var(--color-light-edge)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_1px_2px_rgba(0,0,0,0.5)] hover:bg-surface-raised active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] active:border-black active:translate-y-px',
                 transport:
-                    'bg-surface-panel text-text-primary border border-border-soft shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_1px_2px_rgba(0,0,0,0.5)] hover:bg-surface-raised hover:text-accent-cyan active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] active:text-accent-cyan active:border-black',
-                danger: 'bg-surface-panel text-text-secondary border border-border-soft shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_1px_2px_rgba(0,0,0,0.5)] hover:bg-state-danger hover:text-white hover:border-transparent active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] focus-visible:ring-state-danger/50',
+                    'bg-surface-panel text-text-primary border border-border-soft border-t-[var(--color-light-edge)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_1px_2px_rgba(0,0,0,0.5)] hover:bg-surface-raised hover:text-accent-cyan active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] active:text-accent-cyan active:border-black active:translate-y-px',
+                danger: 'bg-surface-panel text-text-secondary border border-border-soft border-t-[var(--color-light-edge)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_1px_2px_rgba(0,0,0,0.5)] hover:bg-state-danger hover:text-white hover:border-transparent active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] focus-visible:ring-state-danger/50 active:translate-y-px',
             },
             size: {
                 default: 'h-8 px-3 text-xs rounded-sm',

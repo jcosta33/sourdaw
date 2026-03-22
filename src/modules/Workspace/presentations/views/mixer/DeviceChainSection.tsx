@@ -34,7 +34,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                         <button
                             type="button"
                             className={cn(
-                                'w-full rounded bg-muted/20 px-1 py-0.5 text-center hover:bg-muted/40 transition-colors cursor-grab active:cursor-grabbing',
+                                'w-full rounded bg-surface-inset shadow-[inset_0_1px_2px_rgba(0,0,0,0.4)] border border-border-hairline px-1 py-0.5 text-center hover:bg-surface-raised transition-colors cursor-grab active:cursor-grabbing',
                                 d.bypassed && 'opacity-40 line-through'
                             )}
                             onClick={(e) => {
@@ -95,7 +95,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                         <button
                             type="button"
                             key={p.id}
-                            className="w-full rounded bg-primary/10 px-1 py-0.5 text-center hover:bg-primary/20 text-[10px] text-foreground transition-colors"
+                            className="w-full rounded bg-surface-inset border border-border-hairline shadow-[inset_0_1px_2px_rgba(0,0,0,0.3)] px-1 py-0.5 text-center hover:bg-surface-raised text-[10px] text-foreground transition-colors"
                             onClick={(e) => {
                                 e.stopPropagation();
                                 addDevice(track.id, p.name);
@@ -112,7 +112,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                         <button
                             type="button"
                             key={fx.id}
-                            className="w-full rounded bg-purple-500/10 px-1 py-0.5 text-center hover:bg-purple-500/20 text-[10px] text-foreground transition-colors"
+                            className="w-full rounded bg-purple-500/10 border border-purple-500/20 px-1 py-0.5 text-center hover:bg-purple-500/20 text-[10px] text-foreground transition-colors"
                             onClick={(e) => {
                                 e.stopPropagation();
                                 addDevice(track.id, fx.name);
@@ -136,7 +136,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
             ) : (
                 <button
                     type="button"
-                    className="w-full rounded bg-muted/10 px-1 py-0.5 text-center hover:bg-muted/20 transition-colors"
+                    className="w-full rounded bg-surface-inset border border-border-hairline shadow-[inset_0_1px_2px_rgba(0,0,0,0.3)] px-1 py-0.5 text-center hover:bg-surface-raised transition-colors"
                     onClick={(e) => {
                         e.stopPropagation();
                         setShowAdd(true);

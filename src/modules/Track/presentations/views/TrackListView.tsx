@@ -308,12 +308,12 @@ const AddTrackMenu = ({ trackCount }: { trackCount: number }): ReactElement => {
 
             {open && (
                 <div
-                    className="absolute top-full right-0 z-50 mt-1 w-44 rounded-md border border-border bg-surface-overlay shadow-lg py-1 animate-in fade-in-0 zoom-in-95"
+                    className="absolute top-full right-0 z-50 mt-1 w-44 rounded-md border border-border-soft border-t-[var(--color-light-edge)] bg-surface-overlay shadow-[0_4px_16px_rgba(0,0,0,0.5)] py-1 animate-in fade-in-0 zoom-in-95"
                     role="menu"
                 >
                     <button
                         type="button"
-                        className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent transition-colors"
+                        className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-white/[0.06] transition-colors"
                         role="menuitem"
                         onClick={() => createTrackOfKind('audio')}
                     >
@@ -322,7 +322,7 @@ const AddTrackMenu = ({ trackCount }: { trackCount: number }): ReactElement => {
                     </button>
                     <button
                         type="button"
-                        className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent transition-colors"
+                        className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-white/[0.06] transition-colors"
                         role="menuitem"
                         onClick={() => createTrackOfKind('midi')}
                     >
@@ -331,7 +331,7 @@ const AddTrackMenu = ({ trackCount }: { trackCount: number }): ReactElement => {
                     </button>
                     <button
                         type="button"
-                        className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent transition-colors"
+                        className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-white/[0.06] transition-colors"
                         role="menuitem"
                         onClick={() => createTrackOfKind('bus')}
                     >
@@ -348,7 +348,7 @@ const AddTrackMenu = ({ trackCount }: { trackCount: number }): ReactElement => {
                                 <button
                                     type="button"
                                     key={tmpl.id}
-                                    className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent transition-colors"
+                                    className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-white/[0.06] transition-colors"
                                     role="menuitem"
                                     onClick={() => {
                                         loadTrackTemplate(tmpl.id);

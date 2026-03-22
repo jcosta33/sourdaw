@@ -89,7 +89,11 @@ function SliderThumbNode({
     return (
         <SliderPrimitive.Thumb
             data-slot="slider-thumb"
-            className="block size-4 shrink-0 rounded-[4px] border border-black bg-gradient-to-b from-zinc-400 to-zinc-600 shadow-[0_1px_3px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.15)] cursor-pointer outline-none transition-[color,box-shadow] hover:ring-2 hover:ring-accent-cyan/30 focus-visible:ring-4 focus-visible:ring-accent-cyan/40 disabled:pointer-events-none disabled:opacity-50"
+            className="block size-4 shrink-0 rounded-[4px] border border-black shadow-[0_1px_3px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.15)] cursor-pointer outline-none transition-[color,box-shadow] hover:ring-2 hover:ring-accent-cyan/30 focus-visible:ring-4 focus-visible:ring-accent-cyan/40 disabled:pointer-events-none disabled:opacity-50"
+            style={{
+                background: 'linear-gradient(180deg, #555 0%, #3a3a3a 30%, #333 50%, #2a2a2a 70%, #222 100%)',
+                borderTopColor: 'rgba(255,255,255,0.12)',
+            }}
             onPointerDown={(e) => {
                 if (e.metaKey || e.ctrlKey) {
                     e.preventDefault();

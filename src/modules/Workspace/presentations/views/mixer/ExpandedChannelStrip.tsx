@@ -36,7 +36,7 @@ type MixerMenu = { x: number; y: number } | null;
 
 const TRACK_COLORS = ['', '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'];
 
-const menuBtnClass = 'flex w-full items-center px-3 py-1.5 text-xs hover:bg-accent text-left';
+const menuBtnClass = 'flex w-full items-center px-3 py-1.5 text-xs hover:bg-white/[0.06] text-left transition-colors';
 
 type ExpandedChannelStripProps = {
     track: Track;
@@ -112,7 +112,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                 <input
                     ref={renameRef}
                     defaultValue={track.name}
-                    className="w-full rounded border border-border bg-surface-base px-1 text-center text-[9px] text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    className="w-full rounded border border-border-soft bg-surface-inset shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)] px-1 text-center text-[9px] text-foreground font-mono outline-none focus-visible:ring-1 focus-visible:ring-border-focus"
                     onBlur={(e) => {
                         renameTrack(track.id, e.currentTarget.value);
                         setIsRenaming(false);
@@ -269,7 +269,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                         }}
                         min={-50}
                         max={50}
-                        size={28}
+                        size="sm"
                         aria-label={`${track.name} pan`}
                         bipolar
                     />
@@ -296,7 +296,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
             {ctxMenu && (
                 <div
                     ref={ctxRef}
-                    className="fixed z-50 min-w-[160px] max-h-[70vh] overflow-y-auto rounded-md border border-border bg-popover py-1 shadow-lg"
+                    className="fixed z-50 min-w-[160px] max-h-[70vh] overflow-y-auto rounded-md border border-border-soft border-t-[var(--color-light-edge)] bg-surface-overlay py-1 shadow-[0_4px_16px_rgba(0,0,0,0.5)]"
                     style={{ left: ctxMenu.x, top: ctxMenu.y }}
                     role="menu"
                 >

@@ -116,7 +116,7 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                 <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-2 flex flex-col">
                     <label className="text-[10px] text-muted-foreground mb-1">Notes</label>
                     <textarea
-                        className="flex-1 w-full rounded border border-border bg-surface-overlay px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-ring resize-y min-h-[60px]"
+                        className="flex-1 w-full rounded border border-border-soft bg-surface-inset shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)] px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-border-focus resize-y min-h-[60px]"
                         placeholder="Add notes…"
                         value={notesValue}
                         onChange={(e) => setNotesValue(e.target.value)}

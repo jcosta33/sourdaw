@@ -1,7 +1,8 @@
 @import 'tailwindcss';
 
 @theme {
-    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
+    --font-display: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
     --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Mono', monospace;
 
     /* == Layer 1: Core Design Tokens == */
@@ -17,6 +18,7 @@
     --color-bg-panelInset: #050505; /* Deep pushed-in state */
     --color-bg-slot: #000000;
     --color-bg-overlay: #151515;
+    --color-bg-dialog: #2E2E2E; /* Modal dialogs, tooltips */
     --color-bg-scrim: rgba(0, 0, 0, 0.85);
 
     /* Borders and Seams */
@@ -39,16 +41,24 @@
     --color-accent-amber: #fcd34d;
     --color-accent-red: #fca5a5;
 
-    /* UI States */
+    /* UI States (spec-aligned DAW conventions) */
     --color-state-success: var(--color-accent-mint);
     --color-state-warning: var(--color-accent-amber);
     --color-state-danger: var(--color-accent-red);
-    --color-state-record: #e53935;
+    --color-state-record: #FF4032;
     --color-state-clip: #ff1744;
-    --color-state-solo: var(--color-accent-amber);
-    --color-state-mute: var(--color-accent-mint);
+    --color-state-solo: #F7A738;
+    --color-state-mute: #FF6446;
+    --color-state-play: #00FF81;
     --color-state-bypass: var(--color-text-disabled);
     --color-state-linked: var(--color-accent-cyan);
+    --color-state-selection: #4A90D9;
+
+    /* LED tinted off-states (colored dark, not flat gray) */
+    --color-led-off-green: #0A2A0A;
+    --color-led-off-amber: #2A1E0A;
+    --color-led-off-red: #2A0A0A;
+    --color-led-off-cyan: #0A1E2A;
 
     /* Meter Displays */
     --color-meter-safe: #34c759;
@@ -117,12 +127,35 @@
     --color-surface-inset: var(--color-bg-panelInset);
     --color-surface-slot: var(--color-bg-slot);
     --color-surface-overlay: var(--color-bg-overlay);
+    --color-surface-dialog: var(--color-bg-dialog);
 
     /* Tracks Specifics */
     --color-track-audio: oklch(0.65 0.15 145);
     --color-track-midi: oklch(0.65 0.15 260);
     --color-track-bus: oklch(0.65 0.15 50);
     --color-track-master: oklch(0.65 0.15 0);
+
+    /* 16-color Track Palette */
+    --color-palette-red: #DC4848;
+    --color-palette-coral: #FF5F80;
+    --color-palette-orange: #D66B18;
+    --color-palette-amber: #E0AA2A;
+    --color-palette-yellow: #FFEC75;
+    --color-palette-yellow-green: #AFB95B;
+    --color-palette-green: #52BA46;
+    --color-palette-lime: #81D24C;
+    --color-palette-teal: #4CB8B8;
+    --color-palette-sky: #6BAACE;
+    --color-palette-steel: #4881AA;
+    --color-palette-blue: #3B5ECC;
+    --color-palette-purple: #954EB2;
+    --color-palette-sage: #B8CE93;
+    --color-palette-gray: #A0A0A0;
+    --color-palette-light-gray: #E7E6E6;
+
+    /* Rim-lighting edges (consistent top-left light model) */
+    --color-light-edge: rgba(255, 255, 255, 0.08);
+    --color-shadow-edge: rgba(0, 0, 0, 0.3);
 
     /* Base Layout Spacing */
     --spacing-track-height: 4rem;
@@ -170,11 +203,32 @@
 
     body {
         @apply bg-background text-foreground;
+        font-weight: 500;
         font-feature-settings:
             'rlig' 1,
             'calt' 1;
         -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
     }
+}
+
+/* ── DAW-specific utilities ────────────────────────────────────────────── */
+@utility panel-raised {
+    background: var(--color-bg-panel);
+    border: 1px solid var(--color-border-soft);
+    border-top-color: var(--color-light-edge);
+}
+
+@utility channel-inset {
+    box-shadow:
+        inset 0 1px 3px rgba(0, 0, 0, 0.8),
+        0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+@utility glow-active {
+    box-shadow:
+        0 0 4px var(--glow-color),
+        0 0 12px color-mix(in oklch, var(--glow-color), transparent 60%);
 }
 
 /* Tauri specific font-weight compensation for Linux WebKitGTK */

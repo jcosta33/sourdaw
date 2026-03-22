@@ -54,7 +54,7 @@ export const IOSection = ({ track }: IOSectionProps): ReactElement => {
 
                 {outputOpen && (
                     <div
-                        className="absolute bottom-full right-0 z-50 mb-1 min-w-20 rounded-md border border-border bg-surface-raised py-1 shadow-lg"
+                        className="absolute bottom-full right-0 z-50 mb-1 min-w-20 rounded-md border border-border-soft border-t-[var(--color-light-edge)] bg-surface-overlay py-1 shadow-[0_4px_16px_rgba(0,0,0,0.5)]"
                         role="listbox"
                         aria-label="Output routing"
                     >
@@ -65,7 +65,7 @@ export const IOSection = ({ track }: IOSectionProps): ReactElement => {
                                 role="option"
                                 aria-selected={track.outputId === target.id}
                                 className={cn(
-                                    'w-full px-2 py-1 text-left text-[10px] hover:bg-accent transition-colors',
+                                    'w-full px-2 py-1 text-left text-[10px] hover:bg-white/[0.06] transition-colors',
                                     track.outputId === target.id && 'text-primary font-medium'
                                 )}
                                 onClick={(e) => {

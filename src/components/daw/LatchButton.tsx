@@ -12,7 +12,7 @@ interface LatchButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement>
  * LatchButton
  *
  * A tactile DAW toggle that physically "sinks" into the panel when active.
- * Uses strict Layer 1 elevation tokens and localized LED glows.
+ * Uses inverted shadows + reversed gradient + translateY(1px) for realism.
  * Built for React 19 (no forwardRef).
  */
 export function LatchButton({
@@ -26,11 +26,11 @@ export function LatchButton({
 }: LatchButtonProps): ReactElement {
     // Variant mapping for the active localized glow and text color
     const activeStyles = {
-        cyan: 'text-accent-cyan shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] bg-bg-panelInset drop-shadow-[0_0_3px_var(--color-accent-cyan)] border-black',
-        mint: 'text-accent-mint shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] bg-bg-panelInset drop-shadow-[0_0_3px_var(--color-accent-mint)] border-black',
-        amber: 'text-accent-amber shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] bg-bg-panelInset drop-shadow-[0_0_3px_var(--color-accent-amber)] border-black',
-        red: 'text-state-record shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] bg-bg-panelInset drop-shadow-[0_0_4px_var(--color-state-record)] border-black',
-        neutral: 'text-text-primary shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] bg-bg-panelInset border-black',
+        cyan: 'text-accent-cyan drop-shadow-[0_0_3px_var(--color-accent-cyan)]',
+        mint: 'text-accent-mint drop-shadow-[0_0_3px_var(--color-accent-mint)]',
+        amber: 'text-state-solo drop-shadow-[0_0_3px_var(--color-state-solo)]',
+        red: 'text-state-record drop-shadow-[0_0_4px_var(--color-state-record)]',
+        neutral: 'text-text-primary',
     };
 
     const sizeStyles = {
@@ -54,25 +54,41 @@ export function LatchButton({
                 'focus:outline-none focus-visible:ring-1 focus-visible:ring-border-focus',
                 'disabled:opacity-50 disabled:pointer-events-none',
 
-                // Idle state — subtle raised button in recessed tray
-                !active &&
-                    'bg-surface-panel text-text-secondary hover:text-text-primary border border-border-soft shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_1px_2px_rgba(0,0,0,0.5)] hover:bg-surface-raised',
-
-                // Active state styling applied via the variant map
-                active && activeStyles[variant],
-
                 // Hardware layout size
                 sizeStyles[size],
 
                 className
             )}
+            style={
+                active
+                    ? {
+                          // Reversed gradient + deep inset — sinks INTO the panel
+                          background: 'linear-gradient(180deg, #111 0%, #1a1a1a 100%)',
+                          boxShadow:
+                              'inset 0 2px 4px rgba(0,0,0,0.6), inset 0 1px 1px rgba(0,0,0,0.4)',
+                          border: '1px solid rgba(0,0,0,0.6)',
+                          borderTopColor: 'rgba(0,0,0,0.8)',
+                          transform: 'translateY(1px)',
+                      }
+                    : {
+                          // Raised with top-light model
+                          background: 'linear-gradient(180deg, #2a2a2a 0%, #1e1e1e 100%)',
+                          boxShadow:
+                              '0 2px 4px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08)',
+                          border: '1px solid var(--color-border-soft)',
+                          borderTopColor: 'var(--color-light-edge)',
+                      }
+            }
             {...props}
         >
-            {/* 
-              When active, we shift the entire content down by 1px 
-              to sell the physical "push in" effect. 
-            */}
-            <span className="flex items-center gap-1.5">{children}</span>
+            <span
+                className={cn(
+                    'flex items-center gap-1.5',
+                    active ? activeStyles[variant] : 'text-text-secondary hover:text-text-primary'
+                )}
+            >
+                {children}
+            </span>
         </button>
     );
 }

@@ -66,7 +66,7 @@ export const TrackLevelSection = ({ track }: TrackLevelSectionProps): ReactEleme
                                 }}
                                 min={-50}
                                 max={50}
-                                size={32}
+                                size="md"
                                 aria-label={`${track.name} pan`}
                                 bipolar
                             />

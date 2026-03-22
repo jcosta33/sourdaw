@@ -128,8 +128,8 @@ const FuzzyResultItem = ({
             type="button"
             className={`w-full flex items-center gap-2.5 px-3 py-1.5 text-xs transition-colors ${
                 isSelected
-                    ? 'bg-accent/60 text-foreground'
-                    : 'text-muted-foreground hover:bg-accent/30 hover:text-foreground'
+                    ? 'bg-white/[0.08] text-foreground'
+                    : 'text-muted-foreground hover:bg-white/[0.06] hover:text-foreground'
             }`}
             onMouseDown={(e) => {
                 e.preventDefault();
@@ -541,7 +541,7 @@ export const PromptBar = (): ReactElement => {
                     id="prompt-results"
                     role="listbox"
                     aria-label="Command suggestions"
-                    className="absolute top-full left-0 right-0 mt-1 z-50 rounded-md border border-border bg-popover shadow-lg py-1 max-h-80 overflow-y-auto"
+                    className="absolute top-full left-0 right-0 mt-1 z-50 rounded-md border border-border-soft border-t-[var(--color-light-edge)] bg-surface-overlay shadow-[0_4px_16px_rgba(0,0,0,0.5)] py-1 max-h-80 overflow-y-auto"
                 >
                     {value.trim().length === 0 ? (
                         <div className="px-3 py-1 text-[9px] uppercase tracking-wider text-muted-foreground/50 font-medium">

@@ -48,7 +48,11 @@ export const TransportBar = (): ReactElement => {
 
     return (
         <header
-            className="flex h-(--spacing-transport-height) shrink-0 items-center gap-1 border-b border-black bg-surface-app px-2"
+            className="flex h-(--spacing-transport-height) shrink-0 items-center gap-1 border-b border-black bg-surface-base px-2"
+            style={{
+                boxShadow: 'inset 0 -1px 3px rgba(0,0,0,0.3), 0 1px 0 rgba(255,255,255,0.03)',
+                borderTop: '1px solid rgba(255,255,255,0.04)',
+            }}
             role="toolbar"
             aria-label="Transport controls"
         >

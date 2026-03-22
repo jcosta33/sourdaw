@@ -186,7 +186,7 @@ const EmptyArrangeOverlay = (): ReactElement => {
             onDrop={handleDrop}
         >
             <div
-                className={`flex flex-col items-center gap-4 p-8 rounded-xl bg-surface-overlay/90 border shadow-xl max-w-sm transition-colors ${isDragOver ? 'border-primary border-2 bg-primary/5' : 'border-border/50'}`}
+                className={`flex flex-col items-center gap-4 p-8 rounded-xl bg-surface-overlay/90 border shadow-[0_8px_32px_rgba(0,0,0,0.6)] max-w-sm transition-colors ${isDragOver ? 'border-primary border-2 bg-primary/5' : 'border-border-soft border-t-[var(--color-light-edge)]'}`}
             >
                 <div className="flex items-center gap-2">
                     <Music className="size-6 text-muted-foreground" />

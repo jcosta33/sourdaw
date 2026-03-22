@@ -9,16 +9,19 @@ interface FaderProps {
     step?: number;
     fineStep?: number;
     defaultValue?: number;
-    bipolar?: boolean; // if true, center detent
-    height?: number; // pixel height of the fader throw
+    bipolar?: boolean;
+    height?: number;
+    showScale?: boolean;
     className?: string;
 }
 
+/** dB marks for the fader scale */
+const DB_MARKS = [6, 0, -6, -12, -24, -48] as const;
+
 /**
  * Fader
- * Vertical slider with smooth DAW interactions.
- * Click track to jump, drag cap to slide, Shift to slow down.
- * Cap visibly depresses when dragged (shadow-elevation-inset).
+ * Vertical mixer fader with metallic cap, groove track, and dB scale.
+ * Drag cap to slide, Shift for fine mode, double-click to reset.
  */
 export const Fader = ({
     value,
@@ -30,6 +33,7 @@ export const Fader = ({
     defaultValue = 0,
     bipolar = false,
     height = 150,
+    showScale = false,
     className,
 }: FaderProps): ReactElement => {
     const [isDragging, setIsDragging] = useState(false);
@@ -37,18 +41,14 @@ export const Fader = ({
     const startY = useRef(0);
     const startValue = useRef(value);
 
-    // Calculate normalized value [0, 1] for positioning
     const normalized = Math.max(0, Math.min(1, (value - min) / (max - min)));
 
     const clampAndSnap = useCallback(
         (v: number) => {
             let clamped = Math.max(min, Math.min(max, v));
-
-            // Zero detent magnetism (unity/center) if bipolar
             if (bipolar && Math.abs(clamped - defaultValue) < (max - min) * 0.05) {
                 clamped = defaultValue;
             }
-
             return clamped;
         },
         [min, max, defaultValue, bipolar]
@@ -58,23 +58,17 @@ export const Fader = ({
         if (e.button !== 0 || !trackRef.current) {
             return;
         }
-
         e.currentTarget.setPointerCapture(e.pointerId);
         setIsDragging(true);
 
-        // Check if we clicked the track vs the cap
         const capEl = e.currentTarget.querySelector('[data-role="fader-cap"]');
         const isCapClick = capEl?.contains(e.target as Node);
 
         if (!isCapClick) {
-            // Jump to position
             const rect = trackRef.current.getBoundingClientRect();
-            // invert Y because bottom is min
             const percent = 1 - (e.clientY - rect.top) / rect.height;
             const newValue = clampAndSnap(min + percent * (max - min));
             onChange(newValue);
-
-            // start dragging from here
             startValue.current = newValue;
             startY.current = e.clientY;
         } else {
@@ -88,20 +82,15 @@ export const Fader = ({
             if (!isDragging) {
                 return;
             }
-
             const deltaY = startY.current - e.clientY;
             const currentStep = e.shiftKey ? fineStep : step;
-
-            // Scalar sensitivity relative to fader height
             const pxPerUnit = height / (max - min);
             let sensitivity = 1 / pxPerUnit;
             if (e.shiftKey) {
                 sensitivity *= 0.1;
-            } // 10x finer
-
+            }
             let newValue = startValue.current + deltaY * sensitivity;
             newValue = Math.round(newValue / currentStep) * currentStep;
-
             onChange(clampAndSnap(newValue));
         },
         [isDragging, step, fineStep, max, min, height, clampAndSnap, onChange]
@@ -116,48 +105,97 @@ export const Fader = ({
         onChange(defaultValue);
     };
 
-    // Cap position (bottom up)
     const capBottomPct = normalized * 100;
+    const unityPct = Math.max(0, Math.min(100, ((defaultValue - min) / (max - min)) * 100));
 
     return (
         <div
-            className={cn('relative flex flex-col items-center select-none group', className)}
+            className={cn('relative flex items-center select-none group', className)}
             style={{ height }}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onDoubleClick={handleDoubleClick}
         >
-            {/* Background Track (Slot) */}
+            {/* dB scale marks (left side) */}
+            {showScale && (
+                <div className="absolute -left-6 top-0 bottom-0 w-5 flex flex-col justify-between pointer-events-none">
+                    {DB_MARKS.map((db) => {
+                        const pct = ((db - min) / (max - min)) * 100;
+                        return (
+                            <span
+                                key={db}
+                                className={cn(
+                                    'absolute right-0 text-[8px] font-mono leading-none',
+                                    db === 0 ? 'text-text-primary' : 'text-text-disabled'
+                                )}
+                                style={{ bottom: `${pct}%`, transform: 'translateY(50%)' }}
+                            >
+                                {db > 0 ? `+${db}` : String(db)}
+                            </span>
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* Track groove */}
             <div
                 ref={trackRef}
-                className="absolute top-0 bottom-0 w-2.5 bg-bg-slot shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] rounded-full overflow-hidden"
+                className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-[5px] rounded-full overflow-hidden"
+                style={{
+                    background: '#0A0A0A',
+                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.8)',
+                }}
             >
-                {/* Track ticks (optional unity line) */}
+                {/* Unity gain line */}
                 <div
-                    className="absolute w-full h-px bg-border-soft opacity-50 z-0"
-                    style={{ bottom: `${Math.max(0, Math.min(100, ((defaultValue - min) / (max - min)) * 100))}%` }}
+                    className="absolute w-full h-px z-0"
+                    style={{
+                        bottom: `${unityPct}%`,
+                        background: 'rgba(255,255,255,0.15)',
+                    }}
                 />
+
+                {/* Tick marks at the right side for visual reference */}
+                {showScale &&
+                    DB_MARKS.map((db) => {
+                        const pct = ((db - min) / (max - min)) * 100;
+                        return (
+                            <div
+                                key={db}
+                                className="absolute right-0 w-[2px] h-px bg-white/10"
+                                style={{ bottom: `${pct}%` }}
+                            />
+                        );
+                    })}
             </div>
 
-            {/* Fader Cap */}
+            {/* Fader cap */}
             <div
                 data-role="fader-cap"
                 className={cn(
-                    'absolute w-8 h-10 -ml-4 left-1/2 rounded-sm cursor-grab z-10',
+                    'absolute w-8 h-10 left-1/2 -ml-4 rounded-sm z-10',
                     'transition-all duration-instant',
-                    isDragging
-                        ? 'shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] cursor-grabbing'
-                        : 'shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_1px_2px_rgba(0,0,0,0.5)]',
-                    'bg-bg-panel border border-border-soft',
+                    isDragging ? 'cursor-grabbing' : 'cursor-grab',
                     'flex flex-col items-center justify-center gap-[2px]'
                 )}
-                style={{ bottom: `calc(${capBottomPct}% - 20px)` }}
+                style={{
+                    bottom: `calc(${capBottomPct}% - 20px)`,
+                    background: isDragging
+                        ? 'linear-gradient(180deg, #4a4a4a 0%, #333 30%, #2a2a2a 50%, #222 70%, #1a1a1a 100%)'
+                        : 'linear-gradient(180deg, #555 0%, #3a3a3a 30%, #333 50%, #2a2a2a 70%, #222 100%)',
+                    border: '1px solid rgba(255,255,255,0.06)',
+                    borderTopColor: isDragging ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.12)',
+                    borderBottomColor: 'rgba(0,0,0,0.4)',
+                    boxShadow: isDragging
+                        ? 'inset 0 2px 4px rgba(0,0,0,0.6)'
+                        : 'inset 0 1px 0 rgba(255,255,255,0.08), 0 1px 3px rgba(0,0,0,0.6)',
+                }}
             >
-                {/* Grip marks */}
-                <div className={cn('w-4 h-px', isDragging ? 'bg-accent-cyan' : 'bg-border-soft')} />
-                <div className="w-5 h-px bg-border-active opacity-50" />
-                <div className={cn('w-4 h-px', isDragging ? 'bg-accent-cyan' : 'bg-border-soft')} />
+                {/* Center groove marks */}
+                <div className={cn('w-4 h-px', isDragging ? 'bg-accent-cyan' : 'bg-white/10')} />
+                <div className="w-5 h-px bg-white/15" />
+                <div className={cn('w-4 h-px', isDragging ? 'bg-accent-cyan' : 'bg-white/10')} />
             </div>
         </div>
     );

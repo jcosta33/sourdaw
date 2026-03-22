@@ -63,7 +63,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                     </Button>
                     {showDeviceMenu && (
                         <div
-                            className="absolute right-0 top-full z-50 mt-1 w-48 rounded-md border border-border/50 bg-popover py-1 shadow-lg"
+                            className="absolute right-0 top-full z-50 mt-1 w-48 rounded-md border border-border-soft border-t-[var(--color-light-edge)] bg-surface-overlay py-1 shadow-[0_4px_16px_rgba(0,0,0,0.5)]"
                             role="menu"
                         >
                             <p className="px-3 py-1 text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">
@@ -73,7 +73,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                 <button
                                     type="button"
                                     key={plugin.id}
-                                    className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
+                                    className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-white/[0.06] transition-colors"
                                     role="menuitem"
                                     onClick={() => {
                                         addDevice(track.id, plugin.name);
@@ -111,7 +111,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                         <button
                                             type="button"
                                             key={plugin.id}
-                                            className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
+                                            className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-foreground hover:bg-white/[0.06] transition-colors"
                                             role="menuitem"
                                             onClick={() => {
                                                 addExternalDevice(track.id, plugin.id, plugin.name);

@@ -60,7 +60,7 @@ export const BipolarSlider = ({
             <div className="relative pt-2 pb-1 px-1 h-6 flex items-center" onPointerDownCapture={handlePointerDown}>
                 {/* Center tick */}
                 <div
-                    className="absolute top-1 bottom-1 w-[2px] bg-border z-0 transform -translate-x-1/2 pointer-events-none"
+                    className="absolute top-1 bottom-1 w-[2px] bg-white/10 z-0 transform -translate-x-1/2 pointer-events-none"
                     style={{ left: `${normalizedDefault}%` }}
                 />
 
