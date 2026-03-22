@@ -56,8 +56,6 @@ export const useGlobalKeyboardShortcuts = (): void => {
                 return;
             }
 
-
-
             if (mod && e.key === 'a' && !e.shiftKey) {
                 if (isInput) {
                     return;

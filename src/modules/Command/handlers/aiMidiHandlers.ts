@@ -12,10 +12,14 @@
 
 import { type ActionHandler } from '../models/ActionHandler';
 import { type AppAction } from '../models/AppAction';
-import { addMidiNote, getNotesForClip } from '#/modules/Track/useCases/midiNoteCrud';
+import { addMidiNote, getNotesForClip, setNotesForClip } from '#/modules/Track/useCases/midiNoteCrud';
+import { createMidiNote } from '#/modules/Track/models/MidiNote';
 import { addTrack } from '#/modules/Track/useCases/addTrack';
+import { addClip } from '#/modules/Track/useCases/clipUseCases';
 import { stripSilence } from '#/modules/Track/useCases/stripSilence';
 import { detectTempo, detectKey, audioToMidi } from '#/modules/Track/useCases/audioAnalysisUseCases';
+import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
+import { trackStore } from '#/modules/Track/stores/trackStore';
 import { generateToolCalls } from '#/modules/AiRuntime/useCases/llmOrchestration';
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
@@ -136,12 +140,17 @@ export const aiMidiHandlers = {
             const instruction = `Create a variation of these notes. Change ~${String(pct)}% of them — alter some pitches, shift some rhythms, or change velocities, but keep the overall feel and key. Output the COMPLETE set of notes for the clip (replacing all existing notes). The variation should sound like a B-section or alternate take.`;
 
             const notes = await llmGenerateNotes(instruction, existing, a.payload.clipId);
-            // Clear existing and write new
-            // For now, just add — the pattern handler should ideally clear first
-            for (const note of notes) {
-                addMidiNote(a.payload.clipId, note.pitch, note.startBeat, note.duration, note.velocity ?? 100);
-            }
-            logger.info(`[AI MIDI] Generated variation with ${String(notes.length)} notes`);
+            // Replace all existing notes with the variation
+            const newNotes = notes.map((note) =>
+                createMidiNote(
+                    Math.max(0, Math.min(127, Math.round(note.pitch))),
+                    Math.max(0, note.startBeat),
+                    Math.max(0.0625, note.duration),
+                    Math.max(1, Math.min(127, note.velocity ?? 100))
+                )
+            );
+            setNotesForClip(a.payload.clipId, newNotes);
+            logger.info(`[AI MIDI] Generated variation with ${String(newNotes.length)} notes (replaced ${String(existing.length)} existing)`);
         },
         describe: () => ({ label: 'AI: create MIDI variation' }),
         undoable: true,
@@ -244,8 +253,26 @@ export const aiMidiHandlers = {
                 logger.info(
                     `[Audio AI] Generated ${String(audioBuffer.duration.toFixed(1))}s of audio (${String(audioBuffer.sampleRate)}Hz)`
                 );
-                // TODO: Store audioBuffer in audio engine and create clip on track
-                // For now, log success — needs audioBufferStore integration
+
+                // Store the generated audio buffer in the cache
+                const bufferId = crypto.randomUUID();
+                audioBufferCache.set(bufferId, audioBuffer);
+
+                // Calculate duration in beats (assume current project tempo, fallback 120 BPM)
+                const durationBeats = Math.max(1, Math.ceil(audioBuffer.duration * 2));
+
+                // Create a clip on the target track
+                const promptLabel = a.payload.prompt.slice(0, 40);
+                addClip({
+                    trackId,
+                    startBeat: 0,
+                    endBeat: durationBeats,
+                    name: `AI: ${promptLabel}`,
+                    type: 'audio',
+                    audioBufferId: bufferId,
+                });
+
+                logger.info(`[Audio AI] Created clip "${promptLabel}" (${String(durationBeats)} beats) on track ${trackId}`);
             } catch (error) {
                 logger.warn(`[Audio AI] Generation failed: ${String(error)}`);
             }
@@ -256,7 +283,7 @@ export const aiMidiHandlers = {
 
     stemSeparate: {
         execute: async (a) => {
-            const { separateStems: _separateStems, isAudioAiServerRunning } =
+            const { separateStems: doSeparateStems, isAudioAiServerRunning } =
                 await import('#/modules/AiRuntime/useCases/audioAiEngine');
 
             const running = await isAudioAiServerRunning();
@@ -271,15 +298,50 @@ export const aiMidiHandlers = {
             logger.info(`[Audio AI] Separating stems: ${stems.join(', ')} for clip ${a.payload.clipId}`);
 
             try {
-                // TODO: Get audio data from clip via audio engine
-                // For now, log the intent — needs integration with audio buffer store
-                logger.info('[Audio AI] Stem separation requires audio buffer integration — logged intent');
-
-                // When integrated, this will:
                 // 1. Get audio buffer from clip
-                // 2. Send to Demucs server
-                // 3. Create new tracks for each stem
-                // 4. Assign audio buffers to new clips
+                const state = trackStore.value;
+                const track = state?.tracks.find((t) => t.clips.some((c) => c.id === a.payload.clipId));
+                if (!track) {
+                    logger.warn('[Audio AI] Clip not found');
+                    return;
+                }
+                const clip = track.clips.find((c) => c.id === a.payload.clipId);
+                if (!clip || clip.type !== 'audio' || !clip.audioBufferId) {
+                    logger.warn('[Audio AI] Clip has no audio buffer');
+                    return;
+                }
+                const sourceBuffer = audioBufferCache.get(clip.audioBufferId);
+                if (!sourceBuffer) {
+                    logger.warn('[Audio AI] Audio buffer not found in cache');
+                    return;
+                }
+
+                // 2. Convert AudioBuffer to WAV ArrayBuffer for transport
+                const wavData = audioBufferToWav(sourceBuffer);
+
+                // 3. Send to Demucs server
+                const stemResults = await doSeparateStems(wavData, stems);
+
+                // 4. Create new tracks for each stem with clips
+                const durationBeats = clip.endBeat - clip.startBeat;
+                for (const [stemName, stemBuffer] of Object.entries(stemResults)) {
+                    const stemTrack = addTrack({ name: `${clip.name} — ${stemName}`, kind: 'audio' });
+                    if (!stemTrack) {
+                        continue;
+                    }
+                    const stemBufferId = crypto.randomUUID();
+                    audioBufferCache.set(stemBufferId, stemBuffer);
+                    addClip({
+                        trackId: stemTrack.id,
+                        startBeat: clip.startBeat,
+                        endBeat: clip.startBeat + durationBeats,
+                        name: `${stemName}`,
+                        type: 'audio',
+                        audioBufferId: stemBufferId,
+                    });
+                }
+
+                logger.info(`[Audio AI] Separated into ${String(Object.keys(stemResults).length)} stems`);
             } catch (error) {
                 logger.warn(`[Audio AI] Stem separation failed: ${String(error)}`);
             }
@@ -288,3 +350,63 @@ export const aiMidiHandlers = {
         undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'stemSeparate'>>,
 };
+
+// ── Helpers ─────────────────────────────────────────────────────────────
+
+/**
+ * Encode an AudioBuffer as a 16-bit PCM WAV ArrayBuffer.
+ * Used to transport audio data to the AI sidecar server.
+ */
+function audioBufferToWav(buffer: AudioBuffer): ArrayBuffer {
+    const numChannels = buffer.numberOfChannels;
+    const sampleRate = buffer.sampleRate;
+    const format = 1; // PCM
+    const bitsPerSample = 16;
+
+    const channels: Float32Array[] = [];
+    for (let ch = 0; ch < numChannels; ch++) {
+        channels.push(buffer.getChannelData(ch));
+    }
+
+    const numSamples = buffer.length;
+    const dataLength = numSamples * numChannels * (bitsPerSample / 8);
+    const headerLength = 44;
+    const arrayBuffer = new ArrayBuffer(headerLength + dataLength);
+    const view = new DataView(arrayBuffer);
+
+    // RIFF header
+    writeString(view, 0, 'RIFF');
+    view.setUint32(4, 36 + dataLength, true);
+    writeString(view, 8, 'WAVE');
+
+    // fmt chunk
+    writeString(view, 12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, format, true);
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * numChannels * (bitsPerSample / 8), true);
+    view.setUint16(32, numChannels * (bitsPerSample / 8), true);
+    view.setUint16(34, bitsPerSample, true);
+
+    // data chunk
+    writeString(view, 36, 'data');
+    view.setUint32(40, dataLength, true);
+
+    let offset = 44;
+    for (let i = 0; i < numSamples; i++) {
+        for (let ch = 0; ch < numChannels; ch++) {
+            const sample = Math.max(-1, Math.min(1, channels[ch]![i]!));
+            view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+            offset += 2;
+        }
+    }
+
+    return arrayBuffer;
+}
+
+function writeString(view: DataView, offset: number, str: string): void {
+    for (let i = 0; i < str.length; i++) {
+        view.setUint8(offset + i, str.charCodeAt(i));
+    }
+}

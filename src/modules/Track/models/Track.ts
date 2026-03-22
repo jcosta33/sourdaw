@@ -68,6 +68,10 @@ export type Clip = {
     followAction?: FollowAction;
     generating?: boolean;
     isGhost?: boolean;
+    /** If set, this clip is a linked instance of another clip. */
+    parentClipId?: string;
+    /** Which properties are locally overridden on this instance. */
+    overrides?: Record<string, boolean>;
 };
 
 export type Device = {

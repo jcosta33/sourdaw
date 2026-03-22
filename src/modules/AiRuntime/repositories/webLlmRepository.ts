@@ -144,7 +144,9 @@ export async function generateWebLlmToolCalls(
             try {
                 args = JSON.parse(tc.function.arguments ?? '{}') as Record<string, unknown>;
             } catch {
-                logger.warn(`[WebLLM] Failed to parse tool call args for "${tc.function.name}": ${tc.function.arguments}`);
+                logger.warn(
+                    `[WebLLM] Failed to parse tool call args for "${tc.function.name}": ${tc.function.arguments}`
+                );
             }
             results.push({ name: tc.function.name, arguments: args });
         }

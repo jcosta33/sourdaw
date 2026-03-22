@@ -262,11 +262,12 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                 if (trackId) {
                     const beat = getBeatFromX(x);
                     const contentY = y - RULER_HEIGHT + (timelineViewStore.value?.scrollY ?? 0);
-                    const tracks = trackStore.value?.tracks ?? [];
-                    const trackHit = getTrackAtY(tracks, contentY);
-                    const trackHeight = trackHit ? (tracks[trackHit.index]?.height ?? 64) : 64;
+                    const model = buildTimelineRenderModel();
+                    const tracksToTest = model?.tracks ?? [];
+                    const trackHit = getTrackAtY(tracksToTest, contentY);
+                    const trackHeight = trackHit ? (tracksToTest[trackHit.index]?.height ?? 64) : 64;
                     const trackOffset = trackHit
-                        ? tracks.slice(0, trackHit.index).reduce((sum, t) => sum + (t.height ?? 64), 0)
+                        ? tracksToTest.slice(0, trackHit.index).reduce((sum, t) => sum + (t.height ?? 64), 0)
                         : 0;
                     const trackLocalY = contentY - trackOffset;
                     const value = Math.max(0, Math.min(1, 1 - trackLocalY / trackHeight));
@@ -388,11 +389,12 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                 const { x, y } = getCanvasCoords(e);
                 const beat = getBeatFromX(x);
                 const contentY = y - RULER_HEIGHT + (timelineViewStore.value?.scrollY ?? 0);
-                const tracks = trackStore.value?.tracks ?? [];
-                const trackHit = getTrackAtY(tracks, contentY);
-                const trackHeight = trackHit ? (tracks[trackHit.index]?.height ?? 64) : 64;
+                const model = buildTimelineRenderModel();
+                const tracksToTest = model?.tracks ?? [];
+                const trackHit = getTrackAtY(tracksToTest, contentY);
+                const trackHeight = trackHit ? (tracksToTest[trackHit.index]?.height ?? 64) : 64;
                 const trackOffset = trackHit
-                    ? tracks.slice(0, trackHit.index).reduce((sum, t) => sum + (t.height ?? 64), 0)
+                    ? tracksToTest.slice(0, trackHit.index).reduce((sum, t) => sum + (t.height ?? 64), 0)
                     : 0;
                 const trackLocalY = contentY - trackOffset;
                 const value = Math.max(0, Math.min(1, 1 - trackLocalY / trackHeight));
@@ -454,12 +456,13 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             }
 
             const contentY = my - RULER_HEIGHT + (timelineViewStore.value?.scrollY ?? 0);
-            const tracks = trackStore.value?.tracks;
-            if (!tracks) {
+            const model = buildTimelineRenderModel();
+            const tracksToTest = model?.tracks;
+            if (!tracksToTest) {
                 return;
             }
-            const trackHit = getTrackAtY(tracks, Math.max(0, contentY));
-            const targetTrack = trackHit ? tracks[trackHit.index] : null;
+            const trackHit = getTrackAtY(tracksToTest, Math.max(0, contentY));
+            const targetTrack = trackHit ? tracksToTest[trackHit.index] : null;
             const snapTrackId = targetTrack?.id ?? dragState.sourceTrackId;
             const snappedBeat = Math.max(
                 0,

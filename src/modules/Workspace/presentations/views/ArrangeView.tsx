@@ -15,6 +15,9 @@ import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { ResizeHandle } from '#/modules/Workspace/presentations/components/ResizeHandle';
 import { Button } from '#/components/ui/button';
 import { Music, Piano, Plus, Upload } from 'lucide-react';
+import { ChordTrackLane } from './timeline/ChordTrackLane';
+import { ScratchPadView } from './timeline/ScratchPadView';
+import { chordTrackStore } from '#/modules/Track/stores/chordTrackStore';
 
 const TRACK_LIST_MIN = 120;
 const TRACK_LIST_MAX = 400;
@@ -25,7 +28,7 @@ function clamp(value: number, min: number, max: number): number {
 
 export const ArrangeView = (): ReactElement => {
     const { tracks } = useTracks();
-    const { trackListOpen, trackListWidth } = useWorkspaceState();
+    const { trackListOpen, trackListWidth, scratchPadOpen, scratchPadHeight } = useWorkspaceState();
 
     const [localTrackListWidth, setLocalTrackListWidth] = useState(trackListWidth);
     const trackListWidthRef = useRef(localTrackListWidth);
@@ -61,7 +64,14 @@ export const ArrangeView = (): ReactElement => {
         () => markerStore.value
     );
 
+    const chordState = useSyncExternalStore(
+        (cb) => chordTrackStore.subscribe(cb),
+        () => chordTrackStore.value,
+        () => chordTrackStore.value
+    );
+
     const hasMarkers = (markerState?.markers.length ?? 0) > 0;
+    const hasChords = (chordState?.events.length ?? 0) > 0 || (chordState?.enabled ?? false);
     const pixelsPerBeat = viewState?.pixelsPerBeat ?? 12;
     const scrollX = viewState?.scrollX ?? 0;
 
@@ -69,9 +79,9 @@ export const ArrangeView = (): ReactElement => {
         <div className="flex h-full">
             {trackListOpen && (
                 <>
-                    <TrackListView 
-                        style={{ width: localTrackListWidth }} 
-                        extraHeaderHeight={22 + (hasMarkers ? 20 : 0) + 28 + 22} 
+                    <TrackListView
+                        style={{ width: localTrackListWidth }}
+                        extraHeaderHeight={22 + (hasMarkers ? 20 : 0) + 28 + 22 + (hasChords ? 26 : 0)}
                     />
                     <ResizeHandle
                         direction="vertical"
@@ -85,8 +95,20 @@ export const ArrangeView = (): ReactElement => {
                 {hasMarkers && <MarkerLane pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} />}
                 <TimelineMinimap />
                 <BeatRulerBar />
+                {hasChords && <ChordTrackLane pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} />}
                 <TimelineSurface />
                 {tracks.length === 0 && <EmptyArrangeOverlay />}
+                {scratchPadOpen && (
+                    <ScratchPadView
+                        height={scratchPadHeight}
+                        onToggle={() => {
+                            const ws = workspaceStore.value;
+                            if (ws) {
+                                workspaceStore.set({ ...ws, scratchPadOpen: false });
+                            }
+                        }}
+                    />
+                )}
             </div>
         </div>
     );

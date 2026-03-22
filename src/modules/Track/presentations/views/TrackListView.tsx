@@ -30,7 +30,13 @@ const HEIGHT_LABELS: Record<Preferences['trackHeight'], string> = {
     large: 'Large',
 };
 
-export const TrackListView = ({ style, extraHeaderHeight = 0 }: { style?: CSSProperties; extraHeaderHeight?: number }): ReactElement => {
+export const TrackListView = ({
+    style,
+    extraHeaderHeight = 0,
+}: {
+    style?: CSSProperties;
+    extraHeaderHeight?: number;
+}): ReactElement => {
     const { tracks, selectedTrackId } = useTracks();
     const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
     const dragTrackIdRef = useRef<string | null>(null);
@@ -75,8 +81,12 @@ export const TrackListView = ({ style, extraHeaderHeight = 0 }: { style?: CSSPro
 
     const collapsedFolders = new Set(tracks.filter((t) => t.kind === 'folder' && t.collapsed).map((t) => t.id));
     const visibleTracks = tracks.filter((t) => {
-        if (t.kind === 'master') return false;
-        if (!t.parentId) return true;
+        if (t.kind === 'master') {
+            return false;
+        }
+        if (!t.parentId) {
+            return true;
+        }
         return !collapsedFolders.has(t.parentId);
     });
 
@@ -138,8 +148,13 @@ export const TrackListView = ({ style, extraHeaderHeight = 0 }: { style?: CSSPro
 
     return (
         <div className="flex h-full shrink-0 flex-col border-r border-border/30 bg-surface-well" style={style}>
-            <div className="flex items-end justify-between border-b border-border/30 px-2 pb-1 pt-2 shrink-0 bg-surface-tray" style={{ height: extraHeaderHeight }}>
-                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Tracks</span>
+            <div
+                className="flex items-end justify-between border-b border-border/30 px-2 pb-1 pt-2 shrink-0 bg-surface-tray"
+                style={{ height: extraHeaderHeight }}
+            >
+                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">
+                    Tracks
+                </span>
                 <div className="flex items-center gap-0.5">
                     <Tooltip>
                         <TooltipTrigger asChild>

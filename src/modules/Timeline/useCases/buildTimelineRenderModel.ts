@@ -26,8 +26,12 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
         (trackState?.tracks ?? []).filter((t) => t.kind === 'folder' && t.collapsed).map((t) => t.id)
     );
     const visibleTracks = (trackState?.tracks ?? []).filter((t) => {
-        if (t.kind === 'master') return false;
-        if (!t.parentId) return true;
+        if (t.kind === 'master') {
+            return false;
+        }
+        if (!t.parentId) {
+            return true;
+        }
         return !collapsedFolders.has(t.parentId);
     });
 

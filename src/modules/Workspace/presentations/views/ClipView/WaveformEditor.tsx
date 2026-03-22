@@ -384,7 +384,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                 onDragLeave={() => setIsDragging(false)}
                 onDrop={handleDrop}
             >
-<canvas
+                <canvas
                     ref={canvasRef}
                     className={draggingMarker.current ? 'cursor-ew-resize' : 'cursor-crosshair'}
                     aria-label="Waveform editor"

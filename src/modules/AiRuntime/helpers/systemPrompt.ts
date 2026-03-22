@@ -132,9 +132,7 @@ export type PromptFormat = 'api' | 'hermes' | 'json';
 export function buildSystemPrompt(toolsJson: string, projectState: string, format: PromptFormat = 'api'): string {
     const isHermes = format === 'hermes';
 
-    const preamble = isHermes
-        ? `${HERMES_PREAMBLE} <tools> ${toolsJson} </tools> ${HERMES_SCHEMA}`
-        : API_ROLE_PREAMBLE;
+    const preamble = isHermes ? `${HERMES_PREAMBLE} <tools> ${toolsJson} </tools> ${HERMES_SCHEMA}` : API_ROLE_PREAMBLE;
 
     return [
         preamble,

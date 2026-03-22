@@ -152,7 +152,6 @@ export const TimelineMinimap = (): ReactElement => {
         return { canvasWidth, totalBeats, beatsToPixels, viewportWidthPx, viewportStartPx };
     };
 
-
     const handleMouseDown = (e: ReactMouseEvent<HTMLDivElement>) => {
         if (e.button !== 0) {
             return;

@@ -119,4 +119,3 @@ async function parseLlmPath(prompt: string, context: ProjectContext, signal?: Ab
         requiresConfirmation: requiresConfirmation(validated),
     };
 }
-

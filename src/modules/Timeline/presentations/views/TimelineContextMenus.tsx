@@ -27,6 +27,7 @@ import {
     executeAppAction,
 } from '../../useCases/timelineViewActions';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
+import { notifyAiChange } from '#/modules/AiRuntime/presentations/views/AiChangeToast';
 import { addMarker, setMarkerColor, removeMarker as removeMarkerUseCase } from '../../useCases/markerUseCases';
 import { trackStore } from '#/modules/Track/stores/trackStore';
 import { markerStore } from '#/modules/Timeline/stores/markerStore';
@@ -290,6 +291,49 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                     >
                         Detect Key
                     </button>
+                    <div className={menuSep} />
+                    <div className="px-3 py-1 text-[10px] font-medium text-muted-foreground/70 flex items-center gap-1">
+                        <span className="inline-block size-2.5 rounded-full bg-blue-500/60" />
+                        AI
+                    </div>
+                    <button
+                        type="button"
+                        className={menuBtnClass}
+                        role="menuitem"
+                        onClick={act(async () => {
+                            notifyUser('Separating stems… this may take a moment');
+                            try {
+                                await executeAppAction({ type: 'stemSeparate', payload: { clipId } });
+                                notifyAiChange('Stem separation complete', [
+                                    'Created separate tracks for each stem',
+                                ]);
+                            } catch {
+                                notifyUser('Stem separation failed', 'error');
+                            }
+                        })}
+                    >
+                        <span className="text-blue-400 mr-1.5">✦</span>
+                        Separate Stems
+                    </button>
+                    <button
+                        type="button"
+                        className={menuBtnClass}
+                        role="menuitem"
+                        onClick={act(async () => {
+                            notifyUser('Converting audio to MIDI…');
+                            try {
+                                await executeAppAction({ type: 'audioToMidi', payload: { clipId } });
+                                notifyAiChange('Audio converted to MIDI', [
+                                    'New MIDI clip created from detected onsets',
+                                ]);
+                            } catch {
+                                notifyUser('Audio-to-MIDI conversion failed', 'error');
+                            }
+                        })}
+                    >
+                        <span className="text-blue-400 mr-1.5">✦</span>
+                        Convert to MIDI
+                    </button>
                 </>
             )}
             {isMidi && (
@@ -309,6 +353,55 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                         onClick={act(() => exportMidiClip(clipId))}
                     >
                         Export as MIDI…
+                    </button>
+                    <div className={menuSep} />
+                    <div className="px-3 py-1 text-[10px] font-medium text-muted-foreground/70 flex items-center gap-1">
+                        <span className="inline-block size-2.5 rounded-full bg-blue-500/60" />
+                        AI
+                    </div>
+                    <button
+                        type="button"
+                        className={menuBtnClass}
+                        role="menuitem"
+                        onClick={act(async () => {
+                            notifyUser('Generating MIDI continuation…');
+                            try {
+                                await executeAppAction({
+                                    type: 'completeMidi',
+                                    payload: { clipId, bars: 4 },
+                                });
+                                notifyAiChange('MIDI continuation generated', [
+                                    'Added 4 bars of new MIDI content',
+                                ]);
+                            } catch {
+                                notifyUser('MIDI continuation failed', 'error');
+                            }
+                        })}
+                    >
+                        <span className="text-blue-400 mr-1.5">✦</span>
+                        Continue MIDI…
+                    </button>
+                    <button
+                        type="button"
+                        className={menuBtnClass}
+                        role="menuitem"
+                        onClick={act(async () => {
+                            notifyUser('Creating MIDI variation…');
+                            try {
+                                await executeAppAction({
+                                    type: 'variationMidi',
+                                    payload: { clipId, amount: 0.3 },
+                                });
+                                notifyAiChange('MIDI variation created', [
+                                    'Variation applied with 30% divergence',
+                                ]);
+                            } catch {
+                                notifyUser('MIDI variation failed', 'error');
+                            }
+                        })}
+                    >
+                        <span className="text-blue-400 mr-1.5">✦</span>
+                        Create Variation
                     </button>
                 </>
             )}

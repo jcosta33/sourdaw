@@ -60,7 +60,7 @@ export function removeClip(clipId: string): void {
     mapAllTracks((t) => ({ ...t, clips: t.clips.filter((c) => c.id !== clipId) }));
 }
 
-export function moveClip(clipId: string, targetTrackId: string, startBeat: number): void {
+export function moveClip(clipId: string, targetTrackId: string, startBeat: number, originalStartBeat?: number): void {
     const state = getTrackState();
     if (!state) {
         return;
@@ -91,7 +91,7 @@ export function moveClip(clipId: string, targetTrackId: string, startBeat: numbe
         tracks: tracksWithoutClip.map((t) => (t.id === targetTrackId ? { ...t, clips: [...t.clips, movedClip!] } : t)),
     });
 
-    const beatDelta = startBeat - oldStartBeat;
+    const beatDelta = startBeat - (originalStartBeat ?? oldStartBeat);
     if (beatDelta !== 0) {
         shiftClipAutomation(clipId, beatDelta);
         shiftClipMidiNotes(clipId, beatDelta);

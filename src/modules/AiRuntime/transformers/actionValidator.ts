@@ -939,4 +939,3 @@ export function validateSingleAction(raw: unknown): AppAction | null {
             return { type, payload } as AppAction;
     }
 }
-

@@ -125,18 +125,20 @@ const NavCard = ({
         className="w-full flex items-center gap-2.5 px-2 py-2 rounded-md hover:bg-surface-raised border border-transparent hover:border-border/30 transition-all group text-left"
         onClick={onClick}
     >
-        <div className={`flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-md ${color} ${dimmed ? 'opacity-60' : ''}`}>
+        <div
+            className={`flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-md ${color} ${dimmed ? 'opacity-60' : ''}`}
+        >
             <Icon className="size-3.5" aria-hidden="true" />
         </div>
 
         <div className="flex-1 min-w-0">
-            <div className={`text-[11px] font-medium leading-tight flex items-center gap-1 ${dimmed ? 'text-foreground/60' : 'text-foreground/90'}`}>
+            <div
+                className={`text-[11px] font-medium leading-tight flex items-center gap-1 ${dimmed ? 'text-foreground/60' : 'text-foreground/90'}`}
+            >
                 {label}
                 {badge}
             </div>
-            <div className="text-[9px] text-muted-foreground/60 leading-tight truncate mt-0.5">
-                {description}
-            </div>
+            <div className="text-[9px] text-muted-foreground/60 leading-tight truncate mt-0.5">{description}</div>
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
@@ -161,10 +163,7 @@ const EffectItem = ({
         className="flex items-center justify-between rounded-md px-2 py-1.5 hover:bg-surface-raised border border-transparent hover:border-border/30 transition-all cursor-grab active:cursor-grabbing group"
         draggable
         onDragStart={(e) => {
-            e.dataTransfer.setData(
-                'application/x-webdaw-plugin',
-                JSON.stringify({ name: plugin.name, id: plugin.id })
-            );
+            e.dataTransfer.setData('application/x-webdaw-plugin', JSON.stringify({ name: plugin.name, id: plugin.id }));
             e.dataTransfer.effectAllowed = 'copy';
         }}
         onClick={() => {
@@ -187,11 +186,12 @@ const EffectItem = ({
             </span>
         </div>
         <div className="flex items-center gap-1.5 shrink-0 ml-1">
-            <span className="text-[9px] text-muted-foreground/60 tabular-nums">
-                {plugin.parameters.length}p
-            </span>
+            <span className="text-[9px] text-muted-foreground/60 tabular-nums">{plugin.parameters.length}p</span>
             {selectedTrackId ? (
-                <Plus className="size-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" aria-hidden="true" />
+                <Plus
+                    className="size-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+                    aria-hidden="true"
+                />
             ) : null}
         </div>
     </div>
@@ -208,13 +208,17 @@ const UnimplementedBadge = (): ReactElement => (
     </span>
 );
 
-const SoonBadge = (): ReactElement => (
-    <span className="text-[9px] text-amber-500/60 font-normal">soon</span>
-);
+const SoonBadge = (): ReactElement => <span className="text-[9px] text-amber-500/60 font-normal">soon</span>;
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export const EffectsTab = ({ plugins, selectedTrackId, searchQuery, currentRoute, pushRoute }: EffectsTabProps): ReactElement => {
+export const EffectsTab = ({
+    plugins,
+    selectedTrackId,
+    searchQuery,
+    currentRoute,
+    pushRoute,
+}: EffectsTabProps): ReactElement => {
     const effects = plugins.filter((p) => p.category !== 'instrument');
     const query = searchQuery.toLowerCase().trim();
 
@@ -249,18 +253,12 @@ export const EffectsTab = ({ plugins, selectedTrackId, searchQuery, currentRoute
     // ── Search: flat results (no routing) ───────────────────────────────────
     if (query) {
         const filteredEffects = effects.filter(
-            (p) =>
-                p.name.toLowerCase().includes(query) ||
-                p.category.toLowerCase().includes(query)
+            (p) => p.name.toLowerCase().includes(query) || p.category.toLowerCase().includes(query)
         );
         const filteredModulators = MODULATOR_PRESETS.filter(
-            (p) =>
-                p.name.toLowerCase().includes(query) ||
-                p.category.toLowerCase().includes(query)
+            (p) => p.name.toLowerCase().includes(query) || p.category.toLowerCase().includes(query)
         );
-        const filteredMidi = MIDI_EFFECT_FACTORIES.filter((m) =>
-            m.name.toLowerCase().includes(query)
-        );
+        const filteredMidi = MIDI_EFFECT_FACTORIES.filter((m) => m.name.toLowerCase().includes(query));
         const total = filteredEffects.length + filteredModulators.length + filteredMidi.length;
 
         return (
@@ -418,8 +416,8 @@ export const EffectsTab = ({ plugins, selectedTrackId, searchQuery, currentRoute
                 <div className="flex items-start gap-2 px-2 py-2 rounded-md bg-amber-500/5 border border-amber-500/20 mb-2">
                     <Sparkles className="size-3 text-amber-400/80 shrink-0 mt-0.5" aria-hidden="true" />
                     <p className="text-[10px] text-muted-foreground leading-relaxed">
-                        Modulation routing exists in the data model but isn't wired to
-                        Web Audio yet — clicking a preset has no audio effect.
+                        Modulation routing exists in the data model but isn't wired to Web Audio yet — clicking a preset
+                        has no audio effect.
                     </p>
                 </div>
                 {presets.map((preset) => (
@@ -449,8 +447,8 @@ export const EffectsTab = ({ plugins, selectedTrackId, searchQuery, currentRoute
                 <div className="flex items-start gap-2 px-2 py-2 rounded-md bg-amber-500/5 border border-amber-500/20 mb-2">
                     <Sparkles className="size-3 text-amber-400/80 shrink-0 mt-0.5" aria-hidden="true" />
                     <p className="text-[10px] text-muted-foreground leading-relaxed">
-                        Modulation routing exists in the data model but isn't wired to
-                        Web Audio yet — clicking a preset has no audio effect.
+                        Modulation routing exists in the data model but isn't wired to Web Audio yet — clicking a preset
+                        has no audio effect.
                     </p>
                 </div>
 
@@ -485,8 +483,8 @@ export const EffectsTab = ({ plugins, selectedTrackId, searchQuery, currentRoute
                 <div className="flex items-start gap-2 px-2 py-2 rounded-md bg-amber-500/5 border border-amber-500/20">
                     <Sparkles className="size-3 text-amber-400/80 shrink-0 mt-0.5" aria-hidden="true" />
                     <p className="text-[10px] text-muted-foreground leading-relaxed">
-                        MIDI FX logic exists but isn't connected to the MIDI scheduler yet —
-                        tracks don't apply these transforms during playback.
+                        MIDI FX logic exists but isn't connected to the MIDI scheduler yet — tracks don't apply these
+                        transforms during playback.
                     </p>
                 </div>
 

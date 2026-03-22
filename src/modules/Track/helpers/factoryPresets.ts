@@ -612,7 +612,7 @@ const FACTORY_PRESETS: SoundPreset[] = [
         devices: [
             faustInstrument('faust-fm-synth', 'FM Synth', {
                 '/fm_synth/ratio': 2,
-                '/fm_synth/index': 5
+                '/fm_synth/index': 5,
             }),
             delay('Delay', { 'delay-time': 300, 'delay-feedback': 0.3, 'delay-mix': 0.15 }),
             reverb('Reverb', { 'rev-size': 0.5, 'rev-decay': 2, 'rev-mix': 0.2 }),
@@ -1883,26 +1883,26 @@ export { FACTORY_PRESETS, DRUM_KIT_PRESETS };
 // correct Faust AudioWorkletNode identified by module slug.
 
 export const FAUST_SYNTH_PRESETS: SoundPreset[] = [
-
     // ─── Hammond B3 Organ ────────────────────────────────────────────────
     {
         id: 'factory-faust-hammond-full',
         name: 'Full Organ',
         category: 'keys',
         subcategory: 'digital',
-        description: 'Classic Hammond B3 with both 16\' and 8\' drawbars fully open. Big, full organ sound with slow Leslie rotation.',
+        description:
+            "Classic Hammond B3 with both 16' and 8' drawbars fully open. Big, full organ sound with slow Leslie rotation.",
         trackKind: 'midi',
         devices: [
             faustInstrument('faust-hammond-b-3', 'Hammond B3', {
                 '/Hammond_B3/drawbar_16': 8,
-                '/Hammond_B3/drawbar_8':  8,
+                '/Hammond_B3/drawbar_8': 8,
                 '/Hammond_B3/drawbar_513': 0,
-                '/Hammond_B3/drawbar_4':  0,
+                '/Hammond_B3/drawbar_4': 0,
                 '/Hammond_B3/drawbar_223': 0,
-                '/Hammond_B3/drawbar_2':  0,
+                '/Hammond_B3/drawbar_2': 0,
                 '/Hammond_B3/drawbar_135': 0,
                 '/Hammond_B3/drawbar_113': 0,
-                '/Hammond_B3/drawbar_1':  0,
+                '/Hammond_B3/drawbar_1': 0,
                 '/Hammond_B3/leslie_speed': 5.5,
                 '/Hammond_B3/leslie_depth': 0.25,
             }),
@@ -1917,19 +1917,20 @@ export const FAUST_SYNTH_PRESETS: SoundPreset[] = [
         name: 'Jazz Organ',
         category: 'keys',
         subcategory: 'digital',
-        description: 'Jimmy Smith-style jazz organ — 8\' + 4\' + 2\' for that cutting mid-range presence with fast Leslie.',
+        description:
+            "Jimmy Smith-style jazz organ — 8' + 4' + 2' for that cutting mid-range presence with fast Leslie.",
         trackKind: 'midi',
         devices: [
             faustInstrument('faust-hammond-b-3', 'Hammond B3', {
                 '/Hammond_B3/drawbar_16': 0,
-                '/Hammond_B3/drawbar_8':  8,
+                '/Hammond_B3/drawbar_8': 8,
                 '/Hammond_B3/drawbar_513': 0,
-                '/Hammond_B3/drawbar_4':  6,
+                '/Hammond_B3/drawbar_4': 6,
                 '/Hammond_B3/drawbar_223': 0,
-                '/Hammond_B3/drawbar_2':  5,
+                '/Hammond_B3/drawbar_2': 5,
                 '/Hammond_B3/drawbar_135': 0,
                 '/Hammond_B3/drawbar_113': 0,
-                '/Hammond_B3/drawbar_1':  0,
+                '/Hammond_B3/drawbar_1': 0,
                 '/Hammond_B3/leslie_speed': 8.0,
                 '/Hammond_B3/leslie_depth': 0.4,
             }),
@@ -1948,14 +1949,14 @@ export const FAUST_SYNTH_PRESETS: SoundPreset[] = [
         devices: [
             faustInstrument('faust-hammond-b-3', 'Hammond B3', {
                 '/Hammond_B3/drawbar_16': 8,
-                '/Hammond_B3/drawbar_8':  8,
+                '/Hammond_B3/drawbar_8': 8,
                 '/Hammond_B3/drawbar_513': 6,
-                '/Hammond_B3/drawbar_4':  5,
+                '/Hammond_B3/drawbar_4': 5,
                 '/Hammond_B3/drawbar_223': 4,
-                '/Hammond_B3/drawbar_2':  3,
+                '/Hammond_B3/drawbar_2': 3,
                 '/Hammond_B3/drawbar_135': 2,
                 '/Hammond_B3/drawbar_113': 1,
-                '/Hammond_B3/drawbar_1':  0,
+                '/Hammond_B3/drawbar_1': 0,
                 '/Hammond_B3/leslie_speed': 6.5,
                 '/Hammond_B3/leslie_depth': 0.3,
             }),
@@ -1972,7 +1973,8 @@ export const FAUST_SYNTH_PRESETS: SoundPreset[] = [
         name: 'Moog Lead',
         category: 'lead',
         subcategory: 'analog',
-        description: 'Classic Minimoog-style mono lead. Dual sawtooth through resonant lowpass with envelope filter sweep.',
+        description:
+            'Classic Minimoog-style mono lead. Dual sawtooth through resonant lowpass with envelope filter sweep.',
         trackKind: 'midi',
         devices: [
             faustInstrument('faust-minimoog-lead', 'Minimoog Lead', {
@@ -2199,4 +2201,3 @@ export const FAUST_SYNTH_PRESETS: SoundPreset[] = [
         isFactory: true,
     },
 ];
-

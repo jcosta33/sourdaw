@@ -58,10 +58,16 @@ function hexToRgba(hex: string, alpha = 1): [number, number, number, number] {
 function pushRect(
     buf: Float32Array,
     offset: number,
-    x1: number, y1: number,
-    x2: number, y2: number,
-    r: number, g: number, b: number, a: number,
-    w: number, h: number,
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    r: number,
+    g: number,
+    b: number,
+    a: number,
+    w: number,
+    h: number
 ): number {
     // Convert pixel coords → NDC (WebGPU: Y+ is up)
     const nx1 = (x1 / w) * 2 - 1;
@@ -72,12 +78,42 @@ function pushRect(
     // Triangle 1: top-left, top-right, bottom-left
     // Triangle 2: top-right, bottom-right, bottom-left
     const verts: number[] = [
-        nx1, ny1,  r, g, b, a,
-        nx2, ny1,  r, g, b, a,
-        nx1, ny2,  r, g, b, a,
-        nx2, ny1,  r, g, b, a,
-        nx2, ny2,  r, g, b, a,
-        nx1, ny2,  r, g, b, a,
+        nx1,
+        ny1,
+        r,
+        g,
+        b,
+        a,
+        nx2,
+        ny1,
+        r,
+        g,
+        b,
+        a,
+        nx1,
+        ny2,
+        r,
+        g,
+        b,
+        a,
+        nx2,
+        ny1,
+        r,
+        g,
+        b,
+        a,
+        nx2,
+        ny2,
+        r,
+        g,
+        b,
+        a,
+        nx1,
+        ny2,
+        r,
+        g,
+        b,
+        a,
     ];
     buf.set(verts, offset);
     return offset + FLOATS_PER_RECT;
@@ -116,8 +152,8 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                     {
                         arrayStride: FLOATS_PER_VERTEX * 4, // bytes
                         attributes: [
-                            { shaderLocation: 0, offset: 0,      format: 'float32x2' }, // xy
-                            { shaderLocation: 1, offset: 2 * 4,  format: 'float32x4' }, // rgba
+                            { shaderLocation: 0, offset: 0, format: 'float32x2' }, // xy
+                            { shaderLocation: 1, offset: 2 * 4, format: 'float32x4' }, // rgba
                         ],
                     },
                 ],
@@ -165,7 +201,8 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
             const dpr = window.devicePixelRatio || 1;
 
             // Viewport beat range → pixel helpers
-            const { viewportStartBeat, pixelsPerBeat, scrollY, selectedClipIds, selectedTrackId, playheadPosition } = model;
+            const { viewportStartBeat, pixelsPerBeat, scrollY, selectedClipIds, selectedTrackId, playheadPosition } =
+                model;
 
             function beatToX(beat: number): number {
                 return (beat - viewportStartBeat) * pixelsPerBeat * dpr;
@@ -199,7 +236,7 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
             trackY = -scrollY * dpr;
             for (const track of model.tracks) {
                 const th = track.height * dpr;
-                const clipTop    = trackY + 2 * dpr;
+                const clipTop = trackY + 2 * dpr;
                 const clipBottom = trackY + th - 2 * dpr;
 
                 for (const clip of track.clips) {
@@ -247,7 +284,7 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                                 Math.min(nx2, cx2 - 2),
                                 noteY + 2 * dpr,
                                 '#ffffff',
-                                alpha * 0.8,
+                                alpha * 0.8
                             );
                         }
                     }
@@ -259,15 +296,15 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                             // At least 1 rect per pixel, up to max ~2000 bins to balance perf
                             const numBins = Math.min(Math.floor(w * dpr), 2000);
                             const peaks = audioBufferCache.getWaveformPeaks(clip.audioBufferId, numBins);
-                            
+
                             const midY = clipTop + (clipBottom - clipTop) / 2;
                             const padding = 2 * dpr;
-                            const amplitude = ((clipBottom - clipTop) - padding * 2) * 0.35;
+                            const amplitude = (clipBottom - clipTop - padding * 2) * 0.35;
                             const binWidth = w / numBins;
-                            
+
                             // Color analogous to canvas renderer's 'rgba(120, 200, 160, 0.5)'
                             const wfColor = '#78c8a0';
-                            
+
                             for (let i = 0; i < numBins; i++) {
                                 const peakHeight = peaks[i]! * amplitude;
                                 if (peakHeight > 0.5) {
@@ -286,7 +323,7 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
             // 3. Bar / beat grid lines
             const barBeats = model.timeSignatureNumerator;
             const firstBar = Math.floor(viewportStartBeat / barBeats);
-            const lastBar  = Math.ceil((viewportStartBeat + (w / pixelsPerBeat / dpr)) / barBeats) + 1;
+            const lastBar = Math.ceil((viewportStartBeat + w / pixelsPerBeat / dpr) / barBeats) + 1;
             for (let bar = firstBar; bar <= lastBar; bar++) {
                 const beat = bar * barBeats;
                 const gx = beatToX(beat);
@@ -311,14 +348,14 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
             device.queue.writeBuffer(gpuBuf, 0, cpuBuf, 0, rectCount * FLOATS_PER_RECT);
 
             // Record + submit
-            const encoder   = device.createCommandEncoder();
+            const encoder = device.createCommandEncoder();
             const textureView = gpuContext!.getCurrentTexture().createView();
             const renderPass = encoder.beginRenderPass({
                 colorAttachments: [
                     {
                         view: textureView,
                         clearValue: { r: 0.07, g: 0.07, b: 0.07, a: 1.0 },
-                        loadOp:  'clear' as GPULoadOp,
+                        loadOp: 'clear' as GPULoadOp,
                         storeOp: 'store' as GPUStoreOp,
                     },
                 ],
@@ -335,9 +372,9 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
             const dpr = window.devicePixelRatio || 1;
             canvasW = w * dpr;
             canvasH = h * dpr;
-            canvas.width  = canvasW;
+            canvas.width = canvasW;
             canvas.height = canvasH;
-            canvas.style.width  = `${w}px`;
+            canvas.style.width = `${w}px`;
             canvas.style.height = `${h}px`;
             gpuContext!.configure({ device, format, alphaMode: 'premultiplied' });
 

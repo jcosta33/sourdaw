@@ -93,7 +93,9 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                                         {modelInfo.displayName}
                                     </span>
                                 </div>
-                                <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full border ${TIER_COLORS[tierKey]} shrink-0`}>
+                                <span
+                                    className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full border ${TIER_COLORS[tierKey]} shrink-0`}
+                                >
                                     {backendLabel}
                                 </span>
                             </div>
@@ -101,9 +103,7 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
 
                         {/* Body */}
                         <div className="px-3 py-2.5 space-y-2.5">
-                            <p className="text-[10px] text-muted-foreground leading-relaxed">
-                                {modelInfo.description}
-                            </p>
+                            <p className="text-[10px] text-muted-foreground leading-relaxed">{modelInfo.description}</p>
 
                             <div className="flex gap-3 text-[10px] text-muted-foreground">
                                 <span className="inline-flex items-center gap-1">
@@ -162,7 +162,11 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                     className="h-6 gap-1 px-2 text-[10px] font-medium border-emerald-500/30 text-emerald-400/80 hover:text-emerald-300 hover:bg-emerald-500/10 hover:border-emerald-500/50 transition-all"
                     title="AI model loaded — click to manage"
                 >
-                    {backend === 'native' ? <Zap className="size-2.5" aria-hidden="true" /> : <Sparkles className="size-2.5" aria-hidden="true" />}
+                    {backend === 'native' ? (
+                        <Zap className="size-2.5" aria-hidden="true" />
+                    ) : (
+                        <Sparkles className="size-2.5" aria-hidden="true" />
+                    )}
                     AI Ready
                 </Button>
 
@@ -174,7 +178,9 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                                 <span className="text-xs font-semibold text-foreground truncate">
                                     {modelInfo.displayName}
                                 </span>
-                                <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full border ${TIER_COLORS[tierKey]} shrink-0`}>
+                                <span
+                                    className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full border ${TIER_COLORS[tierKey]} shrink-0`}
+                                >
                                     {backendLabel}
                                 </span>
                             </div>

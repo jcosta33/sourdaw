@@ -46,8 +46,12 @@ let basicPitchModel: BasicPitch | null = null;
 
 function getBasicPitchModel(): BasicPitch {
     if (!basicPitchModel) {
-        // Uses the bundled TF.js model from the package
-        basicPitchModel = new BasicPitch('https://tfhub.dev/google/tfjs-model/spice/2/default/1');
+        // Uses the bundled TF.js model shipped with @spotify/basic-pitch.
+        // The model.json + shard files live in node_modules/@spotify/basic-pitch/model/
+        // Rspack/Vite will resolve the import.meta.url-relative path at build time.
+        const modelUrl = new URL('../../../node_modules/@spotify/basic-pitch/model/model.json', import.meta.url).href;
+        logger.info(`[Basic Pitch] Loading model from ${modelUrl}`);
+        basicPitchModel = new BasicPitch(modelUrl);
     }
     return basicPitchModel;
 }

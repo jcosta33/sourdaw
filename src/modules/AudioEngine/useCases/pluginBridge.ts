@@ -130,4 +130,34 @@ export async function processAudioIPC(instanceId: string, audioData: Float32Arra
     }
 }
 
+// ── Plugin GUI ──────────────────────────────────────────────────────────
+
+export type PluginGuiInfo = {
+    has_gui: boolean;
+    is_open: boolean;
+    width: number;
+    height: number;
+};
+
+export async function isPluginGuiSupported(instanceId: string): Promise<boolean> {
+    if (!isTauri()) {
+        return false;
+    }
+    return tauriInvoke('is_plugin_gui_supported', { instanceId }) as Promise<boolean>;
+}
+
+export async function openPluginGui(instanceId: string): Promise<PluginGuiInfo> {
+    if (!isTauri()) {
+        return { has_gui: false, is_open: false, width: 0, height: 0 };
+    }
+    return tauriInvoke('open_plugin_gui', { instanceId }) as Promise<PluginGuiInfo>;
+}
+
+export async function closePluginGui(instanceId: string): Promise<void> {
+    if (!isTauri()) {
+        return;
+    }
+    await tauriInvoke('close_plugin_gui', { instanceId });
+}
+
 export const isTauriAvailable = isTauri;

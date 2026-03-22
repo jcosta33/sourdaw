@@ -52,7 +52,6 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): TimelineRendere
     return { backend: 'canvas2d', render, resize, dispose };
 }
 
-
 function drawGrid(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, width: number, height: number): void {
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
     ctx.lineWidth = 1;
@@ -218,8 +217,6 @@ function drawPlayhead(ctx: CanvasRenderingContext2D, model: TimelineRenderModel,
     ctx.closePath();
     ctx.fill();
 }
-
-
 
 function drawTakeLanes(ctx: CanvasRenderingContext2D, model: TimelineRenderModel): void {
     const takeState = takeLaneStore.value;

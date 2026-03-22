@@ -67,12 +67,7 @@ export function moveMidiNote(clipId: string, noteId: string, newPitch: number, n
     });
 }
 
-export function resizeMidiNote(
-    clipId: string,
-    noteId: string,
-    newStartBeat?: number,
-    newDuration?: number
-): void {
+export function resizeMidiNote(clipId: string, noteId: string, newStartBeat?: number, newDuration?: number): void {
     const state = midiStore.value;
     if (!state) {
         return;
@@ -88,7 +83,9 @@ export function resizeMidiNote(
         notesByClipId: {
             ...state.notesByClipId,
             [clipId]: existing.map((n) => {
-                if (n.id !== noteId) return n;
+                if (n.id !== noteId) {
+                    return n;
+                }
                 return {
                     ...n,
                     startBeat: newStartBeat !== undefined ? newStartBeat : n.startBeat,

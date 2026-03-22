@@ -254,7 +254,7 @@ export function commitClipDrag(drag: DragState, canvasX: number, canvasY: number
     }
 
     const newStartBeat = Math.max(0, snapToGridOrClips(beat - drag.offsetBeat, targetTrackId, drag.clipId));
-    moveClip(drag.clipId, targetTrackId, newStartBeat);
+    moveClip(drag.clipId, targetTrackId, newStartBeat, drag.startBeat);
 }
 
 export type AutomationSubLaneHit = {
@@ -281,8 +281,10 @@ export function hitTestAutomationSubLane(canvasX: number, canvasY: number): Auto
 
     const subLaneMap = workspace.automationSubLanes;
     const model = buildTimelineRenderModel();
-    if (!model) return null;
-    
+    if (!model) {
+        return null;
+    }
+
     let trackYOffset = 0;
 
     for (const track of model.tracks) {

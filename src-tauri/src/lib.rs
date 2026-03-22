@@ -34,6 +34,10 @@ pub fn run() {
             commands::plugins::set_plugin_state,
             // audio bridge
             commands::audio_ipc::audio_ipc,
+            // Plugin GUI
+            commands::plugin_gui::is_plugin_gui_supported,
+            commands::plugin_gui::open_plugin_gui,
+            commands::plugin_gui::close_plugin_gui,
             // MIDI bridge
             commands::midi::list_midi_inputs,
             commands::midi::open_midi_input,

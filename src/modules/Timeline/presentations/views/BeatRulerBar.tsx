@@ -33,7 +33,9 @@ export const BeatRulerBar = (): React.ReactElement => {
     const drawRuler = useCallback(
         (canvas: HTMLCanvasElement) => {
             const ctx = canvas.getContext('2d');
-            if (!ctx) return;
+            if (!ctx) {
+                return;
+            }
             const dpr = window.devicePixelRatio || 1;
             const w = canvas.offsetWidth;
             const h = HEIGHT;
@@ -47,7 +49,7 @@ export const BeatRulerBar = (): React.ReactElement => {
 
             // Loop region
             if (isLooping && loopEnd > loopStart) {
-                const lx = (loopStart * pixelsPerBeat) - scrollX;
+                const lx = loopStart * pixelsPerBeat - scrollX;
                 const lw = (loopEnd - loopStart) * pixelsPerBeat;
                 ctx.fillStyle = 'rgba(99, 102, 241, 0.28)';
                 ctx.fillRect(lx, 0, lw, h);
@@ -143,29 +145,37 @@ export const BeatRulerBar = (): React.ReactElement => {
     const setCanvas = useCallback(
         (el: HTMLCanvasElement | null) => {
             canvasRef.current = el;
-            if (el) drawRuler(el);
+            if (el) {
+                drawRuler(el);
+            }
         },
         [drawRuler]
     );
 
     // Redraw on state change
-    if (canvasRef.current) drawRuler(canvasRef.current);
+    if (canvasRef.current) {
+        drawRuler(canvasRef.current);
+    }
 
     const getBeat = (clientX: number): number => {
         const rect = containerRef.current?.getBoundingClientRect();
-        if (!rect) return 0;
+        if (!rect) {
+            return 0;
+        }
         const x = clientX - rect.left;
         return x / pixelsPerBeat + scrollX / pixelsPerBeat;
     };
 
     const handleMouseDown = useCallback(
         (e: ReactMouseEvent<HTMLDivElement>) => {
-            if (e.button !== 0) return;
+            if (e.button !== 0) {
+                return;
+            }
             const beat = getBeat(e.clientX);
-            
+
             // Set playhead immediately on click
             seekPlayhead(beat);
-            
+
             // But also prepare for a drag to create a loop region
             loopDragRef.current = { startBeat: beat };
         },
@@ -175,7 +185,9 @@ export const BeatRulerBar = (): React.ReactElement => {
 
     const handleMouseMove = useCallback(
         (e: ReactMouseEvent<HTMLDivElement>) => {
-            if (!loopDragRef.current) return;
+            if (!loopDragRef.current) {
+                return;
+            }
             // Only consider it a drag if mouse is actually down (buttons === 1)
             if (e.buttons !== 1) {
                 loopDragRef.current = null;
@@ -185,7 +197,7 @@ export const BeatRulerBar = (): React.ReactElement => {
             const start = loopDragRef.current.startBeat;
             const lo = Math.min(start, beat);
             const hi = Math.max(start, beat);
-            
+
             // Require at least a 0.25 beat drag to establish a loop region
             if (hi - lo >= 0.25) {
                 setLoopRegion(Math.floor(lo), Math.ceil(hi));
@@ -210,14 +222,14 @@ export const BeatRulerBar = (): React.ReactElement => {
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
-            onDoubleClick={() => { if (transportStore.value) transportStore.set({ ...transportStore.value, isLooping: false }); }}
+            onDoubleClick={() => {
+                if (transportStore.value) {
+                    transportStore.set({ ...transportStore.value, isLooping: false });
+                }
+            }}
             title="Drag to set loop region · Shift+drag to extend · Click to move playhead"
         >
-            <canvas
-                ref={setCanvas}
-                className="block w-full"
-                style={{ height: HEIGHT, imageRendering: 'pixelated' }}
-            />
+            <canvas ref={setCanvas} className="block w-full" style={{ height: HEIGHT, imageRendering: 'pixelated' }} />
         </div>
     );
 };

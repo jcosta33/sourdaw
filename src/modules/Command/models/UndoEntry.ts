@@ -64,4 +64,3 @@ export const generateGroupId = (label: string): { groupId: string; groupLabel: s
 });
 
 export const isActionEntry = (entry: UndoEntry): entry is ActionUndoEntry => entry.kind === 'action';
-

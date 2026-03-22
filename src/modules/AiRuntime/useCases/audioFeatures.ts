@@ -129,7 +129,7 @@ export function summarizeFeatures(audioBufferId: string, options?: AnalysisOptio
     const avgZcr = frames.reduce((sum, f) => sum + f.zcr, 0) / n;
 
     // Average chroma profile
-    const chromaProfile: number[] = new Array(12).fill(0);
+    const chromaProfile: number[] = Array.from({ length: 12 }).fill(0) as number[];
     for (const f of frames) {
         for (let i = 0; i < 12; i++) {
             const chromaVal = f.chroma[i] ?? 0;

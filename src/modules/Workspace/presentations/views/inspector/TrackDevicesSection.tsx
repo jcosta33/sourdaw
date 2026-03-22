@@ -1,7 +1,7 @@
 import { type ReactElement, useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import { Card } from '#/components/ui/card';
 import { Button } from '#/components/ui/button';
-import { Plus, Power, Trash2, Monitor } from 'lucide-react';
+import { Plus, Power, Trash2, Monitor, LayoutGrid } from 'lucide-react';
 import { BUILTIN_PLUGINS } from '../../../useCases/workspaceViewActions';
 import {
     bypassDevice,
@@ -15,6 +15,7 @@ import { type Track } from '../../../useCases/workspaceViewActions';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/helpers/platformCapabilities';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { cn } from '#/helpers/Styles/cn';
+import { openPluginGui } from '#/modules/AudioEngine/useCases/pluginBridge';
 
 type TrackDevicesSectionProps = {
     track: Track;
@@ -211,6 +212,25 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                         className={`size-3 ${device.bypassed ? 'text-muted-foreground' : 'text-emerald-400'}`}
                                     />
                                 </Button>
+                                {device.type === 'external-plugin' && device.externalInstanceId && (
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <Button
+                                                variant="ghost"
+                                                size="icon-xs"
+                                                className="h-6 w-6"
+                                                aria-label={`Open editor for ${device.name}`}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    void openPluginGui(device.externalInstanceId!);
+                                                }}
+                                            >
+                                                <LayoutGrid className="size-3 text-primary" />
+                                            </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top">Open plugin editor</TooltipContent>
+                                    </Tooltip>
+                                )}
                                 <Button
                                     variant="ghost"
                                     size="icon-xs"

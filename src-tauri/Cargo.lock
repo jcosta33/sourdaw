@@ -430,6 +430,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "com-scrape-types"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5ce183b975b8fc736a20919c4002717255fbd867df575c792aeefa9a56a73ad0"
+
+[[package]]
 name = "combine"
 version = "4.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5261,40 +5267,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
-name = "vst3-com"
-version = "0.1.0"
-source = "git+https://github.com/RustAudio/vst3-sys.git#f3e8f01c3de6d5df2f503c920c9f2bf8166a771b"
+name = "vst3"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e31e3fe7a6f028ded8c5a9984cf283319e6dc63572c9b71da1d4ee9d71d3b6bf"
 dependencies = [
- "vst3-com-macros",
-]
-
-[[package]]
-name = "vst3-com-macros"
-version = "0.2.0"
-source = "git+https://github.com/RustAudio/vst3-sys.git#f3e8f01c3de6d5df2f503c920c9f2bf8166a771b"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
- "vst3-com-macros-support",
-]
-
-[[package]]
-name = "vst3-com-macros-support"
-version = "0.2.0"
-source = "git+https://github.com/RustAudio/vst3-sys.git#f3e8f01c3de6d5df2f503c920c9f2bf8166a771b"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
-]
-
-[[package]]
-name = "vst3-sys"
-version = "0.1.0"
-source = "git+https://github.com/RustAudio/vst3-sys.git#f3e8f01c3de6d5df2f503c920c9f2bf8166a771b"
-dependencies = [
- "vst3-com",
+ "com-scrape-types",
 ]
 
 [[package]]
@@ -5504,6 +5482,7 @@ dependencies = [
  "libloading 0.8.9",
  "midir",
  "ort",
+ "raw-window-handle",
  "reqwest 0.12.28",
  "rubato",
  "rusty_link",
@@ -5515,7 +5494,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-shell",
  "tokio",
- "vst3-sys",
+ "vst3",
  "whisper-rs",
 ]
 

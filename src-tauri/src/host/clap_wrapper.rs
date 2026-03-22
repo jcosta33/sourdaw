@@ -20,6 +20,10 @@ use clap_sys::ext::params::{
     CLAP_PARAM_IS_AUTOMATABLE, CLAP_PARAM_IS_HIDDEN, CLAP_PARAM_IS_READONLY,
 };
 use clap_sys::ext::state::{clap_plugin_state, CLAP_EXT_STATE};
+use clap_sys::ext::gui::{
+    clap_plugin_gui, clap_window, clap_window_handle,
+    CLAP_EXT_GUI, CLAP_WINDOW_API_COCOA, CLAP_WINDOW_API_WIN32, CLAP_WINDOW_API_X11,
+};
 use clap_sys::stream::{clap_istream, clap_ostream};
 use libloading::Library;
 use std::ffi::{CStr, CString, c_void};
@@ -44,6 +48,10 @@ pub struct ClapWrapper {
     params_ext: *const clap_plugin_params,
     /// Cached pointer to the plugin's state extension (may be null).
     state_ext: *const clap_plugin_state,
+    /// Cached pointer to the plugin's GUI extension (may be null).
+    gui_ext: *const clap_plugin_gui,
+    /// Whether the GUI is currently open.
+    gui_open: bool,
 }
 
 // SAFETY: The clap_plugin is required to be thread-safe by the CLAP spec.
@@ -227,12 +235,16 @@ impl ClapWrapper {
             // 8. Query extensions BEFORE activation
             let params_ext = Self::query_extension::<clap_plugin_params>(plugin_ref, CLAP_EXT_PARAMS);
             let state_ext = Self::query_extension::<clap_plugin_state>(plugin_ref, CLAP_EXT_STATE);
+            let gui_ext = Self::query_extension::<clap_plugin_gui>(plugin_ref, CLAP_EXT_GUI);
 
             if !params_ext.is_null() {
                 eprintln!("[CLAP] Plugin '{}' supports CLAP_EXT_PARAMS", name);
             }
             if !state_ext.is_null() {
                 eprintln!("[CLAP] Plugin '{}' supports CLAP_EXT_STATE", name);
+            }
+            if !gui_ext.is_null() {
+                eprintln!("[CLAP] Plugin '{}' supports CLAP_EXT_GUI", name);
             }
 
             // 9. Activate the plugin
@@ -262,6 +274,8 @@ impl ClapWrapper {
                 sample_rate,
                 params_ext,
                 state_ext,
+                gui_ext,
+                gui_open: false,
             })
         }
     }
@@ -282,6 +296,154 @@ impl ClapWrapper {
     /// Get the plugin descriptor info for scanning.
     pub fn get_name(&self) -> &str {
         &self.name
+    }
+
+    // ── GUI support ─────────────────────────────────────────────────────
+
+    /// Returns true if the plugin provides a custom GUI.
+    pub fn has_gui(&self) -> bool {
+        !self.gui_ext.is_null()
+    }
+
+    /// Returns true if the GUI is currently open.
+    pub fn is_gui_open(&self) -> bool {
+        self.gui_open
+    }
+
+    /// Get the preferred GUI size (width, height) if the plugin has a GUI.
+    /// Must be called AFTER gui.create() for most plugins.
+    pub fn get_gui_size(&self) -> Option<(u32, u32)> {
+        if self.gui_ext.is_null() || self.plugin.is_null() {
+            return None;
+        }
+        unsafe {
+            let gui = &*self.gui_ext;
+            let get_size = gui.get_size?;
+            let mut width: u32 = 0;
+            let mut height: u32 = 0;
+            if get_size(self.plugin, &mut width, &mut height) {
+                Some((width, height))
+            } else {
+                None
+            }
+        }
+    }
+
+    /// Get the platform-specific window API string for CLAP.
+    fn platform_api() -> &'static CStr {
+        #[cfg(target_os = "macos")]
+        { CLAP_WINDOW_API_COCOA }
+        #[cfg(target_os = "windows")]
+        { CLAP_WINDOW_API_WIN32 }
+        #[cfg(target_os = "linux")]
+        { CLAP_WINDOW_API_X11 }
+    }
+
+    /// Open the plugin GUI, parenting it into the given native window handle.
+    ///
+    /// `handle_ptr` is the platform-specific handle:
+    /// - macOS: NSView* (as *mut c_void)
+    /// - Windows: HWND (as *mut c_void)
+    /// - Linux: X11 Window ID (as c_ulong)
+    ///
+    /// CLAP GUI lifecycle (exact order):
+    /// 1. gui.is_api_supported(api, false)
+    /// 2. gui.create(api, false)
+    /// 3. gui.set_scale(scale)
+    /// 4. gui.get_size(&w, &h)
+    /// 5. gui.set_parent(window)
+    /// 6. gui.show()
+    pub fn open_gui(&mut self, handle_ptr: *mut c_void) -> Result<(u32, u32), String> {
+        if self.gui_ext.is_null() || self.plugin.is_null() {
+            return Err("Plugin does not support GUI".to_string());
+        }
+
+        if self.gui_open {
+            return Err("GUI is already open".to_string());
+        }
+
+        unsafe {
+            let gui = &*self.gui_ext;
+            let api = Self::platform_api();
+
+            // 1. Check API support
+            if let Some(is_supported) = gui.is_api_supported {
+                if !is_supported(self.plugin, api.as_ptr(), false) {
+                    return Err(format!("Plugin '{}' does not support embedded GUI on this platform", self.name));
+                }
+            }
+
+            // 2. Create GUI
+            let create = gui.create.ok_or("Plugin GUI has no create function")?;
+            if !create(self.plugin, api.as_ptr(), false) {
+                return Err(format!("Plugin '{}' gui.create() failed", self.name));
+            }
+
+            // 3. Set scale (use 1.0 — plugins handle Retina internally on macOS)
+            if let Some(set_scale) = gui.set_scale {
+                set_scale(self.plugin, 1.0);
+            }
+
+            // 4. Get size
+            let mut width: u32 = 800;
+            let mut height: u32 = 600;
+            if let Some(get_size) = gui.get_size {
+                get_size(self.plugin, &mut width, &mut height);
+            }
+
+            // 5. Set parent — build the clap_window with the native handle
+            let window = clap_window {
+                api: api.as_ptr(),
+                specific: {
+                    #[cfg(target_os = "macos")]
+                    { clap_window_handle { cocoa: handle_ptr } }
+                    #[cfg(target_os = "windows")]
+                    { clap_window_handle { win32: handle_ptr } }
+                    #[cfg(target_os = "linux")]
+                    { clap_window_handle { x11: handle_ptr as u64 } }
+                },
+            };
+
+            if let Some(set_parent) = gui.set_parent {
+                if !set_parent(self.plugin, &window) {
+                    // Clean up
+                    if let Some(destroy) = gui.destroy {
+                        destroy(self.plugin);
+                    }
+                    return Err(format!("Plugin '{}' gui.set_parent() failed", self.name));
+                }
+            }
+
+            // 6. Show
+            if let Some(show) = gui.show {
+                show(self.plugin);
+            }
+
+            self.gui_open = true;
+            eprintln!("[CLAP] Opened GUI for '{}' ({}x{})", self.name, width, height);
+            Ok((width, height))
+        }
+    }
+
+    /// Close (hide + destroy) the plugin GUI.
+    pub fn close_gui(&mut self) {
+        if self.gui_ext.is_null() || self.plugin.is_null() || !self.gui_open {
+            return;
+        }
+
+        unsafe {
+            let gui = &*self.gui_ext;
+
+            if let Some(hide) = gui.hide {
+                hide(self.plugin);
+            }
+            if let Some(destroy) = gui.destroy {
+                destroy(self.plugin);
+            }
+        }
+
+        self.gui_open = false;
+        eprintln!("[CLAP] Closed GUI for '{}'", self.name);
     }
 }
 
@@ -523,10 +685,23 @@ impl AudioPlugin for ClapWrapper {
             }
         }
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 impl Drop for ClapWrapper {
     fn drop(&mut self) {
+        // Close GUI if it's still open
+        if self.gui_open {
+            self.close_gui();
+        }
+
         if !self.plugin.is_null() {
             unsafe {
                 let plugin_ref = &*self.plugin;

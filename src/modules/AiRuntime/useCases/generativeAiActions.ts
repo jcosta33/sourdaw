@@ -11,6 +11,7 @@ import { trackStore } from '#/modules/Track/stores/trackStore';
 import { addClip } from '#/modules/Track/useCases/clipUseCases';
 import { addMidiNote } from '#/modules/Track/useCases/midiNoteCrud';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
+import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { generateMidiViaLlm } from './llmMidiGeneration';
 
 // ── Types ──
@@ -121,12 +122,15 @@ export async function handleGenerateMidiPrompt(prompt: string, numNotes: number 
                     endBeat,
                     name: prompt ? `✨ AI: ${prompt.slice(0, 15)}` : '✨ AI Generation',
                     type: 'midi',
-                    isGhost: true,
                 });
 
                 if (clip) {
                     for (const n of finalNotes) {
                         addMidiNote(clip.id, n.pitch, n.start_beat, n.duration_beats, n.velocity);
+                    }
+                    const ws = workspaceStore.value;
+                    if (ws) {
+                        workspaceStore.set({ ...ws, selectedClipId: clip.id });
                     }
                 }
             }

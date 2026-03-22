@@ -1,6 +1,7 @@
 use crate::commands::plugins::PluginParameter;
+use std::any::Any;
 
-pub trait AudioPlugin: Send + Sync {
+pub trait AudioPlugin: Send + Sync + Any {
     /// Process a block of audio.
     /// `inputs`: slice of channel buffers (e.g., [left_in, right_in])
     /// `outputs`: slice of mutable channel buffers (e.g., [left_out, right_out])
@@ -18,4 +19,10 @@ pub trait AudioPlugin: Send + Sync {
     
     /// Set the opaque binary state of the plugin
     fn set_state(&mut self, state: &[u8]);
+
+    /// Upcast to Any for downcasting to concrete types.
+    fn as_any(&self) -> &dyn Any;
+
+    /// Upcast to Any (mutable) for downcasting to concrete types.
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 }

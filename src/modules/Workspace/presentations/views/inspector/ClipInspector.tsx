@@ -41,6 +41,8 @@ import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiRu
 import { audioToMidi } from '#/modules/AiRuntime/useCases/audioToMidi';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { generateMidiVariations } from '#/modules/AiRuntime/useCases/generateMidiVariations';
+import { notifyUser } from '#/helpers/Notification/notifyUser';
+import { notifyAiChange } from '#/modules/AiRuntime/presentations/views/AiChangeToast';
 
 type ClipInspectorProps = {
     clip: Clip;
@@ -80,6 +82,12 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
         try {
             await handleAiDenoiseClip(clip.id, denoiseStrength / 100);
             setAbMode('processed');
+            notifyAiChange('Denoise complete', [
+                `Applied ${denoiseStrength}% noise reduction`,
+                'Toggle A/B to compare original and processed',
+            ]);
+        } catch {
+            notifyUser('Denoise failed', 'error');
         } finally {
             setIsDenoising(false);
         }
@@ -519,7 +527,10 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                                     variant="ghost"
                                     size="xs"
                                     className="flex-1 h-6 text-[10px] text-purple-400 hover:bg-purple-600/20"
-                                    onClick={() => handleStemSeparationPreview(clip.id)}
+                                    onClick={() => {
+                                        notifyUser('Separating stems… this may take a moment');
+                                        handleStemSeparationPreview(clip.id);
+                                    }}
                                 >
                                     Separate Stems
                                 </Button>
@@ -527,7 +538,12 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                                     variant="ghost"
                                     size="xs"
                                     className="flex-1 h-6 text-[10px] text-purple-400 hover:bg-purple-600/20"
-                                    onClick={() => audioToMidi({ clipId: clip.id, trackId })}
+                                    onClick={() => {
+                                        audioToMidi({ clipId: clip.id, trackId });
+                                        notifyAiChange('Audio converted to MIDI', [
+                                            'New MIDI clip created from detected onsets',
+                                        ]);
+                                    }}
                                 >
                                     MIDI (Basic)
                                 </Button>
@@ -551,7 +567,20 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                                     onClick={async () => {
                                         setIsConvertingPoly(true);
                                         try {
-                                            await polyphonicAudioToMidi({ clipId: clip.id, trackId });
+                                            const result = await polyphonicAudioToMidi({ clipId: clip.id, trackId });
+                                            if (result) {
+                                                notifyAiChange('Polyphonic MIDI conversion complete', [
+                                                    `Detected ${result.notes.length} polyphonic notes`,
+                                                    'New MIDI track and clip created',
+                                                ]);
+                                            } else {
+                                                notifyUser('No notes detected in audio', 'warning');
+                                            }
+                                        } catch (err) {
+                                            notifyUser(
+                                                err instanceof Error ? err.message : 'Polyphonic conversion failed',
+                                                'error'
+                                            );
                                         } finally {
                                             setIsConvertingPoly(false);
                                         }
@@ -652,6 +681,14 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                                         setIsGeneratingVariations(true);
                                         try {
                                             await generateMidiVariations(clip.id);
+                                            notifyAiChange('MIDI variations generated', [
+                                                '3 unique musical variations created as alternative clips',
+                                            ]);
+                                        } catch (err) {
+                                            notifyUser(
+                                                err instanceof Error ? err.message : 'Variation generation failed',
+                                                'error'
+                                            );
                                         } finally {
                                             setIsGeneratingVariations(false);
                                         }

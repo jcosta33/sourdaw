@@ -1,13 +1,7 @@
 import { type ReactElement, useState } from 'react';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
-import {
-    Save,
-    X,
-    ChevronRight,
-    Star,
-    Folder,
-} from 'lucide-react';
+import { Save, X, ChevronRight, Star, Folder } from 'lucide-react';
 import { addTrack } from '../../../useCases/workspaceViewActions';
 import { type SoundPreset, type SoundPresetCategory } from '../../../useCases/workspaceViewActions';
 import { getFactoryPresets } from '../../../useCases/workspaceViewActions';
@@ -245,13 +239,10 @@ export const InstrumentsTab = ({
     }
 
     // ── Route: root instrument browser ──────────────────────────────────
-    const categoriesWithPresets = PRESET_CATEGORIES.filter((cat) =>
-        filteredFactory.some((p) => p.category === cat)
-    );
+    const categoriesWithPresets = PRESET_CATEGORIES.filter((cat) => filteredFactory.some((p) => p.category === cat));
 
     return (
         <div className="flex flex-col gap-0 animate-in slide-in-from-left-4 duration-200">
-
             {/* My Presets & Save – compact row at top */}
             <div className="flex items-center gap-1 mb-2">
                 <Button
@@ -375,7 +366,9 @@ export const InstrumentsTab = ({
                                         onClick={() => pushRoute({ id: `instruments-${cat}`, title: cat })}
                                     >
                                         {/* Icon badge */}
-                                        <div className={`flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-md ${catColor}`}>
+                                        <div
+                                            className={`flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-md ${catColor}`}
+                                        >
                                             <CatIcon className="size-3.5" aria-hidden="true" />
                                         </div>
 

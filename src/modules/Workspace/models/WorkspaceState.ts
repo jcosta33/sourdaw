@@ -37,6 +37,8 @@ export type WorkspaceState = {
     rippleEditing: boolean;
     automationVisibility: AutomationVisibility;
     automationSubLanes: Record<string, string[]>; // trackId → parameterIds shown inline
+    scratchPadOpen: boolean;
+    scratchPadHeight: number;
 };
 
 export const defaultWorkspaceState: WorkspaceState = {
@@ -66,4 +68,6 @@ export const defaultWorkspaceState: WorkspaceState = {
     rippleEditing: false,
     automationVisibility: 'hidden' as AutomationVisibility,
     automationSubLanes: {},
+    scratchPadOpen: false,
+    scratchPadHeight: 120,
 };

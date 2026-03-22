@@ -2,7 +2,7 @@ import { type CSSProperties, type ReactElement, useState, useRef } from 'react';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { Input } from '#/components/ui/input';
 import { Button } from '#/components/ui/button';
-import { Search, Music, FileAudio, Waves, Upload, X } from 'lucide-react';
+import { Search, Music, FileAudio, Waves, Upload, X, Zap } from 'lucide-react';
 import { toggleSidebar } from '../../useCases/togglePanel';
 import { BUILTIN_PLUGINS } from '../../useCases/workspaceViewActions';
 import { useTracks } from '../hooks/useTracks';
@@ -11,6 +11,7 @@ import { usePreviewAudio } from '../hooks/usePreviewAudio';
 import { SamplesTab } from './sidebar/SamplesTab';
 import { InstrumentsTab } from './sidebar/InstrumentsTab';
 import { EffectsTab } from './sidebar/EffectsTab';
+import { MacrosPanel } from './sidebar/MacrosPanel';
 
 export type SidebarRoute = {
     id: string;
@@ -35,11 +36,12 @@ type SidebarProps = {
 const SAMPLE_LIBRARY: { id: string; name: string; category: string; duration: string }[] = [];
 
 export const Sidebar = ({ style }: SidebarProps): ReactElement => {
-    const [activeTab, setActiveTab] = useState<'library' | 'instruments' | 'effects'>('library');
+    const [activeTab, setActiveTab] = useState<'library' | 'instruments' | 'effects' | 'macros'>('library');
     const [navStacks, setNavStacks] = useState<Record<string, SidebarRoute[]>>({
         library: [{ id: 'library', title: 'Library' }],
         instruments: [{ id: 'instruments', title: 'Instruments' }],
         effects: [{ id: 'effects', title: 'Audio Effects' }],
+        macros: [{ id: 'macros', title: 'Macros' }],
     });
 
     const currentStack = navStacks[activeTab] ?? [];
@@ -195,6 +197,14 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                 >
                     <Waves className="size-3" /> Effects
                 </Button>
+                <Button
+                    variant={activeTab === 'macros' ? 'secondary' : 'ghost'}
+                    size="xs"
+                    className="flex-1 gap-1.5 h-7 text-[10px]"
+                    onClick={() => setActiveTab('macros')}
+                >
+                    <Zap className="size-3" /> Macros
+                </Button>
             </div>
 
             {currentStack.length > 1 && (
@@ -290,6 +300,8 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                             pushRoute={pushRoute}
                         />
                     )}
+
+                    {currentRoute.id === 'macros' && <MacrosPanel />}
                 </div>
             </ScrollArea>
         </aside>

@@ -22,6 +22,17 @@ import { collaborationHandlers } from '../handlers/collaborationHandlers';
 import { pluginHostHandlers } from '../handlers/pluginHostHandlers';
 import { aiMidiHandlers } from '../handlers/aiMidiHandlers';
 import { aiOrganizationHandlers } from '../handlers/aiOrganizationHandlers';
+import { chordTrackHandlers } from '../handlers/chordTrackHandlers';
+import { scratchPadHandlers } from '../handlers/scratchPadHandlers';
+import { patternInstanceHandlers } from '../handlers/patternInstanceHandlers';
+import { macroHandlers } from '../handlers/macroHandlers';
+import { undoTreeHandlers } from '../handlers/undoTreeHandlers';
+import { songStructureHandlers } from '../handlers/songStructureHandlers';
+import { versionControlHandlers } from '../handlers/versionControlHandlers';
+import { newFeatureHandlers } from '../handlers/newFeatureHandlers';
+import { batchFeatureHandlers } from '../handlers/batchFeatureHandlers';
+import { finalFeatureHandlers } from '../handlers/finalFeatureHandlers';
+import { recordAction } from './macroUseCases';
 import {
     handleCreateTrackAlternative,
     handleSwitchTrackAlternative,
@@ -151,6 +162,16 @@ const handlerRegistry: Record<string, ActionHandler<any>> = {
     ...vcaHandlers,
     ...midiRoutingHandlers,
     ...aiOrganizationHandlers,
+    ...chordTrackHandlers,
+    ...scratchPadHandlers,
+    ...patternInstanceHandlers,
+    ...macroHandlers,
+    ...undoTreeHandlers,
+    ...songStructureHandlers,
+    ...versionControlHandlers,
+    ...newFeatureHandlers,
+    ...batchFeatureHandlers,
+    ...finalFeatureHandlers,
 };
 
 export type ExecuteOptions = {
@@ -176,6 +197,9 @@ export async function executeAppAction(action: AppAction, options?: ExecuteOptio
 
     await handler.execute(action);
 
+    // Hook: record action for macro playback
+    recordAction(action);
+
     if (getCollaborationStoreValue()?.sessionId) {
         broadcastAction(action);
     }
@@ -194,4 +218,3 @@ export async function executeAppAction(action: AppAction, options?: ExecuteOptio
         pushUndo(entry);
     }
 }
-

@@ -52,4 +52,3 @@ export type ClipRenderModel = {
     generating?: boolean;
     isGhost?: boolean;
 };
-

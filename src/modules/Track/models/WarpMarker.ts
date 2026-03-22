@@ -25,5 +25,3 @@ export const defaultWarpState: WarpState = {
     stretchMode: 'complex',
     originalTempo: null,
 };
-
-

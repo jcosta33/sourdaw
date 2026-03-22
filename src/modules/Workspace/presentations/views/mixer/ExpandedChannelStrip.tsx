@@ -17,11 +17,6 @@ import { setTrackGain, setTrackPan, setTrackColor } from '../../../useCases/work
 import { armTrack } from '../../../useCases/workspaceViewActions';
 import { removeTrack } from '../../../useCases/workspaceViewActions';
 import { renameTrack } from '../../../useCases/workspaceViewActions';
-import {
-    setTrackMute as engineSetTrackMute,
-    setTrackGain as engineSetTrackGain,
-    setTrackPan as engineSetTrackPan,
-} from '../../../useCases/workspaceViewActions';
 import { useMeterLevel } from '../../hooks/useMeterLevel';
 import { LevelMeter } from '../../components/LevelMeter';
 import { VUMeterCanvas } from '../../components/VUMeterCanvas';
@@ -158,7 +153,6 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                             onClick={(e) => {
                                 e.stopPropagation();
                                 muteTrack(track.id, !track.muted);
-                                engineSetTrackMute(track.id, !track.muted);
                             }}
                         >
                             M
@@ -242,7 +236,6 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                         value={track.gain}
                         onChange={(v) => {
                             setTrackGain(track.id, v);
-                            engineSetTrackGain(track.id, v);
                         }}
                         min={0}
                         max={1.5}
@@ -273,7 +266,6 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                         value={track.pan}
                         onChange={(v) => {
                             setTrackPan(track.id, v);
-                            engineSetTrackPan(track.id, v);
                         }}
                         min={-50}
                         max={50}

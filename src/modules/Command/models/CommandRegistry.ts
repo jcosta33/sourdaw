@@ -1016,6 +1016,382 @@ export const commandRegistry: CommandEntry[] = [
             document.dispatchEvent(new CustomEvent('webdaw:open-preferences'));
         },
     },
+
+    // ── Chords ─────────────────────────────────────────────────
+    {
+        id: 'toggle-chord-track',
+        label: 'Toggle Chord Track',
+        description: 'Enable or disable the global chord track',
+        category: 'Chords',
+        action: { type: 'toggleChordTrack' },
+    },
+    {
+        id: 'add-chord-cmaj',
+        label: 'Add C Major Chord',
+        description: 'Add a C major chord event at the next available position',
+        category: 'Chords',
+        action: { type: 'addChordEvent', payload: { beat: 0, root: 0, quality: 'major', duration: 4 } },
+    },
+    {
+        id: 'clear-chord-track',
+        label: 'Clear Chord Track',
+        description: 'Remove all chord events from the chord track',
+        category: 'Chords',
+        action: { type: 'clearChordTrack' },
+    },
+
+    // ── Arrangement ────────────────────────────────────────────
+    {
+        id: 'toggle-scratch-pad',
+        label: 'Toggle Scratch Pad',
+        description: 'Open or close the arrangement scratch pad',
+        category: 'Arrangement',
+        action: { type: 'toggleScratchPad' },
+    },
+    {
+        id: 'capture-scratch-pad',
+        label: 'Capture to Scratch Pad',
+        description: 'Snapshot the current arrangement sections into the scratch pad',
+        category: 'Arrangement',
+        action: { type: 'captureScratchPad' },
+    },
+    {
+        id: 'commit-scratch-pad',
+        label: 'Apply Scratch Pad',
+        description: 'Replace main arrangement with scratch pad order',
+        category: 'Arrangement',
+        action: { type: 'commitScratchPad' },
+    },
+    {
+        id: 'clear-scratch-pad',
+        label: 'Clear Scratch Pad',
+        description: 'Remove all sections from the scratch pad',
+        category: 'Arrangement',
+        action: { type: 'clearScratchPad' },
+    },
+
+    // ── Clips ──────────────────────────────────────────────────
+    {
+        id: 'create-pattern-instance',
+        label: 'Create Pattern Instance',
+        description: 'Create a linked copy of the selected clip (Figma-style)',
+        category: 'Clips',
+        action: { type: 'createPatternInstance', payload: { sourceClipId: '', targetTrackId: '', startBeat: 0 } },
+    },
+    {
+        id: 'detach-pattern-instance',
+        label: 'Detach Pattern Instance',
+        description: 'Break the link between this clip and its parent pattern',
+        category: 'Clips',
+        action: { type: 'detachPatternInstance', payload: { clipId: '' } },
+    },
+
+    // ── Macros ─────────────────────────────────────────────────
+    {
+        id: 'start-macro-recording',
+        label: 'Start Macro Recording',
+        description: 'Begin recording actions as a replayable macro',
+        category: 'Macros',
+        action: { type: 'startMacroRecording' },
+    },
+    {
+        id: 'stop-macro-recording',
+        label: 'Stop Macro Recording',
+        description: 'Stop recording and save the macro',
+        category: 'Macros',
+        action: { type: 'stopMacroRecording', payload: { name: 'New Macro' } },
+    },
+
+    // ── Undo Tree ──────────────────────────────────────────────
+    {
+        id: 'toggle-undo-tree',
+        label: 'Toggle Branching Undo Tree',
+        description: 'Enable/disable branching undo tree mode for non-destructive editing',
+        category: 'Editing',
+        action: { type: 'toggleUndoTree' },
+    },
+
+    // ── AI Analysis ────────────────────────────────────────────
+    {
+        id: 'detect-song-structure',
+        label: 'Detect Song Structure',
+        description: 'Analyze clips and auto-create arrangement sections (intro, verse, chorus, etc.)',
+        category: 'AI',
+        action: { type: 'detectSongStructure', payload: {} },
+    },
+    {
+        id: 'compare-to-reference',
+        label: 'Compare to Reference Mix',
+        description: 'Analyze your mix against a mastered reference for actionable feedback',
+        category: 'AI',
+        action: { type: 'compareToReference' },
+    },
+    {
+        id: 'generate-all-transitions',
+        label: 'Generate Transition Fills',
+        description: 'Auto-generate drum fills and risers at all section boundaries',
+        category: 'AI',
+        action: { type: 'generateAllTransitions' },
+    },
+    {
+        id: 'get-mentor-tips',
+        label: 'Music Mentor Tips',
+        description: 'Get AI feedback explaining why mixing decisions work or need improvement',
+        category: 'AI',
+        action: { type: 'getMentorTips' },
+    },
+
+    // ── Version Control ───────────────────────────────────────
+    {
+        id: 'create-project-version',
+        label: 'Create Project Version',
+        description: 'Snapshot the current project state as a version checkpoint',
+        category: 'Project',
+        action: { type: 'createProjectVersion', payload: { label: 'Manual Checkpoint' } },
+    },
+    {
+        id: 'create-version-branch',
+        label: 'Create Version Branch',
+        description: 'Create a new branch to experiment with an alternative direction',
+        category: 'Project',
+        action: { type: 'createVersionBranch', payload: { name: 'Experiment' } },
+    },
+
+    // ── Control Room ──────────────────────────────────────────
+    {
+        id: 'toggle-mono-monitor',
+        label: 'Toggle Mono Monitoring',
+        description: 'Switch monitoring between stereo and mono for compatibility checking',
+        category: 'Monitoring',
+        action: { type: 'toggleControlRoomMono' },
+    },
+    {
+        id: 'toggle-dim-monitor',
+        label: 'Toggle Dim Monitoring',
+        description: 'Reduce monitor volume to dim level for low-volume mixing checks',
+        category: 'Monitoring',
+        action: { type: 'toggleControlRoomDim' },
+    },
+
+    // ── Sample Management ─────────────────────────────────────
+    {
+        id: 'search-samples',
+        label: 'Search Sample Library',
+        description: 'Search and browse your sample database with auto-tagging and similarity search',
+        category: 'Sound Library',
+        action: { type: 'searchSamples', payload: { query: '' } },
+    },
+
+    // ── Extension / Scripting ─────────────────────────────────
+    {
+        id: 'toggle-script-editor',
+        label: 'Toggle Script Editor',
+        description: 'Open the TypeScript scripting console to automate DAW operations',
+        category: 'Extension',
+        action: { type: 'toggleScriptEditor' },
+    },
+    {
+        id: 'run-script',
+        label: 'Run Script',
+        description: 'Execute the current script in the editor',
+        category: 'Extension',
+        action: { type: 'runScript' },
+    },
+
+    // ── Recording ─────────────────────────────────────────────
+    {
+        id: 'toggle-punch-recording',
+        label: 'Toggle Continuous Punch',
+        description: 'Enable background capture for non-destructive punch recording (QuickPunch)',
+        category: 'Recording',
+        action: { type: 'togglePunchRecording' },
+    },
+
+    // ── Loop Station ──────────────────────────────────────────
+    {
+        id: 'trigger-scene-1',
+        label: 'Trigger Scene 1',
+        description: 'Launch all loop slots in scene column 1',
+        category: 'Performance',
+        action: { type: 'triggerScene', payload: { column: 0 } },
+    },
+
+    // ── Setlist ───────────────────────────────────────────────
+    {
+        id: 'next-setlist-item',
+        label: 'Next Setlist Item',
+        description: 'Advance to the next song in the setlist',
+        category: 'Performance',
+        action: { type: 'nextSetlistItem' },
+    },
+    {
+        id: 'previous-setlist-item',
+        label: 'Previous Setlist Item',
+        description: 'Go back to the previous song in the setlist',
+        category: 'Performance',
+        action: { type: 'previousSetlistItem' },
+    },
+
+    // ── Adjustment Layers ─────────────────────────────────────
+    {
+        id: 'create-adjustment-eq',
+        label: 'Add EQ Adjustment Layer',
+        description: 'Insert a non-destructive EQ layer that applies to tracks below',
+        category: 'Mixing',
+        action: { type: 'createAdjustmentLayer', payload: { name: 'EQ Layer', effectType: 'eq' } },
+    },
+    {
+        id: 'create-adjustment-compressor',
+        label: 'Add Compressor Adjustment Layer',
+        description: 'Insert a non-destructive compressor layer that applies to tracks below',
+        category: 'Mixing',
+        action: { type: 'createAdjustmentLayer', payload: { name: 'Compressor Layer', effectType: 'compressor' } },
+    },
+
+    // ── Audio Precision ───────────────────────────────────────
+    {
+        id: 'set-processing-f64',
+        label: 'Enable 64-bit Processing',
+        description: 'Switch audio engine to 64-bit (f64) floating-point processing',
+        category: 'Audio Engine',
+        action: { type: 'setProcessingMode', payload: { mode: 'f64' } },
+    },
+    {
+        id: 'set-processing-f32',
+        label: 'Revert to 32-bit Processing',
+        description: 'Switch audio engine back to 32-bit (f32) floating-point',
+        category: 'Audio Engine',
+        action: { type: 'setProcessingMode', payload: { mode: 'f32' } },
+    },
+
+    // ── Elastic Audio ─────────────────────────────────────────
+    {
+        id: 'quantize-to-grid-elastic',
+        label: 'Quantize Audio to Grid (Elastic)',
+        description: 'Detect transients and time-align them to the grid',
+        category: 'Editing',
+        action: () => {
+            const clipId = getSelectedClipId();
+            if (clipId) {
+                void executeAppAction({ type: 'detectTransients', payload: { clipId } });
+            }
+        },
+    },
+
+    // ── Node View ─────────────────────────────────────────────
+    {
+        id: 'toggle-node-view',
+        label: 'Toggle Node-Based Routing',
+        description: 'Switch between linear inserts and a Fusion-style node graph view',
+        category: 'View',
+        action: { type: 'toggleNodeView' },
+    },
+
+    // ── Control Surfaces ──────────────────────────────────────
+    {
+        id: 'connect-mcu',
+        label: 'Connect MCU Control Surface',
+        description: 'Enable Mackie Control Universal protocol (10-bit faders)',
+        category: 'Hardware',
+        action: { type: 'setControlSurface', payload: { protocol: 'mcu' } },
+    },
+    {
+        id: 'connect-osc',
+        label: 'Connect OSC Control Surface',
+        description: 'Enable OSC protocol for TouchOSC and similar controllers',
+        category: 'Hardware',
+        action: { type: 'setControlSurface', payload: { protocol: 'osc' } },
+    },
+    {
+        id: 'connect-hui',
+        label: 'Connect HUI Control Surface',
+        description: 'Enable HUI protocol for Pro Tools compatible surfaces',
+        category: 'Hardware',
+        action: { type: 'setControlSurface', payload: { protocol: 'hui' } },
+    },
+
+    // ── CV/Gate ───────────────────────────────────────────────
+    {
+        id: 'add-cv-pitch',
+        label: 'Add CV Pitch Output',
+        description: 'Add a 1V/octave CV pitch output for modular synth control',
+        category: 'Hardware',
+        action: { type: 'addCvOutput', payload: { name: 'CV Pitch', channel: 1, type: 'cv-pitch' } },
+    },
+    {
+        id: 'add-cv-gate',
+        label: 'Add Gate Output',
+        description: 'Add a gate output for modular synth triggering',
+        category: 'Hardware',
+        action: { type: 'addCvOutput', payload: { name: 'Gate', channel: 2, type: 'gate' } },
+    },
+
+    // ── Push ──────────────────────────────────────────────────
+    {
+        id: 'connect-push-2',
+        label: 'Connect Ableton Push 2',
+        description: 'Enable deep hardware integration with Ableton Push 2',
+        category: 'Hardware',
+        action: { type: 'connectPush', payload: { model: 'push2' } },
+    },
+    {
+        id: 'connect-push-3',
+        label: 'Connect Ableton Push 3',
+        description: 'Enable deep hardware integration with Ableton Push 3',
+        category: 'Hardware',
+        action: { type: 'connectPush', payload: { model: 'push3' } },
+    },
+
+    // ── DAWproject ────────────────────────────────────────────
+    {
+        id: 'export-dawproject',
+        label: 'Export DAWproject',
+        description: 'Export project in DAWproject format for Bitwig/Studio One interop',
+        category: 'Project',
+        action: { type: 'exportDawProject' },
+    },
+
+    // ── RAVE ──────────────────────────────────────────────────
+    {
+        id: 'load-rave-strings',
+        label: 'Load RAVE: Strings',
+        description: 'Load the orchestral strings neural synthesis model',
+        category: 'AI',
+        action: { type: 'loadRaveModel', payload: { modelId: 'rave-strings' } },
+    },
+    {
+        id: 'load-rave-vocals',
+        label: 'Load RAVE: Vocals',
+        description: 'Load the vocal synthesis neural model',
+        category: 'AI',
+        action: { type: 'loadRaveModel', payload: { modelId: 'rave-vocals' } },
+    },
+
+    // ── Audio Warping ─────────────────────────────────────────
+    {
+        id: 'enable-warping',
+        label: 'Enable Audio Warping',
+        description: 'Enable time-stretch/pitch-shift warping on the selected clip',
+        category: 'Editing',
+        action: () => {
+            const clipId = getSelectedClipId();
+            if (clipId) {
+                void executeAppAction({ type: 'enableWarping', payload: { clipId } });
+            }
+        },
+    },
+    {
+        id: 'set-warp-elastique',
+        label: 'Set Warp: élastique Pro',
+        description: 'Switch the selected clip to élastique Pro stretching algorithm',
+        category: 'Editing',
+        action: () => {
+            const clipId = getSelectedClipId();
+            if (clipId) {
+                void executeAppAction({ type: 'setWarpAlgorithm', payload: { clipId, algorithm: 'elastique-pro' } });
+            }
+        },
+    },
 ];
 
 export function fuzzyMatch(query: string, text: string): boolean {

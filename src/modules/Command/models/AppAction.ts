@@ -216,7 +216,58 @@ export type AppAction =
                   folderName?: string;
               }>;
           };
-      };
+      }
+    | { type: 'addChordEvent'; payload: { beat: number; root: number; quality: string; duration?: number } }
+    | { type: 'removeChordEvent'; payload: { eventId: string } }
+    | { type: 'toggleChordTrack'; payload?: { enabled?: boolean } }
+    | { type: 'clearChordTrack'; payload?: undefined }
+    | { type: 'toggleScratchPad'; payload?: undefined }
+    | { type: 'captureScratchPad'; payload?: undefined }
+    | { type: 'commitScratchPad'; payload?: undefined }
+    | { type: 'clearScratchPad'; payload?: undefined }
+    | { type: 'createPatternInstance'; payload: { sourceClipId: string; targetTrackId: string; startBeat: number } }
+    | { type: 'detachPatternInstance'; payload: { clipId: string } }
+    | { type: 'startMacroRecording'; payload?: undefined }
+    | { type: 'stopMacroRecording'; payload: { name: string } }
+    | { type: 'playMacro'; payload: { macroId: string } }
+    | { type: 'deleteMacro'; payload: { macroId: string } }
+    | { type: 'toggleUndoTree'; payload?: undefined }
+    | { type: 'labelUndoBranch'; payload: { nodeId: string; label: string } }
+    | { type: 'detectSongStructure'; payload: { trackId?: string } }
+    | { type: 'createProjectVersion'; payload: { label: string; description?: string } }
+    | { type: 'restoreProjectVersion'; payload: { versionId: string } }
+    | { type: 'createVersionBranch'; payload: { name: string } }
+    | { type: 'generateFill'; payload: { atBeat: number; durationBeats?: number; style?: string } }
+    | { type: 'generateAllTransitions'; payload?: undefined }
+    | { type: 'compareToReference'; payload?: undefined }
+    | { type: 'toggleControlRoomMono'; payload?: undefined }
+    | { type: 'toggleControlRoomDim'; payload?: undefined }
+    | { type: 'switchMonitor'; payload: { monitorId: string } }
+    | { type: 'getMentorTips'; payload?: undefined }
+    | { type: 'searchSamples'; payload: { query: string } }
+    | { type: 'runScript'; payload?: undefined }
+    | { type: 'toggleScriptEditor'; payload?: undefined }
+    | { type: 'createCompGroup'; payload: { name: string; trackIds: string[] } }
+    | { type: 'togglePunchRecording'; payload?: undefined }
+    | { type: 'toggleLoopRecord'; payload: { slotId: string } }
+    | { type: 'triggerScene'; payload: { column: number } }
+    | { type: 'nextSetlistItem'; payload?: undefined }
+    | { type: 'previousSetlistItem'; payload?: undefined }
+    | { type: 'createAdjustmentLayer'; payload: { name: string; effectType: string } }
+    | { type: 'setProcessingMode'; payload: { mode: 'f32' | 'f64' } }
+    | { type: 'detectTransients'; payload: { clipId: string; sensitivity?: number } }
+    | { type: 'quantizeTransients'; payload: { clipId: string } }
+    | { type: 'toggleNodeView'; payload?: undefined }
+    | { type: 'setControlSurface'; payload: { protocol: 'mcu' | 'osc' | 'hui' | null } }
+    | { type: 'addCvOutput'; payload: { name: string; channel: number; type: string } }
+    | { type: 'connectPush'; payload: { model: 'push2' | 'push3' } }
+    | { type: 'disconnectPush'; payload?: undefined }
+    | { type: 'exportDawProject'; payload?: undefined }
+    | { type: 'loadRaveModel'; payload: { modelId: string } }
+    | { type: 'setRaveBlend'; payload: { blend: number } }
+    | { type: 'enableWarping'; payload: { clipId: string } }
+    | { type: 'setWarpAlgorithm'; payload: { clipId: string; algorithm: string } }
+    | { type: 'setWarpPitchShift'; payload: { clipId: string; semitones: number } };
 
 export type TrackKind = 'audio' | 'midi' | 'bus' | 'master' | 'folder';
 
