@@ -19,7 +19,13 @@ type DeviceInspectorProps = {
 
 export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProps): ReactElement => {
     const { tracks: allTracks } = useTracks();
-    const plugin = BUILTIN_PLUGINS.find((p) => p.name === device.type || p.name === device.name);
+    const plugin = BUILTIN_PLUGINS.find(
+        (p) =>
+            p.id === device.type ||
+            p.id === `builtin-${device.type}` ||
+            p.name.toLowerCase() === device.type?.toLowerCase() ||
+            p.name === device.name
+    );
     const parameters = plugin?.parameters ?? [];
     const isSidechainComp =
         device.type?.toLowerCase().includes('sidechain') ?? device.name?.toLowerCase().includes('sidechain');

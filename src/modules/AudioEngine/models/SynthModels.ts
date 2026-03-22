@@ -12,6 +12,7 @@ export type SynthParams = {
     filterCutoff: number;
     filterResonance: number;
     filterType: 'lowpass' | 'highpass' | 'bandpass';
+    filterEnvAmount: number; // Hz offset: filter starts at cutoff+amount, decays to cutoff
     detune: number;
     gain: number;
     // Extended parameters for richer timbres
@@ -20,6 +21,10 @@ export type SynthParams = {
     osc2Mix: number; // 0 = only osc1, 1 = only osc2, 0.5 = equal
     subOscLevel: number; // 0-1, level of sub-oscillator (one octave below)
     noiseLevel: number; // 0-1, level of noise layer
+    // Modulation and spatial
+    vibratoRate: number; // Hz, LFO speed for pitch vibrato (0 = off)
+    vibratoDepth: number; // cents, amplitude of pitch vibrato
+    stereoSpread: number; // 0-1, pans osc1 left and osc2 right
 };
 
 export const defaultSynthParams: SynthParams = {
@@ -31,6 +36,7 @@ export const defaultSynthParams: SynthParams = {
     filterCutoff: 5000,
     filterResonance: 1,
     filterType: 'lowpass',
+    filterEnvAmount: 0,
     detune: 0,
     gain: 0.3,
     osc2Waveform: 'sawtooth',
@@ -38,6 +44,9 @@ export const defaultSynthParams: SynthParams = {
     osc2Mix: 0,
     subOscLevel: 0,
     noiseLevel: 0,
+    vibratoRate: 0,
+    vibratoDepth: 0,
+    stereoSpread: 0,
 };
 
 export type MpeParams = {

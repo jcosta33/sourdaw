@@ -18,6 +18,7 @@ const SYNTH_PARAM_KEYS: ReadonlyArray<keyof SynthParams> = [
     'filterCutoff',
     'filterResonance',
     'filterType',
+    'filterEnvAmount',
     'detune',
     'gain',
     'osc2Waveform',
@@ -25,6 +26,9 @@ const SYNTH_PARAM_KEYS: ReadonlyArray<keyof SynthParams> = [
     'osc2Mix',
     'subOscLevel',
     'noiseLevel',
+    'vibratoRate',
+    'vibratoDepth',
+    'stereoSpread',
 ];
 
 const WAVEFORMS = new Set<string>(['sine', 'triangle', 'sawtooth', 'square']);
@@ -74,6 +78,8 @@ export function scheduleNote(
     mpe?: MpeParams
 ): OscillatorNode {
     const baseFrequency = 440 * 2 ** ((pitch - 69) / 12);
+    // Velocity-sensitive attack: harder hits = faster attack (real instrument behavior)
+    const velAttack = params.attack * (1.5 - (velocity / 127));
     const peakGain = (velocity / 127) * params.gain;
     const sustainLevel = peakGain * params.sustain;
 
@@ -86,6 +92,11 @@ export function scheduleNote(
     // Mixer before filter
     const mixer = ctx.createGain();
 
+    // Track all nodes for cleanup
+    const cleanupNodes: AudioNode[] = [mixer];
+    let osc2: OscillatorNode | null = null;
+    let subOsc: OscillatorNode | null = null;
+
     // -- Primary oscillator --
     const osc1 = ctx.createOscillator();
     osc1.type = params.waveform;
@@ -94,12 +105,17 @@ export function scheduleNote(
     const osc1Gain = ctx.createGain();
     osc1Gain.gain.value = params.osc2Mix > 0 ? 1 - params.osc2Mix : 1;
     osc1.connect(osc1Gain);
-    osc1Gain.connect(mixer);
+    cleanupNodes.push(osc1, osc1Gain);
 
-    // Track all nodes for cleanup
-    const cleanupNodes: AudioNode[] = [osc1, osc1Gain, mixer];
-    let osc2: OscillatorNode | null = null;
-    let subOsc: OscillatorNode | null = null;
+    // Stereo spread: pan osc1 left and osc2 right for spatial width
+    if (params.stereoSpread > 0 && params.osc2Mix > 0) {
+        const pan1 = new StereoPannerNode(ctx, { pan: -params.stereoSpread });
+        osc1Gain.connect(pan1);
+        pan1.connect(mixer);
+        cleanupNodes.push(pan1);
+    } else {
+        osc1Gain.connect(mixer);
+    }
 
     // -- Second oscillator (if osc2Mix > 0) --
     if (params.osc2Mix > 0) {
@@ -110,7 +126,16 @@ export function scheduleNote(
         const osc2Gain = ctx.createGain();
         osc2Gain.gain.value = params.osc2Mix;
         osc2.connect(osc2Gain);
-        osc2Gain.connect(mixer);
+
+        // Stereo spread: pan osc2 to the right
+        if (params.stereoSpread > 0) {
+            const pan2 = new StereoPannerNode(ctx, { pan: params.stereoSpread });
+            osc2Gain.connect(pan2);
+            pan2.connect(mixer);
+            cleanupNodes.push(pan2);
+        } else {
+            osc2Gain.connect(mixer);
+        }
         cleanupNodes.push(osc2, osc2Gain);
     }
 
@@ -127,9 +152,11 @@ export function scheduleNote(
     }
 
     // -- Noise layer (if noiseLevel > 0) --
+    // Uses a fast 50ms decay envelope to simulate pluck/hammer attack transients
     let noiseSource: AudioBufferSourceNode | null = null;
     if (params.noiseLevel > 0) {
-        const noiseDuration = duration + params.attack + params.decay + params.release + 0.1;
+        const noiseAttackDecay = 0.05; // 50ms burst
+        const noiseDuration = noiseAttackDecay + 0.05; // short burst + tail
         const noiseLen = Math.ceil(ctx.sampleRate * noiseDuration);
         const noiseBuffer = new AudioBuffer({ numberOfChannels: 1, length: noiseLen, sampleRate: ctx.sampleRate });
         const data = noiseBuffer.getChannelData(0);
@@ -139,21 +166,40 @@ export function scheduleNote(
         noiseSource = ctx.createBufferSource();
         noiseSource.buffer = noiseBuffer;
         const noiseGain = ctx.createGain();
-        noiseGain.gain.value = params.noiseLevel * 0.3; // scale noise to be subtle
+        // Fast attack-decay envelope for the noise burst
+        noiseGain.gain.setValueAtTime(params.noiseLevel * 0.5, startTime);
+        noiseGain.gain.exponentialRampToValueAtTime(0.001, startTime + noiseAttackDecay);
         noiseSource.connect(noiseGain);
         noiseGain.connect(mixer);
         cleanupNodes.push(noiseGain);
     }
 
-    // -- Filter --
+    // -- Filter with velocity sensitivity and pitch tracking --
     const filter = ctx.createBiquadFilter();
     filter.type = params.filterType;
 
-    let filterCutoff = params.filterCutoff;
+    // Velocity → filter brightness: harder hits open the filter more
+    const velocityScale = 0.3 + 0.7 * (velocity / 127);
+    // Pitch tracking: higher notes are naturally brighter (scale by sqrt of freq ratio)
+    const pitchScale = Math.sqrt(frequency / 440);
+    let filterCutoff = Math.min(params.filterCutoff * velocityScale * pitchScale, 20000);
     if (mpe?.pressure !== undefined) {
-        filterCutoff = params.filterCutoff + (mpe.pressure / 127) * 2000;
+        filterCutoff = filterCutoff + (mpe.pressure / 127) * 2000;
     }
-    filter.frequency.setValueAtTime(filterCutoff, startTime);
+
+    // Filter envelope: starts at cutoff+envAmount, decays to cutoff
+    // This creates bright-attack-to-dark-sustain character (piano, bells, plucks)
+    if (params.filterEnvAmount > 0) {
+        const filterPeak = Math.min(filterCutoff + params.filterEnvAmount, 20000);
+        filter.frequency.setValueAtTime(filterPeak, startTime);
+        const filterAttackEnd = startTime + params.attack;
+        const filterDecayEnd = filterAttackEnd + params.decay;
+        // Hold at peak during attack, then sweep down during decay
+        filter.frequency.setValueAtTime(filterPeak, filterAttackEnd);
+        filter.frequency.exponentialRampToValueAtTime(Math.max(filterCutoff, 20), filterDecayEnd);
+    } else {
+        filter.frequency.setValueAtTime(filterCutoff, startTime);
+    }
 
     let filterQ = params.filterResonance;
     if (mpe?.slide !== undefined) {
@@ -161,11 +207,11 @@ export function scheduleNote(
     }
     filter.Q.setValueAtTime(filterQ, startTime);
 
-    // -- Envelope --
+    // -- Envelope (using velocity-sensitive attack) --
     const env = ctx.createGain();
     env.gain.setValueAtTime(0, startTime);
 
-    const attackEnd = startTime + params.attack;
+    const attackEnd = startTime + velAttack;
     const decayEnd = attackEnd + params.decay;
     const releaseStart = startTime + duration;
     const releaseEnd = releaseStart + params.release;
@@ -187,6 +233,29 @@ export function scheduleNote(
     env.connect(destination);
     cleanupNodes.push(filter, env);
 
+    // -- Vibrato LFO (pitch modulation after attack phase) --
+    let vibratoLfo: OscillatorNode | null = null;
+    if (params.vibratoRate > 0 && params.vibratoDepth > 0) {
+        vibratoLfo = ctx.createOscillator();
+        vibratoLfo.type = 'sine';
+        vibratoLfo.frequency.setValueAtTime(params.vibratoRate, startTime);
+        const vibratoGain = ctx.createGain();
+        // Ramp vibrato in after attack phase so it doesn't wobble the onset
+        vibratoGain.gain.setValueAtTime(0, startTime);
+        vibratoGain.gain.linearRampToValueAtTime(0, attackEnd);
+        vibratoGain.gain.linearRampToValueAtTime(params.vibratoDepth, attackEnd + 0.15);
+        vibratoLfo.connect(vibratoGain);
+        // Connect to all oscillators' detune params
+        vibratoGain.connect(osc1.detune);
+        if (osc2) {
+            vibratoGain.connect(osc2.detune);
+        }
+        if (subOsc) {
+            vibratoGain.connect(subOsc.detune);
+        }
+        cleanupNodes.push(vibratoLfo, vibratoGain);
+    }
+
     // -- Start all sources --
     osc1.start(startTime);
     osc1.stop(releaseEnd + 0.01);
@@ -201,6 +270,10 @@ export function scheduleNote(
     if (noiseSource) {
         noiseSource.start(startTime);
         noiseSource.stop(releaseEnd + 0.01);
+    }
+    if (vibratoLfo) {
+        vibratoLfo.start(startTime);
+        vibratoLfo.stop(releaseEnd + 0.01);
     }
 
     osc1.onended = () => {
