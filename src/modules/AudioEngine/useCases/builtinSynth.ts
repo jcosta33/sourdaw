@@ -238,6 +238,8 @@ export function getSynthParamsForTrack(trackId: string): SynthParams {
 
         if (key === 'waveform') {
             result.waveform = resolveEnumParam(raw, WAVEFORMS, WAVEFORM_INDEX, defaultSynthParams.waveform);
+        } else if (key === 'osc2Waveform') {
+            result.osc2Waveform = resolveEnumParam(raw, WAVEFORMS, WAVEFORM_INDEX, defaultSynthParams.osc2Waveform);
         } else if (key === 'filterType') {
             result.filterType = resolveEnumParam(raw, FILTER_TYPES, FILTER_TYPE_INDEX, defaultSynthParams.filterType);
         } else {

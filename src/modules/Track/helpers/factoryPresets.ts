@@ -157,12 +157,6 @@ const phaser = (
     parameterValues: { 'phaser-rate': 0.5, 'phaser-depth': 0.5, 'phaser-feedback': 0.3, 'phaser-stages': 4, ...params },
 });
 
-const faustInstrument = (faustModuleId: string, name: string, params: Record<string, number> = {}): DevicePreset => ({
-    type: faustModuleId,
-    name,
-    parameterValues: params,
-});
-
 // --- Synth preset helpers (waveform: 0=sine,1=tri,2=saw,3=square; filterType: 0=lp,1=hp,2=bp) ---
 
 const FACTORY_PRESETS: SoundPreset[] = [
@@ -587,40 +581,6 @@ const FACTORY_PRESETS: SoundPreset[] = [
     },
 
     // ─── Keys ────────────────────────────────────────────────────────────
-    {
-        id: 'factory-keys-epiano',
-        name: 'Electric Piano',
-        category: 'keys',
-        subcategory: 'digital',
-        description: 'Classic electric piano tone using Faust DSP.',
-        trackKind: 'midi',
-        devices: [
-            faustInstrument('faust-rhodes', 'Rhodes Piano', {}),
-            eq('EQ', { 'eq-mid-gain': 2, 'eq-mid-freq': 1200, 'eq-mid-q': 1.5 }),
-        ],
-        tags: ['electric-piano', 'keys', 'rhodes', 'classic'],
-        author: AUTHOR,
-        isFactory: true,
-    },
-    {
-        id: 'factory-keys-fmpiano',
-        name: 'FM Piano',
-        category: 'keys',
-        subcategory: 'digital',
-        description: 'Classic DX7-style FM electric piano using Faust DSP.',
-        trackKind: 'midi',
-        devices: [
-            faustInstrument('faust-fm-synth', 'FM Synth', {
-                '/fm_synth/ratio': 2,
-                '/fm_synth/index': 5,
-            }),
-            delay('Delay', { 'delay-time': 300, 'delay-feedback': 0.3, 'delay-mix': 0.15 }),
-            reverb('Reverb', { 'rev-size': 0.5, 'rev-decay': 2, 'rev-mix': 0.2 }),
-        ],
-        tags: ['fm', 'keys', 'dx7', 'digital'],
-        author: AUTHOR,
-        isFactory: true,
-    },
     {
         id: 'factory-keys-organ',
         name: 'Organ',
@@ -1877,35 +1837,38 @@ const DRUM_KIT_PRESETS: SoundPreset[] = [
 ];
 export { FACTORY_PRESETS, DRUM_KIT_PRESETS };
 
-// ── Faust synthesizer presets ─────────────────────────────────────────────
-// Factory presets for Faust-compiled instruments registered in faustEngine.ts
-// and proSynthInstruments.ts. Each uses faustInstrument() to route to the
-// correct Faust AudioWorkletNode identified by module slug.
+// ── Converted Faust presets → built-in synth ──────────────────────────────
+// Previously these used faustInstrument() which routed to broken Faust DSPs.
+// Now they use synth() with distinct parameters for sonic variety.
 
-export const FAUST_SYNTH_PRESETS: SoundPreset[] = [
-    // ─── Hammond B3 Organ ────────────────────────────────────────────────
+const FAUST_REPLACEMENT_PRESETS: SoundPreset[] = [
+    // ─── Hammond B3 Organ variants ──────────────────────────────────────
     {
         id: 'factory-faust-hammond-full',
         name: 'Full Organ',
         category: 'keys',
         subcategory: 'digital',
         description:
-            "Classic Hammond B3 with both 16' and 8' drawbars fully open. Big, full organ sound with slow Leslie rotation.",
+            "Classic Hammond B3 with both 16' and 8' drawbars fully open. Big, full organ sound.",
         trackKind: 'midi',
         devices: [
-            faustInstrument('faust-hammond-b-3', 'Hammond B3', {
-                '/Hammond_B3/drawbar_16': 8,
-                '/Hammond_B3/drawbar_8': 8,
-                '/Hammond_B3/drawbar_513': 0,
-                '/Hammond_B3/drawbar_4': 0,
-                '/Hammond_B3/drawbar_223': 0,
-                '/Hammond_B3/drawbar_2': 0,
-                '/Hammond_B3/drawbar_135': 0,
-                '/Hammond_B3/drawbar_113': 0,
-                '/Hammond_B3/drawbar_1': 0,
-                '/Hammond_B3/leslie_speed': 5.5,
-                '/Hammond_B3/leslie_depth': 0.25,
+            synth('Full Organ', {
+                waveform: 3, // square — organ-like harmonic content
+                attack: 0.001,
+                decay: 0.05,
+                sustain: 1.0,
+                release: 0.08,
+                filterCutoff: 5000,
+                filterResonance: 0.5,
+                filterType: 0,
+                detune: 0,
+                gain: 0.25,
+                osc2Waveform: 0, // sine sub-octave
+                osc2Mix: 0.35,
+                osc2Detune: 0,
+                subOscLevel: 0.25,
             }),
+            tremolo('Leslie', { 'trem-rate': 5.5, 'trem-depth': 0.25, 'trem-shape': 0 }),
             reverb('Reverb', { 'rev-size': 0.3, 'rev-decay': 1.5, 'rev-mix': 0.15 }),
         ],
         tags: ['organ', 'hammond', 'keys', 'drawbar', 'full'],
@@ -1918,22 +1881,25 @@ export const FAUST_SYNTH_PRESETS: SoundPreset[] = [
         category: 'keys',
         subcategory: 'digital',
         description:
-            "Jimmy Smith-style jazz organ — 8' + 4' + 2' for that cutting mid-range presence with fast Leslie.",
+            "Jimmy Smith-style jazz organ — cutting mid-range presence with fast Leslie.",
         trackKind: 'midi',
         devices: [
-            faustInstrument('faust-hammond-b-3', 'Hammond B3', {
-                '/Hammond_B3/drawbar_16': 0,
-                '/Hammond_B3/drawbar_8': 8,
-                '/Hammond_B3/drawbar_513': 0,
-                '/Hammond_B3/drawbar_4': 6,
-                '/Hammond_B3/drawbar_223': 0,
-                '/Hammond_B3/drawbar_2': 5,
-                '/Hammond_B3/drawbar_135': 0,
-                '/Hammond_B3/drawbar_113': 0,
-                '/Hammond_B3/drawbar_1': 0,
-                '/Hammond_B3/leslie_speed': 8.0,
-                '/Hammond_B3/leslie_depth': 0.4,
+            synth('Jazz Organ', {
+                waveform: 3, // square
+                attack: 0.001,
+                decay: 0.05,
+                sustain: 1.0,
+                release: 0.06,
+                filterCutoff: 6000,
+                filterResonance: 1,
+                filterType: 0,
+                detune: 0,
+                gain: 0.25,
+                osc2Waveform: 3, // square at 4' (octave up)
+                osc2Mix: 0.2,
+                osc2Detune: 0,
             }),
+            tremolo('Leslie', { 'trem-rate': 8.0, 'trem-depth': 0.4, 'trem-shape': 0 }),
         ],
         tags: ['organ', 'hammond', 'jazz', 'keys', 'leslie'],
         author: AUTHOR,
@@ -1944,22 +1910,27 @@ export const FAUST_SYNTH_PRESETS: SoundPreset[] = [
         name: 'Gospel Organ',
         category: 'keys',
         subcategory: 'digital',
-        description: 'Thick gospel organ with all drawbars engaged for a dense, harmonically rich sound.',
+        description: 'Thick gospel organ — dense, harmonically rich sound.',
         trackKind: 'midi',
         devices: [
-            faustInstrument('faust-hammond-b-3', 'Hammond B3', {
-                '/Hammond_B3/drawbar_16': 8,
-                '/Hammond_B3/drawbar_8': 8,
-                '/Hammond_B3/drawbar_513': 6,
-                '/Hammond_B3/drawbar_4': 5,
-                '/Hammond_B3/drawbar_223': 4,
-                '/Hammond_B3/drawbar_2': 3,
-                '/Hammond_B3/drawbar_135': 2,
-                '/Hammond_B3/drawbar_113': 1,
-                '/Hammond_B3/drawbar_1': 0,
-                '/Hammond_B3/leslie_speed': 6.5,
-                '/Hammond_B3/leslie_depth': 0.3,
+            synth('Gospel Organ', {
+                waveform: 3, // square
+                attack: 0.001,
+                decay: 0.05,
+                sustain: 1.0,
+                release: 0.08,
+                filterCutoff: 4500,
+                filterResonance: 0.5,
+                filterType: 0,
+                detune: 3,
+                gain: 0.25,
+                osc2Waveform: 0, // sine
+                osc2Mix: 0.4,
+                osc2Detune: 0,
+                subOscLevel: 0.3,
+                noiseLevel: 0.02,
             }),
+            tremolo('Leslie', { 'trem-rate': 6.5, 'trem-depth': 0.3, 'trem-shape': 0 }),
             comp('Compressor', { 'comp-threshold': -18, 'comp-ratio': 3, 'comp-attack': 10, 'comp-release': 150 }),
         ],
         tags: ['organ', 'hammond', 'gospel', 'soul', 'rich'],
@@ -1967,26 +1938,30 @@ export const FAUST_SYNTH_PRESETS: SoundPreset[] = [
         isFactory: true,
     },
 
-    // ─── Minimoog Lead ───────────────────────────────────────────────────
+    // ─── Minimoog Lead variants ─────────────────────────────────────────
     {
         id: 'factory-faust-moog-classic',
         name: 'Moog Lead',
         category: 'lead',
         subcategory: 'analog',
         description:
-            'Classic Minimoog-style mono lead. Dual sawtooth through resonant lowpass with envelope filter sweep.',
+            'Classic Minimoog-style mono lead. Dual sawtooth through resonant lowpass.',
         trackKind: 'midi',
         devices: [
-            faustInstrument('faust-minimoog-lead', 'Minimoog Lead', {
-                '/Minimoog_Lead/detune': 7,
-                '/Minimoog_Lead/osc2': 0.6,
-                '/Minimoog_Lead/cutoff': 1800,
-                '/Minimoog_Lead/resonance': 0.4,
-                '/Minimoog_Lead/env_amount': 0.5,
-                '/Minimoog_Lead/attack': 0.005,
-                '/Minimoog_Lead/decay': 0.25,
-                '/Minimoog_Lead/sustain': 0.6,
-                '/Minimoog_Lead/release': 0.3,
+            synth('Moog Lead', {
+                waveform: 2, // sawtooth
+                attack: 0.005,
+                decay: 0.25,
+                sustain: 0.6,
+                release: 0.3,
+                filterCutoff: 1800,
+                filterResonance: 5,
+                filterType: 0,
+                detune: 7,
+                gain: 0.3,
+                osc2Waveform: 2, // sawtooth
+                osc2Mix: 0.45,
+                osc2Detune: -7,
             }),
             delay('Delay', { 'delay-time': 250, 'delay-feedback': 0.25, 'delay-mix': 0.18 }),
         ],
@@ -1999,19 +1974,23 @@ export const FAUST_SYNTH_PRESETS: SoundPreset[] = [
         name: 'Resonant Lead',
         category: 'lead',
         subcategory: 'analog',
-        description: 'High-resonance Moog filter with strong envelope sweep. Cuts through the mix.',
+        description: 'High-resonance filter with strong envelope sweep. Cuts through the mix.',
         trackKind: 'midi',
         devices: [
-            faustInstrument('faust-minimoog-lead', 'Minimoog Lead', {
-                '/Minimoog_Lead/detune': 3,
-                '/Minimoog_Lead/osc2': 0.4,
-                '/Minimoog_Lead/cutoff': 800,
-                '/Minimoog_Lead/resonance': 0.75,
-                '/Minimoog_Lead/env_amount': 0.8,
-                '/Minimoog_Lead/attack': 0.005,
-                '/Minimoog_Lead/decay': 0.4,
-                '/Minimoog_Lead/sustain': 0.3,
-                '/Minimoog_Lead/release': 0.2,
+            synth('Resonant Lead', {
+                waveform: 2, // sawtooth
+                attack: 0.005,
+                decay: 0.4,
+                sustain: 0.3,
+                release: 0.2,
+                filterCutoff: 800,
+                filterResonance: 12,
+                filterType: 0,
+                detune: 3,
+                gain: 0.28,
+                osc2Waveform: 2,
+                osc2Mix: 0.3,
+                osc2Detune: -3,
             }),
         ],
         tags: ['moog', 'resonant', 'lead', 'filter', 'cutting'],
@@ -2023,19 +2002,24 @@ export const FAUST_SYNTH_PRESETS: SoundPreset[] = [
         name: 'Moog Bass Lead',
         category: 'lead',
         subcategory: 'analog',
-        description: 'Low-cutoff Moog lead that doubles as a filter bass. Dark and thick.',
+        description: 'Low-cutoff lead that doubles as a filter bass. Dark and thick.',
         trackKind: 'midi',
         devices: [
-            faustInstrument('faust-minimoog-lead', 'Minimoog Lead', {
-                '/Minimoog_Lead/detune': 12,
-                '/Minimoog_Lead/osc2': 0.8,
-                '/Minimoog_Lead/cutoff': 600,
-                '/Minimoog_Lead/resonance': 0.35,
-                '/Minimoog_Lead/env_amount': 0.3,
-                '/Minimoog_Lead/attack': 0.01,
-                '/Minimoog_Lead/decay': 0.5,
-                '/Minimoog_Lead/sustain': 0.7,
-                '/Minimoog_Lead/release': 0.4,
+            synth('Moog Bass Lead', {
+                waveform: 2, // sawtooth
+                attack: 0.01,
+                decay: 0.5,
+                sustain: 0.7,
+                release: 0.4,
+                filterCutoff: 600,
+                filterResonance: 4,
+                filterType: 0,
+                detune: 12,
+                gain: 0.35,
+                osc2Waveform: 2,
+                osc2Mix: 0.6,
+                osc2Detune: -12,
+                subOscLevel: 0.3,
             }),
             comp('Compressor', { 'comp-threshold': -15, 'comp-ratio': 4, 'comp-attack': 5, 'comp-release': 80 }),
         ],
@@ -2044,17 +2028,29 @@ export const FAUST_SYNTH_PRESETS: SoundPreset[] = [
         isFactory: true,
     },
 
-    // ─── Wavetable Synth ─────────────────────────────────────────────────
+    // ─── Wavetable / Digital ────────────────────────────────────────────
     {
         id: 'factory-faust-wavetable-morph',
         name: 'Wavetable Morph',
         category: 'synth',
         subcategory: 'digital',
-        description: 'Smooth crossfade between sine, sawtooth, and square. Evolves from pure to buzzy to harsh.',
+        description: 'Mixed waveform crossfade between sine and sawtooth. Evolving digital texture.',
         trackKind: 'midi',
         devices: [
-            faustInstrument('faust-wavetable-synth', 'Wavetable Synth', {
-                '/wt/morph': 0.4,
+            synth('Wavetable Morph', {
+                waveform: 1, // triangle (between sine and saw)
+                attack: 0.05,
+                decay: 0.3,
+                sustain: 0.7,
+                release: 0.5,
+                filterCutoff: 5000,
+                filterResonance: 1,
+                filterType: 0,
+                detune: 0,
+                gain: 0.25,
+                osc2Waveform: 2, // sawtooth
+                osc2Mix: 0.4,
+                osc2Detune: 3,
             }),
             reverb('Reverb', { 'rev-size': 0.5, 'rev-decay': 2.5, 'rev-mix': 0.3 }),
         ],
@@ -2067,11 +2063,20 @@ export const FAUST_SYNTH_PRESETS: SoundPreset[] = [
         name: 'Digital Lead',
         category: 'lead',
         subcategory: 'digital',
-        description: 'Bright sawtooth-biased wavetable lead with a short delay for rhythmic presence.',
+        description: 'Clean digital lead with bright character and rhythmic delay.',
         trackKind: 'midi',
         devices: [
-            faustInstrument('faust-wavetable-synth', 'Wavetable Synth', {
-                '/wt/morph': 0.7,
+            synth('Digital Lead', {
+                waveform: 2, // sawtooth
+                attack: 0.01,
+                decay: 0.15,
+                sustain: 0.7,
+                release: 0.2,
+                filterCutoff: 8000,
+                filterResonance: 0.5,
+                filterType: 0,
+                detune: 0,
+                gain: 0.25,
             }),
             delay('Delay', { 'delay-time': 200, 'delay-feedback': 0.3, 'delay-mix': 0.22 }),
         ],
@@ -2080,24 +2085,29 @@ export const FAUST_SYNTH_PRESETS: SoundPreset[] = [
         isFactory: true,
     },
 
-    // ─── Supersaw Unison ─────────────────────────────────────────────────
+    // ─── Supersaw Unison ────────────────────────────────────────────────
     {
         id: 'factory-faust-supersaw-trance',
         name: 'Trance Supersaw',
         category: 'synth',
         subcategory: 'digital',
-        description: '7-voice detuned supersaw with wide spread. Classic trance / EDM lead/pad texture.',
+        description: 'Wide detuned supersaw. Classic trance / EDM lead/pad texture.',
         trackKind: 'midi',
         devices: [
-            faustInstrument('faust-supersaw-unison', 'Supersaw Unison', {
-                '/supersaw/detune': 18,
-                '/supersaw/center_mix': 0.65,
-                '/supersaw/cutoff': 7000,
-                '/supersaw/resonance': 0.25,
-                '/synth/attack': 0.02,
-                '/synth/decay': 0.3,
-                '/synth/sustain': 0.85,
-                '/synth/release': 0.8,
+            synth('Trance Supersaw', {
+                waveform: 2, // sawtooth
+                attack: 0.02,
+                decay: 0.3,
+                sustain: 0.85,
+                release: 0.8,
+                filterCutoff: 7000,
+                filterResonance: 1,
+                filterType: 0,
+                detune: 35,
+                gain: 0.2,
+                osc2Waveform: 2,
+                osc2Mix: 0.5,
+                osc2Detune: -18,
             }),
             reverb('Reverb', { 'rev-size': 0.7, 'rev-decay': 3, 'rev-mix': 0.35 }),
             delay('Delay', { 'delay-time': 375, 'delay-feedback': 0.35, 'delay-mix': 0.2 }),
@@ -2111,18 +2121,24 @@ export const FAUST_SYNTH_PRESETS: SoundPreset[] = [
         name: 'Supersaw Pad',
         category: 'pad',
         subcategory: 'digital',
-        description: 'Slow-attack supersaw pad with large reverb. Fills the stereo field completely.',
+        description: 'Slow-attack supersaw pad with large reverb. Fills the stereo field.',
         trackKind: 'midi',
         devices: [
-            faustInstrument('faust-supersaw-unison', 'Supersaw Unison', {
-                '/supersaw/detune': 22,
-                '/supersaw/center_mix': 0.6,
-                '/supersaw/cutoff': 4500,
-                '/supersaw/resonance': 0.15,
-                '/synth/attack': 0.6,
-                '/synth/decay': 0.4,
-                '/synth/sustain': 0.9,
-                '/synth/release': 2.0,
+            synth('Supersaw Pad', {
+                waveform: 2,
+                attack: 0.6,
+                decay: 0.4,
+                sustain: 0.9,
+                release: 2.0,
+                filterCutoff: 4500,
+                filterResonance: 0.5,
+                filterType: 0,
+                detune: 30,
+                gain: 0.18,
+                osc2Waveform: 2,
+                osc2Mix: 0.5,
+                osc2Detune: -22,
+                noiseLevel: 0.03,
             }),
             reverb('Reverb', { 'rev-size': 0.9, 'rev-decay': 6, 'rev-damping': 0.4, 'rev-mix': 0.55 }),
         ],
@@ -2131,19 +2147,31 @@ export const FAUST_SYNTH_PRESETS: SoundPreset[] = [
         isFactory: true,
     },
 
-    // ─── Physical Model String ───────────────────────────────────────────
+    // ─── Physical Model String → Pluck approximation ───────────────────
     {
         id: 'factory-faust-plucked-string',
         name: 'Plucked String',
         category: 'strings',
         subcategory: 'acoustic',
-        description: 'Karplus-Strong plucked string simulation. Natural decay, acoustic feel.',
+        description: 'Short-decay pluck. Natural acoustic feel.',
         trackKind: 'midi',
         devices: [
-            faustInstrument('faust-physical-model-string', 'Physical Model String', {}),
+            synth('Plucked String', {
+                waveform: 1, // triangle — smooth attack
+                attack: 0.001,
+                decay: 0.4,
+                sustain: 0.0,
+                release: 0.2,
+                filterCutoff: 5000,
+                filterResonance: 1,
+                filterType: 0,
+                detune: 0,
+                gain: 0.3,
+                noiseLevel: 0.15, // pluck transient
+            }),
             reverb('Reverb', { 'rev-size': 0.35, 'rev-decay': 1.5, 'rev-mix': 0.2 }),
         ],
-        tags: ['physical-model', 'pluck', 'string', 'acoustic', 'karplus-strong'],
+        tags: ['pluck', 'string', 'acoustic'],
         author: AUTHOR,
         isFactory: true,
     },
@@ -2152,29 +2180,53 @@ export const FAUST_SYNTH_PRESETS: SoundPreset[] = [
         name: 'Nylon Guitar',
         category: 'guitar',
         subcategory: 'acoustic',
-        description: 'Physical model approximation of a plucked nylon string guitar. Warm and organic.',
+        description: 'Warm plucked nylon string. Organic and mellow.',
         trackKind: 'midi',
         devices: [
-            faustInstrument('faust-physical-model-string', 'Physical Model String', {}),
+            synth('Nylon Guitar', {
+                waveform: 0, // sine — warm fundamental
+                attack: 0.001,
+                decay: 0.5,
+                sustain: 0.0,
+                release: 0.25,
+                filterCutoff: 3000,
+                filterResonance: 0.5,
+                filterType: 0,
+                detune: 0,
+                gain: 0.3,
+                noiseLevel: 0.12, // pluck transient
+            }),
             eq('Warm EQ', { 'eq-low-gain': 2, 'eq-low-freq': 200, 'eq-high-gain': -3, 'eq-high-freq': 8000 }),
             reverb('Reverb', { 'rev-size': 0.25, 'rev-decay': 1.0, 'rev-mix': 0.18 }),
         ],
-        tags: ['physical-model', 'guitar', 'nylon', 'acoustic', 'warm'],
+        tags: ['guitar', 'nylon', 'acoustic', 'warm'],
         author: AUTHOR,
         isFactory: true,
     },
 
-    // ─── Additive Synth ──────────────────────────────────────────────────
+    // ─── Additive Synth → harmonic approximation ────────────────────────
     {
         id: 'factory-faust-additive-brass',
         name: 'Additive Brass',
         category: 'synth',
         subcategory: 'digital',
-        description: '16 harmonic partials with low rolloff. Bright, brass-like timbre with attack transient.',
+        description: 'Bright, brass-like timbre with attack transient and harmonics.',
         trackKind: 'midi',
         devices: [
-            faustInstrument('faust-additive-synth', 'Additive Synth', {
-                '/additive/rolloff': 1.2,
+            synth('Additive Brass', {
+                waveform: 2, // sawtooth — rich harmonics like additive
+                attack: 0.06,
+                decay: 0.2,
+                sustain: 0.7,
+                release: 0.2,
+                filterCutoff: 4000,
+                filterResonance: 2,
+                filterType: 0,
+                detune: 5,
+                gain: 0.3,
+                osc2Waveform: 3, // square — odd harmonics
+                osc2Mix: 0.25,
+                osc2Detune: 0,
             }),
             comp('Compressor', { 'comp-threshold': -18, 'comp-ratio': 3, 'comp-attack': 5, 'comp-release': 100 }),
             eq('Presence', { 'eq-mid-gain': 3, 'eq-mid-freq': 2500, 'eq-mid-q': 1.5 }),
@@ -2188,11 +2240,23 @@ export const FAUST_SYNTH_PRESETS: SoundPreset[] = [
         name: 'Additive Bell',
         category: 'keys',
         subcategory: 'digital',
-        description: 'High harmonic rolloff creates a bell-like, percussive additive tone. Crystal clear.',
+        description: 'Crystal-clear bell tone with inharmonic partials. Percussive and bright.',
         trackKind: 'midi',
         devices: [
-            faustInstrument('faust-additive-synth', 'Additive Synth', {
-                '/additive/rolloff': 2.8,
+            synth('Additive Bell', {
+                waveform: 0, // sine — pure fundamental
+                attack: 0.001,
+                decay: 1.8,
+                sustain: 0.0,
+                release: 0.6,
+                filterCutoff: 10000,
+                filterResonance: 0.5,
+                filterType: 0,
+                detune: 0,
+                gain: 0.25,
+                osc2Waveform: 0, // sine — inharmonic partial
+                osc2Mix: 0.35,
+                osc2Detune: 750, // large inharmonic interval for bell character
             }),
             reverb('Reverb', { 'rev-size': 0.5, 'rev-decay': 3, 'rev-mix': 0.3 }),
         ],
@@ -2200,4 +2264,70 @@ export const FAUST_SYNTH_PRESETS: SoundPreset[] = [
         author: AUTHOR,
         isFactory: true,
     },
+
+    // ─── Electric Piano / FM Piano ──────────────────────────────────────
+    {
+        id: 'factory-keys-epiano',
+        name: 'Electric Piano',
+        category: 'keys',
+        subcategory: 'digital',
+        description: 'Classic electric piano tone. Bell-like attack with warm sustain.',
+        trackKind: 'midi',
+        devices: [
+            synth('Electric Piano', {
+                waveform: 0, // sine — warm Rhodes-like fundamental
+                attack: 0.001,
+                decay: 0.8,
+                sustain: 0.3,
+                release: 0.4,
+                filterCutoff: 4000,
+                filterResonance: 0.5,
+                filterType: 0,
+                detune: 0,
+                gain: 0.28,
+                osc2Waveform: 0, // sine — inharmonic bell partial
+                osc2Mix: 0.3,
+                osc2Detune: 700, // creates bell-like metallic character
+            }),
+            eq('EQ', { 'eq-mid-gain': 2, 'eq-mid-freq': 1200, 'eq-mid-q': 1.5 }),
+            reverb('Reverb', { 'rev-size': 0.3, 'rev-decay': 1.2, 'rev-mix': 0.15 }),
+        ],
+        tags: ['electric-piano', 'keys', 'rhodes', 'classic'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-keys-fmpiano',
+        name: 'FM Piano',
+        category: 'keys',
+        subcategory: 'digital',
+        description: 'DX7-style FM electric piano. Metallic and glassy.',
+        trackKind: 'midi',
+        devices: [
+            synth('FM Piano', {
+                waveform: 1, // triangle — softer than saw, brighter than sine
+                attack: 0.001,
+                decay: 0.6,
+                sustain: 0.2,
+                release: 0.3,
+                filterCutoff: 6000,
+                filterResonance: 1,
+                filterType: 0,
+                detune: 0,
+                gain: 0.25,
+                osc2Waveform: 0, // sine — FM-like partial
+                osc2Mix: 0.35,
+                osc2Detune: 1200, // octave up — characteristic DX7 ratio
+            }),
+            delay('Delay', { 'delay-time': 300, 'delay-feedback': 0.3, 'delay-mix': 0.15 }),
+            reverb('Reverb', { 'rev-size': 0.5, 'rev-decay': 2, 'rev-mix': 0.2 }),
+        ],
+        tags: ['fm', 'keys', 'dx7', 'digital'],
+        author: AUTHOR,
+        isFactory: true,
+    },
 ];
+
+// Merge converted Faust presets into FACTORY_PRESETS at module load
+FACTORY_PRESETS.push(...FAUST_REPLACEMENT_PRESETS);
+
