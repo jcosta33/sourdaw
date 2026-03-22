@@ -113,7 +113,7 @@ export const SessionView = (): ReactElement => {
                                             'h-10 flex items-center justify-center border-b border-border-hairline transition-colors cursor-pointer',
                                             clipId
                                                 ? isActive
-                                                    ? 'bg-green-500/20 shadow-[inset_0_0_8px_rgba(0,255,100,0.1)]'
+                                                    ? 'bg-[var(--color-state-play)]/20 shadow-[inset_0_0_8px_color-mix(in_oklch,var(--color-state-play)_10%,transparent)]'
                                                     : 'bg-surface-inset shadow-[inset_0_1px_2px_rgba(0,0,0,0.3)] hover:bg-surface-raised'
                                                 : 'hover:bg-white/[0.03]'
                                         )}
@@ -128,13 +128,13 @@ export const SessionView = (): ReactElement => {
                                         {clipId ? (
                                             <div className="flex items-center gap-1">
                                                 {isActive && (
-                                                    <Play className="size-2.5 text-green-400 fill-green-400" />
+                                                    <Play className="size-2.5 text-[var(--color-state-play)] fill-[var(--color-state-play)]" />
                                                 )}
                                                 <span
                                                     className={cn(
                                                         'text-[10px] rounded px-1 py-0.5',
                                                         isActive
-                                                            ? 'bg-green-500/30 text-green-300'
+                                                            ? 'bg-[var(--color-state-play)]/30 text-[var(--color-state-play)]'
                                                             : 'bg-muted/30 text-muted-foreground'
                                                     )}
                                                     style={{

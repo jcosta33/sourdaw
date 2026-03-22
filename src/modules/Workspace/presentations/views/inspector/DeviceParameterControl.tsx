@@ -62,7 +62,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                                 className={cn(
                                     'size-3 rounded-full border shrink-0 transition-colors cursor-pointer',
                                     hasAutomation
-                                        ? 'border-orange-400 bg-orange-400/20'
+                                        ? 'border-[var(--color-accent-peach)] bg-[var(--color-accent-peach)]/20'
                                         : 'border-muted-foreground/30 hover:bg-muted'
                                 )}
                                 onClick={() => {
@@ -102,7 +102,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                                 className={cn(
                                     'size-3 rounded-full border shrink-0 transition-colors cursor-pointer',
                                     hasAutomation
-                                        ? 'border-orange-400 bg-orange-400/20'
+                                        ? 'border-[var(--color-accent-peach)] bg-[var(--color-accent-peach)]/20'
                                         : 'border-muted-foreground/30 hover:bg-muted'
                                 )}
                                 onClick={() => {

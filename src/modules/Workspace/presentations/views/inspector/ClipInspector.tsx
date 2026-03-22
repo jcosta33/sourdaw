@@ -297,7 +297,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                                         title={envelope.enabled ? 'Disable' : 'Enable'}
                                     >
                                         <Activity
-                                            className={`size-3 ${envelope.enabled ? 'text-emerald-400' : 'text-muted-foreground'}`}
+                                            className={`size-3 ${envelope.enabled ? 'text-[var(--color-state-success)]' : 'text-muted-foreground'}`}
                                         />
                                     </Button>
                                     <Button
@@ -447,7 +447,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                     <Separator />
                     <section>
                         <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                            <Sparkles className="size-3 text-purple-400" />
+                            <Sparkles className="size-3 text-[var(--color-accent-lavender)]" />
                             AI Actions
                         </h3>
                         <div className="space-y-3">
@@ -505,7 +505,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                                 <Button
                                     variant="secondary"
                                     size="xs"
-                                    className="w-full h-6 text-[10px] bg-purple-600/20 hover:bg-purple-600/40 text-purple-300"
+                                    className="w-full h-6 text-[10px] bg-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]/40 text-[var(--color-accent-lavender)]"
                                     onClick={handleDenoise}
                                     disabled={isDenoising}
                                 >
@@ -526,7 +526,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                                 <Button
                                     variant="ghost"
                                     size="xs"
-                                    className="flex-1 h-6 text-[10px] text-purple-400 hover:bg-purple-600/20"
+                                    className="flex-1 h-6 text-[10px] text-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)]/20"
                                     onClick={() => {
                                         notifyUser('Separating stems… this may take a moment');
                                         handleStemSeparationPreview(clip.id);
@@ -537,7 +537,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                                 <Button
                                     variant="ghost"
                                     size="xs"
-                                    className="flex-1 h-6 text-[10px] text-purple-400 hover:bg-purple-600/20"
+                                    className="flex-1 h-6 text-[10px] text-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)]/20"
                                     onClick={() => {
                                         audioToMidi({ clipId: clip.id, trackId });
                                         notifyAiChange('Audio converted to MIDI', [
@@ -552,7 +552,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                             {/* Polyphonic Audio → MIDI */}
                             <div className="bg-surface-raised/50 rounded-md p-2 space-y-1.5 border border-border/30">
                                 <div className="flex items-center gap-1.5">
-                                    <Music className="size-3 text-purple-400" aria-hidden="true" />
+                                    <Music className="size-3 text-[var(--color-accent-lavender)]" aria-hidden="true" />
                                     <span className="text-[10px] font-medium text-foreground/90">
                                         Polyphonic MIDI (AI)
                                     </span>
@@ -563,7 +563,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                                 <Button
                                     variant="secondary"
                                     size="xs"
-                                    className="w-full h-6 text-[10px] bg-purple-600/20 hover:bg-purple-600/40 text-purple-300"
+                                    className="w-full h-6 text-[10px] bg-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]/40 text-[var(--color-accent-lavender)]"
                                     onClick={async () => {
                                         setIsConvertingPoly(true);
                                         try {
@@ -602,13 +602,13 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                             {/* Audio Analysis */}
                             <div className="bg-surface-raised/50 rounded-md p-2 space-y-1.5 border border-border/30">
                                 <div className="flex items-center gap-1.5">
-                                    <BarChart3 className="size-3 text-purple-400" aria-hidden="true" />
+                                    <BarChart3 className="size-3 text-[var(--color-accent-lavender)]" aria-hidden="true" />
                                     <span className="text-[10px] font-medium text-foreground/90">Audio Analysis</span>
                                 </div>
                                 <Button
                                     variant="secondary"
                                     size="xs"
-                                    className="w-full h-6 text-[10px] bg-purple-600/20 hover:bg-purple-600/40 text-purple-300"
+                                    className="w-full h-6 text-[10px] bg-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]/40 text-[var(--color-accent-lavender)]"
                                     onClick={() => {
                                         setIsAnalyzing(true);
                                         try {
@@ -647,7 +647,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                                     </p>
                                 ) : null}
                                 {pitchResult ? (
-                                    <p className="text-[9px] text-emerald-400/80 font-mono">{pitchResult}</p>
+                                    <p className="text-[9px] text-[var(--color-state-success)]/80 font-mono">{pitchResult}</p>
                                 ) : null}
                             </div>
                         </div>
@@ -660,14 +660,14 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                     <Separator />
                     <section>
                         <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                            <Sparkles className="size-3 text-purple-400" />
+                            <Sparkles className="size-3 text-[var(--color-accent-lavender)]" />
                             AI Actions
                         </h3>
                         <div className="space-y-3">
                             {/* AI Variations */}
                             <div className="bg-surface-raised/50 rounded-md p-2 space-y-1.5 border border-border/30">
                                 <div className="flex items-center gap-1.5">
-                                    <Music className="size-3 text-purple-400" aria-hidden="true" />
+                                    <Music className="size-3 text-[var(--color-accent-lavender)]" aria-hidden="true" />
                                     <span className="text-[10px] font-medium text-foreground/90">AI Variations</span>
                                 </div>
                                 <p className="text-[9px] text-muted-foreground leading-relaxed">
@@ -676,7 +676,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                                 <Button
                                     variant="secondary"
                                     size="xs"
-                                    className="w-full h-6 text-[10px] bg-purple-600/20 hover:bg-purple-600/40 text-purple-300"
+                                    className="w-full h-6 text-[10px] bg-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]/40 text-[var(--color-accent-lavender)]"
                                     onClick={async () => {
                                         setIsGeneratingVariations(true);
                                         try {

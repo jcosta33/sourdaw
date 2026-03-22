@@ -143,7 +143,7 @@ export const CCLane = ({ clipId, controller }: CCLaneProps): ReactElement => {
                 <svg className="absolute inset-0 pointer-events-none" width="100%" height="100%">
                     <polyline
                         fill="none"
-                        stroke="rgba(168, 130, 255, 0.5)"
+                        stroke="var(--color-accent-lavender)" opacity="0.5"
                         strokeWidth="1.5"
                         points={points
                             .map((p: MidiCC) => {
@@ -168,10 +168,10 @@ export const CCLane = ({ clipId, controller }: CCLaneProps): ReactElement => {
                         key={point.id}
                         data-cc-point="true"
                         className={cn(
-                            'absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-purple-400 cursor-grab transition-shadow',
+                            'absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[var(--color-accent-lavender)] cursor-grab transition-shadow',
                             isDragging
-                                ? 'bg-purple-300 shadow-[0_0_6px_rgba(168,130,255,0.6)] cursor-grabbing'
-                                : 'bg-purple-400/80 hover:bg-purple-300 hover:shadow-[0_0_4px_rgba(168,130,255,0.4)]'
+                                ? 'bg-[var(--color-accent-lavender)] shadow-[0_0_6px_var(--color-accent-lavender)] cursor-grabbing'
+                                : 'bg-[var(--color-accent-lavender)]/80 hover:bg-[var(--color-accent-lavender)] hover:shadow-[0_0_4px_var(--color-accent-lavender)]'
                         )}
                         style={{ left: x, top: y }}
                         title={`Beat ${point.beat.toFixed(2)}: ${point.value}`}

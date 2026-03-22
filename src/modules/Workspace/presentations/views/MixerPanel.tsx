@@ -125,7 +125,7 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
                 <Button
                     variant="ghost"
                     size="icon-xs"
-                    className="text-purple-400 hover:text-purple-300 hover:bg-purple-900/20"
+                    className="text-[var(--color-accent-lavender)] hover:text-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)]/10"
                     aria-label="AI Mix Health Analysis"
                     title="AI Mix Health Analysis"
                     onClick={() => setShowMixHealth(true)}

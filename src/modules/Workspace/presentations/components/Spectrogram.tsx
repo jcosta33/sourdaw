@@ -64,7 +64,7 @@ export const Spectrogram = ({ trackId, width = 300, height = 100 }: SpectrogramP
         columnRef.current = 0;
 
         // Clear
-        ctx.fillStyle = '#000';
+        ctx.fillStyle = '#0a0a0a';
         ctx.fillRect(0, 0, width, height);
 
         const draw = (): void => {
@@ -98,7 +98,7 @@ export const Spectrogram = ({ trackId, width = 300, height = 100 }: SpectrogramP
 
             // Draw cursor line
             const nextCol = (col + 1) % width;
-            ctx.fillStyle = '#ccc';
+            ctx.fillStyle = '#a3a3a3';
             ctx.fillRect(nextCol, 0, 1, height);
 
             columnRef.current++;

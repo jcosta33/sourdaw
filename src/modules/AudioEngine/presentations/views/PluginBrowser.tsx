@@ -16,9 +16,9 @@ type PluginBrowserProps = {
 };
 
 const FORMAT_COLORS: Record<string, string> = {
-    vst3: 'bg-blue-500/20 text-blue-300',
-    clap: 'bg-emerald-500/20 text-emerald-300',
-    au: 'bg-purple-500/20 text-purple-300',
+    vst3: 'bg-[var(--color-accent-cyan)]/20 text-[var(--color-accent-cyan)]',
+    clap: 'bg-[var(--color-accent-mint)]/20 text-[var(--color-accent-mint)]',
+    au: 'bg-[var(--color-accent-lavender)]/20 text-[var(--color-accent-lavender)]',
 };
 
 const FORMAT_ORDER = ['vst3', 'clap', 'au'];

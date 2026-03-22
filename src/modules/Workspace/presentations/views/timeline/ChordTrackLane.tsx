@@ -168,7 +168,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
         >
             {/* ── Label + controls strip ── */}
             <div className="flex items-center gap-1.5 px-2 shrink-0 z-10 bg-surface-base/90 border-r border-border/30 h-full">
-                <Music2 className="size-3 text-amber-400/80" aria-hidden="true" />
+                <Music2 className="size-3 text-[var(--color-accent-peach)]/80" aria-hidden="true" />
                 <span className="text-[9px] font-semibold text-muted-foreground/70 uppercase tracking-wider whitespace-nowrap">
                     Chords
                 </span>
@@ -179,7 +179,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                     className={cn(
                         'size-4 rounded flex items-center justify-center transition-colors',
                         state.enabled
-                            ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30'
+                            ? 'bg-[var(--color-accent-peach)]/20 text-[var(--color-accent-peach)] hover:bg-[var(--color-accent-peach)]/30'
                             : 'text-muted-foreground/40 hover:text-muted-foreground/60 hover:bg-white/5'
                     )}
                     aria-label={state.enabled ? 'Disable harmonic following' : 'Enable harmonic following'}

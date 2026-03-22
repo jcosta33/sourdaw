@@ -93,7 +93,7 @@ export const RotaryKnob = ({
 
     // Conic arc gradient for the value ring
     const arcAngleDeg = normalized * 270;
-    const arcColor = isDragging ? 'var(--color-accent-cyan)' : 'rgba(103, 232, 249, 0.6)';
+    const arcColor = isDragging ? 'var(--color-accent-cyan)' : 'rgba(127, 184, 196, 0.6)';
     const arcBg = bipolar
         ? buildBipolarArc(normalized, arcColor)
         : `conic-gradient(from 225deg, ${arcColor} 0deg, ${arcColor} ${arcAngleDeg}deg, transparent ${arcAngleDeg}deg, transparent 270deg, transparent 270deg)`;

@@ -20,14 +20,14 @@ export const MasterVisualizationsSection = (): ReactElement => {
                         <LUFSMeter height={160} width={60} />
                     </div>
                     <div className="bg-surface-base border border-border/50 rounded-md p-3 flex items-center justify-center">
-                        <Goniometer size={140} color="#a855f7" />
+                        <Goniometer size={140} color="#a89bc4" />
                     </div>
                 </div>
                 <div className="bg-surface-base border border-border/50 rounded-md p-3 flex items-center justify-center">
-                    <Oscilloscope width={280} height={100} color="#22c55e" />
+                    <Oscilloscope width={280} height={100} color="#4a9960" />
                 </div>
                 <div className="bg-surface-base border border-border/50 rounded-md p-3 flex items-center justify-center">
-                    <SpectrumAnalyzer width={280} height={100} color="#3b82f6" />
+                    <SpectrumAnalyzer width={280} height={100} color="#4a7090" />
                 </div>
                 <div className="bg-surface-base border border-border/50 rounded-md p-3 flex items-center justify-center">
                     <Spectrogram width={280} height={100} />

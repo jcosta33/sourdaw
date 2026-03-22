@@ -179,10 +179,10 @@ export const PitchBendLane = ({ clipId }: PitchBendLaneProps): ReactElement => {
                         key={point.id}
                         data-pb-point="true"
                         className={cn(
-                            'absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-cyan-400 cursor-grab transition-shadow',
+                            'absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[var(--color-accent-cyan)] cursor-grab transition-shadow',
                             isDragging
-                                ? 'bg-cyan-300 shadow-[0_0_6px_rgba(80,180,220,0.6)] cursor-grabbing'
-                                : 'bg-cyan-400/80 hover:bg-cyan-300 hover:shadow-[0_0_4px_rgba(80,180,220,0.4)]'
+                                ? 'bg-[var(--color-accent-cyan)] shadow-[0_0_6px_rgba(80,180,220,0.6)] cursor-grabbing'
+                                : 'bg-[var(--color-accent-cyan)]/80 hover:bg-[var(--color-accent-cyan)] hover:shadow-[0_0_4px_rgba(80,180,220,0.4)]'
                         )}
                         style={{ left: x, top: y }}
                         title={`Beat ${point.beat.toFixed(2)}: ${point.value} (center: ${PITCH_BEND_CENTER})`}

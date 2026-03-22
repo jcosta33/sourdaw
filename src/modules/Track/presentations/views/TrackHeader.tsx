@@ -73,7 +73,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                             <ChevronDown className="size-3" aria-hidden="true" />
                         )}
                     </Button>
-                    <Folder className="size-3 shrink-0 text-amber-400/70" aria-hidden="true" />
+                    <Folder className="size-3 shrink-0 text-[var(--color-accent-peach)]/70" aria-hidden="true" />
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground truncate flex-1 min-w-0 select-none">
                         {track.name}
                     </span>
@@ -111,7 +111,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
 
                 <InlineTrackName track={track} />
 
-                {track.frozen ? <span className="text-[10px] text-blue-400 font-medium">FRZ</span> : null}
+                {track.frozen ? <span className="text-[10px] text-[var(--color-accent-cyan)] font-medium">FRZ</span> : null}
 
                 {track.kind === 'audio' && isSelected ? (
                     <InputSelector trackId={track.id} inputId={track.inputId} />

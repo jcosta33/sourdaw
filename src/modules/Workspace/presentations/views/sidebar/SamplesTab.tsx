@@ -115,7 +115,7 @@ export const SamplesTab = ({
                                         className={cn(
                                             'size-3',
                                             favorites.has(sample.id)
-                                                ? 'text-yellow-400 fill-yellow-400'
+                                                ? 'text-[var(--color-accent-peach)] fill-[var(--color-accent-peach)]'
                                                 : 'text-muted-foreground'
                                         )}
                                     />

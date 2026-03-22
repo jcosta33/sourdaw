@@ -73,7 +73,7 @@ export const SlideLane = ({ clipId, selectedNoteIds }: SlideLaneProps): ReactEle
                         key={note.id}
                         className={cn(
                             'w-3 rounded-t cursor-ns-resize transition-colors',
-                            isSelected ? 'bg-teal-300/80 hover:bg-teal-300' : 'bg-teal-500/30 hover:bg-teal-500/50'
+                            isSelected ? 'bg-[var(--color-accent-mint)]/80 hover:bg-[var(--color-accent-mint)]' : 'bg-[var(--color-accent-mint)]/30 hover:bg-[var(--color-accent-mint)]/50'
                         )}
                         style={{
                             height: `${(slide / 127) * 100}%`,

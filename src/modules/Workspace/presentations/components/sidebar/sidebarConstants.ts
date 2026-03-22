@@ -49,14 +49,14 @@ export const CATEGORY_ICONS: Record<SoundPresetCategory, LucideIcon> = {
 };
 
 export const CATEGORY_COLORS: Record<SoundPresetCategory, string> = {
-    synth: 'bg-purple-500/20 text-purple-300',
-    bass: 'bg-red-500/20 text-red-300',
-    pad: 'bg-cyan-500/20 text-cyan-300',
-    lead: 'bg-yellow-500/20 text-yellow-300',
-    keys: 'bg-blue-500/20 text-blue-300',
-    drums: 'bg-orange-500/20 text-orange-300',
-    fx: 'bg-pink-500/20 text-pink-300',
-    vocal: 'bg-green-500/20 text-green-300',
-    guitar: 'bg-amber-500/20 text-amber-300',
-    strings: 'bg-indigo-500/20 text-indigo-300',
+    synth: 'bg-[var(--color-accent-lavender)]/20 text-[var(--color-accent-lavender)]',
+    bass: 'bg-[var(--color-state-danger)]/20 text-[var(--color-state-danger)]',
+    pad: 'bg-[var(--color-accent-cyan)]/20 text-[var(--color-accent-cyan)]',
+    lead: 'bg-[var(--color-accent-peach)]/20 text-[var(--color-accent-peach)]',
+    keys: 'bg-[var(--color-accent-cyan)]/20 text-[var(--color-accent-cyan)]',
+    drums: 'bg-[var(--color-accent-peach)]/20 text-[var(--color-accent-peach)]',
+    fx: 'bg-[var(--color-accent-lavender)]/20 text-[var(--color-accent-lavender)]',
+    vocal: 'bg-[var(--color-accent-mint)]/20 text-[var(--color-accent-mint)]',
+    guitar: 'bg-[var(--color-accent-peach)]/20 text-[var(--color-accent-peach)]',
+    strings: 'bg-[var(--color-accent-lavender)]/20 text-[var(--color-accent-lavender)]',
 };

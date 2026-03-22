@@ -57,9 +57,9 @@ export const NotificationToast = (): ReactElement | null => {
             className={cn(
                 'fixed bottom-16 left-4 z-50 w-80 rounded-lg border p-3 shadow-xl animate-in slide-in-from-left-5',
                 latest.level === 'error'
-                    ? 'border-red-500/40 bg-red-950/80'
+                    ? 'border-[var(--color-state-danger)]/40 bg-[var(--color-state-danger)]/10'
                     : latest.level === 'warning'
-                      ? 'border-yellow-500/40 bg-yellow-950/80'
+                      ? 'border-[var(--color-state-warning)]/40 bg-[var(--color-state-warning)]/10'
                       : 'border-border bg-surface-raised'
             )}
             role="alert"
@@ -69,7 +69,7 @@ export const NotificationToast = (): ReactElement | null => {
                 <AlertTriangle
                     className={cn(
                         'mt-0.5 size-4 shrink-0',
-                        latest.level === 'error' ? 'text-red-400' : 'text-yellow-400'
+                        latest.level === 'error' ? 'text-[var(--color-state-danger)]' : 'text-[var(--color-state-warning)]'
                     )}
                 />
                 <p className="flex-1 text-xs text-foreground">{latest.message}</p>

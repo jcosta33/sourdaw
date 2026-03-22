@@ -46,13 +46,13 @@ const CATEGORY_ICONS: Record<TemplateCategory, ReactElement> = {
 const getCategoryColor = (category: TemplateCategory): string => {
     switch (category) {
         case 'demo':
-            return 'text-emerald-400';
+            return 'text-[var(--color-accent-mint)]';
         case 'music':
-            return 'text-violet-400';
+            return 'text-[var(--color-accent-lavender)]';
         case 'podcast':
-            return 'text-amber-400';
+            return 'text-[var(--color-accent-peach)]';
         case 'film':
-            return 'text-sky-400';
+            return 'text-[var(--color-accent-cyan)]';
         default:
             return 'text-muted-foreground';
     }

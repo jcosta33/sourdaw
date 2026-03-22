@@ -139,7 +139,7 @@ export const PanelToggles = ({
                         aria-label="Toggle Generative AI Dashboard"
                         aria-pressed={aiState.isPanelOpen}
                         onClick={toggleGenerativeAiPanel}
-                        className={aiState.isPanelOpen ? 'text-purple-400' : ''}
+                        className={aiState.isPanelOpen ? 'text-[var(--color-accent-lavender)]' : ''}
                     >
                         <Sparkles className="size-3.5" aria-hidden="true" />
                     </Button>

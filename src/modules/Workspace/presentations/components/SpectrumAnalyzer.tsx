@@ -17,7 +17,7 @@ export const SpectrumAnalyzer = ({
     trackId,
     width = 300,
     height = 120,
-    color = '#5a80a8',
+    color = '#4a7090',
 }: SpectrumAnalyzerProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
 

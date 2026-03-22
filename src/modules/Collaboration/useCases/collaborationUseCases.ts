@@ -5,7 +5,7 @@ import { collaborationStore } from '../stores/collaborationStore';
 import { appendLocalOperation, appendRemoteOperation, clearOperations } from './operationLog';
 import * as transport from './webSocketTransport';
 
-const PEER_COLORS = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
+const PEER_COLORS = ['#4a7090', '#c45040', '#7db8a0', '#c4aa5f', '#a89bc4', '#c49090', '#7fb8c4', '#c9a07a'];
 
 let colorIndex = 0;
 
@@ -187,7 +187,7 @@ export function createSession(): string {
             {
                 id: localPeerId,
                 name: 'You',
-                color: '#3b82f6',
+                color: '#4a7090',
                 isHost: true,
                 isConnected: true,
                 lastSeen: Date.now(),

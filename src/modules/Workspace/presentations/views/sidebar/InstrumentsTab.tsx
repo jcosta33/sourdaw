@@ -252,7 +252,7 @@ export const InstrumentsTab = ({
                     onClick={() => pushRoute({ id: 'instruments-user', title: 'My Presets' })}
                 >
                     <div className="flex items-center gap-1.5">
-                        <Star className="size-3 text-yellow-400" aria-hidden="true" />
+                        <Star className="size-3 text-[var(--color-accent-peach)]" aria-hidden="true" />
                         <span className="text-[10px] font-medium text-foreground/80">My Presets</span>
                     </div>
                     <div className="flex items-center gap-1">

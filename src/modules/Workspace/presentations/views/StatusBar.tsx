@@ -105,7 +105,7 @@ export const StatusBar = (): ReactElement => {
                         <div
                             className={cn(
                                 'h-full rounded-full transition-[width] duration-150',
-                                cpuPct < 50 ? 'bg-emerald-500' : cpuPct < 80 ? 'bg-yellow-500' : 'bg-red-500'
+                                cpuPct < 50 ? 'bg-[var(--color-state-success)]' : cpuPct < 80 ? 'bg-[var(--color-state-warning)]' : 'bg-[var(--color-state-danger)]'
                             )}
                             style={{ width: `${Math.min(100, cpuPct)}%` }}
                         />
@@ -121,13 +121,13 @@ export const StatusBar = (): ReactElement => {
                 <div className="flex items-center gap-1">
                     <span className="text-[10px] text-muted-foreground">GPU:</span>
                     {llmStatus?.state === 'generating' ? (
-                        <span className="text-[10px] font-mono text-purple-400 animate-pulse">active</span>
+                        <span className="text-[10px] font-mono text-[var(--color-accent-lavender)] animate-pulse">active</span>
                     ) : llmStatus?.state === 'loading' ? (
-                        <span className="text-[10px] font-mono text-yellow-400">
+                        <span className="text-[10px] font-mono text-[var(--color-state-warning)]">
                             {Math.round(llmStatus.progress * 100)}%
                         </span>
                     ) : llmStatus?.state === 'ready' ? (
-                        <span className="text-[10px] font-mono text-emerald-400/70">ready</span>
+                        <span className="text-[10px] font-mono text-[var(--color-state-success)]/70">ready</span>
                     ) : (
                         <span className="text-[10px] font-mono text-muted-foreground/50">idle</span>
                     )}
@@ -137,7 +137,7 @@ export const StatusBar = (): ReactElement => {
                 <div className="flex items-center gap-1">
                     <div className="h-2 w-16 rounded-full bg-muted/30 overflow-hidden">
                         <div
-                            className="h-full rounded-full bg-emerald-500 transition-[width] duration-75"
+                            className="h-full rounded-full bg-[var(--color-state-success)] transition-[width] duration-75"
                             style={{ width: `${Math.min(100, masterLevel * 300)}%` }}
                         />
                     </div>
@@ -167,7 +167,7 @@ export const StatusBar = (): ReactElement => {
                     <span
                         className={cn(
                             'size-1.5 rounded-full',
-                            collab.connectionStatus === 'connected' ? 'bg-emerald-500' : 'bg-muted-foreground/50'
+                            collab.connectionStatus === 'connected' ? 'bg-[var(--color-state-success)]' : 'bg-muted-foreground/50'
                         )}
                     />
                     <Users className="size-3" />
@@ -192,7 +192,7 @@ export const StatusBar = (): ReactElement => {
                 <span
                     className={cn(
                         'size-1.5 rounded-full',
-                        engineInfo.state === 'running' ? 'bg-emerald-500' : 'bg-muted-foreground/50'
+                        engineInfo.state === 'running' ? 'bg-[var(--color-state-success)]' : 'bg-muted-foreground/50'
                     )}
                     title={`Engine: ${engineInfo.state}`}
                 />

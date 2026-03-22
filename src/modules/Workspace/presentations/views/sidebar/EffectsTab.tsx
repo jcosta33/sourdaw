@@ -52,7 +52,7 @@ const EFFECT_GROUPS: EffectGroup[] = [
         label: 'EQ & Filter',
         description: 'Frequency shaping, cuts & boosts',
         icon: BarChart3,
-        color: 'bg-blue-500/20 text-blue-400',
+        color: 'bg-[var(--color-accent-cyan)]/20 text-[var(--color-accent-cyan)]',
         categories: ['eq', 'filter'],
     },
     {
@@ -60,7 +60,7 @@ const EFFECT_GROUPS: EffectGroup[] = [
         label: 'Dynamics',
         description: 'Compression, limiting & gating',
         icon: Activity,
-        color: 'bg-orange-500/20 text-orange-400',
+        color: 'bg-[var(--color-accent-peach)]/20 text-[var(--color-accent-peach)]',
         categories: ['compressor', 'sidechain-compressor', 'limiter', 'gate', 'expander'],
     },
     {
@@ -68,7 +68,7 @@ const EFFECT_GROUPS: EffectGroup[] = [
         label: 'Time & Space',
         description: 'Reverb, delay & modulation FX',
         icon: Waves,
-        color: 'bg-violet-500/20 text-violet-400',
+        color: 'bg-[var(--color-accent-lavender)]/20 text-[var(--color-accent-lavender)]',
         categories: ['reverb', 'delay', 'chorus', 'flanger', 'phaser', 'tremolo', 'echo'],
     },
     {
@@ -76,7 +76,7 @@ const EFFECT_GROUPS: EffectGroup[] = [
         label: 'Saturation & Drive',
         description: 'Overdrive, saturation & waveshaping',
         icon: Zap,
-        color: 'bg-red-500/20 text-red-400',
+        color: 'bg-[var(--color-state-danger)]/20 text-[var(--color-state-danger)]',
         categories: ['distortion', 'bitcrusher', 'saturation', 'overdrive'],
     },
     {
@@ -92,11 +92,11 @@ const EFFECT_GROUPS: EffectGroup[] = [
 // ── Modulator source → icon/color ─────────────────────────────────────────────
 
 const MODULATOR_SOURCE_META: Record<string, { icon: LucideIcon; color: string; label: string }> = {
-    lfo: { icon: Waves, color: 'bg-indigo-500/20 text-indigo-400', label: 'LFO' },
-    envelope: { icon: Activity, color: 'bg-amber-500/20 text-amber-400', label: 'Envelope' },
-    random: { icon: Shuffle, color: 'bg-pink-500/20 text-pink-400', label: 'Random' },
-    step: { icon: TriangleRight, color: 'bg-teal-500/20 text-teal-400', label: 'Step' },
-    midi: { icon: GitBranch, color: 'bg-cyan-500/20 text-cyan-400', label: 'MIDI' },
+    lfo: { icon: Waves, color: 'bg-[var(--color-accent-lavender)]/20 text-[var(--color-accent-lavender)]', label: 'LFO' },
+    envelope: { icon: Activity, color: 'bg-[var(--color-accent-peach)]/20 text-[var(--color-accent-peach)]', label: 'Envelope' },
+    random: { icon: Shuffle, color: 'bg-[var(--color-accent-lavender)]/20 text-[var(--color-accent-lavender)]', label: 'Random' },
+    step: { icon: TriangleRight, color: 'bg-[var(--color-accent-mint)]/20 text-[var(--color-accent-mint)]', label: 'Step' },
+    midi: { icon: GitBranch, color: 'bg-[var(--color-accent-cyan)]/20 text-[var(--color-accent-cyan)]', label: 'MIDI' },
 };
 
 // ── Shared nav card ──────────────────────────────────────────────────────────
@@ -200,7 +200,7 @@ const EffectItem = ({
 /** Badge shown on unimplemented modulator/MIDI FX items */
 const UnimplementedBadge = (): ReactElement => (
     <span
-        className="inline-flex items-center gap-0.5 text-[9px] font-medium px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500/70 shrink-0 ml-1"
+        className="inline-flex items-center gap-0.5 text-[9px] font-medium px-1.5 py-0.5 rounded bg-[var(--color-accent-peach)]/10 text-[var(--color-accent-peach)]/70 shrink-0 ml-1"
         title="Not yet implemented — no audio effect"
     >
         <AlertCircle className="size-2.5" aria-hidden="true" />
@@ -208,7 +208,7 @@ const UnimplementedBadge = (): ReactElement => (
     </span>
 );
 
-const SoonBadge = (): ReactElement => <span className="text-[9px] text-amber-500/60 font-normal">soon</span>;
+const SoonBadge = (): ReactElement => <span className="text-[9px] text-[var(--color-accent-peach)]/60 font-normal">soon</span>;
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -413,8 +413,8 @@ export const EffectsTab = ({
 
         return (
             <div className="flex flex-col gap-[2px] animate-in slide-in-from-right-4 duration-200">
-                <div className="flex items-start gap-2 px-2 py-2 rounded-md bg-amber-500/5 border border-amber-500/20 mb-2">
-                    <Sparkles className="size-3 text-amber-400/80 shrink-0 mt-0.5" aria-hidden="true" />
+                <div className="flex items-start gap-2 px-2 py-2 rounded-md bg-[var(--color-accent-peach)]/5 border border-[var(--color-accent-peach)]/20 mb-2">
+                    <Sparkles className="size-3 text-[var(--color-accent-peach)]/80 shrink-0 mt-0.5" aria-hidden="true" />
                     <p className="text-[10px] text-muted-foreground leading-relaxed">
                         Modulation routing exists in the data model but isn't wired to Web Audio yet — clicking a preset
                         has no audio effect.
@@ -444,8 +444,8 @@ export const EffectsTab = ({
     if (currentRoute.id === 'effects-modulators') {
         return (
             <div className="flex flex-col gap-0 animate-in slide-in-from-right-4 duration-200">
-                <div className="flex items-start gap-2 px-2 py-2 rounded-md bg-amber-500/5 border border-amber-500/20 mb-2">
-                    <Sparkles className="size-3 text-amber-400/80 shrink-0 mt-0.5" aria-hidden="true" />
+                <div className="flex items-start gap-2 px-2 py-2 rounded-md bg-[var(--color-accent-peach)]/5 border border-[var(--color-accent-peach)]/20 mb-2">
+                    <Sparkles className="size-3 text-[var(--color-accent-peach)]/80 shrink-0 mt-0.5" aria-hidden="true" />
                     <p className="text-[10px] text-muted-foreground leading-relaxed">
                         Modulation routing exists in the data model but isn't wired to Web Audio yet — clicking a preset
                         has no audio effect.
@@ -480,8 +480,8 @@ export const EffectsTab = ({
     if (currentRoute.id === 'effects-midifx') {
         return (
             <div className="flex flex-col gap-2 animate-in slide-in-from-right-4 duration-200">
-                <div className="flex items-start gap-2 px-2 py-2 rounded-md bg-amber-500/5 border border-amber-500/20">
-                    <Sparkles className="size-3 text-amber-400/80 shrink-0 mt-0.5" aria-hidden="true" />
+                <div className="flex items-start gap-2 px-2 py-2 rounded-md bg-[var(--color-accent-peach)]/5 border border-[var(--color-accent-peach)]/20">
+                    <Sparkles className="size-3 text-[var(--color-accent-peach)]/80 shrink-0 mt-0.5" aria-hidden="true" />
                     <p className="text-[10px] text-muted-foreground leading-relaxed">
                         MIDI FX logic exists but isn't connected to the MIDI scheduler yet — tracks don't apply these
                         transforms during playback.
@@ -515,7 +515,7 @@ export const EffectsTab = ({
                 label="Audio FX"
                 description="EQ, dynamics, reverb & drive chains"
                 count={totalAudioFx}
-                color="bg-violet-500/20 text-violet-400"
+                color="bg-[var(--color-accent-lavender)]/20 text-[var(--color-accent-lavender)]"
                 onClick={() => pushRoute({ id: 'effects-audiofx', title: 'Audio FX' })}
             />
             <NavCard
@@ -523,7 +523,7 @@ export const EffectsTab = ({
                 label="Modulators"
                 description="LFO, envelope, random & macro sources"
                 count={MODULATOR_PRESETS.length}
-                color="bg-indigo-500/20 text-indigo-400"
+                color="bg-[var(--color-accent-lavender)]/20 text-[var(--color-accent-lavender)]"
                 dimmed
                 badge={<SoonBadge />}
                 onClick={() => pushRoute({ id: 'effects-modulators', title: 'Modulators' })}
@@ -533,7 +533,7 @@ export const EffectsTab = ({
                 label="MIDI FX"
                 description="Chord gen, scale filter, quantizer & more"
                 count={MIDI_EFFECT_FACTORIES.length}
-                color="bg-cyan-500/20 text-cyan-400"
+                color="bg-[var(--color-accent-cyan)]/20 text-[var(--color-accent-cyan)]"
                 dimmed
                 badge={<SoonBadge />}
                 onClick={() => pushRoute({ id: 'effects-midifx', title: 'MIDI FX' })}

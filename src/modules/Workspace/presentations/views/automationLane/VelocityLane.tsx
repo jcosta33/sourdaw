@@ -72,7 +72,7 @@ export const VelocityLane = ({ clipId, selectedNoteIds }: VelocityLaneProps): Re
                         key={note.id}
                         className={cn(
                             'w-3 rounded-t cursor-ns-resize transition-colors',
-                            isSelected ? 'bg-amber-400/80 hover:bg-amber-400' : 'bg-blue-400/30 hover:bg-blue-400/50'
+                            isSelected ? 'bg-[var(--color-accent-peach)]/80 hover:bg-[var(--color-accent-peach)]' : 'bg-[var(--color-accent-cyan)]/30 hover:bg-[var(--color-accent-cyan)]/50'
                         )}
                         style={{
                             height: `${(note.velocity / 127) * 100}%`,

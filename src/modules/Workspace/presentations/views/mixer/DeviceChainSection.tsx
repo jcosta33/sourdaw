@@ -68,7 +68,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                                 {d.name}
                                 {getAllModulationRoutes().some((r) => r.target.deviceId === d.id) && (
                                     <span
-                                        className="ml-0.5 inline-block size-1.5 rounded-full bg-purple-400"
+                                        className="ml-0.5 inline-block size-1.5 rounded-full bg-[var(--color-accent-lavender)]"
                                         title="Modulated"
                                     />
                                 )}
@@ -112,7 +112,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                         <button
                             type="button"
                             key={fx.id}
-                            className="w-full rounded bg-purple-500/10 border border-purple-500/20 px-1 py-0.5 text-center hover:bg-purple-500/20 text-[10px] text-foreground transition-colors"
+                            className="w-full rounded bg-[var(--color-accent-lavender)]/10 border border-[var(--color-accent-lavender)]/20 px-1 py-0.5 text-center hover:bg-[var(--color-accent-lavender)]/20 text-[10px] text-foreground transition-colors"
                             onClick={(e) => {
                                 e.stopPropagation();
                                 addDevice(track.id, fx.name);

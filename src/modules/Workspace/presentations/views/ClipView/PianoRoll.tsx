@@ -1347,7 +1347,7 @@ export const PianoRoll = ({
                     variant={isFolded ? 'secondary' : 'ghost'}
                     size="xs"
                     onClick={() => setIsFolded((prev) => !prev)}
-                    className={cn('text-[10px] px-2', isFolded && 'text-blue-400 border-blue-400/30')}
+                    className={cn('text-[10px] px-2', isFolded && 'text-[var(--color-accent-cyan)] border-[var(--color-accent-cyan)]/30')}
                     aria-pressed={isFolded}
                     aria-label="Toggle fold to scale"
                 >
@@ -1360,7 +1360,7 @@ export const PianoRoll = ({
                     variant={stepInput ? 'secondary' : 'ghost'}
                     size="xs"
                     onClick={() => setStepInput((prev) => !prev)}
-                    className={cn('text-[10px] px-2', stepInput && 'text-pink-400 border-pink-400/30')}
+                    className={cn('text-[10px] px-2', stepInput && 'text-[var(--color-accent-lavender)] border-[var(--color-accent-lavender)]/30')}
                     aria-pressed={stepInput}
                     aria-label="Toggle step input mode"
                 >
@@ -1373,7 +1373,7 @@ export const PianoRoll = ({
                     variant={showGhostNotes ? 'secondary' : 'ghost'}
                     size="xs"
                     onClick={() => setShowGhostNotes((prev) => !prev)}
-                    className={cn('text-[10px] px-2', showGhostNotes && 'text-purple-400 border-purple-400/30')}
+                    className={cn('text-[10px] px-2', showGhostNotes && 'text-[var(--color-accent-lavender)] border-[var(--color-accent-lavender)]/30')}
                     aria-pressed={showGhostNotes}
                     aria-label="Toggle ghost notes"
                 >
@@ -1384,7 +1384,7 @@ export const PianoRoll = ({
                     variant={chordMode ? 'secondary' : 'ghost'}
                     size="xs"
                     onClick={() => setChordMode((prev) => !prev)}
-                    className={cn('text-[10px] px-2', chordMode && 'text-emerald-400 border-emerald-400/30')}
+                    className={cn('text-[10px] px-2', chordMode && 'text-[var(--color-accent-mint)] border-[var(--color-accent-mint)]/30')}
                     aria-pressed={chordMode}
                     aria-label="Toggle chord stamp mode"
                 >
@@ -1410,7 +1410,7 @@ export const PianoRoll = ({
                     variant={paintMode ? 'secondary' : 'ghost'}
                     size="xs"
                     onClick={() => setPaintMode((prev) => !prev)}
-                    className={cn('text-[10px] px-2', paintMode && 'text-amber-400 border-amber-400/30')}
+                    className={cn('text-[10px] px-2', paintMode && 'text-[var(--color-accent-peach)] border-[var(--color-accent-peach)]/30')}
                     aria-pressed={paintMode}
                     aria-label="Toggle paint mode"
                 >
@@ -1421,7 +1421,7 @@ export const PianoRoll = ({
                     variant={lassoMode ? 'secondary' : 'ghost'}
                     size="xs"
                     onClick={() => setLassoMode((prev) => !prev)}
-                    className={cn('text-[10px] px-2', lassoMode && 'text-purple-400 border-purple-400/30')}
+                    className={cn('text-[10px] px-2', lassoMode && 'text-[var(--color-accent-lavender)] border-[var(--color-accent-lavender)]/30')}
                     aria-pressed={lassoMode}
                     aria-label="Toggle magic lasso selection"
                 >
@@ -1701,7 +1701,7 @@ export const PianoRoll = ({
                     <div className="my-1 border-t border-border/50" />
                     <button
                         type="button"
-                        className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-purple-400 font-medium hover:bg-accent"
+                        className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-[var(--color-accent-lavender)] font-medium hover:bg-accent"
                         role="menuitem"
                         onClick={ctxAct(handleAIGenerate)}
                     >

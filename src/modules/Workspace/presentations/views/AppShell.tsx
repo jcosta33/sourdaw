@@ -325,7 +325,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                     <Button
                                         variant={bottomTab === 'editor' ? 'secondary' : 'ghost'}
                                         size="xs"
-                                        className={bottomTab === 'editor' ? 'text-blue-400' : ''}
+                                        className={bottomTab === 'editor' ? 'text-[var(--color-accent-cyan)]' : ''}
                                         onClick={() => setBottomTab('editor')}
                                     >
                                         Editor
@@ -333,7 +333,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                     <Button
                                         variant={bottomTab === 'session' ? 'secondary' : 'ghost'}
                                         size="xs"
-                                        className={bottomTab === 'session' ? 'text-green-400' : ''}
+                                        className={bottomTab === 'session' ? 'text-[var(--color-accent-mint)]' : ''}
                                         onClick={() => setBottomTab('session')}
                                     >
                                         Session
@@ -341,7 +341,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                     <Button
                                         variant={bottomTab === 'routing' ? 'secondary' : 'ghost'}
                                         size="xs"
-                                        className={bottomTab === 'routing' ? 'text-orange-400' : ''}
+                                        className={bottomTab === 'routing' ? 'text-[var(--color-accent-peach)]' : ''}
                                         onClick={() => setBottomTab('routing')}
                                     >
                                         Routing
@@ -349,7 +349,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                     <Button
                                         variant={bottomTab === 'analysis' ? 'secondary' : 'ghost'}
                                         size="xs"
-                                        className={bottomTab === 'analysis' ? 'text-purple-400' : ''}
+                                        className={bottomTab === 'analysis' ? 'text-[var(--color-accent-lavender)]' : ''}
                                         onClick={() => setBottomTab('analysis')}
                                     >
                                         Analysis

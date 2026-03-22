@@ -151,7 +151,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
             )}
 
             <span className="text-[10px] text-muted-foreground capitalize">{track.kind}</span>
-            {track.vcaGroupId && <span className="text-[9px] text-cyan-400/80 font-mono">VCA</span>}
+            {track.vcaGroupId && <span className="text-[9px] text-[var(--color-accent-cyan)]/80 font-mono">VCA</span>}
 
             {/* Mute / Solo / Arm / Monitor */}
             <div className="flex flex-wrap justify-center gap-1">
@@ -374,7 +374,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                         <button
                             type="button"
                             key={g.id}
-                            className={`${menuBtnClass} ${track.vcaGroupId === g.id ? 'text-cyan-400' : ''}`}
+                            className={`${menuBtnClass} ${track.vcaGroupId === g.id ? 'text-[var(--color-accent-cyan)]' : ''}`}
                             role="menuitem"
                             onClick={act(() => {
                                 if (track.vcaGroupId === g.id) {

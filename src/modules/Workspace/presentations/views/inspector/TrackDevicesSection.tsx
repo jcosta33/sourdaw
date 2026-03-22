@@ -209,7 +209,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                     }}
                                 >
                                     <Power
-                                        className={`size-3 ${device.bypassed ? 'text-muted-foreground' : 'text-emerald-400'}`}
+                                        className={`size-3 ${device.bypassed ? 'text-muted-foreground' : 'text-[var(--color-state-success)]'}`}
                                     />
                                 </Button>
                                 {device.type === 'external-plugin' && device.externalInstanceId && (

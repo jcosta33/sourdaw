@@ -193,7 +193,7 @@ export const RecentProjectsMenu = (): ReactElement => {
                         role="menuitem"
                         onClick={handleLoadDemo}
                     >
-                        <Sparkles className="size-3 text-emerald-400" aria-hidden="true" />
+                        <Sparkles className="size-3 text-[var(--color-accent-mint)]" aria-hidden="true" />
                         Load Demo Project…
                     </button>
 

@@ -22,19 +22,19 @@ const offBackground: Record<LEDVariant, string> = {
 const activeGlow: Record<LEDVariant, { bg: string; shadow: string }> = {
     cyan: {
         bg: 'var(--color-accent-cyan)',
-        shadow: '0 0 4px var(--color-accent-cyan), 0 0 12px rgba(103,232,249,0.4), 0 0 24px rgba(103,232,249,0.15)',
+        shadow: '0 0 4px var(--color-accent-cyan), 0 0 12px rgba(127,184,196,0.4), 0 0 24px rgba(127,184,196,0.15)',
     },
     mint: {
         bg: 'var(--color-accent-mint)',
-        shadow: '0 0 4px var(--color-accent-mint), 0 0 12px rgba(110,231,183,0.4), 0 0 24px rgba(110,231,183,0.15)',
+        shadow: '0 0 4px var(--color-accent-mint), 0 0 12px rgba(125,184,160,0.4), 0 0 24px rgba(125,184,160,0.15)',
     },
     amber: {
         bg: 'var(--color-state-solo)',
-        shadow: '0 0 4px var(--color-state-solo), 0 0 12px rgba(247,167,56,0.4), 0 0 24px rgba(247,167,56,0.15)',
+        shadow: '0 0 4px var(--color-state-solo), 0 0 12px rgba(196,152,64,0.4), 0 0 24px rgba(196,152,64,0.15)',
     },
     red: {
         bg: 'var(--color-state-record)',
-        shadow: '0 0 4px var(--color-state-record), 0 0 12px rgba(255,64,50,0.4), 0 0 24px rgba(255,64,50,0.15)',
+        shadow: '0 0 4px var(--color-state-record), 0 0 12px rgba(196,80,64,0.4), 0 0 24px rgba(196,80,64,0.15)',
     },
 };
 

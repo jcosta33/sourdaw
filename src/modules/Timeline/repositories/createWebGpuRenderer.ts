@@ -331,7 +331,7 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                             const binWidth = w / numBins;
 
                             // Color analogous to canvas renderer's 'rgba(120, 200, 160, 0.5)'
-                            const wfColor = '#78c8a0';
+                            const wfColor = '#6a9e80';
 
                             for (let i = 0; i < numBins; i++) {
                                 const peakHeight = peaks[i]! * amplitude;
@@ -364,8 +364,8 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
             // 4. Playhead
             const phX = beatToX(playheadPosition);
             if (phX >= 0 && phX <= w) {
-                addRect(phX - dpr, 0, phX + dpr, h, '#EF4444', 0.9); // red needle
-                addRect(phX - 4 * dpr, 0, phX + 4 * dpr, 12 * dpr, '#EF4444', 0.9); // head cap
+                addRect(phX - dpr, 0, phX + dpr, h, '#c45040', 0.9); // red needle
+                addRect(phX - 4 * dpr, 0, phX + 4 * dpr, 12 * dpr, '#c45040', 0.9); // head cap
             }
 
             if (rectCount === 0) {

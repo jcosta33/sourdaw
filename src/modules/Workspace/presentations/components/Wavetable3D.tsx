@@ -33,7 +33,7 @@ export const Wavetable3D = ({
     frames: inputFrames,
     width = 200,
     height = 150,
-    color = '#5a80a8',
+    color = '#4a7090',
 }: Wavetable3DProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const frames = inputFrames ?? generateDefaultFrames();

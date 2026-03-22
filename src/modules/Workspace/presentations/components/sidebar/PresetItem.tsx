@@ -69,7 +69,7 @@ export const PresetItem = ({
                         className={cn(
                             'size-3 transition-colors',
                             favorites.has(preset.id)
-                                ? 'text-yellow-400 fill-yellow-400 drop-shadow-sm'
+                                ? 'text-[var(--color-accent-peach)] fill-[var(--color-accent-peach)] drop-shadow-sm'
                                 : 'text-muted-foreground hover:text-foreground'
                         )}
                     />
@@ -77,9 +77,9 @@ export const PresetItem = ({
             </div>
             <div className="flex items-center gap-1.5 pl-[26px] opacity-60 group-hover:opacity-100 transition-opacity">
                 {preset.trackKind === 'midi' ? (
-                    <Piano className="size-3 text-purple-400 shrink-0" aria-label="MIDI track" />
+                    <Piano className="size-3 text-[var(--color-accent-lavender)] shrink-0" aria-label="MIDI track" />
                 ) : (
-                    <Waves className="size-3 text-emerald-400 shrink-0" aria-label="Audio track" />
+                    <Waves className="size-3 text-[var(--color-accent-mint)] shrink-0" aria-label="Audio track" />
                 )}
                 <span className="text-[9px] text-muted-foreground group-hover:text-foreground/80 transition-colors truncate">
                     {chain}

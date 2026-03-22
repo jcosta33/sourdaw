@@ -92,7 +92,7 @@ export const RoutingMatrix = (): ReactElement => {
                                                     className={cn(
                                                         'size-4 rounded-sm border transition-colors',
                                                         isConnected
-                                                            ? 'bg-green-500/40 border-green-500/60 hover:bg-green-500/50'
+                                                            ? 'bg-[var(--color-state-success)]/40 border-[var(--color-state-success)]/60 hover:bg-[var(--color-state-success)]/50'
                                                             : 'bg-muted/10 border-border/20 hover:bg-muted/30'
                                                     )}
                                                     onClick={() => toggleConnection(src.id, dest.id)}
@@ -100,7 +100,7 @@ export const RoutingMatrix = (): ReactElement => {
                                                     title={`${src.name} → ${dest.name}`}
                                                 >
                                                     {isConnected && (
-                                                        <span className="text-[6px] text-green-300">●</span>
+                                                        <span className="text-[6px] text-[var(--color-state-success)]">●</span>
                                                     )}
                                                 </button>
                                             )}

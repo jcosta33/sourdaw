@@ -112,7 +112,7 @@ export const TransportBar = (): ReactElement => {
                 variant={rippleEditing ? 'secondary' : 'ghost'}
                 size="xs"
                 onClick={toggleRippleEditing}
-                className={rippleEditing ? 'text-orange-400 border-orange-400/30 px-1.5' : 'px-1.5'}
+                className={rippleEditing ? 'text-[var(--color-accent-peach)] border-[var(--color-accent-peach)]/30 px-1.5' : 'px-1.5'}
                 aria-pressed={rippleEditing}
                 aria-label="Toggle ripple editing"
                 title="Ripple Editing (auto-shift clips on delete)"

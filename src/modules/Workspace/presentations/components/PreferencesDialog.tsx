@@ -418,18 +418,18 @@ const AiSection = (): ReactElement => {
                     <span
                         className={cn(
                             'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-medium',
-                            backend === 'native' && 'bg-emerald-500/15 text-emerald-400',
-                            backend === 'webllm' && 'bg-blue-500/15 text-blue-400',
-                            backend === 'cloud' && 'bg-purple-500/15 text-purple-400',
+                            backend === 'native' && 'bg-[var(--color-state-success)]/15 text-[var(--color-state-success)]',
+                            backend === 'webllm' && 'bg-[var(--color-accent-cyan)]/15 text-[var(--color-accent-cyan)]',
+                            backend === 'cloud' && 'bg-[var(--color-accent-lavender)]/15 text-[var(--color-accent-lavender)]',
                             backend === 'none' && 'bg-muted text-muted-foreground'
                         )}
                     >
                         <span
                             className={cn(
                                 'size-1.5 rounded-full',
-                                backend === 'native' && 'bg-emerald-400',
-                                backend === 'webllm' && 'bg-blue-400',
-                                backend === 'cloud' && 'bg-purple-400',
+                                backend === 'native' && 'bg-[var(--color-state-success)]',
+                                backend === 'webllm' && 'bg-[var(--color-accent-cyan)]',
+                                backend === 'cloud' && 'bg-[var(--color-accent-lavender)]',
                                 backend === 'none' && 'bg-muted-foreground'
                             )}
                         />
@@ -486,7 +486,7 @@ const AiSection = (): ReactElement => {
                 <div className="flex items-center justify-between mt-2">
                     <span className="text-[10px] text-muted-foreground">
                         Status:{' '}
-                        <span className={isCloudApiAvailable() ? 'text-emerald-400' : 'text-amber-400'}>
+                        <span className={isCloudApiAvailable() ? 'text-[var(--color-state-success)]' : 'text-[var(--color-state-warning)]'}>
                             {isCloudApiAvailable() ? 'Connected' : 'Not configured'}
                         </span>
                     </span>

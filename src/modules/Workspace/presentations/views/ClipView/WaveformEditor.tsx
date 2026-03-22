@@ -344,7 +344,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                     variant={warpState.enabled ? 'secondary' : 'ghost'}
                     size="xs"
                     onClick={handleToggleWarp}
-                    className={cn('text-[10px] px-2', warpState.enabled && 'text-orange-400 border-orange-400/30')}
+                    className={cn('text-[10px] px-2', warpState.enabled && 'text-[var(--color-accent-peach)] border-[var(--color-accent-peach)]/30')}
                     aria-pressed={warpState.enabled}
                     aria-label="Toggle warp mode"
                 >
@@ -368,7 +368,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                             ))}
                         </div>
 
-                        <span className="text-[10px] text-orange-400/70">
+                        <span className="text-[10px] text-[var(--color-accent-peach)]/70">
                             {warpState.markers.length} marker{warpState.markers.length !== 1 ? 's' : ''}
                         </span>
                     </>
@@ -431,7 +431,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                     >
                         <button
                             type="button"
-                            className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-purple-400 hover:bg-accent"
+                            className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-[var(--color-accent-lavender)] hover:bg-accent"
                             role="menuitem"
                             onClick={waveAct(() => handleAiDenoiseClip(clipId))}
                         >
@@ -448,7 +448,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                     >
                         <button
                             type="button"
-                            className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-purple-400 hover:bg-accent"
+                            className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-[var(--color-accent-lavender)] hover:bg-accent"
                             role="menuitem"
                             onClick={waveAct(() => handleStemSeparationPreview(clipId))}
                         >
@@ -460,7 +460,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                     </DisabledFeatureWrapper>
                     <button
                         type="button"
-                        className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-purple-400 hover:bg-accent"
+                        className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-[var(--color-accent-lavender)] hover:bg-accent"
                         role="menuitem"
                         onClick={waveAct(() => {
                             const track = trackStore.value?.tracks.find((t) => t.clips.some((c) => c.id === clipId));

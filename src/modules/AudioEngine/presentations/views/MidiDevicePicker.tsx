@@ -65,7 +65,7 @@ export const MidiDevicePicker = (): ReactElement => {
                 </Button>
             </div>
             {state.selectedInputId && state.inputs.length > 0 && (
-                <p className="text-[10px] text-emerald-400/70">
+                <p className="text-[10px] text-[var(--color-state-success)]/70">
                     Connected: {state.inputs.find((i) => i.id === state.selectedInputId)?.name ?? 'Unknown'}
                 </p>
             )}

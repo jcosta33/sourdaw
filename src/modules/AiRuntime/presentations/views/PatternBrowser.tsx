@@ -57,7 +57,7 @@ const MiniPianoRoll = ({ notes, lengthBeats }: { notes: PatternNote[]; lengthBea
         const pxPerBeat = (width - PREVIEW_PADDING * 2) / lengthBeats;
         const noteHeight = Math.max(2, (height - PREVIEW_PADDING * 2) / pitchRange);
 
-        ctx.fillStyle = 'rgb(128, 96, 160)';
+        ctx.fillStyle = 'rgb(168, 155, 196)';
         for (const note of notes) {
             const x = PREVIEW_PADDING + note.startBeat * pxPerBeat;
             const y = PREVIEW_PADDING + (maxPitch - note.pitch) * noteHeight;

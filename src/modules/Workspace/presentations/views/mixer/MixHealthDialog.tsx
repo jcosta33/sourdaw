@@ -80,7 +80,7 @@ export const MixHealthDialog = ({ open, onOpenChange }: MixHealthDialogProps): R
             <DialogContent className="max-w-2xl bg-surface-raised border border-border/50 text-foreground">
                 <DialogHeader>
                     <DialogTitle className="text-sm font-semibold flex items-center gap-2">
-                        <Sparkles className="size-4 text-purple-400" />
+                        <Sparkles className="size-4 text-[var(--color-accent-lavender)]" />
                         AI Music Mentor: Mix Health
                     </DialogTitle>
                 </DialogHeader>
@@ -106,7 +106,7 @@ export const MixHealthDialog = ({ open, onOpenChange }: MixHealthDialogProps): R
                         size="sm"
                         onClick={handleELI5}
                         disabled={isAnalyzing || !report}
-                        className="bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 border-purple-500/20"
+                        className="bg-[var(--color-accent-lavender)]/10 text-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)]/20 border-[var(--color-accent-lavender)]/20"
                     >
                         <GraduationCap className="size-4 mr-2" />
                         Explain Like I'm 5

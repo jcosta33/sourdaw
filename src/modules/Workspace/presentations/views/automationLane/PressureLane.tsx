@@ -74,8 +74,8 @@ export const PressureLane = ({ clipId, selectedNoteIds }: PressureLaneProps): Re
                         className={cn(
                             'w-3 rounded-t cursor-ns-resize transition-colors',
                             isSelected
-                                ? 'bg-violet-300/80 hover:bg-violet-300'
-                                : 'bg-violet-500/30 hover:bg-violet-500/50'
+                                ? 'bg-[var(--color-accent-lavender)]/80 hover:bg-[var(--color-accent-lavender)]'
+                                : 'bg-[var(--color-accent-lavender)]/30 hover:bg-[var(--color-accent-lavender)]/50'
                         )}
                         style={{
                             height: `${(pressure / 127) * 100}%`,

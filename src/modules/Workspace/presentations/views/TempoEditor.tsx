@@ -296,7 +296,7 @@ export const TempoEditor = (): ReactElement => {
                                         className={cn(
                                             'rounded px-1 py-0.5 text-[10px]',
                                             change.curve === 'linear'
-                                                ? 'bg-blue-500/20 text-blue-400'
+                                                ? 'bg-[var(--color-accent-cyan)]/20 text-[var(--color-accent-cyan)]'
                                                 : 'bg-muted text-muted-foreground'
                                         )}
                                     >

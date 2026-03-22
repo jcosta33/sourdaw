@@ -328,7 +328,7 @@ const drawWaveformPeaks = (
     const amplitude = (trackHeight - padding * 2) * 0.35;
     const binWidth = w / numBins;
 
-    ctx.fillStyle = 'rgba(100, 160, 120, 0.45)';
+    ctx.fillStyle = 'rgba(106, 158, 128, 0.45)';
     ctx.beginPath();
     ctx.moveTo(x + padding, midY);
     for (let i = 0; i < numBins; i++) {

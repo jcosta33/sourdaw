@@ -134,7 +134,7 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                 {sections.length > 0 && (
                     <button
                         type="button"
-                        className="h-5 px-1.5 rounded flex items-center gap-1 text-[9px] text-amber-400/70 hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
+                        className="h-5 px-1.5 rounded flex items-center gap-1 text-[9px] text-[var(--color-accent-peach)]/70 hover:text-[var(--color-accent-peach)] hover:bg-[var(--color-accent-peach)]/10 transition-colors"
                         title="Apply scratch pad to main arrangement"
                         onClick={() => commitScratchPadToArrangement()}
                     >

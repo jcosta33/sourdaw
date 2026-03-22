@@ -517,17 +517,17 @@ export const AutomationLaneRow = ({
                     </span>
                 )}
                 {isDrawMode && (
-                    <span className="text-[9px] font-mono text-amber-400/80 bg-amber-400/10 px-1 py-0.5 rounded">
+                    <span className="text-[9px] font-mono text-[var(--color-accent-peach)]/80 bg-[var(--color-accent-peach)]/10 px-1 py-0.5 rounded">
                         DRAW
                     </span>
                 )}
                 {lane.virginTerritory && (
-                    <span className="text-[9px] font-mono text-emerald-400/80 bg-emerald-400/10 px-1 py-0.5 rounded">
+                    <span className="text-[9px] font-mono text-[var(--color-state-success)]/80 bg-[var(--color-state-success)]/10 px-1 py-0.5 rounded">
                         VT
                     </span>
                 )}
                 {isYZoomed && (
-                    <span className="text-[9px] font-mono text-blue-400/80 bg-blue-400/10 px-1 py-0.5 rounded">
+                    <span className="text-[9px] font-mono text-[var(--color-accent-cyan)]/80 bg-[var(--color-accent-cyan)]/10 px-1 py-0.5 rounded">
                         Y:{(vMin * 100).toFixed(0)}–{(vMax * 100).toFixed(0)}%
                     </span>
                 )}
@@ -542,7 +542,7 @@ export const AutomationLaneRow = ({
                     type="button"
                     className={cn(
                         'size-5 flex items-center justify-center rounded hover:bg-surface-raised/80 transition-colors',
-                        lane.virginTerritory ? 'text-emerald-400' : 'text-muted-foreground hover:text-foreground'
+                        lane.virginTerritory ? 'text-[var(--color-state-success)]' : 'text-muted-foreground hover:text-foreground'
                     )}
                     onClick={() => toggleVirginTerritory(lane.id)}
                     aria-label={lane.virginTerritory ? 'Disable virgin territory' : 'Enable virgin territory'}

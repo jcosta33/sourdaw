@@ -71,7 +71,7 @@ export const MacrosPanel = (): ReactElement => {
                     className={cn(
                         'h-5 px-1.5 rounded flex items-center gap-1 text-[9px] transition-colors',
                         state.recording
-                            ? 'text-red-400 bg-red-500/10 hover:bg-red-500/20'
+                            ? 'text-[var(--color-state-danger)] bg-[var(--color-state-danger)]/10 hover:bg-[var(--color-state-danger)]/20'
                             : 'text-muted-foreground/60 hover:text-muted-foreground hover:bg-white/5'
                     )}
                     onClick={handleToggleRecording}
@@ -79,7 +79,7 @@ export const MacrosPanel = (): ReactElement => {
                 >
                     {state.recording ? (
                         <>
-                            <Square className="size-2.5 fill-red-400" />
+                            <Square className="size-2.5 fill-[var(--color-state-danger)]" />
                             <span>Stop ({state.currentRecording.length})</span>
                         </>
                     ) : (
@@ -93,7 +93,7 @@ export const MacrosPanel = (): ReactElement => {
 
             {/* Recording name input (shown while recording) */}
             {state.recording && (
-                <div className="px-3 py-1.5 border-b border-red-500/20 bg-red-500/5">
+                <div className="px-3 py-1.5 border-b border-[var(--color-state-danger)]/20 bg-[var(--color-state-danger)]/5">
                     <input
                         className="w-full bg-transparent text-[10px] text-foreground/80 outline-none placeholder:text-muted-foreground/30"
                         placeholder="Macro name..."
@@ -149,7 +149,7 @@ export const MacrosPanel = (): ReactElement => {
                                     <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                                         <button
                                             type="button"
-                                            className="size-4 rounded flex items-center justify-center text-muted-foreground/40 hover:text-green-400 hover:bg-green-500/10 transition-colors"
+                                            className="size-4 rounded flex items-center justify-center text-muted-foreground/40 hover:text-[var(--color-state-success)] hover:bg-[var(--color-state-success)]/10 transition-colors"
                                             onClick={() => playMacro(macro.id)}
                                             aria-label={`Play macro ${macro.name}`}
                                             title="Play macro"

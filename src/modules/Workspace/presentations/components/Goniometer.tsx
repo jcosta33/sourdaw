@@ -10,7 +10,7 @@ type GoniometerProps = {
     color?: string;
 };
 
-export const Goniometer = ({ size = 120, color = '#4a9060' }: GoniometerProps): ReactElement => {
+export const Goniometer = ({ size = 120, color = '#a89bc4' }: GoniometerProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const trailRef = useRef<ImageData | null>(null);
 

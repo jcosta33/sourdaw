@@ -74,8 +74,8 @@ export const UndoHistoryPanel = (): ReactElement | null => {
                 )}
 
                 <div className="px-3 py-1">
-                    <div className="flex items-center gap-1 text-[9px] font-medium uppercase tracking-wider text-emerald-500/80">
-                        <span className="size-1.5 rounded-full bg-emerald-500" />
+                    <div className="flex items-center gap-1 text-[9px] font-medium uppercase tracking-wider text-[var(--color-state-success)]/80">
+                        <span className="size-1.5 rounded-full bg-[var(--color-state-success)]" />
                         Current State
                     </div>
                 </div>

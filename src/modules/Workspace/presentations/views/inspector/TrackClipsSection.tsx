@@ -22,14 +22,14 @@ export const TrackClipsSection = ({ track, onSelectClip }: TrackClipsSectionProp
                         <Card
                             key={clip.id}
                             className={`rounded-md shadow-none bg-surface-base p-2 cursor-pointer hover:bg-surface-raised flex flex-col justify-center ${
-                                clip.isGhost ? 'border-purple-500/60 border-dashed' : 'border-border/50'
+                                clip.isGhost ? 'border-[var(--color-accent-lavender)]/60 border-dashed' : 'border-border/50'
                             }`}
                             onClick={() => {
                                 onSelectClip(clip.id);
                             }}
                         >
                             <div className="flex items-center gap-1.5">
-                                {clip.isGhost && <Sparkles className="size-3 text-purple-400 shrink-0" />}
+                                {clip.isGhost && <Sparkles className="size-3 text-[var(--color-accent-lavender)] shrink-0" />}
                                 <span className="text-xs text-foreground font-medium truncate">{clip.name}</span>
                             </div>
                             <span className="text-[10px] text-muted-foreground">
@@ -40,7 +40,7 @@ export const TrackClipsSection = ({ track, onSelectClip }: TrackClipsSectionProp
                                     <Button
                                         variant="secondary"
                                         size="xs"
-                                        className="h-5 flex-1 text-[10px] bg-purple-600/20 hover:bg-purple-600/40 text-purple-300"
+                                        className="h-5 flex-1 text-[10px] bg-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]/40 text-[var(--color-accent-lavender)]"
                                         onClick={(e) => {
                                             e.stopPropagation();
                                             acceptGhostClip(clip.id);

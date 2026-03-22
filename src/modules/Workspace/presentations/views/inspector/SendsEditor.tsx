@@ -50,7 +50,7 @@ export const SendsEditor = ({ track }: SendsEditorProps): ReactElement => {
                                                 className={cn(
                                                     'shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold leading-tight transition-colors border',
                                                     isPreFader
-                                                        ? 'bg-yellow-500/15 text-yellow-500 border-yellow-500/30 shadow-[inset_0_1px_3px_rgba(0,0,0,0.4)]'
+                                                        ? 'bg-[var(--color-state-warning)]/15 text-[var(--color-state-warning)] border-[var(--color-state-warning)]/30 shadow-[inset_0_1px_3px_rgba(0,0,0,0.4)]'
                                                         : 'bg-bg-panel text-muted-foreground border-border-soft shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_1px_2px_rgba(0,0,0,0.3)] hover:text-foreground'
                                                 )}
                                                 onClick={() => toggleSendPreFader(track.id, bus.id)}

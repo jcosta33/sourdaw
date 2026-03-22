@@ -20,7 +20,7 @@ export const SpatialPanner = ({
     azimuth: initialAzimuth = 0,
     distance: initialDistance = 0.5,
     onChange,
-    color = '#5a80a8',
+    color = '#4a7090',
 }: SpatialPannerProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [azimuth, setAzimuth] = useState(initialAzimuth);

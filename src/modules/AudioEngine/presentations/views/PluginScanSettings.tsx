@@ -153,7 +153,7 @@ export const PluginScanSettings = (): ReactElement | null => {
                 )}
 
                 {state.scannedPlugins.length > 0 && state.errors.length === 0 && !state.isScanning && (
-                    <div className="flex items-center gap-1 text-[10px] text-emerald-400">
+                    <div className="flex items-center gap-1 text-[10px] text-[var(--color-state-success)]">
                         <CheckCircle2 className="size-3" aria-hidden="true" />
                         <span>All plugins scanned successfully</span>
                     </div>

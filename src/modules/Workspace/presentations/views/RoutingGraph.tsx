@@ -16,11 +16,11 @@ const PAD = 16;
 type NodePosition = { x: number; y: number; track: Track };
 
 const KIND_FILLS: Record<string, string> = {
-    audio: '#3b82f6',
-    midi: '#a855f7',
-    bus: '#f59e0b',
-    master: '#ef4444',
-    folder: '#6b7280',
+    audio: '#4a7090',
+    midi: '#a89bc4',
+    bus: '#b09040',
+    master: '#c45040',
+    folder: '#737373',
 };
 
 function layoutNodes(tracks: Track[]): {
@@ -66,7 +66,7 @@ function getNodeCenter(pos: NodePosition, side: 'left' | 'right'): { x: number; 
 }
 
 const TrackNode = ({ pos, isSelected }: { pos: NodePosition; isSelected: boolean }): ReactElement => {
-    const fill = KIND_FILLS[pos.track.kind] ?? '#6b7280';
+    const fill = KIND_FILLS[pos.track.kind] ?? '#737373';
 
     return (
         <g
@@ -91,7 +91,7 @@ const TrackNode = ({ pos, isSelected }: { pos: NodePosition; isSelected: boolean
                 rx={4}
                 fill={fill}
                 fillOpacity={0.15}
-                stroke={isSelected ? '#ffffff' : fill}
+                stroke={isSelected ? '#eaeaea' : fill}
                 strokeWidth={isSelected ? 2 : 1}
             />
             <text
@@ -120,7 +120,7 @@ const ConnectionLine = ({
     label?: string;
     highlighted: boolean;
 }): ReactElement => {
-    const strokeColor = variant === 'sidechain' ? '#ef4444' : highlighted ? '#ffffff' : '#64748b';
+    const strokeColor = variant === 'sidechain' ? '#c45040' : highlighted ? '#eaeaea' : '#737373';
 
     const dashArray = variant === 'output' ? undefined : variant === 'send' ? '4 3' : '2 3';
 
@@ -295,17 +295,17 @@ export const RoutingGraph = (): ReactElement => {
 
             {/* Legend */}
             <g transform={`translate(${PAD}, ${height - 28})`}>
-                <line x1={0} y1={0} x2={16} y2={0} stroke="#64748b" strokeWidth={1} />
+                <line x1={0} y1={0} x2={16} y2={0} stroke="#737373" strokeWidth={1} />
                 <text x={20} y={0} dominantBaseline="central" className="fill-muted-foreground text-[10px]">
                     Output
                 </text>
 
-                <line x1={60} y1={0} x2={76} y2={0} stroke="#64748b" strokeWidth={1} strokeDasharray="4 3" />
+                <line x1={60} y1={0} x2={76} y2={0} stroke="#737373" strokeWidth={1} strokeDasharray="4 3" />
                 <text x={80} y={0} dominantBaseline="central" className="fill-muted-foreground text-[10px]">
                     Send
                 </text>
 
-                <line x1={110} y1={0} x2={126} y2={0} stroke="#ef4444" strokeWidth={1} strokeDasharray="2 3" />
+                <line x1={110} y1={0} x2={126} y2={0} stroke="#c45040" strokeWidth={1} strokeDasharray="2 3" />
                 <text x={130} y={0} dominantBaseline="central" className="fill-muted-foreground text-[10px]">
                     Sidechain
                 </text>
