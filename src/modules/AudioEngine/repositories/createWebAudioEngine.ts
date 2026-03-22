@@ -10,6 +10,7 @@ import {
 } from '../models/AudioEngineState';
 import { PluginHostNode } from '../models/PluginHostNode';
 import audioCoreProcessorUrl from '../worklets/audioCoreProcessor.ts?worker&url';
+import { isNativeDspDevice, NATIVE_DSP_DEVICE_TYPES, createNativeDspNode, type NativeDspNodeResult } from '../engine/NativeDspNode';
 
 const logger = Container.getInstance().get(Logger);
 
@@ -689,8 +690,47 @@ export function createWebAudioEngine(): AudioEngine {
             case 'external-plugin':
                 dn = createNativePluginDevice(deviceId, externalInstanceId ?? deviceId);
                 break;
-            default:
-                return;
+            default: {
+                if (isNativeDspDevice(deviceType)) {
+                    const pluginType = NATIVE_DSP_DEVICE_TYPES[deviceType];
+                    if (!pluginType) return;
+                    // Create a bypass node as placeholder while WASM loads
+                    const loadingBypass = context.createGain();
+                    dn = {
+                        deviceId,
+                        type: deviceType,
+                        nodes: [loadingBypass],
+                        inputNode: loadingBypass,
+                        outputNode: loadingBypass,
+                    };
+                    // Async: load WASM and hot-swap into the chain
+                    createNativeDspNode(context, pluginType)
+                        .then(async (result: NativeDspNodeResult) => {
+                            await result.ready;
+                            const stripToUpdate = trackStrips.get(trackId);
+                            if (!stripToUpdate) return;
+                            const idx = stripToUpdate.deviceNodes.findIndex(d => d.deviceId === deviceId);
+                            if (idx !== -1) {
+                                const nativeDn: BuiltinDeviceNode = {
+                                    deviceId,
+                                    type: deviceType,
+                                    nodes: [result.workletNode],
+                                    inputNode: result.workletNode,
+                                    outputNode: result.workletNode,
+                                    nativeDspControls: result,
+                                };
+                                stripToUpdate.deviceNodes[idx] = nativeDn;
+                                rebuildStripChain(stripToUpdate);
+                            }
+                        })
+                        .catch(err => {
+                            logger.warn(`[WebAudioEngine] Failed to load native DSP ${deviceType}: ${err}`);
+                        });
+                } else {
+                    return;
+                }
+                break;
+            }
         }
         strip.deviceNodes.push(dn);
         rebuildStripChain(strip);
@@ -882,6 +922,13 @@ export function createWebAudioEngine(): AudioEngine {
                     compL.release.setTargetAtTime(value / 1000, context.currentTime, 0.01);
                 } else if (paramId === 'lim-ceiling') {
                     ceilingL.gain.setTargetAtTime(10 ** (value / 20), context.currentTime, 0.01);
+                }
+                break;
+            }
+            default: {
+                // Native DSP device — forward param via MessagePort
+                if (dn.type.startsWith('native-') && dn.nativeDspControls) {
+                    dn.nativeDspControls.setParam(paramId, value);
                 }
                 break;
             }

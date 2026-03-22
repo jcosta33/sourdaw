@@ -130,6 +130,8 @@ dependencies = [
  "js-sys",
  "realfft",
  "rustfft",
+ "serde",
+ "serde_json",
  "wasm-bindgen",
 ]
 
