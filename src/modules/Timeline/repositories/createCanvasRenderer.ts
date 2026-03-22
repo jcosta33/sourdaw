@@ -264,6 +264,9 @@ function drawTakeLanes(ctx: CanvasRenderingContext2D, model: TimelineRenderModel
 }
 
 function drawAutomation(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, contentHeight: number): void {
+    if (!model.automationVisible) {
+        return;
+    }
     const autoState = automationStore.value;
     if (!autoState) {
         return;

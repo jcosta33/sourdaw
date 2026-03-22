@@ -392,7 +392,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                             onResize={(d) => setAutomationWidth((w) => clamp(w + d, 200, 600))}
                         />
                         <div
-                            className="contain-strict flex flex-col border-l border-border-hairline bg-surface-tray overflow-hidden"
+                            className="flex flex-col border-l border-border-hairline bg-surface-tray overflow-hidden"
                             style={{ width: automationWidth, minWidth: 200 }}
                         >
                             <AutomationView />

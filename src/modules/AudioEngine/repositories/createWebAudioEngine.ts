@@ -12,6 +12,7 @@ import { PluginHostNode } from '../models/PluginHostNode';
 import audioCoreProcessorUrl from '../worklets/audioCoreProcessor.ts?worker&url';
 import { isNativeDspDevice, NATIVE_DSP_DEVICE_TYPES, createNativeDspNode, type NativeDspNodeResult } from '../engine/NativeDspNode';
 import { isDeviceSupportedOnCurrentPlatform } from '#/modules/Track/models/DeviceParameter';
+import { DEVICE_FACTORIES, applyParams } from './deviceNodeFactory';
 
 const logger = Container.getInstance().get(Logger);
 
@@ -332,13 +333,18 @@ export function createWebAudioEngine(): AudioEngine {
         strip.preFaderTap.disconnect();
         strip.gainNode.disconnect();
         for (const dn of strip.deviceNodes) {
-            dn.outputNode.disconnect();
+            try { dn.inputNode.disconnect(); } catch { /* ok */ }
+            try { dn.outputNode.disconnect(); } catch { /* ok */ }
         }
         strip.panNode.disconnect();
 
         strip.preFaderTap.connect(strip.gainNode);
         let prev: AudioNode = strip.gainNode;
         for (const dn of strip.deviceNodes) {
+            // Skip bypassed web audio devices — route audio past them
+            if ((dn as any)._bypassed) {
+                continue;
+            }
             prev.connect(dn.inputNode);
             prev = dn.outputNode;
         }
@@ -699,7 +705,18 @@ export function createWebAudioEngine(): AudioEngine {
                 dn = createNativePluginDevice(deviceId, externalInstanceId ?? deviceId);
                 break;
             default: {
-                if (isNativeDspDevice(deviceType)) {
+                // Try the shared DEVICE_FACTORIES first (covers all builtin web effects)
+                const factory = DEVICE_FACTORIES[deviceType];
+                if (factory) {
+                    const factoryNode = factory(context);
+                    dn = {
+                        deviceId,
+                        type: deviceType,
+                        nodes: factoryNode.nodes,
+                        inputNode: factoryNode.inputNode,
+                        outputNode: factoryNode.outputNode,
+                    };
+                } else if (isNativeDspDevice(deviceType)) {
                     const pluginType = NATIVE_DSP_DEVICE_TYPES[deviceType];
                     if (!pluginType) return;
                     // Create a bypass node as placeholder while WASM loads
@@ -937,6 +954,9 @@ export function createWebAudioEngine(): AudioEngine {
                 // Native DSP device — forward param via MessagePort
                 if (dn.type.startsWith('native-') && dn.nativeDspControls) {
                     dn.nativeDspControls.setParam(paramId, value);
+                } else if (DEVICE_FACTORIES[dn.type]) {
+                    // Factory-created web device — delegate to shared applyParams
+                    applyParams(dn, dn.type, { [paramId]: value });
                 }
                 break;
             }
@@ -954,6 +974,12 @@ export function createWebAudioEngine(): AudioEngine {
         }
         if (dn.nativeDspControls) {
             dn.nativeDspControls.setBypass(bypassed);
+        } else {
+            // Web audio bypass: disconnect from chain or reconnect
+            // We rebuild the chain which naturally skips bypassed devices
+            // Store bypass state on the node for rebuildStripChain to check
+            (dn as any)._bypassed = bypassed;
+            rebuildStripChain(strip);
         }
     }
 

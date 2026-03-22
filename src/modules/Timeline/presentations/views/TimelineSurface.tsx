@@ -22,6 +22,7 @@ import { playheadPositionRef } from '#/modules/Transport/stores/playheadPosition
 import { tempoMapStore } from '#/modules/Transport/stores/tempoMapStore';
 import { timeSignatureMapStore } from '#/modules/Transport/stores/timeSignatureMapStore';
 import { markerStore } from '#/modules/Timeline/stores/markerStore';
+import { TrackAutomationHeaders } from './TrackAutomationHeader';
 
 export const TimelineSurface = (): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -363,6 +364,8 @@ export const TimelineSurface = (): ReactElement => {
                     }}
                 />
             )}
+
+            <TrackAutomationHeaders containerHeight={containerRef.current?.clientHeight ?? 600} />
 
 
 

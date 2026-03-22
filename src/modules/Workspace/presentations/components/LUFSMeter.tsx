@@ -31,7 +31,24 @@ export const LUFSMeter = ({ height = 160, width = 48, target = -14 }: LUFSMeterP
             return;
         }
 
+        // HiDPI scaling
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = width * dpr;
+        canvas.height = height * dpr;
+        ctx.scale(dpr, dpr);
+
+        // Resolve theme tokens once, outside the animation loop
+        const bgColor = resolveToken('--color-bg-tray', '#0a0a0a');
+        const textDisabled = resolveToken('--color-text-disabled', '#3a3a3a');
+        const paletteSky = resolveToken('--color-palette-sky', '#5a80a8');
+        const meterClip = resolveToken('--color-meter-clip', '#b05050');
+        const meterHot = resolveToken('--color-meter-hot', '#b09040');
+        const meterSafe = resolveToken('--color-meter-safe', '#4a9060');
+        const paletteGray = resolveToken('--color-palette-gray', '#888');
+
         let rafId = 0;
+        let lastStateUpdate = 0;
+        const STATE_UPDATE_INTERVAL = 100; // ~10fps for React state
 
         const draw = (): void => {
             const analyser = audioEngine.masterAnalyser;
@@ -45,9 +62,14 @@ export const LUFSMeter = ({ height = 160, width = 48, target = -14 }: LUFSMeterP
             const st = shortTermRef.current.value;
             const integ = integratedRef.current.value;
 
-            setMomentary(mom);
-            setShortTerm(st);
-            setIntegrated(integ);
+            // Throttle React state updates to ~10fps (only for text/aria readout)
+            const now = performance.now();
+            if (now - lastStateUpdate > STATE_UPDATE_INTERVAL) {
+                setMomentary(mom);
+                setShortTerm(st);
+                setIntegrated(integ);
+                lastStateUpdate = now;
+            }
 
             // Draw
             ctx.clearRect(0, 0, width, height);
@@ -58,12 +80,12 @@ export const LUFSMeter = ({ height = 160, width = 48, target = -14 }: LUFSMeterP
             const lufsToY = (lufs: number): number =>
                 height - ((Math.max(minLUFS, Math.min(maxLUFS, lufs)) - minLUFS) / range) * height;
 
-            // Background gradient
-            ctx.fillStyle = resolveToken('--color-bg-tray', '#0a0a0a');
+            // Background
+            ctx.fillStyle = bgColor;
             ctx.fillRect(0, 0, width, height);
 
             // Scale marks
-            ctx.fillStyle = resolveToken('--color-text-disabled', '#3a3a3a');
+            ctx.fillStyle = textDisabled;
             ctx.font = '8px monospace';
             ctx.textAlign = 'right';
             for (let db = 0; db >= minLUFS; db -= 6) {
@@ -74,7 +96,7 @@ export const LUFSMeter = ({ height = 160, width = 48, target = -14 }: LUFSMeterP
 
             // Target line
             const targetY = lufsToY(target);
-            ctx.strokeStyle = resolveToken('--color-palette-sky', '#5a80a8');
+            ctx.strokeStyle = paletteSky;
             ctx.lineWidth = 1;
             ctx.setLineDash([3, 3]);
             ctx.beginPath();
@@ -86,21 +108,21 @@ export const LUFSMeter = ({ height = 160, width = 48, target = -14 }: LUFSMeterP
             // Momentary bar
             const barW = 10;
             const momY = lufsToY(mom);
-            ctx.fillStyle = mom > -3 ? resolveToken('--color-meter-clip', '#b05050') : mom > -14 ? resolveToken('--color-meter-hot', '#b09040') : resolveToken('--color-meter-safe', '#4a9060');
+            ctx.fillStyle = mom > -3 ? meterClip : mom > -14 ? meterHot : meterSafe;
             ctx.fillRect(2, momY, barW, height - momY);
 
             // Short-term bar
             const stY = lufsToY(st);
-            ctx.fillStyle = st > -3 ? `${resolveToken('--color-meter-clip', '#b05050')}99` : st > -14 ? `${resolveToken('--color-meter-hot', '#b09040')}99` : `${resolveToken('--color-meter-safe', '#4a9060')}99`;
+            ctx.fillStyle = st > -3 ? `${meterClip}99` : st > -14 ? `${meterHot}99` : `${meterSafe}99`;
             ctx.fillRect(14, stY, barW, height - stY);
 
             // Integrated bar
             const integY = lufsToY(integ);
-            ctx.fillStyle = resolveToken('--color-palette-sky', '#5a80a8');
+            ctx.fillStyle = paletteSky;
             ctx.fillRect(26, integY, barW, height - integY);
 
             // Labels
-            ctx.fillStyle = resolveToken('--color-palette-gray', '#888');
+            ctx.fillStyle = paletteGray;
             ctx.font = '7px sans-serif';
             ctx.textAlign = 'center';
             ctx.fillText('M', 7, height - 2);

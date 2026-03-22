@@ -101,6 +101,28 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                     {plugin.name}
                                 </button>
                             ))}
+                            {getPlatformPlugins().filter((p) => p.category === 'analyzer').length > 0 && (
+                                <>
+                                    <div className="mx-2 my-1 border-t border-border/30" />
+                                    <p className="px-3 py-1 text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                        Analyzer
+                                    </p>
+                                    {getPlatformPlugins().filter((p) => p.category === 'analyzer').map((plugin) => (
+                                        <button
+                                            type="button"
+                                            key={plugin.id}
+                                            className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-white/[0.06] transition-colors"
+                                            role="menuitem"
+                                            onClick={() => {
+                                                addDevice(track.id, plugin.name);
+                                                setShowDeviceMenu(false);
+                                            }}
+                                        >
+                                            {plugin.name}
+                                        </button>
+                                    ))}
+                                </>
+                            )}
                             <div className="mx-2 my-1 border-t border-border/30" />
                             <p className="px-3 py-1 text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">
                                 External

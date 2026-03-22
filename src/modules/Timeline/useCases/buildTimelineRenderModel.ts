@@ -119,6 +119,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
             tempo: transportState?.tempo ?? 120,
             timeSignatureNumerator: transportState?.timeSignatureNumerator ?? 4,
             timeSignatureDenominator: transportState?.timeSignatureDenominator ?? 4,
+            automationVisible: autoVisible,
         };
     } else {
         // Fast path: only playhead has changed (or nothing at all)

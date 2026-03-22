@@ -14,6 +14,7 @@ export type TimelineRenderModel = {
     tempo: number;
     timeSignatureNumerator: number;
     timeSignatureDenominator: number;
+    automationVisible: boolean;
 };
 
 export type TrackRenderModel = {

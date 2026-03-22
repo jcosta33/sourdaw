@@ -52,12 +52,16 @@ export const ModulationLFO = ({
 
         let startTime = performance.now();
 
+        // Resolve theme tokens once, outside the animation loop
+        const bg = resolveToken('--color-bg-tray', '#0a0a0a');
+        const accentMint = resolveToken('--color-accent-mint', '#68d391');
+        const textDisabled = resolveToken('--color-text-disabled', '#3a3a3a');
+
         const draw = (now: number): void => {
             const elapsed = (now - startTime) / 1000; // seconds
             ctx.clearRect(0, 0, width, height);
 
             // Background
-            const bg = resolveToken('--color-bg-tray', '#0a0a0a');
             ctx.fillStyle = bg;
             ctx.beginPath();
             ctx.roundRect(0, 0, width, height, 4);
@@ -75,7 +79,6 @@ export const ModulationLFO = ({
             ctx.stroke();
 
             // Draw 2 full cycles of the waveform
-            const accentMint = resolveToken('--color-accent-mint', '#68d391');
             const cyclesVisible = 2;
             const phaseOffset = elapsed * rate; // animated phase
 
@@ -120,7 +123,7 @@ export const ModulationLFO = ({
             }
 
             // Rate label
-            ctx.fillStyle = resolveToken('--color-text-disabled', '#3a3a3a');
+            ctx.fillStyle = textDisabled;
             ctx.font = '7px monospace';
             ctx.textAlign = 'right';
             ctx.fillText(`${rate.toFixed(1)} Hz`, width - 4, height - 3);

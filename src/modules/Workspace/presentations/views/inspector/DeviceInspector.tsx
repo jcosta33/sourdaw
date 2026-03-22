@@ -57,13 +57,7 @@ const SectionHeader = ({ title }: { title: string }): ReactElement => (
     </div>
 );
 
-// ── Helper: device type matching ──
-const deviceTypeIs = (device: Device, ...types: string[]): boolean =>
-    types.some(
-        (t) =>
-            device.type?.toLowerCase().includes(t) ||
-            device.name?.toLowerCase().includes(t)
-    );
+
 
 // ── Param grid helper ──
 type DeviceParam = (typeof BUILTIN_PLUGINS)[number]['parameters'][number];
@@ -97,9 +91,10 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
             p.name === device.name
     );
     const parameters = plugin?.parameters ?? [];
+    const isLimiter = plugin?.id === 'builtin-limiter';
     const isSidechainComp =
         device.type?.toLowerCase().includes('sidechain') ?? device.name?.toLowerCase().includes('sidechain');
-    const isCompressorLimiter = deviceTypeIs(device, 'compressor', 'limiter') || isSidechainComp;
+    const isCompressorLimiter = (plugin?.id === 'builtin-compressor' || isSidechainComp) && !isLimiter;
     const isConvolutionReverb = plugin?.id === 'builtin-convolution-reverb';
     const isReverb = plugin?.id === 'builtin-reverb';
     const isDelay = plugin?.id === 'builtin-delay';
@@ -112,7 +107,6 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
     const isTremolo = plugin?.id === 'builtin-tremolo';
     const isAutoPan = plugin?.id === 'builtin-autopan';
     const isBitcrusher = plugin?.id === 'builtin-bitcrusher';
-    const isLimiter = plugin?.id === 'builtin-limiter';
     const isGain = plugin?.id === 'builtin-gain';
     const isStereoWidener = plugin?.id === 'builtin-stereo-widener';
     const isDeEsser = plugin?.id === 'builtin-deesser';
@@ -214,8 +208,8 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
                             <div className="flex justify-center">
                                 <CompressorGainReduction
                                     trackId={trackId}
-                                    threshold={pv.threshold ?? -12}
-                                    ratio={pv.ratio ?? 4}
+                                    threshold={pv['comp-threshold'] ?? -12}
+                                    ratio={pv['comp-ratio'] ?? 4}
                                 />
                             </div>
                         </div>
@@ -314,11 +308,11 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
                     </div>
                     <div>
                         <SectionHeader title="Space" />
-                        <ParamGrid params={filterParams(parameters, ['rev-mix', 'rev-predelay'])} device={device} trackId={trackId} />
+                        <ParamGrid params={filterParams(parameters, ['rev-size', 'rev-decay', 'rev-predelay'])} device={device} trackId={trackId} />
                     </div>
                     <div>
                         <SectionHeader title="Color" />
-                        <ParamGrid params={filterParams(parameters, ['rev-lowcut'])} device={device} trackId={trackId} />
+                        <ParamGrid params={filterParams(parameters, ['rev-damping', 'rev-lowcut', 'rev-mix'])} device={device} trackId={trackId} />
                     </div>
                 </div>
 
