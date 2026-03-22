@@ -1,13 +1,32 @@
 import { type SoundPreset, type SoundPresetCategory } from '#/modules/Track/models/SoundPreset';
 import { FACTORY_PRESETS, DRUM_KIT_PRESETS } from '#/modules/Track/helpers/factoryPresets';
+import { BUILTIN_PLUGINS } from '#/modules/Track/models/DeviceParameter';
 
 let cachedPresets: SoundPreset[] | null = null;
+let cachedPlatformKey: string | null = null;
 
 export type GetFactoryPresetsOutput = SoundPreset[];
 
+function currentPlatformKey(): string {
+    return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window ? 'native' : 'web';
+}
+
+function isPresetCompatible(preset: SoundPreset): boolean {
+    const isNative = currentPlatformKey() === 'native';
+    return preset.devices.every((d) => {
+        const descriptor = BUILTIN_PLUGINS.find((p) => p.id === d.type);
+        if (!descriptor) return true; // unknown device types (e.g. faust-*) pass through
+        const platform = descriptor.platform ?? 'both';
+        if (platform === 'both') return true;
+        return isNative ? platform === 'native' : platform === 'web';
+    });
+}
+
 export function getFactoryPresets(): GetFactoryPresetsOutput {
-    if (!cachedPresets) {
-        cachedPresets = [...FACTORY_PRESETS, ...DRUM_KIT_PRESETS];
+    const key = currentPlatformKey();
+    if (!cachedPresets || cachedPlatformKey !== key) {
+        cachedPresets = [...FACTORY_PRESETS, ...DRUM_KIT_PRESETS].filter(isPresetCompatible);
+        cachedPlatformKey = key;
     }
     return cachedPresets;
 }

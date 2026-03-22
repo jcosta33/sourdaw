@@ -2,6 +2,7 @@ import { type Device } from '#/modules/Track/useCases/trackQueries';
 import { type OfflineDeviceNode, DEVICE_FACTORIES, applyParams } from '../repositories/deviceNodeFactory';
 import { isFaustModule, createFaustDevice } from '../repositories/faustDeviceFactory';
 import { isNativeDspDevice, NATIVE_DSP_DEVICE_TYPES, createNativeDspNode } from '../engine/NativeDspNode';
+import { isDeviceSupportedOnCurrentPlatform } from '#/modules/Track/models/DeviceParameter';
 
 // Re-export for consumers
 export type { OfflineDeviceNode } from '../repositories/deviceNodeFactory';
@@ -51,6 +52,12 @@ export async function buildDeviceChain(
     let prev: AudioNode = inputNode;
 
     for (const device of activeDevices) {
+        // Skip devices not supported on the current platform (e.g. native-only on web)
+        if (!isDeviceSupportedOnCurrentPlatform(device.type)) {
+            console.info(`[buildDeviceChain] Skipping ${device.type} — not supported on this platform`);
+            continue;
+        }
+
         let dn: OfflineDeviceNode | null = null;
         let nativeDspControls: DeviceNodeEntry['nativeDsp'] = undefined;
 

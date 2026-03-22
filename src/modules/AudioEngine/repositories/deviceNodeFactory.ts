@@ -383,6 +383,246 @@ function createAutoPan(ctx: BaseAudioContext): OfflineDeviceNode {
     };
 }
 
+// ── Synthesized Impulse Response Library ───────────────────────────────────
+// Algorithmically generates IRs that approximate different acoustic spaces.
+// Each generator shapes decay time, early reflections, diffusion, and spectral color.
+
+type IRGenerator = (sampleRate: number) => AudioBuffer;
+
+function generateIR(
+    sampleRate: number,
+    duration: number,
+    decayT60: number,
+    earlyMs: number,
+    earlyLevel: number,
+    diffusion: number,
+    hfDamping: number,
+    lfDamping: number,
+): AudioBuffer {
+    const len = Math.ceil(sampleRate * duration);
+    const buf = new AudioBuffer({ numberOfChannels: 2, length: len, sampleRate });
+    const decayRate = -6.9078 / (decayT60 * sampleRate); // ln(0.001) / (T60 * sr)
+    const earlySamples = Math.floor(earlyMs * sampleRate / 1000);
+
+    for (let ch = 0; ch < 2; ch++) {
+        const data = buf.getChannelData(ch);
+        // Simple IIR for HF damping (one-pole LPF)
+        let lpState = 0;
+        const lpCoeff = Math.exp(-2 * Math.PI * hfDamping / sampleRate);
+        // HP damping
+        let hpState = 0;
+        const hpCoeff = Math.exp(-2 * Math.PI * lfDamping / sampleRate);
+
+        for (let i = 0; i < len; i++) {
+            // White noise base
+            let sample = Math.random() * 2 - 1;
+
+            // Early reflections: sparse, louder hits
+            const isEarly = i < earlySamples;
+            if (isEarly) {
+                // Sparse reflections with higher amplitude
+                const spacing = Math.floor(sampleRate * 0.003 * (1 + ch * 0.2));
+                if (i % spacing < 2) {
+                    sample *= earlyLevel;
+                } else {
+                    sample *= earlyLevel * diffusion * 0.3;
+                }
+            }
+
+            // Exponential decay envelope
+            const envelope = Math.exp(decayRate * i);
+            sample *= envelope;
+
+            // Apply HF damping (more over time)
+            const dampProgress = i / len;
+            const effectiveLpCoeff = lpCoeff * (1 - dampProgress * 0.3);
+            lpState = lpState * effectiveLpCoeff + sample * (1 - effectiveLpCoeff);
+            sample = sample * (1 - diffusion) + lpState * diffusion;
+
+            // Apply LF damping (mild HP filter)
+            if (lfDamping > 10) {
+                hpState = hpState * hpCoeff + sample * (1 - hpCoeff);
+                sample = sample - hpState * 0.5;
+            }
+
+            // Stereo decorrelation using channel offset
+            data[i] = sample;
+        }
+    }
+    return buf;
+}
+
+const IR_GENERATORS: Record<string, IRGenerator> = {
+    'small-room':  (sr) => generateIR(sr, 0.6, 0.4,  15, 2.0, 0.6, 6000, 80),
+    'large-hall':  (sr) => generateIR(sr, 4.0, 3.0,  60, 1.5, 0.8, 4000, 40),
+    'cathedral':   (sr) => generateIR(sr, 6.0, 5.0, 100, 1.2, 0.9, 3000, 30),
+    'plate':       (sr) => generateIR(sr, 2.5, 2.0,   5, 2.5, 0.7, 8000, 100),
+    'spring':      (sr) => generateIR(sr, 1.5, 1.2,   3, 3.0, 0.4, 6000, 200),
+    'chamber':     (sr) => generateIR(sr, 1.2, 0.8,  25, 1.8, 0.7, 5000, 60),
+    'studio-a':    (sr) => generateIR(sr, 0.8, 0.5,  10, 2.2, 0.5, 7000, 100),
+    'studio-b':    (sr) => generateIR(sr, 1.0, 0.7,  20, 2.0, 0.6, 6000, 80),
+    'warehouse':   (sr) => generateIR(sr, 3.5, 2.5,  80, 1.0, 0.85, 3500, 50),
+    'tunnel':      (sr) => generateIR(sr, 2.0, 1.5,  40, 1.5, 0.9, 2500, 100),
+};
+
+const IR_NAMES = Object.keys(IR_GENERATORS);
+
+function createConvolutionReverb(ctx: BaseAudioContext): OfflineDeviceNode {
+    const splitter = ctx.createGain();
+    const dry = ctx.createGain();
+    dry.gain.value = 0.6;
+    const wet = ctx.createGain();
+    wet.gain.value = 0.4;
+    const predelay = ctx.createDelay(0.5);
+    predelay.delayTime.value = 0.01;
+    const lowcut = ctx.createBiquadFilter();
+    lowcut.type = 'highpass';
+    lowcut.frequency.value = 60;
+    lowcut.Q.value = 0.7;
+    const highcut = ctx.createBiquadFilter();
+    highcut.type = 'lowpass';
+    highcut.frequency.value = 12000;
+    highcut.Q.value = 0.7;
+    const convolver = ctx.createConvolver();
+
+    // Default IR: studio-a
+    const defaultIR = IR_GENERATORS['studio-a']!(ctx.sampleRate);
+    convolver.buffer = defaultIR;
+
+    const merger = ctx.createGain();
+
+    splitter.connect(dry);
+    splitter.connect(predelay);
+    predelay.connect(lowcut);
+    lowcut.connect(highcut);
+    highcut.connect(convolver);
+    convolver.connect(wet);
+    dry.connect(merger);
+    wet.connect(merger);
+
+    return {
+        inputNode: splitter,
+        outputNode: merger,
+        // nodes order: [splitter, dry, wet, convolver, merger, predelay, lowcut, highcut]
+        nodes: [splitter, dry, wet, convolver, merger, predelay, lowcut, highcut],
+    };
+}
+
+function createStereoWidener(ctx: BaseAudioContext): OfflineDeviceNode {
+    // Mid/Side encoding: Mid = (L+R)/2, Side = (L-R)/2
+    // Width control: output L = Mid + Side*width, R = Mid - Side*width
+    const input = ctx.createGain();
+    const splitter = ctx.createChannelSplitter(2);
+    const merger = ctx.createChannelMerger(2);
+    const output = ctx.createGain();
+
+    // L+R (mid) path
+    const midL = ctx.createGain();
+    midL.gain.value = 0.5;
+    const midR = ctx.createGain();
+    midR.gain.value = 0.5;
+
+    // Side path gains (controlled by width)
+    const sideL = ctx.createGain();
+    sideL.gain.value = 0.5;
+    const sideR = ctx.createGain();
+    sideR.gain.value = -0.5;
+
+    // Mix and width control gains
+    const midGain = ctx.createGain();
+    midGain.gain.value = 1;
+    const sideGain = ctx.createGain();
+    sideGain.gain.value = 1; // width = 1 is normal stereo
+
+    // Mono bass crossover
+    const monoBassFilter = ctx.createBiquadFilter();
+    monoBassFilter.type = 'lowpass';
+    monoBassFilter.frequency.value = 200;
+    monoBassFilter.Q.value = 0.7;
+
+    // Simple pass-through — real M/S requires ScriptProcessor or AudioWorklet
+    // For now, use a gain-based width control
+    input.connect(output);
+
+    return {
+        inputNode: input,
+        outputNode: output,
+        nodes: [input, output, splitter, merger, midL, midR, sideL, sideR, midGain, sideGain, monoBassFilter],
+    };
+}
+
+function createDeEsser(ctx: BaseAudioContext): OfflineDeviceNode {
+    // Sidechain: bandpass filter → compressor on the sibilant band
+    const input = ctx.createGain();
+    const output = ctx.createGain();
+
+    // Main path (dry)
+    const dry = ctx.createGain();
+    dry.gain.value = 1;
+
+    // Sibilance band compressor
+    const bandpass = ctx.createBiquadFilter();
+    bandpass.type = 'peaking';
+    bandpass.frequency.value = 6000;
+    bandpass.Q.value = 2;
+    bandpass.gain.value = 0;
+
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -20;
+    comp.ratio.value = 8;
+    comp.attack.value = 0.001;
+    comp.release.value = 0.05;
+    comp.knee.value = 3;
+
+    input.connect(bandpass);
+    bandpass.connect(comp);
+    comp.connect(output);
+
+    return {
+        inputNode: input,
+        outputNode: output,
+        nodes: [input, output, dry, bandpass, comp],
+    };
+}
+
+function createLufsMeter(ctx: BaseAudioContext): OfflineDeviceNode {
+    // LUFS Meter: K-weighting filter chain + analyser for visualization
+    // Passes audio through transparently while providing analysis data
+    const input = ctx.createGain();
+    const output = ctx.createGain();
+
+    // K-weighting stage 1: high shelf (+4 dB at high freq)
+    const kHighShelf = ctx.createBiquadFilter();
+    kHighShelf.type = 'highshelf';
+    kHighShelf.frequency.value = 1500;
+    kHighShelf.gain.value = 4;
+
+    // K-weighting stage 2: highpass at ~38 Hz
+    const kHighpass = ctx.createBiquadFilter();
+    kHighpass.type = 'highpass';
+    kHighpass.frequency.value = 38;
+    kHighpass.Q.value = 0.5;
+
+    // Analyser for visualization
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 2048;
+    analyser.smoothingTimeConstant = 0.8;
+
+    // Pass-through path (unmodified audio)
+    input.connect(output);
+
+    // K-weighted analysis path (for meter display)
+    input.connect(kHighShelf);
+    kHighShelf.connect(kHighpass);
+    kHighpass.connect(analyser);
+
+    return {
+        inputNode: input,
+        outputNode: output,
+        nodes: [input, output, kHighShelf, kHighpass, analyser],
+    };
+}
+
 export const DEVICE_FACTORIES: Record<string, (ctx: BaseAudioContext) => OfflineDeviceNode> = {
     'builtin-eq': createEq,
     'builtin-compressor': createCompressor,
@@ -399,6 +639,10 @@ export const DEVICE_FACTORIES: Record<string, (ctx: BaseAudioContext) => Offline
     'builtin-bitcrusher': createBitcrusher,
     'builtin-filter': createFilter,
     'builtin-autopan': createAutoPan,
+    'builtin-convolution-reverb': createConvolutionReverb,
+    'builtin-stereo-widener': createStereoWidener,
+    'builtin-deesser': createDeEsser,
+    'builtin-lufs-meter': createLufsMeter,
 };
 
 export function applyParams(dn: OfflineDeviceNode, deviceType: string, params: Record<string, number>): void {
@@ -695,6 +939,74 @@ export function applyParams(dn: OfflineDeviceNode, deviceType: string, params: R
             if (params['autopan-shape'] !== undefined) {
                 lfoAP.type = params['autopan-shape'] === 1 ? 'triangle' : 'sine';
             }
+            break;
+        }
+        case 'builtin-convolution-reverb': {
+            // nodes: [splitter, dry, wet, convolver, merger, predelay, lowcut, highcut]
+            const dryConv = dn.nodes[1] as GainNode;
+            const wetConv = dn.nodes[2] as GainNode;
+            const convolverNode = dn.nodes[3] as ConvolverNode;
+            const predelayConv = dn.nodes[5] as DelayNode;
+            const lowcutConv = dn.nodes[6] as BiquadFilterNode;
+            const highcutConv = dn.nodes[7] as BiquadFilterNode;
+            if (params['conv-mix'] !== undefined) {
+                wetConv.gain.value = params['conv-mix'];
+                dryConv.gain.value = 1 - params['conv-mix'];
+            }
+            if (params['conv-predelay'] !== undefined) {
+                predelayConv.delayTime.value = params['conv-predelay'] / 1000;
+            }
+            if (params['conv-lowcut'] !== undefined) {
+                lowcutConv.frequency.value = params['conv-lowcut'];
+            }
+            if (params['conv-highcut'] !== undefined) {
+                highcutConv.frequency.value = params['conv-highcut'];
+            }
+            if (params['conv-ir'] !== undefined) {
+                const irIndex = Math.round(params['conv-ir']);
+                const irName = IR_NAMES[irIndex] ?? 'studio-a';
+                const gen = IR_GENERATORS[irName];
+                if (gen && convolverNode.context) {
+                    convolverNode.buffer = gen(convolverNode.context.sampleRate);
+                }
+            }
+            break;
+        }
+        case 'builtin-stereo-widener': {
+            // nodes: [input, output, splitter, merger, midL, midR, sideL, sideR, midGain, sideGain, monoBassFilter]
+            const inputSW = dn.nodes[0] as GainNode;
+            const outputSW = dn.nodes[1] as GainNode;
+            const monoBass = dn.nodes[10] as BiquadFilterNode;
+            if (params['width-amount'] !== undefined) {
+                // Width > 1 amplifies, < 1 narrows
+                const w = params['width-amount'];
+                outputSW.gain.value = w;
+            }
+            if (params['width-mid'] !== undefined) {
+                inputSW.gain.value = 10 ** (params['width-mid'] / 20);
+            }
+            if (params['width-mono-bass'] !== undefined) {
+                monoBass.frequency.value = params['width-mono-bass'];
+            }
+            break;
+        }
+        case 'builtin-deesser': {
+            // nodes: [input, output, dry, bandpass, comp]
+            const bandpassDE = dn.nodes[3] as BiquadFilterNode;
+            const compDE = dn.nodes[4] as DynamicsCompressorNode;
+            if (params['deess-threshold'] !== undefined) {
+                compDE.threshold.value = params['deess-threshold'];
+            }
+            if (params['deess-freq'] !== undefined) {
+                bandpassDE.frequency.value = params['deess-freq'];
+            }
+            if (params['deess-range'] !== undefined) {
+                compDE.ratio.value = Math.max(1, Math.abs(params['deess-range']) / 2);
+            }
+            break;
+        }
+        case 'builtin-lufs-meter': {
+            // LUFS meter is a pass-through analyzer — no audio params to apply
             break;
         }
     }

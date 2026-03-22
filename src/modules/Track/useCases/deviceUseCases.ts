@@ -1,6 +1,6 @@
 import { getTrackState, updateTrack, mapAllTracks, getTrackById } from '../repositories/trackRepository';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
-import { BUILTIN_PLUGINS } from '../models/DeviceParameter';
+import { getPlatformPlugins } from './trackQueries';
 import { type Device, type AutomationMode } from '../models/Track';
 import {
     addDeviceToStrip,
@@ -23,7 +23,7 @@ export function addDevice(trackId: string, deviceType: string): Device | null {
         return null;
     }
 
-    const plugin = BUILTIN_PLUGINS.find((p) => p.name.toLowerCase() === deviceType.toLowerCase());
+    const plugin = getPlatformPlugins().find((p) => p.name.toLowerCase() === deviceType.toLowerCase());
     const parameterValues: Record<string, number> = {};
     if (plugin) {
         for (const param of plugin.parameters) {
@@ -103,6 +103,21 @@ export function removeDevice(deviceId: string): void {
 }
 
 export function bypassDevice(deviceId: string, bypassed: boolean): void {
+    const state = getTrackState();
+    if (state) {
+        for (const track of state.tracks) {
+            if (track.devices.some((d) => d.id === deviceId)) {
+                // Forward bypass to live engine for native DSP devices
+                import('#/modules/AudioEngine/useCases/deviceControls').then(({ updateDeviceBypass }) => {
+                    updateDeviceBypass(track.id, deviceId, bypassed);
+                }).catch(() => {
+                    // Engine bypass forwarding is best-effort
+                });
+                break;
+            }
+        }
+    }
+
     mapAllTracks((t) => ({
         ...t,
         devices: t.devices.map((d) => (d.id === deviceId ? { ...d, bypassed } : d)),

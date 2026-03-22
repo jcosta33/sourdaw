@@ -17,6 +17,8 @@ export type DeviceParameter = {
 
 export type PluginFormat = 'builtin' | 'vst3' | 'clap' | 'au';
 
+export type PluginPlatform = 'web' | 'native' | 'both';
+
 export type PluginDescriptor = {
     id: string;
     name: string;
@@ -25,6 +27,8 @@ export type PluginDescriptor = {
     category: 'instrument' | 'effect' | 'analyzer' | 'utility';
     parameters: DeviceParameter[];
     hasCustomUI: boolean;
+    /** Which runtime this plugin is available on. Defaults to 'both'. */
+    platform?: PluginPlatform;
 };
 
 export const BUILTIN_PLUGINS: PluginDescriptor[] = [
@@ -35,6 +39,7 @@ export const BUILTIN_PLUGINS: PluginDescriptor[] = [
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
+        platform: 'web',
         parameters: [
             {
                 id: 'eq-low-gain',
@@ -162,6 +167,7 @@ export const BUILTIN_PLUGINS: PluginDescriptor[] = [
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
+        platform: 'web',
         parameters: [
             {
                 id: 'comp-threshold',
@@ -250,6 +256,7 @@ export const BUILTIN_PLUGINS: PluginDescriptor[] = [
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
+        platform: 'web',
         parameters: [
             {
                 id: 'rev-size',
@@ -338,6 +345,7 @@ export const BUILTIN_PLUGINS: PluginDescriptor[] = [
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
+        platform: 'web',
         parameters: [
             {
                 id: 'delay-time',
@@ -413,6 +421,7 @@ export const BUILTIN_PLUGINS: PluginDescriptor[] = [
         format: 'builtin',
         category: 'utility',
         hasCustomUI: false,
+        platform: 'web',
         parameters: [
             {
                 id: 'gain-level',
@@ -697,6 +706,7 @@ export const BUILTIN_PLUGINS: PluginDescriptor[] = [
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
+        platform: 'web',
         parameters: [
             {
                 id: 'lim-threshold',
@@ -998,6 +1008,128 @@ export const BUILTIN_PLUGINS: PluginDescriptor[] = [
                 automatable: false,
                 hasAutomation: false,
             },
+        ],
+    },
+    {
+        id: 'builtin-convolution-reverb',
+        name: 'Convolution Reverb',
+        vendor: 'WebDAW',
+        format: 'builtin',
+        category: 'effect',
+        hasCustomUI: false,
+        parameters: [
+            {
+                id: 'conv-ir',
+                deviceId: 'builtin-convolution-reverb',
+                name: 'IR Type',
+                type: 'choice',
+                value: 6,
+                defaultValue: 6,
+                minValue: 0,
+                maxValue: 9,
+                unit: '',
+                choices: [
+                    'Small Room', 'Large Hall', 'Cathedral', 'Plate', 'Spring',
+                    'Chamber', 'Studio A', 'Studio B', 'Warehouse', 'Tunnel',
+                ],
+                automatable: false,
+                hasAutomation: false,
+            },
+            {
+                id: 'conv-mix',
+                deviceId: 'builtin-convolution-reverb',
+                name: 'Mix',
+                type: 'float',
+                value: 0.4,
+                defaultValue: 0.4,
+                minValue: 0,
+                maxValue: 1,
+                unit: '',
+                automatable: true,
+                hasAutomation: false,
+            },
+            {
+                id: 'conv-predelay',
+                deviceId: 'builtin-convolution-reverb',
+                name: 'Predelay',
+                type: 'float',
+                value: 10,
+                defaultValue: 10,
+                minValue: 0,
+                maxValue: 200,
+                unit: 'ms',
+                automatable: true,
+                hasAutomation: false,
+            },
+            {
+                id: 'conv-lowcut',
+                deviceId: 'builtin-convolution-reverb',
+                name: 'Low Cut',
+                type: 'float',
+                value: 60,
+                defaultValue: 60,
+                minValue: 20,
+                maxValue: 500,
+                unit: 'Hz',
+                automatable: true,
+                hasAutomation: false,
+            },
+            {
+                id: 'conv-highcut',
+                deviceId: 'builtin-convolution-reverb',
+                name: 'High Cut',
+                type: 'float',
+                value: 12000,
+                defaultValue: 12000,
+                minValue: 1000,
+                maxValue: 20000,
+                unit: 'Hz',
+                automatable: true,
+                hasAutomation: false,
+            },
+        ],
+    },
+    {
+        id: 'builtin-stereo-widener',
+        name: 'Stereo Widener',
+        vendor: 'WebDAW',
+        format: 'builtin',
+        category: 'utility',
+        hasCustomUI: false,
+        platform: 'web',
+        parameters: [
+            { id: 'width-amount', deviceId: 'builtin-stereo-widener', name: 'Width', type: 'float', value: 1, defaultValue: 1, minValue: 0, maxValue: 3, unit: '', automatable: true, hasAutomation: false },
+            { id: 'width-mid', deviceId: 'builtin-stereo-widener', name: 'Mid Level', type: 'float', value: 0, defaultValue: 0, minValue: -12, maxValue: 6, unit: 'dB', automatable: true, hasAutomation: false },
+            { id: 'width-side', deviceId: 'builtin-stereo-widener', name: 'Side Level', type: 'float', value: 0, defaultValue: 0, minValue: -12, maxValue: 6, unit: 'dB', automatable: true, hasAutomation: false },
+            { id: 'width-mono-bass', deviceId: 'builtin-stereo-widener', name: 'Mono Bass', type: 'float', value: 200, defaultValue: 200, minValue: 20, maxValue: 500, unit: 'Hz', automatable: true, hasAutomation: false },
+        ],
+    },
+    {
+        id: 'builtin-deesser',
+        name: 'De-esser',
+        vendor: 'WebDAW',
+        format: 'builtin',
+        category: 'effect',
+        hasCustomUI: false,
+        platform: 'web',
+        parameters: [
+            { id: 'deess-threshold', deviceId: 'builtin-deesser', name: 'Threshold', type: 'float', value: -20, defaultValue: -20, minValue: -40, maxValue: 0, unit: 'dB', automatable: true, hasAutomation: false },
+            { id: 'deess-freq', deviceId: 'builtin-deesser', name: 'Frequency', type: 'float', value: 6000, defaultValue: 6000, minValue: 2000, maxValue: 12000, unit: 'Hz', automatable: true, hasAutomation: false },
+            { id: 'deess-range', deviceId: 'builtin-deesser', name: 'Range', type: 'float', value: -12, defaultValue: -12, minValue: -30, maxValue: 0, unit: 'dB', automatable: true, hasAutomation: false },
+            { id: 'deess-listen', deviceId: 'builtin-deesser', name: 'Listen', type: 'bool', value: 0, defaultValue: 0, minValue: 0, maxValue: 1, unit: '', automatable: false, hasAutomation: false },
+        ],
+    },
+    {
+        id: 'builtin-lufs-meter',
+        name: 'LUFS Meter',
+        vendor: 'WebDAW',
+        format: 'builtin',
+        category: 'analyzer',
+        hasCustomUI: false,
+        platform: 'web',
+        parameters: [
+            { id: 'lufs-target', deviceId: 'builtin-lufs-meter', name: 'Target LUFS', type: 'float', value: -14, defaultValue: -14, minValue: -30, maxValue: -6, unit: 'LUFS', automatable: false, hasAutomation: false },
+            { id: 'lufs-window', deviceId: 'builtin-lufs-meter', name: 'Window', type: 'choice', value: 0, defaultValue: 0, minValue: 0, maxValue: 2, unit: '', choices: ['Momentary', 'Short-term', 'Integrated'], automatable: false, hasAutomation: false },
         ],
     },
     // -- Instruments --
@@ -1306,6 +1438,7 @@ export const BUILTIN_PLUGINS: PluginDescriptor[] = [
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
+        platform: 'native',
         parameters: [
             { id: 'band2_freq', deviceId: 'native-eq', name: 'Band 1 Freq', type: 'float', value: 250, defaultValue: 250, minValue: 20, maxValue: 20000, unit: 'Hz', automatable: true, hasAutomation: false },
             { id: 'band2_gain', deviceId: 'native-eq', name: 'Band 1 Gain', type: 'float', value: 0, defaultValue: 0, minValue: -24, maxValue: 24, unit: 'dB', automatable: true, hasAutomation: false },
@@ -1329,6 +1462,7 @@ export const BUILTIN_PLUGINS: PluginDescriptor[] = [
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
+        platform: 'native',
         parameters: [
             { id: 'threshold', deviceId: 'native-compressor', name: 'Threshold', type: 'float', value: -18, defaultValue: -18, minValue: -60, maxValue: 0, unit: 'dB', automatable: true, hasAutomation: false },
             { id: 'ratio', deviceId: 'native-compressor', name: 'Ratio', type: 'float', value: 4, defaultValue: 4, minValue: 1, maxValue: 20, unit: ':1', automatable: true, hasAutomation: false },
@@ -1346,6 +1480,7 @@ export const BUILTIN_PLUGINS: PluginDescriptor[] = [
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
+        platform: 'native',
         parameters: [
             { id: 'ceiling', deviceId: 'native-limiter', name: 'Ceiling', type: 'float', value: -0.3, defaultValue: -0.3, minValue: -12, maxValue: 0, unit: 'dB', automatable: true, hasAutomation: false },
             { id: 'release', deviceId: 'native-limiter', name: 'Release', type: 'float', value: 0.05, defaultValue: 0.05, minValue: 0.01, maxValue: 0.5, unit: 's', automatable: true, hasAutomation: false },
@@ -1359,6 +1494,7 @@ export const BUILTIN_PLUGINS: PluginDescriptor[] = [
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
+        platform: 'native',
         parameters: [
             { id: 'mix', deviceId: 'native-reverb', name: 'Mix', type: 'float', value: 0.3, defaultValue: 0.3, minValue: 0, maxValue: 1, unit: '', automatable: true, hasAutomation: false },
             { id: 'size', deviceId: 'native-reverb', name: 'Size', type: 'float', value: 0.7, defaultValue: 0.7, minValue: 0, maxValue: 1, unit: '', automatable: true, hasAutomation: false },
@@ -1374,6 +1510,7 @@ export const BUILTIN_PLUGINS: PluginDescriptor[] = [
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
+        platform: 'native',
         parameters: [
             { id: 'time_l', deviceId: 'native-delay', name: 'Time L', type: 'float', value: 0.25, defaultValue: 0.25, minValue: 0.001, maxValue: 2, unit: 's', automatable: true, hasAutomation: false },
             { id: 'time_r', deviceId: 'native-delay', name: 'Time R', type: 'float', value: 0.375, defaultValue: 0.375, minValue: 0.001, maxValue: 2, unit: 's', automatable: true, hasAutomation: false },
@@ -1390,6 +1527,7 @@ export const BUILTIN_PLUGINS: PluginDescriptor[] = [
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
+        platform: 'native',
         parameters: [
             { id: 'threshold', deviceId: 'native-gate', name: 'Threshold', type: 'float', value: -40, defaultValue: -40, minValue: -80, maxValue: 0, unit: 'dB', automatable: true, hasAutomation: false },
             { id: 'attack', deviceId: 'native-gate', name: 'Attack', type: 'float', value: 0.001, defaultValue: 0.001, minValue: 0.0001, maxValue: 0.1, unit: 's', automatable: true, hasAutomation: false },
@@ -1405,6 +1543,7 @@ export const BUILTIN_PLUGINS: PluginDescriptor[] = [
         format: 'builtin',
         category: 'utility',
         hasCustomUI: false,
+        platform: 'native',
         parameters: [
             { id: 'gain', deviceId: 'native-gain', name: 'Gain', type: 'float', value: 0, defaultValue: 0, minValue: -60, maxValue: 24, unit: 'dB', automatable: true, hasAutomation: false },
             { id: 'pan', deviceId: 'native-gain', name: 'Pan', type: 'float', value: 0, defaultValue: 0, minValue: -1, maxValue: 1, unit: '', automatable: true, hasAutomation: false },
@@ -1467,4 +1606,18 @@ BUILTIN_PLUGINS.push(
 
 export function getPluginById(pluginId: string): PluginDescriptor | undefined {
     return BUILTIN_PLUGINS.find((p) => p.id === pluginId);
+}
+
+/**
+ * Check whether a device type is supported on the current runtime.
+ * Returns false for native-only plugins when running on web,
+ * and false for web-only plugins when running in Tauri.
+ */
+export function isDeviceSupportedOnCurrentPlatform(deviceType: string): boolean {
+    const descriptor = BUILTIN_PLUGINS.find((p) => p.id === deviceType);
+    if (!descriptor) return true; // unknown devices pass through (e.g. external plugins)
+    const platform = descriptor.platform ?? 'both';
+    if (platform === 'both') return true;
+    const isNativeRuntime = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+    return isNativeRuntime ? platform === 'native' : platform === 'web';
 }

@@ -4,7 +4,7 @@ import { Input } from '#/components/ui/input';
 import { Button } from '#/components/ui/button';
 import { Search, Music, FileAudio, Waves, Upload, X, Zap } from 'lucide-react';
 import { toggleSidebar } from '../../useCases/togglePanel';
-import { BUILTIN_PLUGINS } from '../../useCases/workspaceViewActions';
+import { getPlatformPlugins } from '../../useCases/workspaceViewActions';
 import { useTracks } from '../hooks/useTracks';
 import { decodeAudioFile } from '../../useCases/workspaceViewActions';
 import { usePreviewAudio } from '../hooks/usePreviewAudio';
@@ -143,7 +143,7 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
             s.category.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-    const filteredPlugins = BUILTIN_PLUGINS.filter(
+    const filteredPlugins = getPlatformPlugins().filter(
         (p) => !searchQuery.trim() || p.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
 

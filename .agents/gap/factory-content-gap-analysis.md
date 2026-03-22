@@ -1,85 +1,103 @@
 # Factory Content & DSP Pipeline Gap Analysis
 
-This document analyzes the current state of WebDaw's factory content and DSP pipeline against the rigorous requirements for a top-tier (5-star) professional built-in suite of instruments and effects (inspired by Logic Pro's factory suite). It identifies missing features, architectural blockers, and UX improvements needed to ship professional-grade native and web DSP.
+> **Last Updated**: 2026-03-22
 
-## 1. Core Architecture & Host Integration (The WAM 2.0 Standard)
-The professional standard requires all built-in plugins to run as **Web Audio Modules (WAM 2.0)** with unified parameter automation, state management, and sample-accurate processing.
-- **Current State [PARTIAL]:** \`wamPluginHost.ts\` implements the basic WAM registry and plugin loading. \`faustEngine.ts\` successfully compiles Faust DSP to Wasm at runtime. A scaffold \`HighEndPluginProcessor.ts\` exists.
-- **Missing / Gap:** 
-  - Need full **SharedArrayBuffer (SAB)** + **AudioWorklet** integration for heavy Rust/Wasm DSP (e.g. Alchemy, Space Designer).
-  - Zero-latency lock-free **Atomics** (SPSC ring buffers) are not strictly enforced for UI-to-audio thread parameter modulation.
-  - Wasm binaries are not lazily instantiated or dynamically imported correctly for a massive Rust plugin suite.
+This document tracks the state of WebDaw's factory content and DSP pipeline against the requirements in `native-factory.md` and `performance-native.md`.
 
-## 2. Built-in Synthesizers (The "Alchemy" Paradigm)
-A top-tier DAW requires an ultra-flexible multi-engine synthesizer capable of granular, spectral, and additive synthesis.
-- **Current State [PARTIAL]:** \`builtinSynth.ts\` provides a basic subtractive synth leveraging native audio nodes. \`drumKitSynth.ts\` handles basic drum kits. \`proSynthInstruments.ts\` provides Faust-based Wavetable, Supersaw, Additive, and Physical Modeling synths.
-- **Missing / Gap:**
-  - **Granular Engine:** Missing a memory-safe (object-pool based) granular engine capable of real-time microscopic splicing (1-100ms grains).
-  - **Spectral/Additive Engine:** Faust additive synth exists but lacks Wasm SIMD operations for 600+ partials per voice.
-  - **Modulation Matrix:** Missing an audio-rate DAG-sorted modulation matrix connecting LFOs/Envelopes to all parameters without single-sample feedback delays.
-  - **SFZ Sampler:** Missing SFZ parser and sampler engine with disk streaming (\`creek\`) for native and memory OPFS caching for web.
+## 1. Core Architecture & Host Integration
 
-## 3. Professional FX Suite (The "Space Designer" Paradigm)
-Essential mixing tools must be zero-latency (where possible) and extremely high fidelity.
-- **Current State [PARTIAL]:** \`faustEngine.ts\` implements several crucial Phase 1 and 3 effects: 1176 Compressor, Pro EQ, Multiband Compressor, Tape Delay, Limiter, Spring Reverb, and Zita-Rev1.
-- **Missing / Gap:**
-  - **Advanced Convolution Reverb:** Native \`ConvolverNode\` is insufficient. Must implement a **Non-Uniform Partitioned Convolution** engine via \`rustfft\`/\`realfft\`. Small partitions run on AudioWorklet, tails on Web Workers via SAB.
-  - **Modulation Effects:** Missing high-quality Chorus, Flanger, and Phaser.
-  - **Analog Emulation:** Missing saturation/distortion with Jiles-Atherton hysteresis models and oversampling.
-  - **Pitch Correction:** Missing realtime YIN/pYIN pitch tracking and formant-preserving pitch shifting.
+| Component | Status | Notes |
+|-----------|--------|-------|
+| WAM 2.0 plugin host | **DONE** | `wamPluginHost.ts` — registry, loading, lifecycle |
+| Faust → WASM runtime | **DONE** | `faustEngine.ts` — compiles DSP at runtime, 22 modules registered |
+| Native DSP (Rust → WASM) | **DONE** | `audio-core` crate, `nativeDspProcessor.ts`, `NativeDspNode.ts` |
+| Platform gating | **DONE** | `PluginDescriptor.platform`, `getPlatformPlugins()`, preset filtering |
+| Device chain builder | **DONE** | 3 dispatch paths: builtin Web Audio, Faust, native DSP |
+| Parameter bridge | **DONE** | `MessagePort` for native DSP, Faust params via WAM API |
+| SharedArrayBuffer ring buffers | MISSING | Needed for heavy DSP offloading to Worker thread |
 
-## 4. UI/UX & Visualization (Immediate Mode & WebGPU)
-Factory plugins in 5-star DAWs require smooth, 60fps hardware-accelerated visuals.
-- **Current State [MISSING]:** Mostly standard React DOM UI for native DAW components. Plugin UIs are lacking or entirely missing.
-- **Missing / Gap:**
-  - **WebGPU / Canvas 2D:** Dense visualizations (3D spectrograms, realtime EQ curves, waveform visualizers) must use WebGPU or HTML5 OffscreenCanvas passing data via SAB. Relying on React DOM nodes for audio-rate visual updates is an architectural blocker.
-  - **Interaction Design:** Missing custom input components (rotary knobs with vertical/horizontal drag, shift-for-micro-adjust) that bypass standard `<input type="range">`.
+## 2. Built-in Effects
 
----
+### Phase 1 — Essential Effects
+| Effect | Web (Builtin) | Web (Faust) | Native (Rust) | Status |
+|--------|--------------|-------------|---------------|--------|
+| Parametric EQ | ✅ builtin-eq | ✅ Pro Parametric EQ | ✅ native-eq | **DONE** |
+| Compressor | ✅ builtin-compressor | ✅ 1176 Compressor | ✅ native-compressor | **DONE** |
+| Limiter | ✅ builtin-limiter | ✅ Brick-Wall Limiter | ✅ native-limiter | **DONE** |
+| Reverb | ✅ builtin-reverb | ✅ Zita-Rev1, Spring | ✅ native-reverb | **DONE** |
+| Delay | ✅ builtin-delay | ✅ Tape Delay | ✅ native-delay | **DONE** |
+| Noise Gate | — | ✅ Noise Gate | ✅ native-gate | **DONE** |
+| Gain / Utility | ✅ builtin-gain | ✅ Gain Utility | ✅ native-gain | **DONE** |
+| LUFS Meter | — | — | — | **MISSING** |
 
-## Implementation Roadmap & Tasks
-Based on the `plugins.md` roadmap, the following tasks are tracked to bridge the gap.
+### Phase 3 — Extended Effects
+| Effect | Web | Faust | Status |
+|--------|-----|-------|--------|
+| Multiband Compressor | — | ✅ | **DONE** |
+| Chorus | ✅ builtin-chorus | ✅ Multi-Voice Chorus | **DONE** |
+| Flanger | ✅ builtin-flanger | ✅ Through-Zero Flanger | **DONE** |
+| Phaser | ✅ builtin-phaser | ✅ Phaser | **DONE** |
+| Tremolo | ✅ builtin-tremolo | ✅ Tremolo | **DONE** |
+| Distortion | ✅ builtin-distortion | — | **DONE** |
+| Bitcrusher | ✅ builtin-bitcrusher | — | **DONE** |
+| Filter | ✅ builtin-filter | — | **DONE** |
+| Auto-Pan | ✅ builtin-autopan | ✅ Auto-Pan | **DONE** |
+| Sidechain Compressor | ✅ builtin-sidechain-compressor | — | **DONE** |
+| Convolution Reverb | — | — | — | **MISSING** |
+| De-esser | — | — | — | **MISSING** |
+| Stereo Widener | — | — | — | **MISSING** |
+| Pitch Correction | — | — | — | **MISSING** |
+| Amp Simulator | — | — | — | **MISSING** |
 
-**IMPORTANT IMPLEMENTATION RULE:** Do not replace existing presets or instruments. All new instruments, DSP engines, and presets must be **strictly additive**.
+## 3. Built-in Instruments
 
-#### Built-in Audio Effects (Phase 1)
-- **Status:** [DONE]
-- **Gap:** Foundational effects (EQ, Comp, Delay, Reverb) are implemented via `createWebAudioEngine.ts` or Faust WASM. The missing "Noise Gate" and "Gain Utility" have now been built natively in `faustEngine.ts` and seamlessly wired to the UI via `BUILTIN_PLUGINS`. LUFS / Convolution Reverb are deferred to Rust WASM pipeline.
-- [x] Parametric EQ (Pro Parametric EQ in `faustEngine.ts`)
-- [x] Compressor (1176 Compressor in Faust)
-- [x] Limiter with lookahead (Brick-Wall Limiter in Faust)
-- [x] Reverb (Zita-Rev1, Spring Reverb in Faust)
-- [x] Delay (Tape Delay in Faust)
-- [x] Noise Gate (in Faust)
-- [ ] LUFS Meter (via `bs1770` crate)
-- [x] Gain / Utility plugin (in Faust)
+| Instrument | Implementation | Status |
+|-----------|---------------|--------|
+| Basic Polyphonic Synth | `builtinSynth.ts` (Web Audio nodes) | **DONE** |
+| Drum Machine | `drumKitSynth.ts` | **DONE** |
+| Wavetable Synth | `proSynthInstruments.ts` (Faust) | **DONE** |
+| Supersaw Unison | `proSynthInstruments.ts` (Faust) | **DONE** |
+| FM Synth | `faustEngine.ts` (Faust) | **DONE** |
+| Rhodes Piano | `faustEngine.ts` (Faust) | **DONE** |
+| Hammond B3 | `faustEngine.ts` (Faust) | **DONE** |
+| Minimoog Lead | `faustEngine.ts` (Faust) | **DONE** |
+| Physical Model String | `proSynthInstruments.ts` (Faust) | **DONE** |
+| Additive Synth | `proSynthInstruments.ts` (Faust) | **DONE** |
+| SFZ Sampler | — | **MISSING** |
+| Plaits Multi-Engine (24 engines) | — | **MISSING** |
+| Granular Engine | — | **MISSING** |
 
-### Phase 2: Core Instruments [PARTIAL]
-- [x] Basic polyphonic synth voice with AHDSR and SVF (`builtinSynth.ts`)
-- [x] Drum machine with pad mapping (`drumKitSynth.ts`)
-- [x] Wavetable oscillator basic implementation (`proSynthInstruments.ts`)
-- [ ] Wavetable oscillator with mip-mapped bandlimiting (Nigel Redmon alg) in Rust
-- [ ] SFZ parser in Rust (using \`sfizz\` C++ as reference)
-- [ ] Sampler engine with \`creek\` disk streaming (native) and OPFS memory cache (web)
+## 4. Content & Polish
 
-### Phase 3: Extended Effects [PARTIAL]
-- [x] Tape delay wow/flutter/saturation (in Faust)
-- [x] Multiband compressor (in Faust)
-- [ ] Chorus / Flanger / Phaser via delay lines and LFOs
-- [ ] Distortion / Saturation via tanh waveshaping and oversampling
-- [ ] Convolution reverb (non-uniform partitioned FFT via \`rustfft\`)
+| Item | Target | Current | Status |
+|------|--------|---------|--------|
+| Factory presets (effects) | 30+ per effect | ~50 total | **PARTIAL** |
+| Factory presets (synths) | 200+ per synth | ~100 total | **PARTIAL** |
+| Impulse Response library | 50–100 CC-licensed IRs | 0 | **MISSING** |
+| Wavetable collection | 100–200 from AKWF | 0 | **MISSING** |
+| Sample drum kits | 5+ kits | 4 kits | **PARTIAL** |
+| Effect visualization panels | EQ curves, spectrum, comp graph | 0 | **MISSING** |
 
-### Phase 4: Flagship Synth & Advanced Features [MISSING]
-- [ ] Granular synthesis engine
-- [ ] Spectral processing (STFT via \`rustfft\`)
-- [ ] High-density Additive synthesis with Wasm SIMD
-- [ ] DAG-sorted Modulation Matrix
-- [ ] Pitch correction (pYIN + correction curve + pitch shifting)
-- [ ] Amp simulator (cascaded waveshaping + cabinet IR)
+## 5. Remaining Implementation Tasks
 
-### Phase 5: Content and Polish [MISSING]
-- [ ] Factory presets (JSON format, 200+ per synth, 30+ per fx)
-- [ ] Sample library with download-on-demand packs
-- [ ] Wavetable collection from open-source sources (e.g. AKWF)
-- [ ] Impulse Response library from CC-licensed collections
-- [ ] WASM SIMD optimization pass for web polyphony targets
+### HIGH Priority (Immediate)
+- [ ] **LUFS Meter** — BS.1770-4 algorithm, K-weighting, momentary/short-term/integrated
+- [ ] **Convolution Reverb** — Web: `ConvolverNode`, WASM: partitioned FFT
+- [ ] **Impulse Response library** — Curate 50+ CC-licensed IRs from OpenAIR/Voxengo/EchoThief
+- [ ] **Factory presets expansion** — Add 200+ presets across all instruments and effects
+- [ ] **Stereo Widener** — Mid/side processing (logic already in native-gain)
+- [ ] **De-esser** — Bandpass sidechain + compressor
+
+### MEDIUM Priority
+- [ ] SFZ Sampler — SFZ parser in Rust, memory-based playback in WASM AudioWorklet
+- [ ] Wavetable collection — AKWF public domain + generated tables
+- [ ] Effect visualization panels — Canvas 2D EQ curves, compression graphs
+- [ ] Plaits Multi-Engine — `mi-plaits-dsp-rs` 24 synthesis engines
+
+### LOW Priority (Deferred)
+- [ ] Pitch correction — Complex, requires pYIN + formant-preserving shifting
+- [ ] Amp simulator — Cascaded waveshaping + cabinet IR convolution
+- [ ] Granular engine — Grain scheduler, pool, windowing
+- [ ] Modulation matrix — Custom build, no off-the-shelf crate
+- [ ] SharedArrayBuffer ring buffers for heavy DSP offloading
+- [ ] WASM SIMD optimization pass

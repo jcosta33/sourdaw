@@ -39,7 +39,7 @@ export type FaustParamDescriptor = {
     max: number;
     defaultValue: number;
     step: number;
-    type: 'hslider' | 'vslider' | 'nentry' | 'button' | 'checkbox';
+    type: 'hslider' | 'vslider' | 'nentry' | 'button' | 'checkbox' | 'vbargraph' | 'hbargraph';
 };
 
 // ── Module registry ─────────────────────────────────────────────────────
@@ -917,6 +917,199 @@ export function registerBuiltinFaustDSP(): void {
                 defaultValue: 0.3,
                 step: 0.01,
                 type: 'hslider',
+            },
+        ]
+    );
+    // ── LUFS Meter ─────────────────────────────────────────────────────────
+    // ITU-R BS.1770-4 loudness measurement with K-weighting.
+    // Two cascaded biquads per channel, then mean-square with 400ms
+    // and 3s sliding windows for momentary/short-term readout.
+    registerFaustDSP(
+        'LUFS Meter',
+        `
+        import("stdfaust.lib");
+
+        // K-weighting: pre-filter (high shelf +4dB @ 1681Hz)
+        // + RLB weighting (high-pass @ 38Hz)
+        // Coefficients from ITU-R BS.1770-4, 48kHz (close enough for 44.1k)
+        pre_a0 = 1.53512485958697;  pre_a1 = -2.69169618940638;
+        pre_a2 = 1.19839281085285;  pre_b1 = -1.69065929318241;
+        pre_b2 = 0.73248077421585;
+        rlb_a0 = 1.0;  rlb_a1 = -2.0;
+        rlb_a2 = 1.0;  rlb_b1 = -1.99004745483398;
+        rlb_b2 = 0.99007225036621;
+
+        kweight = fi.tf22t(pre_a0, pre_a1, pre_a2, pre_b1, pre_b2)
+                : fi.tf22t(rlb_a0, rlb_a1, rlb_a2, rlb_b1, rlb_b2);
+
+        // Mean-square with sliding window
+        ms_window(t) = ^(2) : si.smooth(ba.tau2pole(t));
+
+        // LUFS from mean-square: 10*log10(ms) - 0.691 offset
+        lufs(ms) = ba.if(ms > 1e-10, 10 * log10(ms) - 0.691, -70);
+
+        momentary_ms = kweight : ms_window(0.4);
+        shortterm_ms = kweight : ms_window(3.0);
+
+        // Output: pass audio through unchanged, bargraphs show levels
+        meter_ch(x) = x <: (_, momentary_ms, shortterm_ms)
+                     : (_, vbargraph("momentary", -70, 0),
+                           vbargraph("short_term", -70, 0));
+
+        process = meter_ch, meter_ch;
+    `,
+        [
+            {
+                address: '/LUFS_Meter/momentary',
+                label: 'Momentary (LUFS)',
+                min: -70,
+                max: 0,
+                defaultValue: -70,
+                step: 0.1,
+                type: 'vbargraph',
+            },
+            {
+                address: '/LUFS_Meter/short_term',
+                label: 'Short-Term (LUFS)',
+                min: -70,
+                max: 0,
+                defaultValue: -70,
+                step: 0.1,
+                type: 'vbargraph',
+            },
+        ]
+    );
+
+    // ── Stereo Widener ────────────────────────────────────────────────────
+    // Mid/side encode → width control → optional mono-bass → decode.
+    // Width 0% = mono, 100% = original, 200% = sides doubled.
+    registerFaustDSP(
+        'Stereo Widener',
+        `
+        import("stdfaust.lib");
+
+        width = hslider("width", 100, 0, 200, 1) / 100.0;
+        mono_freq = hslider("mono_bass", 0, 0, 500, 1);
+
+        // M/S encode
+        mid(l, r)  = (l + r) * 0.5;
+        side(l, r) = (l - r) * 0.5;
+
+        // Mono bass: below cutoff, zero out side channel
+        // Uses a smooth crossover via 1st-order LPF
+        bass_mono(m, s) = m, (s * ba.if(mono_freq > 1,
+            1.0 - (fi.lowpass(1, mono_freq) : abs : si.smooth(0.999)),
+            1.0));
+
+        // M/S decode
+        process(l, r) = mid(l,r), side(l,r)
+                      : bass_mono
+                      : (*(1.0), *(width))
+                      : (+(_, _), -(_, _));
+    `,
+        [
+            {
+                address: '/Stereo_Widener/width',
+                label: 'Width (%)',
+                min: 0,
+                max: 200,
+                defaultValue: 100,
+                step: 1,
+                type: 'hslider',
+            },
+            {
+                address: '/Stereo_Widener/mono_bass',
+                label: 'Mono Bass (Hz)',
+                min: 0,
+                max: 500,
+                defaultValue: 0,
+                step: 1,
+                type: 'hslider',
+            },
+        ]
+    );
+
+    // ── De-esser ──────────────────────────────────────────────────────────
+    // Frequency-selective compressor: bandpass sidechain detects sibilance,
+    // applies gain reduction to the full signal. "Listen" mode solos the
+    // sidechain band for tuning.
+    registerFaustDSP(
+        'De-esser',
+        `
+        import("stdfaust.lib");
+
+        freq   = hslider("frequency", 6000, 2000, 12000, 10);
+        bw     = hslider("bandwidth", 2.0, 0.5, 6.0, 0.1);
+        thresh = hslider("threshold", -20, -60, 0, 0.5);
+        ratio  = hslider("ratio", 4, 1, 20, 0.5);
+        atk    = 0.001;
+        rel    = 0.05;
+        listen = checkbox("listen");
+
+        // Sidechain: bandpass around sibilance region
+        sc_signal = fi.resonbp(freq, bw, 1);
+
+        // Envelope follower on sidechain
+        env = sc_signal : abs : si.smooth(ba.tau2pole(atk))
+            : max(_, _ : si.smooth(ba.tau2pole(rel)));
+
+        // Gain reduction from threshold + ratio
+        gr(e) = ba.if(e > ba.db2linear(thresh),
+            pow(ba.db2linear(thresh) / e, 1 - 1.0/ratio),
+            1.0);
+
+        // Single channel: apply GR from sidechain, or solo sidechain
+        deess(x) = x <: (sc_signal, _)
+                  : (env : gr, _)
+                  : select2(listen, *(_, _), (sc_signal));
+
+        process = deess, deess;
+    `,
+        [
+            {
+                address: '/De-esser/frequency',
+                label: 'Frequency (Hz)',
+                min: 2000,
+                max: 12000,
+                defaultValue: 6000,
+                step: 10,
+                type: 'hslider',
+            },
+            {
+                address: '/De-esser/bandwidth',
+                label: 'Bandwidth (Q)',
+                min: 0.5,
+                max: 6.0,
+                defaultValue: 2.0,
+                step: 0.1,
+                type: 'hslider',
+            },
+            {
+                address: '/De-esser/threshold',
+                label: 'Threshold (dB)',
+                min: -60,
+                max: 0,
+                defaultValue: -20,
+                step: 0.5,
+                type: 'hslider',
+            },
+            {
+                address: '/De-esser/ratio',
+                label: 'Ratio',
+                min: 1,
+                max: 20,
+                defaultValue: 4,
+                step: 0.5,
+                type: 'hslider',
+            },
+            {
+                address: '/De-esser/listen',
+                label: 'Listen (Solo SC)',
+                min: 0,
+                max: 1,
+                defaultValue: 0,
+                step: 1,
+                type: 'checkbox',
             },
         ]
     );

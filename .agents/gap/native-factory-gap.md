@@ -1,71 +1,96 @@
 # Native Factory Plugins — Gap Analysis
 
 > **Scope**: Rust `audio-core` crate DSP → WASM AudioWorklet → TS device system → UI
+> **Last Updated**: 2026-03-22
 
 ## Current State
 
 | Layer | Status |
 |-------|--------|
-| `audio-core` Rust crate | **Scaffold only** — sine wave test, `fundsp`/`rustfft`/`realfft` in Cargo.toml but unused |
-| WASM AudioWorklet bridge | **Working** — `audioCoreProcessor.ts` loads WASM, calls `process_and_get_ptr`, maps outputs |
-| TS device/preset system | **Mature** — `Device` model, `factoryPresets.ts`, `buildDeviceChain`, `applyPreset()` |
-| UI device chain | **Mature** — `DeviceChainSection`, `InstrumentsTab`, parameter editing in Inspector |
+| `audio-core` Rust crate | **DONE** — 7 DSP modules (EQ, Compressor, Limiter, Reverb, Delay, Gate, Gain) |
+| WASM AudioWorklet bridge | **DONE** — `nativeDspProcessor.ts` loads WASM (`--target web` ES module), `NativeDspNode.ts` engine wrapper |
+| TS device/preset system | **DONE** — `Device` model handles `native-dsp` type, `buildDeviceChain` dispatches, factory presets included |
+| UI device chain | **DONE** — `DeviceChainSection`, `TrackDevicesSection`, Inspector parameter editing, sidebar Effects tab |
+| Platform gating | **DONE** — `PluginDescriptor.platform` field, `getPlatformPlugins()` filter, native hidden in web, web hidden in native |
 
-## What Needs Building
+## Faust DSP Modules (22 total — all DONE)
 
-### Phase 1 — Essential Effects (Rust → WASM → AudioWorklet)
+### Effects (13)
+| Module | Source File | Category |
+|--------|-----------|----------|
+| Zita-Rev1 Reverb | `faustEngine.ts` | Reverb |
+| Spring Reverb | `faustEngine.ts` | Reverb |
+| 1176 Compressor | `faustEngine.ts` | Dynamics |
+| Multiband Compressor | `faustEngine.ts` | Dynamics |
+| Brick-Wall Limiter | `faustEngine.ts` | Dynamics |
+| Noise Gate | `faustEngine.ts` | Dynamics |
+| Pro Parametric EQ | `faustEngine.ts` | EQ |
+| Tape Delay | `faustEngine.ts` | Delay |
+| Gain Utility | `faustEngine.ts` | Utility |
+| Multi-Voice Chorus | `proModulationEffects.ts` | Modulation |
+| Through-Zero Flanger | `proModulationEffects.ts` | Modulation |
+| Phaser | `proModulationEffects.ts` | Modulation |
+| Tremolo | `proModulationEffects.ts` | Modulation |
 
-| Plugin | Rust Implementation | Status |
-|--------|-------------------|--------|
-| **Parametric EQ** (8-band) | FunDSP `bell()` + `lowshelf()` + `highshelf()` cascade | MISSING |
-| **Compressor** | Giannoulis feed-forward, `fundsp` envelope follower | MISSING |
-| **Brick-wall Limiter** | Lookahead peak detection, FunDSP | MISSING |
-| **Noise Gate** | Threshold + attack/hold/release + `fundsp` | MISSING |
-| **Algorithmic Reverb** | FunDSP `reverb_stereo()` (Dattorro-based) | MISSING |
-| **Stereo Delay** | FunDSP `delay()` with feedback + filtering | MISSING |
-| **Gain / Utility** | Volume + phase invert + mono/stereo | MISSING |
+### Instruments (9)
+| Module | Source File |
+|--------|-----------|
+| FM Synth | `faustEngine.ts` |
+| Rhodes | `faustEngine.ts` |
+| Hammond B3 | `faustEngine.ts` |
+| Minimoog Lead | `faustEngine.ts` |
+| Wavetable Synth | `proSynthInstruments.ts` |
+| Supersaw Unison | `proSynthInstruments.ts` |
+| Physical Model String | `proSynthInstruments.ts` |
+| Additive Synth | `proSynthInstruments.ts` |
+| Auto-Pan | `proModulationEffects.ts` |
 
-### Phase 2 — Core Instruments (Rust → WASM → AudioWorklet)
+## Builtin Web Audio Plugins (17 — all DONE)
 
-| Plugin | Rust Implementation | Status |
-|--------|-------------------|--------|
-| **Subtractive Synth** | FunDSP oscillators + SVF filter + ADSR | MISSING |
-| **Plaits Multi-Engine** | `mi-plaits-dsp-rs` 24 engines | MISSING — needs crate added |
-| **Drum Machine** | FunDSP percussion synthesis | MISSING |
-| **Basic Sampler** | Memory-backed sample playback in worklet | MISSING |
+6 web-only (have native counterparts): EQ, Compressor, Reverb, Delay, Gain, Limiter
+11 both-platform: Sidechain Compressor, Chorus, Phaser, Distortion, Flanger, Tremolo, Bitcrusher, Filter, Autopan, Synth, Drum Kit
 
-### Phase 3 — Extended Effects
+## Native DSP Plugins (7 — all DONE)
 
-| Plugin | Rust Implementation | Status |
-|--------|-------------------|--------|
-| **Chorus** | Multi-tap modulated delay | MISSING |
-| **Flanger** | Short modulated delay + feedback | MISSING |
-| **Phaser** | Cascaded allpass filters + LFO | MISSING |
-| **Distortion/Saturation** | Waveshaper (`tanh`) + oversampling | MISSING |
-| **Convolution Reverb** | `realfft` partitioned convolution | MISSING |
-| **Multiband Compressor** | Linkwitz-Riley crossovers + per-band | MISSING |
+All native-only (hidden in web): EQ, Compressor, Limiter, Reverb, Delay, Gate, Gain
 
-### TS/UI Integration Needed
+## What Still Needs Building
 
-| Component | Work |
-|-----------|------|
-| New device type: `native-dsp` | Add to `Device.type` union, handle in `buildDeviceChain` |
-| `NativeDspWorkletNode` class | AudioWorkletNode wrapper that routes params to WASM |
-| Parameter bridge | `SharedArrayBuffer` or `MessagePort` param updates to worklet |
-| Factory presets | Add `native-*` presets to `factoryPresets.ts` |
-| Web-unavailable overlay | Disabled state + tooltip for native-only plugins in web mode |
-| `isTauri()` gating | Show/hide or enable/disable native-only plugins |
+### Phase 1 — Missing Effects
 
-### Web vs Native Availability
+| Plugin | Priority | Implementation Strategy | Status |
+|--------|----------|------------------------|--------|
+| **LUFS Meter** | HIGH | `bs1770` algorithm in Rust WASM, or Web Audio `AnalyserNode` based | MISSING |
+| **Convolution Reverb** | HIGH | Web: native `ConvolverNode` + IR loading. Native: Rust partitioned FFT | MISSING |
+| **Stereo Widener** | MEDIUM | Mid/side processing (already in native-gain module, expose as standalone) | MISSING |
+| **De-esser** | MEDIUM | Sidechain compressor with bandpass on sidechain | MISSING |
+| **Pitch Correction** | LOW | `pitch-detection` crate + correction curve — complex, defer | MISSING |
+| **Amp Simulator** | LOW | Cascaded waveshaping + cabinet IR convolution — defer | MISSING |
 
-| Plugin | Web (WASM) | Native (Rust) | Notes |
-|--------|-----------|--------------|-------|
-| EQ, Comp, Limiter, Gate | ✅ via WASM AudioWorklet | ✅ native | Same Rust code, both targets |
-| Reverb (algorithmic) | ✅ via WASM AudioWorklet | ✅ native | Same Rust code |
-| Delay, Chorus, Phaser | ✅ via WASM AudioWorklet | ✅ native | Same Rust code |
-| Convolution Reverb | ⚠️ limited (< 5s IRs) | ✅ native | Web: single-thread constraint |
-| Plaits Synth | ✅ via WASM AudioWorklet | ✅ native | Same Rust code |
-| Disk-streaming Sampler | ❌ web only loads to memory | ✅ uses creek | Web disabled with message |
+### Phase 2 — Missing Instruments
+
+| Plugin | Priority | Implementation Strategy | Status |
+|--------|----------|------------------------|--------|
+| **SFZ Sampler** | HIGH | SFZ parser in Rust, memory-based playback in WASM | MISSING |
+| **Plaits Multi-Engine** | MEDIUM | `mi-plaits-dsp-rs` crate — 24 synthesis engines | MISSING |
+| **Granular Engine** | LOW | FunDSP `granular.rs` or custom grain scheduler | MISSING |
+
+### Phase 3 — Content & Polish
+
+| Item | Priority | Status |
+|------|----------|--------|
+| **More factory presets** (target: 200+ per synth, 30+ per effect) | HIGH | PARTIAL — ~150 total, need 500+ |
+| **Impulse Response library** (50–100 CC-licensed IRs) | HIGH | MISSING |
+| **Wavetable collection** (100–200 from AKWF/open sources) | MEDIUM | MISSING |
+| **Effect visualization** (EQ curves, compression graphs, spectrum) | MEDIUM | MISSING |
+
+### Phase 4 — Advanced Architecture
+
+| Item | Priority | Status |
+|------|----------|--------|
+| **Modulation Matrix** | LOW | MISSING — no off-the-shelf crate, custom build |
+| **Sample library download-on-demand** | LOW | MISSING |
+| **WASM SIMD optimization** | LOW | MISSING |
 
 > [!IMPORTANT]
-> Most plugins compile to **both** WASM and native from the same Rust source. Only disk-streaming sampler and long convolution are truly native-only.
+> The gap analysis is now current as of 2026-03-22. Most Phase 1 effects and Phase 2 instruments from the original roadmap are DONE. The primary remaining gaps are content (presets, IRs, wavetables), LUFS metering, convolution reverb, and the SFZ sampler.

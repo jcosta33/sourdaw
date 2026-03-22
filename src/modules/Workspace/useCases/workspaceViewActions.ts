@@ -155,7 +155,7 @@ export { type TransportState } from '#/modules/Transport/useCases/transportQueri
 export { defaultTransportState } from '#/modules/Transport/useCases/transportQueries';
 
 // ── Re-exports from query layers ──────────────────────────────────
-export { BUILTIN_PLUGINS } from '#/modules/Track/useCases/trackQueries';
+export { BUILTIN_PLUGINS, getPlatformPlugins } from '#/modules/Track/useCases/trackQueries';
 export {
     NATIVE_MODEL_INFO,
     WEBLLM_MODEL_INFO,

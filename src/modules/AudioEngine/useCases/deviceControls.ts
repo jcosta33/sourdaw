@@ -21,3 +21,7 @@ export const removeDeviceFromStrip = (trackId: string, deviceId: string): void =
 export const updateDeviceParam = (trackId: string, deviceId: string, paramId: string, value: number): void => {
     audioEngine.updateDeviceParam(trackId, deviceId, paramId, value);
 };
+
+export const updateDeviceBypass = (trackId: string, deviceId: string, bypassed: boolean): void => {
+    audioEngine.updateDeviceBypass(trackId, deviceId, bypassed);
+};

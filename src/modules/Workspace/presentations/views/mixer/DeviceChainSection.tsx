@@ -2,7 +2,7 @@ import { type ReactElement, useState } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 import { selectTrack } from '../../../useCases/workspaceViewActions';
 import { bypassDevice, addDevice, removeDevice, reorderDevices } from '../../../useCases/workspaceViewActions';
-import { BUILTIN_PLUGINS } from '../../../useCases/workspaceViewActions';
+import { getPlatformPlugins } from '../../../useCases/workspaceViewActions';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { type Track } from '../../../useCases/workspaceViewActions';
 import { getAllModulationRoutes } from '#/modules/AudioEngine/useCases/modulationSystem';
@@ -91,7 +91,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
             </div>
             {showAdd ? (
                 <div className="space-y-0.5">
-                    {BUILTIN_PLUGINS.filter((p) => !p.id.startsWith('native-')).map((p) => (
+                    {getPlatformPlugins().map((p) => (
                         <button
                             type="button"
                             key={p.id}
@@ -103,23 +103,6 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                             }}
                         >
                             + {p.name}
-                        </button>
-                    ))}
-                    <div className="px-3 py-0.5 text-[10px] text-muted-foreground/60 uppercase tracking-wider border-t border-border/20 mt-0.5">
-                        Native DSP
-                    </div>
-                    {BUILTIN_PLUGINS.filter((p) => p.id.startsWith('native-')).map((p) => (
-                        <button
-                            type="button"
-                            key={p.id}
-                            className="w-full rounded bg-[var(--color-accent-green)]/10 border border-[var(--color-accent-green)]/20 px-1 py-0.5 text-center hover:bg-[var(--color-accent-green)]/20 text-[10px] text-foreground transition-colors"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                addDevice(track.id, p.name);
-                                setShowAdd(false);
-                            }}
-                        >
-                            ⚡ {p.name}
                         </button>
                     ))}
                     <div className="px-3 py-0.5 text-[10px] text-muted-foreground/60 uppercase tracking-wider border-t border-border/20 mt-0.5">

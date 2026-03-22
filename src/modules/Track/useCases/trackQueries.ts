@@ -42,6 +42,16 @@ export type {
 export type { Device } from '../models/Track';
 export { BUILTIN_PLUGINS };
 
+/** Platform-filtered plugin list — hides native-only in web, web-only in Tauri. */
+export const getPlatformPlugins = (): typeof BUILTIN_PLUGINS => {
+    const isNative = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+    return BUILTIN_PLUGINS.filter((p) => {
+        const platform = p.platform ?? 'both';
+        if (platform === 'both') return true;
+        return isNative ? platform === 'native' : platform === 'web';
+    });
+};
+
 export { modelCreateTrack as createTrack };
 
 /** Get all tracks. Returns empty array if store is not initialised. */

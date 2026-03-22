@@ -1,0 +1,170 @@
+/**
+ * Compressor Transfer Curve — Canvas2D input/output graph.
+ *
+ * Draws the static transfer characteristic of a compressor:
+ * - Unity line (1:1) in subtle gray
+ * - The actual compression curve with threshold, ratio, and knee
+ * - Threshold and knee indicators
+ * Uses design tokens for consistent DAW aesthetic.
+ */
+import { type ReactElement, useRef, useEffect } from 'react';
+import { resolveToken } from '#/helpers/UI/resolveToken';
+
+type CompressorCurveProps = {
+    threshold: number; // dB, e.g. -20
+    ratio: number; // e.g. 4 (meaning 4:1)
+    knee: number; // dB, e.g. 6
+    makeup: number; // dB, e.g. 0
+    width?: number;
+    height?: number;
+};
+
+const DB_MIN = -60;
+const DB_MAX = 0;
+
+/** Compute output dB given input dB, with soft knee */
+const computeOutput = (inputDb: number, threshold: number, ratio: number, kneeWidth: number): number => {
+    const halfKnee = kneeWidth / 2;
+    if (inputDb <= threshold - halfKnee) {
+        // Below knee — unity
+        return inputDb;
+    } else if (inputDb >= threshold + halfKnee) {
+        // Above knee — full compression
+        return threshold + (inputDb - threshold) / ratio;
+    } else {
+        // In the knee — quadratic interpolation
+        const x = inputDb - threshold + halfKnee;
+        return inputDb + ((1 / ratio - 1) * x * x) / (2 * kneeWidth);
+    }
+};
+
+export const CompressorCurve = ({
+    threshold,
+    ratio,
+    knee,
+    makeup,
+    width = 120,
+    height = 120,
+}: CompressorCurveProps): ReactElement => {
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = width * dpr;
+        canvas.height = height * dpr;
+        ctx.scale(dpr, dpr);
+
+        const pad = 4;
+        const plotW = width - pad * 2;
+        const plotH = height - pad * 2;
+        const dbToX = (db: number): number => pad + ((db - DB_MIN) / (DB_MAX - DB_MIN)) * plotW;
+        const dbToY = (db: number): number => pad + plotH - ((db - DB_MIN) / (DB_MAX - DB_MIN)) * plotH;
+
+        ctx.clearRect(0, 0, width, height);
+
+        // Background
+        ctx.fillStyle = resolveToken('--color-bg-tray', '#0a0a0a');
+        ctx.beginPath();
+        ctx.roundRect(0, 0, width, height, 4);
+        ctx.fill();
+
+        // Grid
+        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+        ctx.lineWidth = 0.5;
+        for (const db of [-48, -36, -24, -12, 0]) {
+            // Horizontal
+            ctx.beginPath();
+            ctx.moveTo(pad, dbToY(db));
+            ctx.lineTo(width - pad, dbToY(db));
+            ctx.stroke();
+            // Vertical
+            ctx.beginPath();
+            ctx.moveTo(dbToX(db), pad);
+            ctx.lineTo(dbToX(db), height - pad);
+            ctx.stroke();
+        }
+
+        // Unity line (1:1)
+        ctx.beginPath();
+        ctx.moveTo(dbToX(DB_MIN), dbToY(DB_MIN));
+        ctx.lineTo(dbToX(DB_MAX), dbToY(DB_MAX));
+        ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Compression curve
+        const accentPeach = resolveToken('--color-accent-peach', '#c4987b');
+        ctx.beginPath();
+        const steps = plotW;
+        for (let i = 0; i <= steps; i++) {
+            const inputDb = DB_MIN + (i / steps) * (DB_MAX - DB_MIN);
+            const outputDb = Math.min(DB_MAX, computeOutput(inputDb, threshold, ratio, knee) + makeup);
+            const x = dbToX(inputDb);
+            const y = dbToY(Math.max(DB_MIN, outputDb));
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = accentPeach;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Fill below curve
+        ctx.lineTo(dbToX(DB_MAX), dbToY(DB_MIN));
+        ctx.lineTo(dbToX(DB_MIN), dbToY(DB_MIN));
+        ctx.closePath();
+        ctx.fillStyle = `${accentPeach}10`;
+        ctx.fill();
+
+        // Threshold marker
+        const thX = dbToX(threshold);
+        const thY = dbToY(computeOutput(threshold, threshold, ratio, knee) + makeup);
+        ctx.beginPath();
+        ctx.setLineDash([2, 2]);
+        ctx.moveTo(thX, pad);
+        ctx.lineTo(thX, height - pad);
+        ctx.strokeStyle = `${accentPeach}60`;
+        ctx.lineWidth = 0.75;
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Threshold dot
+        ctx.beginPath();
+        ctx.arc(thX, thY, 3, 0, Math.PI * 2);
+        ctx.fillStyle = accentPeach;
+        ctx.fill();
+
+        // Labels
+        ctx.fillStyle = resolveToken('--color-text-disabled', '#3a3a3a');
+        ctx.font = '7px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('IN', width / 2, height - 1);
+        ctx.save();
+        ctx.translate(6, height / 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.fillText('OUT', 0, 0);
+        ctx.restore();
+
+        // Ratio text
+        ctx.fillStyle = `${accentPeach}90`;
+        ctx.font = '8px monospace';
+        ctx.textAlign = 'right';
+        ctx.fillText(`${ratio.toFixed(1)}:1`, width - pad, pad + 10);
+    }, [threshold, ratio, knee, makeup, width, height]);
+
+    return (
+        <canvas
+            ref={canvasRef}
+            style={{ width, height }}
+            className="rounded border border-border/30"
+            aria-label="Compressor transfer curve"
+            role="img"
+        />
+    );
+};

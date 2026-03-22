@@ -2,7 +2,7 @@ import { type ReactElement, useState, useEffect, useRef, useSyncExternalStore } 
 import { Card } from '#/components/ui/card';
 import { Button } from '#/components/ui/button';
 import { Plus, Power, Trash2, Monitor, LayoutGrid } from 'lucide-react';
-import { BUILTIN_PLUGINS } from '../../../useCases/workspaceViewActions';
+import { getPlatformPlugins } from '../../../useCases/workspaceViewActions';
 import {
     bypassDevice,
     removeDevice,
@@ -69,7 +69,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                             <p className="px-3 py-1 text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">
                                 Effects
                             </p>
-                            {BUILTIN_PLUGINS.filter((p) => p.category === 'effect').map((plugin) => (
+                            {getPlatformPlugins().filter((p) => p.category === 'effect').map((plugin) => (
                                 <button
                                     type="button"
                                     key={plugin.id}
@@ -87,7 +87,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                             <p className="px-3 py-1 text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">
                                 Utility
                             </p>
-                            {BUILTIN_PLUGINS.filter((p) => p.category === 'utility').map((plugin) => (
+                            {getPlatformPlugins().filter((p) => p.category === 'utility').map((plugin) => (
                                 <button
                                     type="button"
                                     key={plugin.id}

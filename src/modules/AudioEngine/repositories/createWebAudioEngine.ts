@@ -11,6 +11,7 @@ import {
 import { PluginHostNode } from '../models/PluginHostNode';
 import audioCoreProcessorUrl from '../worklets/audioCoreProcessor.ts?worker&url';
 import { isNativeDspDevice, NATIVE_DSP_DEVICE_TYPES, createNativeDspNode, type NativeDspNodeResult } from '../engine/NativeDspNode';
+import { isDeviceSupportedOnCurrentPlatform } from '#/modules/Track/models/DeviceParameter';
 
 const logger = Container.getInstance().get(Logger);
 
@@ -62,6 +63,7 @@ function createNoopEngine(): AudioEngine {
         addDeviceToStrip: () => {},
         removeDeviceFromStrip: () => {},
         updateDeviceParam: () => {},
+        updateDeviceBypass: () => {},
         ensureBusStrip: (busId) => ({ 
             busId, 
             gainNode: silentGain, 
@@ -614,6 +616,12 @@ export function createWebAudioEngine(): AudioEngine {
             return;
         }
 
+        // Skip devices not supported on the current platform
+        if (!isDeviceSupportedOnCurrentPlatform(deviceType)) {
+            logger.info(`[WebAudioEngine] Skipping ${deviceType} — not supported on this platform`);
+            return;
+        }
+
         let dn: BuiltinDeviceNode;
         switch (deviceType) {
             case 'builtin-eq':
@@ -935,6 +943,20 @@ export function createWebAudioEngine(): AudioEngine {
         }
     }
 
+    function updateDeviceBypass(trackId: string, deviceId: string, bypassed: boolean): void {
+        const strip = trackStrips.get(trackId);
+        if (!strip) {
+            return;
+        }
+        const dn = strip.deviceNodes.find((d) => d.deviceId === deviceId);
+        if (!dn) {
+            return;
+        }
+        if (dn.nativeDspControls) {
+            dn.nativeDspControls.setBypass(bypassed);
+        }
+    }
+
     function ensureBusStrip(busId: string): BusStrip {
         const existing = busStrips.get(busId);
         if (existing) {
@@ -1170,6 +1192,7 @@ export function createWebAudioEngine(): AudioEngine {
         addDeviceToStrip,
         removeDeviceFromStrip,
         updateDeviceParam,
+        updateDeviceBypass,
         ensureBusStrip,
         removeBusStrip,
         setBusGain,
