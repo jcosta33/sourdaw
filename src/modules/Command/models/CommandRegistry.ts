@@ -26,6 +26,7 @@ import {
     toggleAutomationPanel,
 } from '#/modules/Workspace/useCases/togglePanel';
 import { seekPlayhead } from '#/modules/Transport/useCases/transportControls';
+import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
 import { removeTrack } from '#/modules/Track/useCases/removeTrack';
 import { splitClip, renameClip } from '#/modules/Track/useCases/clipEditingUseCases';
 import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
@@ -424,7 +425,7 @@ export const commandRegistry: CommandEntry[] = [
         category: 'Clip',
         action: () => {
             const clipId = getSelectedClipId();
-            const beat = transportStore.value?.playheadPosition ?? 0;
+            const beat = transportStore.value ? playheadPositionRef.current : 0;
             if (clipId) {
                 splitClip(clipId, beat);
             }
@@ -919,7 +920,7 @@ export const commandRegistry: CommandEntry[] = [
         action: () => {
             const t = transportStore.value;
             if (t) {
-                executeAppAction({ type: 'insertTime', payload: { atBeat: t.playheadPosition, durationBeats: 4 } });
+                executeAppAction({ type: 'insertTime', payload: { atBeat: playheadPositionRef.current, durationBeats: 4 } });
             }
         },
     },
@@ -958,7 +959,7 @@ export const commandRegistry: CommandEntry[] = [
         description: 'Add a marker at the playhead',
         category: 'Timeline',
         action: () => {
-            const beat = transportStore.value?.playheadPosition ?? 0;
+            const beat = transportStore.value ? playheadPositionRef.current : 0;
             addMarker(Math.floor(beat), `Marker ${Math.floor(beat) + 1}`);
         },
     },

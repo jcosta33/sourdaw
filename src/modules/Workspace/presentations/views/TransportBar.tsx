@@ -92,7 +92,6 @@ export const TransportBar = (): ReactElement => {
                 <Separator orientation="vertical" className="mx-0.5 h-5" />
 
                 <PlayheadDisplay
-                    position={transport.playheadPosition}
                     tempo={transport.tempo}
                     numerator={transport.timeSignatureNumerator}
                     timeDisplayMode={timeDisplayMode}

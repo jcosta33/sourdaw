@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useEffect, useRef, useSyncExternalStore } from 'react';
+import { type ReactElement, useEffect, useRef, useSyncExternalStore } from 'react';
 import { getEngineState, getMasterPeakLevel } from '../../useCases/workspaceViewActions';
 import { useUndoState } from '../hooks/useUndoState';
 import { useCollaborationState } from '../hooks/useCollaborationState';
@@ -6,25 +6,33 @@ import { cn } from '#/helpers/Styles/cn';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { trackStore } from '#/modules/Track/stores/trackStore';
 import { llmStatusStore } from '#/modules/AiRuntime/stores/llmStatusStore';
+import { animationScheduler } from '#/helpers/DOM/AnimationScheduler';
 import { History, Users } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 
 export const StatusBar = (): ReactElement => {
-    const [engineInfo, setEngineInfo] = useState(() => getEngineState());
-    const [masterLevel, setMasterLevel] = useState(0);
-    const [cpuLoad, setCpuLoad] = useState(0);
     const undoState = useUndoState();
     const collab = useCollaborationState();
-    const rafRef = useRef(0);
-    const lastFrameRef = useRef(0);
-    const cpuSamplesRef = useRef<number[]>([]);
-    const [memoryMb, setMemoryMb] = useState(0);
-
+    
     // GPU / LLM status
     const llmStatus = useSyncExternalStore(
         (cb) => llmStatusStore.subscribe(() => cb()),
         () => llmStatusStore.value
     );
+
+    const id = crypto.randomUUID();
+    const lastFrameRef = useRef(0);
+    const cpuSamplesRef = useRef<number[]>([]);
+
+    const cpuBarRef = useRef<HTMLDivElement>(null);
+    const cpuTextRef = useRef<HTMLSpanElement>(null);
+    const memContainerRef = useRef<HTMLDivElement>(null);
+    const memTextRef = useRef<HTMLSpanElement>(null);
+    const sampleRateRef = useRef<HTMLSpanElement>(null);
+    const latencyRef = useRef<HTMLSpanElement>(null);
+    const masterLevelBarRef = useRef<HTMLDivElement>(null);
+    const masterLevelTextRef = useRef<HTMLSpanElement>(null);
+    const engineStateRef = useRef<HTMLSpanElement>(null);
 
     useEffect(() => {
         lastFrameRef.current = performance.now();
@@ -33,8 +41,8 @@ export const StatusBar = (): ReactElement => {
             const frameDelta = now - lastFrameRef.current;
             lastFrameRef.current = now;
 
-            setEngineInfo(getEngineState());
-            setMasterLevel(getMasterPeakLevel());
+            const engineInfo = getEngineState();
+            const masterLevel = getMasterPeakLevel();
 
             const targetFrameMs = 1000 / 60;
             const load = Math.min(100, (frameDelta / targetFrameMs) * 100 - 100);
@@ -43,19 +51,61 @@ export const StatusBar = (): ReactElement => {
             if (samples.length > 30) {
                 samples.shift();
             }
-            const avg = samples.reduce((a, b) => a + b, 0) / samples.length;
-            setCpuLoad(avg);
+            let sum = 0;
+            for (let i = 0; i < samples.length; i++) {
+                sum += samples[i]!;
+            }
+            const avg = sum / samples.length;
+            const cpuPct = Math.round(avg);
 
-            // Memory usage (Chromium-only API)
-            const perfMemory = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory;
-            if (perfMemory) {
-                setMemoryMb(Math.round(perfMemory.usedJSHeapSize / (1024 * 1024)));
+            if (cpuBarRef.current) {
+                cpuBarRef.current.style.width = `${Math.min(100, cpuPct)}%`;
+                cpuBarRef.current.className = `h-full rounded-full transition-[width] duration-150 ${
+                    cpuPct < 50 ? 'bg-[var(--color-state-success)]' : cpuPct < 80 ? 'bg-[var(--color-state-warning)]' : 'bg-[var(--color-state-danger)]'
+                }`;
+            }
+            if (cpuTextRef.current) {
+                cpuTextRef.current.textContent = `${cpuPct}%`;
             }
 
-            rafRef.current = requestAnimationFrame(tick);
+            const perfMemory = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory;
+            if (perfMemory) {
+                const memMb = Math.round(perfMemory.usedJSHeapSize / (1024 * 1024));
+                if (memContainerRef.current) {
+                    memContainerRef.current.style.display = memMb > 0 ? 'flex' : 'none';
+                }
+                if (memTextRef.current) {
+                    memTextRef.current.textContent = `${memMb} MB`;
+                }
+            } else {
+                if (memContainerRef.current) {
+                    memContainerRef.current.style.display = 'none';
+                }
+            }
+
+            if (sampleRateRef.current) {
+                sampleRateRef.current.textContent = `${engineInfo.sampleRate / 1000}kHz`;
+            }
+            if (latencyRef.current) {
+                latencyRef.current.textContent = `${(engineInfo.baseLatency * 1000).toFixed(1)}ms`;
+            }
+            if (engineStateRef.current) {
+                engineStateRef.current.className = `size-1.5 rounded-full ${
+                    engineInfo.state === 'running' ? 'bg-[var(--color-state-success)]' : 'bg-muted-foreground/50'
+                }`;
+                engineStateRef.current.title = `Engine: ${engineInfo.state}`;
+            }
+
+            const levelDb = masterLevel > 0 ? (20 * Math.log10(masterLevel)).toFixed(1) : '-∞';
+            if (masterLevelBarRef.current) {
+                masterLevelBarRef.current.style.width = `${Math.min(100, masterLevel * 300)}%`;
+            }
+            if (masterLevelTextRef.current) {
+                masterLevelTextRef.current.textContent = `${levelDb} dB`;
+            }
         };
-        rafRef.current = requestAnimationFrame(tick);
-        return () => cancelAnimationFrame(rafRef.current);
+        animationScheduler.register(`status-${id}`, tick);
+        return () => animationScheduler.unregister(`status-${id}`);
     }, []);
 
     const selectionLabel = useSyncExternalStore(
@@ -88,10 +138,6 @@ export const StatusBar = (): ReactElement => {
         }
     );
 
-    const latencyMs = (engineInfo.baseLatency * 1000).toFixed(1);
-    const levelDb = masterLevel > 0 ? (20 * Math.log10(masterLevel)).toFixed(1) : '-∞';
-    const cpuPct = Math.round(cpuLoad);
-
     return (
         <footer
             className="flex h-6 shrink-0 items-center justify-between border-t border-black/50 bg-surface-tray shadow-[inset_0_1px_2px_rgba(0,0,0,0.4)] px-3"
@@ -103,21 +149,19 @@ export const StatusBar = (): ReactElement => {
                     <span className="text-[10px] text-muted-foreground">CPU:</span>
                     <div className="h-2 w-10 rounded-full bg-muted/30 overflow-hidden">
                         <div
-                            className={cn(
-                                'h-full rounded-full transition-[width] duration-150',
-                                cpuPct < 50 ? 'bg-[var(--color-state-success)]' : cpuPct < 80 ? 'bg-[var(--color-state-warning)]' : 'bg-[var(--color-state-danger)]'
-                            )}
-                            style={{ width: `${Math.min(100, cpuPct)}%` }}
+                            ref={cpuBarRef}
+                            className="h-full rounded-full transition-[width] duration-150 bg-[var(--color-state-success)]"
+                            style={{ width: '0%' }}
                         />
                     </div>
-                    <span className="text-[10px] font-mono text-muted-foreground w-7 text-right">{cpuPct}%</span>
+                    <span ref={cpuTextRef} className="text-[10px] font-mono text-muted-foreground w-7 text-right">0%</span>
                 </div>
-                {memoryMb > 0 ? (
-                    <div className="flex items-center gap-1">
-                        <span className="text-[10px] text-muted-foreground">MEM:</span>
-                        <span className="text-[10px] font-mono text-muted-foreground">{memoryMb} MB</span>
-                    </div>
-                ) : null}
+                
+                <div ref={memContainerRef} className="flex items-center gap-1" style={{ display: 'none' }}>
+                    <span className="text-[10px] text-muted-foreground">MEM:</span>
+                    <span ref={memTextRef} className="text-[10px] font-mono text-muted-foreground">0 MB</span>
+                </div>
+                
                 <div className="flex items-center gap-1">
                     <span className="text-[10px] text-muted-foreground">GPU:</span>
                     {llmStatus?.state === 'generating' ? (
@@ -132,16 +176,19 @@ export const StatusBar = (): ReactElement => {
                         <span className="text-[10px] font-mono text-muted-foreground/50">idle</span>
                     )}
                 </div>
-                <span className="text-[10px] font-mono tabular-nums text-muted-foreground">{engineInfo.sampleRate / 1000}kHz</span>
-                <span className="text-[10px] font-mono tabular-nums text-muted-foreground">{latencyMs}ms</span>
+                
+                <span ref={sampleRateRef} className="text-[10px] font-mono tabular-nums text-muted-foreground">0kHz</span>
+                <span ref={latencyRef} className="text-[10px] font-mono tabular-nums text-muted-foreground">0.0ms</span>
+                
                 <div className="flex items-center gap-1">
                     <div className="h-2 w-16 rounded-full bg-muted/30 overflow-hidden">
                         <div
+                            ref={masterLevelBarRef}
                             className="h-full rounded-full bg-[var(--color-state-success)] transition-[width] duration-75"
-                            style={{ width: `${Math.min(100, masterLevel * 300)}%` }}
+                            style={{ width: '0%' }}
                         />
                     </div>
-                    <span className="text-[10px] font-mono text-muted-foreground w-10 text-right">{levelDb} dB</span>
+                    <span ref={masterLevelTextRef} className="text-[10px] font-mono text-muted-foreground w-10 text-right">-∞ dB</span>
                 </div>
             </div>
 
@@ -190,11 +237,9 @@ export const StatusBar = (): ReactElement => {
                     {undoState.undoCount} undo{undoState.undoCount !== 1 ? 's' : ''}
                 </Button>
                 <span
-                    className={cn(
-                        'size-1.5 rounded-full',
-                        engineInfo.state === 'running' ? 'bg-[var(--color-state-success)]' : 'bg-muted-foreground/50'
-                    )}
-                    title={`Engine: ${engineInfo.state}`}
+                    ref={engineStateRef}
+                    className="size-1.5 rounded-full bg-muted-foreground/50"
+                    title="Engine: suspended"
                 />
             </div>
         </footer>

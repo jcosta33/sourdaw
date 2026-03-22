@@ -65,7 +65,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
     return (
         <div
             style={style}
-            className="flex flex-col bg-surface-raised border-l border-border/50 overflow-hidden shadow-2xl relative select-none"
+            className="contain-strict flex flex-col bg-surface-raised border-l border-border/50 overflow-hidden shadow-2xl relative select-none"
         >
             {/* Header */}
             <div className="flex items-center justify-between px-3 h-10 border-b border-border/50 bg-surface-tray sticky top-0 shrink-0 z-10">

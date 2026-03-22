@@ -56,6 +56,17 @@ async function removeFromIdb(id: string): Promise<void> {
     }
 }
 
+const mipmapLevel1Cache = new Map<string, Float32Array>();
+
+function clearWaveformCachesForId(id: string) {
+    mipmapLevel1Cache.delete(id);
+    for (const key of waveformCache.keys()) {
+        if (key.startsWith(`${id}:`)) {
+            waveformCache.delete(key);
+        }
+    }
+}
+
 export const audioBufferCache = {
     get(id: string): AudioBuffer | undefined {
         return cache.get(id);
@@ -63,13 +74,13 @@ export const audioBufferCache = {
 
     set(id: string, buffer: AudioBuffer): void {
         cache.set(id, buffer);
-        waveformCache.delete(id);
+        clearWaveformCachesForId(id);
         void persistToIdb(id, buffer);
     },
 
     remove(id: string): void {
         cache.delete(id);
-        waveformCache.delete(id);
+        clearWaveformCachesForId(id);
         void removeFromIdb(id);
     },
 
@@ -95,19 +106,59 @@ export const audioBufferCache = {
 
         const channelData = buffer.getChannelData(0);
         const peaks = new Float32Array(numBins);
-        const samplesPerBin = Math.floor(channelData.length / numBins);
+        const samplesPerBin = channelData.length / numBins;
 
-        for (let bin = 0; bin < numBins; bin++) {
-            let peak = 0;
-            const start = bin * samplesPerBin;
-            const end = Math.min(start + samplesPerBin, channelData.length);
-            for (let i = start; i < end; i++) {
-                const abs = Math.abs(channelData[i]!);
-                if (abs > peak) {
-                    peak = abs;
+        if (samplesPerBin >= 256) {
+            // Use Mipmap Level 1
+            let mipmap = mipmapLevel1Cache.get(id);
+            if (!mipmap) {
+                // Generate Level 1 Mipmap (256 samples per bin)
+                const mipmapLength = Math.ceil(channelData.length / 256);
+                mipmap = new Float32Array(mipmapLength);
+                for (let i = 0; i < mipmapLength; i++) {
+                    let peak = 0;
+                    const start = i * 256;
+                    const end = Math.min(start + 256, channelData.length);
+                    for (let j = start; j < end; j++) {
+                        const abs = Math.abs(channelData[j]!);
+                        if (abs > peak) peak = abs;
+                    }
+                    mipmap[i] = peak;
                 }
+                mipmapLevel1Cache.set(id, mipmap);
             }
-            peaks[bin] = peak;
+
+            const mipmapSamplesPerBin = mipmap.length / numBins;
+            for (let bin = 0; bin < numBins; bin++) {
+                let peak = 0;
+                const start = Math.floor(bin * mipmapSamplesPerBin);
+                const end = Math.floor(Math.min((bin + 1) * mipmapSamplesPerBin, mipmap.length));
+                if (start === end) {
+                    peak = mipmap[start] || 0;
+                } else {
+                    for (let i = start; i < end; i++) {
+                        const v = mipmap[i]!;
+                        if (v > peak) peak = v;
+                    }
+                }
+                peaks[bin] = peak;
+            }
+        } else {
+            // Use original buffer for high zoom levels
+            for (let bin = 0; bin < numBins; bin++) {
+                let peak = 0;
+                const start = Math.floor(bin * samplesPerBin);
+                const end = Math.floor(Math.min((bin + 1) * samplesPerBin, channelData.length));
+                if (start === end) {
+                    peak = Math.abs(channelData[start] || 0);
+                } else {
+                    for (let i = start; i < end; i++) {
+                        const abs = Math.abs(channelData[i]!);
+                        if (abs > peak) peak = abs;
+                    }
+                }
+                peaks[bin] = peak;
+            }
         }
 
         waveformCache.set(key, peaks);

@@ -17,7 +17,7 @@ import { setTrackGain, setTrackPan, setTrackColor } from '../../../useCases/work
 import { armTrack } from '../../../useCases/workspaceViewActions';
 import { removeTrack } from '../../../useCases/workspaceViewActions';
 import { renameTrack } from '../../../useCases/workspaceViewActions';
-import { useMeterLevel } from '../../hooks/useMeterLevel';
+
 import { LevelMeter } from '../../components/LevelMeter';
 import { VUMeterCanvas } from '../../components/VUMeterCanvas';
 import { DeviceChainSection } from './DeviceChainSection';
@@ -58,7 +58,6 @@ type ExpandedChannelStripProps = {
 };
 
 export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: ExpandedChannelStripProps): ReactElement => {
-    const { peak, rms, peakHold } = useMeterLevel(track.id);
     const [ctxMenu, setCtxMenu] = useState<MixerMenu>(null);
     const [isRenaming, setIsRenaming] = useState(false);
     const ctxRef = useRef<HTMLDivElement>(null);
@@ -258,7 +257,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                         aria-label={`${track.name} gain`}
                     />
                 </div>
-                <LevelMeter peak={peak} rms={rms} peakHold={peakHold} width="w-2.5" />
+                <LevelMeter trackId={track.id} width="w-2.5" />
                 <VUMeterCanvas trackId={track.id} size={80} />
             </div>
 

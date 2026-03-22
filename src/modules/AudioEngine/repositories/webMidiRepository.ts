@@ -12,6 +12,7 @@ import {
     createMidiNote,
 } from '#/modules/Track/useCases/trackQueries';
 import { getTransportStoreValue } from '#/modules/Transport/useCases/transportQueries';
+import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
 import { completeMidiLearn, handleMidiMessage as applyMidiMappings } from '#/modules/Track/useCases/midiLearnUseCases';
 import { getSynthParamsForTrack, scheduleNote } from '#/modules/AudioEngine/useCases/builtinSynth';
 
@@ -144,7 +145,7 @@ function findActiveRecordingClip(trackId: string): string | null {
     }
 
     if (transport.isRecording && transport.overdubEnabled) {
-        const ph = transport.playheadPosition;
+        const ph = playheadPositionRef.current;
         const intersecting = midiClips.find((c) => ph >= c.startBeat && ph <= c.endBeat);
         if (intersecting) {
             return intersecting.id;
@@ -183,7 +184,7 @@ function handleNoteOn(channel: number, note: number, velocity: number): void {
 
     const noteData: ActiveNoteData = {
         startTime: now,
-        startBeat: transport ? transport.playheadPosition : 0,
+        startBeat: transport ? playheadPositionRef.current : 0,
         channel,
     };
     activeNotes.set(note, noteData);

@@ -29,7 +29,7 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
 
     return (
         <aside
-            className="flex shrink-0 flex-col border-l border-border-hairline bg-surface-tray shadow-[inset_1px_0_0_rgba(255,255,255,0.02)]"
+            className="contain-strict flex shrink-0 flex-col border-l border-border-hairline bg-surface-tray shadow-[inset_1px_0_0_rgba(255,255,255,0.02)]"
             style={style}
             aria-label="Inspector panel"
         >

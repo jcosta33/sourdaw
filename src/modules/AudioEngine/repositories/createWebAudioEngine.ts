@@ -47,6 +47,7 @@ function createNoopEngine(): AudioEngine {
             muted: false,
             soloed: false,
             deviceNodes: [],
+            meterBuffer: new Float32Array(0),
         }),
         removeTrackStrip: () => {},
         getTrackStrip: () => undefined,
@@ -59,7 +60,12 @@ function createNoopEngine(): AudioEngine {
         addDeviceToStrip: () => {},
         removeDeviceFromStrip: () => {},
         updateDeviceParam: () => {},
-        ensureBusStrip: (busId) => ({ busId, gainNode: silentGain, analyserNode: silentAnalyser }),
+        ensureBusStrip: (busId) => ({ 
+            busId, 
+            gainNode: silentGain, 
+            analyserNode: silentAnalyser, 
+            meterBuffer: new Float32Array(0) 
+        }),
         removeBusStrip: () => {},
         setBusGain: () => {},
         setSend: () => {},
@@ -97,6 +103,7 @@ export function createWebAudioEngine(): AudioEngine {
     const sendNodes = new Map<string, SendNode>();
     const sidechainConnections = new Map<string, GainNode>();
     const scheduledNodes: AudioScheduledSourceNode[] = [];
+    const masterMeterBuffer = new Float32Array(masterAnalyser.frequencyBinCount);
 
     let workletReady = false;
 
@@ -187,6 +194,7 @@ export function createWebAudioEngine(): AudioEngine {
             muted: false,
             soloed: false,
             deviceNodes: [],
+            meterBuffer: new Float32Array(analyserNode.frequencyBinCount),
         };
 
         trackStrips.set(trackId, strip);
@@ -243,8 +251,8 @@ export function createWebAudioEngine(): AudioEngine {
         if (!strip) {
             return 0;
         }
-        const data = new Float32Array(strip.analyserNode.frequencyBinCount);
-        strip.analyserNode.getFloatTimeDomainData(data);
+        const data = strip.meterBuffer;
+        strip.analyserNode.getFloatTimeDomainData(data as any);
         let peak = 0;
         for (let i = 0; i < data.length; i++) {
             const abs = Math.abs(data[i]!);
@@ -256,8 +264,8 @@ export function createWebAudioEngine(): AudioEngine {
     }
 
     function getMasterPeakLevel(): number {
-        const data = new Float32Array(masterAnalyser.frequencyBinCount);
-        masterAnalyser.getFloatTimeDomainData(data);
+        const data = masterMeterBuffer;
+        masterAnalyser.getFloatTimeDomainData(data as any);
         let peak = 0;
         for (let i = 0; i < data.length; i++) {
             const abs = Math.abs(data[i]!);
@@ -834,7 +842,12 @@ export function createWebAudioEngine(): AudioEngine {
         gainNode.connect(analyserNode);
         analyserNode.connect(masterGainNode);
 
-        const strip: BusStrip = { busId, gainNode, analyserNode };
+        const strip: BusStrip = { 
+            busId, 
+            gainNode, 
+            analyserNode, 
+            meterBuffer: new Float32Array(analyserNode.frequencyBinCount) 
+        };
         busStrips.set(busId, strip);
         return strip;
     }
@@ -951,8 +964,10 @@ export function createWebAudioEngine(): AudioEngine {
         if (!strip) {
             return 0;
         }
-        const data = new Float32Array(strip.analyserNode.frequencyBinCount);
-        strip.analyserNode.getFloatTimeDomainData(data);
+        const data = strip.meterBuffer;
+        if (data) {
+            strip.analyserNode.getFloatTimeDomainData(data as any);
+        }
         let peak = 0;
         for (let i = 0; i < data.length; i++) {
             const abs = Math.abs(data[i]!);

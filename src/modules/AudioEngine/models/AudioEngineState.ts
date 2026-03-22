@@ -24,12 +24,14 @@ export type TrackChannelStrip = {
     muted: boolean;
     soloed: boolean;
     deviceNodes: BuiltinDeviceNode[];
+    meterBuffer: Float32Array;
 };
 
 export type BusStrip = {
     busId: string;
     gainNode: GainNode;
     analyserNode: AnalyserNode;
+    meterBuffer: Float32Array;
 };
 
 export type SendNode = {

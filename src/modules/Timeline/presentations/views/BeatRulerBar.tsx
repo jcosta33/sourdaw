@@ -1,7 +1,9 @@
-import { useRef, useCallback, type MouseEvent as ReactMouseEvent } from 'react';
+import { useRef, useCallback, useEffect, type MouseEvent as ReactMouseEvent } from 'react';
 import { useSyncExternalStore } from 'react';
 import { timelineViewStore } from '../../stores/timelineViewStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
+import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
+import { animationScheduler } from '#/helpers/DOM/AnimationScheduler';
 import { seekPlayhead } from '#/modules/Transport/useCases/transportControls';
 import { setLoopRegion } from '#/modules/Transport/useCases/transportControls';
 
@@ -26,12 +28,12 @@ export const BeatRulerBar = (): React.ReactElement => {
     const loopStart = transport?.loopStart ?? 0;
     const loopEnd = transport?.loopEnd ?? 0;
     const isLooping = transport?.isLooping ?? false;
-    const playhead = transport?.playheadPosition ?? 0;
+    const isPlaying = transport?.isPlaying ?? false;
     const timeSigNum = transport?.timeSignatureNumerator ?? 4;
 
     // Draw the ruler via canvas
     const drawRuler = useCallback(
-        (canvas: HTMLCanvasElement) => {
+        (canvas: HTMLCanvasElement, playhead: number = playheadPositionRef.current) => {
             const ctx = canvas.getContext('2d');
             if (!ctx) {
                 return;
@@ -139,8 +141,23 @@ export const BeatRulerBar = (): React.ReactElement => {
                 ctx.fillText('Drag to set loop region · Click to move playhead', w / 2 - 90, h - 5);
             }
         },
-        [pixelsPerBeat, scrollX, loopStart, loopEnd, isLooping, playhead, timeSigNum]
+        [pixelsPerBeat, scrollX, loopStart, loopEnd, isLooping, timeSigNum]
     );
+
+    // Continuous playhead redraw via rAF — reads from the non-reactive ref
+    useEffect(() => {
+        if (!isPlaying) {
+            return;
+        }
+        const id = crypto.randomUUID();
+        const loop = () => {
+            if (canvasRef.current) {
+                drawRuler(canvasRef.current, playheadPositionRef.current);
+            }
+        };
+        animationScheduler.register(`beat-ruler-${id}`, loop);
+        return () => animationScheduler.unregister(`beat-ruler-${id}`);
+    }, [isPlaying, drawRuler]);
 
     const setCanvas = useCallback(
         (el: HTMLCanvasElement | null) => {
@@ -152,9 +169,9 @@ export const BeatRulerBar = (): React.ReactElement => {
         [drawRuler]
     );
 
-    // Redraw on state change
+    // Redraw on discrete state change (non-playhead)
     if (canvasRef.current) {
-        drawRuler(canvasRef.current);
+        drawRuler(canvasRef.current, playheadPositionRef.current);
     }
 
     const getBeat = (clientX: number): number => {

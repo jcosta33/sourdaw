@@ -1,4 +1,5 @@
 import { getTransportState, updateTransportState } from '../repositories/transportRepository';
+import { playheadPositionRef } from '../stores/playheadPositionRef';
 import { trackStore } from '#/modules/Track/stores/trackStore';
 import {
     ensureTrackStrip,
@@ -83,6 +84,7 @@ export function startPlayback(): void {
     }
 
     updateTransportState({ isPlaying: true, playheadPosition: startPosition });
+    playheadPositionRef.current = startPosition;
     startPlayheadScheduler();
 }
 
@@ -107,6 +109,7 @@ export function stopPlayback(): void {
     }
 
     updateTransportState({ isPlaying: false, isRecording: false, playheadPosition });
+    playheadPositionRef.current = playheadPosition;
 }
 
 export function toggleLoop(): void {
@@ -314,6 +317,7 @@ export function seekPlayhead(beat: number): void {
     }
 
     updateTransportState({ playheadPosition: targetBeat });
+    playheadPositionRef.current = targetBeat;
 
     if (wasPlaying) {
         startPlayheadScheduler();

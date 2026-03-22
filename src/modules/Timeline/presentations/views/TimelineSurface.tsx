@@ -9,6 +9,7 @@ import { type TimelineRenderer } from '../../models/RendererBackend';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { zoomTimeline, setAutoScroll, timelineViewStore } from '../../stores/timelineViewStore';
 
+import { animationScheduler } from '#/helpers/DOM/AnimationScheduler';
 import { ClipContextMenu, TimelineEmptyMenu } from './TimelineContextMenus';
 import { useTimelineInteractions } from './hooks/useTimelineInteractions';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
@@ -17,6 +18,7 @@ import { automationStore } from '#/modules/Track/stores/automationStore';
 import { trackStore } from '#/modules/Track/stores/trackStore';
 import { takeLaneStore } from '#/modules/Track/stores/takeLaneStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
+import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
 import { tempoMapStore } from '#/modules/Transport/stores/tempoMapStore';
 import { timeSignatureMapStore } from '#/modules/Transport/stores/timeSignatureMapStore';
 import { markerStore } from '#/modules/Timeline/stores/markerStore';
@@ -25,7 +27,6 @@ export const TimelineSurface = (): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const rendererRef = useRef<TimelineRenderer | null>(null);
-    const rafRef = useRef<number>(0);
 
     const {
         handleMouseDown,
@@ -123,7 +124,7 @@ export const TimelineSurface = (): ReactElement => {
             if (!transport || !viewState) {
                 return;
             }
-            const playheadPx = transport.playheadPosition * viewState.pixelsPerBeat;
+            const playheadPx = playheadPositionRef.current * viewState.pixelsPerBeat;
             const canvasWidth = container.getBoundingClientRect().width;
             const targetScrollX = Math.max(0, playheadPx - canvasWidth / 2);
             timelineViewStore.set({ ...viewState, scrollX: targetScrollX });
@@ -197,6 +198,7 @@ export const TimelineSurface = (): ReactElement => {
 
         let disposed = false;
         let dirty = true;
+        const renderId = crypto.randomUUID();
 
         const markDirty = () => {
             dirty = true;
@@ -242,7 +244,7 @@ export const TimelineSurface = (): ReactElement => {
 
                     const viewState = timelineViewStore.value;
                     if (isPlaying && viewState?.autoScrollEnabled) {
-                        const playheadPx = transport!.playheadPosition * viewState.pixelsPerBeat;
+                        const playheadPx = playheadPositionRef.current * viewState.pixelsPerBeat;
                         const canvasWidth = canvas.width;
                         const rightThreshold = viewState.scrollX + canvasWidth * 0.75;
                         const leftEdge = viewState.scrollX;
@@ -256,11 +258,9 @@ export const TimelineSurface = (): ReactElement => {
                     const model = buildTimelineRenderModel();
                     renderer.render(model);
                 }
-
-                rafRef.current = requestAnimationFrame(renderLoop);
             };
 
-            rafRef.current = requestAnimationFrame(renderLoop);
+            animationScheduler.register(`timeline-${renderId}`, renderLoop);
         };
 
         initRenderer();
@@ -284,7 +284,7 @@ export const TimelineSurface = (): ReactElement => {
 
         return () => {
             disposed = true;
-            cancelAnimationFrame(rafRef.current);
+            animationScheduler.unregister(`timeline-${renderId}`);
             resizeObserver.disconnect();
             rendererRef.current?.dispose();
             rendererRef.current = null;

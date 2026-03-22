@@ -1,4 +1,5 @@
 import { transportStore } from '../stores/transportStore';
+import { playheadPositionRef } from '../stores/playheadPositionRef';
 import { tempoMapStore } from '../stores/tempoMapStore';
 import { getTempoAtBeat } from '../models/TempoMap';
 import { getTimeSignatureAtBeat } from '../models/TimeSignatureMap';
@@ -494,6 +495,7 @@ export function startPlayheadScheduler(): void {
     const ctx = getAudioContext();
     lastTickTime = ctx.currentTime;
     accumulatedPosition = state.playheadPosition;
+    playheadPositionRef.current = state.playheadPosition;
     lastScheduledBeat = state.playheadPosition - 0.0001;
     lastMetronomeBeat = Math.floor(state.playheadPosition) - 1;
 
@@ -624,7 +626,7 @@ export function startPlayheadScheduler(): void {
         }
 
         accumulatedPosition = newPosition;
-        transportStore.set({ ...current, playheadPosition: newPosition });
+        playheadPositionRef.current = newPosition;
 
         const hasArmedTracks = trackStore.value?.tracks.some((t) => t.armed) ?? false;
         if (

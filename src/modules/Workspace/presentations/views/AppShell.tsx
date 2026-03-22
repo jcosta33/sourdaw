@@ -297,7 +297,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                 {/* Center: vertical split — arrangement over mixer */}
                 <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
                     {/* Main arrangement area */}
-                    <main id="main-content" className="flex-1 overflow-hidden min-h-0">
+                    <main id="main-content" className="contain-strict flex-1 overflow-hidden min-h-0">
                         {children}
                     </main>
 
@@ -309,7 +309,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={(d) => setMixerHeight((h) => clamp(h + d, 120, 800))}
                             />
                             <div
-                                className="flex flex-col bg-surface-base overflow-hidden shrink-0"
+                                className="contain-strict flex flex-col bg-surface-base overflow-hidden shrink-0"
                                 style={{ height: mixerHeight }}
                             >
                                 {/* Bottom panel tab bar */}
@@ -392,7 +392,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                             onResize={(d) => setAutomationWidth((w) => clamp(w + d, 200, 600))}
                         />
                         <div
-                            className="flex flex-col border-l border-border-hairline bg-surface-tray overflow-hidden"
+                            className="contain-strict flex flex-col border-l border-border-hairline bg-surface-tray overflow-hidden"
                             style={{ width: automationWidth, minWidth: 200 }}
                         >
                             <AutomationView />

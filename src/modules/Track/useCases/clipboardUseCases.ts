@@ -1,5 +1,6 @@
 import { getTrackState } from '../repositories/trackRepository';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
+import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
 import { midiStore } from '#/modules/Track/stores/midiStore';
 import { addClip, removeClip } from '#/modules/Track/useCases/clipUseCases';
 import { type Clip } from '#/modules/Track/models/Track';
@@ -99,7 +100,7 @@ export function pasteClip(): void {
         return;
     }
 
-    const playheadBeat = transport.playheadPosition;
+    const playheadBeat = playheadPositionRef.current;
     const minStartBeat = Math.min(...clipClipboard.map((e) => e.clip.startBeat));
     const offset = playheadBeat - minStartBeat;
 

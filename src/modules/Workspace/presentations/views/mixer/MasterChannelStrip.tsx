@@ -3,7 +3,7 @@ import { Fader } from '#/components/daw/Fader';
 import { cn } from '#/helpers/Styles/cn';
 import { setMasterGainValue } from '../../../useCases/workspaceViewActions';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { useMeterLevel } from '../../hooks/useMeterLevel';
+
 import { LevelMeter } from '../../components/LevelMeter';
 
 type MasterChannelStripProps = {
@@ -15,7 +15,7 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
         (cb) => transportStore.subscribe(cb),
         () => transportStore.value?.masterGain ?? 80
     );
-    const { peak, rms, peakHold } = useMeterLevel(null);
+
 
     const setMasterGain = (v: number) => {
         const state = transportStore.value;
@@ -45,7 +45,7 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
                     }}
                     aria-label="Master gain"
                 />
-                <LevelMeter peak={peak} rms={rms} peakHold={peakHold} width="w-2.5" />
+                <LevelMeter trackId={null} width="w-2.5" />
             </div>
 
             <span className="text-[10px] font-mono text-text-secondary mt-1">
