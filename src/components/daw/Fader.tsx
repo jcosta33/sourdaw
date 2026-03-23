@@ -1,7 +1,7 @@
-import { type ReactElement, useState, useRef, useCallback } from 'react';
+import { type ReactElement, type PointerEvent, useState, useRef } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 
-interface FaderProps {
+type FaderProps = {
     value: number;
     onChange: (val: number) => void;
     min?: number;
@@ -13,7 +13,7 @@ interface FaderProps {
     height?: number;
     showScale?: boolean;
     className?: string;
-}
+};
 
 /** dB marks for the fader scale */
 const DB_MARKS = [6, 0, -6, -12, -24, -48] as const;
@@ -43,62 +43,56 @@ export const Fader = ({
 
     const normalized = Math.max(0, Math.min(1, (value - min) / (max - min)));
 
-    const clampAndSnap = useCallback(
-        (v: number) => {
-            let clamped = Math.max(min, Math.min(max, v));
-            if (bipolar && Math.abs(clamped - defaultValue) < (max - min) * 0.05) {
-                clamped = defaultValue;
-            }
-            return clamped;
-        },
-        [min, max, defaultValue, bipolar]
-    );
+    const clampAndSnap = (v: number) => {
+        let clamped = Math.max(min, Math.min(max, v));
+        if (bipolar && Math.abs(clamped - defaultValue) < (max - min) * 0.05) {
+            clamped = defaultValue;
+        }
+        return clamped;
+    };
 
-    const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-        if (e.button !== 0 || !trackRef.current) {
+    const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+        if (event.button !== 0 || !trackRef.current) {
             return;
         }
-        e.currentTarget.setPointerCapture(e.pointerId);
+        event.currentTarget.setPointerCapture(event.pointerId);
         setIsDragging(true);
 
-        const capEl = e.currentTarget.querySelector('[data-role="fader-cap"]');
-        const isCapClick = capEl?.contains(e.target as Node);
+        const capEl = event.currentTarget.querySelector('[data-role="fader-cap"]');
+        const isCapClick = capEl?.contains(event.target as Node);
 
         if (!isCapClick) {
             const rect = trackRef.current.getBoundingClientRect();
-            const percent = 1 - (e.clientY - rect.top) / rect.height;
+            const percent = 1 - (event.clientY - rect.top) / rect.height;
             const newValue = clampAndSnap(min + percent * (max - min));
             onChange(newValue);
             startValue.current = newValue;
-            startY.current = e.clientY;
+            startY.current = event.clientY;
         } else {
             startValue.current = value;
-            startY.current = e.clientY;
+            startY.current = event.clientY;
         }
     };
 
-    const handlePointerMove = useCallback(
-        (e: React.PointerEvent<HTMLDivElement>) => {
-            if (!isDragging) {
-                return;
-            }
-            const deltaY = startY.current - e.clientY;
-            const currentStep = e.shiftKey ? fineStep : step;
-            const pxPerUnit = height / (max - min);
-            let sensitivity = 1 / pxPerUnit;
-            if (e.shiftKey) {
-                sensitivity *= 0.1;
-            }
-            let newValue = startValue.current + deltaY * sensitivity;
-            newValue = Math.round(newValue / currentStep) * currentStep;
-            onChange(clampAndSnap(newValue));
-        },
-        [isDragging, step, fineStep, max, min, height, clampAndSnap, onChange]
-    );
+    const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
+        if (!isDragging) {
+            return;
+        }
+        const deltaY = startY.current - event.clientY;
+        const currentStep = event.shiftKey ? fineStep : step;
+        const pxPerUnit = height / (max - min);
+        let sensitivity = 1 / pxPerUnit;
+        if (event.shiftKey) {
+            sensitivity *= 0.1;
+        }
+        let newValue = startValue.current + deltaY * sensitivity;
+        newValue = Math.round(newValue / currentStep) * currentStep;
+        onChange(clampAndSnap(newValue));
+    };
 
-    const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {
         setIsDragging(false);
-        e.currentTarget.releasePointerCapture(e.pointerId);
+        event.currentTarget.releasePointerCapture(event.pointerId);
     };
 
     const handleDoubleClick = () => {
@@ -118,7 +112,7 @@ export const Fader = ({
             onDoubleClick={handleDoubleClick}
         >
             {/* dB scale marks (left side) */}
-            {showScale && (
+            {showScale ? (
                 <div className="absolute -left-6 top-0 bottom-0 w-5 flex flex-col justify-between pointer-events-none">
                     {DB_MARKS.map((db) => {
                         const pct = ((db - min) / (max - min)) * 100;
@@ -136,7 +130,7 @@ export const Fader = ({
                         );
                     })}
                 </div>
-            )}
+            ) : null}
 
             {/* Track groove */}
             <div
@@ -157,17 +151,18 @@ export const Fader = ({
                 />
 
                 {/* Tick marks at the right side for visual reference */}
-                {showScale &&
-                    DB_MARKS.map((db) => {
-                        const pct = ((db - min) / (max - min)) * 100;
-                        return (
-                            <div
-                                key={db}
-                                className="absolute right-0 w-[2px] h-px bg-white/10"
-                                style={{ bottom: `${pct}%` }}
-                            />
-                        );
-                    })}
+                {showScale
+                    ? DB_MARKS.map((db) => {
+                          const pct = ((db - min) / (max - min)) * 100;
+                          return (
+                              <div
+                                  key={db}
+                                  className="absolute right-0 w-[2px] h-px bg-white/10"
+                                  style={{ bottom: `${pct}%` }}
+                              />
+                          );
+                      })
+                    : null}
             </div>
 
             {/* Fader cap */}

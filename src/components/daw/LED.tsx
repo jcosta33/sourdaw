@@ -3,12 +3,12 @@ import { cn } from '#/helpers/Styles/cn';
 
 type LEDVariant = 'cyan' | 'mint' | 'amber' | 'red';
 
-interface LEDProps {
+type LEDProps = {
     on: boolean;
     variant?: LEDVariant;
     size?: 'sm' | 'md' | 'lg';
     className?: string;
-}
+};
 
 /** Tinted dark off-state colors for each LED variant */
 const offBackground: Record<LEDVariant, string> = {

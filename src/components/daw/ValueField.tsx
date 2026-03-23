@@ -1,7 +1,7 @@
-import { type ReactElement, useState, useRef, useCallback } from 'react';
+import { type ReactElement, type PointerEvent, useState, useRef } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 
-interface ValueFieldProps {
+type ValueFieldProps = {
     value: number;
     onChange: (val: number) => void;
     min?: number;
@@ -12,7 +12,7 @@ interface ValueFieldProps {
     label?: string;
     onReset?: () => void;
     className?: string;
-}
+};
 
 /**
  * ValueField / ScrubField
@@ -35,48 +35,45 @@ export const ValueField = ({
     const startY = useRef(0);
     const startValue = useRef(value);
 
-    const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-        if (e.button !== 0) {
+    const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+        if (event.button !== 0) {
             return;
         } // Only left click
-        e.currentTarget.setPointerCapture(e.pointerId);
+        event.currentTarget.setPointerCapture(event.pointerId);
         setIsDragging(true);
-        startY.current = e.clientY;
+        startY.current = event.clientY;
         startValue.current = value;
     };
 
-    const handlePointerMove = useCallback(
-        (e: React.PointerEvent<HTMLDivElement>) => {
-            if (!isDragging) {
-                return;
-            }
+    const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
+        if (!isDragging) {
+            return;
+        }
 
-            const deltaY = startY.current - e.clientY;
-            const currentStep = e.shiftKey ? fineStep : step;
+        const deltaY = startY.current - event.clientY;
+        const currentStep = event.shiftKey ? fineStep : step;
 
-            // Scalar sensitivity
-            const sensitivity = e.shiftKey ? 0.05 : 0.5;
-            let newValue = startValue.current + deltaY * sensitivity * currentStep;
+        // Scalar sensitivity
+        const sensitivity = event.shiftKey ? 0.05 : 0.5;
+        let newValue = startValue.current + deltaY * sensitivity * currentStep;
 
-            // Clamp
-            if (min !== undefined) {
-                newValue = Math.max(min, newValue);
-            }
-            if (max !== undefined) {
-                newValue = Math.min(max, newValue);
-            }
+        // Clamp
+        if (min !== undefined) {
+            newValue = Math.max(min, newValue);
+        }
+        if (max !== undefined) {
+            newValue = Math.min(max, newValue);
+        }
 
-            // Snap to nearest step
-            newValue = Math.round(newValue / currentStep) * currentStep;
+        // Snap to nearest step
+        newValue = Math.round(newValue / currentStep) * currentStep;
 
-            onChange(newValue);
-        },
-        [isDragging, step, fineStep, min, max, onChange]
-    );
+        onChange(newValue);
+    };
 
-    const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {
         setIsDragging(false);
-        e.currentTarget.releasePointerCapture(e.pointerId);
+        event.currentTarget.releasePointerCapture(event.pointerId);
     };
 
     const handleDoubleClick = () => {
@@ -87,11 +84,11 @@ export const ValueField = ({
 
     return (
         <div className={cn('flex flex-col items-center gap-0.5 group', className)}>
-            {label && (
+            {label ? (
                 <span className="text-[9px] uppercase tracking-wider text-text-disabled font-semibold mb-0.5">
                     {label}
                 </span>
-            )}
+            ) : null}
             <div
                 onPointerDown={handlePointerDown}
                 onPointerMove={handlePointerMove}

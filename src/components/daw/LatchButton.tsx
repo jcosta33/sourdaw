@@ -1,12 +1,12 @@
-import { type ReactElement } from 'react';
+import { type ReactElement, type ButtonHTMLAttributes, type Ref } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 
-interface LatchButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+type LatchButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
     active?: boolean;
     variant?: 'cyan' | 'mint' | 'amber' | 'red' | 'neutral';
     size?: 'xs' | 'sm' | 'md' | 'lg' | 'icon' | 'icon-sm';
-    ref?: React.Ref<HTMLButtonElement>;
-}
+    ref?: Ref<HTMLButtonElement>;
+};
 
 /**
  * LatchButton

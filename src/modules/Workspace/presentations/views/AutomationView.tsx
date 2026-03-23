@@ -1,4 +1,4 @@
-import { type ReactElement, useRef, useSyncExternalStore } from 'react';
+import { type ReactElement, type WheelEvent, useRef, useSyncExternalStore } from 'react';
 import { ArrangementBar } from '#/modules/Timeline/presentations/views/ArrangementBar';
 import { timelineViewStore, scrollTimeline, setScrollY } from '#/modules/Timeline/stores/timelineViewStore';
 import { useTracks } from '../hooks/useTracks';
@@ -21,12 +21,12 @@ export const AutomationView = (): ReactElement => {
     const scrollX = viewState?.scrollX ?? 0;
     const containerWidth = containerRef.current?.clientWidth ?? 800;
 
-    const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-        if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-            scrollTimeline(e.deltaX || e.deltaY);
+    const handleWheel = (event: WheelEvent<HTMLDivElement>) => {
+        if (event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
+            scrollTimeline(event.deltaX || event.deltaY);
         } else {
             const currentY = timelineViewStore.value?.scrollY ?? 0;
-            setScrollY(Math.max(0, currentY + e.deltaY));
+            setScrollY(Math.max(0, currentY + event.deltaY));
         }
     };
 

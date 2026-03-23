@@ -1,4 +1,4 @@
-import { type ReactElement, useCallback, useRef } from 'react';
+import { type ReactElement, type MouseEvent, useRef } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 
 type DragResizeHandleProps = {
@@ -22,36 +22,33 @@ export const DragResizeHandle = ({ side, onResize, className }: DragResizeHandle
     const startRef = useRef(0);
     const vertical = isVertical(side);
 
-    const handleMouseDown = useCallback(
-        (e: React.MouseEvent) => {
-            e.preventDefault();
-            startRef.current = vertical ? e.clientX : e.clientY;
+    const handleMouseDown = (event: MouseEvent) => {
+        event.preventDefault();
+        startRef.current = vertical ? event.clientX : event.clientY;
 
-            const onMouseMove = (me: MouseEvent) => {
-                const current = vertical ? me.clientX : me.clientY;
-                const diff = current - startRef.current;
-                startRef.current = current;
+        const onMouseMove = (moveEvent: globalThis.MouseEvent) => {
+            const current = vertical ? moveEvent.clientX : moveEvent.clientY;
+            const diff = current - startRef.current;
+            startRef.current = current;
 
-                // left/top handle: dragging right/down = shrink → invert
-                // right/bottom handle: dragging right/down = grow
-                const delta = side === 'left' || side === 'top' ? -diff : diff;
-                onResize(delta);
-            };
+            // left/top handle: dragging right/down = shrink → invert
+            // right/bottom handle: dragging right/down = grow
+            const delta = side === 'left' || side === 'top' ? -diff : diff;
+            onResize(delta);
+        };
 
-            const onMouseUp = () => {
-                document.removeEventListener('mousemove', onMouseMove);
-                document.removeEventListener('mouseup', onMouseUp);
-                document.body.style.cursor = '';
-                document.body.style.userSelect = '';
-            };
+        const onMouseUp = () => {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        };
 
-            document.body.style.cursor = vertical ? 'col-resize' : 'row-resize';
-            document.body.style.userSelect = 'none';
-            document.addEventListener('mousemove', onMouseMove);
-            document.addEventListener('mouseup', onMouseUp);
-        },
-        [side, onResize, vertical]
-    );
+        document.body.style.cursor = vertical ? 'col-resize' : 'row-resize';
+        document.body.style.userSelect = 'none';
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+    };
 
     return (
         <div

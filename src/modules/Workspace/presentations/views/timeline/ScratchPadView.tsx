@@ -11,7 +11,7 @@
 
 import {
     type ReactElement,
-    type MouseEvent as ReactMouseEvent,
+    type MouseEvent,
     useSyncExternalStore,
     useState,
     useRef,
@@ -78,7 +78,7 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
         if (contextMenu.kind === 'none') {
             return;
         }
-        const handleClick = (e: MouseEvent) => {
+        const handleClick = (e: globalThis.MouseEvent) => {
             if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
                 setContextMenu({ kind: 'none' });
             }
@@ -87,7 +87,7 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
         return () => window.removeEventListener('mousedown', handleClick);
     }, [contextMenu.kind]);
 
-    const handleContextMenu = (e: ReactMouseEvent, section: ScratchPadSection): void => {
+    const handleContextMenu = (e: MouseEvent, section: ScratchPadSection): void => {
         e.preventDefault();
         e.stopPropagation();
         setContextMenu({ kind: 'section', x: e.clientX, y: e.clientY, section });

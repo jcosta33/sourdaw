@@ -1,9 +1,9 @@
 import { type ReactElement, useRef, useEffect } from 'react';
 
-interface GestureEvent extends UIEvent {
+type GestureEvent = UIEvent & {
     readonly scale: number;
     readonly rotation: number;
-}
+};
 import { initTimelineRenderer } from '../../useCases/initTimelineRenderer';
 import { type TimelineRenderer } from '../../models/RendererBackend';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
@@ -316,20 +316,20 @@ export const TimelineSurface = (): ReactElement => {
             }}
             onDrop={handleFileDrop}
         >
-            {isDragOver && (
+            {isDragOver ? (
                 <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-primary/10 border-2 border-dashed border-primary pointer-events-none">
                     <span className="text-sm font-medium text-primary">Drop audio or MIDI files here</span>
                     <span className="text-xs text-primary/60">WAV, MP3, FLAC, AIFF, OGG, MIDI</span>
                 </div>
-            )}
-            {isImporting && (
+            ) : null}
+            {isImporting ? (
                 <div className="absolute inset-0 z-20 flex items-center justify-center bg-surface-base/60 pointer-events-none">
                     <div className="flex items-center gap-2 rounded-md bg-surface-raised px-4 py-2 shadow-lg border border-border">
                         <div className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                         <span className="text-sm font-medium text-foreground">Importing audio…</span>
                     </div>
                 </div>
-            )}
+            ) : null}
             <canvas
                 ref={canvasRef}
                 className="absolute inset-0 touch-none"
@@ -352,7 +352,7 @@ export const TimelineSurface = (): ReactElement => {
                 onPointerCancel={handlePointerCancel}
             />
 
-            {rubberBand && (
+            {rubberBand ? (
                 <div
                     className="absolute border border-[var(--color-accent-cyan)]/60 bg-[var(--color-accent-cyan)]/10 pointer-events-none z-10"
                     style={{
@@ -362,11 +362,11 @@ export const TimelineSurface = (): ReactElement => {
                         height: Math.abs(rubberBand.endY - rubberBand.startY),
                     }}
                 />
-            )}
+            ) : null}
 
 
 
-            {contextMenu?.kind === 'clip' && (
+            {contextMenu?.kind === 'clip' ? (
                 <ClipContextMenu
                     x={contextMenu.x}
                     y={contextMenu.y}
@@ -374,8 +374,8 @@ export const TimelineSurface = (): ReactElement => {
                     splitBeat={contextMenu.splitBeat}
                     onClose={closeContextMenu}
                 />
-            )}
-            {contextMenu?.kind === 'empty' && (
+            ) : null}
+            {contextMenu?.kind === 'empty' ? (
                 <TimelineEmptyMenu
                     x={contextMenu.x}
                     y={contextMenu.y}
@@ -383,7 +383,7 @@ export const TimelineSurface = (): ReactElement => {
                     beat={contextMenu.beat}
                     onClose={closeContextMenu}
                 />
-            )}
+            ) : null}
         </div>
     );
 };

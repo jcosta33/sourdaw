@@ -1,6 +1,6 @@
 import {
     type ReactElement,
-    type MouseEvent as ReactMouseEvent,
+    type MouseEvent,
     useRef,
     useEffect,
     useState,
@@ -152,7 +152,7 @@ export const TimelineMinimap = (): ReactElement => {
         return { canvasWidth, totalBeats, beatsToPixels, viewportWidthPx, viewportStartPx };
     };
 
-    const handleMouseDown = (e: ReactMouseEvent<HTMLDivElement>) => {
+    const handleMouseDown = (e: MouseEvent<HTMLDivElement>) => {
         if (e.button !== 0) {
             return;
         }
@@ -195,7 +195,7 @@ export const TimelineMinimap = (): ReactElement => {
         // Remember the scroll at the moment drag started, so we can compute deltas
         const scrollAtDragStart = dragStartScrollX;
 
-        const handleMouseMove = (moveEvent: MouseEvent) => {
+        const handleMouseMove = (moveEvent: globalThis.MouseEvent) => {
             if (!isDraggingRef.current) {
                 return;
             }

@@ -1,4 +1,4 @@
-import { type ReactElement, type MouseEvent as ReactMouseEvent } from 'react';
+import { type ReactElement, type MouseEvent } from 'react';
 import { setTrackHeight } from '#/modules/Track/useCases/toggleTrackState';
 
 type ResizeHandleProps = {
@@ -6,7 +6,7 @@ type ResizeHandleProps = {
 };
 
 export const ResizeHandle = ({ trackId }: ResizeHandleProps): ReactElement => {
-    const handleMouseDown = (e: ReactMouseEvent<HTMLDivElement>) => {
+    const handleMouseDown = (e: MouseEvent<HTMLDivElement>) => {
         e.preventDefault();
         e.stopPropagation();
 
@@ -14,7 +14,7 @@ export const ResizeHandle = ({ trackId }: ResizeHandleProps): ReactElement => {
         const row = (e.currentTarget as HTMLElement).parentElement;
         const startHeight = row?.getBoundingClientRect().height ?? 64;
 
-        const onMouseMove = (moveEvent: MouseEvent) => {
+        const onMouseMove = (moveEvent: globalThis.MouseEvent) => {
             const delta = moveEvent.clientY - startY;
             setTrackHeight(trackId, Math.round(startHeight + delta));
         };

@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useRef, useEffect } from 'react';
+import { type ReactElement, type MouseEvent, useState, useRef, useEffect } from 'react';
 import {
     ChevronDown,
     Clock,
@@ -65,14 +65,14 @@ export const RecentProjectsMenu = (): ReactElement => {
             return;
         }
 
-        const handleClickOutside = (e: MouseEvent) => {
-            if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        const handleClickOutside = (clickEvent: globalThis.MouseEvent) => {
+            if (menuRef.current && !menuRef.current.contains(clickEvent.target as Node)) {
                 setOpen(false);
             }
         };
 
-        const handleEscape = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') {
+        const handleEscape = (keyEvent: globalThis.KeyboardEvent) => {
+            if (keyEvent.key === 'Escape') {
                 setOpen(false);
             }
         };
@@ -136,8 +136,8 @@ export const RecentProjectsMenu = (): ReactElement => {
         setOpen(false);
     };
 
-    const handleRemove = (key: string, e: React.MouseEvent) => {
-        e.stopPropagation();
+    const handleRemove = (key: string, event: MouseEvent) => {
+        event.stopPropagation();
         removeFromRecentProjects(key);
         setEntries(getRecentProjects());
     };

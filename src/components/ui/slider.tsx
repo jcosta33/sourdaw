@@ -1,6 +1,6 @@
 'use client';
 
-import * as React from 'react';
+import { type ComponentProps, useState } from 'react';
 import { Slider as SliderPrimitive } from 'radix-ui';
 
 import { cn } from '#/helpers/Styles/cn';
@@ -14,8 +14,8 @@ function Slider({
     max = 100,
     step = 1,
     ...props
-}: React.ComponentProps<typeof SliderPrimitive.Root>) {
-    const _values = React.useMemo(() => {
+}: ComponentProps<typeof SliderPrimitive.Root>) {
+    const computeValues = (): number[] => {
         if (value != null) {
             return Array.isArray(value) ? value : [value];
         }
@@ -24,7 +24,8 @@ function Slider({
         }
         // No value provided — single thumb at midpoint
         return [Math.round((min + max) / 2)];
-    }, [value, defaultValue, min, max]);
+    };
+    const _values = computeValues();
 
     return (
         <SliderPrimitive.Root
@@ -53,10 +54,10 @@ function Slider({
                     )}
                 />
             </SliderPrimitive.Track>
-            {Array.from({ length: _values.length }, (_, index) => (
+            {Array.from({ length: _values.length }, (_, thumbIndex) => (
                 <SliderThumbNode
-                    key={index}
-                    index={index}
+                    key={thumbIndex}
+                    index={thumbIndex}
                     values={_values}
                     min={min}
                     max={max}
@@ -83,8 +84,8 @@ function SliderThumbNode({
     defaultValue?: number[];
     onValueChange?: (value: number[]) => void;
 }) {
-    const [isEditing, setIsEditing] = React.useState(false);
-    const [editVal, setEditVal] = React.useState(String(values[index] ?? 0));
+    const [isEditing, setIsEditing] = useState(false);
+    const [editVal, setEditVal] = useState(String(values[index] ?? 0));
 
     return (
         <SliderPrimitive.Thumb
@@ -94,10 +95,10 @@ function SliderThumbNode({
                 background: 'linear-gradient(180deg, #555 0%, #3a3a3a 30%, #333 50%, #2a2a2a 70%, #222 100%)',
                 borderTopColor: 'rgba(255,255,255,0.12)',
             }}
-            onPointerDown={(e) => {
-                if (e.metaKey || e.ctrlKey) {
-                    e.preventDefault();
-                    e.stopPropagation();
+            onPointerDown={(event) => {
+                if (event.metaKey || event.ctrlKey) {
+                    event.preventDefault();
+                    event.stopPropagation();
                     if (defaultValue && onValueChange) {
                         onValueChange(Array.isArray(defaultValue) ? defaultValue : [defaultValue as number]);
                     }
@@ -108,15 +109,15 @@ function SliderThumbNode({
                 setIsEditing(true);
             }}
         >
-            {isEditing && (
+            {isEditing ? (
                 <input
                     autoFocus
                     className="absolute -top-6 left-1/2 -translate-x-1/2 w-12 rounded bg-surface-overlay text-foreground text-[10px] text-center px-1 py-0.5 border border-border outline-none ring-1 ring-accent-cyan z-50 shadow-elevation-floating"
                     value={editVal}
-                    onChange={(e) => setEditVal(e.target.value)}
+                    onChange={(changeEvent) => setEditVal(changeEvent.target.value)}
                     onBlur={() => setIsEditing(false)}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
+                    onKeyDown={(keyEvent) => {
+                        if (keyEvent.key === 'Enter') {
                             const num = Number(editVal);
                             if (!isNaN(num) && onValueChange) {
                                 const newVals = [...values];
@@ -125,13 +126,13 @@ function SliderThumbNode({
                             }
                             setIsEditing(false);
                         }
-                        if (e.key === 'Escape') {
+                        if (keyEvent.key === 'Escape') {
                             setIsEditing(false);
                         }
-                        e.stopPropagation();
+                        keyEvent.stopPropagation();
                     }}
                 />
-            )}
+            ) : null}
         </SliderPrimitive.Thumb>
     );
 }

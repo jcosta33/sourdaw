@@ -1,7 +1,7 @@
-import { type ReactElement, useRef } from 'react';
+import { type ReactElement, type PointerEvent, useRef } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 
-interface RotaryKnobProps {
+type RotaryKnobProps = {
     value: number;
     onChange: (val: number) => void;
     min?: number;
@@ -12,7 +12,7 @@ interface RotaryKnobProps {
     bipolar?: boolean;
     size?: 'sm' | 'md' | 'lg' | 'xl';
     className?: string;
-}
+};
 
 const SIZES = { sm: 24, md: 32, lg: 40, xl: 72 } as const;
 
@@ -53,36 +53,36 @@ export const RotaryKnob = ({
         return clamped;
     };
 
-    const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-        if (e.button !== 0) {
+    const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+        if (event.button !== 0) {
             return;
         }
-        e.currentTarget.setPointerCapture(e.pointerId);
+        event.currentTarget.setPointerCapture(event.pointerId);
         draggingRef.current = true;
-        startY.current = e.clientY;
+        startY.current = event.clientY;
         startValue.current = value;
         rootRef.current?.setAttribute('data-dragging', '');
     };
 
-    const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
         if (!draggingRef.current) {
             return;
         }
-        const deltaY = startY.current - e.clientY;
+        const deltaY = startY.current - event.clientY;
         const sweepPx = 150;
         let sensitivity = (max - min) / sweepPx;
-        if (e.shiftKey) {
+        if (event.shiftKey) {
             sensitivity *= 0.1;
         }
         const raw = startValue.current + deltaY * sensitivity;
-        const currentStep = e.shiftKey ? fineStep : step;
+        const currentStep = event.shiftKey ? fineStep : step;
         const quantized = Math.round(raw / currentStep) * currentStep;
         onChange(clamp(quantized));
     };
 
-    const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {
         draggingRef.current = false;
-        e.currentTarget.releasePointerCapture(e.pointerId);
+        event.currentTarget.releasePointerCapture(event.pointerId);
         rootRef.current?.removeAttribute('data-dragging');
     };
 

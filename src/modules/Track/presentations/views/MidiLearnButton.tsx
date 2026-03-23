@@ -1,4 +1,4 @@
-import { type ReactElement, type MouseEvent as ReactMouseEvent, useSyncExternalStore } from 'react';
+import { type ReactElement, type MouseEvent, useSyncExternalStore } from 'react';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '#/components/ui/tooltip';
 import { cn } from '#/helpers/Styles/cn';
@@ -37,7 +37,7 @@ export const MidiLearnButton = ({ targetType, trackId, deviceId, paramId }: Midi
 
     const existingMapping = state ? findMappingForTarget(target) : undefined;
 
-    const handleClick = (e: ReactMouseEvent): void => {
+    const handleClick = (e: MouseEvent): void => {
         e.stopPropagation();
 
         if (isLearningThis) {

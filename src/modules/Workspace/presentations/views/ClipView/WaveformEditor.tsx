@@ -1,7 +1,8 @@
 import {
     type ReactElement,
-    type MouseEvent as ReactMouseEvent,
-    type DragEvent as ReactDragEvent,
+    type MouseEvent,
+    type DragEvent,
+    type PointerEvent,
     useRef,
     useEffect,
     useState,
@@ -66,7 +67,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
         refreshWarp();
     };
 
-    const handleDrop = async (e: ReactDragEvent<HTMLDivElement>) => {
+    const handleDrop = async (e: DragEvent<HTMLDivElement>) => {
         e.preventDefault();
         setIsDragging(false);
         const file = e.dataTransfer.files[0];
@@ -232,25 +233,25 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
     const hitTestMarker = (x: number) =>
         warpState.markers.find((m) => Math.abs(m.warpedBeat * beatWidth - x) < 8) ?? null;
 
-    const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const handlePointerDown = (event: PointerEvent<HTMLCanvasElement>) => {
         if (!warpState.enabled) {
             return;
         }
-        const x = getCanvasX(e);
+        const x = getCanvasX(event);
         const hit = hitTestMarker(x);
         if (hit) {
             draggingMarker.current = { id: hit.id, startX: x, startBeat: hit.warpedBeat };
             didDrag.current = false;
-            (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
-            e.preventDefault();
+            (event.target as HTMLCanvasElement).setPointerCapture(event.pointerId);
+            event.preventDefault();
         }
     };
 
-    const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const handlePointerMove = (event: PointerEvent<HTMLCanvasElement>) => {
         if (!draggingMarker.current) {
             return;
         }
-        const x = getCanvasX(e);
+        const x = getCanvasX(event);
         const dx = Math.abs(x - draggingMarker.current.startX);
         if (dx > 4) {
             didDrag.current = true;
@@ -266,7 +267,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
         draggingMarker.current = null;
     };
 
-    const handleDoubleClick = (e: ReactMouseEvent<HTMLCanvasElement>) => {
+    const handleDoubleClick = (e: MouseEvent<HTMLCanvasElement>) => {
         if (!warpState.enabled || didDrag.current) {
             return;
         }
@@ -285,7 +286,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
         refreshWarp();
     };
 
-    const handleWaveContextMenu = (e: ReactMouseEvent<HTMLCanvasElement>) => {
+    const handleWaveContextMenu = (e: MouseEvent<HTMLCanvasElement>) => {
         e.preventDefault();
         setWaveCtxMenu({ x: e.clientX, y: e.clientY });
     };
@@ -294,12 +295,12 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
         if (!waveCtxMenu) {
             return;
         }
-        const dismiss = (e: MouseEvent) => {
+        const dismiss = (e: globalThis.MouseEvent) => {
             if (waveCtxRef.current && !waveCtxRef.current.contains(e.target as Node)) {
                 setWaveCtxMenu(null);
             }
         };
-        const esc = (e: KeyboardEvent) => {
+        const esc = (e: globalThis.KeyboardEvent) => {
             if (e.key === 'Escape') {
                 setWaveCtxMenu(null);
             }

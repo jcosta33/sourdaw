@@ -7,8 +7,8 @@ module.exports = {
         {
             name: 'no-cross-module-internals',
             comment:
-                'Only contract folders (errors, events, useCases, presentations/views) ' +
-                'are accessible across modules. models, stores, repositories, transformers, ' +
+                'Only contract folders (errors, events, useCases, stores, presentations/views) ' +
+                'are accessible across modules. models, repositories, transformers, ' +
                 'helpers, engine, worklets, and presentations/hooks/components are module-private.',
             severity: 'error',
             from: {

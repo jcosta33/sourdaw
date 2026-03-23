@@ -38,6 +38,7 @@ AudioEngine/
 ├── errors/            # 🔗 CONTRACT: AudioEngineNotReadyError, AudioContextSuspendedError
 ├── events/            # 🔗 CONTRACT: EngineStartedEvent, EngineStoppedEvent
 ├── useCases/          # 🔗 CONTRACT: initializeEngine, startEngine, setMasterGain
+├── stores/            # 🔗 CONTRACT: engineStatusStore (cross-module shared state)
 ├── repositories/      # Concrete engine construction: createWebAudioEngine
 ├── engine/            # Engine classes: AudioEngine, TrackNode, MixerNode (stateful)
 ├── worklets/          # AudioWorkletProcessor implementations (run in audio thread)
@@ -53,6 +54,7 @@ Track/
 ├── errors/            # 🔗 CONTRACT: TrackNotFoundError
 ├── events/            # 🔗 CONTRACT: TrackAddedEvent, TrackRemovedEvent, TrackMutedEvent
 ├── useCases/          # 🔗 CONTRACT: addTrack, removeTrack, muteTrack, renameTrack
+├── stores/            # 🔗 CONTRACT: trackStore (cross-module shared state)
 ├── repositories/      # Track API calls (persist to project file)
 ├── transformers/      # transformTrack, transformTrackToEngineConfig
 └── presentations/
@@ -65,6 +67,7 @@ Transport/
 ├── errors/            # 🔗 CONTRACT: InvalidTempoError
 ├── events/            # 🔗 CONTRACT: TransportStartedEvent, TempoChangedEvent
 ├── useCases/          # 🔗 CONTRACT: startTransport, stopTransport, setTempo, seekTo
+├── stores/            # 🔗 CONTRACT: transportStore
 ├── repositories/      # transportEngineAdapter (bridge to AudioEngine)
 └── presentations/
     ├── hooks/         # useTransportControls, usePlaybackPosition
@@ -331,11 +334,9 @@ export type TransportConfig = {
 
 ### Repositories — two kinds
 
-DAW repositories fall into two patterns.
+DAW repositories fall into two patterns. **Each repository file exports exactly one function.** Repositories are thin adapters — they translate domain calls into I/O calls. They do NOT contain business logic, validation, or orchestration.
 
-**File/API repositories** follow the base pattern (HTTP client, Tauri invoke) and return domain models.
-
-**Engine adapter repositories** bridge between a use case and the audio engine. They are the **only** place where use cases touch engine instances. This keeps engine imports out of use cases.
+Repositories are the only place where bare-metal I/O happens: DOM/Canvas APIs, Web Audio API, localStorage, IndexedDB, fetch, Tauri invoke, etc. If a use case does raw I/O, that code belongs in a repository.
 
 ```typescript
 // src/modules/Mixer/repositories/mixerEngineAdapter.ts
@@ -377,7 +378,9 @@ export const onMidiMessage = (handler: (event: MidiEvent) => void): Promise<() =
 
 ### Use cases
 
-Use cases contain business logic only. They may call repositories (including engine adapters) but never import engine classes directly. They always dispatch domain events after mutating state.
+Use cases contain business logic only. They may call repositories (including engine adapters) but never import engine classes directly. They always dispatch domain events after mutating state. **Each use case file exports exactly one function.**
+
+Use cases **never** do I/O directly. If a use case needs to access localStorage, fetch data, call the audio engine, or invoke a Tauri command, that I/O belongs in a repository. Use cases only orchestrate repositories.
 
 ```typescript
 // src/modules/Transport/useCases/setTempo.ts
@@ -722,21 +725,21 @@ export const useFaderDrag = (trackId: string) => {
 
 ## Dependency rules (additions to base guide)
 
-### Models and stores are module-private — always
+### Business-layer stores are contracts — presentation-layer stores are private
 
-This is the most commonly violated rule and must be stated explicitly.
+This distinction is critical and must be stated explicitly.
 
-**A module's `models/` folder is never imported by another module.** Models are internal implementation details. They exist to give the module's own use cases, repositories, and transformers a well-typed internal language. They are not a public API. If another module needs a type from your domain, you export a **DTO from `useCases/`** — a deliberate, minimal subset — not the model itself.
+**A module's `stores/` folder (at the business layer, e.g. `Track/stores/`) is a cross-module contract.** These stores hold project state, shared runtime state, and cross-cutting data (tracks, transport config, engine status, MIDI device list). Any module may import them — both for reading via `useSyncExternalStore` and for writing from use cases.
 
-**A module's `presentations/stores/` folder is never imported by another module.** Stores hold UI state that belongs to one domain. If a second domain's presentation needs that state, either it reads from `projectStore` (for project data) or it calls a use case that returns a DTO (for domain data). It does not reach into another module's store.
+**A module's `presentations/stores/` folder is private to that module.** These stores hold UI preferences (zoom level, sidebar state, panel layout) that only the owning module's presentation layer needs. They are never imported cross-module.
 
-The reason this matters: models and stores are subject to internal refactoring at any time. If another module imports them directly, a rename, restructure, or split of the internal model silently breaks that consumer. Contracts (use cases, events, errors) are versioned surfaces — you control when they change. Internals are not.
+**A module's `models/` folder is never imported by another module.** Models are internal implementation details. If another module needs a type from your domain, you export a **DTO from `useCases/`** — not the model itself.
 
 ```typescript
 // ❌ Forbidden — importing a model from another module
 import type { Track } from '#/modules/Track/models/Track';
 
-// ❌ Forbidden — importing a store from another module
+// ❌ Forbidden — importing a presentation-layer store from another module
 import { trackSelectionStore } from '#/modules/Track/presentations/stores/trackSelectionStore';
 
 // ❌ Forbidden — importing a transformer from another module
@@ -747,6 +750,9 @@ import { getTrackByIdApi } from '#/modules/Track/repositories/getTrackByIdApi';
 
 // ❌ Forbidden — importing a hook from another module
 import { useTrackControls } from '#/modules/Track/presentations/hooks/useTrackControls';
+
+// ✅ Allowed — importing a business-layer store (contract folder)
+import { trackStore } from '#/modules/Track/stores/trackStore';
 
 // ✅ Allowed — importing a DTO type exported from a use case (contract folder)
 import type { TrackDto } from '#/modules/Track/useCases/getTrackById';
@@ -767,7 +773,7 @@ import { TrackListView } from '#/modules/Track/presentations/views/TrackListView
 import type { TrackId } from '#/shared/types/ids';
 ```
 
-The only folders that may be imported by other modules are: `useCases/`, `events/`, `errors/`, `presentations/views/`. Every other folder is private.
+The folders that may be imported by other modules are: `useCases/`, `events/`, `errors/`, `stores/`, `presentations/views/`. Every other folder is private.
 
 ---
 

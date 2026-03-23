@@ -1,4 +1,4 @@
-import React, { type ReactElement, useState } from 'react';
+import { type ReactElement, useState, useEffect } from 'react';
 import { Music, Mic, Film, FileText, Layers, Guitar, Piano, Headphones, Sparkles } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '#/components/ui/dialog';
 import { Button } from '#/components/ui/button';
@@ -92,7 +92,7 @@ export const TemplateChooser = ({ open, onClose, initialCategory = 'all' }: Temp
     const [activeFilter, setActiveFilter] = useState<TemplateCategory | 'all'>(initialCategory);
     const templates = getTemplates();
 
-    React.useEffect(() => {
+    useEffect(() => {
         if (open) {
             setActiveFilter(initialCategory);
         }

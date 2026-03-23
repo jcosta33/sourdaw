@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import type { WAMInstance } from '../../useCases/wamPluginHost';
 import { ParameterSAB } from '../../utils/ParameterSAB';
 
-interface HighEndPluginUIProps {
+type HighEndPluginUIProps = {
     instance: WAMInstance;
     parameterSab: ParameterSAB;
     onClose?: () => void;
-}
+};
 
 /**
  * A generic WebGPU-based immediate-mode GUI shell for High-End Factory Plugins 
@@ -105,14 +105,14 @@ export function HighEndPluginUI({ instance, parameterSab, onClose }: HighEndPlug
                     <span className="font-semibold text-foreground">{instance.descriptor.name}</span>
                     <span className="text-xs text-muted-foreground">{instance.descriptor.vendor} ({instance.descriptor.category})</span>
                 </div>
-                {onClose && (
+                {onClose ? (
                     <button 
                         onClick={onClose}
                         className="rounded bg-surface p-1 text-muted hover:bg-surface-hover hover:text-foreground active:bg-surface-active"
                     >
                         Close
                     </button>
-                )}
+                ) : null}
             </div>
 
             {/* WebGPU Canvas Area */}

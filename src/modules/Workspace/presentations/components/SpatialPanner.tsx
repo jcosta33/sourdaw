@@ -3,7 +3,8 @@
  * 2D top-down view with a draggable dot representing the audio source position.
  * Listener is at the center. Shows azimuth circle, distance rings, and L/R labels.
  */
-import { type ReactElement, useRef, useState, useEffect } from 'react';
+import { type ReactElement,
+    type MouseEvent, useRef, useState, useEffect } from 'react';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type SpatialPannerProps = {
@@ -113,14 +114,14 @@ export const SpatialPanner = ({
         ctx.fillText(`${azimuth.toFixed(0)}° ${(distance * 100).toFixed(0)}%`, cx, size - 2);
     }, [azimuth, distance, size, color, cx, cy, maxRadius]);
 
-    const handlePointer = (e: React.MouseEvent<HTMLCanvasElement>): void => {
+    const handlePointer = (event: MouseEvent<HTMLCanvasElement>): void => {
         const canvas = canvasRef.current;
         if (!canvas) {
             return;
         }
         const rect = canvas.getBoundingClientRect();
-        const mx = e.clientX - rect.left - cx;
-        const my = e.clientY - rect.top - cy;
+        const mx = event.clientX - rect.left - cx;
+        const my = event.clientY - rect.top - cy;
 
         const newDist = Math.min(1, Math.sqrt(mx * mx + my * my) / maxRadius);
         const newAz = ((Math.atan2(my, mx) * 180) / Math.PI + 90 + 360) % 360;

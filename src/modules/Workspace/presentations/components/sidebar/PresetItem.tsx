@@ -1,4 +1,4 @@
-import { type ReactElement } from 'react';
+import { type ReactElement, type MouseEvent } from 'react';
 import { Star, Piano, Waves } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
 import { type SoundPreset } from '../../../useCases/workspaceViewActions';
@@ -12,7 +12,7 @@ type PresetItemProps = {
     favorites: Set<string>;
     onToggleFavorite: (id: string) => void;
     onClick: () => void;
-    onContextMenu?: (e: React.MouseEvent) => void;
+    onContextMenu?: (e: MouseEvent) => void;
     preview: PreviewHandle;
 };
 

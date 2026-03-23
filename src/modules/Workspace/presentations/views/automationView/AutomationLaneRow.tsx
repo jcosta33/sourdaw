@@ -1,7 +1,8 @@
 import {
     type ReactElement,
-    type MouseEvent as ReactMouseEvent,
-    type WheelEvent as ReactWheelEvent,
+    type MouseEvent,
+    type WheelEvent,
+    type KeyboardEvent,
     useState,
     useRef,
     useSyncExternalStore,
@@ -192,7 +193,7 @@ export const AutomationLaneRow = ({
     const selBounds = selectedPoints.length > 1 ? getSelectionBounds(lane.id, selectedPoints) : null;
 
     // ─── DRAW MODE HANDLERS ───
-    const handleDrawMouseDown = (e: ReactMouseEvent<SVGSVGElement>) => {
+    const handleDrawMouseDown = (e: MouseEvent<SVGSVGElement>) => {
         const rect = svgRef.current?.getBoundingClientRect();
         if (!rect) {
             return;
@@ -205,7 +206,7 @@ export const AutomationLaneRow = ({
         beginDrawSession(lane.id, snapValue, e.shiftKey);
         paintDrawPoint(beat, value);
 
-        const onMove = (me: MouseEvent) => {
+        const onMove = (me: globalThis.MouseEvent) => {
             const mx = me.clientX - rect.left;
             const my = me.clientY - rect.top;
             paintDrawPoint(Math.max(0, xToBeat(mx)), yToValue(my));
@@ -220,7 +221,7 @@ export const AutomationLaneRow = ({
     };
 
     // ─── RUBBER-BAND SELECTION HANDLERS ───
-    const handleRubberBandStart = (e: ReactMouseEvent<SVGSVGElement>) => {
+    const handleRubberBandStart = (e: MouseEvent<SVGSVGElement>) => {
         if (
             (e.target as Element).closest('[data-auto-point]') ||
             (e.target as Element).closest('[data-tension-handle]')
@@ -240,13 +241,13 @@ export const AutomationLaneRow = ({
 
         setRubberBand({ x1: x, y1: y, x2: x, y2: y });
 
-        const onMove = (me: MouseEvent) => {
+        const onMove = (me: globalThis.MouseEvent) => {
             const mx = me.clientX - rect.left;
             const my = me.clientY - rect.top;
             setRubberBand((prev) => (prev ? { ...prev, x2: mx, y2: my } : null));
         };
 
-        const onUp = (me: MouseEvent) => {
+        const onUp = (me: globalThis.MouseEvent) => {
             const mx = me.clientX - rect.left;
             const my = me.clientY - rect.top;
             const b1 = xToBeat(Math.min(x, mx));
@@ -293,7 +294,7 @@ export const AutomationLaneRow = ({
     };
 
     // ─── SVG CLICK/MOUSEDOWN DISPATCHER ───
-    const handleSvgMouseDown = (e: ReactMouseEvent<SVGSVGElement>) => {
+    const handleSvgMouseDown = (e: MouseEvent<SVGSVGElement>) => {
         if (e.button !== 0) {
             return;
         }
@@ -305,7 +306,7 @@ export const AutomationLaneRow = ({
     };
 
     // ─── TENSION HANDLE DRAG ───
-    const handleTensionMouseDown = (pointBeat: number, e: ReactMouseEvent<SVGCircleElement>) => {
+    const handleTensionMouseDown = (pointBeat: number, e: MouseEvent<SVGCircleElement>) => {
         e.stopPropagation();
         const point = lane.points.find((p) => p.beat === pointBeat);
         if (!point) {
@@ -316,7 +317,7 @@ export const AutomationLaneRow = ({
 
         const startY = e.clientY;
 
-        const onMove = (me: MouseEvent) => {
+        const onMove = (me: globalThis.MouseEvent) => {
             const dy = me.clientY - startY;
             const newTension = Math.max(-1, Math.min(1, initialTension + dy / 100));
             setAutomationPointCurve(lane.id, pointBeat, point.curve, newTension);
@@ -333,7 +334,7 @@ export const AutomationLaneRow = ({
     };
 
     // ─── BREAKPOINT HANDLERS ───
-    const handlePointMouseDown = (pointBeat: number, e: ReactMouseEvent<SVGCircleElement>) => {
+    const handlePointMouseDown = (pointBeat: number, e: MouseEvent<SVGCircleElement>) => {
         e.stopPropagation();
         const rect = svgRef.current?.getBoundingClientRect();
         if (!rect) {
@@ -357,7 +358,7 @@ export const AutomationLaneRow = ({
         let currentBeat = pointBeat;
         setDragPointBeat(pointBeat);
 
-        const onMove = (me: MouseEvent) => {
+        const onMove = (me: globalThis.MouseEvent) => {
             const mx = me.clientX - rect.left;
             const my = me.clientY - rect.top;
             let newBeat = Math.max(0, xToBeat(mx));
@@ -399,7 +400,7 @@ export const AutomationLaneRow = ({
         window.addEventListener('mouseup', onUp);
     };
 
-    const handlePointDoubleClick = (pointBeat: number, e: ReactMouseEvent<SVGCircleElement>) => {
+    const handlePointDoubleClick = (pointBeat: number, e: MouseEvent<SVGCircleElement>) => {
         e.stopPropagation();
         const point = lane.points.find((p) => p.beat === pointBeat);
         if (!point) {
@@ -415,13 +416,13 @@ export const AutomationLaneRow = ({
         setSelectedPoints((prev) => prev.filter((b) => b !== pointBeat));
     };
 
-    const handlePointContextMenu = (pointBeat: number, e: ReactMouseEvent<SVGCircleElement>) => {
+    const handlePointContextMenu = (pointBeat: number, e: MouseEvent<SVGCircleElement>) => {
         e.preventDefault();
         e.stopPropagation();
         setContextMenu({ x: e.clientX, y: e.clientY, beat: pointBeat, section: null });
     };
 
-    const handleSvgContextMenu = (e: ReactMouseEvent<SVGSVGElement>) => {
+    const handleSvgContextMenu = (e: MouseEvent<SVGSVGElement>) => {
         if ((e.target as Element).closest('[data-auto-point]')) {
             return;
         }
@@ -452,23 +453,23 @@ export const AutomationLaneRow = ({
     };
 
     // ─── KEYBOARD FOR SELECTION ───
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        if ((e.key === 'Delete' || e.key === 'Backspace') && selectedPoints.length > 0) {
-            e.preventDefault();
+    const handleKeyDown = (event: KeyboardEvent) => {
+        if ((event.key === 'Delete' || event.key === 'Backspace') && selectedPoints.length > 0) {
+            event.preventDefault();
             deleteSelectedPoints(lane.id, selectedPoints);
             setSelectedPoints([]);
         }
-        if (e.key === 'a' && (e.metaKey || e.ctrlKey)) {
-            e.preventDefault();
+        if (event.key === 'a' && (event.metaKey || event.ctrlKey)) {
+            event.preventDefault();
             setSelectedPoints(lane.points.map((p) => p.beat));
         }
-        if (e.key === 'Escape') {
+        if (event.key === 'Escape') {
             setSelectedPoints([]);
         }
     };
 
     // ─── Y-AXIS ZOOM VIA WHEEL ───
-    const handleWheel = (e: ReactWheelEvent<HTMLDivElement>) => {
+    const handleWheel = (e: WheelEvent<HTMLDivElement>) => {
         if (e.altKey) {
             e.preventDefault();
             e.stopPropagation();

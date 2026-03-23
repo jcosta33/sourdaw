@@ -1,4 +1,4 @@
-import { type ReactElement, useSyncExternalStore } from 'react';
+import { type ReactElement, type ChangeEvent, useSyncExternalStore } from 'react';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { BipolarSlider } from '#/components/ui/bipolar-slider';
 import { cn } from '#/helpers/Styles/cn';
@@ -61,8 +61,8 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
         setDeviceParameter(device.id, param.id, v);
     };
 
-    const handleChoiceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        setDeviceParameter(device.id, param.id, Number(e.target.value));
+    const handleChoiceChange = (event: ChangeEvent<HTMLSelectElement>) => {
+        setDeviceParameter(device.id, param.id, Number(event.target.value));
     };
 
     const isChoice = param.type === 'choice' && param.choices && param.choices.length > 0;

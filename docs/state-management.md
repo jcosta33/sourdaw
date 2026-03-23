@@ -14,6 +14,27 @@ Our custom `Store` class (located at `src/helpers/Store/Store.ts`) provides a si
 
 ---
 
+## Cross-module store contracts
+
+Business-layer stores (located at `ModuleName/stores/`, outside `presentations/`) are **cross-module contracts**. Any module may import and subscribe to them — both from use cases (for reading/writing) and from presentation hooks (for reactive UI binding via `useSyncExternalStore`).
+
+Presentation-layer stores (located at `ModuleName/presentations/stores/`) are **module-private**. They hold UI preferences (zoom, sidebar state, panel layout) and are never imported by another module.
+
+```typescript
+// ✅ Cross-module: import a business-layer store from another module
+import { trackStore } from '#/modules/Track/stores/trackStore';
+
+const tracks = useSyncExternalStore(
+    (cb) => trackStore.subscribe(cb),
+    () => trackStore.value?.tracks ?? []
+);
+
+// ❌ Forbidden: import a presentation-layer store from another module
+import { zoomStore } from '#/modules/Timeline/presentations/stores/zoomStore';
+```
+
+---
+
 ## How to create and use a store
 
 This section provides a practical guide to creating, persisting, and subscribing to a store.

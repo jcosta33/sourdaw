@@ -1,6 +1,6 @@
 import {
     type ReactElement,
-    type MouseEvent as ReactMouseEvent,
+    type MouseEvent,
     useState,
     useRef,
     useEffect,
@@ -87,7 +87,7 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
         if (contextMenu.kind === 'none') {
             return;
         }
-        const handleClick = (e: MouseEvent) => {
+        const handleClick = (e: globalThis.MouseEvent) => {
             if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
                 setContextMenu({ kind: 'none' });
             }
@@ -97,7 +97,7 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
     }, [contextMenu.kind]);
 
     const detectEdge = (
-        e: ReactMouseEvent,
+        e: MouseEvent,
         section: ArrangementSection
     ): 'left' | 'right' | null => {
         const parentRect = (e.currentTarget.parentElement ?? e.currentTarget).getBoundingClientRect();
@@ -114,7 +114,7 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
         return null;
     };
 
-    const handleSectionMouseDown = (e: ReactMouseEvent, section: ArrangementSection) => {
+    const handleSectionMouseDown = (e: MouseEvent, section: ArrangementSection) => {
         if (e.button !== 0 || editing) {
             return;
         }
@@ -148,7 +148,7 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
             originalEnd: origEnd,
         };
 
-        const handleMouseMove = (moveEvent: MouseEvent) => {
+        const handleMouseMove = (moveEvent: globalThis.MouseEvent) => {
             const deltaPx = moveEvent.clientX - startX;
             const deltaBeats = deltaPx / pixelsPerBeat;
 
@@ -188,7 +188,7 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
         window.addEventListener('mouseup', handleMouseUp);
     };
 
-    const handleSectionMouseMove = (e: ReactMouseEvent, section: ArrangementSection) => {
+    const handleSectionMouseMove = (e: MouseEvent, section: ArrangementSection) => {
         if (dragRef.current) {
             return;
         }
@@ -206,7 +206,7 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
         }
     };
 
-    const handleBarContextMenu = (e: ReactMouseEvent<HTMLDivElement>) => {
+    const handleBarContextMenu = (e: MouseEvent<HTMLDivElement>) => {
         if (dragRef.current) {
             return;
         }

@@ -1,4 +1,4 @@
-import { type ReactElement, type MouseEvent as ReactMouseEvent, useState, useRef, useSyncExternalStore } from 'react';
+import { type ReactElement, type MouseEvent, useState, useRef, useSyncExternalStore } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 import { midiStore } from '#/modules/Track/stores/midiStore';
 import { pushUndoEntry } from '../../../useCases/workspaceViewActions';
@@ -28,7 +28,7 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
     const beatToX = (beat: number): number => beat * beatWidth + 8;
     const valueToY = (value: number, height: number): number => height - (value / 127) * (height - 8) - 4;
 
-    const handleContainerClick = (e: ReactMouseEvent<HTMLDivElement>) => {
+    const handleContainerClick = (e: MouseEvent<HTMLDivElement>) => {
         if (!clipId) {
             return;
         }
@@ -57,7 +57,7 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
         );
     };
 
-    const handlePointMouseDown = (pbId: string, e: ReactMouseEvent<HTMLDivElement>) => {
+    const handlePointMouseDown = (pbId: string, e: MouseEvent<HTMLDivElement>) => {
         e.stopPropagation();
         if (!clipId) {
             return;
@@ -75,7 +75,7 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
         const rect = container.getBoundingClientRect();
         const height = rect.height;
 
-        const onMove = (me: MouseEvent) => {
+        const onMove = (me: globalThis.MouseEvent) => {
             const mx = me.clientX - rect.left;
             const my = me.clientY - rect.top;
 
@@ -105,7 +105,7 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
         window.addEventListener('mouseup', onUp);
     };
 
-    const handlePointDoubleClick = (pbId: string, e: ReactMouseEvent<HTMLDivElement>) => {
+    const handlePointDoubleClick = (pbId: string, e: MouseEvent<HTMLDivElement>) => {
         e.stopPropagation();
         if (!clipId) {
             return;

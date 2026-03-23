@@ -1,8 +1,8 @@
 import {
     type ReactElement,
-    type MouseEvent as ReactMouseEvent,
-    type WheelEvent as ReactWheelEvent,
-    type KeyboardEvent as ReactKeyboardEvent,
+    type MouseEvent,
+    type WheelEvent,
+    type KeyboardEvent,
     type Dispatch,
     type SetStateAction,
     useRef,
@@ -12,7 +12,7 @@ import {
 } from 'react';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
-import { useMemo } from 'react';
+
 import { cn } from '#/helpers/Styles/cn';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 import { midiStore } from '#/modules/Track/stores/midiStore';
@@ -41,10 +41,10 @@ import {
 import { generateMidiAI, isTauri } from '#/modules/AudioEngine/useCases/nativeAIBridge';
 import { playAuditionNote } from '#/modules/AudioEngine/useCases/audition';
 
-interface GestureEvent extends UIEvent {
+type GestureEvent = UIEvent & {
     readonly scale: number;
     readonly rotation: number;
-}
+};
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
 const TOTAL_ROWS = 60;
@@ -613,7 +613,7 @@ export const PianoRoll = ({
         return null;
     };
 
-    const handleMouseDown = (e: ReactMouseEvent<HTMLCanvasElement>) => {
+    const handleMouseDown = (e: MouseEvent<HTMLCanvasElement>) => {
         const canvas = canvasRef.current;
         if (!canvas) {
             return;
@@ -802,7 +802,7 @@ export const PianoRoll = ({
         }
     };
 
-    const handleMouseMove = (e: ReactMouseEvent<HTMLCanvasElement>) => {
+    const handleMouseMove = (e: MouseEvent<HTMLCanvasElement>) => {
         const drag = dragRef.current;
 
         // Hover cursor when not dragging
@@ -956,7 +956,7 @@ export const PianoRoll = ({
         }
     };
 
-    const handleMouseUp = (e: ReactMouseEvent<HTMLCanvasElement>) => {
+    const handleMouseUp = (e: MouseEvent<HTMLCanvasElement>) => {
         if (auditionRef.current) {
             auditionRef.current();
             auditionRef.current = null;
@@ -1166,7 +1166,7 @@ export const PianoRoll = ({
         };
     };
 
-    const handleDoubleClick = (e: ReactMouseEvent<HTMLCanvasElement>) => {
+    const handleDoubleClick = (e: MouseEvent<HTMLCanvasElement>) => {
         const canvas = canvasRef.current;
         if (!canvas) {
             return;
@@ -1191,7 +1191,7 @@ export const PianoRoll = ({
         }
     };
 
-    const handleWheel = (e: ReactWheelEvent<HTMLCanvasElement>) => {
+    const handleWheel = (e: WheelEvent<HTMLCanvasElement>) => {
         if (e.ctrlKey || e.metaKey) {
             e.preventDefault();
             const isPinch = Math.abs(e.deltaY) < 10;
@@ -1202,7 +1202,7 @@ export const PianoRoll = ({
         }
     };
 
-    const handleKeyDown = (e: ReactKeyboardEvent<HTMLCanvasElement>) => {
+    const handleKeyDown = (e: KeyboardEvent<HTMLCanvasElement>) => {
         if ((e.key === 'Delete' || e.key === 'Backspace') && selectedNoteIds.size > 0) {
             const deletedNotes = notes.filter((n) => selectedNoteIds.has(n.id)).map((n) => ({ ...n }));
             for (const id of selectedNoteIds) {
@@ -1339,7 +1339,7 @@ export const PianoRoll = ({
         }
     };
 
-    const handleContextMenu = (e: ReactMouseEvent<HTMLCanvasElement>) => {
+    const handleContextMenu = (e: MouseEvent<HTMLCanvasElement>) => {
         e.preventDefault();
         const canvas = canvasRef.current;
         if (!canvas) {
@@ -1354,12 +1354,12 @@ export const PianoRoll = ({
         if (!ctxMenu) {
             return;
         }
-        const dismiss = (e: MouseEvent) => {
+        const dismiss = (e: globalThis.MouseEvent) => {
             if (ctxMenuRef.current && !ctxMenuRef.current.contains(e.target as Node)) {
                 setCtxMenu(null);
             }
         };
-        const esc = (e: KeyboardEvent) => {
+        const esc = (e: globalThis.KeyboardEvent) => {
             if (e.key === 'Escape') {
                 setCtxMenu(null);
             }
@@ -1490,7 +1490,7 @@ export const PianoRoll = ({
                     Chord
                 </Button>
 
-                {chordMode && (
+                {chordMode ? (
                     <select
                         value={chordType}
                         onChange={(e) => setChordType(e.target.value as ChordType)}
@@ -1503,7 +1503,7 @@ export const PianoRoll = ({
                             </option>
                         ))}
                     </select>
-                )}
+                ) : null}
 
                 <Button
                     variant={paintMode ? 'secondary' : 'ghost'}
@@ -1554,7 +1554,7 @@ export const PianoRoll = ({
             >
                 <div className="w-10 shrink-0 border-r border-border/30 bg-surface-raised sticky left-0 z-10">
                     <div className="bg-surface-raised border-b border-border/30" style={{ height: RULER_HEIGHT }} />
-                    {useMemo(() => {
+                    {(() => {
                         const scaleIntervals = SCALES[scaleType] ?? SCALES.chromatic!;
                         const visiblePitches: number[] = [];
                         for (let p = BASE_PITCH + TOTAL_ROWS - 1; p >= BASE_PITCH; p--) {
@@ -1583,7 +1583,7 @@ export const PianoRoll = ({
                                 </div>
                             );
                         });
-                    }, [scaleType, scaleRoot, isFolded])}
+                    })()}
                 </div>
                 <canvas
                     ref={canvasRef}
@@ -1602,7 +1602,7 @@ export const PianoRoll = ({
                 />
             </div>
 
-            {ctxMenu && (
+            {ctxMenu ? (
                 <div
                     ref={ctxMenuRef}
                     className="fixed z-50 min-w-[170px] rounded-md border border-border bg-popover py-1 shadow-lg"
@@ -1890,7 +1890,7 @@ export const PianoRoll = ({
                         Delete Selected <span className="ml-auto pl-4 text-muted-foreground">⌫</span>
                     </button>
                 </div>
-            )}
+            ) : null}
         </div>
     );
 };

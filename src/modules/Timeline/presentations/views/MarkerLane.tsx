@@ -1,6 +1,6 @@
 import {
     type ReactElement,
-    type MouseEvent as ReactMouseEvent,
+    type MouseEvent,
     useState,
     useRef,
     useEffect,
@@ -68,7 +68,7 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
         if (contextMenu.kind === 'none') {
             return;
         }
-        const handleClick = (e: MouseEvent) => {
+        const handleClick = (e: globalThis.MouseEvent) => {
             if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
                 setContextMenu({ kind: 'none' });
             }
@@ -79,7 +79,7 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
 
     // Compute final beat on mouseup by reading the last mousemove position
     // We use a ref-based approach for the final commit to avoid stale closure
-    const handleMarkerDragStartStable = (e: ReactMouseEvent, marker: Marker) => {
+    const handleMarkerDragStartStable = (e: MouseEvent, marker: Marker) => {
         if (e.button !== 0) {
             return;
         }
@@ -96,7 +96,7 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
             originalBeat,
         };
 
-        const handleMouseMove = (moveEvent: MouseEvent) => {
+        const handleMouseMove = (moveEvent: globalThis.MouseEvent) => {
             const deltaPx = moveEvent.clientX - startX;
             const deltaBeats = deltaPx / pixelsPerBeat;
             lastBeat = Math.max(0, Math.round(originalBeat + deltaBeats));
@@ -117,7 +117,7 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
         window.addEventListener('mouseup', handleMouseUp);
     };
 
-    const handleLaneContextMenu = (e: ReactMouseEvent<HTMLDivElement>) => {
+    const handleLaneContextMenu = (e: MouseEvent<HTMLDivElement>) => {
         if (dragRef.current) {
             return;
         }

@@ -1,4 +1,4 @@
-import { type ReactElement, type MouseEvent as ReactMouseEvent, useState, useRef, useEffect } from 'react';
+import { type ReactElement, type MouseEvent, useState, useRef, useEffect } from 'react';
 import { Fader } from '#/components/daw/Fader';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { LatchButton } from '#/components/daw/LatchButton';
@@ -63,7 +63,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
     const ctxRef = useRef<HTMLDivElement>(null);
     const renameRef = useRef<HTMLInputElement>(null);
 
-    const handleContextMenu = (e: ReactMouseEvent<HTMLDivElement>) => {
+    const handleContextMenu = (e: MouseEvent<HTMLDivElement>) => {
         e.preventDefault();
         e.stopPropagation();
         setCtxMenu({ x: e.clientX, y: e.clientY });
@@ -73,12 +73,12 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
         if (!ctxMenu) {
             return;
         }
-        const dismiss = (e: MouseEvent) => {
+        const dismiss = (e: globalThis.MouseEvent) => {
             if (ctxRef.current && !ctxRef.current.contains(e.target as Node)) {
                 setCtxMenu(null);
             }
         };
-        const esc = (e: KeyboardEvent) => {
+        const esc = (e: globalThis.KeyboardEvent) => {
             if (e.key === 'Escape') {
                 setCtxMenu(null);
             }

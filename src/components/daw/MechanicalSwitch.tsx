@@ -1,13 +1,13 @@
 import { type ReactElement } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 
-interface MechanicalSwitchProps {
+type MechanicalSwitchProps = {
     checked: boolean;
     onChange: (checked: boolean) => void;
     className?: string;
     label?: string;
     size?: 'sm' | 'md' | 'lg';
-}
+};
 
 /**
  * MechanicalSwitch
@@ -68,7 +68,7 @@ export function MechanicalSwitch({
                     />
                 </div>
             </button>
-            {label && <span className="text-[9px] font-medium text-text-secondary">{label}</span>}
+            {label ? <span className="text-[9px] font-medium text-text-secondary">{label}</span> : null}
         </div>
     );
 }

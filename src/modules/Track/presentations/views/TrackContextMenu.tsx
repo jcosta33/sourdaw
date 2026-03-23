@@ -1,4 +1,5 @@
-import { type ReactElement, type ReactNode, type MouseEvent, useState, useRef, useEffect } from 'react';
+import { type ReactElement,
+    type MouseEvent, type ReactNode, useState, useRef, useEffect } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 import { removeTrack } from '../../useCases/removeTrack';
 import { toggleSoloSafe } from '../../useCases/toggleTrackState';
@@ -60,7 +61,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
         if (!position) {
             return;
         }
-        const handleEscape = (e: KeyboardEvent) => {
+        const handleEscape = (e: globalThis.KeyboardEvent) => {
             if (e.key === 'Escape') {
                 close();
             }

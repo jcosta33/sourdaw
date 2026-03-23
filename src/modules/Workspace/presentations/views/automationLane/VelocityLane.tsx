@@ -1,4 +1,4 @@
-import { type ReactElement, type MouseEvent as ReactMouseEvent, useRef, useEffect, useSyncExternalStore } from 'react';
+import { type ReactElement, type MouseEvent, useRef, useEffect, useSyncExternalStore } from 'react';
 import { midiStore } from '#/modules/Track/stores/midiStore';
 import { trackStore } from '#/modules/Track/stores/trackStore';
 import { pushUndoEntry } from '../../../useCases/workspaceViewActions';
@@ -121,7 +121,7 @@ export const VelocityLane = ({ clipId, trackId, selectedNoteIds, beatWidth, cont
         }
     }, [notes, selectedNoteIds, beatWidth, contentWidth, clipColor, selectedColor]);
 
-    const handleMouseDown = (e: ReactMouseEvent<HTMLCanvasElement>) => {
+    const handleMouseDown = (e: MouseEvent<HTMLCanvasElement>) => {
         if (!clipId) {
             return;
         }
@@ -158,7 +158,7 @@ export const VelocityLane = ({ clipId, trackId, selectedNoteIds, beatWidth, cont
         const velocity = Math.round(ratio * 127);
         setNoteVelocity(clipId, noteId, velocity);
 
-        const onMove = (me: MouseEvent) => {
+        const onMove = (me: globalThis.MouseEvent) => {
             const containerRect = container.getBoundingClientRect();
             const ry = me.clientY - containerRect.top;
             const r = 1 - Math.max(0, Math.min(1, (ry - 2) / (h - 4)));

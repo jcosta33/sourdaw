@@ -1,4 +1,4 @@
-import { type ReactElement, useRef, useState, useEffect, useSyncExternalStore } from 'react';
+import { type ReactElement, type RefObject, type WheelEvent, useRef, useState, useEffect, useSyncExternalStore } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 import { automationStore } from '#/modules/Track/stores/automationStore';
 import { trackStore } from '#/modules/Track/stores/trackStore';
@@ -24,7 +24,7 @@ const MODE_OPTIONS: { value: AutomationMode; label: string }[] = [
 const SPARKLINE_HEIGHT = 24;
 
 /** Reactively track an element's width via ResizeObserver */
-function useContainerWidth(ref: React.RefObject<HTMLDivElement | null>): number {
+function useContainerWidth(ref: RefObject<HTMLDivElement | null>): number {
     const [width, setWidth] = useState(0);
     useEffect(() => {
         const el = ref.current;
@@ -137,9 +137,9 @@ export const AutomationBottomPanel = (): ReactElement => {
     const modeConfig = AUTOMATION_MODE_CONFIG[automationMode];
     const trackColor = selectedTrack?.color ?? 'var(--color-palette-steel)';
 
-    const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-        if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-            scrollTimeline(e.deltaX || e.deltaY);
+    const handleWheel = (event: WheelEvent<HTMLDivElement>) => {
+        if (event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
+            scrollTimeline(event.deltaX || event.deltaY);
         }
     };
 

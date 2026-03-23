@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useRef, useEffect, useMemo } from 'react';
+import { type ReactElement, useState, useRef, useEffect } from 'react';
 import { Search, Music, Plus, SlidersHorizontal } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { cn } from '#/helpers/Styles/cn';
@@ -163,7 +163,7 @@ const TemplateCard = ({
     genParams: GenerationParams;
     onInsert: (t: PatternTemplate) => void;
 }): ReactElement => {
-    const notes = useMemo(() => template.generate(genParams), [template, genParams]);
+    const notes = template.generate(genParams);
 
     return (
         <div className="group relative bg-surface-raised border border-border/40 rounded-lg overflow-hidden hover:border-[var(--color-accent-lavender)]/40 transition-all duration-200">
@@ -218,15 +218,13 @@ export const PatternBrowser = (): ReactElement => {
     const [density, setDensity] = useState(5);
     const [complexity, setComplexity] = useState(5);
 
-    const genParams: GenerationParams = useMemo(
-        () => ({ key, scale, density, complexity }),
-        [key, scale, density, complexity]
-    );
+    const genParams: GenerationParams = { key, scale, density, complexity };
 
-    const filteredTemplates = useMemo(
-        () => filterTemplates({ query: searchQuery || undefined, category: activeCategory, genre: activeGenre }),
-        [searchQuery, activeCategory, activeGenre]
-    );
+    const filteredTemplates = filterTemplates({
+        query: searchQuery || undefined,
+        category: activeCategory,
+        genre: activeGenre,
+    });
 
     const handleInsertTemplate = (template: PatternTemplate): void => {
         const tState = trackStore.value;
@@ -296,7 +294,7 @@ export const PatternBrowser = (): ReactElement => {
             </div>
 
             {/* Generation controls */}
-            {showControls && (
+            {showControls ? (
                 <div className="bg-surface-base/60 border border-border/40 rounded-lg p-2 space-y-2">
                     <div className="grid grid-cols-3 gap-2">
                         <CompactSelect
@@ -325,7 +323,7 @@ export const PatternBrowser = (): ReactElement => {
                         <ParamSlider label="Complexity" value={complexity} onChange={setComplexity} />
                     </div>
                 </div>
-            )}
+            ) : null}
 
             {/* Category filter */}
             <div className="flex gap-1 flex-wrap">

@@ -8,7 +8,7 @@
 
 import {
     type ReactElement,
-    type MouseEvent as ReactMouseEvent,
+    type MouseEvent,
     useSyncExternalStore,
     useState,
     useRef,
@@ -85,7 +85,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
         if (contextMenu.kind === 'none' && !showAddMenu) {
             return;
         }
-        const handleClick = (e: MouseEvent) => {
+        const handleClick = (e: globalThis.MouseEvent) => {
             if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
                 setContextMenu({ kind: 'none' });
             }
@@ -98,7 +98,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
     }, [contextMenu.kind, showAddMenu]);
 
     // ── Drag handling ─────────────────────────────────────────────────
-    const handleMouseDown = (e: ReactMouseEvent, event: ChordEvent): void => {
+    const handleMouseDown = (e: MouseEvent, event: ChordEvent): void => {
         if (e.button !== 0) {
             return;
         }
@@ -106,7 +106,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
         setDragState({ eventId: event.id, startX: e.clientX, originalBeat: event.beat });
     };
 
-    const handleMouseMove = (e: ReactMouseEvent): void => {
+    const handleMouseMove = (e: MouseEvent): void => {
         if (!dragState) {
             return;
         }
@@ -121,7 +121,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
     };
 
     // ── Context menu ──────────────────────────────────────────────────
-    const handleContextMenu = (e: ReactMouseEvent<HTMLDivElement>): void => {
+    const handleContextMenu = (e: MouseEvent<HTMLDivElement>): void => {
         e.preventDefault();
         const rect = e.currentTarget.getBoundingClientRect();
         const localX = e.clientX - rect.left;

@@ -1,4 +1,4 @@
-import { type CSSProperties, type ReactElement, useState, useCallback, useRef } from 'react';
+import { type CSSProperties, type ReactElement, useState, useRef } from 'react';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { Button } from '#/components/ui/button';
 import { Columns3, Save, RotateCcw, Sparkles, Pencil } from 'lucide-react';
@@ -58,13 +58,13 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
     const [editingSnapshotId, setEditingSnapshotId] = useState<string | null>(null);
     const renameInputRef = useRef<HTMLInputElement>(null);
 
-    const handleSaveSnapshot = useCallback(() => {
+    const handleSaveSnapshot = () => {
         const name = `Snapshot ${snapshots.length + 1}`;
         saveMixerSnapshot(name);
         setSnapshots(getMixerSnapshots());
-    }, [snapshots.length]);
+    };
 
-    const handleRecallSnapshot = useCallback((id: string) => {
+    const handleRecallSnapshot = (id: string) => {
         const previous = recallMixerSnapshot(id);
         if (previous) {
             pushUndoEntry(
@@ -74,20 +74,20 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
             );
         }
         setShowSnapshots(false);
-    }, []);
+    };
 
-    const handleDeleteSnapshot = useCallback((id: string) => {
+    const handleDeleteSnapshot = (id: string) => {
         deleteMixerSnapshot(id);
         setSnapshots(getMixerSnapshots());
-    }, []);
+    };
 
-    const handleRenameCommit = useCallback((id: string, name: string) => {
+    const handleRenameCommit = (id: string, name: string) => {
         if (name.trim()) {
             renameMixerSnapshot(id, name.trim());
             setSnapshots(getMixerSnapshots());
         }
         setEditingSnapshotId(null);
-    }, []);
+    };
 
     return (
         <div
@@ -145,7 +145,7 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
                         <RotateCcw className="size-3" />
                     </Button>
 
-                    {showSnapshots && snapshots.length > 0 && (
+                    {showSnapshots && snapshots.length > 0 ? (
                         <div className="absolute top-full right-0 z-50 mt-1 min-w-[140px] rounded-lg border border-border bg-popover p-1 shadow-lg">
                             {snapshots.map((snap) => (
                                 <div key={snap.id} className="flex items-center gap-1">
@@ -192,7 +192,7 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
                                 </div>
                             ))}
                         </div>
-                    )}
+                    ) : null}
                 </div>
             </div>
 
@@ -213,11 +213,11 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
 
                     <MasterChannelStrip widthClass={widthClass} />
 
-                    {tracks.length === 0 && (
+                    {tracks.length === 0 ? (
                         <div className="flex flex-1 items-center justify-center">
                             <p className="text-xs text-muted-foreground">Add tracks to see mixer channels</p>
                         </div>
-                    )}
+                    ) : null}
                 </div>
             </ScrollArea>
         </div>

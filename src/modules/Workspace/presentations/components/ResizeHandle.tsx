@@ -1,4 +1,4 @@
-import { type ReactElement, type MouseEvent as ReactMouseEvent, useEffect, useRef } from 'react';
+import { type ReactElement, type MouseEvent, useEffect, useRef } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 
 type ResizeHandleProps = {
@@ -12,7 +12,7 @@ export const ResizeHandle = ({ direction, onResize, onResizeEnd }: ResizeHandleP
     const lastPos = useRef(0);
 
     useEffect(() => {
-        const handleMouseMove = (e: MouseEvent) => {
+        const handleMouseMove = (e: globalThis.MouseEvent) => {
             if (!dragging.current) {
                 return;
             }
@@ -40,7 +40,7 @@ export const ResizeHandle = ({ direction, onResize, onResizeEnd }: ResizeHandleP
         };
     }, [direction, onResize, onResizeEnd]);
 
-    const handleMouseDown = (e: ReactMouseEvent) => {
+    const handleMouseDown = (e: MouseEvent) => {
         e.preventDefault();
         dragging.current = true;
         lastPos.current = direction === 'vertical' ? e.clientX : e.clientY;

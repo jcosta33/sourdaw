@@ -1,4 +1,4 @@
-import { type ReactElement } from 'react';
+import { type ReactElement, type PointerEvent } from 'react';
 import { Slider } from '#/components/ui/slider';
 import { cn } from '#/helpers/Styles/cn';
 
@@ -41,22 +41,22 @@ export const BipolarSlider = ({
         onValueChange(mapped);
     };
 
-    const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-        if (e.metaKey || e.ctrlKey) {
-            e.preventDefault();
-            e.stopPropagation();
+    const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+        if (event.metaKey || event.ctrlKey) {
+            event.preventDefault();
+            event.stopPropagation();
             onValueChange(defaultValue);
         }
     };
 
     return (
         <div className={cn('flex flex-col gap-1 w-full', className)}>
-            {label && (
+            {label ? (
                 <div className="flex justify-between items-center px-1">
                     <span className="text-[10px] text-muted-foreground">{label}</span>
                     <span className="text-[10px] font-mono text-muted-foreground">{formatValue(value)}</span>
                 </div>
-            )}
+            ) : null}
             <div className="relative pt-2 pb-1 px-1 h-6 flex items-center" onPointerDownCapture={handlePointerDown}>
                 {/* Center tick */}
                 <div
@@ -72,11 +72,11 @@ export const BipolarSlider = ({
                     className="z-10"
                 />
             </div>
-            {!label && (
+            {!label ? (
                 <div className="flex justify-center">
                     <span className="text-[9px] font-mono text-muted-foreground">{formatValue(value)}</span>
                 </div>
-            )}
+            ) : null}
         </div>
     );
 };
