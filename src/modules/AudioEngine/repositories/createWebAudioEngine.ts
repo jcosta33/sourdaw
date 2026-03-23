@@ -330,19 +330,24 @@ export function createWebAudioEngine(): AudioEngine {
     }
 
     function rebuildStripChain(strip: TrackChannelStrip): void {
+        // Disconnect only the inter-device chain connections, NOT internal device wiring.
+        // For multi-node devices (delay, compressor, reverb, chorus, etc.),
+        // calling inputNode.disconnect() would sever internal connections like
+        // splitter→dry, comp→makeup, etc. that are never restored.
         strip.preFaderTap.disconnect();
         strip.gainNode.disconnect();
         for (const dn of strip.deviceNodes) {
-            try { dn.inputNode.disconnect(); } catch { /* ok */ }
+            // Only disconnect the device's output → next node connection
             try { dn.outputNode.disconnect(); } catch { /* ok */ }
         }
         strip.panNode.disconnect();
+        strip.analyserNode.disconnect();
 
         strip.preFaderTap.connect(strip.gainNode);
         let prev: AudioNode = strip.gainNode;
         for (const dn of strip.deviceNodes) {
             // Skip bypassed web audio devices — route audio past them
-            if ((dn as any)._bypassed) {
+            if ((dn as BuiltinDeviceNode & { _bypassed?: boolean })._bypassed) {
                 continue;
             }
             prev.connect(dn.inputNode);
@@ -350,7 +355,6 @@ export function createWebAudioEngine(): AudioEngine {
         }
         prev.connect(strip.panNode);
         strip.panNode.connect(strip.analyserNode);
-        strip.analyserNode.disconnect();
         strip.analyserNode.connect(masterGainNode);
 
         reconnectSendsForTrack(strip);
@@ -835,6 +839,8 @@ export function createWebAudioEngine(): AudioEngine {
                     comp.attack.setTargetAtTime(value / 1000, context.currentTime, 0.01);
                 } else if (paramId === 'comp-release') {
                     comp.release.setTargetAtTime(value / 1000, context.currentTime, 0.01);
+                } else if (paramId === 'comp-knee') {
+                    comp.knee.setTargetAtTime(value, context.currentTime, 0.01);
                 } else if (paramId === 'comp-makeup') {
                     makeup.gain.setTargetAtTime(10 ** (value / 20), context.currentTime, 0.01);
                 }

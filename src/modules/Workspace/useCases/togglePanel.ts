@@ -1,8 +1,6 @@
 import { getWorkspaceState, updateWorkspaceState } from '../repositories/workspaceRepository';
 import { trackStore } from '#/modules/Track/stores/trackStore';
-import { automationStore } from '#/modules/Track/stores/automationStore';
-import { addAutomationLane } from '#/modules/Track/useCases/automationUseCases';
-import { type SoloMode, type AutomationVisibility } from '../models/WorkspaceState';
+import { type SoloMode } from '../models/WorkspaceState';
 
 export function setSoloMode(soloMode: SoloMode): void {
     const current = getWorkspaceState();
@@ -112,45 +110,8 @@ export function zoomToSelection(): void {
     );
 }
 
-const VISIBILITY_CYCLE: AutomationVisibility[] = ['hidden', 'overlay', 'panel'];
+
 
 export function cycleAutomationVisibility(): void {
-    const current = getWorkspaceState();
-    if (!current) {
-        return;
-    }
-    const currentIdx = VISIBILITY_CYCLE.indexOf(current.automationVisibility ?? 'hidden');
-    const nextIdx = (currentIdx + 1) % VISIBILITY_CYCLE.length;
-    const next = VISIBILITY_CYCLE[nextIdx]!;
-
-    // Auto-create default Volume sub-lanes when entering a visible mode
-    let subLanes = current.automationSubLanes;
-    if (next !== 'hidden') {
-        const trackState = trackStore.value;
-        if (trackState) {
-            const updated = { ...subLanes };
-            let changed = false;
-            for (const track of trackState.tracks) {
-                const existing = updated[track.id];
-                if (!existing || existing.length === 0) {
-                    updated[track.id] = ['gain'];
-                    changed = true;
-                    // Ensure the automation lane exists
-                    const autoState = automationStore.value;
-                    if (!autoState?.lanes.find((l) => l.trackId === track.id && l.parameterId === 'gain')) {
-                        addAutomationLane(track.id, 'gain', 'Volume');
-                    }
-                }
-            }
-            if (changed) {
-                subLanes = updated;
-            }
-        }
-    }
-
-    updateWorkspaceState({
-        automationVisibility: next,
-        automationPanelOpen: next === 'panel',
-        automationSubLanes: subLanes,
-    });
+    document.dispatchEvent(new CustomEvent('webdaw:show-automation-tab'));
 }

@@ -126,7 +126,7 @@ export function saveProject(): void {
                 });
         }
 
-        projectStore.set({ ...project, updatedAt: data.updatedAt, dirty: false });
+        projectStore.set({ ...project, updatedAt: data.updatedAt, dirty: false, loading: false });
         addToRecentProjects(project.name, `webdaw:project:${project.name}`);
     } catch {
         notifyUser('Failed to save project — storage may be full', 'error');
@@ -135,6 +135,7 @@ export function saveProject(): void {
 }
 
 export async function loadProject(): Promise<boolean> {
+    projectStore.set({ ...projectStore.value!, loading: true });
     try {
         // Try native file system first (Tauri)
         if (isNativeFileSystemAvailable()) {
@@ -156,12 +157,14 @@ export async function loadProject(): Promise<boolean> {
         const raw = readProjectJson();
         if (!raw) {
             await demo1_TheCompleteMix();
+            projectStore.set({ ...projectStore.value!, loading: false });
             return true;
         }
 
         const data = JSON.parse(raw) as ProjectData;
         if (data.version !== 1) {
             await demo1_TheCompleteMix();
+            projectStore.set({ ...projectStore.value!, loading: false });
             return true;
         }
 
@@ -194,6 +197,7 @@ export async function loadProject(): Promise<boolean> {
             createdAt: data.createdAt,
             updatedAt: data.updatedAt,
             dirty: false,
+            loading: false,
         });
 
         // Initialize arrangementStore with the saved arrangements (or fallback to backwards compat)
@@ -231,6 +235,7 @@ export async function loadProject(): Promise<boolean> {
         return true;
     } catch {
         await demo1_TheCompleteMix();
+        projectStore.set({ ...projectStore.value!, loading: false });
         clearUndoHistory();
         return true;
     }
@@ -267,6 +272,7 @@ export function newProject(name = 'Untitled Project'): void {
         createdAt: Date.now(),
         updatedAt: Date.now(),
         dirty: false,
+        loading: false,
     });
     removeProjectJson();
     audioBufferCache.clear();
@@ -384,6 +390,7 @@ export async function importProjectFile(file: File): Promise<boolean> {
             createdAt: data.createdAt,
             updatedAt: data.updatedAt,
             dirty: false,
+            loading: false,
         });
 
         if (data.arrangements && data.arrangements.length > 0 && data.activeArrangementId) {

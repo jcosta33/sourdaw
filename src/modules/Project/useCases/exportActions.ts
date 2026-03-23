@@ -16,9 +16,22 @@ export const renderOffline = (lengthBeats: number, sampleRate?: number): Promise
 export const exportStems = (lengthBeats: number, sampleRate?: number): Promise<Map<string, AudioBuffer>> =>
     _exportStems(lengthBeats, sampleRate);
 
-export const downloadWav = (buffer: AudioBuffer, filename: string, bitDepth?: 16 | 24 | 32): Promise<void> =>
-    _downloadWav(buffer, filename, bitDepth);
+export const downloadWav = (
+    buffer: AudioBuffer,
+    filename: string,
+    bitDepth?: 16 | 24 | 32,
+    onProgress?: (frac: number) => void
+): Promise<void> => _downloadWav(buffer, filename, bitDepth, onProgress);
 
-export const downloadMp3 = (buffer: AudioBuffer, filename: string): Promise<void> => _downloadMp3(buffer, filename);
+export const downloadMp3 = (
+    buffer: AudioBuffer,
+    filename: string,
+    bitRate?: number,
+    onProgress?: (frac: number) => void
+): Promise<void> => _downloadMp3(buffer, filename, bitRate, onProgress);
 
-export const downloadFlac = (buffer: AudioBuffer, filename: string): Promise<void> => _downloadFlac(buffer, filename);
+export const downloadFlac = (
+    buffer: AudioBuffer,
+    filename: string,
+    onProgress?: (frac: number) => void
+): Promise<void> => _downloadFlac(buffer, filename, onProgress);

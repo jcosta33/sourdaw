@@ -1610,8 +1610,8 @@ export function getPluginById(pluginId: string): PluginDescriptor | undefined {
 
 /**
  * Check whether a device type is supported on the current runtime.
- * Returns false for native-only plugins when running on web,
- * and false for web-only plugins when running in Tauri.
+ * Returns false for native-only plugins when running on web.
+ * Native (Tauri) can run both web and native plugins since it uses WebView + Web Audio.
  */
 export function isDeviceSupportedOnCurrentPlatform(deviceType: string): boolean {
     const descriptor = BUILTIN_PLUGINS.find((p) => p.id === deviceType);
@@ -1619,5 +1619,6 @@ export function isDeviceSupportedOnCurrentPlatform(deviceType: string): boolean 
     const platform = descriptor.platform ?? 'both';
     if (platform === 'both') return true;
     const isNativeRuntime = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-    return isNativeRuntime ? platform === 'native' : platform === 'web';
+    if (isNativeRuntime) return true; // native can run both web and native plugins
+    return platform === 'web'; // web can only run web plugins
 }

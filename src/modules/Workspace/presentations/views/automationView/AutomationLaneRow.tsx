@@ -584,6 +584,8 @@ export const AutomationLaneRow = ({
                 onContextMenu={handleSvgContextMenu}
                 style={{ width: containerWidth }}
             >
+                {/* Transparent rect for event capture on empty SVG space */}
+                <rect x={0} y={0} width={containerWidth} height={LANE_HEIGHT} fill="transparent" />
                 {/* Grid lines */}
                 {Array.from({ length: 5 }).map((_, i) => {
                     const y = (LANE_HEIGHT / 4) * i;
@@ -870,7 +872,12 @@ export const AutomationLaneRow = ({
                     <div className="fixed inset-0 z-50" onClick={() => setContextMenu(null)} />
                     <div
                         className="fixed z-50 bg-popover border border-border rounded-md shadow-xl py-1 min-w-[160px]"
-                        style={{ left: contextMenu.x, top: contextMenu.y }}
+                        style={{
+                            left: contextMenu.x,
+                            ...(contextMenu.y > window.innerHeight - 300
+                                ? { bottom: window.innerHeight - contextMenu.y }
+                                : { top: contextMenu.y }),
+                        }}
                     >
                         {contextMenu.section !== 'shape' && (
                             <>

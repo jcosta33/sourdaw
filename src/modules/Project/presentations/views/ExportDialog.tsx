@@ -53,6 +53,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     const [bitDepth, setBitDepth] = useState(defaults.bitDepth);
     const [exporting, setExporting] = useState(false);
     const [progress, setProgress] = useState(0);
+    const [statusText, setStatusText] = useState('');
 
     const toggleFormat = (f: ExportFormat) => {
         setFormats((prev) => {
@@ -78,48 +79,69 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
 
     const handleExport = async () => {
         setExporting(true);
-        setProgress(10);
+        setProgress(0);
+        setStatusText('Preparing...');
 
         try {
             const tracks = trackStore.value?.tracks ?? [];
             const maxBeat = Math.max(16, ...tracks.flatMap((t) => t.clips.map((c) => c.endBeat)));
             const bd = bitDepth as 16 | 24 | 32;
             const ts = Date.now();
+            const formatList = Array.from(formats);
 
             if (mode === 'stems') {
-                setProgress(20);
+                setStatusText('Rendering stems...');
+                setProgress(5);
                 const stems = await exportStems(maxBeat, sampleRate);
                 let done = 0;
+                const total = stems.size * formatList.length;
                 for (const [trackId, buffer] of stems) {
                     const track = tracks.find((t) => t.id === trackId);
                     const name = track?.name ?? trackId;
-                    for (const f of Array.from(formats)) {
+                    for (const f of formatList) {
+                        const encodeProgress = (frac: number) => {
+                            setProgress(10 + ((done + frac) / total) * 90);
+                        };
+                        setStatusText(`Encoding ${name} (${f.toUpperCase()})...`);
                         if (f === 'mp3') {
-                            await downloadMp3(buffer, `${name}-${ts}.mp3`);
+                            await downloadMp3(buffer, `${name}-${ts}.mp3`, 128, encodeProgress);
                         } else if (f === 'flac') {
-                            downloadFlac(buffer, `${name}-${ts}.flac`);
+                            await downloadFlac(buffer, `${name}-${ts}.flac`, encodeProgress);
                         } else {
-                            downloadWav(buffer, `${name}-${ts}.wav`, bd);
+                            await downloadWav(buffer, `${name}-${ts}.wav`, bd, encodeProgress);
                         }
+                        done++;
+                        setProgress(10 + (done / total) * 90);
                     }
-                    done++;
-                    setProgress(20 + (done / stems.size) * 80);
                 }
             } else {
-                setProgress(30);
+                // Mixdown: rendering = 0-60%, encoding = 60-100%
+                setStatusText('Rendering offline mixdown...');
+                setProgress(5);
                 const buffer = await renderOffline(maxBeat, sampleRate);
-                setProgress(80);
-                for (const f of Array.from(formats)) {
+                setProgress(60);
+
+                let formatsDone = 0;
+                for (const f of formatList) {
+                    const encodeProgress = (frac: number) => {
+                        const perFormat = 40 / formatList.length;
+                        setProgress(60 + formatsDone * perFormat + frac * perFormat);
+                    };
                     if (f === 'mp3') {
-                        await downloadMp3(buffer, `webdaw-export-${ts}.mp3`);
+                        setStatusText('Encoding MP3...');
+                        await downloadMp3(buffer, `webdaw-export-${ts}.mp3`, 128, encodeProgress);
                     } else if (f === 'flac') {
-                        downloadFlac(buffer, `webdaw-export-${ts}.flac`);
+                        setStatusText('Encoding FLAC...');
+                        await downloadFlac(buffer, `webdaw-export-${ts}.flac`, encodeProgress);
                     } else {
-                        downloadWav(buffer, `webdaw-export-${ts}.wav`, bd);
+                        setStatusText('Encoding WAV...');
+                        await downloadWav(buffer, `webdaw-export-${ts}.wav`, bd, encodeProgress);
                     }
+                    formatsDone++;
                 }
             }
             setProgress(100);
+            setStatusText('Complete!');
             document.dispatchEvent(
                 new CustomEvent('webdaw:notify', {
                     detail: { message: 'Audio exported successfully', level: 'info' },
@@ -127,6 +149,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             );
         } catch (error) {
             logger.error(new Error('Export failed', { cause: error }));
+            setStatusText('Export failed');
         } finally {
             setExporting(false);
         }
@@ -244,7 +267,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     {exporting && (
                         <div className="space-y-1">
                             <div className="flex justify-between text-xs text-muted-foreground">
-                                <span>Rendering...</span>
+                                <span>{statusText}</span>
                                 <span>{progress.toFixed(0)}%</span>
                             </div>
                             <div

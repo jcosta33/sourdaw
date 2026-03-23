@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useRef, useCallback } from 'react';
+import { type ReactElement, useRef } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 
 interface RotaryKnobProps {
@@ -20,67 +20,70 @@ const SIZES = { sm: 24, md: 32, lg: 40, xl: 72 } as const;
  * RotaryKnob
  * Skeuomorphic metallic dome with conic value arc.
  * Vertical drag sets value. Shift for fine control. Double-click resets.
+ *
+ * Performance: dragging state is tracked via refs, not React state,
+ * so pointer-move never triggers re-renders on its own — only `onChange` does.
  */
 export const RotaryKnob = ({
     value,
     onChange,
     min = 0,
     max = 100,
-    step = 1,
-    fineStep = 0.1,
+    step: stepProp,
+    fineStep: fineStepProp,
     defaultValue = 50,
     bipolar = false,
     size = 'md',
     className,
 }: RotaryKnobProps): ReactElement => {
-    const [isDragging, setIsDragging] = useState(false);
+    // Derive sensible defaults from range when not explicitly provided
+    const step = stepProp ?? Math.max(0.001, (max - min) / 200);
+    const fineStep = fineStepProp ?? step / 10;
+    const draggingRef = useRef(false);
     const startY = useRef(0);
     const startValue = useRef(value);
+    const rootRef = useRef<HTMLDivElement>(null);
     const px = SIZES[size];
 
-    const clampAndSnap = useCallback(
-        (v: number) => {
-            let clamped = Math.max(min, Math.min(max, v));
-            if (bipolar && Math.abs(clamped - defaultValue) < (max - min) * 0.05) {
-                clamped = defaultValue;
-            }
-            return clamped;
-        },
-        [min, max, defaultValue, bipolar]
-    );
+    const clamp = (v: number): number => {
+        let clamped = Math.max(min, Math.min(max, v));
+        if (bipolar && Math.abs(clamped - defaultValue) < (max - min) * 0.01) {
+            clamped = defaultValue;
+        }
+        return clamped;
+    };
 
     const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
         if (e.button !== 0) {
             return;
         }
         e.currentTarget.setPointerCapture(e.pointerId);
-        setIsDragging(true);
+        draggingRef.current = true;
         startY.current = e.clientY;
         startValue.current = value;
+        rootRef.current?.setAttribute('data-dragging', '');
     };
 
-    const handlePointerMove = useCallback(
-        (e: React.PointerEvent<HTMLDivElement>) => {
-            if (!isDragging) {
-                return;
-            }
-            const deltaY = startY.current - e.clientY;
-            const currentStep = e.shiftKey ? fineStep : step;
-            const sweepPx = 150;
-            let sensitivity = (max - min) / sweepPx;
-            if (e.shiftKey) {
-                sensitivity *= 0.1;
-            }
-            let newValue = startValue.current + deltaY * sensitivity;
-            newValue = Math.round(newValue / currentStep) * currentStep;
-            onChange(clampAndSnap(newValue));
-        },
-        [isDragging, step, fineStep, max, min, clampAndSnap, onChange]
-    );
+    const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+        if (!draggingRef.current) {
+            return;
+        }
+        const deltaY = startY.current - e.clientY;
+        const sweepPx = 150;
+        let sensitivity = (max - min) / sweepPx;
+        if (e.shiftKey) {
+            sensitivity *= 0.1;
+        }
+        const raw = startValue.current + deltaY * sensitivity;
+        const currentStep = e.shiftKey ? fineStep : step;
+        const quantized = Math.round(raw / currentStep) * currentStep;
+        onChange(clamp(quantized));
+    };
 
     const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
-        setIsDragging(false);
+        draggingRef.current = false;
         e.currentTarget.releasePointerCapture(e.pointerId);
+        rootRef.current?.removeAttribute('data-dragging');
     };
 
     const handleDoubleClick = () => {
@@ -93,14 +96,18 @@ export const RotaryKnob = ({
 
     // Conic arc gradient for the value ring
     const arcAngleDeg = normalized * 270;
-    const arcColor = isDragging ? 'var(--color-accent-cyan)' : 'rgba(127, 184, 196, 0.6)';
+    const arcColor = 'rgba(127, 184, 196, 0.7)';
     const arcBg = bipolar
         ? buildBipolarArc(normalized, arcColor)
         : `conic-gradient(from 225deg, ${arcColor} 0deg, ${arcColor} ${arcAngleDeg}deg, transparent ${arcAngleDeg}deg, transparent 270deg, transparent 270deg)`;
 
     return (
         <div
-            className={cn('relative flex flex-col items-center select-none touch-none cursor-ns-resize', className)}
+            ref={rootRef}
+            className={cn(
+                'group/knob relative flex flex-col items-center select-none touch-none cursor-ns-resize',
+                className,
+            )}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
@@ -110,45 +117,35 @@ export const RotaryKnob = ({
             <div
                 className={cn(
                     'relative rounded-full bg-bg-panelInset flex items-center justify-center p-[2px] channel-inset',
-                    isDragging && 'ring-1 ring-border-focus'
                 )}
                 style={{ width: px, height: px }}
             >
                 {/* Value arc ring */}
                 <div
-                    className="absolute inset-0 rounded-full pointer-events-none transition-opacity duration-fast"
+                    className="absolute inset-0 rounded-full pointer-events-none"
                     style={{
                         background: arcBg,
                         mask: 'radial-gradient(circle, transparent 55%, black 57%)',
                         WebkitMask: 'radial-gradient(circle, transparent 55%, black 57%)',
-                        opacity: isDragging ? 1 : 0.85,
                     }}
                 />
 
-                {/* Metallic dome cap */}
+                {/* Metallic dome cap — no CSS transition on transform for instant response */}
                 <div
                     className={cn(
-                        'w-full h-full rounded-full relative border transition-all duration-fast',
-                        isDragging ? 'border-black/50' : 'border-border-soft'
+                        'w-full h-full rounded-full relative border border-border-soft',
                     )}
                     style={{
-                        background: isDragging
-                            ? 'radial-gradient(ellipse 60% 40% at 50% 35%, rgba(255,255,255,0.18) 0%, transparent 70%), radial-gradient(circle at 50% 40%, #555 0%, #333 40%, #222 100%)'
-                            : 'radial-gradient(ellipse 60% 40% at 50% 35%, rgba(255,255,255,0.12) 0%, transparent 70%), radial-gradient(circle at 50% 40%, #444 0%, #2a2a2a 40%, #1a1a1a 100%)',
-                        boxShadow: isDragging
-                            ? 'inset 0 2px 4px rgba(0,0,0,0.6)'
-                            : 'inset 0 1px 0 rgba(255,255,255,0.08), 0 1px 2px rgba(0,0,0,0.5)',
+                        background:
+                            'radial-gradient(ellipse 60% 40% at 50% 35%, rgba(255,255,255,0.12) 0%, transparent 70%), radial-gradient(circle at 50% 40%, #444 0%, #2a2a2a 40%, #1a1a1a 100%)',
+                        boxShadow:
+                            'inset 0 1px 0 rgba(255,255,255,0.08), 0 1px 2px rgba(0,0,0,0.5)',
                         transform: `rotate(${rotation}deg)`,
                     }}
                 >
                     {/* Position indicator line */}
                     <div
-                        className={cn(
-                            'absolute left-1/2 -translate-x-1/2 rounded-full transition-all duration-fast',
-                            isDragging
-                                ? 'bg-accent-cyan shadow-[0_0_6px_var(--color-accent-cyan)]'
-                                : 'bg-text-secondary'
-                        )}
+                        className="absolute left-1/2 -translate-x-1/2 rounded-full bg-text-secondary"
                         style={{
                             top: '12%',
                             width: px >= 72 ? 3 : 2,
@@ -172,3 +169,4 @@ function buildBipolarArc(normalized: number, color: string): string {
     // Fill from value to center (counter-clockwise visual)
     return `conic-gradient(from 225deg, transparent 0deg, transparent ${valueDeg}deg, ${color} ${valueDeg}deg, ${color} ${centerDeg}deg, transparent ${centerDeg}deg)`;
 }
+

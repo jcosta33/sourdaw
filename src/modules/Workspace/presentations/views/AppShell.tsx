@@ -9,6 +9,7 @@ import {
     useSyncExternalStore,
 } from 'react';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
+import { useProjectState } from '../hooks/useProjectState';
 import { TransportBar } from './TransportBar';
 import { Sidebar } from './Sidebar';
 import { InspectorPanel } from './InspectorPanel';
@@ -17,7 +18,7 @@ import { ChatPanel } from '#/modules/AiRuntime/presentations/views/ChatPanel';
 import { MixerPanel } from './MixerPanel';
 import { SessionView } from './SessionView';
 import { RoutingMatrix } from './RoutingMatrix';
-import { AutomationView } from './AutomationView';
+import { AutomationBottomPanel } from './AutomationBottomPanel';
 import { ClipView } from './ClipView';
 import { AnalysisPanel } from './AnalysisPanel';
 
@@ -49,7 +50,6 @@ import {
     toggleSidebar,
     toggleInspector,
     toggleMixer,
-    toggleAutomationPanel,
     toggleTrackList,
 } from '#/modules/Workspace/useCases/togglePanel';
 import { StatusBar } from './StatusBar';
@@ -74,17 +74,17 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         sidebarOpen,
         inspectorOpen,
         mixerOpen,
-        automationPanelOpen,
         collaborationPanelOpen,
         chatPanelOpen,
         selectedClipId,
     } = useWorkspaceState();
 
+    const project = useProjectState();
     const aiState = useSyncExternalStore(subscribeGenerativeAi, getGenerativeAiSnapshot);
     const aiPanelOpen = aiState.isPanelOpen;
     const [exportOpen, setExportOpen] = useState(false);
     const [prefsOpen, setPrefsOpen] = useState(false);
-    const [bottomTab, setBottomTab] = useState<'editor' | 'mixer' | 'session' | 'routing' | 'analysis'>('mixer');
+    const [bottomTab, setBottomTab] = useState<'editor' | 'mixer' | 'session' | 'routing' | 'analysis' | 'automation'>('mixer');
 
     // Auto-switch bottom tab when clip selected
     useEffect(() => {
@@ -96,6 +96,19 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
             }
         }
     }, [selectedClipId]);
+
+    // Listen for automation tab activation (from 'A' key)
+    useEffect(() => {
+        const handler = () => {
+            setBottomTab('automation');
+            const ws = workspaceStore.value;
+            if (ws && !ws.mixerOpen) {
+                workspaceStore.set({ ...ws, mixerOpen: true });
+            }
+        };
+        document.addEventListener('webdaw:show-automation-tab', handler);
+        return () => document.removeEventListener('webdaw:show-automation-tab', handler);
+    }, []);
 
     useGlobalKeyboardShortcuts();
 
@@ -146,7 +159,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
             }
             if (mod && e.shiftKey && e.key === 'a') {
                 e.preventDefault();
-                toggleAutomationPanel();
+                document.dispatchEvent(new Event('webdaw:show-automation-tab'));
             }
             if (mod && e.key === 'j') {
                 e.preventDefault();
@@ -264,7 +277,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     // ─── Panel width state (pixels, clamped) ───
     const [sidebarWidth, setSidebarWidth] = useState(280);
     const [inspectorWidth, setInspectorWidth] = useState(260);
-    const [automationWidth, setAutomationWidth] = useState(320);
+
     const [chatWidth, setChatWidth] = useState(320);
     const [aiWidth, setAiWidth] = useState(340);
     const [mixerHeight, setMixerHeight] = useState(300);
@@ -290,6 +303,17 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                         <DragResizeHandle
                             side="right"
                             onResize={(d) => setSidebarWidth((w) => clamp(w + d, 180, 500))}
+                        />
+                    </>
+                )}
+
+                {/* Inspector (left of tracks) */}
+                {inspectorOpen && (
+                    <>
+                        <InspectorPanel style={{ width: inspectorWidth, minWidth: 200 }} />
+                        <DragResizeHandle
+                            side="right"
+                            onResize={(d) => setInspectorWidth((w) => clamp(w + d, 200, 500))}
                         />
                     </>
                 )}
@@ -331,6 +355,14 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                         Editor
                                     </Button>
                                     <Button
+                                        variant={bottomTab === 'automation' ? 'secondary' : 'ghost'}
+                                        size="xs"
+                                        className={bottomTab === 'automation' ? 'text-[var(--color-accent-lavender)]' : ''}
+                                        onClick={() => setBottomTab('automation')}
+                                    >
+                                        Automation
+                                    </Button>
+                                    <Button
                                         variant={bottomTab === 'session' ? 'secondary' : 'ghost'}
                                         size="xs"
                                         className={bottomTab === 'session' ? 'text-[var(--color-accent-mint)]' : ''}
@@ -361,6 +393,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                         <ClipView />
                                     ) : bottomTab === 'mixer' ? (
                                         <MixerPanel style={{ height: '100%' }} />
+                                    ) : bottomTab === 'automation' ? (
+                                        <AutomationBottomPanel />
                                     ) : bottomTab === 'session' ? (
                                         <SessionView />
                                     ) : bottomTab === 'analysis' ? (
@@ -374,31 +408,6 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                     )}
                 </div>
 
-                {/* ─── Right-side panels with drag handles ─── */}
-                {inspectorOpen && (
-                    <>
-                        <DragResizeHandle
-                            side="left"
-                            onResize={(d) => setInspectorWidth((w) => clamp(w + d, 200, 500))}
-                        />
-                        <InspectorPanel style={{ width: inspectorWidth, minWidth: 200 }} />
-                    </>
-                )}
-
-                {automationPanelOpen && (
-                    <>
-                        <DragResizeHandle
-                            side="left"
-                            onResize={(d) => setAutomationWidth((w) => clamp(w + d, 200, 600))}
-                        />
-                        <div
-                            className="flex flex-col border-l border-border-hairline bg-surface-tray overflow-hidden"
-                            style={{ width: automationWidth, minWidth: 200 }}
-                        >
-                            <AutomationView />
-                        </div>
-                    </>
-                )}
 
                 {chatPanelOpen && (
                     <>
@@ -437,6 +446,26 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
             <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} />
             <PreferencesDialog open={prefsOpen} onClose={() => setPrefsOpen(false)} />
             <ShortcutCheatSheet />
+
+            {/* Loading overlay */}
+            {project.loading && (
+                <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-black/90 backdrop-blur-md">
+                    <div className="flex flex-col items-center gap-6">
+                        <div className="relative size-12">
+                            <div className="absolute inset-0 rounded-full border-2 border-white/10" />
+                            <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-primary" />
+                        </div>
+                        <div className="flex flex-col items-center gap-1">
+                            <span className="text-sm font-medium text-foreground">
+                                Loading Project
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                                {project.name}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

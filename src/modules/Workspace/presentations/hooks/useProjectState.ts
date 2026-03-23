@@ -9,6 +9,7 @@ const defaultState: ProjectStoreState = {
     createdAt: Date.now(),
     updatedAt: Date.now(),
     dirty: false,
+    loading: true,
 };
 
 export const useProjectState = (): ProjectStoreState => {

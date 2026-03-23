@@ -3,7 +3,7 @@ import { type Device } from '../models/Track';
 import { addTrack } from './addTrack';
 import { addDevice, setDeviceParameter } from './deviceUseCases';
 import { updateTrack, getTrackById } from '../repositories/trackRepository';
-import { updateDeviceParam, removeDeviceFromStrip } from '#/modules/AudioEngine/useCases/deviceControls';
+import { addDeviceToStrip, updateDeviceParam, removeDeviceFromStrip } from '#/modules/AudioEngine/useCases/deviceControls';
 import { LocalStorageStorage } from '#/helpers/Store/Storage/LocalStorageStorage';
 
 const userPresetStorage = new LocalStorageStorage<SoundPreset[]>('webdaw-user-presets');
@@ -30,6 +30,19 @@ function attachInstrumentDevice(trackId: string, dp: DevicePreset): void {
         parameterValues: { ...dp.parameterValues },
     };
     updateTrack(trackId, (t) => ({ ...t, devices: [...t.devices, device] }));
+
+    // Create audio node in the engine (this was missing — caused preset changes to mute)
+    if (dp.type.startsWith('faust-')) {
+        import('#/modules/AudioEngine/useCases/faustEngine')
+            .then(({ compileFaustDSP }) => compileFaustDSP(dp.type))
+            .catch(console.error);
+    }
+    addDeviceToStrip(trackId, device.id, dp.type);
+
+    // Forward initial parameter values to the engine
+    for (const [paramId, value] of Object.entries(dp.parameterValues)) {
+        updateDeviceParam(trackId, device.id, paramId, value);
+    }
 }
 
 function attachEffectDevice(trackId: string, dp: DevicePreset): void {

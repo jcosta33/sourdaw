@@ -6,7 +6,6 @@ import {
     ListOrdered,
     MessageSquare,
     Settings2,
-    TrendingUp,
     Sparkles,
 } from 'lucide-react';
 import { Button } from '#/components/ui/button';
@@ -16,7 +15,6 @@ import {
     toggleInspector,
     toggleMixer,
     toggleChatPanel,
-    toggleAutomationPanel,
     toggleTrackList,
 } from '../../../useCases/togglePanel';
 import {
@@ -29,7 +27,6 @@ import { useSyncExternalStore } from 'react';
 type PanelTogglesProps = {
     sidebarOpen: boolean;
     inspectorOpen: boolean;
-    automationPanelOpen: boolean;
     mixerOpen: boolean;
     chatPanelOpen: boolean;
     trackListOpen: boolean;
@@ -38,7 +35,6 @@ type PanelTogglesProps = {
 export const PanelToggles = ({
     sidebarOpen,
     inspectorOpen,
-    automationPanelOpen,
     mixerOpen,
     chatPanelOpen,
     trackListOpen,
@@ -89,20 +85,7 @@ export const PanelToggles = ({
                 </TooltipTrigger>
                 <TooltipContent>Toggle Inspector (⌘I)</TooltipContent>
             </Tooltip>
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <Button
-                        variant={automationPanelOpen ? 'secondary' : 'ghost'}
-                        size="icon-sm"
-                        aria-label="Toggle automation panel"
-                        aria-pressed={automationPanelOpen}
-                        onClick={toggleAutomationPanel}
-                    >
-                        <TrendingUp className="size-3.5" aria-hidden="true" />
-                    </Button>
-                </TooltipTrigger>
-                <TooltipContent>Toggle Automation (⌘⇧A)</TooltipContent>
-            </Tooltip>
+
             <Tooltip>
                 <TooltipTrigger asChild>
                     <Button

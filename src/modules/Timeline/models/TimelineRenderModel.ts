@@ -14,7 +14,6 @@ export type TimelineRenderModel = {
     tempo: number;
     timeSignatureNumerator: number;
     timeSignatureDenominator: number;
-    automationVisible: boolean;
 };
 
 export type TrackRenderModel = {
@@ -27,7 +26,6 @@ export type TrackRenderModel = {
     soloed: boolean;
     height: number;
     clips: ClipRenderModel[];
-    automationSubLaneCount: number;
     automationMode: 'read' | 'write' | 'touch' | 'latch' | 'off';
 };
 

@@ -37,19 +37,13 @@
     ],
     "macOS": {
       "entitlements": "Entitlements.plist",
-      "infoPlist": "Info.plist"
+      "infoPlist": "Info.plist",
+      "minimumSystemVersion": "11.0"
     }
   },
   "plugins": {
     "shell": {
-      "open": true,
-      "scope": [
-        {
-          "name": "llama-server",
-          "cmd": "llama-server",
-          "args": true
-        }
-      ]
+      "open": true
     }
   }
 }

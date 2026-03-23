@@ -106,9 +106,33 @@ export async function initEngine(): Promise<void> {
     llmStatusStore.set({ state: 'loading', progress: 0, text: `Starting ${backend} engine...` });
 
     if (backend === 'native') {
-        await initLlamaServer();
-        llmStatusStore.set({ state: 'ready', modelId: 'native' });
-        return;
+        try {
+            await initLlamaServer();
+            llmStatusStore.set({ state: 'ready', modelId: 'native' });
+            return;
+        } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error);
+            logger.warn(`[AI Engine] Native AI backend failed: ${msg}`);
+            logger.warn('[AI Engine] Install llama-server or place the binary at src-tauri/binaries/llama-server-{target-triple}');
+
+            // Fall back to WebLLM if WebGPU is available
+            if (typeof navigator !== 'undefined' && 'gpu' in navigator) {
+                logger.info('[AI Engine] Falling back to WebLLM...');
+                llmStatusStore.set({ state: 'loading', progress: 0, text: 'Native AI unavailable — loading WebLLM...' });
+                await initWebLlmEngine();
+                return;
+            }
+
+            // Fall back to cloud if available
+            if (isCloudAvailable()) {
+                logger.info('[AI Engine] Falling back to cloud AI...');
+                llmStatusStore.set({ state: 'ready', modelId: 'claude' });
+                return;
+            }
+
+            llmStatusStore.set({ state: 'error', message: 'Native AI engine not available. Install llama-server to enable AI features.' });
+            throw new Error(`Native AI engine failed: ${msg}. No fallback available.`);
+        }
     }
 
     if (backend === 'cloud') {

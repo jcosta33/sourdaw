@@ -6,7 +6,6 @@ import { midiStore } from '#/modules/Track/stores/midiStore';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { preferencesStore } from '#/modules/Workspace/stores/preferencesStore';
 import { type TimelineRenderModel } from '../models/TimelineRenderModel';
-import { AUTOMATION_SUB_LANE_HEIGHT } from '../models/automationConstants';
 import { TRACK_HEIGHT_VALUES } from '#/modules/Workspace/models/Preferences';
 
 let cachedModel: TimelineRenderModel | null = null;
@@ -46,8 +45,6 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
         const scrollX = viewState?.scrollX ?? 0;
         const viewportStartBeat = scrollX / pixelsPerBeat;
 
-        const autoVisible = ws?.automationVisibility !== 'hidden';
-        const autoSubLanes = ws?.automationSubLanes ?? {};
 
         const collapsedFolders = new Set(
             (trackState?.tracks ?? []).filter((t) => t.kind === 'folder' && t.collapsed).map((t) => t.id)
@@ -64,8 +61,6 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
 
         const tracks = visibleTracks.map((track, index) => {
             const baseHeight = track.kind === 'folder' ? 26 : track.height;
-            const subLaneCount = autoVisible ? (autoSubLanes[track.id]?.length ?? 0) : 0;
-            const effectiveHeight = baseHeight + subLaneCount * AUTOMATION_SUB_LANE_HEIGHT;
 
             return {
                 id: track.id,
@@ -75,8 +70,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
                 color: track.color,
                 muted: track.muted,
                 soloed: track.soloed,
-                height: effectiveHeight,
-                automationSubLaneCount: subLaneCount,
+                height: baseHeight,
                 automationMode: track.automationMode,
                 clips: track.clips.map((clip) => {
                     const notes = clip.type === 'midi' ? (midiState?.notesByClipId[clip.id] ?? []) : [];
@@ -119,7 +113,6 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
             tempo: transportState?.tempo ?? 120,
             timeSignatureNumerator: transportState?.timeSignatureNumerator ?? 4,
             timeSignatureDenominator: transportState?.timeSignatureDenominator ?? 4,
-            automationVisible: autoVisible,
         };
     } else {
         // Fast path: only playhead has changed (or nothing at all)

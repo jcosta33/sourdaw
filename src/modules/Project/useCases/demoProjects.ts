@@ -782,7 +782,7 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     });
 
     syncArrangement(tracks);
-    projectStore.set({ name: 'Resonance (Demo)', createdAt: Date.now(), updatedAt: Date.now(), dirty: false });
+    projectStore.set({ name: 'Resonance (Demo)', createdAt: Date.now(), updatedAt: Date.now(), dirty: false, loading: false });
 }
 
 
@@ -964,7 +964,7 @@ export async function demo2_ElectronicBeat(): Promise<void> {
     });
 
     syncArrangement(tracks);
-    projectStore.set({ name: 'Synthwave Night (Demo)', createdAt: Date.now(), updatedAt: Date.now(), dirty: false });
+    projectStore.set({ name: 'Synthwave Night (Demo)', createdAt: Date.now(), updatedAt: Date.now(), dirty: false, loading: false });
 }
 
 // ---------------------------------------------------------------------------
@@ -1115,7 +1115,7 @@ export async function demo3_AcousticSession(): Promise<void> {
 
     syncArrangement(tracks);
 
-    projectStore.set({ name: 'LoFi Study Guide (Demo)', createdAt: Date.now(), updatedAt: Date.now(), dirty: false });
+    projectStore.set({ name: 'LoFi Study Guide (Demo)', createdAt: Date.now(), updatedAt: Date.now(), dirty: false, loading: false });
 }
 
 // ---------------------------------------------------------------------------

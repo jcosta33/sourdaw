@@ -47,7 +47,11 @@ async function triggerBlobDownload(blob: Blob, filename: string): Promise<void> 
     }, 1000);
 }
 
-export function audioBufferToWav(buffer: AudioBuffer, bitDepth: 16 | 24 | 32 = 16): ArrayBuffer {
+export async function audioBufferToWav(
+    buffer: AudioBuffer,
+    bitDepth: 16 | 24 | 32 = 16,
+    onProgress?: (frac: number) => void
+): Promise<ArrayBuffer> {
     const numChannels = buffer.numberOfChannels;
     const sampleRate = buffer.sampleRate;
     const isFloat = bitDepth === 32;
@@ -95,6 +99,8 @@ export function audioBufferToWav(buffer: AudioBuffer, bitDepth: 16 | 24 | 32 = 1
     const tpdfDither = (): number => Math.random() - Math.random();
 
     let offset = dataOffset + 8;
+    const YIELD_INTERVAL = 32768; // yield to event loop every 32K samples
+
     for (let i = 0; i < buffer.length; i++) {
         for (let ch = 0; ch < numChannels; ch++) {
             const sample = Math.max(-1, Math.min(1, channels[ch]![i]!));
@@ -113,31 +119,39 @@ export function audioBufferToWav(buffer: AudioBuffer, bitDepth: 16 | 24 | 32 = 1
             }
             offset += bytesPerSample;
         }
+
+        // Yield periodically to keep the UI responsive
+        if (i > 0 && i % YIELD_INTERVAL === 0) {
+            onProgress?.(i / buffer.length);
+            await new Promise<void>((r) => setTimeout(r, 0));
+        }
     }
 
+    onProgress?.(1);
     return arrayBuffer;
 }
 
 export async function downloadWav(
     buffer: AudioBuffer,
     filename = 'export.wav',
-    bitDepth: 16 | 24 | 32 = 16
+    bitDepth: 16 | 24 | 32 = 16,
+    onProgress?: (frac: number) => void
 ): Promise<void> {
-    const wav = audioBufferToWav(buffer, bitDepth);
+    const wav = await audioBufferToWav(buffer, bitDepth, onProgress);
     const blob = new Blob([wav], { type: 'audio/wav' });
     await triggerBlobDownload(blob, filename);
 }
 
 type LameEncoder = {
-    encodeBuffer(left: Int16Array, right?: Int16Array): Int8Array;
-    flush(): Int8Array;
+    encodeBuffer(left: Int16Array, right?: Int16Array): Uint8Array;
+    flush(): Uint8Array;
 };
 
-type LameModule = {
-    Mp3Encoder: new (channels: number, sampleRate: number, kbps: number) => LameEncoder;
-};
-
-function encodePcmToMp3(buffer: AudioBuffer, encoder: LameEncoder): Uint8Array {
+async function encodePcmToMp3(
+    buffer: AudioBuffer,
+    encoder: LameEncoder,
+    onProgress?: (frac: number) => void
+): Promise<Uint8Array> {
     const numChannels = Math.min(buffer.numberOfChannels, 2);
     const left = new Int16Array(buffer.length);
     const right = numChannels === 2 ? new Int16Array(buffer.length) : left;
@@ -150,8 +164,9 @@ function encodePcmToMp3(buffer: AudioBuffer, encoder: LameEncoder): Uint8Array {
         right[i] = Math.max(-32768, Math.min(32767, Math.round(rightFloat[i]! * 32767)));
     }
 
-    const chunks: Int8Array[] = [];
+    const chunks: Uint8Array[] = [];
     const BLOCK = 1152;
+    let yieldCounter = 0;
 
     for (let i = 0; i < buffer.length; i += BLOCK) {
         const leftChunk = left.subarray(i, i + BLOCK);
@@ -159,6 +174,11 @@ function encodePcmToMp3(buffer: AudioBuffer, encoder: LameEncoder): Uint8Array {
         const mp3buf = encoder.encodeBuffer(leftChunk, rightChunk);
         if (mp3buf.length > 0) {
             chunks.push(mp3buf);
+        }
+        yieldCounter++;
+        if (yieldCounter % 64 === 0) {
+            onProgress?.(i / buffer.length);
+            await new Promise<void>((r) => setTimeout(r, 0));
         }
     }
 
@@ -171,18 +191,24 @@ function encodePcmToMp3(buffer: AudioBuffer, encoder: LameEncoder): Uint8Array {
     const result = new Uint8Array(totalLength);
     let offset = 0;
     for (const chunk of chunks) {
-        result.set(new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength), offset);
+        result.set(chunk, offset);
         offset += chunk.length;
     }
 
+    onProgress?.(1);
     return result;
 }
 
-export async function downloadMp3(buffer: AudioBuffer, filename = 'export.mp3', bitRate = 128): Promise<void> {
-    const lamejs = (await import('lamejs')) as unknown as LameModule;
+export async function downloadMp3(
+    buffer: AudioBuffer,
+    filename = 'export.mp3',
+    bitRate = 128,
+    onProgress?: (frac: number) => void
+): Promise<void> {
+    const { Mp3Encoder } = await import('@breezystack/lamejs');
     const numChannels = Math.min(buffer.numberOfChannels, 2);
-    const encoder = new lamejs.Mp3Encoder(numChannels, buffer.sampleRate, bitRate);
-    const mp3Data = encodePcmToMp3(buffer, encoder);
+    const encoder = new Mp3Encoder(numChannels, buffer.sampleRate, bitRate);
+    const mp3Data = await encodePcmToMp3(buffer, encoder, onProgress);
     const blob = new Blob([mp3Data.buffer as ArrayBuffer], { type: 'audio/mpeg' });
     await triggerBlobDownload(blob, filename);
 }
@@ -272,7 +298,7 @@ function encodeUtf8Number(n: number): number[] {
 
 const FLAC_BLOCK_SIZE = 4096;
 
-function encodeFlac(buffer: AudioBuffer): Uint8Array {
+async function encodeFlac(buffer: AudioBuffer, onProgress?: (frac: number) => void): Promise<Uint8Array> {
     const numChannels = Math.min(buffer.numberOfChannels, 2);
     const sampleRate = buffer.sampleRate;
     const totalSamples = buffer.length;
@@ -412,13 +438,24 @@ function encodeFlac(buffer: AudioBuffer): Uint8Array {
 
         sampleOffset += blockSize;
         frameNumber++;
+
+        // Yield every 32 frames to keep UI responsive
+        if (frameNumber % 32 === 0) {
+            onProgress?.(sampleOffset / totalSamples);
+            await new Promise<void>((r) => setTimeout(r, 0));
+        }
     }
 
+    onProgress?.(1);
     return out.subarray(0, pos);
 }
 
-export async function downloadFlac(buffer: AudioBuffer, filename = 'export.flac'): Promise<void> {
-    const flacData = encodeFlac(buffer);
+export async function downloadFlac(
+    buffer: AudioBuffer,
+    filename = 'export.flac',
+    onProgress?: (frac: number) => void
+): Promise<void> {
+    const flacData = await encodeFlac(buffer, onProgress);
     const blob = new Blob([flacData.buffer as ArrayBuffer], { type: 'audio/flac' });
     await triggerBlobDownload(blob, filename);
 }

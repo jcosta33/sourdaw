@@ -31,7 +31,6 @@ export const TransportBar = (): ReactElement => {
         sidebarOpen,
         inspectorOpen,
         mixerOpen,
-        automationPanelOpen,
         chatPanelOpen,
         trackListOpen,
         soloMode,
@@ -136,7 +135,6 @@ export const TransportBar = (): ReactElement => {
             <PanelToggles
                 sidebarOpen={sidebarOpen}
                 inspectorOpen={inspectorOpen}
-                automationPanelOpen={automationPanelOpen}
                 mixerOpen={mixerOpen}
                 chatPanelOpen={chatPanelOpen}
                 trackListOpen={trackListOpen}

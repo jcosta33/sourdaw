@@ -9,6 +9,7 @@ import { armTrack } from '../../useCases/recordingUseCases';
 import { toggleFolderCollapse } from '../../useCases/folderUseCases';
 import { setInputMonitoring } from '../../useCases/setTrackGainPan';
 
+
 import { TrackContextMenu } from './TrackContextMenu';
 import { Tooltip, TooltipTrigger, TooltipContent } from '#/components/ui/tooltip';
 import { InlineTrackName } from './trackHeader/InlineTrackName';
@@ -87,8 +88,8 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
         <TrackContextMenu track={track}>
             <div
                 className={cn(
-                    'relative flex shrink-0 items-center gap-1 border-b border-border-soft px-2 cursor-pointer transition-colors duration-fast',
-                    track.parentId ? 'pl-7 border-l-2 border-l-white/5' : '',
+                    'relative flex shrink-0 flex-col border-b border-border-soft cursor-pointer transition-colors duration-fast',
+                    track.parentId ? 'border-l-2 border-l-white/5' : '',
                     isSelected ? 'bg-surface-base shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)]' : 'hover:bg-surface-panel'
                 )}
                 style={{ height: trackHeight }}
@@ -97,115 +98,125 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                 onClick={() => selectTrack(track.id)}
             >
                 <div
-                    className="h-6 w-1 shrink-0 rounded-full"
-                    style={{ backgroundColor: track.color }}
-                    aria-hidden="true"
-                />
+                    className={cn(
+                        'flex items-center gap-1 px-2',
+                        track.parentId ? 'pl-7' : ''
+                    )}
+                    style={{ height: trackHeight }}
+                >
+                    <div
+                        className="h-6 w-1 shrink-0 rounded-full"
+                        style={{ backgroundColor: track.color }}
+                        aria-hidden="true"
+                    />
 
-                {(() => {
-                    const KindIcon = TRACK_KIND_ICON[track.kind];
-                    return KindIcon ? (
-                        <KindIcon className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
-                    ) : null;
-                })()}
+                    {(() => {
+                        const KindIcon = TRACK_KIND_ICON[track.kind];
+                        return KindIcon ? (
+                            <KindIcon className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+                        ) : null;
+                    })()}
 
-                <InlineTrackName track={track} />
+                    <InlineTrackName track={track} />
 
-                {track.frozen ? <span className="text-[10px] text-[var(--color-accent-cyan)] font-medium">FRZ</span> : null}
+                    {track.frozen ? <span className="text-[10px] text-[var(--color-accent-cyan)] font-medium">FRZ</span> : null}
 
-                {track.kind === 'audio' && isSelected ? (
-                    <InputSelector trackId={track.id} inputId={track.inputId} />
-                ) : null}
+                    {track.kind === 'audio' && isSelected ? (
+                        <InputSelector trackId={track.id} inputId={track.inputId} />
+                    ) : null}
 
-                <div className="flex items-center gap-1">
-                    {track.kind === 'audio' || track.kind === 'midi' ? (
+                    <div className="flex items-center gap-1 ml-auto">
+                        {track.kind === 'audio' || track.kind === 'midi' ? (
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <LatchButton
+                                        active={track.inputMonitoring === 'on'}
+                                        variant="mint"
+                                        size="icon-sm"
+                                        aria-label={`Input monitoring: ${INPUT_MONITORING_LABEL[track.inputMonitoring]}`}
+                                        className="font-bold text-[10px]"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setInputMonitoring(track.id, INPUT_MONITORING_CYCLE[track.inputMonitoring]);
+                                        }}
+                                    >
+                                        {INPUT_MONITORING_LABEL[track.inputMonitoring][0]}
+                                    </LatchButton>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom">
+                                    Input monitoring: {INPUT_MONITORING_LABEL[track.inputMonitoring]}
+                                </TooltipContent>
+                            </Tooltip>
+                        ) : null}
+
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <LatchButton
-                                    active={track.inputMonitoring === 'on'}
-                                    variant="mint"
+                                    active={track.armed}
+                                    variant="red"
                                     size="icon-sm"
-                                    aria-label={`Input monitoring: ${INPUT_MONITORING_LABEL[track.inputMonitoring]}`}
-                                    className="font-bold text-[10px]"
+                                    aria-label={track.armed ? `Disarm ${track.name}` : `Arm ${track.name}`}
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        setInputMonitoring(track.id, INPUT_MONITORING_CYCLE[track.inputMonitoring]);
+                                        armTrack(track.id, !track.armed);
                                     }}
                                 >
-                                    {INPUT_MONITORING_LABEL[track.inputMonitoring][0]}
+                                    <Circle
+                                        className={cn('size-2.5', track.armed ? 'fill-state-record' : '')}
+                                        aria-hidden="true"
+                                    />
+                                </LatchButton>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom">{track.armed ? 'Disarm' : 'Arm for recording'}</TooltipContent>
+                        </Tooltip>
+
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <LatchButton
+                                    active={track.muted}
+                                    variant="amber"
+                                    size="icon-sm"
+                                    aria-label={track.muted ? `Unmute ${track.name}` : `Mute ${track.name}`}
+                                    className="font-bold text-[9px]"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        muteTrack(track.id, !track.muted);
+                                    }}
+                                >
+                                    M
+                                </LatchButton>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom">{track.muted ? 'Unmute' : 'Mute'}</TooltipContent>
+                        </Tooltip>
+
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <LatchButton
+                                    active={track.soloed}
+                                    variant="cyan"
+                                    size="icon-sm"
+                                    aria-label={track.soloed ? `Unsolo ${track.name}` : `Solo ${track.name}`}
+                                    className="font-bold text-[9px]"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (e.metaKey || e.ctrlKey) {
+                                            soloTrack(track.id, !track.soloed);
+                                        } else {
+                                            soloTrackExclusive(track.id);
+                                        }
+                                    }}
+                                >
+                                    S
                                 </LatchButton>
                             </TooltipTrigger>
                             <TooltipContent side="bottom">
-                                Input monitoring: {INPUT_MONITORING_LABEL[track.inputMonitoring]}
+                                {track.soloed ? 'Unsolo' : 'Solo (⌘+click for additive)'}
                             </TooltipContent>
                         </Tooltip>
-                    ) : null}
-
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <LatchButton
-                                active={track.armed}
-                                variant="red"
-                                size="icon-sm"
-                                aria-label={track.armed ? `Disarm ${track.name}` : `Arm ${track.name}`}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    armTrack(track.id, !track.armed);
-                                }}
-                            >
-                                <Circle
-                                    className={cn('size-2.5', track.armed ? 'fill-state-record' : '')}
-                                    aria-hidden="true"
-                                />
-                            </LatchButton>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom">{track.armed ? 'Disarm' : 'Arm for recording'}</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <LatchButton
-                                active={track.muted}
-                                variant="amber"
-                                size="icon-sm"
-                                aria-label={track.muted ? `Unmute ${track.name}` : `Mute ${track.name}`}
-                                className="font-bold text-[9px]"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    muteTrack(track.id, !track.muted);
-                                }}
-                            >
-                                M
-                            </LatchButton>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom">{track.muted ? 'Unmute' : 'Mute'}</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <LatchButton
-                                active={track.soloed}
-                                variant="cyan"
-                                size="icon-sm"
-                                aria-label={track.soloed ? `Unsolo ${track.name}` : `Solo ${track.name}`}
-                                className="font-bold text-[9px]"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (e.metaKey || e.ctrlKey) {
-                                        soloTrack(track.id, !track.soloed);
-                                    } else {
-                                        soloTrackExclusive(track.id);
-                                    }
-                                }}
-                            >
-                                S
-                            </LatchButton>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom">
-                            {track.soloed ? 'Unsolo' : 'Solo (⌘+click for additive)'}
-                        </TooltipContent>
-                    </Tooltip>
+                    </div>
                 </div>
+
+
 
                 <ResizeHandle trackId={track.id} />
             </div>

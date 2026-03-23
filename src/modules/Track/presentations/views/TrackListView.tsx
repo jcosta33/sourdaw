@@ -23,6 +23,7 @@ import { timelineViewStore, setScrollY } from '#/modules/Timeline/stores/timelin
 import { injectPromptCommand } from '#/modules/AiRuntime/presentations/views/VoiceCommandOverlay';
 import { defaultPreferences, type Preferences } from '#/modules/Workspace/models/Preferences';
 
+
 const HEIGHT_CYCLE: Preferences['trackHeight'][] = ['compact', 'normal', 'large'];
 const HEIGHT_LABELS: Record<Preferences['trackHeight'], string> = {
     compact: 'Compact',
@@ -47,6 +48,8 @@ export const TrackListView = ({
         () => preferencesStore.value ?? defaultPreferences
     );
     const currentHeight = prefs.trackHeight;
+
+
 
     const scrollY = useSyncExternalStore(
         (cb) => timelineViewStore.subscribe(() => cb()),
@@ -218,34 +221,39 @@ export const TrackListView = ({
                 onKeyDown={handleKeyDown}
             >
                 <div role="grid" aria-label="Track list">
-                    {visibleTracks.map((track, index) => (
-                        <div
-                            key={track.id}
-                            role="row"
-                            tabIndex={track.id === selectedTrackId ? 0 : -1}
-                            aria-selected={track.id === selectedTrackId}
-                            draggable
-                            onDragStart={(e) => {
-                                e.dataTransfer.setData('text/plain', track.id);
-                                e.dataTransfer.effectAllowed = 'move';
-                                handleDragStart(track.id);
-                            }}
-                            onDragOver={(e) => {
-                                e.preventDefault();
-                                e.dataTransfer.dropEffect = 'move';
-                                handleDragOver(e, index);
-                            }}
-                            onDrop={(e) => {
-                                e.preventDefault();
-                                handleDrop(index);
-                            }}
-                            onDragEnd={handleDragEnd}
-                            onClick={() => selectTrack(track.id)}
-                            className={dragOverIndex === index ? 'border-t-2 border-ring outline-none' : 'outline-none'}
-                        >
-                            <TrackHeader track={track} isSelected={track.id === selectedTrackId} />
-                        </div>
-                    ))}
+                    {visibleTracks.map((track, index) => {
+                        return (
+                            <div
+                                key={track.id}
+                                role="row"
+                                tabIndex={track.id === selectedTrackId ? 0 : -1}
+                                aria-selected={track.id === selectedTrackId}
+                                draggable
+                                onDragStart={(e) => {
+                                    e.dataTransfer.setData('text/plain', track.id);
+                                    e.dataTransfer.effectAllowed = 'move';
+                                    handleDragStart(track.id);
+                                }}
+                                onDragOver={(e) => {
+                                    e.preventDefault();
+                                    e.dataTransfer.dropEffect = 'move';
+                                    handleDragOver(e, index);
+                                }}
+                                onDrop={(e) => {
+                                    e.preventDefault();
+                                    handleDrop(index);
+                                }}
+                                onDragEnd={handleDragEnd}
+                                onClick={() => selectTrack(track.id)}
+                                className={dragOverIndex === index ? 'border-t-2 border-ring outline-none' : 'outline-none'}
+                            >
+                                <TrackHeader
+                                    track={track}
+                                    isSelected={track.id === selectedTrackId}
+                                />
+                            </div>
+                        );
+                    })}
 
                     {tracks.length === 0 && (
                         <div className="p-3 text-center">

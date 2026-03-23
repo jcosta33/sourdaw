@@ -141,26 +141,26 @@ export function setDeviceParameter(deviceId: string, paramId: string, value: num
         return;
     }
 
-    for (const track of state.tracks) {
-        if (track.devices.some((d) => d.id === deviceId)) {
-            updateDeviceParam(track.id, deviceId, paramId, value);
-            break;
-        }
+    const track = state.tracks.find((t) => t.devices.some((d) => d.id === deviceId));
+    if (!track) {
+        return;
     }
 
-    mapAllTracks((t) => ({
+    // Update audio engine (non-blocking)
+    updateDeviceParam(track.id, deviceId, paramId, value);
+
+    // Update only the affected track's store state (not all tracks)
+    updateTrack(track.id, (t) => ({
         ...t,
         devices: t.devices.map((d) =>
             d.id === deviceId ? { ...d, parameterValues: { ...d.parameterValues, [paramId]: value } } : d
         ),
     }));
 
+    // Record automation if playing in a recording mode
     const transport = getTransportState();
-    if (transport?.isPlaying) {
-        const track = state.tracks.find((t) => t.devices.some((d) => d.id === deviceId));
-        if (track && RECORDING_MODES.has(track.automationMode)) {
-            recordAutomationValue(track.id, `${deviceId}:${paramId}`, value, transport.playheadPosition);
-        }
+    if (transport?.isPlaying && RECORDING_MODES.has(track.automationMode)) {
+        recordAutomationValue(track.id, `${deviceId}:${paramId}`, value, transport.playheadPosition);
     }
 }
 

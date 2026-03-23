@@ -42,13 +42,15 @@ export type {
 export type { Device } from '../models/Track';
 export { BUILTIN_PLUGINS };
 
-/** Platform-filtered plugin list — hides native-only in web, web-only in Tauri. */
+/** Platform-filtered plugin list — hides native-only plugins on the web platform.
+ *  Native (Tauri) can run both web and native plugins since it uses WebView + Web Audio. */
 export const getPlatformPlugins = (): typeof BUILTIN_PLUGINS => {
     const isNative = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
     return BUILTIN_PLUGINS.filter((p) => {
         const platform = p.platform ?? 'both';
         if (platform === 'both') return true;
-        return isNative ? platform === 'native' : platform === 'web';
+        if (isNative) return true; // native can run both web and native plugins
+        return platform === 'web'; // web can only run web plugins
     });
 };
 

@@ -9,6 +9,7 @@ export type ProjectStoreState = {
     createdAt: number;
     updatedAt: number;
     dirty: boolean;
+    loading: boolean;
 };
 
 export const projectStore = new Store<ProjectStoreState>(logger, {
@@ -17,5 +18,7 @@ export const projectStore = new Store<ProjectStoreState>(logger, {
         createdAt: Date.now(),
         updatedAt: Date.now(),
         dirty: false,
+        loading: true,
     },
 });
+

@@ -102,6 +102,7 @@ export async function loadRecentProject(key: string): Promise<boolean> {
             createdAt: data.createdAt,
             updatedAt: data.updatedAt,
             dirty: false,
+            loading: false,
         });
 
         localStorage.setItem(PROJECT_STORAGE_KEY, raw);

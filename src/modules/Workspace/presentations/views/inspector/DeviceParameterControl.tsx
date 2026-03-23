@@ -15,6 +15,34 @@ type DeviceParameterControlProps = {
     trackId: string;
 };
 
+/** Compute a sensible step from the parameter range and type. */
+function deriveStep(param: DeviceParameter): number {
+    if (param.type === 'int') {
+        return 1;
+    }
+    const range = param.maxValue - param.minValue;
+    // Aim for ~200 discrete positions across the full range
+    const raw = range / 200;
+    // Snap to a "nice" precision: find the order of magnitude and round
+    if (raw >= 1) {
+        return Math.max(1, Math.round(raw));
+    }
+    // For sub-1 steps, round to the nearest power-of-10 fraction
+    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    return Math.max(0.001, Math.round(raw / mag) * mag);
+}
+
+/** Format display value with appropriate precision. */
+function formatDisplayValue(value: number, param: DeviceParameter): string {
+    if (param.type === 'int') {
+        return String(Math.round(value));
+    }
+    const range = param.maxValue - param.minValue;
+    // For large ranges (>10), show 1 decimal. For small ranges, show 2-3 decimals.
+    const decimals = range >= 100 ? 0 : range >= 10 ? 1 : range >= 1 ? 2 : 3;
+    return value.toFixed(decimals);
+}
+
 export const DeviceParameterControl = ({ param, device, trackId }: DeviceParameterControlProps): ReactElement => {
     const autoState = useSyncExternalStore(
         (cb) => automationStore.subscribe(cb),
@@ -25,6 +53,9 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
     const hasAutomation = !!activeLane;
 
     const value = device.parameterValues[param.id] ?? param.value;
+    const step = deriveStep(param);
+    const fineStep = step / 10;
+    const displayValue = formatDisplayValue(value, param);
 
     const handleKnobChange = (v: number) => {
         setDeviceParameter(device.id, param.id, v);
@@ -47,7 +78,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                     </label>
                     <div className="flex items-center gap-1.5 mt-0.5">
                         <span className="text-[10px] font-mono text-muted-foreground shrink-0">
-                            {value.toFixed(param.type === 'int' ? 0 : 1)}
+                            {displayValue}
                             {param.unit ? ` ${param.unit}` : ''}
                         </span>
                         <MidiLearnButton
@@ -85,7 +116,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                     </label>
                     {!isChoice && (
                         <span className="text-[10px] font-mono text-muted-foreground">
-                            {value.toFixed(param.type === 'int' ? 0 : 1)}
+                            {displayValue}
                             {param.unit ? ` ${param.unit}` : ''}
                         </span>
                     )}
@@ -140,9 +171,9 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                         onValueChange={handleKnobChange}
                         min={param.minValue}
                         max={param.maxValue}
-                        step={param.type === 'int' ? 1 : 0.1}
+                        step={step}
                         defaultValue={param.defaultValue ?? param.value}
-                        formatValue={(v) => `${v.toFixed(1)} dB`}
+                        formatValue={(v) => `${formatDisplayValue(v, param)} dB`}
                         className="w-full"
                     />
                 ) : (
@@ -151,7 +182,8 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                         onChange={handleKnobChange}
                         min={param.minValue}
                         max={param.maxValue}
-                        step={param.type === 'int' ? 1 : undefined}
+                        step={step}
+                        fineStep={fineStep}
                         defaultValue={param.defaultValue ?? param.value}
                         bipolar={param.minValue < 0 && param.maxValue > 0}
                         size={
