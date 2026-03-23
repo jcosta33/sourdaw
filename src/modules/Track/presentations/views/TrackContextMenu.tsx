@@ -3,7 +3,7 @@ import { type ReactElement,
 import { cn } from '#/helpers/Styles/cn';
 import { removeTrack } from '../../useCases/removeTrack';
 import { toggleSoloSafe } from '../../useCases/toggleTrackState';
-import { addClip } from '../../useCases/clipUseCases';
+import { addClip } from '#/modules/Clip/useCases/clipUseCases';
 import { renameTrack } from '../../useCases/renameTrack';
 import { freezeTrack, unfreezeTrack, bounceInPlace, bounceToNewTrack } from '../../useCases/freezeBounce';
 import { armTrack } from '../../useCases/recordingUseCases';
@@ -11,7 +11,7 @@ import { addTrack } from '../../useCases/addTrack';
 import { saveTrackAsTemplate } from '../../useCases/trackTemplateUseCases';
 import { setTrackColor, setInputMonitoring } from '../../useCases/setTrackGainPan';
 import { decodeAudioFile } from '../../useCases/trackViewActions';
-import { importMidiFile } from '../../useCases/importMidiFile';
+import { importMidiFile } from '#/modules/Midi/useCases/importMidiFile';
 import { type Track, type InputMonitoring } from '../../models/Track';
 
 const TRACK_COLORS = [

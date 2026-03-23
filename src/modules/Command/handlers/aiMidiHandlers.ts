@@ -12,11 +12,11 @@
 
 import { type ActionHandler } from '../models/ActionHandler';
 import { type AppAction } from '../models/AppAction';
-import { addMidiNote, getNotesForClip, setNotesForClip } from '#/modules/Track/useCases/midiNoteCrud';
-import { createMidiNote } from '#/modules/Track/models/MidiNote';
+import { addMidiNote, getNotesForClip, setNotesForClip } from '#/modules/Midi/useCases/midiNoteCrud';
+import { createMidiNote } from '#/modules/Midi/models/MidiNote';
 import { addTrack } from '#/modules/Track/useCases/addTrack';
-import { addClip } from '#/modules/Track/useCases/clipUseCases';
-import { stripSilence } from '#/modules/Track/useCases/stripSilence';
+import { addClip } from '#/modules/Clip/useCases/clipUseCases';
+import { stripSilence } from '#/modules/Clip/useCases/stripSilence';
 import { detectTempo, detectKey, audioToMidi } from '#/modules/Track/useCases/audioAnalysisUseCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { trackStore } from '#/modules/Track/stores/trackStore';
@@ -226,7 +226,7 @@ export const aiMidiHandlers = {
     generateAudio: {
         execute: async (a) => {
             const { generateAudio: genAudio, isAudioAiServerRunning } =
-                await import('#/modules/AiRuntime/useCases/audioAiEngine');
+                await import('#/modules/AudioAnalysis/useCases/audioAiEngine');
 
             const running = await isAudioAiServerRunning();
             if (!running) {
@@ -284,7 +284,7 @@ export const aiMidiHandlers = {
     stemSeparate: {
         execute: async (a) => {
             const { separateStems: doSeparateStems, isAudioAiServerRunning } =
-                await import('#/modules/AiRuntime/useCases/audioAiEngine');
+                await import('#/modules/AudioAnalysis/useCases/audioAiEngine');
 
             const running = await isAudioAiServerRunning();
             if (!running) {

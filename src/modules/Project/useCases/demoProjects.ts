@@ -1,15 +1,15 @@
 import { trackStore } from '#/modules/Track/stores/trackStore';
-import { midiStore } from '#/modules/Track/stores/midiStore';
+import { midiStore } from '#/modules/Midi/stores/midiStore';
 import { projectStore } from '../stores/projectStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { automationStore } from '#/modules/Track/stores/automationStore';
+import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { markerStore } from '#/modules/Timeline/stores/markerStore';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { defaultTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { createTrack } from '#/modules/Track/useCases/trackQueries';
-import { createAutomationLane } from '#/modules/Track/models/Automation';
+import { createAutomationLane } from '#/modules/Automation/models/Automation';
 import { arrangementStore, defaultArrangementId } from '../stores/arrangementStore';
-import type { MidiNote } from '#/modules/Track/models/MidiNote';
+import type { MidiNote } from '#/modules/Midi/models/MidiNote';
 import type { StretchMode } from '#/modules/Track/models/Track';
 import { getFactoryPresets } from '#/modules/Track/useCases/soundPresetLibrary';
 

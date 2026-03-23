@@ -2,7 +2,7 @@ import { type TimelineRenderer } from '../models/RendererBackend';
 import { type TimelineRenderModel } from '../models/TimelineRenderModel';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { timeSignatureMapStore } from '#/modules/Transport/stores/timeSignatureMapStore';
-import { takeLaneStore } from '#/modules/Track/stores/takeLaneStore';
+import { takeLaneStore } from '#/modules/Clip/stores/takeLaneStore';
 import { drawClip } from '../helpers/clipDrawing';
 
 

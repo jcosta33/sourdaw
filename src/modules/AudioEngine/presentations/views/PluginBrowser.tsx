@@ -4,9 +4,9 @@ import { Input } from '#/components/ui/input';
 import { Search, ChevronDown, ChevronRight, Plug, RefreshCw, Loader2, Plus, AlertCircle, Monitor } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
 import { pluginScanStore, defaultPluginScanState } from '../../stores/pluginScanStore';
-import { startPluginScan } from '../../useCases/pluginScanUseCases';
-import { type ScannedPlugin } from '../../useCases/pluginBridge';
-import { createTrackForPlugin, loadExternalPlugin } from '../../useCases/pluginBrowserActions';
+import { startPluginScan } from '#/modules/Plugin/useCases/pluginScanUseCases';
+import { type ScannedPlugin } from '#/modules/Plugin/useCases/pluginBridge';
+import { createTrackForPlugin, loadExternalPlugin } from '#/modules/Plugin/useCases/pluginBrowserActions';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/helpers/platformCapabilities';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 

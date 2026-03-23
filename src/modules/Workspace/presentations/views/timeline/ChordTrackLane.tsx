@@ -6,14 +6,7 @@
  * and a compact control strip matching the deep-black metallic DAW aesthetic.
  */
 
-import {
-    type ReactElement,
-    type MouseEvent,
-    useSyncExternalStore,
-    useState,
-    useRef,
-    useEffect,
-} from 'react';
+import { type ReactElement, type MouseEvent, useSyncExternalStore, useState, useRef, useEffect } from 'react';
 import { Music2, Plus, Power, Trash2 } from 'lucide-react';
 import { chordTrackStore, type ChordTrackState } from '#/modules/Track/stores/chordTrackStore';
 import {
@@ -27,7 +20,7 @@ import {
     ROOT_NAMES,
     type ChordEvent,
     type ChordType,
-} from '#/modules/Track/useCases/chordTrackUseCases';
+} from '#/modules/Midi/useCases/chordTrackUseCases';
 import { cn } from '#/helpers/Styles/cn';
 
 type ChordTrackLaneProps = {
@@ -49,9 +42,9 @@ const ROOT_COLORS = [
     'oklch(0.38 0.08 300)', // D  - violet
     'oklch(0.38 0.08 320)', // D# - purple
     'oklch(0.40 0.08 350)', // E  - rose
-    'oklch(0.40 0.08 25)',  // F  - red/coral
-    'oklch(0.42 0.08 55)',  // F# - orange
-    'oklch(0.42 0.08 80)',  // G  - amber
+    'oklch(0.40 0.08 25)', // F  - red/coral
+    'oklch(0.42 0.08 55)', // F# - orange
+    'oklch(0.42 0.08 80)', // G  - amber
     'oklch(0.42 0.08 100)', // G# - gold
     'oklch(0.38 0.08 150)', // A  - emerald
     'oklch(0.38 0.08 175)', // A# - teal

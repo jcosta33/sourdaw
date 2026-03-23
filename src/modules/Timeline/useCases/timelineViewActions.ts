@@ -18,7 +18,7 @@ import {
     muteClip as _muteClip,
     trimClipStart as _trimClipStart,
     trimClipEnd as _trimClipEnd,
-} from '#/modules/Track/useCases/clipEditingUseCases';
+} from '#/modules/Clip/useCases/clipEditingUseCases';
 
 export const splitClip: typeof _splitClip = (...args) => _splitClip(...args);
 export const normalizeClip: typeof _normalizeClip = (...args) => _normalizeClip(...args);
@@ -38,7 +38,7 @@ import {
     duplicateClipToNextBar as _duplicateClipToNextBar,
     moveClipPreview as _moveClipPreview,
     moveClip as _moveClip,
-} from '#/modules/Track/useCases/clipUseCases';
+} from '#/modules/Clip/useCases/clipUseCases';
 
 export const addClip: typeof _addClip = (...args) => _addClip(...args);
 export const removeClip: typeof _removeClip = (...args) => _removeClip(...args);
@@ -52,7 +52,7 @@ import {
     copySelectedClip as _copySelectedClip,
     cutSelectedClip as _cutSelectedClip,
     pasteClip as _pasteClip,
-} from '#/modules/Track/useCases/clipboardUseCases';
+} from '#/modules/Clip/useCases/clipboardUseCases';
 
 export const copySelectedClip: typeof _copySelectedClip = (...args) => _copySelectedClip(...args);
 export const cutSelectedClip: typeof _cutSelectedClip = (...args) => _cutSelectedClip(...args);
@@ -62,9 +62,9 @@ export const pasteClip: typeof _pasteClip = (...args) => _pasteClip(...args);
 import { selectTrack as _selectTrack } from '#/modules/Track/useCases/toggleTrackState';
 import { addTrack as _addTrack } from '#/modules/Track/useCases/addTrack';
 import { addDevice as _addDevice } from '#/modules/Track/useCases/deviceUseCases';
-import { exportMidiClip as _exportMidiClip } from '#/modules/Track/useCases/exportMidiFile';
-import { importMidiFile as _importMidiFile } from '#/modules/Track/useCases/importMidiFile';
-import { stripSilence as _stripSilence } from '#/modules/Track/useCases/stripSilence';
+import { exportMidiClip as _exportMidiClip } from '#/modules/Midi/useCases/exportMidiFile';
+import { importMidiFile as _importMidiFile } from '#/modules/Midi/useCases/importMidiFile';
+import { stripSilence as _stripSilence } from '#/modules/Clip/useCases/stripSilence';
 
 export const selectTrack: typeof _selectTrack = (...args) => _selectTrack(...args);
 export const addTrack: typeof _addTrack = (...args) => _addTrack(...args);
@@ -79,7 +79,7 @@ import {
     addAutomationLane as _addAutomationLane,
     removeAutomationPoint as _removeAutomationPoint,
     batchAddAutomationPoints as _batchAddAutomationPoints,
-} from '#/modules/Track/useCases/automationUseCases';
+} from '#/modules/Automation/useCases/automationUseCases';
 
 export const addAutomationPoint: typeof _addAutomationPoint = (...args) => _addAutomationPoint(...args);
 export const addAutomationLane: typeof _addAutomationLane = (...args) => _addAutomationLane(...args);
@@ -88,8 +88,8 @@ export const batchAddAutomationPoints: typeof _batchAddAutomationPoints = (...ar
     _batchAddAutomationPoints(...args);
 
 // ── AiRuntime ─────────────────────────────────────────────────────
-import { detectTempo as _detectTempo } from '#/modules/AiRuntime/useCases/tempoDetection';
-import { detectKey as _detectKey } from '#/modules/AiRuntime/useCases/keyDetection';
+import { detectTempo as _detectTempo } from '#/modules/AudioAnalysis/useCases/tempoDetection';
+import { detectKey as _detectKey } from '#/modules/AudioAnalysis/useCases/keyDetection';
 
 export const detectTempo: typeof _detectTempo = (...args) => _detectTempo(...args);
 export const detectKey: typeof _detectKey = (...args) => _detectKey(...args);

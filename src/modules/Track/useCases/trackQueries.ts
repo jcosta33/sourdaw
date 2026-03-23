@@ -13,14 +13,14 @@ import {
     type MidiCC,
     type MidiPitchBend,
     createMidiNote as modelCreateMidiNote,
-} from '../models/MidiNote';
-import { type AutomationLane, type AutomationPoint } from '../models/Automation';
+} from '#/modules/Midi/models/MidiNote';
+import { type AutomationLane, type AutomationPoint } from '#/modules/Automation/models/Automation';
 import { type DeviceParameter, type DeviceParameterType, BUILTIN_PLUGINS } from '../models/DeviceParameter';
 import { type SoundPresetCategory, type SoundPreset } from '../models/SoundPreset';
-import { type WarpState } from '../models/WarpMarker';
-import { midiStore } from '../stores/midiStore';
-import { automationStore } from '../stores/automationStore';
-import { midiLearnStore, type MidiLearnState } from '../stores/midiLearnStore';
+import { type WarpState } from '#/modules/Clip/models/WarpMarker';
+import { midiStore } from '#/modules/Midi/stores/midiStore';
+import { automationStore } from '#/modules/Automation/stores/automationStore';
+import { midiLearnStore, type MidiLearnState } from '#/modules/Midi/stores/midiLearnStore';
 import { trackStore } from '../stores/trackStore';
 
 export type {

@@ -30,7 +30,7 @@ import {
     removeTrackFromVCA,
     createVCAGroup,
 } from '#/modules/Track/useCases/vcaFaderUseCases';
-import { releaseTouchAutomation } from '#/modules/Track/useCases/automationRecording';
+import { releaseTouchAutomation } from '#/modules/Automation/useCases/automationRecording';
 
 type MixerMenu = { x: number; y: number } | null;
 

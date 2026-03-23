@@ -1,5 +1,5 @@
 import { trackStore } from '../stores/trackStore';
-import { midiStore } from '../stores/midiStore';
+import { midiStore } from '#/modules/Midi/stores/midiStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { buildDeviceChain } from '#/modules/AudioEngine/useCases/buildDeviceChain';

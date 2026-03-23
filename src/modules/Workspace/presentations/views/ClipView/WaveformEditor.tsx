@@ -26,8 +26,8 @@ import {
     removeWarpMarker,
     moveWarpMarker,
 } from '../../../useCases/workspaceViewActions';
-import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiRuntime/useCases/generativeAiActions';
-import { audioToMidi } from '#/modules/AiRuntime/useCases/audioToMidi';
+import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration/useCases/generativeAiActions';
+import { audioToMidi } from '#/modules/AudioAnalysis/useCases/audioToMidi';
 import { isTauri } from '#/modules/AudioEngine/useCases/nativeAIBridge';
 
 const STRETCH_MODES: WarpState['stretchMode'][] = ['complex', 'repitch', 'texture', 'beats'];

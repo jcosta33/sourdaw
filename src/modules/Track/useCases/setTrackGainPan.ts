@@ -1,6 +1,6 @@
 import { getTrackById, updateTrack } from '../repositories/trackRepository';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
-import { recordAutomationValue } from '#/modules/Track/useCases/automationRecording';
+import { recordAutomationValue } from '#/modules/Automation/useCases/automationRecording';
 import { type AutomationMode, type InputMonitoring } from '../models/Track';
 import {
     setTrackGain as engineSetTrackGain,

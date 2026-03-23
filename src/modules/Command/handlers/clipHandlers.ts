@@ -6,7 +6,7 @@ import {
     moveClip,
     duplicateClip,
     duplicateClipToNextBar,
-} from '#/modules/Track/useCases/clipUseCases';
+} from '#/modules/Clip/useCases/clipUseCases';
 import {
     splitClip,
     trimClipStart,
@@ -22,19 +22,19 @@ import {
     crossfadeClips,
     renameClip,
     muteClip,
-} from '#/modules/Track/useCases/clipEditingUseCases';
+} from '#/modules/Clip/useCases/clipEditingUseCases';
 import { bounceSelection } from '#/modules/Track/useCases/freezeBounce';
-import { copySelectedClip, cutSelectedClip, pasteClip } from '#/modules/Track/useCases/clipboardUseCases';
-import { setClipLoop, setClipLoopLength } from '#/modules/Track/useCases/clipLoopUseCases';
-import { audioToMidi } from '#/modules/AiRuntime/useCases/audioToMidi';
-import { detectTempo } from '#/modules/AiRuntime/useCases/tempoDetection';
-import { detectKey } from '#/modules/AiRuntime/useCases/keyDetection';
-import { arpeggiate, type ArpPattern, type ArpRate } from '#/modules/Track/useCases/arpeggiator';
+import { copySelectedClip, cutSelectedClip, pasteClip } from '#/modules/Clip/useCases/clipboardUseCases';
+import { setClipLoop, setClipLoopLength } from '#/modules/Clip/useCases/clipLoopUseCases';
+import { audioToMidi } from '#/modules/AudioAnalysis/useCases/audioToMidi';
+import { detectTempo } from '#/modules/AudioAnalysis/useCases/tempoDetection';
+import { detectKey } from '#/modules/AudioAnalysis/useCases/keyDetection';
+import { arpeggiate, type ArpPattern, type ArpRate } from '#/modules/Midi/useCases/arpeggiator';
 import { getTrackStoreState } from '#/modules/Track/useCases/trackQueries';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { deleteTime, insertTime, duplicateTimeRange } from '#/modules/Track/useCases/timeOperations';
-import { stripSilence } from '#/modules/Track/useCases/stripSilence';
-import { midiStore } from '#/modules/Track/stores/midiStore';
+import { deleteTime, insertTime, duplicateTimeRange } from '#/modules/Clip/useCases/timeOperations';
+import { stripSilence } from '#/modules/Clip/useCases/stripSilence';
+import { midiStore } from '#/modules/Midi/stores/midiStore';
 import { updateTrack } from '#/modules/Track/repositories/trackRepository';
 import { pushUndoEntry } from '../useCases/pushUndoEntry';
 import { rippleDeleteClips, undoRippleDelete } from '#/modules/Workspace/useCases/rippleEditing';

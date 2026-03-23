@@ -14,7 +14,7 @@ import { trackStore } from '#/modules/Track/stores/trackStore';
 import { addMarker } from '#/modules/Timeline/useCases/markerUseCases';
 import { duplicateTrack } from '#/modules/Track/useCases/duplicateTrack';
 import { undo, redo } from '#/modules/Command/useCases/undoRedo';
-import { copySelectedClip, cutSelectedClip, pasteClip } from '#/modules/Track/useCases/clipboardUseCases';
+import { copySelectedClip, cutSelectedClip, pasteClip } from '#/modules/Clip/useCases/clipboardUseCases';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { zoomTimeline } from '#/modules/Timeline/stores/timelineViewStore';
 import {
@@ -28,9 +28,9 @@ import {
 import { seekPlayhead } from '#/modules/Transport/useCases/transportControls';
 import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
 import { removeTrack } from '#/modules/Track/useCases/removeTrack';
-import { splitClip, renameClip } from '#/modules/Track/useCases/clipEditingUseCases';
+import { splitClip, renameClip } from '#/modules/Clip/useCases/clipEditingUseCases';
 import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
-import { automationStore } from '#/modules/Track/stores/automationStore';
+import { automationStore } from '#/modules/Automation/stores/automationStore';
 
 export type CommandEntry = {
     id: string;

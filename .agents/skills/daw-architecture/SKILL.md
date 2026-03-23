@@ -19,7 +19,6 @@ Only these folders may be imported by other modules:
 useCases/              → business operations + exported DTOs
 events/                → DomainEvent subclasses
 errors/                → AppError subclasses
-stores/                → Store<T> instances (business-layer, cross-module)
 presentations/views/   → composable UI entry points
 ```
 
@@ -31,7 +30,7 @@ repositories/               ← NEVER import from another module
 transformers/               ← NEVER import from another module
 helpers/                    ← NEVER import from another module
 engine/                     ← NEVER import from another module
-presentations/stores/       ← NEVER import from another module (UI-layer stores are private)
+presentations/stores/       ← NEVER import from another module
 presentations/hooks/        ← NEVER import from another module
 presentations/components/   ← NEVER import from another module
 ```
@@ -48,7 +47,6 @@ import { TrackRow } from '#/modules/Track/presentations/components/TrackRow';
 // ✅ These are allowed
 import type { TrackDto } from '#/modules/Track/useCases/getTrackById'; // DTO from contract
 import { getTrackById } from '#/modules/Track/useCases/getTrackById';
-import { trackStore } from '#/modules/Track/stores/trackStore';         // stores are contracts
 import { TrackNotFoundError } from '#/modules/Track/errors/TrackNotFoundError';
 import { TrackAddedEvent } from '#/modules/Track/events/TrackAddedEvent';
 import { TrackListView } from '#/modules/Track/presentations/views/TrackListView';
@@ -118,7 +116,6 @@ DomainName/
 ├── errors/            ← 🔗 CONTRACT
 ├── events/            ← 🔗 CONTRACT
 ├── useCases/          ← 🔗 CONTRACT (also where DTOs are exported)
-├── stores/            ← 🔗 CONTRACT (business-layer Store<T> instances)
 ├── repositories/      ← private: IO, engine adapters, Tauri IPC
 ├── engine/            ← private: stateful classes (AudioEngine, TrackNode)
 ├── worklets/          ← private: AudioWorkletProcessor implementations
@@ -126,7 +123,7 @@ DomainName/
 ├── helpers/           ← private: domain utilities
 └── presentations/
     ├── hooks/         ← private
-    ├── stores/        ← private (UI-layer persistent preferences)
+    ├── stores/        ← private
     ├── components/    ← private
     └── views/         ← 🔗 CONTRACT
 ```
@@ -135,28 +132,12 @@ DomainName/
 
 ## Use cases
 
-- Contain business logic only — **NO direct I/O**
+- Contain business logic only
 - May call their own `repositories/` (including engine adapters and Tauri adapters)
 - May call other modules' `useCases/` — never their `repositories/` or `models/`
-- May read/write `stores/` (their own or cross-module contracts)
+- Write to `useProjectStore` for their own slice only
 - Emit a `DomainEvent` after mutating state
 - Use `inject()` when they have external dependencies
-- **One function per file** — each use case file exports exactly ONE function
-
-When a module has many use cases, group them in named subfolders:
-
-```
-useCases/
-├── playback/
-│   ├── startPlayback.ts
-│   ├── stopPlayback.ts
-│   └── seekPlayhead.ts
-├── tempo/
-│   ├── setTempo.ts
-│   └── setTimeSignature.ts
-└── sync/
-    └── sendMidiClock.ts
-```
 
 ```typescript
 // src/modules/Transport/useCases/setTempo.ts
@@ -439,12 +420,13 @@ import { useTracks } from '#/modules/Track/presentations/hooks/useTracks';
 
 // ✅ CORRECT: re-implement the hook locally using the store (a contract)
 import { useSyncExternalStore } from 'react';
-import { trackStore } from '#/modules/Track/stores/trackStore'; // stores/ is a contract
-export const useTracks = () => useSyncExternalStore(
-    (cb) => trackStore.subscribe(cb),
-    () => trackStore.value?.tracks ?? [],
-    () => []
-);
+import { trackStore } from '#/modules/Track/stores/trackStore';
+export const useTracks = () =>
+    useSyncExternalStore(
+        (cb) => trackStore.subscribe(() => cb()),
+        () => trackStore.value?.tracks ?? [],
+        () => []
+    );
 ```
 
 ### 3. `export *` wildcard re-exports
@@ -516,4 +498,3 @@ import { renameTrack, freezeTrack, setTrackColor } from '../../useCases/workspac
 ```
 
 The distinction: a **pure component** receives primitive data + DOM callbacks (`onChange`, `onClick`). A **view** imports use cases and wires business logic. If the parent is just proxying use cases to the child, the child is a view.
-

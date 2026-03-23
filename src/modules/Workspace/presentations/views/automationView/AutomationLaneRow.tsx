@@ -8,23 +8,23 @@ import {
     useSyncExternalStore,
 } from 'react';
 import { cn } from '#/helpers/Styles/cn';
-import { automationStore } from '#/modules/Track/stores/automationStore';
-import { type AutomationLane, type AutomationPoint, type AutomationCurveType } from '#/modules/Track/models/Automation';
+import { automationStore } from '#/modules/Automation/stores/automationStore';
+import { type AutomationLane, type AutomationPoint, type AutomationCurveType } from '#/modules/Automation/models/Automation';
 import {
     addAutomationPoint,
     removeAutomationPoint,
     updateAutomationPoint,
     setAutomationPointCurve,
     toggleAutomationVisibility,
-} from '#/modules/Track/useCases/automationUseCases';
-import { insertAutomationShape, type AutomationShapeType } from '#/modules/Track/useCases/automationShapes';
-import { beginDrawSession, paintDrawPoint, endDrawSession } from '#/modules/Track/useCases/automationDrawMode';
+} from '#/modules/Automation/useCases/automationUseCases';
+import { insertAutomationShape, type AutomationShapeType } from '#/modules/Automation/useCases/automationShapes';
+import { beginDrawSession, paintDrawPoint, endDrawSession } from '#/modules/Automation/useCases/automationDrawMode';
 import {
     selectPointsInRange,
     deleteSelectedPoints,
     getSelectionBounds,
-} from '#/modules/Track/useCases/automationSelection';
-import { adjustYZoom, zoomToUsedRange, toggleVirginTerritory } from '#/modules/Track/useCases/automationZoom';
+} from '#/modules/Automation/useCases/automationSelection';
+import { adjustYZoom, zoomToUsedRange, toggleVirginTerritory } from '#/modules/Automation/useCases/automationZoom';
 import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
 import { LANE_HEIGHT, buildCurvePath } from './automationViewHelpers';
 import { transportStore } from '#/modules/Transport/stores/transportStore';

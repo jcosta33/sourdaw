@@ -5,14 +5,14 @@ import { getTempoAtBeat } from '../models/TempoMap';
 import { getTimeSignatureAtBeat } from '../models/TimeSignatureMap';
 import { timeSignatureMapStore } from '../stores/timeSignatureMapStore';
 import { trackStore } from '#/modules/Track/stores/trackStore';
-import { midiStore } from '#/modules/Track/stores/midiStore';
-import { automationStore } from '#/modules/Track/stores/automationStore';
-import { getAutomationValueAtBeat } from '#/modules/Track/useCases/automationUseCases';
+import { midiStore } from '#/modules/Midi/stores/midiStore';
+import { automationStore } from '#/modules/Automation/stores/automationStore';
+import { getAutomationValueAtBeat } from '#/modules/Automation/useCases/automationUseCases';
 import {
     startAutomationRecording,
     stopAutomationRecording,
     isRecordingAutomation,
-} from '#/modules/Track/useCases/automationRecording';
+} from '#/modules/Automation/useCases/automationRecording';
 import { getEffectiveGain } from '#/modules/Track/useCases/vcaUseCases';
 import {
     ensureTrackStrip,
@@ -28,15 +28,15 @@ import {
 } from '#/modules/AudioEngine/useCases/scheduling';
 import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { resolveClipsWithComping } from '#/modules/Track/useCases/resolveComping';
-import { scheduleNote, getSynthParamsForTrack } from '#/modules/AudioEngine/useCases/builtinSynth';
-import { getDrumKitByIndex, scheduleKitNote, type DrumKit } from '#/modules/AudioEngine/useCases/drumKitSynth';
-import { getDrumKitDefByIndex, scheduleDrumKitNote, type DrumKitDef } from '#/modules/AudioEngine/useCases/drumSynthEngine';
+import { resolveClipsWithComping } from '#/modules/Clip/useCases/resolveComping';
+import { scheduleNote, getSynthParamsForTrack } from '#/modules/Synth/useCases/builtinSynth';
+import { getDrumKitByIndex, scheduleKitNote, type DrumKit } from '#/modules/Synth/useCases/drumKitSynth';
+import { getDrumKitDefByIndex, scheduleDrumKitNote, type DrumKitDef } from '#/modules/Synth/useCases/drumSynthEngine';
 import { getCompensationDelay } from '#/modules/AudioEngine/useCases/latencyCompensation';
 import { startAudioRecording, stopAudioRecording } from '#/modules/AudioEngine/useCases/audioRecorder';
 import { startRecording, stopRecording } from '#/modules/Track/useCases/recordingUseCases';
-import { addTakeLane, addTake } from '#/modules/Track/useCases/compingUseCases';
-import { takeLaneStore } from '#/modules/Track/stores/takeLaneStore';
+import { addTakeLane, addTake } from '#/modules/Clip/useCases/compingUseCases';
+import { takeLaneStore } from '#/modules/Clip/stores/takeLaneStore';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 
 let timerId: ReturnType<typeof setTimeout> | null = null;

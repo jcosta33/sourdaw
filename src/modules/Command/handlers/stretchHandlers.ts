@@ -1,6 +1,6 @@
 import { type ActionHandler } from '../models/ActionHandler';
 import { type AppAction } from '../models/AppAction';
-import { setClipStretchMode, setClipStretchRatio, fitClipToBeats } from '#/modules/Track/useCases/clipStretchUseCases';
+import { setClipStretchMode, setClipStretchRatio, fitClipToBeats } from '#/modules/Clip/useCases/clipStretchUseCases';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 

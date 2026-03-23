@@ -2,13 +2,13 @@ import { getTransportState, updateTransportState } from '#/modules/Transport/use
 import { trackStore } from '#/modules/Track/stores/trackStore';
 import { timelineViewStore } from '../stores/timelineViewStore';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { automationStore } from '#/modules/Track/stores/automationStore';
+import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { buildTimelineRenderModel } from './buildTimelineRenderModel';
 
 const getTrackState = () => trackStore.value;
 const getAllTracks = () => trackStore.value?.tracks ?? [];
-import { moveClip } from '#/modules/Track/useCases/clipUseCases';
-import { trimClipStart, trimClipEnd } from '#/modules/Track/useCases/clipEditingUseCases';
+import { moveClip } from '#/modules/Clip/useCases/clipUseCases';
+import { trimClipStart, trimClipEnd } from '#/modules/Clip/useCases/clipEditingUseCases';
 import { preferencesStore } from '#/modules/Workspace/stores/preferencesStore';
 import { AUTOMATION_SUB_LANE_HEIGHT } from '../models/automationConstants';
 import { gridSnapBeats } from '#/modules/Workspace/models/Preferences';

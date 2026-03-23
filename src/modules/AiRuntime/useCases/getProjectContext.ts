@@ -1,5 +1,5 @@
 import { trackStore } from '#/modules/Track/stores/trackStore';
-import { midiStore } from '#/modules/Track/stores/midiStore';
+import { midiStore } from '#/modules/Midi/stores/midiStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { type ProjectContext } from '../models/ProjectContext';

@@ -13,10 +13,10 @@ import {
 } from '#/modules/Track/useCases/trackQueries';
 import { getTransportStoreValue } from '#/modules/Transport/useCases/transportQueries';
 import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
-import { completeMidiLearn, handleMidiMessage as applyMidiMappings } from '#/modules/Track/useCases/midiLearnUseCases';
-import { getSynthParamsForTrack, scheduleNote } from '#/modules/AudioEngine/useCases/builtinSynth';
-import { getDrumKitByIndex, scheduleKitNote } from '#/modules/AudioEngine/useCases/drumKitSynth';
-import { getDrumKitDefByIndex, scheduleDrumKitNote } from '#/modules/AudioEngine/useCases/drumSynthEngine';
+import { completeMidiLearn, handleMidiMessage as applyMidiMappings } from '#/modules/Midi/useCases/midiLearnUseCases';
+import { getSynthParamsForTrack, scheduleNote } from '#/modules/Synth/useCases/builtinSynth';
+import { getDrumKitByIndex, scheduleKitNote } from '#/modules/Synth/useCases/drumKitSynth';
+import { getDrumKitDefByIndex, scheduleDrumKitNote } from '#/modules/Synth/useCases/drumSynthEngine';
 
 export type MidiInputInfo = {
     id: string;

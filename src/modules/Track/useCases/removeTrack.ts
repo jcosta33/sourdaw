@@ -1,9 +1,9 @@
 import { getTrackState, setTrackState, getTrackById } from '../repositories/trackRepository';
 import { eventBus } from '#/app/bootstrap';
 import { TrackRemovedEvent } from '../events/TrackRemovedEvent';
-import { automationStore } from '../stores/automationStore';
-import { midiStore } from '../stores/midiStore';
-import { takeLaneStore } from '../stores/takeLaneStore';
+import { automationStore } from '#/modules/Automation/stores/automationStore';
+import { midiStore } from '#/modules/Midi/stores/midiStore';
+import { takeLaneStore } from '#/modules/Clip/stores/takeLaneStore';
 
 export function removeTrack(trackId: string): void {
     const state = getTrackState();

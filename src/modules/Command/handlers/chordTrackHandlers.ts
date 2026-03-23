@@ -5,8 +5,8 @@ import {
     removeChordEvent,
     toggleChordTrack,
     clearChordTrack,
-} from '#/modules/Track/useCases/chordTrackUseCases';
-import { type ChordType, CHORD_TYPES } from '#/modules/Track/useCases/chordStamps';
+} from '#/modules/Midi/useCases/chordTrackUseCases';
+import { type ChordType, CHORD_TYPES } from '#/modules/Midi/useCases/chordStamps';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 

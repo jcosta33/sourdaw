@@ -5,8 +5,8 @@ import { bypassDevice, addDevice, removeDevice, reorderDevices } from '../../../
 import { getPlatformPlugins } from '../../../useCases/workspaceViewActions';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { type Track } from '../../../useCases/workspaceViewActions';
-import { getAllModulationRoutes } from '#/modules/AudioEngine/useCases/modulationSystem';
-import { MIDI_EFFECT_FACTORIES } from '#/modules/AudioEngine/useCases/midiEffectPlugins';
+import { getAllModulationRoutes } from '#/modules/Plugin/useCases/modulationSystem';
+import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases/midiEffectPlugins';
 
 type DeviceChainSectionProps = {
     track: Track;

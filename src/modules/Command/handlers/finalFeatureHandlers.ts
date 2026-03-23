@@ -1,9 +1,9 @@
 import { type ActionHandler } from '../models/ActionHandler';
 import { setProcessingMode, type BitDepthMode } from '#/modules/AudioEngine/useCases/audioPrecisionUseCases';
-import { toggleNodeView } from '#/modules/AudioEngine/useCases/nodeViewUseCases';
+import { toggleNodeView } from '#/modules/Plugin/useCases/nodeViewUseCases';
 import { setProtocol, type ControlSurfaceProtocol } from '#/modules/AudioEngine/useCases/controlSurfaceUseCases';
-import { addCvOutput, type CvOutputChannel } from '#/modules/AudioEngine/useCases/cvGateUseCases';
-import { connectPush, disconnectPush } from '#/modules/AudioEngine/useCases/pushIntegrationUseCases';
+import { addCvOutput, type CvOutputChannel } from '#/modules/Synth/useCases/cvGateUseCases';
+import { connectPush, disconnectPush } from '#/modules/Plugin/useCases/pushIntegrationUseCases';
 import { loadModel, setTransferBlend } from '#/modules/AudioEngine/useCases/raveUseCases';
 import { enableWarping, setWarpAlgorithm, setPitchShift, type WarpAlgorithm } from '#/modules/AudioEngine/useCases/audioWarpingUseCases';
 

@@ -45,7 +45,7 @@ import {
     deleteTrackTemplate,
 } from '#/modules/Track/useCases/trackTemplateUseCases';
 import { createVcaGroup, assignToVca, removeFromVca, setVcaGain } from '#/modules/Track/useCases/vcaUseCases';
-import { setMidiOutput, clearMidiOutput } from '#/modules/Track/useCases/midiRoutingUseCases';
+import { setMidiOutput, clearMidiOutput } from '#/modules/Midi/useCases/midiRoutingUseCases';
 
 const trackAlternativeHandlers: Record<string, ActionHandler<any>> = {
     createTrackAlternative: {

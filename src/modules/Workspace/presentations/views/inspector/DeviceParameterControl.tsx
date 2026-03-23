@@ -6,7 +6,7 @@ import { MidiLearnButton } from '#/modules/Track/presentations/views/MidiLearnBu
 import { type DeviceParameter } from '../../../useCases/workspaceViewActions';
 import { addAutomationLane, removeAutomationLane } from '../../../useCases/workspaceViewActions';
 import { setDeviceParameter } from '../../../useCases/workspaceViewActions';
-import { automationStore } from '#/modules/Track/stores/automationStore';
+import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { type Device } from '../../../useCases/workspaceViewActions';
 
 type DeviceParameterControlProps = {

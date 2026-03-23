@@ -1,6 +1,6 @@
 import { type ActionHandler } from '../models/ActionHandler';
 import { type AppAction } from '../models/AppAction';
-import { analyzeMix } from '#/modules/AiRuntime/useCases/analyzeMix';
+import { analyzeMix } from '#/modules/AudioAnalysis/useCases/analyzeMix';
 import { getMixAnalysisStoreValue, setMixAnalysisStoreValue } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
 import { executeAppAction } from '../useCases/executeAppAction';
 

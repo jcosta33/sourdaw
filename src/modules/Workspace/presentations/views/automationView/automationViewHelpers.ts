@@ -1,4 +1,4 @@
-import { type AutomationPoint } from '#/modules/Track/models/Automation';
+import { type AutomationPoint } from '#/modules/Automation/models/Automation';
 import { BUILTIN_PLUGINS } from '../../../useCases/workspaceViewActions';
 
 export const LANE_HEIGHT = 100;

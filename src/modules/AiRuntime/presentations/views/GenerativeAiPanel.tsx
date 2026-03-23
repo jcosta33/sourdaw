@@ -14,7 +14,7 @@ import {
     removeTask,
     type AiTaskResult,
     type GenerativeAiState,
-} from '../../useCases/generativeAiActions';
+} from '#/modules/AiGeneration/useCases/generativeAiActions';
 import { GenreGrid, MoodGrid, InstrumentGrid } from '../components/GenerativeParamGrids';
 import { PatternBrowser } from './PatternBrowser';
 

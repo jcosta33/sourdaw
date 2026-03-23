@@ -1,6 +1,6 @@
 import { type ActionHandler } from '../models/ActionHandler';
 import { type AppAction } from '../models/AppAction';
-import { startPluginScan, findPluginByName } from '#/modules/AudioEngine/useCases/pluginScanUseCases';
+import { startPluginScan, findPluginByName } from '#/modules/Plugin/useCases/pluginScanUseCases';
 import { addTrack } from '#/modules/Track/useCases/addTrack';
 import { addExternalDevice } from '#/modules/Track/useCases/deviceUseCases';
 

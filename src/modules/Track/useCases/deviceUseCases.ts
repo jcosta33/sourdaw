@@ -8,8 +8,8 @@ import {
     updateDeviceParam,
 } from '#/modules/AudioEngine/useCases/deviceControls';
 import { setSend as engineSetSend } from '#/modules/AudioEngine/useCases/busControls';
-import { recordAutomationValue } from './automationRecording';
-import { loadPlugin, unloadPlugin } from '#/modules/AudioEngine/useCases/pluginBridge';
+import { recordAutomationValue } from '#/modules/Automation/useCases/automationRecording';
+import { loadPlugin, unloadPlugin } from '#/modules/Plugin/useCases/pluginBridge';
 
 const RECORDING_MODES: ReadonlySet<AutomationMode> = new Set(['write', 'touch', 'latch']);
 
@@ -43,7 +43,7 @@ export function addDevice(trackId: string, deviceType: string): Device | null {
 
     if (plugin) {
         if (plugin.id.startsWith('faust-')) {
-            import('#/modules/AudioEngine/useCases/faustEngine')
+            import('#/modules/Plugin/useCases/faustEngine')
                 .then(({ compileFaustDSP }) => compileFaustDSP(plugin.id))
                 .catch(console.error);
         }

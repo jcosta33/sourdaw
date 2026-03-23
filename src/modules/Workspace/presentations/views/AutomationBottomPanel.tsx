@@ -1,15 +1,15 @@
 import { type ReactElement, type RefObject, type WheelEvent, useRef, useState, useEffect, useSyncExternalStore } from 'react';
 import { cn } from '#/helpers/Styles/cn';
-import { automationStore } from '#/modules/Track/stores/automationStore';
+import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { trackStore } from '#/modules/Track/stores/trackStore';
 import { timelineViewStore, scrollTimeline } from '#/modules/Timeline/stores/timelineViewStore';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { addAutomationLane, toggleLaneCollapsed, removeAutomationLane } from '#/modules/Track/useCases/automationUseCases';
+import { addAutomationLane, toggleLaneCollapsed, removeAutomationLane } from '#/modules/Automation/useCases/automationUseCases';
 import { setAutomationMode } from '#/modules/Track/useCases/toggleTrackState';
 import { AutomationLaneRow } from './automationView/AutomationLaneRow';
 import { getAutomatableParams, AUTOMATION_MODE_CONFIG, LANE_HEIGHT } from './automationView/automationViewHelpers';
 import { type AutomationMode } from '#/modules/Track/models/Track';
-import { type AutomationLane } from '#/modules/Track/models/Automation';
+import { type AutomationLane } from '#/modules/Automation/models/Automation';
 import { Plus, ChevronRight, ChevronDown, Trash2 } from 'lucide-react';
 import { BeatRulerBar } from '#/modules/Timeline/presentations/views/BeatRulerBar';
 

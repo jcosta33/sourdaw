@@ -21,7 +21,7 @@ import {
     subscribeGenerativeAi,
     getGenerativeAiSnapshot,
     toggleGenerativeAiPanel,
-} from '#/modules/AiRuntime/useCases/generativeAiActions';
+} from '#/modules/AiGeneration/useCases/generativeAiActions';
 import { useSyncExternalStore } from 'react';
 
 type PanelTogglesProps = {

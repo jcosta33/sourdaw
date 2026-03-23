@@ -18,10 +18,10 @@ export {
     renameClip,
     setClipGain,
     setClipFollowAction,
-} from '#/modules/Track/useCases/clipEditingUseCases';
+} from '#/modules/Clip/useCases/clipEditingUseCases';
 
 // ── Track: clip operations ────────────────────────────────────────
-export { addClip, removeClip } from '#/modules/Track/useCases/clipUseCases';
+export { addClip, removeClip } from '#/modules/Clip/useCases/clipUseCases';
 
 // ── Track: clipboard ──────────────────────────────────────────────
 export {
@@ -30,7 +30,7 @@ export {
     pasteClip,
     copySelectedNotes,
     pasteNotes,
-} from '#/modules/Track/useCases/clipboardUseCases';
+} from '#/modules/Clip/useCases/clipboardUseCases';
 
 // ── Track: general ────────────────────────────────────────────────
 export {
@@ -58,17 +58,17 @@ export { removeTrack } from '#/modules/Track/useCases/removeTrack';
 export { setTrackGain, setTrackPan, setTrackColor, setTrackNotes } from '#/modules/Track/useCases/setTrackGainPan';
 export { armTrack } from '#/modules/Track/useCases/recordingUseCases';
 export { freezeTrack, unfreezeTrack } from '#/modules/Track/useCases/freezeBounce';
-export { importMidiFile } from '#/modules/Track/useCases/importMidiFile';
-export { setMidiOutput, clearMidiOutput } from '#/modules/Track/useCases/midiRoutingUseCases';
+export { importMidiFile } from '#/modules/Midi/useCases/importMidiFile';
+export { setMidiOutput, clearMidiOutput } from '#/modules/Midi/useCases/midiRoutingUseCases';
 export { assignToVca, removeFromVca, getVcaGroups, createVcaGroup } from '#/modules/Track/useCases/vcaUseCases';
-export { setCompRegion, selectTake, flattenComp } from '#/modules/Track/useCases/compingUseCases';
+export { setCompRegion, selectTake, flattenComp } from '#/modules/Clip/useCases/compingUseCases';
 
 // ── Track: automation ─────────────────────────────────────────────
 export {
     addAutomationLane,
     removeAutomationLane,
     toggleAutomationVisibility,
-} from '#/modules/Track/useCases/automationUseCases';
+} from '#/modules/Automation/useCases/automationUseCases';
 
 // ── Track: MIDI ───────────────────────────────────────────────────
 export {
@@ -90,7 +90,7 @@ export {
     quantizeNotes,
     transposeNotes,
     humanizeNotes,
-} from '#/modules/Track/useCases/midiUseCases';
+} from '#/modules/Midi/useCases/midiUseCases';
 
 // ── Track: presets ────────────────────────────────────────────────
 export { getFactoryPresets } from '#/modules/Track/useCases/soundPresetLibrary';
@@ -177,9 +177,9 @@ export {
 } from '#/modules/AiRuntime/useCases/cloudApiManagement';
 
 // ── AiRuntime: Audio analysis ────────────────────────────────────
-export { polyphonicAudioToMidi } from '#/modules/AiRuntime/useCases/polyphonicAudioToMidi';
-export { detectDominantPitch } from '#/modules/AiRuntime/useCases/pitchDetection';
-export { summarizeFeatures } from '#/modules/AiRuntime/useCases/audioFeatures';
+export { polyphonicAudioToMidi } from '#/modules/AudioAnalysis/useCases/polyphonicAudioToMidi';
+export { detectDominantPitch } from '#/modules/AudioAnalysis/useCases/pitchDetection';
+export { summarizeFeatures } from '#/modules/AudioAnalysis/useCases/audioFeatures';
 export {
     type SoundPreset,
     type MidiCC,
@@ -205,7 +205,7 @@ export {
     addWarpMarker,
     removeWarpMarker,
     moveWarpMarker,
-} from '#/modules/Track/useCases/warpUseCases';
+} from '#/modules/Clip/useCases/warpUseCases';
 
 // Transport
 export {
@@ -237,7 +237,7 @@ export {
     findPluginByName,
     addScanPath,
     removeScanPath,
-} from '#/modules/AudioEngine/useCases/pluginScanUseCases';
+} from '#/modules/Plugin/useCases/pluginScanUseCases';
 export {
     scanPlugins,
     getDefaultPluginPaths,
@@ -246,15 +246,15 @@ export {
     setPluginParameter,
     getPluginParameters,
     isTauriAvailable,
-} from '#/modules/AudioEngine/useCases/pluginBridge';
+} from '#/modules/Plugin/useCases/pluginBridge';
 
 // ── AudioEngine: WAM & Faust ─────────────────────────────────────
 export {
     getRegisteredPlugins,
     getPluginsByCategory,
     registerWAMPlugin,
-} from '#/modules/AudioEngine/useCases/wamPluginHost';
-export { getFaustModules, getFaustModule, compileFaustDSP } from '#/modules/AudioEngine/useCases/faustEngine';
+} from '#/modules/Plugin/useCases/wamPluginHost';
+export { getFaustModules, getFaustModule, compileFaustDSP } from '#/modules/Plugin/useCases/faustEngine';
 
 // ── AudioEngine: modulation ──────────────────────────────────────
 export {
@@ -268,7 +268,7 @@ export {
     getAllModulationRoutes,
     getModulationRoutesForParam,
     getModulatedValue,
-} from '#/modules/AudioEngine/useCases/modulationSystem';
+} from '#/modules/Plugin/useCases/modulationSystem';
 
 // ── AudioEngine: latency compensation ────────────────────────────
 export {
@@ -313,10 +313,10 @@ export { getTimeSignatureChanges } from '#/modules/Transport/useCases/timeSignat
 export { isRippleEditing } from '#/modules/Workspace/useCases/rippleEditing';
 
 // ── Track: automation UI helpers ─────────────────────────────────
-export { isDrawSessionActive } from '#/modules/Track/useCases/automationDrawMode';
-export { resetYZoom, adjustYZoom, zoomToUsedRange } from '#/modules/Track/useCases/automationZoom';
-export { transformSelectedPoints } from '#/modules/Track/useCases/automationSelection';
-export { createAutomationObject } from '#/modules/Track/models/Automation';
+export { isDrawSessionActive } from '#/modules/Automation/useCases/automationDrawMode';
+export { resetYZoom, adjustYZoom, zoomToUsedRange } from '#/modules/Automation/useCases/automationZoom';
+export { transformSelectedPoints } from '#/modules/Automation/useCases/automationSelection';
+export { createAutomationObject } from '#/modules/Automation/models/Automation';
 
 // ── AudioEngine: drum kit registry ───────────────────────────────
 export { getFactoryDrumKits } from '#/modules/AudioEngine/helpers/factoryDrumKits';

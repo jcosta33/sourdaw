@@ -14,9 +14,9 @@ import { ClipContextMenu, TimelineEmptyMenu } from './TimelineContextMenus';
 import { useTimelineInteractions } from './hooks/useTimelineInteractions';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 
-import { automationStore } from '#/modules/Track/stores/automationStore';
+import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { trackStore } from '#/modules/Track/stores/trackStore';
-import { takeLaneStore } from '#/modules/Track/stores/takeLaneStore';
+import { takeLaneStore } from '#/modules/Clip/stores/takeLaneStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
 import { tempoMapStore } from '#/modules/Transport/stores/tempoMapStore';

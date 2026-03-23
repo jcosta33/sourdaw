@@ -2,7 +2,7 @@ import { type ReactElement, useSyncExternalStore } from 'react';
 import { Card } from '#/components/ui/card';
 import { Button } from '#/components/ui/button';
 import { cn } from '#/helpers/Styles/cn';
-import { takeLaneStore } from '#/modules/Track/stores/takeLaneStore';
+import { takeLaneStore } from '#/modules/Clip/stores/takeLaneStore';
 import { setCompRegion, selectTake, flattenComp } from '../../../useCases/workspaceViewActions';
 
 type TakesSectionProps = {

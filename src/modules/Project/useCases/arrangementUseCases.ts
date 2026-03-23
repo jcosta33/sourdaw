@@ -1,10 +1,10 @@
 import { trackStore } from '#/modules/Track/stores/trackStore';
-import { automationStore } from '#/modules/Track/stores/automationStore';
-import { midiStore } from '#/modules/Track/stores/midiStore';
+import { automationStore } from '#/modules/Automation/stores/automationStore';
+import { midiStore } from '#/modules/Midi/stores/midiStore';
 import { tempoMapStore } from '#/modules/Transport/stores/tempoMapStore';
 import { timeSignatureMapStore } from '#/modules/Transport/stores/timeSignatureMapStore';
 import { markerStore } from '#/modules/Timeline/stores/markerStore';
-import { takeLaneStore } from '#/modules/Track/stores/takeLaneStore';
+import { takeLaneStore } from '#/modules/Clip/stores/takeLaneStore';
 import { arrangementStore } from '../stores/arrangementStore';
 import { type ArrangementData } from '../models/ProjectData';
 import { undoStore } from '#/modules/Command/stores/undoStore';

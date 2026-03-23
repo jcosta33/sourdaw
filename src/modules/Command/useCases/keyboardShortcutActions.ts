@@ -31,7 +31,7 @@ import { duplicateTrack as _duplicateTrack } from '#/modules/Track/useCases/dupl
 import {
     duplicateClip as _duplicateClip,
     duplicateClipToNextBar as _duplicateClipToNextBar,
-} from '#/modules/Track/useCases/clipUseCases';
+} from '#/modules/Clip/useCases/clipUseCases';
 import { zoomTracksVertical as _zoomTracksVertical } from '#/modules/Track/useCases/trackZoom';
 
 export const clearSolos = (): void => _clearSolos();

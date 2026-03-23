@@ -1,13 +1,13 @@
 import { type ActionHandler } from '../models/ActionHandler';
 import { type AppAction } from '../models/AppAction';
-import { applyDrumPatternToTrack, type DrumPatternStyle } from '#/modules/AiRuntime/useCases/generateDrumPattern';
-import { applyMelodyToTrack, type ScaleType } from '#/modules/AiRuntime/useCases/generateMelody';
+import { applyDrumPatternToTrack, type DrumPatternStyle } from '#/modules/AiGeneration/useCases/generateDrumPattern';
+import { applyMelodyToTrack, type ScaleType } from '#/modules/AiGeneration/useCases/generateMelody';
 import {
     applyChordProgressionToTrack,
     type ChordProgressionStyle,
     type ChordVoicing,
-} from '#/modules/AiRuntime/useCases/generateChordProgression';
-import { extractGroove, applyGroove, getGrooveById } from '#/modules/AiRuntime/useCases/grooveTemplate';
+} from '#/modules/AiGeneration/useCases/generateChordProgression';
+import { extractGroove, applyGroove, getGrooveById } from '#/modules/AiGeneration/useCases/grooveTemplate';
 import { addTrack } from '#/modules/Track/useCases/addTrack';
 import { getTrackStoreState } from '#/modules/Track/useCases/trackQueries';
 

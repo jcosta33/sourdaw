@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '#/components/u
 import { Button } from '#/components/ui/button';
 import { Loader2, Sparkles, GraduationCap } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { mixHealthAnalysis } from '#/modules/AiRuntime/useCases/mixHealthAnalysis';
+import { mixHealthAnalysis } from '#/modules/AudioAnalysis/useCases/mixHealthAnalysis';
 import { streamCloudChatCompletion } from '#/modules/AiRuntime/repositories/cloudLlmRepository';
 
 type MixHealthDialogProps = {

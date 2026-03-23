@@ -1,9 +1,9 @@
 import { trackStore } from '../stores/trackStore';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { addMidiNote } from './midiNoteCrud';
+import { addMidiNote } from '#/modules/Midi/useCases/midiNoteCrud';
 import { addTrack } from './addTrack';
-import { addClip } from './clipUseCases';
-import { summarizeFeatures } from '#/modules/AiRuntime/useCases/audioFeatures';
+import { addClip } from '#/modules/Clip/useCases/clipUseCases';
+import { summarizeFeatures } from '#/modules/AudioAnalysis/useCases/audioFeatures';
 
 function getBufferForClip(clipId: string): { buffer: AudioBuffer; audioBufferId: string } | null {
     const track = trackStore.value?.tracks.find((t) => t.clips.some((c) => c.id === clipId));

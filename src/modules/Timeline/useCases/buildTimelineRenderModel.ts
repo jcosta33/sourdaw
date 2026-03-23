@@ -2,7 +2,7 @@ import { trackStore } from '#/modules/Track/stores/trackStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
 import { timelineViewStore } from '../stores/timelineViewStore';
-import { midiStore } from '#/modules/Track/stores/midiStore';
+import { midiStore } from '#/modules/Midi/stores/midiStore';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { preferencesStore } from '#/modules/Workspace/stores/preferencesStore';
 import { type TimelineRenderModel } from '../models/TimelineRenderModel';

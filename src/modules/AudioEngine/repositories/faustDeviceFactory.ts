@@ -9,7 +9,7 @@
  */
 
 import { type OfflineDeviceNode } from './deviceNodeFactory';
-import { createFaustNode, compileFaustDSP, isFaustModule } from '../useCases/faustEngine';
+import { createFaustNode, compileFaustDSP, isFaustModule } from '#/modules/Plugin/useCases/faustEngine';
 
 export { isFaustModule };
 

@@ -1,4 +1,4 @@
-import { type ReactElement, type MouseEvent, useRef } from 'react';
+import { type ReactElement, useRef } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 
 type DragResizeHandleProps = {
@@ -22,7 +22,7 @@ export const DragResizeHandle = ({ side, onResize, className }: DragResizeHandle
     const startRef = useRef(0);
     const vertical = isVertical(side);
 
-    const handleMouseDown = (event: MouseEvent) => {
+    const handleMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
         event.preventDefault();
         startRef.current = vertical ? event.clientX : event.clientY;
 

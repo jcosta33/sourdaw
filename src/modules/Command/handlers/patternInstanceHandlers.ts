@@ -2,7 +2,7 @@ import { type ActionHandler } from '../models/ActionHandler';
 import {
     createPatternInstance,
     detachPatternInstance,
-} from '#/modules/Track/useCases/patternInstanceUseCases';
+} from '#/modules/Midi/useCases/patternInstanceUseCases';
 
 export const patternInstanceHandlers: Record<string, ActionHandler<any>> = {
     createPatternInstance: {

@@ -15,7 +15,7 @@ import { Slider } from '#/components/ui/slider';
 
 import { cn } from '#/helpers/Styles/cn';
 import { resolveToken } from '#/helpers/UI/resolveToken';
-import { midiStore } from '#/modules/Track/stores/midiStore';
+import { midiStore } from '#/modules/Midi/stores/midiStore';
 import { trackStore } from '#/modules/Track/stores/trackStore';
 import { pushUndoEntry } from '../../../useCases/workspaceViewActions';
 import {
@@ -31,13 +31,13 @@ import {
 } from '../../../useCases/workspaceViewActions';
 import { copySelectedNotes, pasteNotes } from '../../../useCases/workspaceViewActions';
 import { type MidiNote } from '../../../useCases/workspaceViewActions';
-import { stampChord, removeNotesByIds, CHORD_TYPE_KEYS, type ChordType } from '#/modules/Track/useCases/chordStamps';
-import { strumNotes, restoreStrumOriginals } from '#/modules/Track/useCases/strumNotes';
+import { stampChord, removeNotesByIds, CHORD_TYPE_KEYS, type ChordType } from '#/modules/Midi/useCases/chordStamps';
+import { strumNotes, restoreStrumOriginals } from '#/modules/Midi/useCases/strumNotes';
 import {
     extractGrooveFromClip,
     applyGrooveToClip,
     restoreGrooveOriginals,
-} from '#/modules/Track/useCases/grooveExtraction';
+} from '#/modules/Midi/useCases/grooveExtraction';
 import { generateMidiAI, isTauri } from '#/modules/AudioEngine/useCases/nativeAIBridge';
 import { playAuditionNote } from '#/modules/AudioEngine/useCases/audition';
 

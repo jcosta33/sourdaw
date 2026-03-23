@@ -1,7 +1,7 @@
 import { Store } from '#/helpers/Store/Store';
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
-import { type ChordEvent } from '../models/ChordEvent';
+import { type ChordEvent } from '#/modules/Midi/models/ChordEvent';
 
 export type ChordTrackState = {
     enabled: boolean;

@@ -7,7 +7,7 @@ import {
     reverseAutomation,
     thinAutomationPoints,
     quantizeAutomationBeats,
-} from '#/modules/Track/useCases/automationUseCases';
+} from '#/modules/Automation/useCases/automationUseCases';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 

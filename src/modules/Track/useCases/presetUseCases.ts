@@ -33,7 +33,7 @@ function attachInstrumentDevice(trackId: string, dp: DevicePreset): void {
 
     // Create audio node in the engine (this was missing — caused preset changes to mute)
     if (dp.type.startsWith('faust-')) {
-        import('#/modules/AudioEngine/useCases/faustEngine')
+        import('#/modules/Plugin/useCases/faustEngine')
             .then(({ compileFaustDSP }) => compileFaustDSP(dp.type))
             .catch(console.error);
     }

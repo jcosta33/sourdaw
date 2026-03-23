@@ -3,7 +3,7 @@ import { Card } from '#/components/ui/card';
 import { Button } from '#/components/ui/button';
 import { Check, X, Sparkles } from 'lucide-react';
 import { type Track } from '../../../useCases/workspaceViewActions';
-import { acceptGhostClip, dismissGhostClip } from '#/modules/Track/useCases/clipUseCases';
+import { acceptGhostClip, dismissGhostClip } from '#/modules/Clip/useCases/clipUseCases';
 
 type TrackClipsSectionProps = {
     track: Track;

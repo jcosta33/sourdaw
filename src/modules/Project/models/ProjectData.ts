@@ -1,11 +1,11 @@
 import { type TrackStoreState } from '#/modules/Track/stores/trackStore';
 import { type TransportState } from '#/modules/Transport/useCases/transportQueries';
-import { type AutomationStoreState } from '#/modules/Track/stores/automationStore';
-import { type MidiStoreState } from '#/modules/Track/stores/midiStore';
+import { type AutomationStoreState } from '#/modules/Automation/stores/automationStore';
+import { type MidiStoreState } from '#/modules/Midi/stores/midiStore';
 import { type TempoMapStoreState } from '#/modules/Transport/stores/tempoMapStore';
 import { type TimeSignatureMapStoreState } from '#/modules/Transport/stores/timeSignatureMapStore';
 import { type MarkerStoreState } from '#/modules/Timeline/stores/markerStore';
-import { type TakeLaneStoreState } from '#/modules/Track/stores/takeLaneStore';
+import { type TakeLaneStoreState } from '#/modules/Clip/stores/takeLaneStore';
 import { type SidechainRoute } from '#/modules/AudioEngine/useCases/sidechainUseCases';
 
 export type ArrangementData = {

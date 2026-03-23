@@ -30,17 +30,17 @@ import {
     scaleAllVelocities,
     setAllVelocities,
     type VelocityCurve,
-} from '#/modules/Track/useCases/midiUseCases';
+} from '#/modules/Midi/useCases/midiUseCases';
 import {
     addAutomationLane,
     addAutomationPoint,
     removeAutomationPoint,
-} from '#/modules/Track/useCases/automationUseCases';
+} from '#/modules/Automation/useCases/automationUseCases';
 import { getAutomationStoreState } from '#/modules/Track/useCases/trackQueries';
 import { saveProject, newProject, exportProjectFile } from '#/modules/Project/useCases/projectPersistence';
-import { exportMidiClip } from '#/modules/Track/useCases/exportMidiFile';
+import { exportMidiClip } from '#/modules/Midi/useCases/exportMidiFile';
 import { pickFiles } from '#/modules/Project/useCases/nativeFileDialog';
-import { importMidiFile } from '#/modules/Track/useCases/importMidiFile';
+import { importMidiFile } from '#/modules/Midi/useCases/importMidiFile';
 import { importAudioFile } from '#/modules/Track/useCases/importAudioFile';
 import { type EditingTool } from '#/modules/Workspace/models/EditingTool';
 

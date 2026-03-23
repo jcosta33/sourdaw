@@ -15,7 +15,7 @@ import { type Track } from '../../../useCases/workspaceViewActions';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/helpers/platformCapabilities';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { cn } from '#/helpers/Styles/cn';
-import { openPluginGui } from '#/modules/AudioEngine/useCases/pluginBridge';
+import { openPluginGui } from '#/modules/Plugin/useCases/pluginBridge';
 
 type TrackDevicesSectionProps = {
     track: Track;

@@ -1,12 +1,4 @@
-import {
-    type MouseEvent,
-    type DragEvent,
-    type PointerEvent,
-    type RefObject,
-    useRef,
-    useState,
-    useEffect,
-} from 'react';
+import { type MouseEvent, type DragEvent, useRef, useState, useCallback, useEffect } from 'react';
 import {
     zoomTimeline,
     scrollTimeline,
@@ -49,16 +41,16 @@ import {
     setLoopRegion,
 } from '../../../useCases/timelineViewActions';
 import { type AutomationPoint } from '#/modules/Track/useCases/trackQueries';
-import { automationStore } from '#/modules/Track/stores/automationStore';
+import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { trackStore } from '#/modules/Track/stores/trackStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { buildTimelineRenderModel } from '../../../useCases/buildTimelineRenderModel';
 
-type GestureEvent = UIEvent & {
+interface GestureEvent extends UIEvent {
     readonly scale: number;
     readonly rotation: number;
-};
+}
 
 const RULER_HEIGHT = 0;
 
@@ -66,10 +58,10 @@ type ClipMenuState = { kind: 'clip'; x: number; y: number; clipId: string; track
 type EmptyMenuState = { kind: 'empty'; x: number; y: number; trackId: string | null; beat: number };
 export type ContextMenuState = ClipMenuState | EmptyMenuState | null;
 
-export const useTimelineInteractions = (canvasRef: RefObject<HTMLCanvasElement | null>) => {
+export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasElement | null>) => {
     const [dragState, setDragState] = useState<DragState | null>(null);
     const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
-    const pointersRef = useRef<Map<number, globalThis.PointerEvent>>(new Map());
+    const pointersRef = useRef<Map<number, PointerEvent>>(new Map());
     const loopDragRef = useRef<{ startBeat: number } | null>(null);
     const autoDragRef = useRef<{ laneId: string; trackId: string; points: AutomationPoint[] } | null>(null);
     const drawDragRef = useRef<{ trackId: string; startBeat: number; clipType: 'audio' | 'midi' } | null>(null);
@@ -137,26 +129,29 @@ export const useTimelineInteractions = (canvasRef: RefObject<HTMLCanvasElement |
         };
     }, [canvasRef]);
 
-    const getCanvasCoords = (e: MouseEvent<HTMLCanvasElement> | DragEvent<HTMLDivElement>): { x: number; y: number } => {
+    const getCanvasCoords = useCallback(
+        (e: MouseEvent<HTMLCanvasElement> | DragEvent<HTMLDivElement>): { x: number; y: number } => {
             const rect = canvasRef.current?.getBoundingClientRect();
             if (!rect) {
                 return { x: 0, y: 0 };
             }
             return { x: e.clientX - rect.left, y: e.clientY - rect.top };
-        };
+        },
+        [canvasRef]
+    );
 
-
-    const getBeatFromX = (x: number): number => {
+    const getBeatFromX = useCallback((x: number): number => {
         const viewState = timelineViewStore.value;
         if (!viewState) {
             return 0;
         }
         return x / viewState.pixelsPerBeat + viewState.scrollX / viewState.pixelsPerBeat;
-    };
+    }, []);
 
     const getActiveTool = () => workspaceStore.value?.activeTool ?? 'select';
 
-    const handleMouseDown = (e: MouseEvent<HTMLCanvasElement>) => {
+    const handleMouseDown = useCallback(
+        (e: MouseEvent<HTMLCanvasElement>) => {
             if (e.button !== 0) {
                 return;
             }
@@ -338,10 +333,12 @@ export const useTimelineInteractions = (canvasRef: RefObject<HTMLCanvasElement |
                 setPlayheadFromClick(x);
                 return;
             }
-        };
+        },
+        [getCanvasCoords, getBeatFromX]
+    );
 
-
-    const handleMouseMove = (e: MouseEvent<HTMLCanvasElement>) => {
+    const handleMouseMove = useCallback(
+        (e: MouseEvent<HTMLCanvasElement>) => {
             if (
                 !dragState &&
                 !loopDragRef.current &&
@@ -489,10 +486,12 @@ export const useTimelineInteractions = (canvasRef: RefObject<HTMLCanvasElement |
                     moveClipPreview(dragState.clipId, targetTrack.id, snappedBeat);
                 }
             }
-        };
+        },
+        [dragState, getCanvasCoords, getBeatFromX, canvasRef]
+    );
 
-
-    const handleMouseUp = (e: MouseEvent<HTMLCanvasElement>) => {
+    const handleMouseUp = useCallback(
+        (e: MouseEvent<HTMLCanvasElement>) => {
             if (loopDragRef.current) {
                 loopDragRef.current = null;
                 return;
@@ -647,10 +646,12 @@ export const useTimelineInteractions = (canvasRef: RefObject<HTMLCanvasElement |
                     canvas.style.cursor = '';
                 }
             }
-        };
+        },
+        [dragState, rubberBand, getCanvasCoords, getBeatFromX, canvasRef]
+    );
 
-
-    const handleDoubleClick = (e: MouseEvent<HTMLCanvasElement>) => {
+    const handleDoubleClick = useCallback(
+        (e: MouseEvent<HTMLCanvasElement>) => {
             const { x, y } = getCanvasCoords(e);
             if (y < RULER_HEIGHT) {
                 return;
@@ -664,10 +665,12 @@ export const useTimelineInteractions = (canvasRef: RefObject<HTMLCanvasElement |
                 }
                 setWorkspaceMode('clip');
             }
-        };
+        },
+        [getCanvasCoords]
+    );
 
-
-    const handleContextMenu = (e: MouseEvent<HTMLCanvasElement>) => {
+    const handleContextMenu = useCallback(
+        (e: MouseEvent<HTMLCanvasElement>) => {
             e.preventDefault();
             const { x, y } = getCanvasCoords(e);
             if (y < RULER_HEIGHT) {
@@ -699,17 +702,18 @@ export const useTimelineInteractions = (canvasRef: RefObject<HTMLCanvasElement |
                     beat: Math.floor(getBeatFromX(x)),
                 });
             }
-        };
+        },
+        [getCanvasCoords, getBeatFromX]
+    );
 
+    const handlePointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+        pointersRef.current.set(e.pointerId, e.nativeEvent);
+    }, []);
 
-    const handlePointerDown = (event: PointerEvent<HTMLCanvasElement>) => {
-        pointersRef.current.set(event.pointerId, event.nativeEvent);
-    };
-
-    const handlePointerMove = (event: PointerEvent<HTMLCanvasElement>) => {
+    const handlePointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
         if (pointersRef.current.size === 2) {
-            const prev = pointersRef.current.get(event.pointerId);
-            pointersRef.current.set(event.pointerId, event.nativeEvent);
+            const prev = pointersRef.current.get(e.pointerId);
+            pointersRef.current.set(e.pointerId, e.nativeEvent);
             if (!prev) {
                 return;
             }
@@ -719,7 +723,7 @@ export const useTimelineInteractions = (canvasRef: RefObject<HTMLCanvasElement |
                 return;
             }
 
-            const prevOther = [...pointersRef.current.entries()].find(([id]) => id !== event.pointerId)?.[1];
+            const prevOther = [...pointersRef.current.entries()].find(([id]) => id !== e.pointerId)?.[1];
             if (!prevOther) {
                 return;
             }
@@ -732,15 +736,16 @@ export const useTimelineInteractions = (canvasRef: RefObject<HTMLCanvasElement |
                 zoomTimeline(delta > 0 ? 2 : -2);
             }
         } else {
-            pointersRef.current.set(event.pointerId, event.nativeEvent);
+            pointersRef.current.set(e.pointerId, e.nativeEvent);
         }
-    };
+    }, []);
 
-    const handlePointerUp = (event: PointerEvent<HTMLCanvasElement>) => {
-        pointersRef.current.delete(event.pointerId);
-    };
+    const handlePointerUp = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+        pointersRef.current.delete(e.pointerId);
+    }, []);
 
-    const handleFileDrop = async (e: DragEvent<HTMLDivElement>) => {
+    const handleFileDrop = useCallback(
+        async (e: DragEvent<HTMLDivElement>) => {
             e.preventDefault();
             setIsDragOver(false);
 
@@ -870,10 +875,11 @@ export const useTimelineInteractions = (canvasRef: RefObject<HTMLCanvasElement |
             } finally {
                 setIsImporting(false);
             }
-        };
+        },
+        [getCanvasCoords, getBeatFromX]
+    );
 
-
-    const getCursor = (): string => {
+    const getCursor = useCallback((): string => {
         if (hoverCursor) {
             return hoverCursor;
         }
@@ -890,7 +896,7 @@ export const useTimelineInteractions = (canvasRef: RefObject<HTMLCanvasElement |
             default:
                 return 'default';
         }
-    };
+    }, [hoverCursor]);
 
     return {
         handleMouseDown,

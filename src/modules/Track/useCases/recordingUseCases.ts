@@ -1,8 +1,8 @@
 import { getTrackState, setTrackState, updateTrack, getTrackById } from '../repositories/trackRepository';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
-import { takeLaneStore } from '../stores/takeLaneStore';
+import { takeLaneStore } from '#/modules/Clip/stores/takeLaneStore';
 import { type Clip } from '../models/Track';
-import { addTakeLane, addTake, getTakeLaneForTrack } from './compingUseCases';
+import { addTakeLane, addTake, getTakeLaneForTrack } from '#/modules/Clip/useCases/compingUseCases';
 import { setMidiInputTrack } from '#/modules/AudioEngine/useCases/webMidiInput';
 
 let recordClipId = 1;

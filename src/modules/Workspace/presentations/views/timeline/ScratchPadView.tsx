@@ -9,14 +9,7 @@
  * with oklch colors, border-white/10, and consistent context menus.
  */
 
-import {
-    type ReactElement,
-    type MouseEvent,
-    useSyncExternalStore,
-    useState,
-    useRef,
-    useEffect,
-} from 'react';
+import { type ReactElement, type MouseEvent, useSyncExternalStore, useState, useRef, useEffect } from 'react';
 import { Copy, ArrowUpFromLine, Trash2, ChevronDown, ChevronUp, GripHorizontal } from 'lucide-react';
 import { scratchPadStore, type ScratchPadStoreState } from '#/modules/Timeline/stores/scratchPadStore';
 import {
@@ -42,9 +35,7 @@ const SECTION_COLORS = [
     'oklch(0.40 0.08 80)',
 ];
 
-type ContextMenuState =
-    | { kind: 'none' }
-    | { kind: 'section'; x: number; y: number; section: ScratchPadSection };
+type ContextMenuState = { kind: 'none' } | { kind: 'section'; x: number; y: number; section: ScratchPadSection };
 
 type EditingState = { sectionId: string; name: string } | null;
 
@@ -189,9 +180,10 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                     ) : (
                         <div className="flex gap-1 h-full items-stretch">
                             {sections.map((section, i) => {
-                                const color = section.color && section.color !== 'oklch(0.5 0.1 260)'
-                                    ? section.color
-                                    : SECTION_COLORS[i % SECTION_COLORS.length]!;
+                                const color =
+                                    section.color && section.color !== 'oklch(0.5 0.1 260)'
+                                        ? section.color
+                                        : SECTION_COLORS[i % SECTION_COLORS.length]!;
                                 const isEditing = editing?.sectionId === section.id;
                                 const duration = section.endBeat - section.startBeat;
 
@@ -233,9 +225,7 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                                                 {section.name}
                                             </span>
                                         )}
-                                        <span className="text-[8px] text-white/40 mt-0.5">
-                                            {duration} beats
-                                        </span>
+                                        <span className="text-[8px] text-white/40 mt-0.5">{duration} beats</span>
                                     </div>
                                 );
                             })}

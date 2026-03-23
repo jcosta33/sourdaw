@@ -22,7 +22,7 @@ import {
     addGainEnvelopePoint,
     removeGainEnvelopePoint,
     resetClipGainEnvelope,
-} from '#/modules/Track/useCases/clipGainEnvelope';
+} from '#/modules/Clip/useCases/clipGainEnvelope';
 import {
     trimClipStart,
     trimClipEnd,
@@ -37,10 +37,10 @@ import {
 } from '../../../useCases/workspaceViewActions';
 import { type Clip } from '../../../useCases/workspaceViewActions';
 import { CLIP_COLOR_PRESETS } from './colorPresets';
-import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiRuntime/useCases/generativeAiActions';
-import { audioToMidi } from '#/modules/AiRuntime/useCases/audioToMidi';
+import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration/useCases/generativeAiActions';
+import { audioToMidi } from '#/modules/AudioAnalysis/useCases/audioToMidi';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { generateMidiVariations } from '#/modules/AiRuntime/useCases/generateMidiVariations';
+import { generateMidiVariations } from '#/modules/AiGeneration/useCases/generateMidiVariations';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { notifyAiChange } from '#/modules/AiRuntime/presentations/views/AiChangeToast';
 

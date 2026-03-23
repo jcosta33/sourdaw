@@ -1,7 +1,7 @@
 import { audioEngine } from '../repositories/audioEngineInstance';
 import { getTransportStoreValue } from '#/modules/Transport/useCases/transportQueries';
-import { registerBuiltinPlugins, initWAMEnvironment } from './wamPluginHost';
-import { registerBuiltinFaustDSP } from './faustEngine';
+import { registerBuiltinPlugins, initWAMEnvironment } from '#/modules/Plugin/useCases/wamPluginHost';
+import { registerBuiltinFaustDSP } from '#/modules/Plugin/useCases/faustEngine';
 
 export async function initializeAudioEngine(): Promise<void> {
     await audioEngine.initialize();

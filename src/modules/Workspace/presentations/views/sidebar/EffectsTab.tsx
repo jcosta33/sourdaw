@@ -18,8 +18,8 @@ import {
 import { type BUILTIN_PLUGINS } from '../../../useCases/workspaceViewActions';
 import { addDevice } from '../../../useCases/workspaceViewActions';
 import { PluginBrowser } from '#/modules/AudioEngine/presentations/views/PluginBrowser';
-import { MODULATOR_PRESETS } from '#/modules/AudioEngine/useCases/modulatorLibrary';
-import { MIDI_EFFECT_FACTORIES } from '#/modules/AudioEngine/useCases/midiEffectPlugins';
+import { MODULATOR_PRESETS } from '#/modules/Plugin/useCases/modulatorLibrary';
+import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases/midiEffectPlugins';
 import { type LucideIcon } from 'lucide-react';
 import { type SidebarRoute } from '../Sidebar';
 
@@ -92,10 +92,26 @@ const EFFECT_GROUPS: EffectGroup[] = [
 // ── Modulator source → icon/color ─────────────────────────────────────────────
 
 const MODULATOR_SOURCE_META: Record<string, { icon: LucideIcon; color: string; label: string }> = {
-    lfo: { icon: Waves, color: 'bg-[var(--color-accent-lavender)]/20 text-[var(--color-accent-lavender)]', label: 'LFO' },
-    envelope: { icon: Activity, color: 'bg-[var(--color-accent-peach)]/20 text-[var(--color-accent-peach)]', label: 'Envelope' },
-    random: { icon: Shuffle, color: 'bg-[var(--color-accent-lavender)]/20 text-[var(--color-accent-lavender)]', label: 'Random' },
-    step: { icon: TriangleRight, color: 'bg-[var(--color-accent-mint)]/20 text-[var(--color-accent-mint)]', label: 'Step' },
+    lfo: {
+        icon: Waves,
+        color: 'bg-[var(--color-accent-lavender)]/20 text-[var(--color-accent-lavender)]',
+        label: 'LFO',
+    },
+    envelope: {
+        icon: Activity,
+        color: 'bg-[var(--color-accent-peach)]/20 text-[var(--color-accent-peach)]',
+        label: 'Envelope',
+    },
+    random: {
+        icon: Shuffle,
+        color: 'bg-[var(--color-accent-lavender)]/20 text-[var(--color-accent-lavender)]',
+        label: 'Random',
+    },
+    step: {
+        icon: TriangleRight,
+        color: 'bg-[var(--color-accent-mint)]/20 text-[var(--color-accent-mint)]',
+        label: 'Step',
+    },
     midi: { icon: GitBranch, color: 'bg-[var(--color-accent-cyan)]/20 text-[var(--color-accent-cyan)]', label: 'MIDI' },
 };
 
@@ -208,7 +224,9 @@ const UnimplementedBadge = (): ReactElement => (
     </span>
 );
 
-const SoonBadge = (): ReactElement => <span className="text-[9px] text-[var(--color-accent-peach)]/60 font-normal">soon</span>;
+const SoonBadge = (): ReactElement => (
+    <span className="text-[9px] text-[var(--color-accent-peach)]/60 font-normal">soon</span>
+);
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -414,7 +432,10 @@ export const EffectsTab = ({
         return (
             <div className="flex flex-col gap-[2px] animate-in slide-in-from-right-4 duration-200">
                 <div className="flex items-start gap-2 px-2 py-2 rounded-md bg-[var(--color-accent-peach)]/5 border border-[var(--color-accent-peach)]/20 mb-2">
-                    <Sparkles className="size-3 text-[var(--color-accent-peach)]/80 shrink-0 mt-0.5" aria-hidden="true" />
+                    <Sparkles
+                        className="size-3 text-[var(--color-accent-peach)]/80 shrink-0 mt-0.5"
+                        aria-hidden="true"
+                    />
                     <p className="text-[10px] text-muted-foreground leading-relaxed">
                         Modulation routing exists in the data model but isn't wired to Web Audio yet — clicking a preset
                         has no audio effect.
@@ -445,7 +466,10 @@ export const EffectsTab = ({
         return (
             <div className="flex flex-col gap-0 animate-in slide-in-from-right-4 duration-200">
                 <div className="flex items-start gap-2 px-2 py-2 rounded-md bg-[var(--color-accent-peach)]/5 border border-[var(--color-accent-peach)]/20 mb-2">
-                    <Sparkles className="size-3 text-[var(--color-accent-peach)]/80 shrink-0 mt-0.5" aria-hidden="true" />
+                    <Sparkles
+                        className="size-3 text-[var(--color-accent-peach)]/80 shrink-0 mt-0.5"
+                        aria-hidden="true"
+                    />
                     <p className="text-[10px] text-muted-foreground leading-relaxed">
                         Modulation routing exists in the data model but isn't wired to Web Audio yet — clicking a preset
                         has no audio effect.
@@ -481,7 +505,10 @@ export const EffectsTab = ({
         return (
             <div className="flex flex-col gap-2 animate-in slide-in-from-right-4 duration-200">
                 <div className="flex items-start gap-2 px-2 py-2 rounded-md bg-[var(--color-accent-peach)]/5 border border-[var(--color-accent-peach)]/20">
-                    <Sparkles className="size-3 text-[var(--color-accent-peach)]/80 shrink-0 mt-0.5" aria-hidden="true" />
+                    <Sparkles
+                        className="size-3 text-[var(--color-accent-peach)]/80 shrink-0 mt-0.5"
+                        aria-hidden="true"
+                    />
                     <p className="text-[10px] text-muted-foreground leading-relaxed">
                         MIDI FX logic exists but isn't connected to the MIDI scheduler yet — tracks don't apply these
                         transforms during playback.

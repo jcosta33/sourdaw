@@ -1,6 +1,6 @@
 import { type ReactElement, type MouseEvent, useState, useRef, useSyncExternalStore } from 'react';
 import { cn } from '#/helpers/Styles/cn';
-import { midiStore } from '#/modules/Track/stores/midiStore';
+import { midiStore } from '#/modules/Midi/stores/midiStore';
 import { pushUndoEntry } from '../../../useCases/workspaceViewActions';
 import { addPitchBend, removePitchBend, movePitchBend } from '../../../useCases/workspaceViewActions';
 import { type MidiPitchBend } from '../../../useCases/workspaceViewActions';

@@ -7,7 +7,7 @@
 import { getTempoAtBeat, type TempoChange } from '#/modules/Transport/useCases/transportQueries';
 import { type AutomationLane, type AutomationPoint } from '#/modules/Track/useCases/trackQueries';
 import { type DeviceNodeEntry, type OfflineDeviceNode } from '../useCases/buildDeviceChain';
-import { getDrumKitByIndex, type DrumKit } from '../useCases/drumKitSynth';
+import { getDrumKitByIndex, type DrumKit } from '#/modules/Synth/useCases/drumKitSynth';
 
 export function beatToSeconds(beat: number, defaultTempo: number, changes: TempoChange[]): number {
     if (changes.length === 0) {

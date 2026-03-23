@@ -1,7 +1,7 @@
 import { audioEngine } from '../repositories/audioEngineInstance';
-import { getSynthParamsForTrack, scheduleNote } from './builtinSynth';
+import { getSynthParamsForTrack, scheduleNote } from '#/modules/Synth/useCases/builtinSynth';
 import { getTrackById } from '#/modules/Track/useCases/trackQueries';
-import { getDrumKitDefByIndex, scheduleDrumKitNote } from './drumSynthEngine';
+import { getDrumKitDefByIndex, scheduleDrumKitNote } from '#/modules/Synth/useCases/drumSynthEngine';
 
 /**
  * Starts a live audition note on a track.

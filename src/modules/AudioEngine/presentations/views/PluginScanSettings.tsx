@@ -3,7 +3,7 @@ import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { FolderOpen, Trash2, RefreshCw, Loader2, Plus, AlertCircle, CheckCircle2, Plug, Monitor } from 'lucide-react';
 import { pluginScanStore, defaultPluginScanState } from '../../stores/pluginScanStore';
-import { startPluginScan, addScanPath, removeScanPath } from '../../useCases/pluginScanUseCases';
+import { startPluginScan, addScanPath, removeScanPath } from '#/modules/Plugin/useCases/pluginScanUseCases';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/helpers/platformCapabilities';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 
