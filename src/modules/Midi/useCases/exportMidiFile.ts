@@ -1,5 +1,6 @@
 import { getAllTracks } from '#/modules/Track/repositories/trackRepository';
 import { midiStore } from '../stores/midiStore';
+import { downloadBlob } from '../repositories/downloadFile';
 import { type MidiNote, type MidiCC } from '../models/MidiNote';
 
 const TICKS_PER_BEAT = 480;
@@ -114,11 +115,7 @@ export function exportMidiClip(clipId: string): void {
     const trackChunk = [...writeString('MTrk'), ...write32(trackData.length), ...trackData];
 
     const bytes = new Uint8Array([...headerChunk, ...trackChunk]);
-    const blob = new Blob([bytes], { type: 'audio/midi' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${clipName.replaceAll(/[^a-zA-Z0-9_-]/g, '_')}.mid`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const sanitizedName = clipName.replaceAll(/[^a-zA-Z0-9_-]/g, '_');
+    downloadBlob(bytes, `${sanitizedName}.mid`, 'audio/midi');
 }
+

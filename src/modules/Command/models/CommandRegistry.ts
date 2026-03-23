@@ -782,7 +782,7 @@ export const commandRegistry: CommandEntry[] = [
         description: 'Import a .webdaw project file',
         category: 'Project',
         action: async () => {
-            const { pickFiles } = await import('#/modules/Project/useCases/nativeFileDialog');
+            const { pickFiles } = await import('#/modules/Project/repositories/nativeFileDialog');
             const files = await pickFiles({
                 filters: [{ name: 'WebDAW Project', extensions: ['webdaw'] }],
                 multiple: false,

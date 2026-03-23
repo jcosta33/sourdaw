@@ -1,0 +1,12 @@
+import { punchRecordingStore } from '#/modules/Transport/stores/punchRecordingStore';
+
+export function discardCapture(captureId: string): void {
+    const state = punchRecordingStore.value;
+    if (!state) {
+        return;
+    }
+    punchRecordingStore.set({
+        ...state,
+        captures: state.captures.filter((c) => c.id !== captureId),
+    });
+}

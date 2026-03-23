@@ -1,0 +1,106 @@
+/**
+ * Extension marketplace store — manages installed extensions,
+ * script commands, console log, and editor state.
+ *
+ * Extracted from extensionUseCases.ts.
+ */
+
+import { Container } from '#/helpers/DependencyInjector/Container';
+import { Logger } from '#/helpers/Logger/Logger';
+import { Store } from '#/helpers/Store/Store';
+
+const logger = Container.getInstance().get(Logger);
+
+export type ExtensionManifest = {
+    id: string;
+    name: string;
+    version: string;
+    description: string;
+    author: string;
+    /** Minimum DAW version required */
+    minDawVersion: string;
+    /** Extension entry point (relative to extension root) */
+    main: string;
+    /** Permissions requested */
+    permissions: ExtensionPermission[];
+    /** Category for marketplace listing */
+    category: ExtensionCategory;
+    /** Icon URL */
+    icon?: string;
+    /** Homepage/docs URL */
+    homepage?: string;
+    /** License identifier */
+    license: string;
+};
+
+export type ExtensionPermission =
+    | 'tracks:read'
+    | 'tracks:write'
+    | 'clips:read'
+    | 'clips:write'
+    | 'transport:read'
+    | 'transport:write'
+    | 'midi:read'
+    | 'midi:write'
+    | 'audio:read'
+    | 'audio:write'
+    | 'fs:read'
+    | 'fs:write'
+    | 'network'
+    | 'ui:panel'
+    | 'ui:menu';
+
+export type ExtensionCategory =
+    | 'effects'
+    | 'instruments'
+    | 'utilities'
+    | 'analysis'
+    | 'notation'
+    | 'collaboration'
+    | 'themes'
+    | 'workflow'
+    | 'ai'
+    | 'other';
+
+export type InstalledExtension = {
+    manifest: ExtensionManifest;
+    /** Is the extension currently enabled? */
+    enabled: boolean;
+    /** Installation timestamp */
+    installedAt: string;
+    /** Last update check */
+    lastUpdatedAt: string;
+    /** Extension state (persisted across sessions) */
+    state: Record<string, unknown>;
+};
+
+export type ScriptCommand = {
+    id: string;
+    extensionId: string;
+    label: string;
+    description: string;
+    /** The function to execute */
+    handler: () => void | Promise<void>;
+};
+
+export type ExtensionMarketplaceState = {
+    installed: InstalledExtension[];
+    /** Registered script commands */
+    commands: ScriptCommand[];
+    /** Active scripting console log */
+    consoleLog: Array<{ timestamp: string; level: 'info' | 'warn' | 'error'; message: string }>;
+    /** Is the script editor panel open? */
+    editorOpen: boolean;
+    /** Current script in the editor */
+    editorContent: string;
+};
+
+export const extensionStore = new Store<ExtensionMarketplaceState>(logger, {
+    initialData: {
+        installed: [],
+        commands: [],
+        consoleLog: [],
+        editorOpen: false,
+        editorContent: '// WebDAW Script\n// Access the DAW API via the global `daw` object\n\nconsole.log("Hello from WebDAW scripting!");\n',
+    },
+});

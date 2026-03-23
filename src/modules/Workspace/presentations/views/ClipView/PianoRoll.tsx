@@ -38,7 +38,7 @@ import {
     applyGrooveToClip,
     restoreGrooveOriginals,
 } from '#/modules/Midi/useCases/grooveExtraction';
-import { generateMidiAI, isTauri } from '#/modules/AudioEngine/useCases/nativeAIBridge';
+import { generateMidiAI, isTauri } from '#/modules/AudioEngine/repositories/nativeAIBridge';
 import { playAuditionNote } from '#/modules/AudioEngine/useCases/audition';
 
 type GestureEvent = UIEvent & {

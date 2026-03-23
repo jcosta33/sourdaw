@@ -12,6 +12,7 @@ import { saveTrackAsTemplate } from '../../useCases/trackTemplateUseCases';
 import { setTrackColor, setInputMonitoring } from '../../useCases/setTrackGainPan';
 import { decodeAudioFile } from '../../useCases/trackViewActions';
 import { importMidiFile } from '#/modules/Midi/useCases/importMidiFile';
+import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { type Track, type InputMonitoring } from '../../models/Track';
 
 const TRACK_COLORS = [
@@ -119,14 +120,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                 audioBufferId: bufferId,
             });
         } catch {
-            document.dispatchEvent(
-                new CustomEvent('webdaw:notify', {
-                    detail: {
-                        message: `Failed to import "${file.name}" — unsupported format or corrupt file`,
-                        level: 'error',
-                    },
-                })
-            );
+            notifyUser(`Failed to import "${file.name}" — unsupported format or corrupt file`, 'error');
         }
         close();
     };

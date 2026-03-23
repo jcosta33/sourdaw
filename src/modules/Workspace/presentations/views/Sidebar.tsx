@@ -3,6 +3,7 @@ import { ScrollArea } from '#/components/ui/scroll-area';
 import { Input } from '#/components/ui/input';
 import { Button } from '#/components/ui/button';
 import { Search, Music, FileAudio, Waves, Upload, X, Zap } from 'lucide-react';
+import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { toggleSidebar } from '../../useCases/togglePanel';
 import { getPlatformPlugins } from '../../useCases/workspaceViewActions';
 import { useTracks } from '../hooks/useTracks';
@@ -106,14 +107,7 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                     },
                 ]);
             } catch {
-                document.dispatchEvent(
-                    new CustomEvent('webdaw:notify', {
-                        detail: {
-                            message: `Failed to import "${file.name}" — unsupported format or corrupt file`,
-                            level: 'error',
-                        },
-                    })
-                );
+                notifyUser(`Failed to import "${file.name}" — unsupported format or corrupt file`, 'error');
             }
         }
     };

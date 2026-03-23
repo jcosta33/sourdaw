@@ -105,6 +105,7 @@ export type LocalStorageKey =
 
     // Stores list of recently opened projects
     | 'webdaw-recent-projects'
+    | 'webdaw:recent-projects'
 
     // Stores user-created sound presets
     | 'webdaw-user-presets'

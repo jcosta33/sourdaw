@@ -17,7 +17,7 @@ import {
     toggleCountIn,
     togglePreRoll,
 } from '../../../useCases/workspaceViewActions';
-import { enableLink, disableLink, getLinkStatus } from '#/modules/AudioEngine/useCases/linkBridge';
+import { enableLink, disableLink, getLinkStatus } from '#/modules/AudioEngine/repositories/linkBridge';
 
 type TransportControlsProps = {
     isPlaying: boolean;

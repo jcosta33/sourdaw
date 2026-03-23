@@ -46,6 +46,7 @@ import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { trackStore } from '#/modules/Track/stores/trackStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { buildTimelineRenderModel } from '../../../useCases/buildTimelineRenderModel';
+import { notifyUser } from '#/helpers/Notification/notifyUser';
 
 interface GestureEvent extends UIEvent {
     readonly scale: number;
@@ -862,14 +863,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
 
                         currentBeat += durationBeats;
                     } catch {
-                        document.dispatchEvent(
-                            new CustomEvent('webdaw:notify', {
-                                detail: {
-                                    message: `Failed to import "${file.name}" — unsupported format or corrupt file`,
-                                    level: 'error',
-                                },
-                            })
-                        );
+                        notifyUser(`Failed to import "${file.name}" — unsupported format or corrupt file`, 'error');
                     }
                 }
             } finally {

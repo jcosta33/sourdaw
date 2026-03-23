@@ -1,0 +1,42 @@
+import { getTrackState, setTrackState } from '#/modules/Track/repositories/trackRepository';
+import { type Clip } from '#/modules/Track/models/Track';
+import { shiftClipAutomation } from '#/modules/Automation/useCases/automationUseCases';
+import { shiftClipMidiNotes } from '#/modules/Midi/useCases/midiNoteCrud';
+
+export function moveClip(clipId: string, targetTrackId: string, startBeat: number, originalStartBeat?: number): void {
+    const state = getTrackState();
+    if (!state) {
+        return;
+    }
+
+    let movedClip: Clip | undefined;
+    let oldStartBeat: number | undefined;
+    const tracksWithoutClip = state.tracks.map((t) => {
+        const clip = t.clips.find((c) => c.id === clipId);
+        if (clip) {
+            oldStartBeat = clip.startBeat;
+            movedClip = {
+                ...clip,
+                trackId: targetTrackId,
+                startBeat,
+                endBeat: startBeat + (clip.endBeat - clip.startBeat),
+            };
+        }
+        return { ...t, clips: t.clips.filter((c) => c.id !== clipId) };
+    });
+
+    if (!movedClip || oldStartBeat === undefined) {
+        return;
+    }
+
+    setTrackState({
+        ...state,
+        tracks: tracksWithoutClip.map((t) => (t.id === targetTrackId ? { ...t, clips: [...t.clips, movedClip!] } : t)),
+    });
+
+    const beatDelta = startBeat - (originalStartBeat ?? oldStartBeat);
+    if (beatDelta !== 0) {
+        shiftClipAutomation(clipId, beatDelta);
+        shiftClipMidiNotes(clipId, beatDelta);
+    }
+}

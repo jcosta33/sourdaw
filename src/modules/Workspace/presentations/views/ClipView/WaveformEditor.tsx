@@ -27,8 +27,9 @@ import {
     moveWarpMarker,
 } from '../../../useCases/workspaceViewActions';
 import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration/useCases/generativeAiActions';
+import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { audioToMidi } from '#/modules/AudioAnalysis/useCases/audioToMidi';
-import { isTauri } from '#/modules/AudioEngine/useCases/nativeAIBridge';
+import { isTauri } from '#/modules/AudioEngine/repositories/nativeAIBridge';
 
 const STRETCH_MODES: WarpState['stretchMode'][] = ['complex', 'repitch', 'texture', 'beats'];
 
@@ -93,14 +94,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
             });
             setBufferVersion((v) => v + 1);
         } catch {
-            document.dispatchEvent(
-                new CustomEvent('webdaw:notify', {
-                    detail: {
-                        message: `Failed to import "${file.name}" — unsupported format or corrupt file`,
-                        level: 'error',
-                    },
-                })
-            );
+            notifyUser(`Failed to import "${file.name}" — unsupported format or corrupt file`, 'error');
         }
     };
 

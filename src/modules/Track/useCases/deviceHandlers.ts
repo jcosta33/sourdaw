@@ -1,4 +1,5 @@
 import { type ActionHandler } from '#/modules/Command/models/ActionHandler';
+import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { type AppAction } from '#/modules/Command/models/AppAction';
 import {
     addDevice,
@@ -108,11 +109,7 @@ export const deviceHandlers = {
             const detail = trackLines
                 ? `Max: ${maxMs}ms, Base: ${baseMs}ms — ${trackLines}`
                 : `Max: ${maxMs}ms, Base: ${baseMs}ms — no device latency`;
-            document.dispatchEvent(
-                new CustomEvent('webdaw:notify', {
-                    detail: { message: `Latency Report: ${detail}`, level: 'info' },
-                })
-            );
+            notifyUser(`Latency Report: ${detail}`);
         },
         describe: () => ({ label: 'Get latency report' }),
         undoable: false,

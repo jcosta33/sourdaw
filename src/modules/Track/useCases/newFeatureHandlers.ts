@@ -1,4 +1,5 @@
 import { type ActionHandler } from '#/modules/Command/models/ActionHandler';
+import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { generateDrumFill, generateAllTransitionFills } from '#/modules/Timeline/useCases/fillTransitionGeneration';
 import { compareToReference } from '#/modules/Mixer/useCases/referenceMixComparison';
 import { toggleMono, toggleDim, switchMonitor } from '#/modules/Mixer/useCases/controlRoomUseCases';
@@ -12,11 +13,7 @@ export const newFeatureHandlers: Record<string, ActionHandler<any>> = {
                 a.payload.durationBeats ?? 2,
                 (a.payload.style ?? 'descending') as 'simple' | 'descending' | 'sixteenth' | 'syncopated'
             );
-            document.dispatchEvent(
-                new CustomEvent('webdaw:notify', {
-                    detail: { message: `Generated ${fill.notes.length}-note drum fill`, level: 'success' },
-                })
-            );
+            notifyUser(`Generated ${fill.notes.length}-note drum fill`, 'success');
         },
         undoable: true,
         describe: () => ({ label: 'Generate Fill' }),
@@ -24,15 +21,11 @@ export const newFeatureHandlers: Record<string, ActionHandler<any>> = {
     generateAllTransitions: {
         execute: async () => {
             const fills = generateAllTransitionFills();
-            document.dispatchEvent(
-                new CustomEvent('webdaw:notify', {
-                    detail: {
-                        message: fills.length > 0
-                            ? `Generated ${fills.length} transition fills across arrangement`
-                            : 'No section boundaries found — add sections first',
-                        level: fills.length > 0 ? 'success' : 'warning',
-                    },
-                })
+            notifyUser(
+                fills.length > 0
+                    ? `Generated ${fills.length} transition fills across arrangement`
+                    : 'No section boundaries found — add sections first',
+                fills.length > 0 ? 'success' : 'warning'
             );
         },
         undoable: true,
@@ -41,13 +34,9 @@ export const newFeatureHandlers: Record<string, ActionHandler<any>> = {
     compareToReference: {
         execute: async () => {
             const result = compareToReference();
-            document.dispatchEvent(
-                new CustomEvent('webdaw:notify', {
-                    detail: {
-                        message: `Mix comparison: ${result.overallScore}% match — ${result.suggestions.length} suggestions`,
-                        level: result.overallScore >= 70 ? 'success' : 'warning',
-                    },
-                })
+            notifyUser(
+                `Mix comparison: ${result.overallScore}% match — ${result.suggestions.length} suggestions`,
+                result.overallScore >= 70 ? 'success' : 'warning'
             );
         },
         undoable: false,
@@ -79,20 +68,9 @@ export const newFeatureHandlers: Record<string, ActionHandler<any>> = {
             const lessons = generateMentorLessons();
             if (lessons.length > 0) {
                 const tip = lessons[0]!;
-                document.dispatchEvent(
-                    new CustomEvent('webdaw:notify', {
-                        detail: {
-                            message: `🎓 ${tip.title}: ${tip.observation} — ${tip.advice}`,
-                            level: 'info',
-                        },
-                    })
-                );
+                notifyUser(`🎓 ${tip.title}: ${tip.observation} — ${tip.advice}`);
             } else {
-                document.dispatchEvent(
-                    new CustomEvent('webdaw:notify', {
-                        detail: { message: 'No mentor tips at this time — looking good!', level: 'success' },
-                    })
-                );
+                notifyUser('No mentor tips at this time — looking good!', 'success');
             }
         },
         undoable: false,

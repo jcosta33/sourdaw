@@ -226,7 +226,7 @@ export const aiMidiHandlers = {
     generateAudio: {
         execute: async (a) => {
             const { generateAudio: genAudio, isAudioAiServerRunning } =
-                await import('#/modules/AudioAnalysis/useCases/audioAiEngine');
+                await import('#/modules/AudioAnalysis/repositories/audioAiEngine');
 
             const running = await isAudioAiServerRunning();
             if (!running) {
@@ -284,7 +284,7 @@ export const aiMidiHandlers = {
     stemSeparate: {
         execute: async (a) => {
             const { separateStems: doSeparateStems, isAudioAiServerRunning } =
-                await import('#/modules/AudioAnalysis/useCases/audioAiEngine');
+                await import('#/modules/AudioAnalysis/repositories/audioAiEngine');
 
             const running = await isAudioAiServerRunning();
             if (!running) {

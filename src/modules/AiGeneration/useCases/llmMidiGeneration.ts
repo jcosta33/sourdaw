@@ -10,7 +10,7 @@ import { resolveBackend } from '#/modules/AiRuntime/useCases/llmOrchestration';
 import { generateWebLlmCompletion } from '#/modules/AiRuntime/repositories/webLlmRepository';
 import { generateNativeCompletion } from '#/modules/AiRuntime/repositories/llamaServerEngine';
 import { isLlamaServerRunning } from '#/modules/AiRuntime/repositories/llamaServerEngine';
-import { type GeneratedNote } from '#/modules/AudioEngine/useCases/nativeAIBridge';
+import { type GeneratedNote } from '#/modules/AudioEngine/repositories/nativeAIBridge';
 import { PATTERN_TEMPLATES, filterTemplates } from '#/modules/AiRuntime/models/midiPatternLibrary';
 
 // ── System prompt for music generation ──

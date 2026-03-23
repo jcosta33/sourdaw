@@ -22,7 +22,7 @@ import {
 import { type TemplateCategory } from '../../useCases/projectTemplates';
 import { newProject, saveProject, exportProjectFile, importProjectFile } from '../../useCases/projectPersistence';
 import { TemplateChooser } from './TemplateChooser';
-import { pickFiles } from '../../useCases/nativeFileDialog';
+import { pickFiles } from '../../repositories/nativeFileDialog';
 
 const formatRelativeTime = (timestamp: number): string => {
     const now = Date.now();

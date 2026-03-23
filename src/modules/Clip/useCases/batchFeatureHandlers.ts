@@ -1,4 +1,5 @@
 import { type ActionHandler } from '#/modules/Command/models/ActionHandler';
+import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { searchSamples } from '#/modules/SoundLibrary/useCases/sampleDatabaseUseCases';
 import { runEditorScript, toggleScriptEditor } from '#/modules/Extension/useCases/extensionUseCases';
 import { createCompGroup } from '#/modules/Clip/useCases/groupCompingUseCases';
@@ -40,11 +41,7 @@ export const batchFeatureHandlers: Record<string, ActionHandler<any>> = {
     togglePunchRecording: {
         execute: async () => {
             togglePunchRecording();
-            document.dispatchEvent(
-                new CustomEvent('webdaw:notify', {
-                    detail: { message: 'Punch recording toggled', level: 'info' },
-                })
-            );
+            notifyUser('Punch recording toggled');
         },
         undoable: false,
         describe: () => ({ label: 'Toggle Punch Recording' }),
@@ -80,15 +77,11 @@ export const batchFeatureHandlers: Record<string, ActionHandler<any>> = {
     detectTempo: {
         execute: async () => {
             const result = detectProjectTempo();
-            document.dispatchEvent(
-                new CustomEvent('webdaw:notify', {
-                    detail: {
-                        message: result.confidence > 0.5
-                            ? `Detected tempo: ${result.averageBpm} BPM (${result.minBpm}–${result.maxBpm} range)`
-                            : 'Could not confidently detect tempo — add more content first',
-                        level: result.confidence > 0.5 ? 'success' : 'warning',
-                    },
-                })
+            notifyUser(
+                result.confidence > 0.5
+                    ? `Detected tempo: ${result.averageBpm} BPM (${result.minBpm}–${result.maxBpm} range)`
+                    : 'Could not confidently detect tempo — add more content first',
+                result.confidence > 0.5 ? 'success' : 'warning'
             );
         },
         undoable: true,

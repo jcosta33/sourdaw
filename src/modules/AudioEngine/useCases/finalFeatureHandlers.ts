@@ -1,4 +1,5 @@
 import { type ActionHandler } from '#/modules/Command/models/ActionHandler';
+import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { setProcessingMode, type BitDepthMode } from '#/modules/AudioEngine/useCases/audioPrecisionUseCases';
 import { toggleNodeView } from '#/modules/Plugin/useCases/nodeViewUseCases';
 import { setProtocol, type ControlSurfaceProtocol } from '#/modules/AudioEngine/useCases/controlSurfaceUseCases';
@@ -18,22 +19,14 @@ export const finalFeatureHandlers: Record<string, ActionHandler<any>> = {
     detectTransients: {
         execute: async () => {
             // Transient detection requires audio buffer — stub dispatches notification
-            document.dispatchEvent(
-                new CustomEvent('webdaw:notify', {
-                    detail: { message: 'Transient detection requires an audio buffer — select an audio clip first', level: 'info' },
-                })
-            );
+            notifyUser('Transient detection requires an audio buffer — select an audio clip first');
         },
         undoable: false,
         describe: () => ({ label: 'Detect Transients' }),
     },
     quantizeTransients: {
         execute: async () => {
-            document.dispatchEvent(
-                new CustomEvent('webdaw:notify', {
-                    detail: { message: 'Transients quantized to grid', level: 'success' },
-                })
-            );
+            notifyUser('Transients quantized to grid', 'success');
         },
         undoable: true,
         describe: () => ({ label: 'Quantize to Grid (Elastic Audio)' }),
@@ -48,11 +41,7 @@ export const finalFeatureHandlers: Record<string, ActionHandler<any>> = {
     setControlSurface: {
         execute: async (a: { payload: { protocol: string | null } }) => {
             setProtocol(a.payload.protocol as ControlSurfaceProtocol | null);
-            document.dispatchEvent(
-                new CustomEvent('webdaw:notify', {
-                    detail: { message: `Control surface: ${a.payload.protocol ?? 'disconnected'}`, level: 'info' },
-                })
-            );
+            notifyUser(`Control surface: ${a.payload.protocol ?? 'disconnected'}`);
         },
         undoable: false,
         describe: () => ({ label: 'Set Control Surface Protocol' }),
@@ -67,11 +56,7 @@ export const finalFeatureHandlers: Record<string, ActionHandler<any>> = {
     connectPush: {
         execute: async (a: { payload: { model: string } }) => {
             connectPush(a.payload.model as 'push2' | 'push3');
-            document.dispatchEvent(
-                new CustomEvent('webdaw:notify', {
-                    detail: { message: `Ableton Push ${a.payload.model === 'push2' ? '2' : '3'} connected`, level: 'success' },
-                })
-            );
+            notifyUser(`Ableton Push ${a.payload.model === 'push2' ? '2' : '3'} connected`, 'success');
         },
         undoable: false,
         describe: () => ({ label: 'Connect Ableton Push' }),
@@ -85,11 +70,7 @@ export const finalFeatureHandlers: Record<string, ActionHandler<any>> = {
     },
     exportDawProject: {
         execute: async () => {
-            document.dispatchEvent(
-                new CustomEvent('webdaw:notify', {
-                    detail: { message: 'DAWproject export — use File > Export DAWproject for full export', level: 'info' },
-                })
-            );
+            notifyUser('DAWproject export — use File > Export DAWproject for full export');
         },
         undoable: false,
         describe: () => ({ label: 'Export DAWproject' }),

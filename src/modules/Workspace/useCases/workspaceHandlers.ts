@@ -1,5 +1,6 @@
 import { type ActionHandler } from '#/modules/Command/models/ActionHandler';
 import { type AppAction } from '#/modules/Command/models/AppAction';
+import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { setWorkspaceMode } from '#/modules/Workspace/useCases/setWorkspaceMode';
 import {
     toggleMixer,
@@ -39,7 +40,7 @@ import {
 import { getAutomationStoreState } from '#/modules/Track/useCases/trackQueries';
 import { saveProject, newProject, exportProjectFile } from '#/modules/Project/useCases/projectPersistence';
 import { exportMidiClip } from '#/modules/Midi/useCases/exportMidiFile';
-import { pickFiles } from '#/modules/Project/useCases/nativeFileDialog';
+import { pickFiles } from '#/modules/Project/repositories/nativeFileDialog';
 import { importMidiFile } from '#/modules/Midi/useCases/importMidiFile';
 import { importAudioFile } from '#/modules/Track/useCases/importAudioFile';
 import { type EditingTool } from '#/modules/Workspace/models/EditingTool';
@@ -260,11 +261,7 @@ export const workspaceHandlers = {
                     }
                 })
                 .catch(() => {
-                    document.dispatchEvent(
-                        new CustomEvent('webdaw:notify', {
-                            detail: { message: 'Failed to open file dialog', level: 'error' },
-                        })
-                    );
+                    notifyUser('Failed to open file dialog', 'error');
                 });
         },
         describe: () => ({ label: 'Import MIDI file' }),
@@ -349,11 +346,7 @@ export const workspaceHandlers = {
                     }
                 })
                 .catch(() => {
-                    document.dispatchEvent(
-                        new CustomEvent('webdaw:notify', {
-                            detail: { message: 'Failed to open file dialog', level: 'error' },
-                        })
-                    );
+                    notifyUser('Failed to open file dialog', 'error');
                 });
         },
         describe: () => ({ label: 'Import audio file' }),

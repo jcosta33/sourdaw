@@ -8,6 +8,7 @@ import { timelineViewStore } from '#/modules/Timeline/stores/timelineViewStore';
 import { TrackListView } from '#/modules/Track/presentations/views/TrackListView';
 import { useTracks } from '../hooks/useTracks';
 import { addTrack, addClip, decodeAudioFile, importMidiFile } from '../../useCases/workspaceViewActions';
+import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { markerStore } from '#/modules/Timeline/stores/markerStore';
 import { useWorkspaceState } from '#/modules/Workspace/presentations/hooks/useWorkspaceState';
@@ -161,14 +162,7 @@ const EmptyArrangeOverlay = (): ReactElement => {
                     audioBufferId: bufferId,
                 });
             } catch {
-                document.dispatchEvent(
-                    new CustomEvent('webdaw:notify', {
-                        detail: {
-                            message: `Failed to import "${file.name}" — unsupported format or corrupt file`,
-                            level: 'error',
-                        },
-                    })
-                );
+                notifyUser(`Failed to import "${file.name}" — unsupported format or corrupt file`, 'error');
             }
         }
     };

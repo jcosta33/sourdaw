@@ -503,14 +503,7 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
                     audioBufferId: result.id,
                 });
             } catch {
-                document.dispatchEvent(
-                    new CustomEvent('webdaw:notify', {
-                        detail: {
-                            message: `Failed to import "${file.name}" — unsupported format or corrupt file`,
-                            level: 'error',
-                        },
-                    })
-                );
+                notifyUser(`Failed to import "${file.name}" — unsupported format or corrupt file`, 'error');
             }
         };
         input.click();

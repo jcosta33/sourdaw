@@ -1,0 +1,8 @@
+import { tauriInvoke, isTauri } from '#/helpers/tauriBridge';
+
+export async function unloadPlugin(instanceId: string): Promise<void> {
+    if (!isTauri()) {
+        return;
+    }
+    await tauriInvoke('unload_plugin', { instanceId });
+}

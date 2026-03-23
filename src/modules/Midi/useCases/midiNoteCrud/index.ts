@@ -1,0 +1,9 @@
+export { addMidiNote } from './addMidiNote';
+export { removeMidiNote } from './removeMidiNote';
+export { moveMidiNote } from './moveMidiNote';
+export { resizeMidiNote } from './resizeMidiNote';
+export { setNoteVelocity } from './setNoteVelocity';
+export { setNoteProbability } from './setNoteProbability';
+export { getNotesForClip } from './getNotesForClip';
+export { shiftClipMidiNotes } from './shiftClipMidiNotes';
+export { setNotesForClip } from './setNotesForClip';

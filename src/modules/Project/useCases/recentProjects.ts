@@ -1,5 +1,6 @@
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
+import { LocalStorageStorage } from '#/helpers/Store/Storage/LocalStorageStorage';
 import { trackStore } from '#/modules/Track/stores/trackStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
@@ -10,8 +11,9 @@ import { markerStore } from '#/modules/Timeline/stores/markerStore';
 import { takeLaneStore } from '#/modules/Clip/stores/takeLaneStore';
 import { setSidechainRoutes } from '#/modules/AudioEngine/useCases/sidechainUseCases';
 import { defaultTransportState } from '#/modules/Transport/useCases/transportQueries';
-import { type ProjectData, PROJECT_STORAGE_KEY, RECENT_PROJECTS_KEY } from '../models/ProjectData';
+import { type ProjectData, RECENT_PROJECTS_KEY } from '../models/ProjectData';
 import { projectStore } from '../stores/projectStore';
+import { readNamedProjectJson, writeProjectJson } from '../repositories/projectRepository/storageOperations';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
 import { undoStore } from '#/modules/Command/stores/undoStore';
@@ -21,6 +23,10 @@ const logger = Container.getInstance().get(Logger);
 
 const MAX_RECENT = 10;
 
+const recentProjectsStorage = new LocalStorageStorage<RecentProjectEntry[]>(
+    RECENT_PROJECTS_KEY as 'webdaw:recent-projects'
+);
+
 export type RecentProjectEntry = {
     name: string;
     key: string;
@@ -28,23 +34,14 @@ export type RecentProjectEntry = {
 };
 
 export function getRecentProjects(): RecentProjectEntry[] {
-    try {
-        const raw = localStorage.getItem(RECENT_PROJECTS_KEY);
-        if (!raw) {
-            return [];
-        }
-        return JSON.parse(raw) as RecentProjectEntry[];
-    } catch {
-        return [];
-    }
+    return recentProjectsStorage.get() ?? [];
 }
 
 export function addToRecentProjects(name: string, key: string): void {
     try {
         const entries = getRecentProjects().filter((e) => e.key !== key);
         entries.unshift({ name, key, updatedAt: Date.now() });
-        const trimmed = entries.slice(0, MAX_RECENT);
-        localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(trimmed));
+        recentProjectsStorage.set(entries.slice(0, MAX_RECENT));
     } catch (error) {
         logger.warn(`Failed to update recent projects: ${error}`);
     }
@@ -52,8 +49,7 @@ export function addToRecentProjects(name: string, key: string): void {
 
 export function removeFromRecentProjects(key: string): void {
     try {
-        const entries = getRecentProjects().filter((e) => e.key !== key);
-        localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(entries));
+        recentProjectsStorage.set(getRecentProjects().filter((e) => e.key !== key));
     } catch (error) {
         logger.warn(`Failed to remove from recent projects: ${error}`);
     }
@@ -61,7 +57,7 @@ export function removeFromRecentProjects(key: string): void {
 
 export async function loadRecentProject(key: string): Promise<boolean> {
     try {
-        const raw = localStorage.getItem(key);
+        const raw = readNamedProjectJson(key);
         if (!raw) {
             logger.warn(`No project data found for key: ${key}`);
             return false;
@@ -105,7 +101,7 @@ export async function loadRecentProject(key: string): Promise<boolean> {
             loading: false,
         });
 
-        localStorage.setItem(PROJECT_STORAGE_KEY, raw);
+        writeProjectJson(raw);
 
         await audioBufferCache.restoreFromIdb(getAudioContext());
         if (trackStore.value) {

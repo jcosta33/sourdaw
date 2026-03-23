@@ -3,6 +3,7 @@ import { createTrack } from '../models/Track';
 import { addClip } from '#/modules/Clip/useCases/clipUseCases';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases/decodeAudioFile';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
+import { notifyUser } from '#/helpers/Notification/notifyUser';
 
 export async function importAudioFile(file: File): Promise<void> {
     let bufferId: string;
@@ -13,14 +14,7 @@ export async function importAudioFile(file: File): Promise<void> {
         bufferId = result.id;
         buffer = result.buffer;
     } catch {
-        document.dispatchEvent(
-            new CustomEvent('webdaw:notify', {
-                detail: {
-                    message: `Failed to import "${file.name}" — unsupported format or corrupt file`,
-                    level: 'error',
-                },
-            })
-        );
+        notifyUser(`Failed to import "${file.name}" — unsupported format or corrupt file`, 'error');
         return;
     }
 

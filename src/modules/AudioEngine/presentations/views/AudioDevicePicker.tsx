@@ -2,8 +2,7 @@ import { type ReactElement, useSyncExternalStore, useState, useEffect } from 're
 import { Button } from '#/components/ui/button';
 import { RefreshCw } from 'lucide-react';
 import {
-    subscribe,
-    getSnapshot,
+    audioDeviceStore,
     getAudioDevices,
     setOutputDevice,
     setInputDevice,
@@ -11,7 +10,12 @@ import {
 } from '../../useCases/audioDeviceSelection';
 
 export const AudioDevicePicker = (): ReactElement => {
-    const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+    const state = useSyncExternalStore(
+        (cb) => audioDeviceStore.subscribe(cb),
+        () => audioDeviceStore.value,
+        () => audioDeviceStore.value
+    );
+
     const [devices, setDevices] = useState<AudioDeviceInfo[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -44,7 +48,7 @@ export const AudioDevicePicker = (): ReactElement => {
                 <label className="text-[10px] text-muted-foreground block">Output</label>
                 <div className="flex items-center gap-2">
                     <select
-                        value={state.selectedOutputId ?? ''}
+                        value={state?.selectedOutputId ?? ''}
                         onChange={(e) => handleOutputChange(e.target.value)}
                         className="flex-1 h-8 rounded-md border border-border bg-surface-overlay px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                         aria-label="Audio output device"
@@ -72,7 +76,7 @@ export const AudioDevicePicker = (): ReactElement => {
             <div className="space-y-1.5">
                 <label className="text-[10px] text-muted-foreground block">Input</label>
                 <select
-                    value={state.selectedInputId ?? ''}
+                    value={state?.selectedInputId ?? ''}
                     onChange={(e) => handleInputChange(e.target.value)}
                     className="w-full h-8 rounded-md border border-border bg-surface-overlay px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                     aria-label="Audio input device"

@@ -1,4 +1,5 @@
 import { type ReactElement, useState } from 'react';
+import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
 import { Button } from '#/components/ui/button';
@@ -142,11 +143,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             }
             setProgress(100);
             setStatusText('Complete!');
-            document.dispatchEvent(
-                new CustomEvent('webdaw:notify', {
-                    detail: { message: 'Audio exported successfully', level: 'info' },
-                })
-            );
+            notifyUser('Audio exported successfully');
         } catch (error) {
             logger.error(new Error('Export failed', { cause: error }));
             setStatusText('Export failed');

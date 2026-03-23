@@ -288,7 +288,7 @@ export {
     executeToolCalling,
     generateMidiAI,
     denoiseAudio,
-} from '#/modules/AudioEngine/useCases/nativeAIBridge';
+} from '#/modules/AudioEngine/repositories/nativeAIBridge';
 
 // ── AudioEngine: MIDI device management ──────────────────────────
 export {
