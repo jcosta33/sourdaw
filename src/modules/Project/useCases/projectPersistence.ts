@@ -11,7 +11,7 @@ import { syncCurrentArrangementToStore } from './arrangementUseCases';
 import { defaultTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { type ProjectData } from '../models/ProjectData';
 import { projectStore } from '../stores/projectStore';
-import { demo1_TheCompleteMix } from './demoProjects';
+
 import { addToRecentProjects } from './recentProjects';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
@@ -156,15 +156,13 @@ export async function loadProject(): Promise<boolean> {
 
         const raw = readProjectJson();
         if (!raw) {
-            await demo1_TheCompleteMix();
-            projectStore.set({ ...projectStore.value!, loading: false });
+            newProject();
             return true;
         }
 
         const data = JSON.parse(raw) as ProjectData;
         if (data.version !== 1) {
-            await demo1_TheCompleteMix();
-            projectStore.set({ ...projectStore.value!, loading: false });
+            newProject();
             return true;
         }
 
@@ -234,8 +232,7 @@ export async function loadProject(): Promise<boolean> {
 
         return true;
     } catch {
-        await demo1_TheCompleteMix();
-        projectStore.set({ ...projectStore.value!, loading: false });
+        newProject();
         clearUndoHistory();
         return true;
     }

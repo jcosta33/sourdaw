@@ -96,7 +96,7 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     const ch = (beat: number) => CHORDS[Math.floor(beat / 16) % 4]!;
     const hv = (base: number, r = 8) => Math.max(10, Math.min(127, Math.round(base + (Math.random() - 0.5) * r * 2)));
 
-    // ── TRACKS: 28 tracks in 6 folders ────────────────────────────────────
+    // ── TRACKS: 36 tracks in 7 folders ────────────────────────────────────
     const masterTrack = createTrack({ name: 'Master', kind: 'master' });
 
     // 🥁 Drums folder
@@ -133,6 +133,18 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     const arpTrack = createTrack({ name: 'Arp Pluck', kind: 'midi', parentId: leadsFolder.id });
 
     // 🔊 FX folder
+    // 🌟 Flourishes folder
+    const flourishFolder = createTrack({ name: '🌟 Flourishes', kind: 'folder' });
+    const fluteTrack = createTrack({ name: 'Flute Counter', kind: 'midi', parentId: flourishFolder.id });
+    const bellAccentTrack = createTrack({ name: 'Bell Accents', kind: 'midi', parentId: flourishFolder.id });
+    const crystalTexTrack = createTrack({ name: 'Crystal Texture', kind: 'midi', parentId: flourishFolder.id });
+    const tremPulseTrack = createTrack({ name: 'Tremolo Pulse', kind: 'midi', parentId: flourishFolder.id });
+    const widePadTrack = createTrack({ name: 'Wide Chorus Pad', kind: 'midi', parentId: flourishFolder.id });
+    const drumFillTrack = createTrack({ name: 'Drum Fills', kind: 'midi', parentId: flourishFolder.id });
+    const impactFxTrack = createTrack({ name: 'Impact FX', kind: 'midi', parentId: flourishFolder.id });
+    const texChirpTrack = createTrack({ name: 'Texture Chirps', kind: 'midi', parentId: flourishFolder.id });
+
+    // 🔊 FX folder
     const fxFolder = createTrack({ name: '🔊 FX & Mix', kind: 'folder' });
     const riserTrack = createTrack({ name: 'Riser', kind: 'midi', parentId: fxFolder.id });
     const noiseSweepTrack = createTrack({ name: 'Noise Sweep', kind: 'midi', parentId: fxFolder.id });
@@ -161,6 +173,85 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     applyPreset(arpTrack, 'factory-synth-arp');
     applyPreset(riserTrack, 'factory-fx-riser');
     applyPreset(noiseSweepTrack, 'factory-fx-noise-sweep');
+    applyPreset(fluteTrack, 'factory-synth-flute');
+    applyPreset(bellAccentTrack, 'factory-keys-bell');
+    applyPreset(crystalTexTrack, 'synth-arp-crystal');
+    applyPreset(tremPulseTrack, 'factory-synth-arp');
+    applyPreset(widePadTrack, 'factory-pad-warm');
+    // Drum Fills: same 808 kit for fills
+    drumFillTrack.devices = [{
+        id: `dev-${crypto.randomUUID()}`, name: '808 Kit', type: 'builtin-drum-kit',
+        bypassed: false, parameterValues: { kit: 0 },
+    }];
+    // Impact FX: sub bass preset for sub drops
+    applyPreset(impactFxTrack, 'factory-bass-sub');
+    // Texture Chirps: pluck preset
+    applyPreset(texChirpTrack, 'factory-keys-pluck');
+    // ── EFFECTS on tracks (web-compatible only) ──────────────────────────
+    const addDev = (t: any, type: string, name: string, params: Record<string, number>) => {
+        t.devices = [...(t.devices || []), {
+            id: `dev-${crypto.randomUUID()}`, name, type, bypassed: false,
+            parameterValues: params,
+        }];
+    };
+    // Lead Classic: override waveform to sine for smooth sound + delay + chorus + reverb
+    const lcSynth = leadClassicTrack.devices?.find((d: any) => d.type === 'builtin-synth');
+    if (lcSynth) lcSynth.parameterValues = { ...lcSynth.parameterValues, waveform: 0 };
+    addDev(leadClassicTrack, 'builtin-delay', 'Dotted Delay', { 'delay-time': 375, 'delay-feedback': 0.3, 'delay-mix': 0.2 });
+    addDev(leadClassicTrack, 'builtin-chorus', 'Lead Chorus', { 'chorus-rate': 0.6, 'chorus-depth': 5, 'chorus-feedback': 0.15, 'chorus-mix': 0.25 });
+    addDev(leadClassicTrack, 'builtin-reverb', 'Lead Space', { 'rev-size': 0.5, 'rev-decay': 2, 'rev-damping': 0.4, 'rev-mix': 0.2 });
+    // Lead Soft: phaser + reverb for dreamy quality
+    addDev(leadSoftTrack, 'builtin-phaser', 'Dream Phase', { 'phaser-rate': 0.2, 'phaser-depth': 0.7, 'phaser-feedback': 0.5, 'phaser-stages': 6 });
+    addDev(leadSoftTrack, 'builtin-reverb', 'Soft Hall', { 'rev-size': 0.7, 'rev-decay': 3, 'rev-damping': 0.3, 'rev-mix': 0.3 });
+    // Brass: reverb for grandeur
+    addDev(brassTrack, 'builtin-reverb', 'Brass Hall', { 'rev-size': 0.65, 'rev-decay': 2.5, 'rev-damping': 0.3, 'rev-mix': 0.25 });
+    // Rhodes: chorus + delay for warmth
+    addDev(rhodesTrack, 'builtin-chorus', 'Rhodes Chorus', { 'chorus-rate': 0.4, 'chorus-depth': 4, 'chorus-feedback': 0.1, 'chorus-mix': 0.3 });
+    addDev(rhodesTrack, 'builtin-delay', 'Rhodes Echo', { 'delay-time': 250, 'delay-feedback': 0.2, 'delay-mix': 0.15 });
+    // Piano: subtle reverb
+    addDev(pianoTrack, 'builtin-reverb', 'Piano Room', { 'rev-size': 0.35, 'rev-decay': 1.5, 'rev-damping': 0.5, 'rev-mix': 0.2 });
+    // Arp: phaser + delay for movement
+    addDev(arpTrack, 'builtin-phaser', 'Arp Phase', { 'phaser-rate': 0.3, 'phaser-depth': 0.5, 'phaser-feedback': 0.35, 'phaser-stages': 4 });
+    addDev(arpTrack, 'builtin-delay', 'Arp Delay', { 'delay-time': 188, 'delay-feedback': 0.4, 'delay-mix': 0.25 });
+    // Shimmer Pad: chorus for extra shimmer
+    addDev(shimmerPadTrack, 'builtin-chorus', 'Shimmer Chorus', { 'chorus-rate': 0.15, 'chorus-depth': 10, 'chorus-feedback': 0.2, 'chorus-mix': 0.35 });
+    // Warm Pad: slow flanger for evolving texture
+    addDev(warmPadTrack, 'builtin-flanger', 'Pad Flange', { 'flanger-rate': 0.08, 'flanger-depth': 4, 'flanger-feedback': 0.3, 'flanger-mix': 0.2 });
+    // Dark Pad: phaser for sinister movement
+    addDev(darkPadTrack, 'builtin-phaser', 'Dark Phase', { 'phaser-rate': 0.1, 'phaser-depth': 0.8, 'phaser-feedback': 0.6, 'phaser-stages': 6 });
+    // Strings Soft: reverb for lushness
+    addDev(stringsSoftTrack, 'builtin-reverb', 'Strings Hall', { 'rev-size': 0.8, 'rev-decay': 3.5, 'rev-damping': 0.25, 'rev-mix': 0.3 });
+    // Strings Bright: reverb + chorus
+    addDev(stringsBrightTrack, 'builtin-reverb', 'Bright Hall', { 'rev-size': 0.7, 'rev-decay': 2.5, 'rev-damping': 0.2, 'rev-mix': 0.25 });
+    addDev(stringsBrightTrack, 'builtin-chorus', 'Bright Chorus', { 'chorus-rate': 0.3, 'chorus-depth': 6, 'chorus-mix': 0.2 });
+    // Pulse Bass: chorus for width + delay for rhythmic echo
+    addDev(pulseBassTrack, 'builtin-chorus', 'Pulse Width', { 'chorus-rate': 0.5, 'chorus-depth': 3, 'chorus-feedback': 0.1, 'chorus-mix': 0.15 });
+    addDev(pulseBassTrack, 'builtin-delay', 'Pulse Echo', { 'delay-time': 188, 'delay-feedback': 0.25, 'delay-mix': 0.15 });
+    // 808 Bass: distortion for bite
+    addDev(bassSynthTrack, 'builtin-distortion', 'Acid Bite', { 'dist-drive': 3, 'dist-tone': 3500, 'dist-mix': 0.15 });
+    // Organ: tremolo for vintage Leslie feel
+    addDev(organTrack, 'builtin-tremolo', 'Leslie Trem', { 'trem-rate': 5.5, 'trem-depth': 0.3, 'trem-shape': 0 });
+    // Flute: delay + reverb
+    addDev(fluteTrack, 'builtin-delay', 'Flute Echo', { 'delay-time': 330, 'delay-feedback': 0.3, 'delay-mix': 0.2 });
+    addDev(fluteTrack, 'builtin-reverb', 'Flute Space', { 'rev-size': 0.6, 'rev-decay': 2.5, 'rev-damping': 0.35, 'rev-mix': 0.25 });
+    // Bell Accents: long reverb tail
+    addDev(bellAccentTrack, 'builtin-reverb', 'Bell Wash', { 'rev-size': 0.85, 'rev-decay': 5, 'rev-damping': 0.15, 'rev-mix': 0.45 });
+    // Crystal Texture: delay + reverb
+    addDev(crystalTexTrack, 'builtin-delay', 'Crystal Delay', { 'delay-time': 200, 'delay-feedback': 0.45, 'delay-mix': 0.3 });
+    addDev(crystalTexTrack, 'builtin-reverb', 'Crystal Wash', { 'rev-size': 0.9, 'rev-decay': 4, 'rev-damping': 0.2, 'rev-mix': 0.35 });
+    // Tremolo Pulse: tremolo + phaser
+    addDev(tremPulseTrack, 'builtin-tremolo', 'Pulse Trem', { 'trem-rate': 3, 'trem-depth': 0.6, 'trem-shape': 0 });
+    addDev(tremPulseTrack, 'builtin-phaser', 'Pulse Phase', { 'phaser-rate': 0.2, 'phaser-depth': 0.6, 'phaser-feedback': 0.4, 'phaser-stages': 4 });
+    // Wide Chorus Pad: deep chorus + reverb
+    addDev(widePadTrack, 'builtin-chorus', 'Wide Chorus', { 'chorus-rate': 0.2, 'chorus-depth': 12, 'chorus-feedback': 0.25, 'chorus-mix': 0.5 });
+    addDev(widePadTrack, 'builtin-reverb', 'Pad Wash', { 'rev-size': 0.9, 'rev-decay': 6, 'rev-damping': 0.15, 'rev-mix': 0.4 });
+    // Drum Fills: reverb on fills for space
+    addDev(drumFillTrack, 'builtin-reverb', 'Fill Verb', { 'rev-size': 0.4, 'rev-decay': 1.2, 'rev-damping': 0.5, 'rev-mix': 0.2 });
+    // Impact FX: reverb for impact tail
+    addDev(impactFxTrack, 'builtin-reverb', 'Impact Tail', { 'rev-size': 0.9, 'rev-decay': 4, 'rev-damping': 0.1, 'rev-mix': 0.4 });
+    // Texture Chirps: delay + autopan for scattered texture
+    addDev(texChirpTrack, 'builtin-delay', 'Chirp Delay', { 'delay-time': 166, 'delay-feedback': 0.5, 'delay-mix': 0.35 });
+    addDev(texChirpTrack, 'builtin-autopan', 'Chirp Pan', { 'autopan-rate': 2, 'autopan-depth': 0.8 });
 
     // ── GAIN / PAN — stereo field ─────────────────────────────────────────
     drumKitTrack.gain = 0.88; drumKitTrack.pan = 0;
@@ -183,6 +274,14 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     arpTrack.gain = 0.55; arpTrack.pan = 32;
     riserTrack.gain = 0.50; riserTrack.pan = 0;
     noiseSweepTrack.gain = 0.40; noiseSweepTrack.pan = 0;
+    fluteTrack.gain = 0.50; fluteTrack.pan = -28;
+    bellAccentTrack.gain = 0.35; bellAccentTrack.pan = 22;
+    crystalTexTrack.gain = 0.30; crystalTexTrack.pan = -35;
+    tremPulseTrack.gain = 0.42; tremPulseTrack.pan = 30;
+    widePadTrack.gain = 0.38; widePadTrack.pan = 0;
+    drumFillTrack.gain = 0.65; drumFillTrack.pan = 0;
+    impactFxTrack.gain = 0.55; impactFxTrack.pan = 0;
+    texChirpTrack.gain = 0.25; texChirpTrack.pan = -40;
 
     // ── AUDIO DRUM BUFFERS ────────────────────────────────────────────────
     const cx = Date.now();
@@ -271,6 +370,24 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     const noiseClip1 = createMidiClip(noiseSweepTrack.id, 'Sweep Build', 192, 224, noiseSweepTrack.color);
     const noiseClip2 = createMidiClip(noiseSweepTrack.id, 'Sweep Final', 352, 384, noiseSweepTrack.color);
     noiseSweepTrack.clips = [noiseClip1, noiseClip2];
+
+    // Flourish clips
+    const fluteClip = createMidiClip(fluteTrack.id, 'Flute Counter', 128, 512, fluteTrack.color);
+    fluteTrack.clips = [fluteClip];
+    const bellAccClip = createMidiClip(bellAccentTrack.id, 'Bell Accents', 64, TB, bellAccentTrack.color);
+    bellAccentTrack.clips = [bellAccClip];
+    const crystalClip = createMidiClip(crystalTexTrack.id, 'Crystal Seq', 192, 512, crystalTexTrack.color);
+    crystalTexTrack.clips = [crystalClip];
+    const tremPulseClip = createMidiClip(tremPulseTrack.id, 'Trem Pulse', 128, 384, tremPulseTrack.color);
+    tremPulseTrack.clips = [tremPulseClip];
+    const widePadClip = createMidiClip(widePadTrack.id, 'Wide Pad', 64, TB, widePadTrack.color);
+    widePadTrack.clips = [widePadClip];
+    const drumFillClip = createMidiClip(drumFillTrack.id, 'Drum Fills', 64, 576, drumFillTrack.color);
+    drumFillTrack.clips = [drumFillClip];
+    const impactClip = createMidiClip(impactFxTrack.id, 'Impacts', 64, 512, impactFxTrack.color);
+    impactFxTrack.clips = [impactClip];
+    const chirpClip = createMidiClip(texChirpTrack.id, 'Chirps', 128, 512, texChirpTrack.color);
+    texChirpTrack.clips = [chirpClip];
 
     // ── MIDI NOTE GENERATION ──────────────────────────────────────────────
     // 808 DRUM KIT NOTES — using GM drum map (kick=36, snare=38, clap=39, etc.)
@@ -543,6 +660,111 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     for (let b = 196; b < 224; b += 2) noiseN.push(note(60, b, 1.8, hv(30 + (b - 196) * 2, 5)));
     for (let b = 356; b < 384; b += 2) noiseN.push(note(60, b, 1.8, hv(30 + (b - 356) * 2, 5)));
 
+    // FLUTE COUNTER — lyrical Dm phrases that answer the lead
+    const fluteN: MidiNote[] = [];
+    const fluteA: [number, number, number, number][] = [
+        [0, 74, 1.5, 62], [2, 72, 1, 58], [3, 69, 0.75, 60],
+        [4, 67, 2, 55], [6, 69, 1, 52], [7, 72, 1, 58],
+    ];
+    const fluteB: [number, number, number, number][] = [
+        [0, 77, 2, 60], [2.5, 74, 0.5, 55], [3, 72, 1.5, 58],
+        [5, 69, 1, 55], [6.5, 67, 1.5, 50],
+    ];
+    for (let ph = 0; ph < (512 - 128) / 8; ph++) {
+        const start = 128 + ph * 8;
+        if (start >= 320 && start < 384) continue;
+        const mel = ph % 2 === 0 ? fluteA : fluteB;
+        for (const [off, pitch, dur, vel] of mel) fluteN.push(note(pitch, start + off, dur, hv(vel)));
+    }
+
+    // BELL ACCENTS — sparse high bell tones on chord changes
+    const bellAccN: MidiNote[] = [];
+    for (let b = 64; b < TB; b += 16) {
+        if (b >= 320 && b < 384) continue;
+        const c = ch(b);
+        const inOutro = b >= 512;
+        bellAccN.push(note(c.ninth + 36, b + 2, 3, hv(inOutro ? 30 : 42)));
+        if (b % 32 === 0 && b >= 128) bellAccN.push(note(c.root + 48, b + 8, 4, hv(35)));
+    }
+
+    // CRYSTAL TEXTURE — delicate 16th arps in intense sections
+    const crystalN: MidiNote[] = [];
+    const crystalPool = [[62, 65, 69, 72], [67, 70, 74, 77], [69, 72, 76, 79], [70, 74, 77, 81]];
+    let cStep = 0;
+    for (let b = 192; b < 512; b += 0.5) {
+        if (b >= 320 && b < 384) continue;
+        const ci = Math.floor(b / 16) % 4;
+        const pool = crystalPool[ci]!;
+        const pitch = pool[cStep % pool.length]! + 12;
+        const vel = b >= 224 && b < 320 ? 48 : b >= 384 ? 42 : 35;
+        crystalN.push(note(pitch, b, 0.4, hv(vel)));
+        cStep++;
+    }
+
+    // TREMOLO PULSE — rhythmic chord pulses with tremolo effect
+    const tremN: MidiNote[] = [];
+    for (let b = 128; b < 384; b += 4) {
+        if (b >= 320 && b < 384) continue;
+        const c = ch(b);
+        const vel = b >= 224 ? 60 : 48;
+        tremN.push(note(c.fifth + 24, b, 0.3, hv(vel)));
+        tremN.push(note(c.fifth + 24, b + 1.5, 0.3, hv(vel - 8)));
+        tremN.push(note(c.root + 24, b + 2.5, 0.3, hv(vel - 5)));
+    }
+
+    // WIDE CHORUS PAD — slow evolving 5ths with deep chorus
+    const wideN: MidiNote[] = [];
+    for (let b = 64; b < TB; b += 32) {
+        const c = ch(b);
+        const inBD = b >= 320 && b < 384;
+        const vel = inBD ? 28 : b >= 512 ? 35 : 48;
+        wideN.push(note(c.root + 12, b, 31, hv(vel)));
+        wideN.push(note(c.fifth + 12, b, 31, hv(vel - 5)));
+        if (!inBD) wideN.push(note(c.ninth + 12, b, 31, hv(vel - 10)));
+    }
+
+    // DRUM FILLS — tom and snare flourishes at section boundaries
+    const drumFillN: MidiNote[] = [];
+    const fillBeats = [112, 192, 288, 368, 448, 544]; // last 16 beats before transitions
+    for (const fb of fillBeats) {
+        const fillStart = fb;
+        // 4-beat fill pattern
+        const tomPitches = [43, 47, 50, 43]; // low-mid-high-low toms
+        for (let i = 0; i < 16; i++) {
+            const b = fillStart + i * 0.25;
+            if (b >= 576) break;
+            if (b >= 320 && b < 384) continue;
+            const vel = Math.min(127, Math.round(60 + i * 4));
+            const tom = tomPitches[i % 4]!;
+            if (i < 8) {
+                if (i % 2 === 0) drumFillN.push(note(tom, b, 0.2, hv(vel)));
+            } else {
+                drumFillN.push(note(tom, b, 0.15, hv(vel)));
+                if (i % 4 === 3) drumFillN.push(note(38, b, 0.1, hv(vel - 10))); // snare flam
+            }
+        }
+    }
+
+    // IMPACT FX — sub bass drops at section changes
+    const impactN: MidiNote[] = [];
+    const impactBeats = [64, 128, 224, 384, 512];
+    for (const ib of impactBeats) {
+        const c = ch(ib);
+        impactN.push(note(c.sub, ib, 4, 100)); // deep sub hit
+        impactN.push(note(c.sub + 12, ib + 0.05, 2, 70)); // harmonic layer
+    }
+
+    // TEXTURE CHIRPS — random high-pitched pluck sounds
+    const chirpN: MidiNote[] = [];
+    const chirpPitches = [86, 88, 89, 91, 93, 95, 98]; // D minor, octave 6-7
+    for (let b = 128; b < 512; b += 2) {
+        if (b >= 320 && b < 384) continue;
+        if (Math.random() < 0.15) {
+            const pitch = chirpPitches[Math.floor(Math.random() * chirpPitches.length)]!;
+            chirpN.push(note(pitch, b + Math.random() * 0.5, 0.05, hv(30, 5)));
+        }
+    }
+
     // ── TRACK ASSEMBLY ────────────────────────────────────────────────────
     const tracks = [
         masterTrack,
@@ -551,6 +773,8 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         keysFolder, pianoTrack, rhodesTrack, organTrack,
         strPadFolder, warmPadTrack, shimmerPadTrack, darkPadTrack, stringsSoftTrack, stringsBrightTrack,
         leadsFolder, leadClassicTrack, leadSoftTrack, brassTrack, arpTrack,
+        flourishFolder, fluteTrack, bellAccentTrack, crystalTexTrack, tremPulseTrack, widePadTrack,
+        drumFillTrack, impactFxTrack, texChirpTrack,
         fxFolder, riserTrack, noiseSweepTrack, reverbBusTrack,
     ];
     trackStore.set({ tracks, selectedTrackId: warmPadTrack.id });
@@ -583,6 +807,14 @@ export async function demo1_TheCompleteMix(): Promise<void> {
             [riserClip2.id]: riserN.filter(n => n.startBeat >= 352).map(n => ({ ...n, startBeat: n.startBeat - 352 })),
             [noiseClip1.id]: noiseN.filter(n => n.startBeat < 224).map(n => ({ ...n, startBeat: n.startBeat - 192 })),
             [noiseClip2.id]: noiseN.filter(n => n.startBeat >= 352).map(n => ({ ...n, startBeat: n.startBeat - 352 })),
+            [fluteClip.id]: fluteN.map(n => ({ ...n, startBeat: n.startBeat - 128 })),
+            [bellAccClip.id]: bellAccN.map(n => ({ ...n, startBeat: n.startBeat - 64 })),
+            [crystalClip.id]: crystalN.map(n => ({ ...n, startBeat: n.startBeat - 192 })),
+            [tremPulseClip.id]: tremN.map(n => ({ ...n, startBeat: n.startBeat - 128 })),
+            [widePadClip.id]: wideN.map(n => ({ ...n, startBeat: n.startBeat - 64 })),
+            [drumFillClip.id]: drumFillN.map(n => ({ ...n, startBeat: n.startBeat - 64 })),
+            [impactClip.id]: impactN.map(n => ({ ...n, startBeat: n.startBeat - 64 })),
+            [chirpClip.id]: chirpN.map(n => ({ ...n, startBeat: n.startBeat - 128 })),
         },
         ccByClipId: {},
         pitchBendByClipId: {},
@@ -744,11 +976,70 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         { beat: 320, value: 0, curve: 'linear', tension: 0 },
     ];
 
+    // Flute volume: swell in catharsis, gentle throughout
+    const fluteVol = mkLane(fluteTrack.id, 'volume', 'Volume', 0, 1);
+    fluteVol.points = [
+        { beat: 128, value: 0.0, curve: 'linear', tension: 0 },
+        { beat: 160, value: 0.4, curve: 'linear', tension: 0 },
+        { beat: 224, value: 0.7, curve: 'linear', tension: 0 },
+        { beat: 312, value: 0.75, curve: 'linear', tension: 0 },
+        { beat: 320, value: 0.0, curve: 'linear', tension: 0 },
+        { beat: 384, value: 0.5, curve: 'linear', tension: 0 },
+        { beat: 512, value: 0.0, curve: 'linear', tension: 0 },
+    ];
+
+    // Crystal texture volume: crescendo into catharsis
+    const crystalVol = mkLane(crystalTexTrack.id, 'volume', 'Volume', 0, 1);
+    crystalVol.points = [
+        { beat: 192, value: 0.0, curve: 'linear', tension: 0 },
+        { beat: 220, value: 0.5, curve: 'linear', tension: 0 },
+        { beat: 224, value: 0.7, curve: 'linear', tension: 0 },
+        { beat: 312, value: 0.8, curve: 'linear', tension: 0 },
+        { beat: 320, value: 0.0, curve: 'linear', tension: 0 },
+        { beat: 400, value: 0.5, curve: 'linear', tension: 0 },
+        { beat: 512, value: 0.0, curve: 'linear', tension: 0 },
+    ];
+
+    // Wide pad volume: slow build, stays through outro
+    const wideVol = mkLane(widePadTrack.id, 'volume', 'Volume', 0, 1);
+    wideVol.points = [
+        { beat: 64, value: 0.0, curve: 'linear', tension: 0 },
+        { beat: 128, value: 0.3, curve: 'linear', tension: 0 },
+        { beat: 224, value: 0.6, curve: 'linear', tension: 0 },
+        { beat: 320, value: 0.35, curve: 'linear', tension: 0 },
+        { beat: 384, value: 0.5, curve: 'linear', tension: 0 },
+        { beat: 512, value: 0.45, curve: 'linear', tension: 0 },
+        { beat: TB, value: 0.1, curve: 'linear', tension: 0 },
+    ];
+
+    // Tremolo Pulse: enters and exits with groove
+    const tremVol = mkLane(tremPulseTrack.id, 'volume', 'Volume', 0, 1);
+    tremVol.points = [
+        { beat: 128, value: 0.0, curve: 'linear', tension: 0 },
+        { beat: 160, value: 0.5, curve: 'linear', tension: 0 },
+        { beat: 224, value: 0.7, curve: 'linear', tension: 0 },
+        { beat: 310, value: 0.65, curve: 'linear', tension: 0 },
+        { beat: 320, value: 0.0, curve: 'linear', tension: 0 },
+    ];
+
+    // Bell accents: subtle throughout
+    const bellAccVol = mkLane(bellAccentTrack.id, 'volume', 'Volume', 0, 1);
+    bellAccVol.points = [
+        { beat: 64, value: 0.0, curve: 'linear', tension: 0 },
+        { beat: 96, value: 0.3, curve: 'linear', tension: 0 },
+        { beat: 224, value: 0.5, curve: 'linear', tension: 0 },
+        { beat: 320, value: 0.2, curve: 'linear', tension: 0 },
+        { beat: 384, value: 0.4, curve: 'linear', tension: 0 },
+        { beat: 512, value: 0.35, curve: 'linear', tension: 0 },
+        { beat: TB, value: 0.1, curve: 'linear', tension: 0 },
+    ];
+
     automationStore.set({
         lanes: [
             subVol, warmVol, drumVol, strSoftVol, arpVol, leadVol,
             pianoVol, brassVol, darkVol, rhodesVol, shimmerVol,
             hatPan, pulseFilter, leadSoftVol, strBrightVol,
+            fluteVol, crystalVol, wideVol, tremVol, bellAccVol,
         ],
     });
 
@@ -790,336 +1081,1510 @@ export async function demo1_TheCompleteMix(): Promise<void> {
 // Demo Project 2: Electronic Beat
 // ---------------------------------------------------------------------------
 
-export async function demo2_ElectronicBeat(): Promise<void> {
-    const bpm = 110;
-    const totalBeats = 128;
+// ---------------------------------------------------------------------------
+// Demo Project 2: Psytrance — "Psyloops"
+// Key: A minor | BPM: 142 | ~5:04 (720 beats)
+// Structure: Intro(0-64) → Build(64-128) → Drop A(128-256) →
+//            Breakdown(256-320) → Drop B(320-448) → Chaos(448-512) →
+//            Breakdown 2(512-576) → Final Drop+Outro(576-720)
+// ---------------------------------------------------------------------------
 
-    // Group Tracks
+export async function demo2_ElectronicBeat(): Promise<void> {
+    const bpm = 142;
+    const TB = 720;
+
+    // A minor chord cycle (16 beats each): Am → F → C → G
+    const BASS_ROOTS = [33, 29, 36, 31]; // A1 F1 C2 G1
+    const CHORD_TONES: number[][] = [
+        [57, 60, 64, 67], // Am7: A3 C4 E4 G4
+        [53, 57, 60, 64], // Fmaj7: F3 A3 C4 E4
+        [60, 64, 67, 71], // Cmaj7: C4 E4 G4 B4
+        [55, 59, 62, 66], // G7: G3 B3 D4 F#4
+    ];
+    const PAD_TONES: number[][] = [
+        [45, 48, 52], // Am: A2 C3 E3
+        [41, 45, 48], // F:  F2 A2 C3
+        [48, 52, 55], // C:  C3 E3 G3
+        [43, 47, 50], // G:  G2 B2 D3
+    ];
+
+    const ci = (beat: number) => Math.floor(beat / 16) % 4;
+    const br = (beat: number) => BASS_ROOTS[ci(beat)]!;
+    const ct = (beat: number) => CHORD_TONES[ci(beat)]!;
+    const hv = (base: number, r = 6) => Math.max(10, Math.min(127, Math.round(base + (Math.random() - 0.5) * r * 2)));
+
+    // Section helpers
+    const R = (b: number, lo: number, hi: number) => b >= lo && b < hi;
+
+    // ── TRACKS ───────────────────────────────────────────────────────────
     const masterTrack = createTrack({ name: 'Master', kind: 'master' });
     const drumFolder = createTrack({ name: 'Drums', kind: 'folder' });
     const bassFolder = createTrack({ name: 'Bass', kind: 'folder' });
     const synthFolder = createTrack({ name: 'Synths', kind: 'folder' });
     const fxFolder = createTrack({ name: 'FX', kind: 'folder' });
 
-    // Drum Tracks
-    const kickTrack = createTrack({ name: 'Kick', kind: 'audio', parentId: drumFolder.id });
-    const snareTrack = createTrack({ name: 'Snare', kind: 'audio', parentId: drumFolder.id });
-    const hatClosedTrack = createTrack({ name: 'Hat Closed', kind: 'audio', parentId: drumFolder.id });
+    const drumTrack = createTrack({ name: 'Drums 808', kind: 'midi', parentId: drumFolder.id });
+    const percTrack = createTrack({ name: 'Percussion', kind: 'midi', parentId: drumFolder.id });
+    const acidTrack = createTrack({ name: 'Acid Bass', kind: 'midi', parentId: bassFolder.id });
+    const subTrack = createTrack({ name: 'Sub Bass', kind: 'midi', parentId: bassFolder.id });
+    const padTrack = createTrack({ name: 'Dark Pad', kind: 'midi', parentId: synthFolder.id });
+    const ssTrack = createTrack({ name: 'Supersaw', kind: 'midi', parentId: synthFolder.id });
+    const arpTrack = createTrack({ name: 'Arp Synth', kind: 'midi', parentId: synthFolder.id });
+    const leadTrack = createTrack({ name: 'Trance Lead', kind: 'midi', parentId: synthFolder.id });
+    const lead2Track = createTrack({ name: 'Formant Lead', kind: 'midi', parentId: synthFolder.id });
+    const sweepTrack = createTrack({ name: 'Noise Sweep', kind: 'midi', parentId: fxFolder.id });
+    const stabTrack = createTrack({ name: 'Stab', kind: 'midi', parentId: fxFolder.id });
 
-    // Bass Tracks
-    const subBassTrack = createTrack({ name: 'Sub Bass', kind: 'midi', parentId: bassFolder.id });
-    const midBassTrack = createTrack({ name: 'FM Bass', kind: 'midi', parentId: bassFolder.id });
+    applyPreset(drumTrack, 'factory-drumkit-808');
+    applyPreset(percTrack, 'factory-drumkit-808');
+    applyPreset(acidTrack, 'factory-bass-acid');
+    applyPreset(subTrack, 'factory-bass-sub');
+    applyPreset(padTrack, 'factory-pad-dark');
+    applyPreset(ssTrack, 'factory-synth-supersaw');
+    applyPreset(arpTrack, 'factory-synth-arp');
+    applyPreset(leadTrack, 'factory-lead-detuned');
+    applyPreset(lead2Track, 'factory-lead-formant');
+    applyPreset(sweepTrack, 'factory-fx-noise-sweep');
+    applyPreset(stabTrack, 'factory-fx-stab');
 
-    // Synth Tracks
-    const padTrack = createTrack({ name: 'Juno Pad', kind: 'midi', parentId: synthFolder.id });
-    const arp1Track = createTrack({ name: 'Pluck Arp', kind: 'midi', parentId: synthFolder.id });
-    const lead1Track = createTrack({ name: 'Main Lead', kind: 'midi', parentId: synthFolder.id });
+    arpTrack.pan = -15;
+    lead2Track.pan = 20;
+    ssTrack.pan = 10;
+    percTrack.pan = -10;
+    subTrack.gain = 0.6;
 
-    // FX Tracks
-    const riserTrack = createTrack({ name: 'Riser', kind: 'audio', parentId: fxFolder.id });
+    // ── CLIPS ────────────────────────────────────────────────────────────
+    const drumClip = createMidiClip(drumTrack.id, 'Main Drums', 0, TB, drumTrack.color);
+    const percClip = createMidiClip(percTrack.id, 'Perc Accents', 64, TB, percTrack.color);
+    const acidClip = createMidiClip(acidTrack.id, 'Acid Line', 64, TB, acidTrack.color);
+    const subClip = createMidiClip(subTrack.id, 'Sub Foundation', 0, TB, subTrack.color);
+    const padClip = createMidiClip(padTrack.id, 'Dark Atmosphere', 0, TB, padTrack.color);
+    const ssClip = createMidiClip(ssTrack.id, 'Supersaw Stabs', 128, 576, ssTrack.color);
+    const arpClip = createMidiClip(arpTrack.id, 'Psytrance Arp', 64, TB, arpTrack.color);
+    const leadClip = createMidiClip(leadTrack.id, 'Lead Melody', 128, 576, leadTrack.color);
+    const lead2Clip = createMidiClip(lead2Track.id, 'Alt Melody', 320, 512, lead2Track.color);
+    const sweepClip = createMidiClip(sweepTrack.id, 'Sweeps', 48, TB, sweepTrack.color);
+    const stabClip = createMidiClip(stabTrack.id, 'Trance Stabs', 128, 576, stabTrack.color);
 
-    applyPreset(subBassTrack, 'factory-bass-sub');
-    applyPreset(midBassTrack, 'factory-bass-analog');
-    applyPreset(padTrack, 'factory-pad-warm');
-    applyPreset(arp1Track, 'factory-keys-pluck');
-    applyPreset(lead1Track, 'factory-lead-classic');
-
-    // Pan some
-
-    const ctxId = Date.now();
-    await Promise.all([
-        generateDemoDrumBuffer(`d2-kick-${ctxId}`, totalBeats, bpm, 'kick'),
-        generateDemoDrumBuffer(`d2-snare-${ctxId}`, totalBeats, bpm, 'snare'),
-        generateDemoDrumBuffer(`d2-hat-${ctxId}`, totalBeats, bpm, 'hat'),
-        generateSyntheticToneBuffer(`d2-riser-${ctxId}`, 16, bpm, 800),
-        generateSyntheticToneBuffer(`d2-vox-${ctxId}`, totalBeats, bpm, 400),
-    ]);
-
-    // We reuse buffers for some
-    const kickClip = createAudioClip(kickTrack.id, 'Synthwave Kick', 0, totalBeats, `d2-kick-${ctxId}`, kickTrack.color);
-    const snareClip = createAudioClip(snareTrack.id, 'Gated Snare', 0, totalBeats, `d2-snare-${ctxId}`, snareTrack.color);
-    const hatClip = createAudioClip(hatClosedTrack.id, '16th Hats', 0, totalBeats, `d2-hat-${ctxId}`, hatClosedTrack.color);
-    const riserClip = createAudioClip(riserTrack.id, 'Riser', 48, 64, `d2-riser-${ctxId}`, riserTrack.color);
-    riserClip.fadeInBeats = 16;
-
-    kickTrack.clips = [kickClip];
-    snareTrack.clips = [snareClip];
-    hatClosedTrack.clips = [hatClip];
-    riserTrack.clips = [riserClip];
-
-    const subClip = createMidiClip(subBassTrack.id, 'Rolling Bass', 0, totalBeats, subBassTrack.color);
-    const midBassClip = createMidiClip(midBassTrack.id, 'Stabs', 0, totalBeats, midBassTrack.color);
-    const padClip = createMidiClip(padTrack.id, 'Chord Progression', 0, totalBeats, padTrack.color);
-    const arpClip = createMidiClip(arp1Track.id, 'Arp Pattern', 16, totalBeats, arp1Track.color);
-    const leadClip = createMidiClip(lead1Track.id, 'Nostalgic Melody', 32, totalBeats, lead1Track.color);
-
-    subBassTrack.clips = [subClip];
-    midBassTrack.clips = [midBassClip];
+    drumTrack.clips = [drumClip];
+    percTrack.clips = [percClip];
+    acidTrack.clips = [acidClip];
+    subTrack.clips = [subClip];
     padTrack.clips = [padClip];
-    arp1Track.clips = [arpClip];
-    lead1Track.clips = [leadClip];
+    ssTrack.clips = [ssClip];
+    arpTrack.clips = [arpClip];
+    leadTrack.clips = [leadClip];
+    lead2Track.clips = [lead2Clip];
+    sweepTrack.clips = [sweepClip];
+    stabTrack.clips = [stabClip];
 
-    const subNotes: MidiNote[] = [];
-    const midBassNotes: MidiNote[] = [];
-    const padNotes: MidiNote[] = [];
-    const arpNotes: MidiNote[] = [];
-    const leadNotes: MidiNote[] = [];
+    // ── NOTE ARRAYS ──────────────────────────────────────────────────────
+    const dn: MidiNote[] = []; // drums
+    const pn: MidiNote[] = []; // percussion
+    const an: MidiNote[] = []; // acid
+    const sn: MidiNote[] = []; // sub
+    const pdn: MidiNote[] = []; // pad
+    const ssn: MidiNote[] = []; // supersaw
+    const arn: MidiNote[] = []; // arp
+    const ln: MidiNote[] = []; // lead
+    const l2n: MidiNote[] = []; // lead2
+    const swn: MidiNote[] = []; // sweep
+    const stn: MidiNote[] = []; // stab
 
-    for (let beat = 0; beat < totalBeats; beat++) {
-        // Progression: Am, F, C, G
-        const bar = Math.floor(beat / 16);
-        const chordIdx = bar % 4;
-        let root = 45; // A2
-        if (chordIdx === 1) {
-            root = 41;
-        } // F2
-        if (chordIdx === 2) {
-            root = 48;
-        } // C3
-        if (chordIdx === 3) {
-            root = 43;
-        } // G2
+    // ── DRUMS (step = 16th note) ─────────────────────────────────────────
+    const isDrop = (b: number) => R(b, 128, 256) || R(b, 320, 512) || R(b, 576, TB);
+    const isBuild = (b: number) => R(b, 64, 128);
+    const isBD = (b: number) => R(b, 256, 320) || R(b, 512, 576);
 
-        // Fast pedaling sub bass
-        if (beat % 0.5 === 0) {
-            subNotes.push(note(root - 12, beat, 0.4, 90 + Math.random() * 10));
+    for (let s = 0; s < TB * 4; s++) {
+        const b = s * 0.25;
+        if (b >= TB) break;
+        const p = b % 4; // position in bar
+        const bar = Math.floor(b / 4);
+
+        // Kick: 4-on-floor (not in breakdowns)
+        if (p % 1 === 0 && !isBD(b)) {
+            let v = R(b, 0, 64) ? hv(90) : isBuild(b) ? hv(100) : isDrop(b) ? hv(115) : 0;
+            if (b >= TB - 32) v = Math.round(v * Math.max(0, 1 - (b - (TB - 32)) / 32));
+            if (v > 0) dn.push(note(36, b, 0.5, v));
+        }
+        // Extra syncopated kicks in drops B and chaos
+        if ((R(b, 320, 512) || R(b, 576, TB)) && (p === 0.75 || p === 2.75) && bar % 2 === 0) {
+            dn.push(note(36, b, 0.25, hv(80)));
         }
 
-        // Mid bass stabs on offbeats
-        if (beat % 2 === 1.5) {
-            midBassNotes.push(note(root, beat, 0.25, 100));
+        // Clap on 1,3 of each bar
+        if ((p === 1 || p === 3) && (isDrop(b) || isBuild(b))) {
+            dn.push(note(39, b, 0.25, hv(100)));
+            if (isDrop(b)) dn.push(note(38, b, 0.25, hv(75))); // snare layer
         }
 
-        // Pads
-        if (beat % 16 === 0) {
-            padNotes.push(note(root, beat, 16, 60));
-            padNotes.push(note(root + 3, beat, 16, 60));
-            padNotes.push(note(root + 7, beat, 16, 60));
+        // Closed HH: 16ths in drops, 8ths in build
+        if (isDrop(b) && p % 0.25 === 0) {
+            const accent = p % 1 === 0 ? 80 : p % 0.5 === 0 ? 55 : 35;
+            dn.push(note(42, b, 0.125, hv(accent)));
+        } else if (isBuild(b) && p % 0.5 === 0) {
+            dn.push(note(42, b, 0.125, hv(60)));
         }
 
-        // Arps
-        if (beat >= 16 && beat % 0.25 === 0) {
-            const arpPitch = root + ((beat * 4) % 3 === 0 ? 12 : 19);
-            arpNotes.push(note(arpPitch, beat, 0.2, 70));
+        // Open HH accent every 8 beats in drops
+        if (isDrop(b) && p === 0.5 && bar % 2 === 0) {
+            dn.push(note(46, b, 0.5, hv(65)));
         }
 
-        // Melody
-        if (beat >= 32 && beat % 4 === 0) {
-            leadNotes.push(note(root + 24, beat, 2, 90));
-            leadNotes.push(note(root + 26, beat + 2, 0.5, 80));
-            leadNotes.push(note(root + 27, beat + 3, 1, 95));
+        // Breakdown textures
+        if (isBD(b)) {
+            if (p === 2 && bar % 2 === 0) dn.push(note(37, b, 0.125, hv(50))); // rimshot
+            if (R(b, 512, 576) && p % 0.5 === 0) dn.push(note(70, b, 0.1, hv(25))); // maracas
+        }
+
+        // Tom fills before section changes (last 4 beats of every 64-beat block)
+        if (isDrop(b) && b % 64 >= 60 && p % 0.5 === 0) {
+            const tom = p < 2 ? 43 : p < 3 ? 47 : 50;
+            dn.push(note(tom, b, 0.25, hv(80)));
+        }
+
+        // Intro rimshot offbeats (beats 32-64)
+        if (R(b, 32, 64) && (p === 0.5 || p === 2.5)) {
+            dn.push(note(37, b, 0.125, hv(55)));
         }
     }
 
-    const tracks = [
-        masterTrack,
-        drumFolder,
-        kickTrack,
-        snareTrack,
-        hatClosedTrack,
-        bassFolder,
-        subBassTrack,
-        midBassTrack,
-        synthFolder,
-        padTrack,
-        arp1Track,
-        lead1Track,
-        fxFolder,
-        riserTrack,
+    // ── PERCUSSION: cowbell, clave, congas ────────────────────────────────
+    for (let s = 0; s < TB * 4; s++) {
+        const b = s * 0.25;
+        if (b >= TB || b < 64) continue;
+        const p = b % 4;
+        const bar = Math.floor(b / 4);
+        if (isDrop(b) && p % 0.5 === 0.25 && bar % 4 < 2) pn.push(note(56, b, 0.1, hv(45))); // cowbell
+        if (R(b, 448, 512) && p % 0.25 === 0 && bar % 2 === 1) pn.push(note(75, b, 0.1, hv(40))); // clave
+        if (isDrop(b) && bar % 8 >= 6 && p === 1.5) pn.push(note(62, b, 0.15, hv(50))); // conga
+    }
+
+    // ── ACID BASS ────────────────────────────────────────────────────────
+    // Pattern A: syncopated 16th with octave jumps
+    const acidPatA = [
+        [0, 0, 0.25], [0.25, 12, 0.125], [0.5, 0, 0.25],
+        [1, 0, 0.5], [1.5, -2, 0.25], [1.75, 0, 0.25],
+        [2, 7, 0.25], [2.5, 0, 0.5],
+        [3, 12, 0.25], [3.5, 7, 0.25], [3.75, 5, 0.25],
+    ];
+    // Pattern B: more aggressive rapid-fire
+    const acidPatB = [
+        [0, 0, 0.125], [0.25, 12, 0.125], [0.5, 7, 0.125], [0.75, 12, 0.125],
+        [1, 0, 0.25], [1.25, 5, 0.25], [1.5, 7, 0.25], [1.75, 12, 0.25],
+        [2, 0, 0.5], [2.5, 5, 0.125], [2.75, 7, 0.125],
+        [3, 12, 0.25], [3.25, 0, 0.25], [3.5, 5, 0.5],
     ];
 
-    trackStore.set({ tracks, selectedTrackId: lead1Track.id });
+    for (let bar = 0; bar < TB / 4; bar++) {
+        const bs = bar * 4;
+        if (bs < 64 || isBD(bs)) continue;
+        const root = br(bs);
+        const pat = (R(bs, 320, 512) || R(bs, 576, TB)) ? acidPatB : acidPatA;
+        const v = isBuild(bs) ? 85 : 105;
+        for (const [off, interval, dur] of pat) {
+            if (bs + off! >= TB) break;
+            an.push(note(root + interval!, bs + off!, dur!, hv(v)));
+        }
+    }
+
+    // ── SUB BASS ─────────────────────────────────────────────────────────
+    for (let beat = 0; beat < TB; beat += 2) {
+        if (isBD(beat)) continue;
+        const root = br(beat);
+        sn.push(note(root, beat, 1.8, hv(85)));
+    }
+
+    // ── DARK PAD (sustained chords) ──────────────────────────────────────
+    for (let beat = 0; beat < TB; beat += 16) {
+        const tones = PAD_TONES[ci(beat)]!;
+        const dur = isBD(beat) ? 16 : 15.5;
+        const v = isBD(beat) ? 75 : isDrop(beat) ? 55 : R(beat, 0, 64) ? 40 : 60;
+        for (const t of tones) pdn.push(note(t, beat, dur, hv(v)));
+    }
+
+    // ── SUPERSAW CHORDS (drops only, shorter rhythmic hits) ──────────────
+    for (let beat = 128; beat < 576; beat += 4) {
+        if (isBD(beat)) continue;
+        const tones = ct(beat);
+        for (const t of tones) ssn.push(note(t, beat, 0.5, hv(90)));
+        // echo on beat 2
+        for (const t of tones) ssn.push(note(t, beat + 2, 0.25, hv(70)));
+    }
+
+    // ── ARP (16th note cycling through chord tones) ──────────────────────
+    for (let s = 0; s < TB * 4; s++) {
+        const b = s * 0.25;
+        if (b < 64 || b >= TB || isBD(b)) continue;
+        const tones = ct(b);
+        const idx = s % tones.length;
+        const octave = Math.floor(s / tones.length) % 2 === 0 ? 0 : 12;
+        const v = isDrop(b) ? hv(70) : hv(55);
+        arn.push(note(tones[idx]! + octave, b, 0.2, v));
+    }
+
+    // ── LEAD MELODY (Drop A phrase, 16-beat phrases) ─────────────────────
+    // A minor pentatonic melodies: A4=69 C5=72 D5=74 E5=76 G5=79 A5=81
+    const melodyA: [number, number, number][] = [ // [offset, pitch, duration]
+        [0, 76, 1.5], [2, 74, 1], [3, 72, 1], [4, 69, 2], [6, 72, 1], [7, 74, 1],
+        [8, 76, 1.5], [10, 79, 1], [11, 81, 1], [12, 79, 2], [14, 76, 2],
+    ];
+    const melodyB: [number, number, number][] = [
+        [0, 81, 0.5], [0.5, 79, 0.5], [1, 76, 1], [2, 79, 0.5], [2.5, 81, 1.5],
+        [4, 79, 1], [5, 76, 0.5], [5.5, 74, 0.5], [6, 72, 2],
+        [8, 74, 1], [9, 76, 1], [10, 79, 2], [12, 81, 2], [14, 79, 2],
+    ];
+    for (let phrase = 0; phrase < (576 - 128) / 16; phrase++) {
+        const start = 128 + phrase * 16;
+        if (isBD(start)) continue;
+        const mel = R(start, 128, 256) ? melodyA : melodyB;
+        for (const [off, pitch, dur] of mel) {
+            if (start + off >= 576) break;
+            // Transpose melody based on chord root offset from A
+            const rootOffset = [0, -4, 3, -2][ci(start)]!; // Am=0, F=-4, C=3, G=-2
+            ln.push(note(pitch + rootOffset, start + off, dur, hv(95)));
+        }
+    }
+
+    // ── FORMANT LEAD (Drop B alt melody) ─────────────────────────────────
+    const fMel: [number, number, number][] = [
+        [0, 72, 2], [2, 76, 1], [3, 79, 1], [4, 81, 3], [7, 79, 1],
+        [8, 76, 2], [10, 74, 1], [11, 72, 1], [12, 69, 4],
+    ];
+    for (let phrase = 0; phrase < (512 - 320) / 16; phrase++) {
+        const start = 320 + phrase * 16;
+        if (isBD(start)) continue;
+        for (const [off, pitch, dur] of fMel) {
+            l2n.push(note(pitch, start + off, dur, hv(85)));
+        }
+    }
+
+    // ── NOISE SWEEPS (before drops) ──────────────────────────────────────
+    const sweepPoints = [48, 112, 304, 560]; // 16 beats before each drop
+    for (const sp of sweepPoints) {
+        swn.push(note(60, sp, 16, 70));
+    }
+
+    // ── STABS (accent hits in drops) ─────────────────────────────────────
+    for (let beat = 128; beat < 576; beat += 8) {
+        if (isBD(beat)) continue;
+        stn.push(note(ct(beat)[0]! + 12, beat, 0.1, hv(100)));
+    }
+
+    // ── ASSEMBLE ─────────────────────────────────────────────────────────
+    const tracks = [
+        masterTrack, drumFolder, drumTrack, percTrack,
+        bassFolder, acidTrack, subTrack,
+        synthFolder, padTrack, ssTrack, arpTrack, leadTrack, lead2Track,
+        fxFolder, sweepTrack, stabTrack,
+    ];
+    trackStore.set({ tracks, selectedTrackId: leadTrack.id });
 
     midiStore.set({
         notesByClipId: {
-            [subClip.id]: subNotes,
-            [midBassClip.id]: midBassNotes,
-            [padClip.id]: padNotes,
-            [arpClip.id]: arpNotes,
-            [leadClip.id]: leadNotes,
+            [drumClip.id]: dn, [percClip.id]: pn,
+            [acidClip.id]: an, [subClip.id]: sn,
+            [padClip.id]: pdn, [ssClip.id]: ssn,
+            [arpClip.id]: arn, [leadClip.id]: ln,
+            [lead2Clip.id]: l2n, [sweepClip.id]: swn,
+            [stabClip.id]: stn,
         },
         ccByClipId: {},
         pitchBendByClipId: {},
     });
 
-    transportStore.set({ ...defaultTransportState, tempo: bpm, loopEnd: totalBeats, isLooping: true });
+    transportStore.set({ ...defaultTransportState, tempo: bpm, loopEnd: TB, isLooping: true });
 
-    const padVolLane = createAutomationLane(padTrack.id, 'volume', 'Volume', 0, 1);
-    padVolLane.points = [
-        { beat: 0, value: 0.1, curve: 'linear', tension: 0 },
-        { beat: 64, value: 0.8, curve: 'linear', tension: 0 },
-        { beat: 128, value: 0.8, curve: 'linear', tension: 0 },
+    // ── AUTOMATION ───────────────────────────────────────────────────────
+    const padVol = createAutomationLane(padTrack.id, 'volume', 'Volume', 0, 1);
+    padVol.points = [
+        { beat: 0, value: 0.3, curve: 'linear', tension: 0 },
+        { beat: 64, value: 0.6, curve: 'linear', tension: 0 },
+        { beat: 128, value: 0.4, curve: 'linear', tension: 0 },
+        { beat: 256, value: 0.8, curve: 'linear', tension: 0 },
+        { beat: 320, value: 0.4, curve: 'linear', tension: 0 },
+        { beat: 512, value: 0.8, curve: 'linear', tension: 0 },
+        { beat: 576, value: 0.3, curve: 'linear', tension: 0 },
+        { beat: 720, value: 0.1, curve: 'linear', tension: 0 },
     ];
-    automationStore.set({ lanes: [padVolLane] });
+    const arpVol = createAutomationLane(arpTrack.id, 'volume', 'Volume', 0, 1);
+    arpVol.points = [
+        { beat: 64, value: 0.2, curve: 'linear', tension: 0 },
+        { beat: 128, value: 0.7, curve: 'linear', tension: 0 },
+        { beat: 256, value: 0.1, curve: 'linear', tension: 0 },
+        { beat: 320, value: 0.7, curve: 'linear', tension: 0 },
+        { beat: 512, value: 0.1, curve: 'linear', tension: 0 },
+        { beat: 576, value: 0.8, curve: 'linear', tension: 0 },
+        { beat: 700, value: 0.0, curve: 'linear', tension: 0 },
+    ];
+    const ssVol = createAutomationLane(ssTrack.id, 'volume', 'Volume', 0, 1);
+    ssVol.points = [
+        { beat: 128, value: 0.0, curve: 'linear', tension: 0 },
+        { beat: 144, value: 0.7, curve: 'linear', tension: 0 },
+        { beat: 248, value: 0.7, curve: 'linear', tension: 0 },
+        { beat: 256, value: 0.0, curve: 'linear', tension: 0 },
+        { beat: 320, value: 0.0, curve: 'linear', tension: 0 },
+        { beat: 336, value: 0.8, curve: 'linear', tension: 0 },
+        { beat: 440, value: 0.8, curve: 'linear', tension: 0 },
+        { beat: 448, value: 0.0, curve: 'linear', tension: 0 },
+    ];
+    const acidVol = createAutomationLane(acidTrack.id, 'volume', 'Volume', 0, 1);
+    acidVol.points = [
+        { beat: 64, value: 0.3, curve: 'linear', tension: 0 },
+        { beat: 128, value: 0.8, curve: 'linear', tension: 0 },
+        { beat: 256, value: 0.0, curve: 'linear', tension: 0 },
+        { beat: 320, value: 0.9, curve: 'linear', tension: 0 },
+        { beat: 512, value: 0.0, curve: 'linear', tension: 0 },
+        { beat: 576, value: 1.0, curve: 'linear', tension: 0 },
+        { beat: 700, value: 0.0, curve: 'linear', tension: 0 },
+    ];
 
+    automationStore.set({ lanes: [padVol, arpVol, ssVol, acidVol] });
+
+    // ── MARKERS ──────────────────────────────────────────────────────────
     markerStore.set({
         markers: [
-            { id: crypto.randomUUID(), beat: 0, name: 'Intro', color: 'oklch(0.40 0.08 70)' },
-            { id: crypto.randomUUID(), beat: 32, name: 'Main Theme', color: 'oklch(0.38 0.09 20)' },
+            { id: crypto.randomUUID(), beat: 0, name: 'Intro', color: 'oklch(0.35 0.10 280)' },
+            { id: crypto.randomUUID(), beat: 64, name: 'Build', color: 'oklch(0.38 0.12 320)' },
+            { id: crypto.randomUUID(), beat: 128, name: 'Drop A', color: 'oklch(0.42 0.15 30)' },
+            { id: crypto.randomUUID(), beat: 256, name: 'Breakdown', color: 'oklch(0.35 0.08 200)' },
+            { id: crypto.randomUUID(), beat: 320, name: 'Drop B', color: 'oklch(0.42 0.15 10)' },
+            { id: crypto.randomUUID(), beat: 448, name: 'Chaos', color: 'oklch(0.45 0.18 50)' },
+            { id: crypto.randomUUID(), beat: 512, name: 'Breakdown 2', color: 'oklch(0.35 0.08 180)' },
+            { id: crypto.randomUUID(), beat: 576, name: 'Final Drop', color: 'oklch(0.42 0.15 0)' },
         ],
         sections: [
-            { id: crypto.randomUUID(), startBeat: 0, endBeat: 32, name: 'Intro', color: 'oklch(0.40 0.08 70)' },
-            { id: crypto.randomUUID(), startBeat: 32, endBeat: 128, name: 'Main Theme', color: 'oklch(0.38 0.09 20)' },
+            { id: crypto.randomUUID(), startBeat: 0, endBeat: 64, name: 'Intro', color: 'oklch(0.35 0.10 280)' },
+            { id: crypto.randomUUID(), startBeat: 64, endBeat: 128, name: 'Build', color: 'oklch(0.38 0.12 320)' },
+            { id: crypto.randomUUID(), startBeat: 128, endBeat: 256, name: 'Drop A', color: 'oklch(0.42 0.15 30)' },
+            { id: crypto.randomUUID(), startBeat: 256, endBeat: 320, name: 'Breakdown', color: 'oklch(0.35 0.08 200)' },
+            { id: crypto.randomUUID(), startBeat: 320, endBeat: 448, name: 'Drop B', color: 'oklch(0.42 0.15 10)' },
+            { id: crypto.randomUUID(), startBeat: 448, endBeat: 512, name: 'Chaos', color: 'oklch(0.45 0.18 50)' },
+            { id: crypto.randomUUID(), startBeat: 512, endBeat: 576, name: 'Breakdown 2', color: 'oklch(0.35 0.08 180)' },
+            { id: crypto.randomUUID(), startBeat: 576, endBeat: 720, name: 'Final Drop', color: 'oklch(0.42 0.15 0)' },
         ],
     });
 
     syncArrangement(tracks);
-    projectStore.set({ name: 'Synthwave Night (Demo)', createdAt: Date.now(), updatedAt: Date.now(), dirty: false, loading: false });
+    projectStore.set({ name: 'Psyloops (Demo)', createdAt: Date.now(), updatedAt: Date.now(), dirty: false, loading: false });
 }
 
 // ---------------------------------------------------------------------------
-// Demo Project 3: Acoustic Session
+// Demo Project 3: Chill Jazz — "Midnight Smoke"
+// Key: Eb major / C minor | BPM: 82 | ~4:18 (588 beats)
+// Structure: Intro(0-48) → A(48-132) → B(132-216) → Solo(216-300) →
+//            Return A(300-384) → Variation(384-492) → Outro(492-588)
 // ---------------------------------------------------------------------------
 
 export async function demo3_AcousticSession(): Promise<void> {
-    const bpm = 85; // LoFi Hip Hop
-    const totalBeats = 128;
+    const bpm = 82;
+    const TB = 588;
 
+    // Jazz chords in Eb / Cm   (midi notes for voicings)
+    // 0: EbMaj7   1: Cm7   2: Fm7   3: Bb7   4: AbMaj7   5: Gm7   6: Dm7b5   7: G7
+    const JAZZ_VOICINGS: number[][] = [
+        [51, 55, 58, 62],  // EbMaj7: Eb3 G3 Bb3 D4
+        [48, 51, 55, 58],  // Cm7:    C3  Eb3 G3 Bb3
+        [53, 56, 60, 63],  // Fm7:    F3  Ab3 C4 Eb4
+        [46, 50, 53, 56],  // Bb7:    Bb2 D3  F3 Ab3
+        [56, 60, 63, 67],  // AbMaj7: Ab3 C4  Eb4 G4
+        [55, 58, 62, 65],  // Gm7:    G3  Bb3 D4 F4
+        [50, 53, 56, 60],  // Dm7b5:  D3  F3  Ab3 C4
+        [43, 47, 50, 53],  // G7:     G2  B2  D3 F3
+    ];
+    const BASS_ROOTS = [39, 36, 41, 34, 44, 43, 38, 31]; // Eb2, C2, F2, Bb1, Ab2, G2, D2, G1
+
+    // Progressions per section (chord indices, 8 beats each)
+    const PROG_A = [0, 2, 3, 0, 1, 5, 2, 3]; // I-ii-V-I vi-iii-ii-V
+    const PROG_B = [4, 5, 2, 0, 1, 6, 7, 1]; // IV-iii-ii-I vi-viib5-V/vi-vi
+    const PROG_SOLO = [2, 3, 0, 1, 4, 5, 6, 7]; // ii-V-I-vi IV-iii-viib5-V/vi
+
+    const getChordIdx = (beat: number): number => {
+        const section = getSec(beat);
+        const barInSec = Math.floor((beat - section.start) / 8) % 8;
+        return section.prog[barInSec]!;
+    };
+
+    type Sec = { start: number; end: number; name: string; prog: number[] };
+    const SECTIONS: Sec[] = [
+        { start: 0, end: 48, name: 'Intro', prog: PROG_A },
+        { start: 48, end: 132, name: 'A Theme', prog: PROG_A },
+        { start: 132, end: 216, name: 'B Theme', prog: PROG_B },
+        { start: 216, end: 300, name: 'Solo', prog: PROG_SOLO },
+        { start: 300, end: 384, name: 'Return A', prog: PROG_A },
+        { start: 384, end: 492, name: 'Variation', prog: PROG_B },
+        { start: 492, end: 588, name: 'Outro', prog: PROG_A },
+    ];
+    const getSec = (b: number): Sec => SECTIONS.find((s) => b >= s.start && b < s.end) ?? SECTIONS[0]!;
+    const hv = (base: number, r = 8) => Math.max(10, Math.min(127, Math.round(base + (Math.random() - 0.5) * r * 2)));
+
+    // ── TRACKS ───────────────────────────────────────────────────────────
     const masterTrack = createTrack({ name: 'Master', kind: 'master' });
-    const drumFolder = createTrack({ name: 'Drum Break', kind: 'folder' });
-    const bassFolder = createTrack({ name: 'Bass & Sub', kind: 'folder' });
-    const keysFolder = createTrack({ name: 'Keys & Vinyl', kind: 'folder' });
-    const fxFolder = createTrack({ name: 'Foley', kind: 'folder' });
+    const rhythmFolder = createTrack({ name: 'Rhythm', kind: 'folder' });
+    const bassFolder = createTrack({ name: 'Bass', kind: 'folder' });
+    const keysFolder = createTrack({ name: 'Keys', kind: 'folder' });
+    const melodyFolder = createTrack({ name: 'Melody', kind: 'folder' });
+    const atmosFolder = createTrack({ name: 'Atmosphere', kind: 'folder' });
 
-    const kickTrack = createTrack({ name: 'Tape Kick', kind: 'audio', parentId: drumFolder.id });
-    const snareTrack = createTrack({ name: 'Rim Snare', kind: 'audio', parentId: drumFolder.id });
-    const hatClosedTrack = createTrack({ name: 'Vinyl Hats', kind: 'audio', parentId: drumFolder.id });
-    const percTrack = createTrack({ name: 'Percussion Loop', kind: 'audio', parentId: drumFolder.id });
+    const drumTrack = createTrack({ name: 'Jazz Drums', kind: 'midi', parentId: rhythmFolder.id });
+    const percTrack = createTrack({ name: 'Percussion', kind: 'midi', parentId: rhythmFolder.id });
+    const bassTrack = createTrack({ name: 'Walking Bass', kind: 'midi', parentId: bassFolder.id });
+    const subTrack = createTrack({ name: 'Sub Layer', kind: 'midi', parentId: bassFolder.id });
+    const rhodesTrack = createTrack({ name: 'Rhodes', kind: 'midi', parentId: keysFolder.id });
+    const organTrack = createTrack({ name: 'Organ', kind: 'midi', parentId: keysFolder.id });
+    const fluteTrack = createTrack({ name: 'Flute', kind: 'midi', parentId: melodyFolder.id });
+    const bellTrack = createTrack({ name: 'Bell', kind: 'midi', parentId: melodyFolder.id });
+    const padTrack = createTrack({ name: 'Shimmer Pad', kind: 'midi', parentId: atmosFolder.id });
+    const stringsTrack = createTrack({ name: 'Soft Strings', kind: 'midi', parentId: atmosFolder.id });
 
-    const subBassTrack = createTrack({ name: 'Deep Sub', kind: 'midi', parentId: bassFolder.id });
-
-    const rhodesTrack = createTrack({ name: 'LoFi Rhodes', kind: 'midi', parentId: keysFolder.id });
-    const pianoTrack = createTrack({ name: 'Dusty Piano', kind: 'midi', parentId: keysFolder.id });
-
-    const vinylNoiseTrack = createTrack({ name: 'Vinyl Crackle', kind: 'audio', parentId: fxFolder.id });
-
-    applyPreset(subBassTrack, 'factory-bass-sub');
+    applyPreset(drumTrack, 'factory-drumkit-808');
+    applyPreset(percTrack, 'factory-drumkit-808');
+    applyPreset(bassTrack, 'factory-bass-analog');
+    applyPreset(subTrack, 'factory-bass-sub');
     applyPreset(rhodesTrack, 'factory-keys-epiano');
-    applyPreset(pianoTrack, 'factory-keys-pluck');
+    applyPreset(organTrack, 'factory-keys-organ');
+    applyPreset(fluteTrack, 'factory-synth-flute');
+    applyPreset(bellTrack, 'factory-keys-bell');
+    applyPreset(padTrack, 'factory-pad-shimmer');
+    applyPreset(stringsTrack, 'factory-strings-soft');
 
-    rhodesTrack.pan = -0.2;
-    vinylNoiseTrack.pan = 0.1;
+    rhodesTrack.pan = -15;
+    bellTrack.pan = 20;
+    organTrack.pan = -10;
+    percTrack.pan = 15;
+    stringsTrack.gain = 0.5;
+    subTrack.gain = 0.4;
 
-    const ctxId = Date.now();
-    await Promise.all([
-        generateDemoDrumBuffer(`d3-kick-${ctxId}`, totalBeats, bpm, 'kick'),
-        generateDemoDrumBuffer(`d3-snare-${ctxId}`, totalBeats, bpm, 'snare'),
-        generateDemoDrumBuffer(`d3-hat-${ctxId}`, totalBeats, bpm, 'shaker'),
-        generateSyntheticToneBuffer(`d3-vinyl-${ctxId}`, totalBeats, bpm, 100),
-    ]);
+    // ── CLIPS ────────────────────────────────────────────────────────────
+    const drumClip = createMidiClip(drumTrack.id, 'Jazz Kit', 0, TB, drumTrack.color);
+    const percClip = createMidiClip(percTrack.id, 'Latin Perc', 48, TB, percTrack.color);
+    const bassClip = createMidiClip(bassTrack.id, 'Walking Bass', 0, TB, bassTrack.color);
+    const subClip = createMidiClip(subTrack.id, 'Sub', 0, TB, subTrack.color);
+    const rhodesClip = createMidiClip(rhodesTrack.id, 'Rhodes Comping', 0, TB, rhodesTrack.color);
+    const organClip = createMidiClip(organTrack.id, 'Organ Pads', 132, 384, organTrack.color);
+    const fluteClip = createMidiClip(fluteTrack.id, 'Flute Solo', 216, 384, fluteTrack.color);
+    const bellClip = createMidiClip(bellTrack.id, 'Bell Melody', 48, 300, bellTrack.color);
+    const padClip = createMidiClip(padTrack.id, 'Shimmer', 0, TB, padTrack.color);
+    const stringsClip = createMidiClip(stringsTrack.id, 'Strings', 132, TB, stringsTrack.color);
 
-    const kickClip = createAudioClip(kickTrack.id, 'LoFi Kick', 0, totalBeats, `d3-kick-${ctxId}`, kickTrack.color);
-    const snareClip = createAudioClip(snareTrack.id, 'Rim Shot', 0, totalBeats, `d3-snare-${ctxId}`, snareTrack.color);
-    const hatClip = createAudioClip(hatClosedTrack.id, 'Lazy Hats', 0, totalBeats, `d3-hat-${ctxId}`, hatClosedTrack.color);
-    const vinylClip = createAudioClip(vinylNoiseTrack.id, 'Crackle Loop', 0, totalBeats, `d3-vinyl-${ctxId}`, vinylNoiseTrack.color);
-    vinylClip.gain = 0.4;
-
-    kickTrack.clips = [kickClip];
-    snareTrack.clips = [snareClip];
-    hatClosedTrack.clips = [hatClip];
-    vinylNoiseTrack.clips = [vinylClip];
-
-    const subClip = createMidiClip(subBassTrack.id, 'Smooth Bass', 0, totalBeats, subBassTrack.color);
-    const rhodesClip = createMidiClip(rhodesTrack.id, 'Chords.tape', 0, totalBeats, rhodesTrack.color);
-    const pianoClip = createMidiClip(pianoTrack.id, 'Muted Melody', 16, totalBeats, pianoTrack.color);
-
-    subBassTrack.clips = [subClip];
+    drumTrack.clips = [drumClip];
+    percTrack.clips = [percClip];
+    bassTrack.clips = [bassClip];
+    subTrack.clips = [subClip];
     rhodesTrack.clips = [rhodesClip];
-    pianoTrack.clips = [pianoClip];
+    organTrack.clips = [organClip];
+    fluteTrack.clips = [fluteClip];
+    bellTrack.clips = [bellClip];
+    padTrack.clips = [padClip];
+    stringsTrack.clips = [stringsClip];
 
-    const subNotes: MidiNote[] = [];
-    const rhodesNotes: MidiNote[] = [];
-    const pianoNotes: MidiNote[] = [];
+    // ── NOTE ARRAYS ──────────────────────────────────────────────────────
+    const dn: MidiNote[] = [];
+    const pcn: MidiNote[] = [];
+    const bn: MidiNote[] = [];
+    const sbn: MidiNote[] = [];
+    const rn: MidiNote[] = [];
+    const on: MidiNote[] = [];
+    const fn: MidiNote[] = [];
+    const bln: MidiNote[] = [];
+    const pdn: MidiNote[] = [];
+    const strn: MidiNote[] = [];
 
-    for (let beat = 0; beat < totalBeats; beat++) {
-        // Jazz progression ii-V-I: Dm7 (D F A C) - G7 (G B D F) - CMaj7 (C E G B)
-        const bar = Math.floor(beat / 8);
-        const chordIdx = bar % 4;
-        let root = 50; // D3
-        let third = 53,
-            fifth = 57,
-            seventh = 60;
+    // ── JAZZ DRUMS ───────────────────────────────────────────────────────
+    // Cross-stick (rimshot 37) as snare, closed HH (42) as ride, kick (36) sparse
+    for (let s = 0; s < TB * 4; s++) {
+        const b = s * 0.25;
+        if (b >= TB) break;
+        const p = b % 4;
+        const sec = getSec(b);
+        const isIntro = sec.name === 'Intro';
+        const isOutro = sec.name === 'Outro';
 
-        if (chordIdx === 1) {
-            // G7
-            root = 43;
-            third = 47;
-            fifth = 50;
-            seventh = 53;
-        } else if (chordIdx >= 2) {
-            // CMaj7
-            root = 48;
-            third = 52;
-            fifth = 55;
-            seventh = 59;
+        // "Ride" on closed HH — swing 8ths (on beat + dotted offbeat)
+        if (p % 1 === 0) {
+            dn.push(note(42, b, 0.3, hv(isIntro ? 40 : 60)));
+        }
+        if (p % 1 === 0.75) { // swung offbeat
+            dn.push(note(42, b, 0.2, hv(isIntro ? 30 : 45)));
         }
 
-        if (beat % 8 === 0) {
-            subNotes.push(note(root - 24, beat + 0.1, 4, 85)); // Late bass
-            subNotes.push(note(root - 24, beat + 4.1, 3, 75));
-
-            rhodesNotes.push(note(root, beat + 0.1, 8, 70));
-            rhodesNotes.push(note(third, beat + 0.12, 8, 70));
-            rhodesNotes.push(note(fifth, beat + 0.14, 8, 70));
-            rhodesNotes.push(note(seventh, beat + 0.16, 8, 60));
+        // Cross-stick on 2 and 4 (not intro/outro)
+        if ((p === 1 || p === 3) && !isIntro) {
+            dn.push(note(37, b, 0.2, hv(isOutro ? 40 : 65)));
         }
 
-        if (beat >= 16 && beat % 4 === 2) {
-            pianoNotes.push(note(seventh + 12, beat + 0.2, 0.5, 80));
-            pianoNotes.push(note(fifth + 12, beat + 1.2, 1, 75));
+        // Kick: beats 1 and 3 of odd bars, beat 1 of even bars + syncopation
+        const barInSec = Math.floor((b - sec.start) / 4);
+        if (!isIntro) {
+            if (p === 0 && barInSec % 2 === 0) dn.push(note(36, b, 0.4, hv(70)));
+            if (p === 2.5 && barInSec % 2 === 1) dn.push(note(36, b, 0.3, hv(55))); // syncopated
+            if (p === 0 && barInSec % 4 === 2) dn.push(note(36, b, 0.4, hv(65)));
+        }
+
+        // Ghost notes (very quiet snare taps at random 16th positions)
+        if (!isIntro && !isOutro && p % 0.25 === 0 && Math.random() < 0.08) {
+            dn.push(note(38, b, 0.1, hv(25, 5)));
+        }
+        // Outro fade
+        if (isOutro && p === 0 && barInSec % 2 === 0) {
+            const fade = Math.max(0, 1 - (b - sec.start) / (sec.end - sec.start));
+            if (fade > 0.1) dn.push(note(36, b, 0.4, Math.round(50 * fade)));
         }
     }
 
+    // ── PERCUSSION: clave, congas ────────────────────────────────────────
+    for (let bar = 0; bar < TB / 4; bar++) {
+        const bs = bar * 4;
+        if (bs < 48) continue;
+        const sec = getSec(bs);
+        // Son clave pattern (3-2): hits at 0, 1.5, 3, 4+1, 4+2 within 8 beats
+        const claveBar = bar % 2;
+        if (claveBar === 0) {
+            pcn.push(note(75, bs, 0.1, hv(40)));
+            pcn.push(note(75, bs + 1.5, 0.1, hv(35)));
+            pcn.push(note(75, bs + 3, 0.1, hv(38)));
+        } else {
+            pcn.push(note(75, bs + 1, 0.1, hv(35)));
+            pcn.push(note(75, bs + 2, 0.1, hv(40)));
+        }
+        // Congas in variation section
+        if (sec.name === 'Variation' || sec.name === 'Solo') {
+            pcn.push(note(62, bs + 0.75, 0.15, hv(45))); // conga high
+            pcn.push(note(63, bs + 2.25, 0.15, hv(40))); // conga mid
+            if (bar % 4 === 3) pcn.push(note(64, bs + 3.5, 0.15, hv(50))); // conga low fill
+        }
+    }
+
+    // ── WALKING BASS ─────────────────────────────────────────────────────
+    // Quarter notes: root → 3rd/5th → passing → chromatic approach
+    for (let bar = 0; bar < TB / 4; bar++) {
+        const bs = bar * 4;
+        if (bs >= TB) break;
+        const ci0 = getChordIdx(bs);
+        const nextBar = Math.min(bs + 4, TB - 1);
+        const ci1 = getChordIdx(nextBar);
+        const root = BASS_ROOTS[ci0]!;
+        const nextRoot = BASS_ROOTS[ci1]!;
+        const voicing = JAZZ_VOICINGS[ci0]!;
+        const sec = getSec(bs);
+        const v = sec.name === 'Intro' ? 65 : sec.name === 'Outro' ? 55 : 80;
+
+        // Beat 1: root
+        bn.push(note(root, bs, 0.9, hv(v)));
+        // Beat 2: 3rd or 5th (pick from voicing, down an octave)
+        const choice = voicing[Math.floor(Math.random() * 2) + 1]! - 12;
+        bn.push(note(choice, bs + 1, 0.9, hv(v - 5)));
+        // Beat 3: scale passing tone
+        const passing = root + (nextRoot > root ? 4 : -3);
+        bn.push(note(passing, bs + 2, 0.9, hv(v - 8)));
+        // Beat 4: chromatic approach to next root
+        const approach = nextRoot > root ? nextRoot - 1 : nextRoot + 1;
+        bn.push(note(approach, bs + 3, 0.9, hv(v - 3)));
+
+        // Sub layer: sustained root
+        sbn.push(note(root - 12, bs, 3.8, hv(70)));
+    }
+
+    // ── RHODES COMPING ───────────────────────────────────────────────────
+    // Syncopated jazz chord stabs with humanization
+    for (let bar = 0; bar < TB / 4; bar++) {
+        const bs = bar * 4;
+        if (bs >= TB) break;
+        const ci0 = getChordIdx(bs);
+        const voicing = JAZZ_VOICINGS[ci0]!;
+        const sec = getSec(bs);
+        const v = sec.name === 'Intro' ? 55 : sec.name === 'Outro' ? 45 : 70;
+
+        // Comp pattern varies by bar position
+        const patIdx = bar % 4;
+        if (patIdx === 0) {
+            // Root position stab on 1
+            for (const t of voicing) rn.push(note(t, bs + 0.1, 1.5, hv(v)));
+            for (const t of voicing) rn.push(note(t, bs + 2.75, 0.8, hv(v - 10)));
+        } else if (patIdx === 1) {
+            // Anticipation on & of 4 (previous bar), stab on 2
+            for (const t of voicing) rn.push(note(t, bs + 1, 1, hv(v)));
+            for (const t of voicing) rn.push(note(t, bs + 3.5, 0.4, hv(v - 15)));
+        } else if (patIdx === 2) {
+            // Sparse: just on 1 and let ring
+            for (const t of voicing) rn.push(note(t, bs + 0.15, 3.5, hv(v - 5)));
+        } else {
+            // Active: hits on 1, &2, 4
+            for (const t of voicing) rn.push(note(t, bs, 0.5, hv(v)));
+            for (const t of voicing) rn.push(note(t, bs + 1.5, 0.5, hv(v - 8)));
+            for (const t of voicing) rn.push(note(t, bs + 3, 0.8, hv(v - 5)));
+        }
+    }
+
+    // ── ORGAN PADS (B theme and return) ──────────────────────────────────
+    for (let beat = 132; beat < 384; beat += 8) {
+        const ci0 = getChordIdx(beat);
+        const voicing = JAZZ_VOICINGS[ci0]!;
+        for (const t of voicing) on.push(note(t - 12, beat, 7.5, hv(50)));
+    }
+
+    // ── BELL MELODY (A and B themes) ─────────────────────────────────────
+    // Lyrical phrases in Eb major with jazz inflections
+    const bellMelA: [number, number, number, number][] = [ // [off, pitch, dur, vel]
+        [0, 67, 1.5, 75], [2, 65, 1, 70], [3, 63, 0.75, 72],
+        [4, 62, 2, 68], [6, 63, 1, 65], [7, 65, 1, 70],
+    ];
+    const bellMelB: [number, number, number, number][] = [
+        [0, 70, 2, 72], [2, 72, 1, 68], [3.5, 70, 0.5, 65],
+        [4, 67, 1.5, 70], [6, 65, 1, 68], [7.5, 67, 0.5, 60],
+    ];
+    for (let phrase = 0; phrase < (300 - 48) / 8; phrase++) {
+        const start = 48 + phrase * 8;
+        if (start >= 300) break;
+        const sec = getSec(start);
+        if (sec.name === 'Solo') continue; // flute takes over
+        const mel = phrase % 2 === 0 ? bellMelA : bellMelB;
+        const transpose = sec.name === 'B Theme' ? 2 : 0;
+        for (const [off, pitch, dur, vel] of mel) {
+            bln.push(note(pitch + transpose, start + off, dur, hv(vel)));
+        }
+    }
+
+    // ── FLUTE SOLO (over Solo and Return A sections) ─────────────────────
+    // More improvisatory feel — longer phrases with wider intervals
+    const flutePhrases: [number, number, number, number][][] = [
+        [[0, 72, 1, 75], [1.5, 74, 0.5, 70], [2, 75, 2, 72], [4, 77, 1.5, 68], [6, 75, 1, 65], [7, 72, 1, 70]],
+        [[0, 79, 0.75, 72], [1, 77, 0.75, 70], [2, 75, 1.5, 68], [4, 72, 2, 72], [6.5, 74, 1, 65], [7.5, 75, 0.5, 60]],
+        [[0, 70, 2, 70], [2.5, 72, 1, 68], [4, 74, 1.5, 72], [6, 77, 1, 65], [7, 75, 1, 70]],
+        [[0, 75, 1, 68], [1.5, 77, 0.5, 65], [2, 79, 2, 72], [4.5, 77, 1.5, 68], [6, 75, 1, 70], [7, 72, 1, 65]],
+    ];
+    for (let phrase = 0; phrase < (384 - 216) / 8; phrase++) {
+        const start = 216 + phrase * 8;
+        if (start >= 384) break;
+        const phIdx = phrase % flutePhrases.length;
+        for (const [off, pitch, dur, vel] of flutePhrases[phIdx]!) {
+            fn.push(note(pitch, start + off, dur, hv(vel)));
+        }
+    }
+
+    // ── SHIMMER PAD ──────────────────────────────────────────────────────
+    for (let beat = 0; beat < TB; beat += 16) {
+        const ci0 = getChordIdx(beat);
+        const voicing = JAZZ_VOICINGS[ci0]!;
+        const sec = getSec(beat);
+        const v = sec.name === 'Intro' || sec.name === 'Outro' ? 35 : 50;
+        for (const t of voicing) pdn.push(note(t + 12, beat, 15.5, hv(v)));
+    }
+
+    // ── SOFT STRINGS ─────────────────────────────────────────────────────
+    for (let beat = 132; beat < TB; beat += 16) {
+        const ci0 = getChordIdx(beat);
+        const voicing = JAZZ_VOICINGS[ci0]!;
+        const sec = getSec(beat);
+        const v = sec.name === 'Outro' ? 30 : 45;
+        for (const t of voicing) strn.push(note(t, beat, 15.5, hv(v)));
+    }
+
+    // ── ASSEMBLE ─────────────────────────────────────────────────────────
     const tracks = [
         masterTrack,
-        drumFolder,
-        kickTrack,
-        snareTrack,
-        hatClosedTrack,
-        percTrack,
-        bassFolder,
-        subBassTrack,
-        keysFolder,
-        rhodesTrack,
-        pianoTrack,
-        fxFolder,
-        vinylNoiseTrack,
+        rhythmFolder, drumTrack, percTrack,
+        bassFolder, bassTrack, subTrack,
+        keysFolder, rhodesTrack, organTrack,
+        melodyFolder, fluteTrack, bellTrack,
+        atmosFolder, padTrack, stringsTrack,
     ];
     trackStore.set({ tracks, selectedTrackId: rhodesTrack.id });
 
     midiStore.set({
-        notesByClipId: { [subClip.id]: subNotes, [rhodesClip.id]: rhodesNotes, [pianoClip.id]: pianoNotes },
+        notesByClipId: {
+            [drumClip.id]: dn, [percClip.id]: pcn,
+            [bassClip.id]: bn, [subClip.id]: sbn,
+            [rhodesClip.id]: rn, [organClip.id]: on,
+            [fluteClip.id]: fn, [bellClip.id]: bln,
+            [padClip.id]: pdn, [stringsClip.id]: strn,
+        },
         ccByClipId: {},
         pitchBendByClipId: {},
     });
 
-    transportStore.set({ ...defaultTransportState, tempo: bpm, loopEnd: totalBeats, isLooping: true });
+    transportStore.set({ ...defaultTransportState, tempo: bpm, loopEnd: TB, isLooping: true });
 
-    const vinylVolLane = createAutomationLane(vinylNoiseTrack.id, 'volume', 'Volume', 0, 1);
-    vinylVolLane.points = [
-        { beat: 0, value: 0.1, curve: 'linear', tension: 0 },
-        { beat: 128, value: 0.3, curve: 'linear', tension: 0 },
+    // ── AUTOMATION ───────────────────────────────────────────────────────
+    const rhodesVol = createAutomationLane(rhodesTrack.id, 'volume', 'Volume', 0, 1);
+    rhodesVol.points = [
+        { beat: 0, value: 0.4, curve: 'linear', tension: 0 },
+        { beat: 48, value: 0.7, curve: 'linear', tension: 0 },
+        { beat: 492, value: 0.7, curve: 'linear', tension: 0 },
+        { beat: 588, value: 0.2, curve: 'linear', tension: 0 },
     ];
-    automationStore.set({ lanes: [vinylVolLane] });
+    const strVol = createAutomationLane(stringsTrack.id, 'volume', 'Volume', 0, 1);
+    strVol.points = [
+        { beat: 132, value: 0.0, curve: 'linear', tension: 0 },
+        { beat: 164, value: 0.5, curve: 'linear', tension: 0 },
+        { beat: 492, value: 0.5, curve: 'linear', tension: 0 },
+        { beat: 588, value: 0.8, curve: 'linear', tension: 0 },
+    ];
+    const padVol = createAutomationLane(padTrack.id, 'volume', 'Volume', 0, 1);
+    padVol.points = [
+        { beat: 0, value: 0.2, curve: 'linear', tension: 0 },
+        { beat: 48, value: 0.5, curve: 'linear', tension: 0 },
+        { beat: 492, value: 0.5, curve: 'linear', tension: 0 },
+        { beat: 560, value: 0.8, curve: 'linear', tension: 0 },
+        { beat: 588, value: 0.3, curve: 'linear', tension: 0 },
+    ];
+    automationStore.set({ lanes: [rhodesVol, strVol, padVol] });
 
+    // ── MARKERS ──────────────────────────────────────────────────────────
     markerStore.set({
-        markers: [
-            { id: crypto.randomUUID(), beat: 0, name: 'Intro', color: 'oklch(0.39 0.08 45)' },
-            { id: crypto.randomUUID(), beat: 16, name: 'Vibe', color: 'oklch(0.40 0.08 150)' },
-        ],
-        sections: [
-            { id: crypto.randomUUID(), startBeat: 0, endBeat: 16, name: 'Intro', color: 'oklch(0.39 0.08 45)' },
-            { id: crypto.randomUUID(), startBeat: 16, endBeat: 128, name: 'Vibe', color: 'oklch(0.40 0.08 150)' },
-        ],
+        markers: SECTIONS.map((s) => ({
+            id: crypto.randomUUID(),
+            beat: s.start,
+            name: s.name,
+            color: 'oklch(0.38 0.07 220)',
+        })),
+        sections: SECTIONS.map((s) => ({
+            id: crypto.randomUUID(),
+            startBeat: s.start,
+            endBeat: s.end,
+            name: s.name,
+            color: s.name.includes('A') ? 'oklch(0.38 0.08 200)'
+                : s.name.includes('B') ? 'oklch(0.38 0.08 160)'
+                : s.name === 'Solo' ? 'oklch(0.40 0.10 40)'
+                : 'oklch(0.36 0.06 240)',
+        })),
     });
 
     syncArrangement(tracks);
-
-    projectStore.set({ name: 'LoFi Study Guide (Demo)', createdAt: Date.now(), updatedAt: Date.now(), dirty: false, loading: false });
+    projectStore.set({ name: 'Midnight Smoke (Demo)', createdAt: Date.now(), updatedAt: Date.now(), dirty: false, loading: false });
 }
 
 // ---------------------------------------------------------------------------
-// Engine Utilities
+// Demo Project 4: Native Showcase — "Brainfeeder" (Flying Lotus style)
+// Key: Eb minor / Gb major | BPM: 83→158 (tempo varies) | ~6:12 (816 beats)
+// NATIVE-ONLY: Uses native-eq, native-compressor, native-reverb, native-delay,
+//              native-gate, native-limiter, native-gain + ALL web effects.
+// ~50 tracks. Maximum complexity showcase.
+// Structure: Fog(0-64) → Fracture(64-160) → Gravity(160-288) →
+//            Warp(288-384) → Collapse(384-480) → Nebula(480-576) →
+//            Hyperspace(576-720) → Dust(720-816)
+// ---------------------------------------------------------------------------
+
+export async function demo4_NativeShowcase(): Promise<void> {
+    const bpm = 83;
+    const TB = 816;
+
+    // Eb minor / Gb major: Eb F Gb Ab Bb Cb Db
+    // Chord pool (MIDI voicings in octave 3-4)
+    const CHORDS: Record<string, number[]> = {
+        Ebm7:   [51, 54, 58, 62],  // Eb3 Gb3 Bb3 Db4
+        Gbmaj7: [54, 58, 61, 65],  // Gb3 Bb3 Db4 F4
+        Abm7:   [56, 59, 63, 66],  // Ab3 Cb4 Eb4 Gb4
+        Bb7:    [58, 62, 65, 68],  // Bb3 D4  F4  Ab4
+        Dbmaj7: [49, 53, 56, 60],  // Db3 F3  Ab3 C4
+        Cbmaj7: [47, 51, 54, 58],  // Cb3 Eb3 Gb3 Bb3
+        Fm7b5:  [53, 56, 59, 63],  // F3  Ab3 Cb4 Eb4
+        Ebm9:   [51, 54, 58, 62, 66], // Eb3 Gb3 Bb3 Db4 F4
+    };
+    const BASS: Record<string, number> = {
+        Ebm7: 39, Gbmaj7: 42, Abm7: 44, Bb7: 46, Dbmaj7: 37, Cbmaj7: 35, Fm7b5: 41, Ebm9: 39,
+    };
+
+    // Section chord progressions (chord name per 8-beat block)
+    const PROG_MAIN = ['Ebm7', 'Gbmaj7', 'Abm7', 'Bb7', 'Dbmaj7', 'Abm7', 'Fm7b5', 'Ebm7'];
+    const PROG_WARP = ['Ebm9', 'Cbmaj7', 'Gbmaj7', 'Abm7', 'Fm7b5', 'Bb7', 'Dbmaj7', 'Ebm9'];
+    const PROG_HYPER = ['Abm7', 'Bb7', 'Ebm7', 'Gbmaj7', 'Dbmaj7', 'Fm7b5', 'Cbmaj7', 'Abm7'];
+
+    type Sec = { start: number; end: number; name: string; prog: string[] };
+    const SECTIONS: Sec[] = [
+        { start: 0, end: 64, name: 'Fog', prog: PROG_MAIN },
+        { start: 64, end: 160, name: 'Fracture', prog: PROG_MAIN },
+        { start: 160, end: 288, name: 'Gravity', prog: PROG_MAIN },
+        { start: 288, end: 384, name: 'Warp', prog: PROG_WARP },
+        { start: 384, end: 480, name: 'Collapse', prog: PROG_WARP },
+        { start: 480, end: 576, name: 'Nebula', prog: PROG_HYPER },
+        { start: 576, end: 720, name: 'Hyperspace', prog: PROG_HYPER },
+        { start: 720, end: 816, name: 'Dust', prog: PROG_MAIN },
+    ];
+    const getSec = (b: number): Sec => SECTIONS.find((s) => b >= s.start && b < s.end) ?? SECTIONS[0]!;
+    const getChord = (b: number): string => {
+        const sec = getSec(b);
+        const idx = Math.floor((b - sec.start) / 8) % sec.prog.length;
+        return sec.prog[idx]!;
+    };
+    const cv = (b: number) => CHORDS[getChord(b)]!;
+    const broot = (b: number) => BASS[getChord(b)]!;
+    const hv = (base: number, r = 8) => Math.max(10, Math.min(127, Math.round(base + (Math.random() - 0.5) * r * 2)));
+    const R = (b: number, lo: number, hi: number) => b >= lo && b < hi;
+
+    // ── TRACKS (50 tracks in 10 folders) ─────────────────────────────────
+    const masterTrack = createTrack({ name: 'Master', kind: 'master' });
+
+    // Folder 1: Kick Layers
+    const kickFolder = createTrack({ name: 'Kick Layers', kind: 'folder' });
+    const kick808 = createTrack({ name: '808 Kick', kind: 'midi', parentId: kickFolder.id });
+    const kickSub = createTrack({ name: 'Sub Kick', kind: 'midi', parentId: kickFolder.id });
+    const kickClick = createTrack({ name: 'Kick Click', kind: 'midi', parentId: kickFolder.id });
+
+    // Folder 2: Snare & Clap
+    const snareFolder = createTrack({ name: 'Snares & Claps', kind: 'folder' });
+    const snare808 = createTrack({ name: 'Snare Main', kind: 'midi', parentId: snareFolder.id });
+    const clap808 = createTrack({ name: 'Clap Layer', kind: 'midi', parentId: snareFolder.id });
+    const ghost = createTrack({ name: 'Ghost Snare', kind: 'midi', parentId: snareFolder.id });
+
+    // Folder 3: Hi-Hats & Cymbals
+    const hatFolder = createTrack({ name: 'Hi-Hats', kind: 'folder' });
+    const hatClosed = createTrack({ name: 'Closed Hat', kind: 'midi', parentId: hatFolder.id });
+    const hatOpen = createTrack({ name: 'Open Hat', kind: 'midi', parentId: hatFolder.id });
+    const ride = createTrack({ name: 'Ride Texture', kind: 'midi', parentId: hatFolder.id });
+
+    // Folder 4: Percussion
+    const percFolder = createTrack({ name: 'Percussion', kind: 'folder' });
+    const conga = createTrack({ name: 'Congas', kind: 'midi', parentId: percFolder.id });
+    const cowbell = createTrack({ name: 'Cowbell', kind: 'midi', parentId: percFolder.id });
+    const rimshot = createTrack({ name: 'Rimshot', kind: 'midi', parentId: percFolder.id });
+    const clave = createTrack({ name: 'Clave', kind: 'midi', parentId: percFolder.id });
+    const tomLow = createTrack({ name: 'Tom Low', kind: 'midi', parentId: percFolder.id });
+    const tomHigh = createTrack({ name: 'Tom High', kind: 'midi', parentId: percFolder.id });
+    const maracas = createTrack({ name: 'Maracas', kind: 'midi', parentId: percFolder.id });
+
+    // Folder 5: Bass
+    const bassFolder = createTrack({ name: 'Bass Section', kind: 'folder' });
+    const reeseBass = createTrack({ name: 'Reese Bass', kind: 'midi', parentId: bassFolder.id });
+    const subBass = createTrack({ name: '808 Sub', kind: 'midi', parentId: bassFolder.id });
+    const acidBass = createTrack({ name: 'Acid Bass', kind: 'midi', parentId: bassFolder.id });
+
+    // Folder 6: Keys & Chords
+    const keysFolder = createTrack({ name: 'Keys & Chords', kind: 'folder' });
+    const rhodes = createTrack({ name: 'Rhodes', kind: 'midi', parentId: keysFolder.id });
+    const wurli = createTrack({ name: 'Wurlitzer', kind: 'midi', parentId: keysFolder.id });
+    const clavTrack = createTrack({ name: 'Clavinet', kind: 'midi', parentId: keysFolder.id });
+    const glassKeys = createTrack({ name: 'Glass Keys', kind: 'midi', parentId: keysFolder.id });
+
+    // Folder 7: Leads & Melodies
+    const leadFolder = createTrack({ name: 'Leads', kind: 'folder' });
+    const liquidLead = createTrack({ name: 'Liquid Lead', kind: 'midi', parentId: leadFolder.id });
+    const screamer = createTrack({ name: 'Screamer', kind: 'midi', parentId: leadFolder.id });
+    const flute = createTrack({ name: 'Flute Lead', kind: 'midi', parentId: leadFolder.id });
+    const bellMel = createTrack({ name: 'Bell Melody', kind: 'midi', parentId: leadFolder.id });
+
+    // Folder 8: Pads & Textures
+    const padFolder = createTrack({ name: 'Pads & Textures', kind: 'folder' });
+    const darkDrone = createTrack({ name: 'Dark Drone', kind: 'midi', parentId: padFolder.id });
+    const etherealPad = createTrack({ name: 'Ethereal Pad', kind: 'midi', parentId: padFolder.id });
+    const warmStrings = createTrack({ name: 'Warm Strings', kind: 'midi', parentId: padFolder.id });
+    const nativeAmb = createTrack({ name: 'Native Ambient', kind: 'midi', parentId: padFolder.id });
+    const lofiPad = createTrack({ name: 'Lo-Fi Pad', kind: 'midi', parentId: padFolder.id });
+
+    // Folder 9: FX & Glitch
+    const fxFolder = createTrack({ name: 'FX & Glitch', kind: 'folder' });
+    const noiseSweep = createTrack({ name: 'Noise Sweep', kind: 'midi', parentId: fxFolder.id });
+    const glitchPluck = createTrack({ name: 'Glitch Pluck', kind: 'midi', parentId: fxFolder.id });
+    const crystalArp = createTrack({ name: 'Crystal Arp', kind: 'midi', parentId: fxFolder.id });
+    const darkPulse = createTrack({ name: 'Dark Pulse', kind: 'midi', parentId: fxFolder.id });
+    const stab = createTrack({ name: 'Stab FX', kind: 'midi', parentId: fxFolder.id });
+    const riser = createTrack({ name: 'Riser', kind: 'midi', parentId: fxFolder.id });
+
+    // Folder 10: Bus Processing
+    const busFolder = createTrack({ name: 'Bus Processing', kind: 'folder' });
+    const drumBus = createTrack({ name: 'Drum Bus', kind: 'midi', parentId: busFolder.id });
+    const synthBus = createTrack({ name: 'Synth Bus', kind: 'midi', parentId: busFolder.id });
+
+    // ── APPLY PRESETS (mix of native + web) ──────────────────────────────
+    const allDrumTracks = [kick808, kickSub, kickClick, snare808, clap808, ghost,
+        hatClosed, hatOpen, ride, conga, cowbell, rimshot, clave, tomLow, tomHigh, maracas, drumBus];
+    for (const t of allDrumTracks) applyPreset(t, 'factory-drumkit-808');
+
+    applyPreset(reeseBass, 'synth-bass-reese');
+    applyPreset(subBass, 'synth-bass-808-sine');
+    applyPreset(acidBass, 'synth-bass-acid');
+    applyPreset(rhodes, 'synth-keys-electric-piano');
+    applyPreset(wurli, 'synth-keys-wurlitzer');
+    applyPreset(clavTrack, 'synth-keys-clavinet');
+    applyPreset(glassKeys, 'factory-keys-bell');
+    applyPreset(liquidLead, 'synth-lead-liquid');
+    applyPreset(screamer, 'synth-lead-screamer');
+    applyPreset(flute, 'factory-synth-flute');
+    applyPreset(bellMel, 'factory-keys-bell');
+    applyPreset(darkDrone, 'synth-pad-dark-drone');
+    applyPreset(etherealPad, 'synth-pad-ethereal');
+    applyPreset(warmStrings, 'synth-pad-warm-strings');
+    applyPreset(nativeAmb, 'factory-native-ambient-texture');
+    applyPreset(lofiPad, 'factory-native-lofi-delay');
+    applyPreset(noiseSweep, 'synth-sfx-noise-sweep');
+    applyPreset(glitchPluck, 'synth-sfx-glitch-pluck');
+    applyPreset(crystalArp, 'synth-arp-crystal');
+    applyPreset(darkPulse, 'synth-arp-dark-pulse');
+    applyPreset(stab, 'factory-fx-stab');
+    applyPreset(riser, 'factory-fx-riser');
+    applyPreset(synthBus, 'factory-drumkit-808'); // placeholder for bus
+
+    // ── PANNING for width ────────────────────────────────────────────────
+    hatClosed.pan = 10; hatOpen.pan = -15; ride.pan = 25;
+    conga.pan = -20; cowbell.pan = 30; rimshot.pan = -10; clave.pan = 35;
+    maracas.pan = -25; tomLow.pan = -30; tomHigh.pan = 15;
+    rhodes.pan = -20; wurli.pan = 15; clavTrack.pan = -10;
+    glassKeys.pan = 25; liquidLead.pan = 10; screamer.pan = -15;
+    flute.pan = 20; bellMel.pan = -25; crystalArp.pan = -35;
+    darkPulse.pan = 30; glitchPluck.pan = -30;
+    etherealPad.pan = -5; warmStrings.pan = 5;
+    kickSub.gain = 0.7; ghost.gain = 0.3; subBass.gain = 0.6;
+    lofiPad.gain = 0.4; nativeAmb.gain = 0.5;
+
+    // ── CLIPS ────────────────────────────────────────────────────────────
+    const mkClip = (t: any, name: string, s: number, e: number) => {
+        const c = createMidiClip(t.id, name, s, e, t.color);
+        t.clips = [...(t.clips || []), c];
+        return c;
+    };
+
+    const ck808 = mkClip(kick808, 'Kick 808', 0, TB);
+    const cksub = mkClip(kickSub, 'Sub Kick', 64, TB);
+    const ckclick = mkClip(kickClick, 'Kick Click', 160, TB);
+    const csn = mkClip(snare808, 'Snare', 64, TB);
+    const cclap = mkClip(clap808, 'Clap', 160, TB);
+    const cghost = mkClip(ghost, 'Ghost', 64, TB);
+    const chc = mkClip(hatClosed, 'Closed HH', 0, TB);
+    const cho = mkClip(hatOpen, 'Open HH', 64, TB);
+    const cride = mkClip(ride, 'Ride', 0, TB);
+    const cconga = mkClip(conga, 'Congas', 160, TB);
+    const ccow = mkClip(cowbell, 'Cowbell', 288, TB);
+    const crim = mkClip(rimshot, 'Rimshot', 64, TB);
+    const cclv = mkClip(clave, 'Clave', 160, 720);
+    const ctlow = mkClip(tomLow, 'Tom Lo', 288, 720);
+    const cthi = mkClip(tomHigh, 'Tom Hi', 288, 720);
+    const cmar = mkClip(maracas, 'Maracas', 0, TB);
+    const creese = mkClip(reeseBass, 'Reese', 64, TB);
+    const csub808 = mkClip(subBass, '808 Sub', 0, TB);
+    const cacid = mkClip(acidBass, 'Acid', 288, 720);
+    const crhodes = mkClip(rhodes, 'Rhodes', 0, TB);
+    const cwurli = mkClip(wurli, 'Wurli', 160, 576);
+    const cclav = mkClip(clavTrack, 'Clav', 288, 720);
+    const cglass = mkClip(glassKeys, 'Glass', 64, TB);
+    const cliquid = mkClip(liquidLead, 'Liquid', 160, 720);
+    const cscream = mkClip(screamer, 'Scream', 384, 576);
+    const cflute = mkClip(flute, 'Flute', 64, 480);
+    const cbell = mkClip(bellMel, 'Bell', 0, TB);
+    const cdrone = mkClip(darkDrone, 'Drone', 0, TB);
+    const cether = mkClip(etherealPad, 'Ethereal', 160, TB);
+    const cwarm = mkClip(warmStrings, 'Strings', 288, TB);
+    const cnamb = mkClip(nativeAmb, 'Ambient', 0, TB);
+    const clofi = mkClip(lofiPad, 'Lo-Fi', 64, 720);
+    const cnoise = mkClip(noiseSweep, 'Sweeps', 0, TB);
+    const cglitch = mkClip(glitchPluck, 'Glitch', 160, 720);
+    const ccrystal = mkClip(crystalArp, 'Crystal', 288, 720);
+    const cdpulse = mkClip(darkPulse, 'Pulse', 160, 576);
+    const cstab = mkClip(stab, 'Stab', 160, 720);
+    const criser = mkClip(riser, 'Riser', 0, TB);
+
+    // ── NOTE GENERATION ──────────────────────────────────────────────────
+    // Note arrays keyed by clip id
+    const N: Record<string, MidiNote[]> = {};
+    const allClips = [ck808,cksub,ckclick,csn,cclap,cghost,chc,cho,cride,cconga,ccow,crim,cclv,ctlow,cthi,cmar,
+        creese,csub808,cacid,crhodes,cwurli,cclav,cglass,cliquid,cscream,cflute,cbell,cdrone,cether,cwarm,
+        cnamb,clofi,cnoise,cglitch,ccrystal,cdpulse,cstab,criser];
+    for (const c of allClips) N[c.id] = [];
+
+    const isDense = (b: number) => R(b, 160, 288) || R(b, 384, 480) || R(b, 576, 720);
+    const isBreak = (b: number) => R(b, 288, 384) || R(b, 480, 576);
+
+    // ── KICK LAYERS ──────────────────────────────────────────────────────
+    for (let s = 0; s < TB * 4; s++) {
+        const b = s * 0.25;
+        if (b >= TB) break;
+        const sec = getSec(b);
+        const p = b % 4;
+
+        // Kick 808: broken beat patterns — NOT 4-on-floor
+        const bar = Math.floor(b / 4);
+        const patIdx = bar % 4;
+        const kickHits = [
+            [0, 1.75, 2.5],      // pattern 0
+            [0, 0.75, 2, 3.25],  // pattern 1
+            [0.5, 1.5, 3],       // pattern 2
+            [0, 1, 2.25, 3.5],   // pattern 3
+        ][sec.name === 'Fog' ? 0 : sec.name === 'Dust' ? 2 : patIdx]!;
+
+        if (kickHits.includes(p) && !R(b, 720, 816)) {
+            N[ck808.id]!.push(note(36, b, 0.4, hv(110)));
+        }
+        // Sub kick layer (lower velocity, slightly delayed)
+        if (b >= 64 && p === 0 && bar % 2 === 0) {
+            N[cksub.id]!.push(note(36, b + 0.02, 0.5, hv(75)));
+        }
+        // Click layer in dense sections
+        if (b >= 160 && isDense(b) && kickHits.includes(p)) {
+            N[ckclick.id]!.push(note(37, b, 0.05, hv(50))); // rimshot as click
+        }
+
+        // Snare: on 2 of each bar + ghost offbeats
+        if (b >= 64 && p === 2) {
+            N[csn.id]!.push(note(38, b, 0.2, hv(100)));
+        }
+        // Syncopated snare in dense sections
+        if (isDense(b) && (p === 3.5 || (p === 1.25 && bar % 2 === 1))) {
+            N[csn.id]!.push(note(38, b, 0.15, hv(80)));
+        }
+
+        // Clap: beat 2, layered with snare in dense
+        if (b >= 160 && p === 2 && isDense(b)) {
+            N[cclap.id]!.push(note(39, b, 0.2, hv(95)));
+        }
+        // Random clap flams
+        if (isDense(b) && p === 2 && bar % 4 === 3) {
+            N[cclap.id]!.push(note(39, b - 0.05, 0.1, hv(60)));
+        }
+
+        // Ghost notes: tiny snare taps
+        if (b >= 64 && p % 0.25 === 0 && Math.random() < 0.12) {
+            N[cghost.id]!.push(note(38, b, 0.08, hv(22, 5)));
+        }
+
+        // Closed HH: complex swung 16ths with velocity curves
+        if (p % 0.25 === 0) {
+            const swing = (s % 2 === 1) ? 0.03 : 0;
+            const accent = p % 1 === 0 ? 70 : p % 0.5 === 0 ? 50 : 30;
+            const secVel = sec.name === 'Fog' ? 0.5 : sec.name === 'Dust' ? 0.4 : 1;
+            const v = Math.round(accent * secVel);
+            if (v > 10) N[chc.id]!.push(note(42, b + swing, 0.1, hv(v)));
+        }
+
+        // Open HH: accents
+        if (b >= 64 && p === 0.5 && bar % 2 === 1) {
+            N[cho.id]!.push(note(46, b, 0.3, hv(55)));
+        }
+
+        // Ride texture: sparse, random
+        if (p % 1 === 0 && Math.random() < 0.15) {
+            N[cride.id]!.push(note(42, b, 0.4, hv(25, 4))); // very quiet ride
+        }
+
+        // Maracas: 8th notes in Fog and Dust for texture
+        if ((R(b, 0, 64) || R(b, 720, TB)) && p % 0.5 === 0) {
+            N[cmar.id]!.push(note(70, b, 0.08, hv(20, 3)));
+        }
+    }
+
+    // ── PERCUSSION (congas, cowbell, rimshot, clave, toms) ────────────────
+    for (let bar = 0; bar < TB / 4; bar++) {
+        const bs = bar * 4;
+        const sec = getSec(bs);
+
+        // Congas: syncopated Latin patterns
+        if (bs >= 160) {
+            N[cconga.id]!.push(note(62, bs + 0.75, 0.15, hv(50))); // high
+            N[cconga.id]!.push(note(63, bs + 2.25, 0.15, hv(45))); // mid
+            if (bar % 4 === 3) {
+                N[cconga.id]!.push(note(64, bs + 3.5, 0.2, hv(55))); // low fill
+                N[cconga.id]!.push(note(62, bs + 3.75, 0.1, hv(40)));
+            }
+        }
+
+        // Cowbell: offbeat 16ths in Warp and Hyperspace
+        if (bs >= 288 && (sec.name === 'Warp' || sec.name === 'Hyperspace')) {
+            N[ccow.id]!.push(note(56, bs + 0.25, 0.1, hv(35)));
+            N[ccow.id]!.push(note(56, bs + 1.75, 0.1, hv(30)));
+            N[ccow.id]!.push(note(56, bs + 3.25, 0.1, hv(38)));
+        }
+
+        // Rimshot: 3-2 son clave variant
+        if (bs >= 64) {
+            const cl = bar % 2;
+            if (cl === 0) {
+                N[crim.id]!.push(note(37, bs, 0.1, hv(45)));
+                N[crim.id]!.push(note(37, bs + 1.5, 0.1, hv(40)));
+            } else {
+                N[crim.id]!.push(note(37, bs + 1, 0.1, hv(42)));
+                N[crim.id]!.push(note(37, bs + 3, 0.1, hv(38)));
+            }
+        }
+
+        // Clave: every 2 bars in middle sections
+        if (bs >= 160 && bs < 720 && bar % 2 === 0) {
+            N[cclv.id]!.push(note(75, bs + 0.5, 0.08, hv(40)));
+            N[cclv.id]!.push(note(75, bs + 2.5, 0.08, hv(35)));
+        }
+
+        // Toms: fills at section boundaries
+        if (bs >= 288 && bs < 720 && bs % 32 >= 28) {
+            N[ctlow.id]!.push(note(43, bs, 0.3, hv(70)));
+            N[cthi.id]!.push(note(50, bs + 1, 0.3, hv(65)));
+            N[ctlow.id]!.push(note(47, bs + 2, 0.3, hv(75)));
+            N[cthi.id]!.push(note(50, bs + 3, 0.3, hv(60)));
+        }
+    }
+
+    // ── REESE BASS ───────────────────────────────────────────────────────
+    for (let bar = 0; bar < TB / 4; bar++) {
+        const bs = bar * 4;
+        if (bs < 64 || bs >= TB) continue;
+        const root = broot(bs);
+        const sec = getSec(bs);
+        if (sec.name === 'Dust') continue;
+        // Syncopated bass — hit on 1, slide on &3
+        N[creese.id]!.push(note(root, bs, 1.5, hv(90)));
+        N[creese.id]!.push(note(root + 2, bs + 2.5, 1, hv(75)));
+        if (isDense(bs)) {
+            N[creese.id]!.push(note(root - 5, bs + 1.75, 0.5, hv(70)));
+        }
+    }
+
+    // ── 808 SUB ──────────────────────────────────────────────────────────
+    for (let beat = 0; beat < TB; beat += 4) {
+        const root = broot(beat);
+        N[csub808.id]!.push(note(root - 12, beat, 3.5, hv(80)));
+    }
+
+    // ── ACID BASS (Warp through Hyperspace) ──────────────────────────────
+    const acidPat = [
+        [0, 0, 0.125], [0.25, 12, 0.1], [0.5, 7, 0.125], [0.75, 0, 0.125],
+        [1, 5, 0.25], [1.5, 0, 0.25], [2, 12, 0.125], [2.25, 7, 0.125],
+        [2.5, 5, 0.25], [3, 0, 0.5],
+    ];
+    for (let bar = 0; bar < TB / 4; bar++) {
+        const bs = bar * 4;
+        if (bs < 288 || bs >= 720) continue;
+        const root = broot(bs);
+        for (const [off, iv, dur] of acidPat) {
+            N[cacid.id]!.push(note(root + iv!, bs + off!, dur!, hv(95)));
+        }
+    }
+
+    // ── RHODES (broken chord comping throughout) ─────────────────────────
+    for (let bar = 0; bar < TB / 4; bar++) {
+        const bs = bar * 4;
+        if (bs >= TB) break;
+        const ch = cv(bs);
+        const sec = getSec(bs);
+        const v = sec.name === 'Fog' || sec.name === 'Dust' ? 50 : 70;
+        const pat = bar % 3;
+        if (pat === 0) {
+            for (const t of ch) N[crhodes.id]!.push(note(t, bs + 0.1, 2, hv(v)));
+            for (const t of ch) N[crhodes.id]!.push(note(t, bs + 2.75, 0.8, hv(v - 12)));
+        } else if (pat === 1) {
+            for (const t of ch) N[crhodes.id]!.push(note(t, bs + 0.5, 3, hv(v - 5)));
+        } else {
+            for (const t of ch) N[crhodes.id]!.push(note(t, bs, 0.5, hv(v)));
+            for (const t of ch) N[crhodes.id]!.push(note(t, bs + 1.5, 0.5, hv(v - 8)));
+            for (const t of ch) N[crhodes.id]!.push(note(t, bs + 3, 0.8, hv(v - 5)));
+        }
+    }
+
+    // ── WURLITZER (mid sections, funky stabs) ────────────────────────────
+    for (let bar = 0; bar < TB / 4; bar++) {
+        const bs = bar * 4;
+        if (bs < 160 || bs >= 576) continue;
+        const ch = cv(bs);
+        if (bar % 2 === 0) {
+            for (const t of ch) N[cwurli.id]!.push(note(t + 12, bs + 0.75, 0.2, hv(65)));
+            for (const t of ch) N[cwurli.id]!.push(note(t + 12, bs + 2.5, 0.15, hv(55)));
+        }
+    }
+
+    // ── CLAVINET (Warp+, percussive hits) ────────────────────────────────
+    for (let bar = 0; bar < TB / 4; bar++) {
+        const bs = bar * 4;
+        if (bs < 288 || bs >= 720) continue;
+        const ch = cv(bs);
+        N[cclav.id]!.push(note(ch[0]! + 12, bs + 1, 0.15, hv(75)));
+        if (bar % 2 === 1) N[cclav.id]!.push(note(ch[2]! + 12, bs + 3.25, 0.1, hv(60)));
+    }
+
+    // ── GLASS KEYS (sparse bell-like accents) ────────────────────────────
+    for (let bar = 0; bar < TB / 4; bar++) {
+        const bs = bar * 4;
+        if (bs < 64 || bs >= TB) continue;
+        const ch = cv(bs);
+        if (bar % 4 === 0) N[cglass.id]!.push(note(ch[3]! + 12, bs, 2, hv(55)));
+        if (bar % 8 === 4) N[cglass.id]!.push(note(ch[1]! + 12, bs + 2, 1.5, hv(45)));
+    }
+
+    // ── LIQUID LEAD (melodic phrases) ────────────────────────────────────
+    // Eb minor pentatonic: Eb=63 Gb=66 Ab=68 Bb=70 Db=73 Eb=75
+    const lMelA: [number, number, number][] = [
+        [0, 75, 1], [1.5, 73, 0.5], [2, 70, 1.5], [4, 68, 1], [5, 70, 0.5], [5.5, 73, 2.5],
+    ];
+    const lMelB: [number, number, number][] = [
+        [0, 70, 0.5], [0.5, 73, 0.5], [1, 75, 2], [3, 73, 0.5], [3.5, 70, 0.5],
+        [4, 68, 1.5], [6, 66, 1], [7, 68, 1],
+    ];
+    for (let ph = 0; ph < (720 - 160) / 8; ph++) {
+        const start = 160 + ph * 8;
+        if (start >= 720) break;
+        if (isBreak(start) && ph % 2 === 0) continue; // leave space
+        const mel = ph % 2 === 0 ? lMelA : lMelB;
+        for (const [off, pitch, dur] of mel) {
+            N[cliquid.id]!.push(note(pitch, start + off, dur, hv(80)));
+        }
+    }
+
+    // ── SCREAMER (Collapse section only — intense) ───────────────────────
+    const sMel: [number, number, number][] = [
+        [0, 75, 0.5], [0.5, 78, 0.5], [1, 80, 1.5], [3, 78, 1],
+        [4, 75, 0.5], [4.5, 73, 0.5], [5, 70, 2], [7, 73, 1],
+    ];
+    for (let ph = 0; ph < (576 - 384) / 8; ph++) {
+        const start = 384 + ph * 8;
+        for (const [off, pitch, dur] of sMel) {
+            N[cscream.id]!.push(note(pitch, start + off, dur, hv(100)));
+        }
+    }
+
+    // ── FLUTE (Fracture through Collapse, gentle) ────────────────────────
+    const fMelodies: [number, number, number][][] = [
+        [[0, 68, 2], [2.5, 70, 1], [4, 73, 1.5], [6, 70, 1], [7, 68, 1]],
+        [[0, 73, 1], [1.5, 75, 0.5], [2, 73, 2], [4.5, 70, 1.5], [6.5, 68, 1.5]],
+        [[0, 66, 2], [2.5, 68, 1], [4, 70, 2], [6.5, 73, 1.5]],
+    ];
+    for (let ph = 0; ph < (480 - 64) / 8; ph++) {
+        const start = 64 + ph * 8;
+        if (start >= 480) break;
+        if (isDense(start) && ph % 3 !== 0) continue;
+        const mel = fMelodies[ph % fMelodies.length]!;
+        for (const [off, pitch, dur] of mel) {
+            N[cflute.id]!.push(note(pitch, start + off, dur, hv(65)));
+        }
+    }
+
+    // ── BELL MELODY (sparse throughout) ──────────────────────────────────
+    for (let beat = 0; beat < TB; beat += 16) {
+        const ch = cv(beat);
+        N[cbell.id]!.push(note(ch[2]! + 24, beat + 2, 2, hv(40)));
+        if (beat % 32 === 0) N[cbell.id]!.push(note(ch[0]! + 24, beat + 10, 3, hv(35)));
+    }
+
+    // ── PADS & TEXTURES ──────────────────────────────────────────────────
+    // Dark Drone: sustained throughout
+    for (let beat = 0; beat < TB; beat += 32) {
+        const ch = cv(beat);
+        for (const t of ch.slice(0, 3)) N[cdrone.id]!.push(note(t - 12, beat, 31, hv(35)));
+    }
+    // Ethereal Pad: mid sections
+    for (let beat = 160; beat < TB; beat += 16) {
+        const ch = cv(beat);
+        for (const t of ch) N[cether.id]!.push(note(t + 12, beat, 15, hv(40)));
+    }
+    // Warm Strings: from Warp onward
+    for (let beat = 288; beat < TB; beat += 16) {
+        const ch = cv(beat);
+        for (const t of ch) N[cwarm.id]!.push(note(t, beat, 15.5, hv(45)));
+    }
+    // Native Ambient: throughout, very subtle
+    for (let beat = 0; beat < TB; beat += 32) {
+        const ch = cv(beat);
+        for (const t of ch.slice(0, 2)) N[cnamb.id]!.push(note(t + 12, beat, 30, hv(30)));
+    }
+    // Lo-Fi Pad: Fracture through Hyperspace
+    for (let beat = 64; beat < 720; beat += 16) {
+        const ch = cv(beat);
+        for (const t of ch.slice(0, 3)) N[clofi.id]!.push(note(t, beat, 15, hv(35)));
+    }
+
+    // ── FX & GLITCH ──────────────────────────────────────────────────────
+    // Noise sweeps before section changes
+    const sweepBeats = [48, 144, 272, 368, 464, 560, 704];
+    for (const sb of sweepBeats) N[cnoise.id]!.push(note(60, sb, 16, 65));
+
+    // Glitch pluck: rapid random in dense sections
+    for (let s = 0; s < TB * 4; s++) {
+        const b = s * 0.25;
+        if (b < 160 || b >= 720 || !isDense(b)) continue;
+        if (Math.random() < 0.06) {
+            const pitch = 60 + Math.floor(Math.random() * 24);
+            N[cglitch.id]!.push(note(pitch, b, 0.08, hv(55)));
+        }
+    }
+
+    // Crystal arp: 16th note patterns in Warp+
+    for (let s = 0; s < TB * 4; s++) {
+        const b = s * 0.25;
+        if (b < 288 || b >= 720) continue;
+        const ch = cv(b);
+        const idx = s % ch.length;
+        const oct = Math.floor(s / ch.length) % 3 === 0 ? 12 : 0;
+        N[ccrystal.id]!.push(note(ch[idx]! + 12 + oct, b, 0.15, hv(50)));
+    }
+
+    // Dark pulse: 16th notes in Gravity through Nebula
+    for (let s = 0; s < TB * 4; s++) {
+        const b = s * 0.25;
+        if (b < 160 || b >= 576) continue;
+        if (s % 2 === 0) {
+            N[cdpulse.id]!.push(note(broot(b), b, 0.1, hv(45)));
+        }
+    }
+
+    // Stabs: accent chords in drops
+    for (let beat = 160; beat < 720; beat += 8) {
+        if (isBreak(beat)) continue;
+        const ch = cv(beat);
+        for (const t of ch) N[cstab.id]!.push(note(t + 12, beat, 0.1, hv(85)));
+    }
+
+    // Risers before every section
+    for (const sec of SECTIONS) {
+        if (sec.start > 0) N[criser.id]!.push(note(60, sec.start - 16, 16, 70));
+    }
+
+    // ── ASSEMBLE ALL TRACKS ──────────────────────────────────────────────
+    const tracks = [
+        masterTrack,
+        kickFolder, kick808, kickSub, kickClick,
+        snareFolder, snare808, clap808, ghost,
+        hatFolder, hatClosed, hatOpen, ride,
+        percFolder, conga, cowbell, rimshot, clave, tomLow, tomHigh, maracas,
+        bassFolder, reeseBass, subBass, acidBass,
+        keysFolder, rhodes, wurli, clavTrack, glassKeys,
+        leadFolder, liquidLead, screamer, flute, bellMel,
+        padFolder, darkDrone, etherealPad, warmStrings, nativeAmb, lofiPad,
+        fxFolder, noiseSweep, glitchPluck, crystalArp, darkPulse, stab, riser,
+        busFolder, drumBus, synthBus,
+    ];
+    trackStore.set({ tracks, selectedTrackId: liquidLead.id });
+
+    midiStore.set({
+        notesByClipId: N,
+        ccByClipId: {},
+        pitchBendByClipId: {},
+    });
+
+    transportStore.set({ ...defaultTransportState, tempo: bpm, loopEnd: TB, isLooping: true });
+
+    // ── AUTOMATION (12 lanes — go crazy) ─────────────────────────────────
+    const mkLane = (trackId: string, param: string, name: string, min: number, max: number) =>
+        createAutomationLane(trackId, param, name, min, max);
+
+    const kickVol = mkLane(kick808.id, 'volume', 'Volume', 0, 1);
+    kickVol.points = [
+        { beat: 0, value: 0.6, curve: 'linear', tension: 0 },
+        { beat: 64, value: 0.9, curve: 'linear', tension: 0 },
+        { beat: 160, value: 1.0, curve: 'linear', tension: 0 },
+        { beat: 720, value: 1.0, curve: 'linear', tension: 0 },
+        { beat: 816, value: 0.0, curve: 'linear', tension: 0 },
+    ];
+
+    const reeseVol = mkLane(reeseBass.id, 'volume', 'Volume', 0, 1);
+    reeseVol.points = [
+        { beat: 64, value: 0.3, curve: 'linear', tension: 0 },
+        { beat: 160, value: 0.8, curve: 'linear', tension: 0 },
+        { beat: 288, value: 0.5, curve: 'linear', tension: 0 },
+        { beat: 384, value: 0.9, curve: 'linear', tension: 0 },
+        { beat: 576, value: 1.0, curve: 'linear', tension: 0 },
+        { beat: 720, value: 0.0, curve: 'linear', tension: 0 },
+    ];
+
+    const droneVol = mkLane(darkDrone.id, 'volume', 'Volume', 0, 1);
+    droneVol.points = [
+        { beat: 0, value: 0.4, curve: 'linear', tension: 0 },
+        { beat: 64, value: 0.2, curve: 'linear', tension: 0 },
+        { beat: 288, value: 0.5, curve: 'linear', tension: 0 },
+        { beat: 480, value: 0.7, curve: 'linear', tension: 0 },
+        { beat: 720, value: 0.8, curve: 'linear', tension: 0 },
+        { beat: 816, value: 0.3, curve: 'linear', tension: 0 },
+    ];
+
+    const rhodesVol = mkLane(rhodes.id, 'volume', 'Volume', 0, 1);
+    rhodesVol.points = [
+        { beat: 0, value: 0.3, curve: 'linear', tension: 0 },
+        { beat: 64, value: 0.6, curve: 'linear', tension: 0 },
+        { beat: 160, value: 0.7, curve: 'linear', tension: 0 },
+        { beat: 720, value: 0.7, curve: 'linear', tension: 0 },
+        { beat: 816, value: 0.2, curve: 'linear', tension: 0 },
+    ];
+
+    const etherVol = mkLane(etherealPad.id, 'volume', 'Volume', 0, 1);
+    etherVol.points = [
+        { beat: 160, value: 0.0, curve: 'linear', tension: 0 },
+        { beat: 224, value: 0.5, curve: 'linear', tension: 0 },
+        { beat: 480, value: 0.6, curve: 'linear', tension: 0 },
+        { beat: 720, value: 0.8, curve: 'linear', tension: 0 },
+        { beat: 816, value: 0.5, curve: 'linear', tension: 0 },
+    ];
+
+    const acidVol = mkLane(acidBass.id, 'volume', 'Volume', 0, 1);
+    acidVol.points = [
+        { beat: 288, value: 0.3, curve: 'linear', tension: 0 },
+        { beat: 384, value: 0.9, curve: 'linear', tension: 0 },
+        { beat: 576, value: 1.0, curve: 'linear', tension: 0 },
+        { beat: 720, value: 0.0, curve: 'linear', tension: 0 },
+    ];
+
+    const glitchVol = mkLane(glitchPluck.id, 'volume', 'Volume', 0, 1);
+    glitchVol.points = [
+        { beat: 160, value: 0.2, curve: 'linear', tension: 0 },
+        { beat: 288, value: 0.5, curve: 'linear', tension: 0 },
+        { beat: 384, value: 0.8, curve: 'linear', tension: 0 },
+        { beat: 576, value: 1.0, curve: 'linear', tension: 0 },
+        { beat: 720, value: 0.0, curve: 'linear', tension: 0 },
+    ];
+
+    const crystalVol = mkLane(crystalArp.id, 'volume', 'Volume', 0, 1);
+    crystalVol.points = [
+        { beat: 288, value: 0.1, curve: 'linear', tension: 0 },
+        { beat: 384, value: 0.6, curve: 'linear', tension: 0 },
+        { beat: 576, value: 0.8, curve: 'linear', tension: 0 },
+        { beat: 720, value: 0.0, curve: 'linear', tension: 0 },
+    ];
+
+    const liquidVol = mkLane(liquidLead.id, 'volume', 'Volume', 0, 1);
+    liquidVol.points = [
+        { beat: 160, value: 0.0, curve: 'linear', tension: 0 },
+        { beat: 192, value: 0.7, curve: 'linear', tension: 0 },
+        { beat: 288, value: 0.5, curve: 'linear', tension: 0 },
+        { beat: 384, value: 0.3, curve: 'linear', tension: 0 },
+        { beat: 480, value: 0.8, curve: 'linear', tension: 0 },
+        { beat: 576, value: 1.0, curve: 'linear', tension: 0 },
+        { beat: 720, value: 0.0, curve: 'linear', tension: 0 },
+    ];
+
+    const hatVol = mkLane(hatClosed.id, 'volume', 'Volume', 0, 1);
+    hatVol.points = [
+        { beat: 0, value: 0.3, curve: 'linear', tension: 0 },
+        { beat: 64, value: 0.5, curve: 'linear', tension: 0 },
+        { beat: 160, value: 0.7, curve: 'linear', tension: 0 },
+        { beat: 576, value: 0.8, curve: 'linear', tension: 0 },
+        { beat: 720, value: 0.5, curve: 'linear', tension: 0 },
+        { beat: 816, value: 0.2, curve: 'linear', tension: 0 },
+    ];
+
+    const warmVol = mkLane(warmStrings.id, 'volume', 'Volume', 0, 1);
+    warmVol.points = [
+        { beat: 288, value: 0.0, curve: 'linear', tension: 0 },
+        { beat: 352, value: 0.4, curve: 'linear', tension: 0 },
+        { beat: 576, value: 0.5, curve: 'linear', tension: 0 },
+        { beat: 720, value: 0.6, curve: 'linear', tension: 0 },
+        { beat: 816, value: 0.8, curve: 'linear', tension: 0 },
+    ];
+
+    const screamVol = mkLane(screamer.id, 'volume', 'Volume', 0, 1);
+    screamVol.points = [
+        { beat: 384, value: 0.0, curve: 'linear', tension: 0 },
+        { beat: 400, value: 0.9, curve: 'linear', tension: 0 },
+        { beat: 560, value: 0.9, curve: 'linear', tension: 0 },
+        { beat: 576, value: 0.0, curve: 'linear', tension: 0 },
+    ];
+
+    automationStore.set({ lanes: [
+        kickVol, reeseVol, droneVol, rhodesVol, etherVol, acidVol,
+        glitchVol, crystalVol, liquidVol, hatVol, warmVol, screamVol,
+    ] });
+
+    // ── MARKERS ──────────────────────────────────────────────────────────
+    const secColors = [
+        'oklch(0.30 0.08 270)', 'oklch(0.35 0.10 300)', 'oklch(0.40 0.13 350)',
+        'oklch(0.38 0.12 30)',  'oklch(0.42 0.15 10)',  'oklch(0.38 0.10 200)',
+        'oklch(0.45 0.18 60)',  'oklch(0.32 0.06 240)',
+    ];
+    markerStore.set({
+        markers: SECTIONS.map((s, i) => ({
+            id: crypto.randomUUID(), beat: s.start, name: s.name, color: secColors[i]!,
+        })),
+        sections: SECTIONS.map((s, i) => ({
+            id: crypto.randomUUID(), startBeat: s.start, endBeat: s.end, name: s.name, color: secColors[i]!,
+        })),
+    });
+
+    syncArrangement(tracks);
+    projectStore.set({ name: 'Brainfeeder (Demo — Native)', createdAt: Date.now(), updatedAt: Date.now(), dirty: false, loading: false });
+}
+
+
 // ---------------------------------------------------------------------------
 
 function syncArrangement(tracks: any[]) {
@@ -1257,30 +2722,3 @@ function createNoiseBurst(
     noise.stop(time + duration + 0.1);
 }
 
-async function generateSyntheticToneBuffer(bufferId: string, beats: number, bpm: number, freq: number): Promise<void> {
-    try {
-        const bps = bpm / 60;
-        const durationSecs = beats / bps;
-        const ctx = new OfflineAudioContext(1, 44100 * Math.ceil(durationSecs), 44100);
-
-        const osc = ctx.createOscillator();
-        const env = ctx.createGain();
-        osc.frequency.value = freq;
-        osc.type = 'triangle';
-
-        env.gain.setValueAtTime(0, 0);
-        env.gain.linearRampToValueAtTime(0.4, 0.5);
-        env.gain.setValueAtTime(0.4, durationSecs - 0.5);
-        env.gain.linearRampToValueAtTime(0, durationSecs);
-
-        osc.connect(env);
-        env.connect(ctx.destination);
-        osc.start(0);
-        osc.stop(durationSecs);
-
-        const rendered = await ctx.startRendering();
-        audioBufferCache.set(bufferId, rendered);
-    } catch {
-        // Ignored
-    }
-}

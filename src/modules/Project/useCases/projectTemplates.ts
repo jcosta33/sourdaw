@@ -2,7 +2,7 @@ import { addTrack } from '#/modules/Track/useCases/addTrack';
 import { addDevice } from '#/modules/Track/useCases/deviceUseCases';
 import { trackStore } from '#/modules/Track/stores/trackStore';
 import { newProject } from './projectPersistence';
-import { demo1_TheCompleteMix, demo2_ElectronicBeat, demo3_AcousticSession } from './demoProjects';
+import { demo1_TheCompleteMix, demo2_ElectronicBeat, demo3_AcousticSession, demo4_NativeShowcase } from './demoProjects';
 
 export type TemplateCategory = 'empty' | 'music' | 'podcast' | 'film' | 'demo';
 
@@ -11,6 +11,7 @@ export type ProjectTemplate = {
     name: string;
     description: string;
     category: TemplateCategory;
+    platform?: 'web' | 'native';
     create: () => void;
 };
 
@@ -132,9 +133,9 @@ const templates: ProjectTemplate[] = [
     },
     {
         id: 'demo-complete',
-        name: 'The Complete Mix',
+        name: 'Resonance',
         description:
-            'A fully arranged 30-second electronic/pop production featuring automation, markers, and mixed stems. Loads by default on first boot.',
+            'A fully arranged 5-minute ambient/IDM production in D minor with 28 tracks, automation, markers, and detailed MIDI patterns.',
         category: 'demo',
         create: () => {
             void demo1_TheCompleteMix();
@@ -142,8 +143,8 @@ const templates: ProjectTemplate[] = [
     },
     {
         id: 'demo-electronic',
-        name: 'Electronic Beat',
-        description: 'A 128 BPM synthesizer and arpeggiator heavy track demonstrating high-tempo MIDI handling.',
+        name: 'Psyloops',
+        description: 'A 142 BPM psytrance track in A minor with acid bass, supersaw stabs, dual leads, and 8 sections of builds and drops.',
         category: 'demo',
         create: () => {
             void demo2_ElectronicBeat();
@@ -151,17 +152,36 @@ const templates: ProjectTemplate[] = [
     },
     {
         id: 'demo-acoustic',
-        name: 'Acoustic Session',
-        description: 'A 90 BPM session with panned guitars, synthetic vocal harmony testing, and shaker loops.',
+        name: 'Midnight Smoke',
+        description: 'A chill 82 BPM jazz track in Eb major with walking bass, Rhodes comping, flute solo, and 7 sections of smooth exploration.',
         category: 'demo',
         create: () => {
             void demo3_AcousticSession();
         },
     },
+    {
+        id: 'demo-native-showcase',
+        name: 'Brainfeeder (Native Only)',
+        description: 'A 50-track Flying Lotus-style experimental beat showcase using native DSP effects. Only available in the native app.',
+        category: 'demo',
+        platform: 'native',
+        create: () => {
+            void demo4_NativeShowcase();
+        },
+    },
 ];
 
+function isNativePlatform(): boolean {
+    return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
 export function getTemplates(): ProjectTemplate[] {
-    return templates;
+    const native = isNativePlatform();
+    return templates.filter((t) => {
+        if (t.platform === 'native' && !native) return false;
+        if (t.platform === 'web' && native) return false;
+        return true;
+    });
 }
 
 export function getTemplatesByCategory(category: TemplateCategory): ProjectTemplate[] {
