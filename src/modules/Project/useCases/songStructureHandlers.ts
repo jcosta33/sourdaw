@@ -1,4 +1,4 @@
-import { type ActionHandler } from '../models/ActionHandler';
+import { type ActionHandler } from '#/modules/Command/models/ActionHandler';
 import { detectAndApplySongStructure } from '#/modules/Timeline/useCases/songStructureDetection';
 
 export const songStructureHandlers: Record<string, ActionHandler<any>> = {

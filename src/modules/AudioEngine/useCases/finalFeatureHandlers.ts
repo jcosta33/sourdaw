@@ -1,4 +1,4 @@
-import { type ActionHandler } from '../models/ActionHandler';
+import { type ActionHandler } from '#/modules/Command/models/ActionHandler';
 import { setProcessingMode, type BitDepthMode } from '#/modules/AudioEngine/useCases/audioPrecisionUseCases';
 import { toggleNodeView } from '#/modules/Plugin/useCases/nodeViewUseCases';
 import { setProtocol, type ControlSurfaceProtocol } from '#/modules/AudioEngine/useCases/controlSurfaceUseCases';

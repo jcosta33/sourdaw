@@ -1,5 +1,5 @@
-import { type ActionHandler } from '../models/ActionHandler';
-import { type AppAction } from '../models/AppAction';
+import { type ActionHandler } from '#/modules/Command/models/ActionHandler';
+import { type AppAction } from '#/modules/Command/models/AppAction';
 import { setTrackColor } from '#/modules/Track/useCases/setTrackGainPan';
 import { renameTrack } from '#/modules/Track/useCases/renameTrack';
 import { groupTracks } from '#/modules/Track/useCases/toggleTrackState';

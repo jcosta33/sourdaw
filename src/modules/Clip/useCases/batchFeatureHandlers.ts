@@ -1,4 +1,4 @@
-import { type ActionHandler } from '../models/ActionHandler';
+import { type ActionHandler } from '#/modules/Command/models/ActionHandler';
 import { searchSamples } from '#/modules/SoundLibrary/useCases/sampleDatabaseUseCases';
 import { runEditorScript, toggleScriptEditor } from '#/modules/Extension/useCases/extensionUseCases';
 import { createCompGroup } from '#/modules/Clip/useCases/groupCompingUseCases';

@@ -1,5 +1,5 @@
-import { type ActionHandler } from '../models/ActionHandler';
-import { type AppAction } from '../models/AppAction';
+import { type ActionHandler } from '#/modules/Command/models/ActionHandler';
+import { type AppAction } from '#/modules/Command/models/AppAction';
 import { applyDrumPatternToTrack, type DrumPatternStyle } from '#/modules/AiGeneration/useCases/generateDrumPattern';
 import { applyMelodyToTrack, type ScaleType } from '#/modules/AiGeneration/useCases/generateMelody';
 import {

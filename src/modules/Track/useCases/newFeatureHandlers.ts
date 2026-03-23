@@ -1,4 +1,4 @@
-import { type ActionHandler } from '../models/ActionHandler';
+import { type ActionHandler } from '#/modules/Command/models/ActionHandler';
 import { generateDrumFill, generateAllTransitionFills } from '#/modules/Timeline/useCases/fillTransitionGeneration';
 import { compareToReference } from '#/modules/Mixer/useCases/referenceMixComparison';
 import { toggleMono, toggleDim, switchMonitor } from '#/modules/Mixer/useCases/controlRoomUseCases';

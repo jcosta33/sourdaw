@@ -1,5 +1,5 @@
-import { type ActionHandler } from '../models/ActionHandler';
-import { type AppAction } from '../models/AppAction';
+import { type ActionHandler } from '#/modules/Command/models/ActionHandler';
+import { type AppAction } from '#/modules/Command/models/AppAction';
 import { addTrack } from '#/modules/Track/useCases/addTrack';
 import { setTrackInput } from '#/modules/Track/useCases/setTrackInput';
 import { removeTrack } from '#/modules/Track/useCases/removeTrack';
@@ -7,7 +7,7 @@ import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { type MidiStoreState, midiStore } from '#/modules/Midi/stores/midiStore';
 import { takeLaneStore } from '#/modules/Clip/stores/takeLaneStore';
 import { setTrackState } from '#/modules/Track/repositories/trackRepository';
-import { pushUndoEntry } from '../useCases/pushUndoEntry';
+import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
 import { renameTrack } from '#/modules/Track/useCases/renameTrack';
 import {
     muteTrack,

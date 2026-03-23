@@ -1,5 +1,5 @@
-import { type ActionHandler } from '../models/ActionHandler';
-import { type AppAction } from '../models/AppAction';
+import { type ActionHandler } from '#/modules/Command/models/ActionHandler';
+import { type AppAction } from '#/modules/Command/models/AppAction';
 import {
     addClip,
     removeClip,
@@ -36,7 +36,7 @@ import { deleteTime, insertTime, duplicateTimeRange } from '#/modules/Clip/useCa
 import { stripSilence } from '#/modules/Clip/useCases/stripSilence';
 import { midiStore } from '#/modules/Midi/stores/midiStore';
 import { updateTrack } from '#/modules/Track/repositories/trackRepository';
-import { pushUndoEntry } from '../useCases/pushUndoEntry';
+import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
 import { rippleDeleteClips, undoRippleDelete } from '#/modules/Workspace/useCases/rippleEditing';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;

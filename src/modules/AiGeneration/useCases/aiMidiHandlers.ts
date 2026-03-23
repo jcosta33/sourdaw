@@ -10,8 +10,8 @@
  * - stripSilence: Remove silent sections based on amplitude threshold
  */
 
-import { type ActionHandler } from '../models/ActionHandler';
-import { type AppAction } from '../models/AppAction';
+import { type ActionHandler } from '#/modules/Command/models/ActionHandler';
+import { type AppAction } from '#/modules/Command/models/AppAction';
 import { addMidiNote, getNotesForClip, setNotesForClip } from '#/modules/Midi/useCases/midiNoteCrud';
 import { createMidiNote } from '#/modules/Midi/models/MidiNote';
 import { addTrack } from '#/modules/Track/useCases/addTrack';

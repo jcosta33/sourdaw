@@ -1,8 +1,8 @@
-import { type ActionHandler } from '../models/ActionHandler';
-import { type AppAction } from '../models/AppAction';
+import { type ActionHandler } from '#/modules/Command/models/ActionHandler';
+import { type AppAction } from '#/modules/Command/models/AppAction';
 import { analyzeMix } from '#/modules/AudioAnalysis/useCases/analyzeMix';
 import { getMixAnalysisStoreValue, setMixAnalysisStoreValue } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
-import { executeAppAction } from '../useCases/executeAppAction';
+import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 

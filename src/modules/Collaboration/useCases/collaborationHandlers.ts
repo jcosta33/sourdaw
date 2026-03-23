@@ -1,5 +1,5 @@
-import { type ActionHandler } from '../models/ActionHandler';
-import { type AppAction } from '../models/AppAction';
+import { type ActionHandler } from '#/modules/Command/models/ActionHandler';
+import { type AppAction } from '#/modules/Command/models/AppAction';
 import { createSession, joinSession, leaveSession } from '#/modules/Collaboration/useCases/collaborationUseCases';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
