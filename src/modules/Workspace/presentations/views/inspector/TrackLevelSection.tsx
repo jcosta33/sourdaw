@@ -2,9 +2,9 @@ import { type ReactElement } from 'react';
 import { Card } from '#/components/ui/card';
 import { Slider } from '#/components/ui/slider';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { MidiLearnButton } from '#/modules/Track/presentations/views/MidiLearnButton';
-import { setTrackGain, setTrackPan } from '../../../useCases/workspaceViewActions';
-import { type Track } from '../../../useCases/workspaceViewActions';
+import { MidiLearnButton } from '#/modules/Arrangement/presentations/views/MidiLearnButton';
+import { setTrackGain, setTrackPan } from '#/modules/Arrangement/useCases/setTrackGainPan';
+import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
 
 type TrackLevelSectionProps = {
     track: Track;

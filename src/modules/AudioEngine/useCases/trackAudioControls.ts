@@ -4,7 +4,7 @@
  * Wraps the AudioEngine track channel strip operations and provides
  * a domain-meaningful API for other modules to control track audio.
  */
-import { audioEngine } from '../repositories/audioEngineInstance';
+import { audioEngine } from '../repositories/createWebAudioEngine';
 import { type TrackChannelStrip } from '../models/AudioEngineState';
 
 export const ensureTrackStrip = (trackId: string): TrackChannelStrip => {

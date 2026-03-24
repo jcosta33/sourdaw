@@ -2,16 +2,16 @@ import { type ReactElement, useState } from 'react';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { Save, X, ChevronRight, Star, Folder } from 'lucide-react';
-import { addTrack } from '../../../useCases/workspaceViewActions';
-import { type SoundPreset, type SoundPresetCategory } from '../../../useCases/workspaceViewActions';
-import { getFactoryPresets } from '../../../useCases/workspaceViewActions';
+import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
+import { type SoundPreset, type SoundPresetCategory } from '#/modules/Arrangement/useCases/trackQueries';
+import { getFactoryPresets } from '#/modules/Arrangement/useCases/soundPresetLibrary';
 import {
     createTrackFromPreset,
     loadPresetToTrack,
     getUserPresets,
     saveCurrentAsPreset,
     deleteUserPreset,
-} from '../../../useCases/workspaceViewActions';
+} from '#/modules/Arrangement/useCases/presetUseCases';
 
 import { PresetItem } from '../../components/sidebar/PresetItem';
 import { PRESET_CATEGORIES, CATEGORY_ICONS, CATEGORY_COLORS } from '../../components/sidebar/sidebarConstants';

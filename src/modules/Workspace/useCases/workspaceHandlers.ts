@@ -1,5 +1,4 @@
-import { type ActionHandler } from '#/modules/Command/models/ActionHandler';
-import { type AppAction } from '#/modules/Command/models/AppAction';
+import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { setWorkspaceMode } from '#/modules/Workspace/useCases/setWorkspaceMode';
 import {
@@ -19,7 +18,7 @@ import {
     addSection,
     removeSection,
     renameSection,
-} from '#/modules/Timeline/useCases/markerUseCases';
+} from '#/modules/Arrangement/useCases/markerUseCases';
 import {
     quantizeNotes,
     quantizeNoteLengths,
@@ -31,18 +30,18 @@ import {
     scaleAllVelocities,
     setAllVelocities,
     type VelocityCurve,
-} from '#/modules/Midi/useCases/midiUseCases';
+} from '#/modules/MIDI/useCases/midiUseCases';
 import {
     addAutomationLane,
     addAutomationPoint,
     removeAutomationPoint,
 } from '#/modules/Automation/useCases/automationUseCases';
-import { getAutomationStoreState } from '#/modules/Track/useCases/trackQueries';
+import { getAutomationStoreState } from '#/modules/Arrangement/useCases/trackQueries';
 import { saveProject, newProject, exportProjectFile } from '#/modules/Project/useCases/projectPersistence';
-import { exportMidiClip } from '#/modules/Midi/useCases/exportMidiFile';
-import { pickFiles } from '#/modules/Project/repositories/nativeFileDialog';
-import { importMidiFile } from '#/modules/Midi/useCases/importMidiFile';
-import { importAudioFile } from '#/modules/Track/useCases/importAudioFile';
+import { exportMidiClip } from '#/modules/MIDI/useCases/exportMidiFile';
+import { pickFiles } from '#/modules/Project/useCases/fileDialogUseCases';
+import { importMidiFile } from '#/modules/MIDI/useCases/importMidiFile';
+import { importAudioFile } from '#/modules/Arrangement/useCases/importAudioFile';
 import { type EditingTool } from '#/modules/Workspace/models/EditingTool';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;

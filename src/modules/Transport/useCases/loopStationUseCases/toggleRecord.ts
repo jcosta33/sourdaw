@@ -1,5 +1,5 @@
 import { loopStationStore, type LoopLayer } from '#/modules/Transport/stores/loopStationStore';
-import { getNextLayerId } from '#/modules/Transport/helpers/loopStationHelpers';
+import { getNextLayerId } from '#/modules/Transport/models/loopStationHelpers';
 
 export function toggleRecord(slotId: string): void {
     const state = loopStationStore.value;

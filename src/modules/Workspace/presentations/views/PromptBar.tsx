@@ -33,28 +33,31 @@ import {
     Users,
     AlertTriangle,
 } from 'lucide-react';
-import { parsePromptToActions, isComplexPrompt } from '../../useCases/workspaceViewActions';
-import { getProjectContext } from '../../useCases/workspaceViewActions';
-import { searchPresets, getAvailablePresets, type FuzzyResult } from '../../useCases/workspaceViewActions';
+import { parsePromptToActions } from '#/modules/AiRuntime/useCases/parsePromptToActions';
+import { isComplexPrompt } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
+import { getProjectContext } from '#/modules/AiRuntime/useCases/getProjectContext';
+import { searchPresets, type FuzzyResult } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
+import { getAvailablePresets } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
 import { onPromptInjection } from '#/modules/AiRuntime/presentations/views/VoiceCommandOverlay';
-import { executeAppAction } from '../../useCases/workspaceViewActions';
+import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
 import { notifyAiChange } from '#/modules/AiRuntime/presentations/views/AiChangeToast';
-import { isLlmAvailable, initEngine } from '../../useCases/workspaceViewActions';
+import { isLlmAvailable } from '#/modules/AiRuntime/useCases/llmOrchestration/backendResolution';
+import { initEngine } from '#/modules/AiRuntime/useCases/llmOrchestration/lifecycle';
 import { llmStatusStore } from '#/modules/AiRuntime/stores/llmStatusStore';
 import { LlmStatusBadge } from './prompt/LlmStatusBadge';
-import { generateGroupId } from '../../useCases/workspaceViewActions';
+import { generateGroupId } from '#/modules/Command/useCases/commandQueries';
 import {
     pushAiActionGroup,
     toggleAiHistoryPanel,
     type AiActionGroup,
 } from '#/modules/AiRuntime/stores/aiActionHistoryStore';
-import { trackStore } from '#/modules/Track/stores/trackStore';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { appendChatMessage } from '#/modules/AiRuntime/stores/chatStore';
-import { type AppAction } from '../../useCases/workspaceViewActions';
-import { describeAction } from '../../useCases/workspaceViewActions';
-import { type IntentResult } from '../../useCases/workspaceViewActions';
-import { type PresetCategory, type PresetContext } from '../../useCases/workspaceViewActions';
+import { type AppAction } from '#/modules/Command/useCases/commandQueries';
+import { describeAction } from '#/modules/Command/useCases/actionLabels';
+import { type IntentResult } from '#/modules/AiRuntime/models/IntentResult';
+import { type PresetCategory, type PresetContext } from '#/modules/AiRuntime/models/presetActions/registry';
 
 const logger = Container.getInstance().get(Logger);
 

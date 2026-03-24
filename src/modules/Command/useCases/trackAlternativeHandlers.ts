@@ -1,6 +1,6 @@
-import { getTrackStoreState, setTrackStoreState } from '#/modules/Track/useCases/trackQueries';
+import { getTrackStoreState, setTrackStoreState } from '#/modules/Arrangement/useCases/trackQueries';
 import { type AppAction } from '../models/AppAction';
-import { type Track, type TrackAlternative, type Clip } from '#/modules/Track/models/Track';
+import { type Track, type TrackAlternative, type Clip } from '#/modules/Arrangement/useCases/trackQueries';
 
 export const handleCreateTrackAlternative = (action: Extract<AppAction, { type: 'createTrackAlternative' }>): void => {
     const state = getTrackStoreState();

@@ -5,10 +5,10 @@ import { ValueField } from '#/components/daw/ValueField';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { cn } from '#/helpers/Styles/cn';
 import { useTransportState } from '../hooks/useTransportState';
-import { setTempo } from '../../useCases/workspaceViewActions';
+import { setTempo } from '#/modules/Transport/useCases/setTempo';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { tempoMapStore, type TempoMapStoreState } from '#/modules/Transport/stores/tempoMapStore';
-import { addTempoChange, removeTempoChange, updateTempoChange } from '../../useCases/workspaceViewActions';
+import { addTempoChange, removeTempoChange, updateTempoChange } from '#/modules/Transport/useCases/tempoMapUseCases';
 import { type TempoChange } from '#/modules/Transport/useCases/transportQueries';
 import { Map, Plus, Trash2 } from 'lucide-react';
 

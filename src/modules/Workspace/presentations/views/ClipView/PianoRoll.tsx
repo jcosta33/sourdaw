@@ -15,30 +15,29 @@ import { Slider } from '#/components/ui/slider';
 
 import { cn } from '#/helpers/Styles/cn';
 import { resolveToken } from '#/helpers/UI/resolveToken';
-import { midiStore } from '#/modules/Midi/stores/midiStore';
-import { trackStore } from '#/modules/Track/stores/trackStore';
-import { pushUndoEntry } from '../../../useCases/workspaceViewActions';
-import {
-    addMidiNote,
-    removeMidiNote,
-    moveMidiNote,
-    resizeMidiNote,
-    setNoteVelocity,
-    humanizeNotes,
-    quantizeNotes,
-    transposeNotes,
-    getNotesForClip,
-} from '../../../useCases/workspaceViewActions';
-import { copySelectedNotes, pasteNotes } from '../../../useCases/workspaceViewActions';
-import { type MidiNote } from '../../../useCases/workspaceViewActions';
-import { stampChord, removeNotesByIds, CHORD_TYPE_KEYS, type ChordType } from '#/modules/Midi/useCases/chordStamps';
-import { strumNotes, restoreStrumOriginals } from '#/modules/Midi/useCases/strumNotes';
+import { midiStore } from '#/modules/MIDI/stores/midiStore';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
+import { addMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/addMidiNote';
+import { removeMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/removeMidiNote';
+import { moveMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/moveMidiNote';
+import { resizeMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/resizeMidiNote';
+import { setNoteVelocity } from '#/modules/MIDI/useCases/midiNoteCrud/setNoteVelocity';
+import { humanizeNotes } from '#/modules/MIDI/useCases/midiNoteTransforms/humanizeNotes';
+import { quantizeNotes } from '#/modules/MIDI/useCases/midiNoteTransforms/quantizeNotes';
+import { transposeNotes } from '#/modules/MIDI/useCases/midiNoteTransforms/transposeNotes';
+import { getNotesForClip } from '#/modules/MIDI/useCases/midiNoteCrud/getNotesForClip';
+import { copySelectedNotes } from '#/modules/Arrangement/useCases/clipboardUseCases/copySelectedNotes';
+import { pasteNotes } from '#/modules/Arrangement/useCases/clipboardUseCases/pasteNotes';
+import { type MidiNote } from '#/modules/Arrangement/useCases/trackQueries';
+import { stampChord, removeNotesByIds, CHORD_TYPE_KEYS, type ChordType } from '#/modules/MIDI/useCases/chordStamps';
+import { strumNotes, restoreStrumOriginals } from '#/modules/MIDI/useCases/strumNotes';
 import {
     extractGrooveFromClip,
     applyGrooveToClip,
     restoreGrooveOriginals,
-} from '#/modules/Midi/useCases/grooveExtraction';
-import { generateMidiAI, isTauri } from '#/modules/AudioEngine/repositories/nativeAIBridge';
+} from '#/modules/MIDI/useCases/grooveExtraction';
+import { generateMidiAI, isTauri } from '#/modules/AudioEngine/useCases/nativeAiBridgeUseCases';
 import { playAuditionNote } from '#/modules/AudioEngine/useCases/audition';
 
 type GestureEvent = UIEvent & {

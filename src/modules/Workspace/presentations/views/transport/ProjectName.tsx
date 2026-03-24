@@ -1,6 +1,6 @@
 import { type ReactElement, useState } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { renameProject, saveProject } from '../../../useCases/workspaceViewActions';
+import { renameProject, saveProject } from '#/modules/Project/useCases/projectPersistence';
 
 type ProjectNameProps = {
     name: string;

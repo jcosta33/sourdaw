@@ -1,5 +1,5 @@
 import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { rdpSimplify } from '#/modules/Track/transformers/automationTransformers';
+import { rdpSimplify } from '#/modules/Arrangement/useCases/automationQueries';
 
 export function thinAutomationPoints(laneId: string, tolerance = 0.01): void {
     const state = automationStore.value;

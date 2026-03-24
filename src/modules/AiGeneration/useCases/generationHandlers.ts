@@ -1,5 +1,4 @@
-import { type ActionHandler } from '#/modules/Command/models/ActionHandler';
-import { type AppAction } from '#/modules/Command/models/AppAction';
+import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
 import { applyDrumPatternToTrack, type DrumPatternStyle } from '#/modules/AiGeneration/useCases/generateDrumPattern';
 import { applyMelodyToTrack, type ScaleType } from '#/modules/AiGeneration/useCases/generateMelody';
 import {
@@ -8,8 +7,8 @@ import {
     type ChordVoicing,
 } from '#/modules/AiGeneration/useCases/generateChordProgression';
 import { extractGroove, applyGroove, getGrooveById } from '#/modules/AiGeneration/useCases/grooveTemplate';
-import { addTrack } from '#/modules/Track/useCases/addTrack';
-import { getTrackStoreState } from '#/modules/Track/useCases/trackQueries';
+import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
+import { getTrackStoreState } from '#/modules/Arrangement/useCases/trackQueries';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 

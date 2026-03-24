@@ -1,12 +1,12 @@
 import { getTransportState, updateTransportState } from '#/modules/Transport/repositories/transportRepository';
-import { trackStore } from '#/modules/Track/stores/trackStore';
-import { updateClip } from '#/modules/Track/repositories/trackRepository';
+import { getTrackStoreState } from '#/modules/Arrangement/useCases/trackQueries';
+import { updateClip } from '#/modules/Arrangement/useCases/trackQueries';
 import { resumeEngine, getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
 import { scheduleClick } from '#/modules/AudioEngine/useCases/scheduling';
 import { startAudioRecording, stopAudioRecording } from '#/modules/AudioEngine/useCases/audioRecorder';
-import { startRecording, stopRecording } from '#/modules/Track/useCases/recordingUseCases';
+import { startRecording, stopRecording } from '#/modules/Arrangement/useCases/recordingUseCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { ensureTrackStrips } from '#/modules/Transport/helpers/ensureTrackStrips';
+import { ensureTrackStrips } from '#/modules/Transport/useCases/ensureTrackStrips';
 import { startPlayback } from './startPlayback';
 
 let activeRecordingClipIds: string[] = [];
@@ -17,7 +17,7 @@ function beginActualRecording(): void {
     activeRecordingClipIds = clips.map((c) => c.id);
     updateTransportState({ isRecording: true });
 
-    const armedTracks = trackStore.value?.tracks.filter((t) => t.armed) ?? [];
+    const armedTracks = getTrackStoreState()?.tracks.filter((t) => t.armed) ?? [];
     for (const track of armedTracks) {
         if (track.kind === 'audio') {
             const recClip = clips.find((c) => c.trackId === track.id);

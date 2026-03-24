@@ -1,7 +1,7 @@
 import { type ReactElement, useSyncExternalStore } from 'react';
 import { Fader } from '#/components/daw/Fader';
 import { cn } from '#/helpers/Styles/cn';
-import { setMasterGainValue } from '../../../useCases/workspaceViewActions';
+import { setMasterGainValue } from '#/modules/AudioEngine/useCases/engineAccess';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 
 import { LevelMeter } from '../../components/LevelMeter';

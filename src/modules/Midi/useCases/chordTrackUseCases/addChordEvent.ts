@@ -1,6 +1,6 @@
-import { chordTrackStore } from '#/modules/Track/stores/chordTrackStore';
-import { createChordEvent, type ChordEvent } from '#/modules/Midi/models/ChordEvent';
-import { type ChordType } from '#/modules/Midi/useCases/chordStamps';
+import { chordTrackStore } from '#/modules/Arrangement/stores/chordTrackStore';
+import { createChordEvent, type ChordEvent } from '#/modules/MIDI/models/ChordEvent';
+import { type ChordType } from '#/modules/MIDI/useCases/chordStamps';
 
 export function addChordEvent(
     beat: number,

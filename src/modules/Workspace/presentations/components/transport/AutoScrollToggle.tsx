@@ -2,7 +2,7 @@ import { type ReactElement, useSyncExternalStore } from 'react';
 import { ChevronsRight } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { timelineViewStore, toggleAutoScroll } from '#/modules/Timeline/stores/timelineViewStore';
+import { timelineViewStore, toggleAutoScroll } from '#/modules/Arrangement/stores/timelineViewStore';
 
 export const AutoScrollToggle = (): ReactElement => {
     const autoScrollEnabled = useSyncExternalStore(

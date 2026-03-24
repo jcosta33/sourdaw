@@ -9,9 +9,14 @@ import {
     type SendNode,
 } from '../models/AudioEngineState';
 import { PluginHostNode } from '../models/PluginHostNode';
-import audioCoreProcessorUrl from '../worklets/audioCoreProcessor.ts?worker&url';
-import { isNativeDspDevice, NATIVE_DSP_DEVICE_TYPES, createNativeDspNode, type NativeDspNodeResult } from '../engine/NativeDspNode';
-import { isDeviceSupportedOnCurrentPlatform } from '#/modules/Track/models/DeviceParameter';
+import audioCoreProcessorUrl from '../services/audioCoreProcessor.ts?worker&url';
+import {
+    isNativeDspDevice,
+    NATIVE_DSP_DEVICE_TYPES,
+    createNativeDspNode,
+    type NativeDspNodeResult,
+} from '../engine/NativeDspNode';
+import { isDeviceSupportedOnCurrentPlatform } from '#/modules/Arrangement/useCases/trackQueries';
 import { DEVICE_FACTORIES, applyParams } from './deviceNodeFactory';
 
 const logger = Container.getInstance().get(Logger);
@@ -65,11 +70,11 @@ function createNoopEngine(): AudioEngine {
         removeDeviceFromStrip: () => {},
         updateDeviceParam: () => {},
         updateDeviceBypass: () => {},
-        ensureBusStrip: (busId) => ({ 
-            busId, 
-            gainNode: silentGain, 
-            analyserNode: silentAnalyser, 
-            meterBuffer: new Float32Array(0) 
+        ensureBusStrip: (busId) => ({
+            busId,
+            gainNode: silentGain,
+            analyserNode: silentAnalyser,
+            meterBuffer: new Float32Array(0),
         }),
         removeBusStrip: () => {},
         setBusGain: () => {},
@@ -338,7 +343,11 @@ export function createWebAudioEngine(): AudioEngine {
         strip.gainNode.disconnect();
         for (const dn of strip.deviceNodes) {
             // Only disconnect the device's output → next node connection
-            try { dn.outputNode.disconnect(); } catch { /* ok */ }
+            try {
+                dn.outputNode.disconnect();
+            } catch {
+                /* ok */
+            }
         }
         strip.panNode.disconnect();
         strip.analyserNode.disconnect();
@@ -674,35 +683,37 @@ export function createWebAudioEngine(): AudioEngine {
                     inputNode: loadingBypassNode,
                     outputNode: loadingBypassNode,
                 };
-                
-                import('./faustDeviceFactory').then(({ createFaustDevice }) => {
-                    createFaustDevice(context, deviceType).then(realDn => {
-                        if (!realDn) return;
-                        const stripToUpdate = trackStrips.get(trackId);
-                        if (!stripToUpdate) return;
-                        
-                        const idx = stripToUpdate.deviceNodes.findIndex(d => d.deviceId === deviceId);
-                        if (idx !== -1) {
-                            const builtinDn = realDn as BuiltinDeviceNode;
-                            builtinDn.deviceId = deviceId;
-                            builtinDn.type = deviceType;
-                            stripToUpdate.deviceNodes[idx] = builtinDn;
-                            rebuildStripChain(stripToUpdate);
-                            
-                            const pending = pendingFaustParams.get(deviceId);
-                            if (pending) {
-                                const worklet = builtinDn.nodes[0] as AudioWorkletNode;
-                                for (const [pId, val] of pending) {
-                                    const param = worklet.parameters.get(pId);
-                                    if (param) param.setTargetAtTime(val, context.currentTime, 0.01);
+
+                import('./faustDeviceFactory')
+                    .then(({ createFaustDevice }) => {
+                        createFaustDevice(context, deviceType).then((realDn) => {
+                            if (!realDn) return;
+                            const stripToUpdate = trackStrips.get(trackId);
+                            if (!stripToUpdate) return;
+
+                            const idx = stripToUpdate.deviceNodes.findIndex((d) => d.deviceId === deviceId);
+                            if (idx !== -1) {
+                                const builtinDn = realDn as BuiltinDeviceNode;
+                                builtinDn.deviceId = deviceId;
+                                builtinDn.type = deviceType;
+                                stripToUpdate.deviceNodes[idx] = builtinDn;
+                                rebuildStripChain(stripToUpdate);
+
+                                const pending = pendingFaustParams.get(deviceId);
+                                if (pending) {
+                                    const worklet = builtinDn.nodes[0] as AudioWorkletNode;
+                                    for (const [pId, val] of pending) {
+                                        const param = worklet.parameters.get(pId);
+                                        if (param) param.setTargetAtTime(val, context.currentTime, 0.01);
+                                    }
+                                    pendingFaustParams.delete(deviceId);
                                 }
-                                pendingFaustParams.delete(deviceId);
                             }
-                        }
+                        });
+                    })
+                    .catch((err) => {
+                        console.error('[WebAudioEngine] Failed to load Faust factory:', err);
                     });
-                }).catch(err => {
-                    console.error('[WebAudioEngine] Failed to load Faust factory:', err);
-                });
                 break;
             }
             case 'external-plugin':
@@ -738,7 +749,7 @@ export function createWebAudioEngine(): AudioEngine {
                             await result.ready;
                             const stripToUpdate = trackStrips.get(trackId);
                             if (!stripToUpdate) return;
-                            const idx = stripToUpdate.deviceNodes.findIndex(d => d.deviceId === deviceId);
+                            const idx = stripToUpdate.deviceNodes.findIndex((d) => d.deviceId === deviceId);
                             if (idx !== -1) {
                                 const nativeDn: BuiltinDeviceNode = {
                                     deviceId,
@@ -752,7 +763,7 @@ export function createWebAudioEngine(): AudioEngine {
                                 rebuildStripChain(stripToUpdate);
                             }
                         })
-                        .catch(err => {
+                        .catch((err) => {
                             logger.warn(`[WebAudioEngine] Failed to load native DSP ${deviceType}: ${err}`);
                         });
                 } else {
@@ -802,7 +813,7 @@ export function createWebAudioEngine(): AudioEngine {
                 map.set(paramId, value);
                 return;
             }
-            
+
             const worklet = dn.nodes[0] as AudioWorkletNode;
             const param = worklet.parameters.get(paramId);
             if (param) param.setTargetAtTime(value, context.currentTime, 0.01);
@@ -1005,11 +1016,11 @@ export function createWebAudioEngine(): AudioEngine {
         gainNode.connect(analyserNode);
         analyserNode.connect(masterGainNode);
 
-        const strip: BusStrip = { 
-            busId, 
-            gainNode, 
-            analyserNode, 
-            meterBuffer: new Float32Array(analyserNode.frequencyBinCount) 
+        const strip: BusStrip = {
+            busId,
+            gainNode,
+            analyserNode,
+            meterBuffer: new Float32Array(analyserNode.frequencyBinCount),
         };
         busStrips.set(busId, strip);
         return strip;
@@ -1238,3 +1249,6 @@ export function createWebAudioEngine(): AudioEngine {
         unwireSidechainRoute,
     };
 }
+
+/** Singleton audio engine instance. */
+export const audioEngine = createWebAudioEngine();

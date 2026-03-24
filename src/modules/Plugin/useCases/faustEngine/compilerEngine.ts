@@ -19,7 +19,7 @@ import {
     type IFaustMonoWebAudioNode,
 } from '@grame/faustwasm';
 import { registerWAMPlugin, type WAMDescriptor } from '../wamPluginHost';
-import { type FaustModule, type FaustParamDescriptor } from './types';
+import { type FaustModule, type FaustParamDescriptor } from '#/modules/Plugin/models/FaustEngineTypes';
 
 // Module registry (raw Map singleton)
 const modules = new Map<string, FaustModule>();

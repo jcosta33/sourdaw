@@ -15,8 +15,8 @@ import {
     AlertCircle,
     Sparkles,
 } from 'lucide-react';
-import { type BUILTIN_PLUGINS } from '../../../useCases/workspaceViewActions';
-import { addDevice } from '../../../useCases/workspaceViewActions';
+import { type BUILTIN_PLUGINS } from '#/modules/Arrangement/useCases/trackQueries';
+import { addDevice } from '#/modules/Arrangement/useCases/deviceUseCases';
 import { PluginBrowser } from '#/modules/AudioEngine/presentations/views/PluginBrowser';
 import { MODULATOR_PRESETS } from '#/modules/Plugin/useCases/modulatorLibrary';
 import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases/midiEffectPlugins';

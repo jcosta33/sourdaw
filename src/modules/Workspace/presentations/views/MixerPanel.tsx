@@ -16,9 +16,9 @@ import {
     renameMixerSnapshot,
     restoreMixerChannels,
     type MixerSnapshot,
-} from '#/modules/Track/useCases/mixerSnapshotUseCases';
-import { pushUndoEntry } from '../../useCases/workspaceViewActions';
+} from '#/modules/Arrangement/useCases/mixerSnapshotUseCases';
 import { MixHealthDialog } from './mixer/MixHealthDialog';
+import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
 
 type MixerPanelProps = {
     style?: CSSProperties;

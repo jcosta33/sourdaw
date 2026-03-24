@@ -4,7 +4,7 @@ import { Button } from '#/components/ui/button';
 import { Loader2, Sparkles, GraduationCap } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { mixHealthAnalysis } from '#/modules/AudioAnalysis/useCases/mixHealthAnalysis';
-import { streamCloudChatCompletion } from '#/modules/AiRuntime/repositories/cloudLlmRepository';
+import { streamCloudChatCompletion } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
 
 type MixHealthDialogProps = {
     open: boolean;

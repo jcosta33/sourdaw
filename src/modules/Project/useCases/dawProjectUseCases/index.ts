@@ -3,6 +3,6 @@ export {
     type DawProjectClip,
     type DawProjectTimeline,
     type DawProjectDocument,
-} from './types';
+} from '#/modules/Project/models/DawProjectTypes';
 export { exportToDawProject } from './exportDawProject';
 export { parseDawProjectXml } from './parseDawProject';

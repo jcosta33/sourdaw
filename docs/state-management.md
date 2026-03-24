@@ -22,7 +22,7 @@ Presentation-layer stores (located at `ModuleName/presentations/stores/`) are **
 
 ```typescript
 // ✅ Cross-module: import a business-layer store from another module
-import { trackStore } from '#/modules/Track/stores/trackStore';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 
 const tracks = useSyncExternalStore(
     (cb) => trackStore.subscribe(cb),
@@ -30,7 +30,7 @@ const tracks = useSyncExternalStore(
 );
 
 // ❌ Forbidden: import a presentation-layer store from another module
-import { zoomStore } from '#/modules/Timeline/presentations/stores/zoomStore';
+import { zoomStore } from '#/modules/Arrangement/presentations/stores/zoomStore';
 ```
 
 ---

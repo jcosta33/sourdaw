@@ -1,4 +1,4 @@
-import { midiStore } from '#/modules/Midi/stores/midiStore';
+import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { createSeededRandom, generateSeed } from '#/helpers/SeededRandom/SeededRandom';
 
 /**

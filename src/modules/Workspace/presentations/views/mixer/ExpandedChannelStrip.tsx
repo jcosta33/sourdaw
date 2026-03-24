@@ -12,24 +12,24 @@ import {
     selectTrack,
     toggleInputMonitoring,
     toggleSoloSafe,
-} from '../../../useCases/workspaceViewActions';
-import { setTrackGain, setTrackPan, setTrackColor } from '../../../useCases/workspaceViewActions';
-import { armTrack } from '../../../useCases/workspaceViewActions';
-import { removeTrack } from '../../../useCases/workspaceViewActions';
-import { renameTrack } from '../../../useCases/workspaceViewActions';
+} from '#/modules/Arrangement/useCases/toggleTrackState';
+import { setTrackGain, setTrackPan, setTrackColor } from '#/modules/Arrangement/useCases/setTrackGainPan';
+import { armTrack } from '#/modules/Arrangement/useCases/recordingUseCases';
+import { removeTrack } from '#/modules/Arrangement/useCases/removeTrack';
+import { renameTrack } from '#/modules/Arrangement/useCases/renameTrack';
 
 import { LevelMeter } from '../../components/LevelMeter';
 import { VUMeterCanvas } from '../../components/VUMeterCanvas';
 import { DeviceChainSection } from './DeviceChainSection';
 import { SendsSection } from './SendsSection';
 import { IOSection } from './IOSection';
-import { type Track } from '../../../useCases/workspaceViewActions';
+import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
 import {
     getAllVCAGroups,
     assignTrackToVCA,
     removeTrackFromVCA,
     createVCAGroup,
-} from '#/modules/Track/useCases/vcaFaderUseCases';
+} from '#/modules/Arrangement/useCases/vcaFaderUseCases';
 import { releaseTouchAutomation } from '#/modules/Automation/useCases/automationRecording';
 
 type MixerMenu = { x: number; y: number } | null;

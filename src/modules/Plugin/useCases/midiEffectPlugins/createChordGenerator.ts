@@ -1,4 +1,4 @@
-import { type MidiEffect, type MidiNote, CHORD_INTERVALS } from './types';
+import { type MidiEffect, type MidiNote, CHORD_INTERVALS } from '#/modules/Plugin/models/MidiEffectTypes';
 
 export function createChordGenerator(chordType = 'major'): MidiEffect {
     const intervals = CHORD_INTERVALS[chordType] ?? [0, 4, 7];

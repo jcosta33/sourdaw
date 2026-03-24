@@ -37,19 +37,19 @@ presentations/components/   ← NEVER import from another module
 
 ```typescript
 // ❌ All of these are forbidden from another module
-import type { Track } from '#/modules/Track/models/Track';
-import { trackSelectionStore } from '#/modules/Track/presentations/stores/trackSelectionStore';
-import { transformTrack } from '#/modules/Track/transformers/transformTrack';
-import { getTrackByIdApi } from '#/modules/Track/repositories/getTrackByIdApi';
-import { useTrackControls } from '#/modules/Track/presentations/hooks/useTrackControls';
-import { TrackRow } from '#/modules/Track/presentations/components/TrackRow';
+import type { Track } from '#/modules/Arrangement/models/Track';
+import { trackSelectionStore } from '#/modules/Arrangement/presentations/stores/trackSelectionStore';
+import { transformTrack } from '#/modules/Arrangement/transformers/transformTrack';
+import { getTrackByIdApi } from '#/modules/Arrangement/repositories/getTrackByIdApi';
+import { useTrackControls } from '#/modules/Arrangement/presentations/hooks/useTrackControls';
+import { TrackRow } from '#/modules/Arrangement/presentations/components/TrackRow';
 
 // ✅ These are allowed
-import type { TrackDto } from '#/modules/Track/useCases/getTrackById'; // DTO from contract
-import { getTrackById } from '#/modules/Track/useCases/getTrackById';
-import { TrackNotFoundError } from '#/modules/Track/errors/TrackNotFoundError';
-import { TrackAddedEvent } from '#/modules/Track/events/TrackAddedEvent';
-import { TrackListView } from '#/modules/Track/presentations/views/TrackListView';
+import type { TrackDto } from '#/modules/Arrangement/useCases/getTrackById'; // DTO from contract
+import { getTrackById } from '#/modules/Arrangement/useCases/getTrackById';
+import { TrackNotFoundError } from '#/modules/Arrangement/errors/TrackNotFoundError';
+import { TrackAddedEvent } from '#/modules/Arrangement/events/TrackAddedEvent';
+import { TrackListView } from '#/modules/Arrangement/presentations/views/TrackListView';
 import type { TrackId } from '#/shared/types/ids'; // shared primitives — not a module
 ```
 
@@ -416,11 +416,11 @@ Hooks in `presentations/hooks/` are **private to the module**. No module may imp
 
 ```typescript
 // ❌ FORBIDDEN: importing another module's hook, even indirectly
-import { useTracks } from '#/modules/Track/presentations/hooks/useTracks';
+import { useTracks } from '#/modules/Arrangement/presentations/hooks/useTracks';
 
 // ✅ CORRECT: re-implement the hook locally using the store (a contract)
 import { useSyncExternalStore } from 'react';
-import { trackStore } from '#/modules/Track/stores/trackStore';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 export const useTracks = () =>
     useSyncExternalStore(
         (cb) => trackStore.subscribe(() => cb()),
@@ -435,11 +435,11 @@ Never use `export *` when re-exporting from another module's use cases. Wildcard
 
 ```typescript
 // ❌ FORBIDDEN
-export * from '#/modules/Track/useCases/presetUseCases';
+export * from '#/modules/Arrangement/useCases/presetUseCases';
 export * from '#/modules/Transport/useCases/transportControls';
 
 // ✅ CORRECT: explicit named exports only
-export { getUserPresets, saveUserPreset } from '#/modules/Track/useCases/presetUseCases';
+export { getUserPresets, saveUserPreset } from '#/modules/Arrangement/useCases/presetUseCases';
 export { togglePlayback, stopPlayback } from '#/modules/Transport/useCases/transportControls';
 ```
 
@@ -451,12 +451,12 @@ Type-only imports from another module's `models/` are still forbidden. The type 
 // ❌ FORBIDDEN: even though it's type-only
 import { type AppAction } from '#/modules/Command/models/AppAction';
 import { type SidechainRoute } from '#/modules/AudioEngine/models/SidechainRoute';
-import { type Track } from '#/modules/Track/models/Track';
+import { type Track } from '#/modules/Arrangement/models/Track';
 
 // ✅ CORRECT: import from the use case / query layer
 import { type AppAction } from '#/modules/Command/useCases/commandQueries';
 import { type SidechainRoute } from '#/modules/AudioEngine/useCases/sidechainUseCases';
-import { type Track } from '#/modules/Track/useCases/trackQueries';
+import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
 ```
 
 ### 5. Components importing use cases

@@ -104,7 +104,7 @@ The codebase has **10+ independent rAF loops**, each calling `requestAnimationFr
 |---|---|
 | Meter level hook | [useMeterLevel.ts](file:///Users/josecosta/dev/webdaw/src/modules/Workspace/presentations/hooks/useMeterLevel.ts) |
 | Status bar | [StatusBar.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Workspace/presentations/views/StatusBar.tsx) |
-| Timeline surface | [TimelineSurface.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Timeline/presentations/views/TimelineSurface.tsx) |
+| Timeline surface | [TimelineSurface.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Arrangement/presentations/views/TimelineSurface.tsx) |
 | LUFS meter | [LUFSMeter.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Workspace/presentations/components/LUFSMeter.tsx) |
 | Phase correlation | [PhaseCorrelationDisplay.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Workspace/presentations/components/PhaseCorrelationDisplay.tsx) |
 | VU meter | [VUMeterCanvas.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Workspace/presentations/components/VUMeterCanvas.tsx) |
@@ -139,8 +139,8 @@ The codebase has **10+ independent rAF loops**, each calling `requestAnimationFr
 2. **Add `content-visibility: auto`** to off-screen track rows and inspector sections — can deliver up to 7× paint time reduction.
 3. **Add `will-change: transform`** to the playhead element for zero-cost compositor movement.
 4. Implementation locations:
-   - [TimelineSurface.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Timeline/presentations/views/TimelineSurface.tsx) container div
-   - Track row containers in [TrackListView.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Track/presentations/views/TrackListView.tsx)
+   - [TimelineSurface.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Arrangement/presentations/views/TimelineSurface.tsx) container div
+   - Track row containers in [TrackListView.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Arrangement/presentations/views/TrackListView.tsx)
    - Panel containers in workspace layout components
 
 ---
@@ -156,7 +156,7 @@ The codebase has **10+ independent rAF loops**, each calling `requestAnimationFr
 ### Remediation
 
 1. Install `@tanstack/react-virtual`.
-2. Implement `useVirtualizer` in [TrackListView.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Track/presentations/views/TrackListView.tsx) with ~5 track overscan.
+2. Implement `useVirtualizer` in [TrackListView.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Arrangement/presentations/views/TrackListView.tsx) with ~5 track overscan.
 3. Audio processing must remain active for all tracks regardless of virtualization (the audio graph runs independently).
 4. For horizontal timeline virtualization, implement a second virtualizer instance for clip rendering (only render clips in the visible beat range).
 
@@ -261,9 +261,9 @@ All canvas rendering (spectrogram, oscilloscope, spectrum analyzer, goniometer) 
 
 ### Current State — What's Good ✅
 
-[TimelineSurface.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Timeline/presentations/views/TimelineSurface.tsx) already follows several best practices:
+[TimelineSurface.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Arrangement/presentations/views/TimelineSurface.tsx) already follows several best practices:
 - Uses a **dedicated rAF loop** with a **dirty-flag pattern** (lines 199–260).
-- Has a **WebGPU renderer** with Canvas2D fallback ([createWebGpuRenderer.ts](file:///Users/josecosta/dev/webdaw/src/modules/Timeline/repositories/createWebGpuRenderer.ts)).
+- Has a **WebGPU renderer** with Canvas2D fallback ([createWebGpuRenderer.ts](file:///Users/josecosta/dev/webdaw/src/modules/Arrangement/repositories/createWebGpuRenderer.ts)).
 - Reads from stores directly (not React state) inside the render loop.
 - Uses `ResizeObserver` for responsive canvas sizing.
 

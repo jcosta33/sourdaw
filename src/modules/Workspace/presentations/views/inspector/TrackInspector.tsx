@@ -1,5 +1,5 @@
 import { type ReactElement } from 'react';
-import { type Track } from '../../../useCases/workspaceViewActions';
+import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
 import { TrackHeaderSection } from './TrackHeaderSection';
 import { TrackAlternativesSection } from './TrackAlternativesSection';
 import { TrackLevelSection } from './TrackLevelSection';

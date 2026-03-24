@@ -6,14 +6,14 @@ import {
     Music, Mic, SlidersHorizontal, Warehouse, ArrowRightLeft,
 } from 'lucide-react';
 import { type LucideIcon } from 'lucide-react';
-import { BUILTIN_PLUGINS, setDeviceParameter } from '../../../useCases/workspaceViewActions';
-import { bypassDevice } from '../../../useCases/workspaceViewActions';
+import { BUILTIN_PLUGINS } from '#/modules/Arrangement/useCases/trackQueries';
+import { setDeviceParameter, bypassDevice } from '#/modules/Arrangement/useCases/deviceUseCases';
 import { MechanicalSwitch } from '#/components/daw/MechanicalSwitch';
 import { LatchButton } from '#/components/daw/LatchButton';
 import { LED } from '#/components/daw/LED';
-import { getSidechainSource, addSidechainRoute, removeSidechainRoute } from '../../../useCases/workspaceViewActions';
+import { getSidechainSource, addSidechainRoute, removeSidechainRoute } from '#/modules/Routing/useCases/sidechainUseCases';
 import { useTracks } from '../../hooks/useTracks';
-import { type Device } from '../../../useCases/workspaceViewActions';
+import { type Device } from '#/modules/Arrangement/useCases/trackQueries';
 import { DeviceParameterControl } from './DeviceParameterControl';
 import { CompressorGainReduction } from '../../components/CompressorGainReduction';
 import { CompressorCurve } from '../../components/CompressorCurve';

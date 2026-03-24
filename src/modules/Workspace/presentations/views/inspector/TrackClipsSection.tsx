@@ -2,8 +2,8 @@ import { type ReactElement } from 'react';
 import { Card } from '#/components/ui/card';
 import { Button } from '#/components/ui/button';
 import { Check, X, Sparkles } from 'lucide-react';
-import { type Track } from '../../../useCases/workspaceViewActions';
-import { acceptGhostClip, dismissGhostClip } from '#/modules/Clip/useCases/clipUseCases';
+import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
+import { acceptGhostClip, dismissGhostClip } from '#/modules/Arrangement/useCases/clipUseCases';
 
 type TrackClipsSectionProps = {
     track: Track;

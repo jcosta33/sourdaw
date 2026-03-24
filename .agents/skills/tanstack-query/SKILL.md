@@ -86,10 +86,10 @@ export const ProjectView = ({ id }: { id: number }): ReactElement => {
 ### Query hooks live in presentation hooks, not in components
 
 ```tsx
-// src/modules/Track/presentations/hooks/useTrack.ts
+// src/modules/Arrangement/presentations/hooks/useTrack.ts
 import { useSuspenseQuery } from "@tanstack/react-query";
 
-import { getTrack } from "#/modules/Track/useCases/getTrack";
+import { getTrack } from "#/modules/Arrangement/useCases/getTrack";
 
 export const useTrack = (id: number) => {
   const { data: track } = useSuspenseQuery({
@@ -104,7 +104,7 @@ useTrack.getKey = (id: number) => ["track", id];
 ```
 
 ```tsx
-// src/modules/Track/presentations/views/TrackView.tsx
+// src/modules/Arrangement/presentations/views/TrackView.tsx
 import { type ReactElement } from "react";
 
 import { useTrack } from "../hooks/useTrack";
@@ -219,10 +219,10 @@ Views consume Suspense-enabled hooks.
 ### Use mutations for writes and keep mutation functions thin
 
 ```tsx
-// src/modules/Track/presentations/hooks/useRenameTrack.ts
+// src/modules/Arrangement/presentations/hooks/useRenameTrack.ts
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { renameTrack } from "#/modules/Track/useCases/renameTrack";
+import { renameTrack } from "#/modules/Arrangement/useCases/renameTrack";
 
 export const useRenameTrack = () => {
   const queryClient = useQueryClient();
@@ -254,10 +254,10 @@ Do not embed domain rules in `onSuccess` or `mutationFn`.
 ### Prefer explicit cache updates plus targeted invalidation
 
 ```tsx
-// src/modules/Clip/presentations/hooks/useMoveClip.ts
+// src/modules/Arrangement/presentations/hooks/useMoveClip.ts
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { moveClip } from "#/modules/Clip/useCases/moveClip";
+import { moveClip } from "#/modules/Arrangement/useCases/moveClip";
 
 export const useMoveClip = () => {
   const queryClient = useQueryClient();
@@ -496,7 +496,7 @@ Data fetching must not happen in `useEffect`. This project’s conventions expli
 Wrong:
 
 ```tsx
-// src/modules/Track/presentations/hooks/useTrackStatus.ts
+// src/modules/Arrangement/presentations/hooks/useTrackStatus.ts
 import { useSuspenseQuery } from "@tanstack/react-query";
 
 export const useTrackStatus = (id: number) => {
@@ -524,10 +524,10 @@ export const useTrackStatus = (id: number) => {
 Correct:
 
 ```tsx
-// src/modules/Track/presentations/hooks/useTrackStatus.ts
+// src/modules/Arrangement/presentations/hooks/useTrackStatus.ts
 import { useSuspenseQuery } from "@tanstack/react-query";
 
-import { getTrackStatus } from "#/modules/Track/useCases/getTrackStatus";
+import { getTrackStatus } from "#/modules/Arrangement/useCases/getTrackStatus";
 
 export const useTrackStatus = (id: number) => {
   const { data: trackStatus } = useSuspenseQuery({

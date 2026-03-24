@@ -1,4 +1,4 @@
-import { type DawProjectTrack, type DawProjectDocument } from './types';
+import { type DawProjectTrack, type DawProjectDocument } from '#/modules/Project/models/DawProjectTypes';
 
 function escapeXml(str: string): string {
     return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');

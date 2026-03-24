@@ -4,7 +4,7 @@
  * Typically placed on compressor/limiter device views.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
-import { audioEngine } from '#/modules/AudioEngine/repositories/audioEngineInstance';
+import { getMasterAnalyser, getTrackStripAnalyser } from '#/modules/AudioEngine/useCases/engineAccess';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type CompressorGainReductionProps = {
@@ -52,8 +52,8 @@ export const CompressorGainReduction = ({
 
         const draw = (): void => {
             const analyser = trackId
-                ? (audioEngine.getTrackStrip(trackId)?.analyserNode ?? audioEngine.masterAnalyser)
-                : audioEngine.masterAnalyser;
+                ? (getTrackStripAnalyser(trackId) ?? getMasterAnalyser())
+                : getMasterAnalyser();
 
             const data = new Float32Array(analyser.frequencyBinCount);
             analyser.getFloatTimeDomainData(data);

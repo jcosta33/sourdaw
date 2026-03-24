@@ -2,7 +2,7 @@ import { type ReactElement } from 'react';
 import { Undo2, Redo2 } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { undo, redo } from '../../../useCases/workspaceViewActions';
+import { undo, redo } from '#/modules/Command/useCases/undoRedo';
 
 type UndoRedoButtonsProps = {
     canUndo: boolean;

@@ -3,7 +3,7 @@ import { X, Sparkles, Music, Mic2, RefreshCw, AudioWaveform, Play, Plus, Loader2
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { DisabledFeatureWrapper } from '#/components/ui/disabled-feature-wrapper';
-import { isTauri } from '#/modules/AudioEngine/repositories/nativeAIBridge';
+import { isTauri } from '#/modules/AudioEngine/useCases/nativeAiBridgeUseCases';
 import {
     subscribeGenerativeAi,
     getGenerativeAiSnapshot,

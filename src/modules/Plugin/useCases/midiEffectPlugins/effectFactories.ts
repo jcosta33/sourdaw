@@ -1,4 +1,4 @@
-import { type MidiEffect } from './types';
+import { type MidiEffect } from '#/modules/Plugin/models/MidiEffectTypes';
 
 export function createVelocityCurve(curve: 'linear' | 'soft' | 'hard' | 'fixed' = 'linear', fixedVel = 100): MidiEffect {
     return {

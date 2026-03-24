@@ -1,5 +1,5 @@
-import { type DrumKitDef, type DrumVoiceDef } from './types';
-import { scheduleDrumVoice } from './voices';
+import { type DrumKitDef, type DrumVoiceDef } from '#/modules/Synth/models/DrumSynthTypes';
+import { scheduleDrumVoice } from '#/modules/Synth/engine/drumSynthVoices';
 
 export const KIT_808_DEF: DrumKitDef = {
     id: 'kit-808',

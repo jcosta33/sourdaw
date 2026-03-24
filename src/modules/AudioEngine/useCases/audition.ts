@@ -1,6 +1,6 @@
-import { audioEngine } from '../repositories/audioEngineInstance';
+import { audioEngine } from '../repositories/createWebAudioEngine';
 import { getSynthParamsForTrack, scheduleNote } from '#/modules/Synth/useCases/builtinSynth';
-import { getTrackById } from '#/modules/Track/useCases/trackQueries';
+import { getTrackById } from '#/modules/Arrangement/useCases/trackQueries';
 import { getDrumKitDefByIndex, scheduleDrumKitNote } from '#/modules/Synth/useCases/drumSynthEngine';
 
 /**

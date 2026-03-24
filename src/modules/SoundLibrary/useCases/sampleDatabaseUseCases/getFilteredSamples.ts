@@ -1,5 +1,5 @@
 import { sampleDatabaseStore, type SampleEntry } from '#/modules/SoundLibrary/stores/sampleDatabaseStore';
-import { AUTO_TAG_RULES } from '#/modules/SoundLibrary/helpers/sampleTaggingHelpers';
+import { AUTO_TAG_RULES } from '#/modules/SoundLibrary/services/sampleTaggingHelpers';
 
 /**
  * Get filtered, sorted samples based on current search/filter/sort state.

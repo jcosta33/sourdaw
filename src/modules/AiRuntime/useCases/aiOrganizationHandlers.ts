@@ -1,9 +1,8 @@
-import { type ActionHandler } from '#/modules/Command/models/ActionHandler';
-import { type AppAction } from '#/modules/Command/models/AppAction';
-import { setTrackColor } from '#/modules/Track/useCases/setTrackGainPan';
-import { renameTrack } from '#/modules/Track/useCases/renameTrack';
-import { groupTracks } from '#/modules/Track/useCases/toggleTrackState';
-import { getTrackStoreState } from '#/modules/Track/useCases/trackQueries';
+import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
+import { setTrackColor } from '#/modules/Arrangement/useCases/setTrackGainPan';
+import { renameTrack } from '#/modules/Arrangement/useCases/renameTrack';
+import { groupTracks } from '#/modules/Arrangement/useCases/toggleTrackState';
+import { getTrackStoreState } from '#/modules/Arrangement/useCases/trackQueries';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 

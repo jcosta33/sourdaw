@@ -1,5 +1,4 @@
-import { type ActionHandler } from '#/modules/Command/models/ActionHandler';
-import { type AppAction } from '#/modules/Command/models/AppAction';
+import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
 import { setTempo } from '#/modules/Transport/useCases/setTempo';
 import {
     togglePlayback,

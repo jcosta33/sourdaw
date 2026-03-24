@@ -5,7 +5,7 @@ import { type ProjectContext } from '../models/ProjectContext';
 import { validateActions } from './validateActions';
 import { parseToolCallsToActions } from './validateLlmOutput';
 import { isLlmAvailable, generateToolCalls, resolveBackend } from './llmOrchestration';
-import { buildActionSystemPromptAsync } from '../helpers/actionSchema';
+import { buildActionSystemPromptAsync } from './actionSchema';
 import {
     tryPresetMatch,
     buildPresetContext,

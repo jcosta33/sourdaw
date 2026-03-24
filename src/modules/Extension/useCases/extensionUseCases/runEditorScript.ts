@@ -1,5 +1,5 @@
 import { extensionStore } from '#/modules/Extension/stores/extension';
-import { appendLog, createDawApi } from '#/modules/Extension/helpers/scripting';
+import { appendLog, createDawApi } from '#/modules/Extension/services/scripting';
 
 /**
  * Execute the current editor content in a sandboxed context.

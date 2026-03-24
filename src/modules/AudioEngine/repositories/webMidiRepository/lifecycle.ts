@@ -2,7 +2,7 @@
  * Web MIDI lifecycle: init, device selection, hot-plug, Tauri fallback, destroy.
  */
 import { isTauri, tauriInvoke } from '#/helpers/tauriBridge';
-import { type MidiInputInfo, MIDI_CC } from './types';
+import { type MidiInputInfo, MIDI_CC } from '#/modules/AudioEngine/models/WebMidiTypes';
 import {
     midiAccess, activeInput, tauriMode, tauriEventUnlisten,
     activeNotes, channelToNote, midiLearn,
@@ -11,7 +11,7 @@ import {
     setMpeEnabledInternal, getMpeEnabledInternal,
 } from './state';
 import { onMidiMessage } from './messageHandlers';
-import { audioEngine } from '#/modules/AudioEngine/repositories/audioEngineInstance';
+import { audioEngine } from '#/modules/AudioEngine/repositories/createWebAudioEngine';
 
 type TauriMidiDevice = { index: number; name: string };
 

@@ -1,7 +1,7 @@
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
 
-import { DAW_CHAT_TOOLS } from '../../helpers/toolDefinitions';
+import { DAW_CHAT_TOOLS } from '../../models/toolDefinitions';
 import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import {

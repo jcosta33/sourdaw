@@ -1,8 +1,8 @@
 import { type ReactElement, type MouseEvent, useRef, useEffect, useSyncExternalStore } from 'react';
-import { midiStore } from '#/modules/Midi/stores/midiStore';
-import { trackStore } from '#/modules/Track/stores/trackStore';
-import { pushUndoEntry } from '../../../useCases/workspaceViewActions';
-import { setNoteSlide } from '../../../useCases/workspaceViewActions';
+import { midiStore } from '#/modules/MIDI/stores/midiStore';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
+import { setNoteSlide } from '#/modules/MIDI/useCases/midiEventUseCases';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
 /** Inject an alpha value into an oklch() color string. */

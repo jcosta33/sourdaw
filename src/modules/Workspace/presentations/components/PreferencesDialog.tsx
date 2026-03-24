@@ -34,9 +34,9 @@ import {
 import {
     configureCloudApi,
     removeCloudApi,
-    isCloudApiAvailable,
-    resolveBackend,
-} from '../../useCases/workspaceViewActions';
+    isCloudAvailable,
+} from '#/modules/AiRuntime/useCases/cloudApiManagement';
+import { resolveBackend } from '#/modules/AiRuntime/useCases/llmOrchestration';
 import {
     shortcutStore,
     updateShortcutBinding,
@@ -486,11 +486,11 @@ const AiSection = (): ReactElement => {
                 <div className="flex items-center justify-between mt-2">
                     <span className="text-[10px] text-muted-foreground">
                         Status:{' '}
-                        <span className={isCloudApiAvailable() ? 'text-[var(--color-state-success)]' : 'text-[var(--color-state-warning)]'}>
-                            {isCloudApiAvailable() ? 'Connected' : 'Not configured'}
+                        <span className={isCloudAvailable() ? 'text-[var(--color-state-success)]' : 'text-[var(--color-state-warning)]'}>
+                            {isCloudAvailable() ? 'Connected' : 'Not configured'}
                         </span>
                     </span>
-                    {isCloudApiAvailable() && (
+                    {isCloudAvailable() && (
                         <Button
                             variant="ghost"
                             size="xs"

@@ -3,7 +3,7 @@
  * X-Y oscilloscope showing L+R vs L-R with phosphor glow decay.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
-import { audioEngine } from '#/modules/AudioEngine/repositories/audioEngineInstance';
+import { getMasterAnalyser } from '#/modules/AudioEngine/useCases/engineAccess';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type GoniometerProps = {
@@ -28,7 +28,7 @@ export const Goniometer = ({ size = 120, color = resolveToken('--color-accent-la
         let rafId = 0;
 
         const draw = (): void => {
-            const analyser = audioEngine.masterAnalyser;
+            const analyser = getMasterAnalyser();
             const data = new Float32Array(analyser.frequencyBinCount);
             analyser.getFloatTimeDomainData(data);
 

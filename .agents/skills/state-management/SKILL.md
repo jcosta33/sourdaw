@@ -211,7 +211,7 @@ export const useTransportState = () => {
 ### Async state with TanStack Query
 
 ```ts
-// src/modules/Track/presentations/hooks/useTracks.ts
+// src/modules/Arrangement/presentations/hooks/useTracks.ts
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { getTracks } from '../useCases/getTracks';
 
@@ -232,7 +232,7 @@ useTracks.getKey = ({ projectId }: UseTracksParams) => ['tracks', projectId];
 ### Mutations
 
 ```ts
-// src/modules/Track/presentations/hooks/useAddTrack.ts
+// src/modules/Arrangement/presentations/hooks/useAddTrack.ts
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { addTrack } from '../useCases/addTrack';
 import { useTracks } from './useTracks';

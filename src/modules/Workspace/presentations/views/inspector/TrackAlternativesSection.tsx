@@ -7,8 +7,8 @@ import {
     handleCreateTrackAlternative,
     handleSwitchTrackAlternative,
     handleDeleteTrackAlternative,
-} from '../../../useCases/workspaceViewActions';
-import { type Track } from '../../../useCases/workspaceViewActions';
+} from '#/modules/Command/useCases/trackAlternativeHandlers';
+import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
 
 type TrackAlternativesSectionProps = {
     track: Track;

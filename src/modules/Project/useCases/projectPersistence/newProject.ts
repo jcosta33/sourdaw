@@ -1,18 +1,18 @@
-import { trackStore } from '#/modules/Track/stores/trackStore';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { midiStore } from '#/modules/Midi/stores/midiStore';
+import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { tempoMapStore } from '#/modules/Transport/stores/tempoMapStore';
 import { timeSignatureMapStore } from '#/modules/Transport/stores/timeSignatureMapStore';
-import { markerStore } from '#/modules/Timeline/stores/markerStore';
-import { takeLaneStore } from '#/modules/Clip/stores/takeLaneStore';
+import { markerStore } from '#/modules/Arrangement/stores/markerStore';
+import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
 import { arrangementStore, defaultArrangementId } from '../../stores/arrangementStore';
 import { defaultTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { projectStore } from '../../stores/projectStore';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { setSidechainRoutes } from '#/modules/AudioEngine/useCases/sidechainUseCases';
+import { setSidechainRoutes } from '#/modules/Routing/useCases/sidechainUseCases';
 import { removeProjectJson } from '../../repositories/projectRepository';
-import { addTrack as addTrackUseCase } from '#/modules/Track/useCases/addTrack';
+import { addTrack as addTrackUseCase } from '#/modules/Arrangement/useCases/addTrack';
 import { clearUndoHistory } from './helpers';
 
 export function newProject(name = 'Untitled Project'): void {

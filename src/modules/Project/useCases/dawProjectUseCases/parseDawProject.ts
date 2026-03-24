@@ -1,6 +1,6 @@
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
-import { type DawProjectTrack, type DawProjectClip, type DawProjectDocument } from './types';
+import { type DawProjectTrack, type DawProjectClip, type DawProjectDocument } from '#/modules/Project/models/DawProjectTypes';
 
 const logger = Container.getInstance().get(Logger);
 

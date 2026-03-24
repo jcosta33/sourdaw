@@ -8,8 +8,8 @@ module.exports = {
             name: 'no-cross-module-internals',
             comment:
                 'Only contract folders (errors, events, useCases, stores, presentations/views) ' +
-                'are accessible across modules. models, repositories, transformers, ' +
-                'helpers, engine, worklets, and presentations/hooks/components are module-private.',
+                'are accessible across modules. models, repositories, transformers, validators, ' +
+                'services, helpers, engine, worklets, and presentations/hooks/components/renderers/context are module-private.',
             severity: 'error',
             from: {
                 path: '^(src/modules/|src/modules/Common/|src/modules/Supporting/)([^/]+/)',
@@ -29,20 +29,6 @@ module.exports = {
             },
         },
 
-        // ─── Presentations cannot call another module's use cases directly ────────
-        {
-            name: 'cross-module-no-use-cases-in-presentations',
-            severity: 'error',
-            comment:
-                'The presentations layer of a module cannot import use cases from another ' +
-                'module. Create a use case in the current module to orchestrate cross-module logic.',
-            from: {
-                path: '^(src/modules/)([^/]+)/presentations/.+',
-            },
-            to: {
-                path: '^$1(?!$2).*/useCases/',
-            },
-        },
 
         // ─── Stores are private within the module ─────────────────────────────────
         {
@@ -83,6 +69,73 @@ module.exports = {
             from: { path: '^(src/modules/)([^/]+)/' },
             to: { path: '^src/modules/(?!$2)[^/]+/models/' },
         },
+
+        // ─── Validators are private within the module ──────────────────────────────
+        {
+            name: 'validators-private-cross',
+            severity: 'error',
+            comment:
+                'validators/ is module-private. Aggregate invariant enforcement is an internal concern. ' +
+                'Other modules should call the owning module\'s useCases/, which internally invoke validators.',
+            from: { path: '^(src/modules/)([^/]+)/' },
+            to: { path: '^src/modules/(?!$2)[^/]+/validators/' },
+        },
+
+        // ─── Services are private within the module ────────────────────────────────
+        {
+            name: 'services-private-cross',
+            severity: 'error',
+            comment:
+                'services/ is module-private. Stateless cross-entity domain logic is an internal concern. ' +
+                'Other modules should call the owning module\'s useCases/, which internally invoke services.',
+            from: { path: '^(src/modules/)([^/]+)/' },
+            to: { path: '^src/modules/(?!$2)[^/]+/services/' },
+        },
+
+        // ─── Transformers are private within the module ────────────────────────────
+        {
+            name: 'transformers-private-cross',
+            severity: 'error',
+            comment:
+                'transformers/ is module-private. Mapping logic is an internal concern. ' +
+                'Other modules should use DTOs exported from useCases/.',
+            from: { path: '^(src/modules/)([^/]+)/' },
+            to: { path: '^src/modules/(?!$2)[^/]+/transformers/' },
+        },
+
+        // ─── Renderers are private within the module ───────────────────────────────
+        {
+            name: 'renderers-private-cross',
+            severity: 'error',
+            comment:
+                'presentations/renderers/ is module-private. Canvas/WebGL/WebGPU drawing code ' +
+                'is presentation-layer I/O scoped to the owning module.',
+            from: { path: '^(src/modules/)([^/]+)/' },
+            to: { path: '^src/modules/(?!$2)[^/]+/presentations/renderers/' },
+        },
+
+        // ─── Context is private within the module ──────────────────────────────────
+        {
+            name: 'context-private-cross',
+            severity: 'error',
+            comment:
+                'presentations/context/ is module-private. Ephemeral UI state (selection, scroll) ' +
+                'must never be shared across module boundaries.',
+            from: { path: '^(src/modules/)([^/]+)/' },
+            to: { path: '^src/modules/(?!$2)[^/]+/presentations/context/' },
+        },
+
+        // ─── Components are private within the module ──────────────────────────────
+        {
+            name: 'components-private-cross',
+            severity: 'error',
+            comment:
+                'presentations/components/ is module-private. Expose reusable UI through ' +
+                'presentations/views/ (contract) instead.',
+            from: { path: '^(src/modules/)([^/]+)/' },
+            to: { path: '^src/modules/(?!$2)[^/]+/presentations/components/' },
+        },
+
 
         // ─── Repositories: only useCases and helpers may import them ──────────────
         {
@@ -192,6 +245,17 @@ module.exports = {
                     '^(src/modules/|src/modules/Common/|src/modules/Supporting/)([^/]+/)(errors|events|useCases|stores|presentations/views)/',
                 ],
             },
+        },
+
+        // ─── Shared layer must not import from modules ────────────────────────────
+        {
+            name: 'shared-no-module-imports',
+            severity: 'error',
+            comment:
+                'src/shared/ may only contain pure types and pure functions. ' +
+                'It must never import from src/modules/.',
+            from: { path: '^src/shared/' },
+            to: { path: '^src/modules/' },
         },
 
         // ─── General ──────────────────────────────────────────────────────────────

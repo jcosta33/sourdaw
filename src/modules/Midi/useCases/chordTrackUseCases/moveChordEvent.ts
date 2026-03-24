@@ -1,4 +1,4 @@
-import { chordTrackStore } from '#/modules/Track/stores/chordTrackStore';
+import { chordTrackStore } from '#/modules/Arrangement/stores/chordTrackStore';
 
 export function moveChordEvent(eventId: string, newBeat: number): void {
     const state = chordTrackStore.value;

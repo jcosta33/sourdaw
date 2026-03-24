@@ -15,11 +15,11 @@ import {
 } from '../../useCases/keyboardShortcutActions';
 
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { trackStore } from '#/modules/Track/stores/trackStore';
-import { zoomTimeline } from '#/modules/Timeline/stores/timelineViewStore';
-import { getAllClipIds, getLastClipEndBeat, goToNextMarker, goToPreviousMarker } from '../../helpers/selectionHelpers';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { zoomTimeline } from '#/modules/Arrangement/stores/timelineViewStore';
+import { getAllClipIds, getLastClipEndBeat, goToNextMarker, goToPreviousMarker } from '../../useCases/selectionHelpers';
 import { cycleAutomationVisibility } from '#/modules/Workspace/useCases/togglePanel';
-import { type EditingTool, TOOL_SHORTCUTS } from '#/modules/Workspace/models/EditingTool';
+import { type EditingTool, TOOL_SHORTCUTS } from '#/modules/Workspace/useCases/workspaceQueries';
 
 const ZOOM_STEP = 4;
 

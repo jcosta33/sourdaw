@@ -7,11 +7,11 @@
  */
 
 import { resolveBackend } from '#/modules/AiRuntime/useCases/llmOrchestration';
-import { generateWebLlmCompletion } from '#/modules/AiRuntime/repositories/webLlmRepository';
-import { generateNativeCompletion } from '#/modules/AiRuntime/repositories/llamaServerEngine';
-import { isLlamaServerRunning } from '#/modules/AiRuntime/repositories/llamaServerEngine';
+import { generateWebLlmCompletion } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
+import { generateNativeCompletion } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
+import { isLlamaServerRunning } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
 import { type GeneratedNote } from '#/modules/AudioEngine/repositories/nativeAIBridge';
-import { PATTERN_TEMPLATES, filterTemplates } from '#/modules/AiRuntime/models/midiPatternLibrary';
+import { PATTERN_TEMPLATES, filterTemplates } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
 
 // ── System prompt for music generation ──
 

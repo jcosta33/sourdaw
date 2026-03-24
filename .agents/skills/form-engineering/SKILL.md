@@ -72,7 +72,7 @@ Install: `pnpm add react-hook-form @hookform/resolvers zod`. Shadcn UI form comp
 ### Inline track rename form
 
 ```tsx
-// src/modules/Track/presentations/components/TrackNameInput.tsx
+// src/modules/Arrangement/presentations/components/TrackNameInput.tsx
 import { useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';

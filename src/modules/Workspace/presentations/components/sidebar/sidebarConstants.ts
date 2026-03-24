@@ -11,7 +11,7 @@ import {
     Guitar,
     Music2,
 } from 'lucide-react';
-import { type SoundPresetCategory } from '../../../useCases/workspaceViewActions';
+import { type SoundPresetCategory } from '#/modules/Arrangement/useCases/trackQueries';
 
 export type SampleItem = {
     id: string;

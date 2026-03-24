@@ -1,5 +1,5 @@
-import { midiStore } from '#/modules/Midi/stores/midiStore';
-import { type MidiNote } from '#/modules/Midi/models/MidiNote';
+import { midiStore } from '#/modules/MIDI/stores/midiStore';
+import { type MidiNote } from '#/modules/MIDI/models/MidiNote';
 
 export type ArpPattern = 'up' | 'down' | 'updown' | 'downup' | 'random';
 export type ArpRate = 4 | 8 | 16 | 32;

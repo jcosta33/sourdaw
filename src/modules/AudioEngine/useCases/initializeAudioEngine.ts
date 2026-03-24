@@ -1,4 +1,4 @@
-import { audioEngine } from '../repositories/audioEngineInstance';
+import { audioEngine } from '../repositories/createWebAudioEngine';
 import { getTransportStoreValue } from '#/modules/Transport/useCases/transportQueries';
 import { registerBuiltinPlugins, initWAMEnvironment } from '#/modules/Plugin/useCases/wamPluginHost';
 import { registerBuiltinFaustDSP } from '#/modules/Plugin/useCases/faustEngine';

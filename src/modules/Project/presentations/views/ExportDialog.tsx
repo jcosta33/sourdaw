@@ -7,7 +7,7 @@ import { Separator } from '#/components/ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '#/components/ui/dialog';
 import { Download } from 'lucide-react';
 import { renderOffline, exportStems, downloadWav, downloadMp3, downloadFlac } from '../../useCases/exportActions';
-import { trackStore } from '#/modules/Track/stores/trackStore';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 
 const logger = Container.getInstance().get(Logger);
 

@@ -1,8 +1,7 @@
-import { type ActionHandler } from '#/modules/Command/models/ActionHandler';
-import { type AppAction } from '#/modules/Command/models/AppAction';
+import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
 import { startPluginScan, findPluginByName } from '#/modules/Plugin/useCases/pluginScanUseCases';
-import { addTrack } from '#/modules/Track/useCases/addTrack';
-import { addExternalDevice } from '#/modules/Track/useCases/deviceUseCases';
+import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
+import { addExternalDevice } from '#/modules/Arrangement/useCases/deviceUseCases';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 

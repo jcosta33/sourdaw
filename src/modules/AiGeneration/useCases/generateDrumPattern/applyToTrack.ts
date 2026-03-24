@@ -1,5 +1,5 @@
-import { addClip } from '#/modules/Clip/useCases/clipUseCases';
-import { addMidiNote } from '#/modules/Midi/useCases/midiUseCases';
+import { addClip } from '#/modules/Arrangement/useCases/clipUseCases';
+import { addMidiNote } from '#/modules/MIDI/useCases/midiUseCases';
 import { type GenerateDrumPatternOptions } from './algorithm';
 import { generateDrumPattern } from './algorithm';
 

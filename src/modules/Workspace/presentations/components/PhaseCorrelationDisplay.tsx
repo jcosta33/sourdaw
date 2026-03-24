@@ -4,7 +4,7 @@
  * Canvas2D rendering with smoothed correlation value.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
-import { audioEngine } from '#/modules/AudioEngine/repositories/audioEngineInstance';
+import { getMasterAnalyser } from '#/modules/AudioEngine/useCases/engineAccess';
 import { PhaseCorrelationMeter as PhaseMeter } from '#/modules/AudioEngine/useCases/advancedMetering';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
@@ -30,7 +30,7 @@ export const PhaseCorrelationDisplay = ({ width = 160, height = 24 }: PhaseCorre
         let rafId = 0;
 
         const draw = (): void => {
-            const analyser = audioEngine.masterAnalyser;
+            const analyser = getMasterAnalyser();
             const data = new Float32Array(analyser.frequencyBinCount);
             analyser.getFloatTimeDomainData(data);
 

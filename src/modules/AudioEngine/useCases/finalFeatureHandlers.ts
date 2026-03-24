@@ -1,4 +1,4 @@
-import { type ActionHandler } from '#/modules/Command/models/ActionHandler';
+import { type ActionHandler } from '#/modules/Command/useCases/commandQueries';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { setProcessingMode, type BitDepthMode } from '#/modules/AudioEngine/useCases/audioPrecisionUseCases';
 import { toggleNodeView } from '#/modules/Plugin/useCases/nodeViewUseCases';

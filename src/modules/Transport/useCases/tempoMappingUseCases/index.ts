@@ -1,4 +1,4 @@
-export { type TempoMapPoint, type TempoMapResult } from './types';
+export { type TempoMapPoint, type TempoMapResult } from '#/modules/Transport/models/TempoMappingTypes';
 export {
     detectTempoFromOnsets,
     estimateOnsetsFromClips,

@@ -1,5 +1,5 @@
 import { pluginScanStore, defaultPluginScanState } from '#/modules/AudioEngine/stores/pluginScanStore';
-import { scanPlugins, getDefaultPluginPaths } from '../../useCases/pluginBridge';
+import { scanPlugins, getDefaultPluginPaths } from '../../repositories/pluginBridge';
 
 const getState = () => pluginScanStore.value ?? defaultPluginScanState;
 

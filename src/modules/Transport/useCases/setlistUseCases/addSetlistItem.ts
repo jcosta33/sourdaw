@@ -1,5 +1,5 @@
 import { setlistStore, type SetlistItem } from '#/modules/Transport/stores/setlistStore';
-import { getNextSetlistItemId, SETLIST_ITEM_COLORS } from '#/modules/Transport/helpers/setlistItemHelpers';
+import { getNextSetlistItemId, SETLIST_ITEM_COLORS } from '#/modules/Transport/models/setlistItemHelpers';
 
 export function addSetlistItem(name: string, estimatedDuration: number = 180): void {
     const state = setlistStore.value;

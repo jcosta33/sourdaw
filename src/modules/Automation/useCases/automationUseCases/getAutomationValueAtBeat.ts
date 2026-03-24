@@ -1,5 +1,5 @@
 import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { interpolateAutomationValue } from '#/modules/Track/transformers/automationTransformers';
+import { interpolateAutomationValue } from '#/modules/Arrangement/useCases/automationQueries';
 
 export function getAutomationValueAtBeat(laneId: string, beat: number): number | null {
     const state = automationStore.value;

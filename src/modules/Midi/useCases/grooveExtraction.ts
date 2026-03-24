@@ -7,7 +7,7 @@
  * perfectly quantized notes to make them feel more "human" or "groovy".
  */
 
-import { midiStore } from '#/modules/Midi/stores/midiStore';
+import { midiStore } from '#/modules/MIDI/stores/midiStore';
 
 export type GrooveTemplate = {
     id: string;

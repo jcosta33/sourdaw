@@ -7,16 +7,16 @@ import {
     getLastClipEndBeat,
     goToNextMarker,
     goToPreviousMarker,
-} from '../helpers/selectionHelpers';
+} from '../useCases/selectionHelpers';
 import { saveProject, newProject } from '#/modules/Project/useCases/projectPersistence';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { trackStore } from '#/modules/Track/stores/trackStore';
-import { addMarker } from '#/modules/Timeline/useCases/markerUseCases';
-import { duplicateTrack } from '#/modules/Track/useCases/duplicateTrack';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { addMarker } from '#/modules/Arrangement/useCases/markerUseCases';
+import { duplicateTrack } from '#/modules/Arrangement/useCases/duplicateTrack';
 import { undo, redo } from '#/modules/Command/useCases/undoRedo';
-import { copySelectedClip, cutSelectedClip, pasteClip } from '#/modules/Clip/useCases/clipboardUseCases';
+import { copySelectedClip, cutSelectedClip, pasteClip } from '#/modules/Arrangement/useCases/clipboardUseCases';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { zoomTimeline } from '#/modules/Timeline/stores/timelineViewStore';
+import { zoomTimeline } from '#/modules/Arrangement/stores/timelineViewStore';
 import {
     zoomToFit,
     zoomToSelection,
@@ -27,8 +27,8 @@ import {
 } from '#/modules/Workspace/useCases/togglePanel';
 import { seekPlayhead } from '#/modules/Transport/useCases/transportControls';
 import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
-import { removeTrack } from '#/modules/Track/useCases/removeTrack';
-import { splitClip, renameClip } from '#/modules/Clip/useCases/clipEditingUseCases';
+import { removeTrack } from '#/modules/Arrangement/useCases/removeTrack';
+import { splitClip, renameClip } from '#/modules/Arrangement/useCases/clipEditingUseCases';
 import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
 
@@ -782,7 +782,7 @@ export const commandRegistry: CommandEntry[] = [
         description: 'Import a .webdaw project file',
         category: 'Project',
         action: async () => {
-            const { pickFiles } = await import('#/modules/Project/repositories/nativeFileDialog');
+            const { pickFiles } = await import('#/modules/Project/useCases/fileDialogUseCases');
             const files = await pickFiles({
                 filters: [{ name: 'WebDAW Project', extensions: ['webdaw'] }],
                 multiple: false,

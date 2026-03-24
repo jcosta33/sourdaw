@@ -1,6 +1,6 @@
 import { isTauri } from '#/helpers/tauriBridge';
 import { isCloudAvailable } from '../../repositories/cloudLlmRepository';
-import { type AiBackend } from './types';
+import { type AiBackend } from '#/modules/AiRuntime/models/LlmOrchestrationTypes';
 
 /**
  * Returns the preferred primary backend:

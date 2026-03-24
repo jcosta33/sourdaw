@@ -302,7 +302,7 @@ export const arrangementPreferencesStore = new Store<ArrangementPreferences>(Con
 Models are plain TypeScript types. They describe shapes, not behavior. Engine resources are never in models.
 
 ```typescript
-// src/modules/Track/models/Track.ts
+// src/modules/Arrangement/models/Track.ts
 
 export type TrackKind = 'audio' | 'midi' | 'instrument' | 'bus' | 'master';
 
@@ -439,7 +439,7 @@ This is the key architectural insight: **undo/redo is free** because the engine 
 Transformers map between domain models and engine configuration. They are pure functions with no side effects.
 
 ```typescript
-// src/modules/Track/transformers/transformTrackToEngineConfig.ts
+// src/modules/Arrangement/transformers/transformTrackToEngineConfig.ts
 
 export type TrackEngineConfig = {
     id: string;
@@ -549,7 +549,7 @@ Allowed only between contract folders. Module B's use case calls Module A's use 
 
 ```typescript
 // Clip use case validating track existence before adding clip
-import { getTrackById } from '#/modules/Track/useCases/getTrackById';
+import { getTrackById } from '#/modules/Arrangement/useCases/getTrackById';
 
 export const addClip = async (input: AddClipInput): Promise<Clip> => {
     const track = await getTrackById(input.trackId); // cross-module, allowed
@@ -737,37 +737,37 @@ This distinction is critical and must be stated explicitly.
 
 ```typescript
 // ❌ Forbidden — importing a model from another module
-import type { Track } from '#/modules/Track/models/Track';
+import type { Track } from '#/modules/Arrangement/models/Track';
 
 // ❌ Forbidden — importing a presentation-layer store from another module
-import { trackSelectionStore } from '#/modules/Track/presentations/stores/trackSelectionStore';
+import { trackSelectionStore } from '#/modules/Arrangement/presentations/stores/trackSelectionStore';
 
 // ❌ Forbidden — importing a transformer from another module
-import { transformTrack } from '#/modules/Track/transformers/transformTrack';
+import { transformTrack } from '#/modules/Arrangement/transformers/transformTrack';
 
 // ❌ Forbidden — importing a repository from another module
-import { getTrackByIdApi } from '#/modules/Track/repositories/getTrackByIdApi';
+import { getTrackByIdApi } from '#/modules/Arrangement/repositories/getTrackByIdApi';
 
 // ❌ Forbidden — importing a hook from another module
-import { useTrackControls } from '#/modules/Track/presentations/hooks/useTrackControls';
+import { useTrackControls } from '#/modules/Arrangement/presentations/hooks/useTrackControls';
 
 // ✅ Allowed — importing a business-layer store (contract folder)
-import { trackStore } from '#/modules/Track/stores/trackStore';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 
 // ✅ Allowed — importing a DTO type exported from a use case (contract folder)
-import type { TrackDto } from '#/modules/Track/useCases/getTrackById';
+import type { TrackDto } from '#/modules/Arrangement/useCases/getTrackById';
 
 // ✅ Allowed — calling a use case (contract folder)
-import { getTrackById } from '#/modules/Track/useCases/getTrackById';
+import { getTrackById } from '#/modules/Arrangement/useCases/getTrackById';
 
 // ✅ Allowed — importing an error (contract folder)
-import { TrackNotFoundError } from '#/modules/Track/errors/TrackNotFoundError';
+import { TrackNotFoundError } from '#/modules/Arrangement/errors/TrackNotFoundError';
 
 // ✅ Allowed — importing an event (contract folder)
-import { TrackAddedEvent } from '#/modules/Track/events/TrackAddedEvent';
+import { TrackAddedEvent } from '#/modules/Arrangement/events/TrackAddedEvent';
 
 // ✅ Allowed — importing a view (contract folder)
-import { TrackListView } from '#/modules/Track/presentations/views/TrackListView';
+import { TrackListView } from '#/modules/Arrangement/presentations/views/TrackListView';
 
 // ✅ Allowed — importing a shared primitive (not a module boundary at all)
 import type { TrackId } from '#/shared/types/ids';
@@ -891,7 +891,7 @@ The distinction tracks the direction of the cross-module dependency:
 A model stays internal to its module. A DTO is what that module chooses to expose — a deliberate, minimal, stable subset. The DTO lives in the `useCases/` file that produces it, so consuming modules import from a contract folder:
 
 ```typescript
-// src/modules/Track/useCases/getTrackById.ts
+// src/modules/Arrangement/useCases/getTrackById.ts
 
 // Internal model — Track lives in Track/models/ and never crosses the boundary
 import type { Track } from '../models/Track';
@@ -926,9 +926,9 @@ export const getTrackById: GetTrackByIdUseCase = async (id) => {
 The consuming module maps the DTO to its own local type immediately:
 
 ```typescript
-// src/modules/Clip/transformers/transformTrackToClipContext.ts
+// src/modules/Arrangement/transformers/transformTrackToClipContext.ts
 
-import type { TrackDto } from '#/modules/Track/useCases/getTrackById';
+import type { TrackDto } from '#/modules/Arrangement/useCases/getTrackById';
 
 // Clip domain's local representation of what it needs from a track
 type ClipTrackContext = {

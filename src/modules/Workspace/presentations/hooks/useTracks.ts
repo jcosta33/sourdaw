@@ -3,7 +3,7 @@
  * Uses the Track store (a contract) directly, avoiding cross-module hook import.
  */
 import { useSyncExternalStore } from 'react';
-import { trackStore, type TrackStoreState } from '#/modules/Track/stores/trackStore';
+import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores/trackStore';
 
 const defaultState: TrackStoreState = { tracks: [], selectedTrackId: null };
 

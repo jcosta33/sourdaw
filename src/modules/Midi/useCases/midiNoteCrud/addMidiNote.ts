@@ -1,5 +1,5 @@
-import { midiStore } from '#/modules/Midi/stores/midiStore';
-import { createMidiNote, type MidiNote } from '#/modules/Midi/models/MidiNote';
+import { midiStore } from '#/modules/MIDI/stores/midiStore';
+import { createMidiNote, type MidiNote } from '#/modules/MIDI/models/MidiNote';
 
 export function addMidiNote(
     clipId: string,

@@ -1,5 +1,5 @@
 import { getWorkspaceState } from '../../repositories/workspaceRepository';
-import { trackStore } from '#/modules/Track/stores/trackStore';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 
 /**
  * Note: DOM CustomEvent dispatch is part of the codebase-wide `webdaw:*`

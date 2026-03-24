@@ -1,7 +1,7 @@
-import { getTrackState, setTrackState } from '#/modules/Track/repositories/trackRepository';
+import { getTrackStoreState as getTrackState, setTrackState } from '#/modules/Arrangement/useCases/trackQueries';
 import { midiStore } from '../stores/midiStore';
-import { createTrack } from '#/modules/Track/models/Track';
-import { addClip } from '#/modules/Clip/useCases/clipUseCases';
+import { createTrack } from '#/modules/Arrangement/useCases/trackQueries';
+import { addClip } from '#/modules/Arrangement/useCases/clipUseCases';
 import { type MidiNote } from '../models/MidiNote';
 
 type ParsedTrack = {

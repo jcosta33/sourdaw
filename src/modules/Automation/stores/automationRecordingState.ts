@@ -6,7 +6,7 @@
 import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { batchAddAutomationPoints } from '#/modules/Automation/useCases/automationUseCases';
 import { type AutomationPoint } from '#/modules/Automation/models/Automation';
-import { type AutomationMode } from '#/modules/Track/models/Track';
+import { type AutomationMode } from '#/modules/Arrangement/useCases/trackQueries';
 
 export type RecordingSession = {
     parameterId: string;

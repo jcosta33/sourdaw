@@ -1,9 +1,9 @@
 import { type ReactElement, type MouseEvent, useState, useRef, useSyncExternalStore } from 'react';
 import { cn } from '#/helpers/Styles/cn';
-import { midiStore } from '#/modules/Midi/stores/midiStore';
-import { pushUndoEntry } from '../../../useCases/workspaceViewActions';
-import { addMidiCC, removeMidiCC, moveMidiCC } from '../../../useCases/workspaceViewActions';
-import { type MidiCC } from '../../../useCases/workspaceViewActions';
+import { midiStore } from '#/modules/MIDI/stores/midiStore';
+import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
+import { addMidiCC, removeMidiCC, moveMidiCC } from '#/modules/MIDI/useCases/midiEventUseCases';
+import { type MidiCC } from '#/modules/Arrangement/useCases/trackQueries';
 
 type CCLaneProps = {
     clipId: string | null;

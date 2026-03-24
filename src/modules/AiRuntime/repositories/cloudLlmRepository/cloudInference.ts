@@ -3,7 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
 
-import { mcpToOpenAiTools } from '../../helpers/mcpToolAdapter';
+import { mcpToOpenAiTools } from '../../repositories/mcpToolAdapter';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { getCloudClient } from './keyManagement';
 

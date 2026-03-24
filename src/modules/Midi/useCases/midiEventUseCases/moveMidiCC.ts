@@ -1,4 +1,4 @@
-import { midiStore } from '#/modules/Midi/stores/midiStore';
+import { midiStore } from '#/modules/MIDI/stores/midiStore';
 
 export function moveMidiCC(clipId: string, ccId: string, newBeat: number, newValue: number): void {
     const state = midiStore.value;

@@ -1,10 +1,10 @@
 import { type ReactElement, useEffect, useRef, useSyncExternalStore } from 'react';
-import { getEngineState, getMasterPeakLevel } from '../../useCases/workspaceViewActions';
+import { getEngineState, getMasterPeakLevel } from '#/modules/AudioEngine/useCases/engineAccess';
 import { useUndoState } from '../hooks/useUndoState';
 import { useCollaborationState } from '../hooks/useCollaborationState';
 import { cn } from '#/helpers/Styles/cn';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { trackStore } from '#/modules/Track/stores/trackStore';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { llmStatusStore } from '#/modules/AiRuntime/stores/llmStatusStore';
 import { animationScheduler } from '#/helpers/DOM/AnimationScheduler';
 import { History, Users } from 'lucide-react';
@@ -13,7 +13,7 @@ import { Button } from '#/components/ui/button';
 export const StatusBar = (): ReactElement => {
     const undoState = useUndoState();
     const collab = useCollaborationState();
-    
+
     // GPU / LLM status
     const llmStatus = useSyncExternalStore(
         (cb) => llmStatusStore.subscribe(() => cb()),
@@ -61,7 +61,11 @@ export const StatusBar = (): ReactElement => {
             if (cpuBarRef.current) {
                 cpuBarRef.current.style.width = `${Math.min(100, cpuPct)}%`;
                 cpuBarRef.current.className = `h-full rounded-full transition-[width] duration-150 ${
-                    cpuPct < 50 ? 'bg-[var(--color-state-success)]' : cpuPct < 80 ? 'bg-[var(--color-state-warning)]' : 'bg-[var(--color-state-danger)]'
+                    cpuPct < 50
+                        ? 'bg-[var(--color-state-success)]'
+                        : cpuPct < 80
+                          ? 'bg-[var(--color-state-warning)]'
+                          : 'bg-[var(--color-state-danger)]'
                 }`;
             }
             if (cpuTextRef.current) {
@@ -154,18 +158,24 @@ export const StatusBar = (): ReactElement => {
                             style={{ width: '0%' }}
                         />
                     </div>
-                    <span ref={cpuTextRef} className="text-[10px] font-mono text-muted-foreground w-7 text-right">0%</span>
+                    <span ref={cpuTextRef} className="text-[10px] font-mono text-muted-foreground w-7 text-right">
+                        0%
+                    </span>
                 </div>
-                
+
                 <div ref={memContainerRef} className="flex items-center gap-1" style={{ display: 'none' }}>
                     <span className="text-[10px] text-muted-foreground">MEM:</span>
-                    <span ref={memTextRef} className="text-[10px] font-mono text-muted-foreground">0 MB</span>
+                    <span ref={memTextRef} className="text-[10px] font-mono text-muted-foreground">
+                        0 MB
+                    </span>
                 </div>
-                
+
                 <div className="flex items-center gap-1">
                     <span className="text-[10px] text-muted-foreground">GPU:</span>
                     {llmStatus?.state === 'generating' ? (
-                        <span className="text-[10px] font-mono text-[var(--color-accent-lavender)] animate-pulse">active</span>
+                        <span className="text-[10px] font-mono text-[var(--color-accent-lavender)] animate-pulse">
+                            active
+                        </span>
                     ) : llmStatus?.state === 'loading' ? (
                         <span className="text-[10px] font-mono text-[var(--color-state-warning)]">
                             {Math.round(llmStatus.progress * 100)}%
@@ -176,10 +186,14 @@ export const StatusBar = (): ReactElement => {
                         <span className="text-[10px] font-mono text-muted-foreground/50">idle</span>
                     )}
                 </div>
-                
-                <span ref={sampleRateRef} className="text-[10px] font-mono tabular-nums text-muted-foreground">0kHz</span>
-                <span ref={latencyRef} className="text-[10px] font-mono tabular-nums text-muted-foreground">0.0ms</span>
-                
+
+                <span ref={sampleRateRef} className="text-[10px] font-mono tabular-nums text-muted-foreground">
+                    0kHz
+                </span>
+                <span ref={latencyRef} className="text-[10px] font-mono tabular-nums text-muted-foreground">
+                    0.0ms
+                </span>
+
                 <div className="flex items-center gap-1">
                     <div className="h-2 w-16 rounded-full bg-muted/30 overflow-hidden">
                         <div
@@ -188,7 +202,12 @@ export const StatusBar = (): ReactElement => {
                             style={{ width: '0%' }}
                         />
                     </div>
-                    <span ref={masterLevelTextRef} className="text-[10px] font-mono text-muted-foreground w-10 text-right">-∞ dB</span>
+                    <span
+                        ref={masterLevelTextRef}
+                        className="text-[10px] font-mono text-muted-foreground w-10 text-right"
+                    >
+                        -∞ dB
+                    </span>
                 </div>
             </div>
 
@@ -214,7 +233,9 @@ export const StatusBar = (): ReactElement => {
                     <span
                         className={cn(
                             'size-1.5 rounded-full',
-                            collab.connectionStatus === 'connected' ? 'bg-[var(--color-state-success)]' : 'bg-muted-foreground/50'
+                            collab.connectionStatus === 'connected'
+                                ? 'bg-[var(--color-state-success)]'
+                                : 'bg-muted-foreground/50'
                         )}
                     />
                     <Users className="size-3" />

@@ -1,4 +1,4 @@
-import { trackStore } from '#/modules/Track/stores/trackStore';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { undoStore } from '#/modules/Command/stores/undoStore';
 import { notifyUser } from '#/helpers/Notification/notifyUser';

@@ -3,11 +3,11 @@
  * Delegates to SynthModels for types/defaults.
  */
 
-import { getTrackById } from '#/modules/Track/useCases/trackQueries';
-import { type SynthParams, defaultSynthParams, type MpeParams } from '#/modules/AudioEngine/models/SynthModels';
+import { getTrackById } from '#/modules/Arrangement/useCases/trackQueries';
+import { type SynthParams, defaultSynthParams, type MpeParams } from '#/modules/AudioEngine/useCases/audioEngineQueries';
 
 // Re-export model types for consumers
-export { type SynthParams, defaultSynthParams, type MpeParams } from '#/modules/AudioEngine/models/SynthModels';
+export { type SynthParams, defaultSynthParams, type MpeParams } from '#/modules/AudioEngine/useCases/audioEngineQueries';
 
 const SYNTH_PARAM_KEYS: ReadonlyArray<keyof SynthParams> = [
     'waveform',

@@ -1,4 +1,4 @@
-import { midiStore } from '#/modules/Midi/stores/midiStore';
+import { midiStore } from '#/modules/MIDI/stores/midiStore';
 
 export function resizeMidiNote(clipId: string, noteId: string, newStartBeat?: number, newDuration?: number): void {
     const state = midiStore.value;

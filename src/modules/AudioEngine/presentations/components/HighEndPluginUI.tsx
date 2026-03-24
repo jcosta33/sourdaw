@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { WAMInstance } from '#/modules/Plugin/useCases/wamPluginHost';
-import { ParameterSAB } from '../../utils/ParameterSAB';
+import { ParameterSAB } from '../../engine/ParameterSAB';
 
 type HighEndPluginUIProps = {
     instance: WAMInstance;

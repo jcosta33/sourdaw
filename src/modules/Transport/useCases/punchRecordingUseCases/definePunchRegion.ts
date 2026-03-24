@@ -1,5 +1,5 @@
 import { punchRecordingStore, type PunchRegion } from '#/modules/Transport/stores/punchRecordingStore';
-import { getNextPunchId } from '#/modules/Transport/helpers/punchRecordingHelpers';
+import { getNextPunchId } from '#/modules/Transport/models/punchRecordingHelpers';
 
 export function definePunchRegion(
     captureId: string,

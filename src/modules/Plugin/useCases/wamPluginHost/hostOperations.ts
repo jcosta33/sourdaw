@@ -1,4 +1,4 @@
-import { type WAMDescriptor, type WAMInstance } from './types';
+import { type WAMDescriptor, type WAMInstance } from '#/modules/Plugin/models/WamPluginHostTypes';
 
 // In-memory registries (raw Map singletons — not Store<T>)
 const registry = new Map<string, WAMDescriptor>();

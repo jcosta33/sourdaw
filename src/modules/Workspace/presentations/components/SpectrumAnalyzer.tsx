@@ -4,7 +4,7 @@
  * Inspired by FabFilter Pro-Q style: perceptual tilt, logarithmic frequency axis.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
-import { audioEngine } from '#/modules/AudioEngine/repositories/audioEngineInstance';
+import { getMasterAnalyser, getTrackStripAnalyser, getAudioSampleRate } from '#/modules/AudioEngine/useCases/engineAccess';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type SpectrumAnalyzerProps = {
@@ -36,14 +36,14 @@ export const SpectrumAnalyzer = ({
 
         const draw = (): void => {
             const analyser = trackId
-                ? (audioEngine.getTrackStrip(trackId)?.analyserNode ?? audioEngine.masterAnalyser)
-                : audioEngine.masterAnalyser;
+                ? (getTrackStripAnalyser(trackId) ?? getMasterAnalyser())
+                : getMasterAnalyser();
 
             const fftSize = analyser.frequencyBinCount;
             const freqData = new Float32Array(fftSize);
             analyser.getFloatFrequencyData(freqData);
 
-            const sampleRate = audioEngine.context?.sampleRate ?? 44100;
+            const sampleRate = getAudioSampleRate();
 
             ctx.clearRect(0, 0, width, height);
 

@@ -1,5 +1,5 @@
 import { loopStationStore, type LoopSlot } from '#/modules/Transport/stores/loopStationStore';
-import { getNextSlotId } from '#/modules/Transport/helpers/loopStationHelpers';
+import { getNextSlotId } from '#/modules/Transport/models/loopStationHelpers';
 
 export function createSlot(trackId: string, row: number, column: number): void {
     const state = loopStationStore.value;

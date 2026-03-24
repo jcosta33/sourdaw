@@ -1,4 +1,4 @@
-import { getAllTracks } from '#/modules/Track/repositories/trackRepository';
+import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
 import {
     activeRecording,
     pendingPoints,

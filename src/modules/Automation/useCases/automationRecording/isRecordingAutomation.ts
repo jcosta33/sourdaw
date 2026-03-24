@@ -1,4 +1,4 @@
-import { getTrackById } from '#/modules/Track/repositories/trackRepository';
+import { getTrackById } from '#/modules/Arrangement/useCases/trackQueries';
 import {
     activeRecording,
     touchActive,

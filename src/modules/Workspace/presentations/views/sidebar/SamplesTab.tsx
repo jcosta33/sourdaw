@@ -1,8 +1,8 @@
 import { type ReactElement } from 'react';
 import { Folder, File, Star, Upload } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
-import { addTrack } from '../../../useCases/workspaceViewActions';
-import { addClip } from '../../../useCases/workspaceViewActions';
+import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
+import { addClip } from '#/modules/Arrangement/useCases/clipUseCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { PreviewButton } from '../../components/sidebar/PreviewButton';
 import { type SampleItem } from '../../components/sidebar/sidebarConstants';

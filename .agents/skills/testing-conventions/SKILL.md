@@ -10,7 +10,7 @@ All tests must be co-located with the code they test.
 Test descriptions must start with `should` or `should not`.
 
 ```text
-src/modules/Track/
+src/modules/Arrangement/
 ├── _tests/                    # Test utilities and shared mocks
 │   ├── TrackDummy.ts
 │   └── getEventBus.mock.ts
@@ -25,7 +25,7 @@ src/modules/Track/
 Use cases contain business logic and dispatch events. Mock repositories and the EventBus with the custom `Prophecy` tool.
 
 ```typescript
-// src/modules/Track/useCases/addTrack.spec.ts
+// src/modules/Arrangement/useCases/addTrack.spec.ts
 
 import { injectDependencies } from '#/helpers/DependencyInjector/injectDependencies';
 import { Prophecy } from '#/helpers/Prophecy/Prophecy';
@@ -71,7 +71,7 @@ describe('addTrack', () => {
 Use `@testing-library/react` for UI component testing. Use ARIA attributes and roles to find targets (`getByRole`, `getByLabelText`) rather than `getByTestId` or `querySelector`. Add `SuspenseGuard` if testing Suspense-based components.
 
 ```tsx
-// src/modules/Track/presentations/components/TrackControls.spec.tsx
+// src/modules/Arrangement/presentations/components/TrackControls.spec.tsx
 
 import { render, screen, fireEvent } from '@testing-library/react';
 import { TrackControls } from './TrackControls';
@@ -108,7 +108,7 @@ describe('TrackControls', () => {
 Never use scattered hardcoded objects. Create reusable Dummies in `_tests/` with default valid fields that can be partially overridden.
 
 ```typescript
-// src/modules/Track/_tests/TrackDummy.ts
+// src/modules/Arrangement/_tests/TrackDummy.ts
 
 import type { Track } from '../models/Track';
 

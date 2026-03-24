@@ -13,10 +13,11 @@ import { DisabledFeatureWrapper } from '#/components/ui/disabled-feature-wrapper
 import { cn } from '#/helpers/Styles/cn';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { decodeAudioFile } from '../../../useCases/workspaceViewActions';
-import { trackStore } from '#/modules/Track/stores/trackStore';
-import { normalizeClip, reverseClip } from '../../../useCases/workspaceViewActions';
-import { type WarpState } from '../../../useCases/workspaceViewActions';
+import { decodeAudioFile } from '#/modules/Arrangement/useCases/trackViewActions';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { normalizeClip } from '#/modules/Arrangement/useCases/clipEditingUseCases/normalizeClip';
+import { reverseClip } from '#/modules/Arrangement/useCases/clipEditingUseCases/reverseClip';
+import { type WarpState } from '#/modules/Arrangement/useCases/trackQueries';
 import {
     getWarpState,
     enableWarp,
@@ -25,11 +26,11 @@ import {
     addWarpMarker,
     removeWarpMarker,
     moveWarpMarker,
-} from '../../../useCases/workspaceViewActions';
+} from '#/modules/Arrangement/useCases/warpUseCases';
 import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration/useCases/generativeAiActions';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { audioToMidi } from '#/modules/AudioAnalysis/useCases/audioToMidi';
-import { isTauri } from '#/modules/AudioEngine/repositories/nativeAIBridge';
+import { isTauri } from '#/modules/AudioEngine/useCases/nativeAiBridgeUseCases';
 
 const STRETCH_MODES: WarpState['stretchMode'][] = ['complex', 'repitch', 'texture', 'beats'];
 

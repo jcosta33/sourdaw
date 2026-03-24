@@ -1,30 +1,12 @@
+/**
+ * Sample player store — owns runtime state for SFZ/SF2 instruments.
+ */
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
 import { Store } from '#/helpers/Store/Store';
+import { type SFZInstrument } from '#/modules/AudioEngine/models/SamplePlayerTypes';
 
-export type SampleRegion = {
-    keyLo: number;
-    keyHi: number;
-    velLo: number;
-    velHi: number;
-    sampleUrl: string;
-    rootKey: number;
-    loopStart?: number;
-    loopEnd?: number;
-    tuning: number; // cents
-    volume: number; // dB
-    pan: number; // -100 to 100
-};
-
-export type SFZInstrument = {
-    id: string;
-    name: string;
-    format: 'sfz' | 'sf2';
-    regions: SampleRegion[];
-    globalDefaults: Partial<SampleRegion>;
-    loaded: boolean;
-    sampleBuffers: Map<string, AudioBuffer>;
-};
+export type { SampleRegion, SFZInstrument } from '#/modules/AudioEngine/models/SamplePlayerTypes';
 
 type InstrumentState = {
     instruments: Record<string, SFZInstrument>;
@@ -67,4 +49,3 @@ export function removeInstrument(id: string): void {
     const { [id]: _, ...rest } = current.instruments;
     instrumentStore.set({ instruments: rest });
 }
-

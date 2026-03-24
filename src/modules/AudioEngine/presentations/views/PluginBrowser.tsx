@@ -5,7 +5,7 @@ import { Search, ChevronDown, ChevronRight, Plug, RefreshCw, Loader2, Plus, Aler
 import { cn } from '#/helpers/Styles/cn';
 import { pluginScanStore, defaultPluginScanState } from '../../stores/pluginScanStore';
 import { startPluginScan } from '#/modules/Plugin/useCases/pluginScanUseCases';
-import { type ScannedPlugin } from '#/modules/Plugin/useCases/pluginBridge';
+import { type ScannedPlugin } from '#/modules/Plugin/useCases/pluginScanUseCases';
 import { createTrackForPlugin, loadExternalPlugin } from '#/modules/Plugin/useCases/pluginBrowserActions';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/helpers/platformCapabilities';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';

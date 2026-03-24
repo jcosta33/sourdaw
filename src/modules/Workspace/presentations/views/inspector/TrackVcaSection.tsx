@@ -2,8 +2,8 @@ import { type ReactElement } from 'react';
 import { Card } from '#/components/ui/card';
 import { Button } from '#/components/ui/button';
 import { Plus } from 'lucide-react';
-import { assignToVca, removeFromVca, getVcaGroups, createVcaGroup } from '../../../useCases/workspaceViewActions';
-import { type Track } from '../../../useCases/workspaceViewActions';
+import { assignToVca, removeFromVca, getVcaGroups, createVcaGroup } from '#/modules/Arrangement/useCases/vcaUseCases';
+import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
 
 type TrackVcaSectionProps = {
     track: Track;

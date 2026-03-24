@@ -2,7 +2,7 @@ import { getTransportState, updateTransportState } from '#/modules/Transport/rep
 import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
 import { resumeEngine } from '#/modules/AudioEngine/useCases/engineAccess';
 import { startPlayheadScheduler } from '#/modules/Transport/useCases/playheadScheduler';
-import { ensureTrackStrips } from '#/modules/Transport/helpers/ensureTrackStrips';
+import { ensureTrackStrips } from '#/modules/Transport/useCases/ensureTrackStrips';
 
 export function startPlayback(): void {
     const state = getTransportState();

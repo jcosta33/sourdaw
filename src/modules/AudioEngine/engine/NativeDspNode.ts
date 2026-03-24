@@ -5,7 +5,7 @@
  * Used for native-* device types (native-eq, native-compressor, etc.).
  */
 
-import nativeDspProcessorUrl from '../worklets/nativeDspProcessor.ts?worker&url';
+import nativeDspProcessorUrl from '../services/nativeDspProcessor.ts?worker&url';
 
 // WASM binary URL for passing to the worklet
 const wasmUrl = new URL('../wasm/audio_core_bg.wasm', import.meta.url).href;
@@ -49,7 +49,7 @@ export type NativeDspNodeResult = {
  */
 export async function createNativeDspNode(
     ctx: BaseAudioContext,
-    pluginType: NativeDspPluginType,
+    pluginType: NativeDspPluginType
 ): Promise<NativeDspNodeResult> {
     await ensureWorkletRegistered(ctx);
 

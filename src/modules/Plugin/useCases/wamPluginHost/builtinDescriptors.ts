@@ -1,4 +1,4 @@
-import { type WAMDescriptor } from './types';
+import { type WAMDescriptor } from '#/modules/Plugin/models/WamPluginHostTypes';
 import { registerWAMPlugin } from './hostOperations';
 
 const BUILTIN_WAM_DESCRIPTORS: WAMDescriptor[] = [

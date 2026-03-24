@@ -3,7 +3,7 @@
  * Displays momentary, short-term, and integrated loudness on a Canvas2D bar.
  */
 import { type ReactElement, useRef, useEffect, useState } from 'react';
-import { audioEngine } from '#/modules/AudioEngine/repositories/audioEngineInstance';
+import { getMasterAnalyser, getAudioSampleRate } from '#/modules/AudioEngine/useCases/engineAccess';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 import { computeMomentaryLUFS, ShortTermLUFS, IntegratedLUFS } from '#/modules/AudioEngine/useCases/advancedMetering';
 
@@ -51,11 +51,11 @@ export const LUFSMeter = ({ height = 160, width = 48, target = -14 }: LUFSMeterP
         const STATE_UPDATE_INTERVAL = 100; // ~10fps for React state
 
         const draw = (): void => {
-            const analyser = audioEngine.masterAnalyser;
+            const analyser = getMasterAnalyser();
             const data = new Float32Array(analyser.frequencyBinCount);
             analyser.getFloatTimeDomainData(data);
 
-            const mom = computeMomentaryLUFS(data, audioEngine.context.sampleRate);
+            const mom = computeMomentaryLUFS(data, getAudioSampleRate());
             shortTermRef.current.push(mom);
             integratedRef.current.push(mom);
 

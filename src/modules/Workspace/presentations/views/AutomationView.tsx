@@ -1,6 +1,6 @@
 import { type ReactElement, type WheelEvent, useRef, useSyncExternalStore } from 'react';
-import { ArrangementBar } from '#/modules/Timeline/presentations/views/ArrangementBar';
-import { timelineViewStore, scrollTimeline, setScrollY } from '#/modules/Timeline/stores/timelineViewStore';
+import { ArrangementBar } from '#/modules/Arrangement/presentations/views/ArrangementBar';
+import { timelineViewStore, scrollTimeline, setScrollY } from '#/modules/Arrangement/stores/timelineViewStore';
 import { useTracks } from '../hooks/useTracks';
 import { TrackAutomationSection } from './automationView/TrackAutomationSection';
 import { Button } from '#/components/ui/button';

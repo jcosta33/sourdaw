@@ -1,9 +1,9 @@
 import { type ReactElement, type MouseEvent, useState, useRef, useSyncExternalStore } from 'react';
 import { cn } from '#/helpers/Styles/cn';
-import { midiStore } from '#/modules/Midi/stores/midiStore';
-import { pushUndoEntry } from '../../../useCases/workspaceViewActions';
-import { addPitchBend, removePitchBend, movePitchBend } from '../../../useCases/workspaceViewActions';
-import { type MidiPitchBend } from '../../../useCases/workspaceViewActions';
+import { midiStore } from '#/modules/MIDI/stores/midiStore';
+import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
+import { addPitchBend, removePitchBend, movePitchBend } from '#/modules/MIDI/useCases/midiEventUseCases';
+import { type MidiPitchBend } from '#/modules/Arrangement/useCases/trackQueries';
 import { PITCH_BEND_CENTER } from './laneConstants';
 
 type PitchBendLaneProps = {

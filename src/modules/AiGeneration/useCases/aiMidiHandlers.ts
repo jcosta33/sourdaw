@@ -10,16 +10,15 @@
  * - stripSilence: Remove silent sections based on amplitude threshold
  */
 
-import { type ActionHandler } from '#/modules/Command/models/ActionHandler';
-import { type AppAction } from '#/modules/Command/models/AppAction';
-import { addMidiNote, getNotesForClip, setNotesForClip } from '#/modules/Midi/useCases/midiNoteCrud';
-import { createMidiNote } from '#/modules/Midi/models/MidiNote';
-import { addTrack } from '#/modules/Track/useCases/addTrack';
-import { addClip } from '#/modules/Clip/useCases/clipUseCases';
-import { stripSilence } from '#/modules/Clip/useCases/stripSilence';
-import { detectTempo, detectKey, audioToMidi } from '#/modules/Track/useCases/audioAnalysisUseCases';
+import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
+import { addMidiNote, getNotesForClip, setNotesForClip } from '#/modules/MIDI/useCases/midiNoteCrud';
+import { createMidiNote } from '#/modules/Arrangement/useCases/trackQueries';
+import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
+import { addClip } from '#/modules/Arrangement/useCases/clipUseCases';
+import { stripSilence } from '#/modules/Arrangement/useCases/stripSilence';
+import { detectTempo, detectKey, audioToMidi } from '#/modules/Arrangement/useCases/audioAnalysisUseCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { trackStore } from '#/modules/Track/stores/trackStore';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { generateToolCalls } from '#/modules/AiRuntime/useCases/llmOrchestration';
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
@@ -226,7 +225,7 @@ export const aiMidiHandlers = {
     generateAudio: {
         execute: async (a) => {
             const { generateAudio: genAudio, isAudioAiServerRunning } =
-                await import('#/modules/AudioAnalysis/repositories/audioAiEngine');
+                await import('#/modules/AudioAnalysis/useCases/audioAiUseCases');
 
             const running = await isAudioAiServerRunning();
             if (!running) {
@@ -284,7 +283,7 @@ export const aiMidiHandlers = {
     stemSeparate: {
         execute: async (a) => {
             const { separateStems: doSeparateStems, isAudioAiServerRunning } =
-                await import('#/modules/AudioAnalysis/repositories/audioAiEngine');
+                await import('#/modules/AudioAnalysis/useCases/audioAiUseCases');
 
             const running = await isAudioAiServerRunning();
             if (!running) {

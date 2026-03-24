@@ -9,7 +9,7 @@ For event-driven flows, use patterns from [events](./events.md). For React compo
 ## Test organization
 
 ```text
-src/modules/Track/
+src/modules/Arrangement/
 ├── _tests/                    # Test utilities and shared mocks
 │   ├── TrackDummy.ts
 │   ├── getEventBus.mock.ts
@@ -288,7 +288,7 @@ describe('subscribeToTrackAdded', () => {
 Tests should be co-located with the code they are testing. Shared test utilities, such as dummy data factories or mock setups, can be placed in a `_tests/` directory at the module root.
 
 ```text
-src/modules/Track/
+src/modules/Arrangement/
 ├── _tests/                    # Test utilities and shared mocks
 │   ├── TrackDummy.ts
 │   ├── getEventBus.mock.ts

@@ -33,7 +33,7 @@ Design every renderer with a `WebGL2Renderer` fallback from the start. Do not tr
 
 
 ```tsx
-// src/modules/Timeline/presentations/components/TimelineSurface.tsx
+// src/modules/Arrangement/presentations/components/TimelineSurface.tsx
 import { type ReactElement, useEffect, useRef } from "react";
 
 type TimelineSurfaceProps = {
@@ -77,7 +77,7 @@ export const TimelineSurface = ({
 ```
 
 ```ts
-// src/modules/Timeline/useCases/createTimelineRenderer.ts
+// src/modules/Arrangement/useCases/createTimelineRenderer.ts
 export type TimelineRenderer = {
   render: () => void;
   resize: (width: number, height: number) => void;
@@ -94,8 +94,8 @@ export type CreateTimelineRenderer = (
 ```
 
 ```ts
-// src/modules/Timeline/repositories/createWebGpuTimelineRenderer.ts
-import type { TimelineRenderer } from "#/modules/Timeline/useCases/createTimelineRenderer";
+// src/modules/Arrangement/repositories/createWebGpuTimelineRenderer.ts
+import type { TimelineRenderer } from "#/modules/Arrangement/useCases/createTimelineRenderer";
 
 export const createWebGpuTimelineRenderer = async (
   canvas: HTMLCanvasElement,
@@ -217,7 +217,7 @@ Do not render dense editor surfaces as thousands of DOM nodes.
 ### Prefer WebGPU for primary high-density rendering
 
 ```ts
-// src/modules/Timeline/repositories/getRendererBackend.ts
+// src/modules/Arrangement/repositories/getRendererBackend.ts
 export type RendererBackend = "webgpu" | "canvas2d";
 
 export const getRendererBackend = (): RendererBackend => {
@@ -243,8 +243,8 @@ WebGPU is the preferred renderer because it supports both high-performance drawi
 ### Canvas fallback is required
 
 ```ts
-// src/modules/Timeline/repositories/createCanvasTimelineRenderer.ts
-import type { TimelineRenderer } from "#/modules/Timeline/useCases/createTimelineRenderer";
+// src/modules/Arrangement/repositories/createCanvasTimelineRenderer.ts
+import type { TimelineRenderer } from "#/modules/Arrangement/useCases/createTimelineRenderer";
 
 export const createCanvasTimelineRenderer = (
   canvas: HTMLCanvasElement,
@@ -292,7 +292,7 @@ Do not make the whole application dependent on WebGPU availability.
 ### Use OffscreenCanvas and workers for heavy off-main-thread rendering
 
 ```ts
-// src/modules/Timeline/repositories/startTimelineWorker.ts
+// src/modules/Arrangement/repositories/startTimelineWorker.ts
 export const startTimelineWorker = (
   canvas: HTMLCanvasElement,
 ): Worker | null => {
@@ -332,7 +332,7 @@ MDN documents that `OffscreenCanvas` decouples canvas rendering from the DOM and
 ### Use `requestAnimationFrame` for redraw scheduling
 
 ```ts
-// src/modules/Timeline/repositories/createRenderLoop.ts
+// src/modules/Arrangement/repositories/createRenderLoop.ts
 export const createRenderLoop = (render: () => void) => {
   let frameId = 0;
 
@@ -365,7 +365,7 @@ MDN documents `requestAnimationFrame` as the browser-coordinated animation redra
 ### Separate render model from app model
 
 ```ts
-// src/modules/Timeline/models/TimelineRenderModel.ts
+// src/modules/Arrangement/models/TimelineRenderModel.ts
 export type TimelineClipRenderModel = {
   id: string;
   x: number;
@@ -398,7 +398,7 @@ Renderers draw data. They do not decide product behavior.
 ### Use batching and geometry buffers, not per-object imperative draw logic everywhere
 
 ```ts
-// src/modules/Timeline/models/TimelineBatch.ts
+// src/modules/Arrangement/models/TimelineBatch.ts
 export type TimelineBatch = {
   vertexBuffer: Float32Array;
   indexBuffer: Uint32Array;
@@ -421,7 +421,7 @@ Do not treat 10,000 clips as 10,000 independent React components or ad hoc draw 
 ### Keep hit-testing separate from rendering
 
 ```ts
-// src/modules/Timeline/useCases/hitTestTimeline.ts
+// src/modules/Arrangement/useCases/hitTestTimeline.ts
 export type HitTestResult =
   | {
       kind: "clip";

@@ -1,6 +1,6 @@
-import { getTrackStoreState } from '#/modules/Track/useCases/trackQueries';
-import { audioEngine } from '#/modules/AudioEngine/repositories/audioEngineInstance';
-import { type TrackLatency, type LatencyReport } from './types';
+import { getTrackStoreState } from '#/modules/Arrangement/useCases/trackQueries';
+import { audioEngine } from '#/modules/AudioEngine/repositories/createWebAudioEngine';
+import { type TrackLatency, type LatencyReport } from '#/modules/AudioEngine/models/LatencyCompensationTypes';
 
 const WORKLET_BLOCK_SIZE = 128;
 

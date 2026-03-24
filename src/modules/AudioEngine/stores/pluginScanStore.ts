@@ -1,7 +1,7 @@
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
 import { Store } from '#/helpers/Store/Store';
-import { type ScannedPlugin } from '#/modules/Plugin/useCases/pluginBridge';
+import { type ScannedPlugin } from '#/modules/Plugin/useCases/pluginScanUseCases';
 
 const logger = Container.getInstance().get(Logger);
 

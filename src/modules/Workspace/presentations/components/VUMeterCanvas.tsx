@@ -3,7 +3,7 @@
  * Canvas2D rendering with green/amber/red arc.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
-import { audioEngine } from '#/modules/AudioEngine/repositories/audioEngineInstance';
+import { getMasterAnalyser, getTrackStripAnalyser } from '#/modules/AudioEngine/useCases/engineAccess';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 import { VUMeter as VUMeterProcessor } from '#/modules/AudioEngine/useCases/advancedMetering';
 
@@ -42,8 +42,8 @@ export const VUMeterCanvas = ({ trackId, size = 100 }: VUMeterCanvasProps): Reac
             lastTimeRef.current = now;
 
             const analyser = trackId
-                ? (audioEngine.getTrackStrip(trackId)?.analyserNode ?? audioEngine.masterAnalyser)
-                : audioEngine.masterAnalyser;
+                ? (getTrackStripAnalyser(trackId) ?? getMasterAnalyser())
+                : getMasterAnalyser();
 
             const data = new Float32Array(analyser.frequencyBinCount);
             analyser.getFloatTimeDomainData(data);

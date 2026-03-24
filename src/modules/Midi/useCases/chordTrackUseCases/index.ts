@@ -13,4 +13,4 @@ export { toggleChordTrack } from './toggleChordTrack';
 export { getChordAtBeat } from './getChordAtBeat';
 
 // Transformers (re-exported for backward compat, consumers should migrate to Midi/transformers/)
-export { transposeNoteToChord, transposeForChordTrack } from '#/modules/Midi/transformers/chordTransposer';
+export { transposeNoteToChord, transposeForChordTrack } from '#/modules/MIDI/transformers/chordTransposer';

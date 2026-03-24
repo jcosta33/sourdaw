@@ -16,8 +16,8 @@ import {
     togglePunchEnabled,
     toggleCountIn,
     togglePreRoll,
-} from '../../../useCases/workspaceViewActions';
-import { enableLink, disableLink, getLinkStatus } from '#/modules/AudioEngine/repositories/linkBridge';
+} from '#/modules/Transport/useCases/transportControls';
+import { enableLink, disableLink, getLinkStatus } from '#/modules/AudioEngine/useCases/engineAccess';
 
 type TransportControlsProps = {
     isPlaying: boolean;

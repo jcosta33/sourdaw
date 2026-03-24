@@ -9,7 +9,7 @@ import {
 } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { type AutomationLane, type AutomationPoint, type AutomationCurveType } from '#/modules/Automation/models/Automation';
+import { type AutomationLane, type AutomationPoint, type AutomationCurveType } from '#/modules/Arrangement/useCases/trackQueries';
 import {
     addAutomationPoint,
     removeAutomationPoint,
@@ -28,7 +28,7 @@ import { adjustYZoom, zoomToUsedRange, toggleVirginTerritory } from '#/modules/A
 import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
 import { LANE_HEIGHT, buildCurvePath } from './automationViewHelpers';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { interpolateAutomationValue, getAutomationRegions } from '#/modules/Track/transformers/automationTransformers';
+import { interpolateAutomationValue, getAutomationRegions } from '#/modules/Arrangement/useCases/automationQueries';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { Eye, EyeOff, X, Maximize2 } from 'lucide-react';
 

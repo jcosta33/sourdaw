@@ -42,12 +42,12 @@ Arrangement/                # The core editing aggregate: timeline + tracks + cl
 ├── useCases/               # 🔗 CONTRACT: addTrack, removeTrack, addClip, moveClip, splitClip
 ├── stores/                 # 🔗 CONTRACT: projectStore (cross-module shared state)
 ├── validators/             # validateClipPlacement, validateTrackDeletion
-├── services/               # Domain services: no cross-cutting services needed yet
-├── ports/                  # Port interfaces: ArrangementEnginePort
-├── adapters/               # WebAudioArrangementAdapter, TauriArrangementAdapter
+├── services/               # Domain services: stateless cross-entity logic
+├── repositories/           # I/O: arrangementEngineAdapter, clipFileAdapter
 ├── transformers/           # transformTrackToEngineConfig, serializeArrangement
 └── presentations/
     ├── hooks/              # useTracks, useAddTrack, useClips, useMoveClip
+    ├── renderers/          # WebGPU/Canvas: waveformRenderer, timelineGridRenderer
     ├── stores/             # private: persistent UI preferences (LocalStorageStorage only)
     ├── context/            # private: ephemeral UI state (selectedTrackId, activeTool)
     └── views/              # 🔗 CONTRACT: ArrangementView, TrackHeaderView, ClipView
@@ -58,8 +58,7 @@ AudioEngine/                # Engine lifecycle and the real-time anti-corruption
 ├── events/                 # 🔗 CONTRACT: EngineStartedEvent, EngineStoppedEvent
 ├── useCases/               # 🔗 CONTRACT: initializeEngine, startEngine, getEngineStatus
 ├── stores/                 # 🔗 CONTRACT: engineStatusStore
-├── ports/                  # 🔗 CONTRACT: AudioEnginePort interface, EngineTelemetryPort interface
-├── adapters/               # WebAudioEngineAdapter, TauriEngineAdapter
+├── repositories/           # I/O: createWebAudioEngine, createTauriEngineAdapter
 ├── engine/                 # Engine classes: AudioEngine, TrackNode, MixerNode (stateful, private)
 ├── worklets/               # AudioWorkletProcessor implementations (run in audio thread)
 └── presentations/
@@ -72,8 +71,7 @@ Transport/
 ├── events/                 # 🔗 CONTRACT: TransportStartedEvent, TempoChangedEvent
 ├── useCases/               # 🔗 CONTRACT: startTransport, stopTransport, setTempo, seekTo
 ├── stores/                 # 🔗 CONTRACT: transportStore
-├── ports/                  # TransportEnginePort
-├── adapters/               # transportWebAudioAdapter
+├── repositories/           # I/O: transportEngineAdapter
 └── presentations/
     ├── hooks/              # useTransportControls, usePlaybackPosition
     └── views/              # 🔗 CONTRACT: TransportBarView
@@ -85,6 +83,7 @@ Routing/                    # Audio graph topology: connections, sends, buses, c
 ├── useCases/               # 🔗 CONTRACT: addSend, removeSend, addBus, setConnectionTarget
 ├── services/               # RoutingService: cycle detection (Kahn's algorithm), latency compensation
 ├── validators/             # validateRoutingGraph, detectCycles
+├── repositories/           # I/O: routingEngineAdapter
 └── presentations/
     ├── hooks/              # useRoutingGraph, useSends
     └── views/              # 🔗 CONTRACT: RoutingMatrixView
@@ -94,9 +93,10 @@ Automation/
 ├── events/                 # 🔗 CONTRACT: BreakpointAddedEvent, AutomationModeChangedEvent
 ├── useCases/               # 🔗 CONTRACT: addBreakpoint, deleteBreakpoint, setAutomationMode
 ├── services/               # AutomationService: interpolation, curve evaluation, data thinning
-├── adapters/               # automationEngineAdapter
+├── repositories/           # I/O: automationEngineAdapter
 └── presentations/
     ├── hooks/              # useAutomationLane, useAutomationMode
+    ├── renderers/          # Canvas: automationCurveRenderer, breakpointRenderer
     └── views/              # 🔗 CONTRACT: AutomationLaneView
 
 Plugin/
@@ -104,8 +104,7 @@ Plugin/
 ├── errors/                 # 🔗 CONTRACT: PluginNotFoundError, PluginLoadError
 ├── events/                 # 🔗 CONTRACT: PluginAddedEvent, ParameterChangedEvent
 ├── useCases/               # 🔗 CONTRACT: addPlugin, removePlugin, setParameter, loadPreset
-├── ports/                  # PluginHostPort
-├── adapters/               # pluginTauriAdapter (Tauri IPC bridge for native CLAP/VST3)
+├── repositories/           # I/O: pluginTauriAdapter, pluginScanCacheAdapter
 └── presentations/
     ├── hooks/              # usePlugin, usePluginParameters
     └── views/              # 🔗 CONTRACT: PluginRackView, PluginEditorView
@@ -114,8 +113,7 @@ MIDI/
 ├── models/                 # MidiEvent, MidiDevice, MidiRoute, MpeState
 ├── events/                 # 🔗 CONTRACT: NoteOnEvent, NoteOffEvent, MidiDeviceConnectedEvent
 ├── useCases/               # 🔗 CONTRACT: connectMidiPort, sendMidiClock, routeMidiInput
-├── ports/                  # MidiDevicePort
-├── adapters/               # midiTauriAdapter (Tauri IPC bridge — midir in Rust)
+├── repositories/           # I/O: midiTauriAdapter (Tauri IPC — midir in Rust)
 └── presentations/
     ├── hooks/              # useMidiDevices, useMidiInput
     └── views/              # 🔗 CONTRACT: MidiRoutingView
@@ -125,8 +123,7 @@ Project/
 ├── errors/                 # 🔗 CONTRACT: ProjectLoadError, ProjectSaveError
 ├── events/                 # 🔗 CONTRACT: ProjectLoadedEvent, ProjectSavedEvent
 ├── useCases/               # 🔗 CONTRACT: loadProject, saveProject, newProject
-├── ports/                  # ProjectPersistencePort
-├── adapters/               # projectTauriAdapter (Tauri fs plugin), projectBrowserAdapter (IndexedDB)
+├── repositories/           # I/O: projectTauriAdapter, projectBrowserAdapter (IndexedDB)
 ├── transformers/           # serializeProject, deserializeProject
 └── presentations/
     ├── hooks/              # useProjectMeta, useRecentProjects
@@ -141,6 +138,7 @@ Command/                    # Cross-cutting: undo/redo with delta commands
 Mixer/                      # PRESENTATION ONLY — no domain logic, reads from Arrangement + Routing
 └── presentations/
     ├── hooks/              # useMixerChannel, useMasterOut, useMeters
+    ├── renderers/          # Canvas: meterRenderer, spectrumRenderer, goniometerRenderer
     ├── context/            # private: mixer view state (channel strip width, scroll)
     └── views/              # 🔗 CONTRACT: MixerConsoleView, ChannelStripView
 ```
@@ -150,7 +148,9 @@ Mixer/                      # PRESENTATION ONLY — no domain logic, reads from 
 - **Arrangement** merges the old Track and Clip modules. Clips exist as children of tracks — every operation (move clip, split clip, cross-track drag) crosses the old Track/Clip boundary. Grouping them eliminates friction for the most common editing operations and makes the aggregate boundary explicit.
 - **Routing** is extracted from the old Mixer module. Audio routing (connections, sends, buses, cycle detection) is genuine domain logic with complex invariants. It deserves its own module with a domain service for graph validation.
 - **Mixer** becomes presentation-only. The mixer UI is a view over Arrangement state (track volume, pan) and Routing state (sends, buses). It has no domain state of its own — it reads from Arrangement and Routing and calls their use cases. This matches how Tracktion Engine, Ardour, and Ableton all structure their mixer: a UI view over the same data that appears in the arrangement.
-- **AudioEngine** owns the anti-corruption layer between the domain and the real-time engine. All engine access from other modules goes through port interfaces defined here.
+- **AudioEngine** owns the anti-corruption layer between the domain and the real-time engine. All engine access from other modules goes through AudioEngine's use case contracts. Platform swapping (WebAudio vs Tauri/Rust) happens at the engine singleton level — the `inject()` DI system swaps which engine class gets instantiated at bootstrap.
+- **`repositories/`** remain the I/O layer in every module — engine adapter calls, Tauri IPC, file system, Web Audio API, localStorage, IndexedDB. Each file exports exactly one function. Repositories are private; use cases orchestrate them.
+- **`presentations/renderers/`** contain Canvas 2D, WebGL, and WebGPU drawing code. Renderers are presentation-layer I/O — they draw to GPU/canvas surfaces and are called from hooks via `requestAnimationFrame`. Waveform rendering, spectrum analysis, meters, automation curves, and timeline grids all live here. This keeps GPU code separated from React components and hooks, following the same "I/O in its own folder" principle used by repositories at the business layer.
 
 ---
 
@@ -555,95 +555,151 @@ export const calculateLatencyCompensation = (
 };
 ```
 
-### Ports and adapters
+### Repositories
 
-The old "repositories" layer is reclassified into **ports** (interfaces) and **adapters** (implementations). This distinction matters because the DAW targets both Tauri (native) and browser (web) environments.
+Repositories are the I/O layer. They are the **only** place where bare-metal I/O happens: Web Audio API, Tauri `invoke`, file system, localStorage, IndexedDB, fetch, etc. Each repository file exports exactly one function. Repositories are private to their module — use cases import them, other modules do not.
 
-**Ports** define the interface. They live in the domain module and express what the domain needs, not how it's implemented.
+DAW repositories fall into two patterns:
 
-```typescript
-// src/modules/AudioEngine/ports/AudioEnginePort.ts
-
-export interface AudioEnginePort {
-    initialize(): Promise<void>;
-    dispose(): void;
-
-    // Topology (slow path)
-    reconcileTopology(tracks: ReadonlyArray<Track>, prevTracks: ReadonlyArray<Track>): void;
-    reconcileRouting(routing: RoutingState, prevRouting: RoutingState): void;
-
-    // Parameters (fast path)
-    setTrackGain(trackId: TrackId, gainDb: Decibels): void;
-    setTrackPan(trackId: TrackId, pan: Pan): void;
-
-    // Transport
-    play(): void;
-    stop(): void;
-    seekTo(positionBeats: Beats): void;
-
-    // Metrics (read-only, for display)
-    getCurrentPosition(): Seconds;
-    getAnalyserNode(trackId: TrackId): AnalyserNode | null;
-}
-```
+**Engine adapter repositories** bridge domain calls to the audio engine. They translate domain types into engine calls.
 
 ```typescript
-// src/modules/AudioEngine/ports/EngineTelemetryPort.ts
+// src/modules/Arrangement/repositories/setTrackGainInEngine.ts
 
-export interface EngineTelemetryPort {
-    subscribe(callback: (telemetry: EngineTelemetry) => void): () => void;
-}
+import { audioEngine } from '#/modules/AudioEngine/engine/AudioEngine';
+import { dbToLinear } from '#/shared/helpers/conversions';
+import type { Decibels } from '#/shared/types/audio';
+import type { TrackId } from '#/shared/types/ids';
 
-export type EngineTelemetry = {
-    playbackPositionSeconds: Seconds;
-    cpuLoadPercent: number;
-    bufferUnderruns: number;
-    meterLevels: ReadonlyMap<TrackId, { peakDb: Decibels; rmsDb: Decibels }>;
+export const setTrackGainInEngine = (trackId: TrackId, gainDb: Decibels): void => {
+    audioEngine.setTrackGain(trackId, dbToLinear(gainDb));
 };
 ```
 
-**Adapters** implement ports for specific platforms. They live in the domain module's `adapters/` folder.
-
 ```typescript
-// src/modules/AudioEngine/adapters/WebAudioEngineAdapter.ts
+// src/modules/Arrangement/repositories/setTrackPanInEngine.ts
 
-export class WebAudioEngineAdapter implements AudioEnginePort {
-    private engine: AudioEngine;
-
-    constructor(engine: AudioEngine) {
-        this.engine = engine;
-    }
-
-    async initialize(): Promise<void> {
-        await this.engine.initialize();
-    }
-
-    setTrackGain(trackId: TrackId, gainDb: Decibels): void {
-        this.engine.setTrackGain(trackId, dbToLinear(gainDb));
-    }
-
-    // ... all other methods delegate to the engine singleton
-}
+export const setTrackPanInEngine = (trackId: TrackId, pan: Pan): void => {
+    audioEngine.setTrackPan(trackId, pan);
+};
 ```
 
+**Tauri/platform adapter repositories** wrap `invoke` and Tauri event listeners for Rust-backed features.
+
 ```typescript
-// src/modules/MIDI/adapters/midiTauriAdapter.ts
+// src/modules/MIDI/repositories/listMidiPortsFromTauri.ts
 
 import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+import type { MidiDevice } from '../models/MidiDevice';
 
-export const createMidiTauriAdapter = (): MidiDevicePort => ({
-    listPorts: () => invoke<MidiDevice[]>('list_midi_ports'),
-    connect: (portIndex: number) => invoke('connect_midi_port', { portIndex }),
-    onMessage: (handler) => listen<MidiEvent>('midi-message', (e) => handler(e.payload)),
-});
+export const listMidiPortsFromTauri = (): Promise<MidiDevice[]> => {
+    return invoke('list_midi_ports');
+};
 ```
 
-**Tauri IPC is isolated to adapters.** Use cases never call `invoke` directly.
+```typescript
+// src/modules/MIDI/repositories/connectMidiPortViaTauri.ts
+
+import { invoke } from '@tauri-apps/api/core';
+
+export const connectMidiPortViaTauri = (portIndex: number): Promise<void> => {
+    return invoke('connect_midi_port', { portIndex });
+};
+```
+
+```typescript
+// src/modules/MIDI/repositories/onMidiMessageFromTauri.ts
+
+import { listen } from '@tauri-apps/api/event';
+import type { MidiEvent } from '../models/MidiEvent';
+
+export const onMidiMessageFromTauri = (handler: (event: MidiEvent) => void): Promise<() => void> => {
+    return listen<MidiEvent>('midi-message', (e) => handler(e.payload));
+};
+```
+
+Use cases **never** call `invoke`, `listen`, `fetch`, or `localStorage` directly. All I/O goes through repositories.
+
+### Renderers (presentation-layer I/O)
+
+**`presentations/renderers/`** contain Canvas 2D, WebGL, and WebGPU drawing code. Renderers are the presentation-layer equivalent of repositories — they isolate I/O (GPU/canvas drawing) from hooks and components.
+
+Renderers are called from hooks via `requestAnimationFrame`, never from use cases or views directly. They receive pre-computed data and draw it — no business logic.
+
+```typescript
+// src/modules/Arrangement/presentations/renderers/waveformRenderer.ts
+
+export type WaveformRenderConfig = {
+    peaks: Float32Array;
+    color: string;
+    width: number;
+    height: number;
+    startSample: number;
+    samplesPerPixel: number;
+};
+
+export const renderWaveform = (
+    ctx: CanvasRenderingContext2D | GPURenderPassEncoder,
+    config: WaveformRenderConfig
+): void => {
+    // Draw waveform peaks to canvas or WebGPU surface
+    // This is pure rendering — no domain logic, no state access
+};
+```
+
+```typescript
+// src/modules/Mixer/presentations/renderers/meterRenderer.ts
+
+export const renderMeter = (
+    ctx: CanvasRenderingContext2D,
+    peakDb: Decibels,
+    rmsDb: Decibels,
+    width: number,
+    height: number
+): void => {
+    // Draw segmented LED meter with peak hold indicator
+};
+```
+
+Hooks wire renderers to canvas refs and `requestAnimationFrame`:
+
+```typescript
+// src/modules/Arrangement/presentations/hooks/useWaveformDisplay.ts
+
+export const useWaveformDisplay = (clipId: ClipId, canvasRef: RefObject<HTMLCanvasElement>) => {
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) {
+            return;
+        }
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+            return;
+        }
+
+        let rafId: number;
+        const draw = () => {
+            const peaks = getPeakData(clipId); // From a precomputed cache, not React state
+            renderWaveform(ctx, {
+                peaks,
+                color: '#6BAACE',
+                width: canvas.width,
+                height: canvas.height,
+                startSample: 0,
+                samplesPerPixel: 256,
+            });
+            rafId = requestAnimationFrame(draw);
+        };
+
+        rafId = requestAnimationFrame(draw);
+        return () => cancelAnimationFrame(rafId);
+    }, [clipId]);
+};
+```
 
 ### Use cases
 
-Use cases contain business logic only. They call ports (not engine classes directly), validate inputs, update the store, and emit domain events. **Each use case file exports exactly one function.**
+Use cases contain business logic only. They call repositories (including engine adapters) but never import engine classes directly. They validate inputs, update the store, and emit domain events. **Each use case file exports exactly one function.**
 
 ```typescript
 // src/modules/Arrangement/useCases/moveClip.ts
@@ -705,7 +761,7 @@ export const moveClip: MoveClipUseCase = (input) => {
 };
 ```
 
-Use cases **never** do I/O directly. If a use case needs to access localStorage, fetch data, call the audio engine, or invoke a Tauri command, that I/O belongs in a port/adapter. Use cases only orchestrate ports.
+Use cases **never** do I/O directly. If a use case needs to access localStorage, fetch data, call the audio engine, or invoke a Tauri command, that I/O belongs in a repository. Use cases only orchestrate repositories.
 
 ### Transformers
 
@@ -752,15 +808,14 @@ export const useMoveClip = () => {
 };
 ```
 
-**Real-time meters** bypass React entirely using `requestAnimationFrame` and canvas refs. They read from the `EngineTelemetryPort`, not from React state.
+**Real-time meters** bypass React entirely using `requestAnimationFrame` and canvas refs. They read engine data via repositories (e.g. `getAnalyserNodeForTrack`), not from React state.
 
 ```typescript
 // src/modules/Mixer/presentations/hooks/useMeterDisplay.ts
 
 export const useMeterDisplay = (trackId: TrackId, canvasRef: RefObject<HTMLCanvasElement>) => {
     useEffect(() => {
-        const enginePort = Container.getInstance().get<AudioEnginePort>('AudioEnginePort');
-        const analyser = enginePort.getAnalyserNode(trackId);
+        const analyser = getAnalyserNodeForTrack(trackId); // from a repository
         if (!analyser || !canvasRef.current) {
             return;
         }
@@ -771,7 +826,13 @@ export const useMeterDisplay = (trackId: TrackId, canvasRef: RefObject<HTMLCanva
         const draw = () => {
             analyser.getFloatTimeDomainData(data);
             const rms = Math.sqrt(data.reduce((s, v) => s + v * v, 0) / data.length);
-            drawMeter(canvasRef.current!, rms);
+            renderMeter(
+                canvasRef.current!.getContext('2d')!,
+                linearToDb(rms),
+                linearToDb(rms),
+                canvasRef.current!.width,
+                canvasRef.current!.height
+            );
             rafId = requestAnimationFrame(draw);
         };
 
@@ -788,11 +849,10 @@ export const useMeterDisplay = (trackId: TrackId, canvasRef: RefObject<HTMLCanva
 
 export const usePlaybackPosition = (displayRef: RefObject<HTMLElement>) => {
     useEffect(() => {
-        const enginePort = Container.getInstance().get<AudioEnginePort>('AudioEnginePort');
         let rafId: number;
 
         const update = () => {
-            const positionSeconds = enginePort.getCurrentPosition();
+            const positionSeconds = getCurrentPlaybackPosition(); // from a repository
             if (displayRef.current) {
                 displayRef.current.textContent = formatTimecode(positionSeconds);
             }
@@ -832,7 +892,7 @@ The boundary between the domain context (TypeScript, non-real-time) and the engi
 
 **Topology changes (slow path):** When tracks, plugins, or routing change, the reconciliation layer diffs old vs new state, builds a set of graph operations (add node, remove node, connect, disconnect), and applies them. In Web Audio, this means creating/disposing `AudioNode` instances. For Tauri/Rust, this sends a `GraphDescription` DTO via IPC.
 
-**Engine → Domain feedback (telemetry):** Metering levels, playback position, CPU load, and buffer underrun counts flow back via a dedicated observable — NOT through the store or event system. React components subscribe to `EngineTelemetryPort` directly via `useRef` + `requestAnimationFrame`, never via state updates.
+**Engine → Domain feedback (telemetry):** Metering levels, playback position, CPU load, and buffer underrun counts flow back via a dedicated observable — NOT through the store or event system. React components read engine telemetry via repositories and `useRef` + `requestAnimationFrame`, never via state updates.
 
 ---
 
@@ -1086,10 +1146,10 @@ The `AudioContext` requires a user gesture to start and must be managed carefull
 // src/modules/AudioEngine/useCases/initializeEngine.ts
 
 export const initializeEngine = async (): Promise<void> => {
-    const enginePort = Container.getInstance().get<AudioEnginePort>('AudioEnginePort');
-    await enginePort.initialize();
-    engineStatusStore.set({ status: 'ready', sampleRate: enginePort.getSampleRate() });
-    eventBus.emit(new EngineStartedEvent({ sampleRate: enginePort.getSampleRate() }));
+    // Must be called from a user interaction handler (click, keydown, etc.)
+    await audioEngine.initialize();
+    engineStatusStore.set({ status: 'ready', sampleRate: audioEngine.sampleRate });
+    eventBus.emit(new EngineStartedEvent({ sampleRate: audioEngine.sampleRate }));
 };
 ```
 
@@ -1191,24 +1251,24 @@ export const getTrackById: GetTrackByIdUseCase = (id) => {
 
 ### What may be imported cross-module
 
-| Folder                     | Cross-module importable? | Purpose                           |
-| -------------------------- | ------------------------ | --------------------------------- |
-| `useCases/`                | ✅ Yes — contract        | Business operations and DTOs      |
-| `events/`                  | ✅ Yes — contract        | Domain events for subscription    |
-| `errors/`                  | ✅ Yes — contract        | Error types for catch/handle      |
-| `stores/` (business layer) | ✅ Yes — contract        | Shared state for reading          |
-| `ports/`                   | ✅ Yes — contract        | Port interfaces for DI            |
-| `presentations/views/`     | ✅ Yes — contract        | Composable view components        |
-| `models/`                  | ❌ Private               | Internal domain types             |
-| `validators/`              | ❌ Private               | Internal invariant enforcement    |
-| `services/`                | ❌ Private               | Internal domain services          |
-| `adapters/`                | ❌ Private               | Platform-specific implementations |
-| `transformers/`            | ❌ Private               | Internal mapping logic            |
-| `engine/`                  | ❌ Private               | Real-time engine internals        |
-| `worklets/`                | ❌ Private               | Audio thread code                 |
-| `presentations/hooks/`     | ❌ Private               | Module-specific hooks             |
-| `presentations/stores/`    | ❌ Private               | UI preferences                    |
-| `presentations/context/`   | ❌ Private               | Ephemeral UI state                |
+| Folder                     | Cross-module importable? | Purpose                                      |
+| -------------------------- | ------------------------ | -------------------------------------------- |
+| `useCases/`                | ✅ Yes — contract        | Business operations and DTOs                 |
+| `events/`                  | ✅ Yes — contract        | Domain events for subscription               |
+| `errors/`                  | ✅ Yes — contract        | Error types for catch/handle                 |
+| `stores/` (business layer) | ✅ Yes — contract        | Shared state for reading                     |
+| `presentations/views/`     | ✅ Yes — contract        | Composable view components                   |
+| `models/`                  | ❌ Private               | Internal domain types                        |
+| `validators/`              | ❌ Private               | Internal invariant enforcement               |
+| `services/`                | ❌ Private               | Internal domain services                     |
+| `repositories/`            | ❌ Private               | I/O: engine adapters, Tauri IPC, file system |
+| `transformers/`            | ❌ Private               | Internal mapping logic                       |
+| `engine/`                  | ❌ Private               | Real-time engine internals                   |
+| `worklets/`                | ❌ Private               | Audio thread code                            |
+| `presentations/hooks/`     | ❌ Private               | Module-specific hooks                        |
+| `presentations/renderers/` | ❌ Private               | Canvas/WebGL/WebGPU drawing code             |
+| `presentations/stores/`    | ❌ Private               | UI preferences                               |
+| `presentations/context/`   | ❌ Private               | Ephemeral UI state                           |
 
 ```typescript
 // ❌ Forbidden — importing a model from another module
@@ -1217,11 +1277,17 @@ import type { Track } from '#/modules/Arrangement/models/Track';
 // ❌ Forbidden — importing a validator from another module
 import { validateClipPlacement } from '#/modules/Arrangement/validators/validateClipPlacement';
 
-// ❌ Forbidden — importing an adapter from another module
-import { midiTauriAdapter } from '#/modules/MIDI/adapters/midiTauriAdapter';
+// ❌ Forbidden — importing a repository from another module
+import { listMidiPortsFromTauri } from '#/modules/MIDI/repositories/listMidiPortsFromTauri';
 
 // ❌ Forbidden — importing engine class from another domain
 import { audioEngine } from '#/modules/AudioEngine/engine/AudioEngine';
+
+// ❌ Forbidden — importing a renderer from another module
+import { renderWaveform } from '#/modules/Arrangement/presentations/renderers/waveformRenderer';
+
+// ❌ Forbidden — importing a hook from another module
+import { useTrackControls } from '#/modules/Arrangement/presentations/hooks/useTrackControls';
 
 // ✅ Allowed — importing a use case (contract folder)
 import { moveClip } from '#/modules/Arrangement/useCases/moveClip';
@@ -1231,9 +1297,6 @@ import type { TrackDto } from '#/modules/Arrangement/useCases/getTrackById';
 
 // ✅ Allowed — importing an event (contract folder)
 import { TrackAddedEvent } from '#/modules/Arrangement/events/TrackAddedEvent';
-
-// ✅ Allowed — importing a port interface (contract folder)
-import type { AudioEnginePort } from '#/modules/AudioEngine/ports/AudioEnginePort';
 
 // ✅ Allowed — importing a business-layer store
 import { projectStore } from '#/modules/Project/stores/projectStore';
@@ -1253,29 +1316,29 @@ Use `eslint-plugin-boundaries` to codify these rules at lint time. Define elemen
 
 ## Quick reference: which layer owns what
 
-| Concern                            | Layer                                                                       | Example                                        |
-| ---------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------- |
-| Serializable project data          | `projectStore` in `Project/stores/` — **contract**                          | tracks, clips, BPM                             |
-| Cross-module runtime state         | `Store<T>` in `stores/` at business layer — **contract**                    | MIDI device list, engine status                |
-| Persistent UI state                | `Store<T>` + `LocalStorageStorage` in `presentations/stores/` — **private** | zoom level, sidebar open                       |
-| Ephemeral UI state                 | React context inside `presentations/context/` — **private**                 | selected track, active tool                    |
-| Local component state              | `useState`                                                                  | hover, input draft                             |
-| AudioContext + nodes               | `engine/` class                                                             | `AudioEngine`, `TrackNode`                     |
-| Aggregate invariants               | `validators/` pure functions                                                | clip overlap, routing cycles                   |
-| Cross-entity domain logic          | `services/` pure functions                                                  | automation interpolation, latency compensation |
-| I/O interface definition           | `ports/` interface                                                          | `AudioEnginePort`, `MidiDevicePort`            |
-| I/O implementation                 | `adapters/`                                                                 | `WebAudioEngineAdapter`, `midiTauriAdapter`    |
-| Subscribing to store outside React | `store.subscribe()`                                                         | engine reconciliation                          |
-| Subscribing to store inside React  | `useSyncExternalStore`                                                      | hooks reading project state                    |
-| Real-time display (60fps)          | `requestAnimationFrame` + canvas ref                                        | meters, playback position                      |
-| Parameter during interaction       | `AudioParam` via reconciliation fast path                                   | fader drag                                     |
-| Parameter at rest                  | `projectStore` + engine reconcile                                           | saved fader value                              |
-| Tauri IPC                          | `adapters/`                                                                 | MIDI, file I/O, plugins                        |
-| Cross-domain business logic        | `useCases/`                                                                 | add clip to armed track                        |
-| Cross-domain notification          | `DomainEvent` + `eventBus`                                                  | tempo changed → MIDI clock                     |
-| Shared identifiers and units       | `src/shared/types/`                                                         | `TrackId`, `Beats`, `Decibels`                 |
-| Cross-module type contract         | DTO exported from `useCases/`                                               | `TrackDto`, `EngineStatusDto`                  |
-| Reading another domain's state     | business layer store or DTO                                                 | mixer reading track names                      |
-| Writing another domain's slice     | ❌ Never — call their use case                                              | `addTrack()` not `store.set()`                 |
-| Shared engine concept (no owner)   | `AudioEngine/useCases/` DTO                                                 | `getEngineStatus()`                            |
-| Undo/redo                          | `Command/` with delta commands + coalescing                                 | `executeCommand()`, `undo()`                   |
+| Concern                            | Layer                                                                       | Example                                         |
+| ---------------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------- |
+| Serializable project data          | `projectStore` in `Project/stores/` — **contract**                          | tracks, clips, BPM                              |
+| Cross-module runtime state         | `Store<T>` in `stores/` at business layer — **contract**                    | MIDI device list, engine status                 |
+| Persistent UI state                | `Store<T>` + `LocalStorageStorage` in `presentations/stores/` — **private** | zoom level, sidebar open                        |
+| Ephemeral UI state                 | React context inside `presentations/context/` — **private**                 | selected track, active tool                     |
+| Local component state              | `useState`                                                                  | hover, input draft                              |
+| AudioContext + nodes               | `engine/` class                                                             | `AudioEngine`, `TrackNode`                      |
+| Aggregate invariants               | `validators/` pure functions                                                | clip overlap, routing cycles                    |
+| Cross-entity domain logic          | `services/` pure functions                                                  | automation interpolation, latency compensation  |
+| All I/O (engine, Tauri, fetch)     | `repositories/`                                                             | engine adapters, Tauri IPC, file system         |
+| GPU/Canvas drawing                 | `presentations/renderers/`                                                  | waveforms, meters, spectrums, automation curves |
+| Subscribing to store outside React | `store.subscribe()`                                                         | engine reconciliation                           |
+| Subscribing to store inside React  | `useSyncExternalStore`                                                      | hooks reading project state                     |
+| Real-time display (60fps)          | `requestAnimationFrame` + canvas ref + renderer                             | meters, playback position                       |
+| Parameter during interaction       | `AudioParam` via reconciliation fast path                                   | fader drag                                      |
+| Parameter at rest                  | `projectStore` + engine reconcile                                           | saved fader value                               |
+| Tauri IPC                          | `repositories/` adapter                                                     | MIDI, file I/O, plugins                         |
+| Cross-domain business logic        | `useCases/`                                                                 | add clip to armed track                         |
+| Cross-domain notification          | `DomainEvent` + `eventBus`                                                  | tempo changed → MIDI clock                      |
+| Shared identifiers and units       | `src/shared/types/`                                                         | `TrackId`, `Beats`, `Decibels`                  |
+| Cross-module type contract         | DTO exported from `useCases/`                                               | `TrackDto`, `EngineStatusDto`                   |
+| Reading another domain's state     | business layer store or DTO                                                 | mixer reading track names                       |
+| Writing another domain's slice     | ❌ Never — call their use case                                              | `addTrack()` not `store.set()`                  |
+| Shared engine concept (no owner)   | `AudioEngine/useCases/` DTO                                                 | `getEngineStatus()`                             |
+| Undo/redo                          | `Command/` with delta commands + coalescing                                 | `executeCommand()`, `undo()`                    |

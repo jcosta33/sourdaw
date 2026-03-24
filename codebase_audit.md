@@ -25,13 +25,13 @@ Audit of `src/modules/` against project documentation (`docs/`).
 
 | File | Notes |
 |------|-------|
-| [useTimelineInteractions.ts](file:///Users/josecosta/dev/webdaw/src/modules/Timeline/presentations/components/hooks/useTimelineInteractions.ts) | Multiple useCallback calls |
+| [useTimelineInteractions.ts](file:///Users/josecosta/dev/webdaw/src/modules/Arrangement/presentations/components/hooks/useTimelineInteractions.ts) | Multiple useCallback calls |
 | [AutomationView.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Workspace/presentations/views/AutomationView.tsx) | |
 | [WaveformEditor.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Workspace/presentations/views/ClipView/WaveformEditor.tsx) | |
 | [PianoRoll.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Workspace/presentations/views/ClipView/PianoRoll.tsx) | `useCallback` for `update` |
 | [PreferencesDialog.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Workspace/presentations/components/PreferencesDialog.tsx) | Justified exception (see above) |
 | [Sidebar.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Workspace/presentations/components/Sidebar.tsx) | |
-| [TrackListView.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Track/presentations/views/TrackListView.tsx) | |
+| [TrackListView.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Arrangement/presentations/views/TrackListView.tsx) | |
 | [VoiceCommandOverlay.tsx](file:///Users/josecosta/dev/webdaw/src/modules/AiRuntime/presentations/components/VoiceCommandOverlay.tsx) | |
 
 **Convention (docs/conventions.md):** _"Do not use `useMemo`, `useCallback`, or `React.memo` manually — the compiler inserts optimal memoization for you."_
@@ -61,8 +61,8 @@ Audit of `src/modules/` against project documentation (`docs/`).
 | [Sidebar.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Workspace/presentations/components/Sidebar.tsx) | Sidebar state |
 | [preferencesStore.ts](file:///Users/josecosta/dev/webdaw/src/modules/Workspace/stores/preferencesStore.ts) | Preferences persistence |
 | [devToolsStorageRepository.ts](file:///Users/josecosta/dev/webdaw/src/modules/DevTools/repositories/devToolsStorageRepository.ts) | DevTools state |
-| [presetUseCases.ts](file:///Users/josecosta/dev/webdaw/src/modules/Track/useCases/presetUseCases.ts) | Preset data |
-| [TrackTemplate.ts](file:///Users/josecosta/dev/webdaw/src/modules/Track/models/TrackTemplate.ts) | Track templates |
+| [presetUseCases.ts](file:///Users/josecosta/dev/webdaw/src/modules/Arrangement/useCases/presetUseCases.ts) | Preset data |
+| [TrackTemplate.ts](file:///Users/josecosta/dev/webdaw/src/modules/Arrangement/models/TrackTemplate.ts) | Track templates |
 
 **Convention (docs/conventions.md L717):** _"Do not use `localStorage` directly; persist via `Store` with `LocalStorageStorage`."_
 

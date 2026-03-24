@@ -209,14 +209,14 @@ Cross-module imports MUST come from contract folders only.
 
 **❌ WRONG — Barrel re-export bypass:**
 ```typescript
-// modules/Track/useCases/index.ts
+// modules/Arrangement/useCases/index.ts
 export { trackStore } from '../stores/trackStore';  // stores/ is a contract, but
                                                      // this is in useCases/, misleading
 ```
 
 **❌ WRONG — Re-exporting private internals through contract folders:**
 ```typescript
-// modules/Track/useCases/index.ts
+// modules/Arrangement/useCases/index.ts
 export { useTrackControls } from '../presentations/hooks/useTrackControls'; // hooks are private!
 ```
 

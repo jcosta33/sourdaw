@@ -137,7 +137,7 @@ Dark mode is the default in the DAW. Shadcn UI components pick up these variable
 ### Dark-mode-first component pattern
 
 ```tsx
-// src/modules/Track/presentations/components/TrackRow.tsx
+// src/modules/Arrangement/presentations/components/TrackRow.tsx
 import { type ReactElement } from 'react';
 
 type TrackRowProps = {

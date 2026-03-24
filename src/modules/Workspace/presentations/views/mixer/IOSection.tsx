@@ -3,8 +3,8 @@ import { ChevronDown } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
 import { Button } from '#/components/ui/button';
 import { useTracks } from '../../hooks/useTracks';
-import { setTrackOutput } from '../../../useCases/workspaceViewActions';
-import { type Track } from '../../../useCases/workspaceViewActions';
+import { setTrackOutput } from '#/modules/Arrangement/useCases/toggleTrackState';
+import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
 
 type IOSectionProps = {
     track: Track;

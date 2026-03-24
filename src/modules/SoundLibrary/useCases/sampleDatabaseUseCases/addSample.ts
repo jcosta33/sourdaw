@@ -1,5 +1,5 @@
 import { sampleDatabaseStore, type SampleEntry } from '#/modules/SoundLibrary/stores/sampleDatabaseStore';
-import { autoTagSample, generateFingerprint, getNextSampleId } from '#/modules/SoundLibrary/helpers/sampleTaggingHelpers';
+import { autoTagSample, generateFingerprint, getNextSampleId } from '#/modules/SoundLibrary/services/sampleTaggingHelpers';
 
 export function addSample(
     path: string,

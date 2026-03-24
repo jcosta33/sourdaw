@@ -2,8 +2,8 @@ import { type ReactElement, useSyncExternalStore } from 'react';
 import { Card } from '#/components/ui/card';
 import { Button } from '#/components/ui/button';
 import { cn } from '#/helpers/Styles/cn';
-import { takeLaneStore } from '#/modules/Clip/stores/takeLaneStore';
-import { setCompRegion, selectTake, flattenComp } from '../../../useCases/workspaceViewActions';
+import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
+import { setCompRegion, selectTake, flattenComp } from '#/modules/Arrangement/useCases/compingUseCases';
 
 type TakesSectionProps = {
     trackId: string;

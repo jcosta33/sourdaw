@@ -2,12 +2,12 @@ import { type ReactElement, type ChangeEvent, useSyncExternalStore } from 'react
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { BipolarSlider } from '#/components/ui/bipolar-slider';
 import { cn } from '#/helpers/Styles/cn';
-import { MidiLearnButton } from '#/modules/Track/presentations/views/MidiLearnButton';
-import { type DeviceParameter } from '../../../useCases/workspaceViewActions';
-import { addAutomationLane, removeAutomationLane } from '../../../useCases/workspaceViewActions';
-import { setDeviceParameter } from '../../../useCases/workspaceViewActions';
+import { MidiLearnButton } from '#/modules/Arrangement/presentations/views/MidiLearnButton';
+import { type DeviceParameter } from '#/modules/Arrangement/useCases/trackQueries';
+import { addAutomationLane, removeAutomationLane } from '#/modules/Automation/useCases/automationUseCases';
+import { setDeviceParameter } from '#/modules/Arrangement/useCases/deviceUseCases';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { type Device } from '../../../useCases/workspaceViewActions';
+import { type Device } from '#/modules/Arrangement/useCases/trackQueries';
 
 type DeviceParameterControlProps = {
     param: DeviceParameter;

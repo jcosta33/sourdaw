@@ -1,17 +1,16 @@
-import { trackStore } from '#/modules/Track/stores/trackStore';
-import { midiStore } from '#/modules/Midi/stores/midiStore';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { projectStore } from '../../stores/projectStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { markerStore } from '#/modules/Timeline/stores/markerStore';
+import { markerStore } from '#/modules/Arrangement/stores/markerStore';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { defaultTransportState } from '#/modules/Transport/useCases/transportQueries';
-import { createTrack } from '#/modules/Track/useCases/trackQueries';
-import { createAutomationLane } from '#/modules/Automation/models/Automation';
+import { createTrack, createAutomationLane } from '#/modules/Arrangement/useCases/trackQueries';
 import { arrangementStore, defaultArrangementId } from '../../stores/arrangementStore';
-import type { MidiNote } from '#/modules/Midi/models/MidiNote';
-import type { StretchMode } from '#/modules/Track/models/Track';
-import { getFactoryPresets } from '#/modules/Track/useCases/soundPresetLibrary';
+import type { MidiNote } from '#/modules/Arrangement/useCases/trackQueries';
+import type { StretchMode } from '#/modules/Arrangement/useCases/trackQueries';
+import { getFactoryPresets } from '#/modules/Arrangement/useCases/soundPresetLibrary';
 
 // Helper to create notes inline
 function note(pitch: number, start: number, duration: number, vel = 100): MidiNote {

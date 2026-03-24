@@ -1,4 +1,4 @@
-import { midiStore } from '#/modules/Midi/stores/midiStore';
+import { midiStore } from '#/modules/MIDI/stores/midiStore';
 
 export function setNoteVelocity(clipId: string, noteId: string, velocity: number): void {
     const state = midiStore.value;

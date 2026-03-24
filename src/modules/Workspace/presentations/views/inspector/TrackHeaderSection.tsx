@@ -3,14 +3,13 @@ import { Card } from '#/components/ui/card';
 import { Input } from '#/components/ui/input';
 import { Button } from '#/components/ui/button';
 import { Snowflake, Zap } from 'lucide-react';
+import { renameTrack } from '#/modules/Arrangement/useCases/renameTrack';
 import {
-    renameTrack,
     setTrackNotes,
     setTrackColor,
-    freezeTrack,
-    unfreezeTrack,
-} from '../../../useCases/workspaceViewActions';
-import { type Track } from '../../../useCases/workspaceViewActions';
+} from '#/modules/Arrangement/useCases/setTrackGainPan';
+import { freezeTrack, unfreezeTrack } from '#/modules/Arrangement/useCases/freezeBounce';
+import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
 import { TRACK_COLOR_PRESETS } from './colorPresets';
 
 type TrackHeaderSectionProps = {

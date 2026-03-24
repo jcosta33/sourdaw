@@ -2,20 +2,20 @@ import { type ReactElement, useState, useEffect, useRef, useSyncExternalStore } 
 import { Card } from '#/components/ui/card';
 import { Button } from '#/components/ui/button';
 import { Plus, Power, Trash2, Monitor, LayoutGrid } from 'lucide-react';
-import { getPlatformPlugins } from '../../../useCases/workspaceViewActions';
+import { getPlatformPlugins } from '#/modules/Arrangement/useCases/trackQueries';
 import {
     bypassDevice,
     removeDevice,
     addDevice,
     addExternalDevice,
     reorderDevices,
-} from '../../../useCases/workspaceViewActions';
+} from '#/modules/Arrangement/useCases/deviceUseCases';
 import { pluginScanStore, defaultPluginScanState } from '#/modules/AudioEngine/stores/pluginScanStore';
-import { type Track } from '../../../useCases/workspaceViewActions';
+import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/helpers/platformCapabilities';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { cn } from '#/helpers/Styles/cn';
-import { openPluginGui } from '#/modules/Plugin/useCases/pluginBridge';
+import { openPluginGui } from '#/modules/Plugin/useCases/pluginLifecycleUseCases';
 
 type TrackDevicesSectionProps = {
     track: Track;

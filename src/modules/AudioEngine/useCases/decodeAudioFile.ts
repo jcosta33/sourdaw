@@ -1,4 +1,4 @@
-import { audioEngine } from '../repositories/audioEngineInstance';
+import { audioEngine } from '../repositories/createWebAudioEngine';
 import { audioBufferCache } from '../stores/audioBufferCache';
 import {
     decodeAudioFile as nativeDecodeAudioFile,

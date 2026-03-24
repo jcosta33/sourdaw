@@ -1,9 +1,9 @@
 import { type ReactElement, useSyncExternalStore } from 'react';
-import { trackStore, type TrackStoreState } from '#/modules/Track/stores/trackStore';
-import { getAllSidechainRoutes } from '../../useCases/workspaceViewActions';
-import { selectTrack } from '../../useCases/workspaceViewActions';
-import { type Track } from '../../useCases/workspaceViewActions';
-import { type SidechainRoute } from '../../useCases/workspaceViewActions';
+import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores/trackStore';
+import { getAllSidechainRoutes } from '#/modules/Routing/useCases/sidechainUseCases';
+import { selectTrack } from '#/modules/Arrangement/useCases/toggleTrackState';
+import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
+import { type SidechainRoute } from '#/modules/Routing/useCases/sidechainUseCases';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
 const defaultState: TrackStoreState = { tracks: [], selectedTrackId: null };

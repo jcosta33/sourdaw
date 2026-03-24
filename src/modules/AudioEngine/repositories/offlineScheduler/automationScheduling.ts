@@ -1,8 +1,8 @@
 import { type TempoChange } from '#/modules/Transport/useCases/transportQueries';
-import { type AutomationLane, type AutomationPoint } from '#/modules/Track/useCases/trackQueries';
+import { type AutomationLane, type AutomationPoint } from '#/modules/Arrangement/useCases/trackQueries';
 import { type DeviceNodeEntry } from '../../useCases/buildDeviceChain';
-import { beatToSeconds } from './beatConversion';
-import { resolveDeviceParam } from './deviceResolution';
+import { beatToSeconds } from '#/modules/AudioEngine/services/beatConversion';
+import { resolveDeviceParam } from '#/modules/AudioEngine/services/deviceResolution';
 
 function interpolateValue(p1: AutomationPoint, p2: AutomationPoint, beat: number): number {
     if (p2.beat === p1.beat) {

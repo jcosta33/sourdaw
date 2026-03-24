@@ -4,7 +4,7 @@
   "project": ["src/**/*.{ts,tsx}", "!src/**/*.spec.{ts,tsx}", "!src/**/*.test.{ts,tsx}"],
   "ignore": [
     "src/components/ui/dialog.tsx",
-    "src/modules/Track/useCases/soundPresetLibrary.ts",
+    "src/modules/Arrangement/useCases/soundPresetLibrary.ts",
     "src/helpers/DependencyInjector/inject.ts",
     "src/helpers/Store/ReadonlyStore.ts",
     "src/helpers/DOM/KeyPressNotifier.ts",
@@ -36,7 +36,7 @@
     "src/modules/Collaboration/useCases/vectorClock.ts",
     "src/modules/Collaboration/useCases/webSocketTransport.ts",
 
-    "src/modules/Track/useCases/clipGainEnvelope.ts",
+    "src/modules/Arrangement/useCases/clipGainEnvelope.ts",
 
     "src/modules/Project/useCases/nativeProjectFiles.ts",
     "src/modules/Project/useCases/nativeFileDialog.ts"

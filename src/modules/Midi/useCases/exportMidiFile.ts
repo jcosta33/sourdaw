@@ -1,4 +1,4 @@
-import { getAllTracks } from '#/modules/Track/repositories/trackRepository';
+import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
 import { midiStore } from '../stores/midiStore';
 import { downloadBlob } from '../repositories/downloadFile';
 import { type MidiNote, type MidiCC } from '../models/MidiNote';

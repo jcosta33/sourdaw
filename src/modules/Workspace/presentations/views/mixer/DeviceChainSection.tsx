@@ -1,10 +1,10 @@
 import { type ReactElement, useState } from 'react';
 import { cn } from '#/helpers/Styles/cn';
-import { selectTrack } from '../../../useCases/workspaceViewActions';
-import { bypassDevice, addDevice, removeDevice, reorderDevices } from '../../../useCases/workspaceViewActions';
-import { getPlatformPlugins } from '../../../useCases/workspaceViewActions';
+import { selectTrack } from '#/modules/Arrangement/useCases/toggleTrackState';
+import { bypassDevice, addDevice, removeDevice, reorderDevices } from '#/modules/Arrangement/useCases/deviceUseCases';
+import { getPlatformPlugins } from '#/modules/Arrangement/useCases/trackQueries';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { type Track } from '../../../useCases/workspaceViewActions';
+import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
 import { getAllModulationRoutes } from '#/modules/Plugin/useCases/modulationSystem';
 import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases/midiEffectPlugins';
 

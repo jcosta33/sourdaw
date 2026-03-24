@@ -11,7 +11,7 @@
 
 import { type ReactElement, type MouseEvent, useSyncExternalStore, useState, useRef, useEffect } from 'react';
 import { Copy, ArrowUpFromLine, Trash2, ChevronDown, ChevronUp, GripHorizontal } from 'lucide-react';
-import { scratchPadStore, type ScratchPadStoreState } from '#/modules/Timeline/stores/scratchPadStore';
+import { scratchPadStore, type ScratchPadStoreState } from '#/modules/Arrangement/stores/scratchPadStore';
 import {
     removeScratchPadSection,
     renameScratchPadSection,
@@ -21,7 +21,7 @@ import {
     captureArrangementToScratchPad,
     commitScratchPadToArrangement,
     type ScratchPadSection,
-} from '#/modules/Timeline/useCases/scratchPadUseCases';
+} from '#/modules/Arrangement/useCases/scratchPadUseCases';
 import { cn } from '#/helpers/Styles/cn';
 
 const defaultState: ScratchPadStoreState = { sections: [] };

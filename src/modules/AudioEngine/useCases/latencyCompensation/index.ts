@@ -1,4 +1,4 @@
-export { type TrackLatency, type LatencyReport } from './types';
+export { type TrackLatency, type LatencyReport } from '#/modules/AudioEngine/models/LatencyCompensationTypes';
 export {
     reportLatency,
     clearReportedLatency,

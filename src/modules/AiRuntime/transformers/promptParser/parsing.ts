@@ -6,8 +6,8 @@
 
 import { type AppAction } from '#/modules/Command/useCases/commandQueries';
 import { type ProjectContext } from '../../models/ProjectContext';
-import { type PresetContext } from '../../helpers/presetActions';
-import { findBestMatch } from '../../helpers/fuzzySearch';
+import { type PresetContext } from '../../models/presetActions';
+import { findBestMatch } from '../../services/fuzzySearch';
 
 // ── Complexity detection ────────────────────────────────────────────────
 

@@ -341,11 +341,11 @@ export const TrackCard = (): React.ReactElement => {
 // ✅ Good
 import { useState, type ReactElement } from 'react';
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { getTrack } from '#/modules/Track/useCases/getTrack';
+import { getTrack } from '#/modules/Arrangement/useCases/getTrack';
 
 // ❌ Bad: Mixed order and missing type-only imports
 import { ReactElement } from 'react';
-import { getTrack } from '../../../../../modules/Track/useCases/getTrack';
+import { getTrack } from '../../../../../modules/Arrangement/useCases/getTrack';
 import { useSuspenseQuery } from '@tanstack/react-query';
 ```
 

@@ -1,5 +1,5 @@
-import { chordTrackStore } from '#/modules/Track/stores/chordTrackStore';
-import { type ChordEvent } from '#/modules/Midi/models/ChordEvent';
+import { chordTrackStore } from '#/modules/Arrangement/stores/chordTrackStore';
+import { type ChordEvent } from '#/modules/MIDI/models/ChordEvent';
 
 export function updateChordEvent(eventId: string, partial: Partial<Pick<ChordEvent, 'root' | 'quality' | 'duration'>>): void {
     const state = chordTrackStore.value;

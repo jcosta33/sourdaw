@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { getAudioContext } from '../../useCases/workspaceViewActions';
+import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
 
 export type PreviewHandle = {
     playingId: string | null;

@@ -3,7 +3,7 @@
  *
  * Handles adding, removing, and updating device parameters on tracks.
  */
-import { audioEngine } from '../repositories/audioEngineInstance';
+import { audioEngine } from '../repositories/createWebAudioEngine';
 
 export const addDeviceToStrip = (
     trackId: string,

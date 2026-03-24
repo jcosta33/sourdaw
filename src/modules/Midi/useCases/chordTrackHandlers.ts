@@ -1,12 +1,11 @@
-import { type ActionHandler } from '#/modules/Command/models/ActionHandler';
-import { type AppAction } from '#/modules/Command/models/AppAction';
+import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
 import {
     addChordEvent,
     removeChordEvent,
     toggleChordTrack,
     clearChordTrack,
-} from '#/modules/Midi/useCases/chordTrackUseCases';
-import { type ChordType, CHORD_TYPES } from '#/modules/Midi/useCases/chordStamps';
+} from '#/modules/MIDI/useCases/chordTrackUseCases';
+import { type ChordType, CHORD_TYPES } from '#/modules/MIDI/useCases/chordStamps';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 

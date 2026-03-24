@@ -5,9 +5,9 @@
  * TODO: detectProjectTempo auto-applies tempo if confidence > 0.5 — should require user confirmation.
  */
 
-import { trackStore } from '#/modules/Track/stores/trackStore';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { type TempoMapPoint, type TempoMapResult } from './types';
+import { type TempoMapPoint, type TempoMapResult } from '#/modules/Transport/models/TempoMappingTypes';
 
 function createEmptyResult(): TempoMapResult {
     return {

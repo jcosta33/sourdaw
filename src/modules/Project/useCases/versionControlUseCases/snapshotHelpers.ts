@@ -1,7 +1,7 @@
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
-import { trackStore } from '#/modules/Track/stores/trackStore';
-import { markerStore } from '#/modules/Timeline/stores/markerStore';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { markerStore } from '#/modules/Arrangement/stores/markerStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { type ProjectSnapshot } from '../../models/ProjectVersion';
 

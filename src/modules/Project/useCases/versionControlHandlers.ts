@@ -1,4 +1,4 @@
-import { type ActionHandler } from '#/modules/Command/models/ActionHandler';
+import { type ActionHandler } from '#/modules/Command/useCases/commandQueries';
 import {
     createProjectVersion,
     restoreVersion,

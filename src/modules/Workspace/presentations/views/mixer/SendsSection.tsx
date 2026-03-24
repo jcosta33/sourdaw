@@ -2,8 +2,8 @@ import { type ReactElement } from 'react';
 import { Slider } from '#/components/ui/slider';
 import { LatchButton } from '#/components/daw/LatchButton';
 import { useTracks } from '../../hooks/useTracks';
-import { setSend, toggleSendPreFader } from '../../../useCases/workspaceViewActions';
-import { type Track } from '../../../useCases/workspaceViewActions';
+import { setSend, toggleSendPreFader } from '#/modules/Arrangement/useCases/deviceUseCases';
+import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
 
 type SendsSectionProps = {
     track: Track;

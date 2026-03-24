@@ -1,8 +1,8 @@
-import { streamCloudChatCompletion } from '#/modules/AiRuntime/repositories/cloudLlmRepository';
-import { getTrackState } from '#/modules/Track/repositories/trackRepository';
-import { getNotesForClip } from '#/modules/Midi/useCases/midiNoteCrud';
-import { createAlternativeClips } from '#/modules/Clip/useCases/clipEditingUseCases';
-import { type Clip } from '#/modules/Track/models/Track';
+import { streamCloudChatCompletion } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
+import { getTrackStoreState as getTrackState } from '#/modules/Arrangement/useCases/trackQueries';
+import { getNotesForClip } from '#/modules/MIDI/useCases/midiNoteCrud';
+import { createAlternativeClips } from '#/modules/Arrangement/useCases/clipEditingUseCases';
+import { type Clip } from '#/modules/Arrangement/useCases/trackQueries';
 
 export async function generateMidiVariations(clipId: string): Promise<void> {
     const state = getTrackState();

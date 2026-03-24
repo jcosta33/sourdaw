@@ -3,7 +3,7 @@
  */
 import { useSyncExternalStore } from 'react';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { defaultTransportState, type TransportState } from '../../useCases/workspaceViewActions';
+import { defaultTransportState, type TransportState } from '#/modules/Transport/useCases/transportQueries';
 
 export const useTransportState = (): TransportState => {
     return useSyncExternalStore(

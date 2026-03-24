@@ -8,29 +8,29 @@ const logger = Container.getInstance().get(Logger);
 import { type ActionHandler } from '../models/ActionHandler';
 import { createUndoEntry } from '../models/UndoEntry';
 import { pushUndo } from '../stores/undoStore';
-import { trackHandlers } from '#/modules/Track/useCases/trackHandlers';
-import { clipHandlers } from '#/modules/Clip/useCases/clipHandlers';
+import { trackHandlers } from '#/modules/Arrangement/useCases/trackHandlers';
+import { clipHandlers } from '#/modules/Arrangement/useCases/clipHandlers';
 import { transportHandlers } from '#/modules/Transport/useCases/transportHandlers';
-import { deviceHandlers } from '#/modules/Track/useCases/deviceHandlers';
+import { deviceHandlers } from '#/modules/Arrangement/useCases/deviceHandlers';
 import { workspaceHandlers } from '#/modules/Workspace/useCases/workspaceHandlers';
 import { automationHandlers } from '#/modules/Automation/useCases/automationHandlers';
-import { presetHandlers } from '#/modules/Track/useCases/presetHandlers';
+import { presetHandlers } from '#/modules/Arrangement/useCases/presetHandlers';
 import { generationHandlers } from '#/modules/AiGeneration/useCases/generationHandlers';
-import { stretchHandlers } from '#/modules/Clip/useCases/stretchHandlers';
+import { stretchHandlers } from '#/modules/Arrangement/useCases/stretchHandlers';
 import { analysisHandlers } from '#/modules/AudioAnalysis/useCases/analysisHandlers';
 import { collaborationHandlers } from '#/modules/Collaboration/useCases/collaborationHandlers';
 import { pluginHostHandlers } from '#/modules/Plugin/useCases/pluginHostHandlers';
 import { aiMidiHandlers } from '#/modules/AiGeneration/useCases/aiMidiHandlers';
 import { aiOrganizationHandlers } from '#/modules/AiRuntime/useCases/aiOrganizationHandlers';
-import { chordTrackHandlers } from '#/modules/Midi/useCases/chordTrackHandlers';
+import { chordTrackHandlers } from '#/modules/MIDI/useCases/chordTrackHandlers';
 import { scratchPadHandlers } from '#/modules/Workspace/useCases/scratchPadHandlers';
-import { patternInstanceHandlers } from '#/modules/Midi/useCases/patternInstanceHandlers';
-import { macroHandlers } from '../handlers/macroHandlers';
-import { undoTreeHandlers } from '../handlers/undoTreeHandlers';
+import { patternInstanceHandlers } from '#/modules/MIDI/useCases/patternInstanceHandlers';
+import { macroHandlers } from '../useCases/macroHandlers';
+import { undoTreeHandlers } from '../useCases/undoTreeHandlers';
 import { songStructureHandlers } from '#/modules/Project/useCases/songStructureHandlers';
 import { versionControlHandlers } from '#/modules/Project/useCases/versionControlHandlers';
-import { newFeatureHandlers } from '#/modules/Track/useCases/newFeatureHandlers';
-import { batchFeatureHandlers } from '#/modules/Clip/useCases/batchFeatureHandlers';
+import { newFeatureHandlers } from '#/modules/Arrangement/useCases/newFeatureHandlers';
+import { batchFeatureHandlers } from '#/modules/Arrangement/useCases/batchFeatureHandlers';
 import { finalFeatureHandlers } from '#/modules/AudioEngine/useCases/finalFeatureHandlers';
 import { recordAction } from './macroUseCases';
 import {
@@ -43,9 +43,9 @@ import {
     saveTrackAsTemplate,
     loadTrackTemplate,
     deleteTrackTemplate,
-} from '#/modules/Track/useCases/trackTemplateUseCases';
-import { createVcaGroup, assignToVca, removeFromVca, setVcaGain } from '#/modules/Track/useCases/vcaUseCases';
-import { setMidiOutput, clearMidiOutput } from '#/modules/Midi/useCases/midiRoutingUseCases';
+} from '#/modules/Arrangement/useCases/trackTemplateUseCases';
+import { createVcaGroup, assignToVca, removeFromVca, setVcaGain } from '#/modules/Arrangement/useCases/vcaUseCases';
+import { setMidiOutput, clearMidiOutput } from '#/modules/MIDI/useCases/midiRoutingUseCases';
 
 const trackAlternativeHandlers: Record<string, ActionHandler<any>> = {
     createTrackAlternative: {

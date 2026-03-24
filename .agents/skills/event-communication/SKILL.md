@@ -29,7 +29,7 @@ class EventBus {
 ```
 
 ```ts
-// src/modules/Track/events/TrackAddedEvent.ts
+// src/modules/Arrangement/events/TrackAddedEvent.ts
 import { DomainEvent } from '#/helpers/Event/DomainEvent';
 
 type TrackAddedPayload = {
@@ -42,7 +42,7 @@ export class TrackAddedEvent extends DomainEvent<TrackAddedPayload> {}
 ```
 
 ```ts
-// src/modules/Track/events/TrackRemovedEvent.ts
+// src/modules/Arrangement/events/TrackRemovedEvent.ts
 import { DomainEvent } from '#/helpers/Event/DomainEvent';
 
 type TrackRemovedPayload = {
@@ -89,7 +89,7 @@ export const eventBus = createEventBus(
 ### Defining a domain event
 
 ```ts
-// src/modules/Clip/events/ClipMovedEvent.ts
+// src/modules/Arrangement/events/ClipMovedEvent.ts
 import { DomainEvent } from '#/helpers/Event/DomainEvent';
 
 type ClipMovedPayload = {
@@ -108,7 +108,7 @@ One class per event. The class constructor is the type discriminant. No string e
 ### Emitting events from a use case
 
 ```ts
-// src/modules/Track/useCases/addTrack.ts
+// src/modules/Arrangement/useCases/addTrack.ts
 import { eventBus } from '#/app/eventBus';
 import { TrackAddedEvent } from '../events/TrackAddedEvent';
 import { createTrackApi } from '../repositories/createTrackApi';
@@ -139,8 +139,8 @@ export const addTrack = async (input: AddTrackInput): Promise<Track> => {
 ```ts
 // src/modules/Analytics/useCases/registerAnalyticsHandlers.ts
 import { eventBus } from '#/app/eventBus';
-import { TrackAddedEvent } from '#/modules/Track/events/TrackAddedEvent';
-import { TrackRemovedEvent } from '#/modules/Track/events/TrackRemovedEvent';
+import { TrackAddedEvent } from '#/modules/Arrangement/events/TrackAddedEvent';
+import { TrackRemovedEvent } from '#/modules/Arrangement/events/TrackRemovedEvent';
 import { TempoChangedEvent } from '#/modules/Transport/events/TempoChangedEvent';
 
 export const registerAnalyticsHandlers = (): (() => void) => {
@@ -169,7 +169,7 @@ Register cross-module handlers at app startup (e.g., inside `main.tsx` or a root
 ### Subscribing in a React hook with cleanup
 
 ```ts
-// src/modules/Track/presentations/hooks/useTrackAddedSubscription.ts
+// src/modules/Arrangement/presentations/hooks/useTrackAddedSubscription.ts
 import { useEffect, useEffectEvent } from 'react';
 import { eventBus } from '#/app/eventBus';
 import { TrackAddedEvent } from '../../events/TrackAddedEvent';
@@ -192,7 +192,7 @@ export const useTrackAddedSubscription = (onTrackAdded: (payload: TrackAddedPayl
 ### Cache invalidation in response to events
 
 ```ts
-// src/modules/Track/useCases/registerTrackQueryHandlers.ts
+// src/modules/Arrangement/useCases/registerTrackQueryHandlers.ts
 import { getQueryClient } from '#/app/queryClient';
 import { eventBus } from '#/app/eventBus';
 import { TrackAddedEvent } from '../events/TrackAddedEvent';

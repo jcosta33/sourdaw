@@ -1,6 +1,6 @@
 import { summarizeFeatures } from './audioFeatures';
-import { getTrackState } from '#/modules/Track/repositories/trackRepository';
-import { streamCloudChatCompletion } from '#/modules/AiRuntime/repositories/cloudLlmRepository';
+import { getTrackStoreState as getTrackState } from '#/modules/Arrangement/useCases/trackQueries';
+import { streamCloudChatCompletion } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
 
 export async function mixHealthAnalysis(onToken: (text: string) => void): Promise<void> {
     const tracks = getTrackState()?.tracks;

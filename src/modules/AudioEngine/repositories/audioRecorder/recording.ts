@@ -5,7 +5,7 @@
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
 import { Store } from '#/helpers/Store/Store';
-import { audioEngine } from '../audioEngineInstance';
+import { audioEngine } from '../createWebAudioEngine';
 import { getSelectedInputId } from '../../useCases/audioDeviceSelection';
 
 const logger = Container.getInstance().get(Logger);

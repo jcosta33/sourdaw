@@ -1,8 +1,8 @@
-import { type Device } from '#/modules/Track/useCases/trackQueries';
+import { type Device } from '#/modules/Arrangement/useCases/trackQueries';
 import { type OfflineDeviceNode, DEVICE_FACTORIES, applyParams } from '../repositories/deviceNodeFactory';
 import { isFaustModule, createFaustDevice } from '../repositories/faustDeviceFactory';
 import { isNativeDspDevice, NATIVE_DSP_DEVICE_TYPES, createNativeDspNode } from '../engine/NativeDspNode';
-import { isDeviceSupportedOnCurrentPlatform } from '#/modules/Track/models/DeviceParameter';
+import { isDeviceSupportedOnCurrentPlatform } from '#/modules/Arrangement/useCases/trackQueries';
 
 // Re-export for consumers
 export type { OfflineDeviceNode } from '../repositories/deviceNodeFactory';

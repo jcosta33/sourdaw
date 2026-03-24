@@ -1,6 +1,6 @@
-import { type ActionHandler } from '#/modules/Command/models/ActionHandler';
+import { type ActionHandler } from '#/modules/Command/useCases/commandQueries';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { detectAndApplySongStructure } from '#/modules/Timeline/useCases/songStructureDetection';
+import { detectAndApplySongStructure } from '#/modules/Arrangement/useCases/songStructureDetection';
 
 export const songStructureHandlers: Record<string, ActionHandler<any>> = {
     detectSongStructure: {

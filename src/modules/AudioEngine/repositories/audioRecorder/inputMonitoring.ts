@@ -1,4 +1,4 @@
-import { audioEngine } from '../audioEngineInstance';
+import { audioEngine } from '../createWebAudioEngine';
 import { getSelectedInputId } from '../../useCases/audioDeviceSelection';
 
 let monitorStream: MediaStream | null = null;

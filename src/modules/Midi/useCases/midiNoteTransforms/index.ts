@@ -1,4 +1,4 @@
-export type { VelocityCurve } from '#/modules/Track/transformers/velocityCurveTransformer';
+export type { VelocityCurve } from '#/modules/Arrangement/transformers/velocityCurveTransformer';
 export { quantizeNotes } from './quantizeNotes';
 export { quantizeNoteLengths } from './quantizeNoteLengths';
 export { transposeNotes } from './transposeNotes';

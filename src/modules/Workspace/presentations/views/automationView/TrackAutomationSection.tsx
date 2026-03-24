@@ -5,9 +5,9 @@ import { addAutomationLane, toggleLaneCollapsed } from '#/modules/Automation/use
 import { Plus, ChevronDown, ChevronRight } from 'lucide-react';
 import { AutomationLaneRow } from './AutomationLaneRow';
 import { getAutomatableParams, AUTOMATION_MODE_CONFIG } from './automationViewHelpers';
-import { type AutomationMode } from '#/modules/Track/models/Track';
-import { type AutomationLane } from '#/modules/Automation/models/Automation';
-import { setAutomationMode } from '#/modules/Track/useCases/toggleTrackState';
+import { type AutomationMode } from '#/modules/Arrangement/useCases/trackQueries';
+import { type AutomationLane } from '#/modules/Arrangement/useCases/trackQueries';
+import { setAutomationMode } from '#/modules/Arrangement/useCases/toggleTrackState';
 
 type TrackAutomationSectionProps = {
     trackId: string;

@@ -1,17 +1,17 @@
 import { type ReactElement, type RefObject, type WheelEvent, useRef, useState, useEffect, useSyncExternalStore } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { trackStore } from '#/modules/Track/stores/trackStore';
-import { timelineViewStore, scrollTimeline } from '#/modules/Timeline/stores/timelineViewStore';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { timelineViewStore, scrollTimeline } from '#/modules/Arrangement/stores/timelineViewStore';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { addAutomationLane, toggleLaneCollapsed, removeAutomationLane } from '#/modules/Automation/useCases/automationUseCases';
-import { setAutomationMode } from '#/modules/Track/useCases/toggleTrackState';
+import { setAutomationMode } from '#/modules/Arrangement/useCases/toggleTrackState';
 import { AutomationLaneRow } from './automationView/AutomationLaneRow';
 import { getAutomatableParams, AUTOMATION_MODE_CONFIG, LANE_HEIGHT } from './automationView/automationViewHelpers';
-import { type AutomationMode } from '#/modules/Track/models/Track';
-import { type AutomationLane } from '#/modules/Automation/models/Automation';
+import { type AutomationMode } from '#/modules/Arrangement/useCases/trackQueries';
+import { type AutomationLane } from '#/modules/Arrangement/useCases/trackQueries';
 import { Plus, ChevronRight, ChevronDown, Trash2 } from 'lucide-react';
-import { BeatRulerBar } from '#/modules/Timeline/presentations/views/BeatRulerBar';
+import { BeatRulerBar } from '#/modules/Arrangement/presentations/views/BeatRulerBar';
 
 const MODE_OPTIONS: { value: AutomationMode; label: string }[] = [
     { value: 'read', label: 'Read' },

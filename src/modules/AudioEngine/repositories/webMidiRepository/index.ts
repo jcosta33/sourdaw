@@ -1,4 +1,4 @@
-export type { MidiInputInfo, WebMidiState } from './types';
+export type { MidiInputInfo, WebMidiState } from '#/modules/AudioEngine/models/WebMidiTypes';
 export { subscribe, getSnapshot } from './state';
 export {
     initWebMidi,

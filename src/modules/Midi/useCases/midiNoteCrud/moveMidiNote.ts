@@ -1,4 +1,4 @@
-import { midiStore } from '#/modules/Midi/stores/midiStore';
+import { midiStore } from '#/modules/MIDI/stores/midiStore';
 
 export function moveMidiNote(clipId: string, noteId: string, newPitch: number, newStartBeat: number): void {
     const state = midiStore.value;

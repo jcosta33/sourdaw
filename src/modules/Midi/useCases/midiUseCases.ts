@@ -3,6 +3,9 @@
  * Import from the specific file when possible.
  */
 
+export type { MidiNote, MidiCC, MidiPitchBend } from '../models/MidiNote';
+export { createMidiNote } from '../models/MidiNote';
+
 // Note CRUD
 export {
     addMidiNote,

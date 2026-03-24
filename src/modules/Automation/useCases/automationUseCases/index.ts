@@ -1,3 +1,5 @@
+export type { AutomationLane, AutomationPoint, AutomationCurveType } from '../../models/Automation';
+export { createAutomationLane } from '../../models/Automation';
 export { addAutomationLane } from './addAutomationLane';
 export { removeAutomationLane } from './removeAutomationLane';
 export { toggleAutomationVisibility } from './toggleAutomationVisibility';

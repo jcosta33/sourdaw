@@ -1,8 +1,8 @@
 import { getMasterAnalyser } from '#/modules/AudioEngine/useCases/engineAccess';
 import { getTrackStrip } from '#/modules/AudioEngine/useCases/trackAudioControls';
-import { trackStore } from '#/modules/Track/stores/trackStore';
-import { readLevels, readFrequencyBalance } from '#/modules/AiRuntime/repositories/mixAnalysisRepository';
-import { detectIssues, generateSuggestions } from '#/modules/AiRuntime/transformers/mixAnalysisTransformers';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { readLevels, readFrequencyBalance } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
+import { detectIssues, generateSuggestions } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
 import { type MixAnalysis } from '#/modules/AiRuntime/models/MixAnalysis';
 
 // Re-export model types and formatMixAnalysis for consumers

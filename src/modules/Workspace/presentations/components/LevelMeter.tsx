@@ -1,7 +1,8 @@
 import { type ReactElement, useEffect, useRef } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 import { resolveToken } from '#/helpers/UI/resolveToken';
-import { getTrackPeakLevel, getMasterPeakLevel } from '../../useCases/workspaceViewActions';
+import { getTrackPeakLevel } from '#/modules/AudioEngine/useCases/trackAudioControls';
+import { getMasterPeakLevel } from '#/modules/AudioEngine/useCases/engineAccess';
 import { animationScheduler } from '#/helpers/DOM/AnimationScheduler';
 
 type LevelMeterProps = {

@@ -33,17 +33,21 @@ import { ExportDialog } from '#/modules/Project/presentations/views/ExportDialog
 import { PreferencesDialog } from '../components/PreferencesDialog';
 import { useGlobalKeyboardShortcuts } from '#/modules/Command/presentations/views/keyboardShortcutsContract';
 import { startShortcutEngine } from '../../useCases/shortcutEngine';
-import { initializeAudioEngine } from '../../useCases/workspaceViewActions';
+import { initializeAudioEngine } from '#/modules/AudioEngine/useCases/initializeAudioEngine';
 import { registerBuiltinPlugins } from '#/modules/Plugin/useCases/wamPluginHost';
 import { registerBuiltinFaustDSP } from '#/modules/Plugin/useCases/faustEngine';
 import { registerProModulationEffects } from '#/modules/Plugin/useCases/proModulationEffects';
 import { registerProSynthInstruments } from '#/modules/Synth/useCases/proSynthInstruments';
-import { initWebMidi } from '../../useCases/workspaceViewActions';
-import { loadProject, saveProject, newProject } from '../../useCases/workspaceViewActions';
-import { undo, redo } from '../../useCases/workspaceViewActions';
-import { copySelectedClip, cutSelectedClip, pasteClip } from '../../useCases/workspaceViewActions';
-import { removeClip } from '../../useCases/workspaceViewActions';
-import { importMidiFile } from '../../useCases/workspaceViewActions';
+import { initWebMidi } from '#/modules/AudioEngine/useCases/webMidiInput';
+import { loadProject } from '#/modules/Project/useCases/projectPersistence/loadProject';
+import { saveProject } from '#/modules/Project/useCases/projectPersistence/saveProject';
+import { newProject } from '#/modules/Project/useCases/projectPersistence/newProject';
+import { undo, redo } from '#/modules/Command/useCases/undoRedo';
+import { copySelectedClip } from '#/modules/Arrangement/useCases/clipboardUseCases/copySelectedClip';
+import { cutSelectedClip } from '#/modules/Arrangement/useCases/clipboardUseCases/cutSelectedClip';
+import { pasteClip } from '#/modules/Arrangement/useCases/clipboardUseCases/pasteClip';
+import { removeClip } from '#/modules/Arrangement/useCases/clipUseCases/removeClip';
+import { importMidiFile } from '#/modules/MIDI/useCases/importMidiFile';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import {
     toggleChatPanel,

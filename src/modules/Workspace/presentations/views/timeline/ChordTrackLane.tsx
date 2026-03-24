@@ -8,7 +8,7 @@
 
 import { type ReactElement, type MouseEvent, useSyncExternalStore, useState, useRef, useEffect } from 'react';
 import { Music2, Plus, Power, Trash2 } from 'lucide-react';
-import { chordTrackStore, type ChordTrackState } from '#/modules/Track/stores/chordTrackStore';
+import { chordTrackStore, type ChordTrackState } from '#/modules/Arrangement/stores/chordTrackStore';
 import {
     addChordEvent,
     removeChordEvent,
@@ -20,7 +20,7 @@ import {
     ROOT_NAMES,
     type ChordEvent,
     type ChordType,
-} from '#/modules/Midi/useCases/chordTrackUseCases';
+} from '#/modules/MIDI/useCases/chordTrackUseCases';
 import { cn } from '#/helpers/Styles/cn';
 
 type ChordTrackLaneProps = {

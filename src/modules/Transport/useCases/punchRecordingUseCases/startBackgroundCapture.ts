@@ -1,5 +1,5 @@
 import { punchRecordingStore, type BackgroundCapture } from '#/modules/Transport/stores/punchRecordingStore';
-import { getNextCaptureId } from '#/modules/Transport/helpers/punchRecordingHelpers';
+import { getNextCaptureId } from '#/modules/Transport/models/punchRecordingHelpers';
 
 export function startBackgroundCapture(trackId: string, startBeat: number): void {
     const state = punchRecordingStore.value;

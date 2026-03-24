@@ -1,5 +1,5 @@
-import { type AutomationPoint } from '#/modules/Automation/models/Automation';
-import { BUILTIN_PLUGINS } from '../../../useCases/workspaceViewActions';
+import { type AutomationPoint } from '#/modules/Arrangement/useCases/trackQueries';
+import { BUILTIN_PLUGINS } from '#/modules/Arrangement/useCases/trackQueries';
 
 export const LANE_HEIGHT = 100;
 

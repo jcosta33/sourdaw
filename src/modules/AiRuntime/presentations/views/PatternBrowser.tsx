@@ -18,9 +18,9 @@ import {
     type ScaleType,
     type GenerationParams,
 } from '../../models/midiPatternLibrary';
-import { trackStore } from '#/modules/Track/stores/trackStore';
-import { addClip } from '#/modules/Clip/useCases/clipUseCases';
-import { addMidiNote } from '#/modules/Midi/useCases/midiNoteCrud';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { addClip } from '#/modules/Arrangement/useCases/clipUseCases';
+import { addMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 

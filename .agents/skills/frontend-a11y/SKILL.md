@@ -108,7 +108,7 @@ Shadcn `Slider` uses `role="slider"` and manages `aria-valuenow`, `aria-valuemin
 ### Mute and solo toggle buttons
 
 ```tsx
-// src/modules/Track/presentations/components/TrackControls.tsx
+// src/modules/Arrangement/presentations/components/TrackControls.tsx
 import { type ReactElement } from 'react';
 import { Button } from '@/components/ui/button';
 
@@ -151,7 +151,7 @@ export const TrackControls = ({ trackId, isMuted, isSolo, onToggleMute, onToggle
 ### Track list (role="list" with keyboard navigation)
 
 ```tsx
-// src/modules/Track/presentations/components/TrackList.tsx
+// src/modules/Arrangement/presentations/components/TrackList.tsx
 import { type ReactElement } from 'react';
 
 type Track = { id: string; name: string };
@@ -237,7 +237,7 @@ export const DeleteTrackButton = ({ onDelete }: { onDelete: () => void }): React
 ### Canvas surface with accessible alternative (WebGPU timeline)
 
 ```tsx
-// src/modules/Timeline/presentations/components/TimelineCanvas.tsx
+// src/modules/Arrangement/presentations/components/TimelineCanvas.tsx
 import { type ReactElement, useRef } from 'react';
 
 type TimelineCanvasProps = {

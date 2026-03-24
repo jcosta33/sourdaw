@@ -8,7 +8,7 @@ import { type DrumKit } from '#/modules/AudioEngine/models/SynthModels';
 
 // Re-export model types and kit data for consumers
 export type { DrumKit, DrumKitVoice } from '#/modules/AudioEngine/models/SynthModels';
-export { getFactoryDrumKits, getDrumKitById, getDrumKitByIndex } from '#/modules/AudioEngine/helpers/factoryDrumKits';
+export { getFactoryDrumKits, getDrumKitById, getDrumKitByIndex } from '#/modules/AudioEngine/useCases/audioEngineQueries';
 
 function findVoice(kit: DrumKit, pitch: number): DrumKit['voices'][number] | null {
     for (const v of kit.voices) {

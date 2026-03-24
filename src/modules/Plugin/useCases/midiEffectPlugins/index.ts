@@ -1,5 +1,5 @@
-export type { MidiNote, MidiEffect } from './types';
-export { CHORD_INTERVALS, SCALES } from './types';
+export type { MidiNote, MidiEffect } from '#/modules/Plugin/models/MidiEffectTypes';
+export { CHORD_INTERVALS, SCALES } from '#/modules/Plugin/models/MidiEffectTypes';
 export { createChordGenerator } from './createChordGenerator';
 export { createScaleFilter } from './createScaleFilter';
 export { createVelocityCurve, createMidiDelay, createNoteQuantizer, createTranspose, createCCMap } from './effectFactories';

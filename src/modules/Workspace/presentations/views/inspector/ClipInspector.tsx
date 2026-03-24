@@ -22,20 +22,18 @@ import {
     addGainEnvelopePoint,
     removeGainEnvelopePoint,
     resetClipGainEnvelope,
-} from '#/modules/Clip/useCases/clipGainEnvelope';
-import {
-    trimClipStart,
-    trimClipEnd,
-    setClipFade,
-    setClipGain,
-    setClipColor,
-    renameClip,
-    setClipFollowAction,
-    polyphonicAudioToMidi,
-    detectDominantPitch,
-    summarizeFeatures,
-} from '../../../useCases/workspaceViewActions';
-import { type Clip } from '../../../useCases/workspaceViewActions';
+} from '#/modules/Arrangement/useCases/clipGainEnvelope';
+import { trimClipStart } from '#/modules/Arrangement/useCases/clipEditingUseCases/trimClipStart';
+import { trimClipEnd } from '#/modules/Arrangement/useCases/clipEditingUseCases/trimClipEnd';
+import { setClipFade } from '#/modules/Arrangement/useCases/clipEditingUseCases/setClipFade';
+import { setClipGain } from '#/modules/Arrangement/useCases/clipEditingUseCases/setClipGain';
+import { setClipColor } from '#/modules/Arrangement/useCases/clipEditingUseCases/setClipColor';
+import { renameClip } from '#/modules/Arrangement/useCases/clipEditingUseCases/renameClip';
+import { setClipFollowAction } from '#/modules/Arrangement/useCases/clipEditingUseCases/setClipFollowAction';
+import { polyphonicAudioToMidi } from '#/modules/AudioAnalysis/useCases/polyphonicAudioToMidi';
+import { detectDominantPitch } from '#/modules/AudioAnalysis/useCases/pitchDetection';
+import { summarizeFeatures } from '#/modules/AudioAnalysis/useCases/audioFeatures';
+import { type Clip } from '#/modules/Arrangement/useCases/trackQueries';
 import { CLIP_COLOR_PRESETS } from './colorPresets';
 import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration/useCases/generativeAiActions';
 import { audioToMidi } from '#/modules/AudioAnalysis/useCases/audioToMidi';

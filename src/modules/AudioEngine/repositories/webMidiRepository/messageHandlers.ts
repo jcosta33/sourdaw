@@ -2,24 +2,24 @@
  * MIDI message handlers: noteOn, noteOff, CC, channel pressure, pitch bend.
  * Handles both live monitoring (oscillator playback) and recording (note creation).
  */
-import { audioEngine } from '#/modules/AudioEngine/repositories/audioEngineInstance';
+import { audioEngine } from '#/modules/AudioEngine/repositories/createWebAudioEngine';
 import {
     getMidiStoreState,
     setMidiStoreState,
     getTrackStoreState,
     getMidiLearnState,
     createMidiNote,
-} from '#/modules/Track/useCases/trackQueries';
+} from '#/modules/Arrangement/useCases/trackQueries';
 import { getTransportStoreValue } from '#/modules/Transport/useCases/transportQueries';
 import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
-import { completeMidiLearn, handleMidiMessage as applyMidiMappings } from '#/modules/Midi/useCases/midiLearnUseCases';
+import { completeMidiLearn, handleMidiMessage as applyMidiMappings } from '#/modules/MIDI/useCases/midiLearnUseCases';
 import { getSynthParamsForTrack, scheduleNote } from '#/modules/Synth/useCases/builtinSynth';
 import { getDrumKitByIndex, scheduleKitNote } from '#/modules/Synth/useCases/drumKitSynth';
 import { getDrumKitDefByIndex, scheduleDrumKitNote } from '#/modules/Synth/useCases/drumSynthEngine';
 import {
     MIDI_NOTE_ON, MIDI_NOTE_OFF, MIDI_CC, MIDI_PITCH_BEND, MIDI_CHANNEL_PRESSURE, MPE_SLIDE_CC,
     type ActiveNoteData,
-} from './types';
+} from '#/modules/AudioEngine/models/WebMidiTypes';
 import {
     activeNotes, channelToNote, mpeEnabled, targetTrackId,
 } from './state';

@@ -1,16 +1,19 @@
 import { type ReactElement, type DragEvent, useSyncExternalStore, useState, useRef, useEffect } from 'react';
-import { TimelineSurface } from '#/modules/Timeline/presentations/views/TimelineSurface';
-import { TimelineMinimap } from '#/modules/Timeline/presentations/views/TimelineMinimap';
-import { ArrangementBar } from '#/modules/Timeline/presentations/views/ArrangementBar';
-import { MarkerLane } from '#/modules/Timeline/presentations/views/MarkerLane';
-import { BeatRulerBar } from '#/modules/Timeline/presentations/views/BeatRulerBar';
-import { timelineViewStore } from '#/modules/Timeline/stores/timelineViewStore';
-import { TrackListView } from '#/modules/Track/presentations/views/TrackListView';
+import { TimelineSurface } from '#/modules/Arrangement/presentations/views/TimelineSurface';
+import { TimelineMinimap } from '#/modules/Arrangement/presentations/views/TimelineMinimap';
+import { ArrangementBar } from '#/modules/Arrangement/presentations/views/ArrangementBar';
+import { MarkerLane } from '#/modules/Arrangement/presentations/views/MarkerLane';
+import { BeatRulerBar } from '#/modules/Arrangement/presentations/views/BeatRulerBar';
+import { timelineViewStore } from '#/modules/Arrangement/stores/timelineViewStore';
+import { TrackListView } from '#/modules/Arrangement/presentations/views/TrackListView';
 import { useTracks } from '../hooks/useTracks';
-import { addTrack, addClip, decodeAudioFile, importMidiFile } from '../../useCases/workspaceViewActions';
+import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
+import { addClip } from '#/modules/Arrangement/useCases/clipUseCases';
+import { decodeAudioFile } from '#/modules/Arrangement/useCases/trackViewActions';
+import { importMidiFile } from '#/modules/MIDI/useCases/importMidiFile';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { markerStore } from '#/modules/Timeline/stores/markerStore';
+import { markerStore } from '#/modules/Arrangement/stores/markerStore';
 import { useWorkspaceState } from '#/modules/Workspace/presentations/hooks/useWorkspaceState';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { ResizeHandle } from '#/modules/Workspace/presentations/components/ResizeHandle';
@@ -18,7 +21,7 @@ import { Button } from '#/components/ui/button';
 import { Music, Piano, Plus, Upload, LayoutTemplate } from 'lucide-react';
 import { ChordTrackLane } from './timeline/ChordTrackLane';
 import { ScratchPadView } from './timeline/ScratchPadView';
-import { chordTrackStore } from '#/modules/Track/stores/chordTrackStore';
+import { chordTrackStore } from '#/modules/Arrangement/stores/chordTrackStore';
 import { TemplateChooser } from '#/modules/Project/presentations/views/TemplateChooser';
 
 const TRACK_LIST_MIN = 120;
@@ -99,7 +102,9 @@ export const ArrangeView = (): ReactElement => {
                 <BeatRulerBar />
                 {hasChords && <ChordTrackLane pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} />}
                 <TimelineSurface />
-                {tracks.filter((t) => t.kind !== 'master' && t.kind !== 'folder').length === 0 && <EmptyArrangeOverlay />}
+                {tracks.filter((t) => t.kind !== 'master' && t.kind !== 'folder').length === 0 && (
+                    <EmptyArrangeOverlay />
+                )}
                 {scratchPadOpen && (
                     <ScratchPadView
                         height={scratchPadHeight}
@@ -119,7 +124,9 @@ export const ArrangeView = (): ReactElement => {
 const EmptyArrangeOverlay = (): ReactElement => {
     const [isDragOver, setIsDragOver] = useState(false);
     const [templateChooserOpen, setTemplateChooserOpen] = useState(false);
-    const [templateChooserCategory, setTemplateChooserCategory] = useState<import('#/modules/Project/useCases/projectTemplates').TemplateCategory | 'all'>('all');
+    const [templateChooserCategory, setTemplateChooserCategory] = useState<
+        import('#/modules/Project/useCases/projectTemplates').TemplateCategory | 'all'
+    >('all');
 
     const handleDrop = async (e: DragEvent<HTMLDivElement>) => {
         e.preventDefault();
@@ -196,11 +203,19 @@ const EmptyArrangeOverlay = (): ReactElement => {
                     </p>
 
                     <div className="flex gap-2">
-                        <Button variant="secondary" size="sm" onClick={() => addTrack({ name: 'Audio 1', kind: 'audio' })}>
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => addTrack({ name: 'Audio 1', kind: 'audio' })}
+                        >
                             <Plus className="size-3.5 mr-1" />
                             Audio Track
                         </Button>
-                        <Button variant="secondary" size="sm" onClick={() => addTrack({ name: 'MIDI 1', kind: 'midi' })}>
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => addTrack({ name: 'MIDI 1', kind: 'midi' })}
+                        >
                             <Piano className="size-3.5 mr-1" />
                             MIDI Track
                         </Button>
@@ -254,4 +269,3 @@ const EmptyArrangeOverlay = (): ReactElement => {
         </>
     );
 };
-

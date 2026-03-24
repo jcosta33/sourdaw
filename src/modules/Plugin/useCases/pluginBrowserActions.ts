@@ -3,8 +3,8 @@
  * so that AudioEngine's PluginBrowser view doesn't import Track use cases directly.
  */
 
-import { addTrack } from '#/modules/Track/useCases/addTrack';
-import { addExternalDevice } from '#/modules/Track/useCases/deviceUseCases';
+import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
+import { addExternalDevice } from '#/modules/Arrangement/useCases/deviceUseCases';
 
 type TrackInfo = {
     id: string;
