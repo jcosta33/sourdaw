@@ -12,8 +12,8 @@ import {
     initWebLlmEngine,
     isWebLlmLoaded,
     generateWebLlmToolCalls,
-} from '../../repositories/webLlmRepository';
-import { generateCloudToolCalls } from '../../repositories/cloudLlmRepository';
+} from '../../repositories/webLlm';
+import { generateCloudToolCalls } from '../../repositories/cloudLlm';
 import { parseToolCallXml, type ToolCallResult } from '../../transformers/toolCallParser';
 import { parseNativeToolCalls } from '../../repositories/nativeToolRegistry';
 import { getBackendChain } from './backendResolution';

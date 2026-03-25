@@ -359,7 +359,11 @@ export function createWebAudioEngine(): AudioEngine {
             if ((dn as BuiltinDeviceNode & { _bypassed?: boolean })._bypassed) {
                 continue;
             }
-            prev.connect(dn.inputNode);
+            // Instrument nodes (Faust synths) have 0 inputs — they generate audio.
+            // Don't try to connect the previous node to them; just take their output.
+            if (dn.inputNode.numberOfInputs > 0) {
+                prev.connect(dn.inputNode);
+            }
             prev = dn.outputNode;
         }
         prev.connect(strip.panNode);
@@ -673,101 +677,101 @@ export function createWebAudioEngine(): AudioEngine {
             case 'builtin-limiter':
                 dn = createLimiterDevice(deviceId);
                 break;
-            case 'faust-noise-gate':
-            case 'faust-gain-utility': {
-                const loadingBypassNode = context.createGain();
-                dn = {
-                    deviceId,
-                    type: deviceType,
-                    nodes: [loadingBypassNode],
-                    inputNode: loadingBypassNode,
-                    outputNode: loadingBypassNode,
-                };
-
-                import('./faustDeviceFactory')
-                    .then(({ createFaustDevice }) => {
-                        createFaustDevice(context, deviceType).then((realDn) => {
-                            if (!realDn) return;
-                            const stripToUpdate = trackStrips.get(trackId);
-                            if (!stripToUpdate) return;
-
-                            const idx = stripToUpdate.deviceNodes.findIndex((d) => d.deviceId === deviceId);
-                            if (idx !== -1) {
-                                const builtinDn = realDn as BuiltinDeviceNode;
-                                builtinDn.deviceId = deviceId;
-                                builtinDn.type = deviceType;
-                                stripToUpdate.deviceNodes[idx] = builtinDn;
-                                rebuildStripChain(stripToUpdate);
-
-                                const pending = pendingFaustParams.get(deviceId);
-                                if (pending) {
-                                    const worklet = builtinDn.nodes[0] as AudioWorkletNode;
-                                    for (const [pId, val] of pending) {
-                                        const param = worklet.parameters.get(pId);
-                                        if (param) param.setTargetAtTime(val, context.currentTime, 0.01);
-                                    }
-                                    pendingFaustParams.delete(deviceId);
-                                }
-                            }
-                        });
-                    })
-                    .catch((err) => {
-                        console.error('[WebAudioEngine] Failed to load Faust factory:', err);
-                    });
-                break;
-            }
             case 'external-plugin':
                 dn = createNativePluginDevice(deviceId, externalInstanceId ?? deviceId);
                 break;
             default: {
-                // Try the shared DEVICE_FACTORIES first (covers all builtin web effects)
-                const factory = DEVICE_FACTORIES[deviceType];
-                if (factory) {
-                    const factoryNode = factory(context);
+                if (deviceType.startsWith('faust-')) {
+                    // Faust DSP device — create a bypass node as placeholder while WASM compiles
+                    const loadingBypassNode = context.createGain();
                     dn = {
                         deviceId,
                         type: deviceType,
-                        nodes: factoryNode.nodes,
-                        inputNode: factoryNode.inputNode,
-                        outputNode: factoryNode.outputNode,
+                        nodes: [loadingBypassNode],
+                        inputNode: loadingBypassNode,
+                        outputNode: loadingBypassNode,
                     };
-                } else if (isNativeDspDevice(deviceType)) {
-                    const pluginType = NATIVE_DSP_DEVICE_TYPES[deviceType];
-                    if (!pluginType) return;
-                    // Create a bypass node as placeholder while WASM loads
-                    const loadingBypass = context.createGain();
-                    dn = {
-                        deviceId,
-                        type: deviceType,
-                        nodes: [loadingBypass],
-                        inputNode: loadingBypass,
-                        outputNode: loadingBypass,
-                    };
-                    // Async: load WASM and hot-swap into the chain
-                    createNativeDspNode(context, pluginType)
-                        .then(async (result: NativeDspNodeResult) => {
-                            await result.ready;
-                            const stripToUpdate = trackStrips.get(trackId);
-                            if (!stripToUpdate) return;
-                            const idx = stripToUpdate.deviceNodes.findIndex((d) => d.deviceId === deviceId);
-                            if (idx !== -1) {
-                                const nativeDn: BuiltinDeviceNode = {
-                                    deviceId,
-                                    type: deviceType,
-                                    nodes: [result.workletNode],
-                                    inputNode: result.workletNode,
-                                    outputNode: result.workletNode,
-                                    nativeDspControls: result,
-                                };
-                                stripToUpdate.deviceNodes[idx] = nativeDn;
-                                rebuildStripChain(stripToUpdate);
-                            }
+
+                    import('./faustDeviceFactory')
+                        .then(({ createFaustDevice }) => {
+                            createFaustDevice(context, deviceType).then((realDn) => {
+                                if (!realDn) return;
+                                const stripToUpdate = trackStrips.get(trackId);
+                                if (!stripToUpdate) return;
+
+                                const idx = stripToUpdate.deviceNodes.findIndex((d) => d.deviceId === deviceId);
+                                if (idx !== -1) {
+                                    const builtinDn = realDn as BuiltinDeviceNode;
+                                    builtinDn.deviceId = deviceId;
+                                    builtinDn.type = deviceType;
+                                    stripToUpdate.deviceNodes[idx] = builtinDn;
+                                    rebuildStripChain(stripToUpdate);
+
+                                    const pending = pendingFaustParams.get(deviceId);
+                                    if (pending) {
+                                        const worklet = builtinDn.nodes[0] as AudioWorkletNode;
+                                        for (const [pId, val] of pending) {
+                                            const param = worklet.parameters.get(pId);
+                                            if (param) param.setTargetAtTime(val, context.currentTime, 0.01);
+                                        }
+                                        pendingFaustParams.delete(deviceId);
+                                    }
+                                }
+                            });
                         })
                         .catch((err) => {
-                            logger.warn(`[WebAudioEngine] Failed to load native DSP ${deviceType}: ${err}`);
+                            console.error('[WebAudioEngine] Failed to load Faust factory:', err);
                         });
                 } else {
-                    return;
+                    // Try the shared DEVICE_FACTORIES first (covers all builtin web effects)
+                    const factory = DEVICE_FACTORIES[deviceType];
+                    if (factory) {
+                        const factoryNode = factory(context);
+                        dn = {
+                            deviceId,
+                            type: deviceType,
+                            nodes: factoryNode.nodes,
+                            inputNode: factoryNode.inputNode,
+                            outputNode: factoryNode.outputNode,
+                        };
+                    } else if (isNativeDspDevice(deviceType)) {
+                        const pluginType = NATIVE_DSP_DEVICE_TYPES[deviceType];
+                        if (!pluginType) return;
+                        // Create a bypass node as placeholder while WASM loads
+                        const loadingBypass = context.createGain();
+                        dn = {
+                            deviceId,
+                            type: deviceType,
+                            nodes: [loadingBypass],
+                            inputNode: loadingBypass,
+                            outputNode: loadingBypass,
+                        };
+                        // Async: load WASM and hot-swap into the chain
+                        createNativeDspNode(context, pluginType)
+                            .then(async (result: NativeDspNodeResult) => {
+                                await result.ready;
+                                const stripToUpdate = trackStrips.get(trackId);
+                                if (!stripToUpdate) return;
+                                const idx = stripToUpdate.deviceNodes.findIndex((d) => d.deviceId === deviceId);
+                                if (idx !== -1) {
+                                    const nativeDn: BuiltinDeviceNode = {
+                                        deviceId,
+                                        type: deviceType,
+                                        nodes: [result.workletNode],
+                                        inputNode: result.workletNode,
+                                        outputNode: result.workletNode,
+                                        nativeDspControls: result,
+                                    };
+                                    stripToUpdate.deviceNodes[idx] = nativeDn;
+                                    rebuildStripChain(stripToUpdate);
+                                }
+                            })
+                            .catch((err) => {
+                                logger.warn(`[WebAudioEngine] Failed to load native DSP ${deviceType}: ${err}`);
+                            });
+                    } else {
+                        return;
+                    }
                 }
                 break;
             }

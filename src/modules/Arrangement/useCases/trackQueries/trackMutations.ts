@@ -11,7 +11,7 @@ import {
     updateClipsOnAllTracks as repoUpdateClipsOnAllTracks,
     mapAllTracks as repoMapAllTracks,
     type TrackState,
-} from '#/modules/Arrangement/repositories/trackRepository';
+} from '#/modules/Arrangement/repositories/track';
 import { type Track, type Clip } from '#/modules/Arrangement/models/Track';
 
 /** Replace the full track state. */

@@ -1,9 +1,10 @@
 import { type ReactElement, useSyncExternalStore } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
+import { swapAutomationSubLaneParam, removeAutomationSubLane, addAutomationSubLane } from '#/modules/Workspace/useCases/automationSubLanes';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { addAutomationLane } from '#/modules/Automation/useCases/automationUseCases';
+import { addAutomationLane } from '#/modules/Automation/useCases/automation';
 import { timelineViewStore } from '#/modules/Arrangement/stores/timelineViewStore';
 import { AUTOMATION_SUB_LANE_HEIGHT } from '#/modules/Arrangement/models/automationConstants';
 import { ChevronDown, Plus, X } from 'lucide-react';
@@ -112,16 +113,7 @@ export const TrackAutomationHeaders = ({ containerHeight }: TrackAutomationHeade
                                             opt.id === paramId ? 'text-foreground font-medium' : 'text-muted-foreground'
                                         )}
                                         onClick={() => {
-                                            // Swap parameter for this sub-lane
-                                            const newParams = [...paramIds];
-                                            newParams[si] = opt.id;
-                                            workspaceStore.set({
-                                                ...ws,
-                                                automationSubLanes: {
-                                                    ...ws.automationSubLanes,
-                                                    [track.id]: newParams,
-                                                },
-                                            });
+                                            swapAutomationSubLaneParam(track.id, si, opt.id);
                                             // Ensure lane exists
                                             if (
                                                 !autoState?.lanes.find(
@@ -143,14 +135,7 @@ export const TrackAutomationHeaders = ({ containerHeight }: TrackAutomationHeade
                             type="button"
                             className="size-4 flex items-center justify-center text-muted-foreground/40 hover:text-foreground rounded hover:bg-surface-raised/80 transition-colors"
                             onClick={() => {
-                                const newParams = paramIds.filter((_, idx) => idx !== si);
-                                workspaceStore.set({
-                                    ...ws,
-                                    automationSubLanes: {
-                                        ...ws.automationSubLanes,
-                                        [track.id]: newParams,
-                                    },
-                                });
+                                removeAutomationSubLane(track.id, si);
                             }}
                             aria-label={`Remove ${paramLabel} automation lane`}
                         >
@@ -158,7 +143,7 @@ export const TrackAutomationHeaders = ({ containerHeight }: TrackAutomationHeade
                         </button>
 
                         {/* Mode badge */}
-                        {lane && (
+                        {lane ? (
                             <span
                                 className={cn(
                                     'text-[7px] font-mono px-1 py-0.5 rounded',
@@ -169,7 +154,7 @@ export const TrackAutomationHeaders = ({ containerHeight }: TrackAutomationHeade
                             >
                                 {lane.enabled === false ? 'OFF' : 'R'}
                             </span>
-                        )}
+                        ) : null}
                     </div>
                 );
             }
@@ -190,13 +175,7 @@ export const TrackAutomationHeaders = ({ containerHeight }: TrackAutomationHeade
                         const usedSet = new Set(existing);
                         const nextParam = PARAMETER_OPTIONS.find((p) => !usedSet.has(p.id));
                         if (nextParam) {
-                            workspaceStore.set({
-                                ...ws,
-                                automationSubLanes: {
-                                    ...ws.automationSubLanes,
-                                    [track.id]: [...existing, nextParam.id],
-                                },
-                            });
+                            addAutomationSubLane(track.id, nextParam.id);
                             // Ensure lane exists
                             if (
                                 !autoState?.lanes.find((l) => l.trackId === track.id && l.parameterId === nextParam.id)

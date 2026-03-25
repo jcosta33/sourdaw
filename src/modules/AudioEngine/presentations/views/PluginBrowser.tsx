@@ -4,8 +4,8 @@ import { Input } from '#/components/ui/input';
 import { Search, ChevronDown, ChevronRight, Plug, RefreshCw, Loader2, Plus, AlertCircle, Monitor } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
 import { pluginScanStore, defaultPluginScanState } from '../../stores/pluginScanStore';
-import { startPluginScan } from '#/modules/Plugin/useCases/pluginScanUseCases';
-import { type ScannedPlugin } from '#/modules/Plugin/useCases/pluginScanUseCases';
+import { startPluginScan } from '#/modules/Plugin/useCases/pluginScan';
+import { type ScannedPlugin } from '#/modules/Plugin/useCases/pluginScan';
 import { createTrackForPlugin, loadExternalPlugin } from '#/modules/Plugin/useCases/pluginBrowserActions';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/helpers/platformCapabilities';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
@@ -111,7 +111,7 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
                 <span className="ml-auto text-[9px] text-muted-foreground">{state.scannedPlugins.length}</span>
             </div>
 
-            {state.scannedPlugins.length === 0 && !state.isScanning && (
+            {state.scannedPlugins.length === 0 && !state.isScanning ? (
                 <div className="px-2 py-3 text-center">
                     <p className="text-[10px] text-muted-foreground mb-2">No external plugins found.</p>
                     <Button variant="outline" size="xs" className="gap-1 text-[10px]" onClick={handleScan}>
@@ -119,16 +119,16 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
                         Scan Plugins
                     </Button>
                 </div>
-            )}
+            ) : null}
 
-            {state.isScanning && (
+            {state.isScanning ? (
                 <div className="flex items-center gap-2 px-2 py-2">
                     <Loader2 className="size-3 animate-spin text-primary" aria-hidden="true" />
                     <span className="text-[10px] text-muted-foreground animate-pulse">Scanning for plugins...</span>
                 </div>
-            )}
+            ) : null}
 
-            {state.scannedPlugins.length > 0 && (
+            {state.scannedPlugins.length > 0 ? (
                 <>
                     <div className="flex items-center gap-1 px-1">
                         <div className="flex-1 flex items-center gap-1">
@@ -201,9 +201,9 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
                         </p>
                     )}
                 </>
-            )}
+            ) : null}
 
-            {state.errors.length > 0 && !state.isScanning && (
+            {state.errors.length > 0 && !state.isScanning ? (
                 <div className="px-2 py-1">
                     {state.errors.map((err, i) => (
                         <div key={i} className="flex items-start gap-1 text-[9px] text-destructive">
@@ -212,7 +212,7 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
                         </div>
                     ))}
                 </div>
-            )}
+            ) : null}
         </div>
     );
 };
@@ -248,14 +248,14 @@ const PluginRow = ({
                 </div>
                 <div className="flex items-center gap-1">
                     <span className="text-[9px] text-muted-foreground truncate">{plugin.vendor}</span>
-                    {plugin.category && (
+                    {plugin.category ? (
                         <span className="text-[9px] text-muted-foreground/70 capitalize">· {plugin.category}</span>
-                    )}
+                    ) : null}
                 </div>
             </div>
             <div className="flex items-center gap-1 shrink-0">
                 <span className="text-[9px] text-muted-foreground">{plugin.num_parameters}p</span>
-                {selectedTrackId && <Plus className="size-3 text-muted-foreground" />}
+                {selectedTrackId ? <Plus className="size-3 text-muted-foreground" /> : null}
             </div>
         </div>
     );

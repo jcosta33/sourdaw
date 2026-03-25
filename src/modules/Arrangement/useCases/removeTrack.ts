@@ -1,4 +1,4 @@
-import { getTrackState, setTrackState, getTrackById } from '../repositories/trackRepository';
+import { getTrackState, setTrackState, getTrackById } from '../repositories/track';
 import { eventBus } from '#/app/bootstrap';
 import { TrackRemovedEvent } from '../events/TrackRemovedEvent';
 import { automationStore } from '#/modules/Automation/stores/automationStore';

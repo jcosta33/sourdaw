@@ -11,7 +11,7 @@ import {
     getUserPresets,
     saveCurrentAsPreset,
     deleteUserPreset,
-} from '#/modules/Arrangement/useCases/presetUseCases';
+} from '#/modules/Arrangement/useCases/preset';
 
 import { PresetItem } from '../../components/sidebar/PresetItem';
 import { PRESET_CATEGORIES, CATEGORY_ICONS, CATEGORY_COLORS } from '../../components/sidebar/sidebarConstants';
@@ -261,7 +261,7 @@ export const InstrumentsTab = ({
                     </div>
                 </Button>
 
-                {selectedTrack && (
+                {selectedTrack ? (
                     <>
                         {!showSaveForm ? (
                             <Button
@@ -275,11 +275,11 @@ export const InstrumentsTab = ({
                             </Button>
                         ) : null}
                     </>
-                )}
+                ) : null}
             </div>
 
             {/* Save form (inline) */}
-            {showSaveForm && selectedTrack && (
+            {showSaveForm && selectedTrack ? (
                 <div className="space-y-1.5 px-1 py-1 rounded-md bg-surface-raised border border-border/40 animate-in fade-in duration-200 mb-2">
                     <div className="flex items-center gap-1">
                         <Input
@@ -331,7 +331,7 @@ export const InstrumentsTab = ({
                         </Button>
                     </div>
                 </div>
-            )}
+            ) : null}
 
             {/* Instrument family groups */}
             {INSTRUMENT_GROUPS.map((group) => {

@@ -4,7 +4,7 @@
  */
 
 import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { batchAddAutomationPoints } from '#/modules/Automation/useCases/automationUseCases';
+import { batchAddAutomationPoints } from '#/modules/Automation/useCases/automation';
 import { type AutomationPoint } from '#/modules/Automation/models/Automation';
 import { type AutomationMode } from '#/modules/Arrangement/useCases/trackQueries';
 

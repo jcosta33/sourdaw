@@ -7,7 +7,7 @@ import { duplicateTrack as _duplicateTrack } from '#/modules/Arrangement/useCase
 import {
     duplicateClip as _duplicateClip,
     duplicateClipToNextBar as _duplicateClipToNextBar,
-} from '#/modules/Arrangement/useCases/clipUseCases';
+} from '#/modules/Arrangement/useCases/clip';
 import { zoomTracksVertical as _zoomTracksVertical } from '#/modules/Arrangement/useCases/trackZoom';
 
 export const clearSolos = (): void => _clearSolos();

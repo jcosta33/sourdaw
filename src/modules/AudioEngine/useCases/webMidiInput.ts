@@ -1,5 +1,5 @@
 /**
- * Barrel re-export — webMidiInput logic moved to repositories/webMidiRepository.ts.
+ * Barrel re-export — webMidiInput logic moved to repositories/webMidi.ts.
  * Import from the repository directly when possible.
  */
 
@@ -17,4 +17,4 @@ export {
     stopMidiLearnLegacy,
     resetMidiState,
     destroyWebMidi,
-} from '../repositories/webMidiRepository';
+} from '../repositories/webMidi';

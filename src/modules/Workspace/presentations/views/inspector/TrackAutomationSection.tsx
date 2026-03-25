@@ -7,7 +7,7 @@ import {
     addAutomationLane,
     toggleAutomationVisibility,
     removeAutomationLane,
-} from '#/modules/Automation/useCases/automationUseCases';
+} from '#/modules/Automation/useCases/automation';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
 
@@ -56,7 +56,7 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                     >
                         <Plus className="size-3" />
                     </Button>
-                    {showAutoMenu && (
+                    {showAutoMenu ? (
                         <div
                             className="absolute right-0 top-full z-50 mt-1 w-48 rounded-md border border-border/50 bg-popover py-1 shadow-lg"
                             role="menu"
@@ -129,7 +129,7 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                                 </>
                             )}
                         </div>
-                    )}
+                    ) : null}
                 </div>
             </div>
             {trackLanes.length > 0 ? (

@@ -7,12 +7,12 @@ import { timeSignatureMapStore } from '#/modules/Transport/stores/timeSignatureM
 import { markerStore } from '#/modules/Arrangement/stores/markerStore';
 import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
 import { arrangementStore } from '../../stores/arrangementStore';
-import { syncCurrentArrangementToStore } from '../arrangementUseCases';
+import { syncCurrentArrangementToStore } from '../arrangement';
 import { type ProjectData } from '../../models/ProjectData';
 import { projectStore } from '../../stores/projectStore';
 import { addToRecentProjects } from '../recentProjects';
-import { getAllSidechainRoutes } from '#/modules/Routing/useCases/sidechainUseCases';
-import { writeProjectJson, writeNamedProjectJson } from '../../repositories/projectRepository';
+import { getAllSidechainRoutes } from '#/modules/Routing/useCases/sidechain';
+import { writeProjectJson, writeNamedProjectJson } from '../../repositories/project';
 import { isNativeFileSystemAvailable, saveProjectToFile, getProjectDirectory } from '../../repositories/nativeProjectFiles';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 

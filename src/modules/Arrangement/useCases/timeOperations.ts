@@ -1,4 +1,4 @@
-import { getTrackState, setTrackState } from '#/modules/Arrangement/repositories/trackRepository';
+import { getTrackState, setTrackState } from '#/modules/Arrangement/repositories/track';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { markerStore } from '#/modules/Arrangement/stores/markerStore';
 import { type Clip } from '#/modules/Arrangement/models/Track';

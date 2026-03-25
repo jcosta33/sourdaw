@@ -3,32 +3,20 @@ import { type ReactElement,
 import { cn } from '#/helpers/Styles/cn';
 import { removeTrack } from '../../useCases/removeTrack';
 import { toggleSoloSafe } from '../../useCases/toggleTrackState';
-import { addClip } from '#/modules/Arrangement/useCases/clipUseCases';
+import { addClip } from '#/modules/Arrangement/useCases/clip';
 import { renameTrack } from '../../useCases/renameTrack';
 import { freezeTrack, unfreezeTrack, bounceInPlace, bounceToNewTrack } from '../../useCases/freezeBounce';
-import { armTrack } from '../../useCases/recordingUseCases';
+import { armTrack } from '../../useCases/recording';
 import { addTrack } from '../../useCases/addTrack';
-import { saveTrackAsTemplate } from '../../useCases/trackTemplateUseCases';
+import { saveTrackAsTemplate } from '../../useCases/trackTemplate';
 import { setTrackColor, setInputMonitoring } from '../../useCases/setTrackGainPan';
 import { decodeAudioFile } from '../../useCases/trackViewActions';
 import { importMidiFile } from '#/modules/MIDI/useCases/importMidiFile';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { type Track, type InputMonitoring } from '../../models/Track';
+import { TRACK_COLOR_PRESETS } from '#/helpers/UI/colorPresets';
 
-const TRACK_COLORS = [
-    'oklch(0.40 0.08 250)',
-    'oklch(0.38 0.09 20)',
-    'oklch(0.40 0.08 150)',
-    'oklch(0.40 0.08 70)',
-    'oklch(0.38 0.08 300)',
-    'oklch(0.38 0.08 340)',
-    'oklch(0.40 0.07 200)',
-    'oklch(0.39 0.08 45)',
-    'oklch(0.40 0.07 170)',
-    'oklch(0.38 0.08 270)',
-    'oklch(0.39 0.07 110)',
-    'oklch(0.38 0.09 0)',
-];
+
 
 const INPUT_MON_OPTIONS: { value: InputMonitoring; label: string }[] = [
     { value: 'auto', label: 'Auto' },
@@ -243,7 +231,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
             />
             {children}
 
-            {position && (
+            {position ? (
                 <>
                     <div className="fixed inset-0 z-40" onClick={close} />
                     <div
@@ -273,7 +261,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                             <div className="p-2">
                                 <p className="text-[10px] text-muted-foreground mb-1.5">Track Color</p>
                                 <div className="grid grid-cols-5 gap-1">
-                                    {TRACK_COLORS.map((color) => (
+                                    {TRACK_COLOR_PRESETS.map((color) => (
                                         <button
                                             type="button"
                                             key={color}
@@ -337,7 +325,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                         )}
                     </div>
                 </>
-            )}
+            ) : null}
         </div>
     );
 };

@@ -4,8 +4,8 @@ import { BipolarSlider } from '#/components/ui/bipolar-slider';
 import { cn } from '#/helpers/Styles/cn';
 import { MidiLearnButton } from '#/modules/Arrangement/presentations/views/MidiLearnButton';
 import { type DeviceParameter } from '#/modules/Arrangement/useCases/trackQueries';
-import { addAutomationLane, removeAutomationLane } from '#/modules/Automation/useCases/automationUseCases';
-import { setDeviceParameter } from '#/modules/Arrangement/useCases/deviceUseCases';
+import { addAutomationLane, removeAutomationLane } from '#/modules/Automation/useCases/automation';
+import { setDeviceParameter } from '#/modules/Arrangement/useCases/device';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { type Device } from '#/modules/Arrangement/useCases/trackQueries';
 
@@ -87,7 +87,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                             deviceId={device.id}
                             paramId={param.id}
                         />
-                        {param.automatable && (
+                        {param.automatable ? (
                             <button
                                 type="button"
                                 className={cn(
@@ -106,7 +106,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                                 aria-label={`Automate ${param.name}`}
                                 title={hasAutomation ? 'Remove automation lane' : 'Add automation lane'}
                             />
-                        )}
+                        ) : null}
                     </div>
                 </div>
             ) : (
@@ -114,12 +114,12 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                     <label className="text-[10px] font-medium text-foreground truncate w-full" title={param.name}>
                         {param.name}
                     </label>
-                    {!isChoice && (
+                    {!isChoice ? (
                         <span className="text-[10px] font-mono text-muted-foreground">
                             {displayValue}
                             {param.unit ? ` ${param.unit}` : ''}
                         </span>
-                    )}
+                    ) : null}
                     <div className="flex items-center gap-1.5 mt-0.5">
                         <MidiLearnButton
                             targetType="deviceParam"
@@ -127,7 +127,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                             deviceId={device.id}
                             paramId={param.id}
                         />
-                        {param.automatable && (
+                        {param.automatable ? (
                             <button
                                 type="button"
                                 className={cn(
@@ -146,7 +146,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                                 aria-label={`Automate ${param.name}`}
                                 title={hasAutomation ? 'Remove automation lane' : 'Add automation lane'}
                             />
-                        )}
+                        ) : null}
                     </div>
                 </div>
             )}

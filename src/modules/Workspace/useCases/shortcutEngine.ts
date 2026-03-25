@@ -7,8 +7,8 @@ import {
     duplicateClipToNextBar,
 } from '#/modules/Command/useCases/keyboardShortcutActions';
 import { undo, redo } from '#/modules/Command/useCases/undoRedo';
-import { copySelectedClip, pasteClip } from '#/modules/Arrangement/useCases/clipboardUseCases';
-import { removeClip } from '#/modules/Arrangement/useCases/clipUseCases';
+import { copySelectedClip, pasteClip } from '#/modules/Arrangement/useCases/clipboard';
+import { removeClip } from '#/modules/Arrangement/useCases/clip';
 import { saveProject } from '#/modules/Project/useCases/projectPersistence';
 import { toggleMixer, toggleInspector, toggleChatPanel } from './togglePanel';
 import { workspaceStore } from '../stores/workspaceStore';

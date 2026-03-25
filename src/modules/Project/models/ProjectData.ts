@@ -6,7 +6,7 @@ import { type TempoMapStoreState } from '#/modules/Transport/stores/tempoMapStor
 import { type TimeSignatureMapStoreState } from '#/modules/Transport/stores/timeSignatureMapStore';
 import { type MarkerStoreState } from '#/modules/Arrangement/stores/markerStore';
 import { type TakeLaneStoreState } from '#/modules/Arrangement/stores/takeLaneStore';
-import { type SidechainRoute } from '#/modules/Routing/useCases/sidechainUseCases';
+import { type SidechainRoute } from '#/modules/Routing/useCases/sidechain';
 
 export type ArrangementData = {
     id: string;

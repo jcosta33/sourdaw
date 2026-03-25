@@ -52,7 +52,7 @@ export const IOSection = ({ track }: IOSectionProps): ReactElement => {
                     <ChevronDown className="size-2 shrink-0 text-muted-foreground" aria-hidden="true" />
                 </Button>
 
-                {outputOpen && (
+                {outputOpen ? (
                     <div
                         className="absolute bottom-full right-0 z-50 mb-1 min-w-20 rounded-md border border-border-soft border-t-[var(--color-light-edge)] bg-surface-overlay py-1 shadow-[0_4px_16px_rgba(0,0,0,0.5)]"
                         role="listbox"
@@ -78,7 +78,7 @@ export const IOSection = ({ track }: IOSectionProps): ReactElement => {
                             </button>
                         ))}
                     </div>
-                )}
+                ) : null}
             </div>
         </div>
     );

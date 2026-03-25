@@ -1,6 +1,7 @@
 import { type ReactElement, useState, useRef, useEffect, useSyncExternalStore } from 'react';
 import { useCollaborationState } from '../hooks/useCollaborationState';
-import { createSession, joinSession, leaveSession } from '../../useCases/collaborationUseCases';
+import { createSession, joinSession, leaveSession } from '../../useCases/collaboration';
+import { closeCollaborationPanel } from '#/modules/Workspace/useCases/togglePanel';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { cn } from '#/helpers/Styles/cn';
 import { Button } from '#/components/ui/button';
@@ -31,12 +32,7 @@ export const CollaborationPanel = (): ReactElement | null => {
         return null;
     }
 
-    const close = () => {
-        const ws = workspaceStore.value;
-        if (ws) {
-            workspaceStore.set({ ...ws, collaborationPanelOpen: false });
-        }
-    };
+    const close = closeCollaborationPanel;
 
     const handleCreate = () => {
         createSession();
@@ -156,11 +152,11 @@ export const CollaborationPanel = (): ReactElement | null => {
                                             {peer.name}
                                             {peer.id === state.localPeerId ? ' (you)' : ''}
                                         </span>
-                                        {peer.isHost && (
+                                        {peer.isHost ? (
                                             <span className="ml-auto shrink-0 rounded bg-muted/40 px-1 text-[10px] text-muted-foreground">
                                                 host
                                             </span>
-                                        )}
+                                        ) : null}
                                     </div>
                                 ))}
                             </div>
@@ -210,7 +206,7 @@ export const CollaborationPanel = (): ReactElement | null => {
                     </>
                 )}
 
-                {state.error && <p className="text-[10px] text-[var(--color-state-danger)]">{state.error}</p>}
+                {state.error ? <p className="text-[10px] text-[var(--color-state-danger)]">{state.error}</p> : null}
             </div>
         </div>
     );

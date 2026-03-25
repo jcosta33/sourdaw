@@ -7,14 +7,14 @@ import { timeSignatureMapStore } from '#/modules/Transport/stores/timeSignatureM
 import { markerStore } from '#/modules/Arrangement/stores/markerStore';
 import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
 import { arrangementStore, defaultArrangementId } from '../../stores/arrangementStore';
-import { syncCurrentArrangementToStore } from '../arrangementUseCases';
+import { syncCurrentArrangementToStore } from '../arrangement';
 import { defaultTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { type ProjectData } from '../../models/ProjectData';
 import { projectStore } from '../../stores/projectStore';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
-import { getAllSidechainRoutes, setSidechainRoutes } from '#/modules/Routing/useCases/sidechainUseCases';
-import { downloadProjectFile } from '../../repositories/projectRepository';
+import { getAllSidechainRoutes, setSidechainRoutes } from '#/modules/Routing/useCases/sidechain';
+import { downloadProjectFile } from '../../repositories/project';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { clearUndoHistory, verifyAudioBufferReferences } from './helpers';
 

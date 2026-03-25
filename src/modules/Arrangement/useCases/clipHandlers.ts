@@ -5,7 +5,7 @@ import {
     moveClip,
     duplicateClip,
     duplicateClipToNextBar,
-} from '#/modules/Arrangement/useCases/clipUseCases';
+} from '#/modules/Arrangement/useCases/clip';
 import {
     splitClip,
     trimClipStart,
@@ -21,10 +21,10 @@ import {
     crossfadeClips,
     renameClip,
     muteClip,
-} from '#/modules/Arrangement/useCases/clipEditingUseCases';
+} from '#/modules/Arrangement/useCases/clipEditing';
 import { bounceSelection } from '#/modules/Arrangement/useCases/freezeBounce';
-import { copySelectedClip, cutSelectedClip, pasteClip } from '#/modules/Arrangement/useCases/clipboardUseCases';
-import { setClipLoop, setClipLoopLength } from '#/modules/Arrangement/useCases/clipLoopUseCases';
+import { copySelectedClip, cutSelectedClip, pasteClip } from '#/modules/Arrangement/useCases/clipboard';
+import { setClipLoop, setClipLoopLength } from '#/modules/Arrangement/useCases/clipLoop';
 import { audioToMidi } from '#/modules/AudioAnalysis/useCases/audioToMidi';
 import { detectTempo } from '#/modules/AudioAnalysis/useCases/tempoDetection';
 import { detectKey } from '#/modules/AudioAnalysis/useCases/keyDetection';
@@ -34,7 +34,7 @@ import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { deleteTime, insertTime, duplicateTimeRange } from '#/modules/Arrangement/useCases/timeOperations';
 import { stripSilence } from '#/modules/Arrangement/useCases/stripSilence';
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
-import { updateTrack } from '#/modules/Arrangement/repositories/trackRepository';
+import { updateTrack } from '#/modules/Arrangement/repositories/track';
 import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
 import { rippleDeleteClips, undoRippleDelete } from '#/modules/Workspace/useCases/rippleEditing';
 

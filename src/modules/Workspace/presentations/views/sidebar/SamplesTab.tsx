@@ -2,7 +2,7 @@ import { type ReactElement } from 'react';
 import { Folder, File, Star, Upload } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { addClip } from '#/modules/Arrangement/useCases/clipUseCases';
+import { addClip } from '#/modules/Arrangement/useCases/clip';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { PreviewButton } from '../../components/sidebar/PreviewButton';
 import { type SampleItem } from '../../components/sidebar/sidebarConstants';
@@ -47,13 +47,13 @@ export const SamplesTab = ({
 
     return (
         <div className="space-y-2">
-            {samples.length === 0 && (
+            {samples.length === 0 ? (
                 <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
                     <Upload className="size-6 text-muted-foreground/40" />
                     <p className="text-xs text-muted-foreground">No samples yet</p>
                     <p className="text-[10px] text-muted-foreground/60">Click Import above or drag audio files here</p>
                 </div>
-            )}
+            ) : null}
             {categories.map((cat) => (
                 <div key={cat}>
                     <div className="flex items-center gap-1 px-1 py-0.5">

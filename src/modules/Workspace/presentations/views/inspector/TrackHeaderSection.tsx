@@ -10,7 +10,7 @@ import {
 } from '#/modules/Arrangement/useCases/setTrackGainPan';
 import { freezeTrack, unfreezeTrack } from '#/modules/Arrangement/useCases/freezeBounce';
 import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
-import { TRACK_COLOR_PRESETS } from './colorPresets';
+import { TRACK_COLOR_PRESETS } from '#/helpers/UI/colorPresets';
 
 type TrackHeaderSectionProps = {
     track: Track;
@@ -71,7 +71,7 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                             <span className="text-[10px] font-medium text-foreground capitalize">{track.kind}</span>
                         </div>
 
-                        {track.kind !== 'folder' && (
+                        {track.kind !== 'folder' ? (
                             <Button
                                 variant={track.frozen ? 'secondary' : 'ghost'}
                                 size="xs"
@@ -88,7 +88,7 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                                 {track.frozen ? <Zap className="size-3 mr-1" /> : <Snowflake className="size-3 mr-1" />}
                                 {track.frozen ? 'Unfreeze' : 'Freeze'}
                             </Button>
-                        )}
+                        ) : null}
                     </div>
 
                     <div className="space-y-1.5">

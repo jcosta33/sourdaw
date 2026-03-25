@@ -4,7 +4,7 @@ import {
     stopMacroRecording,
     playMacro,
     deleteMacro,
-} from '../useCases/macroUseCases';
+} from '../useCases/macro';
 
 export const macroHandlers: Record<string, ActionHandler<any>> = {
     startMacroRecording: {

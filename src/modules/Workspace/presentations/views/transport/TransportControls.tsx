@@ -205,7 +205,7 @@ export const TransportControls = ({
                 <TooltipContent>Metronome (M)</TooltipContent>
             </Tooltip>
 
-            {metronomeEnabled && (
+            {metronomeEnabled ? (
                 <Tooltip>
                     <TooltipTrigger asChild>
                         <div className="flex items-center px-1">
@@ -223,7 +223,7 @@ export const TransportControls = ({
                     </TooltipTrigger>
                     <TooltipContent>Metronome volume: {Math.round(metronomeVolume * 100)}%</TooltipContent>
                 </Tooltip>
-            )}
+            ) : null}
 
             <Tooltip>
                 <TooltipTrigger asChild>

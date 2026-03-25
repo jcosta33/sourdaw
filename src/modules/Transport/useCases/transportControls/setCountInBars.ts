@@ -1,4 +1,4 @@
-import { getTransportState, updateTransportState } from '#/modules/Transport/repositories/transportRepository';
+import { getTransportState, updateTransportState } from '#/modules/Transport/repositories/transport';
 
 export function setCountInBars(bars: number): void {
     const state = getTransportState();

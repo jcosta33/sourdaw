@@ -3,7 +3,7 @@ import { Card } from '#/components/ui/card';
 import { Button } from '#/components/ui/button';
 import { cn } from '#/helpers/Styles/cn';
 import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
-import { setCompRegion, selectTake, flattenComp } from '#/modules/Arrangement/useCases/compingUseCases';
+import { setCompRegion, selectTake, flattenComp } from '#/modules/Arrangement/useCases/comping';
 
 type TakesSectionProps = {
     trackId: string;
@@ -59,11 +59,11 @@ export const TakesSection = ({ trackId }: TakesSectionProps): ReactElement | nul
                                     beat {take.startBeat}–{take.endBeat}
                                 </span>
                             </div>
-                            {take.selected && (
+                            {take.selected ? (
                                 <span className="text-[10px] font-medium text-primary ml-2 shrink-0">Active</span>
-                            )}
+                            ) : null}
                         </div>
-                        {!take.selected && (
+                        {!take.selected ? (
                             <Button
                                 variant="secondary"
                                 size="xs"
@@ -73,7 +73,7 @@ export const TakesSection = ({ trackId }: TakesSectionProps): ReactElement | nul
                             >
                                 Set Active
                             </Button>
-                        )}
+                        ) : null}
                     </Card>
                 ))}
             </div>

@@ -15,8 +15,9 @@ import { resolveToken } from '#/helpers/UI/resolveToken';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { decodeAudioFile } from '#/modules/Arrangement/useCases/trackViewActions';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { normalizeClip } from '#/modules/Arrangement/useCases/clipEditingUseCases/normalizeClip';
-import { reverseClip } from '#/modules/Arrangement/useCases/clipEditingUseCases/reverseClip';
+import { replaceClipAudioBuffer } from '#/modules/Arrangement/useCases/replaceClipAudioBuffer';
+import { normalizeClip } from '#/modules/Arrangement/useCases/clipEditing/normalizeClip';
+import { reverseClip } from '#/modules/Arrangement/useCases/clipEditing/reverseClip';
 import { type WarpState } from '#/modules/Arrangement/useCases/trackQueries';
 import {
     getWarpState,
@@ -26,11 +27,11 @@ import {
     addWarpMarker,
     removeWarpMarker,
     moveWarpMarker,
-} from '#/modules/Arrangement/useCases/warpUseCases';
+} from '#/modules/Arrangement/useCases/warp';
 import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration/useCases/generativeAiActions';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { audioToMidi } from '#/modules/AudioAnalysis/useCases/audioToMidi';
-import { isTauri } from '#/modules/AudioEngine/useCases/nativeAiBridgeUseCases';
+import { isTauri } from '#/modules/AudioEngine/useCases/nativeAiBridge';
 
 const STRETCH_MODES: WarpState['stretchMode'][] = ['complex', 'repitch', 'texture', 'beats'];
 
@@ -79,20 +80,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
 
         try {
             const { id: bufferId } = await decodeAudioFile(file);
-
-            const state = trackStore.value;
-            if (!state) {
-                return;
-            }
-            trackStore.set({
-                ...state,
-                tracks: state.tracks.map((t) => ({
-                    ...t,
-                    clips: t.clips.map((c) =>
-                        c.id === clipId || c.audioBufferId === clipId ? { ...c, audioBufferId: bufferId } : c
-                    ),
-                })),
-            });
+            replaceClipAudioBuffer(clipId, bufferId);
             setBufferVersion((v) => v + 1);
         } catch {
             notifyUser(`Failed to import "${file.name}" — unsupported format or corrupt file`, 'error');
@@ -348,7 +336,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                     Warp
                 </Button>
 
-                {warpState.enabled && (
+                {warpState.enabled ? (
                     <>
                         <div className="flex items-center gap-0.5 rounded-md border border-border/40 p-0.5">
                             {STRETCH_MODES.map((mode) => (
@@ -369,7 +357,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                             {warpState.markers.length} marker{warpState.markers.length !== 1 ? 's' : ''}
                         </span>
                     </>
-                )}
+                ) : null}
             </div>
             <div
                 ref={containerRef}
@@ -391,14 +379,14 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                     onDoubleClick={handleDoubleClick}
                     onContextMenu={handleWaveContextMenu}
                 />
-                {isDragging && (
+                {isDragging ? (
                     <div className="absolute inset-0 flex items-center justify-center bg-primary/10 pointer-events-none">
                         <span className="text-sm font-medium text-primary">Drop audio file here</span>
                     </div>
-                )}
+                ) : null}
             </div>
 
-            {waveCtxMenu && (
+            {waveCtxMenu ? (
                 <div
                     ref={waveCtxRef}
                     className="fixed z-50 min-w-[160px] rounded-md border border-border bg-popover py-1 shadow-lg"
@@ -486,7 +474,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                         {warpState.enabled ? 'Disable Warp' : 'Enable Warp'}
                     </button>
                 </div>
-            )}
+            ) : null}
         </div>
     );
 };

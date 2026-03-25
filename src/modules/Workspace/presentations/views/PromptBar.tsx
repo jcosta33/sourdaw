@@ -1,14 +1,4 @@
-import {
-    type ReactElement,
-    type KeyboardEvent,
-    useState,
-    useRef,
-    useEffect,
-    useSyncExternalStore,
-    type FormEvent,
-} from 'react';
-import { Container } from '#/helpers/DependencyInjector/Container';
-import { Logger } from '#/helpers/Logger/Logger';
+import { type ReactElement } from 'react';
 import { Input } from '#/components/ui/input';
 import { Button } from '#/components/ui/button';
 import {
@@ -33,33 +23,13 @@ import {
     Users,
     AlertTriangle,
 } from 'lucide-react';
-import { parsePromptToActions } from '#/modules/AiRuntime/useCases/parsePromptToActions';
-import { isComplexPrompt } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
-import { getProjectContext } from '#/modules/AiRuntime/useCases/getProjectContext';
-import { searchPresets, type FuzzyResult } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
-import { getAvailablePresets } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
-import { onPromptInjection } from '#/modules/AiRuntime/presentations/views/VoiceCommandOverlay';
-import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
-import { notifyAiChange } from '#/modules/AiRuntime/presentations/views/AiChangeToast';
-import { isLlmAvailable } from '#/modules/AiRuntime/useCases/llmOrchestration/backendResolution';
-import { initEngine } from '#/modules/AiRuntime/useCases/llmOrchestration/lifecycle';
-import { llmStatusStore } from '#/modules/AiRuntime/stores/llmStatusStore';
-import { LlmStatusBadge } from './prompt/LlmStatusBadge';
-import { generateGroupId } from '#/modules/Command/useCases/commandQueries';
-import {
-    pushAiActionGroup,
-    toggleAiHistoryPanel,
-    type AiActionGroup,
-} from '#/modules/AiRuntime/stores/aiActionHistoryStore';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { appendChatMessage } from '#/modules/AiRuntime/stores/chatStore';
-import { type AppAction } from '#/modules/Command/useCases/commandQueries';
+import { toggleAiHistoryPanel } from '#/modules/AiRuntime/stores/aiActionHistoryStore';
+import { type FuzzyResult } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
 import { describeAction } from '#/modules/Command/useCases/actionLabels';
-import { type IntentResult } from '#/modules/AiRuntime/models/IntentResult';
-import { type PresetCategory, type PresetContext } from '#/modules/AiRuntime/models/presetActions/registry';
-
-const logger = Container.getInstance().get(Logger);
+import { type AppAction } from '#/modules/Command/useCases/commandQueries';
+import { type PresetCategory } from '#/modules/AiRuntime/models/presetActions/registry';
+import { usePromptExecution, type SelectionTag } from '../hooks/usePromptExecution';
+import { LlmStatusBadge } from './Prompt/LlmStatusBadge';
 
 // ── Category icons ──────────────────────────────────────────────────────
 
@@ -75,15 +45,6 @@ const CATEGORY_ICONS: Record<PresetCategory, typeof Play> = {
     Automation: GitBranch,
     File: FolderOpen,
     Collaboration: Users,
-};
-
-// ── Selection tag types ─────────────────────────────────────────────────
-
-type SelectionTag = {
-    id: string;
-    label: string;
-    kind: 'track' | 'clip' | 'clips';
-    icon: 'track' | 'clip' | 'clips';
 };
 
 const TAG_ICONS = {
@@ -153,301 +114,19 @@ const FuzzyResultItem = ({
     );
 };
 
-// ── Store subscriptions (module-scope for stable references) ────────────
-
-const subscribeLlm = (cb: () => void): (() => void) => llmStatusStore.subscribe(() => cb());
-const getLlmSnapshot = (): typeof llmStatusStore.value => llmStatusStore.value;
-const subscribeTrack = (cb: () => void): (() => void) => trackStore.subscribe(cb);
-const getTrackSnapshot = () => trackStore.value;
-const subscribeWs = (cb: () => void): (() => void) => workspaceStore.subscribe(cb);
-const getWsSnapshot = () => workspaceStore.value;
-
 // ── Main component ──────────────────────────────────────────────────────
 
 export const PromptBar = (): ReactElement => {
-    const [value, setValue] = useState('');
-    const [isProcessing, setIsProcessing] = useState(false);
-    const [preview, setPreview] = useState<IntentResult | null>(null);
-    const [fuzzyResults, setFuzzyResults] = useState<FuzzyResult[]>([]);
-    const [selectedIndex, setSelectedIndex] = useState(-1);
-    const [dismissedTags, setDismissedTags] = useState<Set<string>>(new Set());
-    const [isFocused, setIsFocused] = useState(false);
-    const inputRef = useRef<HTMLInputElement>(null);
-    const formRef = useRef<HTMLFormElement>(null);
-    const abortRef = useRef<AbortController | null>(null);
-    const pendingSubmitRef = useRef(false);
-
-    const llmStatus = useSyncExternalStore(subscribeLlm, getLlmSnapshot, getLlmSnapshot);
-    const trackState = useSyncExternalStore(subscribeTrack, getTrackSnapshot);
-    const wsState = useSyncExternalStore(subscribeWs, getWsSnapshot);
-
-    // ── Derive selection tags ───────────────────────────────────────────
-    const selectionTags: SelectionTag[] = [];
-    const selectedTrackId = trackState?.selectedTrackId;
-    const selectedClipId = wsState?.selectedClipId;
-    const selectedClipIds = wsState?.selectedClipIds ?? [];
-
-    if (selectedTrackId) {
-        const track = trackState?.tracks.find((t) => t.id === selectedTrackId);
-        if (track && !dismissedTags.has(`track:${selectedTrackId}`)) {
-            selectionTags.push({ id: `track:${selectedTrackId}`, label: track.name, kind: 'track', icon: 'track' });
-        }
-    }
-    if (selectedClipIds.length > 1) {
-        const key = `clips:${selectedClipIds.length}`;
-        if (!dismissedTags.has(key)) {
-            selectionTags.push({ id: key, label: `${selectedClipIds.length} clips`, kind: 'clips', icon: 'clips' });
-        }
-    } else if (selectedClipId) {
-        const allClips = trackState?.tracks.flatMap((t) => t.clips) ?? [];
-        const clip = allClips.find((c) => c.id === selectedClipId);
-        if (clip && !dismissedTags.has(`clip:${selectedClipId}`)) {
-            selectionTags.push({ id: `clip:${selectedClipId}`, label: clip.name, kind: 'clip', icon: 'clip' });
-        }
-    }
-
-    // ── Build preset context ────────────────────────────────────────────
-    const presetContext: PresetContext = {
-        selectedTrackId: selectedTrackId ?? undefined,
-        selectedClipId: selectedClipId ?? undefined,
-        selectedClipType: (() => {
-            const allClips = trackState?.tracks.flatMap((t) => t.clips) ?? [];
-            const clip = allClips.find((c) => c.id === selectedClipId);
-            return clip?.type;
-        })(),
-        trackCount: trackState?.tracks.length ?? 0,
-    };
-
-    // ── Reset dismissed tags when selection changes ─────────────────────
-    useEffect(() => {
-        setDismissedTags(new Set());
-    }, [selectedTrackId, selectedClipId, selectedClipIds]);
-
-    // ── Voice injection (auto-submit after setting value) ────────────────
-    useEffect(() => {
-        return onPromptInjection((text) => {
-            setValue((prev) => (prev ? `${prev} ${text}` : text));
-            pendingSubmitRef.current = true;
-            inputRef.current?.focus();
-        });
-    }, []);
-
-    // ── pending submit after value change ───────────────────────────────
-    useEffect(() => {
-        if (pendingSubmitRef.current && value.trim().length > 0) {
-            pendingSubmitRef.current = false;
-            formRef.current?.requestSubmit();
-        }
-    }, [value]);
-
-    // ── Fuzzy search on input change ────────────────────────────────────
-    useEffect(() => {
-        if (preview || isProcessing) {
-            setFuzzyResults([]);
-            return;
-        }
-        if (!isFocused) {
-            setFuzzyResults([]);
-            return;
-        }
-
-        const trimmed = value.trim();
-        if (trimmed.length === 0) {
-            // Show top available presets when focused with no input
-            const available = getAvailablePresets(presetContext);
-            setFuzzyResults(available.slice(0, 10).map((preset) => ({ preset, score: 0 })));
-        } else {
-            const results = searchPresets(trimmed, presetContext, 10);
-            setFuzzyResults(results);
-        }
-        setSelectedIndex(-1);
-    }, [value, preview, isFocused, isProcessing, trackState, wsState]);
-
-    // ── Execute preset directly ─────────────────────────────────────────
-    const executePreset = async (result: FuzzyResult) => {
-        const actionResult = result.preset.buildAction(presetContext);
-        if (!actionResult) {
-            return;
-        }
-        const actions = Array.isArray(actionResult) ? actionResult : [actionResult];
-
-        // Handle destructive actions
-        if (result.preset.isDestructive) {
-            setPreview({
-                actions,
-                confidence: 0.95,
-                rawText: result.preset.label,
-                requiresConfirmation: true,
-            });
-            setValue(result.preset.label);
-            setFuzzyResults([]);
-            return;
-        }
-
-        setFuzzyResults([]);
-        setIsProcessing(true);
-        try {
-            await executeWithGroup(actions, result.preset.label);
-            if (actions.length > 0) {
-                notifyAiChange(
-                    `Executed: ${result.preset.label}`,
-                    actions.map((a) => a.type)
-                );
-            }
-        } catch (error) {
-            logger.error(new Error('Preset execution failed', { cause: error }));
-        } finally {
-            setIsProcessing(false);
-            setValue('');
-        }
-    };
-
-    // ── Execute action group ────────────────────────────────────────────
-    const executeWithGroup = async (actions: AppAction[], prompt: string) => {
-        const group = generateGroupId(prompt);
-        const executedLabels: Array<{ action: AppAction; label: string }> = [];
-
-        for (const action of actions) {
-            await executeAppAction(action, { ...group, source: 'prompt' });
-            executedLabels.push({ action, label: describeAction(action) });
-        }
-
-        if (actions.length > 0) {
-            const historyGroup: AiActionGroup = {
-                id: group.groupId,
-                prompt,
-                actions: executedLabels,
-                groupId: group.groupId,
-                timestamp: Date.now(),
-                reverted: false,
-            };
-            pushAiActionGroup(historyGroup);
-        }
-    };
-
-    // ── Full prompt submission (for complex / LLM) ──────────────────────
-    const handleSubmit = async (e: FormEvent) => {
-        e.preventDefault();
-        if (!value.trim() || isProcessing) {
-            return;
-        }
-
-        setFuzzyResults([]);
-        setIsProcessing(true);
-        const controller = new AbortController();
-        abortRef.current = controller;
-        try {
-            const context = getProjectContext();
-            const result = await parsePromptToActions(value, context, controller.signal);
-
-            if (controller.signal.aborted) {
-                return;
-            }
-
-            if (result.requiresConfirmation && result.actions.length > 0) {
-                setPreview(result);
-                setIsProcessing(false);
-                return;
-            }
-
-            await executeWithGroup(result.actions, value);
-
-            if (result.actions.length > 0) {
-                notifyAiChange(
-                    `Executed: ${value}`,
-                    result.actions.map((a) => a.type)
-                );
-            } else {
-                notifyAiChange(`No actions matched: "${value}"`, []);
-                appendChatMessage({
-                    id: crypto.randomUUID(),
-                    role: 'user',
-                    content: value,
-                    timestamp: Date.now(),
-                });
-                appendChatMessage({
-                    id: crypto.randomUUID(),
-                    role: 'assistant',
-                    content:
-                        "I couldn't identify any DAW commands in that prompt. If you're looking for help, try the AI Chat panel; if you're trying to execute an action, try rephrasing.",
-                    error: 'No actionable commands found',
-                    timestamp: Date.now(),
-                });
-            }
-        } catch (error) {
-            logger.error(new Error('Prompt execution failed', { cause: error }));
-        } finally {
-            abortRef.current = null;
-            setIsProcessing(false);
-            if (!preview) {
-                setValue('');
-            }
-        }
-    };
-
-    const confirmPreview = async () => {
-        if (!preview) {
-            return;
-        }
-        await executeWithGroup(preview.actions, value);
-        notifyAiChange(
-            `Confirmed: ${value}`,
-            preview.actions.map((a) => a.type)
-        );
-        setPreview(null);
-        setValue('');
-    };
-
-    const cancelPreview = () => {
-        setPreview(null);
-    };
-
-    // ── Keyboard navigation ─────────────────────────────────────────────
-    const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-        if (fuzzyResults.length > 0) {
-            if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                setSelectedIndex((prev) => Math.min(prev + 1, fuzzyResults.length - 1));
-            } else if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                setSelectedIndex((prev) => Math.max(prev - 1, -1));
-            } else if (e.key === 'Tab' && selectedIndex >= 0) {
-                e.preventDefault();
-                const selected = fuzzyResults[selectedIndex];
-                if (selected) {
-                    setValue(selected.preset.label);
-                    setFuzzyResults([]);
-                }
-            } else if (e.key === 'Enter' && selectedIndex >= 0) {
-                e.preventDefault();
-                const selected = fuzzyResults[selectedIndex];
-                if (selected) {
-                    void executePreset(selected);
-                }
-            } else if (e.key === 'Escape') {
-                e.preventDefault();
-                setFuzzyResults([]);
-                setSelectedIndex(-1);
-            }
-        }
-    };
-
-    const handleLoadModel = () => {
-        if (isLlmAvailable()) {
-            void initEngine();
-        }
-    };
-
-    const willUseLlm = value.trim().length > 0 && isComplexPrompt(value.toLowerCase().trim());
+    const prompt = usePromptExecution();
 
     // ── Preview mode ────────────────────────────────────────────────────
-    if (preview) {
+    if (prompt.preview) {
         return (
             <div className="flex items-center gap-2 max-w-lg">
                 <Sparkles className="size-3.5 shrink-0 text-[var(--color-accent-peach)]" aria-hidden="true" />
                 <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap gap-1">
-                        {preview.actions.map((a: AppAction, i: number) => (
+                        {prompt.preview.actions.map((a: AppAction, i: number) => (
                             <span
                                 key={i}
                                 className="inline-flex items-center rounded bg-accent/50 px-1.5 py-0.5 text-[10px] text-foreground"
@@ -457,10 +136,10 @@ export const PromptBar = (): ReactElement => {
                         ))}
                     </div>
                 </div>
-                <Button size="icon-xs" variant="ghost" onClick={confirmPreview} aria-label="Confirm actions">
+                <Button size="icon-xs" variant="ghost" onClick={prompt.confirmPreview} aria-label="Confirm actions">
                     <Check className="size-3 text-[var(--color-state-success)]" />
                 </Button>
-                <Button size="icon-xs" variant="ghost" onClick={cancelPreview} aria-label="Cancel actions">
+                <Button size="icon-xs" variant="ghost" onClick={prompt.cancelPreview} aria-label="Cancel actions">
                     <X className="size-3 text-destructive-foreground" />
                 </Button>
             </div>
@@ -470,61 +149,56 @@ export const PromptBar = (): ReactElement => {
     // ── Main render ─────────────────────────────────────────────────────
     return (
         <div className="relative flex-1 max-w-lg">
-            <form ref={formRef} onSubmit={handleSubmit} className="flex items-center gap-1.5">
-                {isProcessing ? (
+            <form ref={prompt.formRef} onSubmit={prompt.handleSubmit} className="flex items-center gap-1.5">
+                {prompt.isProcessing ? (
                     <Button
                         size="icon-xs"
                         variant="ghost"
                         type="button"
                         aria-label="Cancel AI processing"
-                        onClick={() => {
-                            abortRef.current?.abort();
-                            abortRef.current = null;
-                            setIsProcessing(false);
-                        }}
+                        onClick={prompt.cancelProcessing}
                     >
                         <X className="size-3 text-destructive-foreground" />
                     </Button>
-                ) : willUseLlm ? (
+                ) : prompt.willUseLlm ? (
                     <Brain className="size-3.5 shrink-0 text-[var(--color-accent-lavender)]" aria-hidden="true" />
                 ) : (
                     <Zap className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                 )}
-                {isFocused
-                    ? selectionTags.map((tag) => (
+                {prompt.isFocused
+                    ? prompt.selectionTags.map((tag) => (
                           <SelectionTagChip
                               key={tag.id}
                               tag={tag}
-                              onRemove={() => setDismissedTags((prev) => new Set([...prev, tag.id]))}
+                              onRemove={() => prompt.dismissTag(tag.id)}
                           />
                       ))
                     : null}
                 <Input
-                    ref={inputRef}
+                    ref={prompt.inputRef}
                     type="text"
-                    value={value}
-                    onChange={(e) => setValue(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    onFocus={() => setIsFocused(true)}
+                    value={prompt.value}
+                    onChange={(e) => prompt.setValue(e.target.value)}
+                    onKeyDown={prompt.handleKeyDown}
+                    onFocus={() => prompt.setIsFocused(true)}
                     onBlur={() => {
-                        // Delay to allow clicking dropdown items
-                        setTimeout(() => setIsFocused(false), 200);
+                        setTimeout(() => prompt.setIsFocused(false), 200);
                     }}
                     placeholder={
-                        isProcessing
-                            ? llmStatus?.state === 'generating'
+                        prompt.isProcessing
+                            ? prompt.llmStatus?.state === 'generating'
                                 ? 'AI is thinking...'
                                 : 'Processing...'
-                            : selectionTags.length > 0
+                            : prompt.selectionTags.length > 0
                               ? 'What do you want to do with this?'
                               : 'Type a command... (⌘K for palette)'
                     }
                     className="h-7 border-0 bg-transparent text-xs shadow-none focus-visible:ring-0 placeholder:text-muted-foreground/60"
                     aria-label="Prompt command input"
                     aria-autocomplete="list"
-                    aria-expanded={fuzzyResults.length > 0}
+                    aria-expanded={prompt.fuzzyResults.length > 0}
                     aria-controls="prompt-results"
-                    disabled={isProcessing}
+                    disabled={prompt.isProcessing}
                 />
                 <Button
                     variant="ghost"
@@ -536,30 +210,30 @@ export const PromptBar = (): ReactElement => {
                 >
                     <History className="size-3.5" />
                 </Button>
-                <LlmStatusBadge status={llmStatus ?? { state: 'idle' }} onLoad={handleLoadModel} />
+                <LlmStatusBadge status={prompt.llmStatus ?? { state: 'idle' }} onLoad={prompt.handleLoadModel} />
             </form>
 
-            {fuzzyResults.length > 0 ? (
+            {prompt.fuzzyResults.length > 0 ? (
                 <div
                     id="prompt-results"
                     role="listbox"
                     aria-label="Command suggestions"
                     className="absolute top-full left-0 right-0 mt-1 z-50 rounded-md border border-border-soft border-t-[var(--color-light-edge)] bg-surface-overlay shadow-[0_4px_16px_rgba(0,0,0,0.5)] py-1 max-h-80 overflow-y-auto"
                 >
-                    {value.trim().length === 0 ? (
+                    {prompt.value.trim().length === 0 ? (
                         <div className="px-3 py-1 text-[9px] uppercase tracking-wider text-muted-foreground/50 font-medium">
                             Available commands
                         </div>
                     ) : null}
-                    {fuzzyResults.map((result, i) => (
+                    {prompt.fuzzyResults.map((result, i) => (
                         <FuzzyResultItem
                             key={result.preset.id}
                             result={result}
-                            isSelected={i === selectedIndex}
-                            onExecute={() => void executePreset(result)}
+                            isSelected={i === prompt.selectedIndex}
+                            onExecute={() => void prompt.executePreset(result)}
                         />
                     ))}
-                    {value.trim().length > 0 && fuzzyResults.length === 0 ? (
+                    {prompt.value.trim().length > 0 && prompt.fuzzyResults.length === 0 ? (
                         <div className="px-3 py-2 text-xs text-muted-foreground/60 italic">
                             No matching commands — press Enter to try AI
                         </div>

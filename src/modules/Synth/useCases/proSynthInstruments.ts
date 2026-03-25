@@ -11,26 +11,43 @@ import { registerFaustDSP, type FaustParamDescriptor } from '#/modules/Plugin/us
  * Register all pro synth instruments.
  */
 export function registerProSynthInstruments(): void {
-    // Wavetable Synth
+    // Wavetable Synth — morph crossfade across 4 waveforms with ADSR
     registerFaustDSP(
         'Wavetable Synth',
         `
         import("stdfaust.lib");
         freq = hslider("freq", 440, 20, 12000, 0.01);
+        gain = hslider("gain", 0.5, 0, 1, 0.01);
         gate = button("gate");
-        morph = hslider("morph", 0, 0, 1, 0.001);
-        // Crossfade between waveforms: sine → saw → square → pulse
+        morph = hslider("morph", 0, 0, 1, 0.001) : si.smoo;
+        atk = hslider("attack", 0.01, 0.001, 5, 0.001);
+        dec = hslider("decay", 0.3, 0.01, 5, 0.01);
+        sus = hslider("sustain", 0.6, 0, 1, 0.01);
+        rel = hslider("release", 0.5, 0.01, 10, 0.01);
+        // 4 waveforms: sine → triangle → saw → square
         w1 = os.osc(freq);
-        w2 = os.sawtooth(freq);
-        w3 = os.square(freq);
-        wave = w1 * (1-morph) + w2 * morph * (1-morph) + w3 * morph * morph;
-        process = wave * en.adsr(0.01, 0.3, 0.6, 0.5, gate) <: _, _;
+        w2 = os.triangle(freq);
+        w3 = os.sawtooth(freq);
+        w4 = os.square(freq);
+        // Segment crossfade: morph 0..0.33 = w1↔w2, 0.33..0.66 = w2↔w3, 0.66..1 = w3↔w4
+        seg = morph * 3;
+        s1 = min(1, max(0, 1 - seg));
+        s2 = min(1, max(0, min(seg, 2 - seg)));
+        s3 = min(1, max(0, min(seg - 1, 3 - seg)));
+        s4 = min(1, max(0, seg - 2));
+        wave = w1 * s1 + w2 * s2 + w3 * s3 + w4 * s4;
+        env = en.adsr(atk, dec, sus, rel, gate);
+        process = wave * env * gain <: _, _;
     `,
-        makeSynthParams([
-            { address: '/wt/morph', label: 'Morph', min: 0, max: 1, defaultValue: 0, step: 0.001 },
-            { address: '/wt/detune', label: 'Detune', min: 0, max: 50, defaultValue: 0, step: 0.1 },
-            { address: '/wt/unison', label: 'Unison Voices', min: 1, max: 8, defaultValue: 1, step: 1 },
-        ])
+        [
+            { address: '/wt/morph', label: 'Morph', min: 0, max: 1, defaultValue: 0, step: 0.001, type: 'hslider' as const },
+            { address: '/wt/attack', label: 'Attack', min: 0.001, max: 5, defaultValue: 0.01, step: 0.001, type: 'hslider' as const },
+            { address: '/wt/decay', label: 'Decay', min: 0.01, max: 5, defaultValue: 0.3, step: 0.01, type: 'hslider' as const },
+            { address: '/wt/sustain', label: 'Sustain', min: 0, max: 1, defaultValue: 0.6, step: 0.01, type: 'hslider' as const },
+            { address: '/wt/release', label: 'Release', min: 0.01, max: 10, defaultValue: 0.5, step: 0.01, type: 'hslider' as const },
+            { address: '/wt/gain', label: 'Gain', min: 0, max: 1, defaultValue: 0.5, step: 0.01, type: 'hslider' as const },
+        ],
+        true
     );
 
     // Supersaw Unison Synth — 7 detuned sawtooth oscillators summed and normalised.
@@ -138,23 +155,35 @@ export function registerProSynthInstruments(): void {
                 type: 'hslider',
             },
         ]
-    );
+    , true);
 
-    // Physical Modeling (Karplus-Strong string)
+    // Physical Modeling — Karplus-Strong string with excitation, damping, body controls
     registerFaustDSP(
         'Physical Model String',
         `
         import("stdfaust.lib");
         freq = hslider("freq", 440, 20, 12000, 0.01);
+        gain = hslider("gain", 0.5, 0, 1, 0.01);
         gate = button("gate");
-        // Karplus-Strong string model
-        process = pm.ks(freq, gate) <: _, _;
+        damping = hslider("damping", 0.5, 0, 1, 0.01);
+        excitation = hslider("excitation", 0.8, 0, 1, 0.01);
+        body = hslider("body", 0.5, 0, 1, 0.01);
+        // Excitation burst: filtered noise
+        burst_len = 0.003;
+        burst = no.noise * excitation * en.ar(0.0001, burst_len, gate);
+        // Karplus-Strong: delay line with damped feedback
+        delay_samples = ma.SR / freq;
+        damp_coeff = 0.99 - damping * 0.15;
+        ks_loop = + ~ (de.fdelay(4096, delay_samples - 1) : fi.lowpass(1, freq * (2 + body * 8)) : *(damp_coeff));
+        process = burst : ks_loop * gain <: _, _;
     `,
-        makeSynthParams([
-            { address: '/pm/damping', label: 'Damping', min: 0, max: 1, defaultValue: 0.5, step: 0.01 },
-            { address: '/pm/excitation', label: 'Excitation', min: 0, max: 1, defaultValue: 0.8, step: 0.01 },
-            { address: '/pm/body', label: 'Body', min: 0, max: 1, defaultValue: 0.5, step: 0.01 },
-        ])
+        [
+            { address: '/pm/damping', label: 'Damping', min: 0, max: 1, defaultValue: 0.5, step: 0.01, type: 'hslider' as const },
+            { address: '/pm/excitation', label: 'Excitation', min: 0, max: 1, defaultValue: 0.8, step: 0.01, type: 'hslider' as const },
+            { address: '/pm/body', label: 'Body', min: 0, max: 1, defaultValue: 0.5, step: 0.01, type: 'hslider' as const },
+            { address: '/pm/gain', label: 'Gain', min: 0, max: 1, defaultValue: 0.5, step: 0.01, type: 'hslider' as const },
+        ],
+        true
     );
 
     // Additive Synth
@@ -182,7 +211,8 @@ export function registerProSynthInstruments(): void {
                 step: 0.01,
             },
             { address: '/additive/spread', label: 'Spread', min: 0, max: 1, defaultValue: 0, step: 0.01 },
-        ])
+        ]),
+        true
     );
 }
 

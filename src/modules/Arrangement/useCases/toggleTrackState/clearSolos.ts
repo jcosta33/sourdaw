@@ -1,4 +1,4 @@
-import { mapAllTracks } from '#/modules/Arrangement/repositories/trackRepository';
+import { mapAllTracks } from '#/modules/Arrangement/repositories/track';
 import { applySoloLogic } from '#/modules/Arrangement/services/applySoloLogic';
 
 export function clearSolos(): void {

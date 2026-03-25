@@ -2,7 +2,7 @@ import { type ReactElement } from 'react';
 import { Card } from '#/components/ui/card';
 import { Button } from '#/components/ui/button';
 import { Plus } from 'lucide-react';
-import { assignToVca, removeFromVca, getVcaGroups, createVcaGroup } from '#/modules/Arrangement/useCases/vcaUseCases';
+import { assignToVca, removeFromVca, getVcaGroups, createVcaGroup } from '#/modules/Arrangement/useCases/vca';
 import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
 
 type TrackVcaSectionProps = {

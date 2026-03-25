@@ -2919,6 +2919,10 @@ FACTORY_PRESETS.push(...NATIVE_DSP_PRESETS);
 // Merge converted Faust presets into FACTORY_PRESETS at module load
 FACTORY_PRESETS.push(...FAUST_REPLACEMENT_PRESETS);
 
+// Merge real Faust instrument presets (Hammond B3, Rhodes, Minimoog, FM, Acid, etc.)
+import { FAUST_INSTRUMENT_PRESETS } from './faustInstrumentPresets';
+FACTORY_PRESETS.push(...FAUST_INSTRUMENT_PRESETS);
+
 // Merge expanded presets (effects chains + synth instruments)
 import { EXPANDED_FX_PRESETS, EXPANDED_SYNTH_PRESETS } from './expandedPresets';
 FACTORY_PRESETS.push(...EXPANDED_FX_PRESETS, ...EXPANDED_SYNTH_PRESETS);

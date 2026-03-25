@@ -1,10 +1,10 @@
 import { type ReactElement, type RefObject, useState } from 'react';
-import { VelocityLane } from '../automationLane/VelocityLane';
-import { ProbabilityLane } from '../automationLane/ProbabilityLane';
-import { PressureLane } from '../automationLane/PressureLane';
-import { SlideLane } from '../automationLane/SlideLane';
-import { CCLane } from '../automationLane/CCLane';
-import { PitchBendLane } from '../automationLane/PitchBendLane';
+import { VelocityLane } from '../AutomationLane/VelocityLane';
+import { ProbabilityLane } from '../AutomationLane/ProbabilityLane';
+import { PressureLane } from '../AutomationLane/PressureLane';
+import { SlideLane } from '../AutomationLane/SlideLane';
+import { CCLane } from '../AutomationLane/CCLane';
+import { PitchBendLane } from '../AutomationLane/PitchBendLane';
 
 type LaneMode =
     | { kind: 'velocity' }

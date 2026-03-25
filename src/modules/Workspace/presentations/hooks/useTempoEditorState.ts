@@ -1,0 +1,204 @@
+import { type RefObject, useState, useRef, useEffect, useSyncExternalStore } from 'react';
+import { useTransportState } from './useTransportState';
+import { setTempo } from '#/modules/Transport/useCases/setTempo';
+import { setTimeSignature } from '#/modules/Transport/useCases/setTimeSignature';
+import { tempoMapStore, type TempoMapStoreState } from '#/modules/Transport/stores/tempoMapStore';
+import { addTempoChange, removeTempoChange, updateTempoChange } from '#/modules/Transport/useCases/tempoMap';
+import { type TempoChange } from '#/modules/Transport/useCases/transportQueries';
+
+const defaultTempoMapState: TempoMapStoreState = { changes: [] };
+
+const useTempoMapState = (): TempoMapStoreState => {
+    return useSyncExternalStore(
+        (onChange) => tempoMapStore.subscribe(() => onChange()),
+        () => tempoMapStore.value ?? defaultTempoMapState,
+        () => tempoMapStore.value ?? defaultTempoMapState
+    );
+};
+
+export type TempoEditorState = {
+    transport: ReturnType<typeof useTransportState>;
+    tempoMap: TempoMapStoreState;
+
+    // Time signature editing
+    editingTimeSig: boolean;
+    numValue: string;
+    denValue: string;
+    setNumValue: (v: string) => void;
+    setDenValue: (v: string) => void;
+    startTimeSigEdit: () => void;
+    commitTimeSig: () => void;
+    cancelTimeSigEdit: () => void;
+
+    // Tempo map panel
+    mapOpen: boolean;
+    setMapOpen: (v: boolean) => void;
+    mapPanelRef: RefObject<HTMLDivElement | null>;
+
+    // Tempo change editing
+    newBeat: string;
+    setNewBeat: (v: string) => void;
+    newTempo: string;
+    setNewTempo: (v: string) => void;
+    newCurve: TempoChange['curve'];
+    setNewCurve: (v: TempoChange['curve']) => void;
+    editingChangeId: string | null;
+    editingChangeTempo: string;
+    setEditingChangeTempo: (v: string) => void;
+    handleAddTempoChange: () => void;
+    startEditChange: (change: TempoChange) => void;
+    commitEditChange: () => void;
+    cancelEditChange: () => void;
+    removeChange: (id: string) => void;
+
+    // Tap tempo
+    handleTapTempo: () => void;
+    setTempoValue: (bpm: number) => void;
+};
+
+/**
+ * Encapsulates all state and interaction logic for the TempoEditor view.
+ */
+export const useTempoEditorState = (): TempoEditorState => {
+    const transport = useTransportState();
+    const tempoMap = useTempoMapState();
+
+    const [editingTimeSig, setEditingTimeSig] = useState(false);
+    const [numValue, setNumValue] = useState('');
+    const [denValue, setDenValue] = useState('');
+    const tapTimesRef = useRef<number[]>([]);
+    const [mapOpen, setMapOpen] = useState(false);
+    const mapPanelRef = useRef<HTMLDivElement>(null);
+    const [newBeat, setNewBeat] = useState('0');
+    const [newTempo, setNewTempo] = useState('120');
+    const [newCurve, setNewCurve] = useState<TempoChange['curve']>('instant');
+    const [editingChangeId, setEditingChangeId] = useState<string | null>(null);
+    const [editingChangeTempo, setEditingChangeTempo] = useState('');
+
+    // Click-outside to close tempo map panel
+    useEffect(() => {
+        if (!mapOpen) {
+            return;
+        }
+        const handleClickOutside = (e: MouseEvent): void => {
+            if (mapPanelRef.current && !mapPanelRef.current.contains(e.target as Node)) {
+                setMapOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [mapOpen]);
+
+    const startTimeSigEdit = (): void => {
+        setNumValue(String(transport.timeSignatureNumerator));
+        setDenValue(String(transport.timeSignatureDenominator));
+        setEditingTimeSig(true);
+    };
+
+    const commitTimeSig = (): void => {
+        const num = parseInt(numValue, 10);
+        const den = parseInt(denValue, 10);
+        setTimeSignature(num, den);
+        setEditingTimeSig(false);
+    };
+
+    const cancelTimeSigEdit = (): void => {
+        setEditingTimeSig(false);
+    };
+
+    const handleAddTempoChange = (): void => {
+        const beat = parseFloat(newBeat);
+        const tempo = parseFloat(newTempo);
+        if (isNaN(beat) || beat < 0 || isNaN(tempo) || tempo < 20 || tempo > 999) {
+            return;
+        }
+        addTempoChange(beat, tempo, newCurve);
+        setNewBeat(String(beat + 4));
+    };
+
+    const startEditChange = (change: TempoChange): void => {
+        setEditingChangeId(change.id);
+        setEditingChangeTempo(String(change.tempo));
+    };
+
+    const commitEditChange = (): void => {
+        if (!editingChangeId) {
+            return;
+        }
+        const bpm = parseFloat(editingChangeTempo);
+        if (!isNaN(bpm) && bpm >= 20 && bpm <= 999) {
+            updateTempoChange(editingChangeId, bpm);
+        }
+        setEditingChangeId(null);
+    };
+
+    const cancelEditChange = (): void => {
+        setEditingChangeId(null);
+    };
+
+    const handleTapTempo = (): void => {
+        const now = performance.now();
+        const taps = tapTimesRef.current;
+        taps.push(now);
+
+        if (taps.length > 8) {
+            taps.shift();
+        }
+        if (taps.length < 2) {
+            return;
+        }
+
+        const recentTaps = taps.filter((t) => now - t < 4000);
+        tapTimesRef.current = recentTaps;
+
+        if (recentTaps.length < 2) {
+            return;
+        }
+
+        let totalInterval = 0;
+        for (let i = 1; i < recentTaps.length; i++) {
+            totalInterval += recentTaps[i]! - recentTaps[i - 1]!;
+        }
+        const avgInterval = totalInterval / (recentTaps.length - 1);
+        if (avgInterval <= 0) {
+            return;
+        }
+        const bpm = Math.round((60000 / avgInterval) * 100) / 100;
+
+        if (bpm >= 20 && bpm <= 300) {
+            setTempo(bpm);
+        }
+    };
+
+    return {
+        transport,
+        tempoMap,
+        editingTimeSig,
+        numValue,
+        denValue,
+        setNumValue,
+        setDenValue,
+        startTimeSigEdit,
+        commitTimeSig,
+        cancelTimeSigEdit,
+        mapOpen,
+        setMapOpen,
+        mapPanelRef,
+        newBeat,
+        setNewBeat,
+        newTempo,
+        setNewTempo,
+        newCurve,
+        setNewCurve,
+        editingChangeId,
+        editingChangeTempo,
+        setEditingChangeTempo,
+        handleAddTempoChange,
+        startEditChange,
+        commitEditChange,
+        cancelEditChange,
+        removeChange: removeTempoChange,
+        handleTapTempo,
+        setTempoValue: setTempo,
+    };
+};

@@ -2,7 +2,7 @@ import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
 import { type AppAction } from '../models/AppAction';
 import { getCollaborationStoreValue } from '#/modules/Collaboration/useCases/collaborationQueries';
-import { broadcastAction } from '#/modules/Collaboration/useCases/collaborationUseCases';
+import { broadcastAction } from '#/modules/Collaboration/useCases/collaboration';
 
 const logger = Container.getInstance().get(Logger);
 import { type ActionHandler } from '../models/ActionHandler';
@@ -32,7 +32,7 @@ import { versionControlHandlers } from '#/modules/Project/useCases/versionContro
 import { newFeatureHandlers } from '#/modules/Arrangement/useCases/newFeatureHandlers';
 import { batchFeatureHandlers } from '#/modules/Arrangement/useCases/batchFeatureHandlers';
 import { finalFeatureHandlers } from '#/modules/AudioEngine/useCases/finalFeatureHandlers';
-import { recordAction } from './macroUseCases';
+import { recordAction } from './macro';
 import {
     handleCreateTrackAlternative,
     handleSwitchTrackAlternative,
@@ -43,9 +43,9 @@ import {
     saveTrackAsTemplate,
     loadTrackTemplate,
     deleteTrackTemplate,
-} from '#/modules/Arrangement/useCases/trackTemplateUseCases';
-import { createVcaGroup, assignToVca, removeFromVca, setVcaGain } from '#/modules/Arrangement/useCases/vcaUseCases';
-import { setMidiOutput, clearMidiOutput } from '#/modules/MIDI/useCases/midiRoutingUseCases';
+} from '#/modules/Arrangement/useCases/trackTemplate';
+import { createVcaGroup, assignToVca, removeFromVca, setVcaGain } from '#/modules/Arrangement/useCases/vca';
+import { setMidiOutput, clearMidiOutput } from '#/modules/MIDI/useCases/midiRouting';
 
 const trackAlternativeHandlers: Record<string, ActionHandler<any>> = {
     createTrackAlternative: {

@@ -18,7 +18,7 @@ import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { zoomTimeline } from '#/modules/Arrangement/stores/timelineViewStore';
 import { getAllClipIds, getLastClipEndBeat, goToNextMarker, goToPreviousMarker } from '../../useCases/selectionHelpers';
-import { cycleAutomationVisibility } from '#/modules/Workspace/useCases/togglePanel';
+import { cycleAutomationVisibility, toggleCommandPalette, selectAllClips, clearClipSelection, toggleWorkspaceMode } from '#/modules/Workspace/useCases/togglePanel';
 import { type EditingTool, TOOL_SHORTCUTS } from '#/modules/Workspace/useCases/workspaceQueries';
 
 const ZOOM_STEP = 4;
@@ -31,13 +31,8 @@ const NUMBER_TOOL_MAP: Record<string, EditingTool> = {
     '5': 'stretch',
 };
 
-const toggleWorkspaceMode = (): void => {
-    const ws = workspaceStore.value;
-    if (!ws) {
-        return;
-    }
-    const nextMode = ws.mode === 'arrange' ? 'clip' : 'arrange';
-    workspaceStore.set({ ...ws, mode: nextMode });
+const cycleWorkspaceMode = (): void => {
+    toggleWorkspaceMode();
 };
 
 export const useGlobalKeyboardShortcuts = (): void => {
@@ -49,10 +44,7 @@ export const useGlobalKeyboardShortcuts = (): void => {
 
             if (e.key === 'k' && mod) {
                 e.preventDefault();
-                const ws = workspaceStore.value;
-                if (ws) {
-                    workspaceStore.set({ ...ws, commandPaletteOpen: !ws.commandPaletteOpen });
-                }
+                toggleCommandPalette();
                 return;
             }
 
@@ -61,10 +53,7 @@ export const useGlobalKeyboardShortcuts = (): void => {
                     return;
                 }
                 e.preventDefault();
-                const ws = workspaceStore.value;
-                if (ws) {
-                    workspaceStore.set({ ...ws, selectedClipIds: getAllClipIds(), selectedClipId: null });
-                }
+                selectAllClips(getAllClipIds);
                 return;
             }
 
@@ -73,10 +62,7 @@ export const useGlobalKeyboardShortcuts = (): void => {
                     return;
                 }
                 e.preventDefault();
-                const ws = workspaceStore.value;
-                if (ws) {
-                    workspaceStore.set({ ...ws, selectedClipIds: [], selectedClipId: null });
-                }
+                clearClipSelection();
                 return;
             }
 
@@ -169,7 +155,7 @@ export const useGlobalKeyboardShortcuts = (): void => {
                 case 'Escape': {
                     const ws = workspaceStore.value;
                     if (ws && (ws.selectedClipIds.length > 0 || ws.selectedClipId)) {
-                        workspaceStore.set({ ...ws, selectedClipIds: [], selectedClipId: null });
+                        clearClipSelection();
                     } else {
                         stopPlayback();
                     }
@@ -220,7 +206,7 @@ export const useGlobalKeyboardShortcuts = (): void => {
                     break;
                 case 'Tab':
                     e.preventDefault();
-                    toggleWorkspaceMode();
+                    cycleWorkspaceMode();
                     break;
                 case 'a':
                     cycleAutomationVisibility();

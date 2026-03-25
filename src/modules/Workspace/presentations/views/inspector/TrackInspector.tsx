@@ -36,11 +36,11 @@ export const TrackInspector = ({
             <TrackAutomationSection track={track} />
             <SendsEditor track={track} />
             <TrackVcaSection track={track} />
-            {track.kind === 'midi' && <TrackMidiOutputSection track={track} allTracks={allTracks} />}
+            {track.kind === 'midi' ? <TrackMidiOutputSection track={track} allTracks={allTracks} /> : null}
             <TrackRoutingSection track={track} />
             <TrackClipsSection track={track} onSelectClip={onSelectClip} />
             <TakesSection trackId={track.id} />
-            {track.kind === 'master' && <MasterVisualizationsSection />}
+            {track.kind === 'master' ? <MasterVisualizationsSection /> : null}
             <SignalFlowSection />
         </div>
     );

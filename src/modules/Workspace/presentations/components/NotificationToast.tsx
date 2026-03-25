@@ -82,7 +82,7 @@ export const NotificationToast = (): ReactElement | null => {
                     <X className="size-3" />
                 </Button>
             </div>
-            {items.length > 1 && <p className="mt-1 text-[10px] text-muted-foreground">+{items.length - 1} more</p>}
+            {items.length > 1 ? <p className="mt-1 text-[10px] text-muted-foreground">+{items.length - 1} more</p> : null}
         </div>
     );
 };

@@ -92,12 +92,12 @@ export const MixHealthDialog = ({ open, onOpenChange }: MixHealthDialogProps): R
                         </div>
                     ) : null}
 
-                    {isAnalyzing && (
+                    {isAnalyzing ? (
                         <div className="flex items-center gap-2 text-muted-foreground pt-4">
                             <Loader2 className="size-4 animate-spin" />
                             <span>Mentor is thinking...</span>
                         </div>
-                    )}
+                    ) : null}
                 </div>
 
                 <div className="flex justify-between items-center pt-2 border-t border-border/50">

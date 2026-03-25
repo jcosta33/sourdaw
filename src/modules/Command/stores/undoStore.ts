@@ -63,7 +63,7 @@ export function pushUndo(entry: UndoEntry): void {
     });
 
     // Mirror into branching undo tree when enabled
-    void import('../useCases/undoTreeUseCases').then(({ recordToTree }) => {
+    void import('../useCases/undoTree').then(({ recordToTree }) => {
         recordToTree(entry);
     });
 }

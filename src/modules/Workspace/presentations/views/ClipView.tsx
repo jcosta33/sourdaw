@@ -2,6 +2,7 @@ import { type ReactElement, useState, useRef, useSyncExternalStore } from 'react
 import { useTracks } from '../hooks/useTracks';
 import { Button } from '#/components/ui/button';
 import { setWorkspaceMode } from '../../useCases/setWorkspaceMode';
+import { selectClip } from '../../useCases/togglePanel';
 import { workspaceStore } from '../../stores/workspaceStore';
 
 import { PianoRoll } from './ClipView/PianoRoll';
@@ -38,11 +39,8 @@ export const ClipView = (): ReactElement => {
     const selectedClip =
         selectedTrack.clips.find((c) => c.id === wsState?.selectedClipId) ?? selectedTrack.clips[0] ?? null;
 
-    const selectClip = (clipId: string) => {
-        if (!wsState) {
-            return;
-        }
-        workspaceStore.set({ ...wsState, selectedClipId: clipId });
+    const handleSelectClip = (clipId: string): void => {
+        selectClip(clipId);
     };
 
     const contentWidth = pianoRollContentWidth;
@@ -58,8 +56,8 @@ export const ClipView = (): ReactElement => {
         <div className="flex h-full flex-col">
             <div className="flex items-center gap-2 border-b border-border/50 px-3 py-1.5">
                 <span className="text-xs font-medium text-foreground">{selectedTrack.name}</span>
-                {selectedClip && <span className="text-xs text-muted-foreground">— {selectedClip.name}</span>}
-                {selectedTrack.clips.length > 1 && (
+                {selectedClip ? <span className="text-xs text-muted-foreground">— {selectedClip.name}</span> : null}
+                {selectedTrack.clips.length > 1 ? (
                     <div className="flex items-center gap-1 ml-2">
                         {selectedTrack.clips.map((clip) => (
                             <Button
@@ -67,13 +65,13 @@ export const ClipView = (): ReactElement => {
                                 variant={clip.id === selectedClip?.id ? 'secondary' : 'ghost'}
                                 size="icon-xs"
                                 className="h-5 w-auto px-1.5 text-[9px]"
-                                onClick={() => selectClip(clip.id)}
+                                onClick={() => handleSelectClip(clip.id)}
                             >
                                 {clip.name}
                             </Button>
                         ))}
                     </div>
-                )}
+                ) : null}
                 <div className="flex-1" />
                 <Button variant="ghost" size="xs" onClick={() => setWorkspaceMode('arrange')}>
                     Back

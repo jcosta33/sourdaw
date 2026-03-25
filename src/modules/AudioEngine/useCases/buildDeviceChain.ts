@@ -48,13 +48,17 @@ export async function buildDeviceChain(
         return [];
     }
 
+    // AudioWorklet-based devices (Faust, Native DSP) hang on OfflineAudioContext
+    // because addModule() never resolves. Skip them for offline renders — only
+    // built-in Web Audio nodes work reliably in the offline path.
+    const isOffline = ctx instanceof OfflineAudioContext;
+
     const entries: DeviceNodeEntry[] = [];
     let prev: AudioNode = inputNode;
 
     for (const device of activeDevices) {
         // Skip devices not supported on the current platform (e.g. native-only on web)
         if (!isDeviceSupportedOnCurrentPlatform(device.type)) {
-            console.info(`[buildDeviceChain] Skipping ${device.type} — not supported on this platform`);
             continue;
         }
 
@@ -62,6 +66,9 @@ export async function buildDeviceChain(
         let nativeDspControls: DeviceNodeEntry['nativeDsp'] = undefined;
 
         if (isNativeDspDevice(device.type)) {
+            if (isOffline) {
+                continue;
+            }
             // Native Rust/WASM DSP device
             const pluginType = NATIVE_DSP_DEVICE_TYPES[device.type];
             if (pluginType) {
@@ -86,10 +93,13 @@ export async function buildDeviceChain(
                 }
             }
         } else if (isFaustModule(device.type)) {
+            if (isOffline) {
+                continue;
+            }
             // Faust DSP device — compile and instantiate
             dn = await createFaustDevice(ctx, device.type);
         } else {
-            // Built-in Web Audio device
+            // Built-in Web Audio device — works in both real-time and offline contexts
             const factory = DEVICE_FACTORIES[device.type];
             if (factory) {
                 dn = factory(ctx);

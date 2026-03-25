@@ -10,8 +10,8 @@ import { arrangementStore, defaultArrangementId } from '../../stores/arrangement
 import { defaultTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { projectStore } from '../../stores/projectStore';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { setSidechainRoutes } from '#/modules/Routing/useCases/sidechainUseCases';
-import { removeProjectJson } from '../../repositories/projectRepository';
+import { setSidechainRoutes } from '#/modules/Routing/useCases/sidechain';
+import { removeProjectJson } from '../../repositories/project';
 import { addTrack as addTrackUseCase } from '#/modules/Arrangement/useCases/addTrack';
 import { clearUndoHistory } from './helpers';
 

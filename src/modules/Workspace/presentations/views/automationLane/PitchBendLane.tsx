@@ -2,9 +2,9 @@ import { type ReactElement, type MouseEvent, useState, useRef, useSyncExternalSt
 import { cn } from '#/helpers/Styles/cn';
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
-import { addPitchBend, removePitchBend, movePitchBend } from '#/modules/MIDI/useCases/midiEventUseCases';
+import { addPitchBend, removePitchBend, movePitchBend } from '#/modules/MIDI/useCases/midiEvent';
 import { type MidiPitchBend } from '#/modules/Arrangement/useCases/trackQueries';
-import { PITCH_BEND_CENTER } from './laneConstants';
+import { PITCH_BEND_CENTER } from '../../helpers/laneConstants';
 
 type PitchBendLaneProps = {
     clipId: string | null;
@@ -153,7 +153,7 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
                     strokeWidth="1"
                     strokeDasharray="4 3"
                 />
-                {points.length > 1 && (
+                {points.length > 1 ? (
                     <polyline
                         fill="none"
                         stroke="rgba(80, 180, 220, 0.5)"
@@ -165,7 +165,7 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
                             })
                             .join(' ')}
                     />
-                )}
+                ) : null}
             </svg>
 
             {points.map((point: MidiPitchBend) => {
@@ -192,13 +192,13 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
                 );
             })}
 
-            {points.length === 0 && (
+            {points.length === 0 ? (
                 <div className="flex h-full items-center justify-center pointer-events-none">
                     <p className="text-[10px] text-muted-foreground">
                         Click to add pitch bend points (center = no bend)
                     </p>
                 </div>
-            )}
+            ) : null}
         </div>
     );
 };

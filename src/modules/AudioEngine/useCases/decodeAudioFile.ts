@@ -3,7 +3,7 @@ import { audioBufferCache } from '../stores/audioBufferCache';
 import {
     decodeAudioFile as nativeDecodeAudioFile,
     samplesToAudioBuffer,
-} from '../repositories/audioDecodingRepository';
+} from '../repositories/audioDecoding';
 import { isTauri } from '#/helpers/tauriBridge';
 
 /**

@@ -3,7 +3,7 @@ import { Card } from '#/components/ui/card';
 import { Button } from '#/components/ui/button';
 import { Check, X, Sparkles } from 'lucide-react';
 import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
-import { acceptGhostClip, dismissGhostClip } from '#/modules/Arrangement/useCases/clipUseCases';
+import { acceptGhostClip, dismissGhostClip } from '#/modules/Arrangement/useCases/clip';
 
 type TrackClipsSectionProps = {
     track: Track;
@@ -29,13 +29,13 @@ export const TrackClipsSection = ({ track, onSelectClip }: TrackClipsSectionProp
                             }}
                         >
                             <div className="flex items-center gap-1.5">
-                                {clip.isGhost && <Sparkles className="size-3 text-[var(--color-accent-lavender)] shrink-0" />}
+                                {clip.isGhost ? <Sparkles className="size-3 text-[var(--color-accent-lavender)] shrink-0" /> : null}
                                 <span className="text-xs text-foreground font-medium truncate">{clip.name}</span>
                             </div>
                             <span className="text-[10px] text-muted-foreground">
                                 bar {Math.floor(clip.startBeat / 4) + 1}–{Math.floor(clip.endBeat / 4) + 1}
                             </span>
-                            {clip.isGhost && (
+                            {clip.isGhost ? (
                                 <div className="flex items-center gap-1 mt-1.5 pt-1.5 border-t border-border/30">
                                     <Button
                                         variant="secondary"
@@ -60,7 +60,7 @@ export const TrackClipsSection = ({ track, onSelectClip }: TrackClipsSectionProp
                                         <X className="size-3 mr-1" /> Dismiss
                                     </Button>
                                 </div>
-                            )}
+                            ) : null}
                         </Card>
                     ))}
                 </div>

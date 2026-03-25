@@ -1,4 +1,4 @@
-import { getTransportState, updateTransportState } from '#/modules/Transport/repositories/transportRepository';
+import { getTransportState, updateTransportState } from '#/modules/Transport/repositories/transport';
 
 export function togglePunchEnabled(): void {
     const state = getTransportState();

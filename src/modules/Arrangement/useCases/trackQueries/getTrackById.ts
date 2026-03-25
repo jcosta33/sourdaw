@@ -1,4 +1,4 @@
-import { getTrackById as repoGetTrackById } from '#/modules/Arrangement/repositories/trackRepository';
+import { getTrackById as repoGetTrackById } from '#/modules/Arrangement/repositories/track';
 import { type Track } from '#/modules/Arrangement/models/Track';
 
 /** Find a single track by id. */

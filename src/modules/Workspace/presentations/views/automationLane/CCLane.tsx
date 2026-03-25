@@ -2,7 +2,7 @@ import { type ReactElement, type MouseEvent, useState, useRef, useSyncExternalSt
 import { cn } from '#/helpers/Styles/cn';
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
-import { addMidiCC, removeMidiCC, moveMidiCC } from '#/modules/MIDI/useCases/midiEventUseCases';
+import { addMidiCC, removeMidiCC, moveMidiCC } from '#/modules/MIDI/useCases/midiEvent';
 import { type MidiCC } from '#/modules/Arrangement/useCases/trackQueries';
 
 type CCLaneProps = {
@@ -139,7 +139,7 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
             role="group"
             aria-label={`CC ${controller} automation lane`}
         >
-            {points.length > 1 && (
+            {points.length > 1 ? (
                 <svg className="absolute inset-0 pointer-events-none" width="100%" height="100%">
                     <polyline
                         fill="none"
@@ -154,7 +154,7 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
                             .join(' ')}
                     />
                 </svg>
-            )}
+            ) : null}
 
             {points.map((point: MidiCC) => {
                 const el = containerRef.current;
@@ -181,11 +181,11 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
                 );
             })}
 
-            {points.length === 0 && (
+            {points.length === 0 ? (
                 <div className="flex h-full items-center justify-center pointer-events-none">
                     <p className="text-[10px] text-muted-foreground">Click to add CC points</p>
                 </div>
-            )}
+            ) : null}
         </div>
     );
 };

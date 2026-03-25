@@ -3,44 +3,19 @@ import { Slider } from '#/components/ui/slider';
 import { Separator } from '#/components/ui/separator';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
-import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import {
-    ChevronRight,
-    Sparkles,
-    Volume2,
-    VolumeX,
-    Loader2,
-    Music,
-    BarChart3,
-    Activity,
-    Plus,
-    RotateCcw,
-} from 'lucide-react';
-import {
-    getClipGainEnvelope,
-    toggleClipGainEnvelope,
-    addGainEnvelopePoint,
-    removeGainEnvelopePoint,
-    resetClipGainEnvelope,
-} from '#/modules/Arrangement/useCases/clipGainEnvelope';
-import { trimClipStart } from '#/modules/Arrangement/useCases/clipEditingUseCases/trimClipStart';
-import { trimClipEnd } from '#/modules/Arrangement/useCases/clipEditingUseCases/trimClipEnd';
-import { setClipFade } from '#/modules/Arrangement/useCases/clipEditingUseCases/setClipFade';
-import { setClipGain } from '#/modules/Arrangement/useCases/clipEditingUseCases/setClipGain';
-import { setClipColor } from '#/modules/Arrangement/useCases/clipEditingUseCases/setClipColor';
-import { renameClip } from '#/modules/Arrangement/useCases/clipEditingUseCases/renameClip';
-import { setClipFollowAction } from '#/modules/Arrangement/useCases/clipEditingUseCases/setClipFollowAction';
-import { polyphonicAudioToMidi } from '#/modules/AudioAnalysis/useCases/polyphonicAudioToMidi';
-import { detectDominantPitch } from '#/modules/AudioAnalysis/useCases/pitchDetection';
-import { summarizeFeatures } from '#/modules/AudioAnalysis/useCases/audioFeatures';
+import { ChevronRight } from 'lucide-react';
+import { trimClipStart } from '#/modules/Arrangement/useCases/clipEditing/trimClipStart';
+import { trimClipEnd } from '#/modules/Arrangement/useCases/clipEditing/trimClipEnd';
+import { setClipFade } from '#/modules/Arrangement/useCases/clipEditing/setClipFade';
+import { setClipGain } from '#/modules/Arrangement/useCases/clipEditing/setClipGain';
+import { setClipColor } from '#/modules/Arrangement/useCases/clipEditing/setClipColor';
+import { renameClip } from '#/modules/Arrangement/useCases/clipEditing/renameClip';
+import { setClipFollowAction } from '#/modules/Arrangement/useCases/clipEditing/setClipFollowAction';
 import { type Clip } from '#/modules/Arrangement/useCases/trackQueries';
-import { CLIP_COLOR_PRESETS } from './colorPresets';
-import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration/useCases/generativeAiActions';
-import { audioToMidi } from '#/modules/AudioAnalysis/useCases/audioToMidi';
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { generateMidiVariations } from '#/modules/AiGeneration/useCases/generateMidiVariations';
-import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { notifyAiChange } from '#/modules/AiRuntime/presentations/views/AiChangeToast';
+import { CLIP_COLOR_PRESETS } from '#/helpers/UI/colorPresets';
+import { ClipGainEnvelopeSection } from './ClipGainEnvelopeSection';
+import { ClipAudioAiSection } from './ClipAudioAiSection';
+import { ClipMidiAiSection } from './ClipMidiAiSection';
 
 type ClipInspectorProps = {
     clip: Clip;
@@ -54,41 +29,13 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
     const endBar = Math.floor(clip.endBeat / 4) + 1;
     const [editingName, setEditingName] = useState(false);
     const [nameValue, setNameValue] = useState(clip.name);
-    const [denoiseStrength, setDenoiseStrength] = useState(70);
-    const [isDenoising, setIsDenoising] = useState(false);
-    const [abMode, setAbMode] = useState<'original' | 'processed'>('original');
-    const [isAnalyzing, setIsAnalyzing] = useState(false);
-    const [isConvertingPoly, setIsConvertingPoly] = useState(false);
-    const [isGeneratingVariations, setIsGeneratingVariations] = useState(false);
-    const [analysisResult, setAnalysisResult] = useState<string | null>(null);
-    const [pitchResult, setPitchResult] = useState<string | null>(null);
-    const [envKey, setEnvKey] = useState(0);
-    void envKey; // used to force re-render when envelope mutates
 
-    const hasDenoised = clip.audioBufferId ? audioBufferCache.has(`${clip.audioBufferId}-denoised`) : false;
-
-    const commitClipName = () => {
+    const commitClipName = (): void => {
         const trimmed = nameValue.trim();
         if (trimmed && trimmed !== clip.name) {
             renameClip(clip.id, trimmed);
         }
         setEditingName(false);
-    };
-
-    const handleDenoise = async () => {
-        setIsDenoising(true);
-        try {
-            await handleAiDenoiseClip(clip.id, denoiseStrength / 100);
-            setAbMode('processed');
-            notifyAiChange('Denoise complete', [
-                `Applied ${denoiseStrength}% noise reduction`,
-                'Toggle A/B to compare original and processed',
-            ]);
-        } catch {
-            notifyUser('Denoise failed', 'error');
-        } finally {
-            setIsDenoising(false);
-        }
     };
 
     return (
@@ -269,92 +216,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
 
             <Separator />
 
-            <section>
-                <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                    <Activity className="size-3" aria-hidden="true" />
-                    Gain Envelope
-                </h3>
-                {(() => {
-                    const envelope = getClipGainEnvelope(clip.id);
-                    return (
-                        <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                                <span className="text-[10px] text-muted-foreground">
-                                    {envelope.enabled ? 'Enabled' : 'Disabled'} · {envelope.points.length} point
-                                    {envelope.points.length !== 1 ? 's' : ''}
-                                </span>
-                                <div className="flex items-center gap-1">
-                                    <Button
-                                        variant="ghost"
-                                        size="icon-xs"
-                                        onClick={() => {
-                                            toggleClipGainEnvelope(clip.id);
-                                            setEnvKey((k) => k + 1);
-                                        }}
-                                        aria-label={envelope.enabled ? 'Disable gain envelope' : 'Enable gain envelope'}
-                                        title={envelope.enabled ? 'Disable' : 'Enable'}
-                                    >
-                                        <Activity
-                                            className={`size-3 ${envelope.enabled ? 'text-[var(--color-state-success)]' : 'text-muted-foreground'}`}
-                                        />
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        size="icon-xs"
-                                        onClick={() => {
-                                            addGainEnvelopePoint(clip.id, duration / 2, 0);
-                                            setEnvKey((k) => k + 1);
-                                        }}
-                                        aria-label="Add breakpoint"
-                                        title="Add breakpoint at midpoint"
-                                    >
-                                        <Plus className="size-3" />
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        size="icon-xs"
-                                        onClick={() => {
-                                            resetClipGainEnvelope(clip.id);
-                                            setEnvKey((k) => k + 1);
-                                        }}
-                                        aria-label="Reset gain envelope"
-                                        title="Reset to flat 0 dB"
-                                    >
-                                        <RotateCcw className="size-3" />
-                                    </Button>
-                                </div>
-                            </div>
-                            {envelope.enabled && envelope.points.length > 0 && (
-                                <div className="rounded-md bg-surface-well border border-border-hairline shadow-[inset_0_1px_3px_rgba(0,0,0,0.4)] p-2 space-y-1">
-                                    {envelope.points.map((pt) => (
-                                        <div key={pt.id} className="flex items-center justify-between gap-2">
-                                            <span className="text-[9px] font-mono text-muted-foreground w-12 shrink-0">
-                                                @{pt.beatOffset.toFixed(1)}
-                                            </span>
-                                            <span className="text-[9px] font-mono text-foreground flex-1 text-right">
-                                                {pt.gainDb > 0 ? '+' : ''}
-                                                {pt.gainDb.toFixed(1)} dB
-                                            </span>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon-xs"
-                                                className="h-4 w-4"
-                                                onClick={() => {
-                                                    removeGainEnvelopePoint(clip.id, pt.id);
-                                                    setEnvKey((k) => k + 1);
-                                                }}
-                                                aria-label={`Remove breakpoint at beat ${pt.beatOffset}`}
-                                            >
-                                                <span className="text-[9px] text-muted-foreground">×</span>
-                                            </Button>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    );
-                })()}
-            </section>
+            <ClipGainEnvelopeSection clipId={clip.id} duration={duration} />
 
             <Separator />
 
@@ -429,285 +291,30 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                             </option>
                         </select>
                     </div>
-                    {clip.type === 'audio' && (
+                    {clip.type === 'audio' ? (
                         <div className="flex items-center justify-between">
                             <label className="text-[10px] text-muted-foreground">Audio Source</label>
                             <span className="text-[10px] font-mono text-foreground truncate max-w-24">
                                 {clip.audioBufferId ? `${clip.audioBufferId.slice(0, 16)}…` : 'none'}
                             </span>
                         </div>
-                    )}
+                    ) : null}
                 </div>
             </section>
 
-            {clip.type === 'audio' && (
+            {clip.type === 'audio' ? (
                 <>
                     <Separator />
-                    <section>
-                        <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                            <Sparkles className="size-3 text-[var(--color-accent-lavender)]" />
-                            AI Actions
-                        </h3>
-                        <div className="space-y-3">
-                            {/* Denoise with A/B */}
-                            <div className="bg-surface-raised/50 rounded-md p-2 space-y-2 border border-border/30">
-                                <div className="flex items-center justify-between">
-                                    <span className="text-[10px] font-medium text-foreground/90">Denoise</span>
-                                    {hasDenoised && (
-                                        <div className="flex items-center gap-0.5 bg-surface-base rounded-md p-0.5">
-                                            <Tooltip>
-                                                <TooltipTrigger asChild>
-                                                    <Button
-                                                        variant={abMode === 'original' ? 'secondary' : 'ghost'}
-                                                        size="icon-xs"
-                                                        className="h-5 w-7 text-[9px]"
-                                                        onClick={() => setAbMode('original')}
-                                                        aria-label="Listen to original audio"
-                                                    >
-                                                        <Volume2 className="size-3" />
-                                                    </Button>
-                                                </TooltipTrigger>
-                                                <TooltipContent>Original (A)</TooltipContent>
-                                            </Tooltip>
-                                            <Tooltip>
-                                                <TooltipTrigger asChild>
-                                                    <Button
-                                                        variant={abMode === 'processed' ? 'secondary' : 'ghost'}
-                                                        size="icon-xs"
-                                                        className="h-5 w-7 text-[9px]"
-                                                        onClick={() => setAbMode('processed')}
-                                                        aria-label="Listen to denoised audio"
-                                                    >
-                                                        <VolumeX className="size-3" />
-                                                    </Button>
-                                                </TooltipTrigger>
-                                                <TooltipContent>Denoised (B)</TooltipContent>
-                                            </Tooltip>
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="space-y-1">
-                                    <div className="flex items-center justify-between">
-                                        <label className="text-[10px] text-muted-foreground">Strength</label>
-                                        <span className="text-[10px] text-muted-foreground">{denoiseStrength}%</span>
-                                    </div>
-                                    <Slider
-                                        value={[denoiseStrength]}
-                                        onValueChange={([v]) => setDenoiseStrength(v!)}
-                                        min={10}
-                                        max={100}
-                                        step={5}
-                                        aria-label="Denoise strength"
-                                    />
-                                </div>
-                                <Button
-                                    variant="secondary"
-                                    size="xs"
-                                    className="w-full h-6 text-[10px] bg-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]/40 text-[var(--color-accent-lavender)]"
-                                    onClick={handleDenoise}
-                                    disabled={isDenoising}
-                                >
-                                    {isDenoising ? (
-                                        <>
-                                            <Loader2 className="size-3 mr-1 animate-spin" /> Denoising…
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Sparkles className="size-3 mr-1" /> Apply Denoise
-                                        </>
-                                    )}
-                                </Button>
-                            </div>
-
-                            {/* Quick AI actions */}
-                            <div className="flex gap-1">
-                                <Button
-                                    variant="ghost"
-                                    size="xs"
-                                    className="flex-1 h-6 text-[10px] text-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)]/20"
-                                    onClick={() => {
-                                        notifyUser('Separating stems… this may take a moment');
-                                        handleStemSeparationPreview(clip.id);
-                                    }}
-                                >
-                                    Separate Stems
-                                </Button>
-                                <Button
-                                    variant="ghost"
-                                    size="xs"
-                                    className="flex-1 h-6 text-[10px] text-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)]/20"
-                                    onClick={() => {
-                                        audioToMidi({ clipId: clip.id, trackId });
-                                        notifyAiChange('Audio converted to MIDI', [
-                                            'New MIDI clip created from detected onsets',
-                                        ]);
-                                    }}
-                                >
-                                    MIDI (Basic)
-                                </Button>
-                            </div>
-
-                            {/* Polyphonic Audio → MIDI */}
-                            <div className="bg-surface-raised/50 rounded-md p-2 space-y-1.5 border border-border/30">
-                                <div className="flex items-center gap-1.5">
-                                    <Music className="size-3 text-[var(--color-accent-lavender)]" aria-hidden="true" />
-                                    <span className="text-[10px] font-medium text-foreground/90">
-                                        Polyphonic MIDI (AI)
-                                    </span>
-                                </div>
-                                <p className="text-[9px] text-muted-foreground leading-relaxed">
-                                    Neural network detects chords, melodies, and pitch bends.
-                                </p>
-                                <Button
-                                    variant="secondary"
-                                    size="xs"
-                                    className="w-full h-6 text-[10px] bg-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]/40 text-[var(--color-accent-lavender)]"
-                                    onClick={async () => {
-                                        setIsConvertingPoly(true);
-                                        try {
-                                            const result = await polyphonicAudioToMidi({ clipId: clip.id, trackId });
-                                            if (result) {
-                                                notifyAiChange('Polyphonic MIDI conversion complete', [
-                                                    `Detected ${result.notes.length} polyphonic notes`,
-                                                    'New MIDI track and clip created',
-                                                ]);
-                                            } else {
-                                                notifyUser('No notes detected in audio', 'warning');
-                                            }
-                                        } catch (err) {
-                                            notifyUser(
-                                                err instanceof Error ? err.message : 'Polyphonic conversion failed',
-                                                'error'
-                                            );
-                                        } finally {
-                                            setIsConvertingPoly(false);
-                                        }
-                                    }}
-                                    disabled={isConvertingPoly}
-                                >
-                                    {isConvertingPoly ? (
-                                        <>
-                                            <Loader2 className="size-3 mr-1 animate-spin" /> Converting…
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Music className="size-3 mr-1" /> Audio → MIDI (Poly)
-                                        </>
-                                    )}
-                                </Button>
-                            </div>
-
-                            {/* Audio Analysis */}
-                            <div className="bg-surface-raised/50 rounded-md p-2 space-y-1.5 border border-border/30">
-                                <div className="flex items-center gap-1.5">
-                                    <BarChart3 className="size-3 text-[var(--color-accent-lavender)]" aria-hidden="true" />
-                                    <span className="text-[10px] font-medium text-foreground/90">Audio Analysis</span>
-                                </div>
-                                <Button
-                                    variant="secondary"
-                                    size="xs"
-                                    className="w-full h-6 text-[10px] bg-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]/40 text-[var(--color-accent-lavender)]"
-                                    onClick={() => {
-                                        setIsAnalyzing(true);
-                                        try {
-                                            const bufferId = clip.audioBufferId ?? clip.id;
-                                            const summary = summarizeFeatures(bufferId);
-                                            const pitch = detectDominantPitch(bufferId);
-                                            if (summary) {
-                                                setAnalysisResult(
-                                                    `RMS: ${summary.avgRms.toFixed(3)} | Brightness: ${summary.avgSpectralCentroid.toFixed(0)} Hz | Tonality: ${(1 - summary.avgSpectralFlatness).toFixed(2)}`
-                                                );
-                                            }
-                                            if (pitch) {
-                                                setPitchResult(
-                                                    `Dominant: ${pitch.noteName} (${pitch.frequency.toFixed(1)} Hz, ${(pitch.clarity * 100).toFixed(0)}% clarity)`
-                                                );
-                                            }
-                                        } finally {
-                                            setIsAnalyzing(false);
-                                        }
-                                    }}
-                                    disabled={isAnalyzing}
-                                >
-                                    {isAnalyzing ? (
-                                        <>
-                                            <Loader2 className="size-3 mr-1 animate-spin" /> Analyzing…
-                                        </>
-                                    ) : (
-                                        <>
-                                            <BarChart3 className="size-3 mr-1" /> Analyze Clip
-                                        </>
-                                    )}
-                                </Button>
-                                {analysisResult ? (
-                                    <p className="text-[9px] text-muted-foreground font-mono leading-relaxed">
-                                        {analysisResult}
-                                    </p>
-                                ) : null}
-                                {pitchResult ? (
-                                    <p className="text-[9px] text-[var(--color-state-success)]/80 font-mono">{pitchResult}</p>
-                                ) : null}
-                            </div>
-                        </div>
-                    </section>
+                    <ClipAudioAiSection clip={clip} trackId={trackId} />
                 </>
-            )}
+            ) : null}
 
-            {clip.type === 'midi' && (
+            {clip.type === 'midi' ? (
                 <>
                     <Separator />
-                    <section>
-                        <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                            <Sparkles className="size-3 text-[var(--color-accent-lavender)]" />
-                            AI Actions
-                        </h3>
-                        <div className="space-y-3">
-                            {/* AI Variations */}
-                            <div className="bg-surface-raised/50 rounded-md p-2 space-y-1.5 border border-border/30">
-                                <div className="flex items-center gap-1.5">
-                                    <Music className="size-3 text-[var(--color-accent-lavender)]" aria-hidden="true" />
-                                    <span className="text-[10px] font-medium text-foreground/90">AI Variations</span>
-                                </div>
-                                <p className="text-[9px] text-muted-foreground leading-relaxed">
-                                    Generate 3 musical variations (rhythm, passing notes, simplification).
-                                </p>
-                                <Button
-                                    variant="secondary"
-                                    size="xs"
-                                    className="w-full h-6 text-[10px] bg-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]/40 text-[var(--color-accent-lavender)]"
-                                    onClick={async () => {
-                                        setIsGeneratingVariations(true);
-                                        try {
-                                            await generateMidiVariations(clip.id);
-                                            notifyAiChange('MIDI variations generated', [
-                                                '3 unique musical variations created as alternative clips',
-                                            ]);
-                                        } catch (err) {
-                                            notifyUser(
-                                                err instanceof Error ? err.message : 'Variation generation failed',
-                                                'error'
-                                            );
-                                        } finally {
-                                            setIsGeneratingVariations(false);
-                                        }
-                                    }}
-                                    disabled={isGeneratingVariations}
-                                >
-                                    {isGeneratingVariations ? (
-                                        <>
-                                            <Loader2 className="size-3 mr-1 animate-spin" /> Generating…
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Sparkles className="size-3 mr-1" /> Generate
-                                        </>
-                                    )}
-                                </Button>
-                            </div>
-                        </div>
-                    </section>
+                    <ClipMidiAiSection clipId={clip.id} />
                 </>
-            )}
+            ) : null}
         </div>
     );
 };

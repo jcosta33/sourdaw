@@ -58,7 +58,7 @@ export const TrackAlternativesSection = ({ track }: TrackAlternativesSectionProp
                             <span className="truncate text-xs font-medium text-foreground">{alt.name}</span>
                             <div className="flex items-center gap-0.5 shrink-0">
                                 <span className="text-[10px] text-muted-foreground mr-1">{alt.clips.length}c</span>
-                                {track.alternatives.length > 1 && (
+                                {track.alternatives.length > 1 ? (
                                     <Button
                                         variant="ghost"
                                         size="icon-xs"
@@ -74,7 +74,7 @@ export const TrackAlternativesSection = ({ track }: TrackAlternativesSectionProp
                                     >
                                         <Trash2 className="size-3 text-muted-foreground" />
                                     </Button>
-                                )}
+                                ) : null}
                             </div>
                         </div>
                     </Card>

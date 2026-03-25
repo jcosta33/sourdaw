@@ -1,13 +1,13 @@
 import { type ActionHandler } from '#/modules/Command/useCases/commandQueries';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { searchSamples } from '#/modules/SoundLibrary/useCases/sampleDatabaseUseCases';
-import { runEditorScript, toggleScriptEditor } from '#/modules/Extension/useCases/extensionUseCases';
-import { createCompGroup } from '#/modules/Arrangement/useCases/groupCompingUseCases';
-import { togglePunchRecording } from '#/modules/Transport/useCases/punchRecordingUseCases';
-import { toggleRecord, triggerScene } from '#/modules/Transport/useCases/loopStationUseCases';
-import { nextItem, previousItem } from '#/modules/Transport/useCases/setlistUseCases';
-import { detectProjectTempo } from '#/modules/Transport/useCases/tempoMappingUseCases';
-import { createAdjustmentLayer, type AdjustmentEffectType } from '#/modules/Arrangement/useCases/adjustmentLayerUseCases';
+import { searchSamples } from '#/modules/SoundLibrary/useCases/sampleDatabase';
+import { runEditorScript, toggleScriptEditor } from '#/modules/Extension/useCases/extension';
+import { createCompGroup } from '#/modules/Arrangement/useCases/groupComping';
+import { togglePunchRecording } from '#/modules/Transport/useCases/punchRecording';
+import { toggleRecord, triggerScene } from '#/modules/Transport/useCases/loopStation';
+import { nextItem, previousItem } from '#/modules/Transport/useCases/setlist';
+import { detectProjectTempo } from '#/modules/Transport/useCases/tempoMapping';
+import { createAdjustmentLayer, type AdjustmentEffectType } from '#/modules/Arrangement/useCases/adjustmentLayer';
 
 export const batchFeatureHandlers: Record<string, ActionHandler<any>> = {
     searchSamples: {

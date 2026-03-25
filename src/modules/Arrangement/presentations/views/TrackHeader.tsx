@@ -5,16 +5,16 @@ import { Circle, ChevronRight, ChevronDown, Folder, Music, AudioLines, Radio, Mo
 import { cn } from '#/helpers/Styles/cn';
 import { type Track, type InputMonitoring } from '../../models/Track';
 import { muteTrack, soloTrack, soloTrackExclusive, selectTrack } from '../../useCases/toggleTrackState';
-import { armTrack } from '../../useCases/recordingUseCases';
-import { toggleFolderCollapse } from '../../useCases/folderUseCases';
+import { armTrack } from '../../useCases/recording';
+import { toggleFolderCollapse } from '../../useCases/folder';
 import { setInputMonitoring } from '../../useCases/setTrackGainPan';
 
 
 import { TrackContextMenu } from './TrackContextMenu';
 import { Tooltip, TooltipTrigger, TooltipContent } from '#/components/ui/tooltip';
-import { InlineTrackName } from './trackHeader/InlineTrackName';
-import { ResizeHandle } from './trackHeader/ResizeHandle';
-import { InputSelector } from './trackHeader/InputSelector';
+import { InlineTrackName } from './TrackHeader/InlineTrackName';
+import { ResizeHandle } from './TrackHeader/ResizeHandle';
+import { InputSelector } from './TrackHeader/InputSelector';
 
 const TRACK_KIND_ICON: Record<string, typeof Music> = {
     audio: AudioLines,

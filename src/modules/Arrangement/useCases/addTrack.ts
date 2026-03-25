@@ -1,5 +1,5 @@
 import { createTrack, type Track, type TrackKind } from '../models/Track';
-import { getTrackState, setTrackState } from '../repositories/trackRepository';
+import { getTrackState, setTrackState } from '../repositories/track';
 import { eventBus } from '#/app/bootstrap';
 import { TrackAddedEvent } from '../events/TrackAddedEvent';
 

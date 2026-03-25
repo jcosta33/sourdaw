@@ -11,10 +11,10 @@ import {
 import { saveProject, newProject } from '#/modules/Project/useCases/projectPersistence';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { addMarker } from '#/modules/Arrangement/useCases/markerUseCases';
+import { addMarker } from '#/modules/Arrangement/useCases/marker';
 import { duplicateTrack } from '#/modules/Arrangement/useCases/duplicateTrack';
 import { undo, redo } from '#/modules/Command/useCases/undoRedo';
-import { copySelectedClip, cutSelectedClip, pasteClip } from '#/modules/Arrangement/useCases/clipboardUseCases';
+import { copySelectedClip, cutSelectedClip, pasteClip } from '#/modules/Arrangement/useCases/clipboard';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { zoomTimeline } from '#/modules/Arrangement/stores/timelineViewStore';
 import {
@@ -28,7 +28,7 @@ import {
 import { seekPlayhead } from '#/modules/Transport/useCases/transportControls';
 import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
 import { removeTrack } from '#/modules/Arrangement/useCases/removeTrack';
-import { splitClip, renameClip } from '#/modules/Arrangement/useCases/clipEditingUseCases';
+import { splitClip, renameClip } from '#/modules/Arrangement/useCases/clipEditing';
 import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
 
@@ -782,7 +782,7 @@ export const commandRegistry: CommandEntry[] = [
         description: 'Import a .webdaw project file',
         category: 'Project',
         action: async () => {
-            const { pickFiles } = await import('#/modules/Project/useCases/fileDialogUseCases');
+            const { pickFiles } = await import('#/modules/Project/useCases/fileDialog');
             const files = await pickFiles({
                 filters: [{ name: 'WebDAW Project', extensions: ['webdaw'] }],
                 multiple: false,

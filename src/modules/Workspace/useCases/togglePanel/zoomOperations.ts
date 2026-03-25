@@ -1,4 +1,4 @@
-import { getWorkspaceState } from '../../repositories/workspaceRepository';
+import { getWorkspaceState } from '../../repositories/workspace';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 
 /**

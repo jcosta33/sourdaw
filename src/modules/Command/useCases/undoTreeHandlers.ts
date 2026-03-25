@@ -1,5 +1,5 @@
 import { type ActionHandler } from '../models/ActionHandler';
-import { toggleUndoTree, setNodeLabel } from '../useCases/undoTreeUseCases';
+import { toggleUndoTree, setNodeLabel } from '../useCases/undoTree';
 
 export const undoTreeHandlers: Record<string, ActionHandler<any>> = {
     toggleUndoTree: {

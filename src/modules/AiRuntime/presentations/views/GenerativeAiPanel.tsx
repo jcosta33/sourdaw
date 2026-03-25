@@ -3,7 +3,7 @@ import { X, Sparkles, Music, Mic2, RefreshCw, AudioWaveform, Play, Plus, Loader2
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { DisabledFeatureWrapper } from '#/components/ui/disabled-feature-wrapper';
-import { isTauri } from '#/modules/AudioEngine/useCases/nativeAiBridgeUseCases';
+import { isTauri } from '#/modules/AudioEngine/useCases/nativeAiBridge';
 import {
     subscribeGenerativeAi,
     getGenerativeAiSnapshot,
@@ -104,7 +104,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
             </div>
 
             {/* MIDI Sub-tabs */}
-            {activeTab === 'midi' && (
+            {activeTab === 'midi' ? (
                 <div className="flex px-3 pt-2 pb-1 gap-2 shrink-0">
                     <Button
                         variant={midiSubTab === 'patterns' ? 'secondary' : 'ghost'}
@@ -131,17 +131,17 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                         <Sparkles className="size-3" /> AI Generate
                     </Button>
                 </div>
-            )}
+            ) : null}
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto">
-                {activeTab === 'midi' && midiSubTab === 'patterns' && (
+                {activeTab === 'midi' && midiSubTab === 'patterns' ? (
                     <div className="p-3">
                         <PatternBrowser />
                     </div>
-                )}
+                ) : null}
 
-                {activeTab === 'stems' && (
+                {activeTab === 'stems' ? (
                     <div className="p-3 space-y-3">
                         <p className="text-[10px] text-muted-foreground leading-relaxed">
                             Drop an audio clip here or select one from the arrangement to separate it into 4 distinct
@@ -169,9 +169,9 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                             </Button>
                         </DisabledFeatureWrapper>
                     </div>
-                )}
+                ) : null}
 
-                {(activeTab === 'audio' || (activeTab === 'midi' && midiSubTab === 'ai')) && (
+                {(activeTab === 'audio' || (activeTab === 'midi' && midiSubTab === 'ai')) ? (
                     <div className="p-3 space-y-4">
                         <div className="space-y-3">
                             <div className="space-y-1.5">
@@ -192,7 +192,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                 <div className="space-y-2">
                                     <label className="text-[10px] font-semibold text-foreground/90 uppercase tracking-wider flex items-center justify-between">
                                         Genre
-                                        {genre && (
+                                        {genre ? (
                                             <Button
                                                 variant="link"
                                                 size="xs"
@@ -201,7 +201,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                             >
                                                 Clear
                                             </Button>
-                                        )}
+                                        ) : null}
                                     </label>
                                     <GenreGrid value={genre} onChange={setGenre} />
                                 </div>
@@ -209,7 +209,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                 <div className="space-y-2">
                                     <label className="text-[10px] font-semibold text-foreground/90 uppercase tracking-wider flex items-center justify-between">
                                         Mood
-                                        {mood && (
+                                        {mood ? (
                                             <Button
                                                 variant="link"
                                                 size="xs"
@@ -218,7 +218,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                             >
                                                 Clear
                                             </Button>
-                                        )}
+                                        ) : null}
                                     </label>
                                     <MoodGrid value={mood} onChange={setMood} />
                                 </div>
@@ -226,7 +226,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                 <div className="space-y-2">
                                     <label className="text-[10px] font-semibold text-foreground/90 uppercase tracking-wider flex items-center justify-between">
                                         Instrument Focus
-                                        {instrument && (
+                                        {instrument ? (
                                             <Button
                                                 variant="link"
                                                 size="xs"
@@ -235,13 +235,13 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                             >
                                                 Clear
                                             </Button>
-                                        )}
+                                        ) : null}
                                     </label>
                                     <InstrumentGrid value={instrument} onChange={setInstrument} />
                                 </div>
                             </div>
 
-                            {activeTab === 'audio' && (
+                            {activeTab === 'audio' ? (
                                 <>
                                     <div className="space-y-2">
                                         <div className="flex justify-between items-center">
@@ -279,9 +279,9 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                         </p>
                                     </div>
                                 </>
-                            )}
+                            ) : null}
 
-                            {activeTab === 'midi' && midiSubTab === 'ai' && (
+                            {activeTab === 'midi' && midiSubTab === 'ai' ? (
                                 <>
                                     <div className="space-y-2">
                                         <div className="flex justify-between items-center">
@@ -319,7 +319,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                         </p>
                                     </div>
                                 </>
-                            )}
+                            ) : null}
 
                             <Button
                                 className="w-full h-8 text-xs bg-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)] text-white flex justify-between items-center"
@@ -336,10 +336,10 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                             </Button>
                         </div>
                     </div>
-                )}
+                ) : null}
 
                 {/* Results Library */}
-                {state.tasks.length > 0 && (
+                {state.tasks.length > 0 ? (
                     <div className="p-2 border-t border-border/20">
                         <h3 className="text-[10px] font-semibold text-muted-foreground mb-2 px-1 uppercase tracking-wider">
                             Recent
@@ -350,7 +350,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                             ))}
                         </div>
                     </div>
-                )}
+                ) : null}
             </div>
         </div>
     );
@@ -384,18 +384,18 @@ const TaskResultCard = ({ task }: { task: AiTaskResult }): ReactElement => {
                 </div>
             </div>
 
-            {task.prompt && (
+            {task.prompt ? (
                 <div className="text-[10px] text-muted-foreground italic line-clamp-2">"{task.prompt}"</div>
-            )}
+            ) : null}
 
             <div className="mt-1">
-                {task.status === 'processing' && (
+                {task.status === 'processing' ? (
                     <div className="flex items-center gap-1.5 text-[10px] text-[var(--color-accent-lavender)]">
                         <Loader2 className="size-3 animate-spin" /> Processing...
                     </div>
-                )}
-                {task.status === 'error' && <div className="text-[10px] text-destructive">Error: {task.error}</div>}
-                {task.status === 'success' && (
+                ) : null}
+                {task.status === 'error' ? <div className="text-[10px] text-destructive">Error: {task.error}</div> : null}
+                {task.status === 'success' ? (
                     <div className="flex items-center justify-between mt-1 pt-1 border-t border-border/30">
                         <span className="text-[9px] text-muted-foreground/70">
                             {task.durationMs ? `${(task.durationMs / 1000).toFixed(1)}s` : 'Done'}
@@ -419,7 +419,7 @@ const TaskResultCard = ({ task }: { task: AiTaskResult }): ReactElement => {
                             </Button>
                         </div>
                     </div>
-                )}
+                ) : null}
             </div>
         </div>
     );

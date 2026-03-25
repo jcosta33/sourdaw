@@ -1,7 +1,7 @@
 import {
     denoiseAudio,
     isTauri,
-} from '#/modules/AudioEngine/useCases/nativeAiBridgeUseCases';
+} from '#/modules/AudioEngine/useCases/nativeAiBridge';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { addTask, updateTask } from './taskManagement';
 

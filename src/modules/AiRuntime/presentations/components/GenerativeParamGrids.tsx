@@ -48,14 +48,14 @@ const GridContainer = ({ options, value, onChange }: GridProps & { options: Opti
                         )}
                     >
                         {/* Glow effect for selected state */}
-                        {isSelected && (
+                        {isSelected ? (
                             <div
                                 className={cn(
                                     'absolute inset-0 opacity-20 bg-gradient-to-t pb-[10px]',
                                     `from-${opt.colorClass}-500 to-transparent`
                                 )}
                             />
-                        )}
+                        ) : null}
                         <opt.Icon
                             className={cn(
                                 'size-5 transition-colors duration-300 relative z-10',

@@ -46,7 +46,7 @@ export function isFaustCompilerReady(): boolean {
     return compilerReady;
 }
 
-export function registerFaustDSP(name: string, dspCode: string, params: FaustParamDescriptor[] = []): FaustModule {
+export function registerFaustDSP(name: string, dspCode: string, params: FaustParamDescriptor[] = [], isInstrument = false): FaustModule {
     const mod: FaustModule = {
         id: `faust-${name.toLowerCase().replaceAll(/\s+/g, '-')}`,
         name,
@@ -62,7 +62,7 @@ export function registerFaustDSP(name: string, dspCode: string, params: FaustPar
         name: `[Faust] ${name}`,
         vendor: 'Faust/WebDAW',
         version: '1.0',
-        category: 'effect',
+        category: isInstrument ? 'instrument' : 'effect',
         sdkVersion: '2.0',
         keywords: ['faust', 'dsp'],
     };

@@ -8,7 +8,7 @@ import {
     createArrangement,
     duplicateArrangement,
     renameArrangement,
-} from '../../useCases/arrangementUseCases';
+} from '../../useCases/arrangement';
 import { cn } from '#/helpers/Styles/cn';
 
 export const ArrangementSelector = (): ReactElement | null => {
@@ -105,7 +105,7 @@ export const ArrangementSelector = (): ReactElement | null => {
                 <TooltipContent>Arrangement View Snapshots</TooltipContent>
             </Tooltip>
 
-            {open && (
+            {open ? (
                 <div
                     className="absolute top-full left-0 mt-1 z-50 w-56 rounded-md border border-border bg-surface-overlay shadow-lg py-1 select-none"
                     role="menu"
@@ -136,7 +136,7 @@ export const ArrangementSelector = (): ReactElement | null => {
                                     }}
                                 >
                                     <div className="w-4 flex items-center justify-center shrink-0">
-                                        {isActive && !isEditing && <Check className="size-3" />}
+                                        {isActive && !isEditing ? <Check className="size-3" /> : null}
                                     </div>
 
                                     {isEditing ? (
@@ -211,7 +211,7 @@ export const ArrangementSelector = (): ReactElement | null => {
                         <span>Duplicate Current</span>
                     </button>
                 </div>
-            )}
+            ) : null}
         </div>
     );
 };

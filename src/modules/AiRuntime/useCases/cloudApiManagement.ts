@@ -6,10 +6,10 @@
  * and optionally persisted via the preferences store.
  */
 
-import { setCloudApiKey, clearCloudApiKey } from '../repositories/cloudLlmRepository';
+import { setCloudApiKey, clearCloudApiKey } from '../repositories/cloudLlm';
 
 // Re-export for UI consumers
-export { isCloudAvailable } from '../repositories/cloudLlmRepository';
+export { isCloudAvailable } from '../repositories/cloudLlm';
 
 /**
  * Configure the cloud AI backend with an API key.

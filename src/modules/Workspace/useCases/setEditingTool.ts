@@ -1,5 +1,5 @@
 import { type EditingTool } from '../models/EditingTool';
-import { getWorkspaceState, updateWorkspaceState } from '../repositories/workspaceRepository';
+import { getWorkspaceState, updateWorkspaceState } from '../repositories/workspace';
 
 export type { EditingTool };
 

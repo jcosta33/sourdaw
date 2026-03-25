@@ -3,7 +3,7 @@ import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { FolderOpen, Trash2, RefreshCw, Loader2, Plus, AlertCircle, CheckCircle2, Plug, Monitor } from 'lucide-react';
 import { pluginScanStore, defaultPluginScanState } from '../../stores/pluginScanStore';
-import { startPluginScan, addScanPath, removeScanPath } from '#/modules/Plugin/useCases/pluginScanUseCases';
+import { startPluginScan, addScanPath, removeScanPath } from '#/modules/Plugin/useCases/pluginScan';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/helpers/platformCapabilities';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 
@@ -66,7 +66,7 @@ export const PluginScanSettings = (): ReactElement | null => {
             </label>
 
             <div className="space-y-2">
-                {state.scanPaths.length > 0 && (
+                {state.scanPaths.length > 0 ? (
                     <div className="space-y-1">
                         {state.scanPaths.map((path) => (
                             <div key={path} className="flex items-center gap-1.5 group">
@@ -88,7 +88,7 @@ export const PluginScanSettings = (): ReactElement | null => {
                             </div>
                         ))}
                     </div>
-                )}
+                ) : null}
 
                 <div className="flex items-center gap-1">
                     <Input
@@ -141,7 +141,7 @@ export const PluginScanSettings = (): ReactElement | null => {
 
                 <div className="text-[10px] text-muted-foreground">Last scan: {lastScanLabel}</div>
 
-                {state.errors.length > 0 && (
+                {state.errors.length > 0 ? (
                     <div className="space-y-1 rounded-md border border-destructive/30 bg-destructive/5 p-2">
                         {state.errors.map((err, i) => (
                             <div key={i} className="flex items-start gap-1 text-[10px] text-destructive">
@@ -150,14 +150,14 @@ export const PluginScanSettings = (): ReactElement | null => {
                             </div>
                         ))}
                     </div>
-                )}
+                ) : null}
 
-                {state.scannedPlugins.length > 0 && state.errors.length === 0 && !state.isScanning && (
+                {state.scannedPlugins.length > 0 && state.errors.length === 0 && !state.isScanning ? (
                     <div className="flex items-center gap-1 text-[10px] text-[var(--color-state-success)]">
                         <CheckCircle2 className="size-3" aria-hidden="true" />
                         <span>All plugins scanned successfully</span>
                     </div>
-                )}
+                ) : null}
             </div>
         </section>
     );

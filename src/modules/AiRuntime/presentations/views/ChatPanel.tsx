@@ -74,11 +74,11 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                         <Bot className="size-3.5 text-[var(--color-accent-lavender)]" />
                         AI Chat
                     </span>
-                    {!isLlmAvailable() && (
+                    {!isLlmAvailable() ? (
                         <span className="text-[9px] text-destructive tracking-normal capitalize ml-2 bg-destructive/10 px-1.5 py-[2px] rounded-sm border border-destructive/20">
                             Local AI Not Available
                         </span>
-                    )}
+                    ) : null}
                 </div>
                 <div className="flex items-center gap-1">
                     <Button
@@ -147,9 +147,9 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                                     {msg.role === 'assistant' ? (
                                         <div className="prose prose-invert prose-xs max-w-none prose-p:my-1.5 prose-pre:my-2 prose-pre:bg-black/40 prose-pre:border prose-pre:border-white/5 prose-a:text-[var(--color-accent-lavender)] hover:prose-a:text-[var(--color-accent-lavender)] prose-ul:my-1.5 prose-ul:pl-4 prose-li:my-0.5 prose-strong:text-[var(--color-accent-lavender)] prose-code:text-[var(--color-accent-lavender)] prose-code:bg-[var(--color-accent-lavender)]/10 prose-code:px-1 prose-code:rounded-sm">
                                             <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
-                                            {msg.isStreaming && (
+                                            {msg.isStreaming ? (
                                                 <span className="inline-block w-1.5 h-3.5 bg-[var(--color-accent-lavender)] ml-1 translate-y-[2px] animate-pulse" />
-                                            )}
+                                            ) : null}
                                         </div>
                                     ) : (
                                         <span className="whitespace-pre-wrap break-words">{msg.content}</span>

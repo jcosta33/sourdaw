@@ -27,9 +27,9 @@ export function setMixAnalysisStoreValue(state: MixAnalysisState): void {
 
 // ─── Cross-module re-exports ───────────────────────────────────────────────────
 
-export { streamCloudChatCompletion } from '../repositories/cloudLlmRepository';
-export { readLevels, readFrequencyBalance } from '../repositories/mixAnalysisRepository';
+export { streamCloudChatCompletion } from '../repositories/cloudLlm';
+export { readLevels, readFrequencyBalance } from '../repositories/mixAnalysis';
 export { detectIssues, generateSuggestions } from '../transformers/mixAnalysisTransformers';
-export { generateWebLlmCompletion } from '../repositories/webLlmRepository';
+export { generateWebLlmCompletion } from '../repositories/webLlm';
 export { generateNativeCompletion, isLlamaServerRunning } from '../repositories/llamaServerEngine';
 export { isComplexPrompt } from '../transformers/promptParser/parsing';

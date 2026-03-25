@@ -3,7 +3,7 @@ import {
     createProjectVersion,
     restoreVersion,
     createVersionBranch,
-} from '#/modules/Project/useCases/versionControlUseCases';
+} from '#/modules/Project/useCases/versionControl';
 
 export const versionControlHandlers: Record<string, ActionHandler<any>> = {
     createProjectVersion: {

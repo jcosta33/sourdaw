@@ -6,6 +6,7 @@ import { playheadPositionRef } from '#/modules/Transport/stores/playheadPosition
 import { animationScheduler } from '#/helpers/DOM/AnimationScheduler';
 import { seekPlayhead } from '#/modules/Transport/useCases/transportControls';
 import { setLoopRegion } from '#/modules/Transport/useCases/transportControls';
+import { disableLooping } from '#/modules/Transport/useCases/setLooping';
 
 const HEIGHT = 22;
 
@@ -240,9 +241,7 @@ export const BeatRulerBar = (): React.ReactElement => {
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
             onDoubleClick={() => {
-                if (transportStore.value) {
-                    transportStore.set({ ...transportStore.value, isLooping: false });
-                }
+                disableLooping();
             }}
             title="Drag to set loop region · Shift+drag to extend · Click to move playhead"
         >

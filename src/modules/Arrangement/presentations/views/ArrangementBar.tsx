@@ -15,7 +15,7 @@ import {
     reorderSection,
     moveSection,
     resizeSection,
-} from '../../useCases/markerUseCases';
+} from '../../useCases/marker';
 import { type ArrangementSection } from '../../models/Marker';
 import { cn } from '#/helpers/Styles/cn';
 
@@ -367,13 +367,13 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                 );
             })}
 
-            {sections.length === 0 && (
+            {sections.length === 0 ? (
                 <div className="flex items-center justify-center h-full">
                     <span className="text-[9px] text-muted-foreground/40">Right-click to add arrangement sections</span>
                 </div>
-            )}
+            ) : null}
 
-            {contextMenu.kind !== 'none' && (
+            {contextMenu.kind !== 'none' ? (
                 <div
                     ref={menuRef}
                     className="fixed z-50 min-w-[140px] rounded-md border border-border bg-popover p-1 shadow-md"
@@ -447,7 +447,7 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                         </>
                     )}
                 </div>
-            )}
+            ) : null}
         </div>
     );
 };

@@ -1,0 +1,222 @@
+/**
+ * PianoRoll toolbar — snap, scale, fold, step input, ghost notes,
+ * chord mode, paint mode, lasso mode, and zoom controls.
+ */
+import { type ReactElement } from 'react';
+import { Button } from '#/components/ui/button';
+import { Slider } from '#/components/ui/slider';
+import { cn } from '#/helpers/Styles/cn';
+import { SCALES, SCALE_ROOT_LABELS } from '../../helpers/pianoRollConstants';
+import { CHORD_TYPE_KEYS, type ChordType } from '#/modules/MIDI/useCases/chordStamps';
+
+type PianoRollToolbarProps = {
+    gridSnap: number;
+    onGridSnapChange: (v: number) => void;
+    scaleRoot: number;
+    onScaleRootChange: (v: number) => void;
+    scaleType: string;
+    onScaleTypeChange: (v: string) => void;
+    isFolded: boolean;
+    onToggleFolded: () => void;
+    stepInput: boolean;
+    onToggleStepInput: () => void;
+    showGhostNotes: boolean;
+    onToggleGhostNotes: () => void;
+    chordMode: boolean;
+    onToggleChordMode: () => void;
+    chordType: ChordType;
+    onChordTypeChange: (v: ChordType) => void;
+    paintMode: boolean;
+    onTogglePaintMode: () => void;
+    lassoMode: boolean;
+    onToggleLassoMode: () => void;
+    zoom: number;
+    onZoomChange: (v: number) => void;
+};
+
+export const PianoRollToolbar = ({
+    gridSnap,
+    onGridSnapChange,
+    scaleRoot,
+    onScaleRootChange,
+    scaleType,
+    onScaleTypeChange,
+    isFolded,
+    onToggleFolded,
+    stepInput,
+    onToggleStepInput,
+    showGhostNotes,
+    onToggleGhostNotes,
+    chordMode,
+    onToggleChordMode,
+    chordType,
+    onChordTypeChange,
+    paintMode,
+    onTogglePaintMode,
+    lassoMode,
+    onToggleLassoMode,
+    zoom,
+    onZoomChange,
+}: PianoRollToolbarProps): ReactElement => (
+    <div className="flex items-center gap-2 px-2 py-1 border-b border-border/30 bg-surface-raised">
+        <span className="text-[10px] text-muted-foreground">Snap:</span>
+        {[1, 0.5, 0.25, 0.125].map((v) => (
+            <Button
+                key={v}
+                variant={gridSnap === v ? 'secondary' : 'ghost'}
+                size="icon-xs"
+                onClick={() => onGridSnapChange(v)}
+                className="text-[9px] w-6 h-5"
+            >
+                {v === 1 ? '1' : v === 0.5 ? '1/2' : v === 0.25 ? '1/4' : '1/8'}
+            </Button>
+        ))}
+
+        <div className="w-px h-4 bg-border/40 mx-1" />
+
+        <span className="text-[10px] text-muted-foreground">Scale:</span>
+        <select
+            value={scaleRoot}
+            onChange={(e) => onScaleRootChange(Number(e.target.value))}
+            className="h-5 rounded border border-border/50 bg-surface-overlay px-1 text-[9px] text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            aria-label="Scale root note"
+        >
+            {SCALE_ROOT_LABELS.map((label, i) => (
+                <option key={label} value={i}>
+                    {label}
+                </option>
+            ))}
+        </select>
+        <select
+            value={scaleType}
+            onChange={(e) => onScaleTypeChange(e.target.value)}
+            className="h-5 rounded border border-border/50 bg-surface-overlay px-1 text-[9px] text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            aria-label="Scale type"
+        >
+            {Object.keys(SCALES).map((key) => (
+                <option key={key} value={key}>
+                    {key}
+                </option>
+            ))}
+        </select>
+
+        <Button
+            variant={isFolded ? 'secondary' : 'ghost'}
+            size="xs"
+            onClick={onToggleFolded}
+            className={cn(
+                'text-[10px] px-2',
+                isFolded && 'text-[var(--color-accent-cyan)] border-[var(--color-accent-cyan)]/30'
+            )}
+            aria-pressed={isFolded}
+            aria-label="Toggle fold to scale"
+        >
+            Fold
+        </Button>
+
+        <div className="w-px h-4 bg-border/40 mx-1" />
+
+        <Button
+            variant={stepInput ? 'secondary' : 'ghost'}
+            size="xs"
+            onClick={onToggleStepInput}
+            className={cn(
+                'text-[10px] px-2',
+                stepInput && 'text-[var(--color-accent-lavender)] border-[var(--color-accent-lavender)]/30'
+            )}
+            aria-pressed={stepInput}
+            aria-label="Toggle step input mode"
+        >
+            Step
+        </Button>
+
+        <div className="w-px h-4 bg-border/40 mx-1" />
+
+        <Button
+            variant={showGhostNotes ? 'secondary' : 'ghost'}
+            size="xs"
+            onClick={onToggleGhostNotes}
+            className={cn(
+                'text-[10px] px-2',
+                showGhostNotes && 'text-[var(--color-accent-lavender)] border-[var(--color-accent-lavender)]/30'
+            )}
+            aria-pressed={showGhostNotes}
+            aria-label="Toggle ghost notes"
+        >
+            Ghost
+        </Button>
+
+        <Button
+            variant={chordMode ? 'secondary' : 'ghost'}
+            size="xs"
+            onClick={onToggleChordMode}
+            className={cn(
+                'text-[10px] px-2',
+                chordMode && 'text-[var(--color-accent-mint)] border-[var(--color-accent-mint)]/30'
+            )}
+            aria-pressed={chordMode}
+            aria-label="Toggle chord stamp mode"
+        >
+            Chord
+        </Button>
+
+        {chordMode ? (
+            <select
+                value={chordType}
+                onChange={(e) => onChordTypeChange(e.target.value as ChordType)}
+                className="h-5 rounded border border-border/50 bg-surface-overlay px-1 text-[9px] text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                aria-label="Chord type"
+            >
+                {CHORD_TYPE_KEYS.map((key) => (
+                    <option key={key} value={key}>
+                        {key}
+                    </option>
+                ))}
+            </select>
+        ) : null}
+
+        <Button
+            variant={paintMode ? 'secondary' : 'ghost'}
+            size="xs"
+            onClick={onTogglePaintMode}
+            className={cn(
+                'text-[10px] px-2',
+                paintMode && 'text-[var(--color-accent-peach)] border-[var(--color-accent-peach)]/30'
+            )}
+            aria-pressed={paintMode}
+            aria-label="Toggle paint mode"
+        >
+            Paint
+        </Button>
+
+        <Button
+            variant={lassoMode ? 'secondary' : 'ghost'}
+            size="xs"
+            onClick={onToggleLassoMode}
+            className={cn(
+                'text-[10px] px-2',
+                lassoMode && 'text-[var(--color-accent-lavender)] border-[var(--color-accent-lavender)]/30'
+            )}
+            aria-pressed={lassoMode}
+            aria-label="Toggle magic lasso selection"
+        >
+            Lasso
+        </Button>
+
+        <div className="flex-1" />
+        <span className="text-[10px] text-muted-foreground">Zoom:</span>
+        <Slider
+            value={[zoom * 100]}
+            onValueChange={([v]) => {
+                if (v !== undefined) {
+                    onZoomChange(v / 100);
+                }
+            }}
+            min={25}
+            max={400}
+            step={25}
+            className="w-20"
+            aria-label="Piano roll zoom"
+        />
+    </div>
+);

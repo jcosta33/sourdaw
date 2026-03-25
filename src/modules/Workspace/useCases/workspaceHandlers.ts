@@ -18,7 +18,7 @@ import {
     addSection,
     removeSection,
     renameSection,
-} from '#/modules/Arrangement/useCases/markerUseCases';
+} from '#/modules/Arrangement/useCases/marker';
 import {
     quantizeNotes,
     quantizeNoteLengths,
@@ -30,16 +30,16 @@ import {
     scaleAllVelocities,
     setAllVelocities,
     type VelocityCurve,
-} from '#/modules/MIDI/useCases/midiUseCases';
+} from '#/modules/MIDI/useCases/midi';
 import {
     addAutomationLane,
     addAutomationPoint,
     removeAutomationPoint,
-} from '#/modules/Automation/useCases/automationUseCases';
+} from '#/modules/Automation/useCases/automation';
 import { getAutomationStoreState } from '#/modules/Arrangement/useCases/trackQueries';
 import { saveProject, newProject, exportProjectFile } from '#/modules/Project/useCases/projectPersistence';
 import { exportMidiClip } from '#/modules/MIDI/useCases/exportMidiFile';
-import { pickFiles } from '#/modules/Project/useCases/fileDialogUseCases';
+import { pickFiles } from '#/modules/Project/useCases/fileDialog';
 import { importMidiFile } from '#/modules/MIDI/useCases/importMidiFile';
 import { importAudioFile } from '#/modules/Arrangement/useCases/importAudioFile';
 import { type EditingTool } from '#/modules/Workspace/models/EditingTool';

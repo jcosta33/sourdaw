@@ -2,7 +2,7 @@ import { type ReactElement } from 'react';
 import { Slider } from '#/components/ui/slider';
 import { LatchButton } from '#/components/daw/LatchButton';
 import { useTracks } from '../../hooks/useTracks';
-import { setSend, toggleSendPreFader } from '#/modules/Arrangement/useCases/deviceUseCases';
+import { setSend, toggleSendPreFader } from '#/modules/Arrangement/useCases/device';
 import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
 
 type SendsSectionProps = {

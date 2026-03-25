@@ -21,7 +21,7 @@ import {
     deleteMacro,
     renameMacro,
     type Macro,
-} from '#/modules/Command/useCases/macroUseCases';
+} from '#/modules/Command/useCases/macro';
 import { cn } from '#/helpers/Styles/cn';
 
 const defaultState: MacroStoreState = { macros: [], recording: false, currentRecording: [] };
@@ -92,7 +92,7 @@ export const MacrosPanel = (): ReactElement => {
             </div>
 
             {/* Recording name input (shown while recording) */}
-            {state.recording && (
+            {state.recording ? (
                 <div className="px-3 py-1.5 border-b border-[var(--color-state-danger)]/20 bg-[var(--color-state-danger)]/5">
                     <input
                         className="w-full bg-transparent text-[10px] text-foreground/80 outline-none placeholder:text-muted-foreground/30"
@@ -101,7 +101,7 @@ export const MacrosPanel = (): ReactElement => {
                         onChange={(e) => setNewMacroName(e.target.value)}
                     />
                 </div>
-            )}
+            ) : null}
 
             {/* Macro list */}
             <div className="flex-1 overflow-y-auto">
@@ -145,7 +145,7 @@ export const MacrosPanel = (): ReactElement => {
                                     </>
                                 )}
 
-                                {editingId !== macro.id && (
+                                {editingId !== macro.id ? (
                                     <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                                         <button
                                             type="button"
@@ -178,7 +178,7 @@ export const MacrosPanel = (): ReactElement => {
                                             <Trash2 className="size-2.5" />
                                         </button>
                                     </div>
-                                )}
+                                ) : null}
                             </div>
                         ))}
                     </div>

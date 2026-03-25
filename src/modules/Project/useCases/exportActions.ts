@@ -5,16 +5,22 @@
 import {
     renderOffline as _renderOffline,
     exportStems as _exportStems,
+    cancelExport as _cancelExport,
     downloadWav as _downloadWav,
     downloadMp3 as _downloadMp3,
     downloadFlac as _downloadFlac,
+    type OfflineRenderOptions,
 } from '#/modules/AudioEngine/useCases/offlineRender';
 
-export const renderOffline = (lengthBeats: number, sampleRate?: number): Promise<AudioBuffer> =>
-    _renderOffline(lengthBeats, sampleRate);
+export type { OfflineRenderOptions };
 
-export const exportStems = (lengthBeats: number, sampleRate?: number): Promise<Map<string, AudioBuffer>> =>
-    _exportStems(lengthBeats, sampleRate);
+export const renderOffline = (opts: OfflineRenderOptions): Promise<AudioBuffer> =>
+    _renderOffline(opts);
+
+export const exportStems = (opts: OfflineRenderOptions): Promise<Map<string, AudioBuffer>> =>
+    _exportStems(opts);
+
+export const cancelExport = (): void => _cancelExport();
 
 export const downloadWav = (
     buffer: AudioBuffer,

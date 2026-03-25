@@ -1,4 +1,4 @@
-import { getTransportState } from '#/modules/Transport/repositories/transportRepository';
+import { getTransportState } from '#/modules/Transport/repositories/transport';
 
 export function togglePlayback(): void {
     const state = getTransportState();

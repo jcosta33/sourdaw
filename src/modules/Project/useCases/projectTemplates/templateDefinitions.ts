@@ -1,5 +1,5 @@
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { addDevice } from '#/modules/Arrangement/useCases/deviceUseCases';
+import { addDevice } from '#/modules/Arrangement/useCases/device';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { newProject } from '../projectPersistence';
 import { demo1_TheCompleteMix, demo2_ElectronicBeat, demo3_AcousticSession, demo4_NativeShowcase } from '../demoProjects';

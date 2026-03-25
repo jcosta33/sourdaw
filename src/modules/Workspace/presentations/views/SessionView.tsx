@@ -127,9 +127,9 @@ export const SessionView = (): ReactElement => {
                                     >
                                         {clipId ? (
                                             <div className="flex items-center gap-1">
-                                                {isActive && (
+                                                {isActive ? (
                                                     <Play className="size-2.5 text-[var(--color-state-play)] fill-[var(--color-state-play)]" />
-                                                )}
+                                                ) : null}
                                                 <span
                                                     className={cn(
                                                         'text-[10px] rounded px-1 py-0.5',

@@ -19,10 +19,10 @@ import {
     type GenerationParams,
 } from '../../models/midiPatternLibrary';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { addClip } from '#/modules/Arrangement/useCases/clipUseCases';
+import { addClip } from '#/modules/Arrangement/useCases/clip';
 import { addMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
-import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
+import { selectClip } from '#/modules/Workspace/useCases/togglePanel';
 
 // ── Mini piano-roll preview ──
 
@@ -255,10 +255,7 @@ export const PatternBrowser = (): ReactElement => {
                 addMidiNote(clip.id, note.pitch, note.startBeat, note.durationBeats, note.velocity);
             }
             // Open the new clip in the clip editor
-            const ws = workspaceStore.value;
-            if (ws) {
-                workspaceStore.set({ ...ws, selectedClipId: clip.id });
-            }
+            selectClip(clip.id);
         }
     };
 

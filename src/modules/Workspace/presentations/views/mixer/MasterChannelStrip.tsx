@@ -1,10 +1,10 @@
 import { type ReactElement, useSyncExternalStore } from 'react';
 import { Fader } from '#/components/daw/Fader';
 import { cn } from '#/helpers/Styles/cn';
-import { setMasterGainValue } from '#/modules/AudioEngine/useCases/engineAccess';
+import { setMasterGain } from '#/modules/Transport/useCases/setMasterGain';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 
-import { LevelMeter } from '../../components/LevelMeter';
+import { LevelMeter } from '../metering/LevelMeter';
 
 type MasterChannelStripProps = {
     widthClass: string;
@@ -15,15 +15,6 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
         (cb) => transportStore.subscribe(cb),
         () => transportStore.value?.masterGain ?? 80
     );
-
-
-    const setMasterGain = (v: number) => {
-        const state = transportStore.value;
-        if (state) {
-            transportStore.set({ ...state, masterGain: v });
-        }
-        setMasterGainValue(v / 100);
-    };
 
     return (
         <div

@@ -22,7 +22,7 @@ import {
 import { type TemplateCategory } from '../../useCases/projectTemplates';
 import { newProject, saveProject, exportProjectFile, importProjectFile } from '../../useCases/projectPersistence';
 import { TemplateChooser } from './TemplateChooser';
-import { pickFiles } from '../../useCases/fileDialogUseCases';
+import { pickFiles } from '../../useCases/fileDialog';
 
 const formatRelativeTime = (timestamp: number): string => {
     const now = Date.now();
@@ -160,7 +160,7 @@ export const RecentProjectsMenu = (): ReactElement => {
                 <TooltipContent>Project menu</TooltipContent>
             </Tooltip>
 
-            {open && (
+            {open ? (
                 <div
                     className="absolute top-full left-0 mt-1 z-50 w-64 rounded-md border border-border bg-surface-overlay shadow-lg py-1"
                     role="menu"
@@ -250,13 +250,13 @@ export const RecentProjectsMenu = (): ReactElement => {
                     </button>
 
                     {/* ── Recent Projects ── */}
-                    {entries.length > 0 && <div className="mx-2 my-1 h-px bg-border" role="separator" />}
+                    {entries.length > 0 ? <div className="mx-2 my-1 h-px bg-border" role="separator" /> : null}
 
-                    {entries.length > 0 && (
+                    {entries.length > 0 ? (
                         <div className="px-3 py-1 text-[9px] font-semibold text-muted-foreground/60 uppercase tracking-wider">
                             Recent
                         </div>
-                    )}
+                    ) : null}
 
                     {entries.map((entry) => (
                         <div
@@ -293,7 +293,7 @@ export const RecentProjectsMenu = (): ReactElement => {
                         </div>
                     ))}
                 </div>
-            )}
+            ) : null}
 
             <TemplateChooser
                 open={templateChooserOpen}

@@ -9,13 +9,13 @@ import {
     addDevice,
     addExternalDevice,
     reorderDevices,
-} from '#/modules/Arrangement/useCases/deviceUseCases';
+} from '#/modules/Arrangement/useCases/device';
 import { pluginScanStore, defaultPluginScanState } from '#/modules/AudioEngine/stores/pluginScanStore';
 import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/helpers/platformCapabilities';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { cn } from '#/helpers/Styles/cn';
-import { openPluginGui } from '#/modules/Plugin/useCases/pluginLifecycleUseCases';
+import { openPluginGui } from '#/modules/Plugin/useCases/pluginLifecycle';
 
 type TrackDevicesSectionProps = {
     track: Track;
@@ -61,7 +61,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                     >
                         <Plus className="size-3" />
                     </Button>
-                    {showDeviceMenu && (
+                    {showDeviceMenu ? (
                         <div
                             className="absolute right-0 top-full z-50 mt-1 w-48 rounded-md border border-border-soft border-t-[var(--color-light-edge)] bg-surface-overlay py-1 shadow-[0_4px_16px_rgba(0,0,0,0.5)]"
                             role="menu"
@@ -173,7 +173,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                 </Tooltip>
                             )}
                         </div>
-                    )}
+                    ) : null}
                 </div>
             </div>
             {track.devices.length > 0 ? (
@@ -234,7 +234,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                         className={`size-3 ${device.bypassed ? 'text-muted-foreground' : 'text-[var(--color-state-success)]'}`}
                                     />
                                 </Button>
-                                {device.type === 'external-plugin' && device.externalInstanceId && (
+                                {device.type === 'external-plugin' && device.externalInstanceId ? (
                                     <Tooltip>
                                         <TooltipTrigger asChild>
                                             <Button
@@ -252,7 +252,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                         </TooltipTrigger>
                                         <TooltipContent side="top">Open plugin editor</TooltipContent>
                                     </Tooltip>
-                                )}
+                                ) : null}
                                 <Button
                                     variant="ghost"
                                     size="icon-xs"

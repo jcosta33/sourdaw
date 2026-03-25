@@ -21,7 +21,7 @@ import {
     captureArrangementToScratchPad,
     commitScratchPadToArrangement,
     type ScratchPadSection,
-} from '#/modules/Arrangement/useCases/scratchPadUseCases';
+} from '#/modules/Arrangement/useCases/scratchPad';
 import { cn } from '#/helpers/Styles/cn';
 
 const defaultState: ScratchPadStoreState = { sections: [] };
@@ -122,7 +122,7 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                 </button>
 
                 {/* Commit to arrangement */}
-                {sections.length > 0 && (
+                {sections.length > 0 ? (
                     <button
                         type="button"
                         className="h-5 px-1.5 rounded flex items-center gap-1 text-[9px] text-[var(--color-accent-peach)]/70 hover:text-[var(--color-accent-peach)] hover:bg-[var(--color-accent-peach)]/10 transition-colors"
@@ -132,10 +132,10 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                         <ArrowUpFromLine className="size-2.5" />
                         <span>Apply</span>
                     </button>
-                )}
+                ) : null}
 
                 {/* Clear */}
-                {sections.length > 0 && (
+                {sections.length > 0 ? (
                     <button
                         type="button"
                         className="size-5 rounded flex items-center justify-center text-muted-foreground/30 hover:text-destructive/70 hover:bg-destructive/5 transition-colors"
@@ -145,7 +145,7 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                     >
                         <Trash2 className="size-2.5" />
                     </button>
-                )}
+                ) : null}
 
                 {/* Collapse toggle */}
                 <button
@@ -169,7 +169,7 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
             </div>
 
             {/* ── Sections area ── */}
-            {!collapsed && (
+            {!collapsed ? (
                 <div className="flex-1 overflow-x-auto overflow-y-hidden px-2 py-1.5">
                     {sections.length === 0 ? (
                         <div className="flex items-center justify-center h-full">
@@ -232,10 +232,10 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                         </div>
                     )}
                 </div>
-            )}
+            ) : null}
 
             {/* ── Context menu ── */}
-            {contextMenu.kind === 'section' && (
+            {contextMenu.kind === 'section' ? (
                 <div
                     ref={menuRef}
                     className="fixed z-50 min-w-[140px] rounded-md border border-border bg-popover p-1 shadow-md"
@@ -302,7 +302,7 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                         Delete
                     </button>
                 </div>
-            )}
+            ) : null}
         </div>
     );
 };

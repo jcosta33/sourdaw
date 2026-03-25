@@ -3,7 +3,7 @@ import {
     captureArrangementToScratchPad,
     clearScratchPad,
     commitScratchPadToArrangement,
-} from '#/modules/Arrangement/useCases/scratchPadUseCases';
+} from '#/modules/Arrangement/useCases/scratchPad';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 
 export const scratchPadHandlers: Record<string, ActionHandler<any>> = {

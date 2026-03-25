@@ -16,7 +16,7 @@ import {
     Sparkles,
 } from 'lucide-react';
 import { type BUILTIN_PLUGINS } from '#/modules/Arrangement/useCases/trackQueries';
-import { addDevice } from '#/modules/Arrangement/useCases/deviceUseCases';
+import { addDevice } from '#/modules/Arrangement/useCases/device';
 import { PluginBrowser } from '#/modules/AudioEngine/presentations/views/PluginBrowser';
 import { MODULATOR_PRESETS } from '#/modules/Plugin/useCases/modulatorLibrary';
 import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases/midiEffectPlugins';
@@ -285,13 +285,13 @@ export const EffectsTab = ({
                     {total} result{total !== 1 ? 's' : ''} for &quot;{query}&quot;
                 </div>
 
-                {total === 0 && (
+                {total === 0 ? (
                     <div className="flex flex-col items-center justify-center py-10 opacity-60">
                         <span className="text-xs text-muted-foreground">No effects found.</span>
                     </div>
-                )}
+                ) : null}
 
-                {filteredEffects.length > 0 && (
+                {filteredEffects.length > 0 ? (
                     <>
                         <div className="flex items-center gap-1 px-1.5 py-0.5 mt-1">
                             <Waves className="size-3 text-muted-foreground" aria-hidden="true" />
@@ -305,9 +305,9 @@ export const EffectsTab = ({
                             ))}
                         </div>
                     </>
-                )}
+                ) : null}
 
-                {filteredModulators.length > 0 && (
+                {filteredModulators.length > 0 ? (
                     <>
                         <div className="flex items-center gap-1 px-1.5 py-0.5 mt-2">
                             <Sliders className="size-3 text-muted-foreground" aria-hidden="true" />
@@ -330,9 +330,9 @@ export const EffectsTab = ({
                             ))}
                         </div>
                     </>
-                )}
+                ) : null}
 
-                {filteredMidi.length > 0 && (
+                {filteredMidi.length > 0 ? (
                     <>
                         <div className="flex items-center gap-1 px-1.5 py-0.5 mt-2">
                             <Music2 className="size-3 text-muted-foreground" aria-hidden="true" />
@@ -353,7 +353,7 @@ export const EffectsTab = ({
                             ))}
                         </div>
                     </>
-                )}
+                ) : null}
 
                 <PluginBrowser selectedTrackId={selectedTrackId} searchQuery={searchQuery} />
             </div>
@@ -370,19 +370,19 @@ export const EffectsTab = ({
 
         return (
             <div className="flex flex-col gap-[2px] animate-in slide-in-from-right-4 duration-200">
-                {items.length === 0 && (
+                {items.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-10 opacity-60">
                         <span className="text-xs text-muted-foreground">No effects in this category.</span>
                     </div>
-                )}
+                ) : null}
                 {items.map((plugin) => (
                     <EffectItem key={plugin.id} plugin={plugin} selectedTrackId={selectedTrackId} />
                 ))}
-                {group && (
+                {group ? (
                     <p className="text-[9px] text-muted-foreground/40 px-2 pt-2">
                         Click or drag a plugin to add it to the selected track.
                     </p>
-                )}
+                ) : null}
             </div>
         );
     }
@@ -406,7 +406,7 @@ export const EffectsTab = ({
                     );
                 })}
 
-                {uncategorized.length > 0 && (
+                {uncategorized.length > 0 ? (
                     <NavCard
                         icon={Settings2}
                         label="Other"
@@ -415,7 +415,7 @@ export const EffectsTab = ({
                         color="bg-gray-500/20 text-gray-400"
                         onClick={() => pushRoute({ id: 'effects-audiofx-other', title: 'Other' })}
                     />
-                )}
+                ) : null}
 
                 <div className="pt-1 border-t border-border/20 mt-1">
                     <PluginBrowser selectedTrackId={selectedTrackId} searchQuery={searchQuery} />

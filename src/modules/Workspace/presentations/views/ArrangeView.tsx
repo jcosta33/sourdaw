@@ -8,19 +8,20 @@ import { timelineViewStore } from '#/modules/Arrangement/stores/timelineViewStor
 import { TrackListView } from '#/modules/Arrangement/presentations/views/TrackListView';
 import { useTracks } from '../hooks/useTracks';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { addClip } from '#/modules/Arrangement/useCases/clipUseCases';
+import { addClip } from '#/modules/Arrangement/useCases/clip';
 import { decodeAudioFile } from '#/modules/Arrangement/useCases/trackViewActions';
 import { importMidiFile } from '#/modules/MIDI/useCases/importMidiFile';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { markerStore } from '#/modules/Arrangement/stores/markerStore';
 import { useWorkspaceState } from '#/modules/Workspace/presentations/hooks/useWorkspaceState';
-import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
+import { setTrackListWidth } from '#/modules/Workspace/useCases/togglePanel';
+import { closeScratchPad } from '#/modules/Workspace/useCases/togglePanel';
 import { ResizeHandle } from '#/modules/Workspace/presentations/components/ResizeHandle';
 import { Button } from '#/components/ui/button';
 import { Music, Piano, Plus, Upload, LayoutTemplate } from 'lucide-react';
-import { ChordTrackLane } from './timeline/ChordTrackLane';
-import { ScratchPadView } from './timeline/ScratchPadView';
+import { ChordTrackLane } from './Timeline/ChordTrackLane';
+import { ScratchPadView } from './Timeline/ScratchPadView';
 import { chordTrackStore } from '#/modules/Arrangement/stores/chordTrackStore';
 import { TemplateChooser } from '#/modules/Project/presentations/views/TemplateChooser';
 
@@ -51,10 +52,7 @@ export const ArrangeView = (): ReactElement => {
     };
 
     const handleTrackListResizeEnd = (): void => {
-        const ws = workspaceStore.value;
-        if (ws) {
-            workspaceStore.set({ ...ws, trackListWidth: trackListWidthRef.current });
-        }
+        setTrackListWidth(trackListWidthRef.current);
     };
 
     const viewState = useSyncExternalStore(
@@ -82,7 +80,7 @@ export const ArrangeView = (): ReactElement => {
 
     return (
         <div className="flex h-full">
-            {trackListOpen && (
+            {trackListOpen ? (
                 <>
                     <TrackListView
                         style={{ width: localTrackListWidth }}
@@ -94,28 +92,23 @@ export const ArrangeView = (): ReactElement => {
                         onResizeEnd={handleTrackListResizeEnd}
                     />
                 </>
-            )}
+            ) : null}
             <div className="flex flex-1 flex-col overflow-hidden relative">
                 <ArrangementBar pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} />
-                {hasMarkers && <MarkerLane pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} />}
+                {hasMarkers ? <MarkerLane pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} /> : null}
                 <TimelineMinimap />
                 <BeatRulerBar />
-                {hasChords && <ChordTrackLane pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} />}
+                {hasChords ? <ChordTrackLane pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} /> : null}
                 <TimelineSurface />
-                {tracks.filter((t) => t.kind !== 'master' && t.kind !== 'folder').length === 0 && (
+                {tracks.filter((t) => t.kind !== 'master' && t.kind !== 'folder').length === 0 ? (
                     <EmptyArrangeOverlay />
-                )}
-                {scratchPadOpen && (
+                ) : null}
+                {scratchPadOpen ? (
                     <ScratchPadView
                         height={scratchPadHeight}
-                        onToggle={() => {
-                            const ws = workspaceStore.value;
-                            if (ws) {
-                                workspaceStore.set({ ...ws, scratchPadOpen: false });
-                            }
-                        }}
+                        onToggle={closeScratchPad}
                     />
-                )}
+                ) : null}
             </div>
         </div>
     );

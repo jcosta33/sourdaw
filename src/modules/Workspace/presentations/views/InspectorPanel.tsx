@@ -4,10 +4,10 @@ import { Button } from '#/components/ui/button';
 import { X } from 'lucide-react';
 import { useTracks } from '../hooks/useTracks';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { toggleInspector } from '../../useCases/togglePanel';
-import { TrackInspector } from './inspector/TrackInspector';
-import { ClipInspector } from './inspector/ClipInspector';
-import { DeviceInspector } from './inspector/DeviceInspector';
+import { toggleInspector, clearClipSelection, selectClipWithFocus } from '../../useCases/togglePanel';
+import { TrackInspector } from './Inspector/TrackInspector';
+import { ClipInspector } from './Inspector/ClipInspector';
+import { DeviceInspector } from './Inspector/DeviceInspector';
 
 type InspectorPanelProps = {
     style?: CSSProperties;
@@ -51,35 +51,20 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
                     <ClipInspector
                         clip={selectedClip}
                         trackId={selectedTrack.id}
-                        onBack={() => {
-                            const ws = workspaceStore.value;
-                            if (ws) {
-                                workspaceStore.set({ ...ws, selectedClipId: null, selectedClipIds: [] });
-                            }
-                        }}
+                        onBack={clearClipSelection}
                     />
                 ) : selectedTrack ? (
                     <TrackInspector
                         track={selectedTrack}
                         allTracks={tracks}
-                        onSelectClip={(id) => {
-                            const ws = workspaceStore.value;
-                            if (ws) {
-                                workspaceStore.set({ ...ws, selectedClipId: id, selectedClipIds: [id] });
-                            }
-                        }}
+                        onSelectClip={selectClipWithFocus}
                         onSelectDevice={setSelectedDeviceId}
                     />
                 ) : masterTrack ? (
                     <TrackInspector
                         track={masterTrack}
                         allTracks={tracks}
-                        onSelectClip={(id) => {
-                            const ws = workspaceStore.value;
-                            if (ws) {
-                                workspaceStore.set({ ...ws, selectedClipId: id, selectedClipIds: [id] });
-                            }
-                        }}
+                        onSelectClip={selectClipWithFocus}
                         onSelectDevice={setSelectedDeviceId}
                     />
                 ) : (

@@ -16,7 +16,7 @@ import {
     updateAutomationPoint,
     setAutomationPointCurve,
     toggleAutomationVisibility,
-} from '#/modules/Automation/useCases/automationUseCases';
+} from '#/modules/Automation/useCases/automation';
 import { insertAutomationShape, type AutomationShapeType } from '#/modules/Automation/useCases/automationShapes';
 import { beginDrawSession, paintDrawPoint, endDrawSession } from '#/modules/Automation/useCases/automationDrawMode';
 import {
@@ -26,11 +26,14 @@ import {
 } from '#/modules/Automation/useCases/automationSelection';
 import { adjustYZoom, zoomToUsedRange, toggleVirginTerritory } from '#/modules/Automation/useCases/automationZoom';
 import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
-import { LANE_HEIGHT, buildCurvePath } from './automationViewHelpers';
+import { LANE_HEIGHT, buildCurvePath } from '../../helpers/automationViewHelpers';
+import { formatParameterValue, curveLabel } from '../../helpers/automationLaneConstants';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { interpolateAutomationValue, getAutomationRegions } from '#/modules/Arrangement/useCases/automationQueries';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { Eye, EyeOff, X, Maximize2 } from 'lucide-react';
+import { AutomationLaneHeader } from './AutomationLaneHeader';
+import { AutomationLaneControls } from './AutomationLaneControls';
+import { AutomationContextMenu } from './AutomationContextMenu';
 
 type AutomationLaneRowProps = {
     lane: AutomationLane;
@@ -40,23 +43,7 @@ type AutomationLaneRowProps = {
     containerWidth: number;
 };
 
-const CURVE_OPTIONS: { value: AutomationCurveType; label: string }[] = [
-    { value: 'linear', label: 'Linear' },
-    { value: 's-curve', label: 'S-Curve (Smooth)' },
-    { value: 'exponential', label: 'Exponential' },
-    { value: 'step', label: 'Step (Hold)' },
-    { value: 'stairs', label: 'Stairs' },
-    { value: 'smooth', label: 'Smooth (Spline)' },
-];
 
-const SHAPE_OPTIONS: { value: AutomationShapeType; label: string }[] = [
-    { value: 'sine', label: '∿ Sine' },
-    { value: 'triangle', label: '△ Triangle' },
-    { value: 'sawtooth-up', label: '⟋ Sawtooth Up' },
-    { value: 'sawtooth-down', label: '⟍ Sawtooth Down' },
-    { value: 'square', label: '⊓ Square' },
-    { value: 'random', label: '⚡ Random' },
-];
 
 export const AutomationLaneRow = ({
     lane,
@@ -133,22 +120,7 @@ export const AutomationLaneRow = ({
         }
     }
 
-    const formatValue = (v: number): string => {
-        if (lane.parameterId === 'gain') {
-            if (v <= 0) {
-                return '-∞ dB';
-            }
-            const db = 20 * Math.log10(v);
-            return `${db.toFixed(1)} dB`;
-        }
-        if (lane.parameterId === 'pan') {
-            if (Math.abs(v) < 0.01) {
-                return 'C';
-            }
-            return v > 0 ? `${(v * 100).toFixed(0)}R` : `${(-v * 100).toFixed(0)}L`;
-        }
-        return `${(v * 100).toFixed(0)}%`;
-    };
+
 
     const visiblePoints = lane.points.filter((p) => p.beat >= viewportStartBeat - 2 && p.beat <= viewportEndBeat + 2);
     const selectedSet = new Set(selectedPoints);
@@ -506,77 +478,28 @@ export const AutomationLaneRow = ({
             onKeyDown={handleKeyDown}
             onWheel={handleWheel}
         >
-            {/* Lane header */}
-            <div className="absolute top-1 left-2 z-10 flex items-center gap-1.5">
-                <div className="size-2 rounded-full" style={{ backgroundColor: curveColor }} />
-                <span className="text-[9px] font-medium text-muted-foreground bg-surface-base/90 px-1.5 py-0.5 rounded backdrop-blur-sm">
-                    {lane.parameterName}
-                </span>
-                {currentValue !== null && (
-                    <span className="text-[9px] font-mono text-foreground/60 bg-surface-base/80 px-1 py-0.5 rounded">
-                        {formatValue(currentValue)}
-                    </span>
-                )}
-                {isDrawMode && (
-                    <span className="text-[9px] font-mono text-[var(--color-accent-peach)]/80 bg-[var(--color-accent-peach)]/10 px-1 py-0.5 rounded">
-                        DRAW
-                    </span>
-                )}
-                {lane.virginTerritory && (
-                    <span className="text-[9px] font-mono text-[var(--color-state-success)]/80 bg-[var(--color-state-success)]/10 px-1 py-0.5 rounded">
-                        VT
-                    </span>
-                )}
-                {isYZoomed && (
-                    <span className="text-[9px] font-mono text-[var(--color-accent-cyan)]/80 bg-[var(--color-accent-cyan)]/10 px-1 py-0.5 rounded">
-                        Y:{(vMin * 100).toFixed(0)}–{(vMax * 100).toFixed(0)}%
-                    </span>
-                )}
-            </div>
+            <AutomationLaneHeader
+                parameterName={lane.parameterName}
+                parameterId={lane.parameterId}
+                curveColor={curveColor}
+                currentValue={currentValue}
+                isDrawMode={isDrawMode}
+                isVirginTerritory={!!lane.virginTerritory}
+                isYZoomed={isYZoomed}
+                viewMin={vMin}
+                viewMax={vMax}
+            />
 
-            {/* Lane controls */}
-            <div className="absolute top-1 right-2 z-10 flex items-center gap-0.5">
-                {selectedPoints.length > 0 && (
-                    <span className="text-[8px] text-muted-foreground mr-1">{selectedPoints.length} sel</span>
-                )}
-                <button
-                    type="button"
-                    className={cn(
-                        'size-5 flex items-center justify-center rounded hover:bg-surface-raised/80 transition-colors',
-                        lane.virginTerritory ? 'text-[var(--color-state-success)]' : 'text-muted-foreground hover:text-foreground'
-                    )}
-                    onClick={() => toggleVirginTerritory(lane.id)}
-                    aria-label={lane.virginTerritory ? 'Disable virgin territory' : 'Enable virgin territory'}
-                    title="Virgin Territory"
-                >
-                    <span className="text-[8px] font-bold">VT</span>
-                </button>
-                <button
-                    type="button"
-                    className="size-5 flex items-center justify-center text-muted-foreground hover:text-foreground rounded hover:bg-surface-raised/80 transition-colors"
-                    onClick={() => zoomToUsedRange(lane.id)}
-                    aria-label="Zoom to used range"
-                    title="Zoom Y to used range"
-                >
-                    <Maximize2 className="size-3" />
-                </button>
-                <button
-                    type="button"
-                    className="size-5 flex items-center justify-center text-muted-foreground hover:text-foreground rounded hover:bg-surface-raised/80 transition-colors"
-                    onClick={() => toggleAutomationVisibility(lane.id)}
-                    aria-label={lane.visible ? 'Hide lane' : 'Show lane'}
-                >
-                    {lane.visible ? <Eye className="size-3" /> : <EyeOff className="size-3" />}
-                </button>
-                <button
-                    type="button"
-                    className="size-5 flex items-center justify-center text-muted-foreground hover:text-foreground rounded hover:bg-surface-raised/80 transition-colors"
-                    onClick={() => toggleAutomationVisibility(lane.id)}
-                    aria-label="Close lane"
-                >
-                    <X className="size-3" />
-                </button>
-            </div>
+            <AutomationLaneControls
+                laneId={lane.id}
+                isVirginTerritory={!!lane.virginTerritory}
+                isVisible={lane.visible}
+                selectedCount={selectedPoints.length}
+                onToggleVirginTerritory={() => toggleVirginTerritory(lane.id)}
+                onZoomToUsedRange={() => zoomToUsedRange(lane.id)}
+                onToggleVisibility={() => toggleAutomationVisibility(lane.id)}
+                onClose={() => toggleAutomationVisibility(lane.id)}
+            />
 
             <svg
                 ref={svgRef}
@@ -620,7 +543,7 @@ export const AutomationLaneRow = ({
                     );
                 })}
 
-                {showZeroLine && (
+                {showZeroLine ? (
                     <line
                         x1={0}
                         y1={valueToY(0)}
@@ -630,7 +553,7 @@ export const AutomationLaneRow = ({
                         strokeWidth={1}
                         strokeDasharray="4 3"
                     />
-                )}
+                ) : null}
 
                 {/* Fill under curve segments */}
                 {pathSegments.map((seg, i) =>
@@ -710,7 +633,7 @@ export const AutomationLaneRow = ({
                                 pointerEvents="none"
                                 style={{ filter: isActive ? `drop-shadow(0 0 6px ${curveColor})` : undefined }}
                             />
-                            {isActive && (
+                            {isActive ? (
                                 <text
                                     x={th.cx + 10}
                                     y={th.cy + 4}
@@ -719,7 +642,7 @@ export const AutomationLaneRow = ({
                                 >
                                     {(th.tension >= 0 ? '+' : '') + th.tension.toFixed(2)}
                                 </text>
-                            )}
+                            ) : null}
                         </g>
                     );
                 })}
@@ -747,7 +670,7 @@ export const AutomationLaneRow = ({
                                 onMouseEnter={() => setHoveredBeat(point.beat)}
                                 onMouseLeave={() => setHoveredBeat(null)}
                             />
-                            {(isDragging || isHovered || isSelected) && (
+                            {(isDragging || isHovered || isSelected) ? (
                                 <circle
                                     cx={cx}
                                     cy={cy}
@@ -756,7 +679,7 @@ export const AutomationLaneRow = ({
                                     fillOpacity={0.15}
                                     pointerEvents="none"
                                 />
-                            )}
+                            ) : null}
                             <circle
                                 cx={cx}
                                 cy={cy}
@@ -773,24 +696,16 @@ export const AutomationLaneRow = ({
                                           : `drop-shadow(0 0 2px ${curveColor})`,
                                 }}
                             />
-                            {point.curve !== 'linear' && !isDragging && (
+                            {point.curve !== 'linear' && !isDragging ? (
                                 <text
                                     x={cx + 8}
                                     y={cy - 8}
                                     className="text-[8px] fill-muted-foreground/60 pointer-events-none font-mono"
                                 >
-                                    {point.curve === 's-curve'
-                                        ? 'S'
-                                        : point.curve === 'exponential'
-                                          ? 'E'
-                                          : point.curve === 'step'
-                                            ? '⌐'
-                                            : point.curve === 'stairs'
-                                              ? '⊏'
-                                              : '~'}
+                                    {curveLabel(point.curve)}
                                 </text>
-                            )}
-                            {isHovered && !isDragging && (
+                            ) : null}
+                            {isHovered && !isDragging ? (
                                 <g pointerEvents="none">
                                     <rect
                                         x={cx - 24}
@@ -808,16 +723,16 @@ export const AutomationLaneRow = ({
                                         textAnchor="middle"
                                         className="text-[8px] fill-white font-mono"
                                     >
-                                        {formatValue(point.value)}
+                                        {formatParameterValue(point.value, lane.parameterId)}
                                     </text>
                                 </g>
-                            )}
+                            ) : null}
                         </g>
                     );
                 })}
 
                 {/* Rubber-band selection rectangle */}
-                {rubberBand && Math.abs(rubberBand.x2 - rubberBand.x1) > 3 && (
+                {rubberBand && Math.abs(rubberBand.x2 - rubberBand.x1) > 3 ? (
                     <rect
                         x={Math.min(rubberBand.x1, rubberBand.x2)}
                         y={Math.min(rubberBand.y1, rubberBand.y2)}
@@ -829,10 +744,10 @@ export const AutomationLaneRow = ({
                         strokeDasharray="3 2"
                         pointerEvents="none"
                     />
-                )}
+                ) : null}
 
                 {/* Selection stretch handles */}
-                {selBounds && selectedPoints.length > 1 && !rubberBand && (
+                {selBounds && selectedPoints.length > 1 && !rubberBand ? (
                     <g pointerEvents="none">
                         <rect
                             x={beatToX(selBounds.minBeat) - 2}
@@ -864,60 +779,21 @@ export const AutomationLaneRow = ({
                             />
                         ))}
                     </g>
-                )}
+                ) : null}
             </svg>
 
-            {/* Context menu */}
-            {contextMenu && (
-                <>
-                    <div className="fixed inset-0 z-50" onClick={() => setContextMenu(null)} />
-                    <div
-                        className="fixed z-50 bg-popover border border-border rounded-md shadow-xl py-1 min-w-[160px]"
-                        style={{
-                            left: contextMenu.x,
-                            ...(contextMenu.y > window.innerHeight - 300
-                                ? { bottom: window.innerHeight - contextMenu.y }
-                                : { top: contextMenu.y }),
-                        }}
-                    >
-                        {contextMenu.section !== 'shape' && (
-                            <>
-                                <div className="px-2 py-1 text-[9px] text-muted-foreground uppercase tracking-wider">
-                                    Curve Type
-                                </div>
-                                {CURVE_OPTIONS.map((opt) => (
-                                    <button
-                                        type="button"
-                                        key={opt.value}
-                                        className={cn(
-                                            'w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors',
-                                            lane.points.find((p) => Math.abs(p.beat - contextMenu.beat) < 0.05)
-                                                ?.curve === opt.value && 'text-primary font-medium'
-                                        )}
-                                        onClick={() => handleCurveSelect(opt.value)}
-                                    >
-                                        {opt.label}
-                                    </button>
-                                ))}
-                                <div className="mx-2 my-1 border-t border-border/30" />
-                            </>
-                        )}
-                        <div className="px-2 py-1 text-[9px] text-muted-foreground uppercase tracking-wider">
-                            Insert Shape
-                        </div>
-                        {SHAPE_OPTIONS.map((opt) => (
-                            <button
-                                type="button"
-                                key={opt.value}
-                                className="w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
-                                onClick={() => handleShapeInsert(opt.value)}
-                            >
-                                {opt.label}
-                            </button>
-                        ))}
-                    </div>
-                </>
-            )}
+            {contextMenu ? (
+                <AutomationContextMenu
+                    x={contextMenu.x}
+                    y={contextMenu.y}
+                    beat={contextMenu.beat}
+                    section={contextMenu.section}
+                    points={lane.points}
+                    onCurveSelect={handleCurveSelect}
+                    onShapeInsert={handleShapeInsert}
+                    onClose={() => setContextMenu(null)}
+                />
+            ) : null}
         </div>
     );
 };

@@ -7,13 +7,13 @@ import { timeSignatureMapStore } from '../stores/timeSignatureMapStore';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { getAutomationValueAtBeat } from '#/modules/Automation/useCases/automationUseCases';
+import { getAutomationValueAtBeat } from '#/modules/Automation/useCases/automation';
 import {
     startAutomationRecording,
     stopAutomationRecording,
     isRecordingAutomation,
 } from '#/modules/Automation/useCases/automationRecording';
-import { getEffectiveGain } from '#/modules/Arrangement/useCases/vcaUseCases';
+import { getEffectiveGain } from '#/modules/Arrangement/useCases/vca';
 import {
     ensureTrackStrip,
     setTrackGain as engineSetTrackGain,
@@ -30,12 +30,13 @@ import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { resolveClipsWithComping } from '#/modules/Arrangement/useCases/resolveComping';
 import { scheduleNote, getSynthParamsForTrack } from '#/modules/Synth/useCases/builtinSynth';
+import { getFaustInstrumentNode, scheduleFaustNote } from '#/modules/Synth/useCases/faustInstrumentScheduler';
 import { getDrumKitByIndex, scheduleKitNote, type DrumKit } from '#/modules/Synth/useCases/drumKitSynth';
 import { getDrumKitDefByIndex, scheduleDrumKitNote, type DrumKitDef } from '#/modules/Synth/useCases/drumSynthEngine';
 import { getCompensationDelay } from '#/modules/AudioEngine/useCases/latencyCompensation';
 import { startAudioRecording, stopAudioRecording } from '#/modules/AudioEngine/useCases/audioRecorder';
-import { startRecording, stopRecording } from '#/modules/Arrangement/useCases/recordingUseCases';
-import { addTakeLane, addTake } from '#/modules/Arrangement/useCases/compingUseCases';
+import { startRecording, stopRecording } from '#/modules/Arrangement/useCases/recording';
+import { addTakeLane, addTake } from '#/modules/Arrangement/useCases/comping';
 import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 
@@ -252,6 +253,11 @@ function scheduleMidiNotes(
                                 note.velocity
                             );
                         } else {
+                            // Check for Faust instrument on this track
+                            const faustNode = getFaustInstrumentNode(strip);
+                            if (faustNode) {
+                                scheduleFaustNote(faustNode, note.pitch, time, duration, note.velocity);
+                            } else {
                             const mpe =
                                 note.pressure !== undefined || note.slide !== undefined || note.pitchBend !== undefined
                                     ? { pressure: note.pressure, slide: note.slide, pitchBend: note.pitchBend }
@@ -266,6 +272,7 @@ function scheduleMidiNotes(
                                 synthParams!,
                                 mpe
                             );
+                            }
                         }
                     }
                 }

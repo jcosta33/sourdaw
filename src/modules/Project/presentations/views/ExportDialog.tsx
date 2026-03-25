@@ -1,12 +1,12 @@
-import { type ReactElement, useState } from 'react';
+import { type ReactElement, useState, useRef } from 'react';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
 import { Button } from '#/components/ui/button';
 import { Separator } from '#/components/ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '#/components/ui/dialog';
-import { Download } from 'lucide-react';
-import { renderOffline, exportStems, downloadWav, downloadMp3, downloadFlac } from '../../useCases/exportActions';
+import { Download, X } from 'lucide-react';
+import { renderOffline, exportStems, cancelExport, downloadWav, downloadMp3, downloadFlac } from '../../useCases/exportActions';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 
 const logger = Container.getInstance().get(Logger);
@@ -55,6 +55,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     const [exporting, setExporting] = useState(false);
     const [progress, setProgress] = useState(0);
     const [statusText, setStatusText] = useState('');
+    const [errorText, setErrorText] = useState('');
+    const cancelledRef = useRef(false);
 
     const toggleFormat = (f: ExportFormat) => {
         setFormats((prev) => {
@@ -78,10 +80,18 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         saveExportSettings({ formats: Array.from(formats), sampleRate, bitDepth: bd });
     };
 
+    const handleCancel = () => {
+        cancelledRef.current = true;
+        cancelExport();
+        setStatusText('Cancelling...');
+    };
+
     const handleExport = async () => {
         setExporting(true);
         setProgress(0);
         setStatusText('Preparing...');
+        setErrorText('');
+        cancelledRef.current = false;
 
         try {
             const tracks = trackStore.value?.tracks ?? [];
@@ -92,16 +102,26 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
 
             if (mode === 'stems') {
                 setStatusText('Rendering stems...');
-                setProgress(5);
-                const stems = await exportStems(maxBeat, sampleRate);
+                const stems = await exportStems({
+                    durationBeats: maxBeat,
+                    sampleRate,
+                    onProgress: (frac) => {
+                        setProgress(frac * 50);
+                        setStatusText(`Rendering stems... ${Math.round(frac * 100)}%`);
+                    },
+                });
+                if (cancelledRef.current) { return; }
+
                 let done = 0;
                 const total = stems.size * formatList.length;
                 for (const [trackId, buffer] of stems) {
+                    if (cancelledRef.current) { return; }
                     const track = tracks.find((t) => t.id === trackId);
                     const name = track?.name ?? trackId;
                     for (const f of formatList) {
+                        if (cancelledRef.current) { return; }
                         const encodeProgress = (frac: number) => {
-                            setProgress(10 + ((done + frac) / total) * 90);
+                            setProgress(50 + ((done + frac) / total) * 50);
                         };
                         setStatusText(`Encoding ${name} (${f.toUpperCase()})...`);
                         if (f === 'mp3') {
@@ -112,18 +132,24 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                             await downloadWav(buffer, `${name}-${ts}.wav`, bd, encodeProgress);
                         }
                         done++;
-                        setProgress(10 + (done / total) * 90);
                     }
                 }
             } else {
-                // Mixdown: rendering = 0-60%, encoding = 60-100%
                 setStatusText('Rendering offline mixdown...');
-                setProgress(5);
-                const buffer = await renderOffline(maxBeat, sampleRate);
+                const buffer = await renderOffline({
+                    durationBeats: maxBeat,
+                    sampleRate,
+                    onProgress: (frac) => {
+                        setProgress(frac * 60);
+                        setStatusText(`Rendering... ${Math.round(frac * 100)}%`);
+                    },
+                });
+                if (cancelledRef.current) { return; }
                 setProgress(60);
 
                 let formatsDone = 0;
                 for (const f of formatList) {
+                    if (cancelledRef.current) { return; }
                     const encodeProgress = (frac: number) => {
                         const perFormat = 40 / formatList.length;
                         setProgress(60 + formatsDone * perFormat + frac * perFormat);
@@ -141,12 +167,21 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     formatsDone++;
                 }
             }
-            setProgress(100);
-            setStatusText('Complete!');
-            notifyUser('Audio exported successfully');
+
+            if (!cancelledRef.current) {
+                setProgress(100);
+                setStatusText('Complete!');
+                notifyUser('Audio exported successfully');
+            }
         } catch (error) {
-            logger.error(new Error('Export failed', { cause: error }));
-            setStatusText('Export failed');
+            if (cancelledRef.current) {
+                setStatusText('Export cancelled');
+            } else {
+                const msg = error instanceof Error ? error.message : 'Unknown error';
+                logger.error(new Error('Export failed', { cause: error }));
+                setErrorText(msg);
+                setStatusText('Export failed');
+            }
         } finally {
             setExporting(false);
         }
@@ -165,7 +200,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         <Dialog
             open={open}
             onOpenChange={(isOpen) => {
-                if (!isOpen) {
+                if (!isOpen && !exporting) {
                     onClose();
                 }
             }}
@@ -188,6 +223,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                     size="sm"
                                     onClick={() => setMode(m)}
                                     className="capitalize"
+                                    disabled={exporting}
                                 >
                                     {m}
                                 </Button>
@@ -211,6 +247,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                     aria-pressed={formats.has(f.value)}
                                     role="checkbox"
                                     aria-checked={formats.has(f.value)}
+                                    disabled={exporting}
                                 >
                                     <div className="text-xs font-medium text-foreground">{f.label}</div>
                                     <div className="text-[10px] text-muted-foreground">{f.desc}</div>
@@ -233,6 +270,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                         variant={sampleRate === sr ? 'secondary' : 'ghost'}
                                         size="xs"
                                         onClick={() => updateSampleRate(sr)}
+                                        disabled={exporting}
                                     >
                                         {(sr / 1000).toFixed(1)}k
                                     </Button>
@@ -251,6 +289,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                         variant={bitDepth === bd ? 'secondary' : 'ghost'}
                                         size="xs"
                                         onClick={() => updateBitDepth(bd)}
+                                        disabled={exporting}
                                     >
                                         {bd}-bit
                                     </Button>
@@ -261,7 +300,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
 
                     <Separator />
 
-                    {exporting && (
+                    {exporting ? (
                         <div className="space-y-1">
                             <div className="flex justify-between text-xs text-muted-foreground">
                                 <span>{statusText}</span>
@@ -281,16 +320,31 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                 />
                             </div>
                         </div>
-                    )}
+                    ) : null}
+
+                    {errorText ? (
+                        <div className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
+                            {errorText}
+                        </div>
+                    ) : null}
 
                     <div className="flex justify-end gap-2">
-                        <Button variant="ghost" size="sm" onClick={onClose} disabled={exporting}>
-                            Cancel
-                        </Button>
-                        <Button size="sm" onClick={handleExport} disabled={exporting || formats.size === 0}>
-                            <Download className="size-3.5 mr-1" />
-                            {exporting ? 'Exporting...' : `Export ${mode === 'stems' ? 'Stems' : 'Mixdown'}`}
-                        </Button>
+                        {exporting ? (
+                            <Button variant="destructive" size="sm" onClick={handleCancel}>
+                                <X className="size-3.5 mr-1" />
+                                Cancel Export
+                            </Button>
+                        ) : (
+                            <>
+                                <Button variant="ghost" size="sm" onClick={onClose}>
+                                    Cancel
+                                </Button>
+                                <Button size="sm" onClick={handleExport} disabled={formats.size === 0}>
+                                    <Download className="size-3.5 mr-1" />
+                                    Export {mode === 'stems' ? 'Stems' : 'Mixdown'}
+                                </Button>
+                            </>
+                        )}
                     </div>
                 </div>
             </DialogContent>

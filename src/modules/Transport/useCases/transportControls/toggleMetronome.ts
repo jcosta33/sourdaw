@@ -1,4 +1,4 @@
-import { getTransportState, updateTransportState } from '#/modules/Transport/repositories/transportRepository';
+import { getTransportState, updateTransportState } from '#/modules/Transport/repositories/transport';
 
 export function toggleMetronome(): void {
     const state = getTransportState();

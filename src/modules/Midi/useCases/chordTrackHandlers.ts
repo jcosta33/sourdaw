@@ -4,7 +4,7 @@ import {
     removeChordEvent,
     toggleChordTrack,
     clearChordTrack,
-} from '#/modules/MIDI/useCases/chordTrackUseCases';
+} from '#/modules/MIDI/useCases/chordTrack';
 import { type ChordType, CHORD_TYPES } from '#/modules/MIDI/useCases/chordStamps';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;

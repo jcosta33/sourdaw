@@ -4,7 +4,7 @@
  */
 
 import { type MixIssue, type MixAnalysis } from '../models/MixAnalysis';
-import { type FrequencyBands } from '../repositories/mixAnalysisRepository';
+import { type FrequencyBands } from '../repositories/mixAnalysis';
 
 const SILENCE_FLOOR_DB = -100;
 

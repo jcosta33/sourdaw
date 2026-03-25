@@ -1,4 +1,4 @@
-import { processAudioIPC } from '#/modules/Plugin/useCases/pluginLifecycleUseCases';
+import { processAudioIPC } from '#/modules/Plugin/useCases/pluginLifecycle';
 
 /**
  * A wrapper around the AudioWorkletNode that proxies audio blocks

@@ -4,10 +4,10 @@ import { Button } from '#/components/ui/button';
 import { Columns3, Save, RotateCcw, Sparkles, Pencil } from 'lucide-react';
 import { useTracks } from '../hooks/useTracks';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
-import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { type ChannelStripWidth } from '#/modules/Workspace/models/WorkspaceState';
-import { ExpandedChannelStrip } from './mixer/ExpandedChannelStrip';
-import { MasterChannelStrip } from './mixer/MasterChannelStrip';
+import { cycleChannelStripWidth } from '../../useCases/togglePanel';
+import { type ChannelStripWidth } from '../../models/WorkspaceState';
+import { ExpandedChannelStrip } from './Mixer/ExpandedChannelStrip';
+import { MasterChannelStrip } from './Mixer/MasterChannelStrip';
 import {
     saveMixerSnapshot,
     recallMixerSnapshot,
@@ -16,8 +16,8 @@ import {
     renameMixerSnapshot,
     restoreMixerChannels,
     type MixerSnapshot,
-} from '#/modules/Arrangement/useCases/mixerSnapshotUseCases';
-import { MixHealthDialog } from './mixer/MixHealthDialog';
+} from '#/modules/Arrangement/useCases/mixerSnapshot';
+import { MixHealthDialog } from './Mixer/MixHealthDialog';
 import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
 
 type MixerPanelProps = {
@@ -30,27 +30,13 @@ const STRIP_WIDTH_CLASS: Record<ChannelStripWidth, string> = {
     wide: 'w-36',
 };
 
-const STRIP_WIDTH_CYCLE: Record<ChannelStripWidth, ChannelStripWidth> = {
-    narrow: 'normal',
-    normal: 'wide',
-    wide: 'narrow',
-};
 
 export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
     const { tracks, selectedTrackId } = useTracks();
     const { channelStripWidth } = useWorkspaceState();
     const widthClass = STRIP_WIDTH_CLASS[channelStripWidth];
 
-    const cycleWidth = () => {
-        const ws = workspaceStore.value;
-        if (!ws) {
-            return;
-        }
-        workspaceStore.set({
-            ...ws,
-            channelStripWidth: STRIP_WIDTH_CYCLE[ws.channelStripWidth],
-        });
-    };
+
 
     const [snapshots, setSnapshots] = useState<MixerSnapshot[]>(getMixerSnapshots);
     const [showSnapshots, setShowSnapshots] = useState(false);
@@ -105,7 +91,7 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
                     size="icon-xs"
                     aria-label={`Channel width: ${channelStripWidth}`}
                     title={`Channel width: ${channelStripWidth} (click to cycle)`}
-                    onClick={cycleWidth}
+                    onClick={cycleChannelStripWidth}
                 >
                     <Columns3 className="size-3" />
                 </Button>

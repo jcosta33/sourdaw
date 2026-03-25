@@ -4,10 +4,10 @@ import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { timelineViewStore, scrollTimeline } from '#/modules/Arrangement/stores/timelineViewStore';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { addAutomationLane, toggleLaneCollapsed, removeAutomationLane } from '#/modules/Automation/useCases/automationUseCases';
+import { addAutomationLane, toggleLaneCollapsed, removeAutomationLane } from '#/modules/Automation/useCases/automation';
 import { setAutomationMode } from '#/modules/Arrangement/useCases/toggleTrackState';
-import { AutomationLaneRow } from './automationView/AutomationLaneRow';
-import { getAutomatableParams, AUTOMATION_MODE_CONFIG, LANE_HEIGHT } from './automationView/automationViewHelpers';
+import { AutomationLaneRow } from './AutomationView/AutomationLaneRow';
+import { getAutomatableParams, AUTOMATION_MODE_CONFIG, LANE_HEIGHT } from '../helpers/automationViewHelpers';
 import { type AutomationMode } from '#/modules/Arrangement/useCases/trackQueries';
 import { type AutomationLane } from '#/modules/Arrangement/useCases/trackQueries';
 import { Plus, ChevronRight, ChevronDown, Trash2 } from 'lucide-react';
@@ -171,7 +171,7 @@ export const AutomationBottomPanel = (): ReactElement => {
     return (
         <div className="flex h-full overflow-hidden bg-surface-base/50">
             {/* Left panel — fixed width matching track list */}
-            {trackListOpen && (
+            {trackListOpen ? (
                 <div
                     className="flex flex-col shrink-0 border-r border-border/30 bg-surface-well overflow-y-auto"
                     style={{ width: trackListWidth }}
@@ -202,7 +202,7 @@ export const AutomationBottomPanel = (): ReactElement => {
                             {modeConfig.label}
                         </button>
 
-                        {showModePicker && (
+                        {showModePicker ? (
                             <>
                                 <div
                                     className="fixed inset-0 z-40"
@@ -240,7 +240,7 @@ export const AutomationBottomPanel = (): ReactElement => {
                                     })}
                                 </div>
                             </>
-                        )}
+                        ) : null}
 
                         <span className="text-[9px] text-muted-foreground ml-auto">
                             {trackLanes.length} lane{trackLanes.length !== 1 ? 's' : ''}
@@ -300,11 +300,11 @@ export const AutomationBottomPanel = (): ReactElement => {
                                                 {param.name}
                                             </button>
                                         ))}
-                                        {unusedParams.length === 0 && (
+                                        {unusedParams.length === 0 ? (
                                             <div className="px-2.5 py-2 text-[10px] text-muted-foreground/50 italic">
                                                 All parameters have lanes
                                             </div>
-                                        )}
+                                        ) : null}
                                     </div>
                                 </div>
                             </>
@@ -316,16 +316,16 @@ export const AutomationBottomPanel = (): ReactElement => {
                             >
                                 <Plus className="size-3" />
                                 Add Lane
-                                {unusedParams.length > 0 && (
+                                {unusedParams.length > 0 ? (
                                     <span className="text-[8px] text-muted-foreground/40 ml-auto">
                                         {unusedParams.length} available
                                     </span>
-                                )}
+                                ) : null}
                             </button>
                         )}
                     </div>
                 </div>
-            )}
+            ) : null}
 
             {/* Right panel — automation lanes aligned with timeline */}
             <div className="flex-1 flex flex-col overflow-hidden" ref={containerRef}>

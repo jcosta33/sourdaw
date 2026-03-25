@@ -1,5 +1,5 @@
 import { type AutomationShapeType, generateShapePoints } from '#/modules/Arrangement/useCases/automationQueries';
-import { batchAddAutomationPoints } from './automationUseCases';
+import { batchAddAutomationPoints } from './automation';
 import { automationStore } from '../stores/automationStore';
 
 /**

@@ -1,10 +1,10 @@
 import { type ReactElement, useState, useSyncExternalStore } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { addAutomationLane, toggleLaneCollapsed } from '#/modules/Automation/useCases/automationUseCases';
+import { addAutomationLane, toggleLaneCollapsed } from '#/modules/Automation/useCases/automation';
 import { Plus, ChevronDown, ChevronRight } from 'lucide-react';
 import { AutomationLaneRow } from './AutomationLaneRow';
-import { getAutomatableParams, AUTOMATION_MODE_CONFIG } from './automationViewHelpers';
+import { getAutomatableParams, AUTOMATION_MODE_CONFIG } from '../../helpers/automationViewHelpers';
 import { type AutomationMode } from '#/modules/Arrangement/useCases/trackQueries';
 import { type AutomationLane } from '#/modules/Arrangement/useCases/trackQueries';
 import { setAutomationMode } from '#/modules/Arrangement/useCases/toggleTrackState';
@@ -135,7 +135,7 @@ export const TrackAutomationSection = ({
                         {modeConfig.label}
                     </button>
 
-                    {showModePicker && (
+                    {showModePicker ? (
                         <>
                             <div
                                 className="fixed inset-0 z-40"
@@ -177,7 +177,7 @@ export const TrackAutomationSection = ({
                                 })}
                             </div>
                         </>
-                    )}
+                    ) : null}
 
                     <span className="text-[9px] text-muted-foreground">
                         {trackLanes.length} lane{trackLanes.length !== 1 ? 's' : ''}
@@ -185,7 +185,7 @@ export const TrackAutomationSection = ({
                 </div>
             </div>
 
-            {isExpanded && (
+            {isExpanded ? (
                 <div>
                     {trackLanes.map((lane) =>
                         lane.collapsed ? (
@@ -241,7 +241,7 @@ export const TrackAutomationSection = ({
                         </div>
                     </div>
                 </div>
-            )}
+            ) : null}
         </div>
     );
 };

@@ -5,7 +5,7 @@ import { Button } from '#/components/ui/button';
 import { Plus } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
 import { useTracks } from '../../hooks/useTracks';
-import { setSend, toggleSendPreFader } from '#/modules/Arrangement/useCases/deviceUseCases';
+import { setSend, toggleSendPreFader } from '#/modules/Arrangement/useCases/device';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
 

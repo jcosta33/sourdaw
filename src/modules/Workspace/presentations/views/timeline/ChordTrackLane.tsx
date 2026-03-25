@@ -20,7 +20,7 @@ import {
     ROOT_NAMES,
     type ChordEvent,
     type ChordType,
-} from '#/modules/MIDI/useCases/chordTrackUseCases';
+} from '#/modules/MIDI/useCases/chordTrack';
 import { cn } from '#/helpers/Styles/cn';
 
 type ChordTrackLaneProps = {
@@ -193,11 +193,11 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                     >
                         <Plus className="size-2.5" />
                     </button>
-                    {showAddMenu && <ChordPickerPopover onPick={handleQuickAdd} />}
+                    {showAddMenu ? <ChordPickerPopover onPick={handleQuickAdd} /> : null}
                 </div>
 
                 {/* Clear all — only show if there are events */}
-                {state.events.length > 0 && (
+                {state.events.length > 0 ? (
                     <button
                         type="button"
                         className="size-4 rounded flex items-center justify-center text-muted-foreground/30 hover:text-destructive/70 hover:bg-destructive/5 transition-colors"
@@ -207,7 +207,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                     >
                         <Trash2 className="size-2.5" />
                     </button>
-                )}
+                ) : null}
             </div>
 
             {/* ── Chord blocks ── */}
@@ -246,17 +246,17 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                 })}
 
                 {/* Empty state hint */}
-                {state.events.length === 0 && (
+                {state.events.length === 0 ? (
                     <div className="flex items-center justify-center h-full">
                         <span className="text-[9px] text-muted-foreground/30">
                             Right-click to add chords · Drag to reposition
                         </span>
                     </div>
-                )}
+                ) : null}
             </div>
 
             {/* ── Context menus ── */}
-            {contextMenu.kind !== 'none' && (
+            {contextMenu.kind !== 'none' ? (
                 <div
                     ref={menuRef}
                     className="fixed z-50 min-w-[140px] rounded-md border border-border bg-popover p-1 shadow-md"
@@ -340,7 +340,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                         </>
                     )}
                 </div>
-            )}
+            ) : null}
         </div>
     );
 };

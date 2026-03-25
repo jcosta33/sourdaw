@@ -5,7 +5,7 @@ import { removeTrack } from '#/modules/Arrangement/useCases/removeTrack';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { type MidiStoreState, midiStore } from '#/modules/MIDI/stores/midiStore';
 import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
-import { setTrackState } from '#/modules/Arrangement/repositories/trackRepository';
+import { setTrackState } from '#/modules/Arrangement/repositories/track';
 import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
 import { renameTrack } from '#/modules/Arrangement/useCases/renameTrack';
 import {
@@ -24,10 +24,10 @@ import {
     ungroupTracks,
     toggleSoloSafe,
 } from '#/modules/Arrangement/useCases/toggleTrackState';
-import { armTrack } from '#/modules/Arrangement/useCases/recordingUseCases';
+import { armTrack } from '#/modules/Arrangement/useCases/recording';
 import { freezeTrack, unfreezeTrack, bounceInPlace, bounceToNewTrack } from '#/modules/Arrangement/useCases/freezeBounce';
 import { duplicateTrack } from '#/modules/Arrangement/useCases/duplicateTrack';
-import { createFolder } from '#/modules/Arrangement/useCases/folderUseCases';
+import { createFolder } from '#/modules/Arrangement/useCases/folder';
 import { setTrackGain, setTrackPan, setTrackColor, setTrackNotes } from '#/modules/Arrangement/useCases/setTrackGainPan';
 import { zoomTracksVertical } from '#/modules/Arrangement/useCases/trackZoom';
 import {

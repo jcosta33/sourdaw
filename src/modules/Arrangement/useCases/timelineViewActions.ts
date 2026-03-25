@@ -18,7 +18,7 @@ import {
     muteClip as _muteClip,
     trimClipStart as _trimClipStart,
     trimClipEnd as _trimClipEnd,
-} from '#/modules/Arrangement/useCases/clipEditingUseCases';
+} from '#/modules/Arrangement/useCases/clipEditing';
 
 export const splitClip: typeof _splitClip = (...args) => _splitClip(...args);
 export const normalizeClip: typeof _normalizeClip = (...args) => _normalizeClip(...args);
@@ -38,7 +38,7 @@ import {
     duplicateClipToNextBar as _duplicateClipToNextBar,
     moveClipPreview as _moveClipPreview,
     moveClip as _moveClip,
-} from '#/modules/Arrangement/useCases/clipUseCases';
+} from '#/modules/Arrangement/useCases/clip';
 
 export const addClip: typeof _addClip = (...args) => _addClip(...args);
 export const removeClip: typeof _removeClip = (...args) => _removeClip(...args);
@@ -52,7 +52,7 @@ import {
     copySelectedClip as _copySelectedClip,
     cutSelectedClip as _cutSelectedClip,
     pasteClip as _pasteClip,
-} from '#/modules/Arrangement/useCases/clipboardUseCases';
+} from '#/modules/Arrangement/useCases/clipboard';
 
 export const copySelectedClip: typeof _copySelectedClip = (...args) => _copySelectedClip(...args);
 export const cutSelectedClip: typeof _cutSelectedClip = (...args) => _cutSelectedClip(...args);
@@ -61,7 +61,7 @@ export const pasteClip: typeof _pasteClip = (...args) => _pasteClip(...args);
 // ── Track: general ────────────────────────────────────────────────
 import { selectTrack as _selectTrack } from '#/modules/Arrangement/useCases/toggleTrackState';
 import { addTrack as _addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { addDevice as _addDevice } from '#/modules/Arrangement/useCases/deviceUseCases';
+import { addDevice as _addDevice } from '#/modules/Arrangement/useCases/device';
 import { exportMidiClip as _exportMidiClip } from '#/modules/MIDI/useCases/exportMidiFile';
 import { importMidiFile as _importMidiFile } from '#/modules/MIDI/useCases/importMidiFile';
 import { stripSilence as _stripSilence } from '#/modules/Arrangement/useCases/stripSilence';
@@ -79,7 +79,7 @@ import {
     addAutomationLane as _addAutomationLane,
     removeAutomationPoint as _removeAutomationPoint,
     batchAddAutomationPoints as _batchAddAutomationPoints,
-} from '#/modules/Automation/useCases/automationUseCases';
+} from '#/modules/Automation/useCases/automation';
 
 export const addAutomationPoint: typeof _addAutomationPoint = (...args) => _addAutomationPoint(...args);
 export const addAutomationLane: typeof _addAutomationLane = (...args) => _addAutomationLane(...args);

@@ -1,5 +1,5 @@
-import { addClip } from '#/modules/Arrangement/useCases/clipUseCases';
-import { addMidiNote } from '#/modules/MIDI/useCases/midiUseCases';
+import { addClip } from '#/modules/Arrangement/useCases/clip';
+import { addMidiNote } from '#/modules/MIDI/useCases/midi';
 import { type GenerateMelodyOptions } from './algorithm';
 import { generateMelody } from './algorithm';
 

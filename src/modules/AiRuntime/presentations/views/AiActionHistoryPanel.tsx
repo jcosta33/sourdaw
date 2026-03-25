@@ -35,7 +35,7 @@ const ActionGroupItem = ({ group }: { group: AiActionGroup }): ReactElement => {
                         {group.actions.length} action{group.actions.length !== 1 ? 's' : ''} · {timeAgo}
                     </p>
                 </div>
-                {!group.reverted && (
+                {!group.reverted ? (
                     <Button
                         variant="ghost"
                         size="icon-xs"
@@ -45,10 +45,10 @@ const ActionGroupItem = ({ group }: { group: AiActionGroup }): ReactElement => {
                     >
                         <Undo2 className="size-3" />
                     </Button>
-                )}
-                {group.reverted && <span className="text-[9px] text-muted-foreground italic">reverted</span>}
+                ) : null}
+                {group.reverted ? <span className="text-[9px] text-muted-foreground italic">reverted</span> : null}
             </div>
-            {expanded && (
+            {expanded ? (
                 <div className="px-3 pb-2 pl-7 space-y-0.5">
                     {group.actions.map((a, i) => (
                         <div key={i} className="flex items-center gap-1.5">
@@ -57,7 +57,7 @@ const ActionGroupItem = ({ group }: { group: AiActionGroup }): ReactElement => {
                         </div>
                     ))}
                 </div>
-            )}
+            ) : null}
         </div>
     );
 };
@@ -79,7 +79,7 @@ export const AiActionHistoryPanel = (): ReactElement | null => {
             <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
                 <History className="size-3.5 text-[var(--color-accent-lavender)]" />
                 <span className="text-xs font-medium text-foreground flex-1">AI Action History</span>
-                {state.groups.length > 0 && (
+                {state.groups.length > 0 ? (
                     <Button
                         variant="ghost"
                         size="icon-xs"
@@ -89,7 +89,7 @@ export const AiActionHistoryPanel = (): ReactElement | null => {
                     >
                         <Trash2 className="size-3" />
                     </Button>
-                )}
+                ) : null}
                 <Button
                     variant="ghost"
                     size="icon-xs"

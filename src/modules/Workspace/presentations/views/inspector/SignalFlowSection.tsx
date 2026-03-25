@@ -27,7 +27,7 @@ export const SignalFlowSection = (): ReactElement => {
                     </span>
                 </button>
             </div>
-            {expanded && (
+            {expanded ? (
                 <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
                     <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-2">
                         <div className="rounded bg-surface-overlay p-1">
@@ -35,7 +35,7 @@ export const SignalFlowSection = (): ReactElement => {
                         </div>
                     </Card>
                 </div>
-            )}
+            ) : null}
         </div>
     );
 };

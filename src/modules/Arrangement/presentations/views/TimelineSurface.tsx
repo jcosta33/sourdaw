@@ -11,7 +11,7 @@ import { zoomTimeline, setAutoScroll, timelineViewStore } from '../../stores/tim
 
 import { animationScheduler } from '#/helpers/DOM/AnimationScheduler';
 import { ClipContextMenu, TimelineEmptyMenu } from './TimelineContextMenus';
-import { useTimelineInteractions } from './hooks/useTimelineInteractions';
+import { useTimelineInteractions } from '../hooks/useTimelineInteractions';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 
 import { automationStore } from '#/modules/Automation/stores/automationStore';

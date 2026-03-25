@@ -91,7 +91,7 @@ export const AudioDevicePicker = (): ReactElement => {
                 </select>
             </div>
 
-            {loading && <p className="text-[10px] text-muted-foreground/70 animate-pulse">Detecting devices...</p>}
+            {loading ? <p className="text-[10px] text-muted-foreground/70 animate-pulse">Detecting devices...</p> : null}
         </div>
     );
 };

@@ -14,12 +14,14 @@ import {
     toggleSoloSafe,
 } from '#/modules/Arrangement/useCases/toggleTrackState';
 import { setTrackGain, setTrackPan, setTrackColor } from '#/modules/Arrangement/useCases/setTrackGainPan';
-import { armTrack } from '#/modules/Arrangement/useCases/recordingUseCases';
+import { armTrack } from '#/modules/Arrangement/useCases/recording';
 import { removeTrack } from '#/modules/Arrangement/useCases/removeTrack';
 import { renameTrack } from '#/modules/Arrangement/useCases/renameTrack';
+import { TRACK_COLOR_PRESETS } from '#/helpers/UI/colorPresets';
+import { menuBtnClass } from '#/helpers/UI/contextMenuStyles';
 
-import { LevelMeter } from '../../components/LevelMeter';
-import { VUMeterCanvas } from '../../components/VUMeterCanvas';
+import { LevelMeter } from '../metering/LevelMeter';
+import { VUMeterCanvas } from '../metering/VUMeterCanvas';
 import { DeviceChainSection } from './DeviceChainSection';
 import { SendsSection } from './SendsSection';
 import { IOSection } from './IOSection';
@@ -29,27 +31,12 @@ import {
     assignTrackToVCA,
     removeTrackFromVCA,
     createVCAGroup,
-} from '#/modules/Arrangement/useCases/vcaFaderUseCases';
+} from '#/modules/Arrangement/useCases/vcaFader';
 import { releaseTouchAutomation } from '#/modules/Automation/useCases/automationRecording';
 
 type MixerMenu = { x: number; y: number } | null;
 
-const TRACK_COLORS = [
-    'oklch(0.40 0.07 250)',
-    'oklch(0.38 0.08 20)',
-    'oklch(0.40 0.07 150)',
-    'oklch(0.40 0.07 70)',
-    'oklch(0.38 0.07 300)',
-    'oklch(0.38 0.07 340)',
-    'oklch(0.40 0.06 200)',
-    'oklch(0.39 0.07 45)',
-    'oklch(0.40 0.06 170)',
-    'oklch(0.38 0.07 270)',
-    'oklch(0.39 0.06 110)',
-    'oklch(0.38 0.08 0)',
-];
 
-const menuBtnClass = 'flex w-full items-center px-3 py-1.5 text-xs hover:bg-white/[0.06] text-left transition-colors';
 
 type ExpandedChannelStripProps = {
     track: Track;
@@ -150,7 +137,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
             )}
 
             <span className="text-[10px] text-muted-foreground capitalize">{track.kind}</span>
-            {track.vcaGroupId && <span className="text-[9px] text-[var(--color-accent-cyan)]/80 font-mono">VCA</span>}
+            {track.vcaGroupId ? <span className="text-[9px] text-[var(--color-accent-cyan)]/80 font-mono">VCA</span> : null}
 
             {/* Mute / Solo / Arm / Monitor */}
             <div className="flex flex-wrap justify-center gap-1">
@@ -212,7 +199,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                     </TooltipTrigger>
                     <TooltipContent>{track.armed ? 'Disarm' : 'Arm for recording'}</TooltipContent>
                 </Tooltip>
-                {track.kind === 'audio' && (
+                {track.kind === 'audio' ? (
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <LatchButton
@@ -231,8 +218,8 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                         </TooltipTrigger>
                         <TooltipContent>Input monitoring</TooltipContent>
                     </Tooltip>
-                )}
-                {track.soloSafe && <ShieldCheck className="size-3 text-state-active" aria-label="Solo safe" />}
+                ) : null}
+                {track.soloSafe ? <ShieldCheck className="size-3 text-state-active" aria-label="Solo safe" /> : null}
             </div>
 
             {/* Fader + meter */}
@@ -305,7 +292,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
             <IOSection track={track} />
 
             {/* Context menu */}
-            {ctxMenu && (
+            {ctxMenu ? (
                 <div
                     ref={ctxRef}
                     className="fixed z-50 min-w-[160px] max-h-[70vh] overflow-y-auto rounded-md border border-border-soft border-t-[var(--color-light-edge)] bg-surface-overlay py-1 shadow-[0_4px_16px_rgba(0,0,0,0.5)]"
@@ -356,7 +343,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                     <div className="my-1 border-t border-border/50" />
                     <div className="px-3 py-1 text-[10px] text-muted-foreground">Color</div>
                     <div className="flex gap-1 px-3 py-1">
-                        {TRACK_COLORS.map((c) => (
+                        {TRACK_COLOR_PRESETS.map((c) => (
                             <button
                                 type="button"
                                 key={c}
@@ -417,7 +404,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                         Remove Channel
                     </button>
                 </div>
-            )}
+            ) : null}
         </div>
     );
 };

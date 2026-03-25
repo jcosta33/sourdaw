@@ -1,5 +1,6 @@
 import { type ReactElement, type RefObject, useRef, useEffect } from 'react';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
+import { selectClip } from '#/modules/Workspace/useCases/togglePanel';
 import {
     setWorkspaceMode,
     splitClip,
@@ -27,15 +28,14 @@ import {
     executeAppAction,
 } from '../../useCases/timelineViewActions';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { notifyAiChange } from '#/modules/AiRuntime/presentations/views/AiChangeToast';
-import { addMarker, setMarkerColor, removeMarker as removeMarkerUseCase } from '../../useCases/markerUseCases';
+import { notifyAiChange } from '#/modules/AiRuntime/useCases/notifyAiChange';
+import { addMarker, setMarkerColor, removeMarker as removeMarkerUseCase } from '../../useCases/marker';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { markerStore } from '#/modules/Arrangement/stores/markerStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
+import { menuBtnClass, menuSepClass, menuShortcutClass } from '#/helpers/UI/contextMenuStyles';
 
-const menuBtnClass = 'flex w-full items-center px-3 py-1.5 text-xs hover:bg-accent text-left';
-const menuSep = 'my-1 border-t border-border/50';
-const menuShortcut = 'ml-auto pl-4 text-muted-foreground';
+
 
 const useContextMenuDismiss = (ref: RefObject<HTMLDivElement | null>, onClose: () => void) => {
     useEffect(() => {
@@ -110,18 +110,15 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
             style={{ left: x, top: y }}
             role="menu"
         >
-            {multiSelected && (
+            {multiSelected ? (
                 <div className="px-3 py-1 text-[10px] text-muted-foreground">{selectedIds.length} clips selected</div>
-            )}
+            ) : null}
             <button
                 type="button"
                 className={menuBtnClass}
                 role="menuitem"
                 onClick={act(() => {
-                    const ws = workspaceStore.value;
-                    if (ws) {
-                        workspaceStore.set({ ...ws, selectedClipId: clipId });
-                    }
+                    selectClip(clipId);
                     setWorkspaceMode('clip');
                 })}
             >
@@ -185,52 +182,46 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                 Split at Cursor
             </button>
             <button type="button" className={menuBtnClass} role="menuitem" onClick={act(duplicateSelected)}>
-                Duplicate{multiSelected ? ` (${selectedIds.length})` : ''} <span className={menuShortcut}>⌘D</span>
+                Duplicate{multiSelected ? ` (${selectedIds.length})` : ''} <span className={menuShortcutClass}>⌘D</span>
             </button>
-            {!multiSelected && (
+            {!multiSelected ? (
                 <button
                     type="button"
                     className={menuBtnClass}
                     role="menuitem"
                     onClick={act(() => duplicateClipToNextBar(clipId))}
                 >
-                    Duplicate to Next Bar <span className={menuShortcut}>⌥D</span>
+                    Duplicate to Next Bar <span className={menuShortcutClass}>⌥D</span>
                 </button>
-            )}
-            <div className={menuSep} />
+            ) : null}
+            <div className={menuSepClass} />
             <button
                 type="button"
                 className={menuBtnClass}
                 role="menuitem"
                 onClick={act(() => {
-                    const ws = workspaceStore.value;
-                    if (ws) {
-                        workspaceStore.set({ ...ws, selectedClipId: clipId });
-                    }
+                    selectClip(clipId);
                     copySelectedClip();
                 })}
             >
-                Copy <span className={menuShortcut}>⌘C</span>
+                Copy <span className={menuShortcutClass}>⌘C</span>
             </button>
             <button
                 type="button"
                 className={menuBtnClass}
                 role="menuitem"
                 onClick={act(() => {
-                    const ws = workspaceStore.value;
-                    if (ws) {
-                        workspaceStore.set({ ...ws, selectedClipId: clipId });
-                    }
+                    selectClip(clipId);
                     cutSelectedClip();
                 })}
             >
-                Cut <span className={menuShortcut}>⌘X</span>
+                Cut <span className={menuShortcutClass}>⌘X</span>
             </button>
             <button type="button" className={menuBtnClass} role="menuitem" onClick={act(() => pasteClip())}>
-                Paste <span className={menuShortcut}>⌘V</span>
+                Paste <span className={menuShortcutClass}>⌘V</span>
             </button>
-            <div className={menuSep} />
-            {isAudio && (
+            <div className={menuSepClass} />
+            {isAudio ? (
                 <>
                     <button
                         type="button"
@@ -291,7 +282,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                     >
                         Detect Key
                     </button>
-                    <div className={menuSep} />
+                    <div className={menuSepClass} />
                     <div className="px-3 py-1 text-[10px] font-medium text-muted-foreground/70 flex items-center gap-1">
                         <span className="inline-block size-2.5 rounded-full bg-[var(--color-accent-cyan)]/60" />
                         AI
@@ -335,8 +326,8 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                         Convert to MIDI
                     </button>
                 </>
-            )}
-            {isMidi && (
+            ) : null}
+            {isMidi ? (
                 <>
                     <button
                         type="button"
@@ -354,7 +345,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                     >
                         Export as MIDI…
                     </button>
-                    <div className={menuSep} />
+                    <div className={menuSepClass} />
                     <div className="px-3 py-1 text-[10px] font-medium text-muted-foreground/70 flex items-center gap-1">
                         <span className="inline-block size-2.5 rounded-full bg-[var(--color-accent-cyan)]/60" />
                         AI
@@ -404,7 +395,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                         Create Variation
                     </button>
                 </>
-            )}
+            ) : null}
             <button
                 type="button"
                 className={menuBtnClass}
@@ -421,7 +412,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
             >
                 {isLocked ? 'Unlock Clip' : 'Lock Clip'}
             </button>
-            <div className={menuSep} />
+            <div className={menuSepClass} />
             <div className="px-3 py-1 text-[10px] text-muted-foreground">Color</div>
             <div className="flex gap-1 px-3 py-1">
                 {[
@@ -447,14 +438,14 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                     )
                 )}
             </div>
-            <div className={menuSep} />
+            <div className={menuSepClass} />
             <button
                 type="button"
                 className={`${menuBtnClass} text-destructive hover:bg-destructive/10`}
                 role="menuitem"
                 onClick={act(deleteSelected)}
             >
-                Delete{multiSelected ? ` (${selectedIds.length})` : ''} <span className={menuShortcut}>⌫</span>
+                Delete{multiSelected ? ` (${selectedIds.length})` : ''} <span className={menuShortcutClass}>⌫</span>
             </button>
         </div>
     );
@@ -555,8 +546,8 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
             >
                 Add Bus Track
             </button>
-            <div className={menuSep} />
-            {trackId && (
+            <div className={menuSepClass} />
+            {trackId ? (
                 <button
                     type="button"
                     className={menuBtnClass}
@@ -575,11 +566,11 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
                 >
                     Add Clip Here
                 </button>
-            )}
+            ) : null}
             <button type="button" className={menuBtnClass} role="menuitem" onClick={act(() => pasteClip())}>
-                Paste <span className={menuShortcut}>⌘V</span>
+                Paste <span className={menuShortcutClass}>⌘V</span>
             </button>
-            <div className={menuSep} />
+            <div className={menuSepClass} />
             <button
                 type="button"
                 className={menuBtnClass}
@@ -589,7 +580,7 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
                 Add Marker Here
             </button>
             <NearbyMarkerColorMenu beat={beat} onClose={onClose} />
-            <div className={menuSep} />
+            <div className={menuSepClass} />
             <button type="button" className={menuBtnClass} role="menuitem" onClick={handleImportAudio}>
                 Import Audio…
             </button>
@@ -633,7 +624,7 @@ const NearbyMarkerColorMenu = ({ beat, onClose }: NearbyMarkerColorMenuProps): R
         <>
             {nearby.map((marker) => (
                 <div key={marker.id}>
-                    <div className={menuSep} />
+                    <div className={menuSepClass} />
                     <div className="px-3 py-1 text-[10px] text-muted-foreground">Marker: {marker.name}</div>
                     <div className="flex gap-1 px-3 py-1">
                         {MARKER_COLOR_PRESETS.map((c) => (

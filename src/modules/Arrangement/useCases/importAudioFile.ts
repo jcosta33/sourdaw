@@ -1,6 +1,6 @@
-import { getTrackState, setTrackState } from '../repositories/trackRepository';
+import { getTrackState, setTrackState } from '../repositories/track';
 import { createTrack } from '../models/Track';
-import { addClip } from '#/modules/Arrangement/useCases/clipUseCases';
+import { addClip } from '#/modules/Arrangement/useCases/clip';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases/decodeAudioFile';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { notifyUser } from '#/helpers/Notification/notifyUser';

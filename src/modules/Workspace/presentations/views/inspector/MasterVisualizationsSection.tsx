@@ -1,10 +1,10 @@
 import { type ReactElement } from 'react';
-import { LUFSMeter } from '../../components/LUFSMeter';
-import { PhaseCorrelationDisplay } from '../../components/PhaseCorrelationDisplay';
-import { Oscilloscope } from '../../components/Oscilloscope';
-import { SpectrumAnalyzer } from '../../components/SpectrumAnalyzer';
-import { Spectrogram } from '../../components/Spectrogram';
-import { Goniometer } from '../../components/Goniometer';
+import { LUFSMeter } from '../metering/LUFSMeter';
+import { PhaseCorrelationDisplay } from '../metering/PhaseCorrelationDisplay';
+import { Oscilloscope } from '../metering/Oscilloscope';
+import { SpectrumAnalyzer } from '../metering/SpectrumAnalyzer';
+import { Spectrogram } from '../metering/Spectrogram';
+import { Goniometer } from '../metering/Goniometer';
 import { SpatialPanner } from '../../components/SpatialPanner';
 import { Wavetable3D } from '../../components/Wavetable3D';
 

@@ -103,32 +103,61 @@ export function registerBuiltinFaustDSP(): void {
         { address: '/spring/mix', label: 'Mix', min: 0, max: 1, defaultValue: 0.25, step: 0.01, type: 'hslider' },
     ]);
 
+    // ══════════════════════════════════════════════════════════
+    // ██  INSTRUMENTS  ████████████████████████████████████████
+    // ══════════════════════════════════════════════════════════
+
     // ── FM Synth ──────────────────────────────────────────────
     registerFaustDSP('FM Synth', `
         import("stdfaust.lib");
         freq = hslider("freq", 440, 20, 10000, 0.1);
+        gain = hslider("gain", 0.5, 0, 1, 0.01);
         gate = button("gate");
-        ratio = hslider("ratio", 2, 0.5, 10, 0.1);
-        index = hslider("index", 5, 0, 20, 0.1);
-        process = os.osc(freq + os.osc(freq * ratio) * freq * index) * en.adsr(0.01, 0.1, 0.8, 0.5, gate) <: _, _;
+        ratio = hslider("ratio", 2, 0.5, 16, 0.01);
+        index = hslider("index", 5, 0, 25, 0.1);
+        atk = hslider("attack", 0.01, 0.001, 5, 0.001);
+        dec = hslider("decay", 0.1, 0.01, 5, 0.01);
+        sus = hslider("sustain", 0.8, 0, 1, 0.01);
+        rel = hslider("release", 0.5, 0.01, 10, 0.01);
+        modEnv = en.adsr(0.001, dec * 0.5, 0.3, rel, gate);
+        modOsc = os.osc(freq * ratio) * freq * index * modEnv;
+        carrier = os.osc(freq + modOsc);
+        ampEnv = en.adsr(atk, dec, sus, rel, gate);
+        process = carrier * ampEnv * gain <: _, _;
     `, [
-        { address: '/fm_synth/ratio', label: 'Ratio', min: 0.5, max: 10, defaultValue: 2, step: 0.1, type: 'hslider' },
-        { address: '/fm_synth/index', label: 'Mod Index', min: 0, max: 20, defaultValue: 5, step: 0.1, type: 'hslider' },
-    ]);
+        { address: '/fm_synth/ratio', label: 'Ratio', min: 0.5, max: 16, defaultValue: 2, step: 0.01, type: 'hslider' },
+        { address: '/fm_synth/index', label: 'Mod Index', min: 0, max: 25, defaultValue: 5, step: 0.1, type: 'hslider' },
+        { address: '/fm_synth/attack', label: 'Attack', min: 0.001, max: 5, defaultValue: 0.01, step: 0.001, type: 'hslider' },
+        { address: '/fm_synth/decay', label: 'Decay', min: 0.01, max: 5, defaultValue: 0.1, step: 0.01, type: 'hslider' },
+        { address: '/fm_synth/sustain', label: 'Sustain', min: 0, max: 1, defaultValue: 0.8, step: 0.01, type: 'hslider' },
+        { address: '/fm_synth/release', label: 'Release', min: 0.01, max: 10, defaultValue: 0.5, step: 0.01, type: 'hslider' },
+        { address: '/fm_synth/gain', label: 'Gain', min: 0, max: 1, defaultValue: 0.5, step: 0.01, type: 'hslider' },
+    ], true);
 
     // ── Rhodes Electric Piano ─────────────────────────────────
+    // Body/bell dual-envelope FM architecture per instruments.md
     registerFaustDSP('Rhodes', `
         import("stdfaust.lib");
         freq = hslider("freq", 440, 20, 10000, 0.1);
+        gain = hslider("gain", 0.5, 0, 1, 0.01);
         gate = button("gate");
-        velocity = hslider("velocity", 0.8, 0, 1, 0.01);
-        index = 2 * velocity * en.ar(0.005, 0.5, gate);
-        ratio = 1;
-        mod = os.osc(freq * ratio) * freq * index;
-        carrier = os.osc(freq + mod);
-        env = en.adsr(0.005, 1.5, 0.2, 0.5, gate);
-        process = carrier * env * velocity * 0.5 <: _, _;
-    `, []);
+        brightness = hslider("brightness", 0.5, 0, 1, 0.01);
+        body_decay = hslider("body_decay", 1.5, 0.1, 5, 0.01);
+        bell_decay = hslider("bell_decay", 0.15, 0.01, 1, 0.01);
+        modIdx = (0.5 + brightness * 3.0) * gain;
+        bodyEnv = en.adsr(0.001, body_decay, 0.15, 0.3, gate);
+        bellEnv = en.adsr(0.001, bell_decay, 0.0, 0.1, gate);
+        bodyMod = os.osc(freq) * modIdx * freq;
+        body = os.osc(freq + bodyMod) * bodyEnv * 0.7;
+        bellMod = os.osc(freq * 14) * modIdx * 0.5 * freq;
+        bell = os.osc(freq * 14 + bellMod) * bellEnv * 0.3;
+        process = (body + bell) * gain <: _, _;
+    `, [
+        { address: '/Rhodes/brightness', label: 'Brightness', min: 0, max: 1, defaultValue: 0.5, step: 0.01, type: 'hslider' },
+        { address: '/Rhodes/body_decay', label: 'Body Decay', min: 0.1, max: 5, defaultValue: 1.5, step: 0.01, type: 'hslider' },
+        { address: '/Rhodes/bell_decay', label: 'Bell Decay', min: 0.01, max: 1, defaultValue: 0.15, step: 0.01, type: 'hslider' },
+        { address: '/Rhodes/gain', label: 'Gain', min: 0, max: 1, defaultValue: 0.5, step: 0.01, type: 'hslider' },
+    ], true);
 
     // ── Noise Gate ────────────────────────────────────────────
     registerFaustDSP('Noise Gate', `
@@ -162,10 +191,12 @@ export function registerBuiltinFaustDSP(): void {
         { address: '/Gain_Utility/width', label: 'Stereo Width', min: 0, max: 2, defaultValue: 1, step: 0.01, type: 'hslider' },
     ]);
 
-    // ── Hammond B3 ────────────────────────────────────────────
+    // ── Hammond B3 Organ ──────────────────────────────────────
+    // 9 drawbar tonewheel synthesis + key click + percussion + Leslie
     registerFaustDSP('Hammond B3', `
         import("stdfaust.lib");
         freq = hslider("freq", 440, 20, 6000, 0.01);
+        gain = hslider("gain", 0.5, 0, 1, 0.01);
         gate = button("gate");
         d1 = hslider("drawbar_16", 8, 0, 8, 1);
         d2 = hslider("drawbar_8", 8, 0, 8, 1);
@@ -176,15 +207,27 @@ export function registerBuiltinFaustDSP(): void {
         d7 = hslider("drawbar_135", 0, 0, 8, 1);
         d8 = hslider("drawbar_113", 0, 0, 8, 1);
         d9 = hslider("drawbar_1", 0, 0, 8, 1);
-        organ = os.osc(freq*0.5)*d1 + os.osc(freq)*d2 + os.osc(freq*1.5)*d3 +
-                os.osc(freq*2.0)*d4 + os.osc(freq*3.0)*d5 + os.osc(freq*4.0)*d6 +
-                os.osc(freq*5.0)*d7 + os.osc(freq*6.0)*d8 + os.osc(freq*8.0)*d9;
-        tonewheel = organ / 72.0;
+        perc_level = hslider("percussion", 0.3, 0, 1, 0.01);
+        perc_harm = hslider("perc_harmonic", 2, 2, 3, 1);
         leslie_speed = hslider("leslie_speed", 6.0, 0.1, 12.0, 0.1);
         leslie_depth = hslider("leslie_depth", 0.25, 0.0, 0.8, 0.01);
-        leslie = tonewheel * (1.0 + leslie_depth * os.osc(leslie_speed));
+        click_level = hslider("click", 0.3, 0, 1, 0.01);
+        // Tonewheels with leakage (~-40dB adjacent crosstalk)
+        leak = 0.01;
+        tw(f, d) = os.osc(f) * d + os.osc(f * 1.0007) * d * leak;
+        organ = tw(freq*0.5, d1) + tw(freq, d2) + tw(freq*1.5, d3) +
+                tw(freq*2, d4) + tw(freq*3, d5) + tw(freq*4, d6) +
+                tw(freq*5, d7) + tw(freq*6, d8) + tw(freq*8, d9);
+        tonewheel = organ / 72.0;
+        // Key click: filtered noise burst
+        click = no.noise : fi.resonbp(3000, 2, 1) * en.ar(0.001, 0.004, gate) * click_level;
+        // Percussion: 2nd or 3rd harmonic fast decay, single-trigger
+        perc = os.osc(freq * perc_harm) * en.ar(0.001, 0.15, gate) * perc_level;
+        // Leslie: L/R phase offset for stereo rotation
+        leslie_l = (tonewheel + click + perc) * (1.0 + leslie_depth * os.osc(leslie_speed));
+        leslie_r = (tonewheel + click + perc) * (1.0 + leslie_depth * os.osc(leslie_speed + 1.5708));
         env = en.adsr(0.005, 0.0, 1.0, 0.03, gate);
-        process = leslie * env * 0.7 <: _, _;
+        process = leslie_l * env * gain, leslie_r * env * gain;
     `, [
         { address: '/Hammond_B3/drawbar_16', label: "16'", min: 0, max: 8, defaultValue: 8, step: 1, type: 'hslider' },
         { address: '/Hammond_B3/drawbar_8', label: "8'", min: 0, max: 8, defaultValue: 8, step: 1, type: 'hslider' },
@@ -195,42 +238,84 @@ export function registerBuiltinFaustDSP(): void {
         { address: '/Hammond_B3/drawbar_135', label: "1⅗'", min: 0, max: 8, defaultValue: 0, step: 1, type: 'hslider' },
         { address: '/Hammond_B3/drawbar_113', label: "1⅓'", min: 0, max: 8, defaultValue: 0, step: 1, type: 'hslider' },
         { address: '/Hammond_B3/drawbar_1', label: "1'", min: 0, max: 8, defaultValue: 0, step: 1, type: 'hslider' },
+        { address: '/Hammond_B3/percussion', label: 'Percussion', min: 0, max: 1, defaultValue: 0.3, step: 0.01, type: 'hslider' },
+        { address: '/Hammond_B3/perc_harmonic', label: 'Perc Harmonic', min: 2, max: 3, defaultValue: 2, step: 1, type: 'hslider' },
+        { address: '/Hammond_B3/click', label: 'Key Click', min: 0, max: 1, defaultValue: 0.3, step: 0.01, type: 'hslider' },
         { address: '/Hammond_B3/leslie_speed', label: 'Leslie Speed', min: 0.1, max: 12, defaultValue: 6, step: 0.1, type: 'hslider' },
         { address: '/Hammond_B3/leslie_depth', label: 'Leslie Depth', min: 0, max: 0.8, defaultValue: 0.25, step: 0.01, type: 'hslider' },
-    ]);
+        { address: '/Hammond_B3/gain', label: 'Gain', min: 0, max: 1, defaultValue: 0.5, step: 0.01, type: 'hslider' },
+    ], true);
 
     // ── Minimoog Lead ─────────────────────────────────────────
+    // 3 detuned saws through Moog ladder filter with self-oscillation
     registerFaustDSP('Minimoog Lead', `
         import("stdfaust.lib");
         freq = hslider("freq", 440, 20, 12000, 0.01);
+        gain = hslider("gain", 0.5, 0, 1, 0.01);
         gate = button("gate");
+        glide = hslider("glide", 0.08, 0.001, 0.5, 0.001);
+        sfreq = freq : si.smooth(ba.tau2pole(glide));
         detune = hslider("detune", 7, 0, 50, 0.1);
-        osc2lvl = hslider("osc2", 0.6, 0, 1, 0.01);
-        cutoff = hslider("cutoff", 1800, 80, 18000, 1);
-        res = hslider("resonance", 0.4, 0, 0.95, 0.01);
-        env_amt = hslider("env_amount", 0.5, 0, 1, 0.01);
+        osc3lvl = hslider("osc3", 0.3, 0, 1, 0.01);
+        cutoff = hslider("cutoff", 1800, 80, 18000, 1) : si.smoo;
+        res = hslider("resonance", 4, 0.707, 25, 0.1) : si.smoo;
+        env_amt = hslider("env_amount", 0.3, 0, 1, 0.01);
         atk = hslider("attack", 0.005, 0.001, 5, 0.001);
         dec = hslider("decay", 0.25, 0.01, 5, 0.01);
         sus = hslider("sustain", 0.6, 0, 1, 0.01);
         rel = hslider("release", 0.3, 0.01, 5, 0.01);
-        osc1 = os.sawtooth(freq);
-        osc2 = os.sawtooth(freq * pow(2, detune / 1200));
-        mixed = osc1 + osc2 * osc2lvl;
+        spread = detune * 0.01;
+        osc1 = os.sawtooth(sfreq);
+        osc2 = os.sawtooth(sfreq * (1 + spread));
+        osc3 = os.sawtooth(sfreq * (1 - spread * 1.5));
+        mixed = (osc1 + osc2 + osc3 * osc3lvl) / 3;
         env = en.adsr(atk, dec, sus, rel, gate);
-        dyn_cutoff = cutoff * (1 + env_amt * env * 3);
-        filtered = fi.resonlp(dyn_cutoff, 1 + res * 12, mixed * 0.4);
-        process = filtered * env * 0.8 <: _, _;
+        fenv = env * env_amt;
+        filtered = mixed : ve.moogLadder(min(1.0, cutoff / 20000 + fenv), res);
+        process = filtered * env * gain * 0.8 <: _, _;
     `, [
-        { address: '/Minimoog_Lead/detune', label: 'Osc2 Detune (¢)', min: 0, max: 50, defaultValue: 7, step: 0.1, type: 'hslider' },
-        { address: '/Minimoog_Lead/osc2', label: 'Osc2 Level', min: 0, max: 1, defaultValue: 0.6, step: 0.01, type: 'hslider' },
+        { address: '/Minimoog_Lead/glide', label: 'Glide', min: 0.001, max: 0.5, defaultValue: 0.08, step: 0.001, type: 'hslider' },
+        { address: '/Minimoog_Lead/detune', label: 'Osc Detune (¢)', min: 0, max: 50, defaultValue: 7, step: 0.1, type: 'hslider' },
+        { address: '/Minimoog_Lead/osc3', label: 'Osc3 Level', min: 0, max: 1, defaultValue: 0.3, step: 0.01, type: 'hslider' },
         { address: '/Minimoog_Lead/cutoff', label: 'Filter Cutoff', min: 80, max: 18000, defaultValue: 1800, step: 1, type: 'hslider' },
-        { address: '/Minimoog_Lead/resonance', label: 'Resonance', min: 0, max: 0.95, defaultValue: 0.4, step: 0.01, type: 'hslider' },
-        { address: '/Minimoog_Lead/env_amount', label: 'Filter Env Amt', min: 0, max: 1, defaultValue: 0.5, step: 0.01, type: 'hslider' },
+        { address: '/Minimoog_Lead/resonance', label: 'Resonance', min: 0.707, max: 25, defaultValue: 4, step: 0.1, type: 'hslider' },
+        { address: '/Minimoog_Lead/env_amount', label: 'Filter Env Amt', min: 0, max: 1, defaultValue: 0.3, step: 0.01, type: 'hslider' },
         { address: '/Minimoog_Lead/attack', label: 'Attack', min: 0.001, max: 5, defaultValue: 0.005, step: 0.001, type: 'hslider' },
         { address: '/Minimoog_Lead/decay', label: 'Decay', min: 0.01, max: 5, defaultValue: 0.25, step: 0.01, type: 'hslider' },
         { address: '/Minimoog_Lead/sustain', label: 'Sustain', min: 0, max: 1, defaultValue: 0.6, step: 0.01, type: 'hslider' },
         { address: '/Minimoog_Lead/release', label: 'Release', min: 0.01, max: 5, defaultValue: 0.3, step: 0.01, type: 'hslider' },
-    ]);
+        { address: '/Minimoog_Lead/gain', label: 'Gain', min: 0, max: 1, defaultValue: 0.5, step: 0.01, type: 'hslider' },
+    ], true);
+
+    // ── Acid Bass 303 ─────────────────────────────────────────
+    // Diode ladder filter for characteristic squelchy resonance
+    registerFaustDSP('Acid Bass 303', `
+        import("stdfaust.lib");
+        freq = hslider("freq", 200, 50, 1000, 0.01);
+        gain = hslider("gain", 0.5, 0, 1, 0.01);
+        gate = button("gate");
+        cutoff = hslider("cutoff", 0.3, 0.01, 1, 0.001) : si.smoo;
+        resonance = hslider("resonance", 8, 0.7, 20, 0.1) : si.smoo;
+        envmod = hslider("envmod", 0.5, 0, 1, 0.01) : si.smoo;
+        decay = hslider("decay", 0.15, 0.01, 1.0, 0.01);
+        slide = hslider("slide", 0.06, 0.001, 0.5, 0.001);
+        dist = hslider("drive", 1.0, 1.0, 5.0, 0.1);
+        sfreq = freq : si.smooth(ba.tau2pole(slide));
+        osc_out = os.sawtooth(sfreq);
+        accent_env = en.ar(0.003, decay, gate) * envmod;
+        filtered = osc_out : ve.diodeLadder(min(1.0, cutoff + accent_env), resonance);
+        saturated = ma.tanh(filtered * dist);
+        amp_env = en.adsr(0.003, 0.2, 0.0, 0.05, gate) * gain;
+        process = saturated * amp_env <: _, _;
+    `, [
+        { address: '/Acid_Bass_303/cutoff', label: 'Cutoff', min: 0.01, max: 1, defaultValue: 0.3, step: 0.001, type: 'hslider' },
+        { address: '/Acid_Bass_303/resonance', label: 'Resonance', min: 0.7, max: 20, defaultValue: 8, step: 0.1, type: 'hslider' },
+        { address: '/Acid_Bass_303/envmod', label: 'Env Mod', min: 0, max: 1, defaultValue: 0.5, step: 0.01, type: 'hslider' },
+        { address: '/Acid_Bass_303/decay', label: 'Decay', min: 0.01, max: 1, defaultValue: 0.15, step: 0.01, type: 'hslider' },
+        { address: '/Acid_Bass_303/slide', label: 'Slide', min: 0.001, max: 0.5, defaultValue: 0.06, step: 0.001, type: 'hslider' },
+        { address: '/Acid_Bass_303/drive', label: 'Drive', min: 1, max: 5, defaultValue: 1, step: 0.1, type: 'hslider' },
+        { address: '/Acid_Bass_303/gain', label: 'Gain', min: 0, max: 1, defaultValue: 0.5, step: 0.01, type: 'hslider' },
+    ], true);
 
     // ── LUFS Meter (ITU-R BS.1770-4) ──────────────────────────
     registerFaustDSP('LUFS Meter', `

@@ -14,14 +14,15 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip
 import { useTracks } from '../hooks/useTracks';
 import { TrackHeader } from './TrackHeader';
 import { addTrack } from '../../useCases/addTrack';
-import { createFolder } from '../../useCases/folderUseCases';
+import { createFolder } from '../../useCases/folder';
 import { reorderTrack, selectTrack } from '../../useCases/toggleTrackState';
 import { removeTrack } from '../../useCases/removeTrack';
 import { setWorkspaceMode } from '../../useCases/trackViewActions';
 import { preferencesStore } from '#/modules/Workspace/stores/preferencesStore';
 import { timelineViewStore, setScrollY } from '#/modules/Arrangement/stores/timelineViewStore';
-import { injectPromptCommand } from '#/modules/AiRuntime/presentations/views/VoiceCommandOverlay';
+import { injectPromptCommand } from '#/modules/AiRuntime/useCases/promptInjection';
 import { defaultPreferences, type Preferences } from '#/modules/Workspace/useCases/workspaceQueries';
+import { setTrackHeight } from '#/modules/Workspace/useCases/setTrackHeight';
 
 
 const HEIGHT_CYCLE: Preferences['trackHeight'][] = ['compact', 'normal', 'large'];
@@ -168,9 +169,7 @@ export const TrackListView = ({
                                 onClick={() => {
                                     const idx = HEIGHT_CYCLE.indexOf(currentHeight);
                                     const next = HEIGHT_CYCLE[(idx + 1) % HEIGHT_CYCLE.length]!;
-                                    if (prefs) {
-                                        preferencesStore.set({ ...prefs, trackHeight: next });
-                                    }
+                                    setTrackHeight(next);
                                 }}
                             >
                                 <Rows3 className="size-3" aria-hidden="true" />
@@ -255,21 +254,21 @@ export const TrackListView = ({
                         );
                     })}
 
-                    {tracks.length === 0 && (
+                    {tracks.length === 0 ? (
                         <div className="p-3 text-center">
                             <p className="text-xs text-muted-foreground">No tracks yet</p>
                             <p className="mt-1 text-[10px] text-muted-foreground/60">
                                 Click + or type &quot;add audio track&quot;
                             </p>
                         </div>
-                    )}
+                    ) : null}
                 </div>
             </div>
         </div>
     );
 };
 
-import { getTrackTemplates, loadTrackTemplate } from '../../useCases/trackTemplateUseCases';
+import { getTrackTemplates, loadTrackTemplate } from '../../useCases/trackTemplate';
 
 const AddTrackMenu = ({ trackCount }: { trackCount: number }): ReactElement => {
     const [open, setOpen] = useState(false);
@@ -314,7 +313,7 @@ const AddTrackMenu = ({ trackCount }: { trackCount: number }): ReactElement => {
                 <TooltipContent>Add Track</TooltipContent>
             </Tooltip>
 
-            {open && (
+            {open ? (
                 <div
                     className="absolute top-full right-0 z-50 mt-1 w-44 rounded-md border border-border-soft border-t-[var(--color-light-edge)] bg-surface-overlay shadow-[0_4px_16px_rgba(0,0,0,0.5)] py-1 animate-in fade-in-0 zoom-in-95"
                     role="menu"
@@ -370,7 +369,7 @@ const AddTrackMenu = ({ trackCount }: { trackCount: number }): ReactElement => {
                         </>
                     )}
                 </div>
-            )}
+            ) : null}
         </div>
     );
 };

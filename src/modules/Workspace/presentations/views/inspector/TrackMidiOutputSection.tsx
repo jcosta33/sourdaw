@@ -1,6 +1,6 @@
 import { type ReactElement } from 'react';
 import { Card } from '#/components/ui/card';
-import { setMidiOutput, clearMidiOutput } from '#/modules/MIDI/useCases/midiRoutingUseCases';
+import { setMidiOutput, clearMidiOutput } from '#/modules/MIDI/useCases/midiRouting';
 import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
 
 type TrackMidiOutputSectionProps = {
@@ -40,11 +40,11 @@ export const TrackMidiOutputSection = ({ track, allTracks }: TrackMidiOutputSect
                                 </option>
                             ))}
                     </select>
-                    {track.midiOutputTrackId && (
+                    {track.midiOutputTrackId ? (
                         <p className="mt-2 text-[9px] text-muted-foreground leading-tight">
                             MIDI events from this track are routed to the destination track's instruments.
                         </p>
-                    )}
+                    ) : null}
                 </Card>
             </div>
         </div>

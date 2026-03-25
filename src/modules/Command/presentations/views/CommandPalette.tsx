@@ -4,6 +4,7 @@ import { Input } from '#/components/ui/input';
 import { cn } from '#/helpers/Styles/cn';
 import { searchCommands, type CommandEntry } from '../../models/CommandRegistry';
 import { executeAppAction } from '../../useCases/executeAppAction';
+import { closeCommandPalette } from '#/modules/Workspace/useCases/togglePanel';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 
 const subscribe = (cb: () => void): (() => void) => workspaceStore.subscribe(cb);
@@ -28,12 +29,7 @@ export const CommandPalette = (): ReactElement | null => {
         }
     }, [commandPaletteOpen]);
 
-    const close = () => {
-        const ws = workspaceStore.value;
-        if (ws) {
-            workspaceStore.set({ ...ws, commandPaletteOpen: false });
-        }
-    };
+    const close = closeCommandPalette;
 
     const execute = (entry: CommandEntry) => {
         close();
@@ -101,17 +97,17 @@ export const CommandPalette = (): ReactElement | null => {
                                 <span className="text-foreground">{cmd.label}</span>
                                 <span className="ml-2 text-xs text-muted-foreground">{cmd.description}</span>
                             </div>
-                            {cmd.shortcut && (
+                            {cmd.shortcut ? (
                                 <kbd className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
                                     {cmd.shortcut}
                                 </kbd>
-                            )}
+                            ) : null}
                         </button>
                     ))}
 
-                    {results.length === 0 && (
+                    {results.length === 0 ? (
                         <p className="px-3 py-4 text-center text-sm text-muted-foreground">No commands found</p>
-                    )}
+                    ) : null}
                 </div>
             </DialogContent>
         </Dialog>

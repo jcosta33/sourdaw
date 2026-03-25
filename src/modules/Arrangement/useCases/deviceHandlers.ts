@@ -7,7 +7,7 @@ import {
     setSend,
     removeSend,
     setDeviceParameter,
-} from '#/modules/Arrangement/useCases/deviceUseCases';
+} from '#/modules/Arrangement/useCases/device';
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
 import { getTrackStoreState } from '#/modules/Arrangement/useCases/trackQueries';
 import { getLatencyReport } from '#/modules/AudioEngine/useCases/latencyCompensation';
@@ -16,7 +16,7 @@ import {
     addSidechainRoute,
     removeSidechainRoute as removeSidechainRouteUseCase,
     getSidechainRoutesForTrack,
-} from '#/modules/Routing/useCases/sidechainUseCases';
+} from '#/modules/Routing/useCases/sidechain';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 

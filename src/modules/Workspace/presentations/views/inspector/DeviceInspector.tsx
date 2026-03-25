@@ -7,15 +7,15 @@ import {
 } from 'lucide-react';
 import { type LucideIcon } from 'lucide-react';
 import { BUILTIN_PLUGINS } from '#/modules/Arrangement/useCases/trackQueries';
-import { setDeviceParameter, bypassDevice } from '#/modules/Arrangement/useCases/deviceUseCases';
+import { setDeviceParameter, bypassDevice } from '#/modules/Arrangement/useCases/device';
 import { MechanicalSwitch } from '#/components/daw/MechanicalSwitch';
 import { LatchButton } from '#/components/daw/LatchButton';
 import { LED } from '#/components/daw/LED';
-import { getSidechainSource, addSidechainRoute, removeSidechainRoute } from '#/modules/Routing/useCases/sidechainUseCases';
+import { getSidechainSource, addSidechainRoute, removeSidechainRoute } from '#/modules/Routing/useCases/sidechain';
 import { useTracks } from '../../hooks/useTracks';
 import { type Device } from '#/modules/Arrangement/useCases/trackQueries';
 import { DeviceParameterControl } from './DeviceParameterControl';
-import { CompressorGainReduction } from '../../components/CompressorGainReduction';
+import { CompressorGainReduction } from '../metering/CompressorGainReduction';
 import { CompressorCurve } from '../../components/CompressorCurve';
 import { EQCurve } from '../../components/EQCurve';
 import { ReverbDecay } from '../../components/ReverbDecay';
@@ -24,7 +24,7 @@ import { DistortionCurve } from '../../components/DistortionCurve';
 import { FilterResponse } from '../../components/FilterResponse';
 import { ModulationLFO } from '../../components/ModulationLFO';
 import { BitcrusherStaircase } from '../../components/BitcrusherStaircase';
-import { LUFSMeter } from '../../components/LUFSMeter';
+import { LUFSMeter } from '../metering/LUFSMeter';
 
 type DeviceInspectorProps = {
     device: Device;
@@ -157,7 +157,7 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
             </div>
 
             {/* ── Sidechain Source Selector ── */}
-            {isSidechainComp && (
+            {isSidechainComp ? (
                 <div>
                     <SectionHeader title="Sidechain Source" />
                     <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
@@ -184,10 +184,10 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
                         </Card>
                     </div>
                 </div>
-            )}
+            ) : null}
 
             {/* ── Compressor/Limiter: Curve + Gain Reduction ── */}
-            {isCompressorLimiter && (
+            {isCompressorLimiter ? (
                 <div className="space-y-3">
                     <div>
                         <SectionHeader title="Transfer Curve" />
@@ -215,7 +215,7 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
                         </div>
                     )}
                 </div>
-            )}
+            ) : null}
 
             {/* ── Convolution Reverb: Specialized Layout ── */}
             {isConvolutionReverb && parameters.length > 0 ? (

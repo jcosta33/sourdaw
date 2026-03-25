@@ -7,7 +7,7 @@ import {
     useSyncExternalStore,
 } from 'react';
 import { markerStore } from '../../stores/markerStore';
-import { addMarker, removeMarker, renameMarker, setMarkerColor, moveMarker } from '../../useCases/markerUseCases';
+import { addMarker, removeMarker, renameMarker, setMarkerColor, moveMarker } from '../../useCases/marker';
 import { type Marker } from '../../models/Marker';
 import { Flag } from 'lucide-react';
 
@@ -242,7 +242,7 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                 );
             })}
 
-            {contextMenu.kind !== 'none' && (
+            {contextMenu.kind !== 'none' ? (
                 <div
                     ref={menuRef}
                     className="fixed z-50 min-w-[140px] rounded-md border border-border bg-popover p-1 shadow-md"
@@ -293,7 +293,7 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                         </>
                     )}
                 </div>
-            )}
+            ) : null}
         </div>
     );
 };

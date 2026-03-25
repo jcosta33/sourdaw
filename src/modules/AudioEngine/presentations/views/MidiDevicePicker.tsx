@@ -64,11 +64,11 @@ export const MidiDevicePicker = (): ReactElement => {
                     <RefreshCw className="size-3.5" />
                 </Button>
             </div>
-            {state.selectedInputId && state.inputs.length > 0 && (
+            {state.selectedInputId && state.inputs.length > 0 ? (
                 <p className="text-[10px] text-[var(--color-state-success)]/70">
                     Connected: {state.inputs.find((i) => i.id === state.selectedInputId)?.name ?? 'Unknown'}
                 </p>
-            )}
+            ) : null}
         </div>
     );
 };

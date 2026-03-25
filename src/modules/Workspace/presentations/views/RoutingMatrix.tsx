@@ -99,9 +99,9 @@ export const RoutingMatrix = (): ReactElement => {
                                                     aria-label={`${isConnected ? 'Disconnect' : 'Connect'} ${src.name} → ${dest.name}`}
                                                     title={`${src.name} → ${dest.name}`}
                                                 >
-                                                    {isConnected && (
+                                                    {isConnected ? (
                                                         <span className="text-[6px] text-[var(--color-state-success)]">●</span>
-                                                    )}
+                                                    ) : null}
                                                 </button>
                                             )}
                                         </td>

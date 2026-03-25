@@ -9,10 +9,10 @@ import { useTracks } from '../hooks/useTracks';
 import { decodeAudioFile } from '#/modules/Arrangement/useCases/trackViewActions';
 import { getPlatformPlugins } from '#/modules/Arrangement/useCases/trackQueries';
 import { usePreviewAudio } from '../hooks/usePreviewAudio';
-import { SamplesTab } from './sidebar/SamplesTab';
-import { InstrumentsTab } from './sidebar/InstrumentsTab';
-import { EffectsTab } from './sidebar/EffectsTab';
-import { MacrosPanel } from './sidebar/MacrosPanel';
+import { SamplesTab } from './Sidebar/SamplesTab';
+import { InstrumentsTab } from './Sidebar/InstrumentsTab';
+import { EffectsTab } from './Sidebar/EffectsTab';
+import { MacrosPanel } from './Sidebar/MacrosPanel';
 
 export type SidebarRoute = {
     id: string;
@@ -201,7 +201,7 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                 </Button>
             </div>
 
-            {currentStack.length > 1 && (
+            {currentStack.length > 1 ? (
                 <div className="flex items-center gap-1 border-b border-border/50 bg-surface-overlay px-2 py-1.5 h-[34px] shrink-0">
                     <Button
                         variant="ghost"
@@ -227,7 +227,7 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                         {currentRoute.title}
                     </span>
                 </div>
-            )}
+            ) : null}
 
             <ScrollArea className="flex-1">
                 <div
@@ -235,7 +235,7 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                     className="p-1 h-full"
                     aria-label={`${currentRoute.title} browser`}
                 >
-                    {currentRoute.id === 'library' && (
+                    {currentRoute.id === 'library' ? (
                         <>
                             <div className="flex items-center justify-between px-1 pb-1">
                                 <span className="text-[9px] text-muted-foreground">
@@ -270,9 +270,9 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                                 preview={preview}
                             />
                         </>
-                    )}
+                    ) : null}
 
-                    {currentRoute.id.startsWith('instruments') && (
+                    {currentRoute.id.startsWith('instruments') ? (
                         <InstrumentsTab
                             selectedTrackId={selectedTrackId}
                             searchQuery={searchQuery}
@@ -283,9 +283,9 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                             currentRoute={currentRoute}
                             pushRoute={pushRoute}
                         />
-                    )}
+                    ) : null}
 
-                    {currentRoute.id.startsWith('effects') && (
+                    {currentRoute.id.startsWith('effects') ? (
                         <EffectsTab
                             plugins={filteredPlugins}
                             selectedTrackId={selectedTrackId}
@@ -293,9 +293,9 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                             currentRoute={currentRoute}
                             pushRoute={pushRoute}
                         />
-                    )}
+                    ) : null}
 
-                    {currentRoute.id === 'macros' && <MacrosPanel />}
+                    {currentRoute.id === 'macros' ? <MacrosPanel /> : null}
                 </div>
             </ScrollArea>
         </aside>

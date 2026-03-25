@@ -14,9 +14,9 @@ import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/c
 import { addMidiNote, getNotesForClip, setNotesForClip } from '#/modules/MIDI/useCases/midiNoteCrud';
 import { createMidiNote } from '#/modules/Arrangement/useCases/trackQueries';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { addClip } from '#/modules/Arrangement/useCases/clipUseCases';
+import { addClip } from '#/modules/Arrangement/useCases/clip';
 import { stripSilence } from '#/modules/Arrangement/useCases/stripSilence';
-import { detectTempo, detectKey, audioToMidi } from '#/modules/Arrangement/useCases/audioAnalysisUseCases';
+import { detectTempo, detectKey, audioToMidi } from '#/modules/Arrangement/useCases/audioAnalysis';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { generateToolCalls } from '#/modules/AiRuntime/useCases/llmOrchestration';
@@ -225,7 +225,7 @@ export const aiMidiHandlers = {
     generateAudio: {
         execute: async (a) => {
             const { generateAudio: genAudio, isAudioAiServerRunning } =
-                await import('#/modules/AudioAnalysis/useCases/audioAiUseCases');
+                await import('#/modules/AudioAnalysis/useCases/audioAi');
 
             const running = await isAudioAiServerRunning();
             if (!running) {
@@ -283,7 +283,7 @@ export const aiMidiHandlers = {
     stemSeparate: {
         execute: async (a) => {
             const { separateStems: doSeparateStems, isAudioAiServerRunning } =
-                await import('#/modules/AudioAnalysis/useCases/audioAiUseCases');
+                await import('#/modules/AudioAnalysis/useCases/audioAi');
 
             const running = await isAudioAiServerRunning();
             if (!running) {

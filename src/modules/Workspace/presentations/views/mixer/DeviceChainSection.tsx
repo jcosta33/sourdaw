@@ -1,9 +1,9 @@
 import { type ReactElement, useState } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 import { selectTrack } from '#/modules/Arrangement/useCases/toggleTrackState';
-import { bypassDevice, addDevice, removeDevice, reorderDevices } from '#/modules/Arrangement/useCases/deviceUseCases';
+import { bypassDevice, addDevice, removeDevice, reorderDevices } from '#/modules/Arrangement/useCases/device';
 import { getPlatformPlugins } from '#/modules/Arrangement/useCases/trackQueries';
-import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
+import { openInspector } from '#/modules/Workspace/useCases/togglePanel';
 import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
 import { getAllModulationRoutes } from '#/modules/Plugin/useCases/modulationSystem';
 import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases/midiEffectPlugins';
@@ -15,12 +15,9 @@ type DeviceChainSectionProps = {
 export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactElement => {
     const [showAdd, setShowAdd] = useState(false);
 
-    const openInspector = () => {
+    const handleOpenInspector = (): void => {
         selectTrack(track.id);
-        const ws = workspaceStore.value;
-        if (ws && !ws.inspectorOpen) {
-            workspaceStore.set({ ...ws, inspectorOpen: true });
-        }
+        openInspector();
     };
 
     return (
@@ -39,7 +36,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                             )}
                             onClick={(e) => {
                                 e.stopPropagation();
-                                openInspector();
+                                handleOpenInspector();
                             }}
                             onDoubleClick={(e) => {
                                 e.stopPropagation();
@@ -66,12 +63,12 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                             <span className="text-[10px] text-muted-foreground">
                                 <span className="text-[9px] text-muted-foreground/50 mr-0.5">≡</span>
                                 {d.name}
-                                {getAllModulationRoutes().some((r) => r.target.deviceId === d.id) && (
+                                {getAllModulationRoutes().some((r) => r.target.deviceId === d.id) ? (
                                     <span
                                         className="ml-0.5 inline-block size-1.5 rounded-full bg-[var(--color-accent-lavender)]"
                                         title="Modulated"
                                     />
-                                )}
+                                ) : null}
                             </span>
                         </button>
                         <button

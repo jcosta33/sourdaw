@@ -3,26 +3,7 @@ import { Button } from '#/components/ui/button';
 import { Check, Undo2, X } from 'lucide-react';
 import { undoLastAction } from '#/modules/AiRuntime/useCases/aiPanelActions';
 
-export type AiChangeNotification = {
-    id: string;
-    summary: string;
-    details: string[];
-    timestamp: number;
-};
-
-let changeListeners: ((change: AiChangeNotification) => void)[] = [];
-
-export const notifyAiChange = (summary: string, details: string[]): void => {
-    const notification: AiChangeNotification = {
-        id: `ai-change-${Date.now()}`,
-        summary,
-        details,
-        timestamp: Date.now(),
-    };
-    for (const listener of changeListeners) {
-        listener(notification);
-    }
-};
+import { type AiChangeNotification, subscribeAiChangeNotification } from '#/modules/AiRuntime/useCases/notifyAiChange';
 
 export const AiChangeToast = (): ReactElement | null => {
     const [changes, setChanges] = useState<AiChangeNotification[]>([]);
@@ -31,10 +12,7 @@ export const AiChangeToast = (): ReactElement | null => {
         const handler = (change: AiChangeNotification) => {
             setChanges((prev) => [...prev, change]);
         };
-        changeListeners.push(handler);
-        return () => {
-            changeListeners = changeListeners.filter((l) => l !== handler);
-        };
+        return subscribeAiChangeNotification(handler);
     }, []);
 
     useEffect(() => {
@@ -65,7 +43,7 @@ export const AiChangeToast = (): ReactElement | null => {
                 </div>
                 <div className="flex-1 min-w-0">
                     <p className="text-xs font-medium text-foreground">{latest.summary}</p>
-                    {latest.details.length > 0 && (
+                    {latest.details.length > 0 ? (
                         <div className="mt-1 space-y-0.5">
                             {latest.details.map((detail, i) => (
                                 <p key={i} className="text-[10px] text-muted-foreground">
@@ -73,7 +51,7 @@ export const AiChangeToast = (): ReactElement | null => {
                                 </p>
                             ))}
                         </div>
-                    )}
+                    ) : null}
                     <div className="mt-2 flex gap-1">
                         <Button
                             variant="ghost"

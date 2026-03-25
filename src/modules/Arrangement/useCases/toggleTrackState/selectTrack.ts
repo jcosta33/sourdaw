@@ -1,4 +1,4 @@
-import { updateTrackState, getTrackById } from '#/modules/Arrangement/repositories/trackRepository';
+import { updateTrackState, getTrackById } from '#/modules/Arrangement/repositories/track';
 import { setMidiInputTrack } from '#/modules/AudioEngine/useCases/webMidiInput';
 
 export function selectTrack(trackId: string | null): void {

@@ -1,5 +1,5 @@
 import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
-import { setClipStretchMode, setClipStretchRatio, fitClipToBeats } from '#/modules/Arrangement/useCases/clipStretchUseCases';
+import { setClipStretchMode, setClipStretchRatio, fitClipToBeats } from '#/modules/Arrangement/useCases/clipStretch';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 

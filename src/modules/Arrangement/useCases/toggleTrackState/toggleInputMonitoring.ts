@@ -1,4 +1,4 @@
-import { updateTrack, getTrackById } from '#/modules/Arrangement/repositories/trackRepository';
+import { updateTrack, getTrackById } from '#/modules/Arrangement/repositories/track';
 import { startInputMonitoring, stopInputMonitoring } from '#/modules/AudioEngine/useCases/audioRecorder';
 
 export function toggleInputMonitoring(trackId: string): void {

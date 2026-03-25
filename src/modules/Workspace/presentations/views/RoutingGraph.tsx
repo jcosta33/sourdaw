@@ -1,9 +1,9 @@
 import { type ReactElement, useSyncExternalStore } from 'react';
 import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores/trackStore';
-import { getAllSidechainRoutes } from '#/modules/Routing/useCases/sidechainUseCases';
+import { getAllSidechainRoutes } from '#/modules/Routing/useCases/sidechain';
 import { selectTrack } from '#/modules/Arrangement/useCases/toggleTrackState';
 import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
-import { type SidechainRoute } from '#/modules/Routing/useCases/sidechainUseCases';
+import { type SidechainRoute } from '#/modules/Routing/useCases/sidechain';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
 const defaultState: TrackStoreState = { tracks: [], selectedTrackId: null };
@@ -139,7 +139,7 @@ const ConnectionLine = ({
                 strokeDasharray={dashArray}
                 opacity={highlighted ? 1 : 0.5}
             />
-            {label && (
+            {label ? (
                 <text
                     x={midX}
                     y={(from.y + to.y) / 2 - 6}
@@ -148,7 +148,7 @@ const ConnectionLine = ({
                 >
                     {label}
                 </text>
-            )}
+            ) : null}
         </g>
     );
 };

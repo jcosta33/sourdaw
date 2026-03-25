@@ -1,10 +1,10 @@
-import { getTransportState, updateTransportState } from '#/modules/Transport/repositories/transportRepository';
+import { getTransportState, updateTransportState } from '#/modules/Transport/repositories/transport';
 import { getTrackStoreState } from '#/modules/Arrangement/useCases/trackQueries';
 import { updateClip } from '#/modules/Arrangement/useCases/trackQueries';
 import { resumeEngine, getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
 import { scheduleClick } from '#/modules/AudioEngine/useCases/scheduling';
 import { startAudioRecording, stopAudioRecording } from '#/modules/AudioEngine/useCases/audioRecorder';
-import { startRecording, stopRecording } from '#/modules/Arrangement/useCases/recordingUseCases';
+import { startRecording, stopRecording } from '#/modules/Arrangement/useCases/recording';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { ensureTrackStrips } from '#/modules/Transport/useCases/ensureTrackStrips';
 import { startPlayback } from './startPlayback';

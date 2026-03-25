@@ -1,12 +1,12 @@
 import { type ActionHandler } from '#/modules/Command/useCases/commandQueries';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { setProcessingMode, type BitDepthMode } from '#/modules/AudioEngine/useCases/audioPrecisionUseCases';
-import { toggleNodeView } from '#/modules/Plugin/useCases/nodeViewUseCases';
-import { setProtocol, type ControlSurfaceProtocol } from '#/modules/AudioEngine/useCases/controlSurfaceUseCases';
-import { addCvOutput, type CvOutputChannel } from '#/modules/Synth/useCases/cvGateUseCases';
-import { connectPush, disconnectPush } from '#/modules/Plugin/useCases/pushIntegrationUseCases';
-import { loadModel, setTransferBlend } from '#/modules/AudioEngine/useCases/raveUseCases';
-import { enableWarping, setWarpAlgorithm, setPitchShift, type WarpAlgorithm } from '#/modules/AudioEngine/useCases/audioWarpingUseCases';
+import { setProcessingMode, type BitDepthMode } from '#/modules/AudioEngine/useCases/audioPrecision';
+import { toggleNodeView } from '#/modules/Plugin/useCases/nodeView';
+import { setProtocol, type ControlSurfaceProtocol } from '#/modules/AudioEngine/useCases/controlSurface';
+import { addCvOutput, type CvOutputChannel } from '#/modules/Synth/useCases/cvGate';
+import { connectPush, disconnectPush } from '#/modules/Plugin/useCases/pushIntegration';
+import { loadModel, setTransferBlend } from '#/modules/AudioEngine/useCases/rave';
+import { enableWarping, setWarpAlgorithm, setPitchShift, type WarpAlgorithm } from '#/modules/AudioEngine/useCases/audioWarping';
 
 export const finalFeatureHandlers: Record<string, ActionHandler<any>> = {
     setProcessingMode: {

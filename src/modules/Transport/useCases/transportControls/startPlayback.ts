@@ -1,4 +1,4 @@
-import { getTransportState, updateTransportState } from '#/modules/Transport/repositories/transportRepository';
+import { getTransportState, updateTransportState } from '#/modules/Transport/repositories/transport';
 import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
 import { resumeEngine } from '#/modules/AudioEngine/useCases/engineAccess';
 import { startPlayheadScheduler } from '#/modules/Transport/useCases/playheadScheduler';

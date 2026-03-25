@@ -51,7 +51,7 @@ export const ProjectName = ({ name, dirty }: ProjectNameProps): ReactElement => 
                     onDoubleClick={() => saveProject()}
                 >
                     <span className="truncate">{name}</span>
-                    {dirty && <span className="text-muted-foreground">•</span>}
+                    {dirty ? <span className="text-muted-foreground">•</span> : null}
                 </button>
             </TooltipTrigger>
             <TooltipContent>Click to rename, double-click to save</TooltipContent>

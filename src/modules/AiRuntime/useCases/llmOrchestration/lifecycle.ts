@@ -10,8 +10,8 @@ import {
 import {
     initWebLlmEngine,
     unloadWebLlmEngine,
-} from '../../repositories/webLlmRepository';
-import { isCloudAvailable } from '../../repositories/cloudLlmRepository';
+} from '../../repositories/webLlm';
+import { isCloudAvailable } from '../../repositories/cloudLlm';
 import { resolveBackend } from './backendResolution';
 
 const logger = Container.getInstance().get(Logger);

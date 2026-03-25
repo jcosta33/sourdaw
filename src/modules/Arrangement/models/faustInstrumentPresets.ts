@@ -1,0 +1,746 @@
+/**
+ * Factory presets for Faust-based instruments.
+ *
+ * Each preset uses the actual Faust module ID as the device type
+ * (e.g., 'faust-hammond-b3') so it compiles and runs through
+ * the Faust AudioWorklet pipeline — not the basic builtin-synth.
+ */
+
+import { type SoundPreset, type DevicePreset } from './SoundPreset';
+
+const AUTHOR = 'WebDAW';
+
+// ── Helper: create a Faust instrument device preset ──────────────
+
+function faust(moduleId: string, name: string, params: Record<string, number>): DevicePreset {
+    return { type: moduleId, name, parameterValues: params };
+}
+
+// ── Helper: create a builtin effect device preset ────────────────
+
+function reverb(name: string, params: Record<string, number>): DevicePreset {
+    return { type: 'builtin-reverb', name, parameterValues: { 'rev-size': 0.5, 'rev-decay': 2, 'rev-damping': 0.5, 'rev-mix': 0.3, ...params } };
+}
+
+function delay(name: string, params: Record<string, number>): DevicePreset {
+    return { type: 'builtin-delay', name, parameterValues: { 'delay-time': 250, 'delay-feedback': 0.4, 'delay-mix': 0.3, ...params } };
+}
+
+function chorus(name: string, params: Record<string, number>): DevicePreset {
+    return { type: 'builtin-chorus', name, parameterValues: { 'chorus-rate': 1.5, 'chorus-depth': 7, 'chorus-feedback': 0.2, 'chorus-mix': 0.5, ...params } };
+}
+
+function comp(name: string, params: Record<string, number>): DevicePreset {
+    return { type: 'builtin-compressor', name, parameterValues: { 'comp-threshold': -20, 'comp-ratio': 4, 'comp-attack': 10, 'comp-release': 100, 'comp-makeup': 0, ...params } };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  FAUST INSTRUMENT PRESETS
+// ═══════════════════════════════════════════════════════════════════
+
+export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
+
+    // ─── Hammond B3 Organ ────────────────────────────────────────────────
+
+    {
+        id: 'factory-faust-hammond-gospel',
+        name: 'Gospel Organ',
+        category: 'keys',
+        subcategory: 'analog',
+        description: 'Full drawbars, heavy percussion, fast Leslie. Church and gospel organ.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-hammond-b3', 'Gospel Organ', {
+                drawbar_16: 8, drawbar_8: 8, drawbar_513: 8, drawbar_4: 7, drawbar_223: 6,
+                drawbar_2: 5, drawbar_135: 4, drawbar_113: 3, drawbar_1: 2,
+                percussion: 0.6, perc_harmonic: 3, click: 0.5,
+                leslie_speed: 8.0, leslie_depth: 0.5, gain: 0.5,
+            }),
+            reverb('Hall', { 'rev-size': 0.8, 'rev-decay': 4, 'rev-mix': 0.3 }),
+        ],
+        tags: ['organ', 'hammond', 'gospel', 'church', 'full'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-hammond-jazz',
+        name: 'Jazz Organ',
+        category: 'keys',
+        subcategory: 'analog',
+        description: 'Jimmy Smith-style jazz combo. 8\' and 4\' with percussion on 2nd harmonic.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-hammond-b3', 'Jazz Organ', {
+                drawbar_16: 0, drawbar_8: 8, drawbar_513: 0, drawbar_4: 6, drawbar_223: 0,
+                drawbar_2: 0, drawbar_135: 0, drawbar_113: 0, drawbar_1: 0,
+                percussion: 0.4, perc_harmonic: 2, click: 0.4,
+                leslie_speed: 6.0, leslie_depth: 0.3, gain: 0.5,
+            }),
+        ],
+        tags: ['organ', 'hammond', 'jazz', 'combo', 'percussion'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-hammond-rock',
+        name: 'Rock Organ',
+        category: 'keys',
+        subcategory: 'analog',
+        description: 'Jon Lord-style rock organ. 16\' and 8\' heavy, driven Leslie.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-hammond-b3', 'Rock Organ', {
+                drawbar_16: 8, drawbar_8: 8, drawbar_513: 0, drawbar_4: 0, drawbar_223: 0,
+                drawbar_2: 0, drawbar_135: 0, drawbar_113: 0, drawbar_1: 0,
+                percussion: 0.2, perc_harmonic: 2, click: 0.6,
+                leslie_speed: 10.0, leslie_depth: 0.6, gain: 0.6,
+            }),
+        ],
+        tags: ['organ', 'hammond', 'rock', 'deep-purple', 'driven'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-hammond-ballad',
+        name: 'Ballad Organ',
+        category: 'keys',
+        subcategory: 'analog',
+        description: 'Gentle 8\' and 4\' with slow Leslie. Beautiful for ballads and hymns.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-hammond-b3', 'Ballad Organ', {
+                drawbar_16: 4, drawbar_8: 8, drawbar_513: 0, drawbar_4: 4, drawbar_223: 0,
+                drawbar_2: 0, drawbar_135: 0, drawbar_113: 0, drawbar_1: 0,
+                percussion: 0.0, perc_harmonic: 2, click: 0.1,
+                leslie_speed: 1.5, leslie_depth: 0.15, gain: 0.4,
+            }),
+            reverb('Cathedral', { 'rev-size': 1.0, 'rev-decay': 6, 'rev-mix': 0.35 }),
+        ],
+        tags: ['organ', 'hammond', 'ballad', 'gentle', 'hymn'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-hammond-reggae',
+        name: 'Reggae Organ',
+        category: 'keys',
+        subcategory: 'analog',
+        description: 'Skank organ with 8\' only and heavy click. Sharp, percussive chords.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-hammond-b3', 'Reggae Organ', {
+                drawbar_16: 0, drawbar_8: 6, drawbar_513: 0, drawbar_4: 0, drawbar_223: 0,
+                drawbar_2: 0, drawbar_135: 0, drawbar_113: 0, drawbar_1: 0,
+                percussion: 0.5, perc_harmonic: 3, click: 0.8,
+                leslie_speed: 0.5, leslie_depth: 0.05, gain: 0.45,
+            }),
+        ],
+        tags: ['organ', 'hammond', 'reggae', 'skank', 'percussive'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+
+    // ─── Rhodes Electric Piano ───────────────────────────────────────────
+
+    {
+        id: 'factory-faust-rhodes-warm',
+        name: 'Warm Rhodes',
+        category: 'keys',
+        subcategory: 'analog',
+        description: 'Mellow electric piano with long body decay. Classic warm Rhodes tone.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-rhodes', 'Warm Rhodes', {
+                brightness: 0.3, body_decay: 2.0, bell_decay: 0.1, gain: 0.5,
+            }),
+            chorus('Chorus', { 'chorus-rate': 0.8, 'chorus-depth': 5, 'chorus-mix': 0.3 }),
+        ],
+        tags: ['rhodes', 'keys', 'warm', 'mellow', 'electric-piano'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-rhodes-bright',
+        name: 'Bright Rhodes',
+        category: 'keys',
+        subcategory: 'analog',
+        description: 'Sparkly electric piano with strong bell attack. Great for funk and R&B.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-rhodes', 'Bright Rhodes', {
+                brightness: 0.8, body_decay: 1.2, bell_decay: 0.25, gain: 0.5,
+            }),
+        ],
+        tags: ['rhodes', 'keys', 'bright', 'bell', 'funk'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-rhodes-bark',
+        name: 'Bark Rhodes',
+        category: 'keys',
+        subcategory: 'analog',
+        description: 'Aggressive overdriven Rhodes with high brightness and short decay.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-rhodes', 'Bark Rhodes', {
+                brightness: 1.0, body_decay: 0.8, bell_decay: 0.3, gain: 0.7,
+            }),
+            comp('Compressor', { 'comp-threshold': -12, 'comp-ratio': 6 }),
+        ],
+        tags: ['rhodes', 'keys', 'bark', 'aggressive', 'drive'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-rhodes-suitcase',
+        name: 'Suitcase Rhodes',
+        category: 'keys',
+        subcategory: 'analog',
+        description: 'Classic Fender Rhodes Suitcase with chorus and reverb. Dreamy and wide.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-rhodes', 'Suitcase Rhodes', {
+                brightness: 0.45, body_decay: 1.8, bell_decay: 0.12, gain: 0.45,
+            }),
+            chorus('Chorus', { 'chorus-rate': 1.2, 'chorus-depth': 8, 'chorus-mix': 0.4 }),
+            reverb('Room', { 'rev-size': 0.4, 'rev-decay': 1.5, 'rev-mix': 0.2 }),
+        ],
+        tags: ['rhodes', 'keys', 'suitcase', 'chorus', 'dreamy'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-rhodes-ambient',
+        name: 'Ambient Rhodes',
+        category: 'pad',
+        subcategory: 'analog',
+        description: 'Ethereal Rhodes pad with huge reverb. Sustained ambient textures.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-rhodes', 'Ambient Rhodes', {
+                brightness: 0.2, body_decay: 4.0, bell_decay: 0.05, gain: 0.35,
+            }),
+            reverb('Ambient', { 'rev-size': 1.0, 'rev-decay': 8, 'rev-mix': 0.6 }),
+            delay('Delay', { 'delay-time': 500, 'delay-feedback': 0.4, 'delay-mix': 0.25 }),
+        ],
+        tags: ['rhodes', 'ambient', 'pad', 'ethereal', 'reverb'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+
+    // ─── Minimoog Lead ───────────────────────────────────────────────────
+
+    {
+        id: 'factory-faust-moog-classic-lead',
+        name: 'Classic Moog Lead',
+        category: 'lead',
+        subcategory: 'analog',
+        description: 'The iconic Moog lead sound. Fat saws through resonant ladder filter.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-minimoog-lead', 'Classic Lead', {
+                glide: 0.08, detune: 7, osc3: 0.3,
+                cutoff: 2500, resonance: 4, env_amount: 0.4,
+                attack: 0.005, decay: 0.25, sustain: 0.6, release: 0.3, gain: 0.5,
+            }),
+            delay('Delay', { 'delay-time': 300, 'delay-feedback': 0.3, 'delay-mix': 0.2 }),
+        ],
+        tags: ['moog', 'lead', 'analog', 'classic', 'fat'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-moog-screaming',
+        name: 'Screaming Moog',
+        category: 'lead',
+        subcategory: 'analog',
+        description: 'Self-oscillating filter with high resonance. Aggressive screaming lead.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-minimoog-lead', 'Screaming Lead', {
+                glide: 0.12, detune: 15, osc3: 0.5,
+                cutoff: 3500, resonance: 18, env_amount: 0.6,
+                attack: 0.01, decay: 0.2, sustain: 0.5, release: 0.4, gain: 0.45,
+            }),
+        ],
+        tags: ['moog', 'lead', 'screaming', 'resonant', 'aggressive'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-moog-bass',
+        name: 'Moog Bass',
+        category: 'bass',
+        subcategory: 'analog',
+        description: 'Deep, punchy Moog bass. Low cutoff with envelope punch.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-minimoog-lead', 'Moog Bass', {
+                glide: 0.05, detune: 5, osc3: 0.4,
+                cutoff: 800, resonance: 6, env_amount: 0.5,
+                attack: 0.003, decay: 0.15, sustain: 0.4, release: 0.15, gain: 0.55,
+            }),
+            comp('Compressor', { 'comp-threshold': -15, 'comp-ratio': 5 }),
+        ],
+        tags: ['moog', 'bass', 'deep', 'punchy', 'analog'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-moog-portamento',
+        name: 'Moog Portamento',
+        category: 'lead',
+        subcategory: 'analog',
+        description: 'Long glide lead with smooth pitch transitions. Expressive solo voice.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-minimoog-lead', 'Portamento', {
+                glide: 0.35, detune: 10, osc3: 0.2,
+                cutoff: 2000, resonance: 5, env_amount: 0.3,
+                attack: 0.05, decay: 0.3, sustain: 0.7, release: 0.5, gain: 0.5,
+            }),
+        ],
+        tags: ['moog', 'lead', 'portamento', 'glide', 'expressive'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-moog-pad',
+        name: 'Moog Pad',
+        category: 'pad',
+        subcategory: 'analog',
+        description: 'Warm analog pad with slow attack and resonant sweep.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-minimoog-lead', 'Moog Pad', {
+                glide: 0.001, detune: 12, osc3: 0.5,
+                cutoff: 1200, resonance: 3, env_amount: 0.2,
+                attack: 0.5, decay: 0.5, sustain: 0.8, release: 2.0, gain: 0.4,
+            }),
+            reverb('Reverb', { 'rev-size': 0.8, 'rev-decay': 5, 'rev-mix': 0.4 }),
+        ],
+        tags: ['moog', 'pad', 'warm', 'analog', 'lush'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+
+    // ─── FM Synth ────────────────────────────────────────────────────────
+
+    {
+        id: 'factory-faust-fm-dx-bells',
+        name: 'DX Bells',
+        category: 'keys',
+        subcategory: 'digital',
+        description: 'Classic DX7 bell sound. High ratio FM with fast mod decay.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-fm-synth', 'DX Bells', {
+                ratio: 14, index: 4, attack: 0.001, decay: 2.0, sustain: 0, release: 1.0, gain: 0.45,
+            }),
+            reverb('Hall', { 'rev-size': 0.6, 'rev-decay': 3, 'rev-mix': 0.3 }),
+        ],
+        tags: ['fm', 'bells', 'dx7', 'digital', 'crystalline'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-fm-crystal-keys',
+        name: 'Crystal Keys',
+        category: 'keys',
+        subcategory: 'digital',
+        description: 'Glassy FM keys with medium index. Bright and articulate.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-fm-synth', 'Crystal Keys', {
+                ratio: 3, index: 3, attack: 0.005, decay: 0.8, sustain: 0.3, release: 0.5, gain: 0.5,
+            }),
+        ],
+        tags: ['fm', 'keys', 'crystal', 'digital', 'bright'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-fm-metallic-bass',
+        name: 'FM Metallic Bass',
+        category: 'bass',
+        subcategory: 'digital',
+        description: 'Aggressive FM bass with high modulation index. Metallic and punchy.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-fm-synth', 'Metallic Bass', {
+                ratio: 1, index: 12, attack: 0.003, decay: 0.2, sustain: 0.3, release: 0.1, gain: 0.55,
+            }),
+            comp('Compressor', { 'comp-threshold': -12, 'comp-ratio': 6 }),
+        ],
+        tags: ['fm', 'bass', 'metallic', 'digital', 'punchy'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-fm-epiano',
+        name: 'FM E-Piano',
+        category: 'keys',
+        subcategory: 'digital',
+        description: 'DX7-style electric piano. Warm ratio-1 FM with gentle index.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-fm-synth', 'FM E-Piano', {
+                ratio: 1, index: 2, attack: 0.005, decay: 1.5, sustain: 0.2, release: 0.5, gain: 0.5,
+            }),
+            chorus('Chorus', { 'chorus-rate': 0.6, 'chorus-depth': 4, 'chorus-mix': 0.25 }),
+        ],
+        tags: ['fm', 'keys', 'epiano', 'dx7', 'warm'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-fm-pad',
+        name: 'FM Shimmer Pad',
+        category: 'pad',
+        subcategory: 'digital',
+        description: 'Evolving FM pad with slow attack and gentle modulation.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-fm-synth', 'Shimmer Pad', {
+                ratio: 7, index: 1.5, attack: 0.8, decay: 0.5, sustain: 0.7, release: 3.0, gain: 0.35,
+            }),
+            reverb('Space', { 'rev-size': 1.0, 'rev-decay': 8, 'rev-mix': 0.5 }),
+        ],
+        tags: ['fm', 'pad', 'shimmer', 'evolving', 'ambient'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-fm-organ',
+        name: 'FM Organ',
+        category: 'keys',
+        subcategory: 'digital',
+        description: 'Organ-like sustained FM tone with low ratio.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-fm-synth', 'FM Organ', {
+                ratio: 2, index: 1.5, attack: 0.003, decay: 0.1, sustain: 0.9, release: 0.1, gain: 0.45,
+            }),
+        ],
+        tags: ['fm', 'organ', 'sustained', 'digital'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+
+    // ─── Acid Bass 303 ───────────────────────────────────────────────────
+
+    {
+        id: 'factory-faust-acid-classic',
+        name: 'Classic Acid',
+        category: 'bass',
+        subcategory: 'analog',
+        description: 'The classic 303 acid line. Medium resonance and envelope modulation.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-acid-bass-303', 'Classic Acid', {
+                cutoff: 0.3, resonance: 8, envmod: 0.5, decay: 0.15, slide: 0.06, drive: 1.0, gain: 0.5,
+            }),
+        ],
+        tags: ['acid', '303', 'bass', 'squelch', 'classic'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-acid-squelch',
+        name: 'Acid Squelch',
+        category: 'bass',
+        subcategory: 'analog',
+        description: 'Maximum squelch — high resonance, short decay. Wet and aggressive.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-acid-bass-303', 'Acid Squelch', {
+                cutoff: 0.15, resonance: 16, envmod: 0.8, decay: 0.08, slide: 0.04, drive: 2.0, gain: 0.5,
+            }),
+        ],
+        tags: ['acid', '303', 'squelch', 'aggressive', 'resonant'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-acid-muted',
+        name: 'Muted Acid',
+        category: 'bass',
+        subcategory: 'analog',
+        description: 'Dark, muted 303 with low cutoff and minimal envelope. Subtle and deep.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-acid-bass-303', 'Muted Acid', {
+                cutoff: 0.12, resonance: 4, envmod: 0.15, decay: 0.3, slide: 0.08, drive: 1.0, gain: 0.55,
+            }),
+        ],
+        tags: ['acid', '303', 'muted', 'dark', 'deep'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-acid-scream',
+        name: 'Screaming Acid',
+        category: 'bass',
+        subcategory: 'analog',
+        description: 'Distorted screaming acid. High drive with long slides.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-acid-bass-303', 'Screaming Acid', {
+                cutoff: 0.4, resonance: 14, envmod: 0.7, decay: 0.1, slide: 0.2, drive: 4.0, gain: 0.45,
+            }),
+        ],
+        tags: ['acid', '303', 'screaming', 'distorted', 'drive'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-acid-liquid',
+        name: 'Liquid Acid',
+        category: 'bass',
+        subcategory: 'analog',
+        description: 'Smooth, flowing acid with long slides and medium resonance.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-acid-bass-303', 'Liquid Acid', {
+                cutoff: 0.25, resonance: 10, envmod: 0.4, decay: 0.2, slide: 0.35, drive: 1.5, gain: 0.5,
+            }),
+            delay('Delay', { 'delay-time': 200, 'delay-feedback': 0.3, 'delay-mix': 0.2 }),
+        ],
+        tags: ['acid', '303', 'liquid', 'smooth', 'flowing'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+
+    // ─── Supersaw Unison ─────────────────────────────────────────────────
+
+    {
+        id: 'factory-faust-supersaw-trance',
+        name: 'Trance Lead',
+        category: 'lead',
+        subcategory: 'digital',
+        description: 'Classic trance supersaw. 7 detuned saws with open filter.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-supersaw-unison', 'Trance Lead', {
+                detune: 20, center_mix: 0.5, cutoff: 12000, resonance: 0.2,
+                attack: 0.01, decay: 0.2, sustain: 0.8, release: 0.5,
+            }),
+            reverb('Reverb', { 'rev-size': 0.5, 'rev-decay': 2, 'rev-mix': 0.25 }),
+        ],
+        tags: ['supersaw', 'trance', 'lead', 'unison', 'wide'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-supersaw-chord',
+        name: 'EDM Chord Stab',
+        category: 'synth',
+        subcategory: 'digital',
+        description: 'Short supersaw stab for chords. Quick decay, punchy attack.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-supersaw-unison', 'Chord Stab', {
+                detune: 15, center_mix: 0.6, cutoff: 6000, resonance: 0.3,
+                attack: 0.003, decay: 0.3, sustain: 0.2, release: 0.15,
+            }),
+            comp('Compressor', { 'comp-threshold': -10, 'comp-ratio': 4 }),
+        ],
+        tags: ['supersaw', 'edm', 'chord', 'stab', 'punchy'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-supersaw-pad',
+        name: 'Supersaw Pad',
+        category: 'pad',
+        subcategory: 'digital',
+        description: 'Massive detuned pad with slow attack and long release.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-supersaw-unison', 'Supersaw Pad', {
+                detune: 30, center_mix: 0.4, cutoff: 3000, resonance: 0.5,
+                attack: 0.5, decay: 0.5, sustain: 0.8, release: 3.0,
+            }),
+            reverb('Space', { 'rev-size': 0.9, 'rev-decay': 6, 'rev-mix': 0.4 }),
+        ],
+        tags: ['supersaw', 'pad', 'massive', 'wide', 'ambient'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-supersaw-bass',
+        name: 'Supersaw Bass',
+        category: 'bass',
+        subcategory: 'digital',
+        description: 'Heavy detuned saw bass. Tight and aggressive with low cutoff.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-supersaw-unison', 'Supersaw Bass', {
+                detune: 10, center_mix: 0.7, cutoff: 1500, resonance: 0.6,
+                attack: 0.005, decay: 0.15, sustain: 0.4, release: 0.1,
+            }),
+            comp('Compressor', { 'comp-threshold': -15, 'comp-ratio': 5 }),
+        ],
+        tags: ['supersaw', 'bass', 'heavy', 'aggressive'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+
+    // ─── Wavetable Synth ─────────────────────────────────────────────────
+
+    {
+        id: 'factory-faust-wt-morph-pad',
+        name: 'Morph Pad',
+        category: 'pad',
+        subcategory: 'digital',
+        description: 'Slowly morphing wavetable pad. Evolving timbral texture.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-wavetable-synth', 'Morph Pad', {
+                morph: 0.3, attack: 0.6, decay: 0.5, sustain: 0.8, release: 2.5, gain: 0.45,
+            }),
+            reverb('Space', { 'rev-size': 0.9, 'rev-decay': 5, 'rev-mix': 0.4 }),
+        ],
+        tags: ['wavetable', 'pad', 'morph', 'evolving', 'digital'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-wt-digital-lead',
+        name: 'Digital WT Lead',
+        category: 'lead',
+        subcategory: 'digital',
+        description: 'Bright wavetable lead with square morph. Sharp and cutting.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-wavetable-synth', 'Digital Lead', {
+                morph: 0.8, attack: 0.01, decay: 0.2, sustain: 0.7, release: 0.3, gain: 0.5,
+            }),
+            delay('Delay', { 'delay-time': 250, 'delay-feedback': 0.3, 'delay-mix': 0.2 }),
+        ],
+        tags: ['wavetable', 'lead', 'digital', 'bright', 'sharp'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-wt-glitch',
+        name: 'WT Glitch',
+        category: 'fx',
+        subcategory: 'digital',
+        description: 'Fast-morphing wavetable texture for glitch and experimental use.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-wavetable-synth', 'Glitch', {
+                morph: 0.6, attack: 0.001, decay: 0.05, sustain: 0.4, release: 0.05, gain: 0.5,
+            }),
+        ],
+        tags: ['wavetable', 'glitch', 'experimental', 'fx', 'fast'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+
+    // ─── Additive Synth ──────────────────────────────────────────────────
+
+    {
+        id: 'factory-faust-additive-organ',
+        name: 'Additive Organ',
+        category: 'keys',
+        subcategory: 'digital',
+        description: 'Organ-like tone from additive harmonics. Clean and pure.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-additive-synth', 'Additive Organ', {
+                rolloff: 1.0, attack: 0.003, decay: 0.1, sustain: 0.9, release: 0.1,
+            }),
+        ],
+        tags: ['additive', 'organ', 'digital', 'clean', 'pure'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-additive-glass',
+        name: 'Glass Harmonics',
+        category: 'keys',
+        subcategory: 'digital',
+        description: 'Sparse high-rolloff harmonics. Delicate glass-like bell tones.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-additive-synth', 'Glass', {
+                rolloff: 3.5, attack: 0.001, decay: 1.5, sustain: 0.1, release: 0.5,
+            }),
+            reverb('Hall', { 'rev-size': 0.7, 'rev-decay': 4, 'rev-mix': 0.35 }),
+        ],
+        tags: ['additive', 'glass', 'bell', 'delicate', 'digital'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-additive-saw-approx',
+        name: 'Additive Saw',
+        category: 'synth',
+        subcategory: 'digital',
+        description: 'Sawtooth approximation from 16 harmonics. Band-limited by construction.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-additive-synth', 'Additive Saw', {
+                rolloff: 1.0, attack: 0.01, decay: 0.2, sustain: 0.7, release: 0.3,
+            }),
+        ],
+        tags: ['additive', 'saw', 'synth', 'analog', 'harmonics'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+
+    // ─── Physical Model String ───────────────────────────────────────────
+
+    {
+        id: 'factory-faust-pm-pluck',
+        name: 'Plucked String',
+        category: 'strings',
+        subcategory: 'acoustic',
+        description: 'Karplus-Strong plucked string. Natural guitar-like pluck.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-physical-model-string', 'Plucked String', {
+                damping: 0.5, excitation: 0.8, body: 0.5, gain: 0.5,
+            }),
+        ],
+        tags: ['physical', 'pluck', 'string', 'guitar', 'acoustic'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-pm-harp',
+        name: 'Harp',
+        category: 'strings',
+        subcategory: 'acoustic',
+        description: 'Bright harp-like pluck with resonant body and medium decay.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-physical-model-string', 'Harp', {
+                damping: 0.3, excitation: 1.0, body: 0.8, gain: 0.5,
+            }),
+            reverb('Chamber', { 'rev-size': 0.5, 'rev-decay': 2.5, 'rev-mix': 0.3 }),
+        ],
+        tags: ['physical', 'harp', 'string', 'bright', 'acoustic'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-pm-dulcimer',
+        name: 'Dulcimer',
+        category: 'strings',
+        subcategory: 'acoustic',
+        description: 'Hammered dulcimer-style string with bright attack and quick decay.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-physical-model-string', 'Dulcimer', {
+                damping: 0.6, excitation: 0.9, body: 0.6, gain: 0.5,
+            }),
+        ],
+        tags: ['physical', 'dulcimer', 'hammer', 'bright', 'acoustic'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+];

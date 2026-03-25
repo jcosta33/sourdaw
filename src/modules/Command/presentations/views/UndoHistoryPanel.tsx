@@ -1,6 +1,7 @@
 import { type ReactElement, useSyncExternalStore } from 'react';
 import { undoStore, type UndoStoreState } from '../../stores/undoStore';
 import { undoToIndex } from '../../useCases/undoRedo';
+import { closeUndoHistory } from '#/modules/Workspace/useCases/togglePanel';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { cn } from '#/helpers/Styles/cn';
 import { X, Undo2, Redo2 } from 'lucide-react';
@@ -24,12 +25,7 @@ export const UndoHistoryPanel = (): ReactElement | null => {
         return null;
     }
 
-    const close = () => {
-        const ws = workspaceStore.value;
-        if (ws) {
-            workspaceStore.set({ ...ws, undoHistoryOpen: false });
-        }
-    };
+    const close = closeUndoHistory;
 
     const handleClick = (index: number) => {
         void undoToIndex(index);
@@ -47,11 +43,11 @@ export const UndoHistoryPanel = (): ReactElement | null => {
             </div>
 
             <div className="max-h-72 overflow-y-auto">
-                {state.past.length === 0 && state.future.length === 0 && (
+                {state.past.length === 0 && state.future.length === 0 ? (
                     <div className="px-3 py-4 text-center text-xs text-muted-foreground">No history yet</div>
-                )}
+                ) : null}
 
-                {state.future.length > 0 && (
+                {state.future.length > 0 ? (
                     <div className="border-b border-border/30 pb-1 pt-1">
                         <div className="px-3 py-0.5 text-[9px] font-medium uppercase tracking-wider text-muted-foreground/60">
                             <Redo2 className="mr-1 inline size-2.5" />
@@ -71,7 +67,7 @@ export const UndoHistoryPanel = (): ReactElement | null => {
                             );
                         })}
                     </div>
-                )}
+                ) : null}
 
                 <div className="px-3 py-1">
                     <div className="flex items-center gap-1 text-[9px] font-medium uppercase tracking-wider text-[var(--color-state-success)]/80">
@@ -80,7 +76,7 @@ export const UndoHistoryPanel = (): ReactElement | null => {
                     </div>
                 </div>
 
-                {state.past.length > 0 && (
+                {state.past.length > 0 ? (
                     <div className="pt-0.5 pb-1">
                         <div className="px-3 py-0.5 text-[9px] font-medium uppercase tracking-wider text-muted-foreground/60">
                             <Undo2 className="mr-1 inline size-2.5" />
@@ -108,7 +104,7 @@ export const UndoHistoryPanel = (): ReactElement | null => {
                             );
                         })}
                     </div>
-                )}
+                ) : null}
             </div>
         </div>
     );
