@@ -24,6 +24,8 @@ export type TrackChannelStrip = {
     trackId: string;
     preFaderTap: GainNode;
     gainNode: GainNode;
+    /** Post-device mute node — sits after all devices, before pan. Mute/solo targets this. */
+    postFaderGain: GainNode;
     panNode: StereoPannerNode;
     analyserNode: AnalyserNode;
     muted: boolean;

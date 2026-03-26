@@ -34,7 +34,7 @@ export const defaultTransportState: TransportState = {
     timeSignatureDenominator: 4,
     playheadPosition: 0,
     loopStart: 0,
-    loopEnd: 16,
+    loopEnd: 0,
     scheduleGrainMs: 10,
     punchInEnabled: false,
     punchInBeat: 0,

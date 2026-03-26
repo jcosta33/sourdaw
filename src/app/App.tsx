@@ -3,6 +3,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { ErrorBoundary } from '#/modules/Workspace/presentations/components/ErrorBoundary';
+import { ProjectLoadingOverlay } from '#/modules/Workspace/presentations/components/ProjectLoadingOverlay';
 import { queryClient } from './queryClient';
 import { router } from './router';
 
@@ -11,7 +12,7 @@ export const App = (): ReactElement => {
         <ErrorBoundary>
             <QueryClientProvider client={queryClient}>
                 <TooltipProvider>
-                    <Suspense fallback={<AppLoadingFallback />}>
+                    <Suspense fallback={<ProjectLoadingOverlay />}>
                         <RouterProvider router={router} />
                     </Suspense>
                 </TooltipProvider>
@@ -20,10 +21,3 @@ export const App = (): ReactElement => {
     );
 };
 
-const AppLoadingFallback = (): ReactElement => {
-    return (
-        <div className="flex h-screen w-screen items-center justify-center bg-background">
-            <p className="text-muted-foreground text-sm">Loading WebDAW...</p>
-        </div>
-    );
-};

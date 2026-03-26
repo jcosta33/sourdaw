@@ -229,8 +229,8 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         'eq-high-gain': 1, 'eq-high-freq': 8000, 'eq-high-q': 0.8,
     });
     addDev(drumKitTrack, 'builtin-compressor', 'Drum Glue', {
-        'comp-threshold': -18, 'comp-ratio': 3, 'comp-attack': 10,
-        'comp-release': 80, 'comp-knee': 8, 'comp-makeup': 3,
+        'comp-threshold': -12, 'comp-ratio': 2, 'comp-attack': 15,
+        'comp-release': 100, 'comp-knee': 10, 'comp-makeup': 1,
     });
     // Sub bass: compressor for tight low end
     addDev(subBassTrack, 'builtin-compressor', 'Sub Comp', {
@@ -342,7 +342,7 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     riserTrack.gain = 0.38; riserTrack.pan = 0;
     noiseSweepTrack.gain = 0.30; noiseSweepTrack.pan = 0;
     fluteTrack.gain = 0.38; fluteTrack.pan = -28;
-    bellAccentTrack.gain = 0.05; bellAccentTrack.pan = 22;
+    bellAccentTrack.gain = 0.02; bellAccentTrack.pan = 22;
     crystalTexTrack.gain = 0.18; crystalTexTrack.pan = -35;
     tremPulseTrack.gain = 0.28; tremPulseTrack.pan = 30;
     widePadTrack.gain = 0.28; widePadTrack.pan = 0;
@@ -368,9 +368,9 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     drumKitTrack.clips = [dk1, dk2, dk3, dk4, dk5];
 
     // Audio perc
-    const shakerA = createAudioClip(percShakerTrack.id, 'Shaker A', 96, 320, bShaker, percShakerTrack.color);
-    const shakerB = createAudioClip(percShakerTrack.id, 'Shaker B', 384, 576, bShaker, percShakerTrack.color);
-    percShakerTrack.clips = [shakerA, shakerB];
+    // Perc shaker: ONLY in last section for dramatic texture build
+    const shakerLast = createAudioClip(percShakerTrack.id, 'Shaker Last', 448, 576, bShaker, percShakerTrack.color);
+    percShakerTrack.clips = [shakerLast];
 
     const percA = createAudioClip(percHitsTrack.id, 'Perc Hits A', 128, 320, bPerc, percHitsTrack.color);
     const percB = createAudioClip(percHitsTrack.id, 'Perc Hits B', 384, 512, bPerc, percHitsTrack.color);
@@ -457,7 +457,7 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     texChirpTrack.clips = [chirpClip];
 
     // 808 DRUM KIT NOTES — AMBIENT/MINIMAL style (Kiasmos inspired)
-    // Sparse kicks, no continuous 16th hats, rimshots instead of snares
+    // Sparse kicks in intro, hi-hat variety, 4-on-floor in final section
     const drumN: MidiNote[] = [];
     for (let b = 64; b < 576; b += 1) {
         if (b >= 320 && b < 384) continue; // breakdown silence
@@ -465,15 +465,20 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         const bar = Math.floor(b / 4);
         const inBuild = b < 128;
         const inCatharsis = b >= 224 && b < 320;
+        const inFinal = b >= 384 && b < 512;  // dance section
         const inOutro = b >= 512;
 
-        // Kick: sparse — every 2 beats in groove, every 4 in build/outro
-        if (inBuild && pos === 0 && bar % 2 === 0) {
+        // === KICK ===
+        if (inFinal) {
+            // 4-on-the-floor dance pattern
+            if (pos === 0) {
+                drumN.push(note(36, b, 0.8, hv(90, 6)));
+            }
+        } else if (inBuild && pos === 0 && bar % 2 === 0) {
             drumN.push(note(36, b, 1.0, hv(65, 8)));
         } else if (inOutro && pos === 0 && bar % 2 === 0) {
             drumN.push(note(36, b, 1.0, hv(55, 8)));
         } else if (!inBuild && !inOutro) {
-            // Main groove: kick on 1, ghost on 3 (every other bar adds beat 3)
             if (pos === 0) {
                 drumN.push(note(36, b, 1.0, hv(inCatharsis ? 95 : 80, 6)));
             }
@@ -482,19 +487,43 @@ export async function demo1_TheCompleteMix(): Promise<void> {
             }
         }
 
-        // Rimshot/snare: very sparse — only beat 3 every other bar
-        if (!inBuild && pos === 3 && bar % 2 === 1) {
-            const snarePitch = inCatharsis ? 38 : 37; // snare vs side stick
+        // === SNARE/RIMSHOT ===
+        if (inFinal && pos === 2) {
+            // Snare on 3 for dance sections
+            drumN.push(note(38, b, 0.3, hv(78, 8)));
+        } else if (!inBuild && pos === 3 && bar % 2 === 1) {
+            const snarePitch = inCatharsis ? 38 : 37;
             drumN.push(note(snarePitch, b, 0.3, hv(inCatharsis ? 72 : 55, 10)));
         }
 
-        // Closed HH: quarter notes only (not 16ths!) — ambient breathing
-        if (pos === 0 && !inBuild) {
-            drumN.push(note(42, b + 0.5, 0.2, hv(40, 12))); // offbeat hat
-        }
-        // Open HH: very sparse — every 4 bars on beat 2
-        if (bar % 4 === 3 && pos === 2 && !inBuild && !inOutro) {
-            drumN.push(note(46, b, 0.5, hv(45, 8)));
+        // === HI-HATS (varied patterns, between kick and snare, never overlapping) ===
+        if (inBuild) {
+            // Intro: varied closed hats on offbeats with occasional open hat
+            if (pos === 1) {
+                drumN.push(note(42, b, 0.15, hv(35, 12))); // closed hat
+            }
+            if (pos === 3 && bar % 2 === 0) {
+                drumN.push(note(42, b, 0.1, hv(28, 12))); // ghost hat
+            }
+            if (pos === 1 && bar % 4 === 3) {
+                drumN.push(note(46, b + 0.5, 0.3, hv(38, 10))); // open hat accent
+            }
+        } else if (inFinal) {
+            // Offbeat hats for dance feel
+            if (pos === 1 || pos === 3) {
+                drumN.push(note(42, b, 0.15, hv(42, 10)));
+            }
+            if (bar % 4 === 3 && pos === 3) {
+                drumN.push(note(46, b + 0.5, 0.3, hv(45, 8))); // open hat fill
+            }
+        } else if (!inOutro) {
+            // Regular sections: offbeat closed hat
+            if (pos === 0) {
+                drumN.push(note(42, b + 0.5, 0.2, hv(40, 12)));
+            }
+            if (bar % 4 === 3 && pos === 2) {
+                drumN.push(note(46, b, 0.5, hv(45, 8))); // open hat every 4 bars
+            }
         }
     }
 
@@ -534,7 +563,7 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         }
     }
 
-    // PULSE BASS — syncopated 8th-note pattern
+    // PULSE BASS — syncopated 8th-note pattern (+12 octave to separate from sub)
     const pulseN: MidiNote[] = [];
     const pulseOffsets = [0, 0.5, 1.5, 2, 3, 3.5];
     for (let bar = 8; bar < TB / 4; bar++) {
@@ -545,7 +574,7 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         for (const off of pulseOffsets) {
             const bt = b + off;
             const isAcc = off === 0 || off === 2;
-            const pitch = off === 0.5 || off === 1.5 ? c.fifth : c.root;
+            const pitch = (off === 0.5 || off === 1.5 ? c.fifth : c.root) + 12; // +12 octave up
             pulseN.push(note(pitch, bt, 0.4, hv(Math.round((isAcc ? 88 : 65) * vel), 10)));
         }
     }
@@ -615,14 +644,14 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         }
     }
 
-    // SHIMMER PAD — high ethereal in intense sections
+    // SHIMMER PAD — ethereal in intense sections (-12 octave to sit below leads)
     const shimmerN: MidiNote[] = [];
     for (let b = 128; b < 512; b += 16) {
         if (b >= 320 && b < 384) continue;
         const c = ch(b);
         const vel = b >= 224 && b < 320 ? 58 : 45;
-        shimmerN.push(note(c.ninth + 24, b, 15.8, hv(vel, 10)));
-        shimmerN.push(note(c.root + 36, b, 15.8, hv(vel - 15, 10)));
+        shimmerN.push(note(c.ninth + 12, b, 15.8, hv(vel, 10)));  // -12 from +24
+        shimmerN.push(note(c.root + 24, b, 15.8, hv(vel - 15, 10)));  // -12 from +36
     }
 
     // DARK PAD — tension builder before catharsis & final rise
@@ -760,14 +789,14 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         for (const [off, pitch, dur, vel] of mel) fluteN.push(note(pitch, start + off, dur, hv(vel)));
     }
 
-    // BELL ACCENTS — sparse high bell tones on chord changes
+    // BELL ACCENTS — sparse bell tones on chord changes (-12 octave to sit in mid range)
     const bellAccN: MidiNote[] = [];
     for (let b = 64; b < TB; b += 16) {
         if (b >= 320 && b < 384) continue;
         const c = ch(b);
         const inOutro = b >= 512;
-        bellAccN.push(note(c.ninth + 36, b + 2, 3, hv(inOutro ? 30 : 42)));
-        if (b % 32 === 0 && b >= 128) bellAccN.push(note(c.root + 48, b + 8, 4, hv(35)));
+        bellAccN.push(note(c.ninth + 24, b + 2, 3, hv(inOutro ? 30 : 42)));  // -12 from +36
+        if (b % 32 === 0 && b >= 128) bellAccN.push(note(c.root + 36, b + 8, 4, hv(35)));  // -12 from +48
     }
 
     // CRYSTAL TEXTURE — delicate 16th arps in intense sections

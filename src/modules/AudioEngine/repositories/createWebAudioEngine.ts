@@ -51,6 +51,7 @@ function createNoopEngine(): AudioEngine {
             trackId,
             preFaderTap: silentGain,
             gainNode: silentGain,
+            postFaderGain: silentGain,
             panNode: ctx.createStereoPanner() as unknown as StereoPannerNode,
             analyserNode: silentAnalyser,
             muted: false,
@@ -185,6 +186,11 @@ export function createWebAudioEngine(): AudioEngine {
         const gainNode = context.createGain();
         gainNode.gain.value = 0.8;
 
+        // Post-device mute node — sits after all devices, before pan.
+        // Mute/solo targets this so it works for Faust generators that bypass gainNode.
+        const postFaderGain = context.createGain();
+        postFaderGain.gain.value = 1;
+
         const panNode = context.createStereoPanner();
         panNode.pan.value = 0;
 
@@ -193,7 +199,8 @@ export function createWebAudioEngine(): AudioEngine {
         analyserNode.smoothingTimeConstant = 0.8;
 
         preFaderTap.connect(gainNode);
-        gainNode.connect(panNode);
+        gainNode.connect(postFaderGain);
+        postFaderGain.connect(panNode);
         panNode.connect(analyserNode);
         analyserNode.connect(masterGainNode);
 
@@ -201,6 +208,7 @@ export function createWebAudioEngine(): AudioEngine {
             trackId,
             preFaderTap,
             gainNode,
+            postFaderGain,
             panNode,
             analyserNode,
             muted: false,
@@ -245,16 +253,17 @@ export function createWebAudioEngine(): AudioEngine {
         strip.panNode.pan.setTargetAtTime(Math.max(-1, Math.min(1, pan / 50)), context.currentTime, 0.01);
     }
 
-    function setTrackMute(trackId: string, muted: boolean, restoreGain?: number): void {
+    function setTrackMute(trackId: string, muted: boolean, _restoreGain?: number): void {
         // Ensure the strip exists — it may not have been created yet if playback hasn't started.
         // We still need to apply the mute state so it takes effect as soon as audio is produced.
         const strip = ensureTrackStrip(trackId);
         strip.muted = muted;
+        // Target postFaderGain (not gainNode) so mute works for Faust generators
+        // that bypass the pre-fader gainNode in the device chain.
         if (muted) {
-            strip.gainNode.gain.setTargetAtTime(0, context.currentTime, 0.005);
+            strip.postFaderGain.gain.setTargetAtTime(0, context.currentTime, 0.005);
         } else {
-            const gain = restoreGain ?? (strip.gainNode.gain.value || 0.8);
-            strip.gainNode.gain.setTargetAtTime(Math.max(0, Math.min(1, gain)), context.currentTime, 0.005);
+            strip.postFaderGain.gain.setTargetAtTime(1, context.currentTime, 0.005);
         }
     }
 
@@ -341,6 +350,7 @@ export function createWebAudioEngine(): AudioEngine {
         // splitter→dry, comp→makeup, etc. that are never restored.
         strip.preFaderTap.disconnect();
         strip.gainNode.disconnect();
+        strip.postFaderGain.disconnect();
         for (const dn of strip.deviceNodes) {
             // Only disconnect the device's output → next node connection
             try {
@@ -366,7 +376,9 @@ export function createWebAudioEngine(): AudioEngine {
             }
             prev = dn.outputNode;
         }
-        prev.connect(strip.panNode);
+        // Route through postFaderGain (mute node) before pan
+        prev.connect(strip.postFaderGain);
+        strip.postFaderGain.connect(strip.panNode);
         strip.panNode.connect(strip.analyserNode);
         strip.analyserNode.connect(masterGainNode);
 
