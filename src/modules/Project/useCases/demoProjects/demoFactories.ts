@@ -366,7 +366,7 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     // ── GAIN / PAN — stereo field (rebalanced for ambient clarity) ─────
     drumKitTrack.gain = 0.55; drumKitTrack.pan = 0;
     percShakerTrack.gain = 0.22; percShakerTrack.pan = 45;
-    percHitsTrack.gain = 0.28; percHitsTrack.pan = -40;
+    percHitsTrack.gain = 0.05; percHitsTrack.pan = 0;
     subBassTrack.gain = 0.50; subBassTrack.pan = 0;
     bassSynthTrack.gain = 0.55; bassSynthTrack.pan = 0;
     pulseBassTrack.gain = 1.0; pulseBassTrack.pan = 0;
@@ -3041,11 +3041,11 @@ async function generateDemoDrumBuffer(
             const isSnare =
                 style === 'snare' ? pos === 1 || pos === 3 : style === 'electro' ? pos === 1 || pos === 3 : false;
 
-            // Hi-hat: 8th notes strictly between kick and snare positions
+            // Hi-hat / Perc Hits: 8th notes strictly between kick and snare positions
             // Fires at 0.5, 1.5, 2.5, 3.5 — never on 0, 1, 2, 3
             const isHat =
                 (style === 'hat' || style === '4onFloor') &&
-                step % 2 === 2 && // every other 8th note step (positions 0.5, 1.5, 2.5, 3.5)
+                step % 4 === 2 && // OFF-BEATS: positions 0.5, 1.5, 2.5, 3.5
                 pos !== 0 &&
                 pos !== 1 &&
                 pos !== 2 &&
@@ -3078,7 +3078,22 @@ async function generateDemoDrumBuffer(
                 osc2.stop(time + 0.1);
             }
             if (isHat) {
-                createNoiseBurst(ctx, time, 0.04, 0.22, 'highpass', 9000);
+                if (style === 'hat') {
+                    // Enriching the "Perc Hits" track with a syncopated bongo/block sound
+                    const osc = ctx.createOscillator();
+                    const env = ctx.createGain();
+                    const isHigh = step % 8 === 2; // high bongo vs low bongo
+                    osc.frequency.setValueAtTime(isHigh ? 650 : 450, time);
+                    osc.frequency.exponentialRampToValueAtTime(isHigh ? 550 : 380, time + 0.05);
+                    env.gain.setValueAtTime(0.7, time);
+                    env.gain.exponentialRampToValueAtTime(0.001, time + 0.1);
+                    osc.connect(env);
+                    env.connect(ctx.destination);
+                    osc.start(time);
+                    osc.stop(time + 0.15);
+                } else {
+                    createNoiseBurst(ctx, time, 0.04, 0.22, 'highpass', 9000);
+                }
             }
         }
 

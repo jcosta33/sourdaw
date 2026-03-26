@@ -89,7 +89,6 @@ function createNoopEngine(): AudioEngine {
         wireSidechainRoute: () => {},
         unwireSidechainRoute: () => {},
         waitForDevices: async () => {},
-        setMasterTrackId: () => {},
     };
 }
 
@@ -120,12 +119,6 @@ export function createWebAudioEngine(): AudioEngine {
     const masterMeterBuffer = new Float32Array(masterAnalyser.frequencyBinCount);
     const pendingFaustParams = new Map<string, Map<string, number>>();
     const pendingDevicePromises = new Set<Promise<any>>();
-
-    let explicitMasterTrackId: string | null = null;
-
-    function setMasterTrackId(id: string): void {
-        explicitMasterTrackId = id;
-    }
 
     let workletReady = false;
 
@@ -232,17 +225,10 @@ export function createWebAudioEngine(): AudioEngine {
         };
         trackStrips.set(trackId, strip);
 
-        if (trackId === explicitMasterTrackId) {
+        if (strip.outputId === 'hw_out') {
             analyserNode.connect(masterGainNode);
-            // Re-route existing tracks to this master track
-            trackStrips.forEach((s, id) => {
-                if (id !== trackId) {
-                    s.analyserNode.disconnect();
-                    s.analyserNode.connect(strip.gainNode);
-                }
-            });
-        } else if (explicitMasterTrackId && trackStrips.has(explicitMasterTrackId)) {
-            analyserNode.connect(trackStrips.get(explicitMasterTrackId)!.gainNode);
+        } else if (strip.outputId && trackStrips.has(strip.outputId)) {
+            analyserNode.connect(trackStrips.get(strip.outputId)!.gainNode);
         } else {
             analyserNode.connect(masterGainNode);
         }
@@ -414,10 +400,10 @@ export function createWebAudioEngine(): AudioEngine {
         strip.postFaderGain.connect(strip.panNode);
         strip.panNode.connect(strip.analyserNode);
         
-        if (strip.trackId === explicitMasterTrackId) {
+        if (strip.outputId === 'hw_out') {
             strip.analyserNode.connect(masterGainNode);
-        } else if (explicitMasterTrackId && trackStrips.has(explicitMasterTrackId)) {
-            strip.analyserNode.connect(trackStrips.get(explicitMasterTrackId)!.gainNode);
+        } else if (strip.outputId && trackStrips.has(strip.outputId)) {
+            strip.analyserNode.connect(trackStrips.get(strip.outputId)!.gainNode);
         } else {
             strip.analyserNode.connect(masterGainNode);
         }
@@ -1189,19 +1175,17 @@ export function createWebAudioEngine(): AudioEngine {
         if (!strip) {
             return;
         }
+        strip.outputId = outputId;
         strip.analyserNode.disconnect();
 
-        if (outputId === 'master' || !outputId) {
-            if (explicitMasterTrackId && trackStrips.has(explicitMasterTrackId)) {
-                strip.analyserNode.connect(trackStrips.get(explicitMasterTrackId)!.gainNode);
-            } else {
-                strip.analyserNode.connect(masterGainNode);
-            }
+        if (outputId === 'hw_out') {
+            strip.analyserNode.connect(masterGainNode);
         } else {
             const targetStrip = busStrips.get(outputId) || trackStrips.get(outputId);
             if (targetStrip) {
                 strip.analyserNode.connect(targetStrip.gainNode);
             } else {
+                // Fallback (e.g. Master track strip hasn't been created yet)
                 strip.analyserNode.connect(masterGainNode);
             }
         }
@@ -1322,7 +1306,6 @@ export function createWebAudioEngine(): AudioEngine {
         wireSidechainRoute,
         unwireSidechainRoute,
         waitForDevices,
-        setMasterTrackId,
     };
 }
 

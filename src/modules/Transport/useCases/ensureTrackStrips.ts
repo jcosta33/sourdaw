@@ -11,23 +11,16 @@ import {
     setTrackGain,
     setTrackPan,
     setTrackMute,
+    setTrackOutput,
 } from '#/modules/AudioEngine/useCases/trackAudioControls';
 import { addDeviceToStrip, updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
 import { ensureBusStrip, setBusGain, setSend } from '#/modules/Routing/useCases/busControls';
-import { getAudioEngine } from '#/modules/AudioEngine/useCases/engineAccess';
 
 export function ensureTrackStrips(): void {
     const tracks = trackStore.value?.tracks;
     if (!tracks) {
         return;
     }
-
-    const engine = getAudioEngine();
-    const masterTrack = tracks.find((t) => t.kind === 'master');
-    if (masterTrack) {
-        engine.setMasterTrackId?.(masterTrack.id);
-    }
-
     const busTracks = tracks.filter((t) => t.kind === 'bus');
     for (const bus of busTracks) {
         ensureBusStrip(bus.id);
@@ -39,6 +32,7 @@ export function ensureTrackStrips(): void {
             continue;
         }
         ensureTrackStrip(track.id);
+        setTrackOutput(track.id, track.outputId);
         setTrackGain(track.id, track.gain);
         setTrackPan(track.id, track.pan);
         setTrackMute(track.id, track.muted, track.gain);

@@ -125,7 +125,7 @@ export function createTrack(input: { name: string; kind: TrackKind; parentId?: s
             : [];
 
     return {
-        id: `track-${crypto.randomUUID().slice(0, 8)}`,
+        id: input.kind === 'master' ? 'master' : `track-${crypto.randomUUID().slice(0, 8)}`,
         name: input.name,
         kind: input.kind,
         muted: false,
@@ -144,7 +144,7 @@ export function createTrack(input: { name: string; kind: TrackKind; parentId?: s
         hidden: false,
         disabled: false,
         height: 80,
-        outputId: 'master',
+        outputId: input.kind === 'master' ? 'hw_out' : 'master',
         automationMode: 'read',
         groupId: null,
         soloSafe: input.kind === 'bus',

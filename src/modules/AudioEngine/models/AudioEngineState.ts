@@ -35,6 +35,7 @@ export type TrackChannelStrip = {
     soloed: boolean;
     deviceNodes: BuiltinDeviceNode[];
     meterBuffer: Float32Array;
+    outputId?: string;
 };
 
 export type BusStrip = {
