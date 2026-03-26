@@ -149,34 +149,41 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     const noiseSweepTrack = createTrack({ name: 'Noise Sweep', kind: 'midi', parentId: fxFolder.id });
     const reverbBusTrack = createTrack({ name: 'Reverb Bus', kind: 'bus' });
 
-    // ── PRESETS ────────────────────────────────────────────────────────────
+    // ── PRESETS (Faust instruments for key tracks) ─────────────────────────
     // 808 Kit: type must be builtin-drum-kit for the drum engine
     drumKitTrack.devices = [{
         id: `dev-${crypto.randomUUID()}`, name: '808 Kit', type: 'builtin-drum-kit',
         bypassed: false, parameterValues: { kit: 0 },
     }];
     applyPreset(subBassTrack, 'factory-bass-sub');
-    applyPreset(bassSynthTrack, 'factory-bass-acid');
+    // ▸ Faust Acid Bass 303 — authentic squelchy acid bass
+    applyPreset(bassSynthTrack, 'factory-faust-acid-liquid');
     applyPreset(pulseBassTrack, 'factory-bass-analog');
     applyPreset(pianoTrack, 'factory-keys-pluck');
-    applyPreset(rhodesTrack, 'factory-keys-bell');
-    applyPreset(organTrack, 'factory-keys-organ');
+    // ▸ Faust Amber Rhodes — ethereal electric piano with long reverb tail
+    applyPreset(rhodesTrack, 'factory-faust-rhodes-ambient');
+    // ▸ Faust Hammond Ballad — gentle organ with slow Leslie & cathedral reverb
+    applyPreset(organTrack, 'factory-faust-hammond-ballad');
     applyPreset(warmPadTrack, 'factory-pad-warm');
-    applyPreset(shimmerPadTrack, 'factory-pad-shimmer');
+    // ▸ Faust FM Shimmer Pad — evolving FM pad (ratio 7, slow attack)
+    applyPreset(shimmerPadTrack, 'factory-faust-fm-pad');
     applyPreset(darkPadTrack, 'factory-pad-dark');
     applyPreset(stringsSoftTrack, 'factory-strings-soft');
     applyPreset(stringsBrightTrack, 'factory-strings-bright');
-    applyPreset(leadClassicTrack, 'factory-lead-classic');
+    // ▸ Faust Moog Portamento — smooth analog lead with glide
+    applyPreset(leadClassicTrack, 'factory-faust-moog-portamento');
     applyPreset(leadSoftTrack, 'factory-lead-soft');
     applyPreset(brassTrack, 'factory-synth-brass');
     applyPreset(arpTrack, 'factory-synth-arp');
     applyPreset(riserTrack, 'factory-fx-riser');
     applyPreset(noiseSweepTrack, 'factory-fx-noise-sweep');
     applyPreset(fluteTrack, 'factory-synth-flute');
-    applyPreset(bellAccentTrack, 'factory-keys-bell');
+    // ▸ Faust DX Bells — crystalline FM bell tones
+    applyPreset(bellAccentTrack, 'factory-faust-fm-dx-bells');
     applyPreset(crystalTexTrack, 'synth-arp-crystal');
     applyPreset(tremPulseTrack, 'factory-synth-arp');
-    applyPreset(widePadTrack, 'factory-pad-warm');
+    // ▸ Faust Supersaw Pad — massive detuned pad with reverb
+    applyPreset(widePadTrack, 'factory-faust-supersaw-pad');
     // Drum Fills: same 808 kit for fills
     drumFillTrack.devices = [{
         id: `dev-${crypto.randomUUID()}`, name: '808 Kit', type: 'builtin-drum-kit',
@@ -184,8 +191,8 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     }];
     // Impact FX: sub bass preset for sub drops
     applyPreset(impactFxTrack, 'factory-bass-sub');
-    // Texture Chirps: pluck preset
-    applyPreset(texChirpTrack, 'factory-keys-pluck');
+    // ▸ Faust Additive Glass — delicate chirp textures
+    applyPreset(texChirpTrack, 'factory-faust-additive-glass');
     // ── EFFECTS on tracks (web-compatible only) ──────────────────────────
     const addDev = (t: any, type: string, name: string, params: Record<string, number>) => {
         t.devices = [...(t.devices || []), {
@@ -193,64 +200,124 @@ export async function demo1_TheCompleteMix(): Promise<void> {
             parameterValues: params,
         }];
     };
-    // Lead Classic: override waveform to sine for smooth sound + delay + chorus + reverb
-    const lcSynth = leadClassicTrack.devices?.find((d: any) => d.type === 'builtin-synth');
-    if (lcSynth) lcSynth.parameterValues = { ...lcSynth.parameterValues, waveform: 0 };
+
+    // ╔═══════════════════════════════════════════════════════════════╗
+    // ║  MASTER CHAIN — Kiasmos/Jon Hopkins style mastering        ║
+    // ╚═══════════════════════════════════════════════════════════════╝
+    addDev(masterTrack, 'builtin-eq', 'Master EQ', {
+        'eq-low-gain': 1.5, 'eq-low-freq': 80, 'eq-low-q': 0.8,
+        'eq-mid-gain': -1, 'eq-mid-freq': 400, 'eq-mid-q': 1.2,
+        'eq-high-gain': 2, 'eq-high-freq': 10000, 'eq-high-q': 0.7,
+    });
+    addDev(masterTrack, 'builtin-compressor', 'Glue Comp', {
+        'comp-threshold': -12, 'comp-ratio': 2.5, 'comp-attack': 30,
+        'comp-release': 200, 'comp-knee': 10, 'comp-makeup': 2,
+    });
+    addDev(masterTrack, 'builtin-stereo-widener', 'Width', {
+        'width-amount': 1.15, 'width-mid': 0, 'width-side': 1.5, 'width-mono-bass': 180,
+    });
+    addDev(masterTrack, 'builtin-limiter', 'Brickwall', { 'lim-threshold': -1 });
+    addDev(masterTrack, 'builtin-lufs-meter', 'LUFS', { 'lufs-target': -14 });
+
+    // ╔═══════════════════════════════════════════════════════════════╗
+    // ║  MIX BUS PROCESSING — depth, width, glue                  ║
+    // ╚═══════════════════════════════════════════════════════════════╝
+    // Drums: EQ scoop + gentle compression for punch
+    addDev(drumKitTrack, 'builtin-eq', 'Drum EQ', {
+        'eq-low-gain': 3, 'eq-low-freq': 60, 'eq-low-q': 1,
+        'eq-mid-gain': -2, 'eq-mid-freq': 350, 'eq-mid-q': 1.5,
+        'eq-high-gain': 1, 'eq-high-freq': 8000, 'eq-high-q': 0.8,
+    });
+    addDev(drumKitTrack, 'builtin-compressor', 'Drum Glue', {
+        'comp-threshold': -18, 'comp-ratio': 3, 'comp-attack': 10,
+        'comp-release': 80, 'comp-knee': 8, 'comp-makeup': 3,
+    });
+    // Sub bass: compressor for tight low end
+    addDev(subBassTrack, 'builtin-compressor', 'Sub Comp', {
+        'comp-threshold': -15, 'comp-ratio': 4, 'comp-attack': 5,
+        'comp-release': 100, 'comp-knee': 6, 'comp-makeup': 2,
+    });
+    // Reverb bus: convolution reverb (Studio A) for shared depth
+    addDev(reverbBusTrack, 'builtin-convolution-reverb', 'Room IR', {
+        'conv-ir': 6, 'conv-mix': 0.5, 'conv-predelay': 25,
+        'conv-lowcut': 80, 'conv-highcut': 10000,
+    });
+    // Warm Pad: stereo widener for immersive spread
+    addDev(warmPadTrack, 'builtin-stereo-widener', 'Pad Width', {
+        'width-amount': 1.8, 'width-mid': -2, 'width-side': 2, 'width-mono-bass': 200,
+    });
+
+    // ╔═══════════════════════════════════════════════════════════════╗
+    // ║  PER-TRACK EFFECTS — character, space, movement            ║
+    // ╚═══════════════════════════════════════════════════════════════╝
+    // Lead (Moog): dotted delay + chorus + filtered reverb
     addDev(leadClassicTrack, 'builtin-delay', 'Dotted Delay', { 'delay-time': 375, 'delay-feedback': 0.3, 'delay-mix': 0.2 });
     addDev(leadClassicTrack, 'builtin-chorus', 'Lead Chorus', { 'chorus-rate': 0.6, 'chorus-depth': 5, 'chorus-feedback': 0.15, 'chorus-mix': 0.25 });
-    addDev(leadClassicTrack, 'builtin-reverb', 'Lead Space', { 'rev-size': 0.5, 'rev-decay': 2, 'rev-damping': 0.4, 'rev-mix': 0.2 });
-    // Lead Soft: phaser + reverb for dreamy quality
-    addDev(leadSoftTrack, 'builtin-phaser', 'Dream Phase', { 'phaser-rate': 0.2, 'phaser-depth': 0.7, 'phaser-feedback': 0.5, 'phaser-stages': 6 });
-    addDev(leadSoftTrack, 'builtin-reverb', 'Soft Hall', { 'rev-size': 0.7, 'rev-decay': 3, 'rev-damping': 0.3, 'rev-mix': 0.3 });
-    // Brass: reverb for grandeur
+    addDev(leadClassicTrack, 'builtin-reverb', 'Lead Space', { 'rev-size': 0.6, 'rev-decay': 3, 'rev-damping': 0.3, 'rev-mix': 0.25 });
+    // Lead Soft: phaser + long reverb for dreamy Jon Hopkins quality
+    addDev(leadSoftTrack, 'builtin-phaser', 'Dream Phase', { 'phaser-rate': 0.15, 'phaser-depth': 0.8, 'phaser-feedback': 0.55, 'phaser-stages': 6 });
+    addDev(leadSoftTrack, 'builtin-reverb', 'Soft Hall', { 'rev-size': 0.8, 'rev-decay': 4, 'rev-damping': 0.2, 'rev-mix': 0.35 });
+    // Brass: reverb + EQ brightening for grandeur
     addDev(brassTrack, 'builtin-reverb', 'Brass Hall', { 'rev-size': 0.65, 'rev-decay': 2.5, 'rev-damping': 0.3, 'rev-mix': 0.25 });
-    // Rhodes: chorus + delay for warmth
-    addDev(rhodesTrack, 'builtin-chorus', 'Rhodes Chorus', { 'chorus-rate': 0.4, 'chorus-depth': 4, 'chorus-feedback': 0.1, 'chorus-mix': 0.3 });
-    addDev(rhodesTrack, 'builtin-delay', 'Rhodes Echo', { 'delay-time': 250, 'delay-feedback': 0.2, 'delay-mix': 0.15 });
-    // Piano: subtle reverb
-    addDev(pianoTrack, 'builtin-reverb', 'Piano Room', { 'rev-size': 0.35, 'rev-decay': 1.5, 'rev-damping': 0.5, 'rev-mix': 0.2 });
-    // Arp: phaser + delay for movement
+    // Rhodes (Faust Ambient): already has reverb+delay from preset, add stereo widener
+    addDev(rhodesTrack, 'builtin-stereo-widener', 'Rhodes Width', {
+        'width-amount': 1.4, 'width-mid': 0, 'width-side': 1, 'width-mono-bass': 250,
+    });
+    // Piano: convolution reverb for natural room
+    addDev(pianoTrack, 'builtin-convolution-reverb', 'Piano Room', {
+        'conv-ir': 0, 'conv-mix': 0.25, 'conv-predelay': 10,
+        'conv-lowcut': 100, 'conv-highcut': 12000,
+    });
+    // Arp: phaser + ping-pong delay for spatial movement
     addDev(arpTrack, 'builtin-phaser', 'Arp Phase', { 'phaser-rate': 0.3, 'phaser-depth': 0.5, 'phaser-feedback': 0.35, 'phaser-stages': 4 });
     addDev(arpTrack, 'builtin-delay', 'Arp Delay', { 'delay-time': 188, 'delay-feedback': 0.4, 'delay-mix': 0.25 });
-    // Shimmer Pad: chorus for extra shimmer
+    addDev(arpTrack, 'builtin-autopan', 'Arp Pan', { 'autopan-rate': 0.5, 'autopan-depth': 0.6 });
+    // Shimmer Pad (Faust FM): chorus for extra shimmer
     addDev(shimmerPadTrack, 'builtin-chorus', 'Shimmer Chorus', { 'chorus-rate': 0.15, 'chorus-depth': 10, 'chorus-feedback': 0.2, 'chorus-mix': 0.35 });
-    // Warm Pad: slow flanger for evolving texture
-    addDev(warmPadTrack, 'builtin-flanger', 'Pad Flange', { 'flanger-rate': 0.08, 'flanger-depth': 4, 'flanger-feedback': 0.3, 'flanger-mix': 0.2 });
-    // Dark Pad: phaser for sinister movement
-    addDev(darkPadTrack, 'builtin-phaser', 'Dark Phase', { 'phaser-rate': 0.1, 'phaser-depth': 0.8, 'phaser-feedback': 0.6, 'phaser-stages': 6 });
-    // Strings Soft: reverb for lushness
-    addDev(stringsSoftTrack, 'builtin-reverb', 'Strings Hall', { 'rev-size': 0.8, 'rev-decay': 3.5, 'rev-damping': 0.25, 'rev-mix': 0.3 });
-    // Strings Bright: reverb + chorus
+    // Warm Pad: slow flanger for evolving texture (Kiasmos trick)
+    addDev(warmPadTrack, 'builtin-flanger', 'Pad Flange', { 'flanger-rate': 0.06, 'flanger-depth': 5, 'flanger-feedback': 0.35, 'flanger-mix': 0.2 });
+    addDev(warmPadTrack, 'builtin-reverb', 'Pad Reverb', { 'rev-size': 0.9, 'rev-decay': 5, 'rev-damping': 0.15, 'rev-mix': 0.3 });
+    // Dark Pad: phaser + distortion for sinister texture (Jon Hopkins "Immunity" style)
+    addDev(darkPadTrack, 'builtin-phaser', 'Dark Phase', { 'phaser-rate': 0.08, 'phaser-depth': 0.9, 'phaser-feedback': 0.65, 'phaser-stages': 6 });
+    addDev(darkPadTrack, 'builtin-distortion', 'Dark Saturation', { 'dist-drive': 2, 'dist-tone': 2000, 'dist-mix': 0.1, 'dist-output': -3 });
+    // Strings Soft: lush reverb
+    addDev(stringsSoftTrack, 'builtin-reverb', 'Strings Hall', { 'rev-size': 0.85, 'rev-decay': 4, 'rev-damping': 0.2, 'rev-mix': 0.3 });
+    // Strings Bright: reverb + chorus + EQ presence
     addDev(stringsBrightTrack, 'builtin-reverb', 'Bright Hall', { 'rev-size': 0.7, 'rev-decay': 2.5, 'rev-damping': 0.2, 'rev-mix': 0.25 });
     addDev(stringsBrightTrack, 'builtin-chorus', 'Bright Chorus', { 'chorus-rate': 0.3, 'chorus-depth': 6, 'chorus-mix': 0.2 });
-    // Pulse Bass: chorus for width + delay for rhythmic echo
+    // Pulse Bass: chorus + delay + subtle bitcrusher for grit
     addDev(pulseBassTrack, 'builtin-chorus', 'Pulse Width', { 'chorus-rate': 0.5, 'chorus-depth': 3, 'chorus-feedback': 0.1, 'chorus-mix': 0.15 });
     addDev(pulseBassTrack, 'builtin-delay', 'Pulse Echo', { 'delay-time': 188, 'delay-feedback': 0.25, 'delay-mix': 0.15 });
-    // 808 Bass: distortion for bite
-    addDev(bassSynthTrack, 'builtin-distortion', 'Acid Bite', { 'dist-drive': 3, 'dist-tone': 3500, 'dist-mix': 0.15 });
-    // Organ: tremolo for vintage Leslie feel
+    addDev(pulseBassTrack, 'builtin-bitcrusher', 'Lofi Grit', { 'crush-bits': 12, 'crush-rate': 2, 'crush-mix': 0.08 });
+    // Organ (Faust Hammond): already has Leslie, add tremolo override
     addDev(organTrack, 'builtin-tremolo', 'Leslie Trem', { 'trem-rate': 5.5, 'trem-depth': 0.3, 'trem-shape': 0 });
-    // Flute: delay + reverb
-    addDev(fluteTrack, 'builtin-delay', 'Flute Echo', { 'delay-time': 330, 'delay-feedback': 0.3, 'delay-mix': 0.2 });
-    addDev(fluteTrack, 'builtin-reverb', 'Flute Space', { 'rev-size': 0.6, 'rev-decay': 2.5, 'rev-damping': 0.35, 'rev-mix': 0.25 });
-    // Bell Accents: long reverb tail
-    addDev(bellAccentTrack, 'builtin-reverb', 'Bell Wash', { 'rev-size': 0.85, 'rev-decay': 5, 'rev-damping': 0.15, 'rev-mix': 0.45 });
-    // Crystal Texture: delay + reverb
-    addDev(crystalTexTrack, 'builtin-delay', 'Crystal Delay', { 'delay-time': 200, 'delay-feedback': 0.45, 'delay-mix': 0.3 });
-    addDev(crystalTexTrack, 'builtin-reverb', 'Crystal Wash', { 'rev-size': 0.9, 'rev-decay': 4, 'rev-damping': 0.2, 'rev-mix': 0.35 });
+    // Flute: delay + reverb for floating quality
+    addDev(fluteTrack, 'builtin-delay', 'Flute Echo', { 'delay-time': 330, 'delay-feedback': 0.35, 'delay-mix': 0.22 });
+    addDev(fluteTrack, 'builtin-reverb', 'Flute Space', { 'rev-size': 0.7, 'rev-decay': 3, 'rev-damping': 0.3, 'rev-mix': 0.3 });
+    // Bell Accents (Faust DX Bells): already has reverb from preset, add shimmer delay
+    addDev(bellAccentTrack, 'builtin-delay', 'Bell Echo', { 'delay-time': 500, 'delay-feedback': 0.35, 'delay-mix': 0.25 });
+    // Crystal Texture: delay + reverb + auto-pan for scattered texture
+    addDev(crystalTexTrack, 'builtin-delay', 'Crystal Delay', { 'delay-time': 200, 'delay-feedback': 0.5, 'delay-mix': 0.3 });
+    addDev(crystalTexTrack, 'builtin-reverb', 'Crystal Wash', { 'rev-size': 0.95, 'rev-decay': 5, 'rev-damping': 0.15, 'rev-mix': 0.4 });
+    addDev(crystalTexTrack, 'builtin-autopan', 'Crystal Pan', { 'autopan-rate': 0.3, 'autopan-depth': 0.5 });
     // Tremolo Pulse: tremolo + phaser
     addDev(tremPulseTrack, 'builtin-tremolo', 'Pulse Trem', { 'trem-rate': 3, 'trem-depth': 0.6, 'trem-shape': 0 });
     addDev(tremPulseTrack, 'builtin-phaser', 'Pulse Phase', { 'phaser-rate': 0.2, 'phaser-depth': 0.6, 'phaser-feedback': 0.4, 'phaser-stages': 4 });
-    // Wide Chorus Pad: deep chorus + reverb
-    addDev(widePadTrack, 'builtin-chorus', 'Wide Chorus', { 'chorus-rate': 0.2, 'chorus-depth': 12, 'chorus-feedback': 0.25, 'chorus-mix': 0.5 });
-    addDev(widePadTrack, 'builtin-reverb', 'Pad Wash', { 'rev-size': 0.9, 'rev-decay': 6, 'rev-damping': 0.15, 'rev-mix': 0.4 });
+    // Wide Pad (Faust Supersaw): already has reverb, add deep chorus
+    addDev(widePadTrack, 'builtin-chorus', 'Wide Chorus', { 'chorus-rate': 0.15, 'chorus-depth': 14, 'chorus-feedback': 0.3, 'chorus-mix': 0.5 });
     // Drum Fills: reverb on fills for space
     addDev(drumFillTrack, 'builtin-reverb', 'Fill Verb', { 'rev-size': 0.4, 'rev-decay': 1.2, 'rev-damping': 0.5, 'rev-mix': 0.2 });
-    // Impact FX: reverb for impact tail
-    addDev(impactFxTrack, 'builtin-reverb', 'Impact Tail', { 'rev-size': 0.9, 'rev-decay': 4, 'rev-damping': 0.1, 'rev-mix': 0.4 });
-    // Texture Chirps: delay + autopan for scattered texture
+    // Impact FX: reverb + distortion for impact weight
+    addDev(impactFxTrack, 'builtin-reverb', 'Impact Tail', { 'rev-size': 0.95, 'rev-decay': 5, 'rev-damping': 0.1, 'rev-mix': 0.5 });
+    addDev(impactFxTrack, 'builtin-distortion', 'Impact Drive', { 'dist-drive': 4, 'dist-tone': 1500, 'dist-mix': 0.12 });
+    // Texture Chirps (Faust Additive Glass): delay + autopan for scattered glass
     addDev(texChirpTrack, 'builtin-delay', 'Chirp Delay', { 'delay-time': 166, 'delay-feedback': 0.5, 'delay-mix': 0.35 });
     addDev(texChirpTrack, 'builtin-autopan', 'Chirp Pan', { 'autopan-rate': 2, 'autopan-depth': 0.8 });
+    // Noise Sweep: bitcrusher for lo-fi texture
+    addDev(noiseSweepTrack, 'builtin-bitcrusher', 'Noise Crush', { 'crush-bits': 6, 'crush-rate': 8, 'crush-mix': 0.15 });
+    // Riser: filter + reverb for sweeping builds
+    addDev(riserTrack, 'builtin-filter', 'Rise Filter', { 'filter-cutoff': 500, 'filter-resonance': 4, 'filter-type': 0 });
+    addDev(riserTrack, 'builtin-reverb', 'Rise Space', { 'rev-size': 0.8, 'rev-decay': 3, 'rev-damping': 0.3, 'rev-mix': 0.3 });
 
     // ── GAIN / PAN — stereo field ─────────────────────────────────────────
     drumKitTrack.gain = 0.88; drumKitTrack.pan = 0;
@@ -1033,12 +1100,73 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         { beat: TB, value: 0.1, curve: 'linear', tension: 0 },
     ];
 
+    // ── ADDITIONAL AUTOMATION (mix movement, Kiasmos/Jon Hopkins style) ──
+
+    // Warm pad reverb mix: slowly opens through the track (breathing space)
+    const warmRevMix = mkLane(warmPadTrack.id, 'rev-mix', 'Reverb Mix', 0, 1);
+    warmRevMix.points = [
+        { beat: 0, value: 0.15, curve: 'linear', tension: 0 },
+        { beat: 128, value: 0.25, curve: 'linear', tension: 0 },
+        { beat: 224, value: 0.5, curve: 'linear', tension: 0 },
+        { beat: 320, value: 0.6, curve: 'linear', tension: 0 },
+        { beat: 384, value: 0.3, curve: 'linear', tension: 0 },
+        { beat: 512, value: 0.45, curve: 'linear', tension: 0 },
+        { beat: TB, value: 0.7, curve: 'linear', tension: 0 },
+    ];
+
+    // Arp delay feedback: increases into catharsis for cascading echoes
+    const arpDelayFb = mkLane(arpTrack.id, 'delay-feedback', 'Delay FB', 0, 0.95);
+    arpDelayFb.points = [
+        { beat: 64, value: 0.25, curve: 'linear', tension: 0 },
+        { beat: 128, value: 0.35, curve: 'linear', tension: 0 },
+        { beat: 224, value: 0.55, curve: 'linear', tension: 0 },
+        { beat: 310, value: 0.7, curve: 'linear', tension: 0 },
+        { beat: 320, value: 0.2, curve: 'linear', tension: 0 },
+        { beat: 400, value: 0.4, curve: 'linear', tension: 0 },
+        { beat: 512, value: 0.5, curve: 'linear', tension: 0 },
+        { beat: 576, value: 0.15, curve: 'linear', tension: 0 },
+    ];
+
+    // Shimmer chorus depth: morphs through the track
+    const shimmerChorusDepth = mkLane(shimmerPadTrack.id, 'chorus-depth', 'Chorus Depth', 0.1, 20);
+    shimmerChorusDepth.points = [
+        { beat: 128, value: 5, curve: 'linear', tension: 0 },
+        { beat: 224, value: 14, curve: 'linear', tension: 0 },
+        { beat: 310, value: 18, curve: 'linear', tension: 0 },
+        { beat: 320, value: 4, curve: 'linear', tension: 0 },
+        { beat: 400, value: 10, curve: 'linear', tension: 0 },
+        { beat: 512, value: 3, curve: 'linear', tension: 0 },
+    ];
+
+    // Lead reverb mix: opens up for the catharsis, intimate during outro
+    const leadRevMix = mkLane(leadClassicTrack.id, 'rev-mix', 'Reverb Mix', 0, 1);
+    leadRevMix.points = [
+        { beat: 160, value: 0.15, curve: 'linear', tension: 0 },
+        { beat: 224, value: 0.35, curve: 'linear', tension: 0 },
+        { beat: 288, value: 0.45, curve: 'linear', tension: 0 },
+        { beat: 320, value: 0.1, curve: 'linear', tension: 0 },
+        { beat: 416, value: 0.25, curve: 'linear', tension: 0 },
+        { beat: TB, value: 0.5, curve: 'linear', tension: 0 },
+    ];
+
+    // Dark pad phaser rate: accelerates into catharsis
+    const darkPhaseRate = mkLane(darkPadTrack.id, 'phaser-rate', 'Phase Rate', 0.01, 10);
+    darkPhaseRate.points = [
+        { beat: 192, value: 0.05, curve: 'linear', tension: 0 },
+        { beat: 224, value: 0.15, curve: 'linear', tension: 0 },
+        { beat: 280, value: 0.4, curve: 'linear', tension: 0 },
+        { beat: 320, value: 0.08, curve: 'linear', tension: 0 },
+        { beat: 384, value: 0.03, curve: 'linear', tension: 0 },
+    ];
+
     automationStore.set({
         lanes: [
             subVol, warmVol, drumVol, strSoftVol, arpVol, leadVol,
             pianoVol, brassVol, darkVol, rhodesVol, shimmerVol,
             hatPan, pulseFilter, leadSoftVol, strBrightVol,
             fluteVol, crystalVol, wideVol, tremVol, bellAccVol,
+            // New production automation
+            warmRevMix, arpDelayFb, shimmerChorusDepth, leadRevMix, darkPhaseRate,
         ],
     });
 

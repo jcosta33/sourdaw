@@ -25,6 +25,8 @@ import { FilterResponse } from '../../components/FilterResponse';
 import { ModulationLFO } from '../../components/ModulationLFO';
 import { BitcrusherStaircase } from '../../components/BitcrusherStaircase';
 import { LUFSMeter } from '../metering/LUFSMeter';
+import { resolveDeviceLayout } from './deviceLayoutRegistry';
+import './layouts';
 
 type DeviceInspectorProps = {
     device: Device;
@@ -155,6 +157,19 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
                 </div>
                 <MechanicalSwitch checked={!device.bypassed} onChange={(c) => bypassDevice(device.id, !c)} size="sm" />
             </div>
+
+            {/* ── Registry-based layout (scalable) ── */}
+            {(() => {
+                const LayoutComponent = resolveDeviceLayout(device.type ?? '');
+                if (LayoutComponent) {
+                    return <LayoutComponent device={device} trackId={trackId} parameters={parameters} />;
+                }
+                return null;
+            })()}
+
+            {/* ── Legacy layouts (effects — to be migrated to registry over time) ── */}
+            {!resolveDeviceLayout(device.type ?? '') && (
+            <>
 
             {/* ── Sidechain Source Selector ── */}
             {isSidechainComp ? (
@@ -582,6 +597,8 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
                 <div className="px-1">
                     <p className="text-[10px] text-muted-foreground">No parameters available for this device.</p>
                 </div>
+            )}
+            </>
             )}
         </div>
     );

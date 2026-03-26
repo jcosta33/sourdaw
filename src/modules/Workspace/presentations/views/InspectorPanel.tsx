@@ -40,7 +40,7 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
                 </Button>
             </div>
 
-            <ScrollArea className="flex-1">
+            <ScrollArea className="flex-1 min-h-0">
                 {selectedDevice && selectedTrack ? (
                     <DeviceInspector
                         device={selectedDevice}

@@ -12,6 +12,7 @@ import {
     setTrackPan,
     setTrackMute,
 } from '#/modules/AudioEngine/useCases/trackAudioControls';
+import { addDeviceToStrip, updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
 import { ensureBusStrip, setBusGain, setSend } from '#/modules/Routing/useCases/busControls';
 
 export function ensureTrackStrips(): void {
@@ -34,6 +35,20 @@ export function ensureTrackStrips(): void {
         setTrackGain(track.id, track.gain);
         setTrackPan(track.id, track.pan);
         setTrackMute(track.id, track.muted, track.gain);
+
+        // Bootstrap devices (effects & instruments) from the store data.
+        // Without this, devices exist in the UI but have no audio nodes.
+        for (const device of track.devices) {
+            addDeviceToStrip(track.id, device.id, device.type);
+            // Apply stored parameter values to the newly created audio nodes
+            if (device.parameterValues) {
+                for (const [paramId, value] of Object.entries(device.parameterValues)) {
+                    if (typeof value === 'number') {
+                        updateDeviceParam(track.id, device.id, paramId, value);
+                    }
+                }
+            }
+        }
 
         for (const send of track.sends) {
             setSend(track.id, send.busId, send.level, send.preFader);
