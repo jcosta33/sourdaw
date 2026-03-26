@@ -15,12 +15,12 @@ export const MasterVisualizationsSection = (): ReactElement => {
                 Analysis & Metering
             </div>
             <div className="flex flex-col gap-3">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-3">
                     <div className="bg-surface-base border border-border/50 border-t-[var(--color-light-edge)] rounded-md p-3 flex items-center justify-center">
                         <LUFSMeter height={160} width={60} />
                     </div>
                     <div className="bg-surface-base border border-border/50 border-t-[var(--color-light-edge)] rounded-md p-3 flex items-center justify-center">
-                        <Goniometer size={140} />
+                        <Goniometer size={180} />
                     </div>
                 </div>
                 <div className="bg-surface-base border border-border/50 rounded-md p-3 flex items-center justify-center">
@@ -35,12 +35,12 @@ export const MasterVisualizationsSection = (): ReactElement => {
                 <div className="bg-surface-base border border-border/50 rounded-md p-3 flex items-center justify-center">
                     <PhaseCorrelationDisplay width={280} height={30} />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-3">
                     <div className="bg-surface-base border border-border/50 border-t-[var(--color-light-edge)] rounded-md p-3 flex items-center justify-center">
-                        <SpatialPanner size={120} />
+                        <SpatialPanner size={160} />
                     </div>
                     <div className="bg-surface-base border border-border/50 border-t-[var(--color-light-edge)] rounded-md p-3 flex items-center justify-center">
-                        <Wavetable3D width={140} height={100} />
+                        <Wavetable3D width={200} height={120} />
                     </div>
                 </div>
             </div>

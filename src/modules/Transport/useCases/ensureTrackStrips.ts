@@ -1,6 +1,6 @@
 /**
  * Ensures all track and bus strips exist in the audio engine
- * and syncs their gain/pan/mute/sends from the store state.
+ * and syncs their gain/pan/mute/solo/sends/devices from the store state.
  *
  * Used by startPlayback and toggleRecording before audio begins.
  */
@@ -52,6 +52,19 @@ export function ensureTrackStrips(): void {
 
         for (const send of track.sends) {
             setSend(track.id, send.busId, send.level, send.preFader);
+        }
+    }
+
+    // Apply solo state: if any track is soloed, mute all non-soloed tracks.
+    // This ensures solo set before pressing play takes effect immediately.
+    const anySoloed = tracks.some((t) => t.soloed && t.kind !== 'folder');
+    if (anySoloed) {
+        for (const track of tracks) {
+            if (track.kind === 'folder') {
+                continue;
+            }
+            const shouldMute = !track.soloed;
+            setTrackMute(track.id, shouldMute || track.muted, track.gain);
         }
     }
 }

@@ -158,8 +158,8 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     applyPreset(subBassTrack, 'factory-bass-sub');
     // ▸ Faust Acid Bass 303 — authentic squelchy acid bass
     applyPreset(bassSynthTrack, 'factory-faust-acid-liquid');
-    applyPreset(pulseBassTrack, 'factory-bass-analog');
-    applyPreset(pianoTrack, 'factory-keys-pluck');
+    applyPreset(pulseBassTrack, 'factory-bass-sub');  // sine sub — warm, not video-gamey
+    applyPreset(pianoTrack, 'factory-keys-bell');      // sine bell — smooth with natural decay
     // ▸ Faust Amber Rhodes — ethereal electric piano with long reverb tail
     applyPreset(rhodesTrack, 'factory-faust-rhodes-ambient');
     // ▸ Faust Hammond Ballad — gentle organ with slow Leslie & cathedral reverb
@@ -180,8 +180,8 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     applyPreset(fluteTrack, 'factory-synth-flute');
     // ▸ Faust DX Bells — crystalline FM bell tones
     applyPreset(bellAccentTrack, 'factory-faust-fm-dx-bells');
-    applyPreset(crystalTexTrack, 'synth-arp-crystal');
-    applyPreset(tremPulseTrack, 'factory-synth-arp');
+    applyPreset(crystalTexTrack, 'factory-keys-marimba');  // sine percussive — organic, not sustained
+    applyPreset(tremPulseTrack, 'factory-keys-pluck');     // triangle pluck — natural decay
     // ▸ Faust Supersaw Pad — massive detuned pad with reverb
     applyPreset(widePadTrack, 'factory-faust-supersaw-pad');
     // Drum Fills: same 808 kit for fills
@@ -242,9 +242,11 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         'conv-ir': 6, 'conv-mix': 0.5, 'conv-predelay': 25,
         'conv-lowcut': 80, 'conv-highcut': 10000,
     });
-    // Warm Pad: stereo widener for immersive spread
-    addDev(warmPadTrack, 'builtin-stereo-widener', 'Pad Width', {
-        'width-amount': 1.8, 'width-mid': -2, 'width-side': 2, 'width-mono-bass': 200,
+    // Warm Pad: EQ for warmth and air (boost low-mids + gentle high shelf)
+    addDev(warmPadTrack, 'builtin-eq', 'Pad Warmth', {
+        'eq-low-gain': 2, 'eq-low-freq': 200, 'eq-low-q': 0.8,
+        'eq-mid-gain': -1.5, 'eq-mid-freq': 800, 'eq-mid-q': 1.2,
+        'eq-high-gain': 1.5, 'eq-high-freq': 8000, 'eq-high-q': 0.6,
     });
 
     // ╔═══════════════════════════════════════════════════════════════╗
@@ -254,15 +256,14 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     addDev(leadClassicTrack, 'builtin-delay', 'Dotted Delay', { 'delay-time': 375, 'delay-feedback': 0.3, 'delay-mix': 0.2 });
     addDev(leadClassicTrack, 'builtin-chorus', 'Lead Chorus', { 'chorus-rate': 0.6, 'chorus-depth': 5, 'chorus-feedback': 0.15, 'chorus-mix': 0.25 });
     addDev(leadClassicTrack, 'builtin-reverb', 'Lead Space', { 'rev-size': 0.6, 'rev-decay': 3, 'rev-damping': 0.3, 'rev-mix': 0.25 });
-    // Lead Soft: phaser + long reverb for dreamy Jon Hopkins quality
+    // Lead Soft: phaser + reverb for dreamy Jon Hopkins quality (lower wet to avoid mud)
     addDev(leadSoftTrack, 'builtin-phaser', 'Dream Phase', { 'phaser-rate': 0.15, 'phaser-depth': 0.8, 'phaser-feedback': 0.55, 'phaser-stages': 6 });
-    addDev(leadSoftTrack, 'builtin-reverb', 'Soft Hall', { 'rev-size': 0.8, 'rev-decay': 4, 'rev-damping': 0.2, 'rev-mix': 0.35 });
+    addDev(leadSoftTrack, 'builtin-reverb', 'Soft Hall', { 'rev-size': 0.8, 'rev-decay': 4, 'rev-damping': 0.2, 'rev-mix': 0.22 });
     // Brass: reverb + EQ brightening for grandeur
     addDev(brassTrack, 'builtin-reverb', 'Brass Hall', { 'rev-size': 0.65, 'rev-decay': 2.5, 'rev-damping': 0.3, 'rev-mix': 0.25 });
-    // Rhodes (Faust Ambient): already has reverb+delay from preset, add stereo widener
-    addDev(rhodesTrack, 'builtin-stereo-widener', 'Rhodes Width', {
-        'width-amount': 1.4, 'width-mid': 0, 'width-side': 1, 'width-mono-bass': 250,
-    });
+    // Rhodes (Faust Ambient): chorus + delay for warmth and movement
+    addDev(rhodesTrack, 'builtin-chorus', 'Rhodes Shimmer', { 'chorus-rate': 0.35, 'chorus-depth': 4, 'chorus-feedback': 0.12, 'chorus-mix': 0.25 });
+    addDev(rhodesTrack, 'builtin-delay', 'Rhodes Echo', { 'delay-time': 375, 'delay-feedback': 0.25, 'delay-mix': 0.18 });
     // Piano: convolution reverb for natural room
     addDev(pianoTrack, 'builtin-convolution-reverb', 'Piano Room', {
         'conv-ir': 0, 'conv-mix': 0.25, 'conv-predelay': 10,
@@ -274,9 +275,9 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     addDev(arpTrack, 'builtin-autopan', 'Arp Pan', { 'autopan-rate': 0.5, 'autopan-depth': 0.6 });
     // Shimmer Pad (Faust FM): chorus for extra shimmer
     addDev(shimmerPadTrack, 'builtin-chorus', 'Shimmer Chorus', { 'chorus-rate': 0.15, 'chorus-depth': 10, 'chorus-feedback': 0.2, 'chorus-mix': 0.35 });
-    // Warm Pad: slow flanger for evolving texture (Kiasmos trick)
+    // Warm Pad: slow flanger for evolving texture (Kiasmos trick) + reverb
     addDev(warmPadTrack, 'builtin-flanger', 'Pad Flange', { 'flanger-rate': 0.06, 'flanger-depth': 5, 'flanger-feedback': 0.35, 'flanger-mix': 0.2 });
-    addDev(warmPadTrack, 'builtin-reverb', 'Pad Reverb', { 'rev-size': 0.9, 'rev-decay': 5, 'rev-damping': 0.15, 'rev-mix': 0.3 });
+    addDev(warmPadTrack, 'builtin-reverb', 'Pad Reverb', { 'rev-size': 0.9, 'rev-decay': 5, 'rev-damping': 0.15, 'rev-mix': 0.2 });
     // Dark Pad: phaser + distortion for sinister texture (Jon Hopkins "Immunity" style)
     addDev(darkPadTrack, 'builtin-phaser', 'Dark Phase', { 'phaser-rate': 0.08, 'phaser-depth': 0.9, 'phaser-feedback': 0.65, 'phaser-stages': 6 });
     addDev(darkPadTrack, 'builtin-distortion', 'Dark Saturation', { 'dist-drive': 2, 'dist-tone': 2000, 'dist-mix': 0.1, 'dist-output': -3 });
@@ -296,9 +297,9 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     addDev(fluteTrack, 'builtin-reverb', 'Flute Space', { 'rev-size': 0.7, 'rev-decay': 3, 'rev-damping': 0.3, 'rev-mix': 0.3 });
     // Bell Accents (Faust DX Bells): already has reverb from preset, add shimmer delay
     addDev(bellAccentTrack, 'builtin-delay', 'Bell Echo', { 'delay-time': 500, 'delay-feedback': 0.35, 'delay-mix': 0.25 });
-    // Crystal Texture: delay + reverb + auto-pan for scattered texture
+    // Crystal Texture: delay + reverb (tamed wet) + auto-pan for scattered texture
     addDev(crystalTexTrack, 'builtin-delay', 'Crystal Delay', { 'delay-time': 200, 'delay-feedback': 0.5, 'delay-mix': 0.3 });
-    addDev(crystalTexTrack, 'builtin-reverb', 'Crystal Wash', { 'rev-size': 0.95, 'rev-decay': 5, 'rev-damping': 0.15, 'rev-mix': 0.4 });
+    addDev(crystalTexTrack, 'builtin-reverb', 'Crystal Wash', { 'rev-size': 0.95, 'rev-decay': 5, 'rev-damping': 0.15, 'rev-mix': 0.22 });
     addDev(crystalTexTrack, 'builtin-autopan', 'Crystal Pan', { 'autopan-rate': 0.3, 'autopan-depth': 0.5 });
     // Tremolo Pulse: tremolo + phaser
     addDev(tremPulseTrack, 'builtin-tremolo', 'Pulse Trem', { 'trem-rate': 3, 'trem-depth': 0.6, 'trem-shape': 0 });
@@ -307,8 +308,8 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     addDev(widePadTrack, 'builtin-chorus', 'Wide Chorus', { 'chorus-rate': 0.15, 'chorus-depth': 14, 'chorus-feedback': 0.3, 'chorus-mix': 0.5 });
     // Drum Fills: reverb on fills for space
     addDev(drumFillTrack, 'builtin-reverb', 'Fill Verb', { 'rev-size': 0.4, 'rev-decay': 1.2, 'rev-damping': 0.5, 'rev-mix': 0.2 });
-    // Impact FX: reverb + distortion for impact weight
-    addDev(impactFxTrack, 'builtin-reverb', 'Impact Tail', { 'rev-size': 0.95, 'rev-decay': 5, 'rev-damping': 0.1, 'rev-mix': 0.5 });
+    // Impact FX: reverb (tamed) + distortion for impact weight
+    addDev(impactFxTrack, 'builtin-reverb', 'Impact Tail', { 'rev-size': 0.95, 'rev-decay': 5, 'rev-damping': 0.1, 'rev-mix': 0.3 });
     addDev(impactFxTrack, 'builtin-distortion', 'Impact Drive', { 'dist-drive': 4, 'dist-tone': 1500, 'dist-mix': 0.12 });
     // Texture Chirps (Faust Additive Glass): delay + autopan for scattered glass
     addDev(texChirpTrack, 'builtin-delay', 'Chirp Delay', { 'delay-time': 166, 'delay-feedback': 0.5, 'delay-mix': 0.35 });
@@ -319,35 +320,35 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     addDev(riserTrack, 'builtin-filter', 'Rise Filter', { 'filter-cutoff': 500, 'filter-resonance': 4, 'filter-type': 0 });
     addDev(riserTrack, 'builtin-reverb', 'Rise Space', { 'rev-size': 0.8, 'rev-decay': 3, 'rev-damping': 0.3, 'rev-mix': 0.3 });
 
-    // ── GAIN / PAN — stereo field ─────────────────────────────────────────
-    drumKitTrack.gain = 0.88; drumKitTrack.pan = 0;
-    percShakerTrack.gain = 0.38; percShakerTrack.pan = 35;
-    percHitsTrack.gain = 0.42; percHitsTrack.pan = -25;
-    subBassTrack.gain = 0.90; subBassTrack.pan = 0;
-    bassSynthTrack.gain = 0.72; bassSynthTrack.pan = 5;
-    pulseBassTrack.gain = 0.65; pulseBassTrack.pan = 8;
-    pianoTrack.gain = 0.68; pianoTrack.pan = -22;
-    rhodesTrack.gain = 0.55; rhodesTrack.pan = 18;
-    organTrack.gain = 0.45; organTrack.pan = -8;
-    warmPadTrack.gain = 0.72; warmPadTrack.pan = 12;
-    shimmerPadTrack.gain = 0.48; shimmerPadTrack.pan = -30;
-    darkPadTrack.gain = 0.55; darkPadTrack.pan = 20;
-    stringsSoftTrack.gain = 0.58; stringsSoftTrack.pan = -15;
-    stringsBrightTrack.gain = 0.52; stringsBrightTrack.pan = 25;
-    leadClassicTrack.gain = 0.72; leadClassicTrack.pan = -8;
-    leadSoftTrack.gain = 0.58; leadSoftTrack.pan = 15;
-    brassTrack.gain = 0.62; brassTrack.pan = 5;
-    arpTrack.gain = 0.55; arpTrack.pan = 32;
-    riserTrack.gain = 0.50; riserTrack.pan = 0;
-    noiseSweepTrack.gain = 0.40; noiseSweepTrack.pan = 0;
-    fluteTrack.gain = 0.50; fluteTrack.pan = -28;
-    bellAccentTrack.gain = 0.35; bellAccentTrack.pan = 22;
-    crystalTexTrack.gain = 0.30; crystalTexTrack.pan = -35;
-    tremPulseTrack.gain = 0.42; tremPulseTrack.pan = 30;
-    widePadTrack.gain = 0.38; widePadTrack.pan = 0;
-    drumFillTrack.gain = 0.65; drumFillTrack.pan = 0;
-    impactFxTrack.gain = 0.55; impactFxTrack.pan = 0;
-    texChirpTrack.gain = 0.25; texChirpTrack.pan = -40;
+    // ── GAIN / PAN — stereo field (rebalanced for ambient clarity) ─────
+    drumKitTrack.gain = 0.55; drumKitTrack.pan = 0;
+    percShakerTrack.gain = 0.22; percShakerTrack.pan = 35;
+    percHitsTrack.gain = 0.28; percHitsTrack.pan = -25;
+    subBassTrack.gain = 0.80; subBassTrack.pan = 0;
+    bassSynthTrack.gain = 0.55; bassSynthTrack.pan = 5;
+    pulseBassTrack.gain = 0.48; pulseBassTrack.pan = 8;
+    pianoTrack.gain = 0.62; pianoTrack.pan = -22;
+    rhodesTrack.gain = 0.50; rhodesTrack.pan = 18;
+    organTrack.gain = 0.35; organTrack.pan = -8;
+    warmPadTrack.gain = 0.65; warmPadTrack.pan = 12;
+    shimmerPadTrack.gain = 0.32; shimmerPadTrack.pan = -30;
+    darkPadTrack.gain = 0.42; darkPadTrack.pan = 20;
+    stringsSoftTrack.gain = 0.28; stringsSoftTrack.pan = -15;
+    stringsBrightTrack.gain = 0.42; stringsBrightTrack.pan = 25;
+    leadClassicTrack.gain = 0.60; leadClassicTrack.pan = -8;
+    leadSoftTrack.gain = 0.45; leadSoftTrack.pan = 15;
+    brassTrack.gain = 0.40; brassTrack.pan = 5;
+    arpTrack.gain = 0.35; arpTrack.pan = 32;
+    riserTrack.gain = 0.38; riserTrack.pan = 0;
+    noiseSweepTrack.gain = 0.30; noiseSweepTrack.pan = 0;
+    fluteTrack.gain = 0.38; fluteTrack.pan = -28;
+    bellAccentTrack.gain = 0.05; bellAccentTrack.pan = 22;
+    crystalTexTrack.gain = 0.18; crystalTexTrack.pan = -35;
+    tremPulseTrack.gain = 0.28; tremPulseTrack.pan = 30;
+    widePadTrack.gain = 0.28; widePadTrack.pan = 0;
+    drumFillTrack.gain = 0.40; drumFillTrack.pan = 0;
+    impactFxTrack.gain = 0.45; impactFxTrack.pan = 0;
+    texChirpTrack.gain = 0.15; texChirpTrack.pan = -40;
 
     // ── AUDIO DRUM BUFFERS ────────────────────────────────────────────────
     const cx = Date.now();
@@ -455,78 +456,82 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     const chirpClip = createMidiClip(texChirpTrack.id, 'Chirps', 128, 512, texChirpTrack.color);
     texChirpTrack.clips = [chirpClip];
 
-    // ── MIDI NOTE GENERATION ──────────────────────────────────────────────
-    // 808 DRUM KIT NOTES — using GM drum map (kick=36, snare=38, clap=39, etc.)
+    // 808 DRUM KIT NOTES — AMBIENT/MINIMAL style (Kiasmos inspired)
+    // Sparse kicks, no continuous 16th hats, rimshots instead of snares
     const drumN: MidiNote[] = [];
-    // Sections where drums play: Build(64-128 sparse), Groove(128-224), Catharsis(224-320),
-    //                            Rise(384-512), Outro(512-576 fading)
-    for (let b = 64; b < 576; b += 0.25) {
+    for (let b = 64; b < 576; b += 1) {
         if (b >= 320 && b < 384) continue; // breakdown silence
         const pos = b % 4;
+        const bar = Math.floor(b / 4);
         const inBuild = b < 128;
         const inCatharsis = b >= 224 && b < 320;
         const inOutro = b >= 512;
 
-        // Kick: 4-on-floor (every beat), or half-time in build/outro
-        if (pos === 0 || (!inBuild && !inOutro && pos === 2)) {
-            drumN.push(note(36, b, 0.5, hv(inBuild ? 70 : inCatharsis ? 110 : 95, 8)));
+        // Kick: sparse — every 2 beats in groove, every 4 in build/outro
+        if (inBuild && pos === 0 && bar % 2 === 0) {
+            drumN.push(note(36, b, 1.0, hv(65, 8)));
+        } else if (inOutro && pos === 0 && bar % 2 === 0) {
+            drumN.push(note(36, b, 1.0, hv(55, 8)));
+        } else if (!inBuild && !inOutro) {
+            // Main groove: kick on 1, ghost on 3 (every other bar adds beat 3)
+            if (pos === 0) {
+                drumN.push(note(36, b, 1.0, hv(inCatharsis ? 95 : 80, 6)));
+            }
+            if (pos === 2 && bar % 2 === 0) {
+                drumN.push(note(36, b, 0.8, hv(inCatharsis ? 65 : 50, 8)));
+            }
         }
-        // Ghost kick on "and" of 3 in groove/catharsis
-        if (!inBuild && !inOutro && pos === 2.75) {
-            drumN.push(note(36, b, 0.25, hv(55, 10)));
+
+        // Rimshot/snare: very sparse — only beat 3 every other bar
+        if (!inBuild && pos === 3 && bar % 2 === 1) {
+            const snarePitch = inCatharsis ? 38 : 37; // snare vs side stick
+            drumN.push(note(snarePitch, b, 0.3, hv(inCatharsis ? 72 : 55, 10)));
         }
-        // Snare/Clap on 1 and 3
-        if (!inBuild && (pos === 1 || pos === 3)) {
-            drumN.push(note(inCatharsis ? 39 : 38, b, 0.5, hv(inCatharsis ? 105 : 90, 8)));
+
+        // Closed HH: quarter notes only (not 16ths!) — ambient breathing
+        if (pos === 0 && !inBuild) {
+            drumN.push(note(42, b + 0.5, 0.2, hv(40, 12))); // offbeat hat
         }
-        // Build: snare only on 3
-        if (inBuild && pos === 3) {
-            drumN.push(note(38, b, 0.5, hv(72, 8)));
-        }
-        // Closed HH: 16ths in groove/catharsis, 8ths in build
-        if (!inBuild && pos % 0.25 === 0) {
-            const isAccent = pos % 1 === 0;
-            drumN.push(note(42, b, 0.15, hv(isAccent ? 75 : 50, 12)));
-        } else if (inBuild && pos % 0.5 === 0) {
-            drumN.push(note(42, b, 0.2, hv(62, 10)));
-        }
-        // Open HH: beats 0.5, 2.5 (offbeats) in catharsis only
-        if (inCatharsis && (pos === 0.5 || pos === 2.5)) {
-            drumN.push(note(46, b, 0.3, hv(68, 8)));
-        }
-        // Toms: fills at phrase boundaries (every 32 beats, last 2 beats)
-        if (b % 32 >= 30 && pos % 0.5 === 0 && !inOutro) {
-            const tomPitches = [43, 47, 50]; // low, mid, high
-            drumN.push(note(tomPitches[Math.floor(((b % 2) / 0.5)) % 3]!, b, 0.25, hv(85, 10)));
-        }
-        // Cowbell: sparse accents in catharsis
-        if (inCatharsis && b % 8 === 0) {
-            drumN.push(note(56, b + 0.5, 0.25, hv(60, 8)));
+        // Open HH: very sparse — every 4 bars on beat 2
+        if (bar % 4 === 3 && pos === 2 && !inBuild && !inOutro) {
+            drumN.push(note(46, b, 0.5, hv(45, 8)));
         }
     }
 
-    // SUB BASS — deep root drone every 2 beats
+    // SUB BASS — deep root drone every 4 beats (long droning notes)
     const subN: MidiNote[] = [];
-    for (let b = 0; b < TB; b += 2) {
+    for (let b = 0; b < TB; b += 4) {
         const c = ch(b);
         const inBD = b >= 320 && b < 384;
-        const vel = b < 16 ? 40 : b < 32 ? 55 : b < 64 ? 68 : inBD ? 45 : b >= 512 ? 55 : 82;
-        subN.push(note(c.sub, b, 1.95, hv(vel, 5)));
-        if (b % 16 === 14 && !inBD && b >= 64 && b < 512) {
-            subN.push(note(c.sub + 12, b + 0.5, 0.4, hv(85, 10)));
-        }
+        const vel = b < 16 ? 35 : b < 32 ? 45 : b < 64 ? 58 : inBD ? 38 : b >= 512 ? 48 : 72;
+        subN.push(note(c.sub, b, 3.8, hv(vel, 5)));
     }
 
-    // 808 BASS — melodic acid-style line, enters at build
+    // 808 BASS — melodic line with varied rhythmic patterns per section
     const bass808N: MidiNote[] = [];
     for (let b = 64; b < TB; b += 4) {
         if (b >= 320 && b < 384) continue;
         const c = ch(b);
         const vel = b >= 224 && b < 320 ? 95 : b >= 512 ? 60 : 78;
-        bass808N.push(note(c.root, b, 0.8, hv(vel, 6)));
-        bass808N.push(note(c.fifth, b + 1.5, 0.4, hv(vel - 10, 8)));
-        bass808N.push(note(c.root, b + 2, 0.6, hv(vel - 5, 6)));
-        bass808N.push(note(c.third, b + 3, 0.8, hv(vel - 8, 8)));
+        const phrase = Math.floor(b / 16) % 4;
+        // Vary the pattern every 4 bars to avoid monotony
+        if (phrase === 0) {
+            bass808N.push(note(c.root, b, 1.2, hv(vel, 6)));
+            bass808N.push(note(c.fifth, b + 2, 0.8, hv(vel - 10, 8)));
+            bass808N.push(note(c.root, b + 3, 0.8, hv(vel - 5, 6)));
+        } else if (phrase === 1) {
+            bass808N.push(note(c.root, b, 0.6, hv(vel, 6)));
+            bass808N.push(note(c.third, b + 1, 0.6, hv(vel - 8, 8)));
+            bass808N.push(note(c.fifth, b + 2.5, 1.2, hv(vel - 5, 6)));
+        } else if (phrase === 2) {
+            bass808N.push(note(c.root, b, 2.0, hv(vel, 6)));  // held note
+            bass808N.push(note(c.root + 12, b + 2.5, 0.4, hv(vel - 12, 10))); // octave accent
+            bass808N.push(note(c.fifth, b + 3, 0.8, hv(vel - 8, 8)));
+        } else {
+            bass808N.push(note(c.root, b, 0.8, hv(vel, 6)));
+            bass808N.push(note(c.fifth, b + 1.5, 0.4, hv(vel - 10, 8)));
+            bass808N.push(note(c.third, b + 2, 1.5, hv(vel - 6, 6))); // longer third
+        }
     }
 
     // PULSE BASS — syncopated 8th-note pattern
@@ -545,21 +550,33 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         }
     }
 
-    // PIANO — sparse bookend, breakdown solo
+    // PIANO (bell preset) — clean sine bell tones, let natural decay do the work
     const pianoN: MidiNote[] = [];
-    const pianoSparse = (startBeat: number, c: (typeof CHORDS)[0], velBase: number) => {
-        pianoN.push(note(c.root + 24, startBeat, 1.5, hv(velBase, 8)));
-        pianoN.push(note(c.fifth + 24, startBeat + 2, 1.0, hv(velBase - 8, 8)));
-        pianoN.push(note(c.third + 24, startBeat + 4, 2.0, hv(velBase - 4, 10)));
-        pianoN.push(note(c.seventh + 24, startBeat + 7, 1.5, hv(velBase - 12, 10)));
-    };
-    for (let b = 2; b < 64; b += 8) pianoSparse(b, ch(b), 48);
-    for (let b = 320; b < 384; b += 8) pianoSparse(b, ch(b), 62);
+    // Intro: sparse single notes, each rings out naturally
+    for (let b = 2; b < 64; b += 8) {
+        const c = ch(b);
+        const vel = b < 16 ? 40 : 50;
+        pianoN.push(note(c.root + 24, b, 1.5, hv(vel, 8)));
+        pianoN.push(note(c.fifth + 24, b + 2, 1.5, hv(vel - 8, 10)));
+        pianoN.push(note(c.third + 24, b + 4, 2.0, hv(vel - 4, 8)));
+        pianoN.push(note(c.seventh + 24, b + 6, 1.5, hv(vel - 12, 10)));
+    }
+    // Breakdown: soft chords with gentle velocity crescendo
+    for (let b = 320; b < 384; b += 8) {
+        const c = ch(b);
+        const vel = 55 + Math.floor((b - 320) * 0.15);
+        pianoN.push(note(c.root + 24, b, 2.0, hv(vel, 8)));
+        pianoN.push(note(c.fifth + 24, b + 2, 1.5, hv(vel - 6, 8)));
+        pianoN.push(note(c.third + 24, b + 4, 2.0, hv(vel - 4, 10)));
+        pianoN.push(note(c.seventh + 24, b + 6, 1.5, hv(vel - 10, 10)));
+    }
+    // Outro: sustained bell tones dissolving
     for (let b = 512; b < TB; b += 16) {
         const c = ch(b);
-        pianoN.push(note(c.root + 24, b, 7.5, hv(55, 6)));
-        pianoN.push(note(c.third + 24, b + 0.1, 7.5, hv(48, 6)));
-        pianoN.push(note(c.seventh + 24, b + 0.2, 7.5, hv(42, 6)));
+        const fadeVel = Math.max(25, 50 - Math.floor((b - 512) * 0.3));
+        pianoN.push(note(c.root + 24, b, 4, hv(fadeVel, 6)));
+        pianoN.push(note(c.fifth + 24, b + 4, 4, hv(fadeVel - 6, 8)));
+        pianoN.push(note(c.third + 24, b + 8, 4, hv(fadeVel - 10, 8)));
     }
 
     // RHODES — warm chords in groove sections
@@ -692,7 +709,7 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         brassN.push(note(c.third + 24, b + 8, 7.5, hv(85, 10)));
     }
 
-    // ARP — chord-tone 16th-note sequence
+    // ARP — chord-tone 8th-note sequence (not 16ths — ambient not DnB)
     const ARP_POOLS: number[][] = [
         [62, 65, 69, 72, 74], [67, 70, 74, 77],
         [69, 72, 76, 79], [70, 74, 77, 81],
@@ -700,15 +717,15 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     const ARP_STEPS = [0, 2, 1, 3, 2, 4, 3, 1];
     const arpN: MidiNote[] = [];
     let arpStep = 0;
-    for (let b = 64; b < TB; b += 0.25) {
+    for (let b = 64; b < TB; b += 0.5) { // 8th notes, not 16ths
         if (b >= 320 && b < 384) continue;
         if (b >= 576) continue;
         const chordIdx = Math.floor(b / 16) % 4;
         const pool = ARP_POOLS[chordIdx]!;
         const pitch = pool[ARP_STEPS[arpStep % ARP_STEPS.length]! % pool.length]!;
-        const vel = b < 128 ? 55 : b >= 224 && b < 320 ? 68 : 60;
-        const acc = b % 1 === 0;
-        arpN.push(note(pitch, b, 0.22, hv(acc ? vel : vel - 15, 8)));
+        const vel = b < 128 ? 42 : b >= 224 && b < 320 ? 55 : 48;
+        const acc = b % 2 === 0; // accent on beats
+        arpN.push(note(pitch, b, 0.4, hv(acc ? vel : vel - 12, 8)));
         arpStep++;
     }
 
@@ -789,26 +806,17 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         if (!inBD) wideN.push(note(c.ninth + 12, b, 31, hv(vel - 10)));
     }
 
-    // DRUM FILLS — tom and snare flourishes at section boundaries
+    // DRUM FILLS — minimal tom accents at section boundaries (not busy 16th fills)
     const drumFillN: MidiNote[] = [];
-    const fillBeats = [112, 192, 288, 368, 448, 544]; // last 16 beats before transitions
+    const fillBeats = [112, 192, 288, 368, 448, 544];
     for (const fb of fillBeats) {
-        const fillStart = fb;
-        // 4-beat fill pattern
-        const tomPitches = [43, 47, 50, 43]; // low-mid-high-low toms
-        for (let i = 0; i < 16; i++) {
-            const b = fillStart + i * 0.25;
-            if (b >= 576) break;
-            if (b >= 320 && b < 384) continue;
-            const vel = Math.min(127, Math.round(60 + i * 4));
-            const tom = tomPitches[i % 4]!;
-            if (i < 8) {
-                if (i % 2 === 0) drumFillN.push(note(tom, b, 0.2, hv(vel)));
-            } else {
-                drumFillN.push(note(tom, b, 0.15, hv(vel)));
-                if (i % 4 === 3) drumFillN.push(note(38, b, 0.1, hv(vel - 10))); // snare flam
-            }
-        }
+        if (fb >= 576) break;
+        if (fb >= 320 && fb < 384) continue;
+        // Simple 3-hit fill: low tom, mid tom, floor tom
+        drumFillN.push(note(43, fb, 0.5, hv(62)));
+        drumFillN.push(note(47, fb + 1, 0.5, hv(58)));
+        drumFillN.push(note(50, fb + 2, 0.5, hv(55)));
+        drumFillN.push(note(36, fb + 3, 1.0, hv(75))); // resolving kick
     }
 
     // IMPACT FX — sub bass drops at section changes
@@ -1006,23 +1014,21 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         { beat: 512, value: 0, curve: 'linear', tension: 0 },
     ];
 
-    const hatPan = mkLane(drumKitTrack.id, 'pan', 'Pan', -1, 1);
-    hatPan.points = [];
-    for (let b = 64; b <= TB; b += 8) {
-        hatPan.points.push({ beat: b, value: (b / 8) % 2 === 0 ? 0.22 : -0.22, curve: 'linear', tension: 0 });
-    }
+    // Remove hatPan — was making drums oscillate unnaturally
+    // (hatPan automation deleted)
 
     const pulseFilter = mkLane(pulseBassTrack.id, 'filterCutoff', 'Filter', 20, 20000);
     pulseFilter.points = [
-        { beat: 32, value: 180, curve: 'linear', tension: 0 },
-        { beat: 64, value: 500, curve: 'linear', tension: 0 },
-        { beat: 128, value: 2400, curve: 'linear', tension: 0 },
-        { beat: 224, value: 5200, curve: 'linear', tension: 0 },
-        { beat: 320, value: 250, curve: 'linear', tension: 0 },
-        { beat: 384, value: 1800, curve: 'linear', tension: 0 },
-        { beat: 448, value: 6500, curve: 'linear', tension: 0 },
-        { beat: 512, value: 2200, curve: 'linear', tension: 0 },
-        { beat: TB, value: 150, curve: 'linear', tension: 0 },
+        { beat: 32, value: 100, curve: 'linear', tension: 0 },
+        { beat: 64, value: 400, curve: 'linear', tension: 0 },
+        { beat: 128, value: 2000, curve: 'linear', tension: 0 },
+        { beat: 200, value: 6000, curve: 'linear', tension: 0 },
+        { beat: 224, value: 10000, curve: 'linear', tension: 0 },   // WOW: filter fully opens at catharsis
+        { beat: 320, value: 100, curve: 'linear', tension: 0 },    // CRASH: slams shut at breakdown
+        { beat: 384, value: 800, curve: 'linear', tension: 0 },
+        { beat: 448, value: 8000, curve: 'linear', tension: 0 },
+        { beat: 512, value: 1500, curve: 'linear', tension: 0 },
+        { beat: TB, value: 80, curve: 'linear', tension: 0 },
     ];
 
     const leadSoftVol = mkLane(leadSoftTrack.id, 'volume', 'Volume', 0, 1);
@@ -1088,85 +1094,92 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         { beat: 320, value: 0.0, curve: 'linear', tension: 0 },
     ];
 
-    // Bell accents: subtle throughout
+    // Bell accents: barely-there background texture
     const bellAccVol = mkLane(bellAccentTrack.id, 'volume', 'Volume', 0, 1);
     bellAccVol.points = [
         { beat: 64, value: 0.0, curve: 'linear', tension: 0 },
-        { beat: 96, value: 0.3, curve: 'linear', tension: 0 },
-        { beat: 224, value: 0.5, curve: 'linear', tension: 0 },
-        { beat: 320, value: 0.2, curve: 'linear', tension: 0 },
-        { beat: 384, value: 0.4, curve: 'linear', tension: 0 },
-        { beat: 512, value: 0.35, curve: 'linear', tension: 0 },
-        { beat: TB, value: 0.1, curve: 'linear', tension: 0 },
+        { beat: 96, value: 0.05, curve: 'linear', tension: 0 },
+        { beat: 224, value: 0.10, curve: 'linear', tension: 0 },
+        { beat: 320, value: 0.03, curve: 'linear', tension: 0 },
+        { beat: 384, value: 0.08, curve: 'linear', tension: 0 },
+        { beat: 512, value: 0.05, curve: 'linear', tension: 0 },
+        { beat: TB, value: 0.02, curve: 'linear', tension: 0 },
     ];
 
-    // ── ADDITIONAL AUTOMATION (mix movement, Kiasmos/Jon Hopkins style) ──
+    // ── DRAMATIC AUTOMATION (audible wow moments, Kiasmos/Jon Hopkins style) ──
 
-    // Warm pad reverb mix: slowly opens through the track (breathing space)
+    // Warm pad reverb mix: DRAMATIC — intimate to cathedral
     const warmRevMix = mkLane(warmPadTrack.id, 'rev-mix', 'Reverb Mix', 0, 1);
     warmRevMix.points = [
-        { beat: 0, value: 0.15, curve: 'linear', tension: 0 },
-        { beat: 128, value: 0.25, curve: 'linear', tension: 0 },
-        { beat: 224, value: 0.5, curve: 'linear', tension: 0 },
-        { beat: 320, value: 0.6, curve: 'linear', tension: 0 },
-        { beat: 384, value: 0.3, curve: 'linear', tension: 0 },
-        { beat: 512, value: 0.45, curve: 'linear', tension: 0 },
-        { beat: TB, value: 0.7, curve: 'linear', tension: 0 },
+        { beat: 0, value: 0.05, curve: 'linear', tension: 0 },
+        { beat: 64, value: 0.1, curve: 'linear', tension: 0 },
+        { beat: 128, value: 0.15, curve: 'linear', tension: 0 },
+        { beat: 200, value: 0.3, curve: 'linear', tension: 0 },
+        { beat: 224, value: 0.55, curve: 'linear', tension: 0 },   // WOW: reverb swells into catharsis
+        { beat: 288, value: 0.65, curve: 'linear', tension: 0 },   // Peak reverb wash
+        { beat: 320, value: 0.08, curve: 'linear', tension: 0 },   // SNAP: dry at breakdown
+        { beat: 384, value: 0.2, curve: 'linear', tension: 0 },
+        { beat: 512, value: 0.4, curve: 'linear', tension: 0 },
+        { beat: TB, value: 0.7, curve: 'linear', tension: 0 },    // Outro: dissolves into reverb
     ];
 
-    // Arp delay feedback: increases into catharsis for cascading echoes
+    // Arp delay feedback: builds to near-self-oscillation then CUT
     const arpDelayFb = mkLane(arpTrack.id, 'delay-feedback', 'Delay FB', 0, 0.95);
     arpDelayFb.points = [
-        { beat: 64, value: 0.25, curve: 'linear', tension: 0 },
-        { beat: 128, value: 0.35, curve: 'linear', tension: 0 },
-        { beat: 224, value: 0.55, curve: 'linear', tension: 0 },
-        { beat: 310, value: 0.7, curve: 'linear', tension: 0 },
-        { beat: 320, value: 0.2, curve: 'linear', tension: 0 },
-        { beat: 400, value: 0.4, curve: 'linear', tension: 0 },
+        { beat: 64, value: 0.15, curve: 'linear', tension: 0 },
+        { beat: 128, value: 0.3, curve: 'linear', tension: 0 },
+        { beat: 200, value: 0.5, curve: 'linear', tension: 0 },
+        { beat: 220, value: 0.75, curve: 'linear', tension: 0 },   // Building cascades
+        { beat: 224, value: 0.85, curve: 'linear', tension: 0 },   // WOW: near self-oscillation!
+        { beat: 310, value: 0.88, curve: 'linear', tension: 0 },   // Held at edge
+        { beat: 320, value: 0.1, curve: 'linear', tension: 0 },    // SNAP: cut to almost nothing
+        { beat: 400, value: 0.35, curve: 'linear', tension: 0 },
         { beat: 512, value: 0.5, curve: 'linear', tension: 0 },
-        { beat: 576, value: 0.15, curve: 'linear', tension: 0 },
+        { beat: 576, value: 0.2, curve: 'linear', tension: 0 },
     ];
 
-    // Shimmer chorus depth: morphs through the track
-    const shimmerChorusDepth = mkLane(shimmerPadTrack.id, 'chorus-depth', 'Chorus Depth', 0.1, 20);
-    shimmerChorusDepth.points = [
-        { beat: 128, value: 5, curve: 'linear', tension: 0 },
-        { beat: 224, value: 14, curve: 'linear', tension: 0 },
-        { beat: 310, value: 18, curve: 'linear', tension: 0 },
-        { beat: 320, value: 4, curve: 'linear', tension: 0 },
-        { beat: 400, value: 10, curve: 'linear', tension: 0 },
-        { beat: 512, value: 3, curve: 'linear', tension: 0 },
-    ];
-
-    // Lead reverb mix: opens up for the catharsis, intimate during outro
+    // Lead reverb mix: massive contrast — dry intimate vs huge space
     const leadRevMix = mkLane(leadClassicTrack.id, 'rev-mix', 'Reverb Mix', 0, 1);
     leadRevMix.points = [
-        { beat: 160, value: 0.15, curve: 'linear', tension: 0 },
-        { beat: 224, value: 0.35, curve: 'linear', tension: 0 },
-        { beat: 288, value: 0.45, curve: 'linear', tension: 0 },
-        { beat: 320, value: 0.1, curve: 'linear', tension: 0 },
-        { beat: 416, value: 0.25, curve: 'linear', tension: 0 },
-        { beat: TB, value: 0.5, curve: 'linear', tension: 0 },
+        { beat: 160, value: 0.08, curve: 'linear', tension: 0 },    // Starts dry/intimate
+        { beat: 192, value: 0.12, curve: 'linear', tension: 0 },
+        { beat: 224, value: 0.45, curve: 'linear', tension: 0 },    // WOW: huge reverb at catharsis
+        { beat: 288, value: 0.55, curve: 'linear', tension: 0 },    // Peak space
+        { beat: 320, value: 0.05, curve: 'linear', tension: 0 },    // SNAP: completely dry
+        { beat: 416, value: 0.2, curve: 'linear', tension: 0 },
+        { beat: TB, value: 0.6, curve: 'linear', tension: 0 },     // Dissolves
     ];
 
-    // Dark pad phaser rate: accelerates into catharsis
-    const darkPhaseRate = mkLane(darkPadTrack.id, 'phaser-rate', 'Phase Rate', 0.01, 10);
-    darkPhaseRate.points = [
-        { beat: 192, value: 0.05, curve: 'linear', tension: 0 },
-        { beat: 224, value: 0.15, curve: 'linear', tension: 0 },
-        { beat: 280, value: 0.4, curve: 'linear', tension: 0 },
-        { beat: 320, value: 0.08, curve: 'linear', tension: 0 },
-        { beat: 384, value: 0.03, curve: 'linear', tension: 0 },
+    // Dark pad distortion drive: ramps up into catharsis (sinister growl)
+    const darkDrive = mkLane(darkPadTrack.id, 'dist-drive', 'Drive', 0.1, 20);
+    darkDrive.points = [
+        { beat: 192, value: 1, curve: 'linear', tension: 0 },
+        { beat: 220, value: 3, curve: 'linear', tension: 0 },
+        { beat: 224, value: 8, curve: 'linear', tension: 0 },      // WOW: distortion kicks in hard
+        { beat: 280, value: 12, curve: 'linear', tension: 0 },     // Peak grit
+        { beat: 320, value: 1, curve: 'linear', tension: 0 },      // Clean at breakdown
+        { beat: 384, value: 2, curve: 'linear', tension: 0 },
+    ];
+
+    // Delay mix on crystal texture: scattered → dense → gone
+    const crystalDelayMix = mkLane(crystalTexTrack.id, 'delay-mix', 'Delay Mix', 0, 1);
+    crystalDelayMix.points = [
+        { beat: 192, value: 0.1, curve: 'linear', tension: 0 },
+        { beat: 224, value: 0.5, curve: 'linear', tension: 0 },     // WOW: dense cascading delays
+        { beat: 288, value: 0.6, curve: 'linear', tension: 0 },
+        { beat: 320, value: 0.0, curve: 'linear', tension: 0 },     // CUT
+        { beat: 400, value: 0.35, curve: 'linear', tension: 0 },
+        { beat: 512, value: 0.0, curve: 'linear', tension: 0 },
     ];
 
     automationStore.set({
         lanes: [
             subVol, warmVol, drumVol, strSoftVol, arpVol, leadVol,
             pianoVol, brassVol, darkVol, rhodesVol, shimmerVol,
-            hatPan, pulseFilter, leadSoftVol, strBrightVol,
+            pulseFilter, leadSoftVol, strBrightVol,
             fluteVol, crystalVol, wideVol, tremVol, bellAccVol,
-            // New production automation
-            warmRevMix, arpDelayFb, shimmerChorusDepth, leadRevMix, darkPhaseRate,
+            // Dramatic effect automation
+            warmRevMix, arpDelayFb, leadRevMix, darkDrive, crystalDelayMix,
         ],
     });
 

@@ -15,6 +15,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '#/components/ui/tooltip
 import { InlineTrackName } from './TrackHeader/InlineTrackName';
 import { ResizeHandle } from './TrackHeader/ResizeHandle';
 import { InputSelector } from './TrackHeader/InputSelector';
+import { TrackLevelIndicator } from './TrackHeader/TrackLevelIndicator';
 
 const TRACK_KIND_ICON: Record<string, typeof Music> = {
     audio: AudioLines,
@@ -109,6 +110,8 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                         style={{ backgroundColor: track.color }}
                         aria-hidden="true"
                     />
+
+                    <TrackLevelIndicator trackId={track.id} height={Math.min(trackHeight - 8, 24)} />
 
                     {(() => {
                         const KindIcon = TRACK_KIND_ICON[track.kind];
