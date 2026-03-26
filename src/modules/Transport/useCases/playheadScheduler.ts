@@ -239,7 +239,8 @@ function scheduleMidiNotes(
                                 drumKitDef,
                                 note.pitch,
                                 time,
-                                note.velocity
+                                note.velocity,
+                                clip.gain
                             );
                         } else if (drumKit) {
                             // Legacy synth-based fallback
@@ -250,13 +251,14 @@ function scheduleMidiNotes(
                                 note.pitch,
                                 time,
                                 duration,
-                                note.velocity
+                                note.velocity,
+                                clip.gain
                             );
                         } else {
                             // Check for Faust instrument on this track
                             const faustNode = getFaustInstrumentNode(strip);
                             if (faustNode) {
-                                scheduleFaustNote(faustNode, note.pitch, time, duration, note.velocity);
+                                scheduleFaustNote(faustNode, note.pitch, time, duration, note.velocity, clip.gain);
                             } else {
                             const mpe =
                                 note.pressure !== undefined || note.slide !== undefined || note.pitchBend !== undefined
@@ -270,7 +272,8 @@ function scheduleMidiNotes(
                                 duration,
                                 note.velocity,
                                 synthParams!,
-                                mpe
+                                mpe,
+                                clip.gain
                             );
                             }
                         }

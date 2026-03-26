@@ -8,7 +8,7 @@ import { seekPlayhead } from '#/modules/Transport/useCases/transportControls';
 import { setLoopRegion } from '#/modules/Transport/useCases/transportControls';
 import { disableLooping } from '#/modules/Transport/useCases/setLooping';
 
-const HEIGHT = 22;
+const HEIGHT = 18;
 
 export const BeatRulerBar = (): React.ReactElement => {
     const containerRef = useRef<HTMLDivElement | null>(null);
@@ -47,7 +47,7 @@ export const BeatRulerBar = (): React.ReactElement => {
             ctx.scale(dpr, dpr);
 
             // Background
-            ctx.fillStyle = 'hsl(220 12% 10%)';
+            ctx.fillStyle = 'hsl(220 14% 9%)';
             ctx.fillRect(0, 0, w, h);
 
             // Loop region
@@ -80,28 +80,52 @@ export const BeatRulerBar = (): React.ReactElement => {
                 const barBeat = bar * beatsPerBar;
                 const barX = (barBeat - viewportStartBeat) * pixelsPerBeat;
 
-                // Major bar line
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
-                ctx.lineWidth = 1;
+                // Alternating bar background — Logic Pro-style visual grouping
+                if (bar % 2 === 1) {
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.018)';
+                    ctx.fillRect(barX, 0, barPixels, h);
+                }
+
+                // 4-bar group emphasis: brighter line at every 4th bar
+                const is4BarBoundary = bar % 4 === 0;
+                const is8BarBoundary = bar % 8 === 0;
+
+                if (is8BarBoundary) {
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.30)';
+                    ctx.lineWidth = 1.5;
+                } else if (is4BarBoundary) {
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
+                    ctx.lineWidth = 1;
+                } else {
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.10)';
+                    ctx.lineWidth = 1;
+                }
                 ctx.beginPath();
                 ctx.moveTo(barX, 0);
                 ctx.lineTo(barX, h);
                 ctx.stroke();
 
-                // Bar number label
+                // Bar number label — brighter at 4-bar boundaries
                 if (bar % labelEvery === 0 && bar >= 0) {
-                    ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
-                    ctx.fillText(String(bar + 1), barX + 3, 13);
+                    ctx.fillStyle = is4BarBoundary
+                        ? 'rgba(255, 255, 255, 0.55)'
+                        : 'rgba(255, 255, 255, 0.35)';
+                    ctx.fillText(String(bar + 1), barX + 3, 11);
                 }
 
-                // Beat subdivisions
+                // Beat subdivisions — graduated tick heights
                 if (barPixels > 25) {
                     for (let beat = 1; beat < beatsPerBar; beat++) {
                         const beatX = barX + beat * pixelsPerBeat;
-                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.07)';
+                        // Beat 2 (halfway through bar) gets a taller tick
+                        const isHalf = beat === Math.floor(beatsPerBar / 2);
+                        const tickH = isHalf ? 6 : 4;
+                        ctx.strokeStyle = isHalf
+                            ? 'rgba(255, 255, 255, 0.10)'
+                            : 'rgba(255, 255, 255, 0.06)';
                         ctx.lineWidth = 1;
                         ctx.beginPath();
-                        ctx.moveTo(beatX, h - 5);
+                        ctx.moveTo(beatX, h - tickH);
                         ctx.lineTo(beatX, h);
                         ctx.stroke();
                     }
@@ -137,9 +161,9 @@ export const BeatRulerBar = (): React.ReactElement => {
 
             // Hint text on first load (only if no loop region)
             if (!isLooping && w > 200) {
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
                 ctx.font = '8px system-ui, sans-serif';
-                ctx.fillText('Drag to set loop region · Click to move playhead', w / 2 - 90, h - 5);
+                ctx.fillText('Drag to set loop region · Click to move playhead', w / 2 - 90, h - 4);
             }
         },
         [pixelsPerBeat, scrollX, loopStart, loopEnd, isLooping, timeSigNum]

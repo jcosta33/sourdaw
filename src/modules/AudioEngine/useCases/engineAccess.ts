@@ -19,6 +19,10 @@ export const resumeEngine = (): Promise<void> => {
     return audioEngine.resume();
 };
 
+export const waitForDevices = (): Promise<void> => {
+    return audioEngine.waitForDevices();
+};
+
 export const getMasterAnalyser = (): AnalyserNode => {
     return audioEngine.masterAnalyser;
 };

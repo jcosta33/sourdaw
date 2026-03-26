@@ -6,5 +6,5 @@ export type ProjectTemplate = {
     description: string;
     category: TemplateCategory;
     platform?: 'web' | 'native';
-    create: () => void;
+    create: () => void | Promise<void>;
 };

@@ -143,6 +143,19 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     const impactFxTrack = createTrack({ name: 'Impact FX', kind: 'midi', parentId: flourishFolder.id });
     const texChirpTrack = createTrack({ name: 'Texture Chirps', kind: 'midi', parentId: flourishFolder.id });
 
+    // ✨ Textures folder — 10 transition-fill tracks
+    const textureFolder = createTrack({ name: '✨ Textures', kind: 'folder' });
+    const pluckArpATrack = createTrack({ name: 'Pluck Arp A', kind: 'midi', parentId: textureFolder.id });
+    const pluckArpBTrack = createTrack({ name: 'Pluck Arp B', kind: 'midi', parentId: textureFolder.id });
+    const rhodesStabATrack = createTrack({ name: 'Rhodes Stab A', kind: 'midi', parentId: textureFolder.id });
+    const rhodesStabBTrack = createTrack({ name: 'Rhodes Stab B', kind: 'midi', parentId: textureFolder.id });
+    const bellScatterTrack = createTrack({ name: 'Bell Scatter', kind: 'midi', parentId: textureFolder.id });
+    const glassSwellTrack = createTrack({ name: 'Glass Swell', kind: 'midi', parentId: textureFolder.id });
+    const malletTapTrack = createTrack({ name: 'Mallet Tap', kind: 'midi', parentId: textureFolder.id });
+    const pizzLayerTrack = createTrack({ name: 'Pizz Layer', kind: 'midi', parentId: textureFolder.id });
+    const chimeDropTrack = createTrack({ name: 'Chime Drop', kind: 'midi', parentId: textureFolder.id });
+    const microPercTrack = createTrack({ name: 'Micro Perc', kind: 'midi', parentId: textureFolder.id });
+
     // 🔊 FX folder
     const fxFolder = createTrack({ name: '🔊 FX & Mix', kind: 'folder' });
     const riserTrack = createTrack({ name: 'Riser', kind: 'midi', parentId: fxFolder.id });
@@ -193,6 +206,17 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     applyPreset(impactFxTrack, 'factory-bass-sub');
     // ▸ Faust Additive Glass — delicate chirp textures
     applyPreset(texChirpTrack, 'factory-faust-additive-glass');
+    // ── TEXTURE TRACK PRESETS ──────────────────────────────────────────────
+    applyPreset(pluckArpATrack, 'factory-keys-pluck');
+    applyPreset(pluckArpBTrack, 'factory-keys-pluck');
+    applyPreset(rhodesStabATrack, 'factory-faust-rhodes-ambient');
+    applyPreset(rhodesStabBTrack, 'factory-faust-rhodes-ambient');
+    applyPreset(bellScatterTrack, 'factory-faust-fm-dx-bells');
+    applyPreset(glassSwellTrack, 'factory-faust-additive-glass');
+    applyPreset(malletTapTrack, 'factory-keys-marimba');
+    applyPreset(pizzLayerTrack, 'factory-keys-pluck');
+    applyPreset(chimeDropTrack, 'factory-faust-fm-dx-bells');
+    applyPreset(microPercTrack, 'factory-keys-marimba');
     // ── EFFECTS on tracks (web-compatible only) ──────────────────────────
     const addDev = (t: any, type: string, name: string, params: Record<string, number>) => {
         t.devices = [...(t.devices || []), {
@@ -319,6 +343,25 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     // Riser: filter + reverb for sweeping builds
     addDev(riserTrack, 'builtin-filter', 'Rise Filter', { 'filter-cutoff': 500, 'filter-resonance': 4, 'filter-type': 0 });
     addDev(riserTrack, 'builtin-reverb', 'Rise Space', { 'rev-size': 0.8, 'rev-decay': 3, 'rev-damping': 0.3, 'rev-mix': 0.3 });
+    // ── TEXTURE TRACK EFFECTS ─────────────────────────────────────────────
+    addDev(pluckArpATrack, 'builtin-delay', 'Pluck Delay', { 'delay-time': 250, 'delay-feedback': 0.4, 'delay-mix': 0.3 });
+    addDev(pluckArpATrack, 'builtin-reverb', 'Pluck Space', { 'rev-size': 0.6, 'rev-decay': 2, 'rev-damping': 0.3, 'rev-mix': 0.2 });
+    addDev(pluckArpBTrack, 'builtin-delay', 'Pluck Echo', { 'delay-time': 375, 'delay-feedback': 0.45, 'delay-mix': 0.35 });
+    addDev(pluckArpBTrack, 'builtin-chorus', 'Pluck Chorus', { 'chorus-rate': 0.3, 'chorus-depth': 5, 'chorus-mix': 0.2 });
+    addDev(rhodesStabATrack, 'builtin-chorus', 'Stab Chorus', { 'chorus-rate': 0.8, 'chorus-depth': 6, 'chorus-mix': 0.3 });
+    addDev(rhodesStabATrack, 'builtin-reverb', 'Stab Verb', { 'rev-size': 0.7, 'rev-decay': 2.5, 'rev-damping': 0.25, 'rev-mix': 0.25 });
+    addDev(rhodesStabBTrack, 'builtin-delay', 'Stab Echo', { 'delay-time': 333, 'delay-feedback': 0.35, 'delay-mix': 0.3 });
+    addDev(rhodesStabBTrack, 'builtin-chorus', 'Ghost Chorus', { 'chorus-rate': 1.2, 'chorus-depth': 8, 'chorus-mix': 0.4 });
+    addDev(bellScatterTrack, 'builtin-delay', 'Bell Scatter', { 'delay-time': 166, 'delay-feedback': 0.55, 'delay-mix': 0.4 });
+    addDev(bellScatterTrack, 'builtin-reverb', 'Bell Wash', { 'rev-size': 0.9, 'rev-decay': 4, 'rev-damping': 0.2, 'rev-mix': 0.3 });
+    addDev(glassSwellTrack, 'builtin-reverb', 'Glass Verb', { 'rev-size': 0.95, 'rev-decay': 6, 'rev-damping': 0.1, 'rev-mix': 0.4 });
+    addDev(glassSwellTrack, 'builtin-chorus', 'Glass Shimmer', { 'chorus-rate': 0.2, 'chorus-depth': 12, 'chorus-mix': 0.35 });
+    addDev(malletTapTrack, 'builtin-delay', 'Mallet Echo', { 'delay-time': 125, 'delay-feedback': 0.3, 'delay-mix': 0.25 });
+    addDev(pizzLayerTrack, 'builtin-reverb', 'Pizz Space', { 'rev-size': 0.5, 'rev-decay': 1.5, 'rev-damping': 0.4, 'rev-mix': 0.2 });
+    addDev(chimeDropTrack, 'builtin-delay', 'Chime Trail', { 'delay-time': 500, 'delay-feedback': 0.5, 'delay-mix': 0.4 });
+    addDev(chimeDropTrack, 'builtin-reverb', 'Chime Space', { 'rev-size': 0.95, 'rev-decay': 5, 'rev-damping': 0.15, 'rev-mix': 0.35 });
+    addDev(microPercTrack, 'builtin-delay', 'Micro Echo', { 'delay-time': 83, 'delay-feedback': 0.4, 'delay-mix': 0.3 });
+    addDev(microPercTrack, 'builtin-phaser', 'Micro Phase', { 'phaser-rate': 0.4, 'phaser-depth': 0.7, 'phaser-feedback': 0.5, 'phaser-stages': 4 });
 
     // ── GAIN / PAN — stereo field (rebalanced for ambient clarity) ─────
     drumKitTrack.gain = 0.55; drumKitTrack.pan = 0;
@@ -331,9 +374,9 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     rhodesTrack.gain = 0.50; rhodesTrack.pan = 18;
     organTrack.gain = 0.35; organTrack.pan = -8;
     warmPadTrack.gain = 0.65; warmPadTrack.pan = 12;
-    shimmerPadTrack.gain = 0.32; shimmerPadTrack.pan = -30;
+    shimmerPadTrack.gain = 0.19; shimmerPadTrack.pan = -30;
     darkPadTrack.gain = 0.42; darkPadTrack.pan = 20;
-    stringsSoftTrack.gain = 0.28; stringsSoftTrack.pan = -15;
+    stringsSoftTrack.gain = 0.42; stringsSoftTrack.pan = -15;
     stringsBrightTrack.gain = 0.42; stringsBrightTrack.pan = 25;
     leadClassicTrack.gain = 0.60; leadClassicTrack.pan = -8;
     leadSoftTrack.gain = 0.45; leadSoftTrack.pan = 15;
@@ -342,13 +385,24 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     riserTrack.gain = 0.38; riserTrack.pan = 0;
     noiseSweepTrack.gain = 0.30; noiseSweepTrack.pan = 0;
     fluteTrack.gain = 0.38; fluteTrack.pan = -28;
-    bellAccentTrack.gain = 0.02; bellAccentTrack.pan = 22;
+    bellAccentTrack.gain = 0.005; bellAccentTrack.pan = 22;
     crystalTexTrack.gain = 0.18; crystalTexTrack.pan = -35;
     tremPulseTrack.gain = 0.28; tremPulseTrack.pan = 30;
-    widePadTrack.gain = 0.28; widePadTrack.pan = 0;
+    widePadTrack.gain = 0.42; widePadTrack.pan = 0;
     drumFillTrack.gain = 0.40; drumFillTrack.pan = 0;
     impactFxTrack.gain = 0.45; impactFxTrack.pan = 0;
     texChirpTrack.gain = 0.15; texChirpTrack.pan = -40;
+    // Texture tracks — very low gain, wide stereo field
+    pluckArpATrack.gain = 0.06; pluckArpATrack.pan = -30;
+    pluckArpBTrack.gain = 0.05; pluckArpBTrack.pan = 35;
+    rhodesStabATrack.gain = 0.05; rhodesStabATrack.pan = -25;
+    rhodesStabBTrack.gain = 0.04; rhodesStabBTrack.pan = 28;
+    bellScatterTrack.gain = 0.03; bellScatterTrack.pan = 38;
+    glassSwellTrack.gain = 0.07; glassSwellTrack.pan = -18;
+    malletTapTrack.gain = 0.05; malletTapTrack.pan = 20;
+    pizzLayerTrack.gain = 0.06; pizzLayerTrack.pan = -35;
+    chimeDropTrack.gain = 0.04; chimeDropTrack.pan = 0;
+    microPercTrack.gain = 0.08; microPercTrack.pan = -40;
 
     // ── AUDIO DRUM BUFFERS ────────────────────────────────────────────────
     const cx = Date.now();
@@ -455,6 +509,27 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     impactFxTrack.clips = [impactClip];
     const chirpClip = createMidiClip(texChirpTrack.id, 'Chirps', 128, 512, texChirpTrack.color);
     texChirpTrack.clips = [chirpClip];
+    // ── TEXTURE TRACK CLIPS ──────────────────────────────────────────────
+    const pluckArpAClip = createMidiClip(pluckArpATrack.id, 'Pluck Arp A', 32, TB, pluckArpATrack.color);
+    pluckArpATrack.clips = [pluckArpAClip];
+    const pluckArpBClip = createMidiClip(pluckArpBTrack.id, 'Pluck Arp B', 32, TB, pluckArpBTrack.color);
+    pluckArpBTrack.clips = [pluckArpBClip];
+    const rhodesStabAClip = createMidiClip(rhodesStabATrack.id, 'Rhodes A', 64, TB, rhodesStabATrack.color);
+    rhodesStabATrack.clips = [rhodesStabAClip];
+    const rhodesStabBClip = createMidiClip(rhodesStabBTrack.id, 'Rhodes B', 64, TB, rhodesStabBTrack.color);
+    rhodesStabBTrack.clips = [rhodesStabBClip];
+    const bellScatterClip = createMidiClip(bellScatterTrack.id, 'Bells', 64, TB, bellScatterTrack.color);
+    bellScatterTrack.clips = [bellScatterClip];
+    const glassSwellClip = createMidiClip(glassSwellTrack.id, 'Glass', 64, TB, glassSwellTrack.color);
+    glassSwellTrack.clips = [glassSwellClip];
+    const malletTapClip = createMidiClip(malletTapTrack.id, 'Mallets', 64, 576, malletTapTrack.color);
+    malletTapTrack.clips = [malletTapClip];
+    const pizzLayerClip = createMidiClip(pizzLayerTrack.id, 'Pizz', 128, 512, pizzLayerTrack.color);
+    pizzLayerTrack.clips = [pizzLayerClip];
+    const chimeDropClip = createMidiClip(chimeDropTrack.id, 'Chimes', 32, TB, chimeDropTrack.color);
+    chimeDropTrack.clips = [chimeDropClip];
+    const microPercClip = createMidiClip(microPercTrack.id, 'Micro', 64, 576, microPercTrack.color);
+    microPercTrack.clips = [microPercClip];
 
     // 808 DRUM KIT NOTES — AMBIENT/MINIMAL style (Kiasmos inspired)
     // Sparse kicks in intro, hi-hat variety, 4-on-floor in final section
@@ -543,8 +618,18 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         const c = ch(b);
         const vel = b >= 224 && b < 320 ? 95 : b >= 512 ? 60 : 78;
         const phrase = Math.floor(b / 16) % 4;
-        // Vary the pattern every 4 bars to avoid monotony
-        if (phrase === 0) {
+
+        // DOUBLE-TIME in dance section (384-512): 8th note patterns
+        if (b >= 384 && b < 512) {
+            bass808N.push(note(c.root, b, 0.4, hv(vel, 6)));
+            bass808N.push(note(c.root, b + 0.5, 0.3, hv(vel - 15, 8)));
+            bass808N.push(note(c.fifth, b + 1, 0.4, hv(vel - 8, 6)));
+            bass808N.push(note(c.root, b + 1.5, 0.3, hv(vel - 12, 8)));
+            bass808N.push(note(c.root, b + 2, 0.4, hv(vel - 3, 6)));
+            bass808N.push(note(c.third, b + 2.5, 0.3, hv(vel - 15, 8)));
+            bass808N.push(note(c.fifth, b + 3, 0.4, hv(vel - 6, 6)));
+            bass808N.push(note(c.root, b + 3.5, 0.3, hv(vel - 18, 8)));
+        } else if (phrase === 0) {
             bass808N.push(note(c.root, b, 1.2, hv(vel, 6)));
             bass808N.push(note(c.fifth, b + 2, 0.8, hv(vel - 10, 8)));
             bass808N.push(note(c.root, b + 3, 0.8, hv(vel - 5, 6)));
@@ -566,16 +651,28 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     // PULSE BASS — syncopated 8th-note pattern (+12 octave to separate from sub)
     const pulseN: MidiNote[] = [];
     const pulseOffsets = [0, 0.5, 1.5, 2, 3, 3.5];
+    const pulseDenseOffsets = [0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3, 3.25, 3.5, 3.75]; // 16ths
     for (let bar = 8; bar < TB / 4; bar++) {
         const b = bar * 4;
         if (b >= 320 && b < 384) continue;
         const c = ch(b);
         const vel = b < 64 ? 0.7 : b >= 512 ? 0.75 : 1.0;
-        for (const off of pulseOffsets) {
-            const bt = b + off;
-            const isAcc = off === 0 || off === 2;
-            const pitch = (off === 0.5 || off === 1.5 ? c.fifth : c.root) + 12; // +12 octave up
-            pulseN.push(note(pitch, bt, 0.4, hv(Math.round((isAcc ? 88 : 65) * vel), 10)));
+
+        // Dense 16th-note pattern in dance section
+        if (b >= 384 && b < 512) {
+            for (const off of pulseDenseOffsets) {
+                const bt = b + off;
+                const isDown = off % 1 === 0;
+                const pitch = (off % 2 < 1 ? c.root : c.fifth) + 12;
+                pulseN.push(note(pitch, bt, 0.2, hv(Math.round((isDown ? 78 : 55) * vel), 10)));
+            }
+        } else {
+            for (const off of pulseOffsets) {
+                const bt = b + off;
+                const isAcc = off === 0 || off === 2;
+                const pitch = (off === 0.5 || off === 1.5 ? c.fifth : c.root) + 12; // +12 octave up
+                pulseN.push(note(pitch, bt, 0.4, hv(Math.round((isAcc ? 88 : 65) * vel), 10)));
+            }
         }
     }
 
@@ -1060,6 +1157,78 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         { beat: TB, value: 80, curve: 'linear', tension: 0 },
     ];
 
+    // ── TEXTURE TRACK MIDI PATTERNS (Transition Fills) ───────────────────
+    const arpAN: MidiNote[] = [];
+    const arpBN: MidiNote[] = [];
+    const rStabAN: MidiNote[] = [];
+    const rStabBN: MidiNote[] = [];
+    const bScatN: MidiNote[] = [];
+    const gSwellN: MidiNote[] = [];
+    const malTapN: MidiNote[] = [];
+    const pizzN: MidiNote[] = [];
+    const chimeN: MidiNote[] = [];
+    const microN: MidiNote[] = [];
+
+    // Fills occur every 8 bars (32 beats) to enrich transitions
+    for (let b = 64; b < 512; b += 32) {
+        if (b >= 320 && b < 384) continue; // skip breakdown
+        const c = ch(b);
+        const isMajorChange = b % 64 === 0;
+
+        // Pluck Arps (ascending A, descending B logic)
+        arpAN.push(note(c.root + 12, b - 1, 0.2, hv(70, 5)));
+        arpAN.push(note(c.fifth + 12, b - 0.5, 0.2, hv(65, 5)));
+        arpAN.push(note(c.ninth + 12, b, 0.5, hv(80, 5)));
+
+        arpBN.push(note(c.ninth + 24, b + 15, 0.2, hv(65, 5)));
+        arpBN.push(note(c.fifth + 24, b + 15.5, 0.2, hv(60, 5)));
+        arpBN.push(note(c.third + 24, b + 16, 0.5, hv(75, 5)));
+
+        // Rhodes Stabs (Call and response)
+        if (isMajorChange) {
+            rStabAN.push(note(c.root + 12, b, 2, hv(85, 5)));
+            rStabAN.push(note(c.fifth + 12, b, 2, hv(80, 5)));
+            rStabBN.push(note(c.ninth + 12, b + 2, 2, hv(70, 5)));
+        }
+
+        // Bell Scatter (randomized high sprinkles)
+        bScatN.push(note(c.fifth + 24, b - 0.25, 0.1, hv(60, 10)));
+        bScatN.push(note(c.ninth + 24, b, 0.1, hv(70, 10)));
+        bScatN.push(note(c.third + 36, b + 0.5, 0.1, hv(55, 10)));
+
+        // Glass Swells (leading into sections)
+        gSwellN.push(note(c.root + 24, b - 2, 4, hv(60, 5)));
+
+        // Mallet Taps (rhythmic syncopation)
+        malTapN.push(note(c.root + 12, b + 7.5, 0.1, hv(75, 5)));
+        malTapN.push(note(c.fifth + 12, b + 8, 0.1, hv(85, 5)));
+
+        // Pizz Layer (doubling string rhythms)
+        if (b >= 128) {
+            pizzN.push(note(c.root + 12, b, 0.1, hv(70, 5)));
+            pizzN.push(note(c.fifth + 12, b + 1.5, 0.1, hv(65, 5)));
+        }
+
+        // Chime Drops (single high marker)
+        if (isMajorChange) {
+            chimeN.push(note(c.root + 36, b, 4, hv(90, 5)));
+        }
+
+        // Micro Perc (electronic glitches)
+        microN.push(note(c.root + 24, b + 3.75, 0.05, hv(60, 5)));
+        microN.push(note(c.fifth + 24, b + 3.875, 0.05, hv(50, 5)));
+    }
+    (pluckArpAClip as any).notes = arpAN;
+    (pluckArpBClip as any).notes = arpBN;
+    (rhodesStabAClip as any).notes = rStabAN;
+    (rhodesStabBClip as any).notes = rStabBN;
+    (bellScatterClip as any).notes = bScatN;
+    (glassSwellClip as any).notes = gSwellN;
+    (malletTapClip as any).notes = malTapN;
+    (pizzLayerClip as any).notes = pizzN;
+    (chimeDropClip as any).notes = chimeN;
+    (microPercClip as any).notes = microN;
+
     const leadSoftVol = mkLane(leadSoftTrack.id, 'volume', 'Volume', 0, 1);
     leadSoftVol.points = [
         { beat: 224, value: 0, curve: 'linear', tension: 0 },
@@ -1190,6 +1359,29 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         { beat: 384, value: 2, curve: 'linear', tension: 0 },
     ];
 
+    // Extreme Automations (Jon Hopkins / Kiasmos style)
+    const widePadMix = mkLane(widePadTrack.id, 'chorus-mix', 'Chorus Wash', 0, 1);
+    widePadMix.points = [
+        { beat: 0, value: 0.1, curve: 'linear', tension: 0 },
+        { beat: 224, value: 0.95, curve: 'linear', tension: 0 },   // Total wash
+        { beat: 320, value: 0.05, curve: 'linear', tension: 0 },
+    ];
+
+    const shimmerDepth = mkLane(shimmerPadTrack.id, 'rev-damping', 'Shimmer Open', 0, 1);
+    shimmerDepth.points = [
+        { beat: 64, value: 0.8, curve: 'linear', tension: 0 },     // Muffled
+        { beat: 224, value: 0.1, curve: 'linear', tension: 0 },    // Bright/open
+        { beat: 320, value: 0.9, curve: 'linear', tension: 0 },
+    ];
+
+    const pulseFb = mkLane(pulseBassTrack.id, 'filter-resonance', 'Pulse Res', 0, 20);
+    pulseFb.points = [
+        { beat: 64, value: 1, curve: 'linear', tension: 0 },
+        { beat: 224, value: 15, curve: 'linear', tension: 0 },     // Screaming resonance
+        { beat: 320, value: 0, curve: 'linear', tension: 0 },
+        { beat: 512, value: 12, curve: 'linear', tension: 0 },
+    ];
+
     // Delay mix on crystal texture: scattered → dense → gone
     const crystalDelayMix = mkLane(crystalTexTrack.id, 'delay-mix', 'Delay Mix', 0, 1);
     crystalDelayMix.points = [
@@ -1209,6 +1401,20 @@ export async function demo1_TheCompleteMix(): Promise<void> {
             fluteVol, crystalVol, wideVol, tremVol, bellAccVol,
             // Dramatic effect automation
             warmRevMix, arpDelayFb, leadRevMix, darkDrive, crystalDelayMix,
+            widePadMix, shimmerDepth, pulseFb
+        ],
+    });
+
+
+    automationStore.set({
+        lanes: [
+            subVol, warmVol, drumVol, strSoftVol, arpVol, leadVol,
+            pianoVol, brassVol, darkVol, rhodesVol, shimmerVol,
+            pulseFilter, leadSoftVol, strBrightVol,
+            fluteVol, crystalVol, wideVol, tremVol, bellAccVol,
+            // Dramatic effect automation
+            warmRevMix, arpDelayFb, leadRevMix, darkDrive, crystalDelayMix,
+            widePadMix, shimmerDepth, pulseFb
         ],
     });
 
@@ -1242,6 +1448,15 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     });
 
     syncArrangement(tracks);
+
+    // Bootstrap device audio nodes from store state
+    const { ensureTrackStrips } = await import('#/modules/Transport/useCases/ensureTrackStrips');
+    ensureTrackStrips();
+
+    // Await all internal async device creations (e.g. Faust WASM compilation)
+    const { waitForDevices } = await import('#/modules/AudioEngine/useCases/engineAccess');
+    await waitForDevices();
+
     projectStore.set({ name: 'Resonance (Demo)', createdAt: Date.now(), updatedAt: Date.now(), dirty: false, loading: false });
 }
 

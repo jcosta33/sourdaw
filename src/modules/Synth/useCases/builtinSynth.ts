@@ -75,12 +75,13 @@ export function scheduleNote(
     duration: number,
     velocity: number,
     params: SynthParams,
-    mpe?: MpeParams
+    mpe?: MpeParams,
+    clipGain: number = 1.0
 ): OscillatorNode {
     const baseFrequency = 440 * 2 ** ((pitch - 69) / 12);
     // Velocity-sensitive attack: harder hits = faster attack (real instrument behavior)
     const velAttack = params.attack * (1.5 - (velocity / 127));
-    const peakGain = (velocity / 127) * params.gain;
+    const peakGain = (velocity / 127) * params.gain * clipGain;
     const sustainLevel = peakGain * params.sustain;
 
     let frequency = baseFrequency;

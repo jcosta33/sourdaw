@@ -131,27 +131,21 @@ const templates: ProjectTemplate[] = [
         description:
             'A fully arranged 5-minute ambient/IDM production in D minor with 28 tracks, automation, markers, and detailed MIDI patterns.',
         category: 'demo',
-        create: () => {
-            void demo1_TheCompleteMix();
-        },
+        create: () => demo1_TheCompleteMix(),
     },
     {
         id: 'demo-electronic',
         name: 'Psyloops',
         description: 'A 142 BPM psytrance track in A minor with acid bass, supersaw stabs, dual leads, and 8 sections of builds and drops.',
         category: 'demo',
-        create: () => {
-            void demo2_ElectronicBeat();
-        },
+        create: () => demo2_ElectronicBeat(),
     },
     {
         id: 'demo-acoustic',
         name: 'Midnight Smoke',
         description: 'A chill 82 BPM jazz track in Eb major with walking bass, Rhodes comping, flute solo, and 7 sections of smooth exploration.',
         category: 'demo',
-        create: () => {
-            void demo3_AcousticSession();
-        },
+        create: () => demo3_AcousticSession(),
     },
     {
         id: 'demo-native-showcase',
@@ -159,9 +153,7 @@ const templates: ProjectTemplate[] = [
         description: 'A 50-track Flying Lotus-style experimental beat showcase using native DSP effects. Only available in the native app.',
         category: 'demo',
         platform: 'native',
-        create: () => {
-            void demo4_NativeShowcase();
-        },
+        create: () => demo4_NativeShowcase(),
     },
 ];
 
@@ -178,10 +170,10 @@ export function getTemplatesByCategory(category: TemplateCategory): ProjectTempl
     return templates.filter((t) => t.category === category);
 }
 
-export function createFromTemplate(templateId: string): void {
+export async function createFromTemplate(templateId: string): Promise<void> {
     const template = templates.find((t) => t.id === templateId);
     if (!template) {
         return;
     }
-    template.create();
+    await template.create();
 }

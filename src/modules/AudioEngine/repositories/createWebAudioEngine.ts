@@ -87,6 +87,7 @@ function createNoopEngine(): AudioEngine {
         stopAllScheduled: () => {},
         wireSidechainRoute: () => {},
         unwireSidechainRoute: () => {},
+        waitForDevices: async () => {},
     };
 }
 
@@ -116,6 +117,7 @@ export function createWebAudioEngine(): AudioEngine {
     const scheduledNodes: AudioScheduledSourceNode[] = [];
     const masterMeterBuffer = new Float32Array(masterAnalyser.frequencyBinCount);
     const pendingFaustParams = new Map<string, Map<string, number>>();
+    const pendingDevicePromises = new Set<Promise<any>>();
 
     let workletReady = false;
 
@@ -704,9 +706,9 @@ export function createWebAudioEngine(): AudioEngine {
                         outputNode: loadingBypassNode,
                     };
 
-                    import('./faustDeviceFactory')
+                    const loadPromise = import('./faustDeviceFactory')
                         .then(({ createFaustDevice }) => {
-                            createFaustDevice(context, deviceType).then((realDn) => {
+                            return createFaustDevice(context, deviceType).then((realDn) => {
                                 if (!realDn) return;
                                 const stripToUpdate = trackStrips.get(trackId);
                                 if (!stripToUpdate) return;
@@ -734,6 +736,8 @@ export function createWebAudioEngine(): AudioEngine {
                         .catch((err) => {
                             console.error('[WebAudioEngine] Failed to load Faust factory:', err);
                         });
+                    pendingDevicePromises.add(loadPromise);
+                    loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
                 } else {
                     // Try the shared DEVICE_FACTORIES first (covers all builtin web effects)
                     const factory = DEVICE_FACTORIES[deviceType];
@@ -759,7 +763,7 @@ export function createWebAudioEngine(): AudioEngine {
                             outputNode: loadingBypass,
                         };
                         // Async: load WASM and hot-swap into the chain
-                        createNativeDspNode(context, pluginType)
+                        const loadPromise = createNativeDspNode(context, pluginType)
                             .then(async (result: NativeDspNodeResult) => {
                                 await result.ready;
                                 const stripToUpdate = trackStrips.get(trackId);
@@ -781,6 +785,8 @@ export function createWebAudioEngine(): AudioEngine {
                             .catch((err) => {
                                 logger.warn(`[WebAudioEngine] Failed to load native DSP ${deviceType}: ${err}`);
                             });
+                        pendingDevicePromises.add(loadPromise);
+                        loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
                     } else {
                         return;
                     }
@@ -1058,6 +1064,12 @@ export function createWebAudioEngine(): AudioEngine {
         busStrips.delete(busId);
     }
 
+    async function waitForDevices(): Promise<void> {
+        while (pendingDevicePromises.size > 0) {
+            await Promise.all(Array.from(pendingDevicePromises));
+        }
+    }
+
     function setBusGain(busId: string, gain: number): void {
         const strip = busStrips.get(busId);
         if (!strip) {
@@ -1263,6 +1275,7 @@ export function createWebAudioEngine(): AudioEngine {
         stopAllScheduled,
         wireSidechainRoute,
         unwireSidechainRoute,
+        waitForDevices,
     };
 }
 

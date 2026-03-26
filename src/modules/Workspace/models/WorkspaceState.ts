@@ -49,7 +49,7 @@ export const defaultWorkspaceState: WorkspaceState = {
     automationPanelOpen: false,
     automationPanelWidth: 400,
     trackListOpen: true,
-    trackListWidth: 176,
+    trackListWidth: 220,
     activeTool: 'select',
     commandPaletteOpen: false,
     selectedClipId: null,

@@ -60,10 +60,11 @@ export function scheduleFaustNote(
     pitch: number,
     startTime: number,
     duration: number,
-    velocity: number
+    velocity: number,
+    clipGain: number = 1.0
 ): void {
     const frequency = 440 * 2 ** ((pitch - 69) / 12);
-    const gain = velocity / 127;
+    const gain = (velocity / 127) * clipGain;
 
     const freqParam = findParam(worklet, 'freq');
     const gainParam = findParam(worklet, 'gain');

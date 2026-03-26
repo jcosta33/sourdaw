@@ -1,5 +1,5 @@
 import { type ReactElement, useState, useEffect } from 'react';
-import { Music, Mic, Film, FileText, Layers, Guitar, Piano, Headphones, Sparkles } from 'lucide-react';
+import { Music, Mic, Film, FileText, Layers, Guitar, Piano, Headphones, Sparkles, Loader2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '#/components/ui/dialog';
 import { Button } from '#/components/ui/button';
 import {
@@ -61,9 +61,11 @@ const getCategoryColor = (category: TemplateCategory): string => {
 const TemplateCard = ({
     template,
     onSelect,
+    disabled,
 }: {
     template: ProjectTemplate;
     onSelect: (id: string) => void;
+    disabled?: boolean;
 }): ReactElement => {
     const icon = TEMPLATE_ICONS[template.id] ?? <FileText className="size-5" aria-hidden="true" />;
     const categoryColor = getCategoryColor(template.category);
@@ -71,7 +73,8 @@ const TemplateCard = ({
     return (
         <button
             type="button"
-            className="group flex flex-col items-start gap-3 rounded-lg border border-border p-4 text-left transition-colors hover:border-ring hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            disabled={disabled}
+            className="group flex flex-col items-start gap-3 rounded-lg border border-border p-4 text-left transition-colors hover:border-ring hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 disabled:pointer-events-none"
             onClick={() => {
                 onSelect(template.id);
             }}
@@ -90,27 +93,43 @@ const TemplateCard = ({
 
 export const TemplateChooser = ({ open, onClose, initialCategory = 'all' }: TemplateChooserProps): ReactElement => {
     const [activeFilter, setActiveFilter] = useState<TemplateCategory | 'all'>(initialCategory);
+    const [isLoading, setIsLoading] = useState(false);
+    const [loadingName, setLoadingName] = useState('');
     const templates = getTemplates();
 
     useEffect(() => {
         if (open) {
             setActiveFilter(initialCategory);
+            setIsLoading(false);
         }
     }, [open, initialCategory]);
 
     const filtered = activeFilter === 'all' ? templates : templates.filter((t) => t.category === activeFilter);
 
     const handleSelect = (templateId: string) => {
+        const template = templates.find((t) => t.id === templateId);
+        setLoadingName(template?.name ?? 'Project');
+        setIsLoading(true);
         saveProject();
-        createFromTemplate(templateId);
-        onClose();
+
+        // Use setTimeout to allow the loading UI to render before the heavy sync work
+        setTimeout(() => {
+            void (async () => {
+                try {
+                    await createFromTemplate(templateId);
+                } finally {
+                    setIsLoading(false);
+                    onClose();
+                }
+            })();
+        }, 50);
     };
 
     return (
         <Dialog
             open={open}
             onOpenChange={(isOpen) => {
-                if (!isOpen) {
+                if (!isOpen && !isLoading) {
                     onClose();
                 }
             }}
@@ -123,37 +142,49 @@ export const TemplateChooser = ({ open, onClose, initialCategory = 'all' }: Temp
                     </DialogDescription>
                 </DialogHeader>
 
-                <div className="flex gap-1.5 border-b border-border pb-3">
-                    <Button
-                        variant={activeFilter === 'all' ? 'secondary' : 'ghost'}
-                        size="xs"
-                        onClick={() => {
-                            setActiveFilter('all');
-                        }}
-                    >
-                        <Layers className="size-3.5 mr-1" aria-hidden="true" />
-                        All
-                    </Button>
-                    {CATEGORY_ORDER.filter((c) => c !== 'empty').map((category) => (
-                        <Button
-                            key={category}
-                            variant={activeFilter === category ? 'secondary' : 'ghost'}
-                            size="xs"
-                            onClick={() => {
-                                setActiveFilter(category);
-                            }}
-                        >
-                            {CATEGORY_ICONS[category]}
-                            <span className="ml-1">{CATEGORY_LABELS[category]}</span>
-                        </Button>
-                    ))}
-                </div>
+                {isLoading ? (
+                    <div className="flex flex-col items-center justify-center py-16 gap-4">
+                        <Loader2 className="size-8 text-primary animate-spin" />
+                        <div className="text-center">
+                            <p className="text-sm font-medium text-foreground">Loading {loadingName}…</p>
+                            <p className="text-xs text-muted-foreground mt-1">Compiling instruments and effects</p>
+                        </div>
+                    </div>
+                ) : (
+                    <>
+                        <div className="flex gap-1.5 border-b border-border pb-3">
+                            <Button
+                                variant={activeFilter === 'all' ? 'secondary' : 'ghost'}
+                                size="xs"
+                                onClick={() => {
+                                    setActiveFilter('all');
+                                }}
+                            >
+                                <Layers className="size-3.5 mr-1" aria-hidden="true" />
+                                All
+                            </Button>
+                            {CATEGORY_ORDER.filter((c) => c !== 'empty').map((category) => (
+                                <Button
+                                    key={category}
+                                    variant={activeFilter === category ? 'secondary' : 'ghost'}
+                                    size="xs"
+                                    onClick={() => {
+                                        setActiveFilter(category);
+                                    }}
+                                >
+                                    {CATEGORY_ICONS[category]}
+                                    <span className="ml-1">{CATEGORY_LABELS[category]}</span>
+                                </Button>
+                            ))}
+                        </div>
 
-                <div className="grid grid-cols-2 gap-3 max-h-[400px] overflow-y-auto pr-1">
-                    {filtered.map((template) => (
-                        <TemplateCard key={template.id} template={template} onSelect={handleSelect} />
-                    ))}
-                </div>
+                        <div className="grid grid-cols-2 gap-3 max-h-[400px] overflow-y-auto pr-1">
+                            {filtered.map((template) => (
+                                <TemplateCard key={template.id} template={template} onSelect={handleSelect} disabled={isLoading} />
+                            ))}
+                        </div>
+                    </>
+                )}
             </DialogContent>
         </Dialog>
     );

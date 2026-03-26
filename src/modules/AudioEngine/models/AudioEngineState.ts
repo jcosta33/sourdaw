@@ -83,4 +83,5 @@ export type AudioEngine = {
     stopAllScheduled(): void;
     wireSidechainRoute(sourceTrackId: string, targetTrackId: string, targetDeviceId: string): void;
     unwireSidechainRoute(sourceTrackId: string, targetDeviceId: string): void;
+    waitForDevices(): Promise<void>;
 };

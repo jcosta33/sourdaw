@@ -26,11 +26,12 @@ export function scheduleKitNote(
     pitch: number,
     startTime: number,
     duration: number,
-    velocity: number
+    velocity: number,
+    clipGain: number = 1.0
 ): OscillatorNode | null {
     const v = findVoice(kit, pitch);
     if (!v) {
         return null;
     }
-    return scheduleNote(ctx, destination, pitch, startTime, duration, velocity, v.params);
+    return scheduleNote(ctx, destination, pitch, startTime, duration, velocity, v.params, undefined, clipGain);
 }

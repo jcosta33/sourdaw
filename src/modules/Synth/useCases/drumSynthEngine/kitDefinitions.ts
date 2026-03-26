@@ -42,11 +42,13 @@ export function scheduleDrumKitNote(
     kit: DrumKitDef,
     midiNote: number,
     startTime: number,
-    velocity: number
+    velocity: number,
+    clipGain: number = 1.0
 ): void {
     const voice = findVoiceByNote(kit, midiNote);
     if (!voice) {
         return;
     }
-    scheduleDrumVoice(ctx, dest, voice.type, startTime, velocity);
+    const scaledVelocity = Math.max(0, Math.min(127, velocity * clipGain));
+    scheduleDrumVoice(ctx, dest, voice.type, startTime, scaledVelocity);
 }
