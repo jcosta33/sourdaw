@@ -121,7 +121,7 @@ export const RecentProjectsMenu = (): ReactElement => {
     const handleImportProject = () => {
         setOpen(false);
         void pickFiles({
-            filters: [{ name: 'WebDAW Project', extensions: ['webdaw', 'json'] }],
+            filters: [{ name: 'Sourdaw Project', extensions: ['webdaw', 'json'] }],
         }).then((files) => {
             if (!files || files.length === 0) {
                 return;

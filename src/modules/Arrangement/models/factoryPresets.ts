@@ -1,6 +1,6 @@
 import { type DevicePreset, type SoundPreset } from '#/modules/Arrangement/models/SoundPreset';
 
-const AUTHOR = 'WebDAW';
+const AUTHOR = 'Sourdaw';
 
 const synth = (name: string, params: Record<string, number>): DevicePreset => ({
     type: 'builtin-synth',
@@ -1807,9 +1807,20 @@ const FACTORY_PRESETS: SoundPreset[] = [
         description: 'Tape-style flute/keys emulator with heavy vibrato and noise.',
         trackKind: 'midi',
         devices: [
-            synth('Mellotron', { waveform: 3, attack: 0.1, decay: 0.4, release: 0.3, filterCutoff: 2500, vibratoRate: 5.5, vibratoDepth: 20, noiseLevel: 0.05 }),
+            synth('Mellotron', {
+                waveform: 3,
+                attack: 0.1,
+                decay: 0.4,
+                release: 0.3,
+                filterCutoff: 2500,
+                vibratoRate: 5.5,
+                vibratoDepth: 20,
+                noiseLevel: 0.05,
+            }),
         ],
-        tags: ['mellotron', 'tape', 'vintage', 'keys'], author: AUTHOR, isFactory: true,
+        tags: ['mellotron', 'tape', 'vintage', 'keys'],
+        author: AUTHOR,
+        isFactory: true,
     },
     {
         id: 'factory-strings-analog',
@@ -1819,10 +1830,19 @@ const FACTORY_PRESETS: SoundPreset[] = [
         description: 'Lush dual-oscillator string ensemble with wide stereo spread.',
         trackKind: 'midi',
         devices: [
-            synth('Analog Strings', { waveform: 2, attack: 0.3, release: 1.2, osc2Mix: 0.5, osc2Detune: 15, stereoSpread: 1 }),
+            synth('Analog Strings', {
+                waveform: 2,
+                attack: 0.3,
+                release: 1.2,
+                osc2Mix: 0.5,
+                osc2Detune: 15,
+                stereoSpread: 1,
+            }),
             reverb('Reverb', { 'rev-size': 0.8, 'rev-decay': 4.0, 'rev-mix': 0.4 }),
         ],
-        tags: ['strings', 'analog', 'ensemble', 'lush'], author: AUTHOR, isFactory: true,
+        tags: ['strings', 'analog', 'ensemble', 'lush'],
+        author: AUTHOR,
+        isFactory: true,
     },
     {
         id: 'factory-bass-808-sub',
@@ -1832,10 +1852,20 @@ const FACTORY_PRESETS: SoundPreset[] = [
         description: 'Deep 808-style subwoofer bass with a tuned decay.',
         trackKind: 'midi',
         devices: [
-            synth('808 Bass', { waveform: 0, attack: 0.01, decay: 1.2, sustain: 0, subOscLevel: 1.0, filterCutoff: 800, filterEnvAmount: 1200 }),
+            synth('808 Bass', {
+                waveform: 0,
+                attack: 0.01,
+                decay: 1.2,
+                sustain: 0,
+                subOscLevel: 1.0,
+                filterCutoff: 800,
+                filterEnvAmount: 1200,
+            }),
             comp('Compressor', { 'comp-threshold': -10, 'comp-ratio': 4, 'comp-attack': 5, 'comp-release': 100 }),
         ],
-        tags: ['808', 'bass', 'sub', 'trap'], author: AUTHOR, isFactory: true,
+        tags: ['808', 'bass', 'sub', 'trap'],
+        author: AUTHOR,
+        isFactory: true,
     },
     {
         id: 'factory-brass-classic',
@@ -1845,9 +1875,20 @@ const FACTORY_PRESETS: SoundPreset[] = [
         description: '80s pop synth brass with a bright, biting filter envelope attack.',
         trackKind: 'midi',
         devices: [
-            synth('Classic Brass', { waveform: 2, attack: 0.05, filterEnvAmount: 3000, osc2Waveform: 3, osc2Mix: 0.3, filterCutoff: 500, filterResonance: 3, stereoSpread: 0.5 }),
+            synth('Classic Brass', {
+                waveform: 2,
+                attack: 0.05,
+                filterEnvAmount: 3000,
+                osc2Waveform: 3,
+                osc2Mix: 0.3,
+                filterCutoff: 500,
+                filterResonance: 3,
+                stereoSpread: 0.5,
+            }),
         ],
-        tags: ['brass', '80s', 'synth', 'classic'], author: AUTHOR, isFactory: true,
+        tags: ['brass', '80s', 'synth', 'classic'],
+        author: AUTHOR,
+        isFactory: true,
     },
 ];
 
@@ -1928,8 +1969,7 @@ const FAUST_REPLACEMENT_PRESETS: SoundPreset[] = [
         name: 'Full Organ',
         category: 'keys',
         subcategory: 'digital',
-        description:
-            "Classic Hammond B3 with both 16' and 8' drawbars fully open. Big, full organ sound.",
+        description: "Classic Hammond B3 with both 16' and 8' drawbars fully open. Big, full organ sound.",
         trackKind: 'midi',
         devices: [
             synth('Full Organ', {
@@ -1960,8 +2000,7 @@ const FAUST_REPLACEMENT_PRESETS: SoundPreset[] = [
         name: 'Jazz Organ',
         category: 'keys',
         subcategory: 'digital',
-        description:
-            "Jimmy Smith-style jazz organ — cutting mid-range presence with fast Leslie.",
+        description: 'Jimmy Smith-style jazz organ — cutting mid-range presence with fast Leslie.',
         trackKind: 'midi',
         devices: [
             synth('Jazz Organ', {
@@ -2024,8 +2063,7 @@ const FAUST_REPLACEMENT_PRESETS: SoundPreset[] = [
         name: 'Moog Lead',
         category: 'lead',
         subcategory: 'analog',
-        description:
-            'Classic Minimoog-style mono lead. Dual sawtooth through resonant lowpass.',
+        description: 'Classic Minimoog-style mono lead. Dual sawtooth through resonant lowpass.',
         trackKind: 'midi',
         devices: [
             synth('Moog Lead', {
@@ -2686,22 +2724,40 @@ const FAUST_REPLACEMENT_PRESETS: SoundPreset[] = [
 // ─── Native DSP preset helpers ──────────────────────────────────────────────
 const nativeEq = (
     name: string,
-    params: Partial<Record<
-        | 'band2_freq' | 'band2_gain' | 'band2_q'
-        | 'band3_freq' | 'band3_gain' | 'band3_q'
-        | 'band4_freq' | 'band4_gain' | 'band4_q'
-        | 'band5_freq' | 'band5_gain' | 'band5_q'
-        | 'output_gain',
-        number
-    >>
+    params: Partial<
+        Record<
+            | 'band2_freq'
+            | 'band2_gain'
+            | 'band2_q'
+            | 'band3_freq'
+            | 'band3_gain'
+            | 'band3_q'
+            | 'band4_freq'
+            | 'band4_gain'
+            | 'band4_q'
+            | 'band5_freq'
+            | 'band5_gain'
+            | 'band5_q'
+            | 'output_gain',
+            number
+        >
+    >
 ): DevicePreset => ({
     type: 'native-eq',
     name,
     parameterValues: {
-        band2_freq: 250, band2_gain: 0, band2_q: 1,
-        band3_freq: 800, band3_gain: 0, band3_q: 1,
-        band4_freq: 2500, band4_gain: 0, band4_q: 1,
-        band5_freq: 6000, band5_gain: 0, band5_q: 1,
+        band2_freq: 250,
+        band2_gain: 0,
+        band2_q: 1,
+        band3_freq: 800,
+        band3_gain: 0,
+        band3_q: 1,
+        band4_freq: 2500,
+        band4_gain: 0,
+        band4_q: 1,
+        band5_freq: 6000,
+        band5_gain: 0,
+        band5_q: 1,
         output_gain: 0,
         ...params,
     },
@@ -2772,7 +2828,14 @@ const NATIVE_DSP_PRESETS: SoundPreset[] = [
         description: 'Professional mastering chain: parametric EQ → compressor → limiter.',
         trackKind: 'audio',
         devices: [
-            nativeEq('Mastering EQ', { band2_freq: 60, band2_gain: 1.5, band2_q: 0.7, band4_freq: 3000, band4_gain: 1, band4_q: 0.8 }),
+            nativeEq('Mastering EQ', {
+                band2_freq: 60,
+                band2_gain: 1.5,
+                band2_q: 0.7,
+                band4_freq: 3000,
+                band4_gain: 1,
+                band4_q: 0.8,
+            }),
             nativeComp('Glue Comp', { threshold: -12, ratio: 2, attack: 0.03, release: 0.2, knee: 10, makeup: 2 }),
             nativeLimiter('Ceiling Limiter', { ceiling: -0.3, release: 0.05, lookahead: 5 }),
         ],
@@ -2790,7 +2853,17 @@ const NATIVE_DSP_PRESETS: SoundPreset[] = [
         trackKind: 'audio',
         devices: [
             nativeGate('Gate', { threshold: -35, attack: 0.001, hold: 0.05, release: 0.1 }),
-            nativeEq('Vocal EQ', { band2_freq: 120, band2_gain: -4, band2_q: 0.7, band3_freq: 2500, band3_gain: 2, band3_q: 1.2, band5_freq: 10000, band5_gain: 2, band5_q: 0.5 }),
+            nativeEq('Vocal EQ', {
+                band2_freq: 120,
+                band2_gain: -4,
+                band2_q: 0.7,
+                band3_freq: 2500,
+                band3_gain: 2,
+                band3_q: 1.2,
+                band5_freq: 10000,
+                band5_gain: 2,
+                band5_q: 0.5,
+            }),
             nativeComp('Vocal Comp', { threshold: -20, ratio: 3, attack: 0.005, release: 0.08, knee: 6, makeup: 4 }),
             nativeReverb('Plate Reverb', { mix: 0.15, size: 0.5, decay: 0.6, damping: 0.5, predelay: 30 }),
         ],
@@ -2807,8 +2880,29 @@ const NATIVE_DSP_PRESETS: SoundPreset[] = [
         description: 'Sub-bass focused EQ with compression for tight low-end.',
         trackKind: 'midi',
         devices: [
-            synth('Bass', { waveform: 2, attack: 0.005, decay: 0.2, sustain: 0.6, release: 0.15, filterCutoff: 600, filterResonance: 1, filterType: 0, gain: 0.35, subOscLevel: 0.4 }),
-            nativeEq('Bass EQ', { band2_freq: 60, band2_gain: 3, band2_q: 0.8, band3_freq: 200, band3_gain: -2, band3_q: 1.5, band5_freq: 3000, band5_gain: 1, band5_q: 0.7 }),
+            synth('Bass', {
+                waveform: 2,
+                attack: 0.005,
+                decay: 0.2,
+                sustain: 0.6,
+                release: 0.15,
+                filterCutoff: 600,
+                filterResonance: 1,
+                filterType: 0,
+                gain: 0.35,
+                subOscLevel: 0.4,
+            }),
+            nativeEq('Bass EQ', {
+                band2_freq: 60,
+                band2_gain: 3,
+                band2_q: 0.8,
+                band3_freq: 200,
+                band3_gain: -2,
+                band3_q: 1.5,
+                band5_freq: 3000,
+                band5_gain: 1,
+                band5_q: 0.7,
+            }),
             nativeComp('Bass Comp', { threshold: -15, ratio: 6, attack: 0.003, release: 0.06, knee: 3, makeup: 3 }),
         ],
         tags: ['bass', 'eq', 'compression', 'sub', 'native'],
@@ -2824,9 +2918,30 @@ const NATIVE_DSP_PRESETS: SoundPreset[] = [
         description: 'Lush pad with native reverb and ping-pong delay for ambient soundscapes.',
         trackKind: 'midi',
         devices: [
-            synth('Ambient Pad', { waveform: 0, attack: 0.8, decay: 0.5, sustain: 0.9, release: 3.0, filterCutoff: 3000, filterResonance: 0.5, filterType: 0, gain: 0.2, osc2Waveform: 1, osc2Mix: 0.4, osc2Detune: 5, stereoSpread: 0.8 }),
+            synth('Ambient Pad', {
+                waveform: 0,
+                attack: 0.8,
+                decay: 0.5,
+                sustain: 0.9,
+                release: 3.0,
+                filterCutoff: 3000,
+                filterResonance: 0.5,
+                filterType: 0,
+                gain: 0.2,
+                osc2Waveform: 1,
+                osc2Mix: 0.4,
+                osc2Detune: 5,
+                stereoSpread: 0.8,
+            }),
             nativeReverb('Hall Reverb', { mix: 0.6, size: 0.9, decay: 0.9, damping: 0.3, predelay: 40 }),
-            nativeDelay('Ping-Pong', { time_l: 0.375, time_r: 0.5, feedback: 0.45, mix: 0.25, filter: 6000, ping_pong: 1 }),
+            nativeDelay('Ping-Pong', {
+                time_l: 0.375,
+                time_r: 0.5,
+                feedback: 0.45,
+                mix: 0.25,
+                filter: 6000,
+                ping_pong: 1,
+            }),
         ],
         tags: ['ambient', 'texture', 'reverb', 'delay', 'pad', 'native'],
         author: AUTHOR,
@@ -2841,8 +2956,26 @@ const NATIVE_DSP_PRESETS: SoundPreset[] = [
         description: 'Punchy drum bus: EQ scoop → aggressive compressor → limiter.',
         trackKind: 'audio',
         devices: [
-            nativeEq('Drum EQ', { band2_freq: 100, band2_gain: 2, band2_q: 0.7, band3_freq: 400, band3_gain: -3, band3_q: 1.5, band4_freq: 4000, band4_gain: 2, band4_q: 0.8 }),
-            nativeComp('Drum Comp', { threshold: -14, ratio: 6, attack: 0.002, release: 0.05, knee: 3, makeup: 4, mix: 0.7 }),
+            nativeEq('Drum EQ', {
+                band2_freq: 100,
+                band2_gain: 2,
+                band2_q: 0.7,
+                band3_freq: 400,
+                band3_gain: -3,
+                band3_q: 1.5,
+                band4_freq: 4000,
+                band4_gain: 2,
+                band4_q: 0.8,
+            }),
+            nativeComp('Drum Comp', {
+                threshold: -14,
+                ratio: 6,
+                attack: 0.002,
+                release: 0.05,
+                knee: 3,
+                makeup: 4,
+                mix: 0.7,
+            }),
             nativeLimiter('Safety Limiter', { ceiling: -0.5, release: 0.03 }),
         ],
         tags: ['drums', 'bus', 'punch', 'compression', 'native'],
@@ -2857,9 +2990,7 @@ const NATIVE_DSP_PRESETS: SoundPreset[] = [
         subcategory: 'utility',
         description: 'Mid-side stereo widening with DC block.',
         trackKind: 'audio',
-        devices: [
-            nativeGain('Widener', { width: 1.6, dc_block: 1 }),
-        ],
+        devices: [nativeGain('Widener', { width: 1.6, dc_block: 1 })],
         tags: ['stereo', 'wide', 'utility', 'native'],
         author: AUTHOR,
         isFactory: true,
@@ -2873,8 +3004,24 @@ const NATIVE_DSP_PRESETS: SoundPreset[] = [
         description: 'Gentle EQ warmth with parallel compression for analog feel.',
         trackKind: 'audio',
         devices: [
-            nativeEq('Warmth EQ', { band2_freq: 120, band2_gain: 2, band2_q: 0.5, band5_freq: 8000, band5_gain: -1, band5_q: 0.6, output_gain: 1 }),
-            nativeComp('Parallel Comp', { threshold: -25, ratio: 8, attack: 0.001, release: 0.05, knee: 3, makeup: 6, mix: 0.3 }),
+            nativeEq('Warmth EQ', {
+                band2_freq: 120,
+                band2_gain: 2,
+                band2_q: 0.5,
+                band5_freq: 8000,
+                band5_gain: -1,
+                band5_q: 0.6,
+                output_gain: 1,
+            }),
+            nativeComp('Parallel Comp', {
+                threshold: -25,
+                ratio: 8,
+                attack: 0.001,
+                release: 0.05,
+                knee: 3,
+                makeup: 6,
+                mix: 0.3,
+            }),
         ],
         tags: ['warm', 'saturation', 'analog', 'parallel', 'native'],
         author: AUTHOR,
@@ -2889,7 +3036,14 @@ const NATIVE_DSP_PRESETS: SoundPreset[] = [
         description: 'High-frequency surgical cut with narrow Q for sibilance control.',
         trackKind: 'audio',
         devices: [
-            nativeEq('De-ess EQ', { band4_freq: 6000, band4_gain: -6, band4_q: 4, band5_freq: 8000, band5_gain: -3, band5_q: 3 }),
+            nativeEq('De-ess EQ', {
+                band4_freq: 6000,
+                band4_gain: -6,
+                band4_q: 4,
+                band5_freq: 8000,
+                band5_gain: -3,
+                band5_q: 3,
+            }),
         ],
         tags: ['de-esser', 'sibilance', 'vocal', 'eq', 'native'],
         author: AUTHOR,
@@ -2904,8 +3058,25 @@ const NATIVE_DSP_PRESETS: SoundPreset[] = [
         description: 'Dark filtered delay with high feedback for dub/lo-fi textures.',
         trackKind: 'midi',
         devices: [
-            synth('Lo-Fi Pad', { waveform: 1, attack: 0.3, decay: 0.4, sustain: 0.7, release: 1.5, filterCutoff: 1500, filterResonance: 1, filterType: 0, gain: 0.25 }),
-            nativeDelay('Dub Delay', { time_l: 0.375, time_r: 0.5, feedback: 0.65, mix: 0.4, filter: 2000, ping_pong: 0 }),
+            synth('Lo-Fi Pad', {
+                waveform: 1,
+                attack: 0.3,
+                decay: 0.4,
+                sustain: 0.7,
+                release: 1.5,
+                filterCutoff: 1500,
+                filterResonance: 1,
+                filterType: 0,
+                gain: 0.25,
+            }),
+            nativeDelay('Dub Delay', {
+                time_l: 0.375,
+                time_r: 0.5,
+                feedback: 0.65,
+                mix: 0.4,
+                filter: 2000,
+                ping_pong: 0,
+            }),
             nativeEq('Darken', { band5_freq: 4000, band5_gain: -6, band5_q: 0.5 }),
         ],
         tags: ['lofi', 'delay', 'dub', 'dark', 'filtered', 'native'],
@@ -2926,4 +3097,3 @@ FACTORY_PRESETS.push(...FAUST_INSTRUMENT_PRESETS);
 // Merge expanded presets (effects chains + synth instruments)
 import { EXPANDED_FX_PRESETS, EXPANDED_SYNTH_PRESETS } from './expandedPresets';
 FACTORY_PRESETS.push(...EXPANDED_FX_PRESETS, ...EXPANDED_SYNTH_PRESETS);
-

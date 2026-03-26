@@ -11,7 +11,13 @@ export const ProjectLoadingOverlay = (): ReactElement => {
             <div className="relative mb-8">
                 <div className="size-16 rounded-full border-2 border-white/10 animate-ping absolute inset-0" />
                 <div className="size-16 rounded-full border-2 border-white/20 flex items-center justify-center">
-                    <svg viewBox="0 0 24 24" className="size-7 text-white/60" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <svg
+                        viewBox="0 0 24 24"
+                        className="size-7 text-white/60"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                    >
                         <path d="M9 18V5l12-2v13" />
                         <circle cx="6" cy="18" r="3" />
                         <circle cx="18" cy="16" r="3" />
@@ -19,12 +25,8 @@ export const ProjectLoadingOverlay = (): ReactElement => {
                 </div>
             </div>
 
-            <h1 className="text-lg font-semibold text-white/80 tracking-wide mb-2">
-                WebDAW
-            </h1>
-            <p className="text-sm text-white/40 animate-pulse">
-                Loading project…
-            </p>
+            <h1 className="text-lg font-semibold text-white/80 tracking-wide mb-2">Sourdaw</h1>
+            <p className="text-sm text-white/40 animate-pulse">Loading project…</p>
 
             {/* Subtle gradient bar */}
             <div className="mt-6 w-48 h-0.5 rounded-full overflow-hidden bg-white/5">

@@ -13,7 +13,9 @@ function generateDawProjectXml(doc: DawProjectDocument): string {
     ];
 
     for (const t of doc.tracks) {
-        lines.push(`    <Track id="${t.id}" name="${escapeXml(t.name)}" type="${t.type}" color="${t.color}" volume="${t.volume}" pan="${t.pan}" muted="${t.muted}" solo="${t.solo}" />`);
+        lines.push(
+            `    <Track id="${t.id}" name="${escapeXml(t.name)}" type="${t.type}" color="${t.color}" volume="${t.volume}" pan="${t.pan}" muted="${t.muted}" solo="${t.solo}" />`
+        );
     }
 
     lines.push('  </Tracks>');
@@ -21,13 +23,19 @@ function generateDawProjectXml(doc: DawProjectDocument): string {
 
     for (const c of doc.clips) {
         if (c.notes.length > 0) {
-            lines.push(`    <Clip trackId="${c.trackId}" name="${escapeXml(c.name)}" startBeat="${c.startBeat}" duration="${c.durationBeats}">`);
+            lines.push(
+                `    <Clip trackId="${c.trackId}" name="${escapeXml(c.name)}" startBeat="${c.startBeat}" duration="${c.durationBeats}">`
+            );
             for (const n of c.notes) {
-                lines.push(`      <Note pitch="${n.pitch}" velocity="${n.velocity}" startBeat="${n.startBeat}" duration="${n.durationBeats}" />`);
+                lines.push(
+                    `      <Note pitch="${n.pitch}" velocity="${n.velocity}" startBeat="${n.startBeat}" duration="${n.durationBeats}" />`
+                );
             }
             lines.push('    </Clip>');
         } else {
-            lines.push(`    <Clip trackId="${c.trackId}" name="${escapeXml(c.name)}" startBeat="${c.startBeat}" duration="${c.durationBeats}" mediaRef="${c.mediaRef ?? ''}" />`);
+            lines.push(
+                `    <Clip trackId="${c.trackId}" name="${escapeXml(c.name)}" startBeat="${c.startBeat}" duration="${c.durationBeats}" mediaRef="${c.mediaRef ?? ''}" />`
+            );
         }
     }
 
@@ -66,7 +74,7 @@ export function exportToDawProject(
 ): string {
     const doc: DawProjectDocument = {
         version: '1.0',
-        application: 'WebDAW',
+        application: 'Sourdaw',
         timeline: {
             bpm,
             timeSignatureNumerator: timeSignature[0],
@@ -88,12 +96,13 @@ export function exportToDawProject(
             startBeat: c.startBeat,
             durationBeats: c.endBeat - c.startBeat,
             mediaRef: c.type === 'audio' ? `media/${c.name}.wav` : null,
-            notes: c.midiNotes?.map((n) => ({
-                pitch: n.pitch,
-                velocity: n.velocity,
-                startBeat: n.startBeat,
-                durationBeats: n.duration,
-            })) ?? [],
+            notes:
+                c.midiNotes?.map((n) => ({
+                    pitch: n.pitch,
+                    velocity: n.velocity,
+                    startBeat: n.startBeat,
+                    durationBeats: n.duration,
+                })) ?? [],
         })),
     };
 

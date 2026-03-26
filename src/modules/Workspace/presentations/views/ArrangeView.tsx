@@ -103,12 +103,7 @@ export const ArrangeView = (): ReactElement => {
                 {tracks.filter((t) => t.kind !== 'master' && t.kind !== 'folder').length === 0 ? (
                     <EmptyArrangeOverlay />
                 ) : null}
-                {scratchPadOpen ? (
-                    <ScratchPadView
-                        height={scratchPadHeight}
-                        onToggle={closeScratchPad}
-                    />
-                ) : null}
+                {scratchPadOpen ? <ScratchPadView height={scratchPadHeight} onToggle={closeScratchPad} /> : null}
             </div>
         </div>
     );
@@ -188,7 +183,7 @@ const EmptyArrangeOverlay = (): ReactElement => {
                 >
                     <div className="flex items-center gap-2">
                         <Music className="size-6 text-muted-foreground" />
-                        <h2 className="text-lg font-semibold text-foreground">Welcome to WebDAW</h2>
+                        <h2 className="text-lg font-semibold text-foreground">Welcome to Sourdaw</h2>
                     </div>
 
                     <p className="text-sm text-muted-foreground text-center">

@@ -8,7 +8,7 @@ members = [
 name = "webdaw"
 version = "0.1.0"
 description = "AI-native DAW desktop application"
-authors = ["WebDAW Team"]
+authors = ["Sourdaw Team"]
 edition = "2021"
 
 [lib]

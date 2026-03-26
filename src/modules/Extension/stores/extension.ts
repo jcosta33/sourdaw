@@ -101,6 +101,7 @@ export const extensionStore = new Store<ExtensionMarketplaceState>(logger, {
         commands: [],
         consoleLog: [],
         editorOpen: false,
-        editorContent: '// WebDAW Script\n// Access the DAW API via the global `daw` object\n\nconsole.log("Hello from WebDAW scripting!");\n',
+        editorContent:
+            '// Sourdaw Script\n// Access the DAW API via the global `daw` object\n\nconsole.log("Hello from Sourdaw scripting!");\n',
     },
 });

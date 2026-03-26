@@ -784,7 +784,7 @@ export const commandRegistry: CommandEntry[] = [
         action: async () => {
             const { pickFiles } = await import('#/modules/Project/useCases/fileDialog');
             const files = await pickFiles({
-                filters: [{ name: 'WebDAW Project', extensions: ['webdaw'] }],
+                filters: [{ name: 'Sourdaw Project', extensions: ['webdaw'] }],
                 multiple: false,
             });
             if (files && files.length > 0) {
@@ -920,7 +920,10 @@ export const commandRegistry: CommandEntry[] = [
         action: () => {
             const t = transportStore.value;
             if (t) {
-                executeAppAction({ type: 'insertTime', payload: { atBeat: playheadPositionRef.current, durationBeats: 4 } });
+                executeAppAction({
+                    type: 'insertTime',
+                    payload: { atBeat: playheadPositionRef.current, durationBeats: 4 },
+                });
             }
         },
     },

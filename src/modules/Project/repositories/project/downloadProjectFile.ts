@@ -19,7 +19,7 @@ export async function downloadProjectFile(data: ProjectData): Promise<void> {
                 suggestedName: filename,
                 types: [
                     {
-                        description: 'WebDAW Project',
+                        description: 'Sourdaw Project',
                         accept: { 'application/json': ['.webdaw'] },
                     },
                 ],

@@ -1,5 +1,5 @@
 {
-  "productName": "WebDAW",
+  "productName": "Sourdaw",
   "version": "0.1.0",
   "identifier": "com.webdaw.app",
   "build": {
@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "WebDAW",
+        "title": "Sourdaw",
         "width": 1440,
         "height": 900,
         "resizable": true,

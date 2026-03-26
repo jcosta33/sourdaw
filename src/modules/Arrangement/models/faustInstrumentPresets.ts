@@ -8,7 +8,7 @@
 
 import { type SoundPreset, type DevicePreset } from './SoundPreset';
 
-const AUTHOR = 'WebDAW';
+const AUTHOR = 'Sourdaw';
 
 // ── Helper: create a Faust instrument device preset ──────────────
 
@@ -19,19 +19,48 @@ function faust(moduleId: string, name: string, params: Record<string, number>): 
 // ── Helper: create a builtin effect device preset ────────────────
 
 function reverb(name: string, params: Record<string, number>): DevicePreset {
-    return { type: 'builtin-reverb', name, parameterValues: { 'rev-size': 0.5, 'rev-decay': 2, 'rev-damping': 0.5, 'rev-mix': 0.3, ...params } };
+    return {
+        type: 'builtin-reverb',
+        name,
+        parameterValues: { 'rev-size': 0.5, 'rev-decay': 2, 'rev-damping': 0.5, 'rev-mix': 0.3, ...params },
+    };
 }
 
 function delay(name: string, params: Record<string, number>): DevicePreset {
-    return { type: 'builtin-delay', name, parameterValues: { 'delay-time': 250, 'delay-feedback': 0.4, 'delay-mix': 0.3, ...params } };
+    return {
+        type: 'builtin-delay',
+        name,
+        parameterValues: { 'delay-time': 250, 'delay-feedback': 0.4, 'delay-mix': 0.3, ...params },
+    };
 }
 
 function chorus(name: string, params: Record<string, number>): DevicePreset {
-    return { type: 'builtin-chorus', name, parameterValues: { 'chorus-rate': 1.5, 'chorus-depth': 7, 'chorus-feedback': 0.2, 'chorus-mix': 0.5, ...params } };
+    return {
+        type: 'builtin-chorus',
+        name,
+        parameterValues: {
+            'chorus-rate': 1.5,
+            'chorus-depth': 7,
+            'chorus-feedback': 0.2,
+            'chorus-mix': 0.5,
+            ...params,
+        },
+    };
 }
 
 function comp(name: string, params: Record<string, number>): DevicePreset {
-    return { type: 'builtin-compressor', name, parameterValues: { 'comp-threshold': -20, 'comp-ratio': 4, 'comp-attack': 10, 'comp-release': 100, 'comp-makeup': 0, ...params } };
+    return {
+        type: 'builtin-compressor',
+        name,
+        parameterValues: {
+            'comp-threshold': -20,
+            'comp-ratio': 4,
+            'comp-attack': 10,
+            'comp-release': 100,
+            'comp-makeup': 0,
+            ...params,
+        },
+    };
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -39,7 +68,6 @@ function comp(name: string, params: Record<string, number>): DevicePreset {
 // ═══════════════════════════════════════════════════════════════════
 
 export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
-
     // ─── Hammond B3 Organ ────────────────────────────────────────────────
 
     {
@@ -51,10 +79,21 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-hammond-b3', 'Gospel Organ', {
-                drawbar_16: 8, drawbar_8: 8, drawbar_513: 8, drawbar_4: 7, drawbar_223: 6,
-                drawbar_2: 5, drawbar_135: 4, drawbar_113: 3, drawbar_1: 2,
-                percussion: 0.6, perc_harmonic: 3, click: 0.5,
-                leslie_speed: 8.0, leslie_depth: 0.5, gain: 0.5,
+                drawbar_16: 8,
+                drawbar_8: 8,
+                drawbar_513: 8,
+                drawbar_4: 7,
+                drawbar_223: 6,
+                drawbar_2: 5,
+                drawbar_135: 4,
+                drawbar_113: 3,
+                drawbar_1: 2,
+                percussion: 0.6,
+                perc_harmonic: 3,
+                click: 0.5,
+                leslie_speed: 8.0,
+                leslie_depth: 0.5,
+                gain: 0.5,
             }),
             reverb('Hall', { 'rev-size': 0.8, 'rev-decay': 4, 'rev-mix': 0.3 }),
         ],
@@ -67,14 +106,25 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         name: 'Jazz Organ',
         category: 'keys',
         subcategory: 'analog',
-        description: 'Jimmy Smith-style jazz combo. 8\' and 4\' with percussion on 2nd harmonic.',
+        description: "Jimmy Smith-style jazz combo. 8' and 4' with percussion on 2nd harmonic.",
         trackKind: 'midi',
         devices: [
             faust('faust-hammond-b3', 'Jazz Organ', {
-                drawbar_16: 0, drawbar_8: 8, drawbar_513: 0, drawbar_4: 6, drawbar_223: 0,
-                drawbar_2: 0, drawbar_135: 0, drawbar_113: 0, drawbar_1: 0,
-                percussion: 0.4, perc_harmonic: 2, click: 0.4,
-                leslie_speed: 6.0, leslie_depth: 0.3, gain: 0.5,
+                drawbar_16: 0,
+                drawbar_8: 8,
+                drawbar_513: 0,
+                drawbar_4: 6,
+                drawbar_223: 0,
+                drawbar_2: 0,
+                drawbar_135: 0,
+                drawbar_113: 0,
+                drawbar_1: 0,
+                percussion: 0.4,
+                perc_harmonic: 2,
+                click: 0.4,
+                leslie_speed: 6.0,
+                leslie_depth: 0.3,
+                gain: 0.5,
             }),
         ],
         tags: ['organ', 'hammond', 'jazz', 'combo', 'percussion'],
@@ -86,14 +136,25 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         name: 'Rock Organ',
         category: 'keys',
         subcategory: 'analog',
-        description: 'Jon Lord-style rock organ. 16\' and 8\' heavy, driven Leslie.',
+        description: "Jon Lord-style rock organ. 16' and 8' heavy, driven Leslie.",
         trackKind: 'midi',
         devices: [
             faust('faust-hammond-b3', 'Rock Organ', {
-                drawbar_16: 8, drawbar_8: 8, drawbar_513: 0, drawbar_4: 0, drawbar_223: 0,
-                drawbar_2: 0, drawbar_135: 0, drawbar_113: 0, drawbar_1: 0,
-                percussion: 0.2, perc_harmonic: 2, click: 0.6,
-                leslie_speed: 10.0, leslie_depth: 0.6, gain: 0.6,
+                drawbar_16: 8,
+                drawbar_8: 8,
+                drawbar_513: 0,
+                drawbar_4: 0,
+                drawbar_223: 0,
+                drawbar_2: 0,
+                drawbar_135: 0,
+                drawbar_113: 0,
+                drawbar_1: 0,
+                percussion: 0.2,
+                perc_harmonic: 2,
+                click: 0.6,
+                leslie_speed: 10.0,
+                leslie_depth: 0.6,
+                gain: 0.6,
             }),
         ],
         tags: ['organ', 'hammond', 'rock', 'deep-purple', 'driven'],
@@ -105,14 +166,25 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         name: 'Ballad Organ',
         category: 'keys',
         subcategory: 'analog',
-        description: 'Gentle 8\' and 4\' with slow Leslie. Beautiful for ballads and hymns.',
+        description: "Gentle 8' and 4' with slow Leslie. Beautiful for ballads and hymns.",
         trackKind: 'midi',
         devices: [
             faust('faust-hammond-b3', 'Ballad Organ', {
-                drawbar_16: 4, drawbar_8: 8, drawbar_513: 0, drawbar_4: 4, drawbar_223: 0,
-                drawbar_2: 0, drawbar_135: 0, drawbar_113: 0, drawbar_1: 0,
-                percussion: 0.0, perc_harmonic: 2, click: 0.1,
-                leslie_speed: 1.5, leslie_depth: 0.15, gain: 0.4,
+                drawbar_16: 4,
+                drawbar_8: 8,
+                drawbar_513: 0,
+                drawbar_4: 4,
+                drawbar_223: 0,
+                drawbar_2: 0,
+                drawbar_135: 0,
+                drawbar_113: 0,
+                drawbar_1: 0,
+                percussion: 0.0,
+                perc_harmonic: 2,
+                click: 0.1,
+                leslie_speed: 1.5,
+                leslie_depth: 0.15,
+                gain: 0.4,
             }),
             reverb('Cathedral', { 'rev-size': 1.0, 'rev-decay': 6, 'rev-mix': 0.35 }),
         ],
@@ -125,14 +197,25 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         name: 'Reggae Organ',
         category: 'keys',
         subcategory: 'analog',
-        description: 'Skank organ with 8\' only and heavy click. Sharp, percussive chords.',
+        description: "Skank organ with 8' only and heavy click. Sharp, percussive chords.",
         trackKind: 'midi',
         devices: [
             faust('faust-hammond-b3', 'Reggae Organ', {
-                drawbar_16: 0, drawbar_8: 6, drawbar_513: 0, drawbar_4: 0, drawbar_223: 0,
-                drawbar_2: 0, drawbar_135: 0, drawbar_113: 0, drawbar_1: 0,
-                percussion: 0.5, perc_harmonic: 3, click: 0.8,
-                leslie_speed: 0.5, leslie_depth: 0.05, gain: 0.45,
+                drawbar_16: 0,
+                drawbar_8: 6,
+                drawbar_513: 0,
+                drawbar_4: 0,
+                drawbar_223: 0,
+                drawbar_2: 0,
+                drawbar_135: 0,
+                drawbar_113: 0,
+                drawbar_1: 0,
+                percussion: 0.5,
+                perc_harmonic: 3,
+                click: 0.8,
+                leslie_speed: 0.5,
+                leslie_depth: 0.05,
+                gain: 0.45,
             }),
         ],
         tags: ['organ', 'hammond', 'reggae', 'skank', 'percussive'],
@@ -151,7 +234,10 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-rhodes', 'Warm Rhodes', {
-                brightness: 0.3, body_decay: 2.0, bell_decay: 0.1, gain: 0.5,
+                brightness: 0.3,
+                body_decay: 2.0,
+                bell_decay: 0.1,
+                gain: 0.5,
             }),
             chorus('Chorus', { 'chorus-rate': 0.8, 'chorus-depth': 5, 'chorus-mix': 0.3 }),
         ],
@@ -168,7 +254,10 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-rhodes', 'Bright Rhodes', {
-                brightness: 0.8, body_decay: 1.2, bell_decay: 0.25, gain: 0.5,
+                brightness: 0.8,
+                body_decay: 1.2,
+                bell_decay: 0.25,
+                gain: 0.5,
             }),
         ],
         tags: ['rhodes', 'keys', 'bright', 'bell', 'funk'],
@@ -184,7 +273,10 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-rhodes', 'Bark Rhodes', {
-                brightness: 1.0, body_decay: 0.8, bell_decay: 0.3, gain: 0.7,
+                brightness: 1.0,
+                body_decay: 0.8,
+                bell_decay: 0.3,
+                gain: 0.7,
             }),
             comp('Compressor', { 'comp-threshold': -12, 'comp-ratio': 6 }),
         ],
@@ -201,7 +293,10 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-rhodes', 'Suitcase Rhodes', {
-                brightness: 0.45, body_decay: 1.8, bell_decay: 0.12, gain: 0.45,
+                brightness: 0.45,
+                body_decay: 1.8,
+                bell_decay: 0.12,
+                gain: 0.45,
             }),
             chorus('Chorus', { 'chorus-rate': 1.2, 'chorus-depth': 8, 'chorus-mix': 0.4 }),
             reverb('Room', { 'rev-size': 0.4, 'rev-decay': 1.5, 'rev-mix': 0.2 }),
@@ -219,7 +314,10 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-rhodes', 'Ambient Rhodes', {
-                brightness: 0.2, body_decay: 4.0, bell_decay: 0.05, gain: 0.35,
+                brightness: 0.2,
+                body_decay: 4.0,
+                bell_decay: 0.05,
+                gain: 0.35,
             }),
             reverb('Ambient', { 'rev-size': 1.0, 'rev-decay': 8, 'rev-mix': 0.6 }),
             delay('Delay', { 'delay-time': 500, 'delay-feedback': 0.4, 'delay-mix': 0.25 }),
@@ -240,9 +338,17 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-minimoog-lead', 'Classic Lead', {
-                glide: 0.08, detune: 7, osc3: 0.3,
-                cutoff: 2500, resonance: 4, env_amount: 0.4,
-                attack: 0.005, decay: 0.25, sustain: 0.6, release: 0.3, gain: 0.5,
+                glide: 0.08,
+                detune: 7,
+                osc3: 0.3,
+                cutoff: 2500,
+                resonance: 4,
+                env_amount: 0.4,
+                attack: 0.005,
+                decay: 0.25,
+                sustain: 0.6,
+                release: 0.3,
+                gain: 0.5,
             }),
             delay('Delay', { 'delay-time': 300, 'delay-feedback': 0.3, 'delay-mix': 0.2 }),
         ],
@@ -259,9 +365,17 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-minimoog-lead', 'Screaming Lead', {
-                glide: 0.12, detune: 15, osc3: 0.5,
-                cutoff: 3500, resonance: 18, env_amount: 0.6,
-                attack: 0.01, decay: 0.2, sustain: 0.5, release: 0.4, gain: 0.45,
+                glide: 0.12,
+                detune: 15,
+                osc3: 0.5,
+                cutoff: 3500,
+                resonance: 18,
+                env_amount: 0.6,
+                attack: 0.01,
+                decay: 0.2,
+                sustain: 0.5,
+                release: 0.4,
+                gain: 0.45,
             }),
         ],
         tags: ['moog', 'lead', 'screaming', 'resonant', 'aggressive'],
@@ -277,9 +391,17 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-minimoog-lead', 'Moog Bass', {
-                glide: 0.05, detune: 5, osc3: 0.4,
-                cutoff: 800, resonance: 6, env_amount: 0.5,
-                attack: 0.003, decay: 0.15, sustain: 0.4, release: 0.15, gain: 0.55,
+                glide: 0.05,
+                detune: 5,
+                osc3: 0.4,
+                cutoff: 800,
+                resonance: 6,
+                env_amount: 0.5,
+                attack: 0.003,
+                decay: 0.15,
+                sustain: 0.4,
+                release: 0.15,
+                gain: 0.55,
             }),
             comp('Compressor', { 'comp-threshold': -15, 'comp-ratio': 5 }),
         ],
@@ -296,9 +418,17 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-minimoog-lead', 'Portamento', {
-                glide: 0.35, detune: 10, osc3: 0.2,
-                cutoff: 2000, resonance: 5, env_amount: 0.3,
-                attack: 0.05, decay: 0.3, sustain: 0.7, release: 0.5, gain: 0.5,
+                glide: 0.35,
+                detune: 10,
+                osc3: 0.2,
+                cutoff: 2000,
+                resonance: 5,
+                env_amount: 0.3,
+                attack: 0.05,
+                decay: 0.3,
+                sustain: 0.7,
+                release: 0.5,
+                gain: 0.5,
             }),
         ],
         tags: ['moog', 'lead', 'portamento', 'glide', 'expressive'],
@@ -314,9 +444,17 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-minimoog-lead', 'Moog Pad', {
-                glide: 0.001, detune: 12, osc3: 0.5,
-                cutoff: 1200, resonance: 3, env_amount: 0.2,
-                attack: 0.5, decay: 0.5, sustain: 0.8, release: 2.0, gain: 0.4,
+                glide: 0.001,
+                detune: 12,
+                osc3: 0.5,
+                cutoff: 1200,
+                resonance: 3,
+                env_amount: 0.2,
+                attack: 0.5,
+                decay: 0.5,
+                sustain: 0.8,
+                release: 2.0,
+                gain: 0.4,
             }),
             reverb('Reverb', { 'rev-size': 0.8, 'rev-decay': 5, 'rev-mix': 0.4 }),
         ],
@@ -336,7 +474,13 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-fm-synth', 'DX Bells', {
-                ratio: 14, index: 4, attack: 0.001, decay: 2.0, sustain: 0, release: 1.0, gain: 0.45,
+                ratio: 14,
+                index: 4,
+                attack: 0.001,
+                decay: 2.0,
+                sustain: 0,
+                release: 1.0,
+                gain: 0.45,
             }),
             reverb('Hall', { 'rev-size': 0.6, 'rev-decay': 3, 'rev-mix': 0.3 }),
         ],
@@ -353,7 +497,13 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-fm-synth', 'Crystal Keys', {
-                ratio: 3, index: 3, attack: 0.005, decay: 0.8, sustain: 0.3, release: 0.5, gain: 0.5,
+                ratio: 3,
+                index: 3,
+                attack: 0.005,
+                decay: 0.8,
+                sustain: 0.3,
+                release: 0.5,
+                gain: 0.5,
             }),
         ],
         tags: ['fm', 'keys', 'crystal', 'digital', 'bright'],
@@ -369,7 +519,13 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-fm-synth', 'Metallic Bass', {
-                ratio: 1, index: 12, attack: 0.003, decay: 0.2, sustain: 0.3, release: 0.1, gain: 0.55,
+                ratio: 1,
+                index: 12,
+                attack: 0.003,
+                decay: 0.2,
+                sustain: 0.3,
+                release: 0.1,
+                gain: 0.55,
             }),
             comp('Compressor', { 'comp-threshold': -12, 'comp-ratio': 6 }),
         ],
@@ -386,7 +542,13 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-fm-synth', 'FM E-Piano', {
-                ratio: 1, index: 2, attack: 0.005, decay: 1.5, sustain: 0.2, release: 0.5, gain: 0.5,
+                ratio: 1,
+                index: 2,
+                attack: 0.005,
+                decay: 1.5,
+                sustain: 0.2,
+                release: 0.5,
+                gain: 0.5,
             }),
             chorus('Chorus', { 'chorus-rate': 0.6, 'chorus-depth': 4, 'chorus-mix': 0.25 }),
         ],
@@ -403,7 +565,13 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-fm-synth', 'Shimmer Pad', {
-                ratio: 7, index: 1.5, attack: 0.8, decay: 0.5, sustain: 0.7, release: 3.0, gain: 0.35,
+                ratio: 7,
+                index: 1.5,
+                attack: 0.8,
+                decay: 0.5,
+                sustain: 0.7,
+                release: 3.0,
+                gain: 0.35,
             }),
             reverb('Space', { 'rev-size': 1.0, 'rev-decay': 8, 'rev-mix': 0.5 }),
         ],
@@ -420,7 +588,13 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-fm-synth', 'FM Organ', {
-                ratio: 2, index: 1.5, attack: 0.003, decay: 0.1, sustain: 0.9, release: 0.1, gain: 0.45,
+                ratio: 2,
+                index: 1.5,
+                attack: 0.003,
+                decay: 0.1,
+                sustain: 0.9,
+                release: 0.1,
+                gain: 0.45,
             }),
         ],
         tags: ['fm', 'organ', 'sustained', 'digital'],
@@ -439,7 +613,13 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-acid-bass-303', 'Classic Acid', {
-                cutoff: 0.3, resonance: 8, envmod: 0.5, decay: 0.15, slide: 0.06, drive: 1.0, gain: 0.5,
+                cutoff: 0.3,
+                resonance: 8,
+                envmod: 0.5,
+                decay: 0.15,
+                slide: 0.06,
+                drive: 1.0,
+                gain: 0.5,
             }),
         ],
         tags: ['acid', '303', 'bass', 'squelch', 'classic'],
@@ -455,7 +635,13 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-acid-bass-303', 'Acid Squelch', {
-                cutoff: 0.15, resonance: 16, envmod: 0.8, decay: 0.08, slide: 0.04, drive: 2.0, gain: 0.5,
+                cutoff: 0.15,
+                resonance: 16,
+                envmod: 0.8,
+                decay: 0.08,
+                slide: 0.04,
+                drive: 2.0,
+                gain: 0.5,
             }),
         ],
         tags: ['acid', '303', 'squelch', 'aggressive', 'resonant'],
@@ -471,7 +657,13 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-acid-bass-303', 'Muted Acid', {
-                cutoff: 0.12, resonance: 4, envmod: 0.15, decay: 0.3, slide: 0.08, drive: 1.0, gain: 0.55,
+                cutoff: 0.12,
+                resonance: 4,
+                envmod: 0.15,
+                decay: 0.3,
+                slide: 0.08,
+                drive: 1.0,
+                gain: 0.55,
             }),
         ],
         tags: ['acid', '303', 'muted', 'dark', 'deep'],
@@ -487,7 +679,13 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-acid-bass-303', 'Screaming Acid', {
-                cutoff: 0.4, resonance: 14, envmod: 0.7, decay: 0.1, slide: 0.2, drive: 4.0, gain: 0.45,
+                cutoff: 0.4,
+                resonance: 14,
+                envmod: 0.7,
+                decay: 0.1,
+                slide: 0.2,
+                drive: 4.0,
+                gain: 0.45,
             }),
         ],
         tags: ['acid', '303', 'screaming', 'distorted', 'drive'],
@@ -503,7 +701,13 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-acid-bass-303', 'Liquid Acid', {
-                cutoff: 0.25, resonance: 10, envmod: 0.4, decay: 0.2, slide: 0.35, drive: 1.5, gain: 0.5,
+                cutoff: 0.25,
+                resonance: 10,
+                envmod: 0.4,
+                decay: 0.2,
+                slide: 0.35,
+                drive: 1.5,
+                gain: 0.5,
             }),
             delay('Delay', { 'delay-time': 200, 'delay-feedback': 0.3, 'delay-mix': 0.2 }),
         ],
@@ -523,8 +727,14 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-supersaw-unison', 'Trance Lead', {
-                detune: 20, center_mix: 0.5, cutoff: 12000, resonance: 0.2,
-                attack: 0.01, decay: 0.2, sustain: 0.8, release: 0.5,
+                detune: 20,
+                center_mix: 0.5,
+                cutoff: 12000,
+                resonance: 0.2,
+                attack: 0.01,
+                decay: 0.2,
+                sustain: 0.8,
+                release: 0.5,
             }),
             reverb('Reverb', { 'rev-size': 0.5, 'rev-decay': 2, 'rev-mix': 0.25 }),
         ],
@@ -541,8 +751,14 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-supersaw-unison', 'Chord Stab', {
-                detune: 15, center_mix: 0.6, cutoff: 6000, resonance: 0.3,
-                attack: 0.003, decay: 0.3, sustain: 0.2, release: 0.15,
+                detune: 15,
+                center_mix: 0.6,
+                cutoff: 6000,
+                resonance: 0.3,
+                attack: 0.003,
+                decay: 0.3,
+                sustain: 0.2,
+                release: 0.15,
             }),
             comp('Compressor', { 'comp-threshold': -10, 'comp-ratio': 4 }),
         ],
@@ -559,8 +775,14 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-supersaw-unison', 'Supersaw Pad', {
-                detune: 30, center_mix: 0.4, cutoff: 3000, resonance: 0.5,
-                attack: 0.5, decay: 0.5, sustain: 0.8, release: 3.0,
+                detune: 30,
+                center_mix: 0.4,
+                cutoff: 3000,
+                resonance: 0.5,
+                attack: 0.5,
+                decay: 0.5,
+                sustain: 0.8,
+                release: 3.0,
             }),
             reverb('Space', { 'rev-size': 0.9, 'rev-decay': 6, 'rev-mix': 0.4 }),
         ],
@@ -577,8 +799,14 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-supersaw-unison', 'Supersaw Bass', {
-                detune: 10, center_mix: 0.7, cutoff: 1500, resonance: 0.6,
-                attack: 0.005, decay: 0.15, sustain: 0.4, release: 0.1,
+                detune: 10,
+                center_mix: 0.7,
+                cutoff: 1500,
+                resonance: 0.6,
+                attack: 0.005,
+                decay: 0.15,
+                sustain: 0.4,
+                release: 0.1,
             }),
             comp('Compressor', { 'comp-threshold': -15, 'comp-ratio': 5 }),
         ],
@@ -598,7 +826,12 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-wavetable-synth', 'Morph Pad', {
-                morph: 0.3, attack: 0.6, decay: 0.5, sustain: 0.8, release: 2.5, gain: 0.45,
+                morph: 0.3,
+                attack: 0.6,
+                decay: 0.5,
+                sustain: 0.8,
+                release: 2.5,
+                gain: 0.45,
             }),
             reverb('Space', { 'rev-size': 0.9, 'rev-decay': 5, 'rev-mix': 0.4 }),
         ],
@@ -615,7 +848,12 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-wavetable-synth', 'Digital Lead', {
-                morph: 0.8, attack: 0.01, decay: 0.2, sustain: 0.7, release: 0.3, gain: 0.5,
+                morph: 0.8,
+                attack: 0.01,
+                decay: 0.2,
+                sustain: 0.7,
+                release: 0.3,
+                gain: 0.5,
             }),
             delay('Delay', { 'delay-time': 250, 'delay-feedback': 0.3, 'delay-mix': 0.2 }),
         ],
@@ -632,7 +870,12 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-wavetable-synth', 'Glitch', {
-                morph: 0.6, attack: 0.001, decay: 0.05, sustain: 0.4, release: 0.05, gain: 0.5,
+                morph: 0.6,
+                attack: 0.001,
+                decay: 0.05,
+                sustain: 0.4,
+                release: 0.05,
+                gain: 0.5,
             }),
         ],
         tags: ['wavetable', 'glitch', 'experimental', 'fx', 'fast'],
@@ -651,7 +894,11 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-additive-synth', 'Additive Organ', {
-                rolloff: 1.0, attack: 0.003, decay: 0.1, sustain: 0.9, release: 0.1,
+                rolloff: 1.0,
+                attack: 0.003,
+                decay: 0.1,
+                sustain: 0.9,
+                release: 0.1,
             }),
         ],
         tags: ['additive', 'organ', 'digital', 'clean', 'pure'],
@@ -667,7 +914,11 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-additive-synth', 'Glass', {
-                rolloff: 3.5, attack: 0.001, decay: 1.5, sustain: 0.1, release: 0.5,
+                rolloff: 3.5,
+                attack: 0.001,
+                decay: 1.5,
+                sustain: 0.1,
+                release: 0.5,
             }),
             reverb('Hall', { 'rev-size': 0.7, 'rev-decay': 4, 'rev-mix': 0.35 }),
         ],
@@ -684,7 +935,11 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-additive-synth', 'Additive Saw', {
-                rolloff: 1.0, attack: 0.01, decay: 0.2, sustain: 0.7, release: 0.3,
+                rolloff: 1.0,
+                attack: 0.01,
+                decay: 0.2,
+                sustain: 0.7,
+                release: 0.3,
             }),
         ],
         tags: ['additive', 'saw', 'synth', 'analog', 'harmonics'],
@@ -703,7 +958,10 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-physical-model-string', 'Plucked String', {
-                damping: 0.5, excitation: 0.8, body: 0.5, gain: 0.5,
+                damping: 0.5,
+                excitation: 0.8,
+                body: 0.5,
+                gain: 0.5,
             }),
         ],
         tags: ['physical', 'pluck', 'string', 'guitar', 'acoustic'],
@@ -719,7 +977,10 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-physical-model-string', 'Harp', {
-                damping: 0.3, excitation: 1.0, body: 0.8, gain: 0.5,
+                damping: 0.3,
+                excitation: 1.0,
+                body: 0.8,
+                gain: 0.5,
             }),
             reverb('Chamber', { 'rev-size': 0.5, 'rev-decay': 2.5, 'rev-mix': 0.3 }),
         ],
@@ -736,7 +997,10 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         trackKind: 'midi',
         devices: [
             faust('faust-physical-model-string', 'Dulcimer', {
-                damping: 0.6, excitation: 0.9, body: 0.6, gain: 0.5,
+                damping: 0.6,
+                excitation: 0.9,
+                body: 0.6,
+                gain: 0.5,
             }),
         ],
         tags: ['physical', 'dulcimer', 'hammer', 'bright', 'acoustic'],

@@ -46,7 +46,12 @@ export function isFaustCompilerReady(): boolean {
     return compilerReady;
 }
 
-export function registerFaustDSP(name: string, dspCode: string, params: FaustParamDescriptor[] = [], isInstrument = false): FaustModule {
+export function registerFaustDSP(
+    name: string,
+    dspCode: string,
+    params: FaustParamDescriptor[] = [],
+    isInstrument = false
+): FaustModule {
     const mod: FaustModule = {
         id: `faust-${name.toLowerCase().replaceAll(/\s+/g, '-')}`,
         name,
@@ -60,7 +65,7 @@ export function registerFaustDSP(name: string, dspCode: string, params: FaustPar
     const descriptor: WAMDescriptor = {
         id: `faust.${mod.id}`,
         name: `[Faust] ${name}`,
-        vendor: 'Faust/WebDAW',
+        vendor: 'Faust/Sourdaw',
         version: '1.0',
         category: isInstrument ? 'instrument' : 'effect',
         sdkVersion: '2.0',
@@ -77,7 +82,9 @@ export async function compileFaustDSP(moduleId: string): Promise<boolean> {
         console.warn(`[Faust] Module ${moduleId} not found`);
         return false;
     }
-    if (mod.compiled && mod.generator) { return true; }
+    if (mod.compiled && mod.generator) {
+        return true;
+    }
 
     try {
         const compiler = await getCompiler();
@@ -106,9 +113,14 @@ export async function compileFaustDSP(moduleId: string): Promise<boolean> {
 export async function compileAllFaustModules(): Promise<number> {
     let compiled = 0;
     for (const [id, mod] of modules) {
-        if (mod.compiled) { compiled++; continue; }
+        if (mod.compiled) {
+            compiled++;
+            continue;
+        }
         const success = await compileFaustDSP(id);
-        if (success) { compiled++; }
+        if (success) {
+            compiled++;
+        }
     }
     return compiled;
 }

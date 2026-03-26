@@ -9,8 +9,8 @@ use std::os::raw::c_void;
 
 /// A static host descriptor that outlives all plugin instances.
 /// CLAP plugins receive a pointer to this during creation.
-static HOST_NAME: &[u8] = b"WebDAW\0";
-static HOST_VENDOR: &[u8] = b"WebDAW Team\0";
+static HOST_NAME: &[u8] = b"Sourdaw\0";
+static HOST_VENDOR: &[u8] = b"Sourdaw Team\0";
 static HOST_URL: &[u8] = b"https://webdaw.app\0";
 static HOST_VERSION: &[u8] = b"0.1.0\0";
 

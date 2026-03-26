@@ -153,7 +153,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                         </div>
                         <DisabledFeatureWrapper
                             disabled={!isTauri()}
-                            reason="Stem Separation requires the Tauri Desktop version of WebDAW to run HTDemucs natively."
+                            reason="Stem Separation requires the Tauri Desktop version of Sourdaw to run HTDemucs natively."
                             className="w-full flex"
                         >
                             <Button
@@ -171,7 +171,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                     </div>
                 ) : null}
 
-                {(activeTab === 'audio' || (activeTab === 'midi' && midiSubTab === 'ai')) ? (
+                {activeTab === 'audio' || (activeTab === 'midi' && midiSubTab === 'ai') ? (
                     <div className="p-3 space-y-4">
                         <div className="space-y-3">
                             <div className="space-y-1.5">
@@ -394,7 +394,9 @@ const TaskResultCard = ({ task }: { task: AiTaskResult }): ReactElement => {
                         <Loader2 className="size-3 animate-spin" /> Processing...
                     </div>
                 ) : null}
-                {task.status === 'error' ? <div className="text-[10px] text-destructive">Error: {task.error}</div> : null}
+                {task.status === 'error' ? (
+                    <div className="text-[10px] text-destructive">Error: {task.error}</div>
+                ) : null}
                 {task.status === 'success' ? (
                     <div className="flex items-center justify-between mt-1 pt-1 border-t border-border/30">
                         <span className="text-[9px] text-muted-foreground/70">

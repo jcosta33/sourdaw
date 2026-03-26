@@ -4,7 +4,7 @@
 <dict>
     <!-- Microphone access for audio recording and voice commands -->
     <key>NSMicrophoneUsageDescription</key>
-    <string>WebDAW needs microphone access for audio recording and voice commands.</string>
+    <string>Sourdaw needs microphone access for audio recording and voice commands.</string>
 
     <!-- Camera not needed, but included for potential future video track features -->
 
@@ -17,7 +17,7 @@
     <array>
         <dict>
             <key>CFBundleTypeName</key>
-            <string>WebDAW Project</string>
+            <string>Sourdaw Project</string>
             <key>CFBundleTypeRole</key>
             <string>Editor</string>
             <key>LSHandlerRank</key>
@@ -69,7 +69,7 @@
             <key>UTTypeIdentifier</key>
             <string>com.webdaw.project</string>
             <key>UTTypeDescription</key>
-            <string>WebDAW Project File</string>
+            <string>Sourdaw Project File</string>
             <key>UTTypeConformsTo</key>
             <array>
                 <string>public.json</string>

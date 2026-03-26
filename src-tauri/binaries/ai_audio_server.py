@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-WebDAW AI Audio Server — local inference for audio generation and processing.
+Sourdaw AI Audio Server — local inference for audio generation and processing.
 
 Models:
   - MusicGen Small (300M) — text-to-music generation
@@ -240,7 +240,7 @@ class AudioHandler(BaseHTTPRequestHandler):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="WebDAW AI Audio Server")
+    parser = argparse.ArgumentParser(description="Sourdaw AI Audio Server")
     parser.add_argument("--port", type=int, default=8848, help="Port to listen on")
     parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to bind to")
     args = parser.parse_args()

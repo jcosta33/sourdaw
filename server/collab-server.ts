@@ -1,4 +1,4 @@
-import { WebSocketServer, WebSocket } from "ws";
+import { WebSocketServer, WebSocket } from 'ws';
 
 type Peer = {
     ws: WebSocket;
@@ -15,29 +15,35 @@ type Session = {
 };
 
 type ClientMessage =
-    | { type: "join"; peerId: string; sessionId: string; name: string }
-    | { type: "leave"; peerId: string; sessionId: string }
-    | { type: "action"; peerId: string; sessionId: string; action: unknown; timestamp: number }
-    | { type: "cursor"; peerId: string; sessionId: string; cursor: { trackId: string; beat: number } }
-    | { type: "sync-request"; peerId: string; sessionId: string }
-    | { type: "sync-response"; peerId: string; sessionId: string; targetPeerId: string; state: unknown }
-    | { type: "state-update"; peerId: string; sessionId: string; state: unknown };
+    | { type: 'join'; peerId: string; sessionId: string; name: string }
+    | { type: 'leave'; peerId: string; sessionId: string }
+    | { type: 'action'; peerId: string; sessionId: string; action: unknown; timestamp: number }
+    | { type: 'cursor'; peerId: string; sessionId: string; cursor: { trackId: string; beat: number } }
+    | { type: 'sync-request'; peerId: string; sessionId: string }
+    | { type: 'sync-response'; peerId: string; sessionId: string; targetPeerId: string; state: unknown }
+    | { type: 'state-update'; peerId: string; sessionId: string; state: unknown };
 
 type ServerMessage =
-    | { type: "joined"; peerId: string; sessionId: string; isHost: boolean; peers: Array<{ id: string; name: string; isHost: boolean }> }
-    | { type: "peer-joined"; peerId: string; name: string; isHost: boolean }
-    | { type: "peer-left"; peerId: string; newHostId: string | null }
-    | { type: "action"; peerId: string; action: unknown; timestamp: number }
-    | { type: "cursor"; peerId: string; cursor: { trackId: string; beat: number } }
-    | { type: "sync-request"; peerId: string }
-    | { type: "sync-response"; peerId: string; state: unknown }
-    | { type: "state-update"; peerId: string; state: unknown }
-    | { type: "error"; message: string };
+    | {
+          type: 'joined';
+          peerId: string;
+          sessionId: string;
+          isHost: boolean;
+          peers: Array<{ id: string; name: string; isHost: boolean }>;
+      }
+    | { type: 'peer-joined'; peerId: string; name: string; isHost: boolean }
+    | { type: 'peer-left'; peerId: string; newHostId: string | null }
+    | { type: 'action'; peerId: string; action: unknown; timestamp: number }
+    | { type: 'cursor'; peerId: string; cursor: { trackId: string; beat: number } }
+    | { type: 'sync-request'; peerId: string }
+    | { type: 'sync-response'; peerId: string; state: unknown }
+    | { type: 'state-update'; peerId: string; state: unknown }
+    | { type: 'error'; message: string };
 
 const sessions = new Map<string, Session>();
 const peerToSession = new Map<WebSocket, Peer>();
 
-const PORT = parseInt(process.env.PORT ?? "8787", 10);
+const PORT = parseInt(process.env.PORT ?? '8787', 10);
 
 function sendTo(ws: WebSocket, msg: ServerMessage): void {
     if (ws.readyState === WebSocket.OPEN) {
@@ -61,7 +67,7 @@ function getPeerList(session: Session): Array<{ id: string; name: string; isHost
     }));
 }
 
-function handleJoin(ws: WebSocket, msg: Extract<ClientMessage, { type: "join" }>): void {
+function handleJoin(ws: WebSocket, msg: Extract<ClientMessage, { type: 'join' }>): void {
     let session = sessions.get(msg.sessionId);
     const isHost = !session;
 
@@ -83,7 +89,7 @@ function handleJoin(ws: WebSocket, msg: Extract<ClientMessage, { type: "join" }>
     peerToSession.set(ws, peer);
 
     sendTo(ws, {
-        type: "joined",
+        type: 'joined',
         peerId: msg.peerId,
         sessionId: msg.sessionId,
         isHost,
@@ -91,7 +97,7 @@ function handleJoin(ws: WebSocket, msg: Extract<ClientMessage, { type: "join" }>
     });
 
     broadcastToOthers(session, msg.peerId, {
-        type: "peer-joined",
+        type: 'peer-joined',
         peerId: msg.peerId,
         name: msg.name,
         isHost,
@@ -127,7 +133,7 @@ function handleLeave(ws: WebSocket, peerId: string, sessionId: string): void {
     }
 
     broadcastToOthers(session, peerId, {
-        type: "peer-left",
+        type: 'peer-left',
         peerId,
         newHostId,
     });
@@ -135,40 +141,40 @@ function handleLeave(ws: WebSocket, peerId: string, sessionId: string): void {
     console.log(`Peer ${peerId} left session ${sessionId} (${session.peers.size} peers remaining)`);
 }
 
-function handleAction(session: Session, msg: Extract<ClientMessage, { type: "action" }>): void {
+function handleAction(session: Session, msg: Extract<ClientMessage, { type: 'action' }>): void {
     broadcastToOthers(session, msg.peerId, {
-        type: "action",
+        type: 'action',
         peerId: msg.peerId,
         action: msg.action,
         timestamp: msg.timestamp,
     });
 }
 
-function handleCursor(session: Session, msg: Extract<ClientMessage, { type: "cursor" }>): void {
+function handleCursor(session: Session, msg: Extract<ClientMessage, { type: 'cursor' }>): void {
     broadcastToOthers(session, msg.peerId, {
-        type: "cursor",
+        type: 'cursor',
         peerId: msg.peerId,
         cursor: msg.cursor,
     });
 }
 
-function handleSyncRequest(session: Session, msg: Extract<ClientMessage, { type: "sync-request" }>): void {
+function handleSyncRequest(session: Session, msg: Extract<ClientMessage, { type: 'sync-request' }>): void {
     const host = session.peers.get(session.hostId);
     if (host) {
-        sendTo(host.ws, { type: "sync-request", peerId: msg.peerId });
+        sendTo(host.ws, { type: 'sync-request', peerId: msg.peerId });
     }
 }
 
-function handleSyncResponse(session: Session, msg: Extract<ClientMessage, { type: "sync-response" }>): void {
+function handleSyncResponse(session: Session, msg: Extract<ClientMessage, { type: 'sync-response' }>): void {
     const target = session.peers.get(msg.targetPeerId);
     if (target) {
-        sendTo(target.ws, { type: "sync-response", peerId: msg.peerId, state: msg.state });
+        sendTo(target.ws, { type: 'sync-response', peerId: msg.peerId, state: msg.state });
     }
 }
 
-function handleStateUpdate(session: Session, msg: Extract<ClientMessage, { type: "state-update" }>): void {
+function handleStateUpdate(session: Session, msg: Extract<ClientMessage, { type: 'state-update' }>): void {
     broadcastToOthers(session, msg.peerId, {
-        type: "state-update",
+        type: 'state-update',
         peerId: msg.peerId,
         state: msg.state,
     });
@@ -179,40 +185,40 @@ function handleMessage(ws: WebSocket, raw: string): void {
     try {
         msg = JSON.parse(raw) as ClientMessage;
     } catch {
-        sendTo(ws, { type: "error", message: "Invalid JSON" });
+        sendTo(ws, { type: 'error', message: 'Invalid JSON' });
         return;
     }
 
-    if (msg.type === "join") {
+    if (msg.type === 'join') {
         handleJoin(ws, msg);
         return;
     }
 
-    if (msg.type === "leave") {
+    if (msg.type === 'leave') {
         handleLeave(ws, msg.peerId, msg.sessionId);
         return;
     }
 
     const session = sessions.get(msg.sessionId);
     if (!session) {
-        sendTo(ws, { type: "error", message: "Session not found" });
+        sendTo(ws, { type: 'error', message: 'Session not found' });
         return;
     }
 
     switch (msg.type) {
-        case "action":
+        case 'action':
             handleAction(session, msg);
             break;
-        case "cursor":
+        case 'cursor':
             handleCursor(session, msg);
             break;
-        case "sync-request":
+        case 'sync-request':
             handleSyncRequest(session, msg);
             break;
-        case "sync-response":
+        case 'sync-response':
             handleSyncResponse(session, msg);
             break;
-        case "state-update":
+        case 'state-update':
             handleStateUpdate(session, msg);
             break;
     }
@@ -220,19 +226,19 @@ function handleMessage(ws: WebSocket, raw: string): void {
 
 const wss = new WebSocketServer({ port: PORT });
 
-wss.on("connection", (ws) => {
-    ws.on("message", (data) => {
+wss.on('connection', (ws) => {
+    ws.on('message', (data) => {
         handleMessage(ws, data.toString());
     });
 
-    ws.on("close", () => {
+    ws.on('close', () => {
         const peer = peerToSession.get(ws);
         if (peer) {
             handleLeave(ws, peer.peerId, peer.sessionId);
         }
     });
 
-    ws.on("error", () => {
+    ws.on('error', () => {
         const peer = peerToSession.get(ws);
         if (peer) {
             handleLeave(ws, peer.peerId, peer.sessionId);
@@ -240,4 +246,4 @@ wss.on("connection", (ws) => {
     });
 });
 
-console.log(`WebDAW Collaboration Server running on ws://localhost:${PORT}`);
+console.log(`Sourdaw Collaboration Server running on ws://localhost:${PORT}`);

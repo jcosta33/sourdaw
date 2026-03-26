@@ -1,4 +1,4 @@
-# WebDAW
+# Sourdaw
 
 A modern, browser-native digital audio workstation (DAW) built with React 19, TypeScript, and the Web Audio API. Runs in any modern browser and as a native desktop app via Tauri.
 

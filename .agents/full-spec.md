@@ -1,4 +1,4 @@
-# WebDAW — Complete Technical Reference
+# Sourdaw — Complete Technical Reference
 
 **A comprehensive design and implementation guide for building a professional, cross-platform Digital Audio Workstation using Tauri v2, Rust, React 19, and WebAssembly.**
 

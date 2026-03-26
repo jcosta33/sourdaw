@@ -329,7 +329,10 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                     variant={warpState.enabled ? 'secondary' : 'ghost'}
                     size="xs"
                     onClick={handleToggleWarp}
-                    className={cn('text-[10px] px-2', warpState.enabled && 'text-[var(--color-accent-peach)] border-[var(--color-accent-peach)]/30')}
+                    className={cn(
+                        'text-[10px] px-2',
+                        warpState.enabled && 'text-[var(--color-accent-peach)] border-[var(--color-accent-peach)]/30'
+                    )}
                     aria-pressed={warpState.enabled}
                     aria-label="Toggle warp mode"
                 >
@@ -411,7 +414,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                     </button>
                     <DisabledFeatureWrapper
                         disabled={!isTauri()}
-                        reason="AI Denoise requires the Tauri Desktop version of WebDAW to run."
+                        reason="AI Denoise requires the Tauri Desktop version of Sourdaw to run."
                         className="w-full flex"
                     >
                         <button
@@ -428,7 +431,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                     </DisabledFeatureWrapper>
                     <DisabledFeatureWrapper
                         disabled={!isTauri()}
-                        reason="AI Stem Separation requires the Tauri Desktop version of WebDAW."
+                        reason="AI Stem Separation requires the Tauri Desktop version of Sourdaw."
                         className="w-full flex"
                     >
                         <button
