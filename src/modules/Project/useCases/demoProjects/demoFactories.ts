@@ -561,9 +561,15 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         }
 
         // === SNARE/RIMSHOT ===
-        if (inFinal && pos === 2) {
-            // Snare on 3 for dance sections
-            drumN.push(note(38, b, 0.3, hv(78, 8)));
+        if (inFinal) {
+            if (pos === 1 && bar % 2 === 1) {
+                // Sparse offbeat snare texture
+                drumN.push(note(38, b + 0.5, 0.3, hv(65, 8)));
+            }
+            if (pos === 3 && bar % 4 === 3) {
+                // Occasional late 16th texture
+                drumN.push(note(38, b + 0.75, 0.3, hv(55, 8)));
+            }
         } else if (!inBuild && pos === 3 && bar % 2 === 1) {
             const snarePitch = inCatharsis ? 38 : 37;
             drumN.push(note(snarePitch, b, 0.3, hv(inCatharsis ? 72 : 55, 10)));

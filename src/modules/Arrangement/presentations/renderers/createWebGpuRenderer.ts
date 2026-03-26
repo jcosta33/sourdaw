@@ -298,27 +298,45 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
 
                     // MIDI mini-notes
                     if (clip.type === 'midi' && clip.midiNotes.length > 0) {
-                        const clippedNotes = clip.midiNotes.slice(0, 64); // limit for perf
-                        const pitches = clippedNotes.map((n) => n.pitch);
+                        const pitches = clip.midiNotes.map((n) => n.pitch);
                         const minPitch = Math.min(...pitches);
                         const maxPitch = Math.max(...pitches);
                         const pitchRange = Math.max(maxPitch - minPitch, 12);
                         const noteAreaH = clipBottom - clipTop - 10 * dpr;
-                        for (const note of clippedNotes) {
-                            const nx1 = beatToX(clip.startBeat + note.startBeat);
-                            const nx2 = beatToX(clip.startBeat + note.startBeat + Math.max(note.duration, 0.125));
-                            if (nx2 < cx1 || nx1 > cx2) {
-                                continue;
+
+                        const clipDuration = clip.endBeat - clip.startBeat;
+                        const loopLen = clip.loopEnabled && clip.loopLength ? clip.loopLength : clipDuration;
+
+                        let loopOffset = 0;
+                        let drawnNotes = 0;
+                        const MAX_NOTES_PER_CLIP = 300; 
+
+                        while (loopOffset < clipDuration) {
+                            for (const note of clip.midiNotes) {
+                                if (drawnNotes >= MAX_NOTES_PER_CLIP) break;
+                                
+                                const relBeat = note.startBeat + loopOffset;
+                                if (relBeat >= clipDuration) continue;
+
+                                const nx1 = beatToX(clip.startBeat + relBeat);
+                                const nx2 = beatToX(clip.startBeat + relBeat + Math.max(note.duration, 0.125));
+                                if (nx2 < cx1 || nx1 > cx2) {
+                                    continue;
+                                }
+                                const noteY = clipBottom - 5 * dpr - ((note.pitch - minPitch) / pitchRange) * noteAreaH;
+                                addRect(
+                                    Math.max(nx1, cx1 + 2),
+                                    noteY - dpr,
+                                    Math.min(nx2, cx2 - 2),
+                                    noteY + 2 * dpr,
+                                    '#ffffff',
+                                    alpha * 0.35
+                                );
+                                drawnNotes++;
                             }
-                            const noteY = clipBottom - 5 * dpr - ((note.pitch - minPitch) / pitchRange) * noteAreaH;
-                            addRect(
-                                Math.max(nx1, cx1 + 2),
-                                noteY - dpr,
-                                Math.min(nx2, cx2 - 2),
-                                noteY + 2 * dpr,
-                                '#ffffff',
-                                alpha * 0.35
-                            );
+                            if (drawnNotes >= MAX_NOTES_PER_CLIP) break;
+                            loopOffset += loopLen;
+                            if (!clip.loopEnabled || loopLen <= 0) break;
                         }
                     }
 

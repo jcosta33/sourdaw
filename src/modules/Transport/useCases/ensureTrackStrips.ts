@@ -67,7 +67,7 @@ export function ensureTrackStrips(): void {
     const anySoloed = tracks.some((t) => t.soloed && t.kind !== 'folder');
     if (anySoloed) {
         for (const track of tracks) {
-            if (track.kind === 'folder') {
+            if (track.kind === 'folder' || track.kind === 'master') {
                 continue;
             }
             const shouldMute = !track.soloed;

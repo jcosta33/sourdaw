@@ -299,13 +299,29 @@ const drawMidiNotePreview = (
     }
 
     ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
-    for (const note of notes) {
-        const relStart = note.startBeat - clip.startBeat;
-        const nx = clipX + (relStart / clipDuration) * clipW;
-        const nw = Math.max(1, (note.duration / clipDuration) * clipW);
-        const pitchNorm = (note.pitch - minPitch) / pitchRange;
-        const ny = contentTop + contentHeight - pitchNorm * contentHeight - 2;
-        ctx.fillRect(nx, ny, nw, Math.max(1, contentHeight / (pitchRange + 4)));
+    const loopLen = clip.loopEnabled && clip.loopLength ? clip.loopLength : clipDuration;
+    let loopOffset = 0;
+    let iterations = 0;
+
+    while (loopOffset < clipDuration && iterations < 100) {
+        for (const note of notes) {
+            const relStart = note.startBeat - clip.startBeat + loopOffset;
+            if (relStart >= clipDuration) continue;
+
+            const nx = clipX + (relStart / clipDuration) * clipW;
+            const nw = Math.max(1, (note.duration / clipDuration) * clipW);
+            const pitchNorm = (note.pitch - minPitch) / pitchRange;
+            const ny = contentTop + contentHeight - pitchNorm * contentHeight - 2;
+            
+            // Only draw if within clip visual bounds
+            if (relStart + note.duration > 0 && nx < clipX + clipW) {
+                const drawW = Math.min(nw, clipX + clipW - nx);
+                ctx.fillRect(nx, ny, drawW, Math.max(1, contentHeight / (pitchRange + 4)));
+            }
+        }
+        loopOffset += loopLen;
+        iterations++;
+        if (!clip.loopEnabled || loopLen <= 0) break;
     }
 };
 

@@ -43,7 +43,7 @@ export function applySoloLogic(): void {
     const anySoloed = state.tracks.some((t) => t.soloed);
 
     for (const track of state.tracks) {
-        if (track.kind === 'folder') {
+        if (track.kind === 'folder' || track.kind === 'master') {
             continue;
         }
 
