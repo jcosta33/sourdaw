@@ -15,7 +15,9 @@ type InspectorPanelProps = {
 
 export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => {
     const { tracks, selectedTrackId } = useTracks();
-    const selectedTrack = selectedTrackId ? tracks.find((t) => t.id === selectedTrackId) : null;
+    const masterTrack = tracks.find((t) => t.kind === 'master');
+
+    const selectedTrack = (selectedTrackId ? tracks.find((t) => t.id === selectedTrackId) : null) ?? masterTrack ?? null;
     const wsSelectedClipId = useSyncExternalStore(
         (cb) => workspaceStore.subscribe(cb),
         () => workspaceStore.value?.selectedClipId ?? null
@@ -24,8 +26,6 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
 
     const selectedClip = selectedTrack?.clips.find((c) => c.id === wsSelectedClipId) ?? null;
     const selectedDevice = selectedTrack?.devices.find((d) => d.id === selectedDeviceId) ?? null;
-
-    const masterTrack = tracks.find((t) => t.kind === 'master');
 
     return (
         <aside

@@ -253,8 +253,8 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         'eq-high-gain': 1, 'eq-high-freq': 8000, 'eq-high-q': 0.8,
     });
     addDev(drumKitTrack, 'builtin-compressor', 'Drum Glue', {
-        'comp-threshold': -12, 'comp-ratio': 2, 'comp-attack': 15,
-        'comp-release': 100, 'comp-knee': 10, 'comp-makeup': 1,
+        'comp-threshold': -6, 'comp-ratio': 1.5, 'comp-attack': 15,
+        'comp-release': 100, 'comp-knee': 10, 'comp-makeup': 0.5,
     });
     // Sub bass: compressor for tight low end
     addDev(subBassTrack, 'builtin-compressor', 'Sub Comp', {
@@ -365,44 +365,44 @@ export async function demo1_TheCompleteMix(): Promise<void> {
 
     // ── GAIN / PAN — stereo field (rebalanced for ambient clarity) ─────
     drumKitTrack.gain = 0.55; drumKitTrack.pan = 0;
-    percShakerTrack.gain = 0.22; percShakerTrack.pan = 35;
-    percHitsTrack.gain = 0.28; percHitsTrack.pan = -25;
-    subBassTrack.gain = 0.80; subBassTrack.pan = 0;
-    bassSynthTrack.gain = 0.55; bassSynthTrack.pan = 5;
-    pulseBassTrack.gain = 0.48; pulseBassTrack.pan = 8;
-    pianoTrack.gain = 0.62; pianoTrack.pan = -22;
-    rhodesTrack.gain = 0.50; rhodesTrack.pan = 18;
-    organTrack.gain = 0.35; organTrack.pan = -8;
-    warmPadTrack.gain = 0.65; warmPadTrack.pan = 12;
-    shimmerPadTrack.gain = 0.19; shimmerPadTrack.pan = -30;
-    darkPadTrack.gain = 0.42; darkPadTrack.pan = 20;
-    stringsSoftTrack.gain = 0.42; stringsSoftTrack.pan = -15;
-    stringsBrightTrack.gain = 0.42; stringsBrightTrack.pan = 25;
-    leadClassicTrack.gain = 0.60; leadClassicTrack.pan = -8;
-    leadSoftTrack.gain = 0.45; leadSoftTrack.pan = 15;
-    brassTrack.gain = 0.40; brassTrack.pan = 5;
-    arpTrack.gain = 0.35; arpTrack.pan = 32;
+    percShakerTrack.gain = 0.22; percShakerTrack.pan = 45;
+    percHitsTrack.gain = 0.28; percHitsTrack.pan = -40;
+    subBassTrack.gain = 0.50; subBassTrack.pan = 0;
+    bassSynthTrack.gain = 0.55; bassSynthTrack.pan = 0;
+    pulseBassTrack.gain = 1.0; pulseBassTrack.pan = 0;
+    pianoTrack.gain = 0.62; pianoTrack.pan = -35;
+    rhodesTrack.gain = 0.50; rhodesTrack.pan = 35;
+    organTrack.gain = 0.35; organTrack.pan = -20;
+    warmPadTrack.gain = 0.65; warmPadTrack.pan = 30;
+    shimmerPadTrack.gain = 0.19; shimmerPadTrack.pan = -45;
+    darkPadTrack.gain = 0.42; darkPadTrack.pan = 40;
+    stringsSoftTrack.gain = 0.42; stringsSoftTrack.pan = -30;
+    stringsBrightTrack.gain = 0.42; stringsBrightTrack.pan = 35;
+    leadClassicTrack.gain = 0.60; leadClassicTrack.pan = 0;
+    leadSoftTrack.gain = 0.45; leadSoftTrack.pan = 0;
+    brassTrack.gain = 0.40; brassTrack.pan = 0;
+    arpTrack.gain = 0.35; arpTrack.pan = 45;
     riserTrack.gain = 0.38; riserTrack.pan = 0;
     noiseSweepTrack.gain = 0.30; noiseSweepTrack.pan = 0;
-    fluteTrack.gain = 0.38; fluteTrack.pan = -28;
-    bellAccentTrack.gain = 0.005; bellAccentTrack.pan = 22;
-    crystalTexTrack.gain = 0.18; crystalTexTrack.pan = -35;
-    tremPulseTrack.gain = 0.28; tremPulseTrack.pan = 30;
+    fluteTrack.gain = 0.38; fluteTrack.pan = -35;
+    bellAccentTrack.gain = 0.005; bellAccentTrack.pan = 42;
+    crystalTexTrack.gain = 0.18; crystalTexTrack.pan = -45;
+    tremPulseTrack.gain = 0.28; tremPulseTrack.pan = 42;
     widePadTrack.gain = 0.42; widePadTrack.pan = 0;
     drumFillTrack.gain = 0.40; drumFillTrack.pan = 0;
     impactFxTrack.gain = 0.45; impactFxTrack.pan = 0;
-    texChirpTrack.gain = 0.15; texChirpTrack.pan = -40;
+    texChirpTrack.gain = 0.15; texChirpTrack.pan = -48;
     // Texture tracks — very low gain, wide stereo field
-    pluckArpATrack.gain = 0.06; pluckArpATrack.pan = -30;
-    pluckArpBTrack.gain = 0.05; pluckArpBTrack.pan = 35;
-    rhodesStabATrack.gain = 0.05; rhodesStabATrack.pan = -25;
-    rhodesStabBTrack.gain = 0.04; rhodesStabBTrack.pan = 28;
-    bellScatterTrack.gain = 0.03; bellScatterTrack.pan = 38;
-    glassSwellTrack.gain = 0.07; glassSwellTrack.pan = -18;
-    malletTapTrack.gain = 0.05; malletTapTrack.pan = 20;
-    pizzLayerTrack.gain = 0.06; pizzLayerTrack.pan = -35;
+    pluckArpATrack.gain = 0.06; pluckArpATrack.pan = -40;
+    pluckArpBTrack.gain = 0.05; pluckArpBTrack.pan = 40;
+    rhodesStabATrack.gain = 0.05; rhodesStabATrack.pan = -35;
+    rhodesStabBTrack.gain = 0.04; rhodesStabBTrack.pan = 38;
+    bellScatterTrack.gain = 0.03; bellScatterTrack.pan = 48;
+    glassSwellTrack.gain = 0.07; glassSwellTrack.pan = -28;
+    malletTapTrack.gain = 0.05; malletTapTrack.pan = 30;
+    pizzLayerTrack.gain = 0.06; pizzLayerTrack.pan = -45;
     chimeDropTrack.gain = 0.04; chimeDropTrack.pan = 0;
-    microPercTrack.gain = 0.08; microPercTrack.pan = -40;
+    microPercTrack.gain = 0.08; microPercTrack.pan = -48;
 
     // ── AUDIO DRUM BUFFERS ────────────────────────────────────────────────
     const cx = Date.now();
@@ -545,10 +545,8 @@ export async function demo1_TheCompleteMix(): Promise<void> {
 
         // === KICK ===
         if (inFinal) {
-            // 4-on-the-floor dance pattern
-            if (pos === 0) {
-                drumN.push(note(36, b, 0.8, hv(90, 6)));
-            }
+            // 4-on-the-floor dance pattern (every beat)
+            drumN.push(note(36, b, 0.8, hv(90, 6)));
         } else if (inBuild && pos === 0 && bar % 2 === 0) {
             drumN.push(note(36, b, 1.0, hv(65, 8)));
         } else if (inOutro && pos === 0 && bar % 2 === 0) {
@@ -584,12 +582,10 @@ export async function demo1_TheCompleteMix(): Promise<void> {
                 drumN.push(note(46, b + 0.5, 0.3, hv(38, 10))); // open hat accent
             }
         } else if (inFinal) {
-            // Offbeat hats for dance feel
-            if (pos === 1 || pos === 3) {
-                drumN.push(note(42, b, 0.15, hv(42, 10)));
-            }
+            // Offbeat hats for dance feel (specifically on upbeat 8th notes, never overlapping kick)
+            drumN.push(note(42, b + 0.5, 0.15, hv(50, 10)));
             if (bar % 4 === 3 && pos === 3) {
-                drumN.push(note(46, b + 0.5, 0.3, hv(45, 8))); // open hat fill
+                drumN.push(note(46, b + 0.75, 0.3, hv(45, 8))); // open hat fill
             }
         } else if (!inOutro) {
             // Regular sections: offbeat closed hat
@@ -1393,6 +1389,26 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         { beat: 512, value: 0.0, curve: 'linear', tension: 0 },
     ];
 
+    const leadClassicPan = mkLane(leadClassicTrack.id, 'pan', 'Pan', 0, 1);
+    leadClassicPan.points = [
+        { beat: 0, value: 0.5, curve: 'linear', tension: 0 },
+        { beat: 128, value: 0.2, curve: 'linear', tension: 0 },
+        { beat: 256, value: 0.8, curve: 'linear', tension: 0 },
+        { beat: 384, value: 0.1, curve: 'linear', tension: 0 },
+        { beat: 512, value: 0.9, curve: 'linear', tension: 0 },
+        { beat: TB, value: 0.5, curve: 'linear', tension: 0 },
+    ];
+
+    const leadSoftPan = mkLane(leadSoftTrack.id, 'pan', 'Pan', 0, 1);
+    leadSoftPan.points = [
+        { beat: 0, value: 0.5, curve: 'linear', tension: 0 },
+        { beat: 128, value: 0.8, curve: 'linear', tension: 0 },
+        { beat: 256, value: 0.2, curve: 'linear', tension: 0 },
+        { beat: 384, value: 0.9, curve: 'linear', tension: 0 },
+        { beat: 512, value: 0.1, curve: 'linear', tension: 0 },
+        { beat: TB, value: 0.5, curve: 'linear', tension: 0 },
+    ];
+
     automationStore.set({
         lanes: [
             subVol, warmVol, drumVol, strSoftVol, arpVol, leadVol,
@@ -1401,20 +1417,9 @@ export async function demo1_TheCompleteMix(): Promise<void> {
             fluteVol, crystalVol, wideVol, tremVol, bellAccVol,
             // Dramatic effect automation
             warmRevMix, arpDelayFb, leadRevMix, darkDrive, crystalDelayMix,
-            widePadMix, shimmerDepth, pulseFb
-        ],
-    });
-
-
-    automationStore.set({
-        lanes: [
-            subVol, warmVol, drumVol, strSoftVol, arpVol, leadVol,
-            pianoVol, brassVol, darkVol, rhodesVol, shimmerVol,
-            pulseFilter, leadSoftVol, strBrightVol,
-            fluteVol, crystalVol, wideVol, tremVol, bellAccVol,
-            // Dramatic effect automation
-            warmRevMix, arpDelayFb, leadRevMix, darkDrive, crystalDelayMix,
-            widePadMix, shimmerDepth, pulseFb
+            widePadMix, shimmerDepth, pulseFb,
+            // Pan automation
+            leadClassicPan, leadSoftPan
         ],
     });
 

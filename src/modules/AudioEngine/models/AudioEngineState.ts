@@ -23,7 +23,10 @@ export type BuiltinDeviceNode = {
 export type TrackChannelStrip = {
     trackId: string;
     preFaderTap: GainNode;
+    /** The track's generic input node, where clips and synths route audio BEFORE effects. */
     gainNode: GainNode;
+    /** The actual track volume fader (post-inserts). */
+    faderNode: GainNode;
     /** Post-device mute node — sits after all devices, before pan. Mute/solo targets this. */
     postFaderGain: GainNode;
     panNode: StereoPannerNode;
@@ -84,4 +87,5 @@ export type AudioEngine = {
     wireSidechainRoute(sourceTrackId: string, targetTrackId: string, targetDeviceId: string): void;
     unwireSidechainRoute(sourceTrackId: string, targetDeviceId: string): void;
     waitForDevices(): Promise<void>;
+    setMasterTrackId?(trackId: string): void;
 };

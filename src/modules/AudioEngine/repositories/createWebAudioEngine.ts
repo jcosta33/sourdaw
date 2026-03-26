@@ -51,6 +51,7 @@ function createNoopEngine(): AudioEngine {
             trackId,
             preFaderTap: silentGain,
             gainNode: silentGain,
+            faderNode: silentGain,
             postFaderGain: silentGain,
             panNode: ctx.createStereoPanner() as unknown as StereoPannerNode,
             analyserNode: silentAnalyser,
@@ -88,6 +89,7 @@ function createNoopEngine(): AudioEngine {
         wireSidechainRoute: () => {},
         unwireSidechainRoute: () => {},
         waitForDevices: async () => {},
+        setMasterTrackId: () => {},
     };
 }
 
@@ -118,6 +120,12 @@ export function createWebAudioEngine(): AudioEngine {
     const masterMeterBuffer = new Float32Array(masterAnalyser.frequencyBinCount);
     const pendingFaustParams = new Map<string, Map<string, number>>();
     const pendingDevicePromises = new Set<Promise<any>>();
+
+    let explicitMasterTrackId: string | null = null;
+
+    function setMasterTrackId(id: string): void {
+        explicitMasterTrackId = id;
+    }
 
     let workletReady = false;
 
@@ -185,8 +193,11 @@ export function createWebAudioEngine(): AudioEngine {
         const preFaderTap = context.createGain();
         preFaderTap.gain.value = 1;
 
-        const gainNode = context.createGain();
-        gainNode.gain.value = 0.8;
+        const gainNode = context.createGain(); // the input node
+        gainNode.gain.value = 1;
+
+        const faderNode = context.createGain();
+        faderNode.gain.value = 0.8;
 
         // Post-device mute node — sits after all devices, before pan.
         // Mute/solo targets this so it works for Faust generators that bypass gainNode.
@@ -200,16 +211,17 @@ export function createWebAudioEngine(): AudioEngine {
         analyserNode.fftSize = 256;
         analyserNode.smoothingTimeConstant = 0.8;
 
-        preFaderTap.connect(gainNode);
-        gainNode.connect(postFaderGain);
+        gainNode.connect(preFaderTap);
+        preFaderTap.connect(faderNode);
+        faderNode.connect(postFaderGain);
         postFaderGain.connect(panNode);
         panNode.connect(analyserNode);
-        analyserNode.connect(masterGainNode);
 
         const strip: TrackChannelStrip = {
             trackId,
             preFaderTap,
             gainNode,
+            faderNode,
             postFaderGain,
             panNode,
             analyserNode,
@@ -218,8 +230,23 @@ export function createWebAudioEngine(): AudioEngine {
             deviceNodes: [],
             meterBuffer: new Float32Array(analyserNode.frequencyBinCount),
         };
-
         trackStrips.set(trackId, strip);
+
+        if (trackId === explicitMasterTrackId) {
+            analyserNode.connect(masterGainNode);
+            // Re-route existing tracks to this master track
+            trackStrips.forEach((s, id) => {
+                if (id !== trackId) {
+                    s.analyserNode.disconnect();
+                    s.analyserNode.connect(strip.gainNode);
+                }
+            });
+        } else if (explicitMasterTrackId && trackStrips.has(explicitMasterTrackId)) {
+            analyserNode.connect(trackStrips.get(explicitMasterTrackId)!.gainNode);
+        } else {
+            analyserNode.connect(masterGainNode);
+        }
+
         return strip;
     }
 
@@ -230,6 +257,8 @@ export function createWebAudioEngine(): AudioEngine {
         }
         strip.preFaderTap.disconnect();
         strip.gainNode.disconnect();
+        strip.faderNode.disconnect();
+        strip.postFaderGain.disconnect();
         strip.panNode.disconnect();
         strip.analyserNode.disconnect();
         trackStrips.delete(trackId);
@@ -244,7 +273,7 @@ export function createWebAudioEngine(): AudioEngine {
         if (!strip) {
             return;
         }
-        strip.gainNode.gain.setTargetAtTime(Math.max(0, Math.min(1, gain)), context.currentTime, 0.01);
+        strip.faderNode.gain.setTargetAtTime(Math.max(0, Math.min(1, gain)), context.currentTime, 0.01);
     }
 
     function setTrackPan(trackId: string, pan: number): void {
@@ -352,6 +381,7 @@ export function createWebAudioEngine(): AudioEngine {
         // splitter→dry, comp→makeup, etc. that are never restored.
         strip.preFaderTap.disconnect();
         strip.gainNode.disconnect();
+        strip.faderNode.disconnect();
         strip.postFaderGain.disconnect();
         for (const dn of strip.deviceNodes) {
             // Only disconnect the device's output → next node connection
@@ -364,7 +394,6 @@ export function createWebAudioEngine(): AudioEngine {
         strip.panNode.disconnect();
         strip.analyserNode.disconnect();
 
-        strip.preFaderTap.connect(strip.gainNode);
         let prev: AudioNode = strip.gainNode;
         for (const dn of strip.deviceNodes) {
             // Skip bypassed web audio devices — route audio past them
@@ -378,11 +407,20 @@ export function createWebAudioEngine(): AudioEngine {
             }
             prev = dn.outputNode;
         }
-        // Route through postFaderGain (mute node) before pan
-        prev.connect(strip.postFaderGain);
+        // Route through preFaderTap (sends) then fader (volume) then postFader (mute)
+        prev.connect(strip.preFaderTap);
+        strip.preFaderTap.connect(strip.faderNode);
+        strip.faderNode.connect(strip.postFaderGain);
         strip.postFaderGain.connect(strip.panNode);
         strip.panNode.connect(strip.analyserNode);
-        strip.analyserNode.connect(masterGainNode);
+        
+        if (strip.trackId === explicitMasterTrackId) {
+            strip.analyserNode.connect(masterGainNode);
+        } else if (explicitMasterTrackId && trackStrips.has(explicitMasterTrackId)) {
+            strip.analyserNode.connect(trackStrips.get(explicitMasterTrackId)!.gainNode);
+        } else {
+            strip.analyserNode.connect(masterGainNode);
+        }
 
         reconnectSendsForTrack(strip);
     }
@@ -1154,10 +1192,18 @@ export function createWebAudioEngine(): AudioEngine {
         strip.analyserNode.disconnect();
 
         if (outputId === 'master' || !outputId) {
-            strip.analyserNode.connect(masterGainNode);
+            if (explicitMasterTrackId && trackStrips.has(explicitMasterTrackId)) {
+                strip.analyserNode.connect(trackStrips.get(explicitMasterTrackId)!.gainNode);
+            } else {
+                strip.analyserNode.connect(masterGainNode);
+            }
         } else {
-            const busStrip = ensureBusStrip(outputId);
-            strip.analyserNode.connect(busStrip.gainNode);
+            const targetStrip = busStrips.get(outputId) || trackStrips.get(outputId);
+            if (targetStrip) {
+                strip.analyserNode.connect(targetStrip.gainNode);
+            } else {
+                strip.analyserNode.connect(masterGainNode);
+            }
         }
     }
 
@@ -1276,6 +1322,7 @@ export function createWebAudioEngine(): AudioEngine {
         wireSidechainRoute,
         unwireSidechainRoute,
         waitForDevices,
+        setMasterTrackId,
     };
 }
 

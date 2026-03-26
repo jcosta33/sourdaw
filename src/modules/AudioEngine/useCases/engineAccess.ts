@@ -11,6 +11,8 @@ export const getAudioContext = (): AudioContext => {
     return audioEngine.context;
 };
 
+export const getAudioEngine = () => audioEngine;
+
 export const getEngineState = (): AudioEngineState => {
     return audioEngine.getState();
 };
