@@ -301,6 +301,20 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                         <span className="text-[var(--color-accent-cyan)] mr-1.5">✦</span>
                         Convert to MIDI
                     </button>
+                    <button
+                        type="button"
+                        className={menuBtnClass}
+                        role="menuitem"
+                        onClick={act(async () => {
+                            notifyUser('Denoising audio…');
+                            const { handleAiDenoiseClip } = await import('#/modules/AiGeneration/useCases/actions/audioProcessing');
+                            await handleAiDenoiseClip(clipId, 0.7);
+                            notifyAiChange('Audio denoised', ['Noise reduction applied to clip']);
+                        })}
+                    >
+                        <span className="text-[var(--color-accent-cyan)] mr-1.5">✦</span>
+                        Denoise
+                    </button>
                 </>
             ) : null}
             {isMidi ? (

@@ -13,6 +13,7 @@ import { SamplesTab } from './Sidebar/SamplesTab';
 import { InstrumentsTab } from './Sidebar/InstrumentsTab';
 import { EffectsTab } from './Sidebar/EffectsTab';
 import { MacrosPanel } from './Sidebar/MacrosPanel';
+import { OnlineSampleBrowser } from './Sidebar/OnlineSampleBrowser';
 
 export type SidebarRoute = {
     id: string;
@@ -38,6 +39,7 @@ const SAMPLE_LIBRARY: { id: string; name: string; category: string; duration: st
 
 export const Sidebar = ({ style }: SidebarProps): ReactElement => {
     const [activeTab, setActiveTab] = useState<'library' | 'instruments' | 'effects' | 'macros'>('library');
+    const [libSubTab, setLibSubTab] = useState<'mine' | 'find'>('mine');
     const [navStacks, setNavStacks] = useState<Record<string, SidebarRoute[]>>({
         library: [{ id: 'library', title: 'Library' }],
         instruments: [{ id: 'instruments', title: 'Instruments' }],
@@ -237,38 +239,66 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                 >
                     {currentRoute.id === 'library' ? (
                         <>
-                            <div className="flex items-center justify-between px-1 pb-1">
-                                <span className="text-[9px] text-muted-foreground">
-                                    {filteredSamples.length} samples
-                                </span>
+                            {/* Sub-tabs: My Samples | Find Samples */}
+                            <div className="flex gap-1 px-2 pb-2">
                                 <Button
-                                    variant="ghost"
+                                    variant={libSubTab === 'mine' ? 'secondary' : 'ghost'}
                                     size="xs"
-                                    className="h-5 gap-1 text-[10px]"
-                                    onClick={() => fileInputRef.current?.click()}
+                                    onClick={() => setLibSubTab('mine')}
+                                    className="flex-1"
                                 >
-                                    <Upload className="size-3" aria-hidden="true" />
-                                    Import
+                                    <FileAudio className="size-3 mr-1" /> My Samples
                                 </Button>
-                                <input
-                                    ref={fileInputRef}
-                                    type="file"
-                                    accept="audio/*,.wav,.mp3,.ogg,.flac,.aac,.m4a,.aiff,.aif"
-                                    multiple
-                                    className="hidden"
-                                    onChange={(e) => {
-                                        void handleFileImport(e.target.files);
-                                        e.target.value = '';
-                                    }}
-                                />
+                                <Button
+                                    variant={libSubTab === 'find' ? 'secondary' : 'ghost'}
+                                    size="xs"
+                                    onClick={() => setLibSubTab('find')}
+                                    className="flex-1"
+                                >
+                                    <Search className="size-3 mr-1" /> Find Samples
+                                </Button>
                             </div>
-                            <SamplesTab
-                                samples={filteredSamples}
-                                favorites={favorites}
-                                onToggleFavorite={toggleFavorite}
-                                selectedTrackId={selectedTrackId}
-                                preview={preview}
-                            />
+
+                            {libSubTab === 'mine' ? (
+                                <div className="px-2">
+                                    <div className="flex items-center justify-between pb-1">
+                                        <span className="text-[9px] text-muted-foreground">
+                                            {filteredSamples.length} samples
+                                        </span>
+                                        <Button
+                                            variant="ghost"
+                                            size="xs"
+                                            className="h-5 gap-1 text-[10px]"
+                                            onClick={() => fileInputRef.current?.click()}
+                                        >
+                                            <Upload className="size-3" aria-hidden="true" />
+                                            Import
+                                        </Button>
+                                        <input
+                                            ref={fileInputRef}
+                                            type="file"
+                                            accept="audio/*,.wav,.mp3,.ogg,.flac,.aac,.m4a,.aiff,.aif"
+                                            multiple
+                                            className="hidden"
+                                            onChange={(e) => {
+                                                void handleFileImport(e.target.files);
+                                                e.target.value = '';
+                                            }}
+                                        />
+                                    </div>
+                                    <SamplesTab
+                                        samples={filteredSamples}
+                                        favorites={favorites}
+                                        onToggleFavorite={toggleFavorite}
+                                        selectedTrackId={selectedTrackId}
+                                        preview={preview}
+                                    />
+                                </div>
+                            ) : (
+                                <div className="px-2">
+                                    <OnlineSampleBrowser preview={preview} />
+                                </div>
+                            )}
                         </>
                     ) : null}
 

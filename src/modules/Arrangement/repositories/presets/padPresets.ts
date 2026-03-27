@@ -1,5 +1,5 @@
 import { type SoundPreset } from '#/modules/Arrangement/models/SoundPreset';
-import { synth, reverb, delay, filter, tremolo, chorus, AUTHOR } from './presetHelpers';
+import { synth, reverb, delay, filter, tremolo, AUTHOR } from './presetHelpers';
 
 export const padPresets: SoundPreset[] = [
     // ─── Pad ─────────────────────────────────────────────────────────────
@@ -31,7 +31,6 @@ export const padPresets: SoundPreset[] = [
                 vibratoDepth: 8,
                 vibratoDelay: 1.0,
             }),
-            chorus('Chorus', { 'chorus-rate': 0.8, 'chorus-depth': 6, 'chorus-mix': 0.35 }),
             reverb('Reverb', { 'rev-size': 0.8, 'rev-decay': 5, 'rev-damping': 0.4, 'rev-mix': 0.5 }),
         ],
         tags: ['warm', 'lush', 'sawtooth', 'ambient'],

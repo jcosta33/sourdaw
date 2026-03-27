@@ -14,6 +14,7 @@ import {
 import { toggleAiPanel, removeTask } from '#/modules/AiGeneration/useCases/actions/taskManagement';
 import { handleGenerateMidiPrompt } from '#/modules/AiGeneration/useCases/actions/handleGenerateMidiPrompt';
 import { handleGenerateAudioFallback, handleStemSeparationPreview } from '#/modules/AiGeneration/useCases/actions/audioProcessing';
+import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { GenreGrid, MoodGrid, InstrumentGrid } from '../components/GenerativeParamGrids';
 import { PatternBrowser } from './PatternBrowser';
 
@@ -60,7 +61,8 @@ export const GenerativeAiPanel = (): ReactElement | null => {
         }
 
         if (activeTab === 'audio') {
-            handleGenerateAudioFallback(finalPrompt, audioDuration.toString());
+            const bpm = transportStore.value?.tempo ?? 120;
+            handleGenerateAudioFallback(`${String(Math.round(bpm))} BPM, ${finalPrompt}`, audioDuration.toString());
         } else if (activeTab === 'midi') {
             handleGenerateMidiPrompt(finalPrompt, midiNotes, creativity / 100);
         }

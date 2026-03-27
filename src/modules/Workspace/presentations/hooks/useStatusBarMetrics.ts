@@ -39,17 +39,12 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
             const masterLevel = getMasterPeakLevel();
 
             // ── CPU load estimate ───────────────────────────────────────
-            // Combine audio thread load (baseLatency as proxy) with UI frame budget usage.
-            // baseLatency / (128/sampleRate) approximates audio thread utilization.
-            const bufferDuration = 128 / (engineInfo?.sampleRate ?? 44100);
-            const audioLoad = engineInfo?.baseLatency
-                ? Math.min(100, (engineInfo.baseLatency / bufferDuration) * 100)
-                : 0;
+            // Measures how much of the 16.67ms frame budget was used.
+            // At 60fps: 16.67ms frame = 0%. 33ms frame = 100%.
             const targetFrameMs = 1000 / 60;
-            const frameLoad = frameDelta > targetFrameMs
-                ? Math.min(100, ((frameDelta - targetFrameMs) / targetFrameMs) * 200)
+            const load = frameDelta > targetFrameMs
+                ? Math.min(100, ((frameDelta - targetFrameMs) / targetFrameMs) * 100)
                 : 0;
-            const load = Math.max(audioLoad, frameLoad);
             const samples = cpuSamplesRef.current;
             samples.push(Math.max(0, load));
             if (samples.length > 30) {

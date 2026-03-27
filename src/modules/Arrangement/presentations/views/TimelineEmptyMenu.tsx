@@ -9,6 +9,8 @@ import {
 } from '../../useCases/timelineViewActions';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { addMarker, setMarkerColor, removeMarker as removeMarkerUseCase } from '../../useCases/marker/markerOperations';
+import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
+import { isTauri } from '#/helpers/tauriBridge';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { markerStore } from '#/modules/Arrangement/stores/markerStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
@@ -218,6 +220,63 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
                 Add Marker Here
             </button>
             <NearbyMarkerColorMenu beat={beat} onClose={onClose} />
+            <div className={menuSepClass} />
+            <div className="px-3 py-1 text-[10px] font-medium text-muted-foreground/70 flex items-center gap-1">
+                <span className="inline-block size-2.5 rounded-full bg-[var(--color-accent-lavender)]/60" />
+                AI Generate
+            </div>
+            {isTauri() ? (
+                <button
+                    type="button"
+                    className={menuBtnClass}
+                    role="menuitem"
+                    onClick={act(() => {
+                        const prompt = window.prompt('Describe the audio to generate:');
+                        if (prompt?.trim()) {
+                            void executeAppAction({
+                                type: 'generateAudio',
+                                payload: { prompt: prompt.trim(), durationSeconds: 8, trackId: trackId ?? undefined },
+                            });
+                            notifyUser('Generating audio… this may take a moment');
+                        }
+                    })}
+                >
+                    <span className="text-[var(--color-accent-lavender)] mr-1.5">✦</span>
+                    Generate Audio Here…
+                </button>
+            ) : (
+                <div className="px-3 py-1 text-[10px] text-muted-foreground/50 italic">
+                    Audio generation requires desktop app
+                </div>
+            )}
+            <button
+                type="button"
+                className={menuBtnClass}
+                role="menuitem"
+                onClick={act(() => {
+                    void executeAppAction({
+                        type: 'generateDrumPattern',
+                        payload: { style: 'rock', bars: 4, trackId: trackId ?? undefined },
+                    });
+                })}
+            >
+                <span className="text-[var(--color-accent-lavender)] mr-1.5">✦</span>
+                Generate Drum Pattern
+            </button>
+            <button
+                type="button"
+                className={menuBtnClass}
+                role="menuitem"
+                onClick={act(() => {
+                    void executeAppAction({
+                        type: 'generateChordProgression',
+                        payload: { style: 'pop', key: 0, scale: 'major', bars: 4, trackId: trackId ?? undefined },
+                    });
+                })}
+            >
+                <span className="text-[var(--color-accent-lavender)] mr-1.5">✦</span>
+                Generate Chord Progression
+            </button>
             <div className={menuSepClass} />
             <button type="button" className={menuBtnClass} role="menuitem" onClick={handleImportAudio}>
                 Import Audio…
