@@ -5,11 +5,8 @@
  * return early) or `false` to continue with the general select/drag logic.
  */
 import { type RefObject } from 'react';
-import {
-    hitTestClip,
-    hitTestAutomationSubLane,
-    hitTestTrack,
-} from '../../useCases/timelineInteractions';
+import { hitTestClip, hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip';
+import { hitTestAutomationSubLane } from '../../useCases/timelineInteractions/hitTestAutomationSubLane';
 import {
     splitClip,
     addClip,
@@ -19,7 +16,7 @@ import {
     pushUndoEntry,
 } from '../../useCases/timelineViewActions';
 import { selectTrack } from '../../useCases/timelineViewActions';
-import { type AutomationPoint } from '#/modules/Arrangement/useCases/trackQueries';
+import { type AutomationPoint } from '#/modules/Automation/useCases/automation/types';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { getContentY, resolveTrackAtY, valueAtTrackY } from './timelineMouse';

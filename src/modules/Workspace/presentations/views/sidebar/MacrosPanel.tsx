@@ -14,14 +14,9 @@ import {
 } from 'react';
 import { Play, Trash2, Pencil, Circle, Square } from 'lucide-react';
 import { macroStore, type MacroStoreState } from '#/modules/Command/stores/macroStore';
-import {
-    startMacroRecording,
-    stopMacroRecording,
-    playMacro,
-    deleteMacro,
-    renameMacro,
-    type Macro,
-} from '#/modules/Command/useCases/macro';
+import { startMacroRecording, stopMacroRecording, type Macro } from '#/modules/Command/useCases/macro/recording';
+import { playMacro } from '#/modules/Command/useCases/macro/playback';
+import { deleteMacro, renameMacro } from '#/modules/Command/useCases/macro/management';
 import { cn } from '#/helpers/Styles/cn';
 
 const defaultState: MacroStoreState = { macros: [], recording: false, currentRecording: [] };

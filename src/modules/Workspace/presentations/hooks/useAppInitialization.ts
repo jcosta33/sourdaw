@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { initializeAudioEngine } from '#/modules/AudioEngine/useCases/initializeAudioEngine';
-import { registerBuiltinPlugins } from '#/modules/Plugin/useCases/wamPluginHost';
-import { registerBuiltinFaustDSP } from '#/modules/Plugin/useCases/faustEngine';
+import { registerBuiltinPlugins } from '#/modules/Plugin/useCases/wamPluginHost/builtinDescriptors';
+import { registerBuiltinFaustDSP } from '#/modules/Plugin/useCases/faustEngine/builtinDSP';
 import { registerProModulationEffects } from '#/modules/Plugin/useCases/proModulationEffects';
 import { registerProSynthInstruments } from '#/modules/Synth/useCases/proSynthInstruments';
 import { initWebMidi } from '#/modules/AudioEngine/useCases/webMidiInput';

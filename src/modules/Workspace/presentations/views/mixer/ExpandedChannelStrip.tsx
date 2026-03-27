@@ -5,14 +5,12 @@ import { LatchButton } from '#/components/daw/LatchButton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { Circle, Ear, ShieldCheck } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
-import {
-    muteTrack,
-    soloTrack,
-    soloTrackExclusive,
-    selectTrack,
-    toggleInputMonitoring,
-    toggleSoloSafe,
-} from '#/modules/Arrangement/useCases/toggleTrackState';
+import { muteTrack } from '#/modules/Arrangement/useCases/toggleTrackState/muteTrack';
+import { soloTrack } from '#/modules/Arrangement/useCases/toggleTrackState/soloTrack';
+import { soloTrackExclusive } from '#/modules/Arrangement/useCases/toggleTrackState/soloTrackExclusive';
+import { selectTrack } from '#/modules/Arrangement/useCases/toggleTrackState/selectTrack';
+import { toggleInputMonitoring } from '#/modules/Arrangement/useCases/toggleTrackState/toggleInputMonitoring';
+import { toggleSoloSafe } from '#/modules/Arrangement/useCases/toggleTrackState/toggleSoloSafe';
 import { setTrackGain, setTrackPan, setTrackColor } from '#/modules/Arrangement/useCases/setTrackGainPan';
 import { armTrack } from '#/modules/Arrangement/useCases/recording';
 import { removeTrack } from '#/modules/Arrangement/useCases/removeTrack';
@@ -32,7 +30,7 @@ import {
     removeTrackFromVCA,
     createVCAGroup,
 } from '#/modules/Arrangement/useCases/vcaFader';
-import { releaseTouchAutomation } from '#/modules/Automation/useCases/automationRecording';
+import { releaseTouchAutomation } from '#/modules/Automation/useCases/automationRecording/releaseTouchAutomation';
 
 type MixerMenu = { x: number; y: number } | null;
 

@@ -4,7 +4,7 @@ import { setlistStore } from '#/modules/Transport/stores/setlistStore';
  * Navigate to a specific setlist item by index.
  *
  * Note: DOM CustomEvent dispatch for MIDI program change is part of the
- * codebase-wide `webdaw:*` notification system. Deferred to the EventBus
+ * codebase-wide `sourdaw:*` notification system. Deferred to the EventBus
  * migration sprint (see also zoomOperations.ts, scripting.ts).
  */
 export function goToItem(index: number): void {
@@ -23,7 +23,7 @@ export function goToItem(index: number): void {
     // Dispatch program change if configured
     if (item.programChange) {
         document.dispatchEvent(
-            new CustomEvent('webdaw:midi-out', {
+            new CustomEvent('sourdaw:midi-out', {
                 detail: {
                     type: 'programChange',
                     channel: item.programChange.channel,

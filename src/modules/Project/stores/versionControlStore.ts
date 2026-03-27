@@ -5,7 +5,7 @@ import { type VersionControlState, createDefaultState } from '../models/ProjectV
 
 const logger = Container.getInstance().get(Logger);
 
-const VC_STORAGE_KEY = 'webdaw-version-control';
+const VC_STORAGE_KEY = 'sourdaw-version-control';
 
 function loadFromStorage(): VersionControlState {
     try {

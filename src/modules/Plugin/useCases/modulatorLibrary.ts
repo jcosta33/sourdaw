@@ -10,12 +10,9 @@
  *   To implement: connect ModulationRoute targets to live AudioParams via
  *   an AudioWorklet or rAF render loop in the web-audio-engine.
  */
-import {
-    createModulationSource,
-    updateModulationSourceParam,
-    type ModulationSource,
-    type ModulationSourceType,
-} from '#/modules/Plugin/useCases/modulationSystem';
+import { createModulationSource } from '#/modules/Plugin/useCases/modulationSystem/createModulationSource';
+import { updateModulationSourceParam } from '#/modules/Plugin/useCases/modulationSystem/updateModulationSourceParam';
+import type { ModulationSource, ModulationSourceType } from '#/modules/Plugin/useCases/modulationSystem/types';
 
 export type ModulatorPreset = {
     id: string;

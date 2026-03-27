@@ -2,7 +2,7 @@ import { trackStore } from '../stores/trackStore';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { addMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud';
 import { addTrack } from './addTrack';
-import { addClip } from '#/modules/Arrangement/useCases/clip';
+import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
 import { summarizeFeatures } from '#/modules/AudioAnalysis/useCases/audioFeatures';
 
 function getBufferForClip(clipId: string): { buffer: AudioBuffer; audioBufferId: string } | null {

@@ -1,10 +1,7 @@
 import { type ActionHandler } from '../models/ActionHandler';
-import {
-    startMacroRecording,
-    stopMacroRecording,
-    playMacro,
-    deleteMacro,
-} from '../useCases/macro';
+import { startMacroRecording, stopMacroRecording } from '../useCases/macro/recording';
+import { playMacro } from '../useCases/macro/playback';
+import { deleteMacro } from '../useCases/macro/management';
 
 export const macroHandlers: Record<string, ActionHandler<any>> = {
     startMacroRecording: {

@@ -1,13 +1,14 @@
 import { type ReactElement, useState, useSyncExternalStore } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { addAutomationLane, toggleLaneCollapsed } from '#/modules/Automation/useCases/automation';
+import { addAutomationLane } from '#/modules/Automation/useCases/automation/addAutomationLane';
+import { toggleLaneCollapsed } from '#/modules/Automation/useCases/automation/toggleLaneCollapsed';
 import { Plus, ChevronDown, ChevronRight } from 'lucide-react';
 import { AutomationLaneRow } from './AutomationLaneRow';
 import { getAutomatableParams, AUTOMATION_MODE_CONFIG } from '../../helpers/automationViewHelpers';
-import { type AutomationMode } from '#/modules/Arrangement/useCases/trackQueries';
-import { type AutomationLane } from '#/modules/Arrangement/useCases/trackQueries';
-import { setAutomationMode } from '#/modules/Arrangement/useCases/toggleTrackState';
+import { type AutomationMode } from '#/modules/Arrangement/models/Track';
+import { type AutomationLane } from '#/modules/Automation/useCases/automation/types';
+import { setAutomationMode } from '#/modules/Arrangement/useCases/toggleTrackState/setAutomationMode';
 
 type TrackAutomationSectionProps = {
     trackId: string;

@@ -1,7 +1,7 @@
 import { type ReactElement } from 'react';
 import { Card } from '#/components/ui/card';
 import { setMidiOutput, clearMidiOutput } from '#/modules/MIDI/useCases/midiRouting';
-import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
+import { type Track } from '#/modules/Arrangement/models/Track';
 
 type TrackMidiOutputSectionProps = {
     track: Track;

@@ -4,7 +4,7 @@
  */
 
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { addExternalDevice } from '#/modules/Arrangement/useCases/device';
+import { addExternalDevice } from '#/modules/Arrangement/useCases/device/addExternalDevice';
 
 type TrackInfo = {
     id: string;

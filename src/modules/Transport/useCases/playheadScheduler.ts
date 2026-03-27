@@ -3,15 +3,14 @@ import { playheadPositionRef } from '../stores/playheadPositionRef';
 import { tempoMapStore } from '../stores/tempoMapStore';
 import { getTempoAtBeat } from '../models/TempoMap';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import {
-    startAutomationRecording,
-    stopAutomationRecording,
-} from '#/modules/Automation/useCases/automationRecording';
+import { startAutomationRecording } from '#/modules/Automation/useCases/automationRecording/startAutomationRecording';
+import { stopAutomationRecording } from '#/modules/Automation/useCases/automationRecording/stopAutomationRecording';
 import { stopAllScheduled } from '#/modules/AudioEngine/useCases/scheduling';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { startAudioRecording, stopAudioRecording } from '#/modules/AudioEngine/useCases/audioRecorder';
 import { startRecording, stopRecording } from '#/modules/Arrangement/useCases/recording';
-import { addTakeLane, addTake } from '#/modules/Arrangement/useCases/comping';
+import { addTakeLane } from '#/modules/Arrangement/useCases/comping/addTakeLane';
+import { addTake } from '#/modules/Arrangement/useCases/comping/addTake';
 import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
 import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
 import { scheduleMetronome, resetMetronomeBeat } from './scheduling/scheduleMetronome';

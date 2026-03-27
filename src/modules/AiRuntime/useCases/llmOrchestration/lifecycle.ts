@@ -3,10 +3,10 @@ import { Logger } from '#/helpers/Logger/Logger';
 
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import {
-    initLlamaServer,
-    isLlamaServerRunning,
-    stopLlamaServer,
-} from '../../repositories/llamaServerEngine';
+    initNativeEngine,
+    isNativeEngineReady,
+    stopNativeEngine,
+} from '../../repositories/nativeEngine';
 import {
     initWebLlmEngine,
     unloadWebLlmEngine,
@@ -31,13 +31,12 @@ export async function initEngine(): Promise<void> {
 
     if (backend === 'native') {
         try {
-            await initLlamaServer();
+            await initNativeEngine();
             llmStatusStore.set({ state: 'ready', modelId: 'native' });
             return;
         } catch (error) {
             const msg = error instanceof Error ? error.message : String(error);
             logger.warn(`[AI Engine] Native AI backend failed: ${msg}`);
-            logger.warn('[AI Engine] Install llama-server or place the binary at src-tauri/binaries/llama-server-{target-triple}');
 
             if (typeof navigator !== 'undefined' && 'gpu' in navigator) {
                 logger.info('[AI Engine] Falling back to WebLLM...');
@@ -52,7 +51,7 @@ export async function initEngine(): Promise<void> {
                 return;
             }
 
-            llmStatusStore.set({ state: 'error', message: 'Native AI engine not available. Install llama-server to enable AI features.' });
+            llmStatusStore.set({ state: 'error', message: 'Native AI engine failed to load. Check logs for details.' });
             throw new Error(`Native AI engine failed: ${msg}. No fallback available.`);
         }
     }
@@ -69,8 +68,8 @@ export async function initEngine(): Promise<void> {
  * Unload the current engine and free memory.
  */
 export async function unloadEngine(): Promise<void> {
-    if (isLlamaServerRunning()) {
-        await stopLlamaServer();
+    if (isNativeEngineReady()) {
+        await stopNativeEngine();
     }
     unloadWebLlmEngine();
     llmStatusStore.set({ state: 'idle' });

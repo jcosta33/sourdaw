@@ -7,7 +7,7 @@ import {
     useSyncExternalStore,
 } from 'react';
 import { markerStore } from '../../stores/markerStore';
-import { addMarker, removeMarker, renameMarker, setMarkerColor, moveMarker } from '../../useCases/marker';
+import { addMarker, removeMarker, renameMarker, setMarkerColor, moveMarker } from '../../useCases/marker/markerOperations';
 import { type Marker } from '../../models/Marker';
 import { Flag } from 'lucide-react';
 

@@ -30,9 +30,9 @@ export const NotificationToast = (): ReactElement | null => {
                 return [...prev, notification];
             });
         };
-        document.addEventListener('webdaw:notify', handler);
+        document.addEventListener('sourdaw:notify', handler);
         return () => {
-            document.removeEventListener('webdaw:notify', handler);
+            document.removeEventListener('sourdaw:notify', handler);
         };
     }, []);
 

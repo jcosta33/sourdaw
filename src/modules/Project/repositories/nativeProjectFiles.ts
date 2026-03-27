@@ -32,7 +32,7 @@ async function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Prom
 /**
  * Save a project to the native filesystem.
  *
- * @param path - Absolute path to save the .webdaw file
+ * @param path - Absolute path to save the .sourdaw file
  * @param projectData - Serialized project state (the same JSON structure used by localStorage)
  */
 export async function saveProjectToFile(path: string, projectData: ProjectData): Promise<void> {
@@ -45,7 +45,7 @@ export async function saveProjectToFile(path: string, projectData: ProjectData):
 /**
  * Load a project from the native filesystem.
  *
- * @param path - Absolute path to the .webdaw file
+ * @param path - Absolute path to the .sourdaw file
  * @returns Parsed project state
  */
 export async function loadProjectFromFile(path: string): Promise<ProjectData> {
@@ -59,14 +59,14 @@ export async function loadProjectFromFile(path: string): Promise<ProjectData> {
  * List project files in a directory.
  *
  * @param dirPath - Directory to scan
- * @returns Array of .webdaw file paths
+ * @returns Array of .sourdaw file paths
  */
 export async function listProjectFiles(dirPath: string): Promise<Array<{ name: string; path: string }>> {
     const entries = await tauriInvoke<Array<{ name: string; path: string; is_directory: boolean }>>('list_directory', {
         path: dirPath,
     });
     return entries
-        .filter((e) => !e.is_directory && e.name.endsWith('.webdaw'))
+        .filter((e) => !e.is_directory && e.name.endsWith('.sourdaw'))
         .map((e) => ({ name: e.name, path: e.path }));
 }
 
@@ -82,7 +82,7 @@ export async function getProjectDirectory(): Promise<string> {
     // Ensure directory exists by writing a hidden marker
     try {
         await tauriInvoke('write_audio_file', {
-            path: `${projectDir}/.webdaw-projects`,
+            path: `${projectDir}/.sourdaw-projects`,
             data: Array.from(new TextEncoder().encode('Sourdaw Projects Directory')),
         });
     } catch {

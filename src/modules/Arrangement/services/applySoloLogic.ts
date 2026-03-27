@@ -5,7 +5,7 @@
  * Shared by muteTrack, soloTrack, clearSolos, soloTrackExclusive, toggleSoloSafe.
  */
 
-import { getTrackState } from '#/modules/Arrangement/useCases/trackQueries';
+import { getTrackState } from '#/modules/Arrangement/useCases/trackQueries/trackStoreAccess';
 import {
     setTrackMute as engineSetTrackMute,
     setTrackGain as engineSetTrackGain,

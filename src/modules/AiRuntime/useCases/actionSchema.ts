@@ -1,33 +1,17 @@
 import { type ProjectContext } from '../models/ProjectContext';
 import { type PromptFormat, buildSystemPrompt } from '../transformers/systemPrompt';
 import { mcpToCompactPromptText } from '../repositories/mcpToolAdapter';
-import { getNativeToolsPrompt } from '../repositories/nativeToolRegistry';
-
-// Cache native tools prompt — it doesn't change at runtime
-let cachedNativeToolsPrompt: string | null = null;
 
 /**
- * Async version that includes native (Rust-side) plugin tool schemas.
- *
- * Prefer this when the caller can await (use cases, event handlers).
+ * Build the full system prompt including project state and tool schemas.
  */
 export async function buildActionSystemPromptAsync(
     context: ProjectContext,
     format: PromptFormat = 'api'
 ): Promise<string> {
     const toolsJson = mcpToCompactPromptText();
-
-    // Fetch native tools once and cache
-    if (cachedNativeToolsPrompt === null) {
-        cachedNativeToolsPrompt = await getNativeToolsPrompt();
-    }
-
-    const combinedTools = cachedNativeToolsPrompt
-        ? `${toolsJson}\n\n# Native Plugin Tools\n${cachedNativeToolsPrompt}`
-        : toolsJson;
-
     const projectState = buildProjectState(context);
-    return buildSystemPrompt(combinedTools, projectState, format);
+    return buildSystemPrompt(toolsJson, projectState, format);
 }
 
 // ── Project state serialisation ─────────────────────────────────────────

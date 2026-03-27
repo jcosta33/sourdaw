@@ -6,7 +6,7 @@ async function triggerBlobDownload(blob: Blob, filename: string): Promise<void> 
                 '.wav': 'audio/wav',
                 '.mp3': 'audio/mpeg',
                 '.flac': 'audio/flac',
-                '.webdaw': 'application/json',
+                '.sourdaw': 'application/json',
                 '.json': 'application/json',
             };
             const handle = await (

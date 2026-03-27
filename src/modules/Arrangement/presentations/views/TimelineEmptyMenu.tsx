@@ -7,7 +7,7 @@ import {
     pasteClip,
 } from '../../useCases/timelineViewActions';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { addMarker, setMarkerColor, removeMarker as removeMarkerUseCase } from '../../useCases/marker';
+import { addMarker, setMarkerColor, removeMarker as removeMarkerUseCase } from '../../useCases/marker/markerOperations';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { markerStore } from '#/modules/Arrangement/stores/markerStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';

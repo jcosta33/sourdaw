@@ -1,7 +1,9 @@
 import { type CommandEntry } from '../CommandRegistry';
 import { getAllClipIds } from '../../useCases/selectionHelpers';
 import { undo, redo } from '#/modules/Command/useCases/undoRedo';
-import { copySelectedClip, cutSelectedClip, pasteClip } from '#/modules/Arrangement/useCases/clipboard';
+import { copySelectedClip } from '#/modules/Arrangement/useCases/clipboard/copySelectedClip';
+import { cutSelectedClip } from '#/modules/Arrangement/useCases/clipboard/cutSelectedClip';
+import { pasteClip } from '#/modules/Arrangement/useCases/clipboard/pasteClip';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 
 /** Edit commands — undo, redo, copy, cut, paste, select/deselect all. */

@@ -6,7 +6,7 @@ import { defaultPreferences, type Preferences } from '../models/Preferences';
 
 const logger = Container.getInstance().get(Logger);
 
-const storage = new LocalStorageStorage<Preferences>('webdaw-preferences');
+const storage = new LocalStorageStorage<Preferences>('sourdaw-preferences');
 
 // Merge stored data with defaults so new preference keys are always present
 function mergeWithDefaults(): Preferences {

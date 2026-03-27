@@ -93,10 +93,10 @@ await plugin.audioNode.setState(state);
 
 ```typescript
 const BUILTIN_PLUGINS: Record<string, () => Promise<any>> = {
-  'com.webdaw.eq':         () => import('./plugins/eq/index.js'),
-  'com.webdaw.compressor': () => import('./plugins/compressor/index.js'),
-  'com.webdaw.reverb':     () => import('./plugins/reverb/index.js'),
-  'com.webdaw.synth-sub':  () => import('./plugins/synth-sub/index.js'),
+  'com.sourdaw.eq':         () => import('./plugins/eq/index.js'),
+  'com.sourdaw.compressor': () => import('./plugins/compressor/index.js'),
+  'com.sourdaw.reverb':     () => import('./plugins/reverb/index.js'),
+  'com.sourdaw.synth-sub':  () => import('./plugins/synth-sub/index.js'),
 };
 
 async function loadPlugin(id: string, ctx: AudioContext) {

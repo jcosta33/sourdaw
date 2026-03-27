@@ -1,7 +1,7 @@
 import { findClipById } from '#/modules/Arrangement/services/findClipById';
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { getWorkspaceState } from '#/modules/Workspace/useCases/workspaceQueries';
-import { removeClip } from '#/modules/Arrangement/useCases/clip';
+import { removeClip } from '#/modules/Arrangement/useCases/clip/removeClip';
 import { setClipClipboard } from '#/modules/Arrangement/stores/clipboardStore';
 
 export function cutSelectedClip(): void {

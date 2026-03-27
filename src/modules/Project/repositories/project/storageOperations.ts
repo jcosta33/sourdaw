@@ -1,7 +1,7 @@
 import { LocalStorageStorage } from '#/helpers/Store/Storage/LocalStorageStorage';
 import { PROJECT_STORAGE_KEY } from '../../models/ProjectData';
 
-const projectStorage = new LocalStorageStorage<string>(PROJECT_STORAGE_KEY as 'webdaw-project');
+const projectStorage = new LocalStorageStorage<string>(PROJECT_STORAGE_KEY as 'sourdaw-project');
 
 export function readProjectJson(): string | null {
     return projectStorage.get();
@@ -16,7 +16,7 @@ export function removeProjectJson(): void {
 }
 
 export function writeNamedProjectJson(name: string, json: string): void {
-    const projectKey = `webdaw:project:${name}`;
+    const projectKey = `sourdaw:project:${name}`;
     try {
         localStorage.setItem(projectKey, json);
     } catch {

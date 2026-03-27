@@ -2,7 +2,7 @@ import { type ReactElement } from 'react';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { type SoloMode } from '../../../models/WorkspaceState';
-import { setSoloMode } from '../../../useCases/togglePanel';
+import { setSoloMode } from '../../../useCases/togglePanel/panelToggles';
 
 const SOLO_MODES: { value: SoloMode; label: string; description: string }[] = [
     {

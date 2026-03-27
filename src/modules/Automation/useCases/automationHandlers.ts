@@ -1,12 +1,10 @@
 import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
-import {
-    scaleAutomationValues,
-    stretchAutomationTime,
-    invertAutomation,
-    reverseAutomation,
-    thinAutomationPoints,
-    quantizeAutomationBeats,
-} from '#/modules/Automation/useCases/automation';
+import { scaleAutomationValues } from '#/modules/Automation/useCases/automation/scaleAutomationValues';
+import { stretchAutomationTime } from '#/modules/Automation/useCases/automation/stretchAutomationTime';
+import { invertAutomation } from '#/modules/Automation/useCases/automation/invertAutomation';
+import { reverseAutomation } from '#/modules/Automation/useCases/automation/reverseAutomation';
+import { thinAutomationPoints } from '#/modules/Automation/useCases/automation/thinAutomationPoints';
+import { quantizeAutomationBeats } from '#/modules/Automation/useCases/automation/quantizeAutomationBeats';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 

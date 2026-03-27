@@ -16,7 +16,7 @@ export type PlatformCapabilities = {
     readonly hasPluginScanning: boolean;
     /** MIDI input — Web MIDI API (Chrome) or Tauri native */
     readonly hasMidiInput: boolean;
-    /** Voice command ASR — Tauri sidecar (whisper.cpp) */
+    /** Voice command ASR — Tauri native (whisper-rs) or browser SpeechRecognition */
     readonly hasVoiceCommands: boolean;
     /** Native OS file save dialogs — Tauri only */
     readonly hasNativeFileDialogs: boolean;

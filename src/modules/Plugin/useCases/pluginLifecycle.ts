@@ -3,18 +3,13 @@
  * to provide a proper contract for cross-module consumers.
  */
 
-import {
-    loadPlugin as loadPluginRepo,
-    unloadPlugin as unloadPluginRepo,
-    processAudioIPC as processAudioIPCRepo,
-    openPluginGui as openPluginGuiRepo,
-    closePluginGui as closePluginGuiRepo,
-} from '../repositories/pluginBridge';
+import { loadPlugin as loadPluginRepo } from '../repositories/pluginBridge/loadPlugin';
+import { unloadPlugin as unloadPluginRepo } from '../repositories/pluginBridge/unloadPlugin';
+import { processAudioIPC as processAudioIPCRepo } from '../repositories/pluginBridge/processAudioIPC';
+import { openPluginGui as openPluginGuiRepo } from '../repositories/pluginBridge/openPluginGui';
+import { closePluginGui as closePluginGuiRepo } from '../repositories/pluginBridge/closePluginGui';
 
-export type {
-    PluginInstance,
-    PluginGuiInfo,
-} from '../repositories/pluginBridge';
+export type { PluginInstance, PluginGuiInfo } from '../repositories/pluginBridge/types';
 
 /** Load a plugin instance by plugin ID and instance ID. */
 export function loadPlugin(

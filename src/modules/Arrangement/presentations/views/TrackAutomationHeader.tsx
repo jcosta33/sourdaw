@@ -8,7 +8,7 @@ import {
 } from '#/modules/Workspace/useCases/automationSubLanes';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { addAutomationLane } from '#/modules/Automation/useCases/automation';
+import { addAutomationLane } from '#/modules/Automation/useCases/automation/addAutomationLane';
 import { timelineViewStore } from '#/modules/Arrangement/stores/timelineViewStore';
 import { AUTOMATION_SUB_LANE_HEIGHT } from '#/modules/Arrangement/automationConstants';
 import { ChevronDown, Plus, X } from 'lucide-react';

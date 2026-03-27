@@ -44,6 +44,6 @@ export const DAW_TOOL_SCHEMAS = [
 /**
  * DAW tools in OpenAI-compatible ChatCompletionTool format.
  * Used with the WebLLM native tool calling API (tools + tool_choice).
- * Hermes-2-Pro-Llama-3-8B supports this format natively.
+ * Hermes-3-Llama-3.1-8B supports this format natively.
  */
 export const DAW_CHAT_TOOLS = DAW_TOOL_SCHEMAS;

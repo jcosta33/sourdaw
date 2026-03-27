@@ -10,14 +10,14 @@ Audit of the codebase against [performance-web.md](./performance-web.md). Each s
 
 ### Current State
 
-[useMeterLevel.ts](file:///Users/josecosta/dev/webdaw/src/modules/Workspace/presentations/hooks/useMeterLevel.ts) calls `setLevel()` (React `useState`) on **every `requestAnimationFrame` tick** — 60 setState calls/sec per meter instance. Each call triggers React reconciliation. With N visible tracks, that's N×60 reconciliations/sec just for meters.
+[useMeterLevel.ts](file:///Users/josecosta/dev/sourdaw/src/modules/Workspace/presentations/hooks/useMeterLevel.ts) calls `setLevel()` (React `useState`) on **every `requestAnimationFrame` tick** — 60 setState calls/sec per meter instance. Each call triggers React reconciliation. With N visible tracks, that's N×60 reconciliations/sec just for meters.
 
 ### Affected Files
 
 | File | Issue |
 |---|---|
-| [useMeterLevel.ts](file:///Users/josecosta/dev/webdaw/src/modules/Workspace/presentations/hooks/useMeterLevel.ts) | `setLevel()` inside rAF loop |
-| [StatusBar.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Workspace/presentations/views/StatusBar.tsx) | rAF loop likely updating React state for transport display |
+| [useMeterLevel.ts](file:///Users/josecosta/dev/sourdaw/src/modules/Workspace/presentations/hooks/useMeterLevel.ts) | `setLevel()` inside rAF loop |
+| [StatusBar.tsx](file:///Users/josecosta/dev/sourdaw/src/modules/Workspace/presentations/views/StatusBar.tsx) | rAF loop likely updating React state for transport display |
 
 ### Remediation
 
@@ -33,7 +33,7 @@ Audit of the codebase against [performance-web.md](./performance-web.md). Each s
 
 ### Current State
 
-[playheadScheduler.ts](file:///Users/josecosta/dev/webdaw/src/modules/Transport/useCases/playheadScheduler.ts#L627) calls `transportStore.set()` on every scheduler tick (~100 times/sec, setTimeout at 10ms grain). This pushes `playheadPosition` into a `Store` that triggers `useSyncExternalStore` subscribers across the entire app. Every component reading transport state re-renders on every tick.
+[playheadScheduler.ts](file:///Users/josecosta/dev/sourdaw/src/modules/Transport/useCases/playheadScheduler.ts#L627) calls `transportStore.set()` on every scheduler tick (~100 times/sec, setTimeout at 10ms grain). This pushes `playheadPosition` into a `Store` that triggers `useSyncExternalStore` subscribers across the entire app. Every component reading transport state re-renders on every tick.
 
 ```typescript
 // Line 627 — fires every 10ms during playback
@@ -44,8 +44,8 @@ transportStore.set({ ...current, playheadPosition: newPosition });
 
 | File | Issue |
 |---|---|
-| [playheadScheduler.ts](file:///Users/josecosta/dev/webdaw/src/modules/Transport/useCases/playheadScheduler.ts) | `transportStore.set()` every tick |
-| [transportStore.ts](file:///Users/josecosta/dev/webdaw/src/modules/Transport/stores/transportStore.ts) | Store notifies all subscribers |
+| [playheadScheduler.ts](file:///Users/josecosta/dev/sourdaw/src/modules/Transport/useCases/playheadScheduler.ts) | `transportStore.set()` every tick |
+| [transportStore.ts](file:///Users/josecosta/dev/sourdaw/src/modules/Transport/stores/transportStore.ts) | Store notifies all subscribers |
 | Every component using `transportStore` | Re-renders ~100x/sec during playback |
 
 ### Remediation
@@ -62,7 +62,7 @@ transportStore.set({ ...current, playheadPosition: newPosition });
 
 ### Current State
 
-[createWebAudioEngine.ts](file:///Users/josecosta/dev/webdaw/src/modules/AudioEngine/repositories/createWebAudioEngine.ts#L246) allocates a **new `Float32Array`** on every call to `getTrackPeakLevel()` and `getMasterPeakLevel()`:
+[createWebAudioEngine.ts](file:///Users/josecosta/dev/sourdaw/src/modules/AudioEngine/repositories/createWebAudioEngine.ts#L246) allocates a **new `Float32Array`** on every call to `getTrackPeakLevel()` and `getMasterPeakLevel()`:
 
 ```typescript
 // Line 246 — called 60x/sec per visible track
@@ -76,9 +76,9 @@ This creates GC pressure (N allocations × 60fps). The `getBusPeakLevel` functio
 
 | File | Lines | Issue |
 |---|---|---|
-| [createWebAudioEngine.ts](file:///Users/josecosta/dev/webdaw/src/modules/AudioEngine/repositories/createWebAudioEngine.ts) | 241–256 | `getTrackPeakLevel` — new Float32Array per call |
-| [createWebAudioEngine.ts](file:///Users/josecosta/dev/webdaw/src/modules/AudioEngine/repositories/createWebAudioEngine.ts) | 258–269 | `getMasterPeakLevel` — new Float32Array per call |
-| [createWebAudioEngine.ts](file:///Users/josecosta/dev/webdaw/src/modules/AudioEngine/repositories/createWebAudioEngine.ts) | ~950 | `getBusPeakLevel` — same pattern |
+| [createWebAudioEngine.ts](file:///Users/josecosta/dev/sourdaw/src/modules/AudioEngine/repositories/createWebAudioEngine.ts) | 241–256 | `getTrackPeakLevel` — new Float32Array per call |
+| [createWebAudioEngine.ts](file:///Users/josecosta/dev/sourdaw/src/modules/AudioEngine/repositories/createWebAudioEngine.ts) | 258–269 | `getMasterPeakLevel` — new Float32Array per call |
+| [createWebAudioEngine.ts](file:///Users/josecosta/dev/sourdaw/src/modules/AudioEngine/repositories/createWebAudioEngine.ts) | ~950 | `getBusPeakLevel` — same pattern |
 
 ### Remediation
 
@@ -102,17 +102,17 @@ The codebase has **10+ independent rAF loops**, each calling `requestAnimationFr
 
 | Component | File |
 |---|---|
-| Meter level hook | [useMeterLevel.ts](file:///Users/josecosta/dev/webdaw/src/modules/Workspace/presentations/hooks/useMeterLevel.ts) |
-| Status bar | [StatusBar.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Workspace/presentations/views/StatusBar.tsx) |
-| Timeline surface | [TimelineSurface.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Arrangement/presentations/views/TimelineSurface.tsx) |
-| LUFS meter | [LUFSMeter.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Workspace/presentations/components/LUFSMeter.tsx) |
-| Phase correlation | [PhaseCorrelationDisplay.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Workspace/presentations/components/PhaseCorrelationDisplay.tsx) |
-| VU meter | [VUMeterCanvas.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Workspace/presentations/components/VUMeterCanvas.tsx) |
-| Oscilloscope | [Oscilloscope.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Workspace/presentations/components/Oscilloscope.tsx) |
-| Spectrogram | [Spectrogram.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Workspace/presentations/components/Spectrogram.tsx) |
-| Spectrum analyzer | [SpectrumAnalyzer.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Workspace/presentations/components/SpectrumAnalyzer.tsx) |
-| Goniometer | [Goniometer.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Workspace/presentations/components/Goniometer.tsx) |
-| Compressor GR | [CompressorGainReduction.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Workspace/presentations/components/CompressorGainReduction.tsx) |
+| Meter level hook | [useMeterLevel.ts](file:///Users/josecosta/dev/sourdaw/src/modules/Workspace/presentations/hooks/useMeterLevel.ts) |
+| Status bar | [StatusBar.tsx](file:///Users/josecosta/dev/sourdaw/src/modules/Workspace/presentations/views/StatusBar.tsx) |
+| Timeline surface | [TimelineSurface.tsx](file:///Users/josecosta/dev/sourdaw/src/modules/Arrangement/presentations/views/TimelineSurface.tsx) |
+| LUFS meter | [LUFSMeter.tsx](file:///Users/josecosta/dev/sourdaw/src/modules/Workspace/presentations/components/LUFSMeter.tsx) |
+| Phase correlation | [PhaseCorrelationDisplay.tsx](file:///Users/josecosta/dev/sourdaw/src/modules/Workspace/presentations/components/PhaseCorrelationDisplay.tsx) |
+| VU meter | [VUMeterCanvas.tsx](file:///Users/josecosta/dev/sourdaw/src/modules/Workspace/presentations/components/VUMeterCanvas.tsx) |
+| Oscilloscope | [Oscilloscope.tsx](file:///Users/josecosta/dev/sourdaw/src/modules/Workspace/presentations/components/Oscilloscope.tsx) |
+| Spectrogram | [Spectrogram.tsx](file:///Users/josecosta/dev/sourdaw/src/modules/Workspace/presentations/components/Spectrogram.tsx) |
+| Spectrum analyzer | [SpectrumAnalyzer.tsx](file:///Users/josecosta/dev/sourdaw/src/modules/Workspace/presentations/components/SpectrumAnalyzer.tsx) |
+| Goniometer | [Goniometer.tsx](file:///Users/josecosta/dev/sourdaw/src/modules/Workspace/presentations/components/Goniometer.tsx) |
+| Compressor GR | [CompressorGainReduction.tsx](file:///Users/josecosta/dev/sourdaw/src/modules/Workspace/presentations/components/CompressorGainReduction.tsx) |
 
 ### Remediation
 
@@ -139,8 +139,8 @@ The codebase has **10+ independent rAF loops**, each calling `requestAnimationFr
 2. **Add `content-visibility: auto`** to off-screen track rows and inspector sections — can deliver up to 7× paint time reduction.
 3. **Add `will-change: transform`** to the playhead element for zero-cost compositor movement.
 4. Implementation locations:
-   - [TimelineSurface.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Arrangement/presentations/views/TimelineSurface.tsx) container div
-   - Track row containers in [TrackListView.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Arrangement/presentations/views/TrackListView.tsx)
+   - [TimelineSurface.tsx](file:///Users/josecosta/dev/sourdaw/src/modules/Arrangement/presentations/views/TimelineSurface.tsx) container div
+   - Track row containers in [TrackListView.tsx](file:///Users/josecosta/dev/sourdaw/src/modules/Arrangement/presentations/views/TrackListView.tsx)
    - Panel containers in workspace layout components
 
 ---
@@ -156,7 +156,7 @@ The codebase has **10+ independent rAF loops**, each calling `requestAnimationFr
 ### Remediation
 
 1. Install `@tanstack/react-virtual`.
-2. Implement `useVirtualizer` in [TrackListView.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Arrangement/presentations/views/TrackListView.tsx) with ~5 track overscan.
+2. Implement `useVirtualizer` in [TrackListView.tsx](file:///Users/josecosta/dev/sourdaw/src/modules/Arrangement/presentations/views/TrackListView.tsx) with ~5 track overscan.
 3. Audio processing must remain active for all tracks regardless of virtualization (the audio graph runs independently).
 4. For horizontal timeline virtualization, implement a second virtualizer instance for clip rendering (only render clips in the visible beat range).
 
@@ -168,7 +168,7 @@ The codebase has **10+ independent rAF loops**, each calling `requestAnimationFr
 
 ### Current State
 
-[audioBufferCache.ts](file:///Users/josecosta/dev/webdaw/src/modules/AudioEngine/stores/audioBufferCache.ts#L80) computes peaks on-demand with a fixed `numBins` parameter. There is no multi-resolution mipmap precomputation. Each zoom level recomputes peaks from scratch (even though results are cached by key, the initial computation for each zoom level is expensive for long audio files).
+[audioBufferCache.ts](file:///Users/josecosta/dev/sourdaw/src/modules/AudioEngine/stores/audioBufferCache.ts#L80) computes peaks on-demand with a fixed `numBins` parameter. There is no multi-resolution mipmap precomputation. Each zoom level recomputes peaks from scratch (even though results are cached by key, the initial computation for each zoom level is expensive for long audio files).
 
 ### Remediation
 
@@ -186,7 +186,7 @@ The codebase has **10+ independent rAF loops**, each calling `requestAnimationFr
 
 ### Current State
 
-- [tauri.conf.json](file:///Users/josecosta/dev/webdaw/src-tauri/tauri.conf.json) has `"csp": null` — **no COOP/COEP headers configured**.
+- [tauri.conf.json](file:///Users/josecosta/dev/sourdaw/src-tauri/tauri.conf.json) has `"csp": null` — **no COOP/COEP headers configured**.
 - Zero `SharedArrayBuffer` usage in the codebase.
 - AudioWorklet↔main-thread communication uses `postMessage` only.
 
@@ -227,10 +227,10 @@ All canvas rendering (spectrogram, oscilloscope, spectrum analyzer, goniometer) 
 
 | Component | File |
 |---|---|
-| [Spectrogram.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Workspace/presentations/components/Spectrogram.tsx) | FFT + heatmap rendering on main thread |
-| [Oscilloscope.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Workspace/presentations/components/Oscilloscope.tsx) | Waveform rendering on main thread |
-| [SpectrumAnalyzer.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Workspace/presentations/components/SpectrumAnalyzer.tsx) | FFT bar rendering on main thread |
-| [Goniometer.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Workspace/presentations/components/Goniometer.tsx) | Phase display on main thread |
+| [Spectrogram.tsx](file:///Users/josecosta/dev/sourdaw/src/modules/Workspace/presentations/components/Spectrogram.tsx) | FFT + heatmap rendering on main thread |
+| [Oscilloscope.tsx](file:///Users/josecosta/dev/sourdaw/src/modules/Workspace/presentations/components/Oscilloscope.tsx) | Waveform rendering on main thread |
+| [SpectrumAnalyzer.tsx](file:///Users/josecosta/dev/sourdaw/src/modules/Workspace/presentations/components/SpectrumAnalyzer.tsx) | FFT bar rendering on main thread |
+| [Goniometer.tsx](file:///Users/josecosta/dev/sourdaw/src/modules/Workspace/presentations/components/Goniometer.tsx) | Phase display on main thread |
 
 ### Remediation
 
@@ -246,7 +246,7 @@ All canvas rendering (spectrogram, oscilloscope, spectrum analyzer, goniometer) 
 
 ### Current State
 
-[audioBufferCache.ts](file:///Users/josecosta/dev/webdaw/src/modules/AudioEngine/stores/audioBufferCache.ts) uses **IndexedDB** for persisting audio buffers. This works but is suboptimal — serialization overhead, no synchronous access, and lower throughput than OPFS.
+[audioBufferCache.ts](file:///Users/josecosta/dev/sourdaw/src/modules/AudioEngine/stores/audioBufferCache.ts) uses **IndexedDB** for persisting audio buffers. This works but is suboptimal — serialization overhead, no synchronous access, and lower throughput than OPFS.
 
 ### Remediation
 
@@ -261,9 +261,9 @@ All canvas rendering (spectrogram, oscilloscope, spectrum analyzer, goniometer) 
 
 ### Current State — What's Good ✅
 
-[TimelineSurface.tsx](file:///Users/josecosta/dev/webdaw/src/modules/Arrangement/presentations/views/TimelineSurface.tsx) already follows several best practices:
+[TimelineSurface.tsx](file:///Users/josecosta/dev/sourdaw/src/modules/Arrangement/presentations/views/TimelineSurface.tsx) already follows several best practices:
 - Uses a **dedicated rAF loop** with a **dirty-flag pattern** (lines 199–260).
-- Has a **WebGPU renderer** with Canvas2D fallback ([createWebGpuRenderer.ts](file:///Users/josecosta/dev/webdaw/src/modules/Arrangement/repositories/createWebGpuRenderer.ts)).
+- Has a **WebGPU renderer** with Canvas2D fallback ([createWebGpuRenderer.ts](file:///Users/josecosta/dev/sourdaw/src/modules/Arrangement/repositories/createWebGpuRenderer.ts)).
 - Reads from stores directly (not React state) inside the render loop.
 - Uses `ResizeObserver` for responsive canvas sizing.
 
@@ -280,14 +280,14 @@ All canvas rendering (spectrogram, oscilloscope, spectrum analyzer, goniometer) 
 
 ### Current State
 
-The Rust backend ([lib.rs](file:///Users/josecosta/dev/webdaw/src-tauri/src/lib.rs)) provides IPC commands for:
+The Rust backend ([lib.rs](file:///Users/josecosta/dev/sourdaw/src-tauri/src/lib.rs)) provides IPC commands for:
 - LLM/speech (sidecar management)
 - File I/O (`read_audio_file`, `write_audio_file`)
 - Plugin hosting (CLAP/VST3)
 - MIDI device I/O
 - Audio IPC bridge (unclear functionality)
 
-**No Rust audio engine exists.** All audio processing runs in JavaScript via the Web Audio API in [createWebAudioEngine.ts](file:///Users/josecosta/dev/webdaw/src/modules/AudioEngine/repositories/createWebAudioEngine.ts). This is fine for the web-only target but misses the native performance target.
+**No Rust audio engine exists.** All audio processing runs in JavaScript via the Web Audio API in [createWebAudioEngine.ts](file:///Users/josecosta/dev/sourdaw/src/modules/AudioEngine/repositories/createWebAudioEngine.ts). This is fine for the web-only target but misses the native performance target.
 
 ### Remediation (Long-term)
 

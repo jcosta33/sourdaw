@@ -4,7 +4,7 @@ import { Input } from '#/components/ui/input';
 import { cn } from '#/helpers/Styles/cn';
 import { searchCommands, type CommandEntry } from '../../models/CommandRegistry';
 import { executeAppAction } from '../../useCases/executeAppAction';
-import { closeCommandPalette } from '#/modules/Workspace/useCases/togglePanel';
+import { closeCommandPalette } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 
 const subscribe = (cb: () => void): (() => void) => workspaceStore.subscribe(cb);

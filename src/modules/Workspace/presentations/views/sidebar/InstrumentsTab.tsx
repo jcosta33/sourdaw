@@ -3,15 +3,10 @@ import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { Save, X, ChevronRight, Star, Folder } from 'lucide-react';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { type SoundPreset, type SoundPresetCategory } from '#/modules/Arrangement/useCases/trackQueries';
+import { type SoundPreset, type SoundPresetCategory } from '#/modules/Arrangement/models/SoundPreset';
 import { getFactoryPresets } from '#/modules/Arrangement/useCases/soundPresetLibrary';
-import {
-    createTrackFromPreset,
-    loadPresetToTrack,
-    getUserPresets,
-    saveCurrentAsPreset,
-    deleteUserPreset,
-} from '#/modules/Arrangement/useCases/preset';
+import { getUserPresets, saveCurrentAsPreset, deleteUserPreset } from '#/modules/Arrangement/useCases/preset/presetStorage';
+import { createTrackFromPreset, loadPresetToTrack } from '#/modules/Arrangement/useCases/preset/presetLoading';
 
 import { PresetItem } from '../../components/sidebar/PresetItem';
 import { PRESET_CATEGORIES, CATEGORY_ICONS, CATEGORY_COLORS } from '../../components/sidebar/sidebarConstants';

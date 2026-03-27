@@ -36,7 +36,7 @@ export function addDevice(trackId: string, deviceType: string): Device | null {
 
     if (plugin) {
         if (plugin.id.startsWith('faust-')) {
-            import('#/modules/Plugin/useCases/faustEngine')
+            import('#/modules/Plugin/useCases/faustEngine/compilerEngine')
                 .then(({ compileFaustDSP }) => compileFaustDSP(plugin.id))
                 .catch(console.error);
         }

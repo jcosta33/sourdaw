@@ -6,7 +6,7 @@
  */
 import { timelineViewStore } from '../../stores/timelineViewStore';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
-import { getTrackAtY } from '../../useCases/timelineInteractions';
+import { getTrackAtY } from '../../useCases/timelineInteractions/getTrackAtY';
 
 const RULER_HEIGHT = 0;
 

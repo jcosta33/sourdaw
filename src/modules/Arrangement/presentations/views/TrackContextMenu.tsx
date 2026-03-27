@@ -2,8 +2,8 @@ import { type ReactElement,
     type MouseEvent, type ReactNode, useState, useRef, useEffect } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 import { removeTrack } from '../../useCases/removeTrack';
-import { toggleSoloSafe } from '../../useCases/toggleTrackState';
-import { addClip } from '#/modules/Arrangement/useCases/clip';
+import { toggleSoloSafe } from '../../useCases/toggleTrackState/toggleSoloSafe';
+import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
 import { renameTrack } from '../../useCases/renameTrack';
 import { freezeTrack, unfreezeTrack, bounceInPlace, bounceToNewTrack } from '../../useCases/freezeBounce';
 import { armTrack } from '../../useCases/recording';

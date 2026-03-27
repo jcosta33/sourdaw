@@ -434,7 +434,7 @@ const AiSection = (): ReactElement => {
                             )}
                         />
                         {backend === 'native'
-                            ? 'Native (llama-server)'
+                            ? 'Native (in-process)'
                             : backend === 'cloud'
                               ? 'Cloud (Claude)'
                               : backend === 'webllm'

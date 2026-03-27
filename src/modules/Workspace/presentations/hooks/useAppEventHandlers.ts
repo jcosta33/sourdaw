@@ -11,7 +11,7 @@ type AppEventCallbacks = {
 
 /**
  * Subscribes to custom DOM events dispatched by menus and other parts of the app
- * (e.g. `webdaw:open-export`, `webdaw:save-project`).
+ * (e.g. `sourdaw:open-export`, `sourdaw:save-project`).
  */
 export const useAppEventHandlers = ({ onOpenExport, onOpenPreferences }: AppEventCallbacks): void => {
     useEffect(() => {
@@ -34,21 +34,21 @@ export const useAppEventHandlers = ({ onOpenExport, onOpenPreferences }: AppEven
                 void importMidiFile(file);
             }
         };
-        document.addEventListener('webdaw:open-export', exportHandler);
-        document.addEventListener('webdaw:open-preferences', prefsHandler);
-        document.addEventListener('webdaw:save-project', saveHandler);
-        document.addEventListener('webdaw:new-project', newHandler);
-        document.addEventListener('webdaw:undo', undoHandler);
-        document.addEventListener('webdaw:redo', redoHandler);
-        document.addEventListener('webdaw:import-midi', midiImportHandler);
+        document.addEventListener('sourdaw:open-export', exportHandler);
+        document.addEventListener('sourdaw:open-preferences', prefsHandler);
+        document.addEventListener('sourdaw:save-project', saveHandler);
+        document.addEventListener('sourdaw:new-project', newHandler);
+        document.addEventListener('sourdaw:undo', undoHandler);
+        document.addEventListener('sourdaw:redo', redoHandler);
+        document.addEventListener('sourdaw:import-midi', midiImportHandler);
         return () => {
-            document.removeEventListener('webdaw:open-export', exportHandler);
-            document.removeEventListener('webdaw:open-preferences', prefsHandler);
-            document.removeEventListener('webdaw:save-project', saveHandler);
-            document.removeEventListener('webdaw:new-project', newHandler);
-            document.removeEventListener('webdaw:undo', undoHandler);
-            document.removeEventListener('webdaw:redo', redoHandler);
-            document.removeEventListener('webdaw:import-midi', midiImportHandler);
+            document.removeEventListener('sourdaw:open-export', exportHandler);
+            document.removeEventListener('sourdaw:open-preferences', prefsHandler);
+            document.removeEventListener('sourdaw:save-project', saveHandler);
+            document.removeEventListener('sourdaw:new-project', newHandler);
+            document.removeEventListener('sourdaw:undo', undoHandler);
+            document.removeEventListener('sourdaw:redo', redoHandler);
+            document.removeEventListener('sourdaw:import-midi', midiImportHandler);
         };
     }, [onOpenExport, onOpenPreferences]);
 };

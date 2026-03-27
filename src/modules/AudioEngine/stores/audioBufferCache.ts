@@ -1,7 +1,7 @@
 const cache = new Map<string, AudioBuffer>();
 const waveformCache = new Map<string, Float32Array>();
 
-const DB_NAME = 'webdaw-audio';
+const DB_NAME = 'sourdaw-audio';
 const DB_VERSION = 1;
 const STORE_NAME = 'buffers';
 

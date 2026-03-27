@@ -3,7 +3,7 @@
  * quantize, transpose, humanize, strum, AI, and groove operations.
  */
 import { type ReactElement, useEffect, useRef } from 'react';
-import { type MidiNote } from '#/modules/Arrangement/useCases/trackQueries';
+import { type MidiNote } from '#/modules/MIDI/useCases/midi';
 import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
 import { addMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/addMidiNote';
 import { removeMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/removeMidiNote';

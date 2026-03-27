@@ -5,7 +5,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip
 
 export const VoiceButton = (): ReactElement => {
     const handleClick = () => {
-        document.dispatchEvent(new CustomEvent('webdaw:toggle-voice-command'));
+        document.dispatchEvent(new CustomEvent('sourdaw:toggle-voice-command'));
     };
 
     return (

@@ -2,7 +2,7 @@ import { type ReactElement } from 'react';
 import { Folder, File, Star, Upload } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { addClip } from '#/modules/Arrangement/useCases/clip';
+import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { PreviewButton } from '../../components/sidebar/PreviewButton';
 import { type SampleItem } from '../../components/sidebar/sidebarConstants';
@@ -74,7 +74,7 @@ export const SamplesTab = ({
                                         duration: sample.duration,
                                         audioBufferId: sample.audioBufferId,
                                     };
-                                    e.dataTransfer.setData('application/x-webdaw-sample', JSON.stringify(data));
+                                    e.dataTransfer.setData('application/x-sourdaw-sample', JSON.stringify(data));
                                     e.dataTransfer.effectAllowed = 'copy';
                                 }}
                                 onClick={() => {

@@ -40,6 +40,7 @@
     --color-accent-peach: #c9a07a;
     --color-accent-amber: #c4aa5f;
     --color-accent-red: #c49090;
+    --color-accent-orange: #f1a54b;
 
     /* UI States (muted DAW conventions — readable but not screaming) */
     --color-state-success: var(--color-accent-mint);
@@ -176,7 +177,7 @@
     --color-popover: var(--color-bg-overlay);
     --color-popover-foreground: var(--color-text-primary);
 
-    --color-primary: var(--color-accent-cyan);
+    --color-primary: var(--color-accent-orange);
     --color-primary-foreground: var(--color-bg-app);
 
     --color-secondary: var(--color-bg-panelRaised);
@@ -235,9 +236,12 @@
     --color-yellow-400: #b8a050;
     --color-yellow-500: #a08840;
 
-    /* Oranges → terracotta */
-    --color-orange-400: #b07848;
-    --color-orange-500: #986040;
+    /* Oranges → primary brand accent */
+    --color-orange-200: #f7c996;
+    --color-orange-300: #f4b771;
+    --color-orange-400: #f1a54b;
+    --color-orange-500: #e58e2d;
+    --color-orange-600: #c87a24;
 
     /* Reds → brick/rust */
     --color-red-400: #b06060;

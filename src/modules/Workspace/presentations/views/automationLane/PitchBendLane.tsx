@@ -3,7 +3,7 @@ import { cn } from '#/helpers/Styles/cn';
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
 import { addPitchBend, removePitchBend, movePitchBend } from '#/modules/MIDI/useCases/midiEvent';
-import { type MidiPitchBend } from '#/modules/Arrangement/useCases/trackQueries';
+import { type MidiPitchBend } from '#/modules/MIDI/useCases/midi';
 import { PITCH_BEND_CENTER } from '../../helpers/laneConstants';
 
 type PitchBendLaneProps = {

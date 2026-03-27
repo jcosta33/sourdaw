@@ -1,8 +1,9 @@
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { timelineViewStore } from '../../stores/timelineViewStore';
 import { buildTimelineRenderModel } from '../buildTimelineRenderModel';
-import { moveClip } from '#/modules/Arrangement/useCases/clip';
-import { trimClipStart, trimClipEnd } from '#/modules/Arrangement/useCases/clipEditing';
+import { moveClip } from '#/modules/Arrangement/useCases/clip/moveClip';
+import { trimClipStart } from '#/modules/Arrangement/useCases/clipEditing/trimClipStart';
+import { trimClipEnd } from '#/modules/Arrangement/useCases/clipEditing/trimClipEnd';
 import { snapToGrid } from './snapToGrid';
 import { snapToGridOrClips } from './snapToGridOrClips';
 import { getTrackAtY } from './getTrackAtY';

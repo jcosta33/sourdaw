@@ -1,7 +1,7 @@
 import { streamCloudChatCompletion } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
 import { getTrackStoreState as getTrackState } from '#/modules/Arrangement/useCases/trackQueries';
 import { getNotesForClip } from '#/modules/MIDI/useCases/midiNoteCrud';
-import { createAlternativeClips } from '#/modules/Arrangement/useCases/clipEditing';
+import { createAlternativeClips } from '#/modules/Arrangement/useCases/clipEditing/createAlternativeClips';
 import { type Clip } from '#/modules/Arrangement/useCases/trackQueries';
 
 export async function generateMidiVariations(clipId: string): Promise<void> {

@@ -3,7 +3,7 @@
  *
  * Detection order:
  *  1. Browser SpeechRecognition API (Chrome/Edge)
- *  2. Whisper sidecar via Tauri IPC (desktop builds)
+ *  2. Whisper native via Tauri IPC (desktop builds, auto-downloads model)
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -26,13 +26,6 @@ type SpeechRecognitionInstance = {
     onresult: ((event: { results: SpeechRecognitionResultList }) => void) | null;
     onerror: ((event: { error: string }) => void) | null;
     onend: (() => void) | null;
-};
-
-type TranscriptionResult = {
-    text: string;
-    language: string;
-    duration_ms: number;
-    confidence: number;
 };
 
 type VoiceMode = 'browser' | 'whisper' | null;
@@ -63,16 +56,12 @@ const resolveVoiceMode = (): VoiceMode => {
     return null;
 };
 
-const transcribeViaWhisper = async (audioBlob: Blob): Promise<string> => {
-    const arrayBuffer = await audioBlob.arrayBuffer();
-    const bytes = Array.from(new Uint8Array(arrayBuffer));
-    const tempPath = `__webdaw_voice_${String(Date.now())}.webm`;
-
-    await tauriInvoke('write_audio_file', { path: tempPath, data: bytes });
-    const result = (await tauriInvoke('transcribe_audio', {
-        audioPath: tempPath,
-    })) as TranscriptionResult;
-    return result.text;
+/**
+ * Ensure the Whisper model is downloaded and loaded before first use.
+ * Auto-downloads ~142MB model from HuggingFace on first call.
+ */
+const ensureWhisperLoaded = async (): Promise<void> => {
+    await tauriInvoke('ensure_whisper_ready');
 };
 
 // ── Hook return type ────────────────────────────────────────────────────
@@ -89,7 +78,7 @@ export type VoiceRecordingState = {
 };
 
 /**
- * Manages voice recording lifecycle: browser SpeechRecognition or Whisper sidecar.
+ * Manages voice recording lifecycle: browser SpeechRecognition or native Whisper.
  * Injects transcribed text into the prompt bar via `injectPromptCommand`.
  */
 export const useVoiceRecording = (): VoiceRecordingState => {
@@ -121,54 +110,35 @@ export const useVoiceRecording = (): VoiceRecordingState => {
     };
 
     const startWhisperRecording = async (): Promise<void> => {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-        chunksRef.current = [];
+        try {
+            // Auto-download and load model on first use
+            await ensureWhisperLoaded();
 
-        recorder.ondataavailable = (e) => {
-            if (e.data.size > 0) {
-                chunksRef.current.push(e.data);
-            }
-        };
-
-        recorder.onstop = () => {
-            for (const track of stream.getTracks()) {
-                track.stop();
-            }
-
-            const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
-            chunksRef.current = [];
-
-            if (blob.size === 0) {
+            // Listen for transcription result from Rust
+            const { tauriListen } = await import('#/helpers/tauriBridge');
+            const unlisten = await tauriListen('dictation-result', (payload: unknown) => {
+                const result = payload as { payload: { text: string; duration_ms: number } };
+                const text = result.payload?.text?.trim() ?? '';
+                if (text) {
+                    setFinalText(text);
+                    injectPromptCommand(text);
+                }
+                setTranscribing(false);
                 setIsListening(false);
-                return;
-            }
+                void unlisten();
+            });
 
-            setTranscribing(true);
-            void transcribeViaWhisper(blob)
-                .then((text) => {
-                    const trimmed = text.trim();
-                    if (trimmed) {
-                        injectPromptCommand(trimmed);
-                    }
-                })
-                .catch((error: unknown) => {
-                    logger.warn(`Whisper transcription failed: ${String(error)}`);
-                })
-                .finally(() => {
-                    setTranscribing(false);
-                    setIsListening(false);
-                    setFinalText('');
-                    setInterimText('');
-                });
-        };
+            // Start native recording via cpal + whisper inference
+            await tauriInvoke('start_dictation');
 
-        recorder.start();
-        mediaRecorderRef.current = recorder;
-        modeRef.current = 'whisper';
-        setIsListening(true);
-        setFinalText('');
-        setInterimText('');
+            modeRef.current = 'whisper';
+            setIsListening(true);
+            setFinalText('');
+            setInterimText('Recording...');
+        } catch (error: unknown) {
+            logger.warn(`Whisper recording failed: ${String(error)}`);
+            setIsListening(false);
+        }
     };
 
     // ── Browser SpeechRecognition ────────────────────────────────────────
@@ -269,11 +239,14 @@ export const useVoiceRecording = (): VoiceRecordingState => {
             recognitionRef.current.stop();
             recognitionRef.current = null;
         }
-        if (modeRef.current === 'whisper' && mediaRecorderRef.current) {
-            if (mediaRecorderRef.current.state === 'recording') {
-                mediaRecorderRef.current.stop();
-                return;
-            }
+        if (modeRef.current === 'whisper') {
+            setTranscribing(true);
+            setInterimText('Transcribing...');
+            void tauriInvoke('stop_dictation').catch((e: unknown) => {
+                logger.warn(`stop_dictation failed: ${String(e)}`);
+            });
+            // The dictation-result event listener (set in startWhisperRecording) handles the rest
+            return;
         }
         setIsListening(false);
     };
@@ -321,8 +294,8 @@ export const useVoiceRecording = (): VoiceRecordingState => {
             }
         };
 
-        document.addEventListener('webdaw:toggle-voice-command', handleToggle);
-        return () => document.removeEventListener('webdaw:toggle-voice-command', handleToggle);
+        document.addEventListener('sourdaw:toggle-voice-command', handleToggle);
+        return () => document.removeEventListener('sourdaw:toggle-voice-command', handleToggle);
         // eslint-disable-next-line react-hooks/exhaustive-deps -- stable refs, intentional
     }, []);
 

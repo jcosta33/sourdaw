@@ -34,7 +34,7 @@ impl Default for MidiState {
 /// List all available MIDI input ports.
 #[tauri::command]
 pub fn list_midi_inputs() -> Result<Vec<MidiDeviceInfo>, String> {
-    let midi_in = MidiInput::new("webdaw-enumerate")
+    let midi_in = MidiInput::new("sourdaw-enumerate")
         .map_err(|e| format!("Failed to create MIDI input: {e}"))?;
 
     let ports = midi_in.ports();
@@ -69,7 +69,7 @@ pub fn open_midi_input(
         }
     }
 
-    let midi_in = MidiInput::new("webdaw-input")
+    let midi_in = MidiInput::new("sourdaw-input")
         .map_err(|e| format!("Failed to create MIDI input: {e}"))?;
 
     let ports = midi_in.ports();
@@ -86,7 +86,7 @@ pub fn open_midi_input(
     let connection = midi_in
         .connect(
             port,
-            "webdaw-midi-listener",
+            "sourdaw-midi-listener",
             move |timestamp, message, _| {
                 let payload = MidiMessagePayload {
                     port: name_for_callback.clone(),

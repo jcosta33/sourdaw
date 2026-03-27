@@ -9,7 +9,7 @@ import {
     setTrackColor,
 } from '#/modules/Arrangement/useCases/setTrackGainPan';
 import { freezeTrack, unfreezeTrack } from '#/modules/Arrangement/useCases/freezeBounce';
-import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
+import { type Track } from '#/modules/Arrangement/models/Track';
 import { TRACK_COLOR_PRESETS } from '#/helpers/UI/colorPresets';
 
 type TrackHeaderSectionProps = {

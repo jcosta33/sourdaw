@@ -1,9 +1,9 @@
 import { type ReactElement } from 'react';
 import { Sparkles } from 'lucide-react';
-import { type BUILTIN_PLUGINS } from '#/modules/Arrangement/useCases/trackQueries';
+import { type BUILTIN_PLUGINS } from '#/modules/Arrangement/models/DeviceParameter';
 import { PluginBrowser } from '#/modules/AudioEngine/presentations/views/PluginBrowser';
 import { MODULATOR_PRESETS } from '#/modules/Plugin/useCases/modulatorLibrary';
-import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases/midiEffectPlugins';
+import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases/midiEffectPlugins/registry';
 import { type SidebarRoute } from '../Sidebar';
 import {
     NavCard,

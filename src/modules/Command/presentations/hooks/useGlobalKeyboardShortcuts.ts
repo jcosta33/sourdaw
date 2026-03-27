@@ -1,24 +1,14 @@
 import { useEffect } from 'react';
-import {
-    stopPlayback,
-    toggleMetronome,
-    seekPlayhead,
-    clearSolos,
-    setEditingTool,
-    zoomToFit,
-    zoomToSelection,
-    addTrack,
-    duplicateTrack,
-    duplicateClip,
-    duplicateClipToNextBar,
-    zoomTracksVertical,
-} from '../../useCases/keyboardShortcutActions';
+import { stopPlayback, toggleMetronome, seekPlayhead } from '../../useCases/keyboardShortcutActions/transportShortcuts';
+import { clearSolos, addTrack, duplicateTrack, duplicateClip, duplicateClipToNextBar, zoomTracksVertical } from '../../useCases/keyboardShortcutActions/trackShortcuts';
+import { setEditingTool, zoomToFit, zoomToSelection } from '../../useCases/keyboardShortcutActions/workspaceShortcuts';
 
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { zoomTimeline } from '#/modules/Arrangement/stores/timelineViewStore';
 import { getAllClipIds, getLastClipEndBeat, goToNextMarker, goToPreviousMarker } from '../../useCases/selectionHelpers';
-import { cycleAutomationVisibility, toggleCommandPalette, selectAllClips, clearClipSelection, toggleWorkspaceMode } from '#/modules/Workspace/useCases/togglePanel';
+import { cycleAutomationVisibility } from '#/modules/Workspace/useCases/togglePanel/zoomOperations';
+import { toggleCommandPalette, selectAllClips, clearClipSelection, toggleWorkspaceMode } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 import { type EditingTool, TOOL_SHORTCUTS } from '#/modules/Workspace/useCases/workspaceQueries';
 
 const ZOOM_STEP = 4;
@@ -134,7 +124,7 @@ export const useGlobalKeyboardShortcuts = (): void => {
                     return;
                 }
                 e.preventDefault();
-                document.dispatchEvent(new CustomEvent('webdaw:toggle-voice-command', { detail: { active: true } }));
+                document.dispatchEvent(new CustomEvent('sourdaw:toggle-voice-command', { detail: { active: true } }));
                 return;
             }
 
@@ -162,7 +152,7 @@ export const useGlobalKeyboardShortcuts = (): void => {
                     break;
                 }
                 case 'L':
-                    document.dispatchEvent(new CustomEvent('webdaw:scroll-to-playhead'));
+                    document.dispatchEvent(new CustomEvent('sourdaw:scroll-to-playhead'));
                     break;
                 case 'm':
                     toggleMetronome();
@@ -230,7 +220,7 @@ export const useGlobalKeyboardShortcuts = (): void => {
 
         const keyupHandler = (e: KeyboardEvent) => {
             if (e.key === 'v') {
-                document.dispatchEvent(new CustomEvent('webdaw:toggle-voice-command', { detail: { active: false } }));
+                document.dispatchEvent(new CustomEvent('sourdaw:toggle-voice-command', { detail: { active: false } }));
             }
         };
         window.addEventListener('keyup', keyupHandler);

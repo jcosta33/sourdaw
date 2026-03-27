@@ -16,12 +16,12 @@ import {
     toggleMixer,
     toggleChatPanel,
     toggleTrackList,
-} from '../../../useCases/togglePanel';
+} from '../../../useCases/togglePanel/panelToggles';
 import {
-    subscribeGenerativeAi,
-    getGenerativeAiSnapshot,
-    toggleGenerativeAiPanel,
-} from '#/modules/AiGeneration/useCases/generativeAiActions';
+    subscribeAiStore,
+    getAiSnapshot,
+} from '#/modules/AiGeneration/stores/aiStore';
+import { toggleAiPanel } from '#/modules/AiGeneration/useCases/actions/taskManagement';
 import { useSyncExternalStore } from 'react';
 
 type PanelTogglesProps = {
@@ -39,7 +39,7 @@ export const PanelToggles = ({
     chatPanelOpen,
     trackListOpen,
 }: PanelTogglesProps): ReactElement => {
-    const aiState = useSyncExternalStore<{ isPanelOpen: boolean }>(subscribeGenerativeAi, getGenerativeAiSnapshot);
+    const aiState = useSyncExternalStore<{ isPanelOpen: boolean }>(subscribeAiStore, getAiSnapshot);
 
     return (
         <div className="flex items-center gap-0.5" role="group" aria-label="Panel toggles">
@@ -121,7 +121,7 @@ export const PanelToggles = ({
                         size="icon-sm"
                         aria-label="Toggle Generative AI Dashboard"
                         aria-pressed={aiState.isPanelOpen}
-                        onClick={toggleGenerativeAiPanel}
+                        onClick={toggleAiPanel}
                         className={aiState.isPanelOpen ? 'text-[var(--color-accent-lavender)]' : ''}
                     >
                         <Sparkles className="size-3.5" aria-hidden="true" />
@@ -136,7 +136,7 @@ export const PanelToggles = ({
                         variant="ghost"
                         size="icon-sm"
                         aria-label="Open Preferences"
-                        onClick={() => document.dispatchEvent(new Event('webdaw:open-preferences'))}
+                        onClick={() => document.dispatchEvent(new Event('sourdaw:open-preferences'))}
                     >
                         <Settings2 className="size-3.5" aria-hidden="true" />
                     </Button>

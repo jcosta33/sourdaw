@@ -130,13 +130,13 @@ export const TimelineSurface = (): ReactElement => {
             timelineViewStore.set({ ...viewState, scrollX: targetScrollX });
         };
 
-        document.addEventListener('webdaw:zoom-to-fit', handleZoomToFit);
-        document.addEventListener('webdaw:zoom-to-selection', handleZoomToSelection);
-        document.addEventListener('webdaw:scroll-to-playhead', handleScrollToPlayhead);
+        document.addEventListener('sourdaw:zoom-to-fit', handleZoomToFit);
+        document.addEventListener('sourdaw:zoom-to-selection', handleZoomToSelection);
+        document.addEventListener('sourdaw:scroll-to-playhead', handleScrollToPlayhead);
         return () => {
-            document.removeEventListener('webdaw:zoom-to-fit', handleZoomToFit);
-            document.removeEventListener('webdaw:zoom-to-selection', handleZoomToSelection);
-            document.removeEventListener('webdaw:scroll-to-playhead', handleScrollToPlayhead);
+            document.removeEventListener('sourdaw:zoom-to-fit', handleZoomToFit);
+            document.removeEventListener('sourdaw:zoom-to-selection', handleZoomToSelection);
+            document.removeEventListener('sourdaw:scroll-to-playhead', handleScrollToPlayhead);
         };
     }, []);
 

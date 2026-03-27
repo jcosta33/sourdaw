@@ -12,8 +12,8 @@
  */
 import { type ReactElement, type ComponentType } from 'react';
 import { Card } from '#/components/ui/card';
-import { type DeviceParameter } from '#/modules/Arrangement/useCases/trackQueries';
-import { type Device } from '#/modules/Arrangement/useCases/trackQueries';
+import { type DeviceParameter } from '#/modules/Arrangement/models/DeviceParameter';
+import { type Device } from '#/modules/Arrangement/models/Track';
 import { DeviceParameterControl } from './DeviceParameterControl';
 
 export type DeviceLayoutProps = {

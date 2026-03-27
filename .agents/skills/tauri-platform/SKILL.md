@@ -98,7 +98,7 @@ use tauri::AppHandle;
 
 #[tauri::command]
 pub fn list_midi_ports() -> Result<Vec<String>, String> {
-    let midi_in = MidiInput::new("webdaw").map_err(|e| e.to_string())?;
+    let midi_in = MidiInput::new("sourdaw").map_err(|e| e.to_string())?;
     midi_in.ports().iter()
         .map(|p| midi_in.port_name(p).map_err(|e| e.to_string()))
         .collect()
@@ -110,14 +110,14 @@ pub fn connect_midi_port(
     state: tauri::State<'_, Arc<Mutex<MidiState>>>,
     port_index: usize,
 ) -> Result<(), String> {
-    let midi_in = MidiInput::new("webdaw-input").map_err(|e| e.to_string())?;
+    let midi_in = MidiInput::new("sourdaw-input").map_err(|e| e.to_string())?;
     let ports = midi_in.ports();
     let port = ports.get(port_index).ok_or("Port not found")?;
     let port_name = midi_in.port_name(port).unwrap_or_default();
     let app_clone = app.clone();
     let name_clone = port_name.clone();
 
-    let conn = midi_in.connect(port, "webdaw-conn", move |timestamp, raw, _| {
+    let conn = midi_in.connect(port, "sourdaw-conn", move |timestamp, raw, _| {
         // Parse typed messages with wmidi if needed:
         // if let Ok(msg) = wmidi::MidiMessage::try_from(raw) { ... }
         let _ = app_clone.emit("midi-message", MidiMessage {

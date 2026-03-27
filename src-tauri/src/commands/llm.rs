@@ -173,7 +173,7 @@ pub async fn get_llm_sidecar_status(
 pub fn get_model_dir() -> Result<String, String> {
     let dir = dirs::data_dir()
         .ok_or("Could not determine data directory")?
-        .join("com.webdaw.app")
+        .join("com.sourdaw.app")
         .join("models");
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("Failed to create model directory: {e}"))?;

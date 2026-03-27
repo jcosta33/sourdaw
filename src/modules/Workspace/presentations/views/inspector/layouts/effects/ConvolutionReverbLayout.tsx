@@ -11,7 +11,7 @@ import {
     ParamGrid,
     registerDeviceLayout,
 } from '../../deviceLayoutRegistry';
-import { setDeviceParameter } from '#/modules/Arrangement/useCases/device';
+import { setDeviceParameter } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
 import { LatchButton } from '#/components/daw/LatchButton';
 import { LED } from '#/components/daw/LED';
 

@@ -3,7 +3,9 @@ import { Card } from '#/components/ui/card';
 import { Button } from '#/components/ui/button';
 import { cn } from '#/helpers/Styles/cn';
 import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
-import { setCompRegion, selectTake, flattenComp } from '#/modules/Arrangement/useCases/comping';
+import { setCompRegion } from '#/modules/Arrangement/useCases/comping/setCompRegion';
+import { selectTake } from '#/modules/Arrangement/useCases/comping/selectTake';
+import { flattenComp } from '#/modules/Arrangement/useCases/comping/flattenComp';
 
 type TakesSectionProps = {
     trackId: string;

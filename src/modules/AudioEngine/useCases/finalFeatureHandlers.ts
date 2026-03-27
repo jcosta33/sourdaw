@@ -1,10 +1,11 @@
 import { type ActionHandler } from '#/modules/Command/useCases/commandQueries';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { setProcessingMode, type BitDepthMode } from '#/modules/AudioEngine/useCases/audioPrecision';
-import { toggleNodeView } from '#/modules/Plugin/useCases/nodeView';
+import { toggleNodeView } from '#/modules/Plugin/useCases/nodeView/toggleNodeView';
 import { setProtocol, type ControlSurfaceProtocol } from '#/modules/AudioEngine/useCases/controlSurface';
 import { addCvOutput, type CvOutputChannel } from '#/modules/Synth/useCases/cvGate';
-import { connectPush, disconnectPush } from '#/modules/Plugin/useCases/pushIntegration';
+import { connectPush } from '#/modules/Plugin/useCases/pushIntegration/connectPush';
+import { disconnectPush } from '#/modules/Plugin/useCases/pushIntegration/disconnectPush';
 import { loadModel, setTransferBlend } from '#/modules/AudioEngine/useCases/rave';
 import {
     enableWarping,

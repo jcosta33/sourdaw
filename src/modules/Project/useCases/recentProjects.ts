@@ -24,7 +24,7 @@ const logger = Container.getInstance().get(Logger);
 const MAX_RECENT = 10;
 
 const recentProjectsStorage = new LocalStorageStorage<RecentProjectEntry[]>(
-    RECENT_PROJECTS_KEY as 'webdaw:recent-projects'
+    RECENT_PROJECTS_KEY as 'sourdaw:recent-projects'
 );
 
 export type RecentProjectEntry = {

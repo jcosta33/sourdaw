@@ -9,7 +9,7 @@ import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
 
 export type { AppAction };
 import { undo } from '#/modules/Command/useCases/undoRedo';
-import { toggleChatPanel } from '#/modules/Workspace/useCases/togglePanel';
+import { toggleChatPanel } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 
 /** Execute an app action (delegates to Command module). */
 export function runAppAction(action: AppAction): Promise<void> | void {

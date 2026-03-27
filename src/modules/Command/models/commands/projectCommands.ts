@@ -29,13 +29,13 @@ export const projectCommands: CommandEntry[] = [
         category: 'Project',
         shortcut: '⌘⇧E',
         action: () => {
-            document.dispatchEvent(new CustomEvent('webdaw:open-export'));
+            document.dispatchEvent(new CustomEvent('sourdaw:open-export'));
         },
     },
     {
         id: 'export-project-file',
         label: 'Export Project File',
-        description: 'Download project as .webdaw file',
+        description: 'Download project as .sourdaw file',
         category: 'Project',
         action: { type: 'exportProject' },
     },
@@ -56,12 +56,12 @@ export const projectCommands: CommandEntry[] = [
     {
         id: 'import-project',
         label: 'Import Project',
-        description: 'Import a .webdaw project file',
+        description: 'Import a .sourdaw project file',
         category: 'Project',
         action: async () => {
             const { pickFiles } = await import('#/modules/Project/useCases/fileDialog');
             const files = await pickFiles({
-                filters: [{ name: 'Sourdaw Project', extensions: ['webdaw'] }],
+                filters: [{ name: 'Sourdaw Project', extensions: ['sourdaw'] }],
                 multiple: false,
             });
             if (files && files.length > 0) {

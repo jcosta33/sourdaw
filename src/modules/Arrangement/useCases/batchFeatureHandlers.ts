@@ -2,12 +2,13 @@ import { type ActionHandler } from '#/modules/Command/useCases/commandQueries';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { searchSamples } from '#/modules/SoundLibrary/useCases/sampleDatabase';
 import { runEditorScript, toggleScriptEditor } from '#/modules/Extension/useCases/extension';
-import { createCompGroup } from '#/modules/Arrangement/useCases/groupComping';
+import { createCompGroup } from '#/modules/Arrangement/useCases/groupComping/compGroupOperations';
 import { togglePunchRecording } from '#/modules/Transport/useCases/punchRecording';
 import { toggleRecord, triggerScene } from '#/modules/Transport/useCases/loopStation';
 import { nextItem, previousItem } from '#/modules/Transport/useCases/setlist';
 import { detectProjectTempo } from '#/modules/Transport/useCases/tempoMapping';
-import { createAdjustmentLayer, type AdjustmentEffectType } from '#/modules/Arrangement/useCases/adjustmentLayer';
+import { createAdjustmentLayer } from '#/modules/Arrangement/useCases/adjustmentLayer/createAdjustmentLayer';
+import type { AdjustmentEffectType } from '#/modules/Arrangement/stores/adjustmentLayer';
 
 export const batchFeatureHandlers: Record<string, ActionHandler<any>> = {
     searchSamples: {

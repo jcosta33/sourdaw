@@ -428,7 +428,7 @@ Every feature listed here must also be AI-promptable via the AppAction system.
 | Built-in instruments (synth)                                                                          | DONE   | Subtractive synth: multi-waveform, ADSR, filter, detune                                                                                                                                                                                                                    |
 | Built-in instruments (drum kits)                                                                      | DONE   | 4 factory kits (808, Analog, Electronic, Acoustic), per-pitch voices                                                                                                                                                                                                       |
 | Sound preset library                                                                                  | DONE   | 50+ factory presets, user save/load, categories, sidebar browser                                                                                                                                                                                                           |
-| Preset import/export                                                                                  | DONE   | .webdaw-preset JSON format, save/load to localStorage                                                                                                                                                                                                                      |
+| Preset import/export                                                                                  | DONE   | .sourdaw-preset JSON format, save/load to localStorage                                                                                                                                                                                                                      |
 | WAM 2.0 plugin host                                                                                   | DONE   | `wamPluginHost.ts`: WAM descriptor registry, environment init (`initWAMEnvironment`), plugin loading/unloading, category filtering, instance management. 10 built-in WAM descriptors (7 effects + 3 instruments). `registerBuiltinPlugins()`                               |
 | Faust DSP engine (faust2wam)                                                                          | DONE   | `faustEngine.ts`: register/compile/manage Faust .dsp sources, auto-register as WAM plugins. 7 built-in pro effects with Faust DSP code + param descriptors. `registerBuiltinFaustDSP()` called in AppShell init                                                            |
 | Pro effects suite (Faust)                                                                             | DONE   | 7 effects in `faustEngine.ts`: Zita-Rev1 reverb, 1176 compressor, multiband comp, pro EQ (de-cramped, 7-band), tape delay (wow & flutter), brick-wall limiter (lookahead), spring reverb. Full `FaustParamDescriptor` arrays                                               |
@@ -605,7 +605,7 @@ Every feature listed here must also be AI-promptable via the AppAction system.
 | System audio device selection  | DONE   | AudioDevicePicker in Preferences, setSinkId for output, enumerateDevices                                                                                                                              |
 | MIDI device selection          | DONE   | MidiDevicePicker in Preferences, enumerate/select/refresh                                                                                                                                             |
 | Cross-origin isolation headers | DONE   | COOP/COEP configured in tauri.conf.json for SharedArrayBuffer support                                                                                                                                 |
-| macOS entitlements             | DONE   | `Entitlements.plist`: hardened runtime, App Sandbox, audio-input, network.client, file access, USB. `Info.plist`: music category, .webdaw/.mid/.wav file associations, UTI, HiDPI                     |
+| macOS entitlements             | DONE   | `Entitlements.plist`: hardened runtime, App Sandbox, audio-input, network.client, file access, USB. `Info.plist`: music category, .sourdaw/.mid/.wav file associations, UTI, HiDPI                     |
 | Linux WebKitGTK config         | DONE   | `linuxWebKitConfig.ts`: WebKitGTK version check (≥615 for 2.40+), AudioWorklet detection, SharedArrayBuffer support, WebGPU detection. `runLinuxCompatibilityChecks()` aggregates all                 |
 | Autoplay configuration         | DONE   | `autoplayConfig.ts`: Tauri detection (`isTauriEnvironment`), web gesture-based AudioContext resume on click/keydown/touch (`setupAutoplayResume`), `initializeAutoplay` for both paths                |
 
@@ -628,8 +628,8 @@ Every feature listed here must also be AI-promptable via the AppAction system.
 | ------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Save to localStorage            | DONE   |                                                                                                                                                                                                                                                              |
 | Load from localStorage          | DONE   |                                                                                                                                                                                                                                                              |
-| Export as .webdaw file          | DONE   | JSON download                                                                                                                                                                                                                                                |
-| Import .webdaw file             | DONE   | File picker + restore                                                                                                                                                                                                                                        |
+| Export as .sourdaw file          | DONE   | JSON download                                                                                                                                                                                                                                                |
+| Import .sourdaw file             | DONE   | File picker + restore                                                                                                                                                                                                                                        |
 | Export WAV mixdown              | DONE   |                                                                                                                                                                                                                                                              |
 | Export stems                    | DONE   |                                                                                                                                                                                                                                                              |
 | Export MP3                      | DONE   | lamejs encoder, dynamic import, wired in ExportDialog                                                                                                                                                                                                        |
@@ -641,7 +641,7 @@ Every feature listed here must also be AI-promptable via the AppAction system.
 | Recent projects                 | DONE   | RecentProjectsMenu, multi-project localStorage, max 10                                                                                                                                                                                                       |
 | Auto-save                       | DONE   | 30-second interval in AppShell                                                                                                                                                                                                                               |
 | Project templates               | DONE   | 6 templates (Band, Electronic, Podcast, Film, Singer-Songwriter), TemplateChooser dialog, all MIDI tracks include synth device                                                                                                                               |
-| Native project files (Tauri FS) | DONE   | Save/load .webdaw JSON files to disk via Tauri commands (`write_audio_file`/`read_audio_file`). `nativeProjectFiles.ts` with `saveProjectToFile`, `loadProjectFromFile`, `listProjectFiles`, `getProjectDirectory`. Graceful fallback when Tauri unavailable |
+| Native project files (Tauri FS) | DONE   | Save/load .sourdaw JSON files to disk via Tauri commands (`write_audio_file`/`read_audio_file`). `nativeProjectFiles.ts` with `saveProjectToFile`, `loadProjectFromFile`, `listProjectFiles`, `getProjectDirectory`. Graceful fallback when Tauri unavailable |
 
 ## 16. Sound Library
 
@@ -653,7 +653,7 @@ Every feature listed here must also be AI-promptable via the AppAction system.
 | Factory drum kit presets     | DONE   | 4 kits (808, Analog, Electronic, Acoustic) with per-pitch voices           |
 | Drum kit synth engine        | DONE   | DrumKit model, scheduleKitNote, wired to playheadScheduler + offlineRender |
 | User preset save/load        | DONE   | Save track device chain as preset, localStorage persistence                |
-| Preset import/export         | DONE   | .webdaw-preset JSON file format                                            |
+| Preset import/export         | DONE   | .sourdaw-preset JSON file format                                            |
 | Sidebar preset browser       | DONE   | Category filters, search, device chain summary, one-click load             |
 | Preset AppActions            | DONE   | loadPreset, savePreset — AI-promptable via fast-path                       |
 | Preset favorites             | DONE   | Star/unstar presets in sidebar                                             |
@@ -6295,7 +6295,7 @@ pub struct MidiMessage {
 
 #[tauri::command]
 pub fn list_midi_ports() -> Result<Vec<String>, String> {
-    let midi_in = MidiInput::new("webdaw").map_err(|e| e.to_string())?;
+    let midi_in = MidiInput::new("sourdaw").map_err(|e| e.to_string())?;
     midi_in
         .ports()
         .iter()
@@ -6309,7 +6309,7 @@ pub fn connect_midi_port(
     state: tauri::State<'_, Arc<Mutex<MidiState>>>,
     port_index: usize,
 ) -> Result<(), String> {
-    let midi_in = MidiInput::new("webdaw-input").map_err(|e| e.to_string())?;
+    let midi_in = MidiInput::new("sourdaw-input").map_err(|e| e.to_string())?;
     let ports = midi_in.ports();
     let port = ports.get(port_index).ok_or("Port not found")?;
     let port_name = midi_in.port_name(port).unwrap_or_default();
@@ -6319,7 +6319,7 @@ pub fn connect_midi_port(
     let conn = midi_in
         .connect(
             port,
-            "webdaw-conn",
+            "sourdaw-conn",
             move |timestamp, raw, _| {
                 let _ = app_clone.emit("midi-message", MidiMessage {
                     port: name_clone.clone(),

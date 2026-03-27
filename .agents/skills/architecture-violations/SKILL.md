@@ -155,7 +155,7 @@ A repository file is a thin wrapper. It translates domain concepts into API call
 // ✅ Repository — thin adapter around I/O
 // repositories/saveProjectToStorage.ts
 export const saveProjectToStorage = (data: ProjectState): void => {
-    localStorage.setItem('webdaw-project', JSON.stringify(data));
+    localStorage.setItem('sourdaw-project', JSON.stringify(data));
 };
 ```
 

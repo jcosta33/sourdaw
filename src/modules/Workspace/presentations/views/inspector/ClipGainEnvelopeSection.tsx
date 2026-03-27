@@ -1,13 +1,11 @@
 import { type ReactElement, useState } from 'react';
 import { Button } from '#/components/ui/button';
 import { Activity, Plus, RotateCcw } from 'lucide-react';
-import {
-    getClipGainEnvelope,
-    toggleClipGainEnvelope,
-    addGainEnvelopePoint,
-    removeGainEnvelopePoint,
-    resetClipGainEnvelope,
-} from '#/modules/Arrangement/useCases/clipGainEnvelope';
+import { getClipGainEnvelope } from '#/modules/Arrangement/useCases/clipGainEnvelope/getClipGainEnvelope';
+import { toggleClipGainEnvelope } from '#/modules/Arrangement/useCases/clipGainEnvelope/toggleClipGainEnvelope';
+import { addGainEnvelopePoint } from '#/modules/Arrangement/useCases/clipGainEnvelope/addGainEnvelopePoint';
+import { removeGainEnvelopePoint } from '#/modules/Arrangement/useCases/clipGainEnvelope/removeGainEnvelopePoint';
+import { resetClipGainEnvelope } from '#/modules/Arrangement/useCases/clipGainEnvelope/resetClipGainEnvelope';
 
 type ClipGainEnvelopeSectionProps = {
     clipId: string;

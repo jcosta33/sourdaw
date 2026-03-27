@@ -8,22 +8,20 @@ import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
 import { setTrackState } from '#/modules/Arrangement/repositories/track';
 import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
 import { renameTrack } from '#/modules/Arrangement/useCases/renameTrack';
-import {
-    muteTrack,
-    soloTrack,
-    clearSolos,
-    selectTrack,
-    reorderTrack,
-    hideTrack,
-    disableTrack,
-    setTrackHeight,
-    setTrackOutput,
-    setAutomationMode,
-    foldTrack,
-    groupTracks,
-    ungroupTracks,
-    toggleSoloSafe,
-} from '#/modules/Arrangement/useCases/toggleTrackState';
+import { muteTrack } from '#/modules/Arrangement/useCases/toggleTrackState/muteTrack';
+import { soloTrack } from '#/modules/Arrangement/useCases/toggleTrackState/soloTrack';
+import { clearSolos } from '#/modules/Arrangement/useCases/toggleTrackState/clearSolos';
+import { selectTrack } from '#/modules/Arrangement/useCases/toggleTrackState/selectTrack';
+import { reorderTrack } from '#/modules/Arrangement/useCases/toggleTrackState/reorderTrack';
+import { hideTrack } from '#/modules/Arrangement/useCases/toggleTrackState/hideTrack';
+import { disableTrack } from '#/modules/Arrangement/useCases/toggleTrackState/disableTrack';
+import { setTrackHeight } from '#/modules/Arrangement/useCases/toggleTrackState/setTrackHeight';
+import { setTrackOutput } from '#/modules/Arrangement/useCases/toggleTrackState/setTrackOutput';
+import { setAutomationMode } from '#/modules/Arrangement/useCases/toggleTrackState/setAutomationMode';
+import { foldTrack } from '#/modules/Arrangement/useCases/toggleTrackState/foldTrack';
+import { groupTracks } from '#/modules/Arrangement/useCases/toggleTrackState/groupTracks';
+import { ungroupTracks } from '#/modules/Arrangement/useCases/toggleTrackState/ungroupTracks';
+import { toggleSoloSafe } from '#/modules/Arrangement/useCases/toggleTrackState/toggleSoloSafe';
 import { armTrack } from '#/modules/Arrangement/useCases/recording';
 import { freezeTrack, unfreezeTrack, bounceInPlace, bounceToNewTrack } from '#/modules/Arrangement/useCases/freezeBounce';
 import { duplicateTrack } from '#/modules/Arrangement/useCases/duplicateTrack';
@@ -34,7 +32,7 @@ import {
     setTrackGain as engineSetTrackGain,
     setTrackPan as engineSetTrackPan,
 } from '#/modules/AudioEngine/useCases/trackAudioControls';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/trackQueries';
+import { getTrackStoreState } from '#/modules/Arrangement/useCases/trackQueries/trackStoreAccess';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 

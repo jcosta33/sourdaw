@@ -6,7 +6,7 @@
  */
 import { type RefObject, useEffect } from 'react';
 import { resolveToken } from '#/helpers/UI/resolveToken';
-import { type MidiNote } from '#/modules/Arrangement/useCases/trackQueries';
+import { type MidiNote } from '#/modules/MIDI/useCases/midi';
 import {
     NOTE_NAMES,
     GRID_BEATS,

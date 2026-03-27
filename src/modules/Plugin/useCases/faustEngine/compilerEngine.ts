@@ -18,7 +18,7 @@ import {
     type IFaustCompiler,
     type IFaustMonoWebAudioNode,
 } from '@grame/faustwasm';
-import { registerWAMPlugin, type WAMDescriptor } from '../wamPluginHost';
+import { registerWAMPlugin, type WAMDescriptor } from '../wamPluginHost/hostOperations';
 import { type FaustModule, type FaustParamDescriptor } from '#/modules/Plugin/models/FaustEngineTypes';
 
 // Module registry (raw Map singleton)
@@ -153,3 +153,5 @@ export function getFaustModule(moduleId: string): FaustModule | null {
 export function isFaustModule(moduleId: string): boolean {
     return modules.has(moduleId);
 }
+
+export type { FaustModule, FaustParamDescriptor };

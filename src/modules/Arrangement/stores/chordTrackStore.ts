@@ -1,7 +1,7 @@
 import { Store } from '#/helpers/Store/Store';
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
-import { type ChordEvent } from '#/modules/Arrangement/useCases/trackQueries';
+import { type ChordEvent } from '#/modules/MIDI/models/ChordEvent';
 
 export type ChordTrackState = {
     enabled: boolean;
@@ -12,7 +12,7 @@ const logger = Container.getInstance().get(Logger);
 
 const loadFromStorage = (): ChordTrackState => {
     try {
-        const stored = localStorage.getItem('webdaw_chord_track');
+        const stored = localStorage.getItem('sourdaw_chord_track');
         if (stored) {
             return JSON.parse(stored) as ChordTrackState;
         }
@@ -30,6 +30,6 @@ export const chordTrackStore = new Store<ChordTrackState>(logger, {
 chordTrackStore.subscribe(() => {
     const state = chordTrackStore.value;
     if (state) {
-        localStorage.setItem('webdaw_chord_track', JSON.stringify(state));
+        localStorage.setItem('sourdaw_chord_track', JSON.stringify(state));
     }
 });

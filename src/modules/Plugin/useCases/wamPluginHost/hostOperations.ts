@@ -1,5 +1,5 @@
 import { type WAMDescriptor, type WAMInstance } from '#/modules/Plugin/models/WamPluginHostTypes';
-
+export type { WAMDescriptor, WAMInstance };
 // In-memory registries (raw Map singletons — not Store<T>)
 const registry = new Map<string, WAMDescriptor>();
 const instances = new Map<string, WAMInstance>();
@@ -38,7 +38,7 @@ export async function loadWAMPlugin(
 
     if (pluginId.startsWith('faust.')) {
         const faustModuleId = pluginId.replace('faust.', '');
-        const { compileFaustDSP, createFaustNode } = await import('../faustEngine');
+        const { compileFaustDSP, createFaustNode } = await import('../faustEngine/compilerEngine');
         const compiled = await compileFaustDSP(faustModuleId);
         if (compiled) {
             const faustNode = await createFaustNode(faustModuleId, context);

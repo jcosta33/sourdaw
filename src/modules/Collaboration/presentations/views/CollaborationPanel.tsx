@@ -1,7 +1,7 @@
 import { type ReactElement, useState, useRef, useEffect, useSyncExternalStore } from 'react';
 import { useCollaborationState } from '../hooks/useCollaborationState';
 import { createSession, joinSession, leaveSession } from '../../useCases/collaboration';
-import { closeCollaborationPanel } from '#/modules/Workspace/useCases/togglePanel';
+import { closeCollaborationPanel } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { cn } from '#/helpers/Styles/cn';
 import { Button } from '#/components/ui/button';

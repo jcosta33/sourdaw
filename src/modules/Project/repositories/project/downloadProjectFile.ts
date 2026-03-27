@@ -1,14 +1,14 @@
 import { type ProjectData } from '../../models/ProjectData';
 
 /**
- * Download a project as a .webdaw file.
+ * Download a project as a .sourdaw file.
  * Uses File System Access API for native save dialog, with anchor fallback.
  */
 export async function downloadProjectFile(data: ProjectData): Promise<void> {
     const json = JSON.stringify(data, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
     const safeName = data.name.replaceAll(/[^a-zA-Z0-9_\- ]/g, '_');
-    const filename = `${safeName}.webdaw`;
+    const filename = `${safeName}.sourdaw`;
 
     // Try File System Access API for a proper native Save dialog
     if ('showSaveFilePicker' in window) {
@@ -20,7 +20,7 @@ export async function downloadProjectFile(data: ProjectData): Promise<void> {
                 types: [
                     {
                         description: 'Sourdaw Project',
-                        accept: { 'application/json': ['.webdaw'] },
+                        accept: { 'application/json': ['.sourdaw'] },
                     },
                 ],
             });

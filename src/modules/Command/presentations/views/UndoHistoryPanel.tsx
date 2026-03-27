@@ -1,7 +1,7 @@
 import { type ReactElement, useSyncExternalStore } from 'react';
 import { undoStore, type UndoStoreState } from '../../stores/undoStore';
 import { undoToIndex } from '../../useCases/undoRedo';
-import { closeUndoHistory } from '#/modules/Workspace/useCases/togglePanel';
+import { closeUndoHistory } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { cn } from '#/helpers/Styles/cn';
 import { X, Undo2, Redo2 } from 'lucide-react';

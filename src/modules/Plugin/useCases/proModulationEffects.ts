@@ -3,7 +3,7 @@
  * DSP definitions for professional modulation effects.
  */
 
-import { registerFaustDSP } from './faustEngine';
+import { registerFaustDSP } from './faustEngine/compilerEngine';
 
 /**
  * Register all pro modulation effects.

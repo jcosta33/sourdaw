@@ -47,7 +47,7 @@ type LlmMidiResponse = {
 // ── Core generation ──
 
 /**
- * Generate MIDI notes using the LLM (WebLLM in browser or native llama-server).
+ * Generate MIDI notes using the LLM (WebLLM in browser or native mistral.rs).
  * Returns GeneratedNote[] compatible with the existing clip insertion pipeline.
  */
 export async function generateMidiViaLlm(

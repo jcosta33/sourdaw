@@ -8,7 +8,8 @@ import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { type SoundPreset, type DevicePreset } from '../../models/SoundPreset';
 import { type Device } from '../../models/Track';
 import { addTrack } from '../addTrack';
-import { addDevice, setDeviceParameter } from '../device';
+import { addDevice } from '../device/addDevice';
+import { setDeviceParameter } from '../device/setDeviceParameter';
 import { updateTrack, getTrackById } from '../../repositories/track';
 import { addDeviceToStrip, updateDeviceParam, removeDeviceFromStrip } from '#/modules/AudioEngine/useCases/deviceControls';
 
@@ -33,7 +34,7 @@ function attachInstrumentDevice(trackId: string, dp: DevicePreset): void {
     updateTrack(trackId, (t) => ({ ...t, devices: [...t.devices, device] }));
 
     if (dp.type.startsWith('faust-')) {
-        import('#/modules/Plugin/useCases/faustEngine')
+        import('#/modules/Plugin/useCases/faustEngine/compilerEngine')
             .then(({ compileFaustDSP }) => compileFaustDSP(dp.type))
             .catch((error) => {
                 logger.error(new Error(`Faust compilation failed for ${dp.type}`, { cause: error }));

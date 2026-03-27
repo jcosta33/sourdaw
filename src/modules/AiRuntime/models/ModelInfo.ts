@@ -10,14 +10,13 @@ export type ModelInfo = {
 };
 
 export type NativeModelInfo = ModelInfo & {
-    downloadUrl: string;
-    fileName: string;
+    huggingFaceId: string;
 };
 
 /**
  * WebLLM model: Hermes-3-Llama-3.1-8B (~4.9 GB) — same generation as the native GGUF backend.
  * Supports native OpenAI-compatible tool calling (tools + tool_choice) via WebGPU.
- * Used for the command-prompt action engine when the native llama-server tier is unavailable.
+ * Used for the command-prompt action engine when the native mistral.rs tier is unavailable.
  */
 export const WEBLLM_MODEL_ID = 'Hermes-3-Llama-3.1-8B-q4f16_1-MLC';
 
@@ -30,13 +29,11 @@ export const WEBLLM_MODEL_INFO: ModelInfo = {
 };
 
 export const NATIVE_MODEL_INFO: NativeModelInfo = {
-    displayName: 'Hermes 3 Llama 3.1 8B (GGUF)',
-    description: 'Native inference via Metal GPU. Near 100% GPU utilization. Requires llama-server.',
-    downloadSize: '~4.9 GB',
+    displayName: 'Hermes 3 Llama 3.1 8B',
+    description: 'In-process inference via Metal GPU. Zero setup required — model auto-downloads on first use.',
+    downloadSize: '~4.9 GB (first run only)',
     ramUsage: '~5.2 GB',
-    downloadUrl:
-        'https://huggingface.co/NousResearch/Hermes-3-Llama-3.1-8B-GGUF/resolve/main/Hermes-3-Llama-3.1-8B.Q4_K_M.gguf',
-    fileName: 'Hermes-3-Llama-3.1-8B.Q4_K_M.gguf',
+    huggingFaceId: 'NousResearch/Hermes-3-Llama-3.1-8B',
 };
 
 export const CLOUD_MODEL_INFO: ModelInfo = {

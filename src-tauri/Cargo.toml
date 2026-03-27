@@ -5,14 +5,14 @@ members = [
 ]
 
 [package]
-name = "webdaw"
+name = "sourdaw"
 version = "0.1.0"
 description = "AI-native DAW desktop application"
 authors = ["Sourdaw Team"]
 edition = "2021"
 
 [lib]
-name = "webdaw_lib"
+name = "sourdaw_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]
@@ -30,11 +30,16 @@ clap-sys = "0.3"
 libloading = "0.8"
 raw-window-handle = "0.6"
 midir = "0.10"
-tokio = { version = "1", features = ["time", "net"] }
-reqwest = { version = "0.12", features = ["json"] }
+tokio = { version = "1", features = ["time", "net", "rt", "sync"] }
+reqwest = { version = "0.12", features = ["json", "stream"] }
+futures-util = "0.3"
 whisper-rs = { version = "0.15", features = ["metal"] }
 cpal = "0.15"
 rubato = "0.15"
 symphonia = { version = "0.5", features = ["all"] }
 rusty_link = "0.4"
 ort = { version = "2.0.0-rc.12", features = ["load-dynamic"] }
+mistralrs = { version = "0.7", features = ["metal", "accelerate"] }
+ndarray = "0.16"
+sha2 = "0.10"
+hound = "3.5"

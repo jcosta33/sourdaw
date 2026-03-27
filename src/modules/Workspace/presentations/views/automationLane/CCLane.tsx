@@ -3,7 +3,7 @@ import { cn } from '#/helpers/Styles/cn';
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
 import { addMidiCC, removeMidiCC, moveMidiCC } from '#/modules/MIDI/useCases/midiEvent';
-import { type MidiCC } from '#/modules/Arrangement/useCases/trackQueries';
+import { type MidiCC } from '#/modules/MIDI/useCases/midi';
 
 type CCLaneProps = {
     clipId: string | null;

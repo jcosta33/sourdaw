@@ -7,7 +7,7 @@ import {
     type MidiMappingTargetType,
 } from '../stores/midiLearnStore';
 import { setTrackGain, setTrackPan } from '#/modules/Arrangement/useCases/setTrackGainPan';
-import { setDeviceParameter } from '#/modules/Arrangement/useCases/device';
+import { setDeviceParameter } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
 import {
     setTrackGain as engineSetTrackGain,
     setTrackPan as engineSetTrackPan,

@@ -2,8 +2,8 @@
 export type { Track, Clip, Device, TrackAlternative, StretchMode, AutomationMode } from '#/modules/Arrangement/models/Track';
 export type { TrackKind } from '#/modules/Arrangement/models/Track';
 export type { MidiNote, MidiCC, MidiPitchBend } from '#/modules/MIDI/useCases/midi';
-export type { AutomationLane, AutomationPoint, AutomationCurveType } from '#/modules/Automation/useCases/automation';
-export { createAutomationLane } from '#/modules/Automation/useCases/automation';
+export type { AutomationLane, AutomationPoint, AutomationCurveType } from '#/modules/Automation/useCases/automation/types';
+export { createAutomationLane } from '#/modules/Automation/useCases/automation/createAutomationLane';
 export type { ChordEvent } from '#/modules/MIDI/models/ChordEvent';
 export type { DeviceParameter, DeviceParameterType } from '#/modules/Arrangement/models/DeviceParameter';
 export type { SoundPresetCategory, SoundPreset } from '#/modules/Arrangement/models/SoundPreset';

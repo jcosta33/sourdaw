@@ -1,6 +1,6 @@
 import { getTransportState, updateTransportState } from '#/modules/Transport/repositories/transport';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/trackQueries';
-import { updateClip } from '#/modules/Arrangement/useCases/trackQueries';
+import { getTrackStoreState } from '#/modules/Arrangement/useCases/trackQueries/trackStoreAccess';
+import { updateClip } from '#/modules/Arrangement/useCases/trackQueries/trackMutations';
 import { resumeEngine, getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
 import { scheduleClick } from '#/modules/AudioEngine/useCases/scheduling';
 import { startAudioRecording, stopAudioRecording } from '#/modules/AudioEngine/useCases/audioRecorder';

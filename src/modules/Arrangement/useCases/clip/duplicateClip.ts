@@ -1,5 +1,5 @@
 import { getTrackState } from '#/modules/Arrangement/repositories/track';
-import { duplicateClipAutomation } from '#/modules/Automation/useCases/automation';
+import { duplicateClipAutomation } from '#/modules/Automation/useCases/automation/duplicateClipAutomation';
 import { addClip } from './addClip';
 
 export function duplicateClip(clipId: string): void {

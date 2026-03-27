@@ -15,7 +15,7 @@ export const miscCommands: CommandEntry[] = [
         category: 'App',
         shortcut: '⌘,',
         action: () => {
-            document.dispatchEvent(new CustomEvent('webdaw:open-preferences'));
+            document.dispatchEvent(new CustomEvent('sourdaw:open-preferences'));
         },
     },
 

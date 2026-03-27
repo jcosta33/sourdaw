@@ -5,8 +5,9 @@
  * except for properties explicitly overridden on the instance.
  */
 
-import { getTrackStoreState as getTrackState, updateClip, setTrackState } from '#/modules/Arrangement/useCases/trackQueries';
-import { type Clip } from '#/modules/Arrangement/useCases/trackQueries';
+import { getTrackStoreState as getTrackState } from '#/modules/Arrangement/useCases/trackQueries/trackStoreAccess';
+import { updateClip, setTrackState } from '#/modules/Arrangement/useCases/trackQueries/trackMutations';
+import { type Clip } from '#/modules/Arrangement/models/Track';
 import { getNotesForClip, setNotesForClip } from './midiNoteCrud';
 
 let nextInstanceId = 5000;

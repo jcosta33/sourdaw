@@ -1,12 +1,15 @@
 import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
-import { applyDrumPatternToTrack, type DrumPatternStyle } from '#/modules/AiGeneration/useCases/generateDrumPattern';
-import { applyMelodyToTrack, type ScaleType } from '#/modules/AiGeneration/useCases/generateMelody';
+import { applyDrumPatternToTrack } from '#/modules/AiGeneration/useCases/generateDrumPattern/applyToTrack';
+import { type DrumPatternStyle } from '#/modules/AiGeneration/useCases/generateDrumPattern/algorithm';
+import { applyMelodyToTrack } from '#/modules/AiGeneration/useCases/generateMelody/applyToTrack';
+import { type ScaleType } from '#/modules/AiGeneration/useCases/generateMelody/algorithm';
+import { applyChordProgressionToTrack } from '#/modules/AiGeneration/useCases/generateChordProgression/applyToTrack';
 import {
-    applyChordProgressionToTrack,
     type ChordProgressionStyle,
     type ChordVoicing,
-} from '#/modules/AiGeneration/useCases/generateChordProgression';
-import { extractGroove, applyGroove, getGrooveById } from '#/modules/AiGeneration/useCases/grooveTemplate';
+} from '#/modules/AiGeneration/useCases/generateChordProgression/algorithm';
+import { extractGroove, applyGroove } from '#/modules/AiGeneration/useCases/grooveTemplate/operations';
+import { getGrooveById } from '#/modules/AiGeneration/models/factoryGrooves';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { getTrackStoreState } from '#/modules/Arrangement/useCases/trackQueries';
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { WAMInstance } from '#/modules/Plugin/useCases/wamPluginHost';
+import type { WAMInstance } from '#/modules/Plugin/useCases/wamPluginHost/hostOperations';
 import { type ParameterSAB } from '../../engine/ParameterSAB';
 
 type HighEndPluginUIProps = {

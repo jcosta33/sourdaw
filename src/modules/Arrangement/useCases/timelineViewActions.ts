@@ -8,17 +8,15 @@
  */
 
 // ── Track: clip editing ───────────────────────────────────────────
-import {
-    splitClip as _splitClip,
-    normalizeClip as _normalizeClip,
-    reverseClip as _reverseClip,
-    lockClip as _lockClip,
-    setClipColor as _setClipColor,
-    renameClip as _renameClip,
-    muteClip as _muteClip,
-    trimClipStart as _trimClipStart,
-    trimClipEnd as _trimClipEnd,
-} from '#/modules/Arrangement/useCases/clipEditing';
+import { splitClip as _splitClip } from '#/modules/Arrangement/useCases/clipEditing/splitClip';
+import { normalizeClip as _normalizeClip } from '#/modules/Arrangement/useCases/clipEditing/normalizeClip';
+import { reverseClip as _reverseClip } from '#/modules/Arrangement/useCases/clipEditing/reverseClip';
+import { lockClip as _lockClip } from '#/modules/Arrangement/useCases/clipEditing/lockClip';
+import { setClipColor as _setClipColor } from '#/modules/Arrangement/useCases/clipEditing/setClipColor';
+import { renameClip as _renameClip } from '#/modules/Arrangement/useCases/clipEditing/renameClip';
+import { muteClip as _muteClip } from '#/modules/Arrangement/useCases/clipEditing/muteClip';
+import { trimClipStart as _trimClipStart } from '#/modules/Arrangement/useCases/clipEditing/trimClipStart';
+import { trimClipEnd as _trimClipEnd } from '#/modules/Arrangement/useCases/clipEditing/trimClipEnd';
 
 export const splitClip: typeof _splitClip = (...args) => _splitClip(...args);
 export const normalizeClip: typeof _normalizeClip = (...args) => _normalizeClip(...args);
@@ -31,14 +29,12 @@ export const trimClipStart: typeof _trimClipStart = (...args) => _trimClipStart(
 export const trimClipEnd: typeof _trimClipEnd = (...args) => _trimClipEnd(...args);
 
 // ── Track: clip operations ────────────────────────────────────────
-import {
-    addClip as _addClip,
-    removeClip as _removeClip,
-    duplicateClip as _duplicateClip,
-    duplicateClipToNextBar as _duplicateClipToNextBar,
-    moveClipPreview as _moveClipPreview,
-    moveClip as _moveClip,
-} from '#/modules/Arrangement/useCases/clip';
+import { addClip as _addClip } from '#/modules/Arrangement/useCases/clip/addClip';
+import { removeClip as _removeClip } from '#/modules/Arrangement/useCases/clip/removeClip';
+import { duplicateClip as _duplicateClip } from '#/modules/Arrangement/useCases/clip/duplicateClip';
+import { duplicateClipToNextBar as _duplicateClipToNextBar } from '#/modules/Arrangement/useCases/clip/duplicateClipToNextBar';
+import { moveClipPreview as _moveClipPreview } from '#/modules/Arrangement/useCases/clip/moveClipPreview';
+import { moveClip as _moveClip } from '#/modules/Arrangement/useCases/clip/moveClip';
 
 export const addClip: typeof _addClip = (...args) => _addClip(...args);
 export const removeClip: typeof _removeClip = (...args) => _removeClip(...args);
@@ -48,20 +44,18 @@ export const moveClipPreview: typeof _moveClipPreview = (...args) => _moveClipPr
 export const moveClip: typeof _moveClip = (...args) => _moveClip(...args);
 
 // ── Track: clipboard ──────────────────────────────────────────────
-import {
-    copySelectedClip as _copySelectedClip,
-    cutSelectedClip as _cutSelectedClip,
-    pasteClip as _pasteClip,
-} from '#/modules/Arrangement/useCases/clipboard';
+import { copySelectedClip as _copySelectedClip } from '#/modules/Arrangement/useCases/clipboard/copySelectedClip';
+import { cutSelectedClip as _cutSelectedClip } from '#/modules/Arrangement/useCases/clipboard/cutSelectedClip';
+import { pasteClip as _pasteClip } from '#/modules/Arrangement/useCases/clipboard/pasteClip';
 
 export const copySelectedClip: typeof _copySelectedClip = (...args) => _copySelectedClip(...args);
 export const cutSelectedClip: typeof _cutSelectedClip = (...args) => _cutSelectedClip(...args);
 export const pasteClip: typeof _pasteClip = (...args) => _pasteClip(...args);
 
 // ── Track: general ────────────────────────────────────────────────
-import { selectTrack as _selectTrack } from '#/modules/Arrangement/useCases/toggleTrackState';
+import { selectTrack as _selectTrack } from '#/modules/Arrangement/useCases/toggleTrackState/selectTrack';
 import { addTrack as _addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { addDevice as _addDevice } from '#/modules/Arrangement/useCases/device';
+import { addDevice as _addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
 import { exportMidiClip as _exportMidiClip } from '#/modules/MIDI/useCases/exportMidiFile';
 import { importMidiFile as _importMidiFile } from '#/modules/MIDI/useCases/importMidiFile';
 import { stripSilence as _stripSilence } from '#/modules/Arrangement/useCases/stripSilence';
@@ -74,12 +68,10 @@ export const importMidiFile: typeof _importMidiFile = (...args) => _importMidiFi
 export const stripSilence: typeof _stripSilence = (...args) => _stripSilence(...args);
 
 // ── Track: automation ─────────────────────────────────────────────
-import {
-    addAutomationPoint as _addAutomationPoint,
-    addAutomationLane as _addAutomationLane,
-    removeAutomationPoint as _removeAutomationPoint,
-    batchAddAutomationPoints as _batchAddAutomationPoints,
-} from '#/modules/Automation/useCases/automation';
+import { addAutomationPoint as _addAutomationPoint } from '#/modules/Automation/useCases/automation/addAutomationPoint';
+import { addAutomationLane as _addAutomationLane } from '#/modules/Automation/useCases/automation/addAutomationLane';
+import { removeAutomationPoint as _removeAutomationPoint } from '#/modules/Automation/useCases/automation/removeAutomationPoint';
+import { batchAddAutomationPoints as _batchAddAutomationPoints } from '#/modules/Automation/useCases/automation/batchAddAutomationPoints';
 
 export const addAutomationPoint: typeof _addAutomationPoint = (...args) => _addAutomationPoint(...args);
 export const addAutomationLane: typeof _addAutomationLane = (...args) => _addAutomationLane(...args);

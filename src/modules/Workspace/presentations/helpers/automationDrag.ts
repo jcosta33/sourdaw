@@ -9,12 +9,10 @@ import {
     type AutomationPoint,
     type AutomationCurveType,
 } from '#/modules/Arrangement/useCases/trackQueries';
-import {
-    addAutomationPoint,
-    removeAutomationPoint,
-    updateAutomationPoint,
-    setAutomationPointCurve,
-} from '#/modules/Automation/useCases/automation';
+import { addAutomationPoint } from '#/modules/Automation/useCases/automation/addAutomationPoint';
+import { removeAutomationPoint } from '#/modules/Automation/useCases/automation/removeAutomationPoint';
+import { updateAutomationPoint } from '#/modules/Automation/useCases/automation/updateAutomationPoint';
+import { setAutomationPointCurve } from '#/modules/Automation/useCases/automation/setAutomationPointCurve';
 import { beginDrawSession, paintDrawPoint, endDrawSession } from '#/modules/Automation/useCases/automationDrawMode';
 import { selectPointsInRange } from '#/modules/Automation/useCases/automationSelection';
 import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';

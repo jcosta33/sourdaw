@@ -49,7 +49,7 @@ export const filePresets: readonly PresetAction[] = [
         keywords: ['undo', 'ctrl z', 'cmd z'],
         category: 'File',
         buildAction: () => {
-            document.dispatchEvent(new CustomEvent('webdaw:undo'));
+            document.dispatchEvent(new CustomEvent('sourdaw:undo'));
             return [];
         },
     },
@@ -59,7 +59,7 @@ export const filePresets: readonly PresetAction[] = [
         keywords: ['redo', 'ctrl shift z', 'cmd shift z'],
         category: 'File',
         buildAction: () => {
-            document.dispatchEvent(new CustomEvent('webdaw:redo'));
+            document.dispatchEvent(new CustomEvent('sourdaw:redo'));
             return [];
         },
     },

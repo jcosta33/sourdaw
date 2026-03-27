@@ -2,7 +2,7 @@ import { type ReactElement, useState, useRef, useSyncExternalStore } from 'react
 import { useTracks } from '../hooks/useTracks';
 import { Button } from '#/components/ui/button';
 import { setWorkspaceMode } from '../../useCases/setWorkspaceMode';
-import { selectClip } from '../../useCases/togglePanel';
+import { selectClip } from '../../useCases/togglePanel/panelToggles';
 import { workspaceStore } from '../../stores/workspaceStore';
 
 import { PianoRoll } from './ClipView/PianoRoll';

@@ -1,5 +1,5 @@
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
-import { type MidiNote, createMidiNote } from '#/modules/Arrangement/useCases/trackQueries';
+import { type MidiNote, createMidiNote } from '#/modules/MIDI/useCases/midi';
 import { noteClipboard } from '#/modules/Arrangement/stores/clipboardStore';
 
 export function pasteNotes(clipId: string, beatOffset: number): void {

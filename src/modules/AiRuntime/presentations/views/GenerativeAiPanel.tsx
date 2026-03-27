@@ -5,21 +5,19 @@ import { Slider } from '#/components/ui/slider';
 import { DisabledFeatureWrapper } from '#/components/ui/disabled-feature-wrapper';
 import { isTauri } from '#/modules/AudioEngine/useCases/nativeAiBridge';
 import {
-    subscribeGenerativeAi,
-    getGenerativeAiSnapshot,
-    toggleGenerativeAiPanel,
-    handleGenerateMidiPrompt,
-    handleGenerateAudioFallback,
-    handleStemSeparationPreview,
-    removeTask,
+    subscribeAiStore,
+    getAiSnapshot,
     type AiTaskResult,
-    type GenerativeAiState,
-} from '#/modules/AiGeneration/useCases/generativeAiActions';
+    type AiState,
+} from '#/modules/AiGeneration/stores/aiStore';
+import { toggleAiPanel, removeTask } from '#/modules/AiGeneration/useCases/actions/taskManagement';
+import { handleGenerateMidiPrompt } from '#/modules/AiGeneration/useCases/actions/handleGenerateMidiPrompt';
+import { handleGenerateAudioFallback, handleStemSeparationPreview } from '#/modules/AiGeneration/useCases/actions/audioProcessing';
 import { GenreGrid, MoodGrid, InstrumentGrid } from '../components/GenerativeParamGrids';
 import { PatternBrowser } from './PatternBrowser';
 
 export const GenerativeAiPanel = (): ReactElement | null => {
-    const state = useSyncExternalStore<GenerativeAiState>(subscribeGenerativeAi, getGenerativeAiSnapshot);
+    const state = useSyncExternalStore<AiState>(subscribeAiStore, getAiSnapshot);
     const [activeTab, setActiveTab] = useState<'audio' | 'midi' | 'stems'>('midi');
     const [midiSubTab, setMidiSubTab] = useState<'ai' | 'patterns'>('patterns');
     const [prompt, setPrompt] = useState('');
@@ -70,7 +68,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                     <Sparkles className="size-4 text-[var(--color-accent-lavender)]" />
                     <h2 className="text-xs font-semibold text-foreground tracking-tight">Generation</h2>
                 </div>
-                <Button variant="ghost" size="icon-xs" onClick={toggleGenerativeAiPanel} className="h-6 w-6">
+                <Button variant="ghost" size="icon-xs" onClick={toggleAiPanel} className="h-6 w-6">
                     <X className="size-3.5" />
                 </Button>
             </div>

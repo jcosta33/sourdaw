@@ -1,7 +1,7 @@
 import { type ReactElement, useRef, useEffect, useSyncExternalStore } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { type TimeDisplayMode } from '../../../models/WorkspaceState';
-import { toggleTimeDisplayMode } from '../../../useCases/togglePanel';
+import { toggleTimeDisplayMode } from '../../../useCases/togglePanel/panelToggles';
 import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 

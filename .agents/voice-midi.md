@@ -45,7 +45,7 @@ pub struct MidiMessage {
 
 #[tauri::command]
 pub fn list_midi_ports() -> Result<Vec<String>, String> {
-    let midi_in = MidiInput::new("webdaw").map_err(|e| e.to_string())?;
+    let midi_in = MidiInput::new("sourdaw").map_err(|e| e.to_string())?;
     midi_in
         .ports()
         .iter()
@@ -59,7 +59,7 @@ pub fn connect_midi_port(
     state: tauri::State<'_, Arc<Mutex<MidiState>>>,
     port_index: usize,
 ) -> Result<(), String> {
-    let midi_in = MidiInput::new("webdaw-input").map_err(|e| e.to_string())?;
+    let midi_in = MidiInput::new("sourdaw-input").map_err(|e| e.to_string())?;
     let ports = midi_in.ports();
     let port = ports.get(port_index).ok_or("Port not found")?;
     let port_name = midi_in.port_name(port).unwrap_or_default();
@@ -69,7 +69,7 @@ pub fn connect_midi_port(
     let conn = midi_in
         .connect(
             port,
-            "webdaw-conn",
+            "sourdaw-conn",
             move |timestamp, raw, _| {
                 let _ = app_clone.emit("midi-message", MidiMessage {
                     port: name_clone.clone(),

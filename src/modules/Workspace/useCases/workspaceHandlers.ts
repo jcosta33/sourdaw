@@ -7,18 +7,11 @@ import {
     toggleInspector,
     toggleChatPanel,
     setSnapValue,
-    zoomToFit,
-    zoomToSelection,
-} from '#/modules/Workspace/useCases/togglePanel';
+} from '#/modules/Workspace/useCases/togglePanel/panelToggles';
+import { zoomToFit, zoomToSelection } from '#/modules/Workspace/useCases/togglePanel/zoomOperations';
 import { setEditingTool } from '#/modules/Workspace/useCases/setEditingTool';
-import {
-    addMarker,
-    removeMarker,
-    setMarkerColor,
-    addSection,
-    removeSection,
-    renameSection,
-} from '#/modules/Arrangement/useCases/marker';
+import { addMarker, removeMarker, setMarkerColor } from '#/modules/Arrangement/useCases/marker/markerOperations';
+import { addSection, removeSection, renameSection } from '#/modules/Arrangement/useCases/marker/sectionOperations';
 import {
     quantizeNotes,
     quantizeNoteLengths,
@@ -31,11 +24,9 @@ import {
     setAllVelocities,
     type VelocityCurve,
 } from '#/modules/MIDI/useCases/midi';
-import {
-    addAutomationLane,
-    addAutomationPoint,
-    removeAutomationPoint,
-} from '#/modules/Automation/useCases/automation';
+import { addAutomationLane } from '#/modules/Automation/useCases/automation/addAutomationLane';
+import { addAutomationPoint } from '#/modules/Automation/useCases/automation/addAutomationPoint';
+import { removeAutomationPoint } from '#/modules/Automation/useCases/automation/removeAutomationPoint';
 import { getAutomationStoreState } from '#/modules/Arrangement/useCases/trackQueries';
 import { saveProject, newProject, exportProjectFile } from '#/modules/Project/useCases/projectPersistence';
 import { exportMidiClip } from '#/modules/MIDI/useCases/exportMidiFile';

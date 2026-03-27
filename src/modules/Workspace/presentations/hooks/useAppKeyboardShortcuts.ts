@@ -12,7 +12,7 @@ import {
     toggleMixer,
     toggleTrackList,
     clearClipSelection,
-} from '#/modules/Workspace/useCases/togglePanel';
+} from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 
 type ShortcutCallbacks = {
     onOpenExport: () => void;
@@ -41,7 +41,7 @@ export const useAppKeyboardShortcuts = ({ onOpenExport, onOpenPreferences }: Sho
             }
             if (mod && e.shiftKey && e.key === 'a') {
                 e.preventDefault();
-                document.dispatchEvent(new Event('webdaw:show-automation-tab'));
+                document.dispatchEvent(new Event('sourdaw:show-automation-tab'));
             }
             if (mod && e.key === 'j') {
                 e.preventDefault();

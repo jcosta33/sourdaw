@@ -1,7 +1,7 @@
 import { type SoundPreset } from '../../models/SoundPreset';
 import { LocalStorageStorage } from '#/helpers/Store/Storage/LocalStorageStorage';
 
-const userPresetStorage = new LocalStorageStorage<SoundPreset[]>('webdaw-user-presets');
+const userPresetStorage = new LocalStorageStorage<SoundPreset[]>('sourdaw-user-presets');
 
 let nextUserPresetId = 1;
 

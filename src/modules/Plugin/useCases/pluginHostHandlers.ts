@@ -1,7 +1,8 @@
 import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
-import { startPluginScan, findPluginByName } from '#/modules/Plugin/useCases/pluginScan';
+import { startPluginScan } from '#/modules/Plugin/useCases/pluginScan/scanning';
+import { findPluginByName } from '#/modules/Plugin/useCases/pluginScan/queries';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { addExternalDevice } from '#/modules/Arrangement/useCases/device';
+import { addExternalDevice } from '#/modules/Arrangement/useCases/device/addExternalDevice';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 

@@ -41,8 +41,8 @@ A modern, browser-native digital audio workstation (DAW) built with React 19, Ty
 ### Installation
 
 ```bash
-git clone https://github.com/jcosta33/webdaw.git
-cd webdaw
+git clone https://github.com/jcosta33/sourdaw.git
+cd sourdaw
 pnpm install
 ```
 

@@ -2,12 +2,12 @@ import { getWorkspaceState } from '../../repositories/workspace';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 
 /**
- * Note: DOM CustomEvent dispatch is part of the codebase-wide `webdaw:*`
+ * Note: DOM CustomEvent dispatch is part of the codebase-wide `sourdaw:*`
  * notification system. Deferred to the EventBus migration sprint
  * (see also goToItem.ts, scripting.ts).
  */
 export function zoomToFit(): void {
-    document.dispatchEvent(new CustomEvent('webdaw:zoom-to-fit'));
+    document.dispatchEvent(new CustomEvent('sourdaw:zoom-to-fit'));
 }
 
 export function zoomToSelection(): void {
@@ -34,12 +34,12 @@ export function zoomToSelection(): void {
     if (minStart === Infinity || maxEnd === -Infinity || maxEnd <= minStart) { return; }
 
     document.dispatchEvent(
-        new CustomEvent('webdaw:zoom-to-selection', {
+        new CustomEvent('sourdaw:zoom-to-selection', {
             detail: { startBeat: minStart, endBeat: maxEnd },
         })
     );
 }
 
 export function cycleAutomationVisibility(): void {
-    document.dispatchEvent(new CustomEvent('webdaw:show-automation-tab'));
+    document.dispatchEvent(new CustomEvent('sourdaw:show-automation-tab'));
 }

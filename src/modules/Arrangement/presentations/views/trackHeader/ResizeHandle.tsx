@@ -1,5 +1,5 @@
 import { type ReactElement, type MouseEvent } from 'react';
-import { setTrackHeight } from '#/modules/Arrangement/useCases/toggleTrackState';
+import { setTrackHeight } from '#/modules/Arrangement/useCases/toggleTrackState/setTrackHeight';
 
 type ResizeHandleProps = {
     trackId: string;

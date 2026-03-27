@@ -24,11 +24,11 @@
             <string>Owner</string>
             <key>CFBundleTypeExtensions</key>
             <array>
-                <string>webdaw</string>
+                <string>sourdaw</string>
             </array>
             <key>LSItemContentTypes</key>
             <array>
-                <string>com.webdaw.project</string>
+                <string>com.sourdaw.project</string>
             </array>
         </dict>
         <dict>
@@ -62,12 +62,12 @@
         </dict>
     </array>
 
-    <!-- UTI declarations for .webdaw files -->
+    <!-- UTI declarations for .sourdaw files -->
     <key>UTExportedTypeDeclarations</key>
     <array>
         <dict>
             <key>UTTypeIdentifier</key>
-            <string>com.webdaw.project</string>
+            <string>com.sourdaw.project</string>
             <key>UTTypeDescription</key>
             <string>Sourdaw Project File</string>
             <key>UTTypeConformsTo</key>
@@ -78,7 +78,7 @@
             <dict>
                 <key>public.filename-extension</key>
                 <array>
-                    <string>webdaw</string>
+                    <string>sourdaw</string>
                 </array>
             </dict>
         </dict>

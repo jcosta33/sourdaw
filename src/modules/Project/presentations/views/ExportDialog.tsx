@@ -19,7 +19,7 @@ type ExportDialogProps = {
     onClose: () => void;
 };
 
-const EXPORT_SETTINGS_KEY = 'webdaw:export-settings';
+const EXPORT_SETTINGS_KEY = 'sourdaw:export-settings';
 
 const loadExportSettings = (): { formats: ExportFormat[]; sampleRate: number; bitDepth: number } => {
     try {
@@ -156,13 +156,13 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     };
                     if (f === 'mp3') {
                         setStatusText('Encoding MP3...');
-                        await downloadMp3(buffer, `webdaw-export-${ts}.mp3`, 128, encodeProgress);
+                        await downloadMp3(buffer, `sourdaw-export-${ts}.mp3`, 128, encodeProgress);
                     } else if (f === 'flac') {
                         setStatusText('Encoding FLAC...');
-                        await downloadFlac(buffer, `webdaw-export-${ts}.flac`, encodeProgress);
+                        await downloadFlac(buffer, `sourdaw-export-${ts}.flac`, encodeProgress);
                     } else {
                         setStatusText('Encoding WAV...');
-                        await downloadWav(buffer, `webdaw-export-${ts}.wav`, bd, encodeProgress);
+                        await downloadWav(buffer, `sourdaw-export-${ts}.wav`, bd, encodeProgress);
                     }
                     formatsDone++;
                 }

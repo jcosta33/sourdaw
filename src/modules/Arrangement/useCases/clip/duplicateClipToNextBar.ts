@@ -1,6 +1,6 @@
 import { getTrackState } from '#/modules/Arrangement/repositories/track';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
-import { duplicateClipAutomation } from '#/modules/Automation/useCases/automation';
+import { duplicateClipAutomation } from '#/modules/Automation/useCases/automation/duplicateClipAutomation';
 import { addClip } from './addClip';
 
 export function duplicateClipToNextBar(clipId: string): void {

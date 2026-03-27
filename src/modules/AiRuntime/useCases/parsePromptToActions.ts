@@ -99,8 +99,8 @@ async function parseLlmPath(prompt: string, context: ProjectContext, signal?: Ab
         return { actions: [], confidence: 0, rawText: prompt, requiresConfirmation: false };
     }
 
-    // 'hermes' = native llama-server with Hermes-3 GGUF (XML tool call parsing)
-    // 'api'    = WebLLM Hermes-2-Pro or Cloud — tools passed natively, no XML parsing
+    // 'hermes' = native mistral.rs with Hermes-3 (structured tool calling, XML fallback)
+    // 'api'    = WebLLM Hermes-3 or Cloud — tools passed natively, no XML parsing
     const format = resolveBackend() === 'native' ? ('hermes' as const) : ('api' as const);
     const systemPrompt = await buildActionSystemPromptAsync(context, format);
     const toolCalls = await generateToolCalls(systemPrompt, prompt);

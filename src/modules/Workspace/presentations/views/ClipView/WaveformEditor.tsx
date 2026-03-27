@@ -18,7 +18,7 @@ import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { replaceClipAudioBuffer } from '#/modules/Arrangement/useCases/replaceClipAudioBuffer';
 import { normalizeClip } from '#/modules/Arrangement/useCases/clipEditing/normalizeClip';
 import { reverseClip } from '#/modules/Arrangement/useCases/clipEditing/reverseClip';
-import { type WarpState } from '#/modules/Arrangement/useCases/trackQueries';
+import { type WarpState } from '#/modules/Arrangement/models/WarpMarker';
 import {
     getWarpState,
     enableWarp,
@@ -28,7 +28,7 @@ import {
     removeWarpMarker,
     moveWarpMarker,
 } from '#/modules/Arrangement/useCases/warp';
-import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration/useCases/generativeAiActions';
+import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration/useCases/actions/audioProcessing';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { audioToMidi } from '#/modules/AudioAnalysis/useCases/audioToMidi';
 import { isTauri } from '#/modules/AudioEngine/useCases/nativeAiBridge';

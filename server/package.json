@@ -1,5 +1,5 @@
 {
-    "name": "webdaw-collab-server",
+    "name": "sourdaw-collab-server",
     "private": true,
     "scripts": {
         "dev": "tsx collab-server.ts",

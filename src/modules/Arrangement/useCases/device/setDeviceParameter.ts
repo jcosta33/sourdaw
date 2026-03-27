@@ -2,7 +2,7 @@ import { getTrackState, updateTrack } from '../../repositories/track';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { type AutomationMode } from '../../models/Track';
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
-import { recordAutomationValue } from '#/modules/Automation/useCases/automationRecording';
+import { recordAutomationValue } from '#/modules/Automation/useCases/automationRecording/recordAutomationValue';
 
 const RECORDING_MODES: ReadonlySet<AutomationMode> = new Set(['write', 'touch', 'latch']);
 

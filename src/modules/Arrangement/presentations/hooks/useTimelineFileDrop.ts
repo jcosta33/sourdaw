@@ -1,5 +1,5 @@
 import { type DragEvent, useState } from 'react';
-import { hitTestTrack } from '../../useCases/timelineInteractions';
+import { hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip';
 import {
     addClip,
     addTrack,
@@ -41,7 +41,7 @@ export const useTimelineFileDrop = ({
         const trackHit = hitTestTrack(y);
         const beat = Math.max(0, Math.floor(getBeatFromX(x)));
 
-        const sampleData = e.dataTransfer.getData('application/x-webdaw-sample');
+        const sampleData = e.dataTransfer.getData('application/x-sourdaw-sample');
         if (sampleData) {
             try {
                 const sample = JSON.parse(sampleData) as {
@@ -81,7 +81,7 @@ export const useTimelineFileDrop = ({
             return;
         }
 
-        const pluginData = e.dataTransfer.getData('application/x-webdaw-plugin');
+        const pluginData = e.dataTransfer.getData('application/x-sourdaw-plugin');
         if (pluginData) {
             try {
                 const plugin = JSON.parse(pluginData) as { name: string; id: string };

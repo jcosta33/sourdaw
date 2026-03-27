@@ -5,9 +5,9 @@ import { Button } from '#/components/ui/button';
 import { Plus } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
 import { useTracks } from '../../hooks/useTracks';
-import { setSend, toggleSendPreFader } from '#/modules/Arrangement/useCases/device';
+import { setSend, toggleSendPreFader } from '#/modules/Arrangement/useCases/device/sendManagement';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
+import { type Track } from '#/modules/Arrangement/models/Track';
 
 type SendsEditorProps = {
     track: Track;

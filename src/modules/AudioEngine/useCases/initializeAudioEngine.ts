@@ -1,7 +1,8 @@
 import { audioEngine } from '../repositories/createWebAudioEngine';
 import { getTransportStoreValue } from '#/modules/Transport/useCases/transportQueries';
-import { registerBuiltinPlugins, initWAMEnvironment } from '#/modules/Plugin/useCases/wamPluginHost';
-import { registerBuiltinFaustDSP } from '#/modules/Plugin/useCases/faustEngine';
+import { registerBuiltinPlugins } from '#/modules/Plugin/useCases/wamPluginHost/builtinDescriptors';
+import { initWAMEnvironment } from '#/modules/Plugin/useCases/wamPluginHost/hostOperations';
+import { registerBuiltinFaustDSP } from '#/modules/Plugin/useCases/faustEngine/builtinDSP';
 
 export async function initializeAudioEngine(): Promise<void> {
     await audioEngine.initialize();

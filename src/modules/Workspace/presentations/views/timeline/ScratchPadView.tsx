@@ -18,10 +18,12 @@ import {
     setScratchPadSectionColor,
     reorderScratchPadSection,
     clearScratchPad,
+    type ScratchPadSection,
+} from '#/modules/Arrangement/useCases/scratchPad/scratchPadCrud';
+import {
     captureArrangementToScratchPad,
     commitScratchPadToArrangement,
-    type ScratchPadSection,
-} from '#/modules/Arrangement/useCases/scratchPad';
+} from '#/modules/Arrangement/useCases/scratchPad/captureCommit';
 import { cn } from '#/helpers/Styles/cn';
 
 const defaultState: ScratchPadStoreState = { sections: [] };

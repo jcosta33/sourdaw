@@ -1,5 +1,6 @@
 import { pluginScanStore, defaultPluginScanState } from '#/modules/AudioEngine/stores/pluginScanStore';
-import { type ScannedPlugin } from '../../repositories/pluginBridge';
+import type { ScannedPlugin } from '../../repositories/pluginBridge/types';
+export type { ScannedPlugin };
 
 const getState = () => pluginScanStore.value ?? defaultPluginScanState;
 

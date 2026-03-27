@@ -1,6 +1,6 @@
 import { type ReactElement, useRef } from 'react';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { selectClip } from '#/modules/Workspace/useCases/togglePanel';
+import { selectClip } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 import {
     setWorkspaceMode,
     splitClip,

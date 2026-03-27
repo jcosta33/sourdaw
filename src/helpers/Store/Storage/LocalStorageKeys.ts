@@ -93,28 +93,28 @@ export type LocalStorageKey =
     | 'segmentAnalyticsLoggerEnabled'
 
     // [Dev] DevTools settings (visibility, activeTab, reactScanStatus, fpsMeterState, triggerPosition)
-    | 'webdaw-devtools-settings'
+    | 'sourdaw-devtools-settings'
 
     // ========================== DAW KEYS ====================================
 
     // Stores user preferences (theme, audio device, track height, etc.)
-    | 'webdaw-preferences'
+    | 'sourdaw-preferences'
 
     // Stores the current project state
-    | 'webdaw-project'
+    | 'sourdaw-project'
 
     // Stores list of recently opened projects
-    | 'webdaw-recent-projects'
-    | 'webdaw:recent-projects'
+    | 'sourdaw-recent-projects'
+    | 'sourdaw:recent-projects'
 
     // Stores user-created sound presets
-    | 'webdaw-user-presets'
+    | 'sourdaw-user-presets'
 
     // Stores user-saved track templates
-    | 'webdaw:track-templates'
+    | 'sourdaw:track-templates'
 
     // Stores last-used export dialog settings
-    | 'webdaw-export-settings'
+    | 'sourdaw-export-settings'
 
     // Stores the sidebar collapsed/expanded state
-    | 'webdaw-sidebar-state';
+    | 'sourdaw-sidebar-state';

@@ -1,35 +1,33 @@
 import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
-import {
-    addClip,
-    removeClip,
-    moveClip,
-    duplicateClip,
-    duplicateClipToNextBar,
-} from '#/modules/Arrangement/useCases/clip';
-import {
-    splitClip,
-    trimClipStart,
-    trimClipEnd,
-    setClipFade,
-    normalizeClip,
-    reverseClip,
-    glueClips,
-    nudgeClip,
-    setClipGain,
-    setClipColor,
-    lockClip,
-    crossfadeClips,
-    renameClip,
-    muteClip,
-} from '#/modules/Arrangement/useCases/clipEditing';
+import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
+import { removeClip } from '#/modules/Arrangement/useCases/clip/removeClip';
+import { moveClip } from '#/modules/Arrangement/useCases/clip/moveClip';
+import { duplicateClip } from '#/modules/Arrangement/useCases/clip/duplicateClip';
+import { duplicateClipToNextBar } from '#/modules/Arrangement/useCases/clip/duplicateClipToNextBar';
+import { splitClip } from '#/modules/Arrangement/useCases/clipEditing/splitClip';
+import { trimClipStart } from '#/modules/Arrangement/useCases/clipEditing/trimClipStart';
+import { trimClipEnd } from '#/modules/Arrangement/useCases/clipEditing/trimClipEnd';
+import { setClipFade } from '#/modules/Arrangement/useCases/clipEditing/setClipFade';
+import { normalizeClip } from '#/modules/Arrangement/useCases/clipEditing/normalizeClip';
+import { reverseClip } from '#/modules/Arrangement/useCases/clipEditing/reverseClip';
+import { glueClips } from '#/modules/Arrangement/useCases/clipEditing/glueClips';
+import { nudgeClip } from '#/modules/Arrangement/useCases/clipEditing/nudgeClip';
+import { setClipGain } from '#/modules/Arrangement/useCases/clipEditing/setClipGain';
+import { setClipColor } from '#/modules/Arrangement/useCases/clipEditing/setClipColor';
+import { lockClip } from '#/modules/Arrangement/useCases/clipEditing/lockClip';
+import { crossfadeClips } from '#/modules/Arrangement/useCases/clipEditing/crossfadeClips';
+import { renameClip } from '#/modules/Arrangement/useCases/clipEditing/renameClip';
+import { muteClip } from '#/modules/Arrangement/useCases/clipEditing/muteClip';
 import { bounceSelection } from '#/modules/Arrangement/useCases/freezeBounce';
-import { copySelectedClip, cutSelectedClip, pasteClip } from '#/modules/Arrangement/useCases/clipboard';
+import { copySelectedClip } from '#/modules/Arrangement/useCases/clipboard/copySelectedClip';
+import { cutSelectedClip } from '#/modules/Arrangement/useCases/clipboard/cutSelectedClip';
+import { pasteClip } from '#/modules/Arrangement/useCases/clipboard/pasteClip';
 import { setClipLoop, setClipLoopLength } from '#/modules/Arrangement/useCases/clipLoop';
 import { audioToMidi } from '#/modules/AudioAnalysis/useCases/audioToMidi';
 import { detectTempo } from '#/modules/AudioAnalysis/useCases/tempoDetection';
 import { detectKey } from '#/modules/AudioAnalysis/useCases/keyDetection';
 import { arpeggiate, type ArpPattern, type ArpRate } from '#/modules/MIDI/useCases/arpeggiator';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/trackQueries';
+import { getTrackStoreState } from '#/modules/Arrangement/useCases/trackQueries/trackStoreAccess';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { deleteTime, insertTime, duplicateTimeRange } from '#/modules/Arrangement/useCases/timeOperations';
 import { stripSilence } from '#/modules/Arrangement/useCases/stripSilence';

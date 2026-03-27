@@ -6,6 +6,8 @@ use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
+use super::model_download;
+
 // ── Managed state ───────────────────────────────────────────────────────
 
 pub struct DictationState {
@@ -63,6 +65,49 @@ pub async fn load_whisper_model(
     Ok(AsrStatus {
         loaded: true,
         model_name: Some(name),
+    })
+}
+
+const WHISPER_MODEL_URL: &str =
+    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin";
+const WHISPER_MODEL_FILE: &str = "ggml-base.en.bin";
+
+/// Ensure the Whisper model is downloaded and loaded.
+/// Auto-downloads `ggml-base.en.bin` (~142MB) from HuggingFace on first use.
+#[tauri::command]
+pub async fn ensure_whisper_ready(
+    state: tauri::State<'_, DictationState>,
+) -> Result<AsrStatus, String> {
+    // Check if already loaded
+    {
+        let guard = state.ctx.lock().map_err(|e| format!("Lock error: {e}"))?;
+        if guard.is_some() {
+            return Ok(AsrStatus {
+                loaded: true,
+                model_name: Some(WHISPER_MODEL_FILE.to_string()),
+            });
+        }
+    }
+
+    // Download model if needed
+    let model_path = model_download::ensure_model(WHISPER_MODEL_FILE, WHISPER_MODEL_URL, None).await?;
+    let model_path_str = model_path.to_string_lossy().to_string();
+
+    // Load model
+    let ctx = WhisperContext::new_with_params(
+        &model_path_str,
+        WhisperContextParameters::default(),
+    )
+    .map_err(|e| format!("Failed to load Whisper model: {e}"))?;
+
+    let mut guard = state.ctx.lock().map_err(|e| format!("Lock error: {e}"))?;
+    *guard = Some(Arc::new(ctx));
+
+    eprintln!("[Whisper] Model loaded: {}", WHISPER_MODEL_FILE);
+
+    Ok(AsrStatus {
+        loaded: true,
+        model_name: Some(WHISPER_MODEL_FILE.to_string()),
     })
 }
 

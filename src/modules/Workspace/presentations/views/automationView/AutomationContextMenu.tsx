@@ -3,7 +3,7 @@
  */
 import { type ReactElement } from 'react';
 import { cn } from '#/helpers/Styles/cn';
-import { type AutomationPoint, type AutomationCurveType } from '#/modules/Arrangement/useCases/trackQueries';
+import { type AutomationPoint, type AutomationCurveType } from '#/modules/Automation/useCases/automation/types';
 import { type AutomationShapeType } from '#/modules/Automation/useCases/automationShapes';
 import { CURVE_OPTIONS, SHAPE_OPTIONS } from '../../helpers/automationLaneConstants';
 

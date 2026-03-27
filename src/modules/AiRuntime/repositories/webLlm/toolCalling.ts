@@ -12,7 +12,7 @@ import { initWebLlmEngine } from './engineLifecycle';
 const logger = Container.getInstance().get(Logger);
 
 /**
- * Generate tool calls using Hermes-2-Pro's native tool calling API.
+ * Generate tool calls using Hermes-3's native tool calling API.
  */
 export async function generateWebLlmToolCalls(
     systemPrompt: string,

@@ -55,7 +55,7 @@ const logger = Container.getInstance().get(Logger);
 
 const loadFromLocalStorage = (): ShortcutMap => {
     try {
-        const stored = localStorage.getItem('webdaw_shortcuts');
+        const stored = localStorage.getItem('sourdaw_shortcuts');
         if (stored) {
             return JSON.parse(stored) as ShortcutMap;
         }
@@ -79,12 +79,12 @@ export function updateShortcutBinding(action: ShortcutAction, binding: KeyBindin
 
     const newBindings = { ...state.bindings, [action]: binding };
     shortcutStore.set({ bindings: newBindings });
-    localStorage.setItem('webdaw_shortcuts', JSON.stringify(newBindings));
+    localStorage.setItem('sourdaw_shortcuts', JSON.stringify(newBindings));
 }
 
 export function resetShortcutsToDefault(): void {
     shortcutStore.set({ bindings: DEFAULT_SHORTCUTS });
-    localStorage.setItem('webdaw_shortcuts', JSON.stringify(DEFAULT_SHORTCUTS));
+    localStorage.setItem('sourdaw_shortcuts', JSON.stringify(DEFAULT_SHORTCUTS));
 }
 
 export const formatKeyBinding = (binding: KeyBinding): string => {

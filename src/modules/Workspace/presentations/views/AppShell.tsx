@@ -30,12 +30,12 @@ import { AiChangeToast } from '#/modules/AiRuntime/presentations/views/AiChangeT
 import { NotificationToast } from '../components/NotificationToast';
 import { AiActionHistoryPanel } from '#/modules/AiRuntime/presentations/views/AiActionHistoryPanel';
 import { MixAnalysisPanel } from '#/modules/AiRuntime/presentations/views/MixAnalysisPanel';
-import { subscribeGenerativeAi, getGenerativeAiSnapshot } from '#/modules/AiGeneration/useCases/generativeAiActions';
+import { subscribeAiStore, getAiSnapshot } from '#/modules/AiGeneration/stores/aiStore';
 import { ExportDialog } from '#/modules/Project/presentations/views/ExportDialog';
 import { PreferencesDialog } from './PreferencesDialog';
 import { useGlobalKeyboardShortcuts } from '#/modules/Command/presentations/views/keyboardShortcutsContract';
 import { startShortcutEngine } from '../../useCases/shortcutEngine';
-import { openMixer } from '../../useCases/togglePanel';
+import { openMixer } from '../../useCases/togglePanel/panelToggles';
 import { StatusBar } from './StatusBar';
 import { ShortcutCheatSheet } from '../components/ShortcutCheatSheet';
 import { UndoHistoryPanel } from '#/modules/Command/presentations/views/UndoHistoryPanel';
@@ -64,7 +64,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     } = useWorkspaceState();
 
     const project = useProjectState();
-    const aiState = useSyncExternalStore(subscribeGenerativeAi, getGenerativeAiSnapshot);
+    const aiState = useSyncExternalStore(subscribeAiStore, getAiSnapshot);
     const aiPanelOpen = aiState.isPanelOpen;
     const [exportOpen, setExportOpen] = useState(false);
     const [prefsOpen, setPrefsOpen] = useState(false);
@@ -104,8 +104,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                 openMixer();
             }
         };
-        document.addEventListener('webdaw:show-automation-tab', handler);
-        return () => document.removeEventListener('webdaw:show-automation-tab', handler);
+        document.addEventListener('sourdaw:show-automation-tab', handler);
+        return () => document.removeEventListener('sourdaw:show-automation-tab', handler);
     }, [mixerOpen]);
 
     // ─── Panel width state (pixels, clamped) ───

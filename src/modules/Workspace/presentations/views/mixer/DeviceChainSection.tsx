@@ -1,12 +1,15 @@
 import { type ReactElement, useState } from 'react';
 import { cn } from '#/helpers/Styles/cn';
-import { selectTrack } from '#/modules/Arrangement/useCases/toggleTrackState';
-import { bypassDevice, addDevice, removeDevice, reorderDevices } from '#/modules/Arrangement/useCases/device';
+import { selectTrack } from '#/modules/Arrangement/useCases/toggleTrackState/selectTrack';
+import { bypassDevice } from '#/modules/Arrangement/useCases/device/bypassDevice';
+import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
+import { removeDevice } from '#/modules/Arrangement/useCases/device/removeDevice';
+import { reorderDevices } from '#/modules/Arrangement/useCases/device/reorderDevices';
 import { getPlatformPlugins } from '#/modules/Arrangement/useCases/trackQueries';
-import { openInspector } from '#/modules/Workspace/useCases/togglePanel';
+import { openInspector } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
-import { getAllModulationRoutes } from '#/modules/Plugin/useCases/modulationSystem';
-import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases/midiEffectPlugins';
+import { getAllModulationRoutes } from '#/modules/Plugin/useCases/modulationSystem/getAllModulationRoutes';
+import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases/midiEffectPlugins/registry';
 
 type DeviceChainSectionProps = {
     track: Track;

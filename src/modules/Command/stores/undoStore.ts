@@ -5,7 +5,7 @@ import { type UndoEntry, isActionEntry } from '../models/UndoEntry';
 
 const logger = Container.getInstance().get(Logger);
 
-const UNDO_SESSION_KEY = 'webdaw-undo-session';
+const UNDO_SESSION_KEY = 'sourdaw-undo-session';
 const MAX_UNDO_PERSIST = 100;
 
 export type UndoStoreState = {
@@ -63,7 +63,7 @@ export function pushUndo(entry: UndoEntry): void {
     });
 
     // Mirror into branching undo tree when enabled
-    void import('../useCases/undoTree').then(({ recordToTree }) => {
+    void import('../useCases/undoTree/recordToTree').then(({ recordToTree }) => {
         recordToTree(entry);
     });
 }

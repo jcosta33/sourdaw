@@ -1,16 +1,12 @@
 import { type ShortcutAction, shortcutStore } from '../models/Shortcuts';
-import {
-    togglePlayback,
-    stopPlayback,
-    toggleRecording,
-    toggleLoop,
-    duplicateClipToNextBar,
-} from '#/modules/Command/useCases/keyboardShortcutActions';
+import { togglePlayback, stopPlayback, toggleRecording, toggleLoop } from '#/modules/Command/useCases/keyboardShortcutActions/transportShortcuts';
+import { duplicateClipToNextBar } from '#/modules/Command/useCases/keyboardShortcutActions/trackShortcuts';
 import { undo, redo } from '#/modules/Command/useCases/undoRedo';
-import { copySelectedClip, pasteClip } from '#/modules/Arrangement/useCases/clipboard';
-import { removeClip } from '#/modules/Arrangement/useCases/clip';
+import { copySelectedClip } from '#/modules/Arrangement/useCases/clipboard/copySelectedClip';
+import { pasteClip } from '#/modules/Arrangement/useCases/clipboard/pasteClip';
+import { removeClip } from '#/modules/Arrangement/useCases/clip/removeClip';
 import { saveProject } from '#/modules/Project/useCases/projectPersistence';
-import { toggleMixer, toggleInspector, toggleChatPanel } from './togglePanel';
+import { toggleMixer, toggleInspector, toggleChatPanel } from './togglePanel/panelToggles';
 import { workspaceStore } from '../stores/workspaceStore';
 
 type ShortcutHandler = (e: KeyboardEvent) => void;
@@ -112,7 +108,7 @@ export function startShortcutEngine(): () => void {
                 const handler = actionHandlers[action as ShortcutAction];
                 if (handler) {
                     handler(e);
-                    document.dispatchEvent(new CustomEvent('webdaw:shortcut', { detail: { action } }));
+                    document.dispatchEvent(new CustomEvent('sourdaw:shortcut', { detail: { action } }));
                     return; // Stop processing other keys
                 }
             }

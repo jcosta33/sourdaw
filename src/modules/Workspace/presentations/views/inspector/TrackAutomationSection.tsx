@@ -2,14 +2,12 @@ import { type ReactElement, useState, useEffect, useRef, useSyncExternalStore } 
 import { Card } from '#/components/ui/card';
 import { Button } from '#/components/ui/button';
 import { Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
-import { BUILTIN_PLUGINS } from '#/modules/Arrangement/useCases/trackQueries';
-import {
-    addAutomationLane,
-    toggleAutomationVisibility,
-    removeAutomationLane,
-} from '#/modules/Automation/useCases/automation';
+import { BUILTIN_PLUGINS } from '#/modules/Arrangement/models/DeviceParameter';
+import { addAutomationLane } from '#/modules/Automation/useCases/automation/addAutomationLane';
+import { toggleAutomationVisibility } from '#/modules/Automation/useCases/automation/toggleAutomationVisibility';
+import { removeAutomationLane } from '#/modules/Automation/useCases/automation/removeAutomationLane';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
+import { type Track } from '#/modules/Arrangement/models/Track';
 
 type TrackAutomationSectionProps = {
     track: Track;

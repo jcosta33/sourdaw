@@ -1,6 +1,6 @@
 import { type ActionHandler } from '#/modules/Command/useCases/commandQueries';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { generateDrumFill, generateAllTransitionFills } from '#/modules/Arrangement/useCases/fillTransitionGeneration';
+import { generateDrumFill, generateAllTransitionFills } from '#/modules/Arrangement/useCases/fillTransitionGeneration/generation';
 import { compareToReference } from '#/modules/AudioAnalysis/useCases/referenceMixComparison';
 import { toggleMono, toggleDim, switchMonitor } from '#/modules/AudioEngine/useCases/controlRoom';
 import { generateMentorLessons } from '#/modules/AiRuntime/useCases/musicMentor';

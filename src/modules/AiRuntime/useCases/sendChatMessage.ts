@@ -1,5 +1,5 @@
 import { getLlmEngine } from '../repositories/webLlm';
-import { streamNativeCompletion, isLlamaServerRunning } from '../repositories/llamaServerEngine';
+import { streamNativeCompletion, isLlamaServerRunning } from '../repositories/nativeEngine';
 import { isCloudAvailable, streamCloudChatCompletion } from '../repositories/cloudLlm';
 import { resolveBackend } from './llmOrchestration';
 import { chatStore, appendChatMessage, updateChatMessage, setChatGenerating } from '../stores/chatStore';

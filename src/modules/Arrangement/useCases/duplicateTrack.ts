@@ -1,8 +1,8 @@
 import { getTrackById, updateTrack } from '../repositories/track';
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { addTrack } from './addTrack';
-import { addClip } from '#/modules/Arrangement/useCases/clip';
-import { type MidiNote } from '#/modules/Arrangement/useCases/trackQueries';
+import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
+import { type MidiNote } from '#/modules/MIDI/useCases/midi';
 
 export function duplicateTrack(trackId: string): void {
     const source = getTrackById(trackId);

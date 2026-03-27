@@ -5,7 +5,7 @@ import { useTracks } from '../hooks/useTracks';
 import { TrackAutomationSection } from './AutomationView/TrackAutomationSection';
 import { Button } from '#/components/ui/button';
 import { X } from 'lucide-react';
-import { toggleAutomationPanel } from '../../useCases/togglePanel';
+import { toggleAutomationPanel } from '../../useCases/togglePanel/panelToggles';
 
 export const AutomationView = (): ReactElement => {
     const { tracks } = useTracks();

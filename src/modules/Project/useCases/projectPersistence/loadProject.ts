@@ -26,7 +26,7 @@ export async function loadProject(): Promise<boolean> {
                 const dir = await getProjectDirectory();
                 const projectState = projectStore.value;
                 if (projectState?.name) {
-                    const nativeData = await loadProjectFromFile(`${dir}/${projectState.name}.webdaw`);
+                    const nativeData = await loadProjectFromFile(`${dir}/${projectState.name}.sourdaw`);
                     if (nativeData?.version === 1) {
                         writeProjectJson(JSON.stringify(nativeData));
                     }

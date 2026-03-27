@@ -8,15 +8,15 @@ import { timelineViewStore } from '#/modules/Arrangement/stores/timelineViewStor
 import { TrackListView } from '#/modules/Arrangement/presentations/views/TrackListView';
 import { useTracks } from '../hooks/useTracks';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { addClip } from '#/modules/Arrangement/useCases/clip';
+import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
 import { decodeAudioFile } from '#/modules/Arrangement/useCases/trackViewActions';
 import { importMidiFile } from '#/modules/MIDI/useCases/importMidiFile';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { markerStore } from '#/modules/Arrangement/stores/markerStore';
 import { useWorkspaceState } from '#/modules/Workspace/presentations/hooks/useWorkspaceState';
-import { setTrackListWidth } from '#/modules/Workspace/useCases/togglePanel';
-import { closeScratchPad } from '#/modules/Workspace/useCases/togglePanel';
+import { setTrackListWidth } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
+import { closeScratchPad } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 import { ResizeHandle } from '#/modules/Workspace/presentations/components/ResizeHandle';
 import { Button } from '#/components/ui/button';
 import { Music, Piano, Plus, Upload, LayoutTemplate } from 'lucide-react';

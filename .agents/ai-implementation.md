@@ -18,7 +18,7 @@
 | **AI EQ / spectral matching** | Rust | Web | `realfft` + custom algorithm | <500ms |
 | **Reference mastering** | Rust | Cloud | `realfft` + loudness matching | <5s |
 | **Intelligent gain staging** | Rust | Web | `realfft` + EBU R128 | <1s |
-| **NL → DAW tool calls** | Rust | Cloud → Web | `mistral.rs` Qwen3-8B / Claude API / WebLLM (Hermes-2-Pro) | <3s |
+| **NL → DAW tool calls** | Rust | Cloud → Web | `mistral.rs` Hermes-3-8B / Claude API / WebLLM (Hermes-3) | <3s |
 | **MIDI generation** | Web | Cloud | Magenta.js MusicVAE / Claude tool use | <2s |
 
 **Priority order for implementation** (maximum user impact first): spectrum analysis → BPM/key detection → stem separation → audio-to-MIDI → NL→tool calls → pitch detection → MIDI generation → AI EQ → gain staging → pitch correction → reference mastering.
@@ -35,14 +35,14 @@
 npm install @mlc-ai/web-llm
 ```
 
-**DAW implementation uses `Hermes-2-Pro-Llama-3-8B-q4f16_1-MLC`** — this model supports native one-round function calling via the `tools` + `tool_choice` API. Use `CreateWebWorkerMLCEngine` to run inference off the main thread, then pass tools and read `tool_calls` from the last streamed chunk:
+**DAW implementation uses `Hermes-3-Llama-3.1-8B-q4f16_1-MLC`** — this model supports native one-round function calling via the `tools` + `tool_choice` API. Use `CreateWebWorkerMLCEngine` to run inference off the main thread, then pass tools and read `tool_calls` from the last streamed chunk:
 
 ```typescript
 import { CreateWebWorkerMLCEngine, type ChatCompletionTool } from "@mlc-ai/web-llm";
 
 const engine = await CreateWebWorkerMLCEngine(
   new Worker(new URL("./webllm-worker.ts", import.meta.url), { type: "module" }),
-  "Hermes-2-Pro-Llama-3-8B-q4f16_1-MLC",
+  "Hermes-3-Llama-3.1-8B-q4f16_1-MLC",
   { initProgressCallback: (p) => setLoadProgress(p.progress) },
   { context_window_size: 4096 }
 );
@@ -83,7 +83,7 @@ for await (const chunk of asyncChunks) {
 
 | Model | Quantized Size | VRAM | Tokens/sec (M3 Max) | Tool Calling |
 |---|---|---|---|---|
-| **Hermes-2-Pro-Llama-3-8B q4f16_1** | **~4 GB** | **~6 GB** | **~41** | **✅ Native (recommended)** |
+| **Hermes-3-Llama-3.1-8B q4f16_1** | **~4.9 GB** | **~6 GB** | **~41** | **✅ Native (recommended)** |
 | TinyLlama-1.1B q4f16_1 | ~600 MB | ~1.5 GB | ~100+ | ❌ No |
 | Phi-3.5-mini-instruct q4f16_1 | ~1.8 GB | ~3 GB | ~71 | ❌ JSON mode only |
 | Llama-3.1-8B-Instruct q4f16_1 | ~4 GB | ~6 GB | ~41 | ⚠️ Limited |
@@ -863,7 +863,7 @@ Similar to AI EQ but extended to loudness (EBU R128), stereo width, and dynamic 
 
 **Recommended fallback chain: Rust (mistral.rs) → Cloud (Claude) → Web (WebLLM).**
 
-The Rust tier using mistral.rs with **Qwen3-8B** (Q4K, ~4.5 GB) provides the best balance of quality, latency, and offline capability. It supports native tool calling, MCP, and structured output via llguidance. For machines with <16 GB RAM, fall back to Claude API (best tool-calling quality) or GPT-5.4. WebLLM serves as a fallback for offline-only scenarios on Windows/macOS where the native tier isn't loaded, using **Hermes-2-Pro-Llama-3-8B** (~4 GB) with native OpenAI-compatible tool calling (no JSON mode prompt engineering required).
+The Rust tier uses mistral.rs with **Hermes-3-Llama-3.1-8B** (Q4K ISQ, ~4.9 GB) in-process — no external binary or sidecar needed. The model auto-downloads from HuggingFace Hub on first use. It supports native tool calling via `set_tools()` + `ToolChoice::Auto`, and structured output via grammar constraints. The fallback chain is: **Native (mistral.rs) → Cloud (Claude API) → Browser (WebLLM)**. WebLLM uses the same **Hermes-3-Llama-3.1-8B** model family (~4.9 GB) via WebGPU with native OpenAI-compatible tool calling — this is a first-class browser experience, not a degraded fallback.
 
 ### MIDI generation and completion
 

@@ -4,7 +4,7 @@ import { Input } from '#/components/ui/input';
 import { Button } from '#/components/ui/button';
 import { Search, Music, FileAudio, Waves, Upload, X, Zap } from 'lucide-react';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { toggleSidebar } from '../../useCases/togglePanel';
+import { toggleSidebar } from '../../useCases/togglePanel/panelToggles';
 import { useTracks } from '../hooks/useTracks';
 import { decodeAudioFile } from '#/modules/Arrangement/useCases/trackViewActions';
 import { getPlatformPlugins } from '#/modules/Arrangement/useCases/trackQueries';
@@ -69,7 +69,7 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
     const [userSamples, setUserSamples] = useState<UserSample[]>([]);
     const [favorites, setFavorites] = useState<Set<string>>(() => {
         try {
-            const stored = localStorage.getItem('webdaw-favorites');
+            const stored = localStorage.getItem('sourdaw-favorites');
             return stored ? new Set(JSON.parse(stored) as string[]) : new Set();
         } catch {
             return new Set();
@@ -121,7 +121,7 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                 next.add(id);
             }
             try {
-                localStorage.setItem('webdaw-favorites', JSON.stringify([...next]));
+                localStorage.setItem('sourdaw-favorites', JSON.stringify([...next]));
             } catch {
                 /* ignore */
             }

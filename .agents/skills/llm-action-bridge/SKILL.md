@@ -258,7 +258,7 @@ Key rule for the action bridge layer: browser-local inference routes through the
 
 ### Use native `mistral.rs` for heavier local models
 
-For desktop-local LLM inference, **`mistral.rs` runs in-process as a Rust library** — no sidecar subprocess. The recommended model is Qwen3-8B at Q4_K_M (F1=0.919 on tool-calling benchmarks). Tokens stream to the UI via Tauri Channels.
+For desktop-local LLM inference, **`mistral.rs` runs in-process as a Rust library** — no sidecar subprocess. The current model is Hermes-3-Llama-3.1-8B with Q4K ISQ quantization (~4.9 GB, auto-downloads from HuggingFace). Supports native tool calling via `set_tools()` + `ToolChoice::Auto`. Tokens stream to the UI via Tauri Channels.
 
 See [audio-ai-runtime SKILL.md](./../audio-ai-runtime/SKILL.md) for the full Rust implementation pattern (`run_local_llm` command, Channel setup, model loading at startup).
 

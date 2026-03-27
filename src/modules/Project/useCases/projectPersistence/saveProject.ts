@@ -72,14 +72,14 @@ export function saveProject(): void {
 
         if (isNativeFileSystemAvailable()) {
             getProjectDirectory()
-                .then((dir) => saveProjectToFile(`${dir}/${project.name}.webdaw`, data))
+                .then((dir) => saveProjectToFile(`${dir}/${project.name}.sourdaw`, data))
                 .catch(() => {
                     /* native save is best-effort */
                 });
         }
 
         projectStore.set({ ...project, updatedAt: data.updatedAt, dirty: false, loading: false });
-        addToRecentProjects(project.name, `webdaw:project:${project.name}`);
+        addToRecentProjects(project.name, `sourdaw:project:${project.name}`);
     } catch {
         notifyUser('Failed to save project — storage may be full', 'error');
         return;

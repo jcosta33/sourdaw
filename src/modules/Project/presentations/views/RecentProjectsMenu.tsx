@@ -110,7 +110,7 @@ export const RecentProjectsMenu = (): ReactElement => {
 
     const handleExportAudio = () => {
         setOpen(false);
-        document.dispatchEvent(new CustomEvent('webdaw:open-export'));
+        document.dispatchEvent(new CustomEvent('sourdaw:open-export'));
     };
 
     const handleExportProject = () => {
@@ -121,7 +121,7 @@ export const RecentProjectsMenu = (): ReactElement => {
     const handleImportProject = () => {
         setOpen(false);
         void pickFiles({
-            filters: [{ name: 'Sourdaw Project', extensions: ['webdaw', 'json'] }],
+            filters: [{ name: 'Sourdaw Project', extensions: ['sourdaw', 'json'] }],
         }).then((files) => {
             if (!files || files.length === 0) {
                 return;

@@ -1,57 +1,72 @@
 /**
- * Repository: AI Audio Engine client.
- * Communicates with the ai_audio_server.py Python sidecar for:
- *   - Text-to-music generation (MusicGen)
- *   - Stem separation (Demucs)
+ * Repository: AI Audio Engine.
+ *
+ * Stem separation:
+ *   - Tauri: native Demucs ONNX via ort crate (auto-downloads ~235MB model)
+ *   - Browser: Demucs ONNX via onnxruntime-web (same model, WebGPU/WASM)
+ *
+ * Audio generation (Stable Audio Open):
+ *   - Tauri: Python sidecar (auto-started, model auto-downloads ~1.7GB)
+ *   - Browser: desktop-only feature (requires PyTorch)
  */
 
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
+import { isTauri, tauriInvoke } from '#/helpers/tauriBridge';
 
 const logger = Container.getInstance().get(Logger);
 
-const AI_AUDIO_PORT = 8848;
-const BASE_URL = `http://127.0.0.1:${String(AI_AUDIO_PORT)}`;
-
 /**
- * Check if the AI audio server is running.
+ * Check if stem separation is available.
+ * Always true — both Tauri and browser have native ONNX implementations.
  */
-export async function isAudioAiServerRunning(): Promise<boolean> {
-    try {
-        const response = await fetch(`${BASE_URL}/health`, { signal: AbortSignal.timeout(2000) });
-        return response.ok;
-    } catch {
-        return false;
-    }
+export function isStemSeparationAvailable(): boolean {
+    return true;
 }
 
 /**
- * Generate audio from a text prompt using MusicGen.
- * Returns an AudioBuffer decoded from the WAV response.
+ * Check if audio generation is available.
+ * Only works in Tauri (requires Python sidecar for Stable Audio Open).
  */
-export async function generateAudio(prompt: string, durationSeconds: number = 8): Promise<AudioBuffer> {
-    logger.info(`[Audio AI] Generating audio: "${prompt}" (${String(durationSeconds)}s)`);
+export function isAudioGenerationAvailable(): boolean {
+    return isTauri();
+}
 
-    const response = await fetch(`${BASE_URL}/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            prompt,
-            duration_s: Math.min(durationSeconds, 30),
-        }),
-    });
+// Keep for backward compat — used by generateAudio handler
+export async function isAudioAiServerRunning(): Promise<boolean> {
+    return isTauri();
+}
 
-    if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`Audio generation failed: ${error}`);
+/**
+ * Generate audio from a text prompt using Stable Audio Open.
+ * Desktop only — uses a Python sidecar that auto-starts and auto-downloads the model.
+ */
+export async function generateAudio(
+    prompt: string,
+    durationSeconds: number = 8,
+    options?: { bpm?: number; key?: string; durationBars?: number }
+): Promise<AudioBuffer> {
+    if (!isTauri()) {
+        throw new Error('Audio generation is a desktop-only feature. It requires the Sourdaw desktop app.');
     }
 
-    const wavBytes = await response.arrayBuffer();
-    logger.info(`[Audio AI] Generated ${String(wavBytes.byteLength)} bytes of audio`);
+    logger.info(`[Audio AI] Generating audio: "${prompt}" (${String(durationSeconds)}s)`);
 
-    // Decode WAV to AudioBuffer
+    const result = (await tauriInvoke('generate_audio_clip', {
+        prompt,
+        bpm: options?.bpm ?? null,
+        key: options?.key ?? null,
+        durationBars: options?.durationBars ?? null,
+        durationSeconds,
+    })) as { wav_path: string; duration_seconds: number; sample_rate: number };
+
+    logger.info(`[Audio AI] Generated: ${result.wav_path} (${String(result.duration_seconds)}s)`);
+
+    // Load WAV file into AudioBuffer
+    const fileBytes = (await tauriInvoke('read_audio_file', { path: result.wav_path })) as number[];
+    const wavBuffer = new Uint8Array(fileBytes).buffer;
     const audioContext = new AudioContext();
-    const audioBuffer = await audioContext.decodeAudioData(wavBytes);
+    const audioBuffer = await audioContext.decodeAudioData(wavBuffer);
     await audioContext.close();
 
     return audioBuffer;
@@ -62,60 +77,64 @@ type StemResult = {
 };
 
 /**
- * Separate audio into stems using Demucs.
- * Accepts raw WAV data, returns decoded AudioBuffers for each stem.
+ * Separate audio into stems using Demucs v4 ONNX.
+ *
+ * In Tauri: native Rust inference via ort crate.
+ * In browser: onnxruntime-web with WebGPU/WASM.
+ * Both auto-download the ~235MB model on first use.
  */
 export async function separateStems(audioData: ArrayBuffer, stems: string[] = ['all']): Promise<StemResult> {
     logger.info(`[Audio AI] Separating stems: ${stems.join(', ')}`);
 
-    // Encode audio as base64 for JSON transport
-    const base64Audio = arrayBufferToBase64(audioData);
+    if (isTauri()) {
+        return separateStemsNative(audioData, stems);
+    }
 
-    const response = await fetch(`${BASE_URL}/separate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            audio: base64Audio,
+    return separateStemsBrowserOnnx(audioData, stems);
+}
+
+/**
+ * Native stem separation via Tauri Rust command.
+ * Writes WAV to temp file, passes path to Rust (avoids large JSON IPC).
+ */
+async function separateStemsNative(audioData: ArrayBuffer, stems: string[]): Promise<StemResult> {
+    const tempPath = `__sourdaw_stems_input_${String(Date.now())}.wav`;
+    const wavBytes = Array.from(new Uint8Array(audioData));
+    await tauriInvoke('write_audio_file', { path: tempPath, data: wavBytes });
+
+    logger.info(`[Audio AI] Starting native stem separation...`);
+
+    const result = (await tauriInvoke('separate_stems', {
+        request: {
+            audio_path: tempPath,
             stems,
-        }),
-    });
+        },
+    })) as { stem_paths: Record<string, string>; processing_time_ms: number };
 
-    if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`Stem separation failed: ${error}`);
+    logger.info(`[Audio AI] Native separation completed in ${String(result.processing_time_ms)}ms`);
+
+    const stemBuffers: StemResult = {};
+
+    for (const [name, filePath] of Object.entries(result.stem_paths)) {
+        try {
+            const fileBytes = (await tauriInvoke('read_audio_file', { path: filePath })) as number[];
+            const wavBuffer = new Uint8Array(fileBytes).buffer;
+            const audioContext = new AudioContext();
+            stemBuffers[name] = await audioContext.decodeAudioData(wavBuffer);
+            await audioContext.close();
+        } catch (e) {
+            logger.warn(`[Audio AI] Failed to load stem "${name}" from ${filePath}: ${String(e)}`);
+        }
     }
 
-    const data = (await response.json()) as Record<string, string>;
-
-    // Decode each stem from base64 WAV
-    const audioContext = new AudioContext();
-    const result: StemResult = {};
-
-    for (const [name, base64Wav] of Object.entries(data)) {
-        const wavBytes = base64ToArrayBuffer(base64Wav);
-        result[name] = await audioContext.decodeAudioData(wavBytes);
-    }
-
-    await audioContext.close();
-    logger.info(`[Audio AI] Separated into ${String(Object.keys(result).length)} stems`);
-
-    return result;
+    return stemBuffers;
 }
 
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-        binary += String.fromCharCode(bytes[i] ?? 0);
-    }
-    return btoa(binary);
-}
-
-function base64ToArrayBuffer(base64: string): ArrayBuffer {
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-        bytes[i] = binary.charCodeAt(i);
-    }
-    return bytes.buffer;
+/**
+ * Browser stem separation via ONNX Runtime Web (Demucs v4).
+ * Same model as native, runs entirely in the browser via WebGPU/WASM.
+ */
+async function separateStemsBrowserOnnx(audioData: ArrayBuffer, stems: string[]): Promise<StemResult> {
+    const { separateStemsBrowser } = await import('./browserStemSeparation');
+    return separateStemsBrowser(audioData, stems);
 }

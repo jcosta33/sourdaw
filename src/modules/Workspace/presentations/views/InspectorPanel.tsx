@@ -4,7 +4,7 @@ import { Button } from '#/components/ui/button';
 import { X } from 'lucide-react';
 import { useTracks } from '../hooks/useTracks';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { toggleInspector, clearClipSelection, selectClipWithFocus } from '../../useCases/togglePanel';
+import { toggleInspector, clearClipSelection, selectClipWithFocus } from '../../useCases/togglePanel/panelToggles';
 import { TrackInspector } from './Inspector/TrackInspector';
 import { ClipInspector } from './Inspector/ClipInspector';
 import { DeviceInspector } from './Inspector/DeviceInspector';

@@ -161,7 +161,7 @@ pub async fn run_local_llm(
     on_token: Channel<LlmEvent>,
 ) -> Result<(), String> {
     // Model is loaded once at startup and stored in app state (OnceLock / Arc<Model>)
-    // Pattern: TextModelBuilder::new("Qwen/Qwen3-8B-Instruct")
+    // Pattern: TextModelBuilder::new("NousResearch/Hermes-3-Llama-3.1-8B")
     //              .with_isq(IsqType::Q4K)
     //              .with_paged_attn(|| PagedAttentionMetaBuilder::default().build())?
     //              .build().await?
@@ -403,7 +403,7 @@ Use it for:
 - offline reasoning for creative actions
 - streaming token output to the UI via Tauri Channels
 
-**Recommended model**: Qwen3-8B at Q4_K_M (~4.9 GB) — F1=0.919 on tool-calling benchmarks (near GPT-4). Load via `.with_isq(IsqType::Q4K)` — no manual GGUF download needed.
+**Current model**: Hermes-3-Llama-3.1-8B with Q4K ISQ (~4.9 GB) — strong tool-calling support. Load via `TextModelBuilder::new("NousResearch/Hermes-3-Llama-3.1-8B").with_isq(IsqType::Q4K)` — auto-downloads from HuggingFace Hub, no manual GGUF download needed.
 
 Load once at app startup and store in `Arc<Model>` in app state. Do not reload per-request.
 

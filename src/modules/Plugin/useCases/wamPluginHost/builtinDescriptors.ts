@@ -3,7 +3,7 @@ import { registerWAMPlugin } from './hostOperations';
 
 const BUILTIN_WAM_DESCRIPTORS: WAMDescriptor[] = [
     {
-        id: 'webdaw.eq',
+        id: 'sourdaw.eq',
         name: 'Parametric EQ',
         vendor: 'Sourdaw',
         version: '1.0',
@@ -12,7 +12,7 @@ const BUILTIN_WAM_DESCRIPTORS: WAMDescriptor[] = [
         keywords: ['eq', 'filter', 'tone'],
     },
     {
-        id: 'webdaw.compressor',
+        id: 'sourdaw.compressor',
         name: 'Compressor',
         vendor: 'Sourdaw',
         version: '1.0',
@@ -21,7 +21,7 @@ const BUILTIN_WAM_DESCRIPTORS: WAMDescriptor[] = [
         keywords: ['dynamics', 'compressor'],
     },
     {
-        id: 'webdaw.reverb',
+        id: 'sourdaw.reverb',
         name: 'Reverb',
         vendor: 'Sourdaw',
         version: '1.0',
@@ -30,7 +30,7 @@ const BUILTIN_WAM_DESCRIPTORS: WAMDescriptor[] = [
         keywords: ['reverb', 'space'],
     },
     {
-        id: 'webdaw.delay',
+        id: 'sourdaw.delay',
         name: 'Delay',
         vendor: 'Sourdaw',
         version: '1.0',
@@ -39,7 +39,7 @@ const BUILTIN_WAM_DESCRIPTORS: WAMDescriptor[] = [
         keywords: ['delay', 'echo'],
     },
     {
-        id: 'webdaw.chorus',
+        id: 'sourdaw.chorus',
         name: 'Chorus',
         vendor: 'Sourdaw',
         version: '1.0',
@@ -48,7 +48,7 @@ const BUILTIN_WAM_DESCRIPTORS: WAMDescriptor[] = [
         keywords: ['modulation', 'chorus'],
     },
     {
-        id: 'webdaw.distortion',
+        id: 'sourdaw.distortion',
         name: 'Distortion',
         vendor: 'Sourdaw',
         version: '1.0',
@@ -57,7 +57,7 @@ const BUILTIN_WAM_DESCRIPTORS: WAMDescriptor[] = [
         keywords: ['distortion', 'saturation'],
     },
     {
-        id: 'webdaw.limiter',
+        id: 'sourdaw.limiter',
         name: 'Limiter',
         vendor: 'Sourdaw',
         version: '1.0',
@@ -66,7 +66,7 @@ const BUILTIN_WAM_DESCRIPTORS: WAMDescriptor[] = [
         keywords: ['dynamics', 'limiter'],
     },
     {
-        id: 'webdaw.synth',
+        id: 'sourdaw.synth',
         name: 'Subtractive Synth',
         vendor: 'Sourdaw',
         version: '1.0',
@@ -75,7 +75,7 @@ const BUILTIN_WAM_DESCRIPTORS: WAMDescriptor[] = [
         keywords: ['synth', 'subtractive'],
     },
     {
-        id: 'webdaw.drumkit',
+        id: 'sourdaw.drumkit',
         name: 'Drum Machine',
         vendor: 'Sourdaw',
         version: '1.0',
@@ -84,7 +84,7 @@ const BUILTIN_WAM_DESCRIPTORS: WAMDescriptor[] = [
         keywords: ['drums', 'percussion'],
     },
     {
-        id: 'webdaw.sampler',
+        id: 'sourdaw.sampler',
         name: 'Sampler',
         vendor: 'Sourdaw',
         version: '1.0',
@@ -93,7 +93,7 @@ const BUILTIN_WAM_DESCRIPTORS: WAMDescriptor[] = [
         keywords: ['sampler', 'sample'],
     },
     {
-        id: 'webdaw.alchemy',
+        id: 'sourdaw.alchemy',
         name: 'Alchemy',
         vendor: 'Sourdaw',
         version: '1.0',
@@ -103,7 +103,7 @@ const BUILTIN_WAM_DESCRIPTORS: WAMDescriptor[] = [
         isHighEnd: true,
     },
     {
-        id: 'webdaw.space-designer',
+        id: 'sourdaw.space-designer',
         name: 'Space Designer',
         vendor: 'Sourdaw',
         version: '1.0',
@@ -113,7 +113,7 @@ const BUILTIN_WAM_DESCRIPTORS: WAMDescriptor[] = [
         isHighEnd: true,
     },
     {
-        id: 'webdaw.pro-eq',
+        id: 'sourdaw.pro-eq',
         name: 'Pro EQ',
         vendor: 'Sourdaw',
         version: '1.0',

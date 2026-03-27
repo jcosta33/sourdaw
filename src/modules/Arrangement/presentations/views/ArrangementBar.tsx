@@ -12,10 +12,10 @@ import {
     removeSection,
     renameSection,
     setSectionColor,
-    reorderSection,
     moveSection,
     resizeSection,
-} from '../../useCases/marker';
+    reorderSection,
+} from '../../useCases/marker/sectionOperations';
 import { type ArrangementSection } from '../../models/Marker';
 import { cn } from '#/helpers/Styles/cn';
 

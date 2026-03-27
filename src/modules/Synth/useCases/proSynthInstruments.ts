@@ -5,7 +5,7 @@
  * NOTE: FM Synth and Rhodes are registered in faustEngine.ts — do NOT re-register here.
  */
 
-import { registerFaustDSP, type FaustParamDescriptor } from '#/modules/Plugin/useCases/faustEngine';
+import { registerFaustDSP, type FaustParamDescriptor } from '#/modules/Plugin/useCases/faustEngine/compilerEngine';
 
 /**
  * Register all pro synth instruments.

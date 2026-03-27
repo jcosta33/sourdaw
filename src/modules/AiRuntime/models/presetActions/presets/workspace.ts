@@ -77,7 +77,7 @@ export const workspacePresets: readonly PresetAction[] = [
         keywords: ['preferences', 'settings', 'options', 'config'],
         category: 'Workspace',
         buildAction: () => {
-            document.dispatchEvent(new CustomEvent('webdaw:open-preferences'));
+            document.dispatchEvent(new CustomEvent('sourdaw:open-preferences'));
             return [];
         },
     },

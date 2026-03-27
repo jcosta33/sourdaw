@@ -32,7 +32,7 @@ import { versionControlHandlers } from '#/modules/Project/useCases/versionContro
 import { newFeatureHandlers } from '#/modules/Arrangement/useCases/newFeatureHandlers';
 import { batchFeatureHandlers } from '#/modules/Arrangement/useCases/batchFeatureHandlers';
 import { finalFeatureHandlers } from '#/modules/AudioEngine/useCases/finalFeatureHandlers';
-import { recordAction } from './macro';
+import { recordAction } from './macro/recording';
 import {
     handleCreateTrackAlternative,
     handleSwitchTrackAlternative,

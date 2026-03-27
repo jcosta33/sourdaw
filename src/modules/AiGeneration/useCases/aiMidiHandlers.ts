@@ -14,7 +14,7 @@ import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/c
 import { addMidiNote, getNotesForClip, setNotesForClip } from '#/modules/MIDI/useCases/midiNoteCrud';
 import { createMidiNote } from '#/modules/Arrangement/useCases/trackQueries';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { addClip } from '#/modules/Arrangement/useCases/clip';
+import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
 import { stripSilence } from '#/modules/Arrangement/useCases/stripSilence';
 import { detectTempo, detectKey, audioToMidi } from '#/modules/Arrangement/useCases/audioAnalysis';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
@@ -220,18 +220,15 @@ export const aiMidiHandlers = {
         undoable: true,
     } satisfies ActionHandler<Extract<AppAction, 'audioToMidi'>>,
 
-    // ── AI Audio Generation (MusicGen + Demucs) ─────────────────────────
+    // ── AI Audio Generation (Stable Audio Open) ─────────────────────────
 
     generateAudio: {
         execute: async (a) => {
-            const { generateAudio: genAudio, isAudioAiServerRunning } =
+            const { generateAudio: genAudio, isAudioGenerationAvailable } =
                 await import('#/modules/AudioAnalysis/useCases/audioAi');
 
-            const running = await isAudioAiServerRunning();
-            if (!running) {
-                logger.warn(
-                    '[Audio AI] AI Audio Server not running. Start: python3 src-tauri/binaries/ai_audio_server.py'
-                );
+            if (!isAudioGenerationAvailable()) {
+                logger.warn('[Audio AI] Audio generation requires the Sourdaw desktop app');
                 return;
             }
 
@@ -282,16 +279,8 @@ export const aiMidiHandlers = {
 
     stemSeparate: {
         execute: async (a) => {
-            const { separateStems: doSeparateStems, isAudioAiServerRunning } =
+            const { separateStems: doSeparateStems } =
                 await import('#/modules/AudioAnalysis/useCases/audioAi');
-
-            const running = await isAudioAiServerRunning();
-            if (!running) {
-                logger.warn(
-                    '[Audio AI] AI Audio Server not running. Start: python3 src-tauri/binaries/ai_audio_server.py'
-                );
-                return;
-            }
 
             const stems = a.payload.stems ?? ['all'];
             logger.info(`[Audio AI] Separating stems: ${stems.join(', ')} for clip ${a.payload.clipId}`);
@@ -354,7 +343,7 @@ export const aiMidiHandlers = {
 
 /**
  * Encode an AudioBuffer as a 16-bit PCM WAV ArrayBuffer.
- * Used to transport audio data to the AI sidecar server.
+ * Used to transport audio data to the stem separation engine.
  */
 function audioBufferToWav(buffer: AudioBuffer): ArrayBuffer {
     const numChannels = buffer.numberOfChannels;

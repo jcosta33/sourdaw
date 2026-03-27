@@ -3,11 +3,11 @@
  *
  * Two formats are supported depending on the backend:
  *
- * - 'native' (llama-server + Hermes-3 GGUF):
+ * - 'native' (mistral.rs in-process, Hermes-3):
  *     Hermes XML format — produces <tool_call> blocks.
  *     Tools are embedded in the system prompt via <tools>...</tools>.
  *
- * - 'api' (WebLLM Hermes-2-Pro + Claude cloud):
+ * - 'api' (WebLLM Hermes-3 + Claude cloud):
  *     Native tool calling API (tools + tool_choice passed at request time).
  *     System prompt only needs the DAW role context; tools are NOT embedded here.
  *
@@ -16,7 +16,7 @@
  * into concrete parameters.
  */
 
-// ── Hermes XML preamble (for native llama-server with Hermes-3 GGUF) ───
+// ── Hermes XML preamble (for native mistral.rs with Hermes-3) ───────────
 
 const HERMES_PREAMBLE = `You are a function calling AI model. You are an expert music producer and mix engineer embedded in a DAW (Digital Audio Workstation). You are provided with function signatures within <tools></tools> XML tags. You may call one or more functions to assist with the user query. Don't make assumptions about what values to plug into functions. Here are the available tools:`;
 
@@ -25,7 +25,7 @@ const HERMES_SCHEMA = `Use the following pydantic model json schema for each too
 {"arguments": <args-dict>, "name": <function-name>}
 </tool_call>`;
 
-// ── API-mode role preamble (WebLLM Hermes-2-Pro + Cloud) ────────────────
+// ── API-mode role preamble (WebLLM Hermes-3 + Cloud) ────────────────────
 // Tools are passed via the native API (tools + tool_choice), not embedded here.
 
 const API_ROLE_PREAMBLE = `You are an expert music producer and mix engineer embedded in a DAW (Digital Audio Workstation). You are a function calling AI model.
@@ -114,8 +114,8 @@ const CLOSING = `ALWAYS generate every action needed. Do not explain — just ca
 
 /**
  * Format selects the rendering strategy:
- * - 'hermes': native llama-server with Hermes-3 GGUF — tools embedded in XML prompt
- * - 'api':    WebLLM Hermes-2-Pro or Cloud — tools passed natively, prompt is role-only
+ * - 'hermes': native mistral.rs with Hermes-3 — tools embedded in XML prompt
+ * - 'api':    WebLLM Hermes-3 or Cloud — tools passed natively, prompt is role-only
  *
  * @deprecated 'json' is an alias for 'api' kept for backwards compatibility.
  */

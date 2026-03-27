@@ -20,8 +20,8 @@ import {
     AlertCircle,
 } from 'lucide-react';
 import { type LucideIcon } from 'lucide-react';
-import { addDevice } from '#/modules/Arrangement/useCases/device';
-import { type BUILTIN_PLUGINS } from '#/modules/Arrangement/useCases/trackQueries';
+import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
+import { type BUILTIN_PLUGINS } from '#/modules/Arrangement/models/DeviceParameter';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -175,7 +175,7 @@ export const EffectItem = ({
         className="flex items-center justify-between rounded-md px-2 py-1.5 hover:bg-surface-raised border border-transparent hover:border-border/30 transition-all cursor-grab active:cursor-grabbing group"
         draggable
         onDragStart={(e) => {
-            e.dataTransfer.setData('application/x-webdaw-plugin', JSON.stringify({ name: plugin.name, id: plugin.id }));
+            e.dataTransfer.setData('application/x-sourdaw-plugin', JSON.stringify({ name: plugin.name, id: plugin.id }));
             e.dataTransfer.effectAllowed = 'copy';
         }}
         onClick={() => {

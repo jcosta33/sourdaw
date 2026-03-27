@@ -5,7 +5,7 @@ import { type AiBackend } from '#/modules/AiRuntime/models/LlmOrchestrationTypes
 /**
  * Returns the preferred primary backend:
  * - native: when running in Tauri or on localhost (dev mode)
- * - webllm: when WebGPU is available in the browser (Hermes-2-Pro native tool calling)
+ * - webllm: when WebGPU is available in the browser (Hermes-3 native tool calling)
  * - cloud: when Claude API key is configured but no local options exist
  * - none: no backend available
  */

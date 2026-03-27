@@ -16,8 +16,8 @@ import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
-import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
-import { addClip } from '#/modules/Arrangement/useCases/clip';
+import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries/getAllTracks';
+import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
 import { addMidiNote } from '#/modules/MIDI/useCases/midi';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 

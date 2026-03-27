@@ -2,17 +2,13 @@ import { type MouseEvent, type DragEvent, useRef, useState, useCallback } from '
 import { timelineViewStore, zoomTimeline } from '../../stores/timelineViewStore';
 import { useTimelineGestures } from './useTimelineGestures';
 import { useTimelineFileDrop } from './useTimelineFileDrop';
-import {
-    setPlayheadFromClick,
-    beginClipDrag,
-    commitClipDrag,
-    hitTestClip,
-    hitTestTrack,
-    hitTestClipEdge,
-    snapToGrid,
-    snapToGridOrClips,
-    type DragState,
-} from '../../useCases/timelineInteractions';
+import { setPlayheadFromClick } from '../../useCases/timelineInteractions/setPlayheadFromClick';
+import { beginClipDrag, type DragState } from '../../useCases/timelineInteractions/beginClipDrag';
+import { commitClipDrag } from '../../useCases/timelineInteractions/commitClipDrag';
+import { hitTestClip, hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip';
+import { hitTestClipEdge } from '../../useCases/timelineInteractions/hitTestClipEdge';
+import { snapToGrid } from '../../useCases/timelineInteractions/snapToGrid';
+import { snapToGridOrClips } from '../../useCases/timelineInteractions/snapToGridOrClips';
 import {
     selectTrack,
     setWorkspaceMode,
@@ -27,19 +23,19 @@ import {
     trimClipStart,
     trimClipEnd,
 } from '../../useCases/timelineViewActions';
-import { type AutomationPoint } from '#/modules/Arrangement/useCases/trackQueries';
+import { type AutomationPoint } from '#/modules/Automation/useCases/automation/types';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
-import { getTrackAtY as getTrackAtYHelper } from '../../useCases/timelineInteractions';
+import { getTrackAtY as getTrackAtYHelper } from '../../useCases/timelineInteractions/getTrackAtY';
 import {
     toggleClipInSelection,
     selectClipWithFocus,
     clearClipSelection,
     setClipSelection,
     selectClip,
-} from '#/modules/Workspace/useCases/togglePanel';
+} from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 import { canvasXToBeat, getContentY } from '../helpers/timelineMouse';
 import { handleCutTool, handleDrawTool, handleAutomationTool, tryPaintSubLane, paintAutoDragPoint } from '../helpers/timelineTools';
 

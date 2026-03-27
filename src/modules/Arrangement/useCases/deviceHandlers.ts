@@ -1,15 +1,12 @@
 import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import {
-    addDevice,
-    removeDevice,
-    bypassDevice,
-    setSend,
-    removeSend,
-    setDeviceParameter,
-} from '#/modules/Arrangement/useCases/device';
+import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
+import { removeDevice } from '#/modules/Arrangement/useCases/device/removeDevice';
+import { bypassDevice } from '#/modules/Arrangement/useCases/device/bypassDevice';
+import { setSend, removeSend } from '#/modules/Arrangement/useCases/device/sendManagement';
+import { setDeviceParameter } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/trackQueries';
+import { getTrackStoreState } from '#/modules/Arrangement/useCases/trackQueries/trackStoreAccess';
 import { getLatencyReport } from '#/modules/AudioEngine/useCases/latencyCompensation';
 import { setMpeEnabled } from '#/modules/AudioEngine/useCases/webMidiInput';
 import {
