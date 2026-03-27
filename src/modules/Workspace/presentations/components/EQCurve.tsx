@@ -1,12 +1,10 @@
 /**
- * EQ Curve Visualization — Canvas2D frequency response graph.
+ * EQ Curve — Interactive 3-band parametric EQ visualization.
  *
- * Draws a smooth EQ curve showing the combined frequency response of a
- * 3-band parametric EQ (Low, Mid, High peaking filters).
- * Uses logarithmic frequency axis (20 Hz – 20 kHz) and linear dB axis (±24 dB).
- * Runs in a rAF loop outside React's render cycle for smooth animation.
+ * Drag band dots horizontally to change frequency, vertically to change gain.
+ * Log frequency axis (20 Hz – 20 kHz), linear dB axis (±24 dB).
  */
-import { type ReactElement, useRef, useEffect } from 'react';
+import { type ReactElement, useRef, useEffect, useCallback } from 'react';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type EQCurveProps = {
@@ -21,15 +19,15 @@ type EQCurveProps = {
     highQ: number;
     width?: number;
     height?: number;
+    onParamChange?: (paramId: string, value: number) => void;
 };
 
-/** Compute magnitude (dB) of a single peaking EQ band at frequency f */
 const peakingMag = (f: number, fc: number, gainDb: number, Q: number): number => {
-    if (Math.abs(gainDb) < 0.01) return 0;
+    if (Math.abs(gainDb) < 0.01) { return 0; }
     const w = f / fc;
     const w2 = w * w;
     const bw = w / Q;
-    const A = Math.pow(10, gainDb / 40); // linear amplitude at peak
+    const A = Math.pow(10, gainDb / 40);
     const num = (1 - w2) ** 2 + (bw * A) ** 2;
     const den = (1 - w2) ** 2 + (bw / A) ** 2;
     return 10 * Math.log10(num / den);
@@ -39,148 +37,248 @@ const MIN_FREQ = 20;
 const MAX_FREQ = 20000;
 const DB_RANGE = 24;
 
+const freqToX = (freq: number, w: number): number =>
+    (Math.log10(freq / MIN_FREQ) / Math.log10(MAX_FREQ / MIN_FREQ)) * w;
+
+const xToFreq = (x: number, w: number): number =>
+    MIN_FREQ * Math.pow(MAX_FREQ / MIN_FREQ, x / w);
+
+type BandId = 'low' | 'mid' | 'high';
+
+const BAND_FREQ_PARAMS: Record<BandId, string> = {
+    low: 'eq-low-freq',
+    mid: 'eq-mid-freq',
+    high: 'eq-high-freq',
+};
+const BAND_GAIN_PARAMS: Record<BandId, string> = {
+    low: 'eq-low-gain',
+    mid: 'eq-mid-gain',
+    high: 'eq-high-gain',
+};
+const BAND_FREQ_RANGES: Record<BandId, [number, number]> = {
+    low: [20, 500],
+    mid: [200, 8000],
+    high: [2000, 20000],
+};
+const BAND_COLORS: Record<BandId, string> = {
+    low: '#e8a87c',  // warm orange
+    mid: '#7fb8c4',  // cyan
+    high: '#b4a0d4',  // lavender
+};
+
 export const EQCurve = ({
     lowGain, lowFreq, lowQ,
     midGain, midFreq, midQ,
     highGain, highFreq, highQ,
     width = 200,
     height = 80,
+    onParamChange,
 }: EQCurveProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const dragBand = useRef<BandId | null>(null);
+    const isInteractive = !!onParamChange;
+
+    const bands: Array<{ id: BandId; freq: number; gain: number; q: number }> = [
+        { id: 'low', freq: lowFreq, gain: lowGain, q: lowQ },
+        { id: 'mid', freq: midFreq, gain: midGain, q: midQ },
+        { id: 'high', freq: highFreq, gain: highGain, q: highQ },
+    ];
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) { return; }
         const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        if (!ctx) { return; }
 
-        // DPR for crisp rendering
         const dpr = window.devicePixelRatio || 1;
         canvas.width = width * dpr;
         canvas.height = height * dpr;
         ctx.scale(dpr, dpr);
+        ctx.clearRect(0, 0, width, height);
 
-        const draw = (): void => {
-            ctx.clearRect(0, 0, width, height);
+        const bgColor = resolveToken('--color-bg-tray', '#0a0a0a');
+        ctx.fillStyle = bgColor;
+        ctx.beginPath();
+        ctx.roundRect(0, 0, width, height, 4);
+        ctx.fill();
 
-            // Background
-            const bgColor = resolveToken('--color-bg-tray', '#0a0a0a');
-            ctx.fillStyle = bgColor;
+        const zeroY = height / 2;
+
+        // Grid
+        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(0, zeroY);
+        ctx.lineTo(width, zeroY);
+        ctx.stroke();
+
+        for (const freq of [100, 1000, 10000]) {
+            const x = freqToX(freq, width);
             ctx.beginPath();
-            ctx.roundRect(0, 0, width, height, 4);
-            ctx.fill();
-
-            // Grid lines
-            ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-            ctx.lineWidth = 0.5;
-
-            // Horizontal 0 dB line
-            const zeroY = height / 2;
-            ctx.beginPath();
-            ctx.moveTo(0, zeroY);
-            ctx.lineTo(width, zeroY);
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, height);
             ctx.stroke();
-
-            // Vertical frequency markers
-            for (const freq of [100, 1000, 10000]) {
-                const x = (Math.log10(freq / MIN_FREQ) / Math.log10(MAX_FREQ / MIN_FREQ)) * width;
-                ctx.beginPath();
-                ctx.moveTo(x, 0);
-                ctx.lineTo(x, height);
-                ctx.stroke();
-            }
-
-            // ±12 dB lines
-            for (const db of [-12, 12]) {
-                const y = zeroY - (db / DB_RANGE) * (height / 2);
-                ctx.beginPath();
-                ctx.moveTo(0, y);
-                ctx.lineTo(width, y);
-                ctx.stroke();
-            }
-
-            // Compute curve
-            const points: [number, number][] = [];
-            const steps = width;
-            for (let i = 0; i <= steps; i++) {
-                const x = i;
-                const logFreq = MIN_FREQ * Math.pow(MAX_FREQ / MIN_FREQ, i / steps);
-                const totalDb =
-                    peakingMag(logFreq, lowFreq, lowGain, lowQ) +
-                    peakingMag(logFreq, midFreq, midGain, midQ) +
-                    peakingMag(logFreq, highFreq, highGain, highQ);
-                const clampedDb = Math.max(-DB_RANGE, Math.min(DB_RANGE, totalDb));
-                const y = zeroY - (clampedDb / DB_RANGE) * (height / 2);
-                points.push([x, y]);
-            }
-
-            // Fill area under curve
-            const accentCyan = resolveToken('--color-accent-cyan', '#7fb8c4');
+        }
+        for (const db of [-12, 12]) {
+            const y = zeroY - (db / DB_RANGE) * (height / 2);
             ctx.beginPath();
-            ctx.moveTo(0, zeroY);
-            for (const [x, y] of points) {
-                ctx.lineTo(x, y);
-            }
-            ctx.lineTo(width, zeroY);
-            ctx.closePath();
-            ctx.fillStyle = `${accentCyan}18`; // ~10% opacity
-            ctx.fill();
-
-            // Stroke curve
-            ctx.beginPath();
-            for (let i = 0; i < points.length; i++) {
-                const [x, y] = points[i]!;
-                if (i === 0) ctx.moveTo(x, y);
-                else ctx.lineTo(x, y);
-            }
-            ctx.strokeStyle = accentCyan;
-            ctx.lineWidth = 1.5;
+            ctx.moveTo(0, y);
+            ctx.lineTo(width, y);
             ctx.stroke();
+        }
 
-            // Band center markers
-            const bands = [
-                { freq: lowFreq, gain: lowGain },
-                { freq: midFreq, gain: midGain },
-                { freq: highFreq, gain: highGain },
-            ];
-            for (const band of bands) {
-                if (Math.abs(band.gain) < 0.1) continue;
-                const bx = (Math.log10(band.freq / MIN_FREQ) / Math.log10(MAX_FREQ / MIN_FREQ)) * width;
-                const totalDb =
-                    peakingMag(band.freq, lowFreq, lowGain, lowQ) +
-                    peakingMag(band.freq, midFreq, midGain, midQ) +
-                    peakingMag(band.freq, highFreq, highGain, highQ);
-                const by = zeroY - (Math.max(-DB_RANGE, Math.min(DB_RANGE, totalDb)) / DB_RANGE) * (height / 2);
-                ctx.beginPath();
-                ctx.arc(bx, by, 3, 0, Math.PI * 2);
-                ctx.fillStyle = accentCyan;
-                ctx.fill();
+        // Compute combined curve
+        const accentCyan = resolveToken('--color-accent-cyan', '#7fb8c4');
+        const points: [number, number][] = [];
+        for (let i = 0; i <= width; i++) {
+            const logFreq = MIN_FREQ * Math.pow(MAX_FREQ / MIN_FREQ, i / width);
+            const totalDb =
+                peakingMag(logFreq, lowFreq, lowGain, lowQ) +
+                peakingMag(logFreq, midFreq, midGain, midQ) +
+                peakingMag(logFreq, highFreq, highGain, highQ);
+            const clampedDb = Math.max(-DB_RANGE, Math.min(DB_RANGE, totalDb));
+            const y = zeroY - (clampedDb / DB_RANGE) * (height / 2);
+            points.push([i, y]);
+        }
+
+        // Fill
+        ctx.beginPath();
+        ctx.moveTo(0, zeroY);
+        for (const [x, y] of points) { ctx.lineTo(x, y); }
+        ctx.lineTo(width, zeroY);
+        ctx.closePath();
+        ctx.fillStyle = `${accentCyan}18`;
+        ctx.fill();
+
+        // Stroke
+        ctx.beginPath();
+        for (let i = 0; i < points.length; i++) {
+            const [x, y] = points[i]!;
+            if (i === 0) { ctx.moveTo(x, y); }
+            else { ctx.lineTo(x, y); }
+        }
+        ctx.strokeStyle = accentCyan;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // Band dots — colored and larger when interactive
+        for (const band of bands) {
+            const bx = freqToX(band.freq, width);
+            const totalDb =
+                peakingMag(band.freq, lowFreq, lowGain, lowQ) +
+                peakingMag(band.freq, midFreq, midGain, midQ) +
+                peakingMag(band.freq, highFreq, highGain, highQ);
+            const by = zeroY - (Math.max(-DB_RANGE, Math.min(DB_RANGE, totalDb)) / DB_RANGE) * (height / 2);
+
+            const dotR = isInteractive ? 6 : 3;
+            const color = BAND_COLORS[band.id];
+
+            ctx.beginPath();
+            ctx.arc(bx, by, dotR, 0, Math.PI * 2);
+            ctx.fillStyle = color;
+            ctx.fill();
+            if (isInteractive) {
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+            } else {
                 ctx.strokeStyle = bgColor;
                 ctx.lineWidth = 1;
                 ctx.stroke();
             }
 
-            // Frequency labels
-            ctx.fillStyle = resolveToken('--color-text-disabled', '#3a3a3a');
-            ctx.font = '7px monospace';
-            ctx.textAlign = 'center';
-            for (const [label, freq] of [['100', 100], ['1k', 1000], ['10k', 10000]] as const) {
-                const lx = (Math.log10(freq / MIN_FREQ) / Math.log10(MAX_FREQ / MIN_FREQ)) * width;
-                ctx.fillText(label, lx, height - 2);
+            // Band label
+            if (isInteractive) {
+                ctx.fillStyle = color;
+                ctx.font = 'bold 7px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText(band.id.toUpperCase()[0]!, bx, by - dotR - 3);
             }
-        };
+        }
 
-        draw();
-        // No animation loop needed — redraws on param change via effect deps
-    }, [lowGain, lowFreq, lowQ, midGain, midFreq, midQ, highGain, highFreq, highQ, width, height]);
+        // Frequency labels
+        ctx.fillStyle = resolveToken('--color-text-disabled', '#3a3a3a');
+        ctx.font = '7px monospace';
+        ctx.textAlign = 'center';
+        for (const [label, freq] of [['100', 100], ['1k', 1000], ['10k', 10000]] as const) {
+            ctx.fillText(label, freqToX(freq, width), height - 2);
+        }
+
+        if (isInteractive) {
+            ctx.fillStyle = 'rgba(255,255,255,0.15)';
+            ctx.font = '7px system-ui';
+            ctx.textAlign = 'left';
+            ctx.fillText('drag bands', 4, 10);
+        }
+    }, [lowGain, lowFreq, lowQ, midGain, midFreq, midQ, highGain, highFreq, highQ, width, height, isInteractive, bands]);
+
+    const findNearestBand = useCallback((x: number): BandId | null => {
+        let closest: BandId | null = null;
+        let minDist = 20; // 20px hit radius
+        for (const band of bands) {
+            const bx = freqToX(band.freq, width);
+            const dist = Math.abs(x - bx);
+            if (dist < minDist) {
+                minDist = dist;
+                closest = band.id;
+            }
+        }
+        return closest;
+    }, [bands, width]);
+
+    const handlePointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+        if (!onParamChange) { return; }
+        const canvas = canvasRef.current;
+        if (!canvas) { return; }
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const band = findNearestBand(x);
+        if (!band) { return; }
+        dragBand.current = band;
+        canvas.setPointerCapture(e.pointerId);
+        canvas.style.cursor = 'grabbing';
+    }, [onParamChange, findNearestBand]);
+
+    const handlePointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+        if (!dragBand.current || !onParamChange) { return; }
+        const canvas = canvasRef.current;
+        if (!canvas) { return; }
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        const band = dragBand.current;
+
+        // Horizontal → frequency (clamped to band range)
+        const [minF, maxF] = BAND_FREQ_RANGES[band];
+        const freq = Math.max(minF, Math.min(maxF, xToFreq(x, width)));
+        onParamChange(BAND_FREQ_PARAMS[band], Math.round(freq));
+
+        // Vertical → gain (±24 dB)
+        const zeroY = height / 2;
+        const db = -((y - zeroY) / (height / 2)) * DB_RANGE;
+        const clampedDb = Math.max(-DB_RANGE, Math.min(DB_RANGE, Math.round(db * 2) / 2));
+        onParamChange(BAND_GAIN_PARAMS[band], clampedDb);
+    }, [onParamChange, width, height]);
+
+    const handlePointerUp = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+        dragBand.current = null;
+        const canvas = canvasRef.current;
+        if (canvas) {
+            canvas.releasePointerCapture(e.pointerId);
+            canvas.style.cursor = isInteractive ? 'grab' : 'default';
+        }
+    }, [isInteractive]);
 
     return (
         <canvas
             ref={canvasRef}
-            style={{ width, height }}
+            style={{ width, height, cursor: isInteractive ? 'grab' : 'default' }}
             className="rounded border border-border/30"
-            aria-label="EQ frequency response curve"
+            aria-label="EQ frequency response — drag band dots to adjust"
             role="img"
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
         />
     );
 };

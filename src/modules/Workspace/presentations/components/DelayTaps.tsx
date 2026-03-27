@@ -6,7 +6,7 @@
  * spaced by the delay time and decaying by the feedback amount.
  * Uses cyan accent (routing/secondary) for consistency.
  */
-import { type ReactElement, useRef, useEffect } from 'react';
+import { type ReactElement, useRef, useEffect, useCallback } from 'react';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type DelayTapsProps = {
@@ -15,7 +15,10 @@ type DelayTapsProps = {
     mix: number; // 0–1, dry/wet
     width?: number;
     height?: number;
+    onParamChange?: (paramId: string, value: number) => void;
 };
+
+type DragTarget = 'time' | 'feedback';
 
 export const DelayTaps = ({
     time,
@@ -23,8 +26,16 @@ export const DelayTaps = ({
     mix,
     width = 200,
     height = 50,
+    onParamChange,
 }: DelayTapsProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const isDragging = useRef(false);
+    const dragTarget = useRef<DragTarget | null>(null);
+    const isInteractive = !!onParamChange;
+
+    // Store positions for hit testing
+    const firstTapXRef = useRef(0);
+    const envelopeYRef = useRef(0);
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -74,6 +85,12 @@ export const DelayTaps = ({
         ctx.textAlign = 'center';
         ctx.fillText('D', pad + barWidth / 2, pad + plotH - dryBarH - 2);
 
+        // Store first tap position for hit testing
+        const firstTapTime = time * 1;
+        firstTapXRef.current = pad + (firstTapTime / totalDuration) * plotW;
+        const firstTapAmplitude = mix * Math.pow(feedback, 1);
+        envelopeYRef.current = pad + plotH - firstTapAmplitude * plotH;
+
         // Delay taps
         for (let tap = 1; tap <= maxTaps; tap++) {
             const amplitude = mix * Math.pow(feedback, tap);
@@ -117,15 +134,98 @@ export const DelayTaps = ({
         ctx.font = '7px monospace';
         ctx.textAlign = 'right';
         ctx.fillText(`${Math.round(time)}ms`, width - pad, height - 2);
-    }, [time, feedback, mix, width, height]);
+
+        // "drag to adjust" hint
+        if (isInteractive && !isDragging.current) {
+            ctx.fillStyle = 'rgba(255,255,255,0.25)';
+            ctx.font = '7px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('drag to adjust', width / 2, pad + 8);
+        }
+    }, [time, feedback, mix, width, height, isInteractive]);
+
+    const handlePointerDown = useCallback(
+        (e: React.PointerEvent<HTMLCanvasElement>) => {
+            if (!onParamChange) return;
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+            const rect = canvas.getBoundingClientRect();
+            const mx = e.clientX - rect.left;
+            const my = e.clientY - rect.top;
+
+            // Determine drag target: near first tap X = time, near envelope line = feedback
+            const distToTap = Math.abs(mx - firstTapXRef.current);
+            const distToEnvelope = Math.abs(my - envelopeYRef.current);
+
+            // Prefer horizontal (time) if closer to the first tap, vertical (feedback) if closer to envelope
+            if (distToTap < 20) {
+                dragTarget.current = 'time';
+            } else if (distToEnvelope < 20) {
+                dragTarget.current = 'feedback';
+            } else {
+                // Default: pick whichever is closer
+                dragTarget.current = distToTap < distToEnvelope ? 'time' : 'feedback';
+            }
+
+            isDragging.current = true;
+            canvas.setPointerCapture(e.pointerId);
+            canvas.style.cursor = 'grabbing';
+        },
+        [onParamChange],
+    );
+
+    const handlePointerMove = useCallback(
+        (e: React.PointerEvent<HTMLCanvasElement>) => {
+            if (!onParamChange || !isDragging.current || !dragTarget.current) return;
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+            const rect = canvas.getBoundingClientRect();
+            const pad = 6;
+            const plotW = width - pad * 2;
+            const plotH = height - pad * 2;
+
+            if (dragTarget.current === 'time') {
+                // Map horizontal position to delay time (1-2000ms)
+                const mx = e.clientX - rect.left;
+                const xRatio = Math.max(0, Math.min(1, (mx - pad) / plotW));
+                const newTime = 1 + xRatio * (2000 - 1);
+                onParamChange('delay-time', newTime);
+            } else {
+                // Map vertical position to feedback (0-0.95)
+                const my = e.clientY - rect.top;
+                const bottomY = pad + plotH;
+                const topY = pad;
+                const yRatio = 1 - (my - topY) / (bottomY - topY);
+                const newFeedback = Math.max(0, Math.min(0.95, yRatio));
+                onParamChange('delay-feedback', newFeedback);
+            }
+        },
+        [onParamChange, width, height],
+    );
+
+    const handlePointerUp = useCallback(
+        (e: React.PointerEvent<HTMLCanvasElement>) => {
+            if (!onParamChange) return;
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+            isDragging.current = false;
+            dragTarget.current = null;
+            canvas.releasePointerCapture(e.pointerId);
+            canvas.style.cursor = 'grab';
+        },
+        [onParamChange],
+    );
 
     return (
         <canvas
             ref={canvasRef}
-            style={{ width, height }}
+            style={{ width, height, cursor: isInteractive ? 'grab' : undefined }}
             className="rounded border border-border/30"
             aria-label="Delay tap pattern"
             role="img"
+            onPointerDown={isInteractive ? handlePointerDown : undefined}
+            onPointerMove={isInteractive ? handlePointerMove : undefined}
+            onPointerUp={isInteractive ? handlePointerUp : undefined}
         />
     );
 };

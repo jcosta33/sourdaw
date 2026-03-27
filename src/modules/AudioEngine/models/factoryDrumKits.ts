@@ -361,7 +361,41 @@ const KIT_ACOUSTIC: DrumKit = {
     ],
 };
 
-export const FACTORY_KITS: readonly DrumKit[] = [KIT_808, KIT_ANALOG, KIT_ELECTRONIC, KIT_ACOUSTIC];
+// ── Kit 5: Lo-fi / Vinyl — dusty, filtered, longer decays ─────────────
+
+const KIT_LOFI: DrumKit = {
+    id: 'kit-lofi',
+    name: 'Lo-fi Vinyl',
+    voices: [
+        voice('Kick', 36, { waveform: 'sine', attack: 0.005, decay: 0.5, sustain: 0.02, release: 0.2, filterCutoff: 150, filterResonance: 0.8, gain: 0.55 }),
+        voice('Snare', 38, { waveform: 'square', attack: 0.003, decay: 0.25, sustain: 0.01, release: 0.15, filterCutoff: 1800, filterResonance: 0.6, gain: 0.45 }),
+        voice('Clap', 40, { waveform: 'square', attack: 0.005, decay: 0.2, sustain: 0, release: 0.2, filterCutoff: 2500, filterResonance: 0.4, gain: 0.35 }),
+        voice('Closed HH', 42, { waveform: 'square', attack: 0.001, decay: 0.08, sustain: 0, release: 0.05, filterCutoff: 4000, filterResonance: 1.2, gain: 0.3 }),
+        voice('Tom Low', 45, { waveform: 'sine', attack: 0.003, decay: 0.4, sustain: 0.02, release: 0.2, filterCutoff: 300, filterResonance: 0.5, gain: 0.5 }),
+        voice('Open HH', 46, { waveform: 'square', attack: 0.001, decay: 0.3, sustain: 0.01, release: 0.15, filterCutoff: 5000, filterResonance: 0.8, gain: 0.3 }),
+        voice('Tom Mid', 47, { waveform: 'sine', attack: 0.003, decay: 0.3, sustain: 0.02, release: 0.15, filterCutoff: 450, filterResonance: 0.5, gain: 0.45 }),
+        voice('Tom High', 48, { waveform: 'sine', attack: 0.003, decay: 0.25, sustain: 0.02, release: 0.1, filterCutoff: 600, filterResonance: 0.5, gain: 0.4 }),
+    ],
+};
+
+// ── Kit 6: Trap — tuned 808 kick, tight snaps, fast hats ────────────
+
+const KIT_TRAP: DrumKit = {
+    id: 'kit-trap',
+    name: 'Trap',
+    voices: [
+        voice('808 Kick', 36, { waveform: 'sine', attack: 0.001, decay: 1.2, sustain: 0.15, release: 0.4, filterCutoff: 120, filterResonance: 1.5, filterEnvAmount: 800, gain: 0.7 }),
+        voice('Snap Snare', 38, { waveform: 'square', attack: 0.001, decay: 0.08, sustain: 0, release: 0.04, filterCutoff: 6000, filterResonance: 1.0, noiseLevel: 0.4, gain: 0.55 }),
+        voice('Clap', 40, { waveform: 'square', attack: 0.002, decay: 0.12, sustain: 0, release: 0.06, filterCutoff: 4500, filterResonance: 0.8, gain: 0.45 }),
+        voice('Closed HH', 42, { waveform: 'square', attack: 0.001, decay: 0.03, sustain: 0, release: 0.02, filterCutoff: 10000, filterResonance: 2.0, gain: 0.4 }),
+        voice('Tom Low', 45, { waveform: 'sine', attack: 0.001, decay: 0.6, sustain: 0.05, release: 0.2, filterCutoff: 200, filterResonance: 1.0, gain: 0.55 }),
+        voice('Open HH', 46, { waveform: 'square', attack: 0.001, decay: 0.15, sustain: 0, release: 0.08, filterCutoff: 12000, filterResonance: 1.5, gain: 0.35 }),
+        voice('808 Tom', 47, { waveform: 'sine', attack: 0.001, decay: 0.8, sustain: 0.08, release: 0.3, filterCutoff: 350, filterResonance: 1.2, filterEnvAmount: 500, gain: 0.5 }),
+        voice('Rim', 48, { waveform: 'triangle', attack: 0.001, decay: 0.04, sustain: 0, release: 0.02, filterCutoff: 8000, filterResonance: 3.0, gain: 0.45 }),
+    ],
+};
+
+export const FACTORY_KITS: readonly DrumKit[] = [KIT_808, KIT_ANALOG, KIT_ELECTRONIC, KIT_ACOUSTIC, KIT_LOFI, KIT_TRAP];
 
 const kitIndex = new Map<string, DrumKit>(FACTORY_KITS.map((k) => [k.id, k]));
 

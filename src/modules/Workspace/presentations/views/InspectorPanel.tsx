@@ -27,10 +27,16 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
     const selectedClip = selectedTrack?.clips.find((c) => c.id === wsSelectedClipId) ?? null;
     const selectedDevice = selectedTrack?.devices.find((d) => d.id === selectedDeviceId) ?? null;
 
+    const isDeviceView = !!selectedDevice;
+
     return (
         <aside
-            className="contain-strict flex shrink-0 flex-col border-l border-border-hairline bg-surface-tray shadow-[inset_1px_0_0_rgba(255,255,255,0.02)]"
-            style={style}
+            className="contain-strict flex shrink-0 flex-col border-l border-border-hairline bg-surface-tray shadow-[inset_1px_0_0_rgba(255,255,255,0.02)] transition-[width,min-width] duration-200 ease-out"
+            style={{
+                ...style,
+                width: isDeviceView ? Math.max((style?.width as number) ?? 260, 320) : (style?.width as number) ?? 260,
+                minWidth: isDeviceView ? 300 : 200,
+            }}
             aria-label="Inspector panel"
         >
             <div className="flex flex-row items-center justify-between border-b border-border/50 px-3 py-2">

@@ -5,7 +5,7 @@
  * breakpoints and a filled gradient area. Updates in real-time
  * as knob values change.
  */
-import { type ReactElement, useRef, useEffect } from 'react';
+import { type ReactElement, useRef, useEffect, useCallback } from 'react';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type ADSREnvelopeProps = {
@@ -17,7 +17,10 @@ type ADSREnvelopeProps = {
     color?: string;
     width?: number;
     height?: number;
+    onParamChange?: (paramId: string, value: number) => void;
 };
+
+type BreakpointId = 'attack' | 'decay' | 'sustain' | 'release';
 
 export const ADSREnvelope = ({
     attack,
@@ -27,8 +30,15 @@ export const ADSREnvelope = ({
     color,
     width = 200,
     height = 80,
+    onParamChange,
 }: ADSREnvelopeProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const isDragging = useRef(false);
+    const activeBreakpoint = useRef<BreakpointId | null>(null);
+    const isInteractive = !!onParamChange;
+
+    // Store computed breakpoint positions for hit testing
+    const breakpointsRef = useRef<{ id: BreakpointId; x: number; y: number }[]>([]);
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -66,6 +76,14 @@ export const ADSREnvelope = ({
         const sustainY = bottomY - sustain * (plotH - 4);
 
         const accent = color ?? resolveToken('--color-accent-teal', '#4CB8B8');
+
+        // Store breakpoint positions for hit testing
+        breakpointsRef.current = [
+            { id: 'attack', x: aX, y: topY },
+            { id: 'decay', x: dX, y: sustainY },
+            { id: 'sustain', x: sX, y: sustainY },
+            { id: 'release', x: rX, y: bottomY },
+        ];
 
         // Grid lines
         ctx.strokeStyle = 'rgba(255,255,255,0.05)';
@@ -114,13 +132,20 @@ export const ADSREnvelope = ({
             { x: sX, y: sustainY },
             { x: rX, y: bottomY },
         ];
+        const dotRadius = isInteractive ? 6 : 3;
+        const innerRadius = isInteractive ? 3 : 1.5;
         for (const dot of dots) {
             ctx.beginPath();
-            ctx.arc(dot.x, dot.y, 3, 0, Math.PI * 2);
+            ctx.arc(dot.x, dot.y, dotRadius, 0, Math.PI * 2);
             ctx.fillStyle = accent;
             ctx.fill();
+            if (isInteractive) {
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            }
             ctx.beginPath();
-            ctx.arc(dot.x, dot.y, 1.5, 0, Math.PI * 2);
+            ctx.arc(dot.x, dot.y, innerRadius, 0, Math.PI * 2);
             ctx.fillStyle = '#000';
             ctx.fill();
         }
@@ -141,15 +166,115 @@ export const ADSREnvelope = ({
         ctx.font = '8px monospace';
         ctx.textAlign = 'right';
         ctx.fillText(`${(sustain * 100).toFixed(0)}%`, width - pad, sustainY - 4);
-    }, [attack, decay, sustain, release, color, width, height]);
+
+        // "drag to adjust" hint
+        if (isInteractive && !isDragging.current) {
+            ctx.fillStyle = 'rgba(255,255,255,0.25)';
+            ctx.font = '7px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('drag to adjust', width / 2, pad + 10);
+        }
+    }, [attack, decay, sustain, release, color, width, height, isInteractive]);
+
+    const handlePointerDown = useCallback(
+        (e: React.PointerEvent<HTMLCanvasElement>) => {
+            if (!onParamChange) return;
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+            const rect = canvas.getBoundingClientRect();
+            const mx = e.clientX - rect.left;
+            const my = e.clientY - rect.top;
+
+            // Find closest breakpoint within hit radius
+            const hitRadius = 16;
+            let closest: BreakpointId | null = null;
+            let closestDist = Infinity;
+            for (const bp of breakpointsRef.current) {
+                const dx = mx - bp.x;
+                const dy = my - bp.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < hitRadius && dist < closestDist) {
+                    closestDist = dist;
+                    closest = bp.id;
+                }
+            }
+
+            if (!closest) return;
+
+            isDragging.current = true;
+            activeBreakpoint.current = closest;
+            canvas.setPointerCapture(e.pointerId);
+            canvas.style.cursor = 'grabbing';
+        },
+        [onParamChange],
+    );
+
+    const handlePointerMove = useCallback(
+        (e: React.PointerEvent<HTMLCanvasElement>) => {
+            if (!onParamChange || !isDragging.current || !activeBreakpoint.current) return;
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+            const rect = canvas.getBoundingClientRect();
+            const pad = 6;
+            const plotW = width - pad * 2;
+            const plotH = height - pad * 2;
+            const mx = e.clientX - rect.left;
+            const my = e.clientY - rect.top;
+
+            const bp = activeBreakpoint.current;
+
+            if (bp === 'sustain') {
+                // Vertical drag only -> sustain level (0-1)
+                const bottomY = pad + plotH;
+                const topY = pad + 2;
+                const ratio = 1 - (my - topY) / (bottomY - topY);
+                const clamped = Math.max(0, Math.min(1, ratio));
+                onParamChange('sustain', clamped);
+            } else {
+                // Horizontal drag -> time parameter
+                const xRatio = Math.max(0, Math.min(1, (mx - pad) / plotW));
+                const totalTime = Math.max(0.01, attack + decay + 0.4 + release);
+                const mappedTime = xRatio * totalTime;
+
+                if (bp === 'attack') {
+                    const val = Math.max(0.001, Math.min(2, mappedTime));
+                    onParamChange('attack', val);
+                } else if (bp === 'decay') {
+                    const val = Math.max(0.001, Math.min(2, mappedTime - attack));
+                    onParamChange('decay', Math.max(0.001, val));
+                } else if (bp === 'release') {
+                    const sustainEnd = attack + decay + 0.4;
+                    const val = Math.max(0.001, Math.min(5, mappedTime - sustainEnd));
+                    onParamChange('release', Math.max(0.001, val));
+                }
+            }
+        },
+        [onParamChange, width, height, attack, decay, release],
+    );
+
+    const handlePointerUp = useCallback(
+        (e: React.PointerEvent<HTMLCanvasElement>) => {
+            if (!onParamChange) return;
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+            isDragging.current = false;
+            activeBreakpoint.current = null;
+            canvas.releasePointerCapture(e.pointerId);
+            canvas.style.cursor = 'grab';
+        },
+        [onParamChange],
+    );
 
     return (
         <canvas
             ref={canvasRef}
-            style={{ width, height }}
+            style={{ width, height, cursor: isInteractive ? 'grab' : undefined }}
             className="rounded border border-border/30"
             aria-label="ADSR envelope shape"
             role="img"
+            onPointerDown={isInteractive ? handlePointerDown : undefined}
+            onPointerMove={isInteractive ? handlePointerMove : undefined}
+            onPointerUp={isInteractive ? handlePointerUp : undefined}
         />
     );
 };

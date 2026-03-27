@@ -24,6 +24,7 @@ export const leadPresets: SoundPreset[] = [
                 gain: 0.3,
             }),
             delay('Delay', { 'delay-time': 250, 'delay-feedback': 0.3, 'delay-mix': 0.25 }),
+            reverb('Reverb', { 'rev-size': 0.4, 'rev-decay': 1.8, 'rev-mix': 0.2 }),
         ],
         tags: ['classic', 'sawtooth', 'delay', 'mono'],
         author: AUTHOR,

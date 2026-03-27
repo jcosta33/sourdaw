@@ -1,11 +1,11 @@
 /**
  * DistortionCurve — Canvas2D waveshaper transfer function visualization.
  *
- * Draws the input→output transfer curve for a waveshaper distortion,
+ * Draws the input->output transfer curve for a waveshaper distortion,
  * showing how the drive parameter clips the signal. Higher drive = more
- * aggressive S-curve. Uses 45° unity line as reference.
+ * aggressive S-curve. Uses 45 degree unity line as reference.
  */
-import { type ReactElement, useRef, useEffect } from 'react';
+import { type ReactElement, useRef, useEffect, useCallback } from 'react';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type DistortionCurveProps = {
@@ -14,6 +14,7 @@ type DistortionCurveProps = {
     mix: number;        // 0–1
     width?: number;
     height?: number;
+    onParamChange?: (paramId: string, value: number) => void;
 };
 
 /** Attempt to match the waveshaper curve used in deviceNodeFactory */
@@ -29,8 +30,12 @@ export const DistortionCurve = ({
     mix,
     width = 200,
     height = 120,
+    onParamChange,
 }: DistortionCurveProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const isDragging = useRef(false);
+    const lastY = useRef(0);
+    const isInteractive = !!onParamChange;
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -121,15 +126,64 @@ export const DistortionCurve = ({
         ctx.fillText('IN', pad, pad + gh + 9);
         ctx.textAlign = 'right';
         ctx.fillText('OUT', pad + gw, pad - 2);
-    }, [drive, mix, width, height, _tone]);
+
+        // "drag to adjust" hint
+        if (isInteractive && !isDragging.current) {
+            ctx.fillStyle = 'rgba(255,255,255,0.25)';
+            ctx.font = '7px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('drag to adjust', width / 2, pad + 10);
+        }
+    }, [drive, mix, width, height, _tone, isInteractive]);
+
+    const handlePointerDown = useCallback(
+        (e: React.PointerEvent<HTMLCanvasElement>) => {
+            if (!onParamChange) return;
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+            isDragging.current = true;
+            lastY.current = e.clientY;
+            canvas.setPointerCapture(e.pointerId);
+            canvas.style.cursor = 'grabbing';
+        },
+        [onParamChange],
+    );
+
+    const handlePointerMove = useCallback(
+        (e: React.PointerEvent<HTMLCanvasElement>) => {
+            if (!onParamChange || !isDragging.current) return;
+            const deltaY = lastY.current - e.clientY; // up = positive
+            lastY.current = e.clientY;
+            // Map vertical drag to drive change: ~0.5 drive units per pixel
+            const sensitivity = 0.5;
+            const newDrive = Math.max(0, Math.min(100, drive + deltaY * sensitivity));
+            onParamChange('dist-drive', newDrive);
+        },
+        [onParamChange, drive],
+    );
+
+    const handlePointerUp = useCallback(
+        (e: React.PointerEvent<HTMLCanvasElement>) => {
+            if (!onParamChange) return;
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+            isDragging.current = false;
+            canvas.releasePointerCapture(e.pointerId);
+            canvas.style.cursor = 'grab';
+        },
+        [onParamChange],
+    );
 
     return (
         <canvas
             ref={canvasRef}
-            style={{ width, height }}
+            style={{ width, height, cursor: isInteractive ? 'grab' : undefined }}
             className="rounded border border-border/30"
             aria-label="Distortion transfer curve"
             role="img"
+            onPointerDown={isInteractive ? handlePointerDown : undefined}
+            onPointerMove={isInteractive ? handlePointerMove : undefined}
+            onPointerUp={isInteractive ? handlePointerUp : undefined}
         />
     );
 };

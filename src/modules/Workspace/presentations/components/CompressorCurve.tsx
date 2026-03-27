@@ -7,7 +7,7 @@
  * - Threshold and knee indicators
  * Uses design tokens for consistent DAW aesthetic.
  */
-import { type ReactElement, useRef, useEffect } from 'react';
+import { type ReactElement, useRef, useEffect, useCallback } from 'react';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type CompressorCurveProps = {
@@ -17,6 +17,7 @@ type CompressorCurveProps = {
     makeup: number; // dB, e.g. 0
     width?: number;
     height?: number;
+    onParamChange?: (paramId: string, value: number) => void;
 };
 
 const DB_MIN = -60;
@@ -45,8 +46,11 @@ export const CompressorCurve = ({
     makeup,
     width = 120,
     height = 120,
+    onParamChange,
 }: CompressorCurveProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const isDragging = useRef(false);
+    const isInteractive = !!onParamChange;
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -135,10 +139,16 @@ export const CompressorCurve = ({
         ctx.setLineDash([]);
 
         // Threshold dot
+        const dotRadius = isInteractive ? 5 : 3;
         ctx.beginPath();
-        ctx.arc(thX, thY, 3, 0, Math.PI * 2);
+        ctx.arc(thX, thY, dotRadius, 0, Math.PI * 2);
         ctx.fillStyle = accentPeach;
         ctx.fill();
+        if (isInteractive) {
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
 
         // Labels
         ctx.fillStyle = resolveToken('--color-text-disabled', '#3a3a3a');
@@ -156,15 +166,67 @@ export const CompressorCurve = ({
         ctx.font = '8px monospace';
         ctx.textAlign = 'right';
         ctx.fillText(`${ratio.toFixed(1)}:1`, width - pad, pad + 10);
-    }, [threshold, ratio, knee, makeup, width, height]);
+
+        // "drag to adjust" hint
+        if (isInteractive && !isDragging.current) {
+            ctx.fillStyle = 'rgba(255,255,255,0.25)';
+            ctx.font = '7px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('drag to adjust', width / 2, pad + 10);
+        }
+    }, [threshold, ratio, knee, makeup, width, height, isInteractive]);
+
+    const handlePointerDown = useCallback(
+        (e: React.PointerEvent<HTMLCanvasElement>) => {
+            if (!onParamChange) return;
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+            isDragging.current = true;
+            canvas.setPointerCapture(e.pointerId);
+            canvas.style.cursor = 'grabbing';
+        },
+        [onParamChange],
+    );
+
+    const handlePointerMove = useCallback(
+        (e: React.PointerEvent<HTMLCanvasElement>) => {
+            if (!onParamChange || !isDragging.current) return;
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+            const rect = canvas.getBoundingClientRect();
+            const pad = 4;
+            const plotH = height - pad * 2;
+            // Y position to dB: top = 0 dB, bottom = -60 dB
+            const yRatio = (e.clientY - rect.top - pad) / plotH;
+            const db = DB_MAX - yRatio * (DB_MAX - DB_MIN);
+            const clamped = Math.max(-60, Math.min(0, db));
+            onParamChange('comp-threshold', clamped);
+        },
+        [onParamChange, height],
+    );
+
+    const handlePointerUp = useCallback(
+        (e: React.PointerEvent<HTMLCanvasElement>) => {
+            if (!onParamChange) return;
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+            isDragging.current = false;
+            canvas.releasePointerCapture(e.pointerId);
+            canvas.style.cursor = 'grab';
+        },
+        [onParamChange],
+    );
 
     return (
         <canvas
             ref={canvasRef}
-            style={{ width, height }}
+            style={{ width, height, cursor: isInteractive ? 'grab' : undefined }}
             className="rounded border border-border/30"
             aria-label="Compressor transfer curve"
             role="img"
+            onPointerDown={isInteractive ? handlePointerDown : undefined}
+            onPointerMove={isInteractive ? handlePointerMove : undefined}
+            onPointerUp={isInteractive ? handlePointerUp : undefined}
         />
     );
 };

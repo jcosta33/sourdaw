@@ -1,10 +1,11 @@
 /**
- * Builtin Synth — Dedicated device inspector layout.
+ * Builtin Synth — Dedicated instrument inspector layout.
  *
- * Groups parameters into semantic sections with Canvas visualizations:
- * Oscillators → Filter → Envelope → Modulation → Output
+ * Primary (always visible): Interactive visualizations + core controls
+ * Advanced (collapsible): Osc2, sub/noise, modulation, velocity, stereo
  */
-import { type ReactElement } from 'react';
+import { type ReactElement, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { Card } from '#/components/ui/card';
 import {
     type DeviceLayoutProps,
@@ -16,25 +17,41 @@ import { DeviceParameterControl } from '../DeviceParameterControl';
 import { ADSREnvelope } from '../../../components/ADSREnvelope';
 import { OscillatorWaveform } from '../../../components/OscillatorWaveform';
 import { FilterResponse } from '../../../components/FilterResponse';
+import { setDeviceParameter } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
 
 const WAVE_NAMES = ['sine', 'triangle', 'sawtooth', 'square'] as const;
 
-type DeviceParam = DeviceLayoutProps['parameters'][number];
+type P = DeviceLayoutProps['parameters'][number];
 
-const ParamRow = ({ params, device, trackId, cols = 2 }: {
-    params: DeviceParam[];
-    device: DeviceLayoutProps['device'];
-    trackId: string;
-    cols?: number;
-}): ReactElement => (
-    <div className={`grid grid-cols-1 @md:grid-cols-${cols} gap-2`}>
-        {params.map((param) => (
-            <Card key={param.id} className="rounded-md shadow-none bg-surface-base border-border/50 p-3 w-full pb-4">
-                <DeviceParameterControl param={param} device={device} trackId={trackId} />
-            </Card>
-        ))}
+const Param = ({ p, device, trackId }: { p: P; device: DeviceLayoutProps['device']; trackId: string }): ReactElement => (
+    <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-2 w-full">
+        <DeviceParameterControl param={p} device={device} trackId={trackId} />
+    </Card>
+);
+
+const Row2 = ({ ids, params, device, trackId }: { ids: string[]; params: P[]; device: DeviceLayoutProps['device']; trackId: string }): ReactElement => (
+    <div className="grid grid-cols-2 gap-2">
+        {filterParams(params, ids).map((p) => <Param key={p.id} p={p} device={device} trackId={trackId} />)}
     </div>
 );
+
+const Collapsible = ({ title, defaultOpen, children }: { title: string; defaultOpen: boolean; children: ReactElement }): ReactElement => {
+    const [open, setOpen] = useState(defaultOpen);
+    return (
+        <div>
+            <button
+                type="button"
+                className="flex items-center gap-1 w-full px-1 mb-2 border-b border-border-hairline pb-1 cursor-pointer hover:bg-surface-raised/50 rounded-t-sm"
+                onClick={() => setOpen(!open)}
+                aria-expanded={open}
+            >
+                <ChevronDown className={`size-3 text-muted-foreground transition-transform ${open ? '' : '-rotate-90'}`} />
+                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{title}</span>
+            </button>
+            {open ? children : null}
+        </div>
+    );
+};
 
 const BuiltinSynthLayout = ({ device, trackId, parameters }: DeviceLayoutProps): ReactElement => {
     const pv = device.parameterValues;
@@ -43,116 +60,87 @@ const BuiltinSynthLayout = ({ device, trackId, parameters }: DeviceLayoutProps):
     const waveform = WAVE_NAMES[wf1Idx] ?? 'sawtooth';
     const osc2Waveform = WAVE_NAMES[wf2Idx] ?? 'sawtooth';
 
+    const change = (id: string, v: number): void => { setDeviceParameter(device.id, id, v); };
+
     return (
         <div className="space-y-4">
-            {/* ── Oscillators ── */}
+            {/* ═══ PRIMARY: Always visible ═══ */}
+
+            {/* Oscillator */}
             <div>
-                <SectionHeader title="Oscillators" />
+                <SectionHeader title="Oscillator" />
                 <div className="flex justify-center mb-3">
                     <OscillatorWaveform
-                        waveform={waveform}
-                        osc2Waveform={osc2Waveform}
-                        osc2Mix={pv['osc2Mix'] ?? 0}
-                        detune={pv['osc2Detune'] ?? 0}
-                        width={200}
-                        height={60}
+                        waveform={waveform} osc2Waveform={osc2Waveform}
+                        osc2Mix={pv['osc2Mix'] ?? 0} detune={pv['osc2Detune'] ?? 0}
+                        width={200} height={60}
                     />
                 </div>
-                <ParamRow
-                    params={filterParams(parameters, ['waveform', 'detune'])}
-                    device={device}
-                    trackId={trackId}
-                />
-                <div className="mt-2">
-                    <ParamRow
-                        params={filterParams(parameters, ['osc2Waveform', 'osc2Detune', 'osc2Mix'])}
-                        device={device}
-                        trackId={trackId}
-                        cols={3}
-                    />
-                </div>
-                <div className="mt-2">
-                    <ParamRow
-                        params={filterParams(parameters, ['subOscLevel', 'noiseLevel'])}
-                        device={device}
-                        trackId={trackId}
-                    />
-                </div>
+                <Row2 ids={['waveform', 'detune']} params={parameters} device={device} trackId={trackId} />
             </div>
 
-            {/* ── Filter ── */}
+            {/* Filter — interactive */}
             <div>
                 <SectionHeader title="Filter" />
                 <div className="flex justify-center mb-3">
                     <FilterResponse
-                        cutoff={pv['filterCutoff'] ?? 5000}
-                        resonance={pv['filterResonance'] ?? 1}
-                        filterType={pv['filterType'] ?? 0}
-                        width={200}
-                        height={70}
+                        cutoff={pv['filterCutoff'] ?? 5000} resonance={pv['filterResonance'] ?? 1}
+                        filterType={pv['filterType'] ?? 0} width={200} height={70}
+                        onParamChange={change}
                     />
                 </div>
-                <ParamRow
-                    params={filterParams(parameters, ['filterType'])}
-                    device={device}
-                    trackId={trackId}
-                    cols={1}
-                />
-                <div className="mt-2">
-                    <ParamRow
-                        params={filterParams(parameters, ['filterCutoff', 'filterResonance', 'filterEnvAmount'])}
-                        device={device}
-                        trackId={trackId}
-                        cols={3}
-                    />
-                </div>
+                <Row2 ids={['filterCutoff', 'filterResonance']} params={parameters} device={device} trackId={trackId} />
             </div>
 
-            {/* ── Envelope ── */}
+            {/* Envelope — interactive */}
             <div>
                 <SectionHeader title="Envelope" />
                 <div className="flex justify-center mb-3">
                     <ADSREnvelope
-                        attack={pv['attack'] ?? 0.01}
-                        decay={pv['decay'] ?? 0.2}
-                        sustain={pv['sustain'] ?? 0.7}
-                        release={pv['release'] ?? 0.3}
-                        width={200}
-                        height={80}
+                        attack={pv['attack'] ?? 0.01} decay={pv['decay'] ?? 0.2}
+                        sustain={pv['sustain'] ?? 0.7} release={pv['release'] ?? 0.3}
+                        width={200} height={80} onParamChange={change}
                     />
                 </div>
-                <ParamRow
-                    params={filterParams(parameters, ['attack', 'decay', 'sustain', 'release'])}
-                    device={device}
-                    trackId={trackId}
-                    cols={4}
-                />
+                <Row2 ids={['attack', 'decay']} params={parameters} device={device} trackId={trackId} />
+                <div className="mt-2">
+                    <Row2 ids={['sustain', 'release']} params={parameters} device={device} trackId={trackId} />
+                </div>
             </div>
 
-            {/* ── Modulation ── */}
-            <div>
-                <SectionHeader title="Modulation" />
-                <ParamRow
-                    params={filterParams(parameters, ['vibratoRate', 'vibratoDepth'])}
-                    device={device}
-                    trackId={trackId}
-                />
-            </div>
+            {/* Gain — always visible */}
+            {filterParams(parameters, ['gain']).map((p) => <Param key={p.id} p={p} device={device} trackId={trackId} />)}
 
-            {/* ── Output ── */}
-            <div>
-                <SectionHeader title="Output" />
-                <ParamRow
-                    params={filterParams(parameters, ['gain', 'stereoSpread'])}
-                    device={device}
-                    trackId={trackId}
-                />
-            </div>
+            {/* ═══ ADVANCED: Collapsible ═══ */}
+
+            <Collapsible title="Oscillator 2" defaultOpen={false}>
+                <div className="space-y-2">
+                    <Row2 ids={['osc2Waveform', 'osc2Detune']} params={parameters} device={device} trackId={trackId} />
+                    <Row2 ids={['osc2Mix', 'stereoSpread']} params={parameters} device={device} trackId={trackId} />
+                </div>
+            </Collapsible>
+
+            <Collapsible title="Sub & Noise" defaultOpen={false}>
+                <Row2 ids={['subOscLevel', 'noiseLevel']} params={parameters} device={device} trackId={trackId} />
+            </Collapsible>
+
+            <Collapsible title="Filter Advanced" defaultOpen={false}>
+                <div className="space-y-2">
+                    {filterParams(parameters, ['filterType']).map((p) => <Param key={p.id} p={p} device={device} trackId={trackId} />)}
+                    <Row2 ids={['filterEnvAmount', 'filterVelocitySensitivity']} params={parameters} device={device} trackId={trackId} />
+                </div>
+            </Collapsible>
+
+            <Collapsible title="Modulation" defaultOpen={false}>
+                <div className="space-y-2">
+                    <Row2 ids={['vibratoRate', 'vibratoDepth']} params={parameters} device={device} trackId={trackId} />
+                    {filterParams(parameters, ['vibratoDelay']).map((p) => <Param key={p.id} p={p} device={device} trackId={trackId} />)}
+                </div>
+            </Collapsible>
         </div>
     );
 };
 
-// ── Register for all builtin synth variants ──
 registerDeviceLayout([
     'builtin-synth',
     'builtin-synth-mellotron',

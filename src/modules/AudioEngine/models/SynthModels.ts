@@ -24,7 +24,10 @@ export type SynthParams = {
     // Modulation and spatial
     vibratoRate: number; // Hz, LFO speed for pitch vibrato (0 = off)
     vibratoDepth: number; // cents, amplitude of pitch vibrato
+    vibratoDelay: number; // seconds, delay before vibrato kicks in (more natural)
     stereoSpread: number; // 0-1, pans osc1 left and osc2 right
+    // Velocity sensitivity
+    filterVelocitySensitivity: number; // 0-1, how much velocity opens the filter
 };
 
 export const defaultSynthParams: SynthParams = {
@@ -46,7 +49,9 @@ export const defaultSynthParams: SynthParams = {
     noiseLevel: 0,
     vibratoRate: 0,
     vibratoDepth: 0,
+    vibratoDelay: 0.3,
     stereoSpread: 0,
+    filterVelocitySensitivity: 0,
 };
 
 export type MpeParams = {
