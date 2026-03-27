@@ -165,15 +165,13 @@ export const PromptBar = (): ReactElement => {
                 ) : (
                     <Zap className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                 )}
-                {prompt.isFocused
-                    ? prompt.selectionTags.map((tag) => (
-                          <SelectionTagChip
-                              key={tag.id}
-                              tag={tag}
-                              onRemove={() => prompt.dismissTag(tag.id)}
-                          />
-                      ))
-                    : null}
+                {prompt.selectionTags.map((tag) => (
+                    <SelectionTagChip
+                        key={tag.id}
+                        tag={tag}
+                        onRemove={() => prompt.dismissTag(tag.id)}
+                    />
+                ))}
                 <Input
                     ref={prompt.inputRef}
                     type="text"

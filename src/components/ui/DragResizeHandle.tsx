@@ -26,18 +26,25 @@ export const DragResizeHandle = ({ side, onResize, className }: DragResizeHandle
         event.preventDefault();
         startRef.current = vertical ? event.clientX : event.clientY;
 
-        const onMouseMove = (moveEvent: globalThis.MouseEvent) => {
-            const current = vertical ? moveEvent.clientX : moveEvent.clientY;
-            const diff = current - startRef.current;
-            startRef.current = current;
+        let rafId: number | null = null;
 
-            // left/top handle: dragging right/down = shrink → invert
-            // right/bottom handle: dragging right/down = grow
-            const delta = side === 'left' || side === 'top' ? -diff : diff;
-            onResize(delta);
+        const onMouseMove = (moveEvent: globalThis.MouseEvent) => {
+            if (rafId !== null) { return; }
+            rafId = requestAnimationFrame(() => {
+                rafId = null;
+                const current = vertical ? moveEvent.clientX : moveEvent.clientY;
+                const diff = current - startRef.current;
+                startRef.current = current;
+
+                // left/top handle: dragging right/down = shrink → invert
+                // right/bottom handle: dragging right/down = grow
+                const delta = side === 'left' || side === 'top' ? -diff : diff;
+                onResize(delta);
+            });
         };
 
         const onMouseUp = () => {
+            if (rafId !== null) { cancelAnimationFrame(rafId); }
             document.removeEventListener('mousemove', onMouseMove);
             document.removeEventListener('mouseup', onMouseUp);
             document.body.style.cursor = '';

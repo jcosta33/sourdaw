@@ -35,13 +35,13 @@ export function recordAutomationValue(trackId: string, parameterId: string, valu
 
     if (track.automationMode === 'write') {
         if (laneId) {
+            // Clear from recording start to current position (not shifting start)
             clearPointsInRange(laneId, session.startBeat, beat);
         }
         const points = pendingPoints.get(key) ?? [];
         points.push(point);
         pendingPoints.set(key, points);
         session.lastValue = value;
-        session.startBeat = beat;
     } else if (track.automationMode === 'touch' || track.automationMode === 'latch') {
         touchActive.add(key);
         const points = pendingPoints.get(key) ?? [];

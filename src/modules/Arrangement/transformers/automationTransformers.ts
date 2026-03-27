@@ -142,47 +142,69 @@ export function generateShapePoints(
     endBeat: number,
     minValue: number,
     maxValue: number,
-    resolution = 16
 ): AutomationPoint[] {
-    const points: AutomationPoint[] = [];
     const range = maxValue - minValue;
     const duration = endBeat - startBeat;
+    const mid = startBeat + duration / 2;
 
-    for (let i = 0; i <= resolution; i++) {
-        const t = i / resolution;
-        const beat = startBeat + t * duration;
-        let normalizedValue: number;
+    const pt = (beat: number, norm: number, curve: AutomationPoint['curve'] = 'linear', tension = 0): AutomationPoint => ({
+        beat,
+        value: minValue + norm * range,
+        curve,
+        tension,
+    });
 
-        switch (shape) {
-            case 'sine':
-                normalizedValue = 0.5 + 0.5 * Math.sin(t * Math.PI * 2 - Math.PI / 2);
-                break;
-            case 'triangle':
-                normalizedValue = t < 0.5 ? t * 2 : 2 - t * 2;
-                break;
-            case 'sawtooth-up':
-                normalizedValue = t;
-                break;
-            case 'sawtooth-down':
-                normalizedValue = 1 - t;
-                break;
-            case 'square':
-                normalizedValue = t < 0.5 ? 1 : 0;
-                break;
-            case 'random':
-                normalizedValue = Math.random();
-                break;
+    switch (shape) {
+        case 'square':
+            // 4 points: high → step down at midpoint → step back at end
+            return [
+                pt(startBeat, 1, 'step'),
+                pt(mid, 0, 'step'),
+                pt(endBeat, 1, 'step'),
+            ];
+
+        case 'triangle':
+            // 3 points: low → peak at midpoint → low
+            return [
+                pt(startBeat, 0),
+                pt(mid, 1),
+                pt(endBeat, 0),
+            ];
+
+        case 'sawtooth-up':
+            // 2 points: ramp from low to high
+            return [
+                pt(startBeat, 0),
+                pt(endBeat, 1),
+            ];
+
+        case 'sawtooth-down':
+            // 2 points: ramp from high to low
+            return [
+                pt(startBeat, 1),
+                pt(endBeat, 0),
+            ];
+
+        case 'sine':
+            // 5 key points with smooth curve interpolation
+            return [
+                pt(startBeat, 0, 'smooth', 0.5),
+                pt(startBeat + duration * 0.25, 1, 'smooth', 0.5),
+                pt(mid, 0, 'smooth', 0.5),
+                pt(startBeat + duration * 0.75, 0, 'smooth', 0.5),
+                pt(endBeat, 0, 'smooth', 0.5),
+            ];
+
+        case 'random': {
+            // 8 random points
+            const count = 8;
+            const pts: AutomationPoint[] = [];
+            for (let i = 0; i <= count; i++) {
+                pts.push(pt(startBeat + (i / count) * duration, Math.random()));
+            }
+            return pts;
         }
-
-        points.push({
-            beat,
-            value: minValue + normalizedValue * range,
-            curve: shape === 'square' ? 'step' : 'linear',
-            tension: 0,
-        });
     }
-
-    return points;
 }
 
 /**

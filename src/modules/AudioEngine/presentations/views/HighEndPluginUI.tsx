@@ -18,6 +18,7 @@ type HighEndPluginUIProps = {
  */
 export function HighEndPluginUI({ instance, parameterSab, onClose }: HighEndPluginUIProps) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const deviceRef = useRef<GPUDevice | null>(null);
     const [webGpuSupported, setWebGpuSupported] = useState<boolean>(true);
 
     useEffect(() => {
@@ -38,6 +39,7 @@ export function HighEndPluginUI({ instance, parameterSab, onClose }: HighEndPlug
             }
 
             const device = await adapter.requestDevice();
+            deviceRef.current = device;
             const canvas = canvasRef.current;
             if (!canvas) {
                 return;
@@ -95,7 +97,11 @@ export function HighEndPluginUI({ instance, parameterSab, onClose }: HighEndPlug
             if (animationFrameId) {
                 cancelAnimationFrame(animationFrameId);
             }
-            // Cleanup webgpu device if necessary
+            // Release GPU resources
+            if (deviceRef.current) {
+                deviceRef.current.destroy();
+                deviceRef.current = null;
+            }
         };
     }, [parameterSab]);
 

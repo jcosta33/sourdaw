@@ -90,11 +90,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     useEffect(() => {
         if (selectedClipId) {
             setBottomTab('editor');
-            if (!mixerOpen) {
-                openMixer();
-            }
+            openMixer();
         }
-    }, [selectedClipId, mixerOpen]);
+    }, [selectedClipId]);
 
     // Listen for automation tab activation (from 'A' key)
     useEffect(() => {

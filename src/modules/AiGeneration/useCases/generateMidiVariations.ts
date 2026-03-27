@@ -64,16 +64,17 @@ ONLY output raw JSON, no markdown blocks.`;
     );
 
     try {
-        const cleanedStr = responseStr
-            .trim()
-            .replace(/^```json/, '')
-            .replace(/```$/, '');
-        const data = JSON.parse(cleanedStr);
+        // Extract JSON object from potentially markdown-wrapped response
+        const jsonMatch = responseStr.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+            throw new Error('No JSON object found in AI response');
+        }
+        const data = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
         if (data && Array.isArray(data.variations)) {
-            createAlternativeClips(targetClip.id, data.variations);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- LLM output, validated by createAlternativeClips
+            createAlternativeClips(targetClip.id, data.variations as any);
         }
     } catch (error) {
-        console.error('Failed to parse AI variations:', error);
-        throw new Error('Failed to parse variations from AI.');
+        throw new Error(`Failed to parse variations from AI: ${error instanceof Error ? error.message : String(error)}`);
     }
 }

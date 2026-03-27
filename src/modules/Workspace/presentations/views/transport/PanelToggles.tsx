@@ -119,7 +119,7 @@ export const PanelToggles = ({
                     <Button
                         variant={aiState.isPanelOpen ? 'secondary' : 'ghost'}
                         size="icon-sm"
-                        aria-label="Toggle Generative AI Dashboard"
+                        aria-label="Generate"
                         aria-pressed={aiState.isPanelOpen}
                         onClick={toggleAiPanel}
                         className={aiState.isPanelOpen ? 'text-[var(--color-accent-lavender)]' : ''}
@@ -127,7 +127,7 @@ export const PanelToggles = ({
                         <Sparkles className="size-3.5" aria-hidden="true" />
                     </Button>
                 </TooltipTrigger>
-                <TooltipContent>Toggle Generative AI Dashboard</TooltipContent>
+                <TooltipContent>Generate</TooltipContent>
             </Tooltip>
             <div className="w-px h-4 bg-border/40 mx-0.5" />
             <Tooltip>

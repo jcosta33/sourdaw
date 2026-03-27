@@ -19,7 +19,6 @@ import { TRACK_COLOR_PRESETS } from '#/helpers/UI/colorPresets';
 import { menuBtnClass } from '#/helpers/UI/contextMenuStyles';
 
 import { LevelMeter } from '../metering/LevelMeter';
-import { VUMeterCanvas } from '../metering/VUMeterCanvas';
 import { DeviceChainSection } from './DeviceChainSection';
 import { SendsSection } from './SendsSection';
 import { IOSection } from './IOSection';
@@ -220,30 +219,33 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                 {track.soloSafe ? <ShieldCheck className="size-3 text-state-active" aria-label="Solo safe" /> : null}
             </div>
 
-            {/* Fader + meter */}
-            <div className="flex gap-2 h-40 shrink-0 mt-3 mb-1 items-end justify-center w-[85%]">
-                <div
-                    onPointerUp={() => {
-                        if (track.automationMode === 'touch') {
-                            releaseTouchAutomation(track.id, 'gain');
-                        }
+            {/* Meter */}
+            <div className="flex gap-1 items-end justify-center shrink-0 mt-2">
+                <LevelMeter trackId={track.id} width="w-1.5" />
+            </div>
+
+            {/* Fader */}
+            <div
+                className="shrink-0"
+                onPointerUp={() => {
+                    if (track.automationMode === 'touch') {
+                        releaseTouchAutomation(track.id, 'gain');
+                    }
+                }}
+            >
+                <Fader
+                    value={track.gain}
+                    onChange={(v) => {
+                        setTrackGain(track.id, v);
                     }}
-                >
-                    <Fader
-                        value={track.gain}
-                        onChange={(v) => {
-                            setTrackGain(track.id, v);
-                        }}
-                        min={0}
-                        max={1.5}
-                        step={0.01}
-                        fineStep={0.001}
-                        defaultValue={0.8}
-                        aria-label={`${track.name} gain`}
-                    />
-                </div>
-                <LevelMeter trackId={track.id} width="w-2.5" />
-                <VUMeterCanvas trackId={track.id} size={80} />
+                    min={0}
+                    max={1.5}
+                    step={0.01}
+                    fineStep={0.001}
+                    defaultValue={0.8}
+                    height={100}
+                    aria-label={`${track.name} gain`}
+                />
             </div>
 
             <span className="text-[10px] font-mono text-text-secondary mt-1">

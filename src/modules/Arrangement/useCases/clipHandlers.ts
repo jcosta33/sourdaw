@@ -90,7 +90,7 @@ export const clipHandlers = {
                 for (const track of state.tracks) {
                     const clip = track.clips.find((c) => c.id === a.payload.clipId);
                     if (clip) {
-                        clipSnapshot = JSON.parse(JSON.stringify(clip));
+                        clipSnapshot = structuredClone(clip);
                         trackId = track.id;
                         break;
                     }
@@ -100,13 +100,13 @@ export const clipHandlers = {
             // Snapshot MIDI data for this clip
             const midiState = midiStore.value;
             const notesSnapshot = midiState?.notesByClipId[a.payload.clipId]
-                ? JSON.parse(JSON.stringify(midiState.notesByClipId[a.payload.clipId]))
+                ? structuredClone(midiState.notesByClipId[a.payload.clipId])
                 : null;
             const ccSnapshot = midiState?.ccByClipId[a.payload.clipId]
-                ? JSON.parse(JSON.stringify(midiState.ccByClipId[a.payload.clipId]))
+                ? structuredClone(midiState.ccByClipId[a.payload.clipId])
                 : null;
             const pbSnapshot = midiState?.pitchBendByClipId[a.payload.clipId]
-                ? JSON.parse(JSON.stringify(midiState.pitchBendByClipId[a.payload.clipId]))
+                ? structuredClone(midiState.pitchBendByClipId[a.payload.clipId])
                 : null;
 
             // Execute the removal with optional ripple-shift

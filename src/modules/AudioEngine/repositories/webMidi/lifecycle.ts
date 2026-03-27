@@ -61,7 +61,6 @@ function onStateChange(): void {
         const input = midiAccess.inputs.get(first.id);
         if (input) {
             attachInput(input);
-            console.log(`[MIDI] Auto-attached hot-plugged device: ${first.name}`);
             setState({ inputs, selectedInputId: first.id });
             return;
         }
@@ -80,7 +79,7 @@ async function selectMidiInputTauri(portIndex: number): Promise<void> {
     }
 
     const portName = (await tauriInvoke('open_midi_input', { portIndex })) as string;
-    console.log(`[MIDI] Tauri opened MIDI port: ${portName}`);
+    void portName;
 
     const { tauriListen } = await import('#/helpers/tauriBridge');
     const unlisten = (await tauriListen('midi-message', (event) => {
@@ -111,10 +110,6 @@ export async function initWebMidi(): Promise<boolean> {
             access.onstatechange = onStateChange;
 
             const inputs = enumerateInputs();
-            console.log(
-                `[MIDI] initWebMidi: found ${inputs.length} device(s):`,
-                inputs.map((i) => i.name)
-            );
             setState({ inputs });
 
             if (inputs.length > 0 && !state.selectedInputId) {
@@ -123,7 +118,6 @@ export async function initWebMidi(): Promise<boolean> {
                 if (input) {
                     attachInput(input);
                     setState({ selectedInputId: first.id });
-                    console.log(`[MIDI] Auto-selected input: ${first.name}`);
                 }
             }
 
@@ -142,17 +136,12 @@ export async function initWebMidi(): Promise<boolean> {
                 name: d.name,
                 manufacturer: 'System',
             }));
-            console.log(
-                `[MIDI] Tauri MIDI: found ${inputs.length} device(s):`,
-                inputs.map((i) => i.name)
-            );
             setState({ inputs, isSupported: true });
 
             if (inputs.length > 0 && !state.selectedInputId) {
                 const first = inputs[0]!;
                 await selectMidiInputTauri(Number(first.id));
                 setState({ selectedInputId: first.id });
-                console.log(`[MIDI] Tauri auto-selected input: ${first.name}`);
             }
 
             return true;

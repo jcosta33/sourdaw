@@ -184,7 +184,7 @@ export async function executeAppAction(action: AppAction, options?: ExecuteOptio
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handler = handlerRegistry[action.type] as ActionHandler<any> | undefined;
     if (!handler) {
-        logger.warn(`No handler registered for action: ${action.type}`);
+        logger.error(new Error(`No handler registered for action: ${action.type}`));
         return;
     }
 

@@ -13,7 +13,12 @@ export function addMidiNote(
         throw new Error('MIDI store not initialized');
     }
 
-    const note = createMidiNote(pitch, startBeat, duration, velocity);
+    const safePitch = Math.round(Math.max(0, Math.min(127, pitch)));
+    const safeVelocity = Math.round(Math.max(1, Math.min(127, velocity)));
+    const safeStart = Math.max(0, startBeat);
+    const safeDuration = Math.max(0.0625, duration); // 64th note minimum
+
+    const note = createMidiNote(safePitch, safeStart, safeDuration, safeVelocity);
     const existing = state.notesByClipId[clipId] ?? [];
 
     midiStore.set({

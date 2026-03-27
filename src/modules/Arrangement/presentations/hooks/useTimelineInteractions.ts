@@ -132,7 +132,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
 
             const edgeHit = hitTestClipEdge(x, y);
             let dragMode: 'move' | 'stretch' | 'trim-start' = tool === 'stretch' ? 'stretch' : 'move';
-            if (edgeHit && tool === 'select') {
+            if (edgeHit && edgeHit.edge !== 'body' && tool === 'select') {
                 dragMode = edgeHit.edge === 'left' ? 'trim-start' : 'stretch';
             }
 
@@ -162,7 +162,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             if (!dragState && !loopDragRef.current && !autoDragRef.current && !drawDragRef.current && !rubberBandRef.current) {
                 if (getActiveTool() === 'select') {
                     const edgeHit = hitTestClipEdge(x, y);
-                    setHoverCursor(edgeHit ? 'ew-resize' : null);
+                    setHoverCursor(edgeHit && edgeHit.edge !== 'body' ? 'ew-resize' : null);
                 } else {
                     setHoverCursor(null);
                 }

@@ -12,6 +12,7 @@ import { extractGroove, applyGroove } from '#/modules/AiGeneration/useCases/groo
 import { getGrooveById } from '#/modules/AiGeneration/models/factoryGrooves';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { getTrackStoreState } from '#/modules/Arrangement/useCases/trackQueries';
+import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
 
 type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
 
@@ -58,6 +59,8 @@ function resolveOrCreateMidiTrack(trackId: string | undefined, fallbackName: str
 
     const state = getTrackStoreState();
     const selectedId = state?.selectedTrackId;
+
+    // Use selected track if it's a MIDI track
     if (selectedId) {
         const selected = state?.tracks.find((t) => t.id === selectedId);
         if (selected && selected.kind === 'midi') {
@@ -65,8 +68,21 @@ function resolveOrCreateMidiTrack(trackId: string | undefined, fallbackName: str
         }
     }
 
+    // Fall back to first existing MIDI track
+    const firstMidi = state?.tracks.find((t) => t.kind === 'midi');
+    if (firstMidi) {
+        return firstMidi.id;
+    }
+
+    // Create a new one only if none exist
     const newTrack = addTrack({ name: fallbackName, kind: 'midi' });
     return newTrack?.id ?? null;
+}
+
+/** Get the current playhead position as start beat for new clips. */
+function getPlayheadBeat(): number {
+    const transport = getTransportState();
+    return transport?.playheadPosition ?? 0;
 }
 
 export const generationHandlers = {
@@ -83,7 +99,7 @@ export const generationHandlers = {
                 style,
                 bars: a.payload.bars,
                 density: a.payload.density,
-            });
+            }, getPlayheadBeat());
         },
         describe: (a) => ({ label: `Generate ${a.payload.style} drum pattern` }),
         undoable: true,
@@ -109,7 +125,7 @@ export const generationHandlers = {
                 key,
                 scale,
                 bars: a.payload.bars,
-            });
+            }, getPlayheadBeat());
         },
         describe: (a) => ({ label: `Generate ${a.payload.style} melody` }),
         undoable: true,
@@ -140,7 +156,7 @@ export const generationHandlers = {
                 scale,
                 bars: a.payload.bars,
                 voicing,
-            });
+            }, getPlayheadBeat());
         },
         describe: (a) => ({ label: `Generate ${a.payload.style} chord progression` }),
         undoable: true,

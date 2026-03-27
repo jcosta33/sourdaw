@@ -5,7 +5,7 @@ import { getTrackAtY } from './getTrackAtY';
 export type ClipEdge = 'left' | 'right' | 'body';
 
 const RULER_HEIGHT = 0;
-const EDGE_THRESHOLD_PX = 6;
+const EDGE_THRESHOLD_PX = 10;
 
 export function hitTestClipEdge(
     canvasX: number,

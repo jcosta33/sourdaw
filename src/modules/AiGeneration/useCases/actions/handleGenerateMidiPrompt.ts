@@ -5,11 +5,12 @@ import {
 } from '#/modules/AudioEngine/useCases/nativeAiBridge';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
+import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { addMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { generateMidiViaLlm } from '../llmMidiGeneration';
-import { addTask, updateTask, removeTask } from './taskManagement';
+import { addTask, updateTask } from './taskManagement';
 
 export async function handleGenerateMidiPrompt(prompt: string, numNotes: number = 32, creativity: number = 0.65) {
     const taskId = addTask({ type: 'midi-generation', status: 'processing', prompt });
@@ -33,9 +34,12 @@ export async function handleGenerateMidiPrompt(prompt: string, numNotes: number 
         if (finalNotes.length > 0) {
             const tState = trackStore.value;
             const selectedTrackId = tState?.selectedTrackId;
+
+            // Prefer selected MIDI track → create new one if selected isn't MIDI or nothing selected
             let targetTrack = tState?.tracks.find((t) => t.id === selectedTrackId && t.kind === 'midi');
             if (!targetTrack) {
-                targetTrack = tState?.tracks.find((t) => t.kind === 'midi');
+                const newTrack = addTrack({ name: prompt ? `AI: ${prompt.slice(0, 20)}` : 'AI MIDI', kind: 'midi' });
+                targetTrack = newTrack ?? undefined;
             }
 
             if (targetTrack) {
@@ -61,11 +65,15 @@ export async function handleGenerateMidiPrompt(prompt: string, numNotes: number 
                     }
                 }
             }
-            removeTask(taskId);
-        } else {
             updateTask(taskId, {
                 status: 'success',
-                data: finalNotes,
+                data: { noteCount: finalNotes.length },
+                durationMs: Math.round(performance.now() - start),
+            });
+        } else {
+            updateTask(taskId, {
+                status: 'error',
+                error: 'No notes generated — try rephrasing the prompt',
                 durationMs: Math.round(performance.now() - start),
             });
         }

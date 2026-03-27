@@ -53,11 +53,11 @@ export const trackHandlers = {
             }
 
             // Snapshot everything that removeTrack deletes
-            const trackSnapshot = JSON.parse(JSON.stringify(track)) as typeof track;
+            const trackSnapshot = structuredClone(track);
 
             const autoState = automationStore.value;
             const autoLanes = autoState ? autoState.lanes.filter((l) => l.trackId === a.payload.trackId) : [];
-            const autoLaneSnapshots = JSON.parse(JSON.stringify(autoLanes)) as typeof autoLanes;
+            const autoLaneSnapshots = structuredClone(autoLanes);
 
             const midiState = midiStore.value;
             const clipIds = track.clips.map((c) => c.id);
@@ -65,22 +65,20 @@ export const trackHandlers = {
             if (midiState) {
                 for (const cid of clipIds) {
                     if (midiState.notesByClipId[cid]) {
-                        midiSnapshots.notesByClipId[cid] = JSON.parse(JSON.stringify(midiState.notesByClipId[cid]));
+                        midiSnapshots.notesByClipId[cid] = structuredClone(midiState.notesByClipId[cid]);
                     }
                     if (midiState.ccByClipId[cid]) {
-                        midiSnapshots.ccByClipId[cid] = JSON.parse(JSON.stringify(midiState.ccByClipId[cid]));
+                        midiSnapshots.ccByClipId[cid] = structuredClone(midiState.ccByClipId[cid]);
                     }
                     if (midiState.pitchBendByClipId[cid]) {
-                        midiSnapshots.pitchBendByClipId[cid] = JSON.parse(
-                            JSON.stringify(midiState.pitchBendByClipId[cid])
-                        );
+                        midiSnapshots.pitchBendByClipId[cid] = structuredClone(midiState.pitchBendByClipId[cid]);
                     }
                 }
             }
 
             const takeLaneState = takeLaneStore.value;
             const takeLanes = takeLaneState ? takeLaneState.lanes.filter((l) => l.trackId === a.payload.trackId) : [];
-            const takeLaneSnapshots = JSON.parse(JSON.stringify(takeLanes)) as typeof takeLanes;
+            const takeLaneSnapshots = structuredClone(takeLanes);
 
             // Execute the actual removal
             removeTrack(a.payload.trackId);

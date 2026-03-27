@@ -76,7 +76,7 @@ export const AutomationLaneRow = ({
     );
 
     const isDrawMode = workspace?.activeTool === 'draw';
-    const curveColor = lane.color ?? trackColor;
+    const curveColor = lane.color ?? trackColor ?? '#a78bfa';
     const isDisabled = lane.enabled === false;
     const snapValue = workspace?.snapValue ?? 1;
 
@@ -135,11 +135,12 @@ export const AutomationLaneRow = ({
             if (regionPoints.length === 0) {
                 continue;
             }
+            const regionIndexMap = new Map(lane.points.map((p, idx) => [p, idx]));
             let segPath = `M ${beatToX(regionPoints[0]!.beat)} ${valueToY(regionPoints[0]!.value)}`;
             for (let i = 0; i < regionPoints.length - 1; i++) {
-                const allIdx = lane.points.indexOf(regionPoints[i]!);
+                const allIdx = regionIndexMap.get(regionPoints[i]!) ?? -1;
                 const prevPt = allIdx > 0 ? lane.points[allIdx - 1] : undefined;
-                const nextPt = allIdx < lane.points.length - 2 ? lane.points[allIdx + 2] : undefined;
+                const nextPt = allIdx < lane.points.length - 1 ? lane.points[allIdx + 1] : undefined;
                 segPath += ` ${buildCurvePath(regionPoints[i]!, regionPoints[i + 1]!, beatToX, valueToY, prevPt, nextPt)}`;
             }
             const segFill =
@@ -149,11 +150,12 @@ export const AutomationLaneRow = ({
             pathSegments.push({ pathD: segPath, fillD: segFill });
         }
     } else if (visiblePoints.length > 0) {
+        const visIndexMap = new Map(lane.points.map((p, idx) => [p, idx]));
         let pathD = `M ${beatToX(visiblePoints[0]!.beat)} ${valueToY(visiblePoints[0]!.value)}`;
         for (let i = 0; i < visiblePoints.length - 1; i++) {
-            const allIdx = lane.points.indexOf(visiblePoints[i]!);
+            const allIdx = visIndexMap.get(visiblePoints[i]!) ?? -1;
             const prevPt = allIdx > 0 ? lane.points[allIdx - 1] : undefined;
-            const nextPt = allIdx < lane.points.length - 2 ? lane.points[allIdx + 2] : undefined;
+            const nextPt = allIdx < lane.points.length - 1 ? lane.points[allIdx + 1] : undefined;
             pathD += ` ${buildCurvePath(visiblePoints[i]!, visiblePoints[i + 1]!, beatToX, valueToY, prevPt, nextPt)}`;
         }
         const fillD = `${pathD} L ${beatToX(visiblePoints[visiblePoints.length - 1]!.beat)} ${LANE_HEIGHT} L ${beatToX(visiblePoints[0]!.beat)} ${LANE_HEIGHT} Z`;
@@ -454,7 +456,7 @@ export const AutomationLaneRow = ({
                 })}
 
                 {/* Breakpoint nodes */}
-                {visiblePoints.map((point) => {
+                {visiblePoints.map((point, ptIdx) => {
                     const cx = beatToX(point.beat);
                     const cy = valueToY(point.value);
                     const isDragging = dragPointBeat === point.beat;
@@ -463,7 +465,7 @@ export const AutomationLaneRow = ({
                     const nodeSize = isDragging ? 6 : isHovered || isSelected ? 5 : 4;
 
                     return (
-                        <g key={`${point.beat}-${point.value}`} data-auto-point="true">
+                        <g key={`pt-${String(ptIdx)}-${point.beat}`} data-auto-point="true">
                             <circle
                                 cx={cx}
                                 cy={cy}

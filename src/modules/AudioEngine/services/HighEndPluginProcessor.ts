@@ -14,11 +14,9 @@ class HighEndPluginProcessor extends AudioWorkletProcessor {
             if (event.data.type === 'init-sab') {
                 const sab = event.data.sab as SharedArrayBuffer;
                 this.paramView = new Float32Array(sab);
-                console.log('[HighEndPluginProcessor] SharedArrayBuffer attached for lock-free params.');
             } else if (event.data.type === 'init-wasm') {
                 // In the future: receive compiled Wasm module, instantiate it, and link SAB
                 this.isWasmInitialized = true;
-                console.log('[HighEndPluginProcessor] Wasm DSP initialized.');
             }
         };
     }

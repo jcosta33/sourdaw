@@ -28,15 +28,19 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
             <div className="h-1 w-full rounded-full bg-border-active" />
             <span className="text-[10px] font-bold text-text-primary uppercase tracking-wider">Master</span>
 
-            <div className="flex gap-2 h-40 mt-1 mb-1 items-end justify-center w-full">
+            <div className="flex gap-1 items-end justify-center shrink-0 mt-1">
+                <LevelMeter trackId={null} width="w-1.5" />
+            </div>
+
+            <div className="shrink-0">
                 <Fader
                     value={masterGain / 100}
                     onChange={(v) => {
                         setMasterGain(v * 100);
                     }}
+                    height={100}
                     aria-label="Master gain"
                 />
-                <LevelMeter trackId={null} width="w-2.5" />
             </div>
 
             <span className="text-[10px] font-mono text-text-secondary mt-1">

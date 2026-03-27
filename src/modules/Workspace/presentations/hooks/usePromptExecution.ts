@@ -27,7 +27,6 @@ import {
 } from '#/modules/AiRuntime/stores/aiActionHistoryStore';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { appendChatMessage } from '#/modules/AiRuntime/stores/chatStore';
 import { type AppAction } from '#/modules/Command/useCases/commandQueries';
 import { describeAction } from '#/modules/Command/useCases/actionLabels';
 import { type IntentResult } from '#/modules/AiRuntime/models/IntentResult';
@@ -285,21 +284,10 @@ export const usePromptExecution = (): PromptExecutionState => {
                     result.actions.map((a) => a.type)
                 );
             } else {
-                notifyAiChange(`No actions matched: "${value}"`, []);
-                appendChatMessage({
-                    id: crypto.randomUUID(),
-                    role: 'user',
-                    content: value,
-                    timestamp: Date.now(),
-                });
-                appendChatMessage({
-                    id: crypto.randomUUID(),
-                    role: 'assistant',
-                    content:
-                        "I couldn't identify any DAW commands in that prompt. If you're looking for help, try the AI Chat panel; if you're trying to execute an action, try rephrasing.",
-                    error: 'No actionable commands found',
-                    timestamp: Date.now(),
-                });
+                notifyAiChange(
+                    "No actions matched. Try rephrasing, or use the AI Chat panel for open-ended help.",
+                    []
+                );
             }
         } catch (error) {
             logger.error(new Error('Prompt execution failed', { cause: error }));

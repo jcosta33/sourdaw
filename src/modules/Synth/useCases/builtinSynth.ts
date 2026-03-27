@@ -28,7 +28,9 @@ const SYNTH_PARAM_KEYS: ReadonlyArray<keyof SynthParams> = [
     'noiseLevel',
     'vibratoRate',
     'vibratoDepth',
+    'vibratoDelay',
     'stereoSpread',
+    'filterVelocitySensitivity',
 ];
 
 const WAVEFORMS = new Set<string>(['sine', 'triangle', 'sawtooth', 'square']);
@@ -180,12 +182,15 @@ export function scheduleNote(
     filter.type = params.filterType;
 
     // Velocity → filter brightness: harder hits open the filter more
-    const velocityScale = 0.3 + 0.7 * (velocity / 127);
+    const velSens = params.filterVelocitySensitivity ?? 0;
+    const velocityScale = velSens > 0
+        ? (1 - velSens) + velSens * (velocity / 127)  // 0 sens = always full, 1 sens = full range
+        : 0.3 + 0.7 * (velocity / 127);               // legacy default when param not set
     // Pitch tracking: higher notes are naturally brighter (scale by sqrt of freq ratio)
     const pitchScale = Math.sqrt(frequency / 440);
     let filterCutoff = Math.min(params.filterCutoff * velocityScale * pitchScale, 20000);
     if (mpe?.pressure !== undefined) {
-        filterCutoff = filterCutoff + (mpe.pressure / 127) * 2000;
+        filterCutoff = Math.min(20000, filterCutoff + (mpe.pressure / 127) * 2000);
     }
 
     // Filter envelope: starts at cutoff+envAmount, decays to cutoff
@@ -241,10 +246,11 @@ export function scheduleNote(
         vibratoLfo.type = 'sine';
         vibratoLfo.frequency.setValueAtTime(params.vibratoRate, startTime);
         const vibratoGain = ctx.createGain();
-        // Ramp vibrato in after attack phase so it doesn't wobble the onset
+        // Ramp vibrato in after delay period so it doesn't wobble the onset
+        const vibDelay = params.vibratoDelay ?? 0.3;
         vibratoGain.gain.setValueAtTime(0, startTime);
-        vibratoGain.gain.linearRampToValueAtTime(0, attackEnd);
-        vibratoGain.gain.linearRampToValueAtTime(params.vibratoDepth, attackEnd + 0.15);
+        vibratoGain.gain.linearRampToValueAtTime(0, attackEnd + vibDelay);
+        vibratoGain.gain.linearRampToValueAtTime(params.vibratoDepth, attackEnd + vibDelay + 0.1);
         vibratoLfo.connect(vibratoGain);
         // Connect to all oscillators' detune params
         vibratoGain.connect(osc1.detune);

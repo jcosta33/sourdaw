@@ -22,10 +22,39 @@ export function addSidechainRoute(
         return;
     }
 
+    // Cycle detection: walk forward from target to see if we reach source
+    if (wouldCreateCycle(sourceTrackId, targetTrackId)) {
+        throw new Error(`Sidechain route ${sourceTrackId} → ${targetTrackId} would create a routing cycle`);
+    }
+
     const route = createSidechainRoute(sourceTrackId, targetTrackId, targetDeviceId, targetParameterId);
     sidechainState = { routes: [...sidechainState.routes, route] };
 
     wireSidechainRoute(sourceTrackId, targetTrackId, targetDeviceId);
+}
+
+function wouldCreateCycle(sourceTrackId: string, targetTrackId: string): boolean {
+    if (sourceTrackId === targetTrackId) {
+        return true;
+    }
+    const visited = new Set<string>();
+    const queue = [targetTrackId];
+    while (queue.length > 0) {
+        const current = queue.shift()!;
+        if (current === sourceTrackId) {
+            return true;
+        }
+        if (visited.has(current)) {
+            continue;
+        }
+        visited.add(current);
+        for (const route of sidechainState.routes) {
+            if (route.sourceTrackId === current) {
+                queue.push(route.targetTrackId);
+            }
+        }
+    }
+    return false;
 }
 
 export function removeSidechainRoute(routeId: string): void {

@@ -7,6 +7,11 @@ import { recordAutomationValue } from '#/modules/Automation/useCases/automationR
 const RECORDING_MODES: ReadonlySet<AutomationMode> = new Set(['write', 'touch', 'latch']);
 
 export function setDeviceParameter(deviceId: string, paramId: string, value: number): void {
+    // Guard against invalid values that could crash the audio engine
+    if (!Number.isFinite(value)) {
+        return;
+    }
+
     const state = getTrackState();
     if (!state) {
         return;

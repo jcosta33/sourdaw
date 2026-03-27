@@ -1,4 +1,5 @@
 import { type ReactElement, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { selectClip } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 import {
@@ -75,11 +76,14 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
         }
     };
 
-    return (
+    return createPortal(
         <div
             ref={menuRef}
             className="fixed z-50 min-w-[180px] max-h-[80vh] overflow-y-auto rounded-md border border-border bg-popover py-1 shadow-lg"
-            style={{ left: x, top: y }}
+            style={{
+                left: Math.min(x, window.innerWidth - 200),
+                top: Math.min(y, window.innerHeight - 400),
+            }}
             role="menu"
         >
             {multiSelected ? (
@@ -417,6 +421,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
             >
                 Delete{multiSelected ? ` (${selectedIds.length})` : ''} <span className={menuShortcutClass}>⌫</span>
             </button>
-        </div>
+        </div>,
+        document.body
     );
 };

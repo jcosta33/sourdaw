@@ -29,7 +29,7 @@ export function insertAutomationShape(
     for (let c = 0; c < cycles; c++) {
         const cycleStart = startBeat + c * cycleDuration;
         const cycleEnd = cycleStart + cycleDuration;
-        const points = generateShapePoints(shape, cycleStart, cycleEnd, lane.minValue, lane.maxValue, 16);
+        const points = generateShapePoints(shape, cycleStart, cycleEnd, lane.minValue, lane.maxValue);
         // Remove the last point of each cycle except the final one to avoid duplicates
         if (c < cycles - 1) {
             points.pop();

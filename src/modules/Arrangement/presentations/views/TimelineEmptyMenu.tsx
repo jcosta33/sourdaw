@@ -1,4 +1,5 @@
 import { type ReactElement, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
     addClip,
     addTrack,
@@ -149,11 +150,14 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
         onClose();
     };
 
-    return (
+    return createPortal(
         <div
             ref={menuRef}
             className="fixed z-50 min-w-[180px] rounded-md border border-border bg-popover py-1 shadow-lg"
-            style={{ left: x, top: y }}
+            style={{
+                left: Math.min(x, window.innerWidth - 200),
+                top: Math.min(y, window.innerHeight - 400),
+            }}
             role="menu"
         >
             <button
@@ -221,6 +225,7 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
             <button type="button" className={menuBtnClass} role="menuitem" onClick={handleImportMidi}>
                 Import MIDI…
             </button>
-        </div>
+        </div>,
+        document.body
     );
 };

@@ -3,15 +3,15 @@ import { addMidiNote } from '#/modules/MIDI/useCases/midi';
 import { type GenerateDrumPatternOptions } from './algorithm';
 import { generateDrumPattern } from './algorithm';
 
-export function applyDrumPatternToTrack(trackId: string, options: GenerateDrumPatternOptions): void {
+export function applyDrumPatternToTrack(trackId: string, options: GenerateDrumPatternOptions, startBeat: number = 0): void {
     const bars = options.bars ?? 4;
     const [numerator] = options.timeSignature ?? [4, 4];
     const totalBeats = bars * numerator;
 
     const clip = addClip({
         trackId,
-        startBeat: 0,
-        endBeat: totalBeats,
+        startBeat,
+        endBeat: startBeat + totalBeats,
         name: `${options.style} drums`,
         type: 'midi',
     });

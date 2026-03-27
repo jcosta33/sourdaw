@@ -31,18 +31,13 @@ export function splitClip(clipId: string, splitBeat: number): void {
             };
 
             const rightClip: Clip = {
+                ...clip,
                 id: getNextClipId(),
-                trackId: t.id,
                 name: `${clip.name} (R)`,
                 startBeat: adjustedSplitBeat,
                 endBeat: clip.endBeat,
-                type: clip.type,
                 fadeInBeats: 0,
                 fadeOutBeats: clip.fadeOutBeats,
-                gain: 1.0,
-                color: '',
-                locked: false,
-                muted: clip.muted,
             };
 
             return {

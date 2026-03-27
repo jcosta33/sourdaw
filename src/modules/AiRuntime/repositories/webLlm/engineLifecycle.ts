@@ -50,7 +50,7 @@ export function initWebLlmEngine(): Promise<WebLlmEngine> {
                     });
                 },
             },
-            { context_window_size: 4096 }
+            { context_window_size: 8192 }
         );
 
         engine = created;

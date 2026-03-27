@@ -69,9 +69,6 @@ function findActiveRecordingClip(trackId: string): string | null {
 }
 
 export function handleNoteOn(channel: number, note: number, velocity: number): void {
-    console.log(
-        `[MIDI] noteOn: note=${note} vel=${velocity} targetTrack=${targetTrackId} ctxState=${audioEngine.context.state}`
-    );
     if (velocity === 0) {
         handleNoteOff(channel, note);
         return;
@@ -300,10 +297,6 @@ export function onMidiMessage(event: MIDIMessageEvent): void {
     const status = data[0]!;
     const messageType = status & 0xf0;
     const channel = status & 0x0f;
-
-    console.log(
-        `[MIDI] message: type=0x${messageType.toString(16)} ch=${channel} data=[${Array.from(data).join(',')}]`
-    );
 
     switch (messageType) {
         case MIDI_NOTE_ON:

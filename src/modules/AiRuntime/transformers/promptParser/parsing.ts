@@ -44,6 +44,18 @@ export function isComplexPrompt(normalized: string): boolean {
     if (/\b(staccato|legato|filter|sweep|sidechain|ducking|pumping)\b/i.test(normalized)) {
         return true;
     }
+    // Session/song setup prompts — need LLM for creative decisions
+    if (/\b(start|setup|create|build)\b.*\b(session|song|project|beat)\b/i.test(normalized)) {
+        return true;
+    }
+    // Genre/style references that need creative interpretation
+    if (/\b(blues|jazz|rock|pop|hip.?hop|trap|edm|classical|folk|country|r&b|rnb|funk|reggae|metal|punk|ambient|lo.?fi)\b/i.test(normalized)) {
+        return true;
+    }
+    // "add tracks" without a number — needs LLM to decide how many and what kind
+    if (/\badd\s+tracks?\b/i.test(normalized) && !/\d+\s+tracks?/i.test(normalized)) {
+        return true;
+    }
     return false;
 }
 

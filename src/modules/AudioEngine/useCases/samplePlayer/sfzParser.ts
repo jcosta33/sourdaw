@@ -1,4 +1,5 @@
 import { type SampleRegion, type SFZInstrument, getInstrument, setInstrument } from './types';
+import { notifyUser } from '#/helpers/Notification/notifyUser';
 
 function fillDefaults(partial: Partial<SampleRegion>): SampleRegion {
     return {
@@ -131,6 +132,7 @@ export async function loadSFZSamples(instrumentId: string, ctx: AudioContext, ba
             newBuffers.set(sampleUrl, audioBuffer);
         } catch (error) {
             console.warn(`[SFZ] Failed to load sample: ${sampleUrl}`, error);
+            notifyUser(`Failed to load sample: ${sampleUrl}`, 'warning');
         }
     }
 

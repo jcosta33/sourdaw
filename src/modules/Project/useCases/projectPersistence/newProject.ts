@@ -40,6 +40,13 @@ export function newProject(name = 'Untitled Project'): void {
     });
 
     addTrackUseCase({ name: 'Master', kind: 'master' });
+
+    // Don't auto-select the master track — nothing should be selected on a fresh project
+    const currentTrackState = trackStore.value;
+    if (currentTrackState) {
+        trackStore.set({ ...currentTrackState, selectedTrackId: null });
+    }
+
     projectStore.set({
         name,
         createdAt: Date.now(),

@@ -2,6 +2,7 @@
  * Context menu for automation lane — curve type selection and shape insertion.
  */
 import { type ReactElement } from 'react';
+import { createPortal } from 'react-dom';
 import { cn } from '#/helpers/Styles/cn';
 import { type AutomationPoint, type AutomationCurveType } from '#/modules/Automation/useCases/automation/types';
 import { type AutomationShapeType } from '#/modules/Automation/useCases/automationShapes';
@@ -27,13 +28,13 @@ export const AutomationContextMenu = ({
     onCurveSelect,
     onShapeInsert,
     onClose,
-}: AutomationContextMenuProps): ReactElement => (
+}: AutomationContextMenuProps): ReactElement => createPortal(
     <>
         <div className="fixed inset-0 z-50" onClick={onClose} />
         <div
             className="fixed z-50 bg-popover border border-border rounded-md shadow-xl py-1 min-w-[160px]"
             style={{
-                left: x,
+                left: Math.min(x, window.innerWidth - 200),
                 ...(y > window.innerHeight - 300 ? { bottom: window.innerHeight - y } : { top: y }),
             }}
         >
@@ -71,5 +72,6 @@ export const AutomationContextMenu = ({
                 </button>
             ))}
         </div>
-    </>
+    </>,
+    document.body
 );
