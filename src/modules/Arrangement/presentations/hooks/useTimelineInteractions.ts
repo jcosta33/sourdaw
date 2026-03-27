@@ -1,11 +1,7 @@
-import { type MouseEvent, type DragEvent, useRef, useState, useCallback, useEffect } from 'react';
-import {
-    zoomTimeline,
-    scrollTimeline,
-    setAutoScroll,
-    setScrollY,
-    timelineViewStore,
-} from '../../stores/timelineViewStore';
+import { type MouseEvent, type DragEvent, useRef, useState, useCallback } from 'react';
+import { timelineViewStore, zoomTimeline } from '../../stores/timelineViewStore';
+import { useTimelineGestures } from './useTimelineGestures';
+import { useTimelineFileDrop } from './useTimelineFileDrop';
 import {
     setPlayheadFromClick,
     beginClipDrag,
@@ -15,46 +11,37 @@ import {
     hitTestClipEdge,
     snapToGrid,
     snapToGridOrClips,
-    getTrackAtY,
     type DragState,
-    hitTestAutomationSubLane,
 } from '../../useCases/timelineInteractions';
 import {
     selectTrack,
     setWorkspaceMode,
-    splitClip,
-    trimClipStart,
-    trimClipEnd,
     addClip,
     removeClip,
     moveClipPreview,
     moveClip,
-    decodeAudioFile,
-    importMidiFile,
-    addTrack,
-    addDevice,
-    addAutomationPoint,
-    addAutomationLane,
     removeAutomationPoint,
     batchAddAutomationPoints,
     pushUndoEntry,
     setLoopRegion,
+    trimClipStart,
+    trimClipEnd,
 } from '../../useCases/timelineViewActions';
 import { type AutomationPoint } from '#/modules/Arrangement/useCases/trackQueries';
-import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { toggleClipInSelection, selectClipWithFocus, clearClipSelection, setClipSelection, selectClip } from '#/modules/Workspace/useCases/togglePanel';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
-import { notifyUser } from '#/helpers/Notification/notifyUser';
-
-interface GestureEvent extends UIEvent {
-    readonly scale: number;
-    readonly rotation: number;
-}
-
-const RULER_HEIGHT = 0;
+import { getTrackAtY as getTrackAtYHelper } from '../../useCases/timelineInteractions';
+import {
+    toggleClipInSelection,
+    selectClipWithFocus,
+    clearClipSelection,
+    setClipSelection,
+    selectClip,
+} from '#/modules/Workspace/useCases/togglePanel';
+import { canvasXToBeat, getContentY } from '../helpers/timelineMouse';
+import { handleCutTool, handleDrawTool, handleAutomationTool, tryPaintSubLane, paintAutoDragPoint } from '../helpers/timelineTools';
 
 type ClipMenuState = { kind: 'clip'; x: number; y: number; clipId: string; trackId: string; splitBeat: number };
 type EmptyMenuState = { kind: 'empty'; x: number; y: number; trackId: string | null; beat: number };
@@ -72,67 +59,11 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
     );
     const rubberBandRef = useRef<{ startX: number; startY: number } | null>(null);
     const [hoverCursor, setHoverCursor] = useState<string | null>(null);
-    const [isDragOver, setIsDragOver] = useState(false);
-    const [isImporting, setIsImporting] = useState(false);
 
-    useEffect(() => {
-        const canvas = canvasRef.current;
-        if (!canvas) {
-            return;
-        }
-
-        let lastScale = 1;
-        const onGestureStart = (e: Event) => {
-            e.preventDefault();
-            lastScale = 1;
-        };
-        const onGestureChange = (e: Event) => {
-            e.preventDefault();
-            const ge = e as GestureEvent;
-            const delta = ge.scale - lastScale;
-            lastScale = ge.scale;
-            zoomTimeline(delta * 2);
-        };
-        const onGestureEnd = (e: Event) => e.preventDefault();
-
-        const onWheel = (e: WheelEvent) => {
-            e.preventDefault();
-            if (e.ctrlKey || e.metaKey) {
-                const isPinch = Math.abs(e.deltaY) < 10;
-                const zoomFactor = isPinch ? -e.deltaY * 0.02 : -e.deltaY * 0.005;
-                zoomTimeline(zoomFactor);
-            } else if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-                scrollTimeline(e.deltaX || e.deltaY);
-                const transport = transportStore.value;
-                if (transport?.isPlaying) {
-                    setAutoScroll(false);
-                }
-            } else {
-                const currentY = timelineViewStore.value?.scrollY ?? 0;
-                const trackState = trackStore.value;
-                const canvas = canvasRef.current;
-                const totalTrackH = (trackState?.tracks ?? []).reduce((s, t) => s + (t.height ?? 64), 0);
-                const viewH = canvas ? canvas.clientHeight : 600;
-                const maxY = Math.max(0, totalTrackH - viewH);
-                setScrollY(Math.min(maxY, Math.max(0, currentY + e.deltaY)));
-            }
-        };
-
-        canvas.addEventListener('gesturestart', onGestureStart, { passive: false });
-        canvas.addEventListener('gesturechange', onGestureChange, { passive: false });
-        canvas.addEventListener('gestureend', onGestureEnd, { passive: false });
-        canvas.addEventListener('wheel', onWheel, { passive: false });
-
-        return () => {
-            canvas.removeEventListener('gesturestart', onGestureStart);
-            canvas.removeEventListener('gesturechange', onGestureChange);
-            canvas.removeEventListener('gestureend', onGestureEnd);
-            canvas.removeEventListener('wheel', onWheel);
-        };
-    }, [canvasRef]);
+    useTimelineGestures(canvasRef);
 
     const getCanvasCoords = useCallback(
-        (e: MouseEvent<HTMLCanvasElement> | DragEvent<HTMLDivElement>): { x: number; y: number } => {
+        (e: MouseEvent<HTMLCanvasElement>): { x: number; y: number } => {
             const rect = canvasRef.current?.getBoundingClientRect();
             if (!rect) {
                 return { x: 0, y: 0 };
@@ -142,15 +73,26 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         [canvasRef]
     );
 
-    const getBeatFromX = useCallback((x: number): number => {
-        const viewState = timelineViewStore.value;
-        if (!viewState) {
-            return 0;
-        }
-        return x / viewState.pixelsPerBeat + viewState.scrollX / viewState.pixelsPerBeat;
-    }, []);
+    const getBeatFromX = useCallback((x: number): number => canvasXToBeat(x), []);
+
+    const { handleFileDrop, isDragOver, setIsDragOver, isImporting } = useTimelineFileDrop({
+        getCanvasCoords: useCallback(
+            (e: DragEvent<HTMLDivElement>): { x: number; y: number } => {
+                const rect = canvasRef.current?.getBoundingClientRect();
+                if (!rect) {
+                    return { x: 0, y: 0 };
+                }
+                return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+            },
+            [canvasRef]
+        ),
+        getBeatFromX,
+    });
 
     const getActiveTool = () => workspaceStore.value?.activeTool ?? 'select';
+    const getScrollY = () => timelineViewStore.value?.scrollY ?? 0;
+
+    // ── Mouse Down ────────────────────────────────────────────────────────────
 
     const handleMouseDown = useCallback(
         (e: MouseEvent<HTMLCanvasElement>) => {
@@ -158,154 +100,44 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                 return;
             }
             const { x, y } = getCanvasCoords(e);
+            const beat = getBeatFromX(x);
             const tool = getActiveTool();
 
-            // Check sub-lane click when automation is visible (any tool)
-            const wsState = workspaceStore.value;
-            if (wsState && wsState.automationVisibility !== 'hidden') {
-                const subLaneHit = hitTestAutomationSubLane(x, y);
-                if (subLaneHit) {
-                    const point: AutomationPoint = {
-                        beat: subLaneHit.beat,
-                        value: subLaneHit.value,
-                        curve: 'linear',
-                        tension: 0,
-                    };
-                    addAutomationPoint(subLaneHit.laneId, point);
-                    autoDragRef.current = { laneId: subLaneHit.laneId, trackId: subLaneHit.trackId, points: [point] };
-                    selectTrack(subLaneHit.trackId);
+            // Sub-lane paint when automation panel is visible (any tool)
+            if (workspaceStore.value?.automationVisibility !== 'hidden') {
+                if (tryPaintSubLane(x, y, autoDragRef)) {
                     return;
                 }
             }
 
             if (tool === 'cut') {
-                const hit = hitTestClip(x, y);
-                if (hit) {
-                    const beat = getBeatFromX(x);
-                    const state = trackStore.value;
-                    const origClip = state?.tracks.flatMap((t) => t.clips).find((c) => c.id === hit.clipId);
-                    if (origClip) {
-                        const savedClip = { ...origClip };
-                        splitClip(hit.clipId, beat);
-                        const afterState = trackStore.value;
-                        const newClips =
-                            afterState?.tracks
-                                .flatMap((t) => t.clips)
-                                .filter(
-                                    (c) =>
-                                        c.id !== hit.clipId &&
-                                        (c.startBeat === savedClip.startBeat || c.startBeat === beat) &&
-                                        c.endBeat <= savedClip.endBeat &&
-                                        c.startBeat >= savedClip.startBeat
-                                ) ?? [];
-                        const newClipIds = newClips.map((c) => c.id);
-                        pushUndoEntry(
-                            'Split clip',
-                            () => {
-                                for (const id of newClipIds) {
-                                    removeClip(id);
-                                }
-                                addClip({
-                                    trackId: savedClip.trackId,
-                                    startBeat: savedClip.startBeat,
-                                    endBeat: savedClip.endBeat,
-                                    name: savedClip.name,
-                                    type: savedClip.type,
-                                    audioBufferId: savedClip.audioBufferId,
-                                });
-                            },
-                            () => splitClip(hit.clipId, beat)
-                        );
-                    }
-                }
+                handleCutTool(x, y, snapToGrid(beat));
                 return;
             }
-
             if (tool === 'draw') {
-                const trackId = hitTestTrack(y);
-                if (trackId) {
-                    const beat = getBeatFromX(x);
-                    const track = trackStore.value?.tracks.find((t) => t.id === trackId);
-                    const clipType = track?.kind === 'midi' ? 'midi' : 'audio';
-                    drawDragRef.current = {
-                        trackId,
-                        startBeat: Math.floor(beat),
-                        clipType,
-                    };
-                    selectTrack(trackId);
-                }
+                handleDrawTool(x, y, beat, drawDragRef);
                 return;
             }
-
             if (tool === 'automation') {
-                // Check sub-lane first
-                const subLaneHit = hitTestAutomationSubLane(x, y);
-                if (subLaneHit) {
-                    const point: AutomationPoint = {
-                        beat: subLaneHit.beat,
-                        value: subLaneHit.value,
-                        curve: 'linear',
-                        tension: 0,
-                    };
-                    addAutomationPoint(subLaneHit.laneId, point);
-                    autoDragRef.current = { laneId: subLaneHit.laneId, trackId: subLaneHit.trackId, points: [point] };
-                    selectTrack(subLaneHit.trackId);
-                    return;
-                }
-
-                const trackId = hitTestTrack(y);
-                if (trackId) {
-                    const beat = getBeatFromX(x);
-                    const contentY = y - RULER_HEIGHT + (timelineViewStore.value?.scrollY ?? 0);
-                    const model = buildTimelineRenderModel();
-                    const tracksToTest = model?.tracks ?? [];
-                    const trackHit = getTrackAtY(tracksToTest, contentY);
-                    const trackHeight = trackHit ? (tracksToTest[trackHit.index]?.height ?? 64) : 64;
-                    const trackOffset = trackHit
-                        ? tracksToTest.slice(0, trackHit.index).reduce((sum, t) => sum + (t.height ?? 64), 0)
-                        : 0;
-                    const trackLocalY = contentY - trackOffset;
-                    const value = Math.max(0, Math.min(1, 1 - trackLocalY / trackHeight));
-
-                    const autoState = automationStore.value;
-                    let lane = autoState?.lanes.find((l) => l.trackId === trackId && l.parameterId === 'gain');
-                    if (!lane) {
-                        addAutomationLane(trackId, 'gain', 'Gain');
-                        lane = automationStore.value?.lanes.find(
-                            (l) => l.trackId === trackId && l.parameterId === 'gain'
-                        );
-                    }
-                    if (lane) {
-                        const point: AutomationPoint = { beat, value, curve: 'linear', tension: 0 };
-                        addAutomationPoint(lane.id, point);
-                        autoDragRef.current = { laneId: lane.id, trackId, points: [point] };
-                    }
-                    selectTrack(trackId);
-                }
+                handleAutomationTool(x, y, beat, getScrollY(), autoDragRef);
                 return;
             }
 
+            // ── Select tool: clip hit → select + maybe begin drag ──
             const clipHit = hitTestClip(x, y);
             if (clipHit) {
                 selectTrack(clipHit.trackId);
-                const ws = workspaceStore.value;
-                if (ws) {
-                    if (e.shiftKey || e.metaKey) {
-                        toggleClipInSelection(clipHit.clipId);
-                    } else {
-                        selectClipWithFocus(clipHit.clipId);
-                    }
+                if (e.shiftKey || e.metaKey) {
+                    toggleClipInSelection(clipHit.clipId);
+                } else {
+                    selectClipWithFocus(clipHit.clipId);
                 }
             }
 
             const edgeHit = hitTestClipEdge(x, y);
             let dragMode: 'move' | 'stretch' | 'trim-start' = tool === 'stretch' ? 'stretch' : 'move';
             if (edgeHit && tool === 'select') {
-                if (edgeHit.edge === 'left') {
-                    dragMode = 'trim-start';
-                } else if (edgeHit.edge === 'right') {
-                    dragMode = 'stretch';
-                }
+                dragMode = edgeHit.edge === 'left' ? 'trim-start' : 'stretch';
             }
 
             const drag = beginClipDrag(x, y, dragMode);
@@ -315,51 +147,36 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             }
 
             if (!clipHit) {
-                const trackId = hitTestTrack(y);
-                selectTrack(trackId);
-                const ws = workspaceStore.value;
-                if (ws) {
-                    clearClipSelection();
-                }
+                selectTrack(hitTestTrack(y));
+                clearClipSelection();
                 rubberBandRef.current = { startX: x, startY: y };
                 setPlayheadFromClick(x);
-                return;
             }
         },
         [getCanvasCoords, getBeatFromX]
     );
 
+    // ── Mouse Move ────────────────────────────────────────────────────────────
+
     const handleMouseMove = useCallback(
         (e: MouseEvent<HTMLCanvasElement>) => {
-            if (
-                !dragState &&
-                !loopDragRef.current &&
-                !autoDragRef.current &&
-                !drawDragRef.current &&
-                !rubberBandRef.current
-            ) {
-                const tool = getActiveTool();
-                if (tool === 'select') {
-                    const { x, y } = getCanvasCoords(e);
+            const { x, y } = getCanvasCoords(e);
+
+            // Hover cursor (no active drag)
+            if (!dragState && !loopDragRef.current && !autoDragRef.current && !drawDragRef.current && !rubberBandRef.current) {
+                if (getActiveTool() === 'select') {
                     const edgeHit = hitTestClipEdge(x, y);
-                    if (edgeHit && (edgeHit.edge === 'left' || edgeHit.edge === 'right')) {
-                        setHoverCursor('ew-resize');
-                    } else {
-                        setHoverCursor(null);
-                    }
+                    setHoverCursor(edgeHit ? 'ew-resize' : null);
                 } else {
                     setHoverCursor(null);
                 }
             }
 
             if (loopDragRef.current) {
-                const { x } = getCanvasCoords(e);
                 const currentBeat = getBeatFromX(x);
-                const startBeat = loopDragRef.current.startBeat;
-                const Math_min = Math.min;
-                const Math_max = Math.max;
-                const loopStart = Math_min(startBeat, currentBeat);
-                const loopEnd = Math_max(startBeat, currentBeat);
+                const { startBeat } = loopDragRef.current;
+                const loopStart = Math.min(startBeat, currentBeat);
+                const loopEnd = Math.max(startBeat, currentBeat);
                 if (loopEnd - loopStart > 0.25) {
                     setLoopRegion(Math.floor(loopStart), Math.ceil(loopEnd));
                     const state = transportStore.value;
@@ -371,25 +188,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             }
 
             if (autoDragRef.current) {
-                const { x, y } = getCanvasCoords(e);
-                const beat = getBeatFromX(x);
-                const contentY = y - RULER_HEIGHT + (timelineViewStore.value?.scrollY ?? 0);
-                const model = buildTimelineRenderModel();
-                const tracksToTest = model?.tracks ?? [];
-                const trackHit = getTrackAtY(tracksToTest, contentY);
-                const trackHeight = trackHit ? (tracksToTest[trackHit.index]?.height ?? 64) : 64;
-                const trackOffset = trackHit
-                    ? tracksToTest.slice(0, trackHit.index).reduce((sum, t) => sum + (t.height ?? 64), 0)
-                    : 0;
-                const trackLocalY = contentY - trackOffset;
-                const value = Math.max(0, Math.min(1, 1 - trackLocalY / trackHeight));
-
-                const lastPoint = autoDragRef.current.points[autoDragRef.current.points.length - 1];
-                if (!lastPoint || Math.abs(beat - lastPoint.beat) >= 0.1) {
-                    const point: AutomationPoint = { beat, value, curve: 'linear', tension: 0 };
-                    autoDragRef.current.points.push(point);
-                    addAutomationPoint(autoDragRef.current.laneId, point);
-                }
+                paintAutoDragPoint(x, y, getScrollY(), autoDragRef);
                 return;
             }
 
@@ -398,16 +197,9 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             }
 
             if (rubberBandRef.current) {
-                const { x: mx, y: my } = getCanvasCoords(e);
-                const dx = Math.abs(mx - rubberBandRef.current.startX);
-                const dy = Math.abs(my - rubberBandRef.current.startY);
-                if (dx > 4 || dy > 4) {
-                    setRubberBand({
-                        startX: rubberBandRef.current.startX,
-                        startY: rubberBandRef.current.startY,
-                        endX: mx,
-                        endY: my,
-                    });
+                const { startX, startY } = rubberBandRef.current;
+                if (Math.abs(x - startX) > 4 || Math.abs(y - startY) > 4) {
+                    setRubberBand({ startX, startY, endX: x, endY: y });
                 }
                 return;
             }
@@ -415,47 +207,38 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             if (!dragState) {
                 return;
             }
-            const canvas = canvasRef.current;
-            if (canvas) {
-                canvas.style.cursor = 'grabbing';
-            }
-            const { x: mx, y: my } = getCanvasCoords(e);
-            const viewState = timelineViewStore.value;
-            if (!viewState) {
-                return;
+            if (canvasRef.current) {
+                canvasRef.current.style.cursor = 'grabbing';
             }
 
-            const viewportStartBeat = viewState.scrollX / viewState.pixelsPerBeat;
-            const rawBeat = mx / viewState.pixelsPerBeat + viewportStartBeat;
+            const view = timelineViewStore.value;
+            if (!view) {
+                return;
+            }
+            const rawBeat = x / view.pixelsPerBeat + view.scrollX / view.pixelsPerBeat;
 
             if (dragState.mode === 'trim-start') {
-                const snappedBeat = Math.min(dragState.endBeat - 0.25, snapToGrid(rawBeat));
-                trimClipStart(dragState.clipId, Math.max(0, snappedBeat));
+                trimClipStart(dragState.clipId, Math.max(0, Math.min(dragState.endBeat - 0.25, snapToGrid(rawBeat))));
                 return;
             }
-
             if (dragState.mode === 'stretch') {
-                const snappedBeat = Math.max(dragState.startBeat + 0.25, snapToGrid(rawBeat));
-                trimClipEnd(dragState.clipId, snappedBeat);
+                trimClipEnd(dragState.clipId, Math.max(dragState.startBeat + 0.25, snapToGrid(rawBeat)));
                 return;
             }
 
-            const contentY = my - RULER_HEIGHT + (timelineViewStore.value?.scrollY ?? 0);
+            const contentY = getContentY(y, getScrollY());
             const model = buildTimelineRenderModel();
-            const tracksToTest = model?.tracks;
-            if (!tracksToTest) {
+            const tracks = model?.tracks;
+            if (!tracks) {
                 return;
             }
-            const trackHit = getTrackAtY(tracksToTest, Math.max(0, contentY));
-            const targetTrack = trackHit ? tracksToTest[trackHit.index] : null;
+            const trackHit = getTrackAtYHelper(tracks, Math.max(0, contentY));
+            const targetTrack = trackHit ? tracks[trackHit.index] : null;
             const snapTrackId = targetTrack?.id ?? dragState.sourceTrackId;
-            const snappedBeat = Math.max(
-                0,
-                snapToGridOrClips(rawBeat - dragState.offsetBeat, snapTrackId, dragState.clipId)
-            );
+            const snappedBeat = Math.max(0, snapToGridOrClips(rawBeat - dragState.offsetBeat, snapTrackId, dragState.clipId));
+
             if (targetTrack) {
-                const ws = workspaceStore.value;
-                const selectedIds = ws?.selectedClipIds ?? [];
+                const selectedIds = workspaceStore.value?.selectedClipIds ?? [];
                 if (selectedIds.length > 1 && selectedIds.includes(dragState.clipId)) {
                     const state = trackStore.value;
                     if (state) {
@@ -465,11 +248,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                             for (const id of selectedIds) {
                                 const clip = state.tracks.flatMap((t) => t.clips).find((c) => c.id === id);
                                 if (clip) {
-                                    moveClipPreview(
-                                        id,
-                                        targetTrack.id,
-                                        Math.max(0, snapToGridOrClips(clip.startBeat + beatDelta, targetTrack.id, id))
-                                    );
+                                    moveClipPreview(id, targetTrack.id, Math.max(0, snapToGridOrClips(clip.startBeat + beatDelta, targetTrack.id, id)));
                                 }
                             }
                         }
@@ -481,6 +260,8 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         },
         [dragState, getCanvasCoords, getBeatFromX, canvasRef]
     );
+
+    // ── Mouse Up ──────────────────────────────────────────────────────────────
 
     const handleMouseUp = useCallback(
         (e: MouseEvent<HTMLCanvasElement>) => {
@@ -495,14 +276,8 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                     const savedPoints = drawnPoints.map((p) => ({ ...p }));
                     pushUndoEntry(
                         `Draw ${savedPoints.length} automation point${savedPoints.length > 1 ? 's' : ''}`,
-                        () => {
-                            for (const p of savedPoints) {
-                                removeAutomationPoint(laneId, p.beat);
-                            }
-                        },
-                        () => {
-                            batchAddAutomationPoints(laneId, savedPoints);
-                        }
+                        () => { for (const p of savedPoints) { removeAutomationPoint(laneId, p.beat); } },
+                        () => { batchAddAutomationPoints(laneId, savedPoints); }
                     );
                 }
                 autoDragRef.current = null;
@@ -512,32 +287,16 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             if (drawDragRef.current) {
                 const { x } = getCanvasCoords(e);
                 const endBeat = Math.ceil(getBeatFromX(x));
-                const startBeat = drawDragRef.current.startBeat;
+                const { startBeat, trackId: drawTrackId, clipType: drawClipType } = drawDragRef.current;
                 const s = Math.min(startBeat, endBeat);
-                const en = Math.max(startBeat, endBeat);
-                const length = Math.max(1, en - s);
-                const drawTrackId = drawDragRef.current.trackId;
-                const drawClipType = drawDragRef.current.clipType;
-                const clip = addClip({
-                    trackId: drawTrackId,
-                    startBeat: s,
-                    endBeat: s + length,
-                    name: `Clip ${s}`,
-                    type: drawClipType,
-                });
+                const length = Math.max(1, Math.max(startBeat, endBeat) - s);
+                const clip = addClip({ trackId: drawTrackId, startBeat: s, endBeat: s + length, name: `Clip ${s}`, type: drawClipType });
                 if (clip) {
                     const clipId = clip.id;
                     pushUndoEntry(
                         'Draw clip',
                         () => removeClip(clipId),
-                        () =>
-                            addClip({
-                                trackId: drawTrackId,
-                                startBeat: s,
-                                endBeat: s + length,
-                                name: `Clip ${s}`,
-                                type: drawClipType,
-                            })
+                        () => addClip({ trackId: drawTrackId, startBeat: s, endBeat: s + length, name: `Clip ${s}`, type: drawClipType })
                     );
                 }
                 drawDragRef.current = null;
@@ -545,41 +304,31 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             }
 
             if (rubberBandRef.current && rubberBand) {
+                const view = timelineViewStore.value;
                 const model = buildTimelineRenderModel();
-                const viewState = timelineViewStore.value;
-                if (viewState && model) {
+                if (view && model) {
                     const left = Math.min(rubberBand.startX, rubberBand.endX);
                     const right = Math.max(rubberBand.startX, rubberBand.endX);
-                    const sY = viewState.scrollY ?? 0;
-                    const top = Math.min(rubberBand.startY, rubberBand.endY) - RULER_HEIGHT + sY;
-                    const bottom = Math.max(rubberBand.startY, rubberBand.endY) - RULER_HEIGHT + sY;
-
-                    const viewportStartBeat = viewState.scrollX / viewState.pixelsPerBeat;
-                    const leftBeat = left / viewState.pixelsPerBeat + viewportStartBeat;
-                    const rightBeat = right / viewState.pixelsPerBeat + viewportStartBeat;
+                    const sY = view.scrollY ?? 0;
+                    const top = Math.min(rubberBand.startY, rubberBand.endY) + sY;
+                    const bottom = Math.max(rubberBand.startY, rubberBand.endY) + sY;
+                    const leftBeat = left / view.pixelsPerBeat + view.scrollX / view.pixelsPerBeat;
+                    const rightBeat = right / view.pixelsPerBeat + view.scrollX / view.pixelsPerBeat;
 
                     const hitIds: string[] = [];
                     let trackYOffset = 0;
-
-                    for (let ti = 0; ti < model.tracks.length; ti++) {
-                        const perTrackHeight = model.tracks[ti]!.height;
-                        const trackTop = trackYOffset;
-                        const trackBottom = trackYOffset + perTrackHeight;
-                        trackYOffset += perTrackHeight;
-                        if (trackBottom < top || trackTop > bottom) {
-                            continue;
-                        }
-                        for (const clip of model.tracks[ti]!.clips) {
-                            if (clip.endBeat > leftBeat && clip.startBeat < rightBeat) {
-                                hitIds.push(clip.id);
+                    for (const track of model.tracks) {
+                        const h = track.height;
+                        if (!(trackYOffset + h < top || trackYOffset > bottom)) {
+                            for (const clip of track.clips) {
+                                if (clip.endBeat > leftBeat && clip.startBeat < rightBeat) {
+                                    hitIds.push(clip.id);
+                                }
                             }
                         }
+                        trackYOffset += h;
                     }
-
-                    const ws = workspaceStore.value;
-                    if (ws) {
-                        setClipSelection(hitIds);
-                    }
+                    setClipSelection(hitIds);
                 }
                 rubberBandRef.current = null;
                 setRubberBand(null);
@@ -590,109 +339,66 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
 
             if (dragState) {
                 const { x, y } = getCanvasCoords(e);
-                const origStart = dragState.startBeat;
-                const origEnd = dragState.endBeat;
-                const origTrackId = dragState.sourceTrackId;
-                const dragClipId = dragState.clipId;
-                const dragMode = dragState.mode;
-
+                const { startBeat: origStart, endBeat: origEnd, sourceTrackId: origTrackId, clipId: dragClipId, mode: dragMode } = dragState;
                 commitClipDrag(dragState, x, y);
 
                 const afterClip = trackStore.value?.tracks.flatMap((t) => t.clips).find((c) => c.id === dragClipId);
                 if (afterClip) {
-                    const newStart = afterClip.startBeat;
-                    const newEnd = afterClip.endBeat;
-                    const newTrackId = afterClip.trackId;
+                    const { startBeat: newStart, endBeat: newEnd, trackId: newTrackId } = afterClip;
                     const changed = newStart !== origStart || newEnd !== origEnd || newTrackId !== origTrackId;
-
                     if (changed) {
                         if (dragMode === 'move') {
-                            pushUndoEntry(
-                                'Move clip',
-                                () => moveClip(dragClipId, origTrackId, origStart),
-                                () => moveClip(dragClipId, newTrackId, newStart)
-                            );
+                            pushUndoEntry('Move clip', () => moveClip(dragClipId, origTrackId, origStart), () => moveClip(dragClipId, newTrackId, newStart));
                         } else if (dragMode === 'trim-start') {
-                            pushUndoEntry(
-                                'Trim clip start',
-                                () => trimClipStart(dragClipId, origStart),
-                                () => trimClipStart(dragClipId, newStart)
-                            );
+                            pushUndoEntry('Trim clip start', () => trimClipStart(dragClipId, origStart), () => trimClipStart(dragClipId, newStart));
                         } else if (dragMode === 'stretch') {
-                            pushUndoEntry(
-                                'Trim clip end',
-                                () => trimClipEnd(dragClipId, origEnd),
-                                () => trimClipEnd(dragClipId, newEnd)
-                            );
+                            pushUndoEntry('Trim clip end', () => trimClipEnd(dragClipId, origEnd), () => trimClipEnd(dragClipId, newEnd));
                         }
                     }
                 }
-
                 setDragState(null);
-                const canvas = canvasRef.current;
-                if (canvas) {
-                    canvas.style.cursor = '';
+                if (canvasRef.current) {
+                    canvasRef.current.style.cursor = '';
                 }
             }
         },
         [dragState, rubberBand, getCanvasCoords, getBeatFromX, canvasRef]
     );
 
+    // ── Double Click ──────────────────────────────────────────────────────────
+
     const handleDoubleClick = useCallback(
         (e: MouseEvent<HTMLCanvasElement>) => {
             const { x, y } = getCanvasCoords(e);
-            if (y < RULER_HEIGHT) {
-                return;
-            }
             const hit = hitTestClip(x, y);
             if (hit) {
                 selectTrack(hit.trackId);
-                const ws = workspaceStore.value;
-                if (ws) {
-                    selectClip(hit.clipId);
-                }
+                selectClip(hit.clipId);
                 setWorkspaceMode('clip');
             }
         },
         [getCanvasCoords]
     );
 
+    // ── Context Menu ──────────────────────────────────────────────────────────
+
     const handleContextMenu = useCallback(
         (e: MouseEvent<HTMLCanvasElement>) => {
             e.preventDefault();
             const { x, y } = getCanvasCoords(e);
-            if (y < RULER_HEIGHT) {
-                return;
-            }
-
             const hit = hitTestClip(x, y);
             if (hit) {
                 selectTrack(hit.trackId);
-                const ws = workspaceStore.value;
-                if (ws) {
-                    selectClip(hit.clipId);
-                }
-                setContextMenu({
-                    kind: 'clip',
-                    x: e.clientX,
-                    y: e.clientY,
-                    clipId: hit.clipId,
-                    trackId: hit.trackId,
-                    splitBeat: getBeatFromX(x),
-                });
+                selectClip(hit.clipId);
+                setContextMenu({ kind: 'clip', x: e.clientX, y: e.clientY, clipId: hit.clipId, trackId: hit.trackId, splitBeat: getBeatFromX(x) });
             } else {
-                const trackId = hitTestTrack(y);
-                setContextMenu({
-                    kind: 'empty',
-                    x: e.clientX,
-                    y: e.clientY,
-                    trackId,
-                    beat: Math.floor(getBeatFromX(x)),
-                });
+                setContextMenu({ kind: 'empty', x: e.clientX, y: e.clientY, trackId: hitTestTrack(y), beat: Math.floor(getBeatFromX(x)) });
             }
         },
         [getCanvasCoords, getBeatFromX]
     );
+
+    // ── Pointer (pinch-zoom) ──────────────────────────────────────────────────
 
     const handlePointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
         pointersRef.current.set(e.pointerId, e.nativeEvent);
@@ -702,24 +408,14 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         if (pointersRef.current.size === 2) {
             const prev = pointersRef.current.get(e.pointerId);
             pointersRef.current.set(e.pointerId, e.nativeEvent);
-            if (!prev) {
-                return;
-            }
-
+            if (!prev) return;
             const [p1, p2] = [...pointersRef.current.values()];
-            if (!p1 || !p2) {
-                return;
-            }
-
+            if (!p1 || !p2) return;
             const prevOther = [...pointersRef.current.entries()].find(([id]) => id !== e.pointerId)?.[1];
-            if (!prevOther) {
-                return;
-            }
-
+            if (!prevOther) return;
             const prevDist = Math.hypot(prev.clientX - prevOther.clientX, prev.clientY - prevOther.clientY);
             const currDist = Math.hypot(p1.clientX - p2.clientX, p1.clientY - p2.clientY);
             const delta = currDist - prevDist;
-
             if (Math.abs(delta) > 1) {
                 zoomTimeline(delta > 0 ? 2 : -2);
             }
@@ -732,150 +428,16 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         pointersRef.current.delete(e.pointerId);
     }, []);
 
-    const handleFileDrop = useCallback(
-        async (e: DragEvent<HTMLDivElement>) => {
-            e.preventDefault();
-            setIsDragOver(false);
-
-            const { x, y } = getCanvasCoords(e);
-            const trackHit = hitTestTrack(y);
-            const beat = Math.max(0, Math.floor(getBeatFromX(x)));
-
-            const sampleData = e.dataTransfer.getData('application/x-webdaw-sample');
-            if (sampleData) {
-                try {
-                    const sample = JSON.parse(sampleData) as {
-                        name: string;
-                        id: string;
-                        duration: string;
-                        durationSeconds?: number;
-                        audioBufferId?: string;
-                    };
-                    let targetTrackId = trackHit ?? trackStore.value?.selectedTrackId;
-                    const sampleTargetTrack = targetTrackId
-                        ? trackStore.value?.tracks.find((t) => t.id === targetTrackId)
-                        : null;
-                    if (!targetTrackId || !sampleTargetTrack || sampleTargetTrack.kind !== 'audio') {
-                        const newTrack = addTrack({ name: sample.name, kind: 'audio' });
-                        if (!newTrack) {
-                            return;
-                        }
-                        targetTrackId = newTrack.id;
-                    }
-                    const durationBeats = sample.durationSeconds
-                        ? Math.max(1, Math.ceil(sample.durationSeconds * 2))
-                        : sample.duration.includes('bar')
-                          ? parseInt(sample.duration) * 4
-                          : 4;
-                    addClip({
-                        trackId: targetTrackId,
-                        startBeat: beat,
-                        endBeat: beat + durationBeats,
-                        name: sample.name,
-                        type: 'audio',
-                        audioBufferId: sample.audioBufferId,
-                    });
-                } catch {
-                    /* ignored */
-                }
-                return;
-            }
-
-            const pluginData = e.dataTransfer.getData('application/x-webdaw-plugin');
-            if (pluginData) {
-                try {
-                    const plugin = JSON.parse(pluginData) as { name: string; id: string };
-                    const targetTrackId = trackHit ?? trackStore.value?.selectedTrackId;
-                    if (targetTrackId) {
-                        addDevice(targetTrackId, plugin.name);
-                    }
-                } catch {
-                    /* ignored */
-                }
-                return;
-            }
-
-            const files = Array.from(e.dataTransfer.files);
-            if (files.length === 0) {
-                return;
-            }
-
-            setIsImporting(true);
-            let currentBeat = beat;
-            try {
-                for (const file of files) {
-                    const isMidiFile =
-                        file.type === 'audio/midi' ||
-                        file.type === 'audio/x-midi' ||
-                        ['mid', 'midi'].includes(file.name.toLowerCase().split('.').pop() ?? '');
-                    const isAudioFile =
-                        file.type.startsWith('audio/') ||
-                        ['wav', 'mp3', 'ogg', 'flac', 'aac', 'm4a', 'webm', 'aiff', 'aif'].includes(
-                            file.name.toLowerCase().split('.').pop() ?? ''
-                        );
-
-                    if (isMidiFile) {
-                        await importMidiFile(file);
-                        continue;
-                    }
-
-                    if (!isAudioFile) {
-                        continue;
-                    }
-                    try {
-                        const { id: bufferId, buffer } = await decodeAudioFile(file);
-                        const model = buildTimelineRenderModel();
-                        const durationBeats = Math.max(4, Math.ceil((buffer.duration / 60) * model.tempo));
-
-                        let targetTrackId = trackHit ?? trackStore.value?.selectedTrackId;
-                        const targetTrack = targetTrackId
-                            ? trackStore.value?.tracks.find((t) => t.id === targetTrackId)
-                            : null;
-                        if (!targetTrackId || !targetTrack || targetTrack.kind !== 'audio') {
-                            const newTrack = addTrack({ name: file.name.replace(/\.[^.]+$/, ''), kind: 'audio' });
-                            if (!newTrack) {
-                                return;
-                            }
-                            targetTrackId = newTrack.id;
-                        }
-
-                        addClip({
-                            trackId: targetTrackId,
-                            startBeat: currentBeat,
-                            endBeat: currentBeat + durationBeats,
-                            name: file.name.replace(/\.[^.]+$/, ''),
-                            type: 'audio',
-                            audioBufferId: bufferId,
-                        });
-
-                        currentBeat += durationBeats;
-                    } catch {
-                        notifyUser(`Failed to import "${file.name}" — unsupported format or corrupt file`, 'error');
-                    }
-                }
-            } finally {
-                setIsImporting(false);
-            }
-        },
-        [getCanvasCoords, getBeatFromX]
-    );
+    // ── Cursor ────────────────────────────────────────────────────────────────
 
     const getCursor = useCallback((): string => {
-        if (hoverCursor) {
-            return hoverCursor;
-        }
-        const tool = getActiveTool();
-        switch (tool) {
-            case 'cut':
-                return 'crosshair';
-            case 'draw':
-                return 'cell';
-            case 'automation':
-                return 'crosshair';
-            case 'stretch':
-                return 'ew-resize';
-            default:
-                return 'default';
+        if (hoverCursor) return hoverCursor;
+        switch (getActiveTool()) {
+            case 'cut': return 'crosshair';
+            case 'draw': return 'cell';
+            case 'automation': return 'crosshair';
+            case 'stretch': return 'ew-resize';
+            default: return 'default';
         }
     }, [hoverCursor]);
 

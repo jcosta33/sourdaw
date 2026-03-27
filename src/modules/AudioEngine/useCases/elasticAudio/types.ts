@@ -6,7 +6,11 @@ import { Logger } from '#/helpers/Logger/Logger';
 import { Store } from '#/helpers/Store/Store';
 import { type ElasticAudioState } from '#/modules/AudioEngine/models/ElasticAudioTypes';
 
-export type { TransientMarker, ElasticAudioMode, ElasticAudioState } from '#/modules/AudioEngine/models/ElasticAudioTypes';
+export type {
+    TransientMarker,
+    ElasticAudioMode,
+    ElasticAudioState,
+} from '#/modules/AudioEngine/models/ElasticAudioTypes';
 
 const logger = Container.getInstance().get(Logger);
 

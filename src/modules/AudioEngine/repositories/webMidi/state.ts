@@ -59,10 +59,24 @@ export function getSnapshot(): WebMidiState {
 }
 
 // Setters for module-level state
-export function setMidiAccess(access: MIDIAccess | null): void { midiAccess = access; }
-export function setActiveInput(input: MIDIInput | null): void { activeInput = input; }
-export function setTargetTrackId(id: string | null): void { targetTrackId = id; }
-export function setMpeEnabledInternal(enabled: boolean): void { mpeEnabled = enabled; }
-export function getMpeEnabledInternal(): boolean { return mpeEnabled; }
-export function setTauriMode(enabled: boolean): void { tauriMode = enabled; }
-export function setTauriEventUnlisten(fn: (() => void) | null): void { tauriEventUnlisten = fn; }
+export function setMidiAccess(access: MIDIAccess | null): void {
+    midiAccess = access;
+}
+export function setActiveInput(input: MIDIInput | null): void {
+    activeInput = input;
+}
+export function setTargetTrackId(id: string | null): void {
+    targetTrackId = id;
+}
+export function setMpeEnabledInternal(enabled: boolean): void {
+    mpeEnabled = enabled;
+}
+export function getMpeEnabledInternal(): boolean {
+    return mpeEnabled;
+}
+export function setTauriMode(enabled: boolean): void {
+    tauriMode = enabled;
+}
+export function setTauriEventUnlisten(fn: (() => void) | null): void {
+    tauriEventUnlisten = fn;
+}

@@ -6,7 +6,7 @@
  * the Faust AudioWorklet pipeline — not the basic builtin-synth.
  */
 
-import { type SoundPreset, type DevicePreset } from './SoundPreset';
+import { type SoundPreset, type DevicePreset } from '../../models/SoundPreset';
 
 const AUTHOR = 'Sourdaw';
 

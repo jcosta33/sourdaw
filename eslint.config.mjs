@@ -1,5 +1,5 @@
 // @ts-check
-// Standalone ESLint config for Webdaw — React 19 + Compiler, TypeScript, Tailwind v4.
+// Standalone ESLint config for Sourdaw — React 19 + Compiler, TypeScript, Tailwind v4.
 // Cherry-picked from @frontify/eslint-config-{basic,react}, with broken plugins removed
 // and rules tuned for a DAW application.
 
@@ -74,10 +74,14 @@ export default defineConfig(
             // ── Code style (enforced by @stylistic or base) ──────────────────
             '@stylistic/linebreak-style': ['error', 'unix'],
             '@stylistic/eol-last': ['error', 'always'],
-            '@stylistic/spaced-comment': ['error', 'always', {
-                line: { markers: ['/'], exceptions: ['/', '#'] },
-                block: { markers: ['!'], exceptions: ['*'], balanced: true },
-            }],
+            '@stylistic/spaced-comment': [
+                'error',
+                'always',
+                {
+                    line: { markers: ['/'], exceptions: ['/', '#'] },
+                    block: { markers: ['!'], exceptions: ['*'], balanced: true },
+                },
+            ],
             'prefer-template': 'error',
             'no-var': 'error',
             eqeqeq: 'error',
@@ -158,15 +162,21 @@ export default defineConfig(
             'require-await': 'off',
             '@typescript-eslint/require-await': 'warn',
             '@typescript-eslint/restrict-plus-operands': 'error',
-            '@typescript-eslint/restrict-template-expressions': ['warn', {
-                allowAny: false,
-                allowBoolean: true,
-                allowNullish: false,
-                allowNumber: true,
-                allowRegExp: true,
-            }],
+            '@typescript-eslint/restrict-template-expressions': [
+                'warn',
+                {
+                    allowAny: false,
+                    allowBoolean: true,
+                    allowNullish: false,
+                    allowNumber: true,
+                    allowRegExp: true,
+                },
+            ],
             '@typescript-eslint/unbound-method': 'off',
-            '@typescript-eslint/consistent-type-imports': ['warn', { prefer: 'type-imports', fixStyle: 'inline-type-imports' }],
+            '@typescript-eslint/consistent-type-imports': [
+                'warn',
+                { prefer: 'type-imports', fixStyle: 'inline-type-imports' },
+            ],
             '@typescript-eslint/no-misused-promises': ['warn', { checksVoidReturn: { attributes: false } }],
             '@typescript-eslint/no-floating-promises': 'warn',
             '@typescript-eslint/prefer-promise-reject-errors': 'warn',
@@ -199,10 +209,13 @@ export default defineConfig(
 
             // DAW uses <label> for presentational parameter names (mixer knobs, sliders).
             // These are visual labels, not form labels. Warn to track but don't block.
-            'jsx-a11y-x/label-has-associated-control': ['warn', {
-                controlComponents: ['Slider', 'Select', 'Switch', 'Input', 'Knob', 'Checkbox', 'SelectTrigger'],
-                depth: 3,
-            }],
+            'jsx-a11y-x/label-has-associated-control': [
+                'warn',
+                {
+                    controlComponents: ['Slider', 'Select', 'Switch', 'Input', 'Knob', 'Checkbox', 'SelectTrigger'],
+                    depth: 3,
+                },
+            ],
 
             // DAW interactive surfaces may not have focusable equivalents.
             'jsx-a11y-x/interactive-supports-focus': 'warn',
@@ -236,8 +249,10 @@ export default defineConfig(
             'no-restricted-syntax': [
                 'error',
                 {
-                    selector: "ImportDeclaration[source.value='react'] :matches(ImportDefaultSpecifier, ImportNamespaceSpecifier)",
-                    message: "Default React import not allowed since we use the TypeScript jsx-transform. If you need a global type that collides with a React named export (such as `MouseEvent`), use `globalThis.MouseEvent`.",
+                    selector:
+                        "ImportDeclaration[source.value='react'] :matches(ImportDefaultSpecifier, ImportNamespaceSpecifier)",
+                    message:
+                        'Default React import not allowed since we use the TypeScript jsx-transform. If you need a global type that collides with a React named export (such as `MouseEvent`), use `globalThis.MouseEvent`.',
                 },
             ],
         },
@@ -282,16 +297,20 @@ export default defineConfig(
                     message: 'Do not use `localStorage` directly, use the `Store` with `LocalStorageStorage` instead',
                 },
                 {
-                    selector: "CallExpression[callee.object.object.name='window'][callee.object.property.name='localStorage']",
+                    selector:
+                        "CallExpression[callee.object.object.name='window'][callee.object.property.name='localStorage']",
                     message: 'Do not use `localStorage` directly, use the `Store` with `LocalStorageStorage` instead',
                 },
                 {
                     selector: "CallExpression[callee.object.name='sessionStorage']",
-                    message: 'Do not use `sessionStorage` directly, use the `Store` with `SessionStorageStorage` instead',
+                    message:
+                        'Do not use `sessionStorage` directly, use the `Store` with `SessionStorageStorage` instead',
                 },
                 {
-                    selector: "CallExpression[callee.object.object.name='window'][callee.object.property.name='sessionStorage']",
-                    message: 'Do not use `sessionStorage` directly, use the `Store` with `SessionStorageStorage` instead',
+                    selector:
+                        "CallExpression[callee.object.object.name='window'][callee.object.property.name='sessionStorage']",
+                    message:
+                        'Do not use `sessionStorage` directly, use the `Store` with `SessionStorageStorage` instead',
                 },
             ],
         },
@@ -324,5 +343,5 @@ export default defineConfig(
         rules: {
             curly: ['error', 'all'], // Override Prettier's curly brace preference
         },
-    },
+    }
 );

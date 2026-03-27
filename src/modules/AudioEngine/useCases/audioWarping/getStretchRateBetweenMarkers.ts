@@ -3,11 +3,7 @@ import { type WarpMarker } from '#/modules/AudioEngine/stores/audioWarp';
 /**
  * Calculate effective playback rate between two warp markers.
  */
-export function getStretchRateBetweenMarkers(
-    markerA: WarpMarker,
-    markerB: WarpMarker,
-    bpm: number
-): number {
+export function getStretchRateBetweenMarkers(markerA: WarpMarker, markerB: WarpMarker, bpm: number): number {
     const sourceDuration = markerB.sourceSec - markerA.sourceSec;
     const targetDurationBeats = markerB.targetBeat - markerA.targetBeat;
     const targetDurationSec = (targetDurationBeats / bpm) * 60;

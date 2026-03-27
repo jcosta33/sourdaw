@@ -99,9 +99,10 @@ async function scheduleTrackClips(
 
             const drumKit = resolveDrumKit(track.devices);
             const kitDef = getDrumKitDefByIndex(
-                track.devices.find((d) => d.type === 'builtin-drum-kit' || d.type === 'drum-kit')?.parameterValues.kit ?? 0
+                track.devices.find((d) => d.type === 'builtin-drum-kit' || d.type === 'drum-kit')?.parameterValues
+                    .kit ?? 0
             );
-            const synthParams = (drumKit || kitDef) ? null : getSynthParamsForTrack(track.id);
+            const synthParams = drumKit || kitDef ? null : getSynthParamsForTrack(track.id);
             let noteCount = 0;
 
             for (let iter = 0; iter < maxIterations; iter++) {
@@ -133,7 +134,15 @@ async function scheduleTrackClips(
                     } else if (drumKit) {
                         scheduleKitNote(offlineCtx, trackGain, drumKit, note.pitch, startTime, duration, note.velocity);
                     } else {
-                        scheduleNoteOffline(offlineCtx, trackGain, note.pitch, startTime, duration, note.velocity, synthParams!);
+                        scheduleNoteOffline(
+                            offlineCtx,
+                            trackGain,
+                            note.pitch,
+                            startTime,
+                            duration,
+                            note.velocity,
+                            synthParams!
+                        );
                     }
 
                     // Yield periodically so the UI stays responsive
@@ -222,9 +231,9 @@ function renderWithTimeout(offlineCtx: OfflineAudioContext): Promise<AudioBuffer
                 clearTimeout(timer);
                 resolve(buffer);
             },
-            (err) => {
+            (error) => {
                 clearTimeout(timer);
-                reject(err);
+                reject(error);
             }
         );
     });
@@ -267,10 +276,20 @@ export async function renderOffline(
             const trackPan = offlineCtx.createStereoPanner();
             trackPan.pan.value = track.pan / 50;
 
-            await scheduleTrackClips(offlineCtx, track, midi, trackGain, trackPan, masterGain, durationSeconds, defaultTempo, changes);
+            await scheduleTrackClips(
+                offlineCtx,
+                track,
+                midi,
+                trackGain,
+                trackPan,
+                masterGain,
+                durationSeconds,
+                defaultTempo,
+                changes
+            );
 
             scheduled++;
-            onProgress?.(scheduled / eligible.length * 0.5); // scheduling = 0-50%
+            onProgress?.((scheduled / eligible.length) * 0.5); // scheduling = 0-50%
         }
     }
 
@@ -323,7 +342,17 @@ export async function exportStems(
         const trackPan = offlineCtx.createStereoPanner();
         trackPan.pan.value = track.pan / 50;
 
-        await scheduleTrackClips(offlineCtx, track, midi, trackGain, trackPan, offlineCtx.destination, durationSeconds, defaultTempo, changes);
+        await scheduleTrackClips(
+            offlineCtx,
+            track,
+            midi,
+            trackGain,
+            trackPan,
+            offlineCtx.destination,
+            durationSeconds,
+            defaultTempo,
+            changes
+        );
 
         const buffer = await renderWithTimeout(offlineCtx);
         stems.set(track.id, buffer);

@@ -1,4 +1,4 @@
-import { type ReactElement, useSyncExternalStore, useState, useEffect, useRef } from 'react';
+import { type ReactElement, useSyncExternalStore, useState, useRef } from 'react';
 import { Button } from '#/components/ui/button';
 import { Separator } from '#/components/ui/separator';
 import { Slider } from '#/components/ui/slider';
@@ -24,8 +24,6 @@ import { preferencesStore } from '../../stores/preferencesStore';
 import {
     defaultPreferences,
     type Preferences,
-    GRID_SNAP_OPTIONS,
-    type GridSnapOption,
     BUFFER_SIZE_OPTIONS,
     SAMPLE_RATE_OPTIONS,
     type BufferSizeOption,
@@ -37,13 +35,15 @@ import {
     isCloudAvailable,
 } from '#/modules/AiRuntime/useCases/cloudApiManagement';
 import { resolveBackend } from '#/modules/AiRuntime/useCases/llmOrchestration';
-import {
-    shortcutStore,
-    updateShortcutBinding,
-    resetShortcutsToDefault,
-    formatKeyBinding,
-} from '../../models/Shortcuts';
 import { cn } from '#/helpers/Styles/cn';
+import {
+    SectionTitle,
+    FieldGroup,
+    ToggleRow,
+    VoiceKeyEditor,
+    GridSubdivisionSection,
+} from './preferencesShared';
+import { ShortcutsSection } from './ShortcutsSection';
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -74,6 +74,13 @@ const NAV_ITEMS: NavItem[] = [
 
 const subscribe = (cb: () => void) => preferencesStore.subscribe(cb);
 const getSnapshot = () => preferencesStore.value ?? defaultPreferences;
+
+// ── Section props ─────────────────────────────────────────────────────
+
+type SectionProps = {
+    prefs: Preferences;
+    update: (partial: Partial<Preferences>) => void;
+};
 
 // ── Main dialog ───────────────────────────────────────────────────────
 
@@ -151,13 +158,6 @@ export const PreferencesDialog = ({ open, onClose }: PreferencesDialogProps): Re
             </DialogContent>
         </Dialog>
     );
-};
-
-// ── Section types ─────────────────────────────────────────────────────
-
-type SectionProps = {
-    prefs: Preferences;
-    update: (partial: Partial<Preferences>) => void;
 };
 
 // ── General ───────────────────────────────────────────────────────────
@@ -520,251 +520,5 @@ const AiSection = (): ReactElement => {
                 </div>
             </FieldGroup>
         </>
-    );
-};
-
-// ── Shortcuts ─────────────────────────────────────────────────────────
-
-const ACTION_LABELS: Record<import('../../models/Shortcuts').ShortcutAction, string> = {
-    PLAY_PAUSE: 'Play / Pause',
-    STOP_RETURN: 'Stop (Return to 0)',
-    RECORD_TOGGLE: 'Record',
-    LOOP_TOGGLE: 'Loop Selection',
-    UNDO: 'Undo',
-    REDO: 'Redo',
-    COPY: 'Copy Selected',
-    PASTE: 'Paste',
-    DELETE: 'Delete Selection',
-    SPLIT_CLIP: 'Split Clip at Playhead',
-    DUPLICATE: 'Duplicate',
-    SAVE_PROJECT: 'Save Project',
-    TOGGLE_MIXER: 'Open/Close Mixer',
-    TOGGLE_INSPECTOR: 'Open/Close Inspector',
-    TOGGLE_AI_ASSISTANT: 'Open/Close AI Chat',
-};
-
-const ShortcutsSection = (): ReactElement => {
-    const shortcutState = useSyncExternalStore(
-        (cb) => shortcutStore.subscribe(() => cb()),
-        () => shortcutStore.value,
-        () => shortcutStore.value
-    );
-
-    const [editingAction, setEditingAction] = useState<import('../../models/Shortcuts').ShortcutAction | null>(null);
-
-    useEffect(() => {
-        if (!editingAction) {
-            return;
-        }
-
-        const handleGlobalKey = (e: KeyboardEvent) => {
-            e.preventDefault();
-            e.stopPropagation();
-
-            // Ignore standalone modifiers
-            if (['Meta', 'Shift', 'Alt', 'Control', 'CapsLock'].includes(e.key)) {
-                return;
-            }
-
-            updateShortcutBinding(editingAction, {
-                key: e.key,
-                metaKey: e.metaKey,
-                ctrlKey: e.ctrlKey,
-                altKey: e.altKey,
-                shiftKey: e.shiftKey,
-            });
-            setEditingAction(null);
-        };
-
-        window.addEventListener('keydown', handleGlobalKey, true);
-        return () => window.removeEventListener('keydown', handleGlobalKey, true);
-    }, [editingAction]);
-
-    if (!shortcutState) {
-        return <></>;
-    }
-
-    return (
-        <>
-            <div className="flex items-center justify-between mb-4">
-                <SectionTitle icon={<Keyboard className="size-4" />} title="Keyboard Shortcuts" />
-                <Button
-                    variant="ghost"
-                    size="xs"
-                    onClick={resetShortcutsToDefault}
-                    className="text-[10px] text-muted-foreground"
-                >
-                    Reset to Defaults
-                </Button>
-            </div>
-
-            <div className="grid grid-cols-[1fr_auto] gap-y-2 gap-x-4">
-                {Object.entries(ACTION_LABELS).map(([actionKey, label]) => {
-                    const action = actionKey as import('../../models/Shortcuts').ShortcutAction;
-                    const binding = shortcutState.bindings[action];
-                    const isEditing = editingAction === action;
-
-                    return (
-                        <div key={action} className="flex items-center justify-between group">
-                            <span className="text-xs text-muted-foreground">{label}</span>
-                            <button
-                                type="button"
-                                className={cn(
-                                    'min-w-[80px] text-right rounded px-2 py-1 text-xs font-mono border transition-colors',
-                                    isEditing
-                                        ? 'border-primary bg-primary/10 text-primary animate-pulse'
-                                        : 'border-transparent hover:border-border bg-surface-overlay text-foreground'
-                                )}
-                                onClick={() => setEditingAction(action)}
-                            >
-                                {isEditing ? 'Press keys...' : formatKeyBinding(binding)}
-                            </button>
-                        </div>
-                    );
-                })}
-            </div>
-            {editingAction ? (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm pointer-events-auto">
-                    <div className="bg-surface-raised border border-border rounded-lg p-6 shadow-2xl flex flex-col items-center gap-2">
-                        <Keyboard className="size-8 text-primary mb-2" />
-                        <h3 className="font-semibold text-lg">Binding: {ACTION_LABELS[editingAction]}</h3>
-                        <p className="text-sm text-muted-foreground">Press the desired key combination.</p>
-                        <Button variant="ghost" size="sm" className="mt-4" onClick={() => setEditingAction(null)}>
-                            Cancel
-                        </Button>
-                    </div>
-                </div>
-            ) : null}
-        </>
-    );
-};
-
-// ── Shared components ─────────────────────────────────────────────────
-
-const SectionTitle = ({ icon, title }: { icon: ReactElement; title: string }): ReactElement => (
-    <div className="flex items-center gap-2 mb-1">
-        <span className="text-muted-foreground">{icon}</span>
-        <h2 className="text-sm font-semibold text-foreground">{title}</h2>
-    </div>
-);
-
-const FieldGroup = ({ label, children }: { label: string; children: React.ReactNode }): ReactElement => (
-    <section className="space-y-1.5">
-        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider block">{label}</label>
-        {children}
-    </section>
-);
-
-const VoiceKeyEditor = ({
-    currentKey,
-    onChange,
-}: {
-    currentKey: string;
-    onChange: (key: string) => void;
-}): ReactElement => {
-    const [listening, setListening] = useState(false);
-    const ref = useRef<HTMLButtonElement>(null);
-
-    useEffect(() => {
-        if (!listening) {
-            return;
-        }
-        const handler = (e: KeyboardEvent) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (e.key.length === 1) {
-                onChange(e.key.toLowerCase());
-            }
-            setListening(false);
-        };
-        window.addEventListener('keydown', handler, true);
-        return () => window.removeEventListener('keydown', handler, true);
-    }, [listening, onChange]);
-
-    return (
-        <FieldGroup label="Voice Command Key">
-            <div className="flex items-center gap-2">
-                <button
-                    type="button"
-                    ref={ref}
-                    className={`rounded px-3 py-1.5 text-xs font-mono border transition-colors ${listening ? 'border-primary bg-primary/10 text-primary animate-pulse' : 'border-border bg-surface-overlay text-foreground'}`}
-                    onClick={() => setListening(true)}
-                >
-                    {listening ? 'Press a key...' : currentKey.toUpperCase()}
-                </button>
-                <span className="text-[10px] text-muted-foreground">
-                    {listening ? 'Listening for keypress' : 'Click to change — hold to activate voice input'}
-                </span>
-            </div>
-        </FieldGroup>
-    );
-};
-
-const GRID_GROUPS: { label: string; options: GridSnapOption[] }[] = [
-    { label: 'Standard', options: ['bar', 'beat', '1/2', '1/4', '1/8', '1/16', '1/32'] },
-    { label: 'Triplet', options: ['1/4T', '1/8T', '1/16T'] },
-    { label: 'Dotted', options: ['1/4D', '1/8D'] },
-    { label: '', options: ['off'] },
-];
-
-const GridSubdivisionSection = ({
-    value,
-    onChange,
-}: {
-    value: GridSnapOption;
-    onChange: (v: GridSnapOption) => void;
-}): ReactElement => {
-    return (
-        <FieldGroup label="Grid Snap">
-            <div className="space-y-1.5">
-                {GRID_GROUPS.map((group) => (
-                    <div key={group.label || 'misc'} className="flex flex-wrap gap-1 items-center">
-                        {group.label ? (
-                            <span className="text-[9px] text-muted-foreground/60 w-12 shrink-0">{group.label}</span>
-                        ) : null}
-                        {group.options.map((opt) => {
-                            const entry = GRID_SNAP_OPTIONS.find((o) => o.value === opt);
-                            return (
-                                <Button
-                                    key={opt}
-                                    variant={value === opt ? 'secondary' : 'ghost'}
-                                    size="xs"
-                                    onClick={() => onChange(opt)}
-                                >
-                                    {entry?.label ?? opt}
-                                </Button>
-                            );
-                        })}
-                    </div>
-                ))}
-            </div>
-        </FieldGroup>
-    );
-};
-
-const ToggleRow = ({
-    label,
-    value,
-    onChange,
-}: {
-    label: string;
-    value: boolean;
-    onChange: (v: boolean) => void;
-}): ReactElement => {
-    return (
-        <div className="flex items-center justify-between">
-            <span className="text-xs text-foreground">{label}</span>
-            <button
-                type="button"
-                role="switch"
-                aria-checked={value}
-                className={`relative h-5 w-9 rounded-full transition-colors ${value ? 'bg-primary' : 'bg-muted/50'}`}
-                onClick={() => onChange(!value)}
-            >
-                <span
-                    className={`absolute top-0.5 left-0.5 size-4 rounded-full bg-white transition-transform ${value ? 'translate-x-4' : ''}`}
-                />
-            </button>
-        </div>
     );
 };

@@ -1,0 +1,140 @@
+/**
+ * Shared presentational primitives used across all preferences sections.
+ */
+import { type ReactElement, useState, useEffect, useRef } from 'react';
+import { Button } from '#/components/ui/button';
+import { GRID_SNAP_OPTIONS, type GridSnapOption } from '../../models/Preferences';
+
+// ── SectionTitle ──────────────────────────────────────────────────────
+
+export const SectionTitle = ({ icon, title }: { icon: ReactElement; title: string }): ReactElement => (
+    <div className="flex items-center gap-2 mb-1">
+        <span className="text-muted-foreground">{icon}</span>
+        <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+    </div>
+);
+
+// ── FieldGroup ────────────────────────────────────────────────────────
+
+export const FieldGroup = ({ label, children }: { label: string; children: React.ReactNode }): ReactElement => (
+    <section className="space-y-1.5">
+        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider block">{label}</label>
+        {children}
+    </section>
+);
+
+// ── ToggleRow ─────────────────────────────────────────────────────────
+
+export const ToggleRow = ({
+    label,
+    value,
+    onChange,
+}: {
+    label: string;
+    value: boolean;
+    onChange: (v: boolean) => void;
+}): ReactElement => (
+    <div className="flex items-center justify-between">
+        <span className="text-xs text-foreground">{label}</span>
+        <button
+            type="button"
+            role="switch"
+            aria-checked={value}
+            className={`relative h-5 w-9 rounded-full transition-colors ${value ? 'bg-primary' : 'bg-muted/50'}`}
+            onClick={() => onChange(!value)}
+        >
+            <span
+                className={`absolute top-0.5 left-0.5 size-4 rounded-full bg-white transition-transform ${value ? 'translate-x-4' : ''}`}
+            />
+        </button>
+    </div>
+);
+
+// ── VoiceKeyEditor ────────────────────────────────────────────────────
+
+export const VoiceKeyEditor = ({
+    currentKey,
+    onChange,
+}: {
+    currentKey: string;
+    onChange: (key: string) => void;
+}): ReactElement => {
+    const [listening, setListening] = useState(false);
+    const ref = useRef<HTMLButtonElement>(null);
+
+    useEffect(() => {
+        if (!listening) {
+            return;
+        }
+        const handler = (e: KeyboardEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.key.length === 1) {
+                onChange(e.key.toLowerCase());
+            }
+            setListening(false);
+        };
+        window.addEventListener('keydown', handler, true);
+        return () => window.removeEventListener('keydown', handler, true);
+    }, [listening, onChange]);
+
+    return (
+        <FieldGroup label="Voice Command Key">
+            <div className="flex items-center gap-2">
+                <button
+                    type="button"
+                    ref={ref}
+                    className={`rounded px-3 py-1.5 text-xs font-mono border transition-colors ${listening ? 'border-primary bg-primary/10 text-primary animate-pulse' : 'border-border bg-surface-overlay text-foreground'}`}
+                    onClick={() => setListening(true)}
+                >
+                    {listening ? 'Press a key...' : currentKey.toUpperCase()}
+                </button>
+                <span className="text-[10px] text-muted-foreground">
+                    {listening ? 'Listening for keypress' : 'Click to change — hold to activate voice input'}
+                </span>
+            </div>
+        </FieldGroup>
+    );
+};
+
+// ── GridSubdivisionSection ────────────────────────────────────────────
+
+const GRID_GROUPS: { label: string; options: GridSnapOption[] }[] = [
+    { label: 'Standard', options: ['bar', 'beat', '1/2', '1/4', '1/8', '1/16', '1/32'] },
+    { label: 'Triplet', options: ['1/4T', '1/8T', '1/16T'] },
+    { label: 'Dotted', options: ['1/4D', '1/8D'] },
+    { label: '', options: ['off'] },
+];
+
+export const GridSubdivisionSection = ({
+    value,
+    onChange,
+}: {
+    value: GridSnapOption;
+    onChange: (v: GridSnapOption) => void;
+}): ReactElement => (
+    <FieldGroup label="Grid Snap">
+        <div className="space-y-1.5">
+            {GRID_GROUPS.map((group) => (
+                <div key={group.label || 'misc'} className="flex flex-wrap gap-1 items-center">
+                    {group.label ? (
+                        <span className="text-[9px] text-muted-foreground/60 w-12 shrink-0">{group.label}</span>
+                    ) : null}
+                    {group.options.map((opt) => {
+                        const entry = GRID_SNAP_OPTIONS.find((o: { value: GridSnapOption; label: string }) => o.value === opt);
+                        return (
+                            <Button
+                                key={opt}
+                                variant={value === opt ? 'secondary' : 'ghost'}
+                                size="xs"
+                                onClick={() => onChange(opt)}
+                            >
+                                {entry?.label ?? opt}
+                            </Button>
+                        );
+                    })}
+                </div>
+            ))}
+        </div>
+    </FieldGroup>
+);

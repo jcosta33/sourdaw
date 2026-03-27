@@ -1,6 +1,6 @@
 # Documentation
 
-This documentation provides high-level overviews for implementing features in the WebDaw application, from initial architectural design to testing.
+This documentation provides high-level overviews for implementing features in the Sourdaw application, from initial architectural design to testing.
 
 > **Note**: These files are meant for human reading. For the authoritative, machine-enforced rules that AI agents follow, see `.agents/skills/*/SKILL.md`.
 

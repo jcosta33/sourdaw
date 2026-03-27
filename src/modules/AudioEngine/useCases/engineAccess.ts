@@ -61,11 +61,7 @@ export const setSend = (sourceTrackId: string, busId: string, level: number, pre
 
 // ─── Sidechain operations ──────────────────────────────────────────────────────
 
-export const wireSidechainRoute = (
-    sourceTrackId: string,
-    targetTrackId: string,
-    targetDeviceId: string
-): void => {
+export const wireSidechainRoute = (sourceTrackId: string, targetTrackId: string, targetDeviceId: string): void => {
     audioEngine.wireSidechainRoute(sourceTrackId, targetTrackId, targetDeviceId);
 };
 

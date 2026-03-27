@@ -8,22 +8,17 @@ import {
     useSyncExternalStore,
 } from 'react';
 import { cn } from '#/helpers/Styles/cn';
-import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { type AutomationLane, type AutomationPoint, type AutomationCurveType } from '#/modules/Arrangement/useCases/trackQueries';
+import {
+    type AutomationLane,
+    type AutomationCurveType,
+} from '#/modules/Arrangement/useCases/trackQueries';
 import {
     addAutomationPoint,
     removeAutomationPoint,
-    updateAutomationPoint,
-    setAutomationPointCurve,
     toggleAutomationVisibility,
 } from '#/modules/Automation/useCases/automation';
 import { insertAutomationShape, type AutomationShapeType } from '#/modules/Automation/useCases/automationShapes';
-import { beginDrawSession, paintDrawPoint, endDrawSession } from '#/modules/Automation/useCases/automationDrawMode';
-import {
-    selectPointsInRange,
-    deleteSelectedPoints,
-    getSelectionBounds,
-} from '#/modules/Automation/useCases/automationSelection';
+import { deleteSelectedPoints, getSelectionBounds } from '#/modules/Automation/useCases/automationSelection';
 import { adjustYZoom, zoomToUsedRange, toggleVirginTerritory } from '#/modules/Automation/useCases/automationZoom';
 import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
 import { LANE_HEIGHT, buildCurvePath } from '../../helpers/automationViewHelpers';
@@ -34,6 +29,13 @@ import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { AutomationLaneHeader } from './AutomationLaneHeader';
 import { AutomationLaneControls } from './AutomationLaneControls';
 import { AutomationContextMenu } from './AutomationContextMenu';
+import {
+    onDrawMouseDown,
+    onRubberBandStart,
+    onTensionMouseDown,
+    onPointMouseDown,
+    applyCurveSelect,
+} from '../../helpers/automationDrag';
 
 type AutomationLaneRowProps = {
     lane: AutomationLane;
@@ -42,8 +44,6 @@ type AutomationLaneRowProps = {
     scrollX: number;
     containerWidth: number;
 };
-
-
 
 export const AutomationLaneRow = ({
     lane,
@@ -102,6 +102,9 @@ export const AutomationLaneRow = ({
         return vMin + Math.max(0, Math.min(1, normalized)) * vRange;
     };
 
+    const getRect = (): DOMRect | undefined => svgRef.current?.getBoundingClientRect();
+    const coords = { getRect, xToBeat, yToValue };
+
     // Virgin territory data
     const vtRegions = lane.virginTerritory ? getAutomationRegions(lane.points) : [];
 
@@ -120,8 +123,6 @@ export const AutomationLaneRow = ({
         }
     }
 
-
-
     const visiblePoints = lane.points.filter((p) => p.beat >= viewportStartBeat - 2 && p.beat <= viewportEndBeat + 2);
     const selectedSet = new Set(selectedPoints);
 
@@ -129,9 +130,10 @@ export const AutomationLaneRow = ({
     const pathSegments: { pathD: string; fillD: string }[] = [];
 
     if (lane.virginTerritory && vtRegions.length > 0) {
-        // Build separate path per region
         for (const region of vtRegions) {
-            const regionPoints = visiblePoints.filter((p) => p.beat >= region.startBeat && p.beat <= region.endBeat);
+            const regionPoints = visiblePoints.filter(
+                (p) => p.beat >= region.startBeat && p.beat <= region.endBeat
+            );
             if (regionPoints.length === 0) {
                 continue;
             }
@@ -149,7 +151,6 @@ export const AutomationLaneRow = ({
             pathSegments.push({ pathD: segPath, fillD: segFill });
         }
     } else if (visiblePoints.length > 0) {
-        // Continuous path (non-VT mode)
         let pathD = `M ${beatToX(visiblePoints[0]!.beat)} ${valueToY(visiblePoints[0]!.value)}`;
         for (let i = 0; i < visiblePoints.length - 1; i++) {
             const allIdx = lane.points.indexOf(visiblePoints[i]!);
@@ -164,212 +165,35 @@ export const AutomationLaneRow = ({
     // Selection bounding box
     const selBounds = selectedPoints.length > 1 ? getSelectionBounds(lane.id, selectedPoints) : null;
 
-    // ─── DRAW MODE HANDLERS ───
-    const handleDrawMouseDown = (e: MouseEvent<SVGSVGElement>) => {
-        const rect = svgRef.current?.getBoundingClientRect();
-        if (!rect) {
-            return;
-        }
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        const beat = Math.max(0, xToBeat(x));
-        const value = yToValue(y);
-
-        beginDrawSession(lane.id, snapValue, e.shiftKey);
-        paintDrawPoint(beat, value);
-
-        const onMove = (me: globalThis.MouseEvent) => {
-            const mx = me.clientX - rect.left;
-            const my = me.clientY - rect.top;
-            paintDrawPoint(Math.max(0, xToBeat(mx)), yToValue(my));
-        };
-        const onUp = () => {
-            endDrawSession();
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup', onUp);
-        };
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onUp);
-    };
-
-    // ─── RUBBER-BAND SELECTION HANDLERS ───
-    const handleRubberBandStart = (e: MouseEvent<SVGSVGElement>) => {
-        if (
-            (e.target as Element).closest('[data-auto-point]') ||
-            (e.target as Element).closest('[data-tension-handle]')
-        ) {
-            return;
-        }
-        const rect = svgRef.current?.getBoundingClientRect();
-        if (!rect) {
-            return;
-        }
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-
-        if (!e.shiftKey) {
-            setSelectedPoints([]);
-        }
-
-        setRubberBand({ x1: x, y1: y, x2: x, y2: y });
-
-        const onMove = (me: globalThis.MouseEvent) => {
-            const mx = me.clientX - rect.left;
-            const my = me.clientY - rect.top;
-            setRubberBand((prev) => (prev ? { ...prev, x2: mx, y2: my } : null));
-        };
-
-        const onUp = (me: globalThis.MouseEvent) => {
-            const mx = me.clientX - rect.left;
-            const my = me.clientY - rect.top;
-            const b1 = xToBeat(Math.min(x, mx));
-            const b2 = xToBeat(Math.max(x, mx));
-            const v1 = yToValue(Math.max(y, my));
-            const v2 = yToValue(Math.min(y, my));
-
-            if (Math.abs(mx - x) > 4 || Math.abs(my - y) > 4) {
-                const found = selectPointsInRange(lane.id, b1, b2, v1, v2);
-                if (e.shiftKey) {
-                    setSelectedPoints((prev) => {
-                        const set = new Set(prev);
-                        for (const beat of found) {
-                            if (set.has(beat)) {
-                                set.delete(beat);
-                            } else {
-                                set.add(beat);
-                            }
-                        }
-                        return [...set];
-                    });
-                } else {
-                    setSelectedPoints(found);
-                }
-            } else if (!e.shiftKey) {
-                // Single click in empty space — just add a point in normal mode
-                const beat = Math.max(0, xToBeat(x));
-                const value = yToValue(y);
-                const point: AutomationPoint = { beat, value, curve: 'linear', tension: 0 };
-                addAutomationPoint(lane.id, point);
-                pushUndoEntry(
-                    'Add automation point',
-                    () => removeAutomationPoint(lane.id, beat),
-                    () => addAutomationPoint(lane.id, point)
-                );
-            }
-
-            setRubberBand(null);
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup', onUp);
-        };
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onUp);
-    };
-
-    // ─── SVG CLICK/MOUSEDOWN DISPATCHER ───
+    // ── SVG dispatcher ───────────────────────────────────────────────────────
     const handleSvgMouseDown = (e: MouseEvent<SVGSVGElement>) => {
         if (e.button !== 0) {
             return;
         }
         if (isDrawMode) {
-            handleDrawMouseDown(e);
+            onDrawMouseDown(e, lane, snapValue, coords);
         } else {
-            handleRubberBandStart(e);
+            onRubberBandStart(e, lane, setRubberBand, setSelectedPoints, coords);
         }
     };
 
-    // ─── TENSION HANDLE DRAG ───
-    const handleTensionMouseDown = (pointBeat: number, e: MouseEvent<SVGCircleElement>) => {
-        e.stopPropagation();
-        const point = lane.points.find((p) => p.beat === pointBeat);
-        if (!point) {
+    const handleSvgContextMenu = (e: MouseEvent<SVGSVGElement>) => {
+        if ((e.target as Element).closest('[data-auto-point]')) {
             return;
         }
-        const initialTension = point.tension ?? 0;
-        setTensionDrag({ beat: pointBeat, initialTension });
-
-        const startY = e.clientY;
-
-        const onMove = (me: globalThis.MouseEvent) => {
-            const dy = me.clientY - startY;
-            const newTension = Math.max(-1, Math.min(1, initialTension + dy / 100));
-            setAutomationPointCurve(lane.id, pointBeat, point.curve, newTension);
-        };
-
-        const onUp = () => {
-            setTensionDrag(null);
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup', onUp);
-        };
-
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onUp);
-    };
-
-    // ─── BREAKPOINT HANDLERS ───
-    const handlePointMouseDown = (pointBeat: number, e: MouseEvent<SVGCircleElement>) => {
-        e.stopPropagation();
-        const rect = svgRef.current?.getBoundingClientRect();
+        e.preventDefault();
+        const rect = getRect();
         if (!rect) {
             return;
         }
+        const beat = Math.max(0, xToBeat(e.clientX - rect.left));
+        setContextMenu({ x: e.clientX, y: e.clientY, beat, section: 'shape' });
+    };
 
-        // Toggle selection with Shift
-        if (e.shiftKey) {
-            setSelectedPoints((prev) =>
-                prev.includes(pointBeat) ? prev.filter((b) => b !== pointBeat) : [...prev, pointBeat]
-            );
-            return;
-        }
-
-        const origPoint = lane.points.find((p) => p.beat === pointBeat);
-        if (!origPoint) {
-            return;
-        }
-        const origBeat = origPoint.beat;
-        const origValue = origPoint.value;
-        let currentBeat = pointBeat;
-        setDragPointBeat(pointBeat);
-
-        const onMove = (me: globalThis.MouseEvent) => {
-            const mx = me.clientX - rect.left;
-            const my = me.clientY - rect.top;
-            let newBeat = Math.max(0, xToBeat(mx));
-            let newValue = yToValue(my);
-            // Shift constrains to axis
-            if (me.shiftKey) {
-                const dx = Math.abs(newBeat - origBeat);
-                const dy = Math.abs(newValue - origValue);
-                if (dx > dy) {
-                    newValue = origValue;
-                } else {
-                    newBeat = origBeat;
-                }
-            }
-            updateAutomationPoint(lane.id, currentBeat, newValue, newBeat);
-            currentBeat = newBeat;
-            setDragPointBeat(newBeat);
-        };
-
-        const onUp = () => {
-            setDragPointBeat(null);
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup', onUp);
-            const finalState = automationStore.value;
-            const finalLane = finalState?.lanes.find((l) => l.id === lane.id);
-            const finalPoint = finalLane?.points.find((p) => Math.abs(p.beat - currentBeat) < 0.05);
-            if (finalPoint && (finalPoint.beat !== origBeat || finalPoint.value !== origValue)) {
-                const fb = finalPoint.beat;
-                const fv = finalPoint.value;
-                pushUndoEntry(
-                    'Move automation point',
-                    () => updateAutomationPoint(lane.id, fb, origValue, origBeat),
-                    () => updateAutomationPoint(lane.id, origBeat, fv, fb)
-                );
-            }
-        };
-
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onUp);
+    const handlePointContextMenu = (pointBeat: number, e: MouseEvent<SVGCircleElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setContextMenu({ x: e.clientX, y: e.clientY, beat: pointBeat, section: null });
     };
 
     const handlePointDoubleClick = (pointBeat: number, e: MouseEvent<SVGCircleElement>) => {
@@ -382,37 +206,21 @@ export const AutomationLaneRow = ({
         removeAutomationPoint(lane.id, pointBeat);
         pushUndoEntry(
             'Delete automation point',
-            () => addAutomationPoint(lane.id, savedPoint),
-            () => removeAutomationPoint(lane.id, pointBeat)
+            () => {
+                addAutomationPoint(lane.id, savedPoint);
+            },
+            () => {
+                removeAutomationPoint(lane.id, pointBeat);
+            }
         );
         setSelectedPoints((prev) => prev.filter((b) => b !== pointBeat));
-    };
-
-    const handlePointContextMenu = (pointBeat: number, e: MouseEvent<SVGCircleElement>) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setContextMenu({ x: e.clientX, y: e.clientY, beat: pointBeat, section: null });
-    };
-
-    const handleSvgContextMenu = (e: MouseEvent<SVGSVGElement>) => {
-        if ((e.target as Element).closest('[data-auto-point]')) {
-            return;
-        }
-        e.preventDefault();
-        const rect = svgRef.current?.getBoundingClientRect();
-        if (!rect) {
-            return;
-        }
-        const x = e.clientX - rect.left;
-        const beat = Math.max(0, xToBeat(x));
-        setContextMenu({ x: e.clientX, y: e.clientY, beat, section: 'shape' });
     };
 
     const handleCurveSelect = (curve: AutomationCurveType) => {
         if (!contextMenu) {
             return;
         }
-        setAutomationPointCurve(lane.id, contextMenu.beat, curve, 0.5);
+        applyCurveSelect(lane.id, contextMenu.beat, curve);
         setContextMenu(null);
     };
 
@@ -424,9 +232,10 @@ export const AutomationLaneRow = ({
         setContextMenu(null);
     };
 
-    // ─── KEYBOARD FOR SELECTION ───
+    // ── Keyboard ─────────────────────────────────────────────────────────────
     const handleKeyDown = (event: KeyboardEvent) => {
-        if ((event.key === 'Delete' || event.key === 'Backspace') && selectedPoints.length > 0) {
+        const isDelete = event.key === 'Delete' || event.key === 'Backspace';
+        if (isDelete && selectedPoints.length > 0) {
             event.preventDefault();
             deleteSelectedPoints(lane.id, selectedPoints);
             setSelectedPoints([]);
@@ -440,19 +249,19 @@ export const AutomationLaneRow = ({
         }
     };
 
-    // ─── Y-AXIS ZOOM VIA WHEEL ───
+    // ── Y-axis zoom ───────────────────────────────────────────────────────────
     const handleWheel = (e: WheelEvent<HTMLDivElement>) => {
-        if (e.altKey) {
-            e.preventDefault();
-            e.stopPropagation();
-            const delta = e.deltaY > 0 ? -1 : 1; // scroll up = zoom in
-            adjustYZoom(lane.id, delta);
+        if (!e.altKey) {
+            return;
         }
+        e.preventDefault();
+        e.stopPropagation();
+        adjustYZoom(lane.id, e.deltaY > 0 ? -1 : 1);
     };
 
     const showZeroLine = vMin < 0 && vMax > 0;
 
-    // ─── Tension handle positions (midpoint of each segment) ───
+    // Tension handle positions (midpoint of each segment)
     const tensionHandles: { cx: number; cy: number; beat: number; tension: number }[] = [];
     for (let i = 0; i < visiblePoints.length - 1; i++) {
         const p1 = visiblePoints[i]!;
@@ -460,11 +269,9 @@ export const AutomationLaneRow = ({
         if (p1.curve === 'step' || p1.curve === 'linear') {
             continue;
         }
-        const midBeat = (p1.beat + p2.beat) / 2;
-        const midValue = (p1.value + p2.value) / 2;
         tensionHandles.push({
-            cx: beatToX(midBeat),
-            cy: valueToY(midValue),
+            cx: beatToX((p1.beat + p2.beat) / 2),
+            cy: valueToY((p1.value + p2.value) / 2),
             beat: p1.beat,
             tension: p1.tension ?? 0,
         });
@@ -472,7 +279,7 @@ export const AutomationLaneRow = ({
 
     return (
         <div
-            className={cn('relative border-b border-border/20 outline-none', isDisabled && 'opacity-50')}
+            className={cn('relative border-b border-border/20 outline-none', isDisabled ? 'opacity-50' : '')}
             style={{ height: LANE_HEIGHT }}
             tabIndex={0}
             onKeyDown={handleKeyDown}
@@ -484,7 +291,7 @@ export const AutomationLaneRow = ({
                 curveColor={curveColor}
                 currentValue={currentValue}
                 isDrawMode={isDrawMode}
-                isVirginTerritory={!!lane.virginTerritory}
+                isVirginTerritory={Boolean(lane.virginTerritory)}
                 isYZoomed={isYZoomed}
                 viewMin={vMin}
                 viewMax={vMax}
@@ -492,7 +299,7 @@ export const AutomationLaneRow = ({
 
             <AutomationLaneControls
                 laneId={lane.id}
-                isVirginTerritory={!!lane.virginTerritory}
+                isVirginTerritory={Boolean(lane.virginTerritory)}
                 isVisible={lane.visible}
                 selectedCount={selectedPoints.length}
                 onToggleVirginTerritory={() => toggleVirginTerritory(lane.id)}
@@ -510,6 +317,7 @@ export const AutomationLaneRow = ({
             >
                 {/* Transparent rect for event capture on empty SVG space */}
                 <rect x={0} y={0} width={containerWidth} height={LANE_HEIGHT} fill="transparent" />
+
                 {/* Grid lines */}
                 {Array.from({ length: 5 }).map((_, i) => {
                     const y = (LANE_HEIGHT / 4) * i;
@@ -621,7 +429,7 @@ export const AutomationLaneRow = ({
                                 r={12}
                                 fill="transparent"
                                 className="cursor-ns-resize"
-                                onMouseDown={(e) => handleTensionMouseDown(th.beat, e)}
+                                onMouseDown={(e) => onTensionMouseDown(th.beat, e, lane, setTensionDrag)}
                             />
                             <circle
                                 cx={th.cx}
@@ -664,13 +472,15 @@ export const AutomationLaneRow = ({
                                 r={10}
                                 fill="transparent"
                                 className="cursor-grab"
-                                onMouseDown={(e) => handlePointMouseDown(point.beat, e)}
+                                onMouseDown={(e) =>
+                                    onPointMouseDown(point.beat, e, lane, setDragPointBeat, setSelectedPoints, coords)
+                                }
                                 onDoubleClick={(e) => handlePointDoubleClick(point.beat, e)}
                                 onContextMenu={(e) => handlePointContextMenu(point.beat, e)}
                                 onMouseEnter={() => setHoveredBeat(point.beat)}
                                 onMouseLeave={() => setHoveredBeat(null)}
                             />
-                            {(isDragging || isHovered || isSelected) ? (
+                            {isDragging || isHovered || isSelected ? (
                                 <circle
                                     cx={cx}
                                     cy={cy}
@@ -732,7 +542,7 @@ export const AutomationLaneRow = ({
                 })}
 
                 {/* Rubber-band selection rectangle */}
-                {rubberBand && Math.abs(rubberBand.x2 - rubberBand.x1) > 3 ? (
+                {rubberBand !== null && Math.abs(rubberBand.x2 - rubberBand.x1) > 3 ? (
                     <rect
                         x={Math.min(rubberBand.x1, rubberBand.x2)}
                         y={Math.min(rubberBand.y1, rubberBand.y2)}
@@ -747,7 +557,7 @@ export const AutomationLaneRow = ({
                 ) : null}
 
                 {/* Selection stretch handles */}
-                {selBounds && selectedPoints.length > 1 && !rubberBand ? (
+                {selBounds !== null && selectedPoints.length > 1 && rubberBand === null ? (
                     <g pointerEvents="none">
                         <rect
                             x={beatToX(selBounds.minBeat) - 2}
@@ -760,7 +570,6 @@ export const AutomationLaneRow = ({
                             strokeDasharray="4 2"
                             strokeOpacity={0.5}
                         />
-                        {/* Corner handles */}
                         {[
                             { x: beatToX(selBounds.minBeat), y: valueToY(selBounds.maxValue) },
                             { x: beatToX(selBounds.maxBeat), y: valueToY(selBounds.maxValue) },
@@ -782,7 +591,7 @@ export const AutomationLaneRow = ({
                 ) : null}
             </svg>
 
-            {contextMenu ? (
+            {contextMenu !== null ? (
                 <AutomationContextMenu
                     x={contextMenu.x}
                     y={contextMenu.y}

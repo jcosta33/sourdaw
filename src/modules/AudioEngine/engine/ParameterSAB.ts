@@ -33,17 +33,17 @@ export class ParameterSAB {
 
         const index = this.currentIndex++;
         this.parameterMap.set(name, index);
-        
+
         // Initialize to 0
-        // Float32Array doesn't support Atomics natively for floats in JS 
+        // Float32Array doesn't support Atomics natively for floats in JS
         // (Atomics only works with Int8, Uint8, Int16, Uint16, Int32, Uint32).
-        // However, since we're just reading/writing floats without needing strict atomic 
-        // read-modify-write operations like compareExchange, a simple indexed write is lock-free 
+        // However, since we're just reading/writing floats without needing strict atomic
+        // read-modify-write operations like compareExchange, a simple indexed write is lock-free
         // and sufficient for continuous audio parameters where the latest value just wins.
-        // For true atomicity with floats, we'd need to use a Uint32Array view and 
+        // For true atomicity with floats, we'd need to use a Uint32Array view and
         // Float32Array bit conversions, but standard Float32Array indexing is fine for MVP.
         this.view[index] = 0.0;
-        
+
         return index;
     }
 

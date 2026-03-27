@@ -3,7 +3,7 @@ import { timelineViewStore } from '../../stores/timelineViewStore';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { buildTimelineRenderModel } from '../buildTimelineRenderModel';
-import { AUTOMATION_SUB_LANE_HEIGHT } from '../../models/automationConstants';
+import { AUTOMATION_SUB_LANE_HEIGHT } from '../../automationConstants';
 
 export type AutomationSubLaneHit = {
     laneId: string;

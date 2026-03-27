@@ -9,3 +9,6 @@
 // Instrument layouts
 import './BuiltinSynthLayout';
 import './FaustInstrumentLayout';
+
+// Effect layouts
+import './effects';

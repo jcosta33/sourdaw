@@ -11,15 +11,15 @@ import { Store } from '#/helpers/Store/Store';
 const logger = Container.getInstance().get(Logger);
 
 export type WarpAlgorithm =
-    | 'elastique-pro'       // zplane élastique Pro — best overall quality
-    | 'elastique-efficient'  // zplane élastique Efficient — lower CPU
-    | 'elastique-soloist'   // zplane élastique Soloist — monophonic optimization
-    | 'rubber-band-r3'      // Rubber Band R3 engine (finer, offline)
-    | 'rubber-band-rt'      // Rubber Band real-time engine
-    | 'complex'             // Ableton-style complex mode
-    | 'complex-pro'         // Ableton-style complex pro (formant preserve)
-    | 'repitch'             // Simple resampling (changes pitch)
-    | 'slice';              // Beat-slice transient preservation
+    | 'elastique-pro' // zplane élastique Pro — best overall quality
+    | 'elastique-efficient' // zplane élastique Efficient — lower CPU
+    | 'elastique-soloist' // zplane élastique Soloist — monophonic optimization
+    | 'rubber-band-r3' // Rubber Band R3 engine (finer, offline)
+    | 'rubber-band-rt' // Rubber Band real-time engine
+    | 'complex' // Ableton-style complex mode
+    | 'complex-pro' // Ableton-style complex pro (formant preserve)
+    | 'repitch' // Simple resampling (changes pitch)
+    | 'slice'; // Beat-slice transient preservation
 
 export type WarpMarker = {
     id: string;

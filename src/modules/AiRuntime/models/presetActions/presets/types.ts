@@ -1,0 +1,65 @@
+import { type AppAction } from '#/modules/Command/useCases/commandQueries';
+
+// ── Context passed to every preset builder ──────────────────────────────
+
+export type PresetContext = {
+    selectedTrackId: string | undefined;
+    selectedClipId: string | undefined;
+    selectedClipType: 'audio' | 'midi' | undefined;
+    trackCount: number;
+};
+
+// ── Preset definition ───────────────────────────────────────────────────
+
+export type PresetAction = {
+    id: string;
+    label: string;
+    /** Search terms & common aliases — fuzzy matched against user input */
+    keywords: string[];
+    category: PresetCategory;
+    /** What must be selected for this preset to be available */
+    requiresSelection?: 'track' | 'clip' | 'clipMidi' | 'clipAudio';
+    /** Whether this action is destructive (requires confirmation) */
+    isDestructive?: boolean;
+    /** Build the AppAction(s). Return `null` to indicate the preset is not applicable. */
+    buildAction: (ctx: PresetContext) => AppAction | AppAction[] | null;
+};
+
+export type PresetCategory =
+    | 'Transport'
+    | 'Track'
+    | 'Clip'
+    | 'MIDI'
+    | 'Device'
+    | 'Workspace'
+    | 'Mix'
+    | 'Generate'
+    | 'File'
+    | 'Automation'
+    | 'Collaboration';
+
+// ── Helpers ─────────────────────────────────────────────────────────────
+
+export const trackAction = (
+    type: AppAction['type'],
+    payloadFn: (trackId: string) => Record<string, unknown>
+): PresetAction['buildAction'] => {
+    return (ctx) => {
+        if (!ctx.selectedTrackId) {
+            return null;
+        }
+        return { type, payload: payloadFn(ctx.selectedTrackId) } as AppAction;
+    };
+};
+
+export const clipAction = (
+    type: AppAction['type'],
+    payloadFn: (clipId: string) => Record<string, unknown>
+): PresetAction['buildAction'] => {
+    return (ctx) => {
+        if (!ctx.selectedClipId) {
+            return null;
+        }
+        return { type, payload: payloadFn(ctx.selectedClipId) } as AppAction;
+    };
+};

@@ -121,7 +121,9 @@ export const audioBufferCache = {
                     const end = Math.min(start + 256, channelData.length);
                     for (let j = start; j < end; j++) {
                         const abs = Math.abs(channelData[j]!);
-                        if (abs > peak) peak = abs;
+                        if (abs > peak) {
+                            peak = abs;
+                        }
                     }
                     mipmap[i] = peak;
                 }
@@ -138,7 +140,9 @@ export const audioBufferCache = {
                 } else {
                     for (let i = start; i < end; i++) {
                         const v = mipmap[i]!;
-                        if (v > peak) peak = v;
+                        if (v > peak) {
+                            peak = v;
+                        }
                     }
                 }
                 peaks[bin] = peak;
@@ -154,7 +158,9 @@ export const audioBufferCache = {
                 } else {
                     for (let i = start; i < end; i++) {
                         const abs = Math.abs(channelData[i]!);
-                        if (abs > peak) peak = abs;
+                        if (abs > peak) {
+                            peak = abs;
+                        }
                     }
                 }
                 peaks[bin] = peak;

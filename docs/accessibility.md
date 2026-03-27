@@ -111,7 +111,7 @@ After building your component, verify its accessibility through a combination of
     - Exercise all keyboard navigation paths. Can you reach and operate everything without a mouse?
     - Use browser developer tools to inspect the accessibility tree.
     - Perform spot-checks with a screen reader.
-    - Use Webdaw dev tools
+    - Use Sourdaw dev tools
 
 ---
 

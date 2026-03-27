@@ -1,5 +1,5 @@
 import { type SoundPreset, type SoundPresetCategory } from '#/modules/Arrangement/models/SoundPreset';
-import { FACTORY_PRESETS, DRUM_KIT_PRESETS } from '#/modules/Arrangement/models/factoryPresets';
+import { FACTORY_PRESETS, DRUM_KIT_PRESETS } from '#/modules/Arrangement/repositories/presets/factoryPresets';
 import { BUILTIN_PLUGINS } from '#/modules/Arrangement/models/DeviceParameter';
 
 let cachedPresets: SoundPreset[] | null = null;

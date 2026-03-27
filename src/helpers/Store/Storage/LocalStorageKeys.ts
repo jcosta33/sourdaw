@@ -1,4 +1,4 @@
-/* (c) Copyright Webdaw Ltd., all rights reserved. */
+/* (c) Copyright Sourdaw Ltd., all rights reserved. */
 
 /*****************************************************************************
  * THESE KEYS HAVE LEGAL IMPLICATIONS!                                       *

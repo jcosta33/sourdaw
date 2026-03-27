@@ -1,6 +1,6 @@
 import { getTrackState, updateTrack } from '#/modules/Arrangement/repositories/track';
 import { type Clip } from '#/modules/Arrangement/models/Track';
-import { getNextClipId } from '#/modules/Arrangement/models/clipIdCounter';
+import { getNextClipId } from '#/modules/Arrangement/repositories/clipIdCounter';
 
 export function glueClips(clipIds: string[]): void {
     const state = getTrackState();

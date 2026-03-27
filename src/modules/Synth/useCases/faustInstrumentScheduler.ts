@@ -12,51 +12,16 @@
  * We resolve params by matching the last path segment.
  */
 
-import { type TrackChannelStrip } from '#/modules/AudioEngine/models/AudioEngineState';
+import { scheduleDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
+import { getCurrentTime } from '#/modules/AudioEngine/useCases/scheduling';
 
 /**
- * Find an AudioParam by its short name (last segment of the Faust address path).
- * Faust generates paths like "/InstrumentName/freq" — we match by the tail.
- */
-function findParam(worklet: AudioWorkletNode, shortName: string): AudioParam | null {
-    // Try exact match first (unlikely for Faust but cheap)
-    const exact = worklet.parameters.get(shortName);
-    if (exact) {
-        return exact;
-    }
-
-    // Iterate and match by suffix
-    for (const [key, param] of worklet.parameters) {
-        if (key === shortName || key.endsWith(`/${shortName}`)) {
-            return param;
-        }
-    }
-    return null;
-}
-
-/**
- * Find the Faust instrument AudioWorkletNode in a track's device chain.
- * Returns null if no Faust instrument is present (the track uses builtin synth).
- */
-export function getFaustInstrumentNode(strip: TrackChannelStrip): AudioWorkletNode | null {
-    for (const dn of strip.deviceNodes) {
-        if (dn.type.startsWith('faust-') && dn.inputNode.numberOfInputs === 0) {
-            // This is a Faust generator (instrument), not an effect
-            const node = dn.nodes[0];
-            if (node && node instanceof AudioWorkletNode) {
-                return node;
-            }
-        }
-    }
-    return null;
-}
-
-/**
- * Schedule a note on a Faust instrument AudioWorkletNode.
- * Sets freq, gain, and gate AudioParams with proper timing.
+ * Schedule a note on a Faust instrument.
+ * Sets freq, gain, and gate AudioParams with proper timing via the AudioEngine.
  */
 export function scheduleFaustNote(
-    worklet: AudioWorkletNode,
+    trackId: string,
+    deviceId: string,
     pitch: number,
     startTime: number,
     duration: number,
@@ -66,20 +31,10 @@ export function scheduleFaustNote(
     const frequency = 440 * 2 ** ((pitch - 69) / 12);
     const gain = (velocity / 127) * clipGain;
 
-    const freqParam = findParam(worklet, 'freq');
-    const gainParam = findParam(worklet, 'gain');
-    const gateParam = findParam(worklet, 'gate');
-
-    if (freqParam) {
-        freqParam.setValueAtTime(frequency, startTime);
-    }
-    if (gainParam) {
-        gainParam.setValueAtTime(gain, startTime);
-    }
-    if (gateParam) {
-        gateParam.setValueAtTime(1, startTime);
-        gateParam.setValueAtTime(0, startTime + duration);
-    }
+    scheduleDeviceParam(trackId, deviceId, 'freq', frequency, startTime);
+    scheduleDeviceParam(trackId, deviceId, 'gain', gain, startTime);
+    scheduleDeviceParam(trackId, deviceId, 'gate', 1, startTime);
+    scheduleDeviceParam(trackId, deviceId, 'gate', 0, startTime + duration);
 }
 
 /**
@@ -87,7 +42,8 @@ export function scheduleFaustNote(
  * Returns a stop callback.
  */
 export function startFaustNote(
-    worklet: AudioWorkletNode,
+    trackId: string,
+    deviceId: string,
     pitch: number,
     velocity: number,
     currentTime: number
@@ -95,23 +51,11 @@ export function startFaustNote(
     const frequency = 440 * 2 ** ((pitch - 69) / 12);
     const gain = velocity / 127;
 
-    const freqParam = findParam(worklet, 'freq');
-    const gainParam = findParam(worklet, 'gain');
-    const gateParam = findParam(worklet, 'gate');
-
-    if (freqParam) {
-        freqParam.setValueAtTime(frequency, currentTime);
-    }
-    if (gainParam) {
-        gainParam.setValueAtTime(gain, currentTime);
-    }
-    if (gateParam) {
-        gateParam.setValueAtTime(1, currentTime);
-    }
+    scheduleDeviceParam(trackId, deviceId, 'freq', frequency, currentTime);
+    scheduleDeviceParam(trackId, deviceId, 'gain', gain, currentTime);
+    scheduleDeviceParam(trackId, deviceId, 'gate', 1, currentTime);
 
     return () => {
-        if (gateParam) {
-            gateParam.setValueAtTime(0, worklet.context.currentTime);
-        }
+        scheduleDeviceParam(trackId, deviceId, 'gate', 0, getCurrentTime());
     };
 }

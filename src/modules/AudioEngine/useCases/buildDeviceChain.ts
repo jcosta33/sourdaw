@@ -88,8 +88,8 @@ export async function buildDeviceChain(
                         setParam: result.setParam,
                         setBypass: result.setBypass,
                     };
-                } catch (err) {
-                    console.warn(`Native DSP device ${device.type} failed to load:`, err);
+                } catch (error) {
+                    console.warn(`Native DSP device ${device.type} failed to load:`, error);
                 }
             }
         } else if (isFaustModule(device.type)) {

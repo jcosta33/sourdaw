@@ -1,12 +1,16 @@
 import { type ReactElement, useSyncExternalStore } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { swapAutomationSubLaneParam, removeAutomationSubLane, addAutomationSubLane } from '#/modules/Workspace/useCases/automationSubLanes';
+import {
+    swapAutomationSubLaneParam,
+    removeAutomationSubLane,
+    addAutomationSubLane,
+} from '#/modules/Workspace/useCases/automationSubLanes';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { addAutomationLane } from '#/modules/Automation/useCases/automation';
 import { timelineViewStore } from '#/modules/Arrangement/stores/timelineViewStore';
-import { AUTOMATION_SUB_LANE_HEIGHT } from '#/modules/Arrangement/models/automationConstants';
+import { AUTOMATION_SUB_LANE_HEIGHT } from '#/modules/Arrangement/automationConstants';
 import { ChevronDown, Plus, X } from 'lucide-react';
 
 const RULER_HEIGHT = 24;

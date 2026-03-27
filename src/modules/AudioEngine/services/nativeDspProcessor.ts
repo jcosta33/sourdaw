@@ -26,9 +26,9 @@ class NativeDspProcessor extends AudioWorkletProcessor {
                         type: 'ready',
                         paramNames: this.plugin.get_param_names(),
                     });
-                } catch (err) {
-                    console.error('NativeDspProcessor init failed:', err);
-                    this.port.postMessage({ type: 'error', message: String(err) });
+                } catch (error) {
+                    console.error('NativeDspProcessor init failed:', error);
+                    this.port.postMessage({ type: 'error', message: String(error) });
                 }
             } else if (type === 'set_param' && this.plugin) {
                 this.plugin.set_param(e.data.name, e.data.value);

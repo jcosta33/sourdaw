@@ -3,7 +3,10 @@ import { controlSurfaceStore } from '#/modules/AudioEngine/stores/controlSurface
 /**
  * Process an incoming OSC message and return the mapped action + value.
  */
-export function processOscMessage(address: string, value: number): { actionType: string; parameterPath: string; normalizedValue: number } | null {
+export function processOscMessage(
+    address: string,
+    value: number
+): { actionType: string; parameterPath: string; normalizedValue: number } | null {
     const state = controlSurfaceStore.value;
     if (!state) {
         return null;

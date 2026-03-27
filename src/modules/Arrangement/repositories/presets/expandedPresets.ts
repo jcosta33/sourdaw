@@ -2,124 +2,24 @@
  * Expanded factory presets — additional 100+ presets for effects and instruments.
  * These are merged into FACTORY_PRESETS at module load time.
  */
-import { type SoundPreset, type DevicePreset } from '#/modules/Arrangement/models/SoundPreset';
-
-const AUTHOR = 'Sourdaw';
-
-// ── Helpers ───────────────────────────────────────────────────────────────
-
-const synth = (name: string, params: Record<string, number>): DevicePreset => ({
-    type: 'builtin-synth',
-    name,
-    parameterValues: params,
-});
-
-const eq = (name: string, params: Record<string, number>): DevicePreset => ({
-    type: 'builtin-eq',
-    name,
-    parameterValues: {
-        'eq-low-gain': 0,
-        'eq-low-freq': 100,
-        'eq-mid-gain': 0,
-        'eq-mid-freq': 1000,
-        'eq-mid-q': 1,
-        'eq-high-gain': 0,
-        'eq-high-freq': 8000,
-        ...params,
-    },
-});
-
-const comp = (name: string, params: Record<string, number>): DevicePreset => ({
-    type: 'builtin-compressor',
-    name,
-    parameterValues: {
-        'comp-threshold': -20,
-        'comp-ratio': 4,
-        'comp-attack': 10,
-        'comp-release': 100,
-        'comp-makeup': 0,
-        ...params,
-    },
-});
-
-const reverb = (name: string, params: Record<string, number>): DevicePreset => ({
-    type: 'builtin-reverb',
-    name,
-    parameterValues: { 'rev-size': 0.5, 'rev-decay': 2, 'rev-damping': 0.5, 'rev-mix': 0.3, ...params },
-});
-
-const delay = (name: string, params: Record<string, number>): DevicePreset => ({
-    type: 'builtin-delay',
-    name,
-    parameterValues: { 'delay-time': 250, 'delay-feedback': 0.4, 'delay-mix': 0.3, ...params },
-});
-
-const chorus = (name: string, params: Record<string, number>): DevicePreset => ({
-    type: 'builtin-chorus',
-    name,
-    parameterValues: { 'chorus-rate': 1.5, 'chorus-depth': 7, 'chorus-feedback': 0.2, 'chorus-mix': 0.5, ...params },
-});
-
-const phaser = (name: string, params: Record<string, number>): DevicePreset => ({
-    type: 'builtin-phaser',
-    name,
-    parameterValues: { 'phaser-rate': 0.5, 'phaser-depth': 0.5, 'phaser-feedback': 0.3, 'phaser-stages': 4, ...params },
-});
-
-const flanger = (name: string, params: Record<string, number>): DevicePreset => ({
-    type: 'builtin-flanger',
-    name,
-    parameterValues: {
-        'flanger-rate': 0.3,
-        'flanger-depth': 3,
-        'flanger-feedback': 0.5,
-        'flanger-mix': 0.5,
-        ...params,
-    },
-});
-
-const distortion = (name: string, params: Record<string, number>): DevicePreset => ({
-    type: 'builtin-distortion',
-    name,
-    parameterValues: { 'dist-drive': 5, 'dist-tone': 5000, 'dist-mix': 0.5, ...params },
-});
-
-const tremolo = (name: string, params: Record<string, number>): DevicePreset => ({
-    type: 'builtin-tremolo',
-    name,
-    parameterValues: { 'trem-rate': 4, 'trem-depth': 0.5, 'trem-shape': 0, ...params },
-});
-
-const bitcrusher = (name: string, params: Record<string, number>): DevicePreset => ({
-    type: 'builtin-bitcrusher',
-    name,
-    parameterValues: { 'crush-bits': 8, 'crush-rate': 1, 'crush-mix': 0.5, ...params },
-});
-
-const filter = (name: string, params: Record<string, number>): DevicePreset => ({
-    type: 'builtin-filter',
-    name,
-    parameterValues: { 'filter-cutoff': 1000, 'filter-resonance': 1, 'filter-type': 0, ...params },
-});
-
-const limiter = (name: string, params: Record<string, number>): DevicePreset => ({
-    type: 'builtin-limiter',
-    name,
-    parameterValues: { 'lim-threshold': -1, 'lim-release': 0.1, ...params },
-});
-
-const convReverb = (name: string, params: Record<string, number>): DevicePreset => ({
-    type: 'builtin-convolution-reverb',
-    name,
-    parameterValues: {
-        'conv-ir': 6,
-        'conv-mix': 0.4,
-        'conv-predelay': 10,
-        'conv-lowcut': 60,
-        'conv-highcut': 12000,
-        ...params,
-    },
-});
+import { type SoundPreset } from '#/modules/Arrangement/models/SoundPreset';
+import {
+    synth,
+    eq,
+    comp,
+    reverb,
+    delay,
+    chorus,
+    phaser,
+    flanger,
+    distortion,
+    tremolo,
+    bitcrusher,
+    filter,
+    limiter,
+    convReverb,
+    AUTHOR,
+} from './presetHelpers';
 
 // ── Effect-Only Presets (audio track chains) ─────────────────────────────
 

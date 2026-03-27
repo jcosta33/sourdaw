@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { WAMInstance } from '#/modules/Plugin/useCases/wamPluginHost';
-import { ParameterSAB } from '../../engine/ParameterSAB';
+import { type ParameterSAB } from '../../engine/ParameterSAB';
 
 type HighEndPluginUIProps = {
     instance: WAMInstance;
@@ -9,11 +9,11 @@ type HighEndPluginUIProps = {
 };
 
 /**
- * A generic WebGPU-based immediate-mode GUI shell for High-End Factory Plugins 
+ * A generic WebGPU-based immediate-mode GUI shell for High-End Factory Plugins
  * (Alchemy, Space Designer, Pro EQ).
- * 
+ *
  * Instead of retaining a DOM tree of inputs/knobs, this UI mounts a single <canvas>
- * and uses WebGPU to render the entire UI surface at 60fps. The state is synchronized 
+ * and uses WebGPU to render the entire UI surface at 60fps. The state is synchronized
  * directly with the AudioWorklet via lock-free SharedArrayBuffers (ParameterSAB).
  */
 export function HighEndPluginUI({ instance, parameterSab, onClose }: HighEndPluginUIProps) {
@@ -22,7 +22,7 @@ export function HighEndPluginUI({ instance, parameterSab, onClose }: HighEndPlug
 
     useEffect(() => {
         let animationFrameId: number;
-        
+
         async function initWebGPU() {
             if (!navigator.gpu) {
                 console.warn('[HighEndPluginUI] WebGPU not supported on this browser.');
@@ -39,7 +39,9 @@ export function HighEndPluginUI({ instance, parameterSab, onClose }: HighEndPlug
 
             const device = await adapter.requestDevice();
             const canvas = canvasRef.current;
-            if (!canvas) return;
+            if (!canvas) {
+                return;
+            }
 
             const context = canvas.getContext('webgpu');
             if (!context) {
@@ -103,10 +105,12 @@ export function HighEndPluginUI({ instance, parameterSab, onClose }: HighEndPlug
             <div className="flex items-center justify-between border-b border-border bg-surface-raised px-4 py-2">
                 <div className="flex flex-col">
                     <span className="font-semibold text-foreground">{instance.descriptor.name}</span>
-                    <span className="text-xs text-muted-foreground">{instance.descriptor.vendor} ({instance.descriptor.category})</span>
+                    <span className="text-xs text-muted-foreground">
+                        {instance.descriptor.vendor} ({instance.descriptor.category})
+                    </span>
                 </div>
                 {onClose ? (
-                    <button 
+                    <button
                         onClick={onClose}
                         className="rounded bg-surface p-1 text-muted hover:bg-surface-hover hover:text-foreground active:bg-surface-active"
                     >
@@ -118,18 +122,15 @@ export function HighEndPluginUI({ instance, parameterSab, onClose }: HighEndPlug
             {/* WebGPU Canvas Area */}
             <div className="flex-1 bg-black">
                 {webGpuSupported ? (
-                    <canvas 
-                        ref={canvasRef} 
-                        className="block h-full w-full"
-                        width={800}
-                        height={350}
-                    />
+                    <canvas ref={canvasRef} className="block h-full w-full" width={800} height={350} />
                 ) : (
                     <div className="flex h-full items-center justify-center text-muted">
                         <div className="text-center">
                             <p className="mb-2 text-lg font-medium text-destructive">WebGPU Not Supported</p>
                             <p className="text-sm">This high-end plugin requires WebGPU for its UI rendering.</p>
-                            <p className="text-sm">Please use a compatible browser (e.g. Chrome/Edge 113+ or Safari 18+).</p>
+                            <p className="text-sm">
+                                Please use a compatible browser (e.g. Chrome/Edge 113+ or Safari 18+).
+                            </p>
                         </div>
                     </div>
                 )}

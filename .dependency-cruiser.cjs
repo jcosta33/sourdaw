@@ -1,4 +1,4 @@
-/* (c) Copyright Webdaw Ltd., all rights reserved. */
+/* (c) Copyright Sourdaw Ltd., all rights reserved. */
 
 /** @type {import('dependency-cruiser').IConfiguration} */
 module.exports = {
@@ -28,7 +28,6 @@ module.exports = {
                 ],
             },
         },
-
 
         // ─── Stores are private within the module ─────────────────────────────────
         {
@@ -76,7 +75,7 @@ module.exports = {
             severity: 'error',
             comment:
                 'validators/ is module-private. Aggregate invariant enforcement is an internal concern. ' +
-                'Other modules should call the owning module\'s useCases/, which internally invoke validators.',
+                "Other modules should call the owning module's useCases/, which internally invoke validators.",
             from: { path: '^(src/modules/)([^/]+)/' },
             to: { path: '^src/modules/(?!$2)[^/]+/validators/' },
         },
@@ -87,7 +86,7 @@ module.exports = {
             severity: 'error',
             comment:
                 'services/ is module-private. Stateless cross-entity domain logic is an internal concern. ' +
-                'Other modules should call the owning module\'s useCases/, which internally invoke services.',
+                "Other modules should call the owning module's useCases/, which internally invoke services.",
             from: { path: '^(src/modules/)([^/]+)/' },
             to: { path: '^src/modules/(?!$2)[^/]+/services/' },
         },
@@ -135,7 +134,6 @@ module.exports = {
             from: { path: '^(src/modules/)([^/]+)/' },
             to: { path: '^src/modules/(?!$2)[^/]+/presentations/components/' },
         },
-
 
         // ─── Repositories: only useCases and helpers may import them ──────────────
         {

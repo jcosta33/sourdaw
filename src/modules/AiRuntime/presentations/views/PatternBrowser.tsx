@@ -223,7 +223,7 @@ export const PatternBrowser = (): ReactElement => {
     const filteredTemplates = filterTemplates({
         query: searchQuery || undefined,
         category: activeCategory,
-        genre: activeGenre,
+        genres: activeGenre ? [activeGenre] : undefined,
     });
 
     const handleInsertTemplate = (template: PatternTemplate): void => {

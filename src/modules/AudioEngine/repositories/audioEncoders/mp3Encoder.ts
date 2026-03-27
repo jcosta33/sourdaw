@@ -65,7 +65,12 @@ async function triggerBlobDownload(blob: Blob, filename: string): Promise<void> 
             ).showSaveFilePicker({
                 suggestedName: filename,
                 types: ext
-                    ? [{ description: `${ext.slice(1).toUpperCase()} file`, accept: { [mimeMap[ext] ?? 'application/octet-stream']: [ext] } }]
+                    ? [
+                          {
+                              description: `${ext.slice(1).toUpperCase()} file`,
+                              accept: { [mimeMap[ext] ?? 'application/octet-stream']: [ext] },
+                          },
+                      ]
                     : undefined,
             });
             const writable = await handle.createWritable();

@@ -22,6 +22,16 @@ export const updateDeviceParam = (trackId: string, deviceId: string, paramId: st
     audioEngine.updateDeviceParam(trackId, deviceId, paramId, value);
 };
 
+export const scheduleDeviceParam = (
+    trackId: string,
+    deviceId: string,
+    paramId: string,
+    value: number,
+    time: number
+): void => {
+    audioEngine.scheduleDeviceParam(trackId, deviceId, paramId, value, time);
+};
+
 export const updateDeviceBypass = (trackId: string, deviceId: string, bypassed: boolean): void => {
     audioEngine.updateDeviceBypass(trackId, deviceId, bypassed);
 };

@@ -7,8 +7,15 @@ export function addOscEndpoint(host: string, sendPort: number, receivePort: numb
     }
     controlSurfaceStore.set({
         ...state,
-        oscEndpoints: [...state.oscEndpoints, {
-            id: getNextOscEndpointId(), host, sendPort, receivePort, active: true,
-        }],
+        oscEndpoints: [
+            ...state.oscEndpoints,
+            {
+                id: getNextOscEndpointId(),
+                host,
+                sendPort,
+                receivePort,
+                active: true,
+            },
+        ],
     });
 }

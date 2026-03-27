@@ -7,11 +7,7 @@ import { type LatentVector } from '#/modules/AudioEngine/stores/rave';
  *
  * Pure transform — callers should update raveStore.latentCache if needed.
  */
-export function encodeAudio(
-    samples: Float32Array,
-    sampleRate: number,
-    latentDim: number = 16
-): LatentVector[] {
+export function encodeAudio(samples: Float32Array, sampleRate: number, latentDim: number = 16): LatentVector[] {
     const frameSize = Math.floor(sampleRate * 0.02); // 20ms frames
     const vectors: LatentVector[] = [];
 

@@ -65,4 +65,3 @@ export function setInputDevice(deviceId: string): void {
 export function getSelectedInputId(): string | null {
     return audioDeviceStore.value?.selectedInputId ?? null;
 }
-

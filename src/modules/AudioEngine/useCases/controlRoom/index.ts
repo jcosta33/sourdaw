@@ -1,9 +1,5 @@
 // Types
-export type {
-    MonitorOutput,
-    CueMix,
-    ControlRoomState,
-} from '#/modules/AudioEngine/stores/controlRoom';
+export type { MonitorOutput, CueMix, ControlRoomState } from '#/modules/AudioEngine/stores/controlRoom';
 export { controlRoomStore } from '#/modules/AudioEngine/stores/controlRoom';
 
 // Monitor switching

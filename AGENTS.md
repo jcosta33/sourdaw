@@ -1,6 +1,6 @@
-# Webdaw Web App - AI Agent Guidelines
+# Sourdaw Web App - AI Agent Guidelines
 
-This document provides guidance when working with the Webdaw web application codebase.
+This document provides guidance when working with the Sourdaw web application codebase.
 
 ## Commands
 
@@ -78,7 +78,6 @@ Skills are the authoritative implementation references. **Always read the releva
 - **[faust-wam-plugins](./.agents/skills/faust-wam-plugins/SKILL.md)** — Read when **building built-in DAW plugins** using Faust DSP or WAM 2.0, authoring SFZ instruments for sfizz WASM, selecting free sample libraries for commercial bundling, or managing the WAM plugin hosting lifecycle in AudioWorklet. Covers `faust2wam` compilation pipeline, LGPL-with-exception commercial distribution rights, WAM SDK hosting pattern, sfizz WASM opcode support, and the license matrix for commercially-safe sample libraries (CC0/CC-BY only).
 
 - **[tauri-platform](./.agents/skills/tauri-platform/SKILL.md)** — Read when **choosing between Web APIs and Rust** for any DAW subsystem, configuring WebKit/COOP/COEP headers, implementing MIDI I/O via `midir`, voice dictation via `whisper-rs`, file system access via Tauri plugins, or handling platform differences between WKWebView/WebView2/WebKitGTK. Contains the canonical "use Web API vs use Rust" decision table for all 17 DAW subsystems, WebKitGTK version targets (2.42+ minimum), COOP/COEP configuration, and binary-data IPC patterns.
-
 
 ## Tech Stack
 

@@ -9,9 +9,7 @@ export function setCueTrackLevel(cueId: string, trackId: string, level: number):
     controlRoomStore.set({
         ...state,
         cueMixes: state.cueMixes.map((c) =>
-            c.id === cueId
-                ? { ...c, trackLevels: { ...c.trackLevels, [trackId]: level } }
-                : c
+            c.id === cueId ? { ...c, trackLevels: { ...c.trackLevels, [trackId]: level } } : c
         ),
     });
 }

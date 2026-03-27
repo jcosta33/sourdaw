@@ -75,6 +75,7 @@ export type AudioEngine = {
     addDeviceToStrip(trackId: string, deviceId: string, deviceType: string, externalInstanceId?: string): void;
     removeDeviceFromStrip(trackId: string, deviceId: string): void;
     updateDeviceParam(trackId: string, deviceId: string, paramId: string, value: number): void;
+    scheduleDeviceParam(trackId: string, deviceId: string, paramId: string, value: number, time: number): void;
     updateDeviceBypass(trackId: string, deviceId: string, bypassed: boolean): void;
     ensureBusStrip(busId: string): BusStrip;
     removeBusStrip(busId: string): void;

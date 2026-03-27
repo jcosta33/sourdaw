@@ -1,6 +1,6 @@
 import { getTrackState, setTrackState } from '#/modules/Arrangement/repositories/track';
 import { type Clip } from '#/modules/Arrangement/models/Track';
-import { getNextClipId } from '#/modules/Arrangement/models/clipIdCounter';
+import { getNextClipId } from '#/modules/Arrangement/repositories/clipIdCounter';
 import { snapSplitBeatToZeroCrossing } from '#/modules/Arrangement/services/snapSplitBeatToZeroCrossing';
 
 export function splitClip(clipId: string, splitBeat: number): void {

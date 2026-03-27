@@ -17,12 +17,15 @@ import { getSynthParamsForTrack, scheduleNote } from '#/modules/Synth/useCases/b
 import { getDrumKitByIndex, scheduleKitNote } from '#/modules/Synth/useCases/drumKitSynth';
 import { getDrumKitDefByIndex, scheduleDrumKitNote } from '#/modules/Synth/useCases/drumSynthEngine';
 import {
-    MIDI_NOTE_ON, MIDI_NOTE_OFF, MIDI_CC, MIDI_PITCH_BEND, MIDI_CHANNEL_PRESSURE, MPE_SLIDE_CC,
+    MIDI_NOTE_ON,
+    MIDI_NOTE_OFF,
+    MIDI_CC,
+    MIDI_PITCH_BEND,
+    MIDI_CHANNEL_PRESSURE,
+    MPE_SLIDE_CC,
     type ActiveNoteData,
 } from '#/modules/AudioEngine/models/WebMidiTypes';
-import {
-    activeNotes, channelToNote, mpeEnabled, targetTrackId,
-} from './state';
+import { activeNotes, channelToNote, mpeEnabled, targetTrackId } from './state';
 
 function secondsToBeats(seconds: number, tempo: number): number {
     return (seconds * tempo) / 60;
@@ -101,22 +104,20 @@ export function handleNoteOn(channel: number, note: number, velocity: number): v
 
     if (!(isRecording && isArmed)) {
         const strip = engine.ensureTrackStrip(targetTrackId);
-        
+
         let osc: OscillatorNode | null = null;
-        const synthDevice = track?.devices.find((d) => d.type === 'builtin-drum-kit' || d.type.startsWith('builtin-drum-machine') || d.type.startsWith('builtin-synth'));
-        
+        const synthDevice = track?.devices.find(
+            (d) =>
+                d.type === 'builtin-drum-kit' ||
+                d.type.startsWith('builtin-drum-machine') ||
+                d.type.startsWith('builtin-synth')
+        );
+
         if (synthDevice?.type === 'builtin-drum-kit' || synthDevice?.type.startsWith('builtin-drum-machine')) {
-            const kitIndex = synthDevice.parameterValues['kit'] ?? 0;
+            const kitIndex = synthDevice.parameterValues.kit ?? 0;
             const kitDef = getDrumKitDefByIndex(kitIndex);
             if (kitDef) {
-                scheduleDrumKitNote(
-                    engine.context,
-                    strip.gainNode,
-                    kitDef,
-                    note,
-                    engine.context.currentTime,
-                    velocity
-                );
+                scheduleDrumKitNote(engine.context, strip.gainNode, kitDef, note, engine.context.currentTime, velocity);
             } else {
                 const kit = getDrumKitByIndex(kitIndex);
                 if (kit) {
@@ -138,12 +139,12 @@ export function handleNoteOn(channel: number, note: number, velocity: number): v
                 strip.gainNode,
                 note,
                 engine.context.currentTime,
-                60, 
+                60,
                 velocity,
                 synthParams
             ) as OscillatorNode & { _env?: GainNode };
         }
-        
+
         if (osc) {
             noteData.osc = osc;
         }

@@ -6,10 +6,10 @@
 class HighEndPluginProcessor extends AudioWorkletProcessor {
     private paramView: Float32Array | null = null;
     private isWasmInitialized: boolean = false;
-    
+
     constructor(options: AudioWorkletNodeOptions) {
         super(options);
-        
+
         this.port.onmessage = (event: MessageEvent) => {
             if (event.data.type === 'init-sab') {
                 const sab = event.data.sab as SharedArrayBuffer;
@@ -29,7 +29,7 @@ class HighEndPluginProcessor extends AudioWorkletProcessor {
 
         // Ensure we have input and output channels
         if (!input || !output || input.length === 0 || output.length === 0) {
-            return true; 
+            return true;
         }
 
         // Example: Reading from SAB lock-free
@@ -43,15 +43,15 @@ class HighEndPluginProcessor extends AudioWorkletProcessor {
 
         // Processing Loop (Placeholder)
         // If this were the real Alchemy or Space Designer, we would pass
-        // the `input` buffers and the `sab` pointer directly into the 
+        // the `input` buffers and the `sab` pointer directly into the
         // Wasm function call here, e.g., `wasm_process(in_ptr, out_ptr, frames)`
-        
+
         // For now, simple passthrough with the SAB gain applied to prove the signal path
         const numChannels = Math.min(input.length, output.length);
         for (let channel = 0; channel < numChannels; channel++) {
             const inputChannel = input[channel]!;
             const outputChannel = output[channel]!;
-            
+
             for (let i = 0; i < inputChannel.length; i++) {
                 outputChannel[i] = inputChannel[i]! * gain;
             }

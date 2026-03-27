@@ -1,6 +1,6 @@
 import { audioEngine } from '../repositories/createWebAudioEngine';
 import { getSynthParamsForTrack, scheduleNote } from '#/modules/Synth/useCases/builtinSynth';
-import { getFaustInstrumentNode, startFaustNote } from '#/modules/Synth/useCases/faustInstrumentScheduler';
+import { startFaustNote } from '#/modules/Synth/useCases/faustInstrumentScheduler';
 import { getTrackById } from '#/modules/Arrangement/useCases/trackQueries';
 import { getDrumKitDefByIndex, scheduleDrumKitNote } from '#/modules/Synth/useCases/drumSynthEngine';
 
@@ -26,23 +26,16 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
         const kitIndex = drumDevice.parameterValues.kit ?? drumDevice.parameterValues.kitId ?? 0;
         const kitDef = getDrumKitDefByIndex(kitIndex);
         if (kitDef) {
-            scheduleDrumKitNote(
-                engine.context,
-                strip.gainNode,
-                kitDef,
-                pitch,
-                now,
-                velocity
-            );
+            scheduleDrumKitNote(engine.context, strip.gainNode, kitDef, pitch, now, velocity);
         }
         // Drums are one-shots — the stop callback is a no-op
         return () => {};
     }
 
     // Check for Faust instrument on this track
-    const faustNode = getFaustInstrumentNode(strip);
-    if (faustNode) {
-        return startFaustNote(faustNode, pitch, velocity, now);
+    const faustDevice = track?.devices.find((d) => d.type.startsWith('faust-'));
+    if (faustDevice) {
+        return startFaustNote(trackId, faustDevice.id, pitch, velocity, now);
     }
 
     // Regular synth path

@@ -6,7 +6,12 @@ import { setProtocol, type ControlSurfaceProtocol } from '#/modules/AudioEngine/
 import { addCvOutput, type CvOutputChannel } from '#/modules/Synth/useCases/cvGate';
 import { connectPush, disconnectPush } from '#/modules/Plugin/useCases/pushIntegration';
 import { loadModel, setTransferBlend } from '#/modules/AudioEngine/useCases/rave';
-import { enableWarping, setWarpAlgorithm, setPitchShift, type WarpAlgorithm } from '#/modules/AudioEngine/useCases/audioWarping';
+import {
+    enableWarping,
+    setWarpAlgorithm,
+    setPitchShift,
+    type WarpAlgorithm,
+} from '#/modules/AudioEngine/useCases/audioWarping';
 
 export const finalFeatureHandlers: Record<string, ActionHandler<any>> = {
     setProcessingMode: {
