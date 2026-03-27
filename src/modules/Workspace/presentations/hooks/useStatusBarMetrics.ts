@@ -26,9 +26,22 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
     const idRef = useRef(crypto.randomUUID());
     const lastFrameRef = useRef(0);
     const cpuSamplesRef = useRef<number[]>([]);
+    const idleDeadlineRef = useRef(-1);
 
     useEffect(() => {
         lastFrameRef.current = performance.now();
+
+        // requestIdleCallback loop — measures how much idle time the browser has
+        let idleId = 0;
+        const scheduleIdle = (): void => {
+            if (typeof requestIdleCallback === 'function') {
+                idleId = requestIdleCallback((deadline) => {
+                    idleDeadlineRef.current = deadline.timeRemaining();
+                    scheduleIdle();
+                });
+            }
+        };
+        scheduleIdle();
 
         const tick = (): void => {
             const now = performance.now();
@@ -39,12 +52,31 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
             const masterLevel = getMasterPeakLevel();
 
             // ── CPU load estimate ───────────────────────────────────────
-            // Measures how much of the 16.67ms frame budget was used.
-            // At 60fps: 16.67ms frame = 0%. 33ms frame = 100%.
+            // Uses requestIdleCallback to measure how much of each frame is
+            // consumed by work. If the browser has no idle time, CPU is high.
+            // This is the most accurate browser-available method short of
+            // AudioWorklet self-timing.
             const targetFrameMs = 1000 / 60;
-            const load = frameDelta > targetFrameMs
-                ? Math.min(100, ((frameDelta - targetFrameMs) / targetFrameMs) * 100)
-                : 0;
+
+            // Frame overrun: how much we exceeded the 16.67ms budget
+            const frameOverrun = Math.max(0, frameDelta - targetFrameMs);
+            const frameLoad = Math.min(100, (frameOverrun / targetFrameMs) * 120);
+
+            // Idle time measurement: if the browser reports idle time via
+            // the idleDeadline ref, use it to estimate how busy the main thread is.
+            // No idle time = 100% busy. Full idle time (~50ms) = 0% busy.
+            let idleLoad = 0;
+            const deadline = idleDeadlineRef.current;
+            if (deadline >= 0) {
+                // deadline is the remaining idle ms (0 = fully busy, 50 = fully idle)
+                idleLoad = Math.min(100, Math.max(0, (1 - deadline / 50) * 100));
+                idleDeadlineRef.current = -1; // consumed
+            }
+
+            // Combine: higher of frame jank or idle pressure
+            const isPlaying = engineInfo?.state === 'running';
+            const floor = isPlaying ? 3 : 0;
+            const load = Math.max(floor, frameLoad, idleLoad);
             const samples = cpuSamplesRef.current;
             samples.push(Math.max(0, load));
             if (samples.length > 30) {
@@ -111,6 +143,11 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
         };
 
         animationScheduler.register(`status-${idRef.current}`, tick);
-        return () => animationScheduler.unregister(`status-${idRef.current}`);
+        return () => {
+            animationScheduler.unregister(`status-${idRef.current}`);
+            if (typeof cancelIdleCallback === 'function' && idleId) {
+                cancelIdleCallback(idleId);
+            }
+        };
     }, [refs]);
 };

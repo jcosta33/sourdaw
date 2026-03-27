@@ -28,18 +28,36 @@ const modules = new Map<string, FaustModule>();
 let compilerPromise: Promise<IFaustCompiler> | null = null;
 let compilerReady = false;
 
+let compilerError: string | null = null;
+
 async function getCompiler(): Promise<IFaustCompiler> {
     if (!compilerPromise) {
         compilerPromise = (async () => {
-            const module = await instantiateFaustModuleFromFile('/faust/libfaust-wasm.js');
-            const libFaust = new LibFaust(module);
-            const compiler = new FaustCompiler(libFaust);
-            compilerReady = true;
-            console.info(`[Faust] Compiler ready — version ${compiler.version()}`);
-            return compiler;
+            try {
+                // Use origin-relative path so it works with any protocol
+                // (http:// in dev, tauri:// or https://tauri.localhost in production)
+                const faustPath = `${window.location.origin}/faust/libfaust-wasm.js`;
+
+                const module = await instantiateFaustModuleFromFile(faustPath);
+                const libFaust = new LibFaust(module);
+                const compiler = new FaustCompiler(libFaust);
+                compilerReady = true;
+                return compiler;
+            } catch (error) {
+                const msg = error instanceof Error ? error.message : String(error);
+                compilerError = msg;
+                console.error(`[Faust] Compiler initialization failed: ${msg}`);
+                // Re-throw so callers know compilation is impossible
+                throw new Error(`Faust compiler unavailable: ${msg}`);
+            }
         })();
     }
     return compilerPromise;
+}
+
+/** Returns the compiler init error message, if any. */
+export function getFaustCompilerError(): string | null {
+    return compilerError;
 }
 
 export function isFaustCompilerReady(): boolean {
@@ -79,7 +97,7 @@ export function registerFaustDSP(
 export async function compileFaustDSP(moduleId: string): Promise<boolean> {
     const mod = modules.get(moduleId);
     if (!mod) {
-        console.warn(`[Faust] Module ${moduleId} not found`);
+        console.error(`[Faust] Module "${moduleId}" not registered. Available: ${[...modules.keys()].join(', ')}`);
         return false;
     }
     if (mod.compiled && mod.generator) {
@@ -96,16 +114,16 @@ export async function compileFaustDSP(moduleId: string): Promise<boolean> {
             '-I libraries/'
         );
         if (!result) {
-            console.error(`[Faust] Compilation failed for ${mod.name}`);
+            console.error(`[Faust] Compilation returned null for "${mod.name}". DSP code may have syntax errors.`);
             return false;
         }
         mod.generator = generator;
         mod.compiled = true;
         modules.set(moduleId, mod);
-        console.info(`[Faust] Compiled ${mod.name}`);
         return true;
     } catch (error) {
-        console.error(`[Faust] Compilation error for ${mod.name}:`, error);
+        const msg = error instanceof Error ? error.message : String(error);
+        console.error(`[Faust] Compilation failed for "${mod.name}": ${msg}`);
         return false;
     }
 }
@@ -131,13 +149,17 @@ export async function createFaustNode(
 ): Promise<IFaustMonoWebAudioNode | null> {
     const mod = modules.get(moduleId);
     if (!mod?.generator || !mod.compiled) {
-        console.warn(`[Faust] Module ${moduleId} not compiled — call compileFaustDSP first`);
+        const reason = compilerError
+            ? `Compiler unavailable: ${compilerError}`
+            : 'Module not compiled';
+        console.error(`[Faust] Cannot create node for "${moduleId}": ${reason}`);
         return null;
     }
     try {
         return await mod.generator.createNode(context);
     } catch (error) {
-        console.error(`[Faust] Node creation failed for ${mod.name}:`, error);
+        const msg = error instanceof Error ? error.message : String(error);
+        console.error(`[Faust] Node creation failed for "${mod.name}": ${msg}`);
         return null;
     }
 }

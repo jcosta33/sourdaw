@@ -74,10 +74,20 @@ export async function createNativeDspNode(
         };
     });
 
-    // Send init command with WASM URL and plugin type
+    // Fetch WASM on main thread (AudioWorklet scope doesn't have fetch on Safari/WKWebView)
+    // and pass the binary to the worklet via postMessage.
+    let wasmBytes: ArrayBuffer | null = null;
+    try {
+        const response = await fetch(wasmUrl);
+        wasmBytes = await response.arrayBuffer();
+    } catch {
+        // Fetch failed — fall back to sending URL (works on Chrome)
+    }
+
     node.port.postMessage({
         type: 'init',
         wasmUrl,
+        wasmBytes,
         pluginType,
     });
 

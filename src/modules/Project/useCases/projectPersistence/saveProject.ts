@@ -16,6 +16,8 @@ import { writeProjectJson, writeNamedProjectJson } from '../../repositories/proj
 import { isNativeFileSystemAvailable, saveProjectToFile, getProjectDirectory } from '../../repositories/nativeProjectFiles';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 
+let saveQuotaWarned = false;
+
 export function saveProject(): void {
     syncCurrentArrangementToStore();
 
@@ -65,25 +67,31 @@ export function saveProject(): void {
         activeArrangementId: arrState.activeArrangementId,
     };
 
+    const json = JSON.stringify(data);
+
+    // Try native file system first (no size limit)
+    if (isNativeFileSystemAvailable()) {
+        getProjectDirectory()
+            .then((dir) => saveProjectToFile(`${dir}/${project.name}.sourdaw`, data))
+            .catch(() => { /* native save is best-effort */ });
+    }
+
+    // Try localStorage (may fail for large projects >5MB)
     try {
-        const json = JSON.stringify(data);
         writeProjectJson(json);
         writeNamedProjectJson(project.name, json);
-
-        if (isNativeFileSystemAvailable()) {
-            getProjectDirectory()
-                .then((dir) => saveProjectToFile(`${dir}/${project.name}.sourdaw`, data))
-                .catch(() => {
-                    /* native save is best-effort */
-                });
-        }
-
-        projectStore.set({ ...project, updatedAt: data.updatedAt, dirty: false, loading: false });
-        addToRecentProjects(project.name, `sourdaw:project:${project.name}`);
     } catch {
-        notifyUser('Failed to save project — storage may be full', 'error');
-        return;
+        // Quota exceeded — skip localStorage silently.
+        // The native file save above handles persistence for large projects.
+        // Only warn once, not on every auto-save tick.
+        if (!saveQuotaWarned) {
+            saveQuotaWarned = true;
+            notifyUser('Project too large for browser storage — use File → Save to disk', 'warning');
+        }
     }
+
+    projectStore.set({ ...project, updatedAt: data.updatedAt, dirty: false, loading: false });
+    addToRecentProjects(project.name, `sourdaw:project:${project.name}`);
 }
 
 export function renameProject(name: string): void {

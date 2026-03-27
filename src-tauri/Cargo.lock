@@ -6982,6 +6982,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "sourdaw"
+version = "0.1.0"
+dependencies = [
+ "clap-sys",
+ "cpal",
+ "dirs 5.0.1",
+ "futures-util",
+ "hound",
+ "libloading 0.8.9",
+ "midir",
+ "mistralrs",
+ "ndarray 0.16.1",
+ "ort",
+ "raw-window-handle",
+ "reqwest 0.12.28",
+ "rubato 0.15.0",
+ "rusty_link",
+ "serde",
+ "serde_bytes",
+ "serde_json",
+ "sha2",
+ "symphonia",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-shell",
+ "tokio",
+ "vst3",
+ "whisper-rs",
+]
+
+[[package]]
 name = "sparsevec"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8930,37 +8961,6 @@ dependencies = [
  "phf_codegen 0.13.1",
  "string_cache 0.9.0",
  "string_cache_codegen 0.6.1",
-]
-
-[[package]]
-name = "sourdaw"
-version = "0.1.0"
-dependencies = [
- "clap-sys",
- "cpal",
- "dirs 5.0.1",
- "futures-util",
- "hound",
- "libloading 0.8.9",
- "midir",
- "mistralrs",
- "ndarray 0.16.1",
- "ort",
- "raw-window-handle",
- "reqwest 0.12.28",
- "rubato 0.15.0",
- "rusty_link",
- "serde",
- "serde_bytes",
- "serde_json",
- "sha2",
- "symphonia",
- "tauri",
- "tauri-build",
- "tauri-plugin-shell",
- "tokio",
- "vst3",
- "whisper-rs",
 ]
 
 [[package]]

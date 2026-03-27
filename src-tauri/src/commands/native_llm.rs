@@ -1,17 +1,19 @@
 use mistralrs::{
-    Function, IsqType, PagedAttentionMetaBuilder, RequestBuilder,
-    Response, TextMessageRole, TextModelBuilder, Tool, ToolChoice, ToolType,
+    Function, GgufModelBuilder, PagedAttentionMetaBuilder, RequestBuilder,
+    Response, TextMessageRole, Tool, ToolChoice, ToolType,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::ipc::Channel;
+use tauri::AppHandle;
+use tauri::Emitter;
 use tokio::sync::RwLock;
+
+use super::model_download;
 
 // ── Managed state ────────────────────────────────────────────────────────
 
-/// In-process LLM state. The model downloads from HuggingFace Hub on first
-/// init and stays loaded in memory until explicitly unloaded.
 pub struct NativeLlmState {
     model: Arc<RwLock<Option<Arc<mistralrs::Model>>>>,
     model_id: Arc<RwLock<Option<String>>>,
@@ -61,48 +63,52 @@ pub struct ToolCallResult {
     pub arguments: serde_json::Value,
 }
 
-// ── Default model ────────────────────────────────────────────────────────
+// ── Model config ─────────────────────────────────────────────────────────
 
-const DEFAULT_MODEL_ID: &str = "NousResearch/Hermes-3-Llama-3.1-8B";
+const GGUF_REPO: &str = "NousResearch/Hermes-3-Llama-3.1-8B-GGUF";
+const GGUF_FILE: &str = "Hermes-3-Llama-3.1-8B.Q4_K_M.gguf";
+const GGUF_URL: &str = "https://huggingface.co/NousResearch/Hermes-3-Llama-3.1-8B-GGUF/resolve/main/Hermes-3-Llama-3.1-8B.Q4_K_M.gguf";
 
-// ── Helper: get loaded model or return error ─────────────────────────────
+// ── Helper ───────────────────────────────────────────────────────────────
 
-async fn get_model(
-    state: &NativeLlmState,
-) -> Result<Arc<mistralrs::Model>, String> {
+async fn get_model(state: &NativeLlmState) -> Result<Arc<mistralrs::Model>, String> {
     let guard = state.model.read().await;
-    guard
-        .clone()
-        .ok_or_else(|| "No model loaded. Call init_native_llm first.".to_string())
+    guard.clone().ok_or_else(|| "No model loaded. Call init_native_llm first.".to_string())
 }
 
 // ── Commands ─────────────────────────────────────────────────────────────
 
-/// Initialize the native LLM engine. Downloads the model from HuggingFace Hub
-/// on first use, applies 4-bit quantization in-process, and loads to GPU.
-/// No manual GGUF download or external binary required.
+/// Initialize the native LLM.
+/// Step 1: Download GGUF file with real progress (via our reqwest downloader).
+/// Step 2: Load model from local file (no network needed).
 #[tauri::command]
 pub async fn init_native_llm(
     model_id: Option<String>,
+    app: AppHandle,
     state: tauri::State<'_, NativeLlmState>,
 ) -> Result<NativeLlmStatus, String> {
-    // If already loaded, return immediately
+    // Already loaded?
     {
         let guard = state.model.read().await;
         if guard.is_some() {
             let id = state.model_id.read().await;
-            return Ok(NativeLlmStatus {
-                loaded: true,
-                model_id: id.clone(),
-            });
+            return Ok(NativeLlmStatus { loaded: true, model_id: id.clone() });
         }
     }
 
-    let id = model_id.unwrap_or_else(|| DEFAULT_MODEL_ID.to_string());
-    eprintln!("[Native LLM] Loading model: {id} (4-bit quantization, this may take a moment on first run)...");
+    let _ = model_id; // reserved for future model selection
 
-    let model: mistralrs::Model = TextModelBuilder::new(id.clone())
-        .with_isq(IsqType::Q4K)
+    // Step 1: Ensure GGUF file is downloaded (with real progress)
+    let _ = app.emit("llm-progress", serde_json::json!({ "progress": 0.0, "text": "Checking model cache…" }));
+
+    let model_path = model_download::ensure_model(GGUF_FILE, GGUF_URL, None).await?;
+    let model_path_str = model_path.to_string_lossy().to_string();
+
+    let _ = app.emit("llm-progress", serde_json::json!({ "progress": 0.7, "text": "Loading model into memory…" }));
+    eprintln!("[Native LLM] GGUF downloaded, loading from: {model_path_str}");
+
+    // Step 2: Load from local GGUF file
+    let model: mistralrs::Model = GgufModelBuilder::new(GGUF_REPO, vec![GGUF_FILE])
         .with_logging()
         .with_paged_attn(|| PagedAttentionMetaBuilder::default().build())
         .map_err(|e| format!("PagedAttention config error: {e}"))?
@@ -110,25 +116,17 @@ pub async fn init_native_llm(
         .await
         .map_err(|e| format!("Failed to load model: {e}"))?;
 
+    let _ = app.emit("llm-progress", serde_json::json!({ "progress": 1.0, "text": "Ready" }));
     eprintln!("[Native LLM] Model loaded successfully");
 
     let model = Arc::new(model);
-    {
-        let mut guard = state.model.write().await;
-        *guard = Some(model);
-    }
-    {
-        let mut guard = state.model_id.write().await;
-        *guard = Some(id.clone());
-    }
+    { let mut guard = state.model.write().await; *guard = Some(model); }
+    { let mut guard = state.model_id.write().await; *guard = Some(GGUF_REPO.to_string()); }
 
-    Ok(NativeLlmStatus {
-        loaded: true,
-        model_id: Some(id),
-    })
+    Ok(NativeLlmStatus { loaded: true, model_id: Some(GGUF_REPO.to_string()) })
 }
 
-/// Non-streaming completion. Returns the full response text.
+/// Non-streaming completion.
 #[tauri::command]
 pub async fn generate_native_completion(
     system_prompt: String,
@@ -150,20 +148,16 @@ pub async fn generate_native_completion(
         request = request.set_sampler_max_len(max);
     }
 
-    let response = model
-        .send_chat_request(request)
-        .await
+    let response = model.send_chat_request(request).await
         .map_err(|e| format!("Inference error: {e}"))?;
 
-    let content = response.choices.first()
+    Ok(response.choices.first()
         .and_then(|c| c.message.content.as_ref())
         .cloned()
-        .unwrap_or_default();
-
-    Ok(content)
+        .unwrap_or_default())
 }
 
-/// Streaming completion via Tauri Channel. Sends tokens as they are generated.
+/// Streaming completion via Tauri Channel.
 #[tauri::command]
 pub async fn stream_native_completion(
     system_prompt: String,
@@ -187,21 +181,14 @@ pub async fn stream_native_completion(
         request = request.add_message(role, &msg.content);
     }
 
-    if let Some(temp) = temperature {
-        request = request.set_sampler_temperature(temp as f64);
-    }
-    if let Some(max) = max_tokens {
-        request = request.set_sampler_max_len(max);
-    }
+    if let Some(temp) = temperature { request = request.set_sampler_temperature(temp as f64); }
+    if let Some(max) = max_tokens { request = request.set_sampler_max_len(max); }
 
-    let mut stream = model
-        .stream_chat_request(request)
-        .await
-        .map_err(|e| {
-            let msg = format!("Stream init error: {e}");
-            let _ = on_event.send(LlmStreamEvent::Error { message: msg.clone() });
-            msg
-        })?;
+    let mut stream = model.stream_chat_request(request).await.map_err(|e| {
+        let msg = format!("Stream init error: {e}");
+        let _ = on_event.send(LlmStreamEvent::Error { message: msg.clone() });
+        msg
+    })?;
 
     let mut total_tokens: u32 = 0;
 
@@ -212,18 +199,14 @@ pub async fn stream_native_completion(
                     if let Some(ref content) = choice.delta.content {
                         if !content.is_empty() {
                             total_tokens += 1;
-                            let _ = on_event.send(LlmStreamEvent::Token {
-                                text: content.clone(),
-                            });
+                            let _ = on_event.send(LlmStreamEvent::Token { text: content.clone() });
                         }
                     }
                 }
             }
             Response::Done(_) => break,
             Response::ModelError(msg, _) => {
-                let _ = on_event.send(LlmStreamEvent::Error {
-                    message: msg.to_string(),
-                });
+                let _ = on_event.send(LlmStreamEvent::Error { message: msg.to_string() });
                 return Err(msg.to_string());
             }
             _ => {}
@@ -234,7 +217,7 @@ pub async fn stream_native_completion(
     Ok(())
 }
 
-/// Tool-calling inference. Sends tools to the model and returns parsed tool calls.
+/// Tool-calling inference.
 #[tauri::command]
 pub async fn native_tool_calling(
     system_prompt: String,
@@ -245,22 +228,18 @@ pub async fn native_tool_calling(
 ) -> Result<Vec<ToolCallResult>, String> {
     let model = get_model(&state).await?;
 
-    // Convert our ToolDef to mistralrs Tool format
-    let mr_tools: Vec<Tool> = tools
-        .iter()
-        .map(|t| {
-            let parameters: HashMap<String, serde_json::Value> =
-                serde_json::from_value(t.parameters.clone()).unwrap_or_default();
-            Tool {
-                tp: ToolType::Function,
-                function: Function {
-                    description: Some(t.description.clone()),
-                    name: t.name.clone(),
-                    parameters: Some(parameters),
-                },
-            }
-        })
-        .collect();
+    let mr_tools: Vec<Tool> = tools.iter().map(|t| {
+        let parameters: HashMap<String, serde_json::Value> =
+            serde_json::from_value(t.parameters.clone()).unwrap_or_default();
+        Tool {
+            tp: ToolType::Function,
+            function: Function {
+                description: Some(t.description.clone()),
+                name: t.name.clone(),
+                parameters: Some(parameters),
+            },
+        }
+    }).collect();
 
     let mut request = RequestBuilder::new()
         .add_message(TextMessageRole::System, &system_prompt)
@@ -268,19 +247,12 @@ pub async fn native_tool_calling(
         .set_tools(mr_tools)
         .set_tool_choice(ToolChoice::Auto);
 
-    if let Some(temp) = temperature {
-        request = request.set_sampler_temperature(temp as f64);
-    }
+    if let Some(temp) = temperature { request = request.set_sampler_temperature(temp as f64); }
 
-    let response = model
-        .send_chat_request(request)
-        .await
+    let response = model.send_chat_request(request).await
         .map_err(|e| format!("Tool calling error: {e}"))?;
 
-    let message = response.choices.first()
-        .map(|c| &c.message)
-        .ok_or("No response from model")?;
-
+    let message = response.choices.first().map(|c| &c.message).ok_or("No response")?;
     let mut results = Vec::new();
 
     if let Some(ref tool_calls) = message.tool_calls {
@@ -288,38 +260,25 @@ pub async fn native_tool_calling(
             let arguments: serde_json::Value =
                 serde_json::from_str(&call.function.arguments)
                     .unwrap_or(serde_json::Value::Object(Default::default()));
-            results.push(ToolCallResult {
-                name: call.function.name.clone(),
-                arguments,
-            });
+            results.push(ToolCallResult { name: call.function.name.clone(), arguments });
         }
     }
 
     Ok(results)
 }
 
-/// Unload the model to free GPU/RAM.
+/// Unload model.
 #[tauri::command]
-pub async fn unload_native_llm(
-    state: tauri::State<'_, NativeLlmState>,
-) -> Result<(), String> {
-    {
-        let mut guard = state.model.write().await;
-        *guard = None;
-    }
-    {
-        let mut guard = state.model_id.write().await;
-        *guard = None;
-    }
+pub async fn unload_native_llm(state: tauri::State<'_, NativeLlmState>) -> Result<(), String> {
+    { let mut guard = state.model.write().await; *guard = None; }
+    { let mut guard = state.model_id.write().await; *guard = None; }
     eprintln!("[Native LLM] Model unloaded");
     Ok(())
 }
 
-/// Check whether a model is loaded.
+/// Status check.
 #[tauri::command]
-pub async fn get_native_llm_status(
-    state: tauri::State<'_, NativeLlmState>,
-) -> Result<NativeLlmStatus, String> {
+pub async fn get_native_llm_status(state: tauri::State<'_, NativeLlmState>) -> Result<NativeLlmStatus, String> {
     let loaded = state.model.read().await.is_some();
     let model_id = state.model_id.read().await.clone();
     Ok(NativeLlmStatus { loaded, model_id })

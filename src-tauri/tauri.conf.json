@@ -1,7 +1,7 @@
 {
   "productName": "Sourdaw",
   "version": "0.1.0",
-  "identifier": "com.sourdaw.app",
+  "identifier": "com.sourdaw.daw",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",

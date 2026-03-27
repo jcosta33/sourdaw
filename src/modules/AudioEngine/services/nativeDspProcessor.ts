@@ -18,7 +18,13 @@ class NativeDspProcessor extends AudioWorkletProcessor {
             const { type } = e.data;
             if (type === 'init') {
                 try {
-                    const wasm = await init(e.data.wasmUrl);
+                    // Accept pre-fetched WASM bytes (for Safari/WKWebView where
+                    // fetch is not available in AudioWorklet scope), or fall
+                    // back to URL-based loading (Chrome).
+                    const initSource = e.data.wasmBytes
+                        ? new WebAssembly.Module(e.data.wasmBytes)
+                        : e.data.wasmUrl;
+                    const wasm = await init(initSource);
                     this.wasmMemory = wasm.memory;
                     this.plugin = new WasmPluginInstance(e.data.pluginType, sampleRate);
                     this.isInitialized = true;

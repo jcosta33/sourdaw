@@ -34,17 +34,37 @@ export async function initNativeEngine(): Promise<void> {
         llmStatusStore.set({
             state: 'loading',
             progress: 0,
-            text: 'Loading AI model (downloads ~4.9 GB on first run)...',
+            text: 'Starting AI engine…',
         });
+
+        // Listen for real progress events from Rust
+        let unlisten: (() => void) | null = null;
+        try {
+            const { tauriListen } = await import('#/helpers/tauriBridge');
+            unlisten = await tauriListen('llm-progress', (event: unknown) => {
+                const payload = (event as { payload: { progress: number; text: string } }).payload;
+                if (payload) {
+                    llmStatusStore.set({
+                        state: 'loading',
+                        progress: payload.progress,
+                        text: payload.text,
+                    });
+                }
+            });
+        } catch {
+            // Listener setup failed — progress will just stay at initial message
+        }
 
         try {
             await tauriInvoke('init_native_llm', { modelId: null });
         } catch (error) {
+            if (unlisten) { unlisten(); }
             const msg = error instanceof Error ? error.message : String(error);
             llmStatusStore.set({ state: 'error', message: msg });
             throw error;
         }
 
+        if (unlisten) { unlisten(); }
         nativeEngineReady = true;
         logger.info('[Native AI] In-process LLM ready');
         return;
