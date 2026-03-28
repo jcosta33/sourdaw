@@ -401,6 +401,17 @@ class AudioEngineImpl implements AudioEngine {
             } catch {}
         }
         this.scheduledNodes.length = 0;
+
+        // Send all-notes-off to Fermenter devices (MIDI notes 0-127)
+        for (const [, trackNode] of this.trackNodes) {
+            for (const dn of trackNode.strip.deviceNodes) {
+                if (dn.fermenterControls) {
+                    for (let note = 0; note < 128; note++) {
+                        dn.fermenterControls.noteOff(note);
+                    }
+                }
+            }
+        }
     }
 
     public dispose(): void {

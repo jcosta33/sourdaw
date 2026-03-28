@@ -1,7 +1,8 @@
 [workspace]
 members = [
     ".",
-    "audio-core"
+    "audio-core",
+    "fermenter"
 ]
 
 [package]

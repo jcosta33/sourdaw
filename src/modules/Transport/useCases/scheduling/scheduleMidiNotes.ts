@@ -178,6 +178,31 @@ export function scheduleMidiNotes(
                                 note.velocity,
                                 clip.gain
                             );
+                        } else if (track.devices.some((d) => d.type === 'fermenter')) {
+                            // Fermenter synthesizer — send noteOn/noteOff via worklet MessagePort
+                            const fermenterDevice = track.devices.find((d) => d.type === 'fermenter');
+                            if (fermenterDevice) {
+                                const dn = strip.deviceNodes.find((d) => d.deviceId === fermenterDevice.id);
+                                if (dn?.fermenterControls) {
+                                    const ctx = getAudioContext();
+                                    const scheduleDelay = Math.max(0, time - ctx.currentTime);
+                                    // Schedule noteOn at the precise time using setTimeout
+                                    // (MessagePort messages can't be scheduled at a specific audio time)
+                                    if (scheduleDelay <= 0) {
+                                        dn.fermenterControls.noteOn(note.pitch, note.velocity);
+                                        setTimeout(() => {
+                                            dn.fermenterControls?.noteOff(note.pitch);
+                                        }, duration * 1000);
+                                    } else {
+                                        setTimeout(() => {
+                                            dn.fermenterControls?.noteOn(note.pitch, note.velocity);
+                                            setTimeout(() => {
+                                                dn.fermenterControls?.noteOff(note.pitch);
+                                            }, duration * 1000);
+                                        }, scheduleDelay * 1000);
+                                    }
+                                }
+                            }
                         } else {
                             const faustDevice = track.devices.find((d) => d.type.startsWith('faust-'));
                             if (faustDevice) {

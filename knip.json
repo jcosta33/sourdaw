@@ -1,45 +1,16 @@
 {
   "$schema": "https://unpkg.com/knip@latest/schema.json",
-  "entry": ["src/routes/**/*.tsx"],
-  "project": ["src/**/*.{ts,tsx}", "!src/**/*.spec.{ts,tsx}", "!src/**/*.test.{ts,tsx}"],
+  "entry": [
+    "src/routes/**/*.tsx"
+  ],
+  "project": [
+    "src/**/*.{ts,tsx}",
+    "!src/**/*.spec.{ts,tsx}",
+    "!src/**/*.test.{ts,tsx}",
+    "!src/routeTree.gen.ts"
+  ],
   "ignore": [
-    "src/components/ui/dialog.tsx",
-    "src/modules/Arrangement/useCases/soundPresetLibrary.ts",
-    "src/helpers/DependencyInjector/inject.ts",
-    "src/helpers/Store/ReadonlyStore.ts",
-    "src/helpers/DOM/KeyPressNotifier.ts",
-    "src/helpers/Event/createEventBus.ts",
-    "src/helpers/Event/EventLog.ts",
-    "src/helpers/Event/DevToolsEventBus.ts",
-    "src/helpers/Event/eventLogHelpers.ts",
-    "src/helpers/Logger/createLogger.ts",
-    "src/helpers/React/useKeyPressNotifier.ts",
-    "src/helpers/React/slots/slots.ts",
-    "src/helpers/Styles/merge.ts",
-    "src/helpers/UI/getKeyWithModifier.ts",
-
-    "src/modules/AudioEngine/useCases/drumKitSynth.ts",
-    "src/modules/AudioEngine/useCases/modulatorLibrary.ts",
-    "src/modules/AudioEngine/useCases/samplePlayer.ts",
-    "src/modules/AudioEngine/useCases/modulationSystem.ts",
-    "src/modules/AudioEngine/useCases/wamPluginHost.ts",
-    "src/modules/AudioEngine/useCases/pluginBridge.ts",
-    "src/modules/AudioEngine/useCases/faustEngine.ts",
-    "src/modules/AudioEngine/useCases/nativeAIBridge.ts",
-    "src/modules/AudioEngine/useCases/latencyCompensation.ts",
-    "src/modules/AudioEngine/useCases/linkBridge.ts",
-    "src/modules/AudioEngine/useCases/pluginScanUseCases.ts",
-    "src/modules/AudioEngine/repositories/webMidiRepository.ts",
-
-    "src/modules/Collaboration/useCases/collaborationUseCases.ts",
-    "src/modules/Collaboration/useCases/operationLog.ts",
-    "src/modules/Collaboration/useCases/vectorClock.ts",
-    "src/modules/Collaboration/useCases/webSocketTransport.ts",
-
-    "src/modules/Arrangement/useCases/clipGainEnvelope.ts",
-
-    "src/modules/Project/useCases/nativeProjectFiles.ts",
-    "src/modules/Project/useCases/nativeFileDialog.ts"
+    "src/components/ui/dialog.tsx"
   ],
   "ignoreExportsUsedInFile": true,
   "ignoreDependencies": [
@@ -47,7 +18,6 @@
     "tailwindcss"
   ],
   "ignoreBinaries": [
-    "tauri",
     "prettier"
   ]
 }

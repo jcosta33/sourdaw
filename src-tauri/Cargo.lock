@@ -1966,6 +1966,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fermenter"
+version = "0.1.0"
+dependencies = [
+ "js-sys",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "fft-convolver"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

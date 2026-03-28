@@ -5,6 +5,7 @@ import {
     createNativeDspNode,
     type NativeDspNodeResult,
 } from './NativeDspNode';
+import { isFermenterDevice, createFermenterNode, type FermenterNodeResult } from './FermenterNode';
 import { isDeviceSupportedOnCurrentPlatform } from '#/modules/Arrangement/useCases/trackQueries';
 import { DEVICE_FACTORIES, applyParams } from '../repositories/deviceNodeFactory';
 import { PluginHostNode } from '../models/PluginHostNode';
@@ -291,6 +292,62 @@ export class TrackNode {
                     .catch((error) => logger.warn(`[WebAudioEngine] Native DSP failed: ${error}`));
                 pendingDevicePromises.add(loadPromise);
                 loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
+            } else if (isFermenterDevice(deviceType)) {
+                // Fermenter synthesizer — async WASM init + AudioWorkletNode (instrument, no audio input)
+                const loadingBypass = context.createGain();
+                dn = {
+                    deviceId,
+                    type: deviceType,
+                    nodes: [loadingBypass],
+                    inputNode: loadingBypass,
+                    outputNode: loadingBypass,
+                };
+
+                // Queue params that arrive before WASM is ready
+                const pendingParams: Array<[string, number]> = [];
+                const queuedSetParam = (name: string, value: number): void => {
+                    pendingParams.push([name, value]);
+                };
+                // Expose a provisional fermenterControls so updateParam() calls during
+                // async load get queued instead of silently dropped
+                dn.fermenterControls = {
+                    noteOn: () => {},
+                    noteOff: () => {},
+                    setParam: queuedSetParam,
+                    setBypass: () => {},
+                    destroy: () => {},
+                };
+
+                const loadPromise = createFermenterNode(context as AudioContext)
+                    .then(async (result: FermenterNodeResult) => {
+                        await result.ready;
+                        // Replay any params that were set while WASM was loading
+                        for (const [name, value] of pendingParams) {
+                            result.setParam(name, value);
+                        }
+                        const idx = this.strip.deviceNodes.findIndex((d) => d.deviceId === deviceId);
+                        if (idx !== -1) {
+                            const fermenterDn: BuiltinDeviceNode = {
+                                deviceId,
+                                type: deviceType,
+                                nodes: [result.workletNode],
+                                inputNode: result.workletNode,
+                                outputNode: result.workletNode,
+                                fermenterControls: {
+                                    noteOn: result.noteOn,
+                                    noteOff: result.noteOff,
+                                    setParam: result.setParam,
+                                    setBypass: result.setBypass,
+                                    destroy: result.destroy,
+                                },
+                            };
+                            this.strip.deviceNodes[idx] = fermenterDn;
+                            this.rebuildChain();
+                        }
+                    })
+                    .catch((error) => logger.warn(`[WebAudioEngine] Fermenter failed: ${error}`));
+                pendingDevicePromises.add(loadPromise);
+                loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
             } else {
                 return;
             }
@@ -350,6 +407,11 @@ export class TrackNode {
             return;
         }
 
+        if (dn.fermenterControls) {
+            dn.fermenterControls.setParam(paramId, value);
+            return;
+        }
+
         if (dn.type.startsWith('native-') && dn.nativeDspControls) {
             dn.nativeDspControls.setParam(paramId, value);
         } else if (DEVICE_FACTORIES[dn.type]) {
@@ -389,7 +451,9 @@ export class TrackNode {
         if (!dn) {
             return;
         }
-        if (dn.nativeDspControls) {
+        if (dn.fermenterControls) {
+            dn.fermenterControls.setBypass(bypassed);
+        } else if (dn.nativeDspControls) {
             dn.nativeDspControls.setBypass(bypassed);
         } else {
             (dn as any)._bypassed = bypassed;
@@ -405,6 +469,9 @@ export class TrackNode {
         this.strip.panNode.disconnect();
         this.strip.analyserNode.disconnect();
         for (const dn of this.strip.deviceNodes) {
+            if (dn.fermenterControls) {
+                dn.fermenterControls.destroy();
+            }
             for (const n of dn.nodes) {
                 n.disconnect();
             }

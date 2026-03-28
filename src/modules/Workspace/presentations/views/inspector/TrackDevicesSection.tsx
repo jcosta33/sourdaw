@@ -184,7 +184,11 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                 device.bypassed ? 'opacity-50' : ''
                             )}
                             onClick={() => {
-                                onSelectDevice(device.id);
+                                if (device.type === 'fermenter') {
+                                    document.dispatchEvent(new Event('sourdaw:show-fermenter-tab'));
+                                } else {
+                                    onSelectDevice(device.id);
+                                }
                             }}
                             draggable
                             onDragStart={(e) => {

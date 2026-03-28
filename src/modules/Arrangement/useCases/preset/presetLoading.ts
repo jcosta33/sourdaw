@@ -17,7 +17,7 @@ const logger = Container.getInstance().get(Logger);
 
 let nextPresetDeviceId = 1;
 
-const INSTRUMENT_TYPES = new Set(['synth', 'builtin-synth', 'drum-kit', 'builtin-drum-kit', 'builtin-drum-machine']);
+const INSTRUMENT_TYPES = new Set(['synth', 'builtin-synth', 'drum-kit', 'builtin-drum-kit', 'builtin-drum-machine', 'fermenter']);
 
 function isInstrumentDevice(type: string): boolean {
     return INSTRUMENT_TYPES.has(type) || type.startsWith('faust-');

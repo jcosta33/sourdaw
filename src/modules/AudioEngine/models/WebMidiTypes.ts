@@ -23,6 +23,8 @@ export type ActiveNoteData = {
     slide?: number;
     pitchBend?: number;
     osc?: OscillatorNode & { _env?: GainNode };
+    /** When the note was sent to a Fermenter instance, stores the device ID for noteOff routing */
+    fermenterDeviceId?: string;
 };
 
 // MIDI message constants

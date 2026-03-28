@@ -102,6 +102,17 @@ export function handleNoteOn(channel: number, note: number, velocity: number): v
     if (!(isRecording && isArmed)) {
         const strip = engine.ensureTrackStrip(targetTrackId);
 
+        // Check for Fermenter instrument — route MIDI via worklet MessagePort
+        const fermenterDevice = track?.devices.find((d) => d.type === 'fermenter');
+        if (fermenterDevice) {
+            const dn = strip.deviceNodes.find((d) => d.deviceId === fermenterDevice.id);
+            if (dn?.fermenterControls) {
+                dn.fermenterControls.noteOn(note, velocity);
+                noteData.fermenterDeviceId = fermenterDevice.id;
+            }
+            return;
+        }
+
         let osc: OscillatorNode | null = null;
         const synthDevice = track?.devices.find(
             (d) =>
@@ -158,6 +169,15 @@ export function handleNoteOff(_channel: number, note: number): void {
 
     if (mpeEnabled) {
         channelToNote.delete(noteData.channel);
+    }
+
+    // Fermenter noteOff — send via worklet MessagePort
+    if (noteData.fermenterDeviceId && targetTrackId) {
+        const strip = audioEngine.getTrackStrip(targetTrackId);
+        const dn = strip?.deviceNodes.find((d) => d.deviceId === noteData.fermenterDeviceId);
+        if (dn?.fermenterControls) {
+            dn.fermenterControls.noteOff(note);
+        }
     }
 
     if (noteData.osc) {

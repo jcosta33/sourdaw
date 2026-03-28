@@ -18,6 +18,14 @@ export type BuiltinDeviceNode = {
         setParam: (name: string, value: number) => void;
         setBypass: (bypassed: boolean) => void;
     };
+    /** Controls for the Fermenter synthesizer (MIDI + param updates via MessagePort) */
+    fermenterControls?: {
+        noteOn: (note: number, velocity: number) => void;
+        noteOff: (note: number) => void;
+        setParam: (name: string, value: number) => void;
+        setBypass: (bypassed: boolean) => void;
+        destroy: () => void;
+    };
 };
 
 export type TrackChannelStrip = {

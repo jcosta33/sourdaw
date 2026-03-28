@@ -23,6 +23,7 @@ import { RoutingMatrix } from './RoutingMatrix';
 import { AutomationBottomPanel } from './AutomationBottomPanel';
 import { ClipView } from './ClipView';
 import { AnalysisPanel } from './AnalysisPanel';
+import { FermenterPanel } from '#/modules/Fermenter/presentations/views/FermenterPanel';
 
 import { CommandPalette } from '#/modules/Command/presentations/views/CommandPalette';
 import { VoiceCommandOverlay } from '#/modules/AiRuntime/presentations/views/VoiceCommandOverlay';
@@ -40,6 +41,7 @@ import { StatusBar } from './StatusBar';
 import { ShortcutCheatSheet } from '../components/ShortcutCheatSheet';
 import { UndoHistoryPanel } from '#/modules/Command/presentations/views/UndoHistoryPanel';
 
+import { X } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { DragResizeHandle } from '#/components/ui/DragResizeHandle';
 
@@ -69,6 +71,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const [exportOpen, setExportOpen] = useState(false);
     const [prefsOpen, setPrefsOpen] = useState(false);
     const [bottomTab, setBottomTab] = useState<'editor' | 'mixer' | 'session' | 'routing' | 'analysis' | 'automation'>('mixer');
+    const [fermenterOpen, setFermenterOpen] = useState(false);
 
     // ─── Extracted hooks ───
     useAppInitialization();
@@ -106,6 +109,15 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         return () => document.removeEventListener('sourdaw:show-automation-tab', handler);
     }, [mixerOpen]);
 
+    // Listen for fermenter panel open (from inspector device click)
+    useEffect(() => {
+        const handler = (): void => {
+            setFermenterOpen(true);
+        };
+        document.addEventListener('sourdaw:show-fermenter-tab', handler);
+        return () => document.removeEventListener('sourdaw:show-fermenter-tab', handler);
+    }, []);
+
     // ─── Panel width state (pixels, clamped) ───
     const [sidebarWidth, setSidebarWidth] = useState(280);
     const [inspectorWidth, setInspectorWidth] = useState(260);
@@ -113,6 +125,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const [chatWidth, setChatWidth] = useState(320);
     const [aiWidth, setAiWidth] = useState(340);
     const [mixerHeight, setMixerHeight] = useState(300);
+    const [fermenterHeight, setFermenterHeight] = useState(320);
 
     const clamp = (v: number, min: number, max: number): number => Math.max(min, Math.min(max, v));
 
@@ -156,6 +169,28 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                     <main id="main-content" className="contain-strict flex-1 overflow-hidden min-h-0">
                         {children}
                     </main>
+
+                    {/* Fermenter synth panel — own resizable section */}
+                    {fermenterOpen ? (
+                        <>
+                            <DragResizeHandle
+                                side="top"
+                                onResize={(d) => setFermenterHeight((h) => clamp(h + d, 160, 600))}
+                            />
+                            <div
+                                className="contain-strict flex flex-col bg-surface-base border-t border-[var(--color-accent-lavender)]/20 overflow-hidden shrink-0 animate-in slide-in-from-bottom-2 duration-200"
+                                style={{ height: fermenterHeight }}
+                            >
+                                <div className="flex items-center justify-between px-3 py-1 border-b border-border/30 bg-surface-app/50 shrink-0">
+                                    <span className="text-[10px] font-bold text-[var(--color-accent-lavender)] uppercase tracking-wider">Fermenter</span>
+                                    <Button variant="ghost" size="icon-xs" onClick={() => setFermenterOpen(false)} aria-label="Close Fermenter">
+                                        <X className="size-3.5" />
+                                    </Button>
+                                </div>
+                                <FermenterPanel />
+                            </div>
+                        </>
+                    ) : null}
 
                     {/* Mixer bottom panel */}
                     {mixerOpen ? (

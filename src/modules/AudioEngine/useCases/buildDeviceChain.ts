@@ -2,6 +2,7 @@ import { type Device } from '#/modules/Arrangement/useCases/trackQueries';
 import { type OfflineDeviceNode, DEVICE_FACTORIES, applyParams } from '../repositories/deviceNodeFactory';
 import { isFaustModule, createFaustDevice } from '../repositories/faustDeviceFactory';
 import { isNativeDspDevice, NATIVE_DSP_DEVICE_TYPES, createNativeDspNode } from '../engine/NativeDspNode';
+import { isFermenterDevice, createFermenterNode } from '../engine/FermenterNode';
 import { isDeviceSupportedOnCurrentPlatform } from '#/modules/Arrangement/useCases/trackQueries';
 
 // Re-export for consumers
@@ -91,6 +92,30 @@ export async function buildDeviceChain(
                 } catch (error) {
                     console.warn(`Native DSP device ${device.type} failed to load:`, error);
                 }
+            }
+        } else if (isFermenterDevice(device.type)) {
+            if (isOffline) {
+                continue;
+            }
+            // Fermenter synthesizer — async WASM init + AudioWorkletNode
+            try {
+                const result = await createFermenterNode(ctx);
+                await result.ready;
+                // Apply initial params
+                for (const [key, val] of Object.entries(device.parameterValues)) {
+                    result.setParam(key, val);
+                }
+                dn = {
+                    inputNode: result.workletNode,
+                    outputNode: result.workletNode,
+                    nodes: [result.workletNode],
+                };
+                nativeDspControls = {
+                    setParam: result.setParam,
+                    setBypass: result.setBypass,
+                };
+            } catch (error) {
+                console.warn(`Fermenter device failed to load:`, error);
             }
         } else if (isFaustModule(device.type)) {
             if (isOffline) {

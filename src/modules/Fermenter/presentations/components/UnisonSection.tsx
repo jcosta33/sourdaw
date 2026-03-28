@@ -1,0 +1,63 @@
+/**
+ * Unison controls — voice count, detune spread, stereo width.
+ */
+import { type ReactElement } from 'react';
+import { RotaryKnob } from '#/components/daw/RotaryKnob';
+
+type UnisonSectionProps = {
+    voices: number;
+    detune: number;
+    spread: number;
+    onVoicesChange: (v: number) => void;
+    onDetuneChange: (v: number) => void;
+    onSpreadChange: (v: number) => void;
+};
+
+export const UnisonSection = ({
+    voices,
+    detune,
+    spread,
+    onVoicesChange,
+    onDetuneChange,
+    onSpreadChange,
+}: UnisonSectionProps): ReactElement => {
+    return (
+        <div className="space-y-2">
+            <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-1">
+                Unison
+            </div>
+            <div className="flex items-end gap-3">
+                <div className="flex flex-col items-center gap-1">
+                    <RotaryKnob
+                        value={voices}
+                        onChange={onVoicesChange}
+                        min={1} max={16} step={1} defaultValue={1}
+                        size="lg"
+                    />
+                    <span className="text-[9px] text-muted-foreground">Voices</span>
+                    <span className="text-[8px] text-muted-foreground/60 font-mono">{voices}</span>
+                </div>
+                <div className="flex flex-col items-center gap-1">
+                    <RotaryKnob
+                        value={detune}
+                        onChange={onDetuneChange}
+                        min={0} max={100} step={1} defaultValue={15}
+                        size="lg"
+                    />
+                    <span className="text-[9px] text-muted-foreground">Detune</span>
+                    <span className="text-[8px] text-muted-foreground/60 font-mono">{Math.round(detune)}ct</span>
+                </div>
+                <div className="flex flex-col items-center gap-1">
+                    <RotaryKnob
+                        value={spread}
+                        onChange={onSpreadChange}
+                        min={0} max={1} step={0.01} defaultValue={0.7}
+                        size="lg"
+                    />
+                    <span className="text-[9px] text-muted-foreground">Spread</span>
+                    <span className="text-[8px] text-muted-foreground/60 font-mono">{Math.round(spread * 100)}%</span>
+                </div>
+            </div>
+        </div>
+    );
+};
