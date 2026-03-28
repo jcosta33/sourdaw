@@ -115,6 +115,12 @@ impl WavetableOsc {
         table.read(self.phase, inc)
     }
 
+    /// Return the current phase (0..1) for use by spectral warp processing.
+    #[inline]
+    pub fn phase(&self) -> f32 {
+        self.phase
+    }
+
     pub fn reset_phase(&mut self) {
         self.phase = 0.0;
     }
@@ -161,6 +167,12 @@ impl PolyBlepOsc {
         sample
     }
 
+    /// Return the current phase (0..1).
+    #[inline]
+    pub fn phase(&self) -> f32 {
+        self.phase
+    }
+
     pub fn reset_phase(&mut self) {
         self.phase = 0.0;
     }
@@ -203,6 +215,16 @@ impl UnisonOsc {
     pub fn set_waveform(&mut self, index: usize) {
         for v in &mut self.voices {
             v.set_waveform(index);
+        }
+    }
+
+    /// Return the phase of the first unison voice (0..1).
+    #[inline]
+    pub fn phase(&self) -> f32 {
+        if let Some(v) = self.voices.first() {
+            v.phase()
+        } else {
+            0.0
         }
     }
 
@@ -254,6 +276,45 @@ impl UnisonOsc {
                 left[i] += sample * gain_l;
                 right[i] += sample * gain_r;
             }
+        }
+    }
+
+    /// Render one sample of all unison voices into stereo outputs.
+    #[inline]
+    pub fn process_sample_stereo(
+        &mut self,
+        freq: f32,
+        sample_rate: f32,
+        tables: &[Wavetable],
+        out_l: &mut f32,
+        out_r: &mut f32,
+    ) {
+        let n = self.voice_count;
+        let gain = 1.0 / (n as f32).sqrt();
+
+        for vi in 0..n {
+            let detune_offset = if n > 1 {
+                let t = vi as f32 / (n - 1) as f32;
+                (t - 0.5) * self.detune_cents
+            } else {
+                0.0
+            };
+            let voice_freq = freq * (2.0f32).powf(detune_offset / 1200.0);
+
+            let pan = if n > 1 {
+                let t = vi as f32 / (n - 1) as f32;
+                (t - 0.5) * 2.0 * self.stereo_spread
+            } else {
+                0.0
+            };
+            let pan_norm = (pan + 1.0) * 0.5;
+            let angle = pan_norm * std::f32::consts::FRAC_PI_2;
+            let gain_l = angle.cos() * gain;
+            let gain_r = angle.sin() * gain;
+
+            let sample = self.voices[vi].tick(voice_freq, sample_rate, tables);
+            *out_l += sample * gain_l;
+            *out_r += sample * gain_r;
         }
     }
 }

@@ -244,6 +244,7 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public addDeviceToStrip(trackId: string, deviceId: string, deviceType: string, externalInstanceId?: string): void {
+        this.ensureTrackStrip(trackId);
         this.trackNodes.get(trackId)?.addDevice(deviceId, deviceType, externalInstanceId);
     }
 

@@ -39,11 +39,11 @@ function enumerateInputs(): MidiInputInfo[] {
 }
 
 function attachInput(input: MIDIInput): void {
-    if (activeInput) {
-        activeInput.onmidimessage = null;
+    if (activeInput && activeInput !== input) {
+        activeInput.removeEventListener('midimessage', onMidiMessage as EventListener);
     }
     setActiveInput(input);
-    input.onmidimessage = onMidiMessage;
+    input.addEventListener('midimessage', onMidiMessage as EventListener);
 }
 
 function onStateChange(): void {
@@ -112,12 +112,15 @@ export async function initWebMidi(): Promise<boolean> {
             const inputs = enumerateInputs();
             setState({ inputs });
 
-            if (inputs.length > 0 && !state.selectedInputId) {
-                const first = inputs[0]!;
-                const input = access.inputs.get(first.id);
+            if (inputs.length > 0) {
+                // Always (re-)attach: covers first load AND re-init after page
+                // navigation where selectedInputId may already be set but
+                // the onmidimessage handler was never wired to this access object.
+                const targetId = state.selectedInputId ?? inputs[0]!.id;
+                const input = access.inputs.get(targetId) ?? access.inputs.get(inputs[0]!.id);
                 if (input) {
                     attachInput(input);
-                    setState({ selectedInputId: first.id });
+                    setState({ selectedInputId: input.id });
                 }
             }
 
@@ -138,10 +141,14 @@ export async function initWebMidi(): Promise<boolean> {
             }));
             setState({ inputs, isSupported: true });
 
-            if (inputs.length > 0 && !state.selectedInputId) {
-                const first = inputs[0]!;
-                await selectMidiInputTauri(Number(first.id));
-                setState({ selectedInputId: first.id });
+            if (inputs.length > 0) {
+                // Always (re-)open: covers first load AND re-init after app
+                // restart where selectedInputId is persisted in localStorage but
+                // the Tauri IPC port has NOT been opened yet for this session.
+                const targetId = state.selectedInputId ?? inputs[0]!.id;
+                const targetInput = inputs.find((i) => i.id === targetId) ?? inputs[0]!;
+                await selectMidiInputTauri(Number(targetInput.id));
+                setState({ selectedInputId: targetInput.id });
             }
 
             return true;

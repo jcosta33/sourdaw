@@ -158,6 +158,391 @@ impl StereoChorus {
     }
 }
 
+/// 4-stage allpass phaser with swept notch frequencies.
+pub struct StereoPhaser {
+    allpass_l: [f32; 4],  // allpass states for left
+    allpass_r: [f32; 4],  // allpass states for right
+    lfo_phase: f32,
+    sample_rate: f32,
+}
+
+impl StereoPhaser {
+    pub fn new(sample_rate: f32) -> Self {
+        Self {
+            allpass_l: [0.0; 4],
+            allpass_r: [0.0; 4],
+            lfo_phase: 0.0,
+            sample_rate,
+        }
+    }
+
+    pub fn process_block(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        rate: f32,     // LFO rate 0.1-5 Hz
+        depth: f32,    // 0-1
+        mix: f32,      // 0-1 wet/dry
+    ) {
+        for i in 0..left.len() {
+            // LFO sweeps the allpass frequency
+            self.lfo_phase += rate / self.sample_rate;
+            if self.lfo_phase >= 1.0 { self.lfo_phase -= 1.0; }
+            let lfo = (self.lfo_phase * core::f32::consts::TAU).sin();
+
+            // Map LFO to allpass coefficient range
+            // Sweep between ~200Hz and ~4000Hz
+            let min_freq = 200.0 + (1.0 - depth) * 800.0;
+            let max_freq = 2000.0 + depth * 6000.0;
+            let freq = min_freq + (lfo + 1.0) * 0.5 * (max_freq - min_freq);
+            let coeff = (core::f32::consts::PI * freq / self.sample_rate).tan();
+            let a1 = (coeff - 1.0) / (coeff + 1.0);
+
+            // Process left channel through 4 allpass stages
+            let dry_l = left[i];
+            let mut wet_l = left[i];
+            for s in 0..4 {
+                let y = a1 * wet_l + self.allpass_l[s];
+                self.allpass_l[s] = wet_l - a1 * y;
+                wet_l = y;
+            }
+            left[i] = dry_l * (1.0 - mix) + wet_l * mix;
+
+            // Process right channel (slightly offset LFO for stereo)
+            let dry_r = right[i];
+            let mut wet_r = right[i];
+            let lfo_r = ((self.lfo_phase + 0.25) * core::f32::consts::TAU).sin();
+            let freq_r = min_freq + (lfo_r + 1.0) * 0.5 * (max_freq - min_freq);
+            let coeff_r = (core::f32::consts::PI * freq_r / self.sample_rate).tan();
+            let a1_r = (coeff_r - 1.0) / (coeff_r + 1.0);
+            for s in 0..4 {
+                let y = a1_r * wet_r + self.allpass_r[s];
+                self.allpass_r[s] = wet_r - a1_r * y;
+                wet_r = y;
+            }
+            right[i] = dry_r * (1.0 - mix) + wet_r * mix;
+        }
+    }
+}
+
+/// Distortion with 2x oversampling to reduce aliasing from nonlinear waveshaping.
+pub struct Distortion {
+    /// Previous sample for the simple 2x upsampling interpolation
+    prev_l: f32,
+    prev_r: f32,
+    /// Downsampling filter state (simple one-pole lowpass)
+    ds_l: f32,
+    ds_r: f32,
+}
+
+impl Distortion {
+    pub fn new() -> Self {
+        Self { prev_l: 0.0, prev_r: 0.0, ds_l: 0.0, ds_r: 0.0 }
+    }
+
+    pub fn process_block(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        drive: f32,    // 0-10
+        tone: f32,     // 0-1 (low=dark, high=bright)
+        mix: f32,      // 0-1
+    ) {
+        if mix < 0.001 { return; }
+
+        let gain = 1.0 + drive * 3.0;
+        // Simple one-pole for tone control (higher tone = less filtering)
+        let lp_coeff = 0.2 + tone * 0.8; // 0.2 (dark) to 1.0 (bright)
+
+        for i in 0..left.len() {
+            let dry_l = left[i];
+            let dry_r = right[i];
+
+            // 2x oversample: process at double rate with interpolated samples
+            // Sample 1: interpolated midpoint
+            let mid_l = (self.prev_l + left[i]) * 0.5;
+            let mid_r = (self.prev_r + right[i]) * 0.5;
+
+            // Waveshape both oversampled points
+            let ws1_l = Self::waveshape(mid_l * gain);
+            let ws1_r = Self::waveshape(mid_r * gain);
+            let ws2_l = Self::waveshape(left[i] * gain);
+            let ws2_r = Self::waveshape(right[i] * gain);
+
+            // Average (simple 2x decimation with box filter)
+            let dist_l = (ws1_l + ws2_l) * 0.5;
+            let dist_r = (ws1_r + ws2_r) * 0.5;
+
+            // Tone filter (one-pole lowpass on the distorted signal)
+            self.ds_l += lp_coeff * (dist_l - self.ds_l);
+            self.ds_r += lp_coeff * (dist_r - self.ds_r);
+
+            left[i] = dry_l * (1.0 - mix) + self.ds_l * mix;
+            right[i] = dry_r * (1.0 - mix) + self.ds_r * mix;
+
+            self.prev_l = dry_l;
+            self.prev_r = dry_r;
+        }
+    }
+
+    /// Soft-clip waveshaper: tanh-like curve with asymmetric harmonics
+    #[inline]
+    fn waveshape(x: f32) -> f32 {
+        let x = x.clamp(-4.0, 4.0);
+        let x2 = x * x;
+        x * (27.0 + x2) / (27.0 + 9.0 * x2)
+    }
+}
+
+/// Simple feed-forward compressor with auto-makeup gain.
+pub struct Compressor {
+    envelope: f32,
+}
+
+impl Compressor {
+    pub fn new() -> Self {
+        Self { envelope: 0.0 }
+    }
+
+    pub fn process_block(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        threshold: f32,  // dB (-60 to 0)
+        ratio: f32,      // 1:1 to 20:1
+        attack: f32,     // ms (0.1-100)
+        release: f32,    // ms (10-1000)
+        mix: f32,        // 0-1
+        sample_rate: f32,
+    ) {
+        if mix < 0.001 { return; }
+
+        let threshold_lin = 10.0f32.powf(threshold / 20.0);
+        let att_coeff = (-1.0 / (attack * 0.001 * sample_rate)).exp();
+        let rel_coeff = (-1.0 / (release * 0.001 * sample_rate)).exp();
+        // Auto makeup: compensate for gain reduction at threshold
+        let makeup = if ratio > 1.0 { (1.0 / ratio - 1.0) * threshold / 20.0 } else { 0.0 };
+        let makeup_lin = 10.0f32.powf(-makeup / 20.0);
+
+        for i in 0..left.len() {
+            let input_level = (left[i].abs()).max(right[i].abs());
+
+            // Envelope follower
+            let coeff = if input_level > self.envelope { att_coeff } else { rel_coeff };
+            self.envelope = coeff * self.envelope + (1.0 - coeff) * input_level;
+
+            // Gain computation
+            let gain = if self.envelope > threshold_lin {
+                let db_over = 20.0 * (self.envelope / threshold_lin).log10();
+                let db_reduction = db_over * (1.0 - 1.0 / ratio);
+                10.0f32.powf(-db_reduction / 20.0) * makeup_lin
+            } else {
+                makeup_lin
+            };
+
+            left[i] = left[i] * (1.0 - mix) + left[i] * gain * mix;
+            right[i] = right[i] * (1.0 - mix) + right[i] * gain * mix;
+        }
+    }
+}
+
+/// Stereo width processor using Mid/Side encoding.
+pub struct StereoWidth;
+
+impl StereoWidth {
+    /// Process a block. width: 0=mono, 1=unchanged, 2=extra wide
+    pub fn process_block(left: &mut [f32], right: &mut [f32], width: f32) {
+        if (width - 1.0).abs() < 0.001 { return; } // unity = no-op
+        let w = width.clamp(0.0, 2.0);
+        for i in 0..left.len() {
+            let mid = (left[i] + right[i]) * 0.5;
+            let side = (left[i] - right[i]) * 0.5;
+            left[i] = mid + side * w;
+            right[i] = mid - side * w;
+        }
+    }
+}
+
+// ── FDN Reverb ─────────────────────────────────────────────────────────────
+
+/// Feedback Delay Network reverb — 4 delay lines with Hadamard mixing matrix.
+/// Produces denser, more diffuse reverb than the plate algorithm.
+pub struct FdnReverb {
+    delays: [Vec<f32>; 4],
+    write_pos: [usize; 4],
+    feedback: [f32; 4],    // one-pole filter states for damping
+    damping: f32,
+    decay: f32,
+    mix: f32,
+    sample_rate: f32,
+}
+
+// Prime-length delay times in samples at 44100Hz (avoid metallic modes)
+const FDN_DELAY_LENGTHS_44K: [usize; 4] = [1087, 1283, 1531, 1811];
+
+impl FdnReverb {
+    pub fn new(sample_rate: f32) -> Self {
+        let ratio = sample_rate / 44100.0;
+        let delays = [
+            vec![0.0f32; (FDN_DELAY_LENGTHS_44K[0] as f32 * ratio) as usize],
+            vec![0.0f32; (FDN_DELAY_LENGTHS_44K[1] as f32 * ratio) as usize],
+            vec![0.0f32; (FDN_DELAY_LENGTHS_44K[2] as f32 * ratio) as usize],
+            vec![0.0f32; (FDN_DELAY_LENGTHS_44K[3] as f32 * ratio) as usize],
+        ];
+        Self {
+            delays,
+            write_pos: [0; 4],
+            feedback: [0.0; 4],
+            damping: 0.5,
+            decay: 0.5,
+            mix: 0.0,
+            sample_rate,
+        }
+    }
+
+    pub fn set_params(&mut self, decay: f32, mix: f32, damping: f32) {
+        self.decay = decay.clamp(0.0, 0.99);
+        self.mix = mix.clamp(0.0, 1.0);
+        self.damping = damping.clamp(0.0, 0.99);
+    }
+
+    pub fn process(&mut self, in_l: f32, in_r: f32) -> (f32, f32) {
+        if self.mix < 0.001 { return (in_l, in_r); }
+
+        // Read from delay lines
+        let mut taps = [0.0f32; 4];
+        for i in 0..4 {
+            taps[i] = self.delays[i][self.write_pos[i]];
+        }
+
+        // Hadamard-like mixing matrix (orthogonal, unitary)
+        // H = 0.5 * [[1,1,1,1],[1,-1,1,-1],[1,1,-1,-1],[1,-1,-1,1]]
+        let mixed = [
+            0.5 * (taps[0] + taps[1] + taps[2] + taps[3]),
+            0.5 * (taps[0] - taps[1] + taps[2] - taps[3]),
+            0.5 * (taps[0] + taps[1] - taps[2] - taps[3]),
+            0.5 * (taps[0] - taps[1] - taps[2] + taps[3]),
+        ];
+
+        // Apply damping (one-pole lowpass) and decay, write back
+        let input_l = in_l * 0.25;
+        let input_r = in_r * 0.25;
+        let inputs = [input_l, input_r, input_l, input_r];
+
+        for i in 0..4 {
+            let damped = self.feedback[i] + (1.0 - self.damping) * (mixed[i] - self.feedback[i]);
+            self.feedback[i] = damped;
+            let len = self.delays[i].len();
+            self.delays[i][self.write_pos[i]] = inputs[i] + damped * self.decay;
+            self.write_pos[i] = (self.write_pos[i] + 1) % len;
+        }
+
+        // Output: mix wet (taps 0+2 for L, 1+3 for R)
+        let wet_l = (taps[0] + taps[2]) * 0.5;
+        let wet_r = (taps[1] + taps[3]) * 0.5;
+
+        (in_l * (1.0 - self.mix) + wet_l * self.mix,
+         in_r * (1.0 - self.mix) + wet_r * self.mix)
+    }
+}
+
+// ── Parametric EQ ──────────────────────────────────────────────────────────
+
+/// 3-band parametric EQ using RBJ Audio EQ Cookbook biquad filters.
+pub struct ParametricEq {
+    bands_l: [BiquadState; 3],
+    bands_r: [BiquadState; 3],
+    coeffs: [BiquadCoeffs; 3],
+    /// Whether each band is enabled
+    enabled: [bool; 3],
+}
+
+#[derive(Clone, Copy, Default)]
+struct BiquadState {
+    x1: f32, x2: f32,
+    y1: f32, y2: f32,
+}
+
+#[derive(Clone, Copy)]
+struct BiquadCoeffs {
+    b0: f32, b1: f32, b2: f32,
+    a1: f32, a2: f32,
+}
+
+impl Default for BiquadCoeffs {
+    fn default() -> Self {
+        Self { b0: 1.0, b1: 0.0, b2: 0.0, a1: 0.0, a2: 0.0 }
+    }
+}
+
+impl BiquadCoeffs {
+    /// Peaking EQ filter (RBJ cookbook)
+    fn peaking(freq: f32, gain_db: f32, q: f32, sample_rate: f32) -> Self {
+        let a = 10.0f32.powf(gain_db / 40.0);
+        let w0 = core::f32::consts::TAU * freq / sample_rate;
+        let cos_w0 = w0.cos();
+        let sin_w0 = w0.sin();
+        let alpha = sin_w0 / (2.0 * q);
+
+        let b0 = 1.0 + alpha * a;
+        let b1 = -2.0 * cos_w0;
+        let b2 = 1.0 - alpha * a;
+        let a0 = 1.0 + alpha / a;
+        let a1 = -2.0 * cos_w0;
+        let a2 = 1.0 - alpha / a;
+
+        Self { b0: b0/a0, b1: b1/a0, b2: b2/a0, a1: a1/a0, a2: a2/a0 }
+    }
+}
+
+impl BiquadState {
+    #[inline]
+    fn process(&mut self, x: f32, c: &BiquadCoeffs) -> f32 {
+        let y = c.b0 * x + c.b1 * self.x1 + c.b2 * self.x2 - c.a1 * self.y1 - c.a2 * self.y2;
+        self.x2 = self.x1;
+        self.x1 = x;
+        self.y2 = self.y1;
+        self.y1 = y;
+        y
+    }
+}
+
+impl ParametricEq {
+    pub fn new() -> Self {
+        Self {
+            bands_l: [BiquadState::default(); 3],
+            bands_r: [BiquadState::default(); 3],
+            coeffs: [BiquadCoeffs::default(); 3],
+            enabled: [false; 3],
+        }
+    }
+
+    /// Set band parameters. band_idx 0-2.
+    pub fn set_band(&mut self, idx: usize, freq: f32, gain_db: f32, q: f32, sample_rate: f32) {
+        if idx >= 3 { return; }
+        self.coeffs[idx] = BiquadCoeffs::peaking(
+            freq.clamp(20.0, 20000.0),
+            gain_db.clamp(-24.0, 24.0),
+            q.clamp(0.1, 20.0),
+            sample_rate,
+        );
+        self.enabled[idx] = gain_db.abs() > 0.1;
+    }
+
+    pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32]) {
+        for band_idx in 0..3 {
+            if !self.enabled[band_idx] { continue; }
+            let c = self.coeffs[band_idx];
+            for i in 0..left.len() {
+                left[i] = self.bands_l[band_idx].process(left[i], &c);
+                right[i] = self.bands_r[band_idx].process(right[i], &c);
+            }
+        }
+    }
+}
+
+// ── Plate Reverb ───────────────────────────────────────────────────────────
+
 /// Simplified Dattorro plate reverb.
 /// Based on Jon Dattorro's "Effect Design Part 1" (JAES, 1997).
 /// Canonical base sample rate: 29761 Hz — all delay lengths scale proportionally.
@@ -230,7 +615,8 @@ pub struct PlateReverb {
     decay: f32,
     mix: f32,
     damping: f32,
-    damp_state: f32,
+    damp_state_l: f32,
+    damp_state_r: f32,
 }
 
 impl PlateReverb {
@@ -260,7 +646,8 @@ impl PlateReverb {
             decay: DECAY,
             mix: 0.3,
             damping: 0.5,
-            damp_state: 0.0,
+            damp_state_l: 0.0,
+            damp_state_r: 0.0,
         }
     }
 
@@ -293,8 +680,8 @@ impl PlateReverb {
         self.del1.write(t1);
         let t2 = self.del1.read(self.del1_len);
         // Damping (one-pole lowpass)
-        self.damp_state = t2 * (1.0 - self.damping) + self.damp_state * self.damping;
-        self.del2.write(self.damp_state * self.decay);
+        self.damp_state_l = t2 * (1.0 - self.damping) + self.damp_state_l * self.damping;
+        self.del2.write(self.damp_state_l * self.decay);
         self.tank_l = self.del2.read(self.del2_len);
 
         // Tank right
@@ -302,7 +689,9 @@ impl PlateReverb {
         let t3 = Self::allpass(&mut self.apf4, in_r, self.apf4_len, -self.decay);
         self.del3.write(t3);
         let t4 = self.del3.read(self.del3_len);
-        self.del4.write(t4 * self.decay);
+        // Damping (one-pole lowpass)
+        self.damp_state_r = t4 * (1.0 - self.damping) + self.damp_state_r * self.damping;
+        self.del4.write(self.damp_state_r * self.decay);
         self.tank_r = self.del4.read(self.del4_len);
 
         // Mix dry/wet

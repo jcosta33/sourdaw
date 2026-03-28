@@ -1,8 +1,8 @@
 /**
- * Envelope section — interactive ADSR for amp and filter envelopes.
+ * Envelope section — visualization-first.
+ * Large interactive ADSR as hero (drag breakpoints). Knobs below for precision.
  */
 import { type ReactElement, useState } from 'react';
-import { Card } from '#/components/ui/card';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { ADSREnvelope } from '#/modules/Workspace/presentations/components/ADSREnvelope';
 
@@ -14,89 +14,57 @@ type EnvelopeSectionProps = {
 };
 
 export const EnvelopeSection = ({
-    ampA, ampD, ampS, ampR,
-    filterA, filterD, filterS, filterR,
-    onAmpChange,
-    onFilterChange,
+    ampA, ampD, ampS, ampR, filterA, filterD, filterS, filterR,
+    onAmpChange, onFilterChange,
 }: EnvelopeSectionProps): ReactElement => {
     const [activeEnv, setActiveEnv] = useState<'amp' | 'filter'>('amp');
-
     const isAmp = activeEnv === 'amp';
     const a = isAmp ? ampA : filterA;
     const d = isAmp ? ampD : filterD;
     const s = isAmp ? ampS : filterS;
     const r = isAmp ? ampR : filterR;
 
-    const handleParamChange = (paramId: string, value: number): void => {
-        if (isAmp) {
-            if (paramId === 'attack') { onAmpChange('ampAttack', value); }
-            if (paramId === 'decay') { onAmpChange('ampDecay', value); }
-            if (paramId === 'sustain') { onAmpChange('ampSustain', value); }
-            if (paramId === 'release') { onAmpChange('ampRelease', value); }
-        } else {
-            if (paramId === 'attack') { onFilterChange('filterAttack', value); }
-            if (paramId === 'decay') { onFilterChange('filterDecay', value); }
-            if (paramId === 'sustain') { onFilterChange('filterSustain', value); }
-            if (paramId === 'release') { onFilterChange('filterRelease', value); }
-        }
+    const handle = (paramId: string, value: number): void => {
+        const prefix = isAmp ? 'amp' : 'filter';
+        const map: Record<string, string> = { attack: `${prefix}Attack`, decay: `${prefix}Decay`, sustain: `${prefix}Sustain`, release: `${prefix}Release` };
+        const key = map[paramId];
+        if (!key) return;
+        if (isAmp) onAmpChange(key as 'ampAttack' | 'ampDecay' | 'ampSustain' | 'ampRelease', value);
+        else onFilterChange(key as 'filterAttack' | 'filterDecay' | 'filterSustain' | 'filterRelease', value);
     };
 
     return (
-        <div className="space-y-2">
-            <div className="flex items-center gap-2 px-1">
+        <div className="space-y-2 w-full max-w-[320px]">
+            {/* Header with AMP/FILTER toggle */}
+            <div className="flex items-center gap-2">
                 <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Envelope</span>
-                <div className="flex gap-1 ml-auto">
-                    <button
-                        type="button"
-                        className={`px-1.5 py-0.5 rounded text-[8px] font-medium ${isAmp ? 'bg-[var(--color-accent-teal)] text-white' : 'text-muted-foreground'}`}
-                        onClick={() => setActiveEnv('amp')}
-                    >
-                        AMP
-                    </button>
-                    <button
-                        type="button"
-                        className={`px-1.5 py-0.5 rounded text-[8px] font-medium ${!isAmp ? 'bg-[var(--color-accent-cyan)] text-white' : 'text-muted-foreground'}`}
-                        onClick={() => setActiveEnv('filter')}
-                    >
-                        FILTER
-                    </button>
+                <div className="flex gap-0.5">
+                    <button type="button" className={`px-2 py-0.5 rounded text-[8px] font-medium ${isAmp ? 'bg-[var(--color-accent-mint)] text-white' : 'text-muted-foreground/50 hover:text-foreground'}`} onClick={() => setActiveEnv('amp')}>AMP</button>
+                    <button type="button" className={`px-2 py-0.5 rounded text-[8px] font-medium ${!isAmp ? 'bg-[var(--color-accent-cyan)] text-white' : 'text-muted-foreground/50 hover:text-foreground'}`} onClick={() => setActiveEnv('filter')}>FILTER</button>
                 </div>
             </div>
 
-            {/* Interactive ADSR */}
-            <div className="flex justify-center">
-                <ADSREnvelope
-                    attack={a} decay={d} sustain={s} release={r}
-                    width={220} height={80}
-                    onParamChange={handleParamChange}
+            {/* HERO: Large interactive ADSR — drag the breakpoints */}
+            <div className="rounded-md overflow-hidden border border-border/20 bg-black/20">
+                <ADSREnvelope attack={a} decay={d} sustain={s} release={r}
+                    color={isAmp ? 'var(--color-accent-mint)' : 'var(--color-accent-cyan)'}
+                    width={310} height={100} onParamChange={handle}
                 />
             </div>
 
-            {/* ADSR knobs */}
-            <div className="grid grid-cols-2 gap-2">
+            {/* Precision knobs */}
+            <div className="flex items-end gap-2">
                 {[
-                    { label: 'Attack', value: a, key: 'attack', max: 5 },
-                    { label: 'Decay', value: d, key: 'decay', max: 5 },
-                    { label: 'Sustain', value: s, key: 'sustain', max: 1 },
-                    { label: 'Release', value: r, key: 'release', max: 10 },
-                ].map(({ label, value, key, max }) => (
-                    <Card key={key} className="rounded-md shadow-none bg-surface-base border-border/50 p-2 flex items-center gap-2">
-                        <RotaryKnob
-                            value={value}
-                            onChange={(v) => handleParamChange(key, v)}
-                            min={key === 'sustain' ? 0 : 0.001}
-                            max={max}
-                            step={key === 'sustain' ? 0.01 : 0.005}
-                            defaultValue={key === 'sustain' ? 0.7 : 0.2}
-                            size="md"
-                        />
-                        <div>
-                            <div className="text-[9px] font-medium text-foreground/80">{label}</div>
-                            <div className="text-[8px] text-muted-foreground font-mono">
-                                {key === 'sustain' ? `${Math.round(value * 100)}%` : `${(value * 1000).toFixed(0)}ms`}
-                            </div>
-                        </div>
-                    </Card>
+                    { label: 'A', value: a, key: 'attack', min: 0.001, max: 5, fmt: `${(a * 1000).toFixed(0)}ms` },
+                    { label: 'D', value: d, key: 'decay', min: 0.001, max: 5, fmt: `${(d * 1000).toFixed(0)}ms` },
+                    { label: 'S', value: s, key: 'sustain', min: 0, max: 1, fmt: `${Math.round(s * 100)}%` },
+                    { label: 'R', value: r, key: 'release', min: 0.001, max: 10, fmt: `${(r * 1000).toFixed(0)}ms` },
+                ].map(({ label, value, key, min, max, fmt }) => (
+                    <div key={key} className="flex flex-col items-center gap-0">
+                        <RotaryKnob value={value} onChange={(v) => handle(key, v)} min={min} max={max} step={key === 'sustain' ? 0.01 : 0.005} defaultValue={key === 'sustain' ? 0.7 : 0.2} size="lg" />
+                        <span className="text-[7px] text-muted-foreground">{label}</span>
+                        <span className="text-[6px] text-muted-foreground/50 font-mono">{fmt}</span>
+                    </div>
                 ))}
             </div>
         </div>

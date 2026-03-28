@@ -24,10 +24,32 @@ export const midiLearn: MidiLearnState = {
     callback: null,
 };
 
+const STORAGE_KEY = 'sourdaw:midi:selectedInputId';
+
+function readPersistedInputId(): string | null {
+    try {
+        return localStorage.getItem(STORAGE_KEY);
+    } catch {
+        return null;
+    }
+}
+
+function persistInputId(id: string | null): void {
+    try {
+        if (id) {
+            localStorage.setItem(STORAGE_KEY, id);
+        } else {
+            localStorage.removeItem(STORAGE_KEY);
+        }
+    } catch {
+        // storage not available
+    }
+}
+
 let state: WebMidiState = {
     isSupported: webMidiSupported || isTauri(),
     inputs: [],
-    selectedInputId: null,
+    selectedInputId: readPersistedInputId(),
 };
 
 const subscribers = new Set<Subscriber>();
@@ -40,6 +62,9 @@ function notify(): void {
 
 export function setState(next: Partial<WebMidiState>): void {
     state = { ...state, ...next };
+    if ('selectedInputId' in next) {
+        persistInputId(next.selectedInputId ?? null);
+    }
     notify();
 }
 

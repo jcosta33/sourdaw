@@ -94,7 +94,7 @@ export async function buildDeviceChain(
                 }
             }
         } else if (isFermenterDevice(device.type)) {
-            if (isOffline) {
+            if (isOffline || !(ctx instanceof AudioContext)) {
                 continue;
             }
             // Fermenter synthesizer — async WASM init + AudioWorkletNode

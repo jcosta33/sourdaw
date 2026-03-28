@@ -105,12 +105,13 @@ export function handleNoteOn(channel: number, note: number, velocity: number): v
         // Check for Fermenter instrument — route MIDI via worklet MessagePort
         const fermenterDevice = track?.devices.find((d) => d.type === 'fermenter');
         if (fermenterDevice) {
-            const dn = strip.deviceNodes.find((d) => d.deviceId === fermenterDevice.id);
-            if (dn?.fermenterControls) {
+            const dn = strip.deviceNodes.find((d) => d.deviceId === fermenterDevice.id || d.type === 'fermenter');
+            if (dn?.fermenterControls?.ready) {
                 dn.fermenterControls.noteOn(note, velocity);
                 noteData.fermenterDeviceId = fermenterDevice.id;
+                return;
             }
-            return;
+            // Fermenter not ready yet — fall through to built-in synth as fallback
         }
 
         let osc: OscillatorNode | null = null;
@@ -292,19 +293,43 @@ export function handleChannelPressure(channel: number, pressure: number): void {
     }
 }
 
+// Standard MIDI pitch bend range: ±2 semitones (200 cents). Widely used default.
+const STANDARD_BEND_RANGE_CENTS = 200;
+// MPE per-note bend range: ±48 semitones, matching builtinSynth.ts convention.
+const MPE_BEND_RANGE_CENTS = 48 * 100;
+
 export function handlePitchBend(channel: number, lsb: number, msb: number): void {
-    if (!mpeEnabled || channel < 1) {
+    // Raw 14-bit pitch bend: range 0–16383, centre at 8192.
+    const bendValue = ((msb << 7) | lsb) - 8192; // -8192 … +8191
+
+    if (mpeEnabled && channel >= 1) {
+        // MPE mode: pitch bend is per-note, keyed by channel.
+        const noteForChannel = channelToNote.get(channel);
+        if (noteForChannel === undefined) {
+            return;
+        }
+        const noteData = activeNotes.get(noteForChannel);
+        if (!noteData) {
+            return;
+        }
+        noteData.pitchBend = bendValue;
+        if (noteData.osc) {
+            const bendCents = (bendValue / 8192) * MPE_BEND_RANGE_CENTS;
+            const baseDetune = targetTrackId ? getSynthParamsForTrack(targetTrackId).detune : 0;
+            noteData.osc.detune.setTargetAtTime(baseDetune + bendCents, audioEngine.context.currentTime, 0.003);
+        }
         return;
     }
 
-    const noteForChannel = channelToNote.get(channel);
-    if (noteForChannel === undefined) {
-        return;
-    }
-
-    const noteData = activeNotes.get(noteForChannel);
-    if (noteData) {
-        noteData.pitchBend = ((msb << 7) | lsb) - 8192;
+    // Standard MIDI: pitch bend on channel 0 is a global message — apply to
+    // every active note. This is what a conventional keyboard pitch wheel does.
+    const bendCents = (bendValue / 8192) * STANDARD_BEND_RANGE_CENTS;
+    const baseDetune = targetTrackId ? getSynthParamsForTrack(targetTrackId).detune : 0;
+    const now = audioEngine.context.currentTime;
+    for (const noteData of activeNotes.values()) {
+        if (noteData.osc) {
+            noteData.osc.detune.setTargetAtTime(baseDetune + bendCents, now, 0.003);
+        }
     }
 }
 

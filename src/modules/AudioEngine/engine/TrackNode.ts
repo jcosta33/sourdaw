@@ -15,7 +15,7 @@ import { Logger } from '#/helpers/Logger/Logger';
 const logger = Container.getInstance().get(Logger);
 
 export interface TrackNodeDeps {
-    context: BaseAudioContext;
+    context: AudioContext;
     masterGainNode: GainNode;
     getBusGainNode: (busId: string) => GainNode | undefined;
     getTrackGainNode: (trackId: string) => GainNode | undefined;
@@ -311,6 +311,7 @@ export class TrackNode {
                 // Expose a provisional fermenterControls so updateParam() calls during
                 // async load get queued instead of silently dropped
                 dn.fermenterControls = {
+                    ready: false,
                     noteOn: () => {},
                     noteOff: () => {},
                     setParam: queuedSetParam,
@@ -318,7 +319,7 @@ export class TrackNode {
                     destroy: () => {},
                 };
 
-                const loadPromise = createFermenterNode(context as AudioContext)
+                const loadPromise = createFermenterNode(context)
                     .then(async (result: FermenterNodeResult) => {
                         await result.ready;
                         // Replay any params that were set while WASM was loading
@@ -334,6 +335,7 @@ export class TrackNode {
                                 inputNode: result.workletNode,
                                 outputNode: result.workletNode,
                                 fermenterControls: {
+                                    ready: true,
                                     noteOn: result.noteOn,
                                     noteOff: result.noteOff,
                                     setParam: result.setParam,
@@ -361,6 +363,9 @@ export class TrackNode {
         const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
         if (!dn) {
             return;
+        }
+        if (dn.fermenterControls) {
+            dn.fermenterControls.destroy();
         }
         for (const n of dn.nodes) {
             n.disconnect();

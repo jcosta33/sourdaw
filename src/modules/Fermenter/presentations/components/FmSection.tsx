@@ -1,0 +1,101 @@
+/**
+ * FM synthesis controls — algorithm selector, operator ratios + levels, feedback.
+ */
+import { type ReactElement } from 'react';
+import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { FM_ALGORITHM_NAMES } from '../../models/FermenterPatch';
+
+type FmSectionProps = {
+    algorithm: number;
+    ratios: [number, number, number, number];
+    levels: [number, number, number, number];
+    feedback: number;
+    modAmount: number;
+    onParam: (key: string, value: number) => void;
+};
+
+const OP_COLORS = [
+    'text-[var(--color-accent-cyan)]',
+    'text-[var(--color-accent-mint)]',
+    'text-[var(--color-accent-peach)]',
+    'text-[var(--color-accent-lavender)]',
+];
+
+export const FmSection = ({
+    algorithm,
+    ratios,
+    levels,
+    feedback,
+    modAmount,
+    onParam,
+}: FmSectionProps): ReactElement => {
+    return (
+        <div className="space-y-2">
+            <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-1">
+                FM Engine
+            </div>
+
+            {/* Algorithm selector */}
+            <div className="px-1">
+                <select
+                    value={algorithm}
+                    onChange={(e) => onParam('fmAlgorithm', Number(e.target.value))}
+                    className="w-full bg-surface-inset border border-border/40 rounded px-1.5 py-0.5 text-[9px] text-foreground cursor-pointer"
+                >
+                    {FM_ALGORITHM_NAMES.map((name, i) => (
+                        <option key={i} value={i}>{name}</option>
+                    ))}
+                </select>
+            </div>
+
+            {/* Operator ratios + levels */}
+            <div className="grid grid-cols-4 gap-1 px-1">
+                {([0, 1, 2, 3] as const).map((i) => {
+                    const ratio = ratios[i];
+                    const level = levels[i];
+                    return (
+                        <div key={i} className="flex flex-col items-center gap-0.5">
+                            <span className={`text-[8px] font-bold ${OP_COLORS[i]}`}>Op {i + 1}</span>
+                            <RotaryKnob
+                                value={ratio}
+                                onChange={(v) => onParam(`fmRatio${i + 1}`, v)}
+                                min={0.5} max={16} step={0.5} defaultValue={i + 1}
+                                size="sm"
+                            />
+                            <span className="text-[7px] text-muted-foreground/60 font-mono">{ratio.toFixed(1)}×</span>
+                            <RotaryKnob
+                                value={level}
+                                onChange={(v) => onParam(`fmLevel${i + 1}`, v)}
+                                min={0} max={1} step={0.01} defaultValue={1}
+                                size="sm"
+                            />
+                            <span className="text-[7px] text-muted-foreground/60 font-mono">{Math.round(level * 100)}%</span>
+                        </div>
+                    );
+                })}
+            </div>
+
+            {/* Feedback + Mod Depth */}
+            <div className="flex items-end gap-2 px-1">
+                <div className="flex flex-col items-center gap-0.5">
+                    <RotaryKnob
+                        value={feedback}
+                        onChange={(v) => onParam('fmFeedback', v)}
+                        min={0} max={1} step={0.01} defaultValue={0}
+                        size="lg"
+                    />
+                    <span className="text-[8px] text-muted-foreground">Feedback</span>
+                </div>
+                <div className="flex flex-col items-center gap-0.5">
+                    <RotaryKnob
+                        value={modAmount}
+                        onChange={(v) => onParam('fmModAmount', v)}
+                        min={0} max={4} step={0.01} defaultValue={1}
+                        size="lg"
+                    />
+                    <span className="text-[8px] text-muted-foreground">Depth</span>
+                </div>
+            </div>
+        </div>
+    );
+};

@@ -54,13 +54,17 @@ impl Envelope {
         self.state != EnvState::Idle
     }
 
+    pub fn get_level(&self) -> f32 {
+        self.level
+    }
+
     #[inline]
     pub fn tick(&mut self) -> f32 {
         match self.state {
             EnvState::Idle => 0.0,
             EnvState::Attack => {
-                self.level += self.attack_coeff * (1.1 - self.level);
-                if self.level >= 1.0 {
+                self.level += self.attack_coeff * (1.0 - self.level);
+                if self.level >= 0.999 {
                     self.level = 1.0;
                     self.state = EnvState::Decay;
                 }
@@ -77,7 +81,7 @@ impl Envelope {
             EnvState::Sustain => self.sustain_level,
             EnvState::Release => {
                 self.level += self.release_coeff * (0.0 - self.level);
-                if self.level < 0.0001 {
+                if self.level < 1e-8 {
                     self.level = 0.0;
                     self.state = EnvState::Idle;
                 }

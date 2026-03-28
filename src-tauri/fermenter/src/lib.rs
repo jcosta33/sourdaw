@@ -3,6 +3,8 @@
 //! Compiles to both native (Rust library) and WASM (AudioWorklet).
 //! All DSP is lock-free, allocation-free in the audio path.
 
+pub mod additive;
+pub mod chaos;
 pub mod params;
 pub mod envelope;
 pub mod oscillator;
@@ -11,10 +13,18 @@ pub mod lfo;
 pub mod modulation;
 pub mod effects;
 pub mod noise;
+pub mod fm;
+pub mod physical;
+pub mod granular;
+pub mod sampler;
+pub mod mseg;
+pub mod spectral;
+pub mod stepseq;
 pub mod voice;
+pub mod layer;
 pub mod synth;
 
-use synth::{MasterSynth, MidiEvent};
+use synth::MasterSynth;
 use wasm_bindgen::prelude::*;
 
 /// WASM-exported Fermenter instance for AudioWorklet.
@@ -44,19 +54,12 @@ impl FermenterInstance {
 
     /// Process a MIDI note on event.
     pub fn note_on(&mut self, note: u8, velocity: u8) {
-        // Process as single-event block
-        let events = [MidiEvent { kind: 1, note, velocity, offset: 0 }];
-        self.left_buf.fill(0.0);
-        self.right_buf.fill(0.0);
-        self.synth.process_block(&mut self.left_buf, &mut self.right_buf, &events);
+        self.synth.note_on(note, velocity);
     }
 
     /// Process a MIDI note off event.
     pub fn note_off(&mut self, note: u8) {
-        let events = [MidiEvent { kind: 0, note, velocity: 0, offset: 0 }];
-        self.left_buf.fill(0.0);
-        self.right_buf.fill(0.0);
-        self.synth.process_block(&mut self.left_buf, &mut self.right_buf, &events);
+        self.synth.note_off(note);
     }
 
     /// Process a block of 128 samples. Returns pointer to left channel.

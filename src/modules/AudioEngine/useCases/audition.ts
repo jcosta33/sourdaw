@@ -35,13 +35,16 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
     // Check for Fermenter synth on this track
     const fermenterDevice = track?.devices.find((d) => d.type === 'fermenter');
     if (fermenterDevice) {
-        const dn = strip.deviceNodes.find((d) => d.deviceId === fermenterDevice.id);
-        if (dn?.fermenterControls) {
+        const dn = strip.deviceNodes.find(
+            (d) => d.deviceId === fermenterDevice.id || d.type === 'fermenter'
+        );
+        if (dn?.fermenterControls?.ready) {
             dn.fermenterControls.noteOn(pitch, velocity);
             return () => {
                 dn.fermenterControls?.noteOff(pitch);
             };
         }
+        // Fermenter not ready — fall through to built-in synth as temporary fallback
     }
 
     // Check for Faust instrument on this track

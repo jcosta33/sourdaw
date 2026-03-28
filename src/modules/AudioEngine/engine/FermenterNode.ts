@@ -1,24 +1,30 @@
 /**
- * Engine class: FermenterNode
+ * FermenterNode — AudioWorkletNode wrapper for the Fermenter synthesizer.
  *
- * Wraps an AudioWorkletNode that hosts the Fermenter synthesizer WASM instance.
- * Provides noteOn/noteOff/setParam methods that forward via MessagePort.
- * Used when a track has a 'fermenter' instrument device.
+ * Creates and manages the WASM-powered worklet. Provides noteOn/noteOff/setParam
+ * methods that forward via MessagePort. Caches WASM binary and worklet registration.
  */
 
 import fermenterProcessorUrl from '../services/fermenterProcessor.ts?worker&url';
 
-/** Default WASM path — served from public/ via Vite. */
 const DEFAULT_WASM_URL = '/wasm/fermenter/fermenter_bg.wasm';
 
-let workletRegistered = false;
+let workletRegistrationPromise: Promise<void> | null = null;
+let cachedWasmBytes: ArrayBuffer | null = null;
 
-async function ensureWorkletRegistered(ctx: BaseAudioContext): Promise<void> {
-    if (workletRegistered) {
-        return;
+async function ensureWorkletRegistered(ctx: AudioContext): Promise<void> {
+    if (!workletRegistrationPromise) {
+        workletRegistrationPromise = ctx.audioWorklet.addModule(fermenterProcessorUrl);
     }
-    await ctx.audioWorklet.addModule(fermenterProcessorUrl);
-    workletRegistered = true;
+    return workletRegistrationPromise;
+}
+
+async function fetchWasmBinary(url: string): Promise<ArrayBuffer> {
+    if (cachedWasmBytes) return cachedWasmBytes;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Failed to fetch Fermenter WASM: ${response.status}`);
+    cachedWasmBytes = await response.arrayBuffer();
+    return cachedWasmBytes;
 }
 
 export type FermenterNodeResult = {
@@ -40,20 +46,18 @@ export function isFermenterDevice(deviceType: string): boolean {
 /**
  * Create a Fermenter AudioWorkletNode.
  *
- * Returns immediately with an unconnected node; await `result.ready` before
- * sending MIDI events.
- *
- * @param ctx - The AudioContext (must be a real AudioContext, not OfflineAudioContext)
- * @param wasmUrl - Optional override for the WASM binary URL
+ * Resumes the AudioContext if suspended (worklet processors only run when active).
+ * Caches WASM binary across calls. Await `result.ready` before sending MIDI.
  */
-export async function createFermenterNode(
-    ctx: BaseAudioContext,
-    wasmUrl?: string
-): Promise<FermenterNodeResult> {
+export async function createFermenterNode(ctx: AudioContext, wasmUrl?: string): Promise<FermenterNodeResult> {
+    if (ctx.state === 'suspended') {
+        await ctx.resume();
+    }
+
     await ensureWorkletRegistered(ctx);
 
     const node = new AudioWorkletNode(ctx, 'fermenter-processor', {
-        numberOfInputs: 0,   // Instruments generate audio — no audio input needed
+        numberOfInputs: 0,
         numberOfOutputs: 1,
         outputChannelCount: [2],
         channelCount: 2,
@@ -61,76 +65,42 @@ export async function createFermenterNode(
     });
 
     let bypassed = false;
+    let settled = false;
 
     const readyPromise = new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('FermenterNode init timeout')), 10_000);
+        const timeout = setTimeout(() => {
+            if (!settled) { settled = true; reject(new Error('FermenterNode init timeout (10s)')); }
+        }, 10_000);
         node.port.onmessage = (e: MessageEvent) => {
-            if (e.data.type === 'ready') {
-                clearTimeout(timeout);
-                resolve();
-            } else if (e.data.type === 'error') {
-                clearTimeout(timeout);
-                reject(new Error(e.data.message as string));
-            }
+            if (settled) return;
+            if (e.data.type === 'ready') { settled = true; clearTimeout(timeout); resolve(); }
+            else if (e.data.type === 'error') { settled = true; clearTimeout(timeout); reject(new Error(e.data.message)); }
         };
     });
 
-    // Fetch WASM binary on main thread (AudioWorklet scope lacks fetch on Safari/WKWebView)
-    const resolvedWasmUrl = wasmUrl ?? DEFAULT_WASM_URL;
-    const wasmResponse = await fetch(resolvedWasmUrl);
-    const wasmBytes = await wasmResponse.arrayBuffer();
-
-    node.port.postMessage(
-        { type: 'init', wasmBytes },
-        [wasmBytes] // Transfer ownership for zero-copy
-    );
-
-    const noteOn = (note: number, velocity: number): void => {
-        if (!bypassed) {
-            node.port.postMessage({ type: 'noteOn', note, velocity });
-        }
-    };
-
-    const noteOff = (note: number): void => {
-        if (!bypassed) {
-            node.port.postMessage({ type: 'noteOff', note });
-        }
-    };
-
-    const setParam = (name: string, value: number): void => {
-        node.port.postMessage({ type: 'param', name, value });
-    };
-
-    const setBypass = (bypassState: boolean): void => {
-        bypassed = bypassState;
-    };
-
-    const connect = (dest: AudioNode): void => {
-        node.connect(dest);
-    };
-
-    const disconnect = (): void => {
-        try {
-            node.disconnect();
-        } catch {
-            /* already disconnected */
-        }
-    };
-
-    const destroy = (): void => {
-        disconnect();
-        node.port.close();
-    };
+    const wasmBytes = await fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL);
+    const copy = wasmBytes.slice(0);
+    node.port.postMessage({ type: 'init', wasmBytes: copy }, [copy]);
 
     return {
         workletNode: node,
-        noteOn,
-        noteOff,
-        setParam,
-        setBypass,
-        connect,
-        disconnect,
-        destroy,
+        noteOn(note: number, velocity: number) {
+            if (!bypassed && note >= 0 && note < 128) {
+                node.port.postMessage({ type: 'noteOn', note, velocity: Math.min(127, Math.max(0, velocity)) });
+            }
+        },
+        noteOff(note: number) {
+            node.port.postMessage({ type: 'noteOff', note });
+        },
+        setParam(name: string, value: number) {
+            if (Number.isFinite(value)) {
+                node.port.postMessage({ type: 'param', name, value });
+            }
+        },
+        setBypass(state: boolean) { bypassed = state; },
+        connect(dest: AudioNode) { node.connect(dest); },
+        disconnect() { try { node.disconnect(); } catch { /* already disconnected */ } },
+        destroy() { try { node.disconnect(); } catch {} node.port.close(); },
         ready: readyPromise,
     };
 }

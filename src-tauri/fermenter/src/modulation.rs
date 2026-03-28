@@ -20,6 +20,8 @@ pub enum ModSource {
     Lfo1,
     Lfo2,
     Velocity,
+    Mseg,
+    StepSeq,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -78,6 +80,8 @@ impl ModMatrix {
         lfo1: f32,
         lfo2: f32,
         velocity: f32,
+        mseg: f32,
+        step_seq: f32,
     ) -> ModOutput {
         let mut out = ModOutput::default();
 
@@ -92,6 +96,8 @@ impl ModMatrix {
                 ModSource::Lfo1 => lfo1,
                 ModSource::Lfo2 => lfo2,
                 ModSource::Velocity => velocity,
+                ModSource::Mseg => mseg,
+                ModSource::StepSeq => step_seq,
             };
 
             let contrib = source_val * slot.amount;

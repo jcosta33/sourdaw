@@ -1,0 +1,55 @@
+/**
+ * Sampler engine controls — playback mode, start/end points.
+ */
+import { type ReactElement } from 'react';
+import { RotaryKnob } from '#/components/daw/RotaryKnob';
+
+const MODE_NAMES = ['One-Shot', 'Loop', 'Ping-Pong'] as const;
+
+type SamplerSectionProps = {
+    mode: number;
+    start: number;
+    end: number;
+    onParam: (key: string, value: number) => void;
+};
+
+export const SamplerSection = ({ mode, start, end, onParam }: SamplerSectionProps): ReactElement => (
+    <div className="space-y-2">
+        <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-1">
+            Sampler
+        </div>
+        <div className="text-[8px] text-muted-foreground/60 px-1">
+            Sample playback with loop modes. Pitch-tracks to MIDI notes.
+        </div>
+        {/* Mode selector */}
+        <div className="flex gap-0.5 px-1">
+            {MODE_NAMES.map((name, i) => (
+                <button
+                    key={name}
+                    type="button"
+                    className={`px-1.5 py-0.5 rounded text-[7px] font-medium transition-colors ${
+                        mode === i
+                            ? 'bg-[var(--color-accent-cyan)]/80 text-white'
+                            : 'text-muted-foreground/50 hover:text-foreground'
+                    }`}
+                    onClick={() => onParam('samplerMode', i)}
+                >
+                    {name}
+                </button>
+            ))}
+        </div>
+        {/* Start / End */}
+        <div className="flex items-end gap-3 px-1">
+            <div className="flex flex-col items-center gap-0.5">
+                <RotaryKnob value={start} onChange={(v) => onParam('samplerStart', v)} min={0} max={1} step={0.01} defaultValue={0} size="lg" />
+                <span className="text-[8px] text-muted-foreground">Start</span>
+                <span className="text-[7px] text-muted-foreground/60 font-mono">{Math.round(start * 100)}%</span>
+            </div>
+            <div className="flex flex-col items-center gap-0.5">
+                <RotaryKnob value={end} onChange={(v) => onParam('samplerEnd', v)} min={0} max={1} step={0.01} defaultValue={1} size="lg" />
+                <span className="text-[8px] text-muted-foreground">End</span>
+                <span className="text-[7px] text-muted-foreground/60 font-mono">{Math.round(end * 100)}%</span>
+            </div>
+        </div>
+    </div>
+);

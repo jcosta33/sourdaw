@@ -1,5 +1,6 @@
 /**
- * Fermenter factory presets — curated starting points for the master synth.
+ * Fermenter factory presets — bread-themed, covering every sound imaginable.
+ * Named after the sourdough theme: Sourdaw app, Fermenter synth.
  */
 
 import { type SoundPreset, type DevicePreset } from '#/modules/Arrangement/models/SoundPreset';
@@ -13,8 +14,7 @@ function fermenterDevice(name: string, overrides: Partial<FermenterPatch> = {}):
     for (const [key, value] of Object.entries(patch)) {
         if (key === 'version' || key === 'name') continue;
         if (key === 'macros') {
-            const macros = value as number[];
-            macros.forEach((v, i) => { parameterValues[`macro${i}`] = v; });
+            (value as number[]).forEach((v, i) => { parameterValues[`macro${i}`] = v; });
         } else {
             parameterValues[key] = value as number;
         }
@@ -22,369 +22,217 @@ function fermenterDevice(name: string, overrides: Partial<FermenterPatch> = {}):
     return { type: 'fermenter', name, parameterValues };
 }
 
+const p = (id: string, name: string, cat: SoundPreset['category'], desc: string, tags: string[], ov: Partial<FermenterPatch>): SoundPreset => ({
+    id: `fermenter-${id}`, name, category: cat, subcategory: 'fermenter', description: desc,
+    trackKind: 'midi', devices: [fermenterDevice(name, ov)], tags: ['fermenter', ...tags], author: AUTHOR, isFactory: true,
+});
+
 export const FERMENTER_PRESETS: SoundPreset[] = [
-    {
-        id: 'fermenter-init',
-        name: 'Fermenter — Init',
-        category: 'synth',
-        subcategory: 'fermenter',
-        description: 'Clean starting point — sawtooth through low-pass filter with gentle reverb',
-        trackKind: 'midi',
-        devices: [fermenterDevice('Fermenter Init')],
-        tags: ['fermenter', 'init', 'default', 'clean'],
-        author: AUTHOR,
-        isFactory: true,
-    },
-    {
-        id: 'fermenter-warm-pad',
-        name: 'Fermenter — Warm Pad',
-        category: 'pad',
-        subcategory: 'fermenter',
-        description: 'Slow-attack filtered pad with lush reverb — great for ambient textures',
-        trackKind: 'midi',
-        devices: [fermenterDevice('Warm Pad', {
-            oscWaveform: 1,
-            oscLevel: 0.7,
-            unisonVoices: 4,
-            unisonDetune: 25,
-            unisonSpread: 0.9,
-            filterCutoff: 2000,
-            filterResonance: 1.5,
-            ampAttack: 0.8,
-            ampDecay: 0.5,
-            ampSustain: 0.9,
-            ampRelease: 2.0,
-            filterAttack: 1.0,
-            filterDecay: 0.8,
-            filterSustain: 0.3,
-            filterRelease: 1.5,
-            filterEnvAmount: 0.6,
-            reverbMix: 0.55,
-            reverbDecay: 0.8,
-            lfoRate: 0.3,
-            lfoPitchAmount: 0.02,
-            chorusMix: 0.3,
-            chorusDepth: 0.5,
-        })],
-        tags: ['fermenter', 'pad', 'warm', 'ambient', 'lush', 'unison'],
-        author: AUTHOR,
-        isFactory: true,
-    },
-    {
-        id: 'fermenter-acid-bass',
-        name: 'Fermenter — Acid Bass',
-        category: 'bass',
-        subcategory: 'fermenter',
-        description: 'Resonant squelchy bass — classic acid house character',
-        trackKind: 'midi',
-        devices: [fermenterDevice('Acid Bass', {
-            oscEngine: 1, // VA for that analog character
-            oscWaveform: 2,
-            oscLevel: 0.9,
-            filterCutoff: 600,
-            filterResonance: 8.0,
-            filterDrive: 3.0,
-            filterMode: 0,
-            ampAttack: 0.005,
-            ampDecay: 0.15,
-            ampSustain: 0.0,
-            ampRelease: 0.08,
-            filterAttack: 0.005,
-            filterDecay: 0.2,
-            filterSustain: 0.0,
-            filterRelease: 0.1,
-            filterEnvAmount: 0.9,
-            reverbMix: 0.05,
-            portamentoTime: 0.05,
-            portamentoMode: 1,
-        })],
-        tags: ['fermenter', 'bass', 'acid', '303', 'squelch', 'analog'],
-        author: AUTHOR,
-        isFactory: true,
-    },
-    {
-        id: 'fermenter-pluck-lead',
-        name: 'Fermenter — Pluck Lead',
-        category: 'lead',
-        subcategory: 'fermenter',
-        description: 'Snappy pluck with filter envelope — cuts through any mix',
-        trackKind: 'midi',
-        devices: [fermenterDevice('Pluck Lead', {
-            oscWaveform: 1,
-            oscLevel: 0.85,
-            filterCutoff: 3000,
-            filterResonance: 2.0,
-            ampAttack: 0.003,
-            ampDecay: 0.25,
-            ampSustain: 0.3,
-            ampRelease: 0.2,
-            filterAttack: 0.001,
-            filterDecay: 0.15,
-            filterSustain: 0.1,
-            filterRelease: 0.15,
-            filterEnvAmount: 0.7,
-            reverbMix: 0.25,
-            reverbDecay: 0.4,
-            delayMix: 0.2,
-            delayTime: 250,
-            delayFeedback: 0.3,
-        })],
-        tags: ['fermenter', 'lead', 'pluck', 'sharp'],
-        author: AUTHOR,
-        isFactory: true,
-    },
-    {
-        id: 'fermenter-sub-bass',
-        name: 'Fermenter — Sub Bass',
-        category: 'bass',
-        subcategory: 'fermenter',
-        description: 'Pure sine sub with tight envelope — solid low end foundation',
-        trackKind: 'midi',
-        devices: [fermenterDevice('Sub Bass', {
-            oscWaveform: 0,
-            oscLevel: 1.0,
-            filterCutoff: 500,
-            filterResonance: 0.7,
-            ampAttack: 0.005,
-            ampDecay: 0.8,
-            ampSustain: 0.0,
-            ampRelease: 0.15,
-            filterEnvAmount: 0.0,
-            reverbMix: 0.0,
-        })],
-        tags: ['fermenter', 'bass', 'sub', 'deep', '808'],
-        author: AUTHOR,
-        isFactory: true,
-    },
-    {
-        id: 'fermenter-glass-keys',
-        name: 'Fermenter — Glass Keys',
-        category: 'keys',
-        subcategory: 'fermenter',
-        description: 'Crystalline tone with bright attack and shimmering reverb',
-        trackKind: 'midi',
-        devices: [fermenterDevice('Glass Keys', {
-            oscWaveform: 3,
-            oscLevel: 0.75,
-            filterCutoff: 8000,
-            filterResonance: 1.2,
-            ampAttack: 0.002,
-            ampDecay: 0.6,
-            ampSustain: 0.2,
-            ampRelease: 0.8,
-            filterAttack: 0.001,
-            filterDecay: 0.4,
-            filterSustain: 0.1,
-            filterRelease: 0.6,
-            filterEnvAmount: 0.3,
-            reverbMix: 0.4,
-            reverbDecay: 0.65,
-            chorusMix: 0.15,
-        })],
-        tags: ['fermenter', 'keys', 'glass', 'crystal', 'bell'],
-        author: AUTHOR,
-        isFactory: true,
-    },
-    {
-        id: 'fermenter-dark-drone',
-        name: 'Fermenter — Dark Drone',
-        category: 'pad',
-        subcategory: 'fermenter',
-        description: 'Low rumbling drone with slow LFO movement — cinematic atmosphere',
-        trackKind: 'midi',
-        devices: [fermenterDevice('Dark Drone', {
-            oscWaveform: 1,
-            oscLevel: 0.6,
-            unisonVoices: 6,
-            unisonDetune: 40,
-            unisonSpread: 1.0,
-            noiseLevel: 0.08,
-            noiseColor: 2, // brown
-            filterCutoff: 800,
-            filterResonance: 3.0,
-            filterDrive: 1.5,
-            filterMode: 0,
-            ampAttack: 2.0,
-            ampDecay: 1.0,
-            ampSustain: 1.0,
-            ampRelease: 3.0,
-            filterAttack: 3.0,
-            filterDecay: 2.0,
-            filterSustain: 0.5,
-            filterRelease: 2.0,
-            filterEnvAmount: 0.3,
-            lfoRate: 0.1,
-            lfoPitchAmount: 0.05,
-            lfoFilterAmount: 0.3,
-            reverbMix: 0.7,
-            reverbDecay: 0.9,
-        })],
-        tags: ['fermenter', 'pad', 'drone', 'dark', 'cinematic', 'ambient'],
-        author: AUTHOR,
-        isFactory: true,
-    },
-    {
-        id: 'fermenter-bright-lead',
-        name: 'Fermenter — Bright Lead',
-        category: 'lead',
-        subcategory: 'fermenter',
-        description: 'Aggressive square lead with high resonance — stands out in dense mixes',
-        trackKind: 'midi',
-        devices: [fermenterDevice('Bright Lead', {
-            oscEngine: 1, // VA
-            oscWaveform: 2,
-            oscLevel: 0.8,
-            filterCutoff: 6000,
-            filterResonance: 4.0,
-            filterDrive: 2.0,
-            ampAttack: 0.01,
-            ampDecay: 0.3,
-            ampSustain: 0.8,
-            ampRelease: 0.15,
-            filterAttack: 0.01,
-            filterDecay: 0.2,
-            filterSustain: 0.6,
-            filterRelease: 0.1,
-            filterEnvAmount: 0.4,
-            reverbMix: 0.15,
-            reverbDecay: 0.3,
-            portamentoTime: 0.03,
-        })],
-        tags: ['fermenter', 'lead', 'bright', 'aggressive', 'analog'],
-        author: AUTHOR,
-        isFactory: true,
-    },
-    {
-        id: 'fermenter-supersaw',
-        name: 'Fermenter — Supersaw',
-        category: 'synth',
-        subcategory: 'fermenter',
-        description: 'Thick detuned supersaw — the quintessential trance/EDM sound',
-        trackKind: 'midi',
-        devices: [fermenterDevice('Supersaw', {
-            oscWaveform: 1,
-            oscLevel: 0.75,
-            unisonVoices: 8,
-            unisonDetune: 30,
-            unisonSpread: 0.85,
-            filterCutoff: 4000,
-            filterResonance: 1.2,
-            ampAttack: 0.01,
-            ampDecay: 0.5,
-            ampSustain: 0.6,
-            ampRelease: 0.4,
-            filterAttack: 0.01,
-            filterDecay: 0.3,
-            filterSustain: 0.4,
-            filterRelease: 0.3,
-            filterEnvAmount: 0.5,
-            reverbMix: 0.3,
-            reverbDecay: 0.6,
-            chorusMix: 0.1,
-        })],
-        tags: ['fermenter', 'synth', 'supersaw', 'trance', 'edm', 'unison'],
-        author: AUTHOR,
-        isFactory: true,
-    },
-    {
-        id: 'fermenter-analog-brass',
-        name: 'Fermenter — Analog Brass',
-        category: 'synth',
-        subcategory: 'fermenter',
-        description: 'Fat brass stab with filter punch — retro synth brass',
-        trackKind: 'midi',
-        devices: [fermenterDevice('Analog Brass', {
-            oscEngine: 1, // VA
-            oscWaveform: 1,
-            oscLevel: 0.85,
-            unisonVoices: 3,
-            unisonDetune: 12,
-            unisonSpread: 0.5,
-            filterCutoff: 800,
-            filterResonance: 2.5,
-            filterDrive: 1.0,
-            ampAttack: 0.05,
-            ampDecay: 0.3,
-            ampSustain: 0.6,
-            ampRelease: 0.2,
-            filterAttack: 0.02,
-            filterDecay: 0.25,
-            filterSustain: 0.3,
-            filterRelease: 0.15,
-            filterEnvAmount: 0.8,
-            reverbMix: 0.15,
-        })],
-        tags: ['fermenter', 'synth', 'brass', 'analog', 'stab'],
-        author: AUTHOR,
-        isFactory: true,
-    },
-    {
-        id: 'fermenter-ethereal-pad',
-        name: 'Fermenter — Ethereal Pad',
-        category: 'pad',
-        subcategory: 'fermenter',
-        description: 'Dreamy high-pass filtered pad with chorus and long reverb',
-        trackKind: 'midi',
-        devices: [fermenterDevice('Ethereal Pad', {
-            oscWaveform: 3, // triangle
-            oscLevel: 0.6,
-            unisonVoices: 5,
-            unisonDetune: 20,
-            unisonSpread: 1.0,
-            noiseLevel: 0.04,
-            filterMode: 1, // HP
-            filterCutoff: 300,
-            filterResonance: 1.5,
-            ampAttack: 1.5,
-            ampDecay: 0.5,
-            ampSustain: 0.8,
-            ampRelease: 3.0,
-            filterAttack: 2.0,
-            filterDecay: 1.0,
-            filterSustain: 0.4,
-            filterRelease: 2.0,
-            filterEnvAmount: -0.3,
-            lfoRate: 0.2,
-            lfoFilterAmount: 0.2,
-            reverbMix: 0.65,
-            reverbDecay: 0.85,
-            chorusMix: 0.35,
-            chorusDepth: 0.6,
-            chorusRate: 0.8,
-        })],
-        tags: ['fermenter', 'pad', 'ethereal', 'dreamy', 'ambient'],
-        author: AUTHOR,
-        isFactory: true,
-    },
-    {
-        id: 'fermenter-dirty-bass',
-        name: 'Fermenter — Dirty Bass',
-        category: 'bass',
-        subcategory: 'fermenter',
-        description: 'Overdriven bass with noise grit — for aggressive productions',
-        trackKind: 'midi',
-        devices: [fermenterDevice('Dirty Bass', {
-            oscEngine: 1,
-            oscWaveform: 2,
-            oscLevel: 0.9,
-            noiseLevel: 0.1,
-            noiseColor: 0, // white
-            filterCutoff: 1200,
-            filterResonance: 3.0,
-            filterDrive: 5.0,
-            ampAttack: 0.003,
-            ampDecay: 0.3,
-            ampSustain: 0.4,
-            ampRelease: 0.1,
-            filterAttack: 0.003,
-            filterDecay: 0.15,
-            filterSustain: 0.2,
-            filterRelease: 0.1,
-            filterEnvAmount: 0.7,
-            reverbMix: 0.05,
-        })],
-        tags: ['fermenter', 'bass', 'dirty', 'distorted', 'aggressive'],
-        author: AUTHOR,
-        isFactory: true,
-    },
+
+    // ═══════════════════════════════════════════════════════════════════
+    // INIT / UTILITY
+    // ═══════════════════════════════════════════════════════════════════
+    p('init', 'Blank Dough', 'synth', 'Clean init — raw sawtooth through lowpass', ['init', 'clean'], {}),
+
+    // ═══════════════════════════════════════════════════════════════════
+    // BASS — The Foundation
+    // ═══════════════════════════════════════════════════════════════════
+    p('sub-bass', 'Sourdough Starter', 'bass', 'Pure sine sub — the foundation every mix rises from', ['sub', 'deep'], { oscWaveform: 0, filterCutoff: 500, ampDecay: 0.8, ampSustain: 0, ampRelease: 0.15, reverbMix: 0 }),
+    p('acid-bass', 'Acid Leaven', 'bass', '303-style acid squelch — diode ladder with envelope bite', ['acid', '303', 'diode'], { oscEngine: 1, oscWaveform: 2, filterModel: 2, filterCutoff: 600, filterResonance: 8, filterDrive: 3, ampAttack: 0.005, ampDecay: 0.15, ampSustain: 0, ampRelease: 0.08, filterAttack: 0.005, filterDecay: 0.2, filterEnvAmount: 0.9, portamentoTime: 0.05, portamentoMode: 1 }),
+    p('moog-bass', 'Pumpernickel', 'bass', 'Fat Moog bass — warm ladder filter with body', ['moog', 'fat', 'warm'], { oscEngine: 1, oscWaveform: 1, filterModel: 1, filterCutoff: 800, filterResonance: 3, filterDrive: 1.5, ampAttack: 0.003, ampDecay: 0.3, ampSustain: 0.5, ampRelease: 0.15, filterEnvAmount: 0.6 }),
+    p('reese-bass', 'Rye Reese', 'bass', 'Detuned saw unison — DnB reese monster', ['reese', 'dnb', 'unison'], { oscWaveform: 1, unisonVoices: 3, unisonDetune: 15, filterCutoff: 1500, filterResonance: 2, ampAttack: 0.005, ampDecay: 0.5, ampSustain: 0.6, ampRelease: 0.2 }),
+    p('fm-bass', 'Ciabatta Growl', 'bass', 'FM growl bass — punchy harmonics that bite', ['fm', 'growl'], { oscEngine: 2, fmAlgorithm: 1, fmRatio1: 1, fmRatio2: 1, fmRatio3: 2, fmRatio4: 3, fmModAmount: 1.2, filterModel: 1, filterCutoff: 2000, ampAttack: 0.003, ampDecay: 0.3, ampSustain: 0.5 }),
+    p('dirty-bass', 'Burnt Crust', 'bass', 'Overdriven distorted bass — charred and aggressive', ['dirty', 'distortion'], { oscEngine: 1, oscWaveform: 2, filterModel: 2, filterCutoff: 1200, filterResonance: 3, filterDrive: 5, distMix: 0.3, distDrive: 6, ampAttack: 0.003, ampDecay: 0.3, ampSustain: 0.4 }),
+    p('wobble-bass', 'Wobbly Baguette', 'bass', 'LFO-modulated dubstep wobble', ['wobble', 'dubstep', 'lfo'], { oscWaveform: 1, filterCutoff: 2000, filterResonance: 5, lfoRate: 4, lfoFilterAmount: 0.8, ampAttack: 0.01, ampSustain: 0.8 }),
+    p('808-bass', 'Flatbread 808', 'bass', 'Pitched 808 kick-bass — long decay sine', ['808', 'trap'], { oscWaveform: 0, filterCutoff: 400, ampAttack: 0.001, ampDecay: 1.5, ampSustain: 0, ampRelease: 0.5 }),
+
+    // ═══════════════════════════════════════════════════════════════════
+    // LEADS — Sharp and Cutting
+    // ═══════════════════════════════════════════════════════════════════
+    p('classic-lead', 'Baguette Edge', 'lead', 'Classic mono saw lead — cuts through any mix', ['classic', 'saw'], { oscWaveform: 1, filterCutoff: 3000, filterResonance: 2, ampAttack: 0.01, ampSustain: 0.8, ampRelease: 0.15, filterEnvAmount: 0.5, portamentoTime: 0.03 }),
+    p('sync-lead', 'Pretzel Twist', 'lead', 'Hard sync screaming lead — warp mode sync sweep', ['sync', 'warp'], { oscWaveform: 1, warpMode: 1, warpAmount: 0.5, filterCutoff: 6000, ampAttack: 0.01, ampSustain: 0.8, filterEnvAmount: 0.6, portamentoTime: 0.04, reverbMix: 0.1 }),
+    p('moog-lead', 'Brioche Cream', 'lead', 'Fat Moog lead with self-oscillating filter', ['moog', 'fat'], { oscEngine: 1, oscWaveform: 1, filterModel: 1, filterCutoff: 2000, filterResonance: 6, filterDrive: 2, ampSustain: 0.7, filterEnvAmount: 0.8, portamentoTime: 0.04, reverbMix: 0.15 }),
+    p('ms20-lead', 'Crusty Scream', 'lead', 'Screaming MS-20 lead — raw and nasty', ['ms20', 'gritty'], { oscEngine: 1, oscWaveform: 1, filterModel: 4, filterCutoff: 1500, filterResonance: 7, filterDrive: 3, ampSustain: 0.7, filterEnvAmount: 0.8, portamentoTime: 0.05, distMix: 0.15, distDrive: 2 }),
+    p('pluck-lead', 'Breadstick Pluck', 'lead', 'Snappy pluck with filter bite', ['pluck', 'sharp'], { oscWaveform: 1, filterCutoff: 3000, filterResonance: 2, ampAttack: 0.003, ampDecay: 0.25, ampSustain: 0.3, ampRelease: 0.2, filterDecay: 0.15, filterEnvAmount: 0.7, reverbMix: 0.25, delayMix: 0.2, delayTime: 250 }),
+    p('distorted-lead', 'Charcoal Snarl', 'lead', 'Distorted + phaser for angry leads', ['distortion', 'phaser'], { oscEngine: 1, oscWaveform: 2, filterModel: 1, filterCutoff: 4000, filterResonance: 3, distMix: 0.4, distDrive: 6, distTone: 0.7, phaserMix: 0.25, phaserRate: 0.8, portamentoTime: 0.03, reverbMix: 0.15 }),
+    p('trance-lead', 'Golden Loaf', 'lead', 'Supersaw trance lead — bright and euphoric', ['trance', 'supersaw'], { oscWaveform: 1, unisonVoices: 7, unisonDetune: 25, unisonSpread: 0.8, filterCutoff: 5000, ampAttack: 0.01, ampSustain: 0.7, reverbMix: 0.25, delayMix: 0.15, delayTime: 375 }),
+
+    // ═══════════════════════════════════════════════════════════════════
+    // PADS — Warm and Enveloping
+    // ═══════════════════════════════════════════════════════════════════
+    p('warm-pad', 'Warm Proving', 'pad', 'Slow-attack filtered pad — like dough rising in a warm kitchen', ['warm', 'ambient'], { oscWaveform: 1, unisonVoices: 4, unisonDetune: 25, unisonSpread: 0.9, filterCutoff: 2000, filterResonance: 1.5, ampAttack: 0.8, ampSustain: 0.9, ampRelease: 2, filterAttack: 1, filterEnvAmount: 0.6, reverbMix: 0.55, reverbDecay: 0.8, chorusMix: 0.3, lfoRate: 0.3, lfoPitchAmount: 0.02 }),
+    p('dark-drone', 'Rye Darkness', 'pad', 'Low rumbling drone — cinematic atmosphere', ['drone', 'dark', 'cinematic'], { oscWaveform: 1, unisonVoices: 6, unisonDetune: 40, unisonSpread: 1, noiseLevel: 0.08, noiseColor: 2, filterCutoff: 800, filterResonance: 3, filterDrive: 1.5, ampAttack: 2, ampSustain: 1, ampRelease: 3, filterEnvAmount: 0.3, lfoRate: 0.1, lfoPitchAmount: 0.05, lfoFilterAmount: 0.3, reverbMix: 0.7, reverbDecay: 0.9 }),
+    p('ethereal-pad', 'Angel Bread', 'pad', 'Dreamy high-pass filtered choir-like pad', ['ethereal', 'dreamy'], { oscWaveform: 3, unisonVoices: 5, unisonDetune: 20, unisonSpread: 1, noiseLevel: 0.04, filterMode: 1, filterCutoff: 300, ampAttack: 1.5, ampSustain: 0.8, ampRelease: 3, lfoRate: 0.2, lfoFilterAmount: 0.2, reverbMix: 0.65, reverbDecay: 0.85, chorusMix: 0.35 }),
+    p('analog-pad', 'Vintage Flour', 'pad', 'Warm analog-style pad with oscillator drift', ['analog', 'vintage', 'drift'], { oscEngine: 1, oscWaveform: 1, oscDrift: 0.4, unisonVoices: 3, unisonDetune: 8, unisonSpread: 0.6, filterModel: 1, filterCutoff: 2500, ampAttack: 0.3, ampSustain: 0.8, ampRelease: 1, reverbMix: 0.3, chorusMix: 0.2, stereoWidth: 1.2 }),
+    p('sem-sweep', 'Challah Sweep', 'pad', 'Creamy SEM morph sweep — LP→Notch→HP', ['sem', 'oberheim', 'sweep'], { oscWaveform: 1, unisonVoices: 3, unisonDetune: 10, filterModel: 5, filterCutoff: 3000, filterResonance: 3, ampAttack: 0.1, ampSustain: 0.7, ampRelease: 0.5, lfoRate: 0.3, lfoFilterAmount: 0.5, reverbMix: 0.25, chorusMix: 0.15, stereoWidth: 1.3 }),
+    p('grain-cloud', 'Flour Dust', 'pad', 'Shimmering granular cloud — micro-grains in stereo space', ['granular', 'cloud', 'texture'], { oscEngine: 4, grainDensity: 30, grainSize: 80, grainPosition: 0.3, grainSpray: 0.4, grainPitchVar: 3, grainPanSpread: 0.9, filterCutoff: 6000, ampAttack: 0.5, ampSustain: 0.8, ampRelease: 2, reverbMix: 0.6, reverbDecay: 0.8, chorusMix: 0.15 }),
+    p('ambient-texture', 'Sourdough Mist', 'pad', 'All effects layered — shimmering atmospheric', ['ambient', 'texture'], { oscWaveform: 3, unisonVoices: 4, unisonDetune: 35, unisonSpread: 1, noiseLevel: 0.06, noiseColor: 1, filterCutoff: 3000, ampAttack: 2, ampSustain: 0.7, ampRelease: 4, lfoRate: 0.08, lfoFilterAmount: 0.3, reverbMix: 0.7, reverbDecay: 0.9, delayMix: 0.35, delayTime: 500, delayFeedback: 0.55, chorusMix: 0.3, phaserMix: 0.2, phaserRate: 0.3, masterGain: 0.8 }),
+    p('vocal-pad', 'Choir Loaf', 'pad', 'Formant filter choir — ethereal vowel sweeps', ['formant', 'vocal', 'choir'], { oscWaveform: 1, unisonVoices: 5, unisonDetune: 20, unisonSpread: 1, filterModel: 3, filterCutoff: 5000, filterResonance: 2, ampAttack: 1.2, ampSustain: 0.8, ampRelease: 2.5, lfoRate: 0.15, lfoFilterAmount: 0.4, reverbMix: 0.6, reverbDecay: 0.85, chorusMix: 0.2 }),
+    p('mseg-pad', 'Rising Dough', 'pad', 'Complex MSEG shapes the filter — evolving, living', ['mseg', 'evolving'], { oscWaveform: 1, unisonVoices: 4, unisonDetune: 20, unisonSpread: 0.8, filterCutoff: 2000, filterResonance: 2.5, ampAttack: 0.5, ampSustain: 0.8, ampRelease: 2, msegToFilter: 0.7, reverbMix: 0.5, reverbDecay: 0.75, chorusMix: 0.2, stereoWidth: 1.4 }),
+
+    // ═══════════════════════════════════════════════════════════════════
+    // KEYS — Musical and Playable
+    // ═══════════════════════════════════════════════════════════════════
+    p('fm-epiano', 'Croissant Keys', 'keys', 'Classic DX7 e-piano — bell-like attack, warm decay', ['fm', 'epiano', 'dx7'], { oscEngine: 2, fmAlgorithm: 0, fmRatio1: 1, fmRatio2: 1, fmRatio3: 3, fmRatio4: 7, fmLevel2: 0.7, fmLevel3: 0.4, fmLevel4: 0.15, fmModAmount: 1.5, filterCutoff: 12000, ampAttack: 0.002, ampDecay: 1.2, ampSustain: 0, ampRelease: 0.8, reverbMix: 0.3, chorusMix: 0.15 }),
+    p('fm-bell', 'Dinner Bell', 'keys', 'Metallic inharmonic FM bell — crystalline ring', ['fm', 'bell', 'metallic'], { oscEngine: 2, fmAlgorithm: 2, fmRatio1: 1, fmRatio2: 3.5, fmRatio3: 7.1, fmRatio4: 11, fmLevel2: 0.6, fmLevel3: 0.3, fmLevel4: 0.2, fmModAmount: 2, filterCutoff: 16000, ampAttack: 0.001, ampDecay: 2.5, ampSustain: 0, ampRelease: 1.5, reverbMix: 0.5, reverbDecay: 0.7 }),
+    p('glass-keys', 'Crystal Glaze', 'keys', 'Crystalline wavetable tone — bright and shimmering', ['crystal', 'glass'], { oscWaveform: 3, filterCutoff: 8000, filterResonance: 1.2, ampAttack: 0.002, ampDecay: 0.6, ampSustain: 0.2, ampRelease: 0.8, filterDecay: 0.4, filterEnvAmount: 0.3, reverbMix: 0.4, reverbDecay: 0.65, chorusMix: 0.15 }),
+    p('fm-organ', 'Pullman Organ', 'keys', 'Percussive FM organ — drawbar-like harmonics', ['fm', 'organ'], { oscEngine: 2, fmAlgorithm: 3, fmRatio1: 1, fmRatio2: 2, fmRatio3: 4, fmRatio4: 6, fmLevel2: 0.6, fmLevel3: 0.3, fmLevel4: 0.15, filterCutoff: 8000, ampAttack: 0.003, ampDecay: 0.1, ampSustain: 0.85, ampRelease: 0.1, chorusMix: 0.2, reverbMix: 0.2 }),
+    p('additive-organ', 'Marble Rye Organ', 'keys', 'Additive organ — pure odd harmonics', ['additive', 'organ'], { oscEngine: 5, additivePartials: 16, additiveTilt: -1, additiveOdd: 0.8, filterCutoff: 10000, ampAttack: 0.01, ampDecay: 0.1, ampSustain: 0.9, ampRelease: 0.1, chorusMix: 0.15, reverbMix: 0.2 }),
+    p('clavinet', 'Cracker Clav', 'keys', 'Funky clavinet-style pluck with bite', ['clav', 'funk'], { oscEngine: 1, oscWaveform: 2, filterModel: 4, filterCutoff: 3000, filterResonance: 4, ampAttack: 0.002, ampDecay: 0.3, ampSustain: 0.1, ampRelease: 0.1, filterDecay: 0.15, filterEnvAmount: 0.8 }),
+    p('wurlitzer', 'Wheat Wurli', 'keys', 'Warm Wurlitzer — FM with tremolo', ['wurlitzer', 'fm', 'vintage'], { oscEngine: 2, fmAlgorithm: 0, fmRatio1: 1, fmRatio2: 1, fmModAmount: 0.8, filterCutoff: 4000, ampAttack: 0.005, ampDecay: 0.8, ampSustain: 0.3, ampRelease: 0.5, lfoRate: 5, lfoPitchAmount: 0.03, reverbMix: 0.2 }),
+
+    // ═══════════════════════════════════════════════════════════════════
+    // STRINGS / ORCHESTRAL
+    // ═══════════════════════════════════════════════════════════════════
+    p('string-ensemble', 'Whole Wheat Strings', 'strings', 'Lush analog string ensemble — warm and wide', ['strings', 'ensemble', 'analog'], { oscWaveform: 1, unisonVoices: 6, unisonDetune: 18, unisonSpread: 0.9, oscDrift: 0.3, filterModel: 5, filterCutoff: 3000, filterResonance: 1.2, ampAttack: 0.4, ampSustain: 0.85, ampRelease: 0.8, chorusMix: 0.3, chorusDepth: 0.5, reverbMix: 0.35, stereoWidth: 1.4 }),
+    p('cello', 'Rye Cello', 'strings', 'Solo cello emulation — rich and resonant', ['cello', 'solo', 'orchestral'], { oscEngine: 1, oscWaveform: 1, filterModel: 1, filterCutoff: 1800, filterResonance: 1.5, ampAttack: 0.15, ampSustain: 0.8, ampRelease: 0.4, lfoRate: 5.5, lfoPitchAmount: 0.02, reverbMix: 0.3, reverbDecay: 0.6 }),
+    p('violin', 'Sourdough Violin', 'strings', 'Bright violin — saw with vibrato and formant character', ['violin', 'solo'], { oscWaveform: 1, filterModel: 3, filterCutoff: 6000, filterResonance: 2, ampAttack: 0.1, ampSustain: 0.85, ampRelease: 0.3, lfoRate: 6, lfoPitchAmount: 0.025, reverbMix: 0.25 }),
+    p('pizzicato', 'Breadstick Pizz', 'strings', 'Karplus-Strong pizzicato — natural plucked string', ['pizzicato', 'pluck', 'physical'], { oscEngine: 3, ksDamping: 0.35, ksBrightness: 0.8, filterCutoff: 10000, ampRelease: 1, reverbMix: 0.3, reverbDecay: 0.5 }),
+    p('harp', 'Golden Harp', 'strings', 'Bright harp pluck — gentle with shimmer', ['harp', 'pluck'], { oscEngine: 3, ksDamping: 0.25, ksBrightness: 0.9, filterCutoff: 12000, ampRelease: 2, reverbMix: 0.4, reverbDecay: 0.7, delayMix: 0.1, delayTime: 300 }),
+    p('sitar', 'Naan Sitar', 'strings', 'Sitar-like buzz — resonant string with inharmonicity', ['sitar', 'world', 'ethnic'], { oscEngine: 3, ksDamping: 0.15, ksBrightness: 1, filterModel: 3, filterCutoff: 4000, filterResonance: 5, ampRelease: 1.5, reverbMix: 0.3, delayMix: 0.15, delayTime: 200 }),
+    p('mellotron-strings', 'Stale Mellotron', 'strings', 'Vintage mellotron string texture — wobbly and nostalgic', ['mellotron', 'vintage', 'tape'], { oscWaveform: 1, unisonVoices: 3, unisonDetune: 12, oscDrift: 0.5, filterCutoff: 3000, filterResonance: 0.8, ampAttack: 0.2, ampSustain: 0.7, ampRelease: 0.5, lfoRate: 0.4, lfoPitchAmount: 0.04, chorusMix: 0.2, reverbMix: 0.3, noiseLevel: 0.03 }),
+    p('mellotron-flute', 'Stale Mellotron Flute', 'strings', 'Mellotron flute choir — breathy and haunting', ['mellotron', 'flute', 'vintage'], { oscWaveform: 3, unisonVoices: 2, unisonDetune: 8, oscDrift: 0.6, noiseLevel: 0.05, filterModel: 3, filterCutoff: 5000, ampAttack: 0.15, ampSustain: 0.75, ampRelease: 0.4, lfoRate: 0.3, lfoPitchAmount: 0.03, reverbMix: 0.35, chorusMix: 0.15 }),
+
+    // ═══════════════════════════════════════════════════════════════════
+    // SYNTH — Classic and Modern
+    // ═══════════════════════════════════════════════════════════════════
+    p('supersaw', 'Superloaf', 'synth', 'Thick detuned supersaw — the quintessential trance/EDM sound', ['supersaw', 'trance', 'edm'], { oscWaveform: 1, unisonVoices: 8, unisonDetune: 30, unisonSpread: 0.85, filterCutoff: 4000, ampAttack: 0.01, ampSustain: 0.6, ampRelease: 0.4, filterEnvAmount: 0.5, reverbMix: 0.3, chorusMix: 0.1 }),
+    p('analog-brass', 'Rye Brass', 'synth', 'Fat brass stab — filter punch with body', ['brass', 'stab', 'analog'], { oscEngine: 1, oscWaveform: 1, unisonVoices: 3, unisonDetune: 12, unisonSpread: 0.5, filterModel: 1, filterCutoff: 800, filterResonance: 2.5, filterDrive: 1, ampAttack: 0.05, ampDecay: 0.3, ampSustain: 0.6, filterEnvAmount: 0.8 }),
+    p('seq-arp', 'Breadcrumb Sequence', 'synth', 'Step sequencer modulating pitch — instant arpeggio', ['sequence', 'arpeggio', 'rhythm'], { oscWaveform: 1, filterCutoff: 4000, filterResonance: 2, ampAttack: 0.005, ampDecay: 0.15, ampSustain: 0.3, ampRelease: 0.1, seqRate: 8, seqToPitch: 0.5, delayMix: 0.3, delayTime: 187, delayFeedback: 0.4, reverbMix: 0.2 }),
+    p('wavefold', 'Folded Focaccia', 'synth', 'Wavefolded sine — West Coast synthesis character', ['wavefold', 'west-coast'], { oscWaveform: 0, warpMode: 6, warpAmount: 0.6, filterModel: 1, filterCutoff: 5000, filterResonance: 2, ampAttack: 0.01, ampDecay: 0.3, ampSustain: 0.6, filterEnvAmount: 0.5, reverbMix: 0.15 }),
+    p('bitcrush', 'Stale Crumbs', 'synth', 'Lo-fi bitcrushed — chiptune to glitch territory', ['bitcrush', 'lofi', 'glitch'], { oscWaveform: 2, warpMode: 2, warpAmount: 0.4, filterCutoff: 6000, ampAttack: 0.005, ampDecay: 0.2, ampSustain: 0.5, distMix: 0.15, distDrive: 2, reverbMix: 0.1 }),
+    p('hard-sync', 'Twisted Knot', 'synth', 'Hard sync warp — classic screaming sweep', ['sync', 'warp'], { oscWaveform: 1, warpMode: 1, warpAmount: 0.5, filterCutoff: 6000, ampSustain: 0.8, filterEnvAmount: 0.6, portamentoTime: 0.04, reverbMix: 0.1 }),
+    p('ring-mod', 'Tin Can Ring', 'synth', 'Audio-rate AM — metallic ring modulation', ['ring', 'metallic', 'am'], { oscWaveform: 1, audioModTarget: 2, audioModRate: 220, audioModDepth: 0.7, filterCutoff: 8000, ampAttack: 0.1, ampSustain: 0.7, reverbMix: 0.4, delayMix: 0.2, delayTime: 400 }),
+    p('chaos-drift', 'Wild Yeast', 'synth', 'Lorenz chaos modulating pitch and filter — alive and unpredictable', ['chaos', 'lorenz', 'experimental'], { oscWaveform: 1, unisonVoices: 2, unisonDetune: 10, chaosAmount: 0.5, chaosSpeed: 2, filterCutoff: 3000, filterResonance: 3, ampAttack: 0.3, ampSustain: 0.8, reverbMix: 0.4, delayMix: 0.2 }),
+
+    // ═══════════════════════════════════════════════════════════════════
+    // DRUMS & PERCUSSION
+    // ═══════════════════════════════════════════════════════════════════
+    p('metallic-perc', 'Cookie Sheet', 'drums', 'Metallic Karplus-Strong percussion — tuned chime', ['metallic', 'percussion', 'physical'], { oscEngine: 3, ksDamping: 0.15, ksBrightness: 1, filterCutoff: 16000, filterModel: 1, ampRelease: 0.5, reverbMix: 0.4, delayMix: 0.2, delayTime: 300 }),
+    p('grain-stutter', 'Breadcrumb Glitch', 'drums', 'Dense stuttering grains — glitchy rhythmic texture', ['granular', 'stutter', 'glitch'], { oscEngine: 4, grainDensity: 80, grainSize: 15, grainSpray: 0.02, grainPitchVar: 0.5, grainPanSpread: 0.3, filterModel: 2, filterCutoff: 3000, filterResonance: 4, ampAttack: 0.003, ampDecay: 0.2, ampSustain: 0.5, delayMix: 0.3, delayTime: 125, delayFeedback: 0.5, distMix: 0.2, distDrive: 3 }),
+    p('snare-synth', 'Cracker Snap', 'drums', 'Synthetic snare — noise burst with pitched body', ['snare', 'synthetic'], { oscWaveform: 0, noiseLevel: 0.7, noiseColor: 0, filterCutoff: 4000, filterResonance: 1, ampAttack: 0.001, ampDecay: 0.15, ampSustain: 0, ampRelease: 0.1, filterDecay: 0.08, filterEnvAmount: 0.8 }),
+    p('kick-synth', 'Dough Punch', 'drums', 'Synthetic kick — pitched sine with fast envelope sweep', ['kick', 'synthetic'], { oscWaveform: 0, filterCutoff: 8000, ampAttack: 0.001, ampDecay: 0.3, ampSustain: 0, filterDecay: 0.05, filterEnvAmount: 0.9 }),
+    p('hihat-synth', 'Salt Sprinkle', 'drums', 'Synthetic hi-hat — filtered noise burst', ['hihat', 'synthetic'], { oscWaveform: 0, noiseLevel: 1, noiseColor: 0, filterMode: 1, filterCutoff: 8000, filterResonance: 2, ampAttack: 0.001, ampDecay: 0.05, ampSustain: 0, ampRelease: 0.03 }),
+
+    // ═══════════════════════════════════════════════════════════════════
+    // FX / TEXTURES
+    // ═══════════════════════════════════════════════════════════════════
+    p('talking-bass', 'Talking Bread', 'fx', 'Formant-filtered bass that speaks — sweep cutoff for vowels', ['formant', 'vowel', 'talking'], { oscEngine: 1, oscWaveform: 1, filterModel: 3, filterCutoff: 3000, filterResonance: 3, filterDrive: 1.5, ampAttack: 0.005, ampDecay: 0.3, ampSustain: 0.6, filterEnvAmount: 0.7, reverbMix: 0.1 }),
+    p('riser', 'Oven Riser', 'fx', 'Sweeping riser — noise + saw with rising filter', ['riser', 'buildup', 'transition'], { oscWaveform: 1, noiseLevel: 0.3, noiseColor: 0, filterCutoff: 200, filterResonance: 4, ampAttack: 4, ampSustain: 0.8, filterAttack: 4, filterEnvAmount: 0.95, reverbMix: 0.4 }),
+    p('impact', 'Oven Door Slam', 'fx', 'Impact hit — short noise burst with massive reverb', ['impact', 'hit', 'cinematic'], { oscWaveform: 0, noiseLevel: 0.8, noiseColor: 2, filterCutoff: 2000, ampAttack: 0.001, ampDecay: 0.3, ampSustain: 0, reverbMix: 0.8, reverbDecay: 0.9, distMix: 0.2, distDrive: 4 }),
+    p('wind', 'Baker\'s Breath', 'fx', 'Wind texture — filtered noise with slow modulation', ['wind', 'ambient', 'noise'], { noiseLevel: 0.9, noiseColor: 1, oscLevel: 0.1, filterCutoff: 2000, filterResonance: 3, ampAttack: 1.5, ampSustain: 0.7, ampRelease: 2, lfoRate: 0.15, lfoFilterAmount: 0.6, reverbMix: 0.5 }),
+    p('laser', 'Bread Slicer', 'fx', 'Laser zap — fast pitch sweep down', ['laser', 'zap', 'sfx'], { oscWaveform: 0, filterCutoff: 15000, ampAttack: 0.001, ampDecay: 0.3, ampSustain: 0, filterDecay: 0.1, filterEnvAmount: 0.95, reverbMix: 0.2 }),
+
+    // ═══════════════════════════════════════════════════════════════════
+    // WORLD / ETHNIC
+    // ═══════════════════════════════════════════════════════════════════
+    p('koto', 'Rice Paper Koto', 'strings', 'Japanese koto — bright plucked string with resonance', ['koto', 'world', 'japan'], { oscEngine: 3, ksDamping: 0.2, ksBrightness: 0.95, filterCutoff: 8000, filterResonance: 3, ampRelease: 2, reverbMix: 0.3, delayMix: 0.1, delayTime: 400 }),
+    p('kalimba', 'Thumbprint Kalimba', 'keys', 'Kalimba thumb piano — FM bell with soft attack', ['kalimba', 'world', 'african'], { oscEngine: 2, fmAlgorithm: 2, fmRatio1: 1, fmRatio2: 5.2, fmRatio3: 9, fmLevel2: 0.4, fmLevel3: 0.15, fmModAmount: 1.5, filterCutoff: 10000, ampAttack: 0.002, ampDecay: 1.5, ampSustain: 0, reverbMix: 0.35 }),
+    p('gamelan', 'Bronze Loaf', 'keys', 'Gamelan metalophone — inharmonic additive bell', ['gamelan', 'world', 'indonesian'], { oscEngine: 5, additivePartials: 12, additiveTilt: 1, additiveInharm: 0.03, filterCutoff: 14000, ampAttack: 0.001, ampDecay: 3, ampSustain: 0, reverbMix: 0.5, reverbDecay: 0.8 }),
+    p('didgeridoo', 'Outback Loaf', 'bass', 'Didgeridoo drone — formant filter with growl', ['didgeridoo', 'world', 'drone'], { oscEngine: 1, oscWaveform: 1, filterModel: 3, filterCutoff: 2000, filterResonance: 4, filterDrive: 2, ampAttack: 0.3, ampSustain: 0.9, ampRelease: 0.5, lfoRate: 0.2, lfoFilterAmount: 0.4, noiseLevel: 0.05 }),
+    p('tabla', 'Naan Tabla', 'drums', 'Tabla-like tuned drum — pitched body with noise transient', ['tabla', 'world', 'indian'], { oscWaveform: 0, noiseLevel: 0.4, filterCutoff: 3000, ampAttack: 0.001, ampDecay: 0.4, ampSustain: 0, filterDecay: 0.05, filterEnvAmount: 0.7, reverbMix: 0.15 }),
+
+    // ═══════════════════════════════════════════════════════════════════
+    // ADDITIVE / EXPERIMENTAL
+    // ═══════════════════════════════════════════════════════════════════
+    p('additive-bells', 'Church Bell', 'synth', 'Inharmonic additive bells — metallic shimmer', ['additive', 'bell', 'inharmonic'], { oscEngine: 5, additivePartials: 24, additiveTilt: 1.5, additiveInharm: 0.02, filterCutoff: 14000, ampAttack: 0.002, ampDecay: 3, ampSustain: 0, ampRelease: 2, reverbMix: 0.5, reverbDecay: 0.8 }),
+    p('perlin-evolve', 'Sourdough Culture', 'synth', 'Perlin noise + chaos modulating everything — living organism', ['perlin', 'chaos', 'evolving'], { oscWaveform: 1, unisonVoices: 3, unisonDetune: 15, chaosAmount: 0.7, chaosSpeed: 1.5, filterCutoff: 4000, filterResonance: 3, ampAttack: 0.5, ampSustain: 0.8, ampRelease: 2, reverbMix: 0.5, delayMix: 0.2, stereoWidth: 1.5 }),
+    p('sampler-loop', 'Bread Machine', 'synth', 'Looping sampler — mechanical rhythm from internal waveform', ['sampler', 'loop'], { oscEngine: 6, samplerMode: 1, samplerStart: 0, samplerEnd: 0.3, filterCutoff: 5000, ampSustain: 0.8, reverbMix: 0.2 }),
+    p('fm-glass', 'Stained Glass Bun', 'synth', 'High-ratio FM — glass-like timbres that shimmer', ['fm', 'glass', 'bright'], { oscEngine: 2, fmAlgorithm: 0, fmRatio1: 1, fmRatio2: 7, fmRatio3: 11, fmRatio4: 15, fmLevel2: 0.3, fmLevel3: 0.15, fmLevel4: 0.08, fmModAmount: 2.5, filterCutoff: 18000, ampAttack: 0.001, ampDecay: 2, ampSustain: 0, reverbMix: 0.6, reverbDecay: 0.8 }),
+
+    // ═══════════════════════════════════════════════════════════════════
+    // CLASSIC SYNTH EMULATIONS
+    // ═══════════════════════════════════════════════════════════════════
+    p('minimoog-bass', 'Mother Dough', 'bass', 'Minimoog bass — the original analog fat bottom', ['minimoog', 'classic', 'analog'], { oscEngine: 1, oscWaveform: 1, filterModel: 1, filterCutoff: 1000, filterResonance: 2, filterDrive: 1, ampAttack: 0.005, ampDecay: 0.4, ampSustain: 0.4, ampRelease: 0.1, filterEnvAmount: 0.6, oscDrift: 0.2 }),
+    p('juno-pad', 'Proofing Juno', 'pad', 'Roland Juno-106 style pad — chorus-soaked warmth', ['juno', 'roland', 'chorus'], { oscWaveform: 2, filterModel: 0, filterCutoff: 2500, filterResonance: 1, ampAttack: 0.3, ampSustain: 0.8, ampRelease: 1.5, chorusMix: 0.5, chorusDepth: 0.6, chorusRate: 0.8, reverbMix: 0.2, stereoWidth: 1.3 }),
+    p('prophet-brass', 'Prophet Pita', 'synth', 'Sequential Prophet brass — bipolar filter punch', ['prophet', 'brass', 'classic'], { oscEngine: 1, oscWaveform: 1, unisonVoices: 2, unisonDetune: 6, filterModel: 0, filterCutoff: 500, filterResonance: 2, ampAttack: 0.03, ampDecay: 0.2, ampSustain: 0.6, filterEnvAmount: 0.85, oscDrift: 0.15 }),
+    p('oberheim-pad', 'SEM Sourdough', 'pad', 'Oberheim OB-X pad — creamy morphing filter', ['oberheim', 'ob-x', 'cream'], { oscWaveform: 1, unisonVoices: 4, unisonDetune: 15, filterModel: 5, filterCutoff: 4000, filterResonance: 2, ampAttack: 0.5, ampSustain: 0.85, ampRelease: 1.5, lfoRate: 0.2, lfoFilterAmount: 0.3, chorusMix: 0.2, reverbMix: 0.3, oscDrift: 0.2 }),
+    p('dx7-brass', 'Yamaha Yeast', 'synth', 'DX7 brass — the iconic 80s FM brass hit', ['dx7', 'fm', 'brass', '80s'], { oscEngine: 2, fmAlgorithm: 0, fmRatio1: 1, fmRatio2: 1, fmRatio3: 1, fmRatio4: 1, fmLevel2: 0.9, fmLevel3: 0.6, fmModAmount: 2, filterCutoff: 6000, ampAttack: 0.01, ampDecay: 0.5, ampSustain: 0.4, ampRelease: 0.2, filterEnvAmount: 0.4 }),
+    p('tb303-acid', 'Sourdough 303', 'bass', 'Roland TB-303 acid — the sound that launched a genre', ['303', 'acid', 'roland', 'techno'], { oscEngine: 1, oscWaveform: 2, filterModel: 2, filterCutoff: 700, filterResonance: 9, filterDrive: 4, ampAttack: 0.003, ampDecay: 0.2, ampSustain: 0, ampRelease: 0.05, filterDecay: 0.15, filterEnvAmount: 0.9, portamentoTime: 0.03, portamentoMode: 1, delayMix: 0.15, delayTime: 187 }),
+    p('sh101-lead', 'Roland Rye', 'lead', 'SH-101 mono lead — simple but powerful', ['sh-101', 'roland', 'mono'], { oscEngine: 1, oscWaveform: 1, filterCutoff: 3000, filterResonance: 3, ampAttack: 0.005, ampSustain: 0.7, ampRelease: 0.1, filterEnvAmount: 0.5, portamentoTime: 0.02 }),
+    p('cs80-pad', 'Vangelis Ciabatta', 'pad', 'Yamaha CS-80 style — lush aftertouch-responsive pad', ['cs-80', 'yamaha', 'blade-runner'], { oscWaveform: 1, unisonVoices: 4, unisonDetune: 12, filterModel: 0, filterCutoff: 3500, filterResonance: 1.8, ampAttack: 0.2, ampSustain: 0.85, ampRelease: 2, chorusMix: 0.25, reverbMix: 0.4, reverbDecay: 0.7, stereoWidth: 1.3, oscDrift: 0.3 }),
+
+    // ═══════════════════════════════════════════════════════════════════
+    // VOCAL / FORMANT
+    // ═══════════════════════════════════════════════════════════════════
+    p('robot-voice', 'Robo-Baker', 'fx', 'Robot voice — formant filter with step sequencer', ['robot', 'formant', 'vocoder'], { oscWaveform: 2, filterModel: 3, filterCutoff: 3000, filterResonance: 4, seqRate: 6, seqToPitch: 0.3, ampAttack: 0.01, ampSustain: 0.7, reverbMix: 0.15 }),
+    p('vowel-bass', 'Talking Starter', 'bass', 'Deep formant bass — cutoff sweeps through vowels', ['formant', 'vowel', 'bass'], { oscEngine: 1, oscWaveform: 1, filterModel: 3, filterCutoff: 2000, filterResonance: 3, filterDrive: 2, ampAttack: 0.005, ampDecay: 0.3, ampSustain: 0.6, filterDecay: 0.4, filterEnvAmount: 0.8 }),
+
+    // ═══════════════════════════════════════════════════════════════════
+    // CINEMATIC / SCORING
+    // ═══════════════════════════════════════════════════════════════════
+    p('tension-drone', 'Fermentation Tension', 'pad', 'Dark tension drone — for horror/thriller scoring', ['cinematic', 'tension', 'horror'], { oscWaveform: 1, unisonVoices: 4, unisonDetune: 50, noiseLevel: 0.1, noiseColor: 2, filterCutoff: 600, filterResonance: 4, filterDrive: 2, ampAttack: 3, ampSustain: 1, ampRelease: 4, chaosAmount: 0.4, chaosSpeed: 0.5, reverbMix: 0.8, reverbDecay: 0.95, stereoWidth: 1.5 }),
+    p('epic-brass', 'Crusade Horns', 'synth', 'Epic brass section — massive and heroic', ['epic', 'brass', 'cinematic', 'orchestral'], { oscEngine: 1, oscWaveform: 1, unisonVoices: 6, unisonDetune: 8, filterModel: 1, filterCutoff: 1200, filterResonance: 2, filterDrive: 1, ampAttack: 0.08, ampDecay: 0.3, ampSustain: 0.7, filterEnvAmount: 0.7, reverbMix: 0.35, reverbDecay: 0.6, stereoWidth: 1.3, compMix: 0.3, compThreshold: -15, compRatio: 3 }),
+    p('ocean-waves', 'Tidal Loaf', 'fx', 'Ocean-like wash — noise + LFO for rhythmic waves', ['ocean', 'ambient', 'nature'], { noiseLevel: 0.8, noiseColor: 1, oscLevel: 0, filterCutoff: 1500, filterResonance: 2, ampAttack: 2, ampSustain: 0.6, ampRelease: 3, lfoRate: 0.08, lfoFilterAmount: 0.7, reverbMix: 0.6, reverbDecay: 0.85 }),
+
+    // ═══════════════════════════════════════════════════════════════════
+    // REALISTIC ACOUSTIC INSTRUMENTS
+    // Each uses the synthesis engine best suited to the instrument's physics.
+    // ═══════════════════════════════════════════════════════════════════
+
+    // ── Pianos & Keyboard Instruments ───────────────────────────────
+    // Grand piano uses FM (DX7 piano algorithm: stacked operators with fast-decaying mod).
+    // The key is ratio 1:1 with moderate mod index decaying faster than carrier.
+    p('grand-piano', 'Steinway Sourdough', 'keys', 'Grand piano — FM model with hammer attack and warm resonance', ['piano', 'grand', 'acoustic', 'fm'], { oscEngine: 2, fmAlgorithm: 0, fmRatio1: 1, fmRatio2: 1, fmRatio3: 3, fmRatio4: 5.04, fmLevel1: 1, fmLevel2: 0.65, fmLevel3: 0.2, fmLevel4: 0.08, fmModAmount: 1.8, filterCutoff: 10000, filterResonance: 0.7, ampAttack: 0.002, ampDecay: 2.5, ampSustain: 0, ampRelease: 1.2, filterDecay: 0.8, filterEnvAmount: 0.3, reverbMix: 0.25, reverbDecay: 0.5, stereoWidth: 1.2 }),
+    p('upright-piano', 'Rustic Upright', 'keys', 'Upright piano — warmer, darker character than grand', ['piano', 'upright', 'acoustic'], { oscEngine: 2, fmAlgorithm: 0, fmRatio1: 1, fmRatio2: 1.001, fmRatio3: 2, fmRatio4: 4, fmLevel1: 1, fmLevel2: 0.5, fmLevel3: 0.15, fmLevel4: 0.05, fmModAmount: 1.4, filterModel: 1, filterCutoff: 5000, filterResonance: 0.8, ampAttack: 0.003, ampDecay: 2, ampSustain: 0, ampRelease: 0.8, filterDecay: 0.5, filterEnvAmount: 0.2, reverbMix: 0.2, oscDrift: 0.1 }),
+    p('honky-tonk', 'Honky Rye', 'keys', 'Honky-tonk tack piano — bright, detuned, barroom character', ['piano', 'honky-tonk', 'vintage'], { oscEngine: 2, fmAlgorithm: 0, fmRatio1: 1, fmRatio2: 1.005, fmRatio3: 3, fmRatio4: 7, fmLevel1: 1, fmLevel2: 0.7, fmLevel3: 0.3, fmLevel4: 0.12, fmModAmount: 2.2, filterCutoff: 12000, ampAttack: 0.001, ampDecay: 1.5, ampSustain: 0, ampRelease: 0.5, oscDrift: 0.3 }),
+
+    // ── Plucked Strings ─────────────────────────────────────────────
+    // Karplus-Strong: the physics naturally model vibrating strings.
+    p('acoustic-guitar', 'Wheat Guitar', 'guitar', 'Nylon acoustic guitar — warm KS string with body resonance', ['guitar', 'acoustic', 'nylon', 'physical'], { oscEngine: 3, ksDamping: 0.4, ksBrightness: 0.75, filterCutoff: 5000, filterResonance: 1.5, ampRelease: 1.5, reverbMix: 0.2, reverbDecay: 0.4 }),
+    p('steel-guitar', 'Steel Rye', 'guitar', 'Steel string guitar — bright with metallic shimmer', ['guitar', 'steel', 'acoustic', 'physical'], { oscEngine: 3, ksDamping: 0.3, ksBrightness: 0.9, filterCutoff: 10000, filterResonance: 1, ampRelease: 2, reverbMix: 0.2, reverbDecay: 0.4, chorusMix: 0.08 }),
+    p('electric-guitar-clean', 'Clean Sourdough', 'guitar', 'Clean electric guitar — bright pluck with spring reverb', ['guitar', 'electric', 'clean'], { oscEngine: 3, ksDamping: 0.25, ksBrightness: 0.85, filterCutoff: 8000, filterResonance: 1.5, ampRelease: 1.5, reverbMix: 0.3, reverbDecay: 0.5, chorusMix: 0.1, compMix: 0.2, compThreshold: -15 }),
+    p('electric-guitar-dirty', 'Distorted Sourdough', 'guitar', 'Distorted electric guitar — KS through heavy distortion', ['guitar', 'electric', 'distortion'], { oscEngine: 3, ksDamping: 0.3, ksBrightness: 0.9, filterCutoff: 6000, filterResonance: 2, ampRelease: 1, distMix: 0.6, distDrive: 8, distTone: 0.6, compMix: 0.3, compThreshold: -12, reverbMix: 0.15 }),
+    p('bass-guitar', 'Sourdough Bass Guitar', 'bass', 'Electric bass guitar — deep plucked string', ['guitar', 'bass', 'electric', 'physical'], { oscEngine: 3, ksDamping: 0.5, ksBrightness: 0.6, filterModel: 1, filterCutoff: 2000, filterResonance: 1, ampRelease: 0.8, compMix: 0.3, compThreshold: -18 }),
+    p('banjo', 'Banjo Bread', 'strings', 'Banjo — bright, tight, twangy pluck', ['banjo', 'folk', 'physical'], { oscEngine: 3, ksDamping: 0.2, ksBrightness: 1, filterCutoff: 12000, filterResonance: 2, ampRelease: 0.6, reverbMix: 0.1 }),
+    p('mandolin', 'Mando-loaf', 'strings', 'Mandolin — paired bright strings with tremolo', ['mandolin', 'folk', 'physical'], { oscEngine: 3, ksDamping: 0.2, ksBrightness: 0.9, filterCutoff: 10000, ampRelease: 0.8, lfoRate: 8, lfoPitchAmount: 0.02, reverbMix: 0.2 }),
+    p('ukulele', 'Uku-loaf', 'strings', 'Ukulele — bright, cheerful, short sustain', ['ukulele', 'folk', 'physical'], { oscEngine: 3, ksDamping: 0.35, ksBrightness: 0.85, filterCutoff: 8000, ampRelease: 0.5, reverbMix: 0.15 }),
+    p('harpsichord', 'Baroque Biscuit', 'keys', 'Harpsichord — bright metallic pluck with no sustain', ['harpsichord', 'baroque', 'physical'], { oscEngine: 3, ksDamping: 0.15, ksBrightness: 1, filterCutoff: 14000, filterResonance: 2, ampRelease: 0.3, reverbMix: 0.25, reverbDecay: 0.5 }),
+    p('zither', 'Bavarian Brot', 'strings', 'Zither — long ringing plucked metal strings', ['zither', 'world', 'physical'], { oscEngine: 3, ksDamping: 0.15, ksBrightness: 0.8, filterCutoff: 8000, ampRelease: 3, reverbMix: 0.35, reverbDecay: 0.7 }),
+    p('handpan', 'Handpan Pita', 'drums', 'Handpan / Hang drum — tuned metallic resonance', ['handpan', 'hang', 'world', 'physical'], { oscEngine: 3, ksDamping: 0.2, ksBrightness: 0.7, filterCutoff: 6000, filterResonance: 3, ampRelease: 2.5, reverbMix: 0.45, reverbDecay: 0.7 }),
+
+    // ── Brass & Woodwinds ───────────────────────────────────────────
+    // Brass: saw + filter envelope simulates the lip reed excitation opening the spectrum.
+    // Woodwinds: filtered noise + sine/square (tube resonance) with breath noise.
+    p('trumpet', 'Trumpet Loaf', 'synth', 'Trumpet — bright brass with filter attack simulating valve opening', ['trumpet', 'brass', 'orchestral'], { oscEngine: 1, oscWaveform: 1, filterModel: 0, filterCutoff: 800, filterResonance: 2, ampAttack: 0.04, ampDecay: 0.15, ampSustain: 0.75, ampRelease: 0.15, filterAttack: 0.03, filterDecay: 0.15, filterSustain: 0.5, filterEnvAmount: 0.85, lfoRate: 5.5, lfoPitchAmount: 0.015, reverbMix: 0.2 }),
+    p('trombone', 'Trombone Baguette', 'synth', 'Trombone — warm, mellow brass with slow attack', ['trombone', 'brass', 'orchestral'], { oscEngine: 1, oscWaveform: 1, filterModel: 1, filterCutoff: 600, filterResonance: 1.5, ampAttack: 0.06, ampSustain: 0.7, ampRelease: 0.2, filterAttack: 0.05, filterEnvAmount: 0.7, lfoRate: 5, lfoPitchAmount: 0.012, reverbMix: 0.25 }),
+    p('french-horn', 'Croissant Horn', 'synth', 'French horn — round, noble brass with dark warmth', ['horn', 'brass', 'orchestral'], { oscEngine: 1, oscWaveform: 1, unisonVoices: 2, unisonDetune: 3, filterModel: 1, filterCutoff: 500, filterResonance: 1.2, ampAttack: 0.1, ampSustain: 0.8, ampRelease: 0.3, filterAttack: 0.08, filterEnvAmount: 0.5, lfoRate: 4.5, lfoPitchAmount: 0.01, reverbMix: 0.35, reverbDecay: 0.6 }),
+    p('tuba', 'Tuba Pumpernickel', 'bass', 'Tuba — deep, round brass foundation', ['tuba', 'brass', 'orchestral'], { oscEngine: 1, oscWaveform: 1, filterModel: 1, filterCutoff: 400, filterResonance: 1, ampAttack: 0.08, ampSustain: 0.7, ampRelease: 0.2, filterAttack: 0.06, filterEnvAmount: 0.4, reverbMix: 0.2 }),
+    p('flute', 'Flute Flour', 'synth', 'Concert flute — sine + breath noise with vibrato', ['flute', 'woodwind', 'orchestral'], { oscWaveform: 0, oscLevel: 0.7, noiseLevel: 0.15, noiseColor: 0, filterCutoff: 6000, filterResonance: 1.5, ampAttack: 0.08, ampSustain: 0.8, ampRelease: 0.15, lfoRate: 5, lfoPitchAmount: 0.02, reverbMix: 0.25 }),
+    p('clarinet', 'Clarinet Cracker', 'synth', 'Clarinet — square wave (odd harmonics) with soft reed attack', ['clarinet', 'woodwind', 'orchestral'], { oscEngine: 1, oscWaveform: 2, filterModel: 0, filterCutoff: 2000, filterResonance: 1.5, ampAttack: 0.05, ampSustain: 0.8, ampRelease: 0.1, filterAttack: 0.04, filterEnvAmount: 0.3, lfoRate: 5.5, lfoPitchAmount: 0.01, reverbMix: 0.2 }),
+    p('oboe', 'Oboe Olive', 'synth', 'Oboe — nasal double-reed with thin, piercing tone', ['oboe', 'woodwind', 'orchestral'], { oscEngine: 1, oscWaveform: 1, filterModel: 3, filterCutoff: 4000, filterResonance: 3, ampAttack: 0.04, ampSustain: 0.75, ampRelease: 0.1, lfoRate: 5.5, lfoPitchAmount: 0.015, reverbMix: 0.2 }),
+    p('bassoon', 'Bassoon Brioche', 'synth', 'Bassoon — dark, reedy double-reed bass woodwind', ['bassoon', 'woodwind', 'orchestral'], { oscEngine: 1, oscWaveform: 1, filterModel: 3, filterCutoff: 2000, filterResonance: 2.5, ampAttack: 0.05, ampSustain: 0.7, ampRelease: 0.15, lfoRate: 4.5, lfoPitchAmount: 0.012, reverbMix: 0.2 }),
+    p('pan-flute', 'Pan de Flute', 'synth', 'Pan flute — breathy sine with air and warmth', ['pan-flute', 'world', 'woodwind'], { oscWaveform: 0, oscLevel: 0.6, noiseLevel: 0.2, noiseColor: 0, filterCutoff: 4000, ampAttack: 0.1, ampSustain: 0.7, ampRelease: 0.2, lfoRate: 4, lfoPitchAmount: 0.015, reverbMix: 0.35, reverbDecay: 0.6 }),
+    p('shakuhachi', 'Shakuhachi Bread', 'synth', 'Shakuhachi bamboo flute — breathy with pitch bends', ['shakuhachi', 'world', 'japan', 'flute'], { oscWaveform: 3, oscLevel: 0.5, noiseLevel: 0.25, noiseColor: 0, filterCutoff: 3500, filterResonance: 2, ampAttack: 0.15, ampSustain: 0.7, ampRelease: 0.3, lfoRate: 0.3, lfoPitchAmount: 0.04, reverbMix: 0.4, reverbDecay: 0.6 }),
+    p('recorder', 'Recorder Roll', 'synth', 'Recorder — bright, simple woodwind tone', ['recorder', 'woodwind'], { oscWaveform: 0, oscLevel: 0.8, noiseLevel: 0.08, filterCutoff: 8000, ampAttack: 0.03, ampSustain: 0.8, ampRelease: 0.1, lfoRate: 5, lfoPitchAmount: 0.01, reverbMix: 0.2 }),
+
+    // ── Mallet Percussion ───────────────────────────────────────────
+    // Marimba/xylophone: FM with inharmonic ratios + fast decay. Additive for bells.
+    p('marimba', 'Marimba Multigrain', 'drums', 'Marimba — warm wooden resonance with mallet strike', ['marimba', 'mallet', 'world'], { oscEngine: 2, fmAlgorithm: 2, fmRatio1: 1, fmRatio2: 4, fmRatio3: 10, fmLevel1: 1, fmLevel2: 0.4, fmLevel3: 0.08, fmModAmount: 1.5, filterCutoff: 6000, ampAttack: 0.001, ampDecay: 1.2, ampSustain: 0, ampRelease: 0.5, reverbMix: 0.2 }),
+    p('xylophone', 'Xylo-loaf', 'drums', 'Xylophone — bright, hard mallet on wood bars', ['xylophone', 'mallet', 'bright'], { oscEngine: 2, fmAlgorithm: 2, fmRatio1: 1, fmRatio2: 3.99, fmRatio3: 9.02, fmLevel1: 1, fmLevel2: 0.5, fmLevel3: 0.15, fmModAmount: 2, filterCutoff: 14000, ampAttack: 0.001, ampDecay: 0.8, ampSustain: 0, reverbMix: 0.15 }),
+    p('vibraphone', 'Vibra-bun', 'keys', 'Vibraphone — metallic with motor tremolo', ['vibraphone', 'mallet', 'jazz'], { oscEngine: 2, fmAlgorithm: 2, fmRatio1: 1, fmRatio2: 3.5, fmRatio3: 8.3, fmLevel1: 1, fmLevel2: 0.3, fmLevel3: 0.1, fmModAmount: 1.8, filterCutoff: 10000, ampAttack: 0.001, ampDecay: 3, ampSustain: 0, ampRelease: 2, lfoRate: 5.5, lfoPitchAmount: 0.005, reverbMix: 0.35 }),
+    p('glockenspiel', 'Glocken Glaze', 'keys', 'Glockenspiel — bright, pure metallic bells', ['glockenspiel', 'mallet', 'bell'], { oscEngine: 5, additivePartials: 8, additiveTilt: 2, additiveInharm: 0.015, filterCutoff: 16000, ampAttack: 0.001, ampDecay: 2, ampSustain: 0, reverbMix: 0.4, reverbDecay: 0.6 }),
+    p('tubular-bells', 'Cathedral Bells', 'keys', 'Tubular bells — deep inharmonic orchestral chimes', ['tubular', 'bell', 'orchestral'], { oscEngine: 5, additivePartials: 20, additiveTilt: 0.5, additiveInharm: 0.025, filterCutoff: 12000, ampAttack: 0.001, ampDecay: 5, ampSustain: 0, ampRelease: 3, reverbMix: 0.5, reverbDecay: 0.85 }),
+    p('celesta', 'Celesta Crumb', 'keys', 'Celesta — delicate music box bells', ['celesta', 'bell', 'delicate'], { oscEngine: 2, fmAlgorithm: 2, fmRatio1: 1, fmRatio2: 5.2, fmRatio3: 14, fmLevel1: 1, fmLevel2: 0.25, fmLevel3: 0.06, fmModAmount: 1.5, filterCutoff: 14000, ampAttack: 0.001, ampDecay: 1.5, ampSustain: 0, ampRelease: 1, reverbMix: 0.35, reverbDecay: 0.6 }),
+    p('steel-drum', 'Steel Pan Loaf', 'drums', 'Steel drum / steel pan — Caribbean tuned percussion', ['steel-drum', 'caribbean', 'world'], { oscEngine: 2, fmAlgorithm: 2, fmRatio1: 1, fmRatio2: 4.76, fmRatio3: 6.28, fmLevel1: 1, fmLevel2: 0.4, fmLevel3: 0.15, fmModAmount: 2, filterCutoff: 10000, ampAttack: 0.001, ampDecay: 1.5, ampSustain: 0, ampRelease: 0.8, reverbMix: 0.25 }),
+    p('music-box', 'Music Box Bun', 'keys', 'Music box — tiny, delicate plucked metal tines', ['music-box', 'delicate', 'physical'], { oscEngine: 3, ksDamping: 0.15, ksBrightness: 0.95, filterCutoff: 12000, filterResonance: 2, ampRelease: 1.5, reverbMix: 0.3, reverbDecay: 0.6, delayMix: 0.1, delayTime: 400, delayFeedback: 0.3 }),
+
+    // ── World / Ethnic Instruments ──────────────────────────────────
+    p('sitar-deep', 'Deep Naan Sitar', 'strings', 'Sitar — buzzing sympathetic strings with resonant filter', ['sitar', 'indian', 'world', 'physical'], { oscEngine: 3, ksDamping: 0.12, ksBrightness: 1, filterModel: 3, filterCutoff: 4000, filterResonance: 6, ampRelease: 2, reverbMix: 0.3, delayMix: 0.1, delayTime: 200, portamentoTime: 0.06 }),
+    p('shamisen', 'Shamisen Soba', 'strings', 'Shamisen — bright plucked with buzzy sawari', ['shamisen', 'japan', 'world', 'physical'], { oscEngine: 3, ksDamping: 0.2, ksBrightness: 1, filterCutoff: 10000, filterResonance: 3, distMix: 0.1, distDrive: 2, ampRelease: 0.8, reverbMix: 0.15 }),
+    p('erhu', 'Erhu Mantou', 'strings', 'Erhu — Chinese bowed string, expressive and nasal', ['erhu', 'china', 'world', 'bowed'], { oscEngine: 1, oscWaveform: 1, filterModel: 3, filterCutoff: 3500, filterResonance: 4, ampAttack: 0.1, ampSustain: 0.8, ampRelease: 0.3, lfoRate: 5.5, lfoPitchAmount: 0.02, reverbMix: 0.2 }),
+    p('oud', 'Oud Flatbread', 'strings', 'Oud — Middle Eastern plucked lute', ['oud', 'middle-east', 'world', 'physical'], { oscEngine: 3, ksDamping: 0.35, ksBrightness: 0.7, filterCutoff: 5000, filterResonance: 1.5, ampRelease: 1.2, reverbMix: 0.2, reverbDecay: 0.4 }),
+    p('mbira', 'Mbira Millet', 'keys', 'Mbira / thumb piano — bright tines with buzz', ['mbira', 'african', 'world', 'physical'], { oscEngine: 3, ksDamping: 0.18, ksBrightness: 0.85, filterCutoff: 8000, filterResonance: 3, ampRelease: 1.5, reverbMix: 0.3, delayMix: 0.15, delayTime: 250, delayFeedback: 0.3 }),
+    p('balafon', 'Balafon Barley', 'drums', 'Balafon — West African wooden xylophone', ['balafon', 'african', 'world', 'mallet'], { oscEngine: 2, fmAlgorithm: 2, fmRatio1: 1, fmRatio2: 3.8, fmRatio3: 8.5, fmLevel1: 1, fmLevel2: 0.35, fmLevel3: 0.1, fmModAmount: 1.3, filterModel: 1, filterCutoff: 4000, ampAttack: 0.001, ampDecay: 1, ampSustain: 0, reverbMix: 0.2 }),
+    p('djembe', 'Djembe Dough', 'drums', 'Djembe drum — deep body with sharp slap', ['djembe', 'african', 'world', 'drum'], { oscWaveform: 0, noiseLevel: 0.5, noiseColor: 2, filterCutoff: 3000, filterResonance: 2, ampAttack: 0.001, ampDecay: 0.5, ampSustain: 0, filterDecay: 0.03, filterEnvAmount: 0.8, reverbMix: 0.15 }),
+    p('tongue-drum', 'Tongue Roll', 'drums', 'Tongue drum — warm, tuned, meditative percussion', ['tongue-drum', 'meditation', 'world'], { oscEngine: 3, ksDamping: 0.3, ksBrightness: 0.6, filterModel: 1, filterCutoff: 3000, filterResonance: 2, ampRelease: 3, reverbMix: 0.5, reverbDecay: 0.7 }),
+    p('didgeridoo-deep', 'Didgeri-dough', 'bass', 'Didgeridoo — deep circular-breathing drone', ['didgeridoo', 'australian', 'world', 'drone'], { oscEngine: 1, oscWaveform: 1, filterModel: 3, filterCutoff: 2000, filterResonance: 4, filterDrive: 2, ampAttack: 0.3, ampSustain: 0.9, ampRelease: 0.5, lfoRate: 0.2, lfoFilterAmount: 0.4, noiseLevel: 0.05 }),
+
+    // ── Bowed Strings ───────────────────────────────────────────────
+    // Bowed strings: saw + vibrato + slow attack (simulates bow pressure buildup).
+    p('cello-solo', 'Rye Cello Solo', 'strings', 'Cello — rich, warm solo voice with expressive vibrato', ['cello', 'solo', 'orchestral', 'bowed'], { oscEngine: 1, oscWaveform: 1, oscDrift: 0.15, filterModel: 1, filterCutoff: 1800, filterResonance: 1.5, ampAttack: 0.15, ampSustain: 0.85, ampRelease: 0.4, lfoRate: 5.5, lfoPitchAmount: 0.02, reverbMix: 0.3, reverbDecay: 0.6 }),
+    p('viola', 'Viola Brioche', 'strings', 'Viola — darker, warmer cousin of the violin', ['viola', 'orchestral', 'bowed'], { oscEngine: 1, oscWaveform: 1, filterCutoff: 2500, filterResonance: 1.3, ampAttack: 0.12, ampSustain: 0.8, ampRelease: 0.3, lfoRate: 5.8, lfoPitchAmount: 0.018, reverbMix: 0.25 }),
+    p('contrabass', 'Double Dough Bass', 'bass', 'Contrabass — deep bowed orchestral bass', ['contrabass', 'orchestral', 'bowed'], { oscEngine: 1, oscWaveform: 1, filterModel: 1, filterCutoff: 1200, filterResonance: 1, ampAttack: 0.2, ampSustain: 0.8, ampRelease: 0.5, lfoRate: 4.5, lfoPitchAmount: 0.01, reverbMix: 0.3 }),
+    p('string-section', 'Whole Wheat Section', 'strings', 'Full string section — lush ensemble with width', ['strings', 'section', 'orchestral', 'ensemble'], { oscEngine: 1, oscWaveform: 1, oscDrift: 0.25, unisonVoices: 6, unisonDetune: 15, unisonSpread: 1, filterModel: 5, filterCutoff: 3500, filterResonance: 1, ampAttack: 0.4, ampSustain: 0.85, ampRelease: 1, chorusMix: 0.2, reverbMix: 0.35, reverbDecay: 0.6, stereoWidth: 1.4 }),
 ];
+

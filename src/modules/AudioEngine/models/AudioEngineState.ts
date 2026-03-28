@@ -20,6 +20,7 @@ export type BuiltinDeviceNode = {
     };
     /** Controls for the Fermenter synthesizer (MIDI + param updates via MessagePort) */
     fermenterControls?: {
+        ready: boolean;
         noteOn: (note: number, velocity: number) => void;
         noteOff: (note: number) => void;
         setParam: (name: string, value: number) => void;
