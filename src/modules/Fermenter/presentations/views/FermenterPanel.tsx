@@ -21,7 +21,7 @@
  * Level 5: Right gets transform pad + spectrum
  */
 import { type ReactElement, useCallback, useState, useSyncExternalStore } from 'react';
-import { Cpu, RotateCcw, Save, Shuffle } from 'lucide-react';
+import { ChevronDown, Cpu, RotateCcw, Save, Shuffle } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { ScrollArea } from '#/components/ui/scroll-area';
@@ -83,6 +83,7 @@ export const FermenterPanel = (): ReactElement => {
     const [showSave, setShowSave] = useState(false);
     const [saveName, setSaveName] = useState('');
     const [upVer, setUpVer] = useState(0);
+    const [presetOpen, setPresetOpen] = useState(false);
     const userPatches = loadUserPatches(); void upVer;
 
     const setParam = useCallback((key: keyof FermenterPatch, value: number) => setFermenterParamWithAudio(key, value), []);
@@ -216,7 +217,15 @@ export const FermenterPanel = (): ReactElement => {
             {/* ─── Top bar ─── */}
             <div className="flex items-center justify-between px-3 py-1 shrink-0 border-b border-border/30 bg-surface-app/30">
                 <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-bold text-[var(--color-accent-lavender)] tracking-tight">{patch.name}</span>
+                    {/* Preset name — click to open browser flyout */}
+                    <button
+                        type="button"
+                        className="flex items-center gap-1 group"
+                        onClick={() => setPresetOpen((o) => !o)}
+                    >
+                        <span className="text-[10px] font-bold text-[var(--color-accent-lavender)] tracking-tight group-hover:text-[var(--color-accent-lavender)]/70 transition-colors">{patch.name}</span>
+                        <ChevronDown className={`size-2.5 text-[var(--color-accent-lavender)]/50 transition-transform duration-150 ${presetOpen ? 'rotate-180' : ''}`} />
+                    </button>
                     {showSave ? (
                         <div className="flex items-center gap-1">
                             <input type="text" value={saveName} onChange={(e) => setSaveName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') setShowSave(false); }} placeholder="Name…" className="h-5 w-20 rounded border border-border/40 bg-surface-inset px-1.5 text-[9px] outline-none" autoFocus />
@@ -250,35 +259,16 @@ export const FermenterPanel = (): ReactElement => {
                     {macroPanel(false)}
                 </div>
             ) : (
-                /* Level 2+: Three-column layout */
-                <div className="flex flex-1 min-h-0 overflow-hidden">
-                    {/* LEFT: Preset browser (Level 2+) or Layer stack (Level 3+) */}
-                    <div className="w-[180px] shrink-0 border-r border-border/20 flex flex-col overflow-hidden">
-                        {uiLevel >= 3 ? (
-                            <>
-                                <div className="shrink-0 border-b border-border/20">
-                                    <LayerStack numLayers={patch.numLayers} activeLayer={patch.activeLayer} layerLevel={patch.layerLevel} layerPan={patch.layerPan} currentEngine={patch.oscEngine} onActiveLayerChange={(v) => setParam('activeLayer', v)} onNumLayersChange={(v) => setParam('numLayers', v)} onLevelChange={(v) => setParam('layerLevel', v)} onPanChange={(v) => setParam('layerPan', v)} />
-                                </div>
-                                <div className="flex-1 overflow-hidden">
-                                    <PresetBrowser 
-                                        currentName={patch.name} 
-                                        userPatches={userPatches} 
-                                        presets={FERMENTER_PRESETS}
-                                        onLoadPreset={loadPreset} 
-                                    />
-                                </div>
-                            </>
-                        ) : (
-                            <PresetBrowser 
-                                currentName={patch.name} 
-                                userPatches={userPatches} 
-                                presets={FERMENTER_PRESETS}
-                                onLoadPreset={loadPreset} 
-                            />
-                        )}
-                    </div>
+                /* Level 2+: Two-column layout — no more fixed preset sidebar */
+                <div className="flex flex-1 min-h-0 overflow-hidden relative">
+                    {/* LEFT: Layer stack (Level 3+) */}
+                    {uiLevel >= 3 ? (
+                        <div className="w-[120px] shrink-0 border-r border-border/20 flex flex-col overflow-hidden">
+                            <LayerStack numLayers={patch.numLayers} activeLayer={patch.activeLayer} layerLevel={patch.layerLevel} layerPan={patch.layerPan} currentEngine={patch.oscEngine} onActiveLayerChange={(v) => setParam('activeLayer', v)} onNumLayersChange={(v) => setParam('numLayers', v)} onLevelChange={(v) => setParam('layerLevel', v)} onPanChange={(v) => setParam('layerPan', v)} />
+                        </div>
+                    ) : null}
 
-                    {/* CENTER: Section tabs + content */}
+                    {/* CENTER: Section tabs + content — gets full width at Level 2 */}
                     <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
                         <div className="px-2 py-1 border-b border-border/20 shrink-0">
                             <SectionNav active={section} onChange={setSection} />
@@ -308,6 +298,26 @@ export const FermenterPanel = (): ReactElement => {
                             </div>
                         ) : null}
                     </div>
+
+                    {/* PRESET BROWSER FLYOUT — overlays content, toggled from top bar */}
+                    {presetOpen ? (
+                        <>
+                            {/* Backdrop */}
+                            <div
+                                className="absolute inset-0 z-10"
+                                onClick={() => setPresetOpen(false)}
+                            />
+                            {/* Panel */}
+                            <div className="absolute left-0 top-0 bottom-0 z-20 w-[220px] bg-surface-tray border-r border-border/30 shadow-2xl flex flex-col animate-in slide-in-from-left-1 duration-150">
+                                <PresetBrowser
+                                    currentName={patch.name}
+                                    userPatches={userPatches}
+                                    presets={FERMENTER_PRESETS}
+                                    onLoadPreset={(id) => { loadPreset(id); setPresetOpen(false); }}
+                                />
+                            </div>
+                        </>
+                    ) : null}
                 </div>
             )}
         </div>
