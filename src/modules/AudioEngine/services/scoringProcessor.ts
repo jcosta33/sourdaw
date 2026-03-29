@@ -39,27 +39,43 @@ class ScoringProcessor extends AudioWorkletProcessor {
     }
 
     _initWasm(wasmBytes) {
+        const mod = new WebAssembly.Module(wasmBytes);
+        const importInfo = WebAssembly.Module.imports(mod);
+        const bgImports = {};
+        
+        let instance;
+
+        for (const imp of importInfo) {
+            if (imp.module === './scoring_bg.js') {
+                if (imp.name.startsWith('__wbg___wbindgen_throw_')) {
+                    bgImports[imp.name] = function(ptr, len) {
+                        throw new Error('WASM error at ptr ' + ptr + ' len ' + len);
+                    };
+                } else if (imp.name === '__wbindgen_init_externref_table') {
+                    bgImports[imp.name] = function() {
+                        const table = instance.exports.__wbindgen_externrefs;
+                        if (table) {
+                            const offset = table.grow(4);
+                            table.set(0, undefined);
+                            table.set(offset + 0, undefined);
+                            table.set(offset + 1, null);
+                            table.set(offset + 2, true);
+                            table.set(offset + 3, false);
+                        }
+                    };
+                } else if (imp.name.startsWith('__wbg___wbindgen_copy_to_typed_array_')) {
+                    bgImports[imp.name] = function() {};
+                } else {
+                    bgImports[imp.name] = function() {};
+                }
+            }
+        }
+
         const imports = {
-            './scoring_bg.js': {
-                __wbg___wbindgen_throw_6ddd609b62940d55(ptr, len) {
-                    throw new Error('WASM error at ' + ptr + ' len ' + len);
-                },
-                __wbindgen_init_externref_table() {
-                    const table = instance.exports.__wbindgen_externrefs;
-                    if (table) {
-                        const offset = table.grow(4);
-                        table.set(0, undefined);
-                        table.set(offset + 0, undefined);
-                        table.set(offset + 1, null);
-                        table.set(offset + 2, true);
-                        table.set(offset + 3, false);
-                    }
-                },
-            },
+            './scoring_bg.js': bgImports,
         };
 
-        const mod = new WebAssembly.Module(wasmBytes);
-        const instance = new WebAssembly.Instance(mod, imports);
+        instance = new WebAssembly.Instance(mod, imports);
         const w = instance.exports;
 
         if (w.__wbindgen_start) {
@@ -83,9 +99,6 @@ class ScoringProcessor extends AudioWorkletProcessor {
             buf[i] = name.charCodeAt(i);
         }
         w.scoringinstance_set_param(this._ptr, strPtr, len, value);
-        if (w.__wbindgen_free) {
-            w.__wbindgen_free(strPtr, len, 1);
-        }
     }
 
     process(inputs, outputs) {

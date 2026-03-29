@@ -221,10 +221,6 @@ class LevainProcessor extends AudioWorkletProcessor {
             buf[i] = name.charCodeAt(i);
         }
         w.levaininstance_set_param(this._ptr, strPtr, len, value);
-        // Free the string memory to prevent WASM memory leak.
-        if (w.__wbindgen_free) {
-            w.__wbindgen_free(strPtr, len, 1);
-        }
     }
 
     process(_inputs, outputs) {
