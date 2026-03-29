@@ -1,0 +1,16 @@
+{
+  "name": "toaster",
+  "type": "module",
+  "description": "Grinder drum machine DSP engine — compiles to native and WASM",
+  "version": "0.1.0",
+  "files": [
+    "toaster_bg.wasm",
+    "toaster.js",
+    "toaster.d.ts"
+  ],
+  "main": "toaster.js",
+  "types": "toaster.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
