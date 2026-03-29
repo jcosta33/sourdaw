@@ -5,16 +5,20 @@ import { Save, X, ChevronRight, Star, Folder, Music2, Drum, Music } from 'lucide
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { type SoundPreset, type SoundPresetCategory } from '#/modules/Arrangement/useCases/trackQueries';
 import { getFactoryPresets } from '#/modules/Arrangement/useCases/soundPresetLibrary';
-import { getUserPresets, saveCurrentAsPreset, deleteUserPreset } from '#/modules/Arrangement/useCases/preset/presetStorage';
+import {
+    getUserPresets,
+    saveCurrentAsPreset,
+    deleteUserPreset,
+} from '#/modules/Arrangement/useCases/preset/presetStorage';
 import { createTrackFromPreset, loadPresetToTrack } from '#/modules/Arrangement/useCases/preset/presetLoading';
 import { createDrumTrackStack } from '#/modules/Toaster/useCases/createDrumTrackStack';
 
-import { PresetItem } from '../../components/sidebar/PresetItem';
-import { InstrumentCard, FERMENTER_THEME, TOASTER_THEME, LEVAIN_THEME } from '../../components/sidebar/InstrumentCard';
-import { SectionHeader } from '../../components/sidebar/SectionHeader';
-import { EmptyState } from '../../components/sidebar/EmptyState';
+import { PresetItem } from '../../components/Sidebar/PresetItem';
+import { InstrumentCard, FERMENTER_THEME, TOASTER_THEME, LEVAIN_THEME } from '../../components/Sidebar/InstrumentCard';
+import { SectionHeader } from '../../components/Sidebar/SectionHeader';
+import { EmptyState } from '../../components/Sidebar/EmptyState';
 import { NavCard } from '../Sidebar/effectsTabHelpers';
-import { PRESET_CATEGORIES, CATEGORY_ICONS, CATEGORY_COLORS } from '../../components/sidebar/sidebarConstants';
+import { PRESET_CATEGORIES, CATEGORY_ICONS, CATEGORY_COLORS } from '../../components/Sidebar/sidebarConstants';
 import { type PreviewHandle } from '../../hooks/usePreviewAudio';
 import { type SidebarRoute } from '../Sidebar';
 
@@ -109,8 +113,7 @@ export const InstrumentsTab = ({
 
     // Filter out presets that belong to custom-UI instruments or effects categories
     const isSoundPreset = (p: SoundPreset): boolean =>
-        !p.devices.some((d) => CUSTOM_UI_DEVICE_TYPES.has(d.type)) &&
-        !EFFECTS_CATEGORIES.has(p.category);
+        !p.devices.some((d) => CUSTOM_UI_DEVICE_TYPES.has(d.type)) && !EFFECTS_CATEGORIES.has(p.category);
 
     const soundPresets = factoryPresets.filter((p) => isSoundPreset(p) && matchesSearch(p));
     const filteredUser = userPresets.filter((p) => matchesSearch(p));
@@ -153,9 +156,15 @@ export const InstrumentsTab = ({
 
     const handleAddFermenterTrack = () => {
         const preset: SoundPreset = {
-            id: 'fermenter-default', name: 'Fermenter', category: 'synth', description: 'Fermenter synthesizer',
-            trackKind: 'midi', devices: [{ type: 'fermenter', name: 'Fermenter', parameterValues: {} }],
-            tags: ['synth', 'wavetable', 'analog'], author: 'Sourdaw', isFactory: true,
+            id: 'fermenter-default',
+            name: 'Fermenter',
+            category: 'synth',
+            description: 'Fermenter synthesizer',
+            trackKind: 'midi',
+            devices: [{ type: 'fermenter', name: 'Fermenter', parameterValues: {} }],
+            tags: ['synth', 'wavetable', 'analog'],
+            author: 'Sourdaw',
+            isFactory: true,
         };
         createTrackFromPreset(preset);
     };
@@ -166,9 +175,15 @@ export const InstrumentsTab = ({
 
     const handleAddLevainTrack = () => {
         const preset: SoundPreset = {
-            id: 'levain-default', name: 'Levain', category: 'keys', description: 'Levain instrument',
-            trackKind: 'midi', devices: [{ type: 'levain', name: 'Levain', parameterValues: {} }],
-            tags: ['levain', 'strings', 'brass', 'woodwinds'], author: 'Sourdaw', isFactory: true,
+            id: 'levain-default',
+            name: 'Levain',
+            category: 'keys',
+            description: 'Levain instrument',
+            trackKind: 'midi',
+            devices: [{ type: 'levain', name: 'Levain', parameterValues: {} }],
+            tags: ['levain', 'strings', 'brass', 'woodwinds'],
+            author: 'Sourdaw',
+            isFactory: true,
         };
         createTrackFromPreset(preset);
     };

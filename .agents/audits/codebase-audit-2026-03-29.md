@@ -165,7 +165,7 @@ Seven section components all live in one file. While only one renders at a time,
 
 ### 16. `InstrumentCard` LEVAIN_THEME bypasses the design token system
 
-**File:** `presentations/components/sidebar/InstrumentCard.tsx:38-44`
+**File:** `presentations/components/Sidebar/InstrumentCard.tsx:38-44`
 
 ```ts
 export const LEVAIN_THEME: InstrumentCardTheme = {
@@ -193,7 +193,7 @@ export const LEVAIN_THEME: InstrumentCardTheme = {
 | TrackListView           | `text-xs + text-[10px]` | none         | `p-3 text-center`  | plain div   |
 | MixerPanel              | `text-xs`               | none         | flex centered      | flex        |
 
-`components/sidebar/EmptyState.tsx` exists (338 bytes) but is barely used. All six patterns should use it.
+`components/Sidebar/EmptyState.tsx` exists (338 bytes) but is barely used. All six patterns should use it.
 
 ---
 
@@ -219,7 +219,7 @@ The pattern `text-[9px] font-semibold text-muted-foreground uppercase tracking-w
 - `EffectsTab.tsx` search results (4 instances): lines 128-133, 144-149, 169-174, 192-197
 - `InstrumentsTab.tsx` group headers (multiple instances)
 
-`components/sidebar/SectionHeader.tsx` exists (448 bytes) but is not used at these sites.
+`components/Sidebar/SectionHeader.tsx` exists (448 bytes) but is not used at these sites.
 
 ---
 

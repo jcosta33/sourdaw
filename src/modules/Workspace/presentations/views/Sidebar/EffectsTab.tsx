@@ -7,7 +7,7 @@ import { createTrackFromPreset, loadPresetToTrack } from '#/modules/Arrangement/
 import { PluginBrowser } from '#/modules/AudioEngine/presentations/views/PluginBrowser';
 import { MODULATOR_PRESETS } from '#/modules/Plugin/useCases/modulatorLibrary';
 import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases/pluginQueries';
-import { PresetItem } from '../../components/sidebar/PresetItem';
+import { PresetItem } from '../../components/Sidebar/PresetItem';
 import { type PreviewHandle } from '../../hooks/usePreviewAudio';
 import { type SidebarRoute } from '../Sidebar';
 import {
@@ -57,11 +57,12 @@ export const EffectsTab = ({
     // FX chain presets (moved from Instruments tab)
     const fxPresets = getFactoryPresets().filter((p) => FX_PRESET_CATEGORIES.has(p.category));
     const filteredFxPresets = query
-        ? fxPresets.filter((p) =>
-            p.name.toLowerCase().includes(query) ||
-            p.category.toLowerCase().includes(query) ||
-            p.tags.some((t) => t.toLowerCase().includes(query))
-        )
+        ? fxPresets.filter(
+              (p) =>
+                  p.name.toLowerCase().includes(query) ||
+                  p.category.toLowerCase().includes(query) ||
+                  p.tags.some((t) => t.toLowerCase().includes(query))
+          )
         : fxPresets;
 
     const handleFxPresetClick = (preset: SoundPreset) => {
@@ -109,7 +110,8 @@ export const EffectsTab = ({
             (p) => p.name.toLowerCase().includes(query) || p.category.toLowerCase().includes(query)
         );
         const filteredMidi = MIDI_EFFECT_FACTORIES.filter((m) => m.name.toLowerCase().includes(query));
-        const total = filteredEffects.length + filteredModulators.length + filteredMidi.length + filteredFxPresets.length;
+        const total =
+            filteredEffects.length + filteredModulators.length + filteredMidi.length + filteredFxPresets.length;
 
         return (
             <div className="flex flex-col gap-1 animate-in fade-in duration-150">

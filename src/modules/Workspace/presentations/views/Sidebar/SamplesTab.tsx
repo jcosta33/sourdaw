@@ -4,8 +4,8 @@ import { cn } from '#/helpers/Styles/cn';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { PreviewButton } from '../../components/sidebar/PreviewButton';
-import { type SampleItem } from '../../components/sidebar/sidebarConstants';
+import { PreviewButton } from '../../components/Sidebar/PreviewButton';
+import { type SampleItem } from '../../components/Sidebar/sidebarConstants';
 import { type PreviewHandle } from '../../hooks/usePreviewAudio';
 
 type SamplesTabProps = {
