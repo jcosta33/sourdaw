@@ -7,6 +7,7 @@ mod reverb;
 mod delay;
 mod gate;
 mod gain;
+mod proof_chamber;
 
 use eq::ParametricEq;
 use compressor::Compressor;
@@ -15,6 +16,7 @@ use reverb::AlgorithmicReverb;
 use delay::StereoDelay;
 use gate::NoiseGate;
 use gain::GainUtility;
+use proof_chamber::ProofChamber;
 
 // ---------------------------------------------------------------------------
 // Multi-plugin WASM processor
@@ -28,6 +30,7 @@ enum PluginCore {
     Delay(StereoDelay),
     Gate(NoiseGate),
     Gain(GainUtility),
+    ProofChamber(ProofChamber),
 }
 
 #[wasm_bindgen]
@@ -52,6 +55,7 @@ impl WasmPluginInstance {
             "delay" => PluginCore::Delay(StereoDelay::new(sample_rate)),
             "gate" => PluginCore::Gate(NoiseGate::new(sample_rate)),
             "gain" => PluginCore::Gain(GainUtility::new()),
+            "proof-chamber" => PluginCore::ProofChamber(ProofChamber::new(sample_rate)),
             _ => return Err(JsValue::from_str(&format!("Unknown plugin type: {plugin_type}"))),
         };
 
@@ -74,6 +78,7 @@ impl WasmPluginInstance {
             PluginCore::Delay(p) => p.set_param(name, value),
             PluginCore::Gate(p) => p.set_param(name, value),
             PluginCore::Gain(p) => p.set_param(name, value),
+            PluginCore::ProofChamber(p) => p.set_param(name, value),
         }
     }
 
@@ -108,6 +113,7 @@ impl WasmPluginInstance {
                 PluginCore::Delay(p) => p.process(&mut self.out_left[..frames], &mut self.out_right[..frames]),
                 PluginCore::Gate(p) => p.process(&mut self.out_left[..frames], &mut self.out_right[..frames]),
                 PluginCore::Gain(p) => p.process(&mut self.out_left[..frames], &mut self.out_right[..frames]),
+                PluginCore::ProofChamber(p) => p.process(&mut self.out_left[..frames], &mut self.out_right[..frames]),
             }
         }
 
@@ -131,6 +137,7 @@ impl WasmPluginInstance {
             PluginCore::Delay(p) => p.param_names(),
             PluginCore::Gate(p) => p.param_names(),
             PluginCore::Gain(p) => p.param_names(),
+            PluginCore::ProofChamber(p) => p.param_names(),
         };
         serde_json::to_string(&names).unwrap_or_else(|_| "[]".to_string())
     }

@@ -8,6 +8,7 @@ import { workspaceStore } from '../../stores/workspaceStore';
 import { PianoRoll } from './ClipView/PianoRoll';
 import { WaveformEditor } from './ClipView/WaveformEditor';
 import { AutomationLane } from './ClipView/AutomationLane';
+import { KneadEditor } from './ClipView/KneadEditor';
 
 
 export const ClipView = (): ReactElement => {
@@ -18,6 +19,7 @@ export const ClipView = (): ReactElement => {
     const [pianoRollBeatWidth, setPianoRollBeatWidth] = useState(40);
     const [pianoRollContentWidth, setPianoRollContentWidth] = useState(0);
     const automationScrollRef = useRef<HTMLDivElement>(null);
+    const [audioEditMode, setAudioEditMode] = useState<'waveform' | 'pitch'>('waveform');
 
     const wsState = useSyncExternalStore(
         (cb) => workspaceStore.subscribe(() => cb()),
@@ -72,6 +74,26 @@ export const ClipView = (): ReactElement => {
                         ))}
                     </div>
                 ) : null}
+                {selectedTrack.kind === 'audio' && selectedClip ? (
+                    <div className="flex items-center gap-1 ml-4 bg-muted/50 p-0.5 rounded-md">
+                        <Button
+                            variant={audioEditMode === 'waveform' ? 'secondary' : 'ghost'}
+                            size="xs"
+                            className="h-5 px-2 text-[10px]"
+                            onClick={() => setAudioEditMode('waveform')}
+                        >
+                            Waveform
+                        </Button>
+                        <Button
+                            variant={audioEditMode === 'pitch' ? 'secondary' : 'ghost'}
+                            size="xs"
+                            className="h-5 px-2 text-[10px]"
+                            onClick={() => setAudioEditMode('pitch')}
+                        >
+                            Knead (Pitch)
+                        </Button>
+                    </div>
+                ) : null}
                 <div className="flex-1" />
                 <Button variant="ghost" size="xs" onClick={() => setWorkspaceMode('arrange')}>
                     Back
@@ -89,6 +111,8 @@ export const ClipView = (): ReactElement => {
                         onBeatWidthChange={setPianoRollBeatWidth}
                         onContentWidthChange={setPianoRollContentWidth}
                     />
+                ) : selectedClip && audioEditMode === 'pitch' ? (
+                    <KneadEditor clipId={selectedClip.audioBufferId ?? selectedClip.id} trackId={selectedTrack.id} />
                 ) : selectedClip ? (
                     <WaveformEditor clipId={selectedClip.audioBufferId ?? selectedClip.id} />
                 ) : (

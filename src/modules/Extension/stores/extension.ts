@@ -2,7 +2,11 @@
  * Extension marketplace store — manages installed extensions,
  * script commands, console log, and editor state.
  *
- * Extracted from extensionUseCases.ts.
+ * TODO: FROZEN — Extension system is architecturally sound (types, manifest,
+ * permissions model) but the runtime is unsandboxed. Do not build further
+ * UI or expose to users until Worker-based sandbox is implemented.
+ * Permissions below are declared but never enforced at runtime.
+ * See .agents/audits/dead-code-audit.md Section 10 for full analysis.
  */
 
 import { Container } from '#/helpers/DependencyInjector/Container';

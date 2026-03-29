@@ -899,6 +899,15 @@ The AudioEngine/Arrangement warp duplication (Section 2) is the highest-priority
 6. **Pattern Morph** — `MorphState` added to `ToasterState`, `morphPatterns()` called in sequencer tick loop when morph is active, use cases for setting target/position/toggle.
 7. **Pattern Instance** — `isLinkedInstance` field on `ClipRenderModel`, populated from `clip.parentClipId` in `buildTimelineRenderModel`, dashed blue border + ⧉ badge in clip drawing.
 
+### Concerning items (actioned after deep investigation)
+
+8. **Sixteen Levels** — Fixed: tune/decay/filter targets now call `setToasterPadParam` with proper range-mapped values (tune: -24 to +24 semitones, decay: 0 to 1, filter: 20-20000 Hz log scale) and trigger at full velocity. Velocity target unchanged.
+9. **Note Repeat** — Fixed: replaced `setInterval` with AudioContext-corrected `setTimeout` chain (same pattern as sequencer playback). Tracks `nextTriggerTime` in AudioContext seconds and computes delta for each chained timeout.
+10. **Time Signature** — Fixed: `getBarBeatAtPosition` now correctly uses the denominator. Each segment's quarter-note length is divided by `numerator * (4 / denominator)` to compute bars. Beat-within-bar and tick are calculated relative to the denominator's note value. 6/8, 12/8, and alla breve now produce correct bar/beat/tick results.
+11. **Sound Locks** — Deleted broken implementation, rebuilt from scratch. Added typed `soundLock?: DrumEngineType` field to `Step` model (no more `_` prefix hack in `paramLocks`). Sequencer now reads `step.soundLock`, sends `engine_type` via new `setPadEngineImmediate()` before triggering, and restores the pad's default engine after. New `soundLocks.ts` uses the typed field cleanly.
+12. **Audio Precision** — Deleted: removed `audioPrecision.ts`, `setProcessingMode` handler from `finalFeatureHandlers.ts`, action type from `AppAction.ts`, and both command palette entries from `miscCommands.ts`.
+13. **Extension System** — Frozen: removed `runScript` and `toggleScriptEditor` from command palette and batch handlers. Added `TODO: SECURITY` comments to `runEditorScript.ts`, `scripting.ts`, and `extension.ts` store documenting the unsandboxed `new Function()` risk and the path to a Worker-based redesign. Extension types preserved as design artifacts.
+
 ---
 
 ## 10. DEEP INVESTIGATION — Concerning items (fine-tooth comb audit)

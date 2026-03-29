@@ -1475,6 +1475,7 @@ version = "0.1.0"
 dependencies = [
  "cpal",
  "daw-core",
+ "daw-dsp",
  "rtrb",
 ]
 
@@ -5378,6 +5379,16 @@ checksum = "52717f9a02b6965224f95ca2a81e2e0c5c43baacd28ca057577988930b6c3d5b"
 dependencies = [
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "proof-chamber"
+version = "0.1.0"
+dependencies = [
+ "js-sys",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
 ]
 
 [[package]]

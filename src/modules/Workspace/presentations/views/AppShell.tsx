@@ -30,6 +30,7 @@ import { FermenterPanel } from '#/modules/Fermenter/presentations/views/Fermente
 import { ToasterPanel } from '#/modules/Toaster/presentations/views/ToasterPanel';
 import { InstrumentBottomPanel } from '../components/InstrumentBottomPanel';
 import { LevainPanel } from '#/modules/Levain/presentations/views/LevainPanel';
+import { ProofChamberPanel } from '#/modules/ProofChamber/presentations/views/ProofChamberPanel';
 
 import { CommandPalette } from '#/modules/Command/presentations/views/CommandPalette';
 import { VoiceCommandOverlay } from '#/modules/AiRuntime/presentations/views/VoiceCommandOverlay';
@@ -88,6 +89,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const [fermenterOpen, setFermenterOpen] = useState(false);
     const [grinderOpen, setGrinderOpen] = useState(false);
     const [levainOpen, setLevainOpen] = useState(false);
+    const [proofChamberOpen, setProofChamberOpen] = useState(false);
 
     // ─── Extracted hooks ───
     useAppInitialization();
@@ -150,6 +152,15 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         };
         document.addEventListener(APP_EVENTS.SHOW_ORCHESTRAL_TAB, handler);
         return () => document.removeEventListener(APP_EVENTS.SHOW_ORCHESTRAL_TAB, handler);
+    }, []);
+
+    // Listen for Proof Chamber panel open (from inspector device click)
+    useEffect(() => {
+        const handler = (): void => {
+            setProofChamberOpen(true);
+        };
+        document.addEventListener(APP_EVENTS.SHOW_PROOF_CHAMBER_TAB, handler);
+        return () => document.removeEventListener(APP_EVENTS.SHOW_PROOF_CHAMBER_TAB, handler);
     }, []);
 
     // ─── Panel dimension setters (persisted via workspace store) ───
@@ -239,6 +250,19 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                             onClose={() => setLevainOpen(false)}
                         >
                             <LevainPanel />
+                        </InstrumentBottomPanel>
+                    ) : null}
+
+                    {proofChamberOpen ? (
+                        <InstrumentBottomPanel
+                            label="Proof Chamber"
+                            labelColor="text-[var(--color-accent-cyan)]"
+                            borderColor="border-[var(--color-accent-cyan)]/20"
+                            height={340}
+                            onResize={() => {}}
+                            onClose={() => setProofChamberOpen(false)}
+                        >
+                            <ProofChamberPanel />
                         </InstrumentBottomPanel>
                     ) : null}
 

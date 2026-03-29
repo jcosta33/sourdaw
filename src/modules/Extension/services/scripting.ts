@@ -1,5 +1,14 @@
 /**
- * Extension scripting helpers — shared console logging and sandboxed API creation.
+ * Extension scripting helpers — console logging and API creation.
+ *
+ * TODO: SECURITY — createDawApi() exposes executeAppAction with full access to
+ * the entire action registry (tracks, clips, transport, plugins, AI, etc.).
+ * The `as any` cast bypasses type safety. Permissions declared in
+ * ExtensionManifest are never checked. Before shipping:
+ *   1. Move to Worker-based execution with postMessage proxy
+ *   2. Validate each action against the extension's declared permissions
+ *   3. Rate-limit API calls from scripts
+ * See .agents/audits/dead-code-audit.md Section 10 for full analysis.
  */
 
 import { extensionStore } from '#/modules/Extension/stores/extension';
@@ -23,11 +32,8 @@ export function appendLog(level: 'info' | 'warn' | 'error', message: string): vo
 }
 
 /**
- * Create a sandboxed DAW API object for script execution.
- *
- * Note: dynamic import is intentional here — the scripting sandbox cannot
- * hold direct references to internal modules. Notifications use the
- * centralised `notifyUser` helper.
+ * Create a DAW API object for script execution.
+ * WARNING: This is NOT sandboxed — scripts get full executeAppAction access.
  */
 export function createDawApi(): Record<string, unknown> {
     return {

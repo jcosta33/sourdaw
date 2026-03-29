@@ -11,3 +11,4 @@ crate-type = ["rlib"]
 daw-core = { path = "../daw-core" }
 rtrb = "0.3"
 cpal = { version = "0.15", features = [] }
+daw-dsp = { version = "0.1.0", path = "../daw-dsp" }

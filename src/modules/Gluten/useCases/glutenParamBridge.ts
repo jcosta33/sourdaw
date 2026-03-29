@@ -1,0 +1,60 @@
+/**
+ * Gluten parameter bridge — throttles UI updates to audio engine.
+ *
+ * Same rAF-throttled pattern as fermenterParamBridge.
+ */
+import { updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
+import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
+import { type GlutenPatch } from '../models/GlutenPatch';
+import { setGlutenParam } from '../stores/glutenStore';
+
+type DeviceRef = { trackId: string; deviceId: string };
+
+let cachedRefs: DeviceRef[] | null = null;
+let cacheStaleTimer: ReturnType<typeof setTimeout> | null = null;
+
+function getActiveDevices(): DeviceRef[] {
+    if (cachedRefs) { return cachedRefs; }
+
+    const refs: DeviceRef[] = [];
+    for (const track of getAllTracks()) {
+        for (const device of track.devices) {
+            if (device.type === 'gluten') {
+                refs.push({ trackId: track.id, deviceId: device.id });
+            }
+        }
+    }
+    cachedRefs = refs;
+
+    if (cacheStaleTimer) { clearTimeout(cacheStaleTimer); }
+    cacheStaleTimer = setTimeout(() => { cachedRefs = null; }, 2000);
+
+    return refs;
+}
+
+const pendingUpdates = new Map<string, number>();
+const latestValues = new Map<string, number>();
+
+function flushParam(key: string): void {
+    pendingUpdates.delete(key);
+    const value = latestValues.get(key);
+    if (value === undefined) { return; }
+    latestValues.delete(key);
+
+    for (const { trackId, deviceId } of getActiveDevices()) {
+        updateDeviceParam(trackId, deviceId, key, value);
+    }
+}
+
+/**
+ * Set a Gluten parameter — updates UI store immediately,
+ * throttles audio engine updates to rAF.
+ */
+export function setGlutenParamWithAudio<K extends keyof GlutenPatch>(key: K, value: number): void {
+    setGlutenParam(key, value as GlutenPatch[K]);
+
+    latestValues.set(key, value);
+    if (!pendingUpdates.has(key)) {
+        pendingUpdates.set(key, requestAnimationFrame(() => flushParam(key)));
+    }
+}
