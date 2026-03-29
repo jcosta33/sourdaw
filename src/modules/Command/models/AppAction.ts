@@ -245,8 +245,6 @@ export type AppAction =
     | { type: 'switchMonitor'; payload: { monitorId: string } }
     | { type: 'getMentorTips'; payload?: undefined }
     | { type: 'searchSamples'; payload: { query: string } }
-    | { type: 'runScript'; payload?: undefined }
-    | { type: 'toggleScriptEditor'; payload?: undefined }
     | { type: 'createCompGroup'; payload: { name: string; trackIds: string[] } }
     | { type: 'togglePunchRecording'; payload?: undefined }
     | { type: 'toggleLoopRecord'; payload: { slotId: string } }

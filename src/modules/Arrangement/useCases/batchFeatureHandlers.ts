@@ -17,20 +17,9 @@ export const batchFeatureHandlers: Record<string, ActionHandler<any>> = {
         undoable: false,
         describe: () => ({ label: 'Search Samples' }),
     },
-    runScript: {
-        execute: async () => {
-            runEditorScript();
-        },
-        undoable: false,
-        describe: () => ({ label: 'Run Script' }),
-    },
-    toggleScriptEditor: {
-        execute: async () => {
-            toggleScriptEditor();
-        },
-        undoable: false,
-        describe: () => ({ label: 'Toggle Script Editor' }),
-    },
+    // TODO: Extension system frozen — runtime uses unsandboxed new Function().
+    // Rebuild with Worker-based sandbox before re-exposing runScript / toggleScriptEditor.
+    // See dead-code-audit.md Section 10 for full security analysis.
     createCompGroup: {
         execute: async (a: { payload: { name: string; trackIds: string[] } }) => {
             createCompGroup(a.payload.name, a.payload.trackIds);
