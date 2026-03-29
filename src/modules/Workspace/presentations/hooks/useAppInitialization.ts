@@ -7,6 +7,7 @@ import { registerProSynthInstruments } from '#/modules/Synth/useCases/proSynthIn
 import { initWebMidi } from '#/modules/AudioEngine/useCases/webMidiInput';
 import { loadProject } from '#/modules/Project/useCases/projectPersistence/loadProject';
 import { saveProject } from '#/modules/Project/useCases/projectPersistence/saveProject';
+import { ensureTrackStrips } from '#/modules/Transport/useCases/ensureTrackStrips';
 
 /**
  * Handles one-time app startup: audio engine + plugins on first user interaction,
@@ -14,6 +15,8 @@ import { saveProject } from '#/modules/Project/useCases/projectPersistence/saveP
  */
 export const useAppInitialization = (): void => {
     const audioInitialized = useRef(false);
+
+    const projectLoaded = useRef(false);
 
     useEffect(() => {
         const init = (): void => {
@@ -25,6 +28,12 @@ export const useAppInitialization = (): void => {
                 registerBuiltinFaustDSP();
                 registerProModulationEffects();
                 registerProSynthInstruments();
+                // Reconcile audio engine strips with any tracks that were
+                // restored from the saved project before first interaction.
+                // Without this, instruments are silent on load.
+                if (projectLoaded.current) {
+                    ensureTrackStrips();
+                }
             }
         };
         window.addEventListener('click', init, { once: true });
@@ -36,7 +45,14 @@ export const useAppInitialization = (): void => {
     }, []);
 
     useEffect(() => {
-        void loadProject();
+        void loadProject().then(() => {
+            projectLoaded.current = true;
+            // If audio was already initialized (e.g. user clicked before
+            // project finished loading), reconcile strips now.
+            if (audioInitialized.current) {
+                ensureTrackStrips();
+            }
+        });
     }, []);
 
     useEffect(() => {

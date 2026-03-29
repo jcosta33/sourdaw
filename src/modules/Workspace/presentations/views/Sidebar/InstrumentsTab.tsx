@@ -3,6 +3,7 @@ import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { Save, X, ChevronRight, Star, Folder, Music2, Drum, Music } from 'lucide-react';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
+import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
 import { type SoundPreset, type SoundPresetCategory } from '#/modules/Arrangement/useCases/trackQueries';
 import { getFactoryPresets } from '#/modules/Arrangement/useCases/soundPresetLibrary';
 import {
@@ -119,7 +120,11 @@ export const InstrumentsTab = ({
     const filteredUser = userPresets.filter((p) => matchesSearch(p));
 
     const handlePresetClick = (preset: SoundPreset) => {
-        if (selectedTrackId) {
+        // Load onto the selected track if it's a compatible kind, else create new
+        const trackKindMatches = selectedTrack?.kind === preset.trackKind ||
+            (preset.trackKind === 'midi' && selectedTrack?.kind === 'midi') ||
+            (preset.trackKind === 'audio' && selectedTrack?.kind === 'audio');
+        if (selectedTrackId && trackKindMatches) {
             loadPresetToTrack(selectedTrackId, preset);
         } else {
             createTrackFromPreset(preset);
@@ -155,37 +160,50 @@ export const InstrumentsTab = ({
     };
 
     const handleAddFermenterTrack = () => {
-        const preset: SoundPreset = {
-            id: 'fermenter-default',
-            name: 'Fermenter',
-            category: 'synth',
-            description: 'Fermenter synthesizer',
-            trackKind: 'midi',
-            devices: [{ type: 'fermenter', name: 'Fermenter', parameterValues: {} }],
-            tags: ['synth', 'wavetable', 'analog'],
-            author: 'Sourdaw',
-            isFactory: true,
-        };
-        createTrackFromPreset(preset);
+        if (selectedTrack?.kind === 'midi') {
+            // Add Fermenter device to the currently selected MIDI track
+            addDevice(selectedTrack.id, 'fermenter');
+        } else {
+            const preset: SoundPreset = {
+                id: 'fermenter-default',
+                name: 'Fermenter',
+                category: 'synth',
+                description: 'Fermenter synthesizer',
+                trackKind: 'midi',
+                devices: [{ type: 'fermenter', name: 'Fermenter', parameterValues: {} }],
+                tags: ['synth', 'wavetable', 'analog'],
+                author: 'Sourdaw',
+                isFactory: true,
+            };
+            createTrackFromPreset(preset);
+        }
     };
 
     const handleAddGrinderTrack = () => {
-        createDrumTrackStack();
+        if (selectedTrack?.kind === 'midi') {
+            addDevice(selectedTrack.id, 'toaster');
+        } else {
+            createDrumTrackStack();
+        }
     };
 
     const handleAddLevainTrack = () => {
-        const preset: SoundPreset = {
-            id: 'levain-default',
-            name: 'Levain',
-            category: 'keys',
-            description: 'Levain instrument',
-            trackKind: 'midi',
-            devices: [{ type: 'levain', name: 'Levain', parameterValues: {} }],
-            tags: ['levain', 'strings', 'brass', 'woodwinds'],
-            author: 'Sourdaw',
-            isFactory: true,
-        };
-        createTrackFromPreset(preset);
+        if (selectedTrack?.kind === 'midi') {
+            addDevice(selectedTrack.id, 'levain');
+        } else {
+            const preset: SoundPreset = {
+                id: 'levain-default',
+                name: 'Levain',
+                category: 'keys',
+                description: 'Levain instrument',
+                trackKind: 'midi',
+                devices: [{ type: 'levain', name: 'Levain', parameterValues: {} }],
+                tags: ['levain', 'strings', 'brass', 'woodwinds'],
+                author: 'Sourdaw',
+                isFactory: true,
+            };
+            createTrackFromPreset(preset);
+        }
     };
 
     void userPresetsVersion;
