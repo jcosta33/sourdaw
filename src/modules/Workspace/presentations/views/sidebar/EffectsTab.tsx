@@ -1,12 +1,12 @@
 import { type ReactElement } from 'react';
 import { Sparkles } from 'lucide-react';
-import { type BUILTIN_PLUGINS } from '#/modules/Arrangement/models/DeviceParameter';
-import { type SoundPreset } from '#/modules/Arrangement/models/SoundPreset';
+import { type BUILTIN_PLUGINS } from '#/modules/Arrangement/useCases/trackQueries';
+import { type SoundPreset } from '#/modules/Arrangement/useCases/trackQueries';
 import { getFactoryPresets } from '#/modules/Arrangement/useCases/soundPresetLibrary';
 import { createTrackFromPreset, loadPresetToTrack } from '#/modules/Arrangement/useCases/preset/presetLoading';
 import { PluginBrowser } from '#/modules/AudioEngine/presentations/views/PluginBrowser';
 import { MODULATOR_PRESETS } from '#/modules/Plugin/useCases/modulatorLibrary';
-import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases/midiEffectPlugins/registry';
+import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases/pluginQueries';
 import { PresetItem } from '../../components/sidebar/PresetItem';
 import { type PreviewHandle } from '../../hooks/usePreviewAudio';
 import { type SidebarRoute } from '../Sidebar';

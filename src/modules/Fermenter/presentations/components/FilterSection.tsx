@@ -5,7 +5,7 @@
  */
 import { type ReactElement } from 'react';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { FilterResponse } from '#/modules/Workspace/presentations/components/FilterResponse';
+import { FilterResponse } from '#/components/daw/visualizers/FilterResponse';
 import { FILTER_MODE_NAMES, FILTER_MODEL_NAMES } from '../../models/FermenterPatch';
 
 type FilterSectionProps = {

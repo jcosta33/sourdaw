@@ -3,7 +3,7 @@
  * Named after the sourdough theme: Sourdaw app, Fermenter synth.
  */
 
-import { type SoundPreset, type DevicePreset } from '#/modules/Arrangement/models/SoundPreset';
+import { type SoundPreset, type DevicePreset } from '#/modules/Arrangement/useCases/trackQueries';
 import { type FermenterPatch, DEFAULT_PATCH } from '../models/FermenterPatch';
 
 const AUTHOR = 'Sourdaw';

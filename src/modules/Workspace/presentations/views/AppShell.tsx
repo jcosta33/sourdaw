@@ -8,12 +8,13 @@ import {
     useSyncExternalStore,
 } from 'react';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
-import { updateWorkspaceState } from '../../repositories/workspace';
+import { updateWorkspaceState } from '../../useCases/workspaceState';
 import { useProjectState } from '../hooks/useProjectState';
 import { useAppInitialization } from '../hooks/useAppInitialization';
 import { useAppKeyboardShortcuts } from '../hooks/useAppKeyboardShortcuts';
 import { useAppEventHandlers } from '../hooks/useAppEventHandlers';
 import { APP_EVENTS } from '#/helpers/Event/appEvents';
+import { clamp } from '#/helpers/Math/clamp';
 import { TransportBar } from './TransportBar';
 import { Sidebar } from './Sidebar';
 import { InspectorPanel } from './InspectorPanel';
@@ -54,8 +55,6 @@ const CollaborationPanelLazy = lazy(() =>
         default: m.CollaborationPanel,
     }))
 );
-
-const clamp = (v: number, min: number, max: number): number => Math.max(min, Math.min(max, v));
 
 type AppShellProps = {
     children: ReactNode;

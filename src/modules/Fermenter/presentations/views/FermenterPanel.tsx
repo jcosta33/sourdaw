@@ -30,7 +30,7 @@ import {
 } from '../../stores/fermenterStore';
 import { type FermenterPatch, DEFAULT_PATCH } from '../../models/FermenterPatch';
 import { setFermenterParamWithAudio } from '../../useCases/fermenterParamBridge';
-import { FERMENTER_PRESETS } from '../../repositories/fermenterPresets';
+import { FERMENTER_PRESETS } from '../../useCases/fermenterQueries';
 
 import { MacroStrip } from '../components/MacroStrip';
 import { XYPad } from '../components/XYPad';
@@ -53,7 +53,7 @@ import { ModulationSection } from '../components/ModulationSection';
 import { EffectsSection } from '../components/EffectsSection';
 import { LayerStack } from '../components/LayerStack';
 import { SignalFlowView } from '../components/SignalFlowView';
-import { TransformPad } from '../components/TransformPad';
+import { TransformPad } from './TransformPad';
 import { SpectrumAnalyzer } from '../components/SpectrumAnalyzer';
 
 // ── Preset persistence ──────────────────────────────────────────────
@@ -260,11 +260,21 @@ export const FermenterPanel = (): ReactElement => {
                                     <LayerStack numLayers={patch.numLayers} activeLayer={patch.activeLayer} layerLevel={patch.layerLevel} layerPan={patch.layerPan} currentEngine={patch.oscEngine} onActiveLayerChange={(v) => setParam('activeLayer', v)} onNumLayersChange={(v) => setParam('numLayers', v)} onLevelChange={(v) => setParam('layerLevel', v)} onPanChange={(v) => setParam('layerPan', v)} />
                                 </div>
                                 <div className="flex-1 overflow-hidden">
-                                    <PresetBrowser currentName={patch.name} userPatches={userPatches} onLoadPreset={loadPreset} />
+                                    <PresetBrowser 
+                                        currentName={patch.name} 
+                                        userPatches={userPatches} 
+                                        presets={FERMENTER_PRESETS}
+                                        onLoadPreset={loadPreset} 
+                                    />
                                 </div>
                             </>
                         ) : (
-                            <PresetBrowser currentName={patch.name} userPatches={userPatches} onLoadPreset={loadPreset} />
+                            <PresetBrowser 
+                                currentName={patch.name} 
+                                userPatches={userPatches} 
+                                presets={FERMENTER_PRESETS}
+                                onLoadPreset={loadPreset} 
+                            />
                         )}
                     </div>
 

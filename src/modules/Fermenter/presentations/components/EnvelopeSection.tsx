@@ -4,7 +4,7 @@
  */
 import { type ReactElement, useState } from 'react';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { ADSREnvelope } from '#/modules/Workspace/presentations/components/ADSREnvelope';
+import { ADSREnvelope } from '#/components/daw/visualizers/ADSREnvelope';
 
 type EnvelopeSectionProps = {
     ampA: number; ampD: number; ampS: number; ampR: number;

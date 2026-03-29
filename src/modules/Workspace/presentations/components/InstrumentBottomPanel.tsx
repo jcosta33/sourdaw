@@ -1,5 +1,6 @@
 import { type ReactElement, type ReactNode } from 'react';
 import { X } from 'lucide-react';
+import { clamp } from '#/helpers/Math/clamp';
 import { Button } from '#/components/ui/button';
 import { DragResizeHandle } from '#/components/ui/DragResizeHandle';
 
@@ -15,7 +16,7 @@ type InstrumentBottomPanelProps = {
     children: ReactNode;
 };
 
-const clamp = (v: number, min: number, max: number): number => Math.max(min, Math.min(max, v));
+
 
 export const InstrumentBottomPanel = ({
     label,

@@ -7,14 +7,14 @@
 import { type ReactElement } from 'react';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { type HumanizeConfig } from '../../models/LevainPatch';
-import { setHumanizeAmount } from '../../stores/levainStore';
-import { setLevainParamWithAudio } from '../../useCases/levainParamBridge';
+
 
 type HumanizePanelProps = {
     config: HumanizeConfig;
+    onChange: (partial: Partial<HumanizeConfig>) => void;
 };
 
-export const HumanizePanel = ({ config }: HumanizePanelProps): ReactElement => {
+export const HumanizePanel = ({ config, onChange }: HumanizePanelProps): ReactElement => {
     return (
         <div className="space-y-4 max-w-[340px]">
             {/* Header */}
@@ -26,7 +26,7 @@ export const HumanizePanel = ({ config }: HumanizePanelProps): ReactElement => {
             <div className="flex flex-col items-center gap-1 py-2">
                 <RotaryKnob
                     value={config.amount}
-                    onChange={(v) => setHumanizeAmount(v)}
+                    onChange={(v) => onChange({ amount: v })}
                     min={0}
                     max={1}
                     step={0.01}
@@ -46,9 +46,7 @@ export const HumanizePanel = ({ config }: HumanizePanelProps): ReactElement => {
                 <div className="flex flex-col items-center gap-0">
                     <RotaryKnob
                         value={config.timingMaxMs}
-                        onChange={(v) =>
-                            setLevainParamWithAudio('humanize', { ...config, timingMaxMs: v })
-                        }
+                        onChange={(v) => onChange({ timingMaxMs: v })}
                         min={0}
                         max={25}
                         step={0.5}
@@ -66,9 +64,7 @@ export const HumanizePanel = ({ config }: HumanizePanelProps): ReactElement => {
                 <div className="flex flex-col items-center gap-0">
                     <RotaryKnob
                         value={config.tuningMaxCents}
-                        onChange={(v) =>
-                            setLevainParamWithAudio('humanize', { ...config, tuningMaxCents: v })
-                        }
+                        onChange={(v) => onChange({ tuningMaxCents: v })}
                         min={0}
                         max={10}
                         step={0.5}
@@ -86,9 +82,7 @@ export const HumanizePanel = ({ config }: HumanizePanelProps): ReactElement => {
                 <div className="flex flex-col items-center gap-0">
                     <RotaryKnob
                         value={config.dynamicMax * 100}
-                        onChange={(v) =>
-                            setLevainParamWithAudio('humanize', { ...config, dynamicMax: v / 100 })
-                        }
+                        onChange={(v) => onChange({ dynamicMax: v / 100 })}
                         min={0}
                         max={15}
                         step={0.5}
@@ -106,9 +100,7 @@ export const HumanizePanel = ({ config }: HumanizePanelProps): ReactElement => {
                 <div className="flex flex-col items-center gap-0">
                     <RotaryKnob
                         value={config.vibratoVarMax * 100}
-                        onChange={(v) =>
-                            setLevainParamWithAudio('humanize', { ...config, vibratoVarMax: v / 100 })
-                        }
+                        onChange={(v) => onChange({ vibratoVarMax: v / 100 })}
                         min={0}
                         max={30}
                         step={1}

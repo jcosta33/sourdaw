@@ -40,13 +40,6 @@ export function selectPad(index: number): void {
     }
 }
 
-export function setGrinderUiLevel(level: 1 | 2 | 3 | 4 | 5): void {
-    const state = toasterStore.value;
-    if (state) {
-        toasterStore.set({ ...state, uiLevel: level });
-    }
-}
-
 export function updatePad(index: number, updates: Partial<PadState>): void {
     const state = toasterStore.value;
     if (!state) { return; }
@@ -54,12 +47,6 @@ export function updatePad(index: number, updates: Partial<PadState>): void {
     if (!pads[index]) { return; }
     pads[index] = { ...pads[index], ...updates };
     toasterStore.set({ ...state, kit: { ...state.kit, pads } });
-}
-
-export function updateKitParam(key: keyof ToasterKit, value: number | string): void {
-    const state = toasterStore.value;
-    if (!state) { return; }
-    toasterStore.set({ ...state, kit: { ...state.kit, [key]: value } });
 }
 
 export function loadKit(kit: ToasterKit): void {
@@ -109,9 +96,3 @@ export function setStepVelocity(padIndex: number, stepIndex: number, velocity: n
     toasterStore.set({ ...state, kit: { ...state.kit, patterns: newPatterns } });
 }
 
-export function setGrinderEngineReady(ready: boolean): void {
-    const state = toasterStore.value;
-    if (state) {
-        toasterStore.set({ ...state, engineReady: ready });
-    }
-}

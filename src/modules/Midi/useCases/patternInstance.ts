@@ -7,7 +7,7 @@
 
 import { getTrackStoreState as getTrackState } from '#/modules/Arrangement/useCases/trackQueries/trackStoreAccess';
 import { updateClip, setTrackState } from '#/modules/Arrangement/useCases/trackQueries/trackMutations';
-import { type Clip } from '#/modules/Arrangement/models/Track';
+import { type Clip } from '#/modules/Arrangement/useCases/trackQueries';
 import { getNotesForClip, setNotesForClip } from './midiNoteCrud';
 
 let nextInstanceId = 5000;

@@ -58,5 +58,4 @@ export type ProjectData = {
     activeArrangementId?: string;
 };
 
-export const PROJECT_STORAGE_KEY = 'sourdaw-project';
 export const RECENT_PROJECTS_KEY = 'sourdaw:recent-projects';

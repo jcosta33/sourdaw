@@ -9,8 +9,8 @@
 import { resolveBackend } from '#/modules/AiRuntime/useCases/llmOrchestration';
 import { generateWebLlmCompletion } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
 import { generateNativeCompletion } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
-import { isLlamaServerRunning } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
-import { type GeneratedNote } from '#/modules/AudioEngine/repositories/nativeAIBridge';
+import { isNativeEngineReady } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
+import { type GeneratedNote } from '#/modules/AudioEngine/useCases/audioEngineQueries';
 import { PATTERN_TEMPLATES, filterTemplates } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
 
 // ── System prompt for music generation ──
@@ -64,7 +64,7 @@ export async function generateMidiViaLlm(
         return fallbackToPatternMatch(prompt);
     }
 
-    if (backend === 'native' && isLlamaServerRunning()) {
+    if (backend === 'native' && isNativeEngineReady()) {
         rawResponse = await generateNativeCompletion(MIDI_SYSTEM_PROMPT, userMessage);
     } else if (backend === 'cloud') {
         // Cloud fallback: use the same MIDI prompt but via native completion

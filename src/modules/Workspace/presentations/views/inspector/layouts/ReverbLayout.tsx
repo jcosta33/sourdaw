@@ -5,7 +5,7 @@ import { type ReactElement } from 'react';
 import { Card } from '#/components/ui/card';
 import { type DeviceLayoutProps, SectionHeader, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
 import { DeviceParameterControl } from '../DeviceParameterControl';
-import { ReverbDecay } from '../../../components/ReverbDecay';
+import { ReverbDecay } from '#/components/daw/visualizers/ReverbDecay';
 
 type P = DeviceLayoutProps['parameters'][number];
 const Param = ({ p, device, trackId }: { p: P; device: DeviceLayoutProps['device']; trackId: string }): ReactElement => (

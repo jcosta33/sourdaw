@@ -12,22 +12,12 @@ import {
 } from '../repositories/transport';
 import { type TransportState, defaultTransportState } from '../models/TransportState';
 import { type TempoChange, getTempoAtBeat as modelGetTempoAtBeat } from '../models/TempoMap';
-import {
-    getTimeSignatureAtBeat as modelGetTimeSignatureAtBeat,
-    type TimeSignatureChange,
-} from '../models/TimeSignatureMap';
+import { type TimeSignatureChange } from '../models/TimeSignatureMap';
 import { transportStore } from '../stores/transportStore';
 import { tempoMapStore } from '../stores/tempoMapStore';
 
 export { defaultTransportState };
 export type { TransportState, TempoChange, TimeSignatureChange };
-
-/** Get the time signature at a given beat. */
-export function getTimeSignatureAtBeat(
-    ...args: Parameters<typeof modelGetTimeSignatureAtBeat>
-): ReturnType<typeof modelGetTimeSignatureAtBeat> {
-    return modelGetTimeSignatureAtBeat(...args);
-}
 
 /** Get the current transport state snapshot. */
 export function getTransportState(): TransportState | null {

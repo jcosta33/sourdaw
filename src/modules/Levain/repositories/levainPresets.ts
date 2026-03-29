@@ -44,14 +44,6 @@ export const FACTORY_PRESETS: PresetEntry[] = [
     { id: 'ens-brass-section', name: 'Brass Section', category: 'ensemble', level: 'build', description: 'Hrn + Tpt + Tbn + Tba', instrumentId: 'horn' },
 ];
 
-export function getPresetsByCategory(category: PresetCategory): PresetEntry[] {
-    return FACTORY_PRESETS.filter((p) => p.category === category);
-}
-
-export function getPresetsByLevel(level: PresetLevel): PresetEntry[] {
-    return FACTORY_PRESETS.filter((p) => p.level === level);
-}
-
 export function loadPreset(presetId: string): LevainPatch | null {
     const entry = FACTORY_PRESETS.find((p) => p.id === presetId);
     if (!entry) {

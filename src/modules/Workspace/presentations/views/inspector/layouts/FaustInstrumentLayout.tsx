@@ -12,9 +12,9 @@ import {
     registerPrefixLayout,
 } from '../deviceLayoutRegistry';
 import { DeviceParameterControl } from '../DeviceParameterControl';
-import { FilterResponse } from '../../../components/FilterResponse';
-import { ADSREnvelope } from '../../../components/ADSREnvelope';
-import { OscillatorWaveform } from '../../../components/OscillatorWaveform';
+import { FilterResponse } from '#/components/daw/visualizers/FilterResponse';
+import { ADSREnvelope } from '#/components/daw/visualizers/ADSREnvelope';
+import { OscillatorWaveform } from '#/components/daw/visualizers/OscillatorWaveform';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
 
 type P = DeviceLayoutProps['parameters'][number];

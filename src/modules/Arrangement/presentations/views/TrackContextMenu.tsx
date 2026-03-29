@@ -1,5 +1,5 @@
 import { type ReactElement,
-    type MouseEvent, type ReactNode, useState, useRef, useEffect } from 'react';
+    type MouseEvent, type ReactNode, useState, useRef } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 import { removeTrack } from '../../useCases/removeTrack';
 import { toggleSoloSafe } from '../../useCases/toggleTrackState/toggleSoloSafe';
@@ -15,6 +15,7 @@ import { importMidiFile } from '#/modules/MIDI/useCases/importMidiFile';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { type Track, type InputMonitoring } from '../../models/Track';
 import { TRACK_COLOR_PRESETS } from '#/helpers/UI/colorPresets';
+import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
 
 
 
@@ -46,18 +47,8 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
         setRenaming(false);
     };
 
-    useEffect(() => {
-        if (!position) {
-            return;
-        }
-        const handleEscape = (e: globalThis.KeyboardEvent) => {
-            if (e.key === 'Escape') {
-                close();
-            }
-        };
-        document.addEventListener('keydown', handleEscape);
-        return () => document.removeEventListener('keydown', handleEscape);
-    }, [position]);
+    const menuRef = useRef<HTMLDivElement>(null);
+    useContextMenuDismiss(menuRef, close);
 
     const handleDuplicate = () => {
         const newTrack = addTrack({ name: `${track.name} (copy)`, kind: track.kind });
@@ -193,7 +184,9 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
         {
             label: 'Delete Track',
             action: () => {
-                removeTrack(track.id);
+                if (window.confirm('Are you sure you want to delete this track? This action cannot be undone.')) {
+                    removeTrack(track.id);
+                }
                 close();
             },
             destructive: true,
@@ -235,8 +228,12 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                 <>
                     <div className="fixed inset-0 z-40" onClick={close} />
                     <div
-                        className="fixed z-50 min-w-44 rounded-md border border-border bg-popover p-1 shadow-lg"
-                        style={{ left: position.x, top: position.y }}
+                        ref={menuRef}
+                        className="fixed z-50 min-w-[200px] rounded-md border border-border bg-popover py-1 shadow-md animate-in fade-in zoom-in-95"
+                        style={{
+                            left: Math.min(position.x, window.innerWidth - 220),
+                            top: Math.min(position.y, window.innerHeight - 300),
+                        }}
                         role="menu"
                     >
                         {renaming ? (

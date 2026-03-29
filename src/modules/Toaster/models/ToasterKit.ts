@@ -194,7 +194,3 @@ export function createDefaultKit(): ToasterKit {
     };
 }
 
-export const MACRO_LABELS = [
-    'Tune', 'Decay', 'Color', 'Punch',
-    'Space', 'Drive', 'Swing', 'Dynamics',
-] as const;

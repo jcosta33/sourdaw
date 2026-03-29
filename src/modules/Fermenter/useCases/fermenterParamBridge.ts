@@ -7,7 +7,7 @@
  */
 
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
-import { getAllTracks } from '#/modules/Arrangement/repositories/track/queries';
+import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
 import { type FermenterPatch } from '../models/FermenterPatch';
 import { setFermenterParam } from '../stores/fermenterStore';
 
@@ -15,11 +15,6 @@ type DeviceRef = { trackId: string; deviceId: string };
 
 let cachedRefs: DeviceRef[] | null = null;
 let cacheStaleTimer: ReturnType<typeof setTimeout> | null = null;
-
-/** Invalidate cache so next param change re-scans. */
-export function invalidateFermenterCache(): void {
-    cachedRefs = null;
-}
 
 function getActiveDevices(): DeviceRef[] {
     if (cachedRefs) return cachedRefs;

@@ -1,11 +1,6 @@
 import { invokeAI } from './isTauri';
 
-export type GeneratedNote = {
-    pitch: number;
-    velocity: number;
-    start_beat: number;
-    duration_beats: number;
-};
+import { type GeneratedNote } from '../../models/GeneratedNote';
 
 export type MidiGenerationResult = {
     notes: GeneratedNote[];

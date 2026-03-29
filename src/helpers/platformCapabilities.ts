@@ -68,5 +68,3 @@ export const DISABLED_REASONS = {
     voiceCommands: 'Voice commands require the desktop app',
     multiTrackRecording: 'Multi-track recording requires the desktop app',
 } as const;
-
-export type DisabledReason = (typeof DISABLED_REASONS)[keyof typeof DISABLED_REASONS];

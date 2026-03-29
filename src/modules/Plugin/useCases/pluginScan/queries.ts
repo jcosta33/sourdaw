@@ -4,14 +4,6 @@ export type { ScannedPlugin };
 
 const getState = () => pluginScanStore.value ?? defaultPluginScanState;
 
-export function getScannedPlugins(): ScannedPlugin[] {
-    return getState().scannedPlugins;
-}
-
-export function getScannedPluginsByFormat(format: string): ScannedPlugin[] {
-    return getState().scannedPlugins.filter((p) => p.format.toLowerCase() === format.toLowerCase());
-}
-
 export function findPluginByName(name: string): ScannedPlugin | undefined {
     const lower = name.toLowerCase();
     return (

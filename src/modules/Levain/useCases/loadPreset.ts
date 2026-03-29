@@ -5,19 +5,8 @@
 
 import { type LevainPatch, createDefaultPatch, type InstrumentId } from '../models/LevainPatch';
 import { levainStore } from '../stores/levainStore';
-import { loadPreset as loadPresetFromRepo } from '../repositories/levainPresets';
-import { setLevainParamWithAudio } from './levainParamBridge';
 
-/**
- * Load a factory preset by ID.
- */
-export function loadFactoryPreset(presetId: string): void {
-    const patch = loadPresetFromRepo(presetId);
-    if (!patch) {
-        return;
-    }
-    applyPatch(patch);
-}
+import { setLevainParamWithAudio } from './levainParamBridge';
 
 /**
  * Load an instrument with default settings.

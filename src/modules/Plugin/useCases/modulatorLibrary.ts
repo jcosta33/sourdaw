@@ -10,9 +10,7 @@
  *   To implement: connect ModulationRoute targets to live AudioParams via
  *   an AudioWorklet or rAF render loop in the web-audio-engine.
  */
-import { createModulationSource } from '#/modules/Plugin/useCases/modulationSystem/createModulationSource';
-import { updateModulationSourceParam } from '#/modules/Plugin/useCases/modulationSystem/updateModulationSourceParam';
-import type { ModulationSource, ModulationSourceType } from '#/modules/Plugin/useCases/modulationSystem/types';
+import type { ModulationSourceType } from '#/modules/Plugin/useCases/modulationSystem/types';
 
 export type ModulatorPreset = {
     id: string;
@@ -145,31 +143,3 @@ export const MODULATOR_PRESETS: ModulatorPreset[] = [
     },
 ];
 
-/**
- * Instantiate a modulation source from a preset.
- */
-export function createFromPreset(presetId: string): ModulationSource | null {
-    const preset = MODULATOR_PRESETS.find((p) => p.id === presetId);
-    if (!preset) {
-        return null;
-    }
-
-    const source = createModulationSource(preset.sourceType, preset.name);
-    for (const [param, value] of Object.entries(preset.parameters)) {
-        updateModulationSourceParam(source.id, param, value);
-    }
-    return source;
-}
-
-/**
- * Get presets grouped by category.
- */
-export function getPresetsByCategory(): Map<string, ModulatorPreset[]> {
-    const grouped = new Map<string, ModulatorPreset[]>();
-    for (const preset of MODULATOR_PRESETS) {
-        const list = grouped.get(preset.category) ?? [];
-        list.push(preset);
-        grouped.set(preset.category, list);
-    }
-    return grouped;
-}

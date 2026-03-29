@@ -6,9 +6,10 @@ export type { AutomationLane, AutomationPoint, AutomationCurveType } from '#/mod
 export { createAutomationLane } from '#/modules/Automation/useCases/automation/createAutomationLane';
 export type { ChordEvent } from '#/modules/MIDI/models/ChordEvent';
 export type { DeviceParameter, DeviceParameterType } from '#/modules/Arrangement/models/DeviceParameter';
-export type { SoundPresetCategory, SoundPreset } from '#/modules/Arrangement/models/SoundPreset';
+export type { SoundPresetCategory, SoundPreset, DevicePreset } from '#/modules/Arrangement/models/SoundPreset';
 export type { WarpState } from '#/modules/Arrangement/models/WarpMarker';
 export type { MidiLearnState } from '#/modules/MIDI/stores/midiLearnStore';
+export type { MixerSnapshot } from '#/modules/Arrangement/models/MixerSnapshotTypes';
 
 export { BUILTIN_PLUGINS, isDeviceSupportedOnCurrentPlatform, getPluginById } from '#/modules/Arrangement/models/DeviceParameter';
 export { createTrack } from '#/modules/Arrangement/models/Track';
@@ -20,15 +21,13 @@ export { getPlatformPlugins } from '#/modules/Arrangement/repositories/getPlatfo
 // ── Track queries ────────────────────────────────────────────────────
 export { getAllTracks } from './getAllTracks';
 export { getTrackById } from './getTrackById';
-export { getTrackStoreState, getTrackState, setTrackStoreState } from './trackStoreAccess';
+export { getTrackStoreState, setTrackStoreState } from './trackStoreAccess';
 
 // ── Track mutations (contract wrappers for cross-module consumers) ───
 export {
     setTrackState,
     updateTrack,
     updateClip,
-    updateClipsOnAllTracks,
-    mapAllTracks,
     type TrackState,
 } from './trackMutations';
 

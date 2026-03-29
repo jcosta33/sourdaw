@@ -5,7 +5,7 @@
  */
 import { type ReactElement, useRef, useState, useCallback, useEffect } from 'react';
 import { type FermenterPatch, DEFAULT_PATCH } from '../../models/FermenterPatch';
-import { FERMENTER_PRESETS } from '../../repositories/fermenterPresets';
+import { FERMENTER_PRESETS } from '../../useCases/fermenterQueries';
 import { bilinearPatch, applyMorphedPatch } from '../../useCases/presetMorph';
 
 type TransformPadProps = Record<string, never>;

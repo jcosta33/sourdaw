@@ -57,23 +57,3 @@ export function loadFermenterPatch(patch: FermenterPatch): void {
     }
 }
 
-export function updateFermenterMetrics(activeVoices: number, peakL: number, peakR: number): void {
-    const state = fermenterStore.value;
-    if (state) {
-        fermenterStore.set({ ...state, activeVoices, peakL, peakR });
-    }
-}
-
-export function updateFermenterScope(buffer: Float32Array): void {
-    const state = fermenterStore.value;
-    if (state) {
-        fermenterStore.set({ ...state, scopeBuffer: buffer });
-    }
-}
-
-export function setFermenterEngineReady(ready: boolean): void {
-    const state = fermenterStore.value;
-    if (state) {
-        fermenterStore.set({ ...state, engineReady: ready });
-    }
-}

@@ -2,7 +2,7 @@ import { type ReactElement, useSyncExternalStore } from 'react';
 import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores/trackStore';
 import { getAllSidechainRoutes } from '#/modules/Routing/useCases/sidechain';
 import { selectTrack } from '#/modules/Arrangement/useCases/toggleTrackState/selectTrack';
-import { type Track } from '#/modules/Arrangement/models/Track';
+import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
 import { type SidechainRoute } from '#/modules/Routing/useCases/sidechain';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 

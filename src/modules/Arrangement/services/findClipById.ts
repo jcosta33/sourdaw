@@ -1,11 +1,11 @@
-import { getTrackState } from '#/modules/Arrangement/useCases/trackQueries/trackStoreAccess';
+import { getTrackStoreState } from '#/modules/Arrangement/useCases/trackQueries/trackStoreAccess';
 import { type Clip } from '#/modules/Arrangement/models/Track';
 
 /**
  * Finds a clip by ID across all tracks.
  */
 export function findClipById(clipId: string): { clip: Clip; trackId: string } | null {
-    const state = getTrackState();
+    const state = getTrackStoreState();
     if (!state) {
         return null;
     }

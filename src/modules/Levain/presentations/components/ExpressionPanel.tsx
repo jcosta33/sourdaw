@@ -8,12 +8,12 @@
 import { type ReactElement, useRef, useEffect } from 'react';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { type ExpressionConfig, type LegatoConfig } from '../../models/LevainPatch';
-import { setLevainParamWithAudio } from '../../useCases/levainParamBridge';
-import { setLegatoEnabled } from '../../stores/levainStore';
 
 type ExpressionPanelProps = {
     expression: ExpressionConfig;
     legato: LegatoConfig;
+    onChangeExp: (partial: Partial<ExpressionConfig>) => void;
+    onChangeLeg: (partial: Partial<LegatoConfig>) => void;
 };
 
 // ── Dynamics curve visualization ────────────────────────────────────
@@ -106,11 +106,7 @@ const DynamicsCurve = ({ curve, crossfadeTime }: { curve: string; crossfadeTime:
     );
 };
 
-export const ExpressionPanel = ({ expression, legato }: ExpressionPanelProps): ReactElement => {
-    const update = (partial: Partial<ExpressionConfig>): void => {
-        setLevainParamWithAudio('expression', { ...expression, ...partial } as ExpressionConfig);
-    };
-
+export const ExpressionPanel = ({ expression, legato, onChangeExp, onChangeLeg }: ExpressionPanelProps): ReactElement => {
     return (
         <div className="space-y-3 max-w-[340px]">
             {/* Header */}
@@ -128,7 +124,7 @@ export const ExpressionPanel = ({ expression, legato }: ExpressionPanelProps): R
                                     ? 'bg-amber-500/20 text-amber-300'
                                     : 'text-muted-foreground/60 hover:text-foreground'
                             }`}
-                            onClick={() => update({ cc1Curve: c })}
+                            onClick={() => onChangeExp({ cc1Curve: c })}
                         >
                             {c === 's-curve' ? 'S-Curve' : c.charAt(0).toUpperCase() + c.slice(1)}
                         </button>
@@ -142,7 +138,7 @@ export const ExpressionPanel = ({ expression, legato }: ExpressionPanelProps): R
                             ? 'bg-emerald-500/20 text-emerald-300'
                             : 'text-muted-foreground/40 hover:text-foreground'
                     }`}
-                    onClick={() => setLegatoEnabled(!legato.enabled)}
+                    onClick={() => onChangeLeg({ enabled: !legato.enabled })}
                 >
                     Legato {legato.enabled ? 'On' : 'Off'}
                 </button>
@@ -159,7 +155,7 @@ export const ExpressionPanel = ({ expression, legato }: ExpressionPanelProps): R
                 <div className="flex flex-col items-center gap-0">
                     <RotaryKnob
                         value={expression.dynamicCrossfadeTime}
-                        onChange={(v) => update({ dynamicCrossfadeTime: v })}
+                        onChange={(v) => onChangeExp({ dynamicCrossfadeTime: v })}
                         min={0.02}
                         max={0.3}
                         step={0.005}
@@ -178,7 +174,7 @@ export const ExpressionPanel = ({ expression, legato }: ExpressionPanelProps): R
                     <div className="flex flex-col items-center gap-0">
                         <RotaryKnob
                             value={expression.vibratoDepthMax}
-                            onChange={(v) => update({ vibratoDepthMax: v })}
+                            onChange={(v) => onChangeExp({ vibratoDepthMax: v })}
                             min={0}
                             max={50}
                             step={1}
@@ -196,7 +192,7 @@ export const ExpressionPanel = ({ expression, legato }: ExpressionPanelProps): R
                     <div className="flex flex-col items-center gap-0">
                         <RotaryKnob
                             value={expression.vibratoRateMax}
-                            onChange={(v) => update({ vibratoRateMax: v })}
+                            onChange={(v) => onChangeExp({ vibratoRateMax: v })}
                             min={2}
                             max={9}
                             step={0.1}
@@ -214,7 +210,7 @@ export const ExpressionPanel = ({ expression, legato }: ExpressionPanelProps): R
                     <div className="flex flex-col items-center gap-0">
                         <RotaryKnob
                             value={expression.vibratoOnsetDelay}
-                            onChange={(v) => update({ vibratoOnsetDelay: v })}
+                            onChange={(v) => onChangeExp({ vibratoOnsetDelay: v })}
                             min={0}
                             max={0.5}
                             step={0.01}

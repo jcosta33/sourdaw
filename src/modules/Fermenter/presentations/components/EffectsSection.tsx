@@ -5,10 +5,10 @@
  */
 import { type ReactElement, useState } from 'react';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { EQCurve } from '#/modules/Workspace/presentations/components/EQCurve';
-import { CompressorCurve } from '#/modules/Workspace/presentations/components/CompressorCurve';
-import { DelayTaps } from '#/modules/Workspace/presentations/components/DelayTaps';
-import { DistortionCurve } from '#/modules/Workspace/presentations/components/DistortionCurve';
+import { EQCurve } from '#/components/daw/visualizers/EQCurve';
+import { CompressorCurve } from '#/components/daw/visualizers/CompressorCurve';
+import { DelayTaps } from '#/components/daw/visualizers/DelayTaps';
+import { DistortionCurve } from '#/components/daw/visualizers/DistortionCurve';
 
 type EffectsSectionProps = {
     reverbMix: number; reverbDecay: number;

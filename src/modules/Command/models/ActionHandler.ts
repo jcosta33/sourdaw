@@ -1,4 +1,4 @@
-import { type AppAction, type AppActionType } from './AppAction';
+import { type AppAction } from './AppAction';
 
 export type ActionResult = {
     label: string;
@@ -11,6 +11,3 @@ export type ActionHandler<T extends AppAction = AppAction> = {
     undoable: boolean;
 };
 
-export type ActionHandlerMap = {
-    [K in AppActionType]: ActionHandler<Extract<AppAction, { type: K }>>;
-};

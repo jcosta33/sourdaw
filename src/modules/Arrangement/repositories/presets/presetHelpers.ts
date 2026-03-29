@@ -87,12 +87,6 @@ export const delay = (
     },
 });
 
-export const gain = (name: string, level: number): DevicePreset => ({
-    type: 'builtin-gain',
-    name,
-    parameterValues: { 'gain-level': level },
-});
-
 export const flanger = (
     name: string,
     params: Partial<Record<'flanger-rate' | 'flanger-depth' | 'flanger-feedback' | 'flanger-mix', number>>

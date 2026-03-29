@@ -11,10 +11,8 @@
  *   3. For prefix-based matching (e.g. all faust-*), use resolveDeviceLayout()
  */
 import { type ReactElement, type ComponentType } from 'react';
-import { Card } from '#/components/ui/card';
-import { type DeviceParameter } from '#/modules/Arrangement/models/DeviceParameter';
-import { type Device } from '#/modules/Arrangement/models/Track';
-import { DeviceParameterControl } from './DeviceParameterControl';
+import { type DeviceParameter } from '#/modules/Arrangement/useCases/trackQueries';
+import { type Device } from '#/modules/Arrangement/useCases/trackQueries';
 
 export type DeviceLayoutProps = {
     device: Device;
@@ -79,23 +77,3 @@ export const SectionHeader = ({ title }: { title: string }): ReactElement => (
     </div>
 );
 
-/** Responsive parameter card grid used by all effect layouts */
-export const ParamGrid = ({
-    params,
-    device,
-    trackId,
-    cols = 2,
-}: {
-    params: DeviceParameter[];
-    device: Device;
-    trackId: string;
-    cols?: number;
-}): ReactElement => (
-    <div className={`grid grid-cols-1 @md:grid-cols-${cols} gap-2`}>
-        {params.map((param) => (
-            <Card key={param.id} className="rounded-md shadow-none bg-surface-base border-border/50 p-3 w-full pb-4">
-                <DeviceParameterControl param={param} device={device} trackId={trackId} />
-            </Card>
-        ))}
-    </div>
-);

@@ -30,7 +30,7 @@ import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { type AppAction } from '#/modules/Command/useCases/commandQueries';
 import { describeAction } from '#/modules/Command/useCases/actionLabels';
 import { type IntentResult } from '#/modules/AiRuntime/models/IntentResult';
-import { type PresetCategory, type PresetContext } from '#/modules/AiRuntime/models/presetActions/registry';
+import { type PresetContext } from '#/modules/AiRuntime/models/presetActions/registry';
 
 const logger = Container.getInstance().get(Logger);
 
@@ -42,13 +42,6 @@ const subscribeTrack = (cb: () => void): (() => void) => trackStore.subscribe(cb
 const getTrackSnapshot = () => trackStore.value;
 const subscribeWs = (cb: () => void): (() => void) => workspaceStore.subscribe(cb);
 const getWsSnapshot = () => workspaceStore.value;
-
-// ── Category icon keys ──────────────────────────────────────────────────
-
-export const PROMPT_CATEGORY_KEYS: readonly PresetCategory[] = [
-    'Transport', 'Track', 'Clip', 'MIDI', 'Device',
-    'Generate', 'Workspace', 'Mix', 'Automation', 'File', 'Collaboration',
-] as const;
 
 // ── Selection tag type ──────────────────────────────────────────────────
 

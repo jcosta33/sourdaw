@@ -24,12 +24,7 @@ export type DeviceNodeEntry = {
     };
 };
 
-export type BuildDeviceChainInput = {
-    ctx: BaseAudioContext;
-    devices: Device[];
-    inputNode: AudioNode;
-    outputNode: AudioNode;
-};
+
 
 export type BuildDeviceChainOutput = DeviceNodeEntry[];
 

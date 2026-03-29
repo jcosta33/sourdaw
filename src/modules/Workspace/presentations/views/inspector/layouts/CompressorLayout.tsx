@@ -5,7 +5,7 @@ import { type ReactElement } from 'react';
 import { Card } from '#/components/ui/card';
 import { type DeviceLayoutProps, SectionHeader, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
 import { DeviceParameterControl } from '../DeviceParameterControl';
-import { CompressorCurve } from '../../../components/CompressorCurve';
+import { CompressorCurve } from '#/components/daw/visualizers/CompressorCurve';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
 
 type P = DeviceLayoutProps['parameters'][number];

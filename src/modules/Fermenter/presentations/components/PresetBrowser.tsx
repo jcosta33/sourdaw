@@ -4,16 +4,18 @@
  */
 import { type ReactElement, useState, useMemo } from 'react';
 import { Search, Star, ChevronRight } from 'lucide-react';
-import { FERMENTER_PRESETS } from '../../repositories/fermenterPresets';
+import { type SoundPreset } from '#/modules/Arrangement/useCases/trackQueries';
 
 type PresetBrowserProps = {
     currentName: string;
     userPatches: Array<{ id: string; name: string }>;
+    presets: SoundPreset[];
     onLoadPreset: (presetId: string) => void;
 };
 
 const CATEGORIES = [
     { id: 'all', label: 'All', icon: null },
+    { id: 'user', label: 'My Patches', color: 'var(--color-accent-peach)' },
     { id: 'synth', label: 'Synth', color: 'var(--color-accent-lavender)' },
     { id: 'bass', label: 'Bass', color: 'var(--color-state-danger)' },
     { id: 'lead', label: 'Lead', color: 'var(--color-accent-peach)' },
@@ -22,20 +24,19 @@ const CATEGORIES = [
     { id: 'strings', label: 'Strings', color: 'var(--color-accent-lavender)' },
     { id: 'drums', label: 'Drums', color: 'var(--color-accent-peach)' },
     { id: 'fx', label: 'FX', color: 'var(--color-accent-lavender)' },
-    { id: 'user', label: 'My Patches', color: 'var(--color-accent-peach)' },
 ];
 
 const TAGS = ['fermenter', 'analog', 'fm', 'physical', 'granular', 'additive', 'acid', 'warm', 'aggressive', 'ambient', 'unison', 'warp', 'moog', 'diode'];
 
-export const PresetBrowser = ({ currentName, userPatches, onLoadPreset }: PresetBrowserProps): ReactElement => {
+export const PresetBrowser = ({ currentName, userPatches, presets, onLoadPreset }: PresetBrowserProps): ReactElement => {
     const [search, setSearch] = useState('');
     const [category, setCategory] = useState('all');
     const [selectedTag, setSelectedTag] = useState<string | null>(null);
 
     const filtered = useMemo(() => {
         let results = category === 'user'
-            ? userPatches.map((p) => ({ id: p.id, name: p.name, category: 'user' as string, tags: [] as string[] }))
-            : FERMENTER_PRESETS.map((p) => ({ id: p.id, name: p.name.replace('Fermenter — ', ''), category: p.category, tags: p.tags }));
+            ? userPatches.map((p) => ({ id: p.id, name: p.name, category: 'user', tags: [] as string[] }))
+            : presets.map((p) => ({ id: p.id, name: p.name.replace('Fermenter — ', ''), category: p.category, tags: p.tags || [] }));
 
         if (category !== 'all' && category !== 'user') {
             results = results.filter((p) => p.category === category);
@@ -45,7 +46,7 @@ export const PresetBrowser = ({ currentName, userPatches, onLoadPreset }: Preset
             const q = search.toLowerCase();
             results = results.filter((p) =>
                 p.name.toLowerCase().includes(q) ||
-                p.tags.some((t) => t.includes(q))
+                p.tags.some((t) => t.toLowerCase().includes(q))
             );
         }
 
@@ -54,7 +55,7 @@ export const PresetBrowser = ({ currentName, userPatches, onLoadPreset }: Preset
         }
 
         return results;
-    }, [search, category, selectedTag, userPatches]);
+    }, [search, category, selectedTag, userPatches, presets]);
 
     return (
         <div className="flex flex-col h-full">

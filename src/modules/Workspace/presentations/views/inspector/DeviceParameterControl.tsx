@@ -8,7 +8,7 @@ import { addAutomationLane } from '#/modules/Automation/useCases/automation/addA
 import { removeAutomationLane } from '#/modules/Automation/useCases/automation/removeAutomationLane';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { type Device } from '#/modules/Arrangement/models/Track';
+import { type Device } from '#/modules/Arrangement/useCases/trackQueries';
 
 type DeviceParameterControlProps = {
     param: DeviceParameter;

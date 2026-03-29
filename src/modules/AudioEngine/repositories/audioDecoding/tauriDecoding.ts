@@ -21,11 +21,6 @@ export type DecodedAudio = {
     totalFrames: number;
 };
 
-export type WaveformPeak = {
-    min: number;
-    max: number;
-};
-
 // ── Rust ↔ TS key mapping helpers ───────────────────────────────────────
 
 type RustAudioFileInfo = {

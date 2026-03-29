@@ -22,13 +22,6 @@ export function toggleRippleEditing(): void {
 }
 
 /**
- * Check if ripple editing is currently enabled.
- */
-export function isRippleEditing(): boolean {
-    return workspaceStore.value?.rippleEditing ?? false;
-}
-
-/**
  * Delete clips and optionally ripple-shift: moves all subsequent clips
  * on the same track left to fill the gap.
  *

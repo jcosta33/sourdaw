@@ -4,7 +4,7 @@
  * Handles: step triggers, probability, conditional triggers, swing, ratcheting, param locks.
  */
 
-import { audioEngine } from '#/modules/AudioEngine/repositories/createWebAudioEngine';
+import { getAudioTime } from '#/modules/AudioEngine/useCases/engineAccess';
 import { toasterStore } from '../stores/toasterStore';
 import { type Step } from '../models/ToasterKit';
 import { triggerToasterPad } from './triggerPad';
@@ -107,7 +107,7 @@ function tick(currentStep: number, bpm: number, stepsPerBeat: number): void {
     if (nextStep === 0) { playCount++; }
 
     nextTickTime += stepDurationSec;
-    const now = audioEngine.context.currentTime;
+    const now = getAudioTime();
     const delayMs = Math.max(1, (nextTickTime - now) * 1000);
 
     timeoutId = setTimeout(() => tick(nextStep, bpm, stepsPerBeat), delayMs);
@@ -117,7 +117,7 @@ export function startSequencer(bpm: number, stepsPerBeat: number = 4): void {
     stopSequencer();
     running = true;
     playCount = 0;
-    nextTickTime = audioEngine.context.currentTime;
+    nextTickTime = getAudioTime();
     tick(0, bpm, stepsPerBeat);
 }
 
@@ -132,8 +132,4 @@ export function stopSequencer(): void {
         toasterStore.set({ ...state, isPlaying: false, currentStep: 0 });
     }
     playCount = 0;
-}
-
-export function isSequencerPlaying(): boolean {
-    return running;
 }

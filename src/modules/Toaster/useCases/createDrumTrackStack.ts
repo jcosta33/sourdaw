@@ -10,15 +10,15 @@
  * - No extra "instrument" track — the folder IS the instrument
  */
 
-import { createTrack } from '#/modules/Arrangement/models/Track';
-import { getTrackState, setTrackState } from '#/modules/Arrangement/repositories/track';
+import { createTrack } from '#/modules/Arrangement/useCases/trackQueries';
+import { getTrackStoreState, setTrackStoreState } from '#/modules/Arrangement/useCases/trackQueries';
 import { addDeviceToStrip } from '#/modules/AudioEngine/useCases/deviceControls';
 import { DEFAULT_PAD_NAMES, PAD_COLORS } from '../models/ToasterKit';
 import { eventBus } from '#/app/bootstrap';
 import { TrackAddedEvent } from '#/modules/Arrangement/events/TrackAddedEvent';
 
 export function createDrumTrackStack(): string | null {
-    const state = getTrackState();
+    const state = getTrackStoreState();
     if (!state) { return null; }
 
     // Parent is a folder — gives it collapse/expand UI, smaller height, groups children
@@ -47,7 +47,7 @@ export function createDrumTrackStack(): string | null {
     });
 
     // Commit all tracks in one batch
-    setTrackState({
+    setTrackStoreState({
         ...state,
         tracks: [...state.tracks, parent, ...children],
         selectedTrackId: parent.id,

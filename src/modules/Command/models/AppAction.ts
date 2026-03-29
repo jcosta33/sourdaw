@@ -272,21 +272,3 @@ export type AppAction =
 export type TrackKind = 'audio' | 'midi' | 'bus' | 'master' | 'folder';
 
 export type AppActionType = AppAction['type'];
-
-export const DESTRUCTIVE_ACTIONS: ReadonlySet<AppActionType> = new Set([
-    'removeTrack',
-    'removeAllTracks',
-    'removeClip',
-    'removeDevice',
-    'removeMarker',
-    'bounceInPlace',
-]);
-
-export const REQUIRES_CONFIRMATION: ReadonlySet<AppActionType> = new Set([
-    'removeTrack',
-    'removeAllTracks',
-    'removeClip',
-    'removeDevice',
-    'bounceInPlace',
-    'deleteTrackAlternative',
-]);

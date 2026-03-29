@@ -7,10 +7,9 @@
 import { type ReactElement, useRef, useEffect } from 'react';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { type LegatoConfig } from '../../models/LevainPatch';
-import { setLevainParamWithAudio } from '../../useCases/levainParamBridge';
-
 type LegatoTuningProps = {
     config: LegatoConfig;
+    onChange: (partial: Partial<LegatoConfig>) => void;
 };
 
 // ── Legato visualization ────────────────────────────────────────────
@@ -102,9 +101,9 @@ const LegatoDiagram = ({ slowMs, fastMs }: { slowMs: number; fastMs: number }): 
     );
 };
 
-export const LegatoTuning = ({ config }: LegatoTuningProps): ReactElement => {
+export const LegatoTuning = ({ config, onChange }: LegatoTuningProps): ReactElement => {
     const update = (partial: Partial<LegatoConfig>): void => {
-        setLevainParamWithAudio('legato', { ...config, ...partial });
+        onChange(partial);
     };
 
     return (

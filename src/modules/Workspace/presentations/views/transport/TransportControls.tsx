@@ -1,4 +1,5 @@
-import { type ReactElement, useState, useEffect } from 'react';
+import { type ReactElement, useSyncExternalStore } from 'react';
+import { Slider } from '#/components/ui/slider';
 import { Play, Pause, Square, Circle, Repeat, Scissors, ListOrdered, Link as LinkIcon, Layers } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { LatchButton } from '#/components/daw/LatchButton';
@@ -17,7 +18,8 @@ import {
     toggleCountIn,
     togglePreRoll,
 } from '#/modules/Transport/useCases/transportControls';
-import { enableLink, disableLink, getLinkStatus } from '#/modules/AudioEngine/useCases/engineAccess';
+import { enableLink, disableLink } from '#/modules/AudioEngine/useCases/engineAccess';
+import { subscribeToLinkStatus, getLinkStatusSnapshot } from '#/modules/AudioEngine/stores/linkStatusStore';
 
 type TransportControlsProps = {
     isPlaying: boolean;
@@ -46,26 +48,17 @@ export const TransportControls = ({
     preRollEnabled,
     anyTrackArmed,
 }: TransportControlsProps): ReactElement => {
-    const [linkEnabled, setLinkEnabled] = useState(false);
-
-    useEffect(() => {
-        getLinkStatus()
-            .then((status) => setLinkEnabled(status.enabled))
-            .catch(() => {});
-    }, []);
+    const linkEnabled = useSyncExternalStore(subscribeToLinkStatus, getLinkStatusSnapshot);
 
     const handleLinkToggle = async () => {
         try {
             if (linkEnabled) {
                 await disableLink();
-                setLinkEnabled(false);
             } else {
                 await enableLink();
-                setLinkEnabled(true);
+                // Since engine update might not be instant, we can optimistically disable it
             }
-        } catch {
-            // Ignore if tauri bridge fails
-        }
+        } catch {}
     };
 
     return (
@@ -208,15 +201,14 @@ export const TransportControls = ({
             {metronomeEnabled ? (
                 <Tooltip>
                     <TooltipTrigger asChild>
-                        <div className="flex items-center px-1">
-                            <input
-                                type="range"
+                        <div className="flex items-center px-2 py-1">
+                            <Slider
                                 min={0}
                                 max={1}
                                 step={0.01}
-                                value={metronomeVolume}
-                                onChange={(e) => setMetronomeVolume(parseFloat(e.target.value))}
-                                className="h-2 w-16 cursor-pointer rounded-full appearance-none bg-bg-slot shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-text-secondary [&::-webkit-slider-thumb]:rounded-sm"
+                                value={[metronomeVolume]}
+                                onValueChange={(val) => setMetronomeVolume(val[0] ?? 0)}
+                                className="w-16 h-3"
                                 aria-label={`Metronome volume: ${Math.round(metronomeVolume * 100)}%`}
                             />
                         </div>

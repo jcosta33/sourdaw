@@ -49,13 +49,6 @@ export const levainStore = new Store<LevainState>(logger, {
 // State update functions
 // ---------------------------------------------------------------------------
 
-export function setLevainUiLevel(level: LevainUiLevel): void {
-    const state = levainStore.value;
-    if (state) {
-        levainStore.set({ ...state, uiLevel: level });
-    }
-}
-
 export function setLevainParam<K extends keyof LevainPatch>(
     key: K,
     value: LevainPatch[K],
@@ -144,13 +137,6 @@ export function setLegatoEnabled(enabled: boolean): void {
             },
         });
         sendLegatoEnabledToEngine(enabled);
-    }
-}
-
-export function updateEngineMetrics(activeVoices: number, peakL: number, peakR: number): void {
-    const state = levainStore.value;
-    if (state) {
-        levainStore.set({ ...state, activeVoices, peakL, peakR });
     }
 }
 

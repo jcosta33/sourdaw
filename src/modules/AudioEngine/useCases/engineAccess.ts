@@ -11,8 +11,6 @@ export const getAudioContext = (): AudioContext => {
     return audioEngine.context;
 };
 
-export const getAudioEngine = () => audioEngine;
-
 export const getEngineState = (): AudioEngineState => {
     return audioEngine.getState();
 };
@@ -41,8 +39,20 @@ export const getAudioSampleRate = (): number => {
     return audioEngine.context?.sampleRate ?? 44100;
 };
 
-export const getTrackStripAnalyser = (trackId: string): AnalyserNode | null => {
+export function getTrackAnalyser(trackId: string): AnalyserNode | null {
     return audioEngine.getTrackStrip(trackId)?.analyserNode ?? null;
+}
+
+export function getTrackStrip(trackId: string) {
+    return audioEngine.getTrackStrip(trackId);
+}
+
+export function ensureTrackStrip(trackId: string) {
+    return audioEngine.ensureTrackStrip(trackId);
+}
+
+export function getAudioTime(): number {
+    return audioEngine.context?.currentTime ?? 0;
 };
 
 // ─── Bus operations ────────────────────────────────────────────────────────────

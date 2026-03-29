@@ -3,7 +3,7 @@ import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { Save, X, ChevronRight, Star, Folder, Music2, Drum, Music } from 'lucide-react';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { type SoundPreset, type SoundPresetCategory } from '#/modules/Arrangement/models/SoundPreset';
+import { type SoundPreset, type SoundPresetCategory } from '#/modules/Arrangement/useCases/trackQueries';
 import { getFactoryPresets } from '#/modules/Arrangement/useCases/soundPresetLibrary';
 import { getUserPresets, saveCurrentAsPreset, deleteUserPreset } from '#/modules/Arrangement/useCases/preset/presetStorage';
 import { createTrackFromPreset, loadPresetToTrack } from '#/modules/Arrangement/useCases/preset/presetLoading';

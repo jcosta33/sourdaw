@@ -31,5 +31,5 @@ export { streamCloudChatCompletion } from '../repositories/cloudLlm';
 export { readLevels, readFrequencyBalance } from '../repositories/mixAnalysis';
 export { detectIssues, generateSuggestions } from '../transformers/mixAnalysisTransformers';
 export { generateWebLlmCompletion } from '../repositories/webLlm';
-export { generateNativeCompletion, isLlamaServerRunning } from '../repositories/nativeEngine';
+export { generateNativeCompletion, isNativeEngineReady } from '../repositories/nativeEngine';
 export { isComplexPrompt } from '../transformers/promptParser/parsing';

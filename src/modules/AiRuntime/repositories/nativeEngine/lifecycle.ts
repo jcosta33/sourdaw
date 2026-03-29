@@ -97,7 +97,3 @@ export function isNativeEngineReady(): boolean {
     return nativeEngineReady;
 }
 
-// Backward-compatible aliases
-export const initLlamaServer = initNativeEngine;
-export const stopLlamaServer = stopNativeEngine;
-export const isLlamaServerRunning = isNativeEngineReady;

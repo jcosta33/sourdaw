@@ -4,7 +4,7 @@
  * Can display master or per-track audio.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
-import { getMasterAnalyser, getTrackStripAnalyser } from '#/modules/AudioEngine/useCases/engineAccess';
+import { getMasterAnalyser, getTrackAnalyser } from '#/modules/AudioEngine/useCases/engineAccess';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type OscilloscopeProps = {
@@ -36,7 +36,7 @@ export const Oscilloscope = ({
 
         const draw = (): void => {
             const analyser = trackId
-                ? (getTrackStripAnalyser(trackId) ?? getMasterAnalyser())
+                ? (getTrackAnalyser(trackId) ?? getMasterAnalyser())
                 : getMasterAnalyser();
 
             const bufferLength = analyser.frequencyBinCount;

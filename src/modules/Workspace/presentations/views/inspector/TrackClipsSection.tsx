@@ -2,7 +2,7 @@ import { type ReactElement } from 'react';
 import { Card } from '#/components/ui/card';
 import { Button } from '#/components/ui/button';
 import { Check, X, Sparkles } from 'lucide-react';
-import { type Track } from '#/modules/Arrangement/models/Track';
+import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
 import { acceptGhostClip } from '#/modules/Arrangement/useCases/clip/acceptGhostClip';
 import { dismissGhostClip } from '#/modules/Arrangement/useCases/clip/dismissGhostClip';
 

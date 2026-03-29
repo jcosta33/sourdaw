@@ -2,15 +2,15 @@ import { type ReactElement, useState, useEffect, useRef, useSyncExternalStore } 
 import { Card } from '#/components/ui/card';
 import { Button } from '#/components/ui/button';
 import { Plus, Power, Trash2, Monitor, LayoutGrid } from 'lucide-react';
-import { getPlatformPlugins } from '#/modules/Arrangement/repositories/getPlatformPlugins';
-import { getPluginById } from '#/modules/Arrangement/models/DeviceParameter';
+import { getPlatformPlugins } from '#/modules/Arrangement/useCases/trackQueries';
+import { getPluginById } from '#/modules/Arrangement/useCases/trackQueries';
 import { bypassDevice } from '#/modules/Arrangement/useCases/device/bypassDevice';
 import { removeDevice } from '#/modules/Arrangement/useCases/device/removeDevice';
 import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
 import { addExternalDevice } from '#/modules/Arrangement/useCases/device/addExternalDevice';
 import { reorderDevices } from '#/modules/Arrangement/useCases/device/reorderDevices';
 import { pluginScanStore, defaultPluginScanState } from '#/modules/AudioEngine/stores/pluginScanStore';
-import { type Track } from '#/modules/Arrangement/models/Track';
+import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/helpers/platformCapabilities';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { cn } from '#/helpers/Styles/cn';

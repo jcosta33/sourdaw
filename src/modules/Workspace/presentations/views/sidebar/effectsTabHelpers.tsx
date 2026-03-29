@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { type LucideIcon } from 'lucide-react';
 import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
-import { type BUILTIN_PLUGINS } from '#/modules/Arrangement/models/DeviceParameter';
+import { type BUILTIN_PLUGINS } from '#/modules/Arrangement/useCases/trackQueries';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 

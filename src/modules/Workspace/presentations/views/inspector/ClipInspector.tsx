@@ -11,7 +11,7 @@ import { setClipGain } from '#/modules/Arrangement/useCases/clipEditing/setClipG
 import { setClipColor } from '#/modules/Arrangement/useCases/clipEditing/setClipColor';
 import { renameClip } from '#/modules/Arrangement/useCases/clipEditing/renameClip';
 import { setClipFollowAction } from '#/modules/Arrangement/useCases/clipEditing/setClipFollowAction';
-import { type Clip } from '#/modules/Arrangement/models/Track';
+import { type Clip } from '#/modules/Arrangement/useCases/trackQueries';
 import { CLIP_COLOR_PRESETS } from '#/helpers/UI/colorPresets';
 import { ClipGainEnvelopeSection } from './ClipGainEnvelopeSection';
 import { ClipAudioAiSection } from './ClipAudioAiSection';

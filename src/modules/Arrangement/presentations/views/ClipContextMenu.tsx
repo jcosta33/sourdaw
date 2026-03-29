@@ -1,4 +1,4 @@
-import { type ReactElement, useRef } from 'react';
+import { type ReactElement, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { selectClip } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
@@ -29,7 +29,7 @@ import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { notifyAiChange } from '#/modules/AiRuntime/useCases/notifyAiChange';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { menuBtnClass, menuSepClass, menuShortcutClass } from '#/helpers/UI/contextMenuStyles';
-import { useContextMenuDismiss } from '../hooks/useContextMenuDismiss';
+import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
 
 type ClipContextMenuProps = {
     x: number;
@@ -44,6 +44,8 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
     useContextMenuDismiss(menuRef, onClose);
 
     const clip = trackStore.value?.tracks.flatMap((t) => t.clips).find((c) => c.id === clipId);
+    const [isRenaming, setIsRenaming] = useState(false);
+    const [newName, setNewName] = useState(clip?.name ?? '');
     const isMidi = clip?.type === 'midi';
     const isAudio = clip?.type === 'audio';
     const isLocked = clip?.locked ?? false;
@@ -100,21 +102,40 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
             >
                 Edit Clip
             </button>
-            <button
-                type="button"
-                className={menuBtnClass}
-                role="menuitem"
-                onClick={() => {
-                    const currentClip = trackStore.value?.tracks.flatMap((t) => t.clips).find((c) => c.id === clipId);
-                    const newName = window.prompt('Rename clip:', currentClip?.name ?? '');
-                    if (newName !== null && newName.trim()) {
-                        renameClip(clipId, newName.trim());
-                    }
-                    onClose();
-                }}
-            >
-                Rename Clip
-            </button>
+            {isRenaming ? (
+                <div className="px-2 py-1.5 flex flex-col gap-1 border-y border-border/40 my-0.5 bg-surface-raised">
+                    <div className="text-[9px] text-muted-foreground uppercase tracking-wider">Rename Clip</div>
+                    <input
+                        type="text"
+                        autoFocus
+                        value={newName}
+                        onChange={(e) => setNewName(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                                const trimmed = newName.trim();
+                                if (trimmed) renameClip(clipId, trimmed);
+                                onClose();
+                            } else if (e.key === 'Escape') {
+                                setIsRenaming(false);
+                            }
+                        }}
+                        className="w-full bg-surface-inset text-[10px] text-foreground rounded border border-border px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-[var(--color-accent-amber)]"
+                    />
+                </div>
+            ) : (
+                <button
+                    type="button"
+                    className={menuBtnClass}
+                    role="menuitem"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        setIsRenaming(true);
+                        setNewName(clip?.name ?? '');
+                    }}
+                >
+                    Rename Clip
+                </button>
+            )}
             <button
                 type="button"
                 className={menuBtnClass}

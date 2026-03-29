@@ -3,7 +3,7 @@ import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { newProject } from '../projectPersistence';
 import { demo1_TheCompleteMix, demo2_ElectronicBeat, demo3_AcousticSession, demo4_NativeShowcase } from '../demoProjects';
-import { type TemplateCategory, type ProjectTemplate } from '#/modules/Project/models/ProjectTemplateTypes';
+import { type ProjectTemplate } from '#/modules/Project/models/ProjectTemplateTypes';
 
 let synthDeviceCounter = 0;
 
@@ -164,10 +164,6 @@ export function getTemplates(): ProjectTemplate[] {
         if (t.platform === 'web' && native) return false;
         return true;
     });
-}
-
-export function getTemplatesByCategory(category: TemplateCategory): ProjectTemplate[] {
-    return templates.filter((t) => t.category === category);
 }
 
 export async function createFromTemplate(templateId: string): Promise<void> {

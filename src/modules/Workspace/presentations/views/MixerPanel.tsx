@@ -1,4 +1,5 @@
 import { type CSSProperties, type ReactElement, useState, useRef } from 'react';
+import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { Button } from '#/components/ui/button';
 import { Columns3, Save, RotateCcw, Sparkles, Pencil } from 'lucide-react';
@@ -8,7 +9,7 @@ import { cycleChannelStripWidth } from '../../useCases/togglePanel/panelToggles'
 import { type ChannelStripWidth } from '../../models/WorkspaceState';
 import { ExpandedChannelStrip } from './Mixer/ExpandedChannelStrip';
 import { MasterChannelStrip } from './Mixer/MasterChannelStrip';
-import type { MixerSnapshot } from '#/modules/Arrangement/models/MixerSnapshotTypes';
+import type { MixerSnapshot } from '#/modules/Arrangement/useCases/trackQueries';
 import {
     saveMixerSnapshot,
     recallMixerSnapshot,
@@ -43,6 +44,12 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
     const [showMixHealth, setShowMixHealth] = useState(false);
     const [editingSnapshotId, setEditingSnapshotId] = useState<string | null>(null);
     const renameInputRef = useRef<HTMLInputElement>(null);
+    const snapshotsRef = useRef<HTMLDivElement>(null);
+
+    useContextMenuDismiss(snapshotsRef, () => {
+        setShowSnapshots(false);
+        setEditingSnapshotId(null);
+    });
 
     const handleSaveSnapshot = () => {
         const name = `Snapshot ${snapshots.length + 1}`;
@@ -132,7 +139,7 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
                     </Button>
 
                     {showSnapshots && snapshots.length > 0 ? (
-                        <div className="absolute top-full right-0 z-50 mt-1 min-w-[140px] rounded-lg border border-border bg-popover p-1 shadow-lg">
+                        <div ref={snapshotsRef} className="absolute top-full right-0 z-50 mt-1 min-w-[140px] rounded-lg border border-border bg-popover p-1 shadow-lg">
                             {snapshots.map((snap) => (
                                 <div key={snap.id} className="flex items-center gap-1">
                                     {editingSnapshotId === snap.id ? (

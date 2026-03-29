@@ -24,13 +24,10 @@ import { ChordTrackLane } from './Timeline/ChordTrackLane';
 import { ScratchPadView } from './Timeline/ScratchPadView';
 import { chordTrackStore } from '#/modules/Arrangement/stores/chordTrackStore';
 import { TemplateChooser } from '#/modules/Project/presentations/views/TemplateChooser';
+import { clamp } from '#/helpers/Math/clamp';
 
 const TRACK_LIST_MIN = 120;
 const TRACK_LIST_MAX = 400;
-
-function clamp(value: number, min: number, max: number): number {
-    return Math.min(max, Math.max(min, value));
-}
 
 export const ArrangeView = (): ReactElement => {
     const { tracks } = useTracks();

@@ -1,7 +1,7 @@
 import { type ReactElement, useSyncExternalStore } from 'react';
 import { Card } from '#/components/ui/card';
 import { audioGraphStore } from '#/modules/AudioEngine/stores/audioGraphStore';
-import { type Track } from '#/modules/Arrangement/models/Track';
+import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
 
 type TrackRoutingSectionProps = {
     track: Track;

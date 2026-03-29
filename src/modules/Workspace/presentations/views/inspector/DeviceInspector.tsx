@@ -1,10 +1,10 @@
 import { type ReactElement } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { Button } from '#/components/ui/button';
-import { BUILTIN_PLUGINS, type DeviceParameter } from '#/modules/Arrangement/models/DeviceParameter';
+import { BUILTIN_PLUGINS, type DeviceParameter } from '#/modules/Arrangement/useCases/trackQueries';
 import { bypassDevice } from '#/modules/Arrangement/useCases/device/bypassDevice';
 import { MechanicalSwitch } from '#/components/daw/MechanicalSwitch';
-import { type Device } from '#/modules/Arrangement/models/Track';
+import { type Device } from '#/modules/Arrangement/useCases/trackQueries';
 import { resolveDeviceLayout } from './deviceLayoutRegistry';
 import { GenericDeviceLayout } from './GenericDeviceLayout';
 import './layouts';

@@ -4,8 +4,8 @@
 
 import { type ToasterKit, type DrumEngineType } from '../models/ToasterKit';
 import { loadKit } from '../stores/toasterStore';
-import { audioEngine } from '#/modules/AudioEngine/repositories/createWebAudioEngine';
-import { getAllTracks } from '#/modules/Arrangement/repositories/track/queries';
+import { getTrackStrip } from '#/modules/AudioEngine/useCases/engineAccess';
+import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
 
 /**
  * Map TS engine type to Rust DrumEngineType index.
@@ -29,7 +29,7 @@ export function getToasterControls(): { setPadParam: (pad: number, name: string,
     const grinderTrack = tracks.find((t) => t.devices.some((d) => d.type === 'grinder'));
     if (!grinderTrack) { return null; }
 
-    const strip = audioEngine.getTrackStrip(grinderTrack.id);
+    const strip = getTrackStrip(grinderTrack.id);
     if (!strip) { return null; }
 
     const dn = strip.deviceNodes.find((d) => d.grinderControls?.ready);

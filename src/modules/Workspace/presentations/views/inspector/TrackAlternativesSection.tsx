@@ -8,7 +8,7 @@ import {
     handleSwitchTrackAlternative,
     handleDeleteTrackAlternative,
 } from '#/modules/Command/useCases/trackAlternativeHandlers';
-import { type Track } from '#/modules/Arrangement/models/Track';
+import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
 
 type TrackAlternativesSectionProps = {
     track: Track;

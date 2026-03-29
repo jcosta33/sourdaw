@@ -10,8 +10,7 @@ import { isToasterDevice, createToasterNode, type ToasterNodeResult } from './To
 import { isLevainDevice, createLevainNode, type LevainNodeResult } from './LevainNode';
 import { registerLevainDevice, unregisterLevainDevice } from '#/modules/Levain/useCases/levainParamBridge';
 import { setEngineReady } from '#/modules/Levain/stores/levainStore';
-import { isDeviceSupportedOnCurrentPlatform } from '#/modules/Arrangement/useCases/trackQueries';
-import { DEVICE_FACTORIES, applyParams } from '../repositories/deviceNodeFactory';
+import { DEVICE_FACTORIES, applyParams, createFaustDeviceNode } from '../useCases/deviceResolvers';
 import { PluginHostNode } from '../models/PluginHostNode';
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
@@ -192,8 +191,8 @@ export class TrackNode {
             return;
         }
 
-        if (!isDeviceSupportedOnCurrentPlatform(deviceType)) {
-            logger.info(`[WebAudioEngine] Skipping ${deviceType} — not supported`);
+        if (this.strip.deviceNodes.find((n) => n.deviceId === deviceId)) {
+            logger.warn(`Device ${deviceId} already exists on track ${this.trackId}`);
             return;
         }
 
@@ -220,33 +219,31 @@ export class TrackNode {
                 outputNode: loadingBypassNode,
             };
 
-            const loadPromise = import('../repositories/faustDeviceFactory')
-                .then(({ createFaustDevice }) => {
-                    return createFaustDevice(context, deviceType).then((realDn) => {
-                        if (!realDn) {
-                            return;
-                        }
-                        const idx = this.strip.deviceNodes.findIndex((d) => d.deviceId === deviceId);
-                        if (idx !== -1) {
-                            const builtinDn = realDn as BuiltinDeviceNode;
-                            builtinDn.deviceId = deviceId;
-                            builtinDn.type = deviceType;
-                            this.strip.deviceNodes[idx] = builtinDn;
-                            this.rebuildChain();
+            const loadPromise = createFaustDeviceNode(context, deviceType)
+                .then((realDn) => {
+                    if (!realDn) {
+                        return;
+                    }
+                    const idx = this.strip.deviceNodes.findIndex((d) => d.deviceId === deviceId);
+                    if (idx !== -1) {
+                        const builtinDn = realDn as BuiltinDeviceNode;
+                        builtinDn.deviceId = deviceId;
+                        builtinDn.type = deviceType;
+                        this.strip.deviceNodes[idx] = builtinDn;
+                        this.rebuildChain();
 
-                            const pending = pendingFaustParams.get(deviceId);
-                            if (pending) {
-                                const worklet = builtinDn.nodes[0] as AudioWorkletNode;
-                                for (const [pId, val] of pending) {
-                                    const param = worklet.parameters.get(pId);
-                                    if (param) {
-                                        param.setTargetAtTime(val, context.currentTime, 0.01);
-                                    }
+                        const pending = pendingFaustParams.get(deviceId);
+                        if (pending) {
+                            const worklet = builtinDn.nodes[0] as AudioWorkletNode;
+                            for (const [pId, val] of pending) {
+                                const param = worklet.parameters.get(pId);
+                                if (param) {
+                                    param.setTargetAtTime(val, context.currentTime, 0.01);
                                 }
-                                pendingFaustParams.delete(deviceId);
                             }
+                            pendingFaustParams.delete(deviceId);
                         }
-                    });
+                    }
                 })
                 .catch((error) => logger.warn(`[WebAudioEngine] Faust error: ${error}`));
             pendingDevicePromises.add(loadPromise);

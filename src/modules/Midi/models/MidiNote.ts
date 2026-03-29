@@ -25,8 +25,6 @@ export type MidiPitchBend = {
     channel: number;
 };
 
-export type MidiEvent = MidiNote | MidiCC | MidiPitchBend;
-
 let nextNoteId = 1;
 let nextCcId = 1;
 let nextPitchBendId = 1;

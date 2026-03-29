@@ -5,7 +5,7 @@
  * color intensity from dark blue → cyan → yellow → white.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
-import { getMasterAnalyser, getTrackStripAnalyser } from '#/modules/AudioEngine/useCases/engineAccess';
+import { getMasterAnalyser, getTrackAnalyser } from '#/modules/AudioEngine/useCases/engineAccess';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type SpectrogramProps = {
@@ -70,7 +70,7 @@ export const Spectrogram = ({ trackId, width = 300, height = 100 }: SpectrogramP
 
         const draw = (): void => {
             const analyser = trackId
-                ? (getTrackStripAnalyser(trackId) ?? getMasterAnalyser())
+                ? (getTrackAnalyser(trackId) ?? getMasterAnalyser())
                 : getMasterAnalyser();
 
             const fftSize = analyser.frequencyBinCount;

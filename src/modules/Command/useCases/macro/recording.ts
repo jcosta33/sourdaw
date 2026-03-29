@@ -58,7 +58,3 @@ export function recordAction(action: AppAction): void {
         currentRecording: [...state.currentRecording, action],
     });
 }
-
-export function isRecording(): boolean {
-    return macroStore.value?.recording ?? false;
-}

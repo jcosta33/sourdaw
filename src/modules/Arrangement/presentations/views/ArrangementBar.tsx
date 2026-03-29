@@ -18,6 +18,7 @@ import {
 } from '../../useCases/marker/sectionOperations';
 import { type ArrangementSection } from '../../models/Marker';
 import { cn } from '#/helpers/Styles/cn';
+import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
 
 type ArrangementBarProps = {
     pixelsPerBeat: number;
@@ -83,18 +84,7 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
         }
     }, [editing]);
 
-    useEffect(() => {
-        if (contextMenu.kind === 'none') {
-            return;
-        }
-        const handleClick = (e: globalThis.MouseEvent) => {
-            if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-                setContextMenu({ kind: 'none' });
-            }
-        };
-        window.addEventListener('mousedown', handleClick);
-        return () => window.removeEventListener('mousedown', handleClick);
-    }, [contextMenu.kind]);
+    useContextMenuDismiss(menuRef, () => setContextMenu({ kind: 'none' }));
 
     const detectEdge = (
         e: MouseEvent,

@@ -6,5 +6,3 @@ export type IntentResult = {
     rawText: string;
     requiresConfirmation: boolean;
 };
-
-export type AiRuntimeStatus = 'idle' | 'loading' | 'processing' | 'ready' | 'error';

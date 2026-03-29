@@ -14,4 +14,5 @@ export {
     type DrumKit,
     type DrumKitVoice,
 } from '#/modules/AudioEngine/models/SynthModels';
-export { getFactoryDrumKits, getDrumKitById, getDrumKitByIndex } from '#/modules/AudioEngine/models/factoryDrumKits';
+export { getDrumKitById, getDrumKitByIndex } from '#/modules/AudioEngine/models/factoryDrumKits';
+export type { GeneratedNote } from '../models/GeneratedNote';

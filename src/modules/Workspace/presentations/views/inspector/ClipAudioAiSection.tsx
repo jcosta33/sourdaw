@@ -3,7 +3,7 @@ import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { Sparkles, Volume2, VolumeX, Loader2, Music, BarChart3 } from 'lucide-react';
-import { type Clip } from '#/modules/Arrangement/models/Track';
+import { type Clip } from '#/modules/Arrangement/useCases/trackQueries';
 import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration/useCases/actions/audioProcessing';
 import { polyphonicAudioToMidi } from '#/modules/AudioAnalysis/useCases/polyphonicAudioToMidi';
 import { detectDominantPitch } from '#/modules/AudioAnalysis/useCases/pitchDetection';

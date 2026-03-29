@@ -10,7 +10,7 @@ import { removeAutomationLane } from '#/modules/Automation/useCases/automation/r
 import { setAutomationMode } from '#/modules/Arrangement/useCases/toggleTrackState/setAutomationMode';
 import { AutomationLaneRow } from './AutomationView/AutomationLaneRow';
 import { getAutomatableParams, AUTOMATION_MODE_CONFIG, LANE_HEIGHT } from '../helpers/automationViewHelpers';
-import { type AutomationMode } from '#/modules/Arrangement/models/Track';
+import { type AutomationMode } from '#/modules/Arrangement/useCases/trackQueries';
 import { type AutomationLane } from '#/modules/Arrangement/useCases/trackQueries';
 import { Plus, ChevronRight, ChevronDown, Trash2 } from 'lucide-react';
 import { BeatRulerBar } from '#/modules/Arrangement/presentations/views/BeatRulerBar';

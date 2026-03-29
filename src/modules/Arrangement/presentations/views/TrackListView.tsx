@@ -8,6 +8,15 @@ import {
     useEffect,
     useSyncExternalStore,
 } from 'react';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+    DropdownMenuSeparator,
+    DropdownMenuLabel,
+} from '#/components/ui/dropdown-menu';
+import { getTrackTemplates, loadTrackTemplate } from '../../useCases/trackTemplate';
 import { Button } from '#/components/ui/button';
 import { Plus, FolderPlus, Rows3, Music, Mic2, GitBranch, FileStack, Wand2 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
@@ -269,108 +278,68 @@ export const TrackListView = ({
     );
 };
 
-import { getTrackTemplates, loadTrackTemplate } from '../../useCases/trackTemplate';
 
 const AddTrackMenu = ({ trackCount }: { trackCount: number }): ReactElement => {
-    const [open, setOpen] = useState(false);
-    const menuRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        if (!open) {
-            return;
-        }
-        const handleClickOutside = (e: MouseEvent) => {
-            if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-                setOpen(false);
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [open]);
-
     const createTrackOfKind = (kind: 'audio' | 'midi' | 'bus') => {
         const labels = { audio: 'Audio', midi: 'MIDI', bus: 'Bus' };
         addTrack({ name: `${labels[kind]} ${trackCount + 1}`, kind });
-        setOpen(false);
     };
 
-    const templates = open ? getTrackTemplates() : [];
+    const templates = getTrackTemplates();
 
     return (
-        <div className="relative" ref={menuRef}>
+        <DropdownMenu>
             <Tooltip>
                 <TooltipTrigger asChild>
-                    <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        aria-label="Add track"
-                        aria-haspopup="true"
-                        aria-expanded={open}
-                        onClick={() => setOpen((v) => !v)}
-                    >
-                        <Plus className="size-3" aria-hidden="true" />
-                    </Button>
+                    <DropdownMenuTrigger asChild>
+                        <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            aria-label="Add track"
+                        >
+                            <Plus className="size-3" aria-hidden="true" />
+                        </Button>
+                    </DropdownMenuTrigger>
                 </TooltipTrigger>
                 <TooltipContent>Add Track</TooltipContent>
             </Tooltip>
 
-            {open ? (
-                <div
-                    className="absolute top-full right-0 z-50 mt-1 w-44 rounded-md border border-border-soft border-t-[var(--color-light-edge)] bg-surface-overlay shadow-[0_4px_16px_rgba(0,0,0,0.5)] py-1 animate-in fade-in-0 zoom-in-95"
-                    role="menu"
-                >
-                    <button
-                        type="button"
-                        className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-white/[0.06] transition-colors"
-                        role="menuitem"
-                        onClick={() => createTrackOfKind('audio')}
-                    >
-                        <Mic2 className="size-3 text-[var(--color-accent-cyan)]" />
-                        Audio Track
-                    </button>
-                    <button
-                        type="button"
-                        className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-white/[0.06] transition-colors"
-                        role="menuitem"
-                        onClick={() => createTrackOfKind('midi')}
-                    >
-                        <Music className="size-3 text-[var(--color-accent-mint)]" />
-                        MIDI Track
-                    </button>
-                    <button
-                        type="button"
-                        className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-white/[0.06] transition-colors"
-                        role="menuitem"
-                        onClick={() => createTrackOfKind('bus')}
-                    >
-                        <GitBranch className="size-3 text-[var(--color-accent-peach)]" />
-                        Bus Track
-                    </button>
-                    {templates.length > 0 && (
-                        <>
-                            <div className="mx-2 my-1 border-t border-border/30" />
-                            <p className="px-3 py-1 text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">
-                                Templates
-                            </p>
-                            {templates.map((tmpl) => (
-                                <button
-                                    type="button"
-                                    key={tmpl.id}
-                                    className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-white/[0.06] transition-colors"
-                                    role="menuitem"
-                                    onClick={() => {
-                                        loadTrackTemplate(tmpl.id);
-                                        setOpen(false);
-                                    }}
-                                >
-                                    <FileStack className="size-3 text-[var(--color-accent-lavender)]" />
-                                    {tmpl.name}
-                                </button>
-                            ))}
-                        </>
-                    )}
-                </div>
-            ) : null}
-        </div>
+            <DropdownMenuContent
+                align="end"
+                sideOffset={4}
+                className="w-44 rounded-md border border-border-soft border-t-[var(--color-light-edge)] bg-surface-overlay shadow-[0_4px_16px_rgba(0,0,0,0.5)] py-1"
+            >
+                <DropdownMenuItem onClick={() => createTrackOfKind('audio')} className="flex items-center gap-2 px-3 py-1.5 text-xs focus:bg-white/[0.06] cursor-pointer">
+                    <Mic2 className="size-3 text-[var(--color-accent-cyan)]" />
+                    Audio Track
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => createTrackOfKind('midi')} className="flex items-center gap-2 px-3 py-1.5 text-xs focus:bg-white/[0.06] cursor-pointer">
+                    <Music className="size-3 text-[var(--color-accent-mint)]" />
+                    MIDI Track
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => createTrackOfKind('bus')} className="flex items-center gap-2 px-3 py-1.5 text-xs focus:bg-white/[0.06] cursor-pointer">
+                    <GitBranch className="size-3 text-[var(--color-accent-peach)]" />
+                    Bus Track
+                </DropdownMenuItem>
+                {templates.length > 0 && (
+                    <>
+                        <DropdownMenuSeparator className="mx-2 my-1 border-border/30 bg-transparent border-t" />
+                        <DropdownMenuLabel className="px-3 py-1 text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">
+                            Templates
+                        </DropdownMenuLabel>
+                        {templates.map((tmpl) => (
+                            <DropdownMenuItem
+                                key={tmpl.id}
+                                onClick={() => loadTrackTemplate(tmpl.id)}
+                                className="flex items-center gap-2 px-3 py-1.5 text-xs focus:bg-white/[0.06] cursor-pointer"
+                            >
+                                <FileStack className="size-3 text-[var(--color-accent-lavender)]" />
+                                {tmpl.name}
+                            </DropdownMenuItem>
+                        ))}
+                    </>
+                )}
+            </DropdownMenuContent>
+        </DropdownMenu>
     );
 };

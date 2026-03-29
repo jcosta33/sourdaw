@@ -2,12 +2,12 @@ import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
 import { isTauri, tauriInvoke } from '#/helpers/tauriBridge';
 
-import { DAW_CHAT_TOOLS, DAW_TOOL_SCHEMAS } from '../../models/toolDefinitions';
+import { DAW_TOOL_SCHEMAS } from '../../models/toolDefinitions';
 import { selectToolsForPrompt } from '../../transformers/toolSelector';
 import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import {
-    isLlamaServerRunning,
+    isNativeEngineReady,
     generateNativeCompletion,
 } from '../../repositories/nativeEngine';
 import {
@@ -51,12 +51,12 @@ export async function generateToolCalls(systemPrompt: string, userMessage: strin
                 if (!isWebLlmLoaded()) {
                     await initWebLlmEngine();
                 }
-                const relevantTools = selectToolsForPrompt(DAW_CHAT_TOOLS, userMessage);
-                logger.info(`[AI Engine] (webllm) Using ${String(relevantTools.length)}/${String(DAW_CHAT_TOOLS.length)} tools`);
+                const relevantTools = selectToolsForPrompt(DAW_TOOL_SCHEMAS, userMessage);
+                logger.info(`[AI Engine] (webllm) Using ${String(relevantTools.length)}/${String(DAW_TOOL_SCHEMAS.length)} tools`);
                 results = await generateWebLlmToolCalls(systemPrompt, userMessage, relevantTools);
             } else {
                 // Native backend: prefer structured tool calling via mistral.rs
-                if (!isLlamaServerRunning()) {
+                if (!isNativeEngineReady()) {
                     throw new Error('Native AI engine not running');
                 }
                 results = await generateNativeToolCalls(systemPrompt, userMessage);

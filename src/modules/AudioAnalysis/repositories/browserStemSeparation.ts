@@ -27,13 +27,6 @@ type OrtSession = {
 let cachedSession: OrtSession | null = null;
 
 /**
- * Check if ONNX Runtime Web is available (WebGPU or WASM).
- */
-export function isBrowserStemSeparationAvailable(): boolean {
-    return typeof window !== 'undefined';
-}
-
-/**
  * Get or download the model file, using Cache API for persistence.
  */
 async function getModelBuffer(): Promise<ArrayBuffer> {
@@ -233,13 +226,3 @@ export async function separateStemsBrowser(
     return result;
 }
 
-/**
- * Release the cached ONNX session to free memory.
- */
-export function releaseBrowserStemSession(): void {
-    if (cachedSession) {
-        cachedSession.release();
-        cachedSession = null;
-        logger.info('[Browser Stems] Session released');
-    }
-}

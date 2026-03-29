@@ -5,7 +5,7 @@
  * Shared by muteTrack, soloTrack, clearSolos, soloTrackExclusive, toggleSoloSafe.
  */
 
-import { getTrackState } from '#/modules/Arrangement/useCases/trackQueries/trackStoreAccess';
+import { getTrackStoreState } from '#/modules/Arrangement/useCases/trackQueries/trackStoreAccess';
 import {
     setTrackMute as engineSetTrackMute,
     setTrackGain as engineSetTrackGain,
@@ -34,7 +34,7 @@ function isRoutedToSoloedTrack(track: Track, allTracks: Track[], visited = new S
 }
 
 export function applySoloLogic(): void {
-    const state = getTrackState();
+    const state = getTrackStoreState();
     if (!state) {
         return;
     }

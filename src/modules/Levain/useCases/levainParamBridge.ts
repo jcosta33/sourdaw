@@ -151,16 +151,6 @@ export function setMacroWithAudio(index: number, value: number): void {
 }
 
 /**
- * Send a MIDI CC directly to the audio engine.
- */
-export function sendCcToEngine(cc: number, value: number): void {
-    const device = getDevice();
-    if (device) {
-        device.handleCc(cc, value);
-    }
-}
-
-/**
  * Send humanize amount directly to the engine.
  */
 export function sendHumanizeToEngine(amount: number): void {

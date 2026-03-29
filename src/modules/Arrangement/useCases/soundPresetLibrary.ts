@@ -1,4 +1,4 @@
-import { type SoundPreset, type SoundPresetCategory } from '#/modules/Arrangement/models/SoundPreset';
+import { type SoundPreset } from '#/modules/Arrangement/models/SoundPreset';
 import { FACTORY_PRESETS, DRUM_KIT_PRESETS } from '#/modules/Arrangement/repositories/presets/factoryPresets';
 import { BUILTIN_PLUGINS } from '#/modules/Arrangement/models/DeviceParameter';
 
@@ -34,9 +34,3 @@ export function getFactoryPresets(): GetFactoryPresetsOutput {
     return cachedPresets;
 }
 
-export type GetPresetsByCategoryInput = SoundPresetCategory;
-export type GetPresetsByCategoryOutput = SoundPreset[];
-
-export function getPresetsByCategory(category: GetPresetsByCategoryInput): GetPresetsByCategoryOutput {
-    return getFactoryPresets().filter((p) => p.category === category);
-}

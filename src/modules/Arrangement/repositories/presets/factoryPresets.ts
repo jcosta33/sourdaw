@@ -20,7 +20,7 @@ import { stringsPresets } from './stringsPresets';
 // ── Standalone data files (unchanged — each already < 300 lines) ──────────
 import { EXPANDED_FX_PRESETS, EXPANDED_SYNTH_PRESETS } from './expandedPresets';
 import { FAUST_INSTRUMENT_PRESETS } from './faustInstrumentPresets';
-import { FERMENTER_PRESETS } from '#/modules/Fermenter/repositories/fermenterPresets';
+import { FERMENTER_PRESETS } from '#/modules/Fermenter/useCases/fermenterQueries';
 
 // ── Drum Kit presets ────────────────────────────────────────────────────────
 // Small enough to stay inline here (< 60 lines).

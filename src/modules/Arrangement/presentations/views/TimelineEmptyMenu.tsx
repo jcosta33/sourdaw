@@ -15,7 +15,7 @@ import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { markerStore } from '#/modules/Arrangement/stores/markerStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { menuBtnClass, menuSepClass, menuShortcutClass } from '#/helpers/UI/contextMenuStyles';
-import { useContextMenuDismiss } from '../hooks/useContextMenuDismiss';
+import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
 
 // ── Marker color presets ──────────────────────────────────────────────
 

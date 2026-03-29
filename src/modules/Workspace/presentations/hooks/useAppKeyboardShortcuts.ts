@@ -3,6 +3,9 @@ import { copySelectedClip } from '#/modules/Arrangement/useCases/clipboard/copyS
 import { cutSelectedClip } from '#/modules/Arrangement/useCases/clipboard/cutSelectedClip';
 import { pasteClip } from '#/modules/Arrangement/useCases/clipboard/pasteClip';
 import { removeClip } from '#/modules/Arrangement/useCases/clip/removeClip';
+import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
 import { saveProject } from '#/modules/Project/useCases/projectPersistence/saveProject';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import {
@@ -90,10 +93,30 @@ export const useAppKeyboardShortcuts = ({ onOpenExport, onOpenPreferences }: Sho
                     ws.selectedClipIds.length > 0 ? ws.selectedClipIds : ws.selectedClipId ? [ws.selectedClipId] : [];
                 if (ids.length > 0) {
                     e.preventDefault();
-                    for (const id of ids) {
-                        removeClip(id);
+                    const deletedClips = ids
+                        .map((id) => trackStore.value?.tracks.flatMap((t) => t.clips).find((c) => c.id === id))
+                        .filter((c): c is NonNullable<typeof c> => c != null);
+
+                    if (deletedClips.length > 0) {
+                        pushUndoEntry(
+                            `Delete ${deletedClips.length} clip${deletedClips.length === 1 ? '' : 's'}`,
+                            () => {
+                                for (const c of deletedClips) {
+                                    addClip(c);
+                                }
+                            },
+                            () => {
+                                for (const c of deletedClips) {
+                                    removeClip(c.id);
+                                }
+                                clearClipSelection();
+                            }
+                        );
+                        for (const c of deletedClips) {
+                            removeClip(c.id);
+                        }
+                        clearClipSelection();
                     }
-                    clearClipSelection();
                 }
             }
         };

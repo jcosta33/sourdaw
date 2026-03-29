@@ -1,4 +1,5 @@
 import { type ReactElement, type MouseEvent, useState, useRef, useEffect } from 'react';
+import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
 import { Fader } from '#/components/daw/Fader';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { LatchButton } from '#/components/daw/LatchButton';
@@ -53,27 +54,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
         setCtxMenu({ x: e.clientX, y: e.clientY });
     };
 
-    useEffect(() => {
-        if (!ctxMenu) {
-            return;
-        }
-        const dismiss = (e: globalThis.MouseEvent) => {
-            if (ctxRef.current && !ctxRef.current.contains(e.target as Node)) {
-                setCtxMenu(null);
-            }
-        };
-        const esc = (e: globalThis.KeyboardEvent) => {
-            if (e.key === 'Escape') {
-                setCtxMenu(null);
-            }
-        };
-        document.addEventListener('mousedown', dismiss);
-        document.addEventListener('keydown', esc);
-        return () => {
-            document.removeEventListener('mousedown', dismiss);
-            document.removeEventListener('keydown', esc);
-        };
-    }, [ctxMenu]);
+    useContextMenuDismiss(ctxRef, () => setCtxMenu(null));
 
     useEffect(() => {
         if (isRenaming) {
@@ -399,7 +380,11 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                         type="button"
                         className={`${menuBtnClass} text-destructive hover:bg-destructive/10`}
                         role="menuitem"
-                        onClick={act(() => removeTrack(track.id))}
+                        onClick={act(() => {
+                            if (window.confirm('Are you sure you want to delete this track? This action cannot be undone.')) {
+                                removeTrack(track.id);
+                            }
+                        })}
                     >
                         Remove Channel
                     </button>

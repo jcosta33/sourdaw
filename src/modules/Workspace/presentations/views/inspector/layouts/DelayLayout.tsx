@@ -5,7 +5,7 @@ import { type ReactElement } from 'react';
 import { Card } from '#/components/ui/card';
 import { type DeviceLayoutProps, SectionHeader, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
 import { DeviceParameterControl } from '../DeviceParameterControl';
-import { DelayTaps } from '../../../components/DelayTaps';
+import { DelayTaps } from '#/components/daw/visualizers/DelayTaps';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
 
 type P = DeviceLayoutProps['parameters'][number];

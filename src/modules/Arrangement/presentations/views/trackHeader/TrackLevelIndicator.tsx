@@ -7,7 +7,7 @@
  * Uses requestAnimationFrame with no React state updates for zero re-render cost.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
-import { getTrackStripAnalyser } from '#/modules/AudioEngine/useCases/engineAccess';
+import { getTrackAnalyser } from '#/modules/AudioEngine/useCases/engineAccess';
 
 type TrackLevelIndicatorProps = {
     trackId: string;
@@ -67,7 +67,7 @@ export const TrackLevelIndicator = ({ trackId, height }: TrackLevelIndicatorProp
         let smoothedDb = DB_FLOOR;
 
         const draw = (): void => {
-            const analyser = getTrackStripAnalyser(trackId);
+            const analyser = getTrackAnalyser(trackId);
             let currentDb = DB_FLOOR;
 
             if (analyser) {

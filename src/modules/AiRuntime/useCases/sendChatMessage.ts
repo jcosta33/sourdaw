@@ -1,5 +1,5 @@
 import { getLlmEngine } from '../repositories/webLlm';
-import { streamNativeCompletion, isLlamaServerRunning } from '../repositories/nativeEngine';
+import { streamNativeCompletion, isNativeEngineReady } from '../repositories/nativeEngine';
 import { isCloudAvailable, streamCloudChatCompletion } from '../repositories/cloudLlm';
 import { resolveBackend } from './llmOrchestration';
 import { chatStore, appendChatMessage, updateChatMessage, setChatGenerating } from '../stores/chatStore';
@@ -20,7 +20,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
     if (backend === 'none') {
         throw new Error('No AI backend available. Configure an API key or use a WebGPU-capable browser.');
     }
-    if (backend === 'native' && !isLlamaServerRunning()) {
+    if (backend === 'native' && !isNativeEngineReady()) {
         throw new Error('Native AI engine is not running. Load the AI engine first.');
     }
     if (backend === 'webllm' && !getLlmEngine()) {

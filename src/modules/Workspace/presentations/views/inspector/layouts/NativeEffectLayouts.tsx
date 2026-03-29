@@ -12,9 +12,9 @@ import {
     registerDeviceLayout,
 } from '../deviceLayoutRegistry';
 import { DeviceParameterControl } from '../DeviceParameterControl';
-import { CompressorCurve } from '../../../components/CompressorCurve';
-import { ReverbDecay } from '../../../components/ReverbDecay';
-import { DelayTaps } from '../../../components/DelayTaps';
+import { CompressorCurve } from '#/components/daw/visualizers/CompressorCurve';
+import { ReverbDecay } from '#/components/daw/visualizers/ReverbDecay';
+import { DelayTaps } from '#/components/daw/visualizers/DelayTaps';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
 
 type P = DeviceLayoutProps['parameters'][number];

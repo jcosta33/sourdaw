@@ -8,8 +8,7 @@ import { reorderDevices } from '#/modules/Arrangement/useCases/device/reorderDev
 import { getPlatformPlugins } from '#/modules/Arrangement/useCases/trackQueries';
 import { openInspector } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
-import { getAllModulationRoutes } from '#/modules/Plugin/useCases/modulationSystem/getAllModulationRoutes';
-import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases/midiEffectPlugins/registry';
+import { getAllModulationRoutes, MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases/pluginQueries';
 
 type DeviceChainSectionProps = {
     track: Track;

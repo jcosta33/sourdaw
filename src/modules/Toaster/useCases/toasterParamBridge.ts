@@ -4,19 +4,15 @@
  * Uses rAF throttling to avoid flooding MessagePort during knob dragging.
  */
 
-import { audioEngine } from '#/modules/AudioEngine/repositories/createWebAudioEngine';
-import { getAllTracks } from '#/modules/Arrangement/repositories/track/queries';
-import { updatePad, updateKitParam } from '../stores/toasterStore';
-import { type PadState, type ToasterKit } from '../models/ToasterKit';
+import { getTrackStrip } from '#/modules/AudioEngine/useCases/engineAccess';
+import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
+import { updatePad } from '../stores/toasterStore';
+import { type PadState } from '../models/ToasterKit';
 
 type DeviceRef = { trackId: string; deviceId: string };
 
 let cachedRefs: DeviceRef[] | null = null;
 let cacheTimer: ReturnType<typeof setTimeout> | null = null;
-
-export function invalidateToasterCache(): void {
-    cachedRefs = null;
-}
 
 function getActiveDevices(): DeviceRef[] {
     if (cachedRefs) { return cachedRefs; }
@@ -34,26 +30,6 @@ function getActiveDevices(): DeviceRef[] {
     return refs;
 }
 
-// Throttling for kit-level params
-const kitPending = new Map<string, number>();
-const kitLatest = new Map<string, number>();
-
-function flushKitParam(key: string): void {
-    kitPending.delete(key);
-    const value = kitLatest.get(key);
-    if (value === undefined) { return; }
-    kitLatest.delete(key);
-
-    for (const { trackId } of getActiveDevices()) {
-        const strip = audioEngine.getTrackStrip(trackId);
-        if (!strip) { continue; }
-        const dn = strip.deviceNodes.find((d) => d.grinderControls?.ready);
-        if (dn?.grinderControls) {
-            dn.grinderControls.setParam(key, value);
-        }
-    }
-}
-
 // Throttling for pad-level params
 const padPending = new Map<string, number>();
 const padLatest = new Map<string, { pad: number; name: string; value: number }>();
@@ -65,23 +41,12 @@ function flushPadParam(cacheKey: string): void {
     padLatest.delete(cacheKey);
 
     for (const { trackId } of getActiveDevices()) {
-        const strip = audioEngine.getTrackStrip(trackId);
+        const strip = getTrackStrip(trackId);
         if (!strip) { continue; }
         const dn = strip.deviceNodes.find((d) => d.grinderControls?.ready);
         if (dn?.grinderControls) {
             dn.grinderControls.setPadParam(entry.pad, entry.name, entry.value);
         }
-    }
-}
-
-/**
- * Update a kit-level parameter and forward to the audio engine.
- */
-export function setToasterKitParam(key: keyof ToasterKit, value: number): void {
-    updateKitParam(key, value);
-    kitLatest.set(key, value);
-    if (!kitPending.has(key)) {
-        kitPending.set(key, requestAnimationFrame(() => flushKitParam(key)));
     }
 }
 

@@ -22,6 +22,7 @@ import { ArticulationList } from '../components/ArticulationList';
 import { ExpressionPanel } from '../components/ExpressionPanel';
 import { LegatoTuning } from '../components/LegatoTuning';
 import { HumanizePanel } from '../components/HumanizePanel';
+import { setLevainParamWithAudio } from '../../useCases/levainParamBridge';
 import { MicBlendSlider } from '../components/MicBlendSlider';
 
 // ── Instruments ─────────────────────────────────────────────────────
@@ -127,23 +128,34 @@ export const LevainPanel = (): ReactElement => {
                 <div className="flex-1 min-w-0 overflow-x-auto overflow-y-auto">
                     <div className="flex items-start gap-0 p-2 h-full min-w-max">
 
-                        {/* Expression group — with canvas visualization */}
+                        {/* Expression group */}
                         <div className="shrink-0 px-2">
-                            <ExpressionPanel expression={patch.expression} legato={patch.legato} />
+                            <ExpressionPanel 
+                                expression={patch.expression} 
+                                legato={patch.legato} 
+                                onChangeExp={(p) => setLevainParamWithAudio('expression', { ...patch.expression, ...p })}
+                                onChangeLeg={(p) => setLevainParamWithAudio('legato', { ...patch.legato, ...p })}
+                            />
                         </div>
 
                         <div className="w-px self-stretch bg-border/15 shrink-0" />
 
-                        {/* Legato group — with canvas visualization */}
+                        {/* Legato group */}
                         <div className="shrink-0 px-2">
-                            <LegatoTuning config={patch.legato} />
+                            <LegatoTuning 
+                                config={patch.legato} 
+                                onChange={(p) => setLevainParamWithAudio('legato', { ...patch.legato, ...p })}
+                            />
                         </div>
 
                         <div className="w-px self-stretch bg-border/15 shrink-0" />
 
-                        {/* Humanize group — XL knob + detail knobs */}
+                        {/* Humanize group */}
                         <div className="shrink-0 px-2">
-                            <HumanizePanel config={patch.humanize} />
+                            <HumanizePanel 
+                                config={patch.humanize} 
+                                onChange={(p) => setLevainParamWithAudio('humanize', { ...patch.humanize, ...p })}
+                            />
                         </div>
 
                         <div className="w-px self-stretch bg-border/15 shrink-0" />
