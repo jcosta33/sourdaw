@@ -1,7 +1,7 @@
 import { type ReactElement } from 'react';
 import { Button } from '#/components/ui/button';
 import { LatchButton } from '#/components/daw/LatchButton';
-import { Circle, ChevronRight, ChevronDown, Folder, Music, AudioLines, Radio, Monitor } from 'lucide-react';
+import { Circle, ChevronRight, ChevronDown, Folder, Music, AudioLines, Radio, Monitor, Drum } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
 import { type Track, type InputMonitoring } from '../../models/Track';
 import { muteTrack } from '../../useCases/toggleTrackState/muteTrack';
@@ -48,6 +48,9 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
     const trackHeight = track.height;
 
     if (track.kind === 'folder') {
+        const isDrumMachine = track.devices.some((d) => d.type === 'toaster');
+        const FolderIcon = isDrumMachine ? Drum : Folder;
+
         return (
             <TrackContextMenu track={track}>
                 <div
@@ -55,6 +58,8 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                         'relative flex shrink-0 items-center gap-1 border-b border-border-soft px-1 cursor-pointer transition-colors',
                         isSelected
                             ? 'bg-surface-overlay shadow-[inset_0_1px_3px_rgba(0,0,0,0.5)]'
+                            : isDrumMachine
+                            ? 'bg-surface-panel hover:bg-surface-base'
                             : 'bg-surface-tray hover:bg-surface-base'
                     )}
                     style={{ height: 26 }}
@@ -78,7 +83,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                             <ChevronDown className="size-3" aria-hidden="true" />
                         )}
                     </Button>
-                    <Folder className="size-3 shrink-0 text-[var(--color-accent-peach)]/70" aria-hidden="true" />
+                    <FolderIcon className={cn("size-3 shrink-0", isDrumMachine ? "text-[var(--color-accent-blue)]/80" : "text-[var(--color-accent-peach)]/70")} aria-hidden="true" />
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground truncate flex-1 min-w-0 select-none">
                         {track.name}
                     </span>

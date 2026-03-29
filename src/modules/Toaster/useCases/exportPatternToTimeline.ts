@@ -51,7 +51,7 @@ export function exportPatternToTimeline(): void {
             const step = track.steps[s];
             if (!step?.active) { continue; }
 
-            const startBeat = insertAt + s * stepDurationBeats;
+            const startBeat = s * stepDurationBeats;
             const midiNote = 36 + track.padIndex;
             const velocity = Math.round(step.velocity * 127);
 

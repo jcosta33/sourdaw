@@ -1,0 +1,14 @@
+{
+  "name": "scoring",
+  "type": "module",
+  "description": "Scoring — reference-grade chromatic tuner for Sourdaw",
+  "version": "0.1.0",
+  "files": [
+    "scoring_bg.wasm",
+    "scoring.js"
+  ],
+  "main": "scoring.js",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

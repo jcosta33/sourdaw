@@ -74,5 +74,11 @@ export function loadToasterKitPreset(kit: ToasterKit): void {
         controls.setPadParam(i, 'filter_resonance', pad.filterResonance);
         controls.setPadParam(i, 'send_reverb', pad.sendReverb);
         controls.setPadParam(i, 'send_delay', pad.sendDelay);
+
+        if (pad.engineParams) {
+            for (const [key, value] of Object.entries(pad.engineParams)) {
+                controls.setPadParam(i, key, value);
+            }
+        }
     }
 }

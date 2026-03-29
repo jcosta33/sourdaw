@@ -1,0 +1,14 @@
+{
+  "name": "daw-dsp",
+  "type": "module",
+  "description": "Pure mathematical algorithms and DSP components for Sourdaw.",
+  "version": "0.1.0",
+  "files": [
+    "daw_dsp_bg.wasm",
+    "daw_dsp.js"
+  ],
+  "main": "daw_dsp.js",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

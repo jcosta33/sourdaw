@@ -165,7 +165,49 @@ export function scheduleMidiNotes(
 
                         const strip = ensureTrackStrip(track.id);
 
-                        if (drumKitDef) {
+                        let isToasterChild = false;
+                        let toasterParentTrack = null;
+                        
+                        if (track.parentId) {
+                            toasterParentTrack = tracks.find(t => t.id === track.parentId);
+                            if (toasterParentTrack?.devices.some(d => d.type === 'toaster')) {
+                                isToasterChild = true;
+                            }
+                        }
+
+                        if (isToasterChild && toasterParentTrack) {
+                            const toasterDevice = toasterParentTrack.devices.find((d) => d.type === 'toaster');
+                            const parentStrip = ensureTrackStrip(toasterParentTrack.id);
+                            if (toasterDevice && parentStrip) {
+                                const dn = parentStrip.deviceNodes.find((d) => d.deviceId === toasterDevice.id);
+                                if (dn?.toasterControls) {
+                                    const children = tracks.filter((t) => t.parentId === toasterParentTrack!.id);
+                                    let pad = children.findIndex((t) => t.id === track.id);
+                                    let pitchNote = pitch;
+                                    
+                                    if (pad === -1) {
+                                        pad = pitch - 36;
+                                        if (pad >= 24 && pad <= 39) {
+                                            pad = pad - 24; 
+                                        }
+                                        pitchNote = 60;
+                                    }
+                                    
+                                    if (pad >= 0 && pad < 16) {
+                                        const ctx = getAudioContext();
+                                        const scheduleDelay = Math.max(0, time - ctx.currentTime);
+                                        
+                                        if (scheduleDelay <= 0) {
+                                            dn.toasterControls.noteOn(pad, note.velocity, pitchNote);
+                                        } else {
+                                            setTimeout(() => {
+                                                dn.toasterControls?.noteOn(pad, note.velocity, pitchNote);
+                                            }, scheduleDelay * 1000);
+                                        }
+                                    }
+                                }
+                            }
+                        } else if (drumKitDef) {
                             scheduleDrumKitNote(
                                 getAudioContext(),
                                 strip.gainNode,

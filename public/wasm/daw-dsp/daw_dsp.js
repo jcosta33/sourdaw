@@ -1,0 +1,963 @@
+/**
+ * WASM-exported Fermenter instance for AudioWorklet.
+ */
+export class FermenterInstance {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        FermenterInstanceFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_fermenterinstance_free(ptr, 0);
+    }
+    /**
+     * Get number of currently sounding voices.
+     * @returns {number}
+     */
+    active_voices() {
+        const ret = wasm.fermenterinstance_active_voices(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Get pointer to right channel buffer (call after process).
+     * @returns {number}
+     */
+    get_right_ptr() {
+        const ret = wasm.fermenterinstance_get_right_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @param {number} sample_rate
+     * @param {number} max_voices
+     */
+    constructor(sample_rate, max_voices) {
+        const ret = wasm.fermenterinstance_new(sample_rate, max_voices);
+        this.__wbg_ptr = ret >>> 0;
+        FermenterInstanceFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * Process a MIDI note off event.
+     * @param {number} note
+     */
+    note_off(note) {
+        wasm.fermenterinstance_note_off(this.__wbg_ptr, note);
+    }
+    /**
+     * Process a MIDI note on event.
+     * @param {number} note
+     * @param {number} velocity
+     */
+    note_on(note, velocity) {
+        wasm.fermenterinstance_note_on(this.__wbg_ptr, note, velocity);
+    }
+    /**
+     * Process a block of 128 samples. Returns pointer to left channel.
+     * Caller reads left + right from WASM memory.
+     * @param {number} block_size
+     * @returns {number}
+     */
+    process(block_size) {
+        const ret = wasm.fermenterinstance_process(this.__wbg_ptr, block_size);
+        return ret >>> 0;
+    }
+    /**
+     * Set a named parameter value.
+     * @param {string} name
+     * @param {number} value
+     */
+    set_param(name, value) {
+        const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.fermenterinstance_set_param(this.__wbg_ptr, ptr0, len0, value);
+    }
+}
+if (Symbol.dispose) FermenterInstance.prototype[Symbol.dispose] = FermenterInstance.prototype.free;
+
+/**
+ * WASM-exported Gluten instance for AudioWorklet.
+ * Unlike instruments, this is an *effect* — it processes input audio.
+ */
+export class GlutenInstance {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        GlutenInstanceFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_gluteninstance_free(ptr, 0);
+    }
+    /**
+     * Get crest factor (peak/RMS ratio in dB).
+     * @returns {number}
+     */
+    get_crest() {
+        const ret = wasm.gluteninstance_get_crest(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Get current gain reduction in dB (for metering).
+     * @returns {number}
+     */
+    get_gr_db() {
+        const ret = wasm.gluteninstance_get_gr_db(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Get current input level in dB (for metering).
+     * @returns {number}
+     */
+    get_input_db() {
+        const ret = wasm.gluteninstance_get_input_db(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Get pointer to input left buffer — caller writes input audio here.
+     * @returns {number}
+     */
+    get_input_left_ptr() {
+        const ret = wasm.gluteninstance_get_input_left_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Get pointer to input right buffer.
+     * @returns {number}
+     */
+    get_input_right_ptr() {
+        const ret = wasm.gluteninstance_get_input_right_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Get latency in samples (lookahead delay) for host compensation.
+     * @returns {number}
+     */
+    get_latency_samples() {
+        const ret = wasm.gluteninstance_get_latency_samples(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Get current output level in dB (for metering).
+     * @returns {number}
+     */
+    get_output_db() {
+        const ret = wasm.gluteninstance_get_output_db(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Get phase correlation (-1 to +1).
+     * @returns {number}
+     */
+    get_phase_corr() {
+        const ret = wasm.gluteninstance_get_phase_corr(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Get pointer to output right buffer (call after process).
+     * @returns {number}
+     */
+    get_right_ptr() {
+        const ret = wasm.gluteninstance_get_right_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Get pointer to external sidechain left buffer.
+     * @returns {number}
+     */
+    get_sc_left_ptr() {
+        const ret = wasm.gluteninstance_get_sc_left_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Get pointer to external sidechain right buffer.
+     * @returns {number}
+     */
+    get_sc_right_ptr() {
+        const ret = wasm.gluteninstance_get_sc_right_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @param {number} sample_rate
+     */
+    constructor(sample_rate) {
+        const ret = wasm.gluteninstance_new(sample_rate);
+        this.__wbg_ptr = ret >>> 0;
+        GlutenInstanceFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * Process a block. Input must already be written to input buffers.
+     * Returns pointer to output left buffer.
+     * @param {number} block_size
+     * @returns {number}
+     */
+    process(block_size) {
+        const ret = wasm.gluteninstance_process(this.__wbg_ptr, block_size);
+        return ret >>> 0;
+    }
+    /**
+     * Set a parameter by name.
+     * @param {string} name
+     * @param {number} value
+     */
+    set_param(name, value) {
+        const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.gluteninstance_set_param(this.__wbg_ptr, ptr0, len0, value);
+    }
+}
+if (Symbol.dispose) GlutenInstance.prototype[Symbol.dispose] = GlutenInstance.prototype.free;
+
+export class KneadInstance {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        KneadInstanceFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_kneadinstance_free(ptr, 0);
+    }
+    /**
+     * @param {number} sample_rate
+     */
+    constructor(sample_rate) {
+        const ret = wasm.kneadinstance_new(sample_rate);
+        this.__wbg_ptr = ret >>> 0;
+        KneadInstanceFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {number} frames
+     * @returns {number}
+     */
+    process(frames) {
+        const ret = wasm.kneadinstance_process(this.__wbg_ptr, frames);
+        return ret >>> 0;
+    }
+}
+if (Symbol.dispose) KneadInstance.prototype[Symbol.dispose] = KneadInstance.prototype.free;
+
+/**
+ * WASM-exported Levain instance for AudioWorklet.
+ */
+export class LevainInstance {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        LevainInstanceFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_levaininstance_free(ptr, 0);
+    }
+    /**
+     * Get number of currently sounding voices.
+     * @returns {number}
+     */
+    active_voices() {
+        const ret = wasm.levaininstance_active_voices(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Add a sample to the pool. `data` is interleaved f32 PCM.
+     * Returns the SampleId.
+     * @param {Float32Array} data
+     * @param {number} frame_count
+     * @param {number} channels
+     * @param {number} sample_rate
+     * @returns {number}
+     */
+    add_sample(data, frame_count, channels, sample_rate) {
+        const ptr0 = passArrayF32ToWasm0(data, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.levaininstance_add_sample(this.__wbg_ptr, ptr0, len0, frame_count, channels, sample_rate);
+        return ret >>> 0;
+    }
+    /**
+     * Add a zone to the zone map. Call build_zone_map() after all zones are added.
+     * @param {number} zone_id
+     * @param {number} sample_id
+     * @param {number} articulation_id
+     * @param {number} root_note
+     * @param {number} lo_key
+     * @param {number} hi_key
+     * @param {number} lo_vel
+     * @param {number} hi_vel
+     * @param {number} rr_pos
+     * @param {number} rr_len
+     * @param {number} mic_id
+     * @param {boolean} is_release
+     * @param {number} loop_mode
+     * @param {number} loop_start
+     * @param {number} loop_end
+     * @param {number} loop_crossfade
+     * @param {number} gain_db
+     * @param {number} attack
+     * @param {number} decay
+     * @param {number} sustain
+     * @param {number} release
+     */
+    add_zone(zone_id, sample_id, articulation_id, root_note, lo_key, hi_key, lo_vel, hi_vel, rr_pos, rr_len, mic_id, is_release, loop_mode, loop_start, loop_end, loop_crossfade, gain_db, attack, decay, sustain, release) {
+        wasm.levaininstance_add_zone(this.__wbg_ptr, zone_id, sample_id, articulation_id, root_note, lo_key, hi_key, lo_vel, hi_vel, rr_pos, rr_len, mic_id, is_release, loop_mode, loop_start, loop_end, loop_crossfade, gain_db, attack, decay, sustain, release);
+    }
+    /**
+     * Build the zone lookup table after all zones and samples are loaded.
+     * @param {number} num_articulations
+     * @param {number} num_mics
+     */
+    build_zone_map(num_articulations, num_mics) {
+        wasm.levaininstance_build_zone_map(this.__wbg_ptr, num_articulations, num_mics);
+    }
+    /**
+     * Get pointer to right channel buffer (call after process).
+     * @returns {number}
+     */
+    get_right_ptr() {
+        const ret = wasm.levaininstance_get_right_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Process a MIDI CC event.
+     * @param {number} cc
+     * @param {number} value
+     */
+    handle_cc(cc, value) {
+        wasm.levaininstance_handle_cc(this.__wbg_ptr, cc, value);
+    }
+    /**
+     * @param {number} sample_rate
+     * @param {number} max_voices
+     */
+    constructor(sample_rate, max_voices) {
+        const ret = wasm.levaininstance_new(sample_rate, max_voices);
+        this.__wbg_ptr = ret >>> 0;
+        LevainInstanceFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * Process a MIDI note off event.
+     * @param {number} note
+     */
+    note_off(note) {
+        wasm.levaininstance_note_off(this.__wbg_ptr, note);
+    }
+    /**
+     * Process a MIDI note on event.
+     * @param {number} note
+     * @param {number} velocity
+     */
+    note_on(note, velocity) {
+        wasm.levaininstance_note_on(this.__wbg_ptr, note, velocity);
+    }
+    /**
+     * Process a block of audio. Returns pointer to left channel.
+     * Caller reads left + right from WASM memory.
+     * @param {number} block_size
+     * @returns {number}
+     */
+    process(block_size) {
+        const ret = wasm.levaininstance_process(this.__wbg_ptr, block_size);
+        return ret >>> 0;
+    }
+    /**
+     * Set a named parameter value.
+     * @param {string} name
+     * @param {number} value
+     */
+    set_param(name, value) {
+        const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.levaininstance_set_param(this.__wbg_ptr, ptr0, len0, value);
+    }
+}
+if (Symbol.dispose) LevainInstance.prototype[Symbol.dispose] = LevainInstance.prototype.free;
+
+export class ProofChamberEngine {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        ProofChamberEngineFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_proofchamberengine_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    get mix() {
+        const ret = wasm.__wbg_get_proofchamberengine_mix(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get pre_delay_ms() {
+        const ret = wasm.__wbg_get_proofchamberengine_pre_delay_ms(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @param {number} sample_rate
+     */
+    constructor(sample_rate) {
+        const ret = wasm.proofchamberengine_new(sample_rate);
+        this.__wbg_ptr = ret >>> 0;
+        ProofChamberEngineFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {Float32Array} in_l
+     * @param {Float32Array} in_r
+     * @param {Float32Array} out_l
+     * @param {Float32Array} out_r
+     */
+    process_block(in_l, in_r, out_l, out_r) {
+        const ptr0 = passArrayF32ToWasm0(in_l, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF32ToWasm0(in_r, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        var ptr2 = passArrayF32ToWasm0(out_l, wasm.__wbindgen_malloc);
+        var len2 = WASM_VECTOR_LEN;
+        var ptr3 = passArrayF32ToWasm0(out_r, wasm.__wbindgen_malloc);
+        var len3 = WASM_VECTOR_LEN;
+        wasm.proofchamberengine_process_block(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, out_l, ptr3, len3, out_r);
+    }
+    /**
+     * Update internal Dattorro plate parameters smoothly
+     * @param {number} mix
+     * @param {number} pre_delay_ms
+     * @param {number} decay
+     * @param {number} bandwidth
+     * @param {number} damping
+     * @param {number} diffusion
+     * @param {number} excursion_samples
+     */
+    set_parameters(mix, pre_delay_ms, decay, bandwidth, damping, diffusion, excursion_samples) {
+        wasm.proofchamberengine_set_parameters(this.__wbg_ptr, mix, pre_delay_ms, decay, bandwidth, damping, diffusion, excursion_samples);
+    }
+    /**
+     * @param {number} arg0
+     */
+    set mix(arg0) {
+        wasm.__wbg_set_proofchamberengine_mix(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {number} arg0
+     */
+    set pre_delay_ms(arg0) {
+        wasm.__wbg_set_proofchamberengine_pre_delay_ms(this.__wbg_ptr, arg0);
+    }
+}
+if (Symbol.dispose) ProofChamberEngine.prototype[Symbol.dispose] = ProofChamberEngine.prototype.free;
+
+/**
+ * WASM-exported Proof mastering suite instance for AudioWorklet.
+ */
+export class ProofInstance {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        ProofInstanceFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_proofinstance_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    get_ab_gain_offset() {
+        const ret = wasm.proofinstance_get_ab_gain_offset(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_correlation() {
+        const ret = wasm.proofinstance_get_correlation(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Get per-band dynamics gain reduction. Returns 4 values.
+     * @param {number} band
+     * @returns {number}
+     */
+    get_dynamics_gr(band) {
+        const ret = wasm.proofinstance_get_dynamics_gr(this.__wbg_ptr, band);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_input_left_ptr() {
+        const ret = wasm.proofinstance_get_input_left_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get_input_lufs() {
+        const ret = wasm.proofinstance_get_input_lufs(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_input_right_ptr() {
+        const ret = wasm.proofinstance_get_input_right_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get_integrated_lufs() {
+        const ret = wasm.proofinstance_get_integrated_lufs(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_latency_samples() {
+        const ret = wasm.proofinstance_get_latency_samples(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get_limiter_gr_db() {
+        const ret = wasm.proofinstance_get_limiter_gr_db(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_lra() {
+        const ret = wasm.proofinstance_get_lra(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    get_module_order() {
+        const ret = wasm.proofinstance_get_module_order(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {number}
+     */
+    get_output_lufs() {
+        const ret = wasm.proofinstance_get_output_lufs(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_output_st_lufs() {
+        const ret = wasm.proofinstance_get_output_st_lufs(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_right_ptr() {
+        const ret = wasm.proofinstance_get_right_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Get inline meter tap data. tap_idx 0 = input, 1-5 = after each module.
+     * @param {number} tap_idx
+     * @returns {number}
+     */
+    get_tap_peak_l(tap_idx) {
+        const ret = wasm.proofinstance_get_tap_peak_l(this.__wbg_ptr, tap_idx);
+        return ret;
+    }
+    /**
+     * @param {number} tap_idx
+     * @returns {number}
+     */
+    get_tap_peak_r(tap_idx) {
+        const ret = wasm.proofinstance_get_tap_peak_r(this.__wbg_ptr, tap_idx);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_true_peak_db() {
+        const ret = wasm.proofinstance_get_true_peak_db(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @param {number} sample_rate
+     */
+    constructor(sample_rate) {
+        const ret = wasm.proofinstance_new(sample_rate);
+        this.__wbg_ptr = ret >>> 0;
+        ProofInstanceFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * Process a block. Input must already be written to input buffers.
+     * @param {number} block_size
+     * @returns {number}
+     */
+    process(block_size) {
+        const ret = wasm.proofinstance_process(this.__wbg_ptr, block_size);
+        return ret >>> 0;
+    }
+    /**
+     * Reorder the processing chain. Pass 5 module IDs (0=EQ, 1=Dyn, 2=Img, 3=Exc, 4=Lim).
+     * @param {number} m0
+     * @param {number} m1
+     * @param {number} m2
+     * @param {number} m3
+     * @param {number} m4
+     */
+    reorder(m0, m1, m2, m3, m4) {
+        wasm.proofinstance_reorder(this.__wbg_ptr, m0, m1, m2, m3, m4);
+    }
+    reset_integrated() {
+        wasm.proofinstance_reset_integrated(this.__wbg_ptr);
+    }
+    /**
+     * @param {string} name
+     * @param {number} value
+     */
+    set_param(name, value) {
+        const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.proofinstance_set_param(this.__wbg_ptr, ptr0, len0, value);
+    }
+}
+if (Symbol.dispose) ProofInstance.prototype[Symbol.dispose] = ProofInstance.prototype.free;
+
+/**
+ * WASM-exported Toaster instance for AudioWorklet.
+ */
+export class ToasterInstance {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        ToasterInstanceFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_toasterinstance_free(ptr, 0);
+    }
+    /**
+     * Get pointer to right channel buffer (call after process).
+     * @returns {number}
+     */
+    get_right_ptr() {
+        const ret = wasm.toasterinstance_get_right_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @param {number} sample_rate
+     * @param {number} num_pads
+     */
+    constructor(sample_rate, num_pads) {
+        const ret = wasm.toasterinstance_new(sample_rate, num_pads);
+        this.__wbg_ptr = ret >>> 0;
+        ToasterInstanceFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * Release a pad (for sustained sounds like open hi-hat).
+     * @param {number} pad
+     */
+    note_off(pad) {
+        wasm.toasterinstance_note_off(this.__wbg_ptr, pad);
+    }
+    /**
+     * Trigger a drum pad. `midi_note` controls pitch (60 = default/center pitch).
+     * @param {number} pad
+     * @param {number} velocity
+     * @param {number} midi_note
+     */
+    note_on(pad, velocity, midi_note) {
+        wasm.toasterinstance_note_on(this.__wbg_ptr, pad, velocity, midi_note);
+    }
+    /**
+     * Process a block of audio. Returns pointer to left channel buffer.
+     * Caller reads left + right from WASM memory.
+     * @param {number} block_size
+     * @returns {number}
+     */
+    process(block_size) {
+        const ret = wasm.toasterinstance_process(this.__wbg_ptr, block_size);
+        return ret >>> 0;
+    }
+    /**
+     * Set a per-pad parameter (volume, pan, tune, filter_cutoff, etc.).
+     * @param {number} pad
+     * @param {string} name
+     * @param {number} value
+     */
+    set_pad_param(pad, name, value) {
+        const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.toasterinstance_set_pad_param(this.__wbg_ptr, pad, ptr0, len0, value);
+    }
+    /**
+     * Set a global parameter (master_gain, reverb_*, delay_*).
+     * @param {string} name
+     * @param {number} value
+     */
+    set_param(name, value) {
+        const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.toasterinstance_set_param(this.__wbg_ptr, ptr0, len0, value);
+    }
+}
+if (Symbol.dispose) ToasterInstance.prototype[Symbol.dispose] = ToasterInstance.prototype.free;
+
+function __wbg_get_imports() {
+    const import0 = {
+        __proto__: null,
+        __wbg___wbindgen_copy_to_typed_array_2f7503a7f71d6632: function(arg0, arg1, arg2) {
+            new Uint8Array(arg2.buffer, arg2.byteOffset, arg2.byteLength).set(getArrayU8FromWasm0(arg0, arg1));
+        },
+        __wbg___wbindgen_throw_5549492daedad139: function(arg0, arg1) {
+            throw new Error(getStringFromWasm0(arg0, arg1));
+        },
+        __wbindgen_init_externref_table: function() {
+            const table = wasm.__wbindgen_externrefs;
+            const offset = table.grow(4);
+            table.set(0, undefined);
+            table.set(offset + 0, undefined);
+            table.set(offset + 1, null);
+            table.set(offset + 2, true);
+            table.set(offset + 3, false);
+        },
+    };
+    return {
+        __proto__: null,
+        "./daw_dsp_bg.js": import0,
+    };
+}
+
+const FermenterInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_fermenterinstance_free(ptr >>> 0, 1));
+const GlutenInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_gluteninstance_free(ptr >>> 0, 1));
+const KneadInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_kneadinstance_free(ptr >>> 0, 1));
+const LevainInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_levaininstance_free(ptr >>> 0, 1));
+const ProofChamberEngineFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_proofchamberengine_free(ptr >>> 0, 1));
+const ProofInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_proofinstance_free(ptr >>> 0, 1));
+const ToasterInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_toasterinstance_free(ptr >>> 0, 1));
+
+function getArrayU8FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getUint8ArrayMemory0().subarray(ptr / 1, ptr / 1 + len);
+}
+
+let cachedFloat32ArrayMemory0 = null;
+function getFloat32ArrayMemory0() {
+    if (cachedFloat32ArrayMemory0 === null || cachedFloat32ArrayMemory0.byteLength === 0) {
+        cachedFloat32ArrayMemory0 = new Float32Array(wasm.memory.buffer);
+    }
+    return cachedFloat32ArrayMemory0;
+}
+
+function getStringFromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return decodeText(ptr, len);
+}
+
+let cachedUint8ArrayMemory0 = null;
+function getUint8ArrayMemory0() {
+    if (cachedUint8ArrayMemory0 === null || cachedUint8ArrayMemory0.byteLength === 0) {
+        cachedUint8ArrayMemory0 = new Uint8Array(wasm.memory.buffer);
+    }
+    return cachedUint8ArrayMemory0;
+}
+
+function passArrayF32ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 4, 4) >>> 0;
+    getFloat32ArrayMemory0().set(arg, ptr / 4);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
+}
+
+function passStringToWasm0(arg, malloc, realloc) {
+    if (realloc === undefined) {
+        const buf = cachedTextEncoder.encode(arg);
+        const ptr = malloc(buf.length, 1) >>> 0;
+        getUint8ArrayMemory0().subarray(ptr, ptr + buf.length).set(buf);
+        WASM_VECTOR_LEN = buf.length;
+        return ptr;
+    }
+
+    let len = arg.length;
+    let ptr = malloc(len, 1) >>> 0;
+
+    const mem = getUint8ArrayMemory0();
+
+    let offset = 0;
+
+    for (; offset < len; offset++) {
+        const code = arg.charCodeAt(offset);
+        if (code > 0x7F) break;
+        mem[ptr + offset] = code;
+    }
+    if (offset !== len) {
+        if (offset !== 0) {
+            arg = arg.slice(offset);
+        }
+        ptr = realloc(ptr, len, len = offset + arg.length * 3, 1) >>> 0;
+        const view = getUint8ArrayMemory0().subarray(ptr + offset, ptr + len);
+        const ret = cachedTextEncoder.encodeInto(arg, view);
+
+        offset += ret.written;
+        ptr = realloc(ptr, len, offset, 1) >>> 0;
+    }
+
+    WASM_VECTOR_LEN = offset;
+    return ptr;
+}
+
+let cachedTextDecoder = new TextDecoder('utf-8', { ignoreBOM: true, fatal: true });
+cachedTextDecoder.decode();
+const MAX_SAFARI_DECODE_BYTES = 2146435072;
+let numBytesDecoded = 0;
+function decodeText(ptr, len) {
+    numBytesDecoded += len;
+    if (numBytesDecoded >= MAX_SAFARI_DECODE_BYTES) {
+        cachedTextDecoder = new TextDecoder('utf-8', { ignoreBOM: true, fatal: true });
+        cachedTextDecoder.decode();
+        numBytesDecoded = len;
+    }
+    return cachedTextDecoder.decode(getUint8ArrayMemory0().subarray(ptr, ptr + len));
+}
+
+const cachedTextEncoder = new TextEncoder();
+
+if (!('encodeInto' in cachedTextEncoder)) {
+    cachedTextEncoder.encodeInto = function (arg, view) {
+        const buf = cachedTextEncoder.encode(arg);
+        view.set(buf);
+        return {
+            read: arg.length,
+            written: buf.length
+        };
+    };
+}
+
+let WASM_VECTOR_LEN = 0;
+
+let wasmModule, wasm;
+function __wbg_finalize_init(instance, module) {
+    wasm = instance.exports;
+    wasmModule = module;
+    cachedFloat32ArrayMemory0 = null;
+    cachedUint8ArrayMemory0 = null;
+    wasm.__wbindgen_start();
+    return wasm;
+}
+
+async function __wbg_load(module, imports) {
+    if (typeof Response === 'function' && module instanceof Response) {
+        if (typeof WebAssembly.instantiateStreaming === 'function') {
+            try {
+                return await WebAssembly.instantiateStreaming(module, imports);
+            } catch (e) {
+                const validResponse = module.ok && expectedResponseType(module.type);
+
+                if (validResponse && module.headers.get('Content-Type') !== 'application/wasm') {
+                    console.warn("`WebAssembly.instantiateStreaming` failed because your server does not serve Wasm with `application/wasm` MIME type. Falling back to `WebAssembly.instantiate` which is slower. Original error:\n", e);
+
+                } else { throw e; }
+            }
+        }
+
+        const bytes = await module.arrayBuffer();
+        return await WebAssembly.instantiate(bytes, imports);
+    } else {
+        const instance = await WebAssembly.instantiate(module, imports);
+
+        if (instance instanceof WebAssembly.Instance) {
+            return { instance, module };
+        } else {
+            return instance;
+        }
+    }
+
+    function expectedResponseType(type) {
+        switch (type) {
+            case 'basic': case 'cors': case 'default': return true;
+        }
+        return false;
+    }
+}
+
+function initSync(module) {
+    if (wasm !== undefined) return wasm;
+
+
+    if (module !== undefined) {
+        if (Object.getPrototypeOf(module) === Object.prototype) {
+            ({module} = module)
+        } else {
+            console.warn('using deprecated parameters for `initSync()`; pass a single object instead')
+        }
+    }
+
+    const imports = __wbg_get_imports();
+    if (!(module instanceof WebAssembly.Module)) {
+        module = new WebAssembly.Module(module);
+    }
+    const instance = new WebAssembly.Instance(module, imports);
+    return __wbg_finalize_init(instance, module);
+}
+
+async function __wbg_init(module_or_path) {
+    if (wasm !== undefined) return wasm;
+
+
+    if (module_or_path !== undefined) {
+        if (Object.getPrototypeOf(module_or_path) === Object.prototype) {
+            ({module_or_path} = module_or_path)
+        } else {
+            console.warn('using deprecated parameters for the initialization function; pass a single object instead')
+        }
+    }
+
+    if (module_or_path === undefined) {
+        module_or_path = new URL('daw_dsp_bg.wasm', import.meta.url);
+    }
+    const imports = __wbg_get_imports();
+
+    if (typeof module_or_path === 'string' || (typeof Request === 'function' && module_or_path instanceof Request) || (typeof URL === 'function' && module_or_path instanceof URL)) {
+        module_or_path = fetch(module_or_path);
+    }
+
+    const { instance, module } = await __wbg_load(await module_or_path, imports);
+
+    return __wbg_finalize_init(instance, module);
+}
+
+export { initSync, __wbg_init as default };

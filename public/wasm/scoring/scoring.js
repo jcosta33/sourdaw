@@ -1,62 +1,126 @@
-export class ProofChamberInstance {
+export class ScoringInstance {
     __destroy_into_raw() {
         const ptr = this.__wbg_ptr;
         this.__wbg_ptr = 0;
-        ProofChamberInstanceFinalization.unregister(this);
+        ScoringInstanceFinalization.unregister(this);
         return ptr;
     }
     free() {
         const ptr = this.__destroy_into_raw();
-        wasm.__wbg_proofchamberinstance_free(ptr, 0);
+        wasm.__wbg_scoringinstance_free(ptr, 0);
     }
     /**
-     * Report plugin latency in samples for PDC (delay compensation).
-     * The convolution head size is the minimum latency.
      * @returns {number}
      */
-    get_latency() {
-        const ret = wasm.proofchamberinstance_get_latency(this.__wbg_ptr);
+    get_cents() {
+        const ret = wasm.scoringinstance_get_cents(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_confidence() {
+        const ret = wasm.scoringinstance_get_confidence(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_frequency() {
+        const ret = wasm.scoringinstance_get_frequency(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_midi_note() {
+        const ret = wasm.scoringinstance_get_midi_note(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_note_index() {
+        const ret = wasm.scoringinstance_get_note_index(this.__wbg_ptr);
         return ret >>> 0;
     }
     /**
-     * @returns {string}
+     * @returns {number}
      */
-    get_param_names() {
-        let deferred1_0;
-        let deferred1_1;
-        try {
-            const ret = wasm.proofchamberinstance_get_param_names(this.__wbg_ptr);
-            deferred1_0 = ret[0];
-            deferred1_1 = ret[1];
-            return getStringFromWasm0(ret[0], ret[1]);
-        } finally {
-            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
-        }
+    get_octave() {
+        const ret = wasm.scoringinstance_get_octave(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @param {number} idx
+     * @returns {number}
+     */
+    get_poly_string_cents(idx) {
+        const ret = wasm.scoringinstance_get_poly_string_cents(this.__wbg_ptr, idx);
+        return ret;
+    }
+    /**
+     * @param {number} idx
+     * @returns {number}
+     */
+    get_poly_string_confidence(idx) {
+        const ret = wasm.scoringinstance_get_poly_string_confidence(this.__wbg_ptr, idx);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_poly_string_count() {
+        const ret = wasm.scoringinstance_get_poly_string_count(this.__wbg_ptr);
+        return ret >>> 0;
     }
     /**
      * @returns {number}
      */
     get_right_ptr() {
-        const ret = wasm.proofchamberinstance_get_right_ptr(this.__wbg_ptr);
+        const ret = wasm.scoringinstance_get_right_ptr(this.__wbg_ptr);
         return ret >>> 0;
     }
     /**
-     * Load an IR for the convolution engine.
-     * @param {Float32Array} ir_data
-     * @param {number} channels
+     * Import a Scala .scl file and apply as tuning offsets.
+     * @param {string} scl_text
      */
-    load_ir(ir_data, channels) {
-        const ptr0 = passArrayF32ToWasm0(ir_data, wasm.__wbindgen_malloc);
+    import_scala(scl_text) {
+        const ptr0 = passStringToWasm0(scl_text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        wasm.proofchamberinstance_load_ir(this.__wbg_ptr, ptr0, len0, channels);
+        wasm.scoringinstance_import_scala(this.__wbg_ptr, ptr0, len0);
+    }
+    /**
+     * Import an AnaMark .tun file and apply as tuning offsets.
+     * @param {string} tun_text
+     */
+    import_tun(tun_text) {
+        const ptr0 = passStringToWasm0(tun_text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.scoringinstance_import_tun(this.__wbg_ptr, ptr0, len0);
+    }
+    /**
+     * @returns {boolean}
+     */
+    is_active() {
+        const ret = wasm.scoringinstance_is_active(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * @param {number} idx
+     * @returns {boolean}
+     */
+    is_poly_string_active(idx) {
+        const ret = wasm.scoringinstance_is_poly_string_active(this.__wbg_ptr, idx);
+        return ret !== 0;
     }
     /**
      * @param {number} sample_rate
      */
     constructor(sample_rate) {
-        const ret = wasm.proofchamberinstance_new(sample_rate);
+        const ret = wasm.scoringinstance_new(sample_rate);
         this.__wbg_ptr = ret >>> 0;
-        ProofChamberInstanceFinalization.register(this, this.__wbg_ptr, this);
+        ScoringInstanceFinalization.register(this, this.__wbg_ptr, this);
         return this;
     }
     /**
@@ -70,7 +134,7 @@ export class ProofChamberInstance {
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passArrayF32ToWasm0(right_in, wasm.__wbindgen_malloc);
         const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.proofchamberinstance_process(this.__wbg_ptr, ptr0, len0, ptr1, len1, frames);
+        const ret = wasm.scoringinstance_process(this.__wbg_ptr, ptr0, len0, ptr1, len1, frames);
         return ret >>> 0;
     }
     /**
@@ -80,10 +144,10 @@ export class ProofChamberInstance {
     set_param(name, value) {
         const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        wasm.proofchamberinstance_set_param(this.__wbg_ptr, ptr0, len0, value);
+        wasm.scoringinstance_set_param(this.__wbg_ptr, ptr0, len0, value);
     }
 }
-if (Symbol.dispose) ProofChamberInstance.prototype[Symbol.dispose] = ProofChamberInstance.prototype.free;
+if (Symbol.dispose) ScoringInstance.prototype[Symbol.dispose] = ScoringInstance.prototype.free;
 
 function __wbg_get_imports() {
     const import0 = {
@@ -103,13 +167,13 @@ function __wbg_get_imports() {
     };
     return {
         __proto__: null,
-        "./proof_chamber_bg.js": import0,
+        "./scoring_bg.js": import0,
     };
 }
 
-const ProofChamberInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
+const ScoringInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_proofchamberinstance_free(ptr >>> 0, 1));
+    : new FinalizationRegistry(ptr => wasm.__wbg_scoringinstance_free(ptr >>> 0, 1));
 
 let cachedFloat32ArrayMemory0 = null;
 function getFloat32ArrayMemory0() {
@@ -283,7 +347,7 @@ async function __wbg_init(module_or_path) {
     }
 
     if (module_or_path === undefined) {
-        module_or_path = new URL('proof_chamber_bg.wasm', import.meta.url);
+        module_or_path = new URL('scoring_bg.wasm', import.meta.url);
     }
     const imports = __wbg_get_imports();
 
