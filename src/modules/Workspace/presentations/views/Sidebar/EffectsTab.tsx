@@ -1,5 +1,7 @@
 import { type ReactElement } from 'react';
-import { Shield, Sparkles } from 'lucide-react';
+import { Shield, Sparkles, Zap, GitBranch, AudioLines } from 'lucide-react';
+import { InstrumentCard, PROOF_THEME, KNEAD_THEME, YEAST_THEME, SCORING_THEME } from '../../components/Sidebar/InstrumentCard';
+import { APP_EVENTS } from '#/helpers/Event/appEvents';
 import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
 import { type BUILTIN_PLUGINS } from '#/modules/Arrangement/useCases/trackQueries';
 import { type SoundPreset } from '#/modules/Arrangement/useCases/trackQueries';
@@ -419,39 +421,59 @@ export const EffectsTab = ({
 
     // ── Route: Root — three top-level section cards ──────────────────────────
 
-    const handleAddProof = () => {
-        if (selectedTrackId) {
-            addDevice(selectedTrackId, 'Proof');
-        }
-    };
-
     return (
         <div className="flex flex-col gap-0 animate-in slide-in-from-left-4 duration-200">
-            {/* Featured: Proof Mastering Suite */}
-            <div className="mb-2">
-                <button
-                    type="button"
-                    className="w-full group relative overflow-hidden rounded-lg border border-[var(--color-accent-mint)]/30 bg-gradient-to-br from-[var(--color-accent-mint)]/10 via-surface-raised to-[var(--color-accent-mint)]/5 hover:border-[var(--color-accent-mint)]/50 hover:from-[var(--color-accent-mint)]/15 transition-all duration-200 cursor-pointer"
-                    onClick={handleAddProof}
-                >
-                    <div className="flex items-center gap-3 px-3 py-3">
-                        <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-[var(--color-accent-mint)]/20 border border-[var(--color-accent-mint)]/20">
-                            <Shield className="size-4.5 text-[var(--color-accent-mint)]" />
-                        </div>
-                        <div className="flex-1 min-w-0 text-left">
-                            <div className="flex items-center gap-1.5">
-                                <span className="text-[12px] font-bold text-foreground tracking-tight">Proof</span>
-                                <span className="px-1 py-px rounded text-[8px] font-bold uppercase tracking-wider bg-[var(--color-accent-mint)]/20 text-[var(--color-accent-mint)]">
-                                    Mastering
-                                </span>
-                            </div>
-                            <div className="text-[9px] text-muted-foreground/80 leading-tight mt-0.5">
-                                EQ · Multiband Dynamics · Stereo Imager · Exciter · Limiter
-                            </div>
-                        </div>
-                    </div>
-                    <div className="absolute -top-6 -right-6 w-16 h-16 bg-[var(--color-accent-mint)]/8 rounded-full blur-xl pointer-events-none" />
-                </button>
+            {/* Featured: Premium Plugins */}
+            <div className="flex flex-col gap-1.5 mb-3">
+                <InstrumentCard
+                    icon={Shield}
+                    label="Proof"
+                    badge="Mastering"
+                    description="EQ · Multiband Dynamics · Imager · Exciter · Limiter"
+                    onClick={() => {
+                        if (selectedTrackId) {
+                            addDevice(selectedTrackId, 'Proof');
+                            document.dispatchEvent(new Event(APP_EVENTS.SHOW_PROOF_TAB));
+                        }
+                    }}
+                    theme={PROOF_THEME}
+                />
+                <InstrumentCard
+                    icon={Zap}
+                    label="Knead"
+                    badge="Amp Sim"
+                    description="Tube Drive · Preamp EQ · Cabinet Simulator"
+                    onClick={() => {
+                        if (selectedTrackId) addDevice(selectedTrackId, 'Knead');
+                    }}
+                    theme={KNEAD_THEME}
+                />
+                <InstrumentCard
+                    icon={GitBranch}
+                    label="Yeast"
+                    badge="MIDI FX"
+                    description="Arpeggiator · Chord Generator · Scale Filter"
+                    onClick={() => {
+                        if (selectedTrackId) {
+                            addDevice(selectedTrackId, 'Yeast');
+                            document.dispatchEvent(new Event(APP_EVENTS.SHOW_YEAST_TAB));
+                        }
+                    }}
+                    theme={YEAST_THEME}
+                />
+                <InstrumentCard
+                    icon={AudioLines}
+                    label="Scoring Tuner"
+                    badge="Analysis"
+                    description="Polyphonic pitch tracking · Yin & MPM Transcription"
+                    onClick={() => {
+                        if (selectedTrackId) {
+                            addDevice(selectedTrackId, 'Scoring');
+                            document.dispatchEvent(new Event(APP_EVENTS.SHOW_SCORING_TAB));
+                        }
+                    }}
+                    theme={SCORING_THEME}
+                />
             </div>
 
             <NavCard

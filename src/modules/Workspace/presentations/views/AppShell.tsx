@@ -138,9 +138,22 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         return () => document.removeEventListener(APP_EVENTS.SHOW_AUTOMATION_TAB, handler);
     }, [mixerOpen]);
 
+    // ─── Shared state helpers ───
+    const closeAllDevicePanels = () => {
+        setFermenterOpen(false);
+        setToasterOpen(false);
+        setLevainOpen(false);
+        setProofChamberOpen(false);
+        setGlutenOpen(false);
+        setScoringOpen(false);
+        setProofOpen(false);
+        setYeastOpen(false);
+    };
+
     // Listen for fermenter panel open (from inspector device click)
     useEffect(() => {
         const handler = (): void => {
+            closeAllDevicePanels();
             setFermenterOpen(true);
         };
         document.addEventListener(APP_EVENTS.SHOW_FERMENTER_TAB, handler);
@@ -150,6 +163,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     // Listen for toaster panel open (from inspector device click)
     useEffect(() => {
         const handler = (): void => {
+            closeAllDevicePanels();
             setToasterOpen(true);
         };
         document.addEventListener(APP_EVENTS.SHOW_TOASTER_TAB, handler);
@@ -159,6 +173,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     // Listen for levain panel open (from inspector device click)
     useEffect(() => {
         const handler = (): void => {
+            closeAllDevicePanels();
             setLevainOpen(true);
         };
         document.addEventListener(APP_EVENTS.SHOW_LEVAIN_TAB, handler);
@@ -168,6 +183,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     // Listen for Proof Chamber panel open (from inspector device click)
     useEffect(() => {
         const handler = (): void => {
+            closeAllDevicePanels();
             setProofChamberOpen(true);
         };
         document.addEventListener(APP_EVENTS.SHOW_PROOF_CHAMBER_TAB, handler);
@@ -177,6 +193,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     // Listen for Gluten panel open (from inspector device click)
     useEffect(() => {
         const handler = (): void => {
+            closeAllDevicePanels();
             setGlutenOpen(true);
         };
         document.addEventListener(APP_EVENTS.SHOW_GLUTEN_TAB, handler);
@@ -186,6 +203,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     // Listen for Proof mastering suite panel open
     useEffect(() => {
         const handler = (): void => {
+            closeAllDevicePanels();
             setProofOpen(true);
         };
         document.addEventListener(APP_EVENTS.SHOW_PROOF_TAB, handler);
@@ -194,13 +212,19 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     // Listen for Yeast MIDI FX panel open
     useEffect(() => {
-        const handler = (): void => { setYeastOpen(true); };
+        const handler = (): void => {
+            closeAllDevicePanels();
+            setYeastOpen(true);
+        };
         document.addEventListener(APP_EVENTS.SHOW_YEAST_TAB, handler);
         return () => document.removeEventListener(APP_EVENTS.SHOW_YEAST_TAB, handler);
     }, []);
 
     useEffect(() => {
-        const handler = (): void => { setScoringOpen(true); };
+        const handler = (): void => {
+            closeAllDevicePanels();
+            setScoringOpen(true);
+        };
         document.addEventListener(APP_EVENTS.SHOW_SCORING_TAB, handler);
         return () => document.removeEventListener(APP_EVENTS.SHOW_SCORING_TAB, handler);
     }, []);

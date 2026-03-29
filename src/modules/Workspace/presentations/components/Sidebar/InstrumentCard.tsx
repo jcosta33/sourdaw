@@ -43,6 +43,38 @@ export const LEVAIN_THEME: InstrumentCardTheme = {
     glow: 'bg-amber-500/8',
 };
 
+export const PROOF_THEME: InstrumentCardTheme = {
+    button: 'border-[var(--color-accent-mint)]/30 bg-gradient-to-br from-[var(--color-accent-mint)]/10 via-surface-raised to-[var(--color-accent-mint)]/5 hover:border-[var(--color-accent-mint)]/50 hover:from-[var(--color-accent-mint)]/15',
+    iconBox: 'bg-[var(--color-accent-mint)]/20 border-[var(--color-accent-mint)]/20 shadow-[0_0_12px_var(--color-accent-mint)/15]',
+    iconColor: 'text-[var(--color-accent-mint)]',
+    badgeColor: 'bg-[var(--color-accent-mint)]/20 text-[var(--color-accent-mint)]',
+    glow: 'bg-[var(--color-accent-mint)]/8',
+};
+
+export const KNEAD_THEME: InstrumentCardTheme = {
+    button: 'border-[var(--color-accent-pink)]/30 bg-gradient-to-br from-[var(--color-accent-pink)]/10 via-surface-raised to-[var(--color-accent-pink)]/5 hover:border-[var(--color-accent-pink)]/50 hover:from-[var(--color-accent-pink)]/15',
+    iconBox: 'bg-[var(--color-accent-pink)]/20 border-[var(--color-accent-pink)]/20 shadow-[0_0_12px_var(--color-accent-pink)/15]',
+    iconColor: 'text-[var(--color-accent-pink)]',
+    badgeColor: 'bg-[var(--color-accent-pink)]/20 text-[var(--color-accent-pink)]',
+    glow: 'bg-[var(--color-accent-pink)]/8',
+};
+
+export const SCORING_THEME: InstrumentCardTheme = {
+    button: 'border-[var(--color-accent-cyan)]/30 bg-gradient-to-br from-[var(--color-accent-cyan)]/10 via-surface-raised to-[var(--color-accent-cyan)]/5 hover:border-[var(--color-accent-cyan)]/50 hover:from-[var(--color-accent-cyan)]/15',
+    iconBox: 'bg-[var(--color-accent-cyan)]/20 border-[var(--color-accent-cyan)]/20 shadow-[0_0_12px_var(--color-accent-cyan)/15]',
+    iconColor: 'text-[var(--color-accent-cyan)]',
+    badgeColor: 'bg-[var(--color-accent-cyan)]/20 text-[var(--color-accent-cyan)]',
+    glow: 'bg-[var(--color-accent-cyan)]/8',
+};
+
+export const YEAST_THEME: InstrumentCardTheme = {
+    button: 'border-lime-500/30 bg-gradient-to-br from-lime-500/10 via-surface-raised to-lime-500/5 hover:border-lime-500/50 hover:from-lime-500/15',
+    iconBox: 'bg-lime-500/20 border-lime-500/20 shadow-[0_0_12px_rgba(132,204,22,0.15)]',
+    iconColor: 'text-lime-400',
+    badgeColor: 'bg-lime-500/20 text-lime-400',
+    glow: 'bg-lime-500/8',
+};
+
 export const InstrumentCard = ({ icon: Icon, label, badge, description, onClick, theme }: InstrumentCardProps): ReactElement => (
     <button
         type="button"

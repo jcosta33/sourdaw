@@ -12,6 +12,7 @@ import {
 } from '#/modules/Arrangement/useCases/preset/presetStorage';
 import { createTrackFromPreset, loadPresetToTrack } from '#/modules/Arrangement/useCases/preset/presetLoading';
 import { createDrumTrackStack } from '#/modules/Toaster/useCases/createDrumTrackStack';
+import { APP_EVENTS } from '#/helpers/Event/appEvents';
 
 import { PresetItem } from '../../components/Sidebar/PresetItem';
 import { InstrumentCard, FERMENTER_THEME, TOASTER_THEME, LEVAIN_THEME } from '../../components/Sidebar/InstrumentCard';
@@ -172,10 +173,12 @@ export const InstrumentsTab = ({
             isFactory: true,
         };
         createTrackFromPreset(preset);
+        document.dispatchEvent(new Event(APP_EVENTS.SHOW_FERMENTER_TAB));
     };
 
     const handleAddToasterTrack = () => {
         createDrumTrackStack();
+        document.dispatchEvent(new Event(APP_EVENTS.SHOW_TOASTER_TAB));
     };
 
     const handleAddLevainTrack = () => {
@@ -191,6 +194,7 @@ export const InstrumentsTab = ({
             isFactory: true,
         };
         createTrackFromPreset(preset);
+        document.dispatchEvent(new Event(APP_EVENTS.SHOW_LEVAIN_TAB));
     };
 
     void userPresetsVersion;
