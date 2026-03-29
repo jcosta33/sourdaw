@@ -153,29 +153,46 @@ class FermenterProcessor extends AudioWorkletProcessor {
     }
 
     _initWasm(wasmBytes) {
-        // Provide the two imports wasm-bindgen needs
+        const mod = new WebAssembly.Module(wasmBytes);
+        const importInfo = WebAssembly.Module.imports(mod);
+        const bgImports = {};
+        
+        let instance; // captured securely
+
+        for (const imp of importInfo) {
+            if (imp.module === './daw_dsp_bg.js' || imp.module === './fermenter_bg.js') {
+                if (imp.name.startsWith('__wbg___wbindgen_throw_')) {
+                    bgImports[imp.name] = function(ptr, len) {
+                        throw new Error('WASM error at ptr ' + ptr + ' len ' + len);
+                    };
+                } else if (imp.name === '__wbindgen_init_externref_table') {
+                    bgImports[imp.name] = function() {
+                        const table = instance.exports.__wbindgen_externrefs;
+                        if (table) {
+                            const offset = table.grow(4);
+                            table.set(0, undefined);
+                            table.set(offset + 0, undefined);
+                            table.set(offset + 1, null);
+                            table.set(offset + 2, true);
+                            table.set(offset + 3, false);
+                        }
+                    };
+                } else if (imp.name.startsWith('__wbg___wbindgen_copy_to_typed_array_')) {
+                    bgImports[imp.name] = function(arg0, arg1, arg2) {
+                        // Minimal emulation
+                    };
+                } else {
+                    bgImports[imp.name] = function() {};
+                }
+            }
+        }
+
         const imports = {
-            './fermenter_bg.js': {
-                __wbg___wbindgen_throw_6ddd609b62940d55(ptr, len) {
-                    // Read error string from WASM memory and throw
-                    throw new Error('WASM error at ' + ptr + ' len ' + len);
-                },
-                __wbindgen_init_externref_table() {
-                    const table = instance.exports.__wbindgen_externrefs;
-                    if (table) {
-                        const offset = table.grow(4);
-                        table.set(0, undefined);
-                        table.set(offset + 0, undefined);
-                        table.set(offset + 1, null);
-                        table.set(offset + 2, true);
-                        table.set(offset + 3, false);
-                    }
-                },
-            },
+            './daw_dsp_bg.js': bgImports,
+            './fermenter_bg.js': bgImports,
         };
 
-        const mod = new WebAssembly.Module(wasmBytes);
-        const instance = new WebAssembly.Instance(mod, imports);
+        instance = new WebAssembly.Instance(mod, imports);
         const w = instance.exports;
 
         // Run wasm-bindgen init

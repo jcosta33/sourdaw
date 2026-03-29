@@ -18,6 +18,7 @@ import { type DisplayMode } from '../../models/ScoringState';
 const MODES: { id: DisplayMode; label: string }[] = [
     { id: 'needle', label: 'Needle' },
     { id: 'strobe', label: 'Strobe' },
+    { id: 'poly', label: 'Poly' },
 ];
 
 export const ScoringPanel = (): ReactElement => {
@@ -102,8 +103,10 @@ export const ScoringPanel = (): ReactElement => {
                 <div className="flex-1 max-w-[400px] h-full">
                     {mode === 'needle' ? (
                         <NeedleDisplay cents={cents} active={active} confidence={confidence} />
-                    ) : (
+                    ) : mode === 'strobe' ? (
                         <StrobeDisplay cents={cents} active={active} />
+                    ) : (
+                        <PolyDisplay />
                     )}
                 </div>
 
@@ -338,4 +341,50 @@ const HistoryGraph = ({ cents, active }: { cents: number; active: boolean }): Re
     }, [cents, active]);
 
     return <canvas ref={canvasRef} width={600} height={40} className="w-full h-full" />;
+};
+
+// ── Polyphonic string display ───────────────────────────────────────
+
+const GUITAR_STRINGS = ['E2', 'A2', 'D3', 'G3', 'B3', 'E4'];
+
+const PolyDisplay = (): ReactElement => {
+    // In a full implementation, this would read from the scoring store's poly data.
+    // For now, show the string labels with placeholder indicators.
+    return (
+        <div className="flex flex-col justify-center gap-1 px-4 h-full">
+            {GUITAR_STRINGS.map((label) => {
+                const stringCents = 0; // would come from store
+                const stringActive = false;
+                const absCents = Math.abs(stringCents);
+                const barColor = !stringActive ? 'bg-muted-foreground/10'
+                    : absCents <= 2 ? 'bg-emerald-500'
+                    : absCents <= 10 ? 'bg-yellow-500'
+                    : 'bg-red-500';
+
+                return (
+                    <div key={label} className="flex items-center gap-2">
+                        <span className="text-[10px] text-muted-foreground/60 w-6 text-right font-mono">{label}</span>
+                        <div className="flex-1 h-3 bg-surface-base/50 rounded-full relative overflow-hidden">
+                            {/* Center line */}
+                            <div className="absolute left-1/2 top-0 bottom-0 w-px bg-emerald-500/20" />
+                            {/* Deviation indicator */}
+                            {stringActive ? (
+                                <div
+                                    className={`absolute top-0 bottom-0 w-2 rounded-full ${barColor} transition-all duration-100`}
+                                    style={{
+                                        left: `${50 + (stringCents / 50) * 50}%`,
+                                        transform: 'translateX(-50%)',
+                                    }}
+                                />
+                            ) : null}
+                        </div>
+                        <span className="text-[8px] text-muted-foreground/40 w-10 text-right tabular-nums">
+                            {stringActive ? `${stringCents >= 0 ? '+' : ''}${stringCents.toFixed(1)}` : '—'}
+                        </span>
+                    </div>
+                );
+            })}
+            <span className="text-[7px] text-muted-foreground/30 text-center mt-1">Strum all open strings</span>
+        </div>
+    );
 };

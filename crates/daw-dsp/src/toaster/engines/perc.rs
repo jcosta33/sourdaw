@@ -73,7 +73,7 @@ impl PercEngine {
             base_freq: 800.0,
             tune_ratio: 1.0,
             tone: 0.5,
-            noise_level: 0.0,
+            noise_level: 0.5,
             decay: 0.1,
             drive: 0.0,
         }

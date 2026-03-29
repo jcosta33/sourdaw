@@ -6,11 +6,16 @@
 
 pub mod preprocess;
 pub mod yin;
+pub mod mpm;
+pub mod poly;
 pub mod tuning;
 pub mod tone;
+pub mod scala;
 
 use preprocess::{DcBlocker, Bandpass, RmsTracker, apply_hann_window, normalize};
 use yin::YinDetector;
+use mpm::MpmDetector;
+use poly::PolyStringTracker;
 use tuning::TuningSystem;
 use tone::ToneGenerator;
 use wasm_bindgen::prelude::*;
@@ -190,6 +195,8 @@ pub struct ScoringEngine {
     analysis_buf: AnalysisBuffer,
     analysis_window: Vec<f32>,
     yin: YinDetector,
+    mpm: MpmDetector,
+    poly: PolyStringTracker,
 
     // Stabilization
     stabilizer: TemporalStabilizer,
@@ -228,6 +235,8 @@ impl ScoringEngine {
             analysis_buf: AnalysisBuffer::new(hop),
             analysis_window: vec![0.0; ANALYSIS_WINDOW],
             yin: YinDetector::new(sample_rate, 40.0, 5000.0),
+            mpm: MpmDetector::new(sample_rate, 40.0, 5000.0),
+            poly: PolyStringTracker::new(sample_rate),
             stabilizer: TemporalStabilizer::new(),
             vibrato: VibratoDetector::new(),
             raw_freq: 0.0,
@@ -252,6 +261,14 @@ impl ScoringEngine {
             "capo" => self.tuning.set_param("capo", value),
             "tone" => self.tone.set_enabled(value > 0.5),
             "mute" => self.mute_output = value > 0.5,
+            "poly" => self.poly.enabled = value > 0.5,
+            "instrument" => {
+                match value as u8 {
+                    0 => self.poly.set_guitar_standard(),
+                    1 => self.poly.set_bass_4(),
+                    _ => {}
+                }
+            }
             _ => {}
         }
     }
@@ -266,6 +283,9 @@ impl ScoringEngine {
             let filtered = self.bandpass.process(dc_removed);
             let rms = self.rms.update(filtered);
 
+            // Feed poly tracker (runs at its own rate internally)
+            self.poly.process_sample(filtered);
+
             // Feed analysis buffer
             let should_analyze = self.analysis_buf.push(filtered);
 
@@ -275,8 +295,20 @@ impl ScoringEngine {
                 apply_hann_window(&mut self.analysis_window);
                 normalize(&mut self.analysis_window);
 
-                // Run YIN
-                let (freq, conf) = self.yin.detect(&self.analysis_window);
+                // Run YIN (primary)
+                let (yin_freq, yin_conf) = self.yin.detect(&self.analysis_window);
+
+                // Run MPM (cross-check)
+                let (mpm_freq, mpm_clarity) = self.mpm.detect(&self.analysis_window);
+
+                // Use YIN as primary; use MPM as fallback if YIN confidence is low
+                let (freq, conf) = if yin_conf > 0.5 {
+                    (yin_freq, yin_conf)
+                } else if mpm_clarity > 0.6 {
+                    (mpm_freq, mpm_clarity)
+                } else {
+                    (yin_freq, yin_conf) // YIN even at low confidence
+                };
 
                 if freq > 0.0 && conf > 0.3 {
                     self.raw_freq = freq;
@@ -373,4 +405,31 @@ impl ScoringInstance {
     pub fn get_octave(&self) -> i32 { self.engine.octave }
     pub fn get_midi_note(&self) -> i32 { self.engine.midi_note }
     pub fn is_active(&self) -> bool { self.engine.active }
+
+    // Poly telemetry
+    pub fn get_poly_string_count(&self) -> u32 { self.engine.poly.string_count() as u32 }
+    pub fn get_poly_string_cents(&self, idx: u32) -> f32 {
+        self.engine.poly.results.get(idx as usize).map(|r| r.cents).unwrap_or(0.0)
+    }
+    pub fn get_poly_string_confidence(&self, idx: u32) -> f32 {
+        self.engine.poly.results.get(idx as usize).map(|r| r.confidence).unwrap_or(0.0)
+    }
+    pub fn is_poly_string_active(&self, idx: u32) -> bool {
+        self.engine.poly.results.get(idx as usize).map(|r| r.active).unwrap_or(false)
+    }
+
+    /// Import a Scala .scl file and apply as tuning offsets.
+    pub fn import_scala(&mut self, scl_text: &str) {
+        if let Some(scale) = scala::ScalaScale::parse_scl(scl_text) {
+            self.engine.tuning.offsets = scale.to_12tet_offsets();
+        }
+    }
+
+    /// Import an AnaMark .tun file and apply as tuning offsets.
+    pub fn import_tun(&mut self, tun_text: &str) {
+        if let Some(tuning) = scala::AnaMarkTuning::parse_tun(tun_text) {
+            self.engine.tuning.offsets = tuning.to_12tet_offsets();
+            self.engine.tuning.a4_hz = tuning.base_freq;
+        }
+    }
 }

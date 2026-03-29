@@ -46,6 +46,7 @@ export type GlutenPatch = {
     scEqEnabled: boolean;
     deltaListen: boolean;
     gainMatchBypass: boolean;
+    extSidechain: boolean;
 
     // FET-specific
     inputGain: number;    // dB
@@ -103,6 +104,7 @@ export const DEFAULT_PATCH: GlutenPatch = {
     scEqEnabled: false,
     deltaListen: false,
     gainMatchBypass: false,
+    extSidechain: false,
     inputGain: 0,
     outputGain: 0,
     xfmrDrive: 1.2,

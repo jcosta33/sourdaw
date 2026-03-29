@@ -76,7 +76,7 @@ class ToasterProcessor extends AudioWorkletProcessor {
         let instance; // captured securely
 
         for (const imp of importInfo) {
-            if (imp.module === './toaster_bg.js') {
+            if (imp.module === './daw_dsp_bg.js' || imp.module === './toaster_bg.js') {
                 if (imp.name.startsWith('__wbg___wbindgen_throw_')) {
                     bgImports[imp.name] = function(ptr, len) {
                         throw new Error('WASM error at ptr ' + ptr + ' len ' + len);
@@ -93,6 +93,12 @@ class ToasterProcessor extends AudioWorkletProcessor {
                             table.set(offset + 3, false);
                         }
                     };
+                } else if (imp.name.startsWith('__wbg___wbindgen_copy_to_typed_array_')) {
+                    bgImports[imp.name] = function(arg0, arg1, arg2) {
+                        // Minimal emulation: arg2 is a fat pointer to JS object, arg0/arg1 is WASM slice
+                        // Realistically Worklets don't pass JS objects back and forth, so empty stub works 
+                        // as long as it doesn't crash initialization
+                    };
                 } else {
                     bgImports[imp.name] = function() {};
                 }
@@ -100,6 +106,7 @@ class ToasterProcessor extends AudioWorkletProcessor {
         }
 
         const imports = {
+            './daw_dsp_bg.js': bgImports,
             './toaster_bg.js': bgImports,
         };
 

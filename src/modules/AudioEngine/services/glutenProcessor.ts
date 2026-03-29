@@ -55,6 +55,7 @@ const PARAM_MAP = {
     jfetK3: 'jfet_k3',
     xfmrK2: 'xfmr_k2',
     oversampling: 'oversampling',
+    extSidechain: 'ext_sidechain',
 };
 
 class GlutenProcessor extends AudioWorkletProcessor {
@@ -86,7 +87,7 @@ class GlutenProcessor extends AudioWorkletProcessor {
 
     _initWasm(wasmBytes) {
         const imports = {
-            './gluten_bg.js': {
+            './daw_dsp_bg.js': {
                 __wbg___wbindgen_throw_6ddd609b62940d55(ptr, len) {
                     throw new Error('WASM error at ' + ptr + ' len ' + len);
                 },
@@ -155,6 +156,15 @@ class GlutenProcessor extends AudioWorkletProcessor {
         const mem = w.memory.buffer;
         new Float32Array(mem, inLeftPtr, frames).set(input[0]);
         new Float32Array(mem, inRightPtr, frames).set(input[1] ?? input[0]);
+
+        // Write external sidechain if available (input 1)
+        const scInput = inputs[1];
+        if (scInput && scInput.length >= 1 && scInput[0].length > 0) {
+            const scLeftPtr = w.gluteninstance_get_sc_left_ptr(this._ptr) >>> 0;
+            const scRightPtr = w.gluteninstance_get_sc_right_ptr(this._ptr) >>> 0;
+            new Float32Array(mem, scLeftPtr, frames).set(scInput[0]);
+            new Float32Array(mem, scRightPtr, frames).set(scInput[1] ?? scInput[0]);
+        }
 
         // Process — returns pointer to output left buffer
         const outLeftPtr = w.gluteninstance_process(this._ptr, frames) >>> 0;

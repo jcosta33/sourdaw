@@ -34,6 +34,7 @@ import { ProofChamberPanel } from '#/modules/ProofChamber/presentations/views/Pr
 import { GlutenPanel } from '#/modules/Gluten/presentations/views/GlutenPanel';
 import { ProofPanel } from '#/modules/Proof/presentations/views/ProofPanel';
 import { ScoringPanel } from '#/modules/Scoring/presentations/views/ScoringPanel';
+import { YeastPanel } from '#/modules/Yeast/presentations/views/YeastPanel';
 
 import { CommandPalette } from '#/modules/Command/presentations/views/CommandPalette';
 import { VoiceCommandOverlay } from '#/modules/AiRuntime/presentations/views/VoiceCommandOverlay';
@@ -83,6 +84,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         levainHeight,
         glutenHeight,
         proofHeight,
+        yeastHeight,
     } = workspaceState;
 
     const project = useProjectState();
@@ -98,6 +100,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const [glutenOpen, setGlutenOpen] = useState(false);
     const [scoringOpen, setScoringOpen] = useState(false);
     const [proofOpen, setProofOpen] = useState(false);
+    const [yeastOpen, setYeastOpen] = useState(false);
 
     // ─── Extracted hooks ───
     useAppInitialization();
@@ -189,6 +192,13 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         return () => document.removeEventListener(APP_EVENTS.SHOW_PROOF_TAB, handler);
     }, []);
 
+    // Listen for Yeast MIDI FX panel open
+    useEffect(() => {
+        const handler = (): void => { setYeastOpen(true); };
+        document.addEventListener(APP_EVENTS.SHOW_YEAST_TAB, handler);
+        return () => document.removeEventListener(APP_EVENTS.SHOW_YEAST_TAB, handler);
+    }, []);
+
     useEffect(() => {
         const handler = (): void => { setScoringOpen(true); };
         document.addEventListener(APP_EVENTS.SHOW_SCORING_TAB, handler);
@@ -206,6 +216,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const setLevainHeight = (fn: (prev: number) => number) => updateWorkspaceState({ levainHeight: fn(levainHeight) });
     const setGlutenHeight = (fn: (prev: number) => number) => updateWorkspaceState({ glutenHeight: fn(glutenHeight) });
     const setProofHeight = (fn: (prev: number) => number) => updateWorkspaceState({ proofHeight: fn(proofHeight) });
+    const setYeastHeight = (fn: (prev: number) => number) => updateWorkspaceState({ yeastHeight: fn(yeastHeight) });
 
     return (
         <div className="flex h-screen w-screen flex-col overflow-hidden bg-surface-app">
@@ -336,6 +347,19 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                             onClose={() => setScoringOpen(false)}
                         >
                             <ScoringPanel />
+                        </InstrumentBottomPanel>
+                    ) : null}
+
+                    {yeastOpen ? (
+                        <InstrumentBottomPanel
+                            label="Yeast"
+                            labelColor="text-[var(--color-accent-peach)]"
+                            borderColor="border-[var(--color-accent-peach)]/20"
+                            height={yeastHeight}
+                            onResize={setYeastHeight}
+                            onClose={() => setYeastOpen(false)}
+                        >
+                            <YeastPanel />
                         </InstrumentBottomPanel>
                     ) : null}
 

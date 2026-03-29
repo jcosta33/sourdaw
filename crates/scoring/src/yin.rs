@@ -36,7 +36,7 @@ fn fft_autocorrelation(input: &[f32], output: &mut [f32], n: usize) {
     output[..len].copy_from_slice(&re[..len]);
 }
 
-fn fft_inplace(re: &mut [f32], im: &mut [f32], inverse: bool) {
+pub fn fft_inplace(re: &mut [f32], im: &mut [f32], inverse: bool) {
     let n = re.len();
     if !n.is_power_of_two() || n < 2 { return; }
 

@@ -19,7 +19,7 @@ function getActiveDevices(): DeviceRef[] {
     const refs: DeviceRef[] = [];
     for (const track of getAllTracks()) {
         for (const device of track.devices) {
-            if (device.type === 'grinder') {
+            if (device.type === 'toaster') {
                 refs.push({ trackId: track.id, deviceId: device.id });
             }
         }
@@ -43,9 +43,9 @@ function flushPadParam(cacheKey: string): void {
     for (const { trackId } of getActiveDevices()) {
         const strip = getTrackStrip(trackId);
         if (!strip) { continue; }
-        const dn = strip.deviceNodes.find((d) => d.grinderControls?.ready);
-        if (dn?.grinderControls) {
-            dn.grinderControls.setPadParam(entry.pad, entry.name, entry.value);
+        const dn = strip.deviceNodes.find((d) => d.toasterControls && d.toasterControls.ready !== undefined);
+        if (dn?.toasterControls) {
+            dn.toasterControls.setPadParam(entry.pad, entry.name, entry.value);
         }
     }
 }
@@ -80,9 +80,9 @@ export function setPadEngineImmediate(padIndex: number, engineIdx: number): void
         if (!strip) {
             continue;
         }
-        const dn = strip.deviceNodes.find((d) => d.grinderControls?.ready);
-        if (dn?.grinderControls) {
-            dn.grinderControls.setPadParam(padIndex, 'engine_type', engineIdx);
+        const dn = strip.deviceNodes.find((d) => d.toasterControls && d.toasterControls.ready !== undefined);
+        if (dn?.toasterControls) {
+            dn.toasterControls.setPadParam(padIndex, 'engine_type', engineIdx);
         }
     }
 }

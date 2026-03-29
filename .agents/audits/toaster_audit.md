@@ -1,51 +1,62 @@
-# Top-to-Bottom Audit: Toaster Drum Machine
+# Toaster Drum Machine: Deep Audit & Diagnostics 
 
-## Executive Summary
-Per your instructions, I reverted my surgical `TrackNode.ts` patch and took a step back to audit the entire Toaster module, tracing exactly how it processes sound from the TypeScript routing layer down into the raw Rust DSP math.
+I have performed a fine-tooth comb analysis from the React frontend, down through the TypeScript AudioWorklet bridges, and into the raw WASM compilation pipeline and Rust DSP math. 
 
-You were absolutely right that the system should let Rust do the heavy lifting natively without TS forcing overrides. But tracing the Rust engines revealed why everything sounds like "random things" "broken plucks" or "thin bells." The actual mathematical DSP algorithms written in the Rust backend are currently primitive placeholders. Even when they are routed properly, they produce raw, un-filtered shapes that sound like 1980s toy synthesizers.
+Here are the root causes of the timbral anomalies, the unresponsive presets, and why "barely anything has changed."
 
-Here are the detailed findings from the top down:
+## 1. THE SMOKING GUN: You Are Running an Ancient WASM Engine
+The most catastrophic bug is in the build and loading pipeline.
+When the project's folder architecture was consolidated into `daw-dsp` (as part of the 5-crate rule), the `package.json` command was updated to combine all synthesizers into one compilation target:
+`"wasm:dsp": "cd crates/daw-dsp && wasm-pack build --target web --out-dir ../../public/wasm/daw-dsp"`
+This successfully generates a single new binary named **`daw_dsp_bg.wasm`**.
 
----
+However, **the React Audio Engine never loads it.**
+- `ToasterNode.ts` is still hardcoded to fetch `const DEFAULT_WASM_URL = '/wasm/toaster/toaster_bg.wasm';`
+- `ToasterProcessor.ts` checks for `imp.module === './toaster_bg.js'`, which would crash on the new binary anyway.
+- **Worse yet:** `FermenterNode` and `LevainNode` suffer from *the exact same bug*. They fetch `/wasm/fermenter/fermenter_bg.wasm`.
 
-### 1. The TS -> Rust Parameter Bridge
-* **The "Kick" Illusion:** The TS frontend currently treats the Toaster audio node as an opaque box upon project load. If a user tweaks a parameter in the UI, it sends it via `set_param`, but on a fresh load, TS does not serialize the saved kit parameters to the Rust engine automatically.
-* **Rust Native Defaults:** The Rust `ToasterEngine::new` natively sets up a GM-compatible map by default (**Pad 0 = Kick**, **Pad 1 = Snare**, **Pad 2 = Closed Hat**). So if TS doesn't send anything, Rust *is* producing Snares and Hi-hats—they just mathematically sound incredibly bad right now.
-* **The "Open" Parameter Bug:** In `note_on`, the Rust engine explicitly forwards `tune`, `decay`, `tone`, and `drive` to the active voice. However, it **does not forward the `is_open` flag** for HiHats. As a result, both the Open and Closed hi-hats permanently trigger their short envelope decay logic (0.01 - 0.05s). That is why **Closed HH sounds exactly like Open HH**.
+**Conclusion:** The browser is loading pre-refactoring ghost files left over in your `/public` folder. All the new "analog" synthesis math, Loopback FM logic, and Rust bug fixes have **never actually been executed in your browser.** You are literally hearing an older version of the codebase.
 
----
+## 2. The Broken React-to-Audio Thread Bridge
+When manipulating knobs to change `drive`, `decay`, or `tone`, those values are routed through `src/modules/Toaster/useCases/toasterParamBridge.ts`. 
+During a previous UI renaming pass, this file was missed:
+```typescript
+if (device.type === 'grinder') {  // <--- Bug: Should be 'toaster'
+    refs.push({ trackId: track.id, deviceId: device.id });
+}
+const dn = strip.deviceNodes.find((d) => d.grinderControls?.ready); // <--- Bug
+```
+Because it searches for `grinder`, the bridge fails silently. Moving UI knobs on the front-end never transmits messages to the WASM audio thread. 
 
-### 2. The DSP Engines (`daw-dsp/src/toaster/engines/*`)
+## 3. The DSP Bugs Waiting in the Dark
+Once we fix the WASM pipeline (Step 1), the new DSP code *will* load... but it will immediately break across several drum models because the Rust parameters are mapped destructively against UI macros:
 
-#### **Snare (`snare.rs`)**
-> *"Snare: sounds like a kick drum with a long tail"*
+### The Snare (Sounds like a Kick Drum)
+```rust
+// Inside snare.rs `set_param`
+"drive" => self.snappy = value.clamp(0.0, 10.0) / 10.0,
+```
+- Standard UI presets (like "Plain Bread") map `pad.drive` to `0`. 
+- When `loadToasterKit.ts` pushes that `drive = 0` to the WASM, the new Rust code forces `self.snappy = 0`.
+- Since `snappy` controls the volume of the snare wire noise, the entire noise layer is muted. You are left with only the underlying "body" sine waves, which mathematically sounds identical to a high-pitched kick drum.
 
-The Snare engine uses two static sine waves at 200Hz and 360Hz. It has absolutely **zero pitch sweep** (FM knock), which is the essential component that gives snares their punch. Instead, it exponentially decays these two raw, steady sines. When combined with the SVF noise filter, it sounds exactly like an electronic tom or a kick drum with excessive tail.
+### The Hi-Hat (Thin and Missing Harmonic Ratios)
+- In `hihat.rs`, the documentation says it uses "six square oscillators at inharmonic metallic ratios". It even defines a generic constant for it: `const RATIOS: [f32; 6] = [1.0, 1.4, 1.68, 2.0, 2.4, 2.82];`.
+- **The Bug:** `RATIOS` is permanently ignored/unused by the code. The tick function only actually calculates two oscillator phase accumulators, producing a very thin ring-mod-style chirp instead of a dense metallic cluster.
 
-#### **Hi-Hat (`hihat.rs`)**
-> *"Open HH: sounds like a distorted broken pluck"*
+### Cowbell & Shaker (Missing Noise Exciter)
+- In `perc.rs`, the shaker relies heavily on `noise_level`. However, `noise_level` is initialized to `0.0` inside `new()`.
+- Because the limited 10-knob UI (volume, pan, tune, decay, tone, drive, cutoff, resonance, send_rev, send_dly) doesn't have a parameter for `noise_level`, it is never set. The Shaker and sections of the Rimshot are left starved of the noise floor they mathematically require to be audible.
 
-The HiHat engine attempts to synthesize metallic overtones by summing **6 raw, non-bandlimited square waves** at inharmonic ratios. At sample rates like 44.1kHz, generating raw square waves with infinite harmonics creates massive aliasing distortion (`fs/2` foldback). When this garbage signal is driven into two highly resonant state-variable filters (SVF) at 3.5kHz and 7kHz, the intermodulation distortion creates a harsh, broken digital pluck instead of white metallic shimmer.
+## Resolution Recommendations (The Fix)
 
-#### **Toms (`tom.rs`)**
-> *"Mid tom: doesn't play anything at all"* 
-> *(Or plays incorrectly via MIDI offset)*
+To solve all issues completely:
 
-All three Toms (Low, Mid, High) are instantiated in Rust with the exact same base frequency of `150Hz`. However, the engine's `note_on` function intercepts standard incoming MIDI keys (e.g., C3 = 60) and applies a raw math offset `(midi_note - 60.0 + pad_cfg.tune)`. Because the UI pads aren't currently bound to a dynamic GM key-map on the physical keyboard, hitting specific keys drives the oscillators into random tuning extremes or zeroes them out entirely.
-
-#### **Percussion: Cowbell, Clave, Shaker, Rim (`perc.rs`)**
-> *"High tom, shaker, clave, perc 1 and perc 2: sounds like a thin bell"*
-
-The Clave engine is mathematically modeled as a continuous, pure Sine wave multiplied against the global amplitude envelope. No fast FM transient, no body resonance. It is literally just an 800Hz sine wave, which is why they all sound like cheap, thin bells. The Cowbell uses two aliasing square waves, leading back to the "broken pluck" issue.
-
----
-
-## Architectural Recommendations for the Sourdaw Model
-To match the premium standard of Logic Pro's Drum Machine Designer:
-
-1. **Replace the Naive DSP Engine Math**: The underlying Rust synthesis algorithms need a complete overhaul. 
-   * **HiHats** require TR-808 style tuned noise bands or bandlimited (PolyBLEP) metallic impulse arrays to eliminate aliasing.
-   * **Snares/Kicks** require explicit FM pitch-envelopes (`vco_pitch = base_pitch * (1.0 + env * modulation)`) for transient knock.
-2. **Implement Event-Driven Rehydration**: To prevent the TS world from brute-forcing parameter loops, we should implement a clean `DeviceLoadedEvent` or leverage the `TrackNode.ts` parameter map so that saved UI state mathematically syncs down to Rust organically on project load.
-3. **Fix the Pad -> Engine Parameters**: The `HiHat` engine's `open` parameter, and other specific engine configurations, need to be rigorously forwarded upon the `trigger()` call rather than being lost during voice-stealing recycling.
+1. **Pipeline Restructuring (`ts` bridge)** 
+    - Unify `FermenterNode`, `ToasterNode`, and `LevainNode` to all fetch and instantiate from `/wasm/daw-dsp/daw_dsp_bg.wasm`. 
+    - Update their `Processor.ts` files to intercept `./daw_dsp_bg.js` imports instead of individual crate imports.
+2. **Bridge Repair (`toasterParamBridge.ts`)** 
+    - Rename all internal `grinder` references to `toaster` so that live UI tweaking works.
+3. **Decouple and Complete the DSP Math** 
+    - **Snare/Percussion:** Remove the hardcoded bounds tying UI macros to basic internal constants. The instruments should load with robust, authentic default acoustic values (e.g. `snappy` is always high for a snare), and UI knobs like `drive` should just behave as secondary saturation stages.
+    - **Hi-Hat:** Implement a loop iterating over the `RATIOS` array so that all 6 inharmonic bands are present.

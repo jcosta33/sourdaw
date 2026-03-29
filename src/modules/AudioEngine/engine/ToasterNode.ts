@@ -7,7 +7,7 @@
 
 import toasterProcessorUrl from '../services/toasterProcessor.ts?worker&url';
 
-const DEFAULT_WASM_URL = '/wasm/toaster/toaster_bg.wasm';
+const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
 let workletRegistrationPromise: Promise<void> | null = null;
 let cachedWasmBytes: ArrayBuffer | null = null;

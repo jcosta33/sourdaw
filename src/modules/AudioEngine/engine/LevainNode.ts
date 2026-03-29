@@ -9,7 +9,7 @@
 import levainProcessorUrl from '../services/levainProcessor.ts?worker&url';
 import { autoLoadLevainSamples } from '#/modules/Levain/useCases/autoLoadSamples';
 
-const DEFAULT_WASM_URL = '/wasm/levain/levain_bg.wasm';
+const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
 const workletRegistrations = new WeakMap<AudioContext, Promise<void>>();
 let cachedWasmBytes: ArrayBuffer | null = null;

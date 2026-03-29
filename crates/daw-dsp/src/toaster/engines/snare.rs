@@ -15,6 +15,12 @@ fn noise(state: &mut u32) -> f32 {
     (x as i32 as f32) / (i32::MAX as f32)
 }
 
+#[inline]
+fn fast_tanh(x: f32) -> f32 {
+    let x2 = x * x;
+    x * (27.0 + x2) / (27.0 + 9.0 * x2)
+}
+
 pub struct SnareEngine {
     // Body oscillators
     phase1: f32,
@@ -37,6 +43,7 @@ pub struct SnareEngine {
     noise_color: f32,    // bandpass center freq factor
     tone: f32,           // body/noise balance
     noise_decay: f32,    // seconds
+    drive: f32,          // saturation amount
 }
 
 impl SnareEngine {
@@ -55,10 +62,11 @@ impl SnareEngine {
             bp_ic2: 0.0,
             tune: 0.0,
             body_decay: 0.08,
-            snappy: 0.6,
+            snappy: 0.8,
             noise_color: 0.5,
             tone: 0.5,
             noise_decay: 0.15,
+            drive: 0.0,
         }
     }
 
@@ -128,7 +136,13 @@ impl SnareEngine {
         self.noise_env *= self.noise_decay_coeff;
 
         // Mix body and noise
-        body * self.tone + filtered_noise * (1.0 - self.tone * 0.5)
+        let mixed = body * self.tone + filtered_noise * (1.0 - self.tone * 0.5);
+
+        if self.drive > 0.001 {
+            fast_tanh(mixed * (1.0 + self.drive * 4.0))
+        } else {
+            mixed
+        }
     }
 
     pub fn is_active(&self) -> bool {
@@ -145,7 +159,7 @@ impl SnareEngine {
                 self.noise_decay = 0.03 + v * 0.22;
             }
             "tone" => self.tone = value.clamp(0.0, 1.0),
-            "drive" => self.snappy = value.clamp(0.0, 10.0) / 10.0,
+            "drive" => self.drive = value.clamp(0.0, 10.0),
             "body_decay" => self.body_decay = value.clamp(0.02, 0.5),
             "snappy" => self.snappy = value.clamp(0.0, 1.0),
             "noise_color" => self.noise_color = value.clamp(0.0, 1.0),
