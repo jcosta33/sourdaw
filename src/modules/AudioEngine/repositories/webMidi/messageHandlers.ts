@@ -100,22 +100,83 @@ export function handleNoteOn(channel: number, note: number, velocity: number): v
     const isRecording = transport?.isRecording ?? false;
 
     if (!(isRecording && isArmed)) {
-        const strip = engine.ensureTrackStrip(targetTrackId);
 
-        // Check for Fermenter instrument — route MIDI via worklet MessagePort
-        const fermenterDevice = track?.devices.find((d) => d.type === 'fermenter');
-        if (fermenterDevice) {
-            const dn = strip.deviceNodes.find((d) => d.deviceId === fermenterDevice.id || d.type === 'fermenter');
-            if (dn?.fermenterControls?.ready) {
-                dn.fermenterControls.noteOn(note, velocity);
-                noteData.fermenterDeviceId = fermenterDevice.id;
-                return;
+        // ── Resolve instrument track ────────────────────────────────────
+        // A track may be:
+        //   (a) A normal track with its own instrument device
+        //   (b) A Grinder child track (no devices, parentId → Grinder parent)
+        //   (c) Any other child track that routes to its parent's instrument
+        //
+        // For Grinder child tracks: the child represents ONE pad.
+        // Any MIDI note on that child plays that pad's sound.
+        // On the parent Grinder track: MIDI note selects the pad (GM drum map).
+
+        let instrumentTrackId = targetTrackId;
+        let instrumentTrack = track;
+        let grinderChildPad: number | null = null;
+
+        if (track && track.devices.length === 0 && track.parentId && trackState) {
+            const parent = trackState.tracks.find((t) => t.id === track.parentId);
+            if (parent) {
+                instrumentTrackId = parent.id;
+                instrumentTrack = parent;
+
+                // If parent has a Grinder, determine which pad this child represents
+                if (parent.devices.some((d) => d.type === 'grinder')) {
+                    const children = trackState.tracks.filter(
+                        (t) => t.parentId === parent.id
+                    );
+                    grinderChildPad = children.findIndex((t) => t.id === track.id);
+                }
             }
-            // Fermenter not ready yet — fall through to built-in synth as fallback
         }
 
+        const strip = engine.ensureTrackStrip(instrumentTrackId);
+
+        // ── Route to the instrument on the resolved track ───────────────
+
+        // Fermenter synth
+        const fermenterDev = instrumentTrack?.devices.find((d) => d.type === 'fermenter');
+        if (fermenterDev) {
+            const dn = strip.deviceNodes.find((d) => d.deviceId === fermenterDev.id || d.type === 'fermenter');
+            if (dn?.fermenterControls?.ready) {
+                dn.fermenterControls.noteOn(note, velocity);
+                noteData.fermenterDeviceId = fermenterDev.id;
+                return;
+            }
+            return; // not ready — play nothing (don't fall through to wrong sound)
+        }
+
+        // Grinder drum machine
+        const grinderDev = instrumentTrack?.devices.find((d) => d.type === 'grinder');
+        if (grinderDev) {
+            const dn = strip.deviceNodes.find((d) => d.deviceId === grinderDev.id || d.type === 'grinder');
+            if (dn?.grinderControls?.ready) {
+                // Child track → always play that child's pad, MIDI note controls pitch
+                // Parent track → note selects the pad (GM drum map: C1=36 → pad 0)
+                const pad = grinderChildPad ?? (note - 36);
+                dn.grinderControls.noteOn(pad, velocity, note);
+                noteData.grinderDeviceId = grinderDev.id;
+                return;
+            }
+            return; // not ready
+        }
+
+        // Orchestral instrument
+        const orchestralDev = instrumentTrack?.devices.find((d) => d.type === 'orchestral');
+        if (orchestralDev) {
+            const dn = strip.deviceNodes.find((d) => d.deviceId === orchestralDev.id || d.type === 'orchestral');
+            if (dn?.orchestraControls?.ready) {
+                dn.orchestraControls.noteOn(note, velocity);
+                (noteData as Record<string, unknown>).orchestraDeviceId = orchestralDev.id;
+                return;
+            }
+            return; // not ready
+        }
+
+        // ── Built-in synth / drum kit fallback ────────────────────────
         let osc: OscillatorNode | null = null;
-        const synthDevice = track?.devices.find(
+        const synthDevice = instrumentTrack?.devices.find(
             (d) =>
                 d.type === 'builtin-drum-kit' ||
                 d.type.startsWith('builtin-drum-machine') ||
@@ -178,6 +239,25 @@ export function handleNoteOff(_channel: number, note: number): void {
         const dn = strip?.deviceNodes.find((d) => d.deviceId === noteData.fermenterDeviceId);
         if (dn?.fermenterControls) {
             dn.fermenterControls.noteOff(note);
+        }
+    }
+
+    // Grinder noteOff — send via worklet MessagePort
+    if (noteData.grinderDeviceId && targetTrackId) {
+        const strip = audioEngine.getTrackStrip(targetTrackId);
+        const dn = strip?.deviceNodes.find((d) => d.deviceId === noteData.grinderDeviceId);
+        if (dn?.grinderControls) {
+            const pad = note - 36;
+            dn.grinderControls.noteOff(pad);
+        }
+    }
+
+    // Orchestral noteOff — send via worklet MessagePort
+    if ((noteData as any).orchestraDeviceId && targetTrackId) {
+        const strip = audioEngine.getTrackStrip(targetTrackId);
+        const dn = strip?.deviceNodes.find((d) => d.deviceId === (noteData as any).orchestraDeviceId);
+        if (dn?.orchestraControls) {
+            dn.orchestraControls.noteOff(note);
         }
     }
 
@@ -274,6 +354,18 @@ export function handleCC(channel: number, cc: number, value: number): void {
         audioEngine.setTrackGain(targetTrackId, value / 127);
     } else if (cc === 10) {
         audioEngine.setTrackPan(targetTrackId, ((value / 127) * 2 - 1) * 50);
+    }
+
+    // Forward expression CCs (CC1, CC2, CC11, CC64) to orchestral engine
+    const trackState = getTrackStoreState();
+    const track = trackState?.tracks.find((t) => t.id === targetTrackId);
+    const orchestraDevice = track?.devices.find((d) => d.type === 'orchestral');
+    if (orchestraDevice) {
+        const strip = audioEngine.getTrackStrip(targetTrackId);
+        const dn = strip?.deviceNodes.find((d) => d.deviceId === orchestraDevice.id || d.type === 'orchestral');
+        if (dn?.orchestraControls?.ready) {
+            dn.orchestraControls.handleCc(cc, value);
+        }
     }
 }
 

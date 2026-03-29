@@ -1,0 +1,91 @@
+//! Pad configuration for a single drum pad in the Grinder drum machine.
+
+use crate::engines::DrumEngineType;
+
+/// One drum pad's configuration. Does not contain DSP state —
+/// that lives in the voice. This is purely parameter storage.
+pub struct Pad {
+    pub engine_type: DrumEngineType,
+    pub choke_group: u8,        // 0 = none, 1-16 = group
+    pub volume: f32,
+    pub pan: f32,               // -1 (left) to +1 (right)
+    pub muted: bool,
+    pub tune: f32,              // semitones
+    pub decay: f32,             // 0-1 normalized
+    pub tone: f32,              // 0-1 normalized
+    pub drive: f32,             // 0-10
+    pub filter_cutoff: f32,     // 0-1 normalized
+    pub filter_resonance: f32,  // 0-1 normalized
+    pub send_reverb: f32,       // 0-1
+    pub send_delay: f32,        // 0-1
+    pub transient_attack: f32,  // 0-2, 1 = unity
+    pub transient_sustain: f32, // 0-2, 1 = unity
+    pub bus_route: u8,          // 0 = master direct, 1-4 = bus 1-4
+}
+
+impl Pad {
+    pub fn new(engine_type: DrumEngineType) -> Self {
+        Self {
+            engine_type,
+            choke_group: 0,
+            volume: 0.8,
+            pan: 0.0,
+            muted: false,
+            tune: 0.0,
+            decay: 0.5,
+            tone: 0.5,
+            drive: 0.0,
+            filter_cutoff: 1.0,
+            filter_resonance: 0.0,
+            send_reverb: 0.0,
+            send_delay: 0.0,
+            transient_attack: 1.0,
+            transient_sustain: 1.0,
+            bus_route: 0,
+        }
+    }
+
+    pub fn set_param(&mut self, name: &str, value: f32) {
+        match name {
+            "volume" => self.volume = value.clamp(0.0, 1.0),
+            "pan" => self.pan = value.clamp(-1.0, 1.0),
+            "muted" => self.muted = value > 0.5,
+            "tune" => self.tune = value.clamp(-24.0, 24.0),
+            "decay" => self.decay = value.clamp(0.0, 1.0),
+            "tone" => self.tone = value.clamp(0.0, 1.0),
+            "drive" => self.drive = value.clamp(0.0, 10.0),
+            "filter_cutoff" => {
+                // Accept Hz (20-20000) and normalize to 0-1 for the SVF
+                // log scale: 0 = 20Hz, 1 = 20000Hz
+                let hz = value.clamp(20.0, 20000.0);
+                self.filter_cutoff = (hz / 20.0).log2() / (1000.0f32).log2();
+                self.filter_cutoff = self.filter_cutoff.clamp(0.0, 1.0);
+            }
+            "filter_resonance" => {
+                // Accept 0.5-20 Q range, normalize to 0-1
+                self.filter_resonance = ((value - 0.5) / 19.5).clamp(0.0, 1.0);
+            }
+            "send_reverb" => self.send_reverb = value.clamp(0.0, 1.0),
+            "send_delay" => self.send_delay = value.clamp(0.0, 1.0),
+            "choke_group" => self.choke_group = (value as u8).min(16),
+            "transient_attack" => self.transient_attack = value.clamp(0.0, 2.0),
+            "transient_sustain" => self.transient_sustain = value.clamp(0.0, 2.0),
+            "bus_route" => self.bus_route = (value as u8).min(4),
+            "engine_type" => {
+                self.engine_type = match value as u32 {
+                    0 => DrumEngineType::Kick,
+                    1 => DrumEngineType::Snare,
+                    2 => DrumEngineType::HiHat,
+                    3 => DrumEngineType::Clap,
+                    4 => DrumEngineType::Perc,
+                    5 => DrumEngineType::Tom,
+                    6 => DrumEngineType::Cymbal,
+                    7 => DrumEngineType::Modal,
+                    8 => DrumEngineType::FmPerc,
+                    _ => DrumEngineType::Kick,
+                };
+            }
+            _ => {}
+        }
+    }
+}

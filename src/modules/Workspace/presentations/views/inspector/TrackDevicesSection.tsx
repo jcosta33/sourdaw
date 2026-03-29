@@ -3,6 +3,7 @@ import { Card } from '#/components/ui/card';
 import { Button } from '#/components/ui/button';
 import { Plus, Power, Trash2, Monitor, LayoutGrid } from 'lucide-react';
 import { getPlatformPlugins } from '#/modules/Arrangement/repositories/getPlatformPlugins';
+import { getPluginById } from '#/modules/Arrangement/models/DeviceParameter';
 import { bypassDevice } from '#/modules/Arrangement/useCases/device/bypassDevice';
 import { removeDevice } from '#/modules/Arrangement/useCases/device/removeDevice';
 import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
@@ -184,8 +185,9 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                 device.bypassed ? 'opacity-50' : ''
                             )}
                             onClick={() => {
-                                if (device.type === 'fermenter') {
-                                    document.dispatchEvent(new Event('sourdaw:show-fermenter-tab'));
+                                const descriptor = getPluginById(device.type);
+                                if (descriptor?.hasCustomUI) {
+                                    document.dispatchEvent(new Event(`sourdaw:show-${device.type}-tab`));
                                 } else {
                                     onSelectDevice(device.id);
                                 }

@@ -1,9 +1,14 @@
 import { type ReactElement } from 'react';
 import { Sparkles } from 'lucide-react';
 import { type BUILTIN_PLUGINS } from '#/modules/Arrangement/models/DeviceParameter';
+import { type SoundPreset } from '#/modules/Arrangement/models/SoundPreset';
+import { getFactoryPresets } from '#/modules/Arrangement/useCases/soundPresetLibrary';
+import { createTrackFromPreset, loadPresetToTrack } from '#/modules/Arrangement/useCases/preset/presetLoading';
 import { PluginBrowser } from '#/modules/AudioEngine/presentations/views/PluginBrowser';
 import { MODULATOR_PRESETS } from '#/modules/Plugin/useCases/modulatorLibrary';
 import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases/midiEffectPlugins/registry';
+import { PresetItem } from '../../components/sidebar/PresetItem';
+import { type PreviewHandle } from '../../hooks/usePreviewAudio';
 import { type SidebarRoute } from '../Sidebar';
 import {
     NavCard,
@@ -18,6 +23,9 @@ import {
     Music2,
 } from './effectsTabHelpers';
 
+// FX preset categories that live in this tab (moved from Instruments)
+const FX_PRESET_CATEGORIES = new Set(['fx', 'vocal']);
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 type EffectsTabProps = {
@@ -26,6 +34,9 @@ type EffectsTabProps = {
     searchQuery: string;
     currentRoute: SidebarRoute;
     pushRoute: (route: SidebarRoute) => void;
+    favorites: Set<string>;
+    onToggleFavorite: (id: string) => void;
+    preview: PreviewHandle;
 };
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -36,9 +47,30 @@ export const EffectsTab = ({
     searchQuery,
     currentRoute,
     pushRoute,
+    favorites,
+    onToggleFavorite,
+    preview,
 }: EffectsTabProps): ReactElement => {
     const effects = plugins.filter((p) => p.category !== 'instrument');
     const query = searchQuery.toLowerCase().trim();
+
+    // FX chain presets (moved from Instruments tab)
+    const fxPresets = getFactoryPresets().filter((p) => FX_PRESET_CATEGORIES.has(p.category));
+    const filteredFxPresets = query
+        ? fxPresets.filter((p) =>
+            p.name.toLowerCase().includes(query) ||
+            p.category.toLowerCase().includes(query) ||
+            p.tags.some((t) => t.toLowerCase().includes(query))
+        )
+        : fxPresets;
+
+    const handleFxPresetClick = (preset: SoundPreset) => {
+        if (selectedTrackId) {
+            loadPresetToTrack(selectedTrackId, preset);
+        } else {
+            createTrackFromPreset(preset);
+        }
+    };
 
     // ── Group effects by EFFECT_GROUPS ──────────────────────────────────────
     const groupedEffects = new Map<string, EffectPlugin[]>();
@@ -77,7 +109,7 @@ export const EffectsTab = ({
             (p) => p.name.toLowerCase().includes(query) || p.category.toLowerCase().includes(query)
         );
         const filteredMidi = MIDI_EFFECT_FACTORIES.filter((m) => m.name.toLowerCase().includes(query));
-        const total = filteredEffects.length + filteredModulators.length + filteredMidi.length;
+        const total = filteredEffects.length + filteredModulators.length + filteredMidi.length + filteredFxPresets.length;
 
         return (
             <div className="flex flex-col gap-1 animate-in fade-in duration-150">
@@ -155,7 +187,56 @@ export const EffectsTab = ({
                     </>
                 ) : null}
 
+                {filteredFxPresets.length > 0 ? (
+                    <>
+                        <div className="flex items-center gap-1 px-1.5 py-0.5 mt-2">
+                            <Sparkles className="size-3 text-muted-foreground" aria-hidden="true" />
+                            <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                FX Chain Presets
+                            </span>
+                        </div>
+                        <div className="flex flex-col gap-[2px]">
+                            {filteredFxPresets.map((preset) => (
+                                <PresetItem
+                                    key={preset.id}
+                                    preset={preset}
+                                    selectedTrackId={selectedTrackId}
+                                    favorites={favorites}
+                                    onToggleFavorite={onToggleFavorite}
+                                    onClick={() => handleFxPresetClick(preset)}
+                                    preview={preview}
+                                />
+                            ))}
+                        </div>
+                    </>
+                ) : null}
+
                 <PluginBrowser selectedTrackId={selectedTrackId} searchQuery={searchQuery} />
+            </div>
+        );
+    }
+
+    // ── Route: FX chain presets — flat list of all FX/vocal presets ─────────
+    if (currentRoute.id === 'effects-fxpresets') {
+        return (
+            <div className="flex flex-col gap-1.5 animate-in slide-in-from-right-4 duration-200">
+                {fxPresets.length > 0 ? (
+                    fxPresets.map((preset) => (
+                        <PresetItem
+                            key={preset.id}
+                            preset={preset}
+                            selectedTrackId={selectedTrackId}
+                            favorites={favorites}
+                            onToggleFavorite={onToggleFavorite}
+                            onClick={() => handleFxPresetClick(preset)}
+                            preview={preview}
+                        />
+                    ))
+                ) : (
+                    <div className="flex flex-col items-center justify-center py-10 opacity-60">
+                        <span className="text-xs text-muted-foreground">No FX chain presets.</span>
+                    </div>
+                )}
             </div>
         );
     }
@@ -365,6 +446,17 @@ export const EffectsTab = ({
                 badge={<SoonBadge />}
                 onClick={() => pushRoute({ id: 'effects-midifx', title: 'MIDI FX' })}
             />
+
+            {fxPresets.length > 0 ? (
+                <NavCard
+                    icon={Sparkles}
+                    label="FX Chain Presets"
+                    description="Sound design, vocal & mix chains"
+                    count={fxPresets.length}
+                    color="bg-[var(--color-accent-peach)]/20 text-[var(--color-accent-peach)]"
+                    onClick={() => pushRoute({ id: 'effects-fxpresets', title: 'FX Chain Presets' })}
+                />
+            ) : null}
 
             {/* External Plugin Browser */}
             <div className="border-t border-border/20 pt-2 mt-1">

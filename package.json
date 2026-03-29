@@ -15,7 +15,11 @@
     "lint:fix": "eslint --fix \"src/**/*.{ts,tsx}\"",
     "deps:validate": "depcruise src",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "wasm:fermenter": "cd src-tauri/fermenter && wasm-pack build --target web --out-dir ../../public/wasm/fermenter --no-typescript",
+    "wasm:grinder": "cd src-tauri/grinder && wasm-pack build --target web --out-dir ../../public/wasm/grinder --no-typescript",
+    "wasm:orchestral": "cd src-tauri/orchestral && wasm-pack build --target web --out-dir ../../public/wasm/orchestral --no-typescript",
+    "wasm:all": "npm run wasm:fermenter && npm run wasm:grinder && npm run wasm:orchestral"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",

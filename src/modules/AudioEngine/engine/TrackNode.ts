@@ -6,6 +6,10 @@ import {
     type NativeDspNodeResult,
 } from './NativeDspNode';
 import { isFermenterDevice, createFermenterNode, type FermenterNodeResult } from './FermenterNode';
+import { isGrinderDevice, createGrinderNode, type GrinderNodeResult } from './GrinderNode';
+import { isOrchestraDevice, createOrchestraNode, type OrchestraNodeResult } from './OrchestraNode';
+import { registerOrchestraDevice, unregisterOrchestraDevice } from '#/modules/Orchestral/useCases/orchestralParamBridge';
+import { setEngineReady } from '#/modules/Orchestral/stores/orchestralStore';
 import { isDeviceSupportedOnCurrentPlatform } from '#/modules/Arrangement/useCases/trackQueries';
 import { DEVICE_FACTORIES, applyParams } from '../repositories/deviceNodeFactory';
 import { PluginHostNode } from '../models/PluginHostNode';
@@ -350,6 +354,129 @@ export class TrackNode {
                     .catch((error) => logger.warn(`[WebAudioEngine] Fermenter failed: ${error}`));
                 pendingDevicePromises.add(loadPromise);
                 loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
+            } else if (isGrinderDevice(deviceType)) {
+                // Grinder drum machine — async WASM init + AudioWorkletNode (instrument, no audio input)
+                const loadingBypass = context.createGain();
+                dn = {
+                    deviceId,
+                    type: deviceType,
+                    nodes: [loadingBypass],
+                    inputNode: loadingBypass,
+                    outputNode: loadingBypass,
+                };
+
+                // Queue params that arrive before WASM is ready
+                const pendingParams: Array<[string, number]> = [];
+                const queuedSetParam = (name: string, value: number): void => {
+                    pendingParams.push([name, value]);
+                };
+                // Expose a provisional grinderControls so updateParam() calls during
+                // async load get queued instead of silently dropped
+                dn.grinderControls = {
+                    ready: false,
+                    noteOn: () => {},
+                    noteOff: () => {},
+                    setParam: queuedSetParam,
+                    setPadParam: () => {},
+                    setBypass: () => {},
+                    destroy: () => {},
+                };
+
+                const loadPromise = createGrinderNode(context)
+                    .then(async (result: GrinderNodeResult) => {
+                        await result.ready;
+                        // Replay any params that were set while WASM was loading
+                        for (const [name, value] of pendingParams) {
+                            result.setParam(name, value);
+                        }
+                        const idx = this.strip.deviceNodes.findIndex((d) => d.deviceId === deviceId);
+                        if (idx !== -1) {
+                            const grinderDn: BuiltinDeviceNode = {
+                                deviceId,
+                                type: deviceType,
+                                nodes: [result.workletNode],
+                                inputNode: result.workletNode,
+                                outputNode: result.workletNode,
+                                grinderControls: {
+                                    ready: true,
+                                    noteOn: result.noteOn,
+                                    noteOff: result.noteOff,
+                                    setParam: result.setParam,
+                                    setPadParam: result.setPadParam,
+                                    setBypass: result.setBypass,
+                                    destroy: result.destroy,
+                                },
+                            };
+                            this.strip.deviceNodes[idx] = grinderDn;
+                            this.rebuildChain();
+                        }
+                    })
+                    .catch((error) => logger.warn(`[WebAudioEngine] Grinder failed: ${error}`));
+                pendingDevicePromises.add(loadPromise);
+                loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
+            } else if (isOrchestraDevice(deviceType)) {
+                // Orchestral suite — async WASM init + AudioWorkletNode (instrument, no audio input)
+                const loadingBypass = context.createGain();
+                dn = {
+                    deviceId,
+                    type: deviceType,
+                    nodes: [loadingBypass],
+                    inputNode: loadingBypass,
+                    outputNode: loadingBypass,
+                };
+
+                // Queue params that arrive before WASM is ready
+                const pendingParams: Array<[string, number]> = [];
+                const queuedSetParam = (name: string, value: number): void => {
+                    pendingParams.push([name, value]);
+                };
+                dn.orchestraControls = {
+                    ready: false,
+                    noteOn: () => {},
+                    noteOff: () => {},
+                    handleCc: () => {},
+                    setParam: queuedSetParam,
+                    setBypass: () => {},
+                    destroy: () => {},
+                };
+
+                const loadPromise = createOrchestraNode(context)
+                    .then(async (result: OrchestraNodeResult) => {
+                        await result.ready;
+                        for (const [name, value] of pendingParams) {
+                            result.setParam(name, value);
+                        }
+                        const idx = this.strip.deviceNodes.findIndex((d) => d.deviceId === deviceId);
+                        if (idx !== -1) {
+                            const orchestraDn: BuiltinDeviceNode = {
+                                deviceId,
+                                type: deviceType,
+                                nodes: [result.workletNode],
+                                inputNode: result.workletNode,
+                                outputNode: result.workletNode,
+                                orchestraControls: {
+                                    ready: true,
+                                    noteOn: result.noteOn,
+                                    noteOff: result.noteOff,
+                                    handleCc: result.handleCc,
+                                    setParam: result.setParam,
+                                    setBypass: result.setBypass,
+                                    destroy: result.destroy,
+                                },
+                            };
+                            this.strip.deviceNodes[idx] = orchestraDn;
+                            this.rebuildChain();
+                            // Register with param bridge so UI knobs reach the engine
+                            registerOrchestraDevice({
+                                setParam: result.setParam,
+                                handleCc: result.handleCc,
+                            });
+                            setEngineReady(true);
+                        }
+                    })
+                    .catch((error) => logger.warn(`[WebAudioEngine] Orchestral failed: ${error}`));
+                pendingDevicePromises.add(loadPromise);
+                loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
             } else {
                 return;
             }
@@ -366,6 +493,12 @@ export class TrackNode {
         }
         if (dn.fermenterControls) {
             dn.fermenterControls.destroy();
+        }
+        if (dn.grinderControls) {
+            dn.grinderControls.destroy();
+        }
+        if (dn.orchestraControls) {
+            dn.orchestraControls.destroy();
         }
         for (const n of dn.nodes) {
             n.disconnect();
@@ -417,6 +550,16 @@ export class TrackNode {
             return;
         }
 
+        if (dn.grinderControls) {
+            dn.grinderControls.setParam(paramId, value);
+            return;
+        }
+
+        if (dn.orchestraControls) {
+            dn.orchestraControls.setParam(paramId, value);
+            return;
+        }
+
         if (dn.type.startsWith('native-') && dn.nativeDspControls) {
             dn.nativeDspControls.setParam(paramId, value);
         } else if (DEVICE_FACTORIES[dn.type]) {
@@ -458,6 +601,10 @@ export class TrackNode {
         }
         if (dn.fermenterControls) {
             dn.fermenterControls.setBypass(bypassed);
+        } else if (dn.grinderControls) {
+            dn.grinderControls.setBypass(bypassed);
+        } else if (dn.orchestraControls) {
+            dn.orchestraControls.setBypass(bypassed);
         } else if (dn.nativeDspControls) {
             dn.nativeDspControls.setBypass(bypassed);
         } else {
@@ -476,6 +623,13 @@ export class TrackNode {
         for (const dn of this.strip.deviceNodes) {
             if (dn.fermenterControls) {
                 dn.fermenterControls.destroy();
+            }
+            if (dn.grinderControls) {
+                dn.grinderControls.destroy();
+            }
+            if (dn.orchestraControls) {
+                dn.orchestraControls.destroy();
+                unregisterOrchestraDevice();
             }
             for (const n of dn.nodes) {
                 n.disconnect();

@@ -17,6 +17,26 @@ A pad-based drum instrument where every pad is a full instrument channel. Each p
 
 This must surpass Logic's Drum Machine Designer, Ableton's Drum Rack, NI Battery 4, FL Studio's FPC, Bitwig's Drum Machine, NI Maschine, and hardware references (MPC, TR-808/909, SP-1200, Digitakt).
 
+## Reference Machines — What to Steal From Each
+
+**Logic DMD**: Each pad is a full DAW channel strip (any instrument + FX chain). Drum Synth has purpose-built engines per category (not generic osc+filter). Track stack architecture = mixer sees individual channels per drum piece. **Take**: per-pad full instrument hosting, purpose-built engines, the "container for channels" concept.
+
+**Ableton Drum Rack**: Nested device chains per pad. Chain selector with velocity/key zones. 16 macro knobs spanning all pads. Recursive nesting (Drum Rack inside Drum Rack). **Take**: velocity-zone layering, choke groups, kit macros, recursive hosting.
+
+**NI Battery 4**: 128-cell grid (8×16). Up to 128 sample layers per cell with velocity crossfading. Per-cell effects. 4 internal buses. Tag-based browser. Cell matrix operations. **Take**: large grid, deep layering, per-pad sample editing, bus routing, tag browser.
+
+**FL Studio FPC**: Dual-bank (A/B) with waveform preview on pad face. Up to 4 layers per pad with independent ADSR. Channel Rack step sequencer (fastest drum programming UX). **Take**: visual waveform on pads, fast per-layer controls, tight sequencer integration.
+
+**Bitwig Drum Machine**: Full device chain per pad (not simplified). Same audio-rate modulation system as The Grid works per pad. Nested containers. **Take**: full modulation system per pad, audio-rate mod for sound design.
+
+**Roland TR-808**: Dedicated circuit per drum type (bridged-T kick, hex Schmitt hat, multi-burst clap). Global accent boosts amplitude AND modifies tone. **Take**: purpose-built circuits, accent = timbral change not just volume.
+
+**Akai MPC**: 16 Levels mode (one pad → 4×4 parameter grid). Note Repeat (tempo-synced retrigger). Chop/slice workflow. Per-pad velocity curves. **Take**: 16 Levels, Note Repeat, slice workflow, velocity curves.
+
+**E-mu SP-1200**: 12-bit/26.04kHz deliberate lo-fi. No reconstruction filter. Drop-sample pitch shifting (no interpolation). SSM2044 VCF on some channels. **Take**: lo-fi as a feature, vintage character modes.
+
+**Elektron Digitakt**: Parameter locks (per-step automation of any parameter). Conditional trigs (probability, fill, first/not-first, A:B ratio). Sound locks (different sample per step). Retrig per step. **Take**: parameter locks, conditional trigs, sound locks, retrig.
+
 ## Technology Constraints
 
 - Rust, `no_std`-compatible DSP, compiles to native + WASM
@@ -209,6 +229,226 @@ Any pad can use a full Fermenter voice — wavetable, VA, FM, granular, additive
 - Total pool: 64–128 voices shared across all pads
 - Stealing priority: same pad oldest first, then global oldest
 - Choke group kills are immediate (fast fade, not stealing)
+
+## Transient Detection Algorithms (ODFs)
+
+Critical for auto-slicing, transient shaping, and transient-preserving time-stretch.
+
+**Energy Envelope Derivative (cheapest)**
+```
+e[m] = Σ_n w[n] x_m[n]²
+odf[m] = max(0, e[m] - e[m-1])
+```
+Useful but misses soft onsets and false-triggers on loud sustain.
+
+**Spectral Flux (best for percussion)**
+```
+odf[m] = Σ_k max(0, |X(m,k)| - |X(m-1,k)|)
+```
+More robust — detects spectral change, not just energy. Requires STFT.
+
+**Complex-Domain / Phase Deviation**
+Tracks phase evolution across STFT frames. Better for pitched onsets, fewer false positives. More complex.
+
+**Multi-Band ODF Fusion**
+Compute ODF in bands (low/mid/high), combine. Most robust for drums with distinct spectral shapes. ~2–3× STFT cost.
+
+**Peak Picking Post-Processing**
+1. Smooth ODF with moving average
+2. Adaptive threshold: `T[m] = median_filter(odf) + k * std(odf)`
+3. Find local maxima where `odf[m] > T[m]` and separated by minimum inter-onset interval
+
+| Method | Feature | Pros | Cons | Best Use |
+|--------|---------|------|------|----------|
+| Energy derivative | Δ energy | Very cheap | Misses soft onsets | Simple slicing |
+| Spectral flux | Δ magnitude | Robust for percussion | Needs STFT | Loops/drums |
+| Phase/complex | Phase deviation | Fewer false positives | More complex | Melodic percussion |
+| Multi-band fusion | Band ODFs combined | Most robust | Most compute | Full auto-slice |
+
+## Transient Shaper Algorithm
+
+Split signal into transient and sustain components using dual envelope followers:
+
+```
+r[n] = |x[n]|                              // rectify
+ef[n] = one_pole(r[n], τ_fast)             // fast envelope (~0.5ms)
+es[n] = one_pole(r[n], τ_slow)             // slow envelope (~20ms)
+t[n] = clamp(ef[n] - es[n], 0, 1)          // transient measure
+
+x_transient[n] = x[n] * (t[n] / (ef[n] + ε))
+x_sustain[n] = x[n] - x_transient[n]
+
+output[n] = x_transient[n] * gain_attack + x_sustain[n] * gain_sustain
+```
+
+## Auto-Slice Workflow (sample import → kit)
+
+When user drops a drum loop:
+1. Compute ODF → onset times
+2. Refine each onset to closest zero-crossing or local minimum (reduces clicks)
+3. If tempo known, optionally snap to beat grid but preserve micro-timing as groove template
+4. Extract per-slice features: RMS, peak, spectral centroid (brightness), duration
+5. Auto-map slices to pads: cluster by centroid + duration ("low+long" → kick, "high+short" → hat)
+6. Create step sequencer pattern that replays original timing
+
+## Sample Browser & Kit Management
+
+**Sample browser:**
+- Tag-based: category (kick, snare, hat, clap, tom, percussion, cymbal, FX), genre (hip-hop, electronic, acoustic, cinematic, lo-fi), character (punchy, warm, bright, dirty, clean)
+- Audio preview on hover/click (plays through browser output, not pad FX)
+- Waveform thumbnail per sample
+- Favorites, recently used, search with fuzzy match
+- Factory library: classic machines (808, 909, LinnDrum, SP-1200, CR-78), acoustic kits, cinematic, foley, textures
+- Drag from browser → pad
+
+**Kit management:**
+- Kit = complete state (all pads, layers, FX, routing, macros, patterns)
+- Save/load as JSON, tag-based browser
+- A/B compare between two loaded kits
+- Starter templates: 808 Kit, 909 Kit, Acoustic Kit, Lo-Fi Kit, Cinematic Kit, Empty Kit
+
+**Import workflows:**
+1. **File → pad**: auto-detect one-shot vs loop (length + pattern analysis). One-shot: trim silence, normalize. Loop: offer play-as-loop, auto-slice, or granular source.
+2. **Loop → machine**: transient detect → slice → assign to sequential pads → create replay pattern
+3. **Multi-sample folder**: detect velocity layers by filename convention or loudness analysis → assign with auto-configured velocity crossfading
+
+## Resampling & Pitch-Shifting
+
+**For drum one-shots** (default: resampling, not time-stretch):
+- Linear: 2 taps, fastest, audible HF loss
+- Cubic Hermite: 4 taps, good quality/CPU (recommended default)
+- Windowed-sinc: 8–64 taps, best quality, expensive
+
+**For loops** (time-stretch approaches):
+
+| Algorithm | Domain | Transient Handling | Good For | Bad For |
+|-----------|--------|-------------------|----------|---------|
+| Resampling | time | preserves transients | one-shots | loop tempo changes |
+| WSOLA | time | good with alignment | rhythmic loops | extreme polyphonic |
+| Phase vocoder | freq | smears unless phase-locked | pads, ambience | sharp drums |
+| Signalsmith Stretch | hybrid | designed for quality | general purpose | very large stretch |
+
+**WSOLA core**: analysis frames of length L, for each synthesis frame search neighborhood for offset maximizing cross-correlation with previous tail, overlap-add with Hann window. Enhanced WSOLA preserves transients by detecting and protecting transient regions.
+
+## Rust Struct Sketches (Key Data Structures)
+
+```rust
+pub struct KickSynth {
+    pub phase: f32,
+    pub base_freq: f32,     // Hz (30-80)
+    pub pitch_decay_s: f32, // seconds (0.05-0.2)
+    pub amp_decay_s: f32,   // seconds (0.05-0.8)
+    pub click_level: f32,   // 0-1
+    pub drive: f32,         // 0-10
+    pub env: ExpEnv,
+    pub pitch_env: ExpEnv,
+    pub click_env: ExpEnv,
+}
+
+pub struct LoopbackFm {
+    pub phase: f32,
+    pub freq: f32,
+    pub index: f32,         // modulation index (envelope-controlled)
+    pub fb: f32,            // feedback amount
+    pub y_prev: f32,        // previous output for feedback
+}
+
+pub struct ModalMode {
+    pub freq: f32,
+    pub decay: f32,         // per-sample multiplier: exp(-1/(τ*fs))
+    pub gain: f32,
+    pub state: [f32; 2],    // biquad resonator state
+}
+
+pub struct ModalPerc {
+    pub modes: [ModalMode; MAX_MODES],  // MAX_MODES ~= 16-32
+    pub mode_count: usize,
+    pub exciter: Exciter,   // impulse/noise burst/force profile
+}
+```
+
+## DC Blocking & Denormal Protection
+
+**DC blocker** (Julius O. Smith):
+```
+y[n] = x[n] - x[n-1] + R * y[n-1]
+R ≈ 0.995 at 44.1kHz (~32Hz cutoff)
+```
+
+**Denormal protection:**
+- x86: set MXCSR register `_mm_setcsr(csr | 0x8040)` (FTZ bit 15, DAZ bit 6)
+- ARM/Apple Silicon: flush by default
+- Portable fallback: add `1e-15` (alternating sign each buffer) to IIR filter inputs
+- Without protection: IIR states decaying toward zero cause **10–100× CPU spikes**
+
+## Dattorro Plate Reverb Constants (at 29761 Hz base)
+
+Scale all to runtime sample rate: `scaled = round(base * fs / 29761)`
+
+- Input diffuser allpass sizes: **142, 107, 379, 277**
+- Modulated allpass sizes: **672, 908**
+- Tank delays: **4453, 4217, 3720, 3163**
+- Decay diffusers: **1800, 2656**
+- Output taps: **266, 2974, 1913, 1996, 1990, 187, 1066**
+
+**Drum-specific sauce**: short pre-delay + higher input diffusion → clean transient + dense tail. Per-voice mini-plate (tiny delay lengths) creates "each hit has its own space" (WASM-budget permitting).
+
+## GPU Compute (WGSL Pseudocode)
+
+**Pattern Heatmap Visualization:**
+```wgsl
+struct Step { vel: f32, prob: f32, trig: u32, pad: u32, step: u32 };
+
+@group(0) @binding(0) var<storage, read> steps: array<Step>;
+@group(0) @binding(1) var<uniform> u: Uniforms;
+
+@vertex fn vs(@builtin(instance_index) ii: u32) -> VSOut {
+    let s = steps[ii];
+    let x = f32(s.step) / f32(u.steps_total);
+    let y = f32(s.pad) / f32(u.pad_count);
+    // Build quad in clip space, pass intensity to fragment
+}
+
+@fragment fn fs(in: VSOut) -> @location(0) vec4f {
+    let intensity = in.trig * in.vel * in.prob;
+    return vec4f(intensity, intensity, intensity, 1.0);
+}
+```
+
+**FFT (Stockham-style) for Spectrum:**
+```wgsl
+@group(0) @binding(0) var<storage, read_write> buf: array<vec2f>; // complex
+@group(0) @binding(1) var<uniform> u: FFTUniforms;
+
+@compute @workgroup_size(256)
+fn fft_stage(@builtin(global_invocation_id) gid: vec3u) {
+    let i = gid.x;
+    if (i >= u.N / 2u) { return; }
+    let a = buf[index_a(i, u.stage)];
+    let b = buf[index_b(i, u.stage)];
+    let w = twiddle(i, u.stage, u.N);
+    let t = cmul(b, w);
+    buf[out0(i, u.stage)] = a + t;
+    buf[out1(i, u.stage)] = a - t;
+}
+```
+
+## Oversampling Filter Design
+
+**Halfband IIR filters** (allpass decomposition) are the standard for real-time:
+- ~1 sample latency vs hundreds for linear-phase FIR
+- For 4× oversampling, cascade two halfband stages; for 8×, three
+- Professional stopband: **100–144dB**
+- **2× sufficient for gentle saturation** (tanh); aggressive waveshaping needs **4–8×**
+- Each 2× only provides 6dB alias rejection — MinBLEP's 70–80dB is vastly superior for oscillators
+
+## Velocity & Filter Mapping
+
+**Velocity**: square-law relationship `amplitude = (m * velocity + b)²`. Apply power of **0.8** to normalized velocity before exponential mapping (empirically most musical — Dannenberg CMU 2006).
+
+**Filter cutoff**: must use exponential frequency mapping since pitch perception is logarithmic. `freq = 20 * pow(1000, knob_position)` → 0→20Hz, 0.5→632Hz, 1.0→20kHz.
+
+**Envelope times**: logarithmic mapping (1ms to 10s) so short times are resolvable on the knob.
 
 ---
 

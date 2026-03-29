@@ -89,11 +89,13 @@ export const FermenterPanel = (): ReactElement => {
     const onParam = useCallback((key: string, value: number) => setFermenterParamWithAudio(key as keyof FermenterPatch, value), []);
 
     const setMacro = useCallback((index: number, value: number) => {
+        // Update store with new macro array
         const macros = [...patch.macros] as FermenterPatch['macros'];
         macros[index] = value;
-        // macros are stored as a tuple but forwarded as individual updates
-        setFermenterParamWithAudio('macros', macros as unknown as number);
-    }, [patch.macros]);
+        loadFermenterPatch({ ...patch, macros });
+        // Macros don't map to Rust params yet — they're performance controllers
+        // that will eventually map to synth params via the macro routing system
+    }, [patch]);
 
     const loadPreset = useCallback((presetId: string) => {
         const up = userPatches.find((p) => p.id === presetId);

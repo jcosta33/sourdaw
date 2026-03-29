@@ -24,6 +24,8 @@ import { AutomationBottomPanel } from './AutomationBottomPanel';
 import { ClipView } from './ClipView';
 import { AnalysisPanel } from './AnalysisPanel';
 import { FermenterPanel } from '#/modules/Fermenter/presentations/views/FermenterPanel';
+import { GrinderPanel } from '#/modules/Grinder/presentations/views/GrinderPanel';
+import { OrchestraPanel } from '#/modules/Orchestral/presentations/views/OrchestraPanel';
 
 import { CommandPalette } from '#/modules/Command/presentations/views/CommandPalette';
 import { VoiceCommandOverlay } from '#/modules/AiRuntime/presentations/views/VoiceCommandOverlay';
@@ -72,6 +74,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const [prefsOpen, setPrefsOpen] = useState(false);
     const [bottomTab, setBottomTab] = useState<'editor' | 'mixer' | 'session' | 'routing' | 'analysis' | 'automation'>('mixer');
     const [fermenterOpen, setFermenterOpen] = useState(false);
+    const [grinderOpen, setGrinderOpen] = useState(false);
+    const [orchestralOpen, setOrchestralOpen] = useState(false);
 
     // ─── Extracted hooks ───
     useAppInitialization();
@@ -118,6 +122,24 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         return () => document.removeEventListener('sourdaw:show-fermenter-tab', handler);
     }, []);
 
+    // Listen for grinder panel open (from inspector device click)
+    useEffect(() => {
+        const handler = (): void => {
+            setGrinderOpen(true);
+        };
+        document.addEventListener('sourdaw:show-grinder-tab', handler);
+        return () => document.removeEventListener('sourdaw:show-grinder-tab', handler);
+    }, []);
+
+    // Listen for orchestral panel open (from inspector device click)
+    useEffect(() => {
+        const handler = (): void => {
+            setOrchestralOpen(true);
+        };
+        document.addEventListener('sourdaw:show-orchestral-tab', handler);
+        return () => document.removeEventListener('sourdaw:show-orchestral-tab', handler);
+    }, []);
+
     // ─── Panel width state (pixels, clamped) ───
     const [sidebarWidth, setSidebarWidth] = useState(280);
     const [inspectorWidth, setInspectorWidth] = useState(260);
@@ -126,6 +148,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const [aiWidth, setAiWidth] = useState(340);
     const [mixerHeight, setMixerHeight] = useState(300);
     const [fermenterHeight, setFermenterHeight] = useState(320);
+    const [grinderHeight, setGrinderHeight] = useState(420);
+    const [orchestralHeight, setOrchestralHeight] = useState(340);
 
     const clamp = (v: number, min: number, max: number): number => Math.max(min, Math.min(max, v));
 
@@ -188,6 +212,50 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                     </Button>
                                 </div>
                                 <FermenterPanel />
+                            </div>
+                        </>
+                    ) : null}
+
+                    {/* Grinder drum machine panel — own resizable section */}
+                    {grinderOpen ? (
+                        <>
+                            <DragResizeHandle
+                                side="top"
+                                onResize={(d) => setGrinderHeight((h) => clamp(h + d, 160, 600))}
+                            />
+                            <div
+                                className="contain-strict flex flex-col bg-surface-base border-t border-[var(--color-accent-peach)]/20 overflow-hidden shrink-0 animate-in slide-in-from-bottom-2 duration-200"
+                                style={{ height: grinderHeight }}
+                            >
+                                <div className="flex items-center justify-between px-3 py-1 border-b border-border/30 bg-surface-app/50 shrink-0">
+                                    <span className="text-[10px] font-bold text-[var(--color-accent-peach)] uppercase tracking-wider">Grinder</span>
+                                    <Button variant="ghost" size="icon-xs" onClick={() => setGrinderOpen(false)} aria-label="Close Grinder">
+                                        <X className="size-3.5" />
+                                    </Button>
+                                </div>
+                                <GrinderPanel />
+                            </div>
+                        </>
+                    ) : null}
+
+                    {/* Orchestral bottom panel */}
+                    {orchestralOpen ? (
+                        <>
+                            <DragResizeHandle
+                                side="top"
+                                onResize={(d) => setOrchestralHeight((h) => clamp(h + d, 160, 600))}
+                            />
+                            <div
+                                className="contain-strict flex flex-col bg-surface-base border-t border-amber-500/20 overflow-hidden shrink-0 animate-in slide-in-from-bottom-2 duration-200"
+                                style={{ height: orchestralHeight }}
+                            >
+                                <div className="flex items-center justify-between px-3 py-1 border-b border-border/30 bg-surface-app/50 shrink-0">
+                                    <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">Orchestral</span>
+                                    <Button variant="ghost" size="icon-xs" onClick={() => setOrchestralOpen(false)} aria-label="Close Orchestral">
+                                        <X className="size-3.5" />
+                                    </Button>
+                                </div>
+                                <OrchestraPanel />
                             </div>
                         </>
                     ) : null}

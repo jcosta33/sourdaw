@@ -44,7 +44,40 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
                 dn.fermenterControls?.noteOff(pitch);
             };
         }
-        // Fermenter not ready — fall through to built-in synth as temporary fallback
+        // Fermenter not ready — don't fall through to built-in synth
+        return () => {};
+    }
+
+    // Check for Grinder drum machine on this track
+    const grinderDevice = track?.devices.find((d) => d.type === 'grinder');
+    if (grinderDevice) {
+        const dn = strip.deviceNodes.find(
+            (d) => d.deviceId === grinderDevice.id || d.type === 'grinder'
+        );
+        if (dn?.grinderControls?.ready) {
+            const pad = pitch - 36;
+            dn.grinderControls.noteOn(pad, velocity);
+            return () => {
+                dn.grinderControls?.noteOff(pad);
+            };
+        }
+        // Grinder not ready — don't fall through to built-in synth (wrong sound)
+        return () => {};
+    }
+
+    // Check for Orchestral instrument on this track
+    const orchestraDevice = track?.devices.find((d) => d.type === 'orchestral');
+    if (orchestraDevice) {
+        const dn = strip.deviceNodes.find(
+            (d) => d.deviceId === orchestraDevice.id || d.type === 'orchestral'
+        );
+        if (dn?.orchestraControls?.ready) {
+            dn.orchestraControls.noteOn(pitch, velocity);
+            return () => {
+                dn.orchestraControls?.noteOff(pitch);
+            };
+        }
+        // Orchestral not ready — fall through to built-in synth as temporary fallback
     }
 
     // Check for Faust instrument on this track

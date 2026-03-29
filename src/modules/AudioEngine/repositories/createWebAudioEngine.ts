@@ -411,6 +411,16 @@ class AudioEngineImpl implements AudioEngine {
                         dn.fermenterControls.noteOff(note);
                     }
                 }
+                if (dn.grinderControls) {
+                    for (let pad = 0; pad < 16; pad++) {
+                        dn.grinderControls.noteOff(pad);
+                    }
+                }
+                if (dn.orchestraControls) {
+                    for (let note = 0; note < 128; note++) {
+                        dn.orchestraControls.noteOff(note);
+                    }
+                }
             }
         }
     }

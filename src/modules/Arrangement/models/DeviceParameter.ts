@@ -45,6 +45,8 @@ import { BUILTIN_EFFECT_DESCRIPTORS } from './pluginDescriptors/builtinEffectDes
 import { BUILTIN_INSTRUMENT_DESCRIPTORS } from './pluginDescriptors/builtinInstrumentDescriptors';
 import { NATIVE_DSP_DESCRIPTORS } from './pluginDescriptors/nativeDspDescriptors';
 import { FERMENTER_DESCRIPTOR } from './pluginDescriptors/fermenterDescriptor';
+import { GRINDER_DESCRIPTOR } from './pluginDescriptors/grinderDescriptor';
+import { ORCHESTRAL_DESCRIPTOR } from './pluginDescriptors/orchestralDescriptor';
 
 // ── Synth variants (generated from builtin-synth base) ─────────────────────
 function createSynthVariant(id: string, name: string, overrides: Record<string, number>): PluginDescriptor {
@@ -116,6 +118,8 @@ export const BUILTIN_PLUGINS: PluginDescriptor[] = [
     ...SYNTH_VARIANTS,
     ...DRUM_VARIANTS,
     FERMENTER_DESCRIPTOR,
+    GRINDER_DESCRIPTOR,
+    ORCHESTRAL_DESCRIPTOR,
 ];
 
 // ── Utility functions ──────────────────────────────────────────────────────

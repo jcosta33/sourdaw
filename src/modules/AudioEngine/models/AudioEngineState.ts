@@ -27,6 +27,26 @@ export type BuiltinDeviceNode = {
         setBypass: (bypassed: boolean) => void;
         destroy: () => void;
     };
+    /** Controls for the Grinder drum machine (MIDI + param updates via MessagePort) */
+    grinderControls?: {
+        ready: boolean;
+        noteOn: (pad: number, velocity: number, midiNote?: number) => void;
+        noteOff: (pad: number) => void;
+        setParam: (name: string, value: number) => void;
+        setPadParam: (pad: number, name: string, value: number) => void;
+        setBypass: (bypassed: boolean) => void;
+        destroy: () => void;
+    };
+    /** Controls for the Orchestral suite (MIDI + CC + param updates via MessagePort) */
+    orchestraControls?: {
+        ready: boolean;
+        noteOn: (note: number, velocity: number) => void;
+        noteOff: (note: number) => void;
+        handleCc: (cc: number, value: number) => void;
+        setParam: (name: string, value: number) => void;
+        setBypass: (bypassed: boolean) => void;
+        destroy: () => void;
+    };
 };
 
 export type TrackChannelStrip = {

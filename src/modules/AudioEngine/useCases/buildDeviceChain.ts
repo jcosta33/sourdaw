@@ -3,6 +3,8 @@ import { type OfflineDeviceNode, DEVICE_FACTORIES, applyParams } from '../reposi
 import { isFaustModule, createFaustDevice } from '../repositories/faustDeviceFactory';
 import { isNativeDspDevice, NATIVE_DSP_DEVICE_TYPES, createNativeDspNode } from '../engine/NativeDspNode';
 import { isFermenterDevice, createFermenterNode } from '../engine/FermenterNode';
+import { isGrinderDevice, createGrinderNode } from '../engine/GrinderNode';
+import { isOrchestraDevice, createOrchestraNode } from '../engine/OrchestraNode';
 import { isDeviceSupportedOnCurrentPlatform } from '#/modules/Arrangement/useCases/trackQueries';
 
 // Re-export for consumers
@@ -116,6 +118,54 @@ export async function buildDeviceChain(
                 };
             } catch (error) {
                 console.warn(`Fermenter device failed to load:`, error);
+            }
+        } else if (isGrinderDevice(device.type)) {
+            if (isOffline || !(ctx instanceof AudioContext)) {
+                continue;
+            }
+            // Grinder drum machine — async WASM init + AudioWorkletNode
+            try {
+                const result = await createGrinderNode(ctx);
+                await result.ready;
+                // Apply initial params
+                for (const [key, val] of Object.entries(device.parameterValues)) {
+                    result.setParam(key, val);
+                }
+                dn = {
+                    inputNode: result.workletNode,
+                    outputNode: result.workletNode,
+                    nodes: [result.workletNode],
+                };
+                nativeDspControls = {
+                    setParam: result.setParam,
+                    setBypass: result.setBypass,
+                };
+            } catch (error) {
+                console.warn(`Grinder device failed to load:`, error);
+            }
+        } else if (isOrchestraDevice(device.type)) {
+            if (isOffline || !(ctx instanceof AudioContext)) {
+                continue;
+            }
+            // Orchestral suite — async WASM init + AudioWorkletNode
+            try {
+                const result = await createOrchestraNode(ctx);
+                await result.ready;
+                // Apply initial params
+                for (const [key, val] of Object.entries(device.parameterValues)) {
+                    result.setParam(key, val);
+                }
+                dn = {
+                    inputNode: result.workletNode,
+                    outputNode: result.workletNode,
+                    nodes: [result.workletNode],
+                };
+                nativeDspControls = {
+                    setParam: result.setParam,
+                    setBypass: result.setBypass,
+                };
+            } catch (error) {
+                console.warn(`Orchestral device failed to load:`, error);
             }
         } else if (isFaustModule(device.type)) {
             if (isOffline) {

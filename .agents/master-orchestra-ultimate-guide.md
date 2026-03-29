@@ -6,6 +6,8 @@ This is the consolidated implementation guide for a world-class orchestral instr
 
 **Critical distinction from the synth:** The orchestral suite is primarily a **sample playback and performance intelligence engine**, not a synthesis engine. The quality ceiling depends on (1) the quality of recorded samples (an asset problem, not a code problem) and (2) the intelligence of the playback engine — legato transitions, expression mapping, articulation switching, release triggers, round-robin management. The code must make great samples sound like a real performance.
 
+The design centers around a **section + voice engine** where each voice can combine structured sampling, procedural layers, expressive control mapping, and space.
+
 ---
 
 ## Reference libraries: what makes each one best-in-class
@@ -13,7 +15,7 @@ This is the consolidated implementation guide for a world-class orchestral instr
 ### Spitfire Audio BBC Symphony Orchestra Professional
 
 - **True recorded legato**: musicians physically play from note A to note B at multiple dynamics. The actual bowed/blown transition is recorded, not crossfaded.
-- **344 articulation techniques** across all instruments — deepest articulation coverage in any single library.
+- **344 articulation techniques** across all instruments — deepest articulation coverage in any single library. **45 legato patches** specifically.
 - **12 microphone positions**: Close, Leader, Tree (Decca tree), Ambient, Outrigger, Gallery, Balcony, Spill, Stereo, plus section-specific positions.
 - **Release triggers**: separate "key-off" samples — bow lift, finger release, key noise, breath stop.
 - **Multiple dynamic layers** per articulation, crossfaded via CC1 for continuous dynamic control independent of velocity.
@@ -37,7 +39,22 @@ This is the consolidated implementation guide for a world-class orchestral instr
 - **Adaptive legato**: transition speed varies based on playing speed. Fast passages use quick transitions; slow passages use longer, more expressive ones.
 - **Simple, focused articulation set**: ~15 essential articulations per instrument that cover 90% of scoring needs.
 
-**Take**: adaptive legato based on playing speed, focused articulation set prioritizing playability.
+- **First-chair / ensemble separation**: solo instruments and ensemble patches complement each other with consistent tone.
+
+**Take**: adaptive legato based on playing speed, focused articulation set prioritizing playability, first-chair/ensemble tonal consistency.
+
+### EastWest Hollywood Orchestra Opus
+
+- **Deep sampling**: massive library with extensive chromatic coverage.
+- **Diamond mic positions**: multiple mic position system for spatial control.
+- **Comprehensive articulation coverage** across all orchestral families.
+
+**Take**: deep sampling methodology, Diamond mic position concept as a reference for multi-mic architecture.
+
+### CineOrchestra / CineSamples
+
+- **Cinematic sound**: optimized for film/TV scoring use cases.
+- **Kontakt-based**: reference for scripting and articulation switching patterns.
 
 ### Audio Modeling SWAM
 
@@ -51,10 +68,12 @@ This is the consolidated implementation guide for a world-class orchestral instr
 
 ### Logic Pro Studio Strings / Horns / Woodwinds
 
+- **Deep DAW integration**: articulation sets, smart controls, Drummer integration.
 - **Articulation ID system**: each note carries an articulation ID as metadata, not a separate MIDI event. Cleaner than raw keyswitching.
 - **Studio Strings true legato** with portamento/fingered transitions, controlled by velocity on the overlapping note.
+- **Good-enough quality for demos and many final productions** at zero additional cost — demonstrates why a built-in orchestral engine matters even with lower sample quality than premium libraries.
 
-**Take**: articulation ID system (superior to raw keyswitching), tight DAW integration patterns.
+**Take**: articulation ID system (superior to raw keyswitching), tight DAW integration patterns, smart controls concept for macro knob design.
 
 ---
 
@@ -65,7 +84,7 @@ This is the consolidated implementation guide for a world-class orchestral instr
 - Exposes: `fn process(midi_events: &[MidiEvent], output: &mut [&mut [f32]], block_size: usize)`
 - No I/O in the processing path — sample data pre-loaded or streamed via background thread
 - Audio hot path: allocation-free, lock-free, syscall-free
-- WebAudio render quantum defaults to 128 frames; always read buffer length at runtime
+- WebAudio render quantum defaults to 128 frames; implementations caution that the size may be configurable in the future, so always treat block size as variable and read buffer length at runtime
 - Native: `cpal` callback on a dedicated high-priority thread
 - UI/control changes arrive via SPSC ring buffers (drop messages rather than block)
 
@@ -87,6 +106,7 @@ This is the consolidated implementation guide for a world-class orchestral instr
   - Velocity layer LOD (reduce to 2-4)
   - RR LOD (reduce RR count)
   - Articulation LOD (disable interval transitions on large sections)
+  - Alternative: progressive loading where samples are fetched and decoded incrementally as needed
 
 ---
 
@@ -101,7 +121,7 @@ This is the consolidated implementation guide for a world-class orchestral instr
 
 - Stateless math primitives plus stateful DSP objects, fixed-size and allocation-free once constructed:
   - Resamplers (linear / cubic Hermite / windowed-sinc tables)
-  - Filters: RBJ biquad, SVF (TPT/ZDF), ladder variants (optional)
+  - Filters: RBJ biquad (using the W3C-hosted Audio EQ Cookbook), SVF (TPT/ZDF) and ladder-derived models informed by Vadim Zavalishin's "The Art of VA Filter Design" (rev 2.1.0)
   - Envelope and smoothing primitives (one-pole, piecewise exponential)
   - Delay lines, fractional delay interpolators (linear, Lagrange, Thiran)
   - STFT windows and overlap-add scaffolding
@@ -126,7 +146,7 @@ This is the consolidated implementation guide for a world-class orchestral instr
 - **Parameter registry**: table mapping `&'static str` to `ParamId` on UI side (perfect hash or sorted binary search). Never resolve strings on the audio thread.
 - Audio side stores: `target[param_index]`, `smoothed[param_index]`, `dirty_flags[param_index]`
 - Changes via SPSC queue: `SetParam { id: ParamId, value: f32 }`, `LoadPresetHandle { handle_id }`
-- **Smoothing**: `y[n] = y[n-1] + alpha * (x - y[n-1])`, `alpha = 1 - exp(-1/(tau * fs))`, tau tuned per parameter type
+- **Smoothing** (one-pole, per Smith's PAPS): `y[n] = y[n-1] + alpha * (x - y[n-1])`, `alpha = 1 - exp(-1/(tau * fs))`, tau tuned per parameter type (fast for modulation, slower for UI knobs)
 
 ---
 
@@ -155,6 +175,8 @@ Instrument (e.g., "Violins 1")
       +-- Dynamic Layer
           +-- Sample (note-off sound)
 ```
+
+Zones are modeled with constraints similar to **SFZ** (because SFZ expresses many sampler invariants: region/group inheritance, ADSR opcodes, and round-robin sequencing via `seq_length`/`seq_position`). This allocation-free lookup approach mirrors the motivation behind allocation-free SMF parsing libraries like `midly`, which explicitly avoid allocations by referencing original bytes and separating I/O from parsing.
 
 ### Key dimension axes
 
@@ -316,11 +338,13 @@ For each active note, per audio block:
 
 ### Resampling tiers
 
-| Resampler     | Math                            | Quality | CPU   | Best use              |
-|---------------|---------------------------------|---------|-------|-----------------------|
-| Linear        | `y = (1-t)*x0 + t*x1`          | lowest  | lowest| draft, noisy textures |
-| Cubic Hermite | 4-point polynomial              | high    | low-mid| default realtime     |
-| Windowed-sinc | `y = sum x[n]*sinc(pi(n-t))*w[n]`| best  | highest| offline render, solo |
+| Resampler     | Math                            | Quality | CPU   | Best use              | Anti-aliasing notes                 |
+|---------------|---------------------------------|---------|-------|-----------------------|-------------------------------------|
+| Linear        | `y = (1-t)*x0 + t*x1`          | lowest  | lowest| draft, noisy textures | droops HF; minimal ringing          |
+| Cubic Hermite | 4-point polynomial              | high    | low-mid| default realtime     | good HF, stable                     |
+| Windowed-sinc | `y = sum x[n]*sinc(pi(n-t))*w[n]`| best  | highest| offline render, solo | can be bandlimited if designed well |
+
+Smith's PAPS (Physical Audio Signal Processing) discussion of delay-line interpolation and windowed-sinc provides practical implementation details and highlights why naive interpolation affects frequency response. The interpolation taxonomy (linear, Lagrange/Farrow, windowed-sinc) is explicitly laid out there.
 
 ### Disk streaming (native only)
 
@@ -335,7 +359,7 @@ For each active note, per audio block:
 
 - Source: WAV or FLAC (losslessly compressed, ~60% of WAV size)
 - Internal: decoded to 32-bit float PCM in memory
-- Rate: 44.1kHz or 48kHz (matching session). Resample on load if mismatched.
+- Rate: 44.1kHz or 48kHz (matching session). Resample on load if mismatched using the `rubato` crate for high-quality sample rate conversion.
 - Channels: mono or stereo per mic position, mixed at playback time
 - Metadata: start/end, loop points, root note, tuning — stored in JSON/TOML manifest or embedded in WAV chunks
 
@@ -368,9 +392,9 @@ When sustain pedal or long releases are active: freeze the tail into an auxiliar
 
 **Keyswitching**: dedicated MIDI notes (below playable range, typically C0-B0) switch active articulation. Supports latching (stays until another pressed) and momentary (reverts on release).
 
-**Articulation IDs (Logic Pro approach)**: each MIDI note-on carries an articulation ID as metadata. Cleaner than keyswitching because it doesn't consume note data and survives transposition. Map IDs to internal articulations via configurable table.
+**Articulation IDs (Logic Pro approach)**: each MIDI note-on carries an articulation ID as metadata. Cleaner than keyswitching because it doesn't consume note data and survives transposition. Map IDs to internal articulations via configurable table. **Implementation**: encode articulation ID in a custom MIDI event or as a note attribute in the internal MIDI representation.
 
-**Velocity-based switching**: different velocity ranges trigger different articulations. Useful where attack character naturally varies with playing force.
+**Velocity-based switching**: different velocity ranges trigger different articulations (e.g., vel 1-60 = legato, vel 61-100 = sustained, vel 101-127 = marcato). Useful where attack character naturally varies with playing force. Configurable velocity split points per instrument.
 
 **CC-based switching**: a dedicated CC (e.g., CC32) selects articulation by value range. Compatible with UACC (Universal Articulation Controller Channel) standard.
 
@@ -418,7 +442,7 @@ Legato:
 Sustained:
 - **Long / Sustain**: standard with natural vibrato
 - **Long (non-vibrato)**: more "military" or "heroic"
-- **Long (muted)**: straight mute, cup mute, harmon mute (each different timbre)
+- **Long (muted)**: straight mute, cup mute, harmon mute (with and without stem — each produces a different timbre), plunger mute
 - **Crescendo / Decrescendo**: notes that swell or fade (recorded as complete gestures)
 - **Sforzando**: loud accent attack followed by immediate drop to sustain
 
@@ -430,6 +454,7 @@ Effects:
 - **Falls**: downward glissando away
 - **Shakes / Doits**: lip trills and bends
 - **Flutter tongue**: rapid tongue-roll creating growling tremolo
+- **Muted variants**: straight mute, cup mute, harmon mute (with and without stem), plunger mute — each produces a distinctly different timbre. Essential for jazz/film brass writing.
 
 Legato:
 - **Slurred**: smooth without re-tonguing
@@ -460,10 +485,12 @@ Legato:
 
 **Choir / Vocals (stretch goal)**
 
-- Vowel sounds (Ah, Eh, Ee, Oh, Oo), syllables, humming, staccato syllables
+- Vowel sounds (Ah, Eh, Ee, Oh, Oo) — each a separate articulation or crossfadable via CC for smooth vowel morphing
+- Common choral syllables for building words; staccato syllables for short vocal attacks
+- Humming (closed-mouth sustained)
 - CC1-controlled dynamics with 5+ layers
-- Divisi (splitting sections)
-- Word-builder (extremely complex stretch goal)
+- Divisi: splitting sections (e.g., sopranos into Sop 1 and Sop 2) for harmonic parts
+- Word-builder (stretch goal): assemble syllables into words via text input — extremely complex; reference implementations include EastWest WordBuilder and Soundiron Requiem
 
 ### Articulation presets
 
@@ -512,7 +539,7 @@ Map CC1 (0-127) to dynamic layer blending:
 - **Natural vibrato**: baked into samples at the performed dynamic level
 - **CC-controlled vibrato depth**: CC2 or dedicated CC crossfades between vibrato and non-vibrato versions
 - **Synthetic vibrato augmentation** for fine control beyond baked-in vibrato:
-  - Pitch LFO: rate 4-7Hz, depth 10-50 cents, controllable via CC2
+  - Pitch LFO: rate 4-7Hz typical (5-9Hz for string vibrato specifically), depth 10-40 cents depending on instrument and dynamic, controllable via CC2
   - Amplitude LFO: subtle ~1-3dB, slightly slower than pitch (bow pressure variation)
   - Timbre LFO: modulate a formant filter (timbral change accompanying real vibrato)
   - Vibrato onset delay: 100-300ms from note start (real players don't vibrate immediately)
@@ -663,7 +690,7 @@ Hot-path: apply integer delay lines (or fractional if needed) per mic. Delay cha
 ### Virtual stage positioning
 
 Standard seating (from audience perspective):
-- Violin 1: far left | Violin 2: center-left | Violas: center | Cellos: center-right | Basses: far right
+- Violin 1: far left | Violin 2: center-left | Violas: center | Cellos: center-right | Basses: far right (or behind cellos — alternative seating)
 - Flutes: center-left (behind strings) | Oboes: center | Clarinets: center-right | Bassoons: center-right
 - Horns: left (behind woodwinds) | Trumpets: center | Trombones: center-right | Tuba: right
 - Timpani: center-right (far back) | Percussion: right (far back) | Harp: far left
@@ -678,7 +705,9 @@ When true mic positions aren't available, simulate:
 
 ## Convolution reverb: partitioned convolution engine
 
-Long orchestral IRs require partitioned convolution.
+Long orchestral IRs require partitioned convolution (direct convolution cost scales with IR length per sample, making it impractical for multi-second IRs).
+
+**Foundational reference**: Gardner's "Efficient Convolution without Input-Output Delay" is the classic paper describing the hybrid approach combining direct-form and block FFT processing to achieve **zero input-output delay**. Smith's PAPS covers FDN reverberation structures, stability, and feedback matrices (Hadamard/Householder) with delay length choice heuristics.
 
 ### Uniform partitioned convolution
 
@@ -690,7 +719,7 @@ Split IR `h[n]` into partitions of length `L`:
 
 ### Latency
 
-Reduce perceived latency by making partition 0 small (head partition) and running it in time domain or with a tiny FFT. Hybrid "head + tail" approach.
+Latency is near `L` samples for a pure uniform FFT convolver. Reduce perceived latency by making partition 0 small (head partition) and running it in time domain or with a tiny FFT. This hybrid "head + tail" philosophy follows Gardner's approach.
 
 ### Per-voice vs shared convolution
 
@@ -700,13 +729,17 @@ Reduce perceived latency by making partition 0 small (head partition) and runnin
 
 ### Algorithmic reverb fallback (FDN)
 
-Cheaper and tunable compared to convolution. Provides "glue" even when IRs are disabled. FDN with Hadamard/Householder feedback matrices and tuned delay lengths.
+Cheaper and tunable compared to convolution. Provides "glue" even when IRs are disabled. FDN with Hadamard/Householder feedback matrices and tuned delay lengths. Smith's PAPS explicitly covers FDN reverberation structures, including stability conditions, feedback matrices, and delay length choice heuristics.
 
 ---
 
 ## Physical modeling augmentation
 
-The hybrid approach: samples provide core timbre, physical models add continuous variation.
+The hybrid approach: samples provide core timbre, physical models add continuous variation. Physical models are implemented as **optional layers** and **thin augmentations** for sampling, based on the standard "nonlinear exciter + linear resonator" framework from digital waveguide modeling literature.
+
+Full physical models (e.g., FDTD brass models) are too expensive for real-time use, though research environments exist for articulated brass using FDTD methods. The waveguide approach is the practical choice.
+
+**Implementation priority**: the sample-based engine is the priority. Physical modeling augmentation should be included in the architecture but marked as a later phase. These components are research-intensive and CPU-expensive.
 
 ### Bow noise / breath noise layer
 
@@ -719,7 +752,7 @@ The hybrid approach: samples provide core timbre, physical models add continuous
 ### Vibrato modeling layer
 
 Supplements baked-in sample vibrato:
-- Pitch LFO (4-7Hz, 10-50 cents, CC2-controlled)
+- Pitch LFO (4-7Hz typical, 5-9Hz for strings; depth 10-40 cents, CC2-controlled)
 - Amplitude LFO (~1-3dB, slightly slower, bow pressure variation)
 - Timbre LFO (formant filter modulation)
 - Vibrato onset delay (100-300ms)
@@ -752,8 +785,9 @@ pub struct BowedStringModel {
 }
 ```
 
-- String resonator: bidirectional delay line (length ~ fs/f0) with frequency-dependent loss filter
-- Bow exciter: nonlinear friction curve (stick-slip Helmholtz motion)
+- String resonator: bidirectional delay line (length ~ fs/f0) with frequency-dependent loss filter. Traveling waves `u+(n)` and `u-(n)` in delay lines; junction scattering at bridge/nut via reflection coefficients.
+- Bow exciter: nonlinear friction curve `F = f(v_rel)` providing stick-slip (Helmholtz motion). Reference: Julius O. Smith III's "Synthesis of Bowed Strings."
+- Body resonance: **two options** — (1) pair of 2D waveguide meshes for detailed body modeling, or (2) transfer function derived from measured impulse response (cheaper, often sufficient)
 - Anti-aliasing: clamp bow nonlinearity and lowpass at Nyquist margin (draft); 2x oversample inside exciter loop (render)
 - Purpose: blend low-level physical model under sustains for continuous energy changes under CC/MPE, defeating the "static sustain loop" problem
 
@@ -769,13 +803,15 @@ pub struct ReedTubeModel {
 }
 ```
 
-- Bore: delay line + reflection filter at bell/open end
-- Reed: nonlinear function of mouth pressure and bore pressure
-- Breath: colored noise modulated by breath pressure, coupled into bore
+- Bore: delay line (cylindrical or conical tube waveguide) + reflection filter at bell/open end
+- Reed/lip: nonlinear excitation (mass-spring-damper system) — function of mouth pressure and bore pressure. Reference: Scavone's work on digital waveguide modeling of reed instruments and nonlinear excitations.
+- Tone holes: open/closed state affects effective tube length (critical for woodwind modeling)
+- Breath/turbulence: colored noise modulated by breath pressure, coupled into bore as excitation term
+- Parameters: breath pressure, embouchure tension, vibrato, key positions
 
 ### Modal synthesis (percussion and body resonance)
 
-Sum of damped modes — useful for:
+Modal synthesis models an instrument body as a sum of damped modes, consistent with physical modeling formulations in Smith's PAPS and related modal synthesis literature. Useful for:
 - Controllable resonance on short articulations
 - Instrument body response under dynamics
 - Subtle "room-body coupling" enhancement
@@ -810,7 +846,7 @@ on note_off(note, velocity):
 ### Pedaling and sustain
 
 - **CC64 (Sustain Pedal)**: notes continue sustaining after key release. Release triggers do NOT fire until pedal is lifted.
-- **Half-pedaling**: CC64 values 0-127 control partial damping.
+- **Half-pedaling**: CC64 values 0-127 control partial damping (more relevant for piano but applicable to sustained orchestral instruments in the sense of partial release behavior).
 - When pedal lifts, all sustained notes fade out with release envelopes. Release triggers fire staggered (+/-10-30ms) to avoid coordinated stop.
 
 ---
@@ -853,7 +889,7 @@ Configurable thresholds, overridable per note.
 
 ### SMF import
 
-Parse MIDI/SMF as "score reference" for phrase assistance, articulation prediction, tempo mapping. Use `midly` crate (allocation-minimizing, lifetime-based borrows).
+Parse MIDI/SMF as "score reference" for phrase assistance, articulation prediction, tempo mapping. Use `midly` crate — it explicitly avoids allocations by referencing original bytes via Rust lifetimes and separates I/O from parsing. SMF timing uses "ticks per quarter note" or SMPTE time formats per the MIDI file specification.
 
 **Non-real-time**: parsing happens outside audio thread. Engine receives precompiled event stream.
 
@@ -879,7 +915,12 @@ For resynthesis, phrase morphing, vibrato SEM, and "texture layers":
 2. Peak picking per frame -> partial tracks
 3. Estimate noise residual
 4. Detect transients
-5. Store: partial tracks (f_i(t), A_i(t)), stochastic spectral envelope, transient events
+5. Store: partial tracks (f_i(t), A_i(t)), stochastic spectral envelope, transient events (time, band-limited snapshots)
+
+**Key implementation insights from Smith's Spectral Audio Signal Processing:**
+- Sinusoidal models are highly effective for tonal instruments (strings, winds, brass)
+- Noise-like components should be modeled as **filtered stochastic terms rather than many sinusoids** — the naive approach of using many sinusoids for noise is a common anti-pattern that wastes CPU
+- Explicit transient models help preserve attacks during time-stretch
 
 ### Synthesis pipeline (realtime)
 
@@ -889,28 +930,37 @@ For resynthesis, phrase morphing, vibrato SEM, and "texture layers":
 
 ### Transient detection
 
+Onset detection function (ODF) families per Bello's tutorial and Dixon's evaluation work:
+
 - Energy derivative (fast, coarse)
 - Spectral flux (robust for musical changes)
-- Complex-domain phase deviation ODF (better for tonal onsets)
+- Complex-domain phase deviation ODF (better for tonal onsets, uses likely-phase deviation)
 - Multi-band fusion (reduces false positives)
+
+Post-processing ODFs for reliable onset picks follows best practices from Bello/Dixon.
 
 ### Time-stretch and pitch-shift
 
-| Method               | Domain | Strengths               | Weaknesses                      | Best use                   |
-|----------------------|--------|-------------------------|---------------------------------|----------------------------|
-| Resampling           | time   | preserves transients    | changes duration with pitch     | per-note tuning            |
-| WSOLA                | time   | preserves transients    | wobble on sustained harmonics   | rhythmic phrases, legato   |
-| Phase vocoder        | freq   | strong harmonic sustain | transient smear                 | pads, long sustains        |
-| Signalsmith Stretch  | hybrid | strong general-purpose  | best for modest stretch factors | practical realtime control |
+| Method               | Domain | Strengths               | Weaknesses                      | Best use                   | Reference                             |
+|----------------------|--------|-------------------------|---------------------------------|----------------------------|---------------------------------------|
+| Resampling           | time   | preserves transients    | changes duration with pitch     | per-note tuning            | Smith PAPS interpolation              |
+| WSOLA                | time   | preserves transients    | wobble on sustained harmonics   | rhythmic phrases, legato   | Driedger's thesis; enhanced WSOLA     |
+| Phase vocoder        | freq   | strong harmonic sustain | transient smear ("phasiness")   | pads, long sustains        | Dolson's tutorial; phase locking improvements |
+| Signalsmith Stretch  | hybrid | strong general-purpose  | best for modest stretch factors | practical realtime control | MIT licensed; documents best ranges   |
 
 ---
 
 ## GPU compute and visualization
 
-GPU is optional for audio (readback latency too unpredictable for AudioWorklet), but valuable for:
+GPU is optional for audio generation (GPU readback latency and scheduling are not deterministic enough for the AudioWorklet hot path), but valuable for:
 - Visualization (spectrograms, waveform overviews, phase meters)
 - Offline/preview tasks (IR FFT preparation, peak computations)
-- Heavy resynthesis previews
+- Heavy resynthesis previews (partial-bank rendering and noise spectral shaping can be offloaded to GPU, but realtime audio output stays on CPU because GPU readback/jitter risks glitching)
+
+### API and shader language
+
+- **WGSL** is standardized by the W3C and defines compute shaders, storage buffers, and workgroup semantics. WGSL buffer layout and storage interface constraints are specified in the WGSL spec.
+- On native, use `wgpu` — a Rust implementation aligned with WebGPU that supports both native backends and WASM.
 
 ### Hard rule: audio thread never blocks on GPU
 
@@ -919,11 +969,40 @@ Audio thread writes analysis taps into SPSC buffer. UI/render thread consumes ta
 ### GPU workloads
 
 - **Spectrogram**: GPU FFT (Stockham radix-2) + magnitude texture
-- **Waveform view**: min/max downsample per pixel column
-- **Mic phase meter**: cross-correlation between mic streams
+- **Waveform view**: min/max downsample per pixel column (GPU compute is ideal)
+- **Mic phase meter**: compute cross-correlation or phase coherence between mic streams (CPU or GPU)
 - **Articulation timeline**: display legato transitions and articulation states over time
-- **Convolution tail partitions**: FFT multiply-accumulate (offline render)
+- **Convolution tail partitions**: precompute FFT of each IR partition (offline), then per render tick: FFT input block, multiply-accumulate across partitions, iFFT and overlap-add
 - **Additive synthesis preview**: partial-bank rendering (Lab mode)
+- **Noise spectral shaping**: offload to GPU for resynthesis previews
+
+### WGSL Stockham FFT stage (pseudocode)
+
+```wgsl
+struct Uniforms { N: u32, stage: u32 };
+
+@group(0) @binding(0) var<storage, read_write> buf: array<vec2f>;
+@group(0) @binding(1) var<uniform> u: Uniforms;
+
+fn cmul(a: vec2f, b: vec2f) -> vec2f {
+  return vec2f(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x);
+}
+
+@compute @workgroup_size(256)
+fn fft_stage(@builtin(global_invocation_id) gid: vec3u) {
+  let i = gid.x;
+  if (i >= u.N/2u) { return; }
+
+  // Read indices depend on stage in Stockham autosort
+  let a = buf[index_a(i, u.stage)];
+  let b = buf[index_b(i, u.stage)];
+  let w = twiddle(i, u.stage, u.N); // e^{-j2*pi*k/N}
+  let t = cmul(b, w);
+
+  buf[out0(i, u.stage)] = a + t;
+  buf[out1(i, u.stage)] = a - t;
+}
+```
 
 ---
 
@@ -944,6 +1023,8 @@ Migration: `migrate(version_old -> version_new)` on load. Audio thread receives 
 
 ### Expression and MPE mapping
 
+The MPE specification (defined by the MIDI Association) formalizes per-note pitch/timbre/pressure control.
+
 - Global: CC1 mod wheel, CC11 expression, CC7 volume
 - Per-note MPE: pitch bend -> intonation/portamento, pressure -> bow/breath/vibrato, "timbre" (CC74) -> brightness/noise/bow position
 - Per-voice `ExpressionState` updated by MIDI events
@@ -951,10 +1032,17 @@ Migration: `migrate(version_old -> version_new)` on load. Audio thread receives 
 ### AI-assisted generation
 
 1. Template-based generation (style-aware orchestral templates)
-2. Quality scoring classifier (CNN on spectrograms, ONNX via `ort` crate)
+2. Quality scoring classifier (CNN on spectrograms)
 3. Auto-tagging (spectral + dynamics features)
 4. Text-to-preset/phrase (LLM outputs JSON schema)
 5. Morphing and variation (interpolate articulations, dynamics curves, mic mixes)
+
+**ONNX for classifiers**: ONNX IR and opsets are versioned with monotonically increasing numbers. Native inference uses the `ort` crate (Rust bindings for ONNX Runtime).
+
+**Classifier architecture (practical)**:
+- Input: 2-second audio render (per patch or phrase) -> mel-spectrogram image
+- CNN: small 2D conv stack -> dense -> scalar score
+- Dual outputs: "quality score" and "artifact risk" (e.g., transient smear, phasey mic issues)
 
 ---
 
@@ -976,7 +1064,7 @@ Templates include mixer routing, bus processing, reverb sends, panning.
 
 ### Articulation lane in piano roll
 
-The DAW's piano roll supports an **articulation lane** below note data. Each note can have an articulation assignment overriding current keyswitch state. Visual color-coding per articulation type. Modern approach — cleaner than keyswitches in MIDI data.
+The DAW's piano roll supports an **articulation lane** below note data. Each note can have an articulation assignment overriding current keyswitch state. Visual color-coding per articulation type. This is the modern approach used by Cubase Expression Maps, Logic Articulation Sets, and Dorico — cleaner than scattering keyswitch notes in MIDI data.
 
 ### Shared effects
 
@@ -988,12 +1076,15 @@ All effects from `daw-dsp` available as per-instrument inserts. Same reverb, EQ,
 
 ### Phase 1: Free / CC samples (initial release)
 
-- Virtual Playing Orchestra (CC, Sonatina-based)
+- Virtual Playing Orchestra (Creative Commons, Sonatina-based)
 - VSCO 2 Community Edition (Versilian Studios, CC-BY)
 - Iowa University Electronic Music Studios (public domain)
+- Philharmonia Orchestra Sound Samples (educational use)
 - SSO (Sonatina Symphonic Orchestra, CC-BY)
 
 ### Phase 2: Original recordings (as product matures)
+
+This is extremely expensive ($100K-$1M+) and time-consuming (months of recording + editing). Produces the highest quality, uniquely owned content.
 
 Recording spec:
 - Pitches: chromatic every minor third (C, Eb, F#, A); every semitone for solo/legato
@@ -1006,7 +1097,7 @@ Recording spec:
 
 ### Phase 3: AI-generated / resynthesized (experimental)
 
-Generative audio models or spectral resynthesis of recorded content. Legal and quality frontier.
+Use generative audio models (e.g., MusicGen, Stable Audio) trained on orchestral recordings to generate sample content. Or use resynthesis: analyze a recording, extract spectral characteristics, resynthesize as new content that's not a copy of the original. Legal and quality concerns — this is a frontier area.
 
 ---
 
@@ -1031,7 +1122,14 @@ The orchestral suite follows the same core philosophy as the master synth:
 
 > Complexity is always available, but never forced.
 
-These are **visibility layers in the same patch format**, not separate products or modes.
+These are **visibility layers in the same patch format**, not separate products or modes:
+
+- **Level 1: Play**
+- **Level 2: Shape**
+- **Level 3: Build (Ensemble)**
+- **Level 4: Arrange**
+- **Level 5: Route (Mix)**
+- **Level 6: Lab**
 
 ### Core UI philosophy
 
@@ -1203,7 +1301,28 @@ Each template: sensible defaults, preloaded routings, only important first contr
 
 ---
 
-### Level 4 — Route (Mix)
+### Level 4 — Arrange
+
+Phrase-level editing and performance assembly.
+
+**Visible:**
+- Phrase tools: MIDI import preview, articulation timeline, tempo map overlay
+- Phrase morphing controls
+- Legato "glue" adjustments (transition timing, overlap behavior)
+- Score-to-performance mapping (how MIDI data translates to articulation choices)
+- Articulation prediction from playing patterns
+- Humanization preview (hear before/after)
+
+**User goal:** refine how a written passage translates to a performed passage. This is where MIDI becomes music.
+
+**Rules:**
+- Every change should be auditionable before committing
+- Timeline visualization should clearly show articulation states over time
+- Non-destructive: original MIDI data preserved alongside performance interpretation
+
+---
+
+### Level 5 — Route (Mix)
 
 Architecture becomes explicit.
 
@@ -1227,7 +1346,7 @@ Architecture becomes explicit.
 
 ---
 
-### Level 5 — Lab
+### Level 6 — Lab
 
 High-complexity surface for sample developers and sound researchers.
 
@@ -1310,10 +1429,71 @@ Non-negotiable quality drivers for best-in-class orchestral realism:
 7. **Predictable performance**: strict LOD governor keyed to quantum deadlines; WASM never attempts disk streaming; SPSC ring buffers for control
 8. **Release triggers that complete the picture**: every note-off sounds real, not just "silence"
 9. **Ensemble intelligence**: auto-divisi, pitch convergence, attack spread, dynamic bloom
-10. **The UI disappears**: a composer at Level 1 should never know that Levels 3-5 exist unless they go looking
+10. **The UI disappears**: a composer at Level 1 should never know that Levels 3-6 exist unless they go looking
 
 ---
 
 ## One-sentence summary
 
 **The perfect orchestral engine makes great samples sound like a living performance through intelligent legato, continuous expression, spatial realism, and physical modeling augmentation — all behind a UI where composers live in macros and articulation switching while engineers and sample developers access full depth on demand.**
+
+---
+
+## Key references and bibliography
+
+An implementer should consult these sources for deep technical detail:
+
+### DSP and synthesis foundations
+
+- **Julius O. Smith III, "Physical Audio Signal Processing" (PAPS)** (ccrma.stanford.edu) — canonical reference for delay lines, comb/allpass, interpolation, waveguides, FDNs, bowed string synthesis, reed/wind models, modal synthesis, reverberation structures. The single most important reference for this engine.
+- **Julius O. Smith III, "Spectral Audio Signal Processing"** (ccrma.stanford.edu, 2011 online edition) — SMS (sines+noise+transients), sinusoidal modeling, spectral envelope modulation, stochastic noise modeling.
+- **Julius O. Smith III, "Synthesis of Bowed Strings"** — canonical waveguide bowed-string synthesis.
+- **Vadim Zavalishin, "The Art of VA Filter Design" (rev 2.1.0)** — TPT SVF, ladder filters, virtual analog filter design.
+- **Robert Bristow-Johnson, Audio EQ Cookbook** (W3C-hosted) — RBJ biquad filter implementations.
+- **Gary Scavone** — digital waveguide modeling of reed instruments and nonlinear excitations.
+
+### Time-stretch, onset detection, and convolution
+
+- **William Gardner, "Efficient Convolution without Input-Output Delay"** — classic paper on hybrid head+tail partitioned convolution with zero input-output delay.
+- **Bello et al., onset detection tutorial** — ODF families (energy, spectral flux, complex-domain).
+- **Dixon, onset detection evaluation** — practical onset detection benchmarking.
+- **Mark Dolson, phase vocoder tutorial** — phase vocoder fundamentals, artifacts ("phasiness," transient smear).
+- **Driedger, WSOLA thesis** — WSOLA and transient-preserving improvements.
+- **Phase vocoder improvement literature** — phase locking techniques and modern reviews.
+- **Knapp & Carter** — GCC-PHAT time-delay estimation method.
+
+### Standards and specifications
+
+- **SFZ format specification** (sfzformat.com) — open standard for sample instrument definition. Region/group inheritance, ADSR opcodes, round-robin sequencing via `seq_length`/`seq_position`.
+- **MIDI File Specification (SMF)** — timing in "ticks per quarter note" or SMPTE.
+- **MPE Specification** (MIDI Association) — per-note pitch/timbre/pressure control.
+- **WGSL Specification** (W3C) — compute shaders, storage buffers, workgroup semantics, buffer layout constraints.
+- **ONNX Specification** — IR and opsets versioned with monotonically increasing numbers.
+- **DAWproject specification** — orchestral template interoperability.
+
+### Rust crates
+
+- **`midly`** — allocation-free SMF parsing, lifetime-based borrows referencing original bytes.
+- **`creek`** — async sample streaming from disk (native backend).
+- **`rubato`** — high-quality sample rate conversion.
+- **`wgpu`** — Rust WebGPU implementation, supports native backends and WASM.
+- **`ort`** — Rust bindings for ONNX Runtime (inference).
+- **`cpal`** — cross-platform audio I/O.
+- **Signalsmith Stretch** — MIT-licensed time-stretch library with documented best ranges.
+
+### Sampling and orchestration references
+
+- Spitfire Audio developer talks and documentation (BBC SO, Albion, Chamber Strings)
+- Vienna Symphonic Library white papers on the Synchron Player engine
+- Audio Modeling SWAM technical documentation (physical modeling approaches)
+- Native Instruments Kontakt manual — sample zone mapping, round robin, keyswitching
+- Kontakt scripting references (many orchestral libraries publish their scripts)
+- Steinberg Expression Maps documentation — articulation management
+- Logic Pro Articulation Set documentation
+- "The Guide to MIDI Orchestration" by Paul Gilreath — standard reference for realistic MIDI orchestral programming
+- Orchestration textbooks: Adler, Blatter, Piston — real instrument capabilities and limitations
+- Pianobook.co.uk community — sampling methodology insights
+- Christian Henson (Spitfire co-founder) YouTube videos on sampling techniques
+- Sound On Sound "Session Notes" and "Orchestral Sampling" features
+- KVR forums — comparative discussions on library realism
+- VI-Control.net forums — primary community for orchestral composers and sample library users
