@@ -230,7 +230,7 @@ pub async fn generate_audio_clip(
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
 
-    let request_id = uuid_v4();
+    let request_id = uuid::Uuid::new_v4().to_string();
     let output_dir = model_download::model_dir()?
         .parent()
         .unwrap_or(std::path::Path::new("/tmp"))
@@ -296,12 +296,4 @@ pub async fn stop_audio_gen_sidecar(
     Ok(())
 }
 
-/// Simple UUID v4 without adding the uuid crate.
-fn uuid_v4() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let t = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    format!("{t:032x}")
-}
+

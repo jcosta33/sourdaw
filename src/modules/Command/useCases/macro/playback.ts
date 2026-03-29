@@ -1,7 +1,10 @@
 import { macroStore } from '../../stores/macroStore';
+import { generateGroupId } from '../../models/UndoEntry';
 
 /**
  * Replay a saved macro by dispatching each action in sequence.
+ * All actions share a single undo group so the entire macro can be
+ * undone/redone as one atomic operation.
  * Uses dynamic import to avoid circular dependency with executeAppAction.
  */
 export async function playMacro(macroId: string): Promise<void> {
@@ -15,10 +18,10 @@ export async function playMacro(macroId: string): Promise<void> {
         return;
     }
 
-    // Dynamic import to break circular dependency
     const { executeAppAction } = await import('../executeAppAction');
+    const { groupId, groupLabel } = generateGroupId(`Macro: ${macro.name}`);
 
     for (const action of macro.actions) {
-        await executeAppAction(action);
+        await executeAppAction(action, { groupId, groupLabel });
     }
 }

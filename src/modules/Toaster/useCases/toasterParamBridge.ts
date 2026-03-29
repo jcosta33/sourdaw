@@ -68,3 +68,21 @@ export function setToasterPadParam(padIndex: number, key: keyof PadState, value:
         padPending.set(cacheKey, requestAnimationFrame(() => flushPadParam(cacheKey)));
     }
 }
+
+/**
+ * Send engine_type directly to the worklet (bypasses rAF throttle).
+ * Used by sound locks which need immediate engine swap before triggering.
+ * Does NOT update the store — the pad's stored engineType remains the default.
+ */
+export function setPadEngineImmediate(padIndex: number, engineIdx: number): void {
+    for (const { trackId } of getActiveDevices()) {
+        const strip = getTrackStrip(trackId);
+        if (!strip) {
+            continue;
+        }
+        const dn = strip.deviceNodes.find((d) => d.grinderControls?.ready);
+        if (dn?.grinderControls) {
+            dn.grinderControls.setPadParam(padIndex, 'engine_type', engineIdx);
+        }
+    }
+}

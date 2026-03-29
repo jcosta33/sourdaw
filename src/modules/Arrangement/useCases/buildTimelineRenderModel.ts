@@ -90,6 +90,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
                         fadeOutBeats: clip.fadeOutBeats,
                         generating: clip.generating,
                         isGhost: clip.isGhost,
+                        isLinkedInstance: !!clip.parentClipId,
                     };
                 }),
             };

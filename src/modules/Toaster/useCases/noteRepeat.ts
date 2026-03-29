@@ -1,14 +1,18 @@
 /**
  * Note Repeat — hold a pad to retrigger at a tempo-synced rate.
  * MPC-style performance feature. Rate adjustable in real-time.
+ * Uses AudioContext clock correction (chained setTimeout) to prevent drift.
  */
 
+import { getAudioTime } from '#/modules/AudioEngine/useCases/engineAccess';
 import { triggerToasterPad } from './triggerPad';
 
 type NoteRepeatState = {
     padIndex: number;
     velocity: number;
-    intervalId: ReturnType<typeof setInterval>;
+    timeoutId: ReturnType<typeof setTimeout>;
+    nextTriggerTime: number;
+    intervalSec: number;
 };
 
 let activeRepeat: NoteRepeatState | null = null;
@@ -27,23 +31,37 @@ function rateToDurationMs(rate: NoteRepeatRate, bpm: number): number {
     }
 }
 
+function scheduleNextTrigger(): void {
+    if (!activeRepeat) {
+        return;
+    }
+
+    triggerToasterPad(activeRepeat.padIndex, activeRepeat.velocity);
+
+    activeRepeat.nextTriggerTime += activeRepeat.intervalSec;
+    const now = getAudioTime();
+    const delayMs = Math.max(1, (activeRepeat.nextTriggerTime - now) * 1000);
+
+    activeRepeat.timeoutId = setTimeout(scheduleNextTrigger, delayMs);
+}
+
 export function startNoteRepeat(padIndex: number, velocity: number, bpm: number, rate: NoteRepeatRate): void {
     stopNoteRepeat();
     const durationMs = rateToDurationMs(rate, bpm);
+    const intervalSec = durationMs / 1000;
 
-    // Trigger immediately
     triggerToasterPad(padIndex, velocity);
 
-    const intervalId = setInterval(() => {
-        triggerToasterPad(padIndex, velocity);
-    }, durationMs);
+    const nextTriggerTime = getAudioTime() + intervalSec;
+    const delayMs = Math.max(1, intervalSec * 1000);
+    const timeoutId = setTimeout(scheduleNextTrigger, delayMs);
 
-    activeRepeat = { padIndex, velocity, intervalId };
+    activeRepeat = { padIndex, velocity, timeoutId, nextTriggerTime, intervalSec };
 }
 
 export function stopNoteRepeat(): void {
     if (activeRepeat) {
-        clearInterval(activeRepeat.intervalId);
+        clearTimeout(activeRepeat.timeoutId);
         activeRepeat = null;
     }
 }

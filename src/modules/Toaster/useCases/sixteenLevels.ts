@@ -5,6 +5,7 @@
  */
 
 import { triggerToasterPad } from './triggerPad';
+import { setToasterPadParam } from './toasterParamBridge';
 
 export type SixteenLevelsTarget = 'velocity' | 'tune' | 'decay' | 'filter';
 
@@ -45,12 +46,20 @@ export function trigger16Level(gridIndex: number): void {
             triggerToasterPad(targetPad, Math.round(normalized * 127));
             break;
         case 'tune':
-        case 'decay':
-        case 'filter':
-            // For non-velocity targets, trigger at full velocity but vary the parameter
-            // This requires sending a param change before triggering
-            // For now, just vary velocity as the simplest implementation
-            triggerToasterPad(targetPad, Math.round(normalized * 127));
+            setToasterPadParam(targetPad, 'tune', -24 + normalized * 48);
+            triggerToasterPad(targetPad, 127);
             break;
+        case 'decay':
+            setToasterPadParam(targetPad, 'decay', normalized);
+            triggerToasterPad(targetPad, 127);
+            break;
+        case 'filter': {
+            const minHz = 20;
+            const maxHz = 20000;
+            const freq = minHz * Math.pow(maxHz / minHz, normalized);
+            setToasterPadParam(targetPad, 'filterCutoff', freq);
+            triggerToasterPad(targetPad, 127);
+            break;
+        }
     }
 }

@@ -1,11 +1,11 @@
 [package]
-name = "toaster"
+name = "daw-dsp"
 version = "0.1.0"
 edition = "2021"
-description = "Grinder drum machine DSP engine — compiles to native and WASM"
+description = "Pure mathematical algorithms and DSP components for Sourdaw."
 
 [lib]
-crate-type = ["cdylib", "rlib"]
+crate-type = ["rlib", "cdylib"]
 
 [dependencies]
 wasm-bindgen = "0.2"

@@ -1,178 +1,1047 @@
-# Knead — Pitch Correction and Melodic Editing Research and Implementation Guide
+# Knead — Pitch Correction and Melodic Editing for Sourdaw
 
-## Requirements and competitive baselines
+## Executive Summary
 
-Knead’s mission is two different products glued together: a low-latency monophonic corrector for tracking/live feel (Auto‑Tune/Waves‑style), and an offline, note-object editor that can reach into chords (Melodyne DNA‑style). The hard part is not “pitch correction” in the everyday sense; it’s building a representation of _note objects_ inside polyphonic audio so that per-note edits (pitch, timing, duration, formant) can be applied without shredding everything else. citeturn22view0turn22view1turn27view0
+Knead must ship as **two tightly integrated systems** with a shared note-object model:
 
-**What “DNA-level” implies in practice.** entity["company","Celemony","audio software company, munich"]’s documentation and patent trail are unusually explicit that polyphonic note editing is (a) an STFT-and-object-analysis problem, (b) not guaranteed to be “perfect” for all signals, and (c) fundamentally an _offline_ analysis workflow rather than a live, frame-by-frame corrector. citeturn27view0turn22view1turn39view0 The core patent language describes: overlapping-window readout, Fourier transform, energy-per-bin, event objects, note objects, associating events to notes by time plausibility, and computing per-note “spectral proportion factors” so a portion of the total sound can be attributed to each note object (and later resynthesized after edits). citeturn22view0turn22view1 That same publication frames the goal as discriminating _pitches / pitch evolutions_ in the overall signal (and associating sound portions to “note objects”), explicitly distinguishing this from general “separate all sources in a room” source separation. citeturn22view1
+- A **real-time monophonic corrector** (tracking/live UX): fast pitch tracking + low-latency pitch shifting + musical retuning controls (speed, tolerance, humanize, vibrato behavior, MIDI/scale constraints).
+- An **offline analysis + edit + resynthesis engine** (editor UX): converts audio into **editable note objects** (“blobs”) with pitch/time/formant/level handles and reconstructs audio after per-note edits.
+- A **polyphonic “DNA-level” decomposition mode** (the hardest part): extracts **note objects inside chords** using STFT/sinusoidal modeling, peak/partial tracking, harmonic grouping, and **soft time–frequency attribution masks** (“spectral proportion factors”) to support per-note editing without turning the problem into full stem separation. The relevant patent language explicitly frames the goal as discriminating pitches/pitch evolutions (note objects) rather than separating real-world sources, and states the method is primarily for already-recorded material (not live real-time). citeturn6view4turn6view5
 
-**Melodyne’s algorithm split is a useful mental model for Knead.** Melodyne exposes distinct analysis modes and recommends them per material: “Melodic” for monophonic pitched signals (vocal, flute, bass), “Percussive” variants for transient material, “Polyphonic Sustain/Decay” for chord-capable instruments when you need per-note access, and “Universal” when you just need time-slice stretching/transposition for complex material like rhythm guitars or mixes. citeturn27view0turn27view1 Importantly, Celemony warns that polyphonic detection “cannot…always deliver perfect results” and urges a workflow where users _check and correct_ detection in a note-assignment mode. citeturn27view0 That is a direct UI/UX requirement for Knead: a polyphonic “Lab” mode that assumes imperfect analysis and equips the user to repair it.
+A feasible product strategy is:
 
-**Real-time pitch correction tools define the “Play” layer of UX.** entity["company","Antares Audio Technologies","audio software company, ca, us"]’s Auto‑Tune Pro X user guide clearly positions “Auto Mode” as low-latency real-time pitch correction and “Graph Mode” as detailed pitch/timing editing. citeturn14view1 It also states a hard constraint: Auto‑Tune is intended for a well-isolated **monophonic** source and cannot accurately pitch-correct multiple pitches at once (multiple voices on one track, chords, etc.). citeturn14view1 The guide defines **Retune Speed** as the rate of correction, including a **0 ms** setting that produces instantaneous pitch changes (the signature hard-quantized behavior). citeturn21view0 It further defines **Humanize** as a mechanism to apply slower retune only on the sustained part of longer notes to avoid sustained notes becoming unnaturally static when fast retune is needed for short notes. citeturn21view1
+- **Ship world-class monophonic correction first** (Knead is immediately useful for vocals and single-note instruments).
+- Add **offline monophonic blob editor** (Flex Pitch/Melodyne-style editing surface).
+- Add **polyphonic analysis + note-assignment repair tooling** as a “Lab mode,” with strong confidence overlays and fallback behaviors on dense/ambiguous material—matching how advanced editors explicitly require fine-tuning/repair in polyphonic detection workflows. citeturn14search6turn14search7turn14search3
 
-**Waves Tune Real-Time is a clean spec for “speed/tolerance/vibrato” behavior.** entity["company","Waves Audio","audio dsp company, tel aviv"]’ documentation defines correction **Speed** (ms) and **Note Transition** (ms) separately, and explicitly introduces **Tolerance** as “Cents” and “Time” thresholds to prevent unwanted note-hopping glitches. citeturn40view0turn10view2 It specifies a base behavior where changing target note is tied to a 50‑cent threshold (Western scales) and shows how “Cents” adds to that threshold and “Time” adds a dwell-time requirement before correction kicks in. citeturn40view1turn10view2 It also separates “vibrato depth” (preserve/diminish/exaggerate frequency modulation) from correction speed, and describes a “quantization effect” approach through fast speed/transition and reduced vibrato depth. citeturn40view0
+## Product Requirements and Competitive Behaviors
 
-**Performance transfer and alignment are not optional features if you want “suite-level” value.** entity["company","Synchro Arts","audio software company, uk"]’ Revoice Pro describes Audio Performance Transfer (APT) as (1) finding timing correspondence between a Guide and a Target (Dub) using VocAlign technology, then (2) measuring features like timing, pitch, vibrato, and level, then (3) transferring user-selected features to generate a modified target, usually with timing alignment. citeturn25view0 This “guide/dub” conceptual model maps cleanly onto Knead’s “Route” layer: alignment + pitch transfer between tracks as first-class operations.
+### What “DNA-level polyphonic editing” requires
 
-**Integrated editors show what users expect from “blobs.”** entity["company","Apple","technology company, cupertino"]’s Logic Pro Flex Pitch documentation demonstrates the baseline interaction model: notes can be dragged vertically to change pitch, horizontally to move timing, edges resized for duration, notes can be split/merged, and per-note “hotspots” expose pitch drift (start/end), vibrato, fine pitch, gain, and formant shift. citeturn25view1 This is a ready-made blueprint for Knead’s Level 3 editor interactions.
+A polyphonic note editor must do more than “detect multiple pitches.” It must:
 
-**Formant preservation is repeatedly treated as core quality.** entity["company","iZotope","audio software company, ma, us"]’s Nectar pitch correction documentation describes “Preserve” formant controls that retain the original vocal timbre while pitch is corrected, plus explicit formant shift controls and guidance that singers’ formants often shift slightly with pitch in natural production. citeturn25view2 Celemony exposes a dedicated formant tool with per-note formant shifts measured in cents and large-range creative shifts, reinforcing that “pitch vs formant” must be independently editable at the note-object level. citeturn25view5
+- Identify **note objects** (pitch trajectories that can include vibrato/portamento) and expose them to the user.
+- Attribute some portion of the signal to each note object so that per-note edits can be resynthesized.
+- Provide **manual repair tools** (split/merge, re-assignment) because plausible interpretations multiply rapidly in polyphonic material, and distorted/complex audio leads to ambiguous detection. citeturn14search6turn14search12
+- Run primarily as **offline/background analysis** because a stable note-object interpretation depends on context; the referenced patent also explicitly describes analysis over a past interval of several seconds and emphasizes the method is not intended as true “real time” performance processing. citeturn6view4turn6view5
 
-The upshot: Knead needs a **dual engine** strategy—real-time monophonic processing for “Play/Shape,” and offline analysis + note-object resynthesis for “Build/Lab.” That division is consistent with how DNA-like systems and real-time correctors publicly describe their constraints and workflows. citeturn22view1turn14view1turn43view2
+### Competitive control semantics Knead must match
 
-## Monophonic analysis: detection, voicing, notes, vibrato
+The most “must-match” behaviors are stable across leading tools:
 
-Monophonic pitch detection is the “easy” part only relative to polyphonic note access—it is still hard to make robust against breathiness, consonants, vibrato, and fast transitions. A production-grade monophonic analysis pipeline should output: a frame-level f0 estimate (or “unvoiced”), a confidence/aperiodicity measure, and a smoothed pitch curve plus discrete note objects.
+- **Retune speed** (ms): 0 ms = instantaneous snapping and vibrato suppression; 10–50 ms typical for natural correction; larger values preserve expressive gestures but correct more slowly. citeturn9view3
+- **Tolerance / hysteresis**: avoid unwanted note transitions by requiring enough pitch deviation (cents threshold) and/or persistence time before switching target notes. citeturn9view4
+- **Humanize / vibrato-aware targeting**: treat sustained-note modulation differently than note transitions so vibrato and intended pitch nuance are not flattened. citeturn9view3
+- **Formant preservation vs. formant shifting**: “preserve” for realism; “shift” for creative timbre changes; the best tools describe these as distinct controls and note that natural singing often shifts formants slightly upward on higher notes. citeturn4search2turn4search17
+- **Polyphonic editor UX**: stacked blobs in chords, plus a note assignment mode where tools adjust detection/interpretation rather than directly changing sound. citeturn0search4turn14search7
 
-**YIN as the baseline estimator.** A clear, implementable description of YIN is captured in the docs for a Rust YIN implementation: compute the mean-square difference function \(d(t)\), normalize it via the cumulative mean normalized difference function \(d'(t)\), then choose the first local minimum below a threshold; refine via quadratic (parabolic) interpolation. citeturn20view0 The aubio documentation similarly traces YIN’s lineage and highlights tolerance thresholds and confidence concepts in practical pitch detectors derived from YIN (including FFT-based variants that compute a tapered difference function). citeturn20view1
+### Patent and IP risk posture
 
-**pYIN as “YIN + probabilities + sequence model.”** A very usable production definition appears in the librosa documentation: pYIN computes multiple f0 candidates and associated probabilities from YIN-style analysis, then applies **Viterbi decoding** to estimate the most likely f0 sequence and voicing flags. citeturn19view0turn18search2 This is exactly the smoothing behavior needed to reduce octave jumps and stabilize voiced/unvoiced boundaries under vibrato and portamento.
+The note-object polyphonic processing approach described in a widely cited patent includes: overlapping windows, Fourier transform, per-bin energy, event objects, note objects, associating events to notes, and computing “spectral proportion factors” for note objects; the Google Patents listing indicates an active status and shows an expiration in 2029. Treat this as an **engineering constraint**: you should involve counsel early, avoid cloning claim language/mechanics, and maintain multiple fallback paths (time-slice “universal” processing and whole-chord operations) if polyphonic note access is restricted by feasibility or IP constraints. citeturn6view5turn6view4
 
-**Frame sizes and hops should be chosen around latency vs stability tradeoffs.** Librosa’s pYIN defaults (frame_length 2048 samples, hop_length ≈ frame_length/4) are a concrete, widely-used reference point and imply an analysis overlap near 75%. citeturn19view0 For Knead’s real-time mode, you can treat this as a starting “analysis resolution” rather than a fixed rule: smaller frames reduce latency but lose low-frequency resolution, while larger frames improve stability and low-note tracking at the cost of responsiveness.
+## Monophonic Engine and Real‑Time Pitch Correction
 
-**Voiced/unvoiced (and “what not to tune”).** pYIN’s model explicitly outputs voiced flags and voiced probabilities, which you can treat as the primary gate for pitch correction. citeturn19view0 Celemony’s vocal-oriented workflow adds an important practical insight: sibilants are detected and treated specially, and pitch correction tools preserve sound quality by transposing _pitched components_ without shifting sibilants (since shifting sibilants sounds unnatural). citeturn26view0turn27view0 For Knead, that suggests a monophonic analysis that tags frames (or subframes) as “periodic tonal,” “noise-like,” and “transient,” and routes them differently through the correction engine.
+### Monophonic analysis pipeline overview
 
-**From pitch curve to note objects.** In Melodyne terms, “blobs” are not frames—they are note objects that have pitch center, drift, modulation/vibrato, and transitions. Celemony’s pitch editing descriptions explicitly separate pitch center from modulation and drift, describing pitch drift as slow wavering while preserving faster modulation (vibrato). citeturn26view1turn26view0 Logic’s Flex Pitch similarly treats drift and vibrato as separate edit dimensions per note. citeturn25view1 In Knead, note segmentation should therefore be optimized for _editability_: you want note boundaries where users expect separate musical notes or separable regions of expression (e.g., a slide into a note vs the steady-state vowel).
+Monophonic pitch correction needs four outputs:
 
-**Vibrato detection should be explicit, not an accidental byproduct.** Empirical voice research frequently characterizes vocal vibrato as periodic modulation of f0, commonly in the **4–7 Hz** range, with extent reported in cents or percent depending on study. citeturn24view4turn24view1turn24view15 A practical representation for Knead is:
+1. **Frame-level f0 estimate** (or “unvoiced”)
+2. **Confidence / periodicity metric**
+3. **Smoothed pitch curve** (continuous f0 trajectory)
+4. **Discrete note objects** (for blob view and per-note controls)
 
-- a **baseline pitch curve** (slow component: intended pitch + portamento),
-- plus a **modulation component** (band-limited around vibrato rates),
-- plus optional micro-jitter/noise descriptors for breathiness.
+A robust production pipeline:
 
-This matches the control affordances users see in Auto‑Tune (Humanize), Waves (Vibrato Depth), Melodyne (pitch modulation/drift separation), and Flex Pitch (vibrato tool/hotspot). citeturn21view1turn40view0turn26view1turn25view1
+```mermaid
+flowchart LR
+  A[Audio frame] --> B[YIN difference + CMND]
+  B --> C[Candidate τ minima + parabolic refine]
+  C --> D[Pitch candidates + confidence]
+  D --> E[pYIN: probabilistic candidates]
+  E --> F[Viterbi/HMM smoothing]
+  F --> G[Voiced/unvoiced gating]
+  F --> H[Pitch curve]
+  H --> I[Note segmentation]
+  I --> J[Vibrato + drift decomposition]
+```
+
+### YIN — algorithm, parameters, and failure modes
 
-## Real-time correction and time-scale manipulation
+**Core idea.** YIN transforms pitch tracking into finding a lag τ with strong periodic similarity, using a **difference function** and a normalization that reduces octave/doubling bias.
+
+**Algorithm sketch (per frame):**
 
-Knead’s real-time mode should behave like a musician-friendly “set key/scale and sing/play” device—but under the hood it needs a mathematically stable target selection rule, a correction-rate model, and a low-latency pitch shifter suitable for monophonic voiced signals.
+- Compute difference function:
 
-**Target pitch selection is a constrained mapping problem, not a “nearest bin” toy.** The basic behavior across mainstream correctors is: pick allowed notes from a key/scale system and tune toward them. Auto‑Tune’s guide describes continuous comparison to scale notes and correction to the nearest scale tone under fast retune settings. citeturn21view0turn14view1 iZotope and VocalSynth documentation similarly emphasizes correctly choosing root/scale (or going chromatic when unsure) to get robust results. citeturn25view2turn10view3
+\[
+d(\tau)=\sum\_{t=0}^{N-\tau-1}\left(x[t]-x[t+\tau]\right)^2
+\]
 
-**Speed, tolerance, and “humanize” are separate controls with distinct DSP implications.**
+- Compute cumulative mean normalized difference (CMND):
 
-- **Retune speed / correction speed** is the time constant of a smoothing process toward the target pitch. Auto‑Tune is explicit that 0 ms is instantaneous, and larger values produce more gradual pitch changes. citeturn21view0 Waves expresses this as a Speed parameter in ms, noting that fast values can flatten pitch contours. citeturn40view0
-- **Tolerance / flex** is a hysteresis mechanism that prevents micro-variations from triggering a different target note. Waves’ “Cents” and “Time” tolerance parameters are a precise specification of this idea. citeturn40view1turn10view2 Auto‑Tune’s “Flex‑Tune” similarly narrows or widens the effective correction zone around scale notes. citeturn21view2
-- **Humanize / vibrato preservation** should operate primarily on the sustained segment of a note, slowing correction there while still allowing fast capture of short notes. Auto‑Tune defines Humanize exactly in these terms. citeturn21view1 Waves’ vibrato model explicitly treats frequency modulation preservation separately from correction speed. citeturn40view0
+\[
+d'(\tau)=\frac{d(\tau)}{ \frac{1}{\tau}\sum\_{j=1}^{\tau} d(j) }
+\]
 
-A practical Knead design is to compute a **note target** plus a **continuous correction curve** that depends on: current deviation, voicing probability, whether the segment is “attack vs sustain,” and whether modulation is labeled as vibrato vs unintended drift.
+- Find the **first local minimum** below a threshold (e.g., 0.1–0.2), then refine τ with parabolic interpolation around the minimum.
+- Convert to frequency: \( f_0 = \frac{f_s}{\tau} \).
 
-**PSOLA is the primary real-time monophonic pitch shifter for “natural” small moves.** The classic PSOLA framework is described by entity["people","Eric Moulines","speech dsp researcher"] and entity["people","Francis Charpentier","speech dsp researcher"] as a pitch-synchronous overlap-add approach for prosody modification, with variants operating in time domain (TD‑PSOLA) and frequency domain (FD‑PSOLA); the paper explicitly notes time-domain PSOLA’s efficiency for real-time systems, while FD‑PSOLA provides more flexible spectral modification. citeturn31view0 For Knead’s “Play” layer, TD‑PSOLA-style processing aligned to pitch marks (or robust quasi-period markers) is the lowest-latency path to natural sound on vocals and single melodic instruments—provided voicing detection and period tracking are stable.
+This “CMND + first-minimum threshold” structure is the signature of YIN and is explicitly cited as the key differentiator in literature and implementations. citeturn12search0turn12search7
 
-**Phase vocoder is the fallback for larger shifts, polyphonic material, and harmonizer voices.** entity["people","Jean Laroche","audio dsp researcher"] and entity["people","Mark Dolson","audio dsp researcher"] describe phase-vocoder techniques for pitch shifting and harmonizing, including peak-detection and peak-shifting stages and a tradeoff where more flexible techniques require larger overlap (they explicitly contrast a simple 50% overlap case with a more flexible approach requiring ~75% overlap). citeturn10view4turn40view0 This maps directly to a practical Knead architecture:
+**Recommended real-time parameter defaults (44.1/48 kHz):**
 
-- Use PSOLA where you have strong periodicity and need low latency.
-- Use a peak/phase-locked vocoder family where periodicity is weak or polyphony exists, accepting heavier compute and managing transient artifacts.
+| Use                          | Frame size |      Hop |  Overlap |   f0 range | Notes                                            |
+| ---------------------------- | ---------: | -------: | -------: | ---------: | ------------------------------------------------ |
+| Low-latency tracking vocals  |       2048 |  256–512 | 75–87.5% | 80–1000 Hz | Good responsiveness; slightly less stable low f0 |
+| Higher-stability vocals/bass |       4096 | 512–1024 | 75–87.5% |  50–600 Hz | Better for low notes; more latency               |
 
-**Transient handling is not optional; it gates perceived “pro quality.”** entity["people","Axel Röbel","audio dsp researcher"]’s phase vocoder transient work is explicit about the failure mode: abrupt amplitude changes (attack transients) violate near-stationary assumptions and cause characteristic artifacts. citeturn36view0 The paper proposes transient detection and processing at the level of spectral peaks/bins, with phase reinitialization timed around transient position, aiming to keep stationary partials coherent even in polyphonic signals. citeturn36view0 For Knead, this implies the real-time pitch shifter must include:
+Practical guidance: start at **2048/256** (≈46 ms window, ≈6 ms hop at 44.1 kHz) for smooth tracking, then expose a “latency/accuracy” selector.
 
-- a transient detector (energy/phase-related features),
-- an option to bypass or special-handle transients,
-- and a “transient-safety” mode for percussive onsets in instruments like guitar or piano.
+**Rust-like pseudocode (YIN core):**
 
-## Formant modeling and timbral control
+```rust
+struct YinConfig {
+    sample_rate: f32,
+    frame_size: usize,
+    f0_min: f32,
+    f0_max: f32,
+    cmnd_threshold: f32, // e.g., 0.15
+}
+
+struct YinResult {
+    f0_hz: Option<f32>,
+    periodicity: f32, // 0..1 (1 = strongly periodic)
+    tau: Option<f32>, // sub-sample
+}
+
+fn yin_frame(x: &[f32], cfg: &YinConfig) -> YinResult {
+    let n = cfg.frame_size;
+    let tau_min = (cfg.sample_rate / cfg.f0_max).floor() as usize;
+    let tau_max = (cfg.sample_rate / cfg.f0_min).ceil() as usize;
+
+    // 1) difference function
+    let mut d = vec![0.0_f32; tau_max + 1];
+    for tau in 1..=tau_max {
+        let mut sum = 0.0;
+        for t in 0..(n - tau) {
+            let diff = x[t] - x[t + tau];
+            sum += diff * diff;
+        }
+        d[tau] = sum;
+    }
+
+    // 2) CMND
+    let mut cmnd = vec![1.0_f32; tau_max + 1];
+    let mut running = 0.0_f32;
+    for tau in 1..=tau_max {
+        running += d[tau];
+        cmnd[tau] = if running > 0.0 { d[tau] * (tau as f32) / running } else { 1.0 };
+    }
+
+    // 3) pick first dip under threshold
+    let mut pick: Option<usize> = None;
+    for tau in tau_min..=tau_max {
+        if cmnd[tau] < cfg.cmnd_threshold {
+            // local min search
+            let mut t0 = tau;
+            while t0 + 1 <= tau_max && cmnd[t0 + 1] < cmnd[t0] {
+                t0 += 1;
+            }
+            pick = Some(t0);
+            break;
+        }
+    }
+
+    // 4) parabolic refinement
+    if let Some(tau_i) = pick {
+        let tau_f = parabolic_minimum(&cmnd, tau_i); // returns float τ
+        let f0 = cfg.sample_rate / tau_f;
+        let periodicity = 1.0 - cmnd[tau_i].clamp(0.0, 1.0);
+        YinResult { f0_hz: Some(f0), periodicity, tau: Some(tau_f) }
+    } else {
+        YinResult { f0_hz: None, periodicity: 0.0, tau: None }
+    }
+}
+```
 
-Pitch correction that “sounds expensive” is usually less about pitch accuracy and more about preserving or intentionally manipulating timbre. Every major baseline tool exposes formant operations, either as “preserve” or as “shift.”
+**Common YIN failure modes:**
 
-**Source–filter framing and LPC are the pragmatic entry point.** entity["people","John Makhoul","speech dsp researcher"]’s classic tutorial describes linear prediction as modeling a signal via an all-pole filter excited by a source (impulse train for voiced, noise for unvoiced), which is the operational basis for extracting a spectral envelope in speech-like signals. citeturn8search0turn37view0 (For vocals, this envelope corresponds closely to formant structure and broader timbral shaping.) Order selection is a long-standing practical issue; Matlab’s formant estimation documentation gives a standard rule of thumb relating model order to expected formant count. citeturn8search1
+- **Subharmonic / octave errors**: can occur when the signal has strong even/odd harmonic ambiguity or when the threshold is poorly tuned.
+- **Breathy/noisy vowels**: periodicity metric falls; false unvoiced or unstable f0.
+- **Rapid transitions** (consonants, glottal fry, growl): pitch tracking becomes discontinuous; needs voicing gating and smoothing.
 
-**Formant preservation is an explicit product requirement in commercial tools.**
+### pYIN — probabilistic candidates + sequence decoding
 
-- Nectar describes “Preserve” formants as retaining the performer’s timbre while tuning, and provides per-region formant shift and scaling controls. citeturn25view2
-- Celemony’s formant tool describes per-note formant shifts with visual feedback measured in cents (100 cents = 1 semitone), emphasizing that formants can be moved independently of pitch for subtle nuance or extreme effects. citeturn25view5
-- Logic Flex Pitch exposes per-note formant shift directly in the editor. citeturn25view1
+pYIN is best understood as:
 
-**Implementation implications for Knead.**
+- Run a YIN-like analysis, but instead of a single τ threshold, produce **multiple pitch candidates** with **probabilities** (via a distribution over thresholds).
+- Use a **sequence model (HMM) decoded with Viterbi** to pick a globally consistent pitch track while jointly estimating voicing. citeturn0search10turn17search7
 
-- In PSOLA-based monophonic shifting, small pitch moves often preserve perceived formants reasonably well because the waveform’s fine structure is preserved under pitch-synchronous overlap-add—until you push into large transpositions or unstable pitch-marking.
-- In FFT/phase-vocoder methods, pitch shifting naively moves the entire spectrum, which shifts both the harmonic structure and the spectral envelope together—hence the “chipmunk/monster” effect. This is why formant-aware processing tends to decompose **envelope vs excitation** (via LPC, cepstral “true envelope” families, or related methods) and recompose after shifting.
+This design directly targets YIN failure modes:
 
-Because Knead must support both “preserve” and “creative formant shift,” the internal representation should store (at minimum) a per-note spectral envelope descriptor and a policy:
+- It reduces octave flips by penalizing implausible jumps.
+- It smooths vibrato without flattening it, by allowing small continuous transitions.
+- It lets voicing be an inferred state rather than a hard local threshold.
 
-- **Preserve**: keep envelope mostly fixed while shifting harmonic structure.
-- **Follow**: shift envelope partially with pitch (as Nectar notes is closer to what humans do). citeturn25view2
-- **Independent shift**: shift envelope without shifting pitch (gender shift), or vice versa.
+**Pragmatic pYIN defaults:**
 
-## Polyphonic note access: analysis, separation, resynthesis
+- Frequency bins: 10–20 cents resolution internally (finer bins improve stability but increase computation).
+- Transition costs:
+    - small cost per semitone step (favor continuity),
+    - large cost for octave jumps,
+    - explicit voiced↔unvoiced transition penalties (avoid chatter).
+- Candidate pruning: keep top K τ minima per frame (e.g., K=3–5).
 
-This is the defining challenge: providing edit handles for individual notes _inside chords_ in a rendered audio file. The central risk is believing this is “just polyphonic pitch detection.” It is more than that: you need a decomposition that is stable under editing and resynthesis.
+### Voiced/unvoiced detection (V/UV)
 
-**Why this remains hard (and what success looks like).** Multi‑f0 estimation and polyphonic analysis remain challenging and do not match human ability, especially as polyphony increases and sources become spectrally dense. citeturn38view0turn31view3 Duan/Pardo/Zhang explicitly frame multi‑f0 estimation as challenging and motivate peak-based spectral representations because peaks carry perceptually salient harmonic information and facilitate modeling of multiples of fundamentals. citeturn38view0 Virtanen’s NMF work similarly frames monaural polyphonic separation as a difficult problem, modeling mixtures via nonnegative spectrogram factorization and emphasizing that “sound source separation” from a single channel is an appealing but hard capability. citeturn31view3
+Knead should compute a **voicing probability** per frame, used to:
 
-**DNA-style analysis is best viewed as “note objects + masks,” not “stems.”** The Celemony patent family frames polyphonic editing as identifying **note objects** (quasi-periodic pitched objects with perceptible duration), associating lower-level **event objects** to them, and computing **spectral proportion factors** that assign portions of the total spectral energy to each note object for later processing and resynthesis. citeturn22view0turn22view1 It also explicitly positions the method as primarily for already-recorded musical material, not real-time performance processing. citeturn22view1 This supports Knead’s required product stance: polyphonic “Lab” mode should be an offline analysis pass with caching and user-driven verification/correction tools.
+- bypass correction on unvoiced regions (breaths, fricatives),
+- avoid PSOLA pitch marking where it will fail,
+- support “sibilant handling” and noise preservation behaviors similar to advanced editors.
 
-**A workable hybrid pipeline for Knead’s polyphonic mode.** The most defensible route is a hybrid of classic sinusoidal modeling (for editability and high-quality resynthesis) plus modern multipitch priors (for initialization and robustness).
+A robust V/UV classifier can blend:
 
-1. **STFT + peak picking + partial tracking (sinusoidal front end).** A standard sinusoidal model extracts peaks from the STFT and then tracks sinusoids over time. entity["people","Robert McAulay","speech dsp researcher"] and entity["people","Thomas Quatieri","speech dsp researcher"] describe extracting amplitudes/frequencies/phases via STFT peak picking and tracking peaks across frames with “birth” and “death” of sinusoids, with explicit attention to phase trajectory smoothing for high-quality reconstruction. citeturn37view0 The PARSHL framework (by entity["people","Julius O. Smith","audio dsp researcher"] and entity["people","Xavier Serra","audio dsp researcher"]) similarly describes STFT-based peak tracking that follows amplitude, frequency, and phase trajectories from FFT to FFT, framing it as an “inharmonic phase vocoder” suitable for additive parameter extraction. citeturn32view1turn32view2
+- periodicity/confidence (from YIN/pYIN),
+- spectral flatness (noise-like vs harmonic),
+- harmonic-to-noise-like ratio heuristics.
 
-2. **Harmonic grouping and multi‑f0 inference (note hypothesis).** Once you have partial tracks, you need to group them into harmonic sets that correspond to note objects. Duan/Pardo’s maximum-likelihood multi‑f0 estimation models both spectral peaks and non-peak regions and uses greedy/iterative strategies to avoid combinatorial explosion, plus refinement over neighboring frames to reduce inconsistent errors. citeturn38view0 This family of ideas is directly useful for Knead: multi‑f0 should propose candidate fundamentals; harmonic grouping assigns tracked partials to fundamentals; then note objects are formed by temporal continuity of activation.
+Neural pitch estimators like SPICE explicitly incorporate a confidence head that can be used for voicing detection rather than handcrafted thresholds, demonstrating that “confidence as voicing proxy” is viable. citeturn8view2
 
-3. **Event objects, note objects, and per-note masks (editability layer).** The Celemony patent’s “event objects → note objects → spectral proportion factors” structure is effectively an instruction to compute **soft masks**: per note object, determine how much of each time-frequency bin belongs to it, enabling removal/addition/resynthesis after edits. citeturn22view0turn22view1 This avoids hard separation boundaries and supports gradual overlap between notes—critical when harmonics collide.
+### Note segmentation rules (monophonic blobs)
 
-4. **Residual modeling (what you don’t want to warp).** Sinusoidal modeling literature and practical tools often conceptualize signals as deterministic sinusoidal components plus residual/noise/transients. Dressler’s DAFx work on sinusoidal extraction explicitly motivates dividing the signal into deterministic sinusoidal components plus noise and notes that polyphonic audio demands adaptations beyond monophonic assumptions. citeturn31view4 For Knead, the residual should be preserved or separately processed (especially for transients and noise-like components), aligned with the Melodyne approach of protecting sibilants/unpitched components during pitch correction. citeturn26view0turn27view0
+A note (“blob”) is a **stable musical region** with:
 
-5. **Resynthesis under edits with phase coherence constraints.** High-quality resynthesis requires continuity of phase trajectories and careful handling at note boundaries. McAulay/Quatieri explicitly emphasize phase trajectory modeling for high-quality reconstruction. citeturn37view0 Röbel’s transient work highlights that careless phase reinitialization across broad bands can destroy coherence of stationary partials in polyphonic signals, motivating localized, bin/peak-level transient treatment. citeturn36view0
+- a pitch center,
+- internal drift + vibrato,
+- boundaries where pitch, energy, or voicing suggests a new note.
 
-**Alternative decomposition approaches and where they fit.**
+**Segmentation criteria (combined):**
 
-- **NMF family:** Virtanen’s approach factorizes a magnitude spectrogram into fixed spectra with time-varying gains, encouraging temporal continuity and sparseness; this is valuable as a coarse separation prior but is not inherently “note-object editable” without additional constraints and pitch-aware structure. citeturn31view3
-- **PLCA family:** entity["people","Paris Smaragdis","audio ml researcher"] and entity["people","Bhiksha Raj","audio ml researcher"] describe PLCA as a probabilistic latent decomposition of spectra and later extend it toward shift-invariant variants, explicitly relating it to NMF while adding probabilistic interpretability and extensions like shift invariance. citeturn38view1turn38view2 PLCA variants are frequently used for multipitch estimation and can form part of a “note activation posterior” stage, but high-quality per-note pitch/time edits still tend to need sinusoidal/phase-coherent resynthesis or very carefully constrained spectral modification.
+1. **Voicing boundaries**
+    - if V/UV flips to unvoiced for > ~30–60 ms, cut a note boundary.
 
-- **Neural multipitch / AMT as a prior:** entity["company","Spotify","music streaming company, se"]’s Basic Pitch is a direct demonstration of practical polyphonic note inference from audio: it is described as polyphonic, instrument-agnostic, and capable of pitch-bend detection, with engineering claims of being computationally lightweight and running faster than real time on many computers. citeturn28view0turn28view3turn28view1 The accompanying paper describes a lightweight model that predicts multipitch and note activations and explicitly treats multipitch estimation as preserving expressive pitch fluctuations (vibrato, glissando) while note estimation is closer to a score representation. citeturn29view0 This is highly relevant to Knead as a _hybrid initializer_: neural models can propose “what notes are present when,” while sinusoidal modeling refines f0 and enables high-quality controlled edits.
+2. **Onset/energy cues**
+    - spectral flux peak or energy rise marks likely onset.
+    - if onset occurs while voicing remains, cut only if pitch center changes substantially soon after.
 
-**Practical limitation envelope for Knead’s “DNA mode.”** External reviews and user discussions align strongly with the technical constraints above: DNA-style editing works best when notes are well separated (e.g., guitar/piano/strings loops) and becomes difficult on heavily distorted material with dense harmonics, producing many tiny ambiguous segments. citeturn43view1turn27view0 Even Celemony’s own docs caution that polyphonic detection cannot always be perfect and suggest manual correction workflows. citeturn27view0 Knead’s product spec should therefore define a “supported polyphonic complexity” band (e.g., sparse polyphony, one primary instrument, moderate distortion) and offer graceful degradation: fall back to time-slice (“Universal”-like) processing and whole-chord transposition when per-note access is unreliable. citeturn27view0turn28view1
+3. **Pitch discontinuity**
+    - if \(|\Delta f_0|\) exceeds ~80–120 cents within a short window (e.g., 30–80 ms), start a new note.
 
-**Patent/IP reality check.** The key DNA-like method described in US8022286B2 is listed as active with an expiration shown on the Google Patents page in 2029. citeturn22view0 While this is not legal advice, it is a product-planning constraint: Knead’s design should be careful about literally re-implementing patented claim language (note objects + spectral proportion factors + specific association mechanics) and should involve counsel when engineering approaches converge on patented methods.
+4. **Micro-gesture protection**
+    - do **not** segment inside vibrato or small pitch gestures unless consistent with onset cues.
 
-## Editor data model, UI/UX, and creative workflow features
+**Recommended defaults (monophonic):**
 
-Knead’s UI goal (“blob editor is the most important view”) is consistent with how leading tools operationalize note-object editing, and there are concrete interaction patterns worth copying—because they’re grounded in what the underlying DSP can reliably support.
+- minimum note length: 60–80 ms
+- minimum voiced duration to form a note: 40–60 ms
+- pitch change threshold for segmentation: 100 cents (with hysteresis)
+- unvoiced gap threshold: 40 ms (to ignore tiny consonant gaps)
 
-image_group{"layout":"carousel","aspect_ratio":"16:9","query":["Melodyne 5 note editor blobs screenshot","Logic Pro Flex Pitch audio track editor screenshot","Auto-Tune Pro X graph mode screenshot","Waves Tune Real-Time plugin interface screenshot"],"num_per_query":1}
+### Vibrato modeling and control
 
-**Blob = editable note object.** Melodyne’s documentation explicitly frames blobs as handles for pitch/time edits; its pitch tool text stresses the pitch curve within the blob as essential to perceived intonation and describes musically-informed pitch assessment over the note’s duration. citeturn26view0 Melodyne’s polyphonic mode stacks blobs vertically for chords, and (in versions that support it) allows changing one chord tone to reharmonize the chord (e.g., E minor to E major by changing G to G#). citeturn25view3 Logic Pro Flex Pitch uses very similar note rectangles with direct manipulation and per-note hotspots; that’s a proven UX schema for Level 3. citeturn25view1
+Vibrato is periodic modulation of f0. Typical vocal vibrato is often reported around **5–7 Hz** with extent varying by style/training; one study describes 5–7 Hz and extent on the order of several percent of f0 (roughly comparable to about ±1 semitone in some contexts). citeturn5search8turn5search0
 
-**Note separation / split-merge tools are essential, not “advanced.”** Celemony’s training docs distinguish soft separations (linked notes that preserve phrasing and transitions) from hard separations (independent notes with no pitch/formant/amplitude transitions). citeturn25view4turn26view0 Logic Flex Pitch directly supports split and merge operations. citeturn25view1 In Knead, split/merge is not merely an edit convenience: it is the user-facing mechanism to repair segmentation errors and to control transition artifacts.
+**Knead representation (per note):**
 
-**A recommended internal data model for Knead’s editor.** To support Level 3+ interactions, each note object should carry:
+- base pitch curve \(b(t)\): low-frequency trend (intonation + portamento)
+- modulation \(m(t)\): band-limited component around ~3–9 Hz
+- remainder \(r(t)\): jitter/noise
 
-- time domain: onset, offset, and optional internal anchor points for drift/transitions,
-- pitch domain: pitch center (cents), pitch curve (f0 samples), drift curve (low-frequency component), modulation curve (vibrato component),
-- timbre domain: formant shift value + optional envelope descriptor snapshot(s),
-- amplitude domain: per-note gain and optional amplitude envelope,
-- linkage domain: soft/hard separation links to neighbors plus transition parameters,
-- provenance: detection confidence, voicing probability, and “analysis mode” used.
+Implementation:
 
-For Level 5 DNA-mode notes, extend the note object with:
+- compute pitch curve in cents relative to note center
+- apply a band-pass filter (e.g., 3–9 Hz) to isolate vibrato component
+- estimate rate via autocorrelation or FFT peak on \(m(t)\)
+- estimate depth as RMS or peak-to-peak in cents (typical UI: 0–100%)
 
-- partial-track references (amplitude/frequency/phase trajectories),
-- per-bin soft masks / spectral proportion factors (for reconstruction under overlap),
-- and residual association policy (what is preserved vs transformed).
+Controls:
 
-This structure is aligned with the object vocabulary described in the polyphonic patent and sinusoidal modeling literature (tracked amplitude/frequency/phase trajectories plus birth/death; note objects and per-note spectral allocation). citeturn22view0turn37view0turn32view1
+- **Vibrato Preserve**: leave \(m(t)\) untouched while tuning \(b(t)\)
+- **Vibrato Reduce**: scale \(m(t)\) by factor 0..1
+- **Vibrato Add**: inject synthetic sinusoidal FM with controllable rate, depth, delay-in, and jitter
 
-**Progressive disclosure UX mapped to DSP reality.**
+### Real-time pitch correction behavior (speed, tolerance, humanize, MIDI)
 
-- **Play:** A tuner-like view with key/scale, a “correction speed” macro, and wet/dry. This is the Auto‑Tune/Waves mental model. citeturn14view1turn40view0turn10view3
-- **Shape:** Expose Humanize, tolerance/flex, vibrato handling, and formant preserve/shift. These correspond to documented controls in Auto‑Tune, Waves, and Nectar. citeturn21view1turn40view1turn25view2
-- **Build:** Full-screen piano-roll-like blob editor: drag pitch/time, resize duration, split/merge, per-note drift/vibrato/formant/gain hotspots. Logic Flex Pitch provides a validated interaction spec here. citeturn25view1turn25view4
-- **Route:** APT-style guide/dub alignment and pitch transfer; harmonizer where additional voices derive from the same pitch-shift engine but respect scale/key; vocal doubler. Revoice Pro’s APT steps are an explicit design reference. citeturn25view0
-- **Lab:** Polyphonic note access with transparent uncertainty (confidence overlays, ambiguous-note highlighting) and manual reassignment tools, consistent with Celemony’s guidance to correct polyphonic detection outputs. citeturn27view0turn22view1
+Use an explicit control model tied to audible results:
 
-**Creative effects as structured re-use of core primitives.**
+#### Scale/key mapping
 
-- **Hard tune / robotic quantization** is “fast retune + low tolerance + reduced vibrato.” That mapping is directly described in Auto‑Tune (0 ms retune) and Waves (minimum speed/transition, vibrato control). citeturn21view0turn40view0
-- **Harmonizer** is multiple shifted voices plus scale-aware target selection. Laroche/Dolson explicitly discuss harmonizing as a phase‑vocoder application, and Basic Pitch’s “multipitch + pitch bend preservation” highlights the importance of expressive variations for realistic harmonies. citeturn10view4turn28view0
-- **Vocal doubler** is slight detune + micro-delay + small formant/character variation. Celemony even exposes “random deviations” workflows for simulating doubled tracks more realistically. citeturn26view0
-- **Gender shift** is primarily formant shifting without pitch shifting; Nectar and Melodyne both frame formant shift as a first-class control. citeturn25view2turn25view5
-- **Pitch-to-MIDI** can be implemented at two levels:
-    - monophonic: segment notes from your f0 curve and emit MIDI,
-    - polyphonic: use a neural AMT prior like Basic Pitch to infer note events with pitch bends, then export MIDI. citeturn28view0turn28view1turn29view0
+- Represent notes as **pitch classes** (0–11) plus octave.
+- Allowed set A is derived from key+scale (or a user-custom scale).
+- Target note is chosen by minimizing distance in cents, with hysteresis.
 
-**The “secret sauce” is mostly about what you _don’t_ destroy.**
+#### Tolerance (dead zone + hold time)
 
-- Preserving vibrato and expressive modulation while correcting pitch center is explicitly how Melodyne separates pitch drift from pitch modulation, and how Auto‑Tune defines Humanize. citeturn26view1turn21view1
-- Avoiding note-transition glitches requires tolerance/hysteresis; Waves documents this as the primary purpose of its tolerance controls. citeturn40view1
-- Avoiding transient smearing and phase incoherence requires transient-aware phase processing; Röbel’s work is a direct technical blueprint for why and how. citeturn36view0turn10view4
-- Polyphonic editability requires an object model robust under overlap; Celemony’s patent language (note objects + spectral proportion factors + residual) and the sinusoidal tracking literature converge on this requirement from different angles. citeturn22view0turn37view0turn32view1
+Borrow the semantics of “cents tolerance + time tolerance”:
 
-**Honest boundary of what’s achievable.** A “full mix” with drums, bass, guitars, vocals, and effects is generally outside the reliable per-note-edit envelope for today’s non-stem workflows; even DNA-style systems and reviews treat results as case-by-case and dependent on note separability and harmonic clarity. citeturn27view0turn43view1turn28view1 Knead can still be “Melodyne-level” by matching the _workflow contract_: offline polyphonic analysis on suitable material, explicit uncertainty, strong manual correction tools, and excellent monophonic correction—while providing graceful degradation (whole-signal transposition/time-slicing) when note-object separation is unreliable. citeturn27view1turn22view1turn43view2
+- If within ±T cents of the current target, keep target.
+- Switch target only if pitch stays outside tolerance for at least T_time, to avoid micro-wiggles causing note hopping. citeturn9view4
+
+#### Retune speed (first-order smoother with separate attack/sustain)
+
+A practical model:
+
+- detect note onset (from segmentation cues or transient/flux)
+- use faster correction constant during onset region (0–80 ms)
+- use slower correction during sustain (Humanize)
+
+Auto‑Tune’s manual describes retune speed in **milliseconds**, explicitly noting 0 ms yields immediate changes and suppresses vibrato/deviations; 10–50 ms is typical for natural correction. citeturn9view3
+
+#### MIDI input mode
+
+- If MIDI notes are held, target set becomes exactly those notes (or last note, or chord-based selection).
+- When no MIDI notes held, fall back to scale mapping.
+
+Auto‑Tune’s documentation includes MIDI-based scale definition (“learn scale”) behaviors; Knead should match the “MIDI defines legal notes” pattern. citeturn3search18turn9view3
+
+## Polyphonic Analysis and Note‑Object Decomposition
+
+### Why sinusoidal modeling is the most edit-friendly representation
+
+For polyphonic editing, you need a representation that supports:
+
+- independent manipulation of note pitch trajectories,
+- phase-coherent resynthesis,
+- soft overlap handling.
+
+Classic sinusoidal analysis/synthesis explicitly models a frame as a set of sinusoidal components with amplitude, frequency, and phase estimated from the STFT, then addresses the hard part: **frame-to-frame peak matching** because peaks appear/disappear and move due to changing pitch and sidelobe interactions. citeturn10view1
+
+### Polyphonic pipeline overview (DNA-style, but implementable)
+
+```mermaid
+flowchart TB
+  A[Audio segment] --> B[STFT: windowed overlapping frames]
+  B --> C[Peak picking + sub-bin interpolation]
+  C --> D[Partial tracking: connect peaks across frames]
+  D --> E[Harmonic grouping: cluster partials into note hypotheses]
+  E --> F[Note objects + activation envelopes]
+  E --> G[Soft masks / spectral proportion factors]
+  B --> H[Residual model: transients + noise + inharmonic]
+  F --> I[Per-note editable parameters]
+  I --> J[Resynthesis: additive partials + residual]
+```
+
+The patent language for note-object oriented polyphonic processing describes: overlapping windows, Fourier transform, per-bin energy, event objects, note objects, associating events and notes by plausible timing, and computing spectral proportion factors for each note object. citeturn6view5turn6view4
+
+### STFT configuration and window choices
+
+**Defaults (polyphonic analysis):**
+
+- window: **Blackman–Harris** for better sidelobe suppression (reduces false peaks near strong harmonics), or Hann when CPU is tight.
+- size: **8192** (44.1 kHz → ~186 ms window; high frequency resolution)
+- hop: **2048** (25% hop) for stable tracking; consider 1024 for smoother trajectories.
+- use zero-padding for finer peak interpolation (optional).
+
+Trade-off:
+
+- Larger windows improve harmonic discrimination (critical for chord tones close in frequency).
+- Smaller hops improve temporal continuity for partial tracking and reduce “staircase” in f0 tracks.
+
+image_group{"layout":"carousel","aspect_ratio":"16:9","query":["STFT spectrogram harmonic series vocal","spectral peak picking diagram audio","sinusoidal partial tracking illustration","harmonic grouping fundamentals diagram"],"num_per_query":1}
+
+### Peak picking and sub-bin interpolation
+
+Per frame:
+
+1. Compute magnitude spectrum \(|X[k]|\).
+2. Find **local maxima** above adaptive threshold:
+    - threshold = max(noise_floor + margin, percentile-based)
+3. For each peak at bin k, do **quadratic interpolation** in log-magnitude:
+    - estimate fractional bin offset δ
+    - refined frequency \( f = (k + \delta)\frac{f_s}{N} \)
+4. Store:
+    - frequency, amplitude, phase
+    - optional peak “prominence” feature for later filtering
+
+This peak-based approach matches the “peak-detection stage followed by peak-shifting stage” in advanced phase-vocoder work, where peak structure is treated as a core primitive for clean modifications. citeturn6view2turn0search3
+
+### Partial tracking (peak matching, birth/death, slope constraints)
+
+Partial tracking converts per-frame peaks into **sinusoid trajectories**:
+
+- Each partial p has a state:
+    - last frequency \(f*{t-1}\), amplitude \(a*{t-1}\), phase \(\phi\_{t-1}\)
+    - estimated slope \( \Delta f \) (optional)
+    - age, stability score
+
+**Matching rule (between frames t and t+1):**
+
+- Candidate peaks within frequency neighborhood:
+    - \(|f*{cand} - f*{pred}| < f\_{gate}\)
+- Cost function:
+    - \(w*f |f*{cand}-f*{pred}|\) + \(w_a |a*{cand}-a\_{pred}|\) + \(w_s\) (stability penalty)
+- Choose assignment via:
+    - greedy sorted by strongest peaks (fast)
+    - Hungarian assignment (better but heavier)
+
+**Birth/death:**
+
+- Birth: unmatched peaks above threshold start new tracks.
+- Death: tracks that fail to match for M frames (e.g., 2–4) end, possibly with a fade-out.
+
+**Slope constraint:**
+
+- For voiced harmonic partials, instantaneous frequency should change slowly relative to hop:
+    - enforce max cents-per-second slope
+    - allow faster slope near transients or detected note transitions
+
+Sinusoidal modeling literature emphasizes that peak matching is hard in practice because peaks can appear/disappear due to sidelobe interactions and pitch changes, motivating robust tracking and interpolation of amplitude/phase trajectories. citeturn10view1
+
+**Rust-like pseudocode (partial tracker skeleton):**
+
+```rust
+struct Peak { f_hz: f32, mag: f32, phase: f32 }
+struct Partial {
+    id: u64,
+    points: Vec<(f32 /*t*/, f32 /*f*/, f32 /*mag*/, f32 /*phase*/)>,
+
+    // state
+    f_pred: f32,
+    mag_pred: f32,
+    missed: u32,
+    alive: bool,
+}
+
+struct TrackerConfig {
+    f_gate_hz: f32,     // e.g., 20–80 Hz depending on band
+    max_missed: u32,    // e.g., 3
+    w_f: f32, w_mag: f32,
+}
+
+fn track_frame(partials: &mut Vec<Partial>, peaks: &[Peak], t: f32, cfg: &TrackerConfig) {
+    let mut used = vec![false; peaks.len()];
+
+    // 1) try to match existing partials
+    for p in partials.iter_mut().filter(|p| p.alive) {
+        let mut best: Option<(usize, f32)> = None;
+
+        for (i, pk) in peaks.iter().enumerate() {
+            if used[i] { continue; }
+            let df = (pk.f_hz - p.f_pred).abs();
+            if df > cfg.f_gate_hz { continue; }
+
+            let cost = cfg.w_f * df + cfg.w_mag * (pk.mag - p.mag_pred).abs();
+            if best.map(|(_, c)| cost < c).unwrap_or(true) {
+                best = Some((i, cost));
+            }
+        }
+
+        if let Some((i, _)) = best {
+            let pk = &peaks[i];
+            used[i] = true;
+            p.points.push((t, pk.f_hz, pk.mag, pk.phase));
+            p.f_pred = pk.f_hz;    // + optional slope model
+            p.mag_pred = pk.mag;
+            p.missed = 0;
+        } else {
+            p.missed += 1;
+            if p.missed > cfg.max_missed {
+                p.alive = false;
+            }
+        }
+    }
+
+    // 2) births
+    for (i, pk) in peaks.iter().enumerate() {
+        if used[i] { continue; }
+        // threshold peaks upstream before here
+        partials.push(Partial {
+            id: new_id(),
+            points: vec![(t, pk.f_hz, pk.mag, pk.phase)],
+            f_pred: pk.f_hz,
+            mag_pred: pk.mag,
+            missed: 0,
+            alive: true,
+        });
+    }
+}
+```
+
+### Harmonic grouping into note objects
+
+Once partials exist, group them into **harmonic sets** that represent a note.
+
+#### Candidate f0 generation
+
+For each frame or short span:
+
+- Use **subharmonic summation**:
+    - for candidate f0 values, sum energy at multiples \(k f_0\), with weights decreasing with k.
+- Or infer f0 from partials using a GCD-like approach in log frequency:
+    - find f0 that minimizes deviation of partial frequencies from integer multiples.
+
+#### Group scoring function
+
+Define a score for a candidate note with fundamental f0:
+
+- For each tracked partial i with frequency \(f_i\), compute nearest harmonic number:
+    - \(k_i = \text{round}(f_i / f_0)\)
+- Harmonic deviation penalty:
+    - \( \epsilon_i = |f_i - k_i f_0| \) (in cents or Hz)
+- Score:
+    - energy term: sum magnitudes of aligned partials
+    - penalty for missing low-order harmonics
+    - penalty for high inharmonicity / inconsistent envelopes
+
+A practical score:
+
+\[
+S(f*0) = \sum*{i \in P}\left( w_k \cdot a_i \cdot \exp(-\alpha \epsilon_i^2)\right) - \lambda \cdot \text{missing}(f_0)
+\]
+
+where \(w_k\) down-weights high harmonics.
+
+#### Temporal consolidation (note segmentation in polyphony)
+
+Notes must be stable over time, so you merge frame-level groupings into note objects by:
+
+- requiring minimum duration (e.g., 60–120 ms)
+- enforcing continuity of f0 (allow vibrato/portamento)
+- allowing crossings: the patent explicitly states that pitch evolutions may vary arbitrarily and crossing notes can still be identified as distinct notes if evolutions are consistent. citeturn6view4
+
+### Soft masks / spectral proportion factors
+
+Polyphonic editing fails if you hard-assign each time–frequency bin to exactly one note. Instead use **soft attribution**:
+
+- Build a modeled spectrum per note object \(N_j(t,f)\) from its partials (and optionally an estimated envelope).
+- Compute total modeled spectrum \(M(t,f) = \sum_j N_j(t,f)\).
+- Define per-note soft mask:
+  \[
+  W_j(t,f)=\frac{N_j(t,f)}{M(t,f)+\epsilon}
+  \]
+- Extract per-note contribution:
+  \[
+  X_j(t,f)=W_j(t,f)\cdot X(t,f)
+  \]
+  These “spectral proportion factors” are conceptually aligned with what the patent describes: associating part of the total sound to each note object for later manipulation and resynthesis. citeturn6view5turn6view4
+
+**Residual definition:**
+
+- residual STFT:
+  \[
+  R(t,f)=X(t,f)-\sum_j X_j(t,f)
+  \]
+- Or (more robust): keep residual as whatever is not explained by stable partial tracks (transients/noise/inharmonic).
+
+### Residual modeling and transient awareness
+
+For musical realism:
+
+- Preserve attack transients and noise-like components.
+- Do not phase-vocoder smear them.
+
+Phase-vocoder transient preservation research emphasizes that naïve phase vocoder processing creates artifacts at attack transients and motivates transient detection criteria local in frequency so stationary parts are not affected, avoiding simplistic “force time-stretch factor to 1 during transients” hacks. citeturn11search4turn11search3
+
+In Knead’s polyphonic engine:
+
+- mark transient frames using spectral flux / energy slope and/or a peak-classification strategy
+- route transient energy into residual or handle with time-domain methods
+- ensure crossfades when recombining partial-synth and residual
+
+### Hybrid designs with neural multipitch priors
+
+Neural AMT/multipitch models are valuable not as the entire editing engine, but as **proposal generators** that reduce combinatorial ambiguity.
+
+A lightweight multipitch/note model (Basic Pitch / NMP) demonstrates practical characteristics relevant to Knead:
+
+- input representation: constant-Q transform (CQT), 3 bins per semitone
+- hop size: ~11 ms
+- harmonic stacking: shift CQT to align harmonics (7 harmonics + 1 subharmonic)
+- outputs: onset, note activity, multipitch posteriorgrams
+- tiny parameter count (~16,782 parameters), explicitly designed for low memory and runtime constraints citeturn15view2turn15view1
+
+**Hybrid approach recommended:**
+
+- Use NN posteriorgrams to propose:
+    - which pitches are active
+    - where onsets are
+    - confidence regions
+- Then run sinusoidal tracking constrained to those proposals:
+    - narrower f0 candidate set
+    - more stable grouping
+    - user-facing confidence overlays grounded in model probabilities
+
+**ONNX feasibility:**
+
+- ONNX Runtime provides a cross-platform inference engine with performance tuning guidance; in Rust you can use a dedicated crate (“ort”) to run ONNX models in the desktop backend while keeping the audio thread safe. citeturn5search9turn5search13
+
+## Resynthesis, Editing Operations, and Artifact Control
+
+### Pitch shifting engines: PSOLA and phase vocoder
+
+Knead needs both:
+
+- **PSOLA** for monophonic, low-latency, natural small-to-moderate shifts.
+- **Phase vocoder** (peak/phase-locked) for larger shifts, harmonizer voices, and polyphonic components.
+
+#### PSOLA implementation (monophonic)
+
+PSOLA modifies pitch by:
+
+- segmenting audio into pitch-synchronous grains (aligned to epochs/pitch marks),
+- overlapping and adding grains at a new spacing to achieve a new period.
+
+PSOLA literature describes both time-domain and frequency-domain variants and emphasizes that prosody modification is achieved via pitch-synchronous overlap-add, with time-domain approaches being direct and efficient when pitch marks are accurate. citeturn13search0turn13search4
+
+**Key engineering requirements:**
+
+- robust pitch mark detection
+- stable behavior near voiced/unvoiced transitions
+- crossfades to avoid clicks
+
+**Recommended PSOLA defaults:**
+
+- grain length: 2 pitch periods (common robust choice)
+- window: Hann
+- overlap: typically 50% in the grain domain
+- max shift for “transparent” quality: ~±4 semitones (beyond that, expect artifacts and consider vocoder)
+
+**Rust-like pseudocode (PSOLA grain loop):**
+
+```rust
+struct PsolaConfig {
+    sample_rate: f32,
+    max_semitones_transparent: f32,
+}
+
+fn psola_process(
+    input: &[f32],
+    pitch_marks: &[usize], // indices of epochs
+    target_f0_curve: &[f32],
+    cfg: &PsolaConfig
+) -> Vec<f32> {
+    let mut out = vec![0.0_f32; input.len()];
+
+    for n in 1..pitch_marks.len()-1 {
+        let pm = pitch_marks[n];
+        let p_prev = pitch_marks[n-1];
+        let p_next = pitch_marks[n+1];
+        let period = (p_next - p_prev) as f32 * 0.5;
+
+        // grain: centered at pm, length ~2 periods
+        let half = period.round() as isize;
+        let start = (pm as isize - half).max(0) as usize;
+        let end   = (pm as isize + half).min(input.len() as isize - 1) as usize;
+
+        let grain = &input[start..end];
+        let window = hann_window(grain.len());
+
+        // compute destination center based on desired period from target_f0_curve
+        let f0_t = target_f0_curve[pm]; // interpolated
+        let target_period = cfg.sample_rate / f0_t;
+
+        let dst_center = compute_dst_center(pm, period, target_period);
+        overlap_add(&mut out, grain, &window, dst_center);
+    }
+
+    out
+}
+```
+
+#### Phase vocoder (peak-based / phase-locked)
+
+Advanced phase vocoder work emphasizes two things that are directly useful for Knead:
+
+- Moving pitch via time-stretch + resample is not the only option; you can do direct frequency-domain manipulation.
+- Peak detection + peak shifting is a practical foundation. The work describes a simple method allowing 50% overlap but reduced precision, and a more flexible one requiring ~75% overlap. citeturn6view2turn0search3
+
+**Knead should implement:**
+
+- STFT analysis
+- transient detection
+- phase propagation with phase-locking around spectral peaks (reduces “phasiness”)
+- peak-wise frequency scaling for pitch shift
+
+### Transient detection and preservation
+
+A practical plan consistent with transient-processing research:
+
+- compute spectral flux per frame
+- detect transient frames via threshold + refractory period
+- treat transient bins differently:
+    - copy transient magnitude/phase from original (or constrain phase updates)
+    - crossfade into processed tonal regions
+
+Röbel’s transient work specifically motivates local-frequency processing so stationary components aren’t corrupted while still reducing transient artifacts. citeturn11search4turn11search3
+
+### Formant estimation, preservation, and shifting
+
+#### LPC envelope (fast, good default)
+
+For vocals, formants can be approximated via LPC spectral envelope:
+
+- choose LPC order based on sample rate and expected formant count; speech engineering rules of thumb are commonly expressed in terms of sampling frequency or number of expected formants. citeturn13search8turn13search5
+
+**Practical defaults (44.1/48 kHz vocals):**
+
+- LPC order 12–20 (start at 16)
+- pre-emphasis: 0.95
+- analysis frame: 20–40 ms (separate from pitch frame)
+
+#### Cepstral envelope (more robust under some conditions)
+
+A cepstral lifter approach estimates envelope by smoothing log-magnitude spectrum, often more stable when LPC becomes spiky or when signal is partially inharmonic.
+
+#### Formant preservation on pitch shift
+
+Implement via source–filter separation:
+
+- compute spectral envelope \(E(f)\)
+- compute fine structure \(H(f)=|X(f)| / (E(f)+\epsilon)\)
+- shift fine structure to new pitch (or partial frequencies in sinusoidal model)
+- keep envelope fixed (preserve) or shift partially (follow) or shift independently (creative)
+
+Commercial docs explicitly frame “preserve formants” as critical for natural sound and note that slight formant following can match real singing behavior (formants shift slightly upward on higher notes). citeturn4search2turn4search17
+
+### Polyphonic editing operations and artifact mitigation
+
+Per-note edit operations in DNA mode should modify the note object, not the whole signal:
+
+| Edit                    | What changes                        | How                                                     |
+| ----------------------- | ----------------------------------- | ------------------------------------------------------- |
+| Pitch (cents/semitones) | partial frequencies + mask envelope | scale partial f(t) or shift harmonic group; update mask |
+| Timing (ms)             | activation envelope time shift      | shift note envelope; crossfade boundaries               |
+| Duration                | envelope time warp                  | stretch envelope; maintain transitions                  |
+| Gain (dB)               | partial amplitudes + mask gain      | scale amplitudes; prevent clipping                      |
+| Formant (cents)         | envelope per note                   | modify envelope model; don’t destroy neighbors          |
+
+Artifact mitigations that matter most:
+
+- **Boundary phase continuity:** integrate instantaneous frequency for each partial so phase remains continuous; otherwise create clicks/warble.
+- **Mask smoothing:** smooth \(W_j(t,f)\) in time/frequency to avoid musical “holes” when a note is moved.
+- **Overlap-aware edits:** when two notes share harmonics closely, ensure edits are tapered at overlap zones (mask crossfades).
+- **Transient isolation:** keep transients in residual or treat with a specialized path.
+
+## Editor Data Model and UI/UX Specification
+
+### Data model (implementation-grade)
+
+Use two note types:
+
+- `NoteBlob` for monophonic (or “melodic algorithm”) editing.
+- `HarmonicNote` for polyphonic (DNA mode) editing.
+
+```mermaid
+classDiagram
+  class NoteBlob {
+    +u64 id
+    +f32 t0
+    +f32 t1
+    +f32 pitch_center_cents
+    +Vec<f32> pitch_curve_cents
+    +f32 voiced_conf
+    +f32 drift_pct
+    +f32 vibrato_depth_pct
+    +f32 vibrato_rate_hz
+    +f32 formant_shift_cents
+    +f32 gain_db
+    +bool muted
+    +Provenance meta
+  }
+
+  class HarmonicNote {
+    +u64 id
+    +f32 t0
+    +f32 t1
+    +f32 f0_curve_hz[]
+    +Vec<PartialRef> partials
+    +MaskRef soft_mask
+    +Envelope amp_env
+    +SpectralEnvRef formant_env
+    +f32 confidence
+    +EditState edits
+    +Provenance meta
+  }
+
+  class PartialRef {
+    +u64 partial_id
+    +usize i0
+    +usize i1
+    +f32 harmonic_index_est
+  }
+
+  class Provenance {
+    +AnalysisMode mode
+    +String algorithm_version
+    +u64 audio_hash
+    +f32 analysis_sr
+    +Params analysis_params
+  }
+
+  NoteBlob --> Provenance
+  HarmonicNote --> PartialRef
+  HarmonicNote --> Provenance
+```
+
+### Note split/merge and manual assignment tools
+
+Polyphonic note detection requires explicit repair tooling; Melodyne’s documentation describes “Note Assignment Mode” as the place where detection is aligned to the actual music and notes are corrected before real editing, and it explicitly states polyphonic detection has more abundant plausible interpretations and depends strongly on material (distorted guitar harder than clear overtone instruments). citeturn14search7turn14search6
+
+Knead should ship a comparable concept:
+
+- **Assignment Mode (Lab)**: edits detection, not sound (until committed).
+- Operations:
+    - split a note at cursor (time)
+    - merge adjacent notes
+    - reassign partials between notes
+    - add/remove a note hypothesis
+    - “treat as harmonic vs treat as overtone” toggles for suspicious peaks
+
+### Five-level progressive disclosure UI/UX
+
+image_group{"layout":"carousel","aspect_ratio":"16:9","query":["Logic Pro Flex Pitch note hotspots screenshot","Melodyne note editor blobs stacked chords screenshot","Auto-Tune Pro graph mode note objects screenshot","Waves Tune Real-Time pitch display screenshot"],"num_per_query":1}
+
+#### Play
+
+Goal: “Set key and sing.”
+
+Controls (defaults):
+
+- Key: Auto/off (default Auto off)
+- Scale: Chromatic (default) or Major/Minor presets
+- Correction Amount (macro): 0–100% (default 70%)
+- Retune Speed: 0–200 ms (default 25 ms)
+- Mix: 0–100% (default 100% wet for insert; 50% for send)
+
+Visualizations:
+
+- tuner needle + cents offset
+- “target note” highlight
+- voicing confidence meter
+
+Interaction:
+
+- one-click “Track Input Range” (auto sets f0_min/f0_max based on recent voiced frames)
+- safe bypass on unvoiced frames
+
+Accessibility:
+
+- large numeric cents readout
+- color + shape coding (not color alone)
+
+#### Shape
+
+Goal: “Make it natural or make it an effect.”
+
+Add controls:
+
+- Tolerance Cents: 0–100 cents (default 25)
+- Tolerance Time: 0–150 ms (default 30)
+- Humanize: 0–100% (default 40)
+- Vibrato Preserve: on/off (default on)
+- Vibrato Amount: -100%..+100% (default 0)
+- Formant Preserve: on/off (default on)
+- Formant Shift: -600..+600 cents (default 0)
+- Input Type (voice/instrument): affects voicing thresholds and f0 range
+
+Audition modes:
+
+- “Hear detected pitch only” (sine overlay)
+- “Hear corrected pitch only” (sine overlay)
+- A/B snapshot of parameters
+
+#### Build
+
+Goal: “Blob editor for surgical monophonic editing.”
+
+Layout:
+
+- full-screen optional panel
+- time axis aligned to DAW timeline
+- pitch axis as semitone lanes with note labels
+
+Objects:
+
+- blobs with internal pitch curve overlay
+- drift line and vibrato glyphs
+- confidence shading: low-conf notes fade/hatched
+
+Gestures:
+
+- drag vertical: pitch
+- drag horizontal: timing
+- edge drag: duration
+- modifier keys:
+    - Shift = fine adjust (1 cent / 1 ms steps)
+    - Alt = override snapping
+    - Ctrl/Cmd = duplicate note edit (copy to selection)
+- split tool: click to cut
+- merge: select contiguous notes → merge
+
+#### Route
+
+Goal: “Production workflows (harmonies, doubling, APT-like transfer).”
+
+Modules:
+
+- Harmonizer:
+    - voices: up to 4
+    - interval per voice: scale-aware (3rd/5th/octave)
+    - spread: 0–40 ms delay, 0–30 cents detune, formant variance
+- Doubler:
+    - two layers default
+    - random drift + microtiming
+- Pitch-to-MIDI:
+    - mono mode from blobs
+    - poly mode from NN posteriorgrams (export only)
+- Performance transfer (Revoice-style):
+    - guide track + dub track
+    - transfer strength for timing/pitch/level
+    - per-segment automation curves
+
+The “guide/dub” model and time-variable pitch transfer controls are explicitly described in Revoice documentation, and Knead should match that conceptual workflow. citeturn4search3turn4search18
+
+#### Lab
+
+Goal: “Polyphonic note access with uncertainty-first UX.”
+
+Views:
+
+- spectrogram overlay with tracked peaks/partials
+- chord blobs stacked, each with confidence and partial count
+- mask heatmap (how much energy belongs to this note)
+
+Controls:
+
+- analysis quality preset: Draft / Standard / High
+- window size selector (4096/8192/16384)
+- peak threshold and “harmonic strictness”
+- NN assistance toggle (if ONNX model enabled)
+- “Reanalyze selection only” button
+
+Error-repair workflow (critical):
+
+1. user selects problematic region
+2. “Show ambiguity” highlights bins/partials with multi-note competition
+3. user uses tools:
+    - promote/demote note
+    - reassign partial group
+    - split/merge
+4. “Commit detection” locks the note-object graph, enabling normal edits
+5. resynthesis previews instantly for the region
+
+## Performance, Scheduling, Testing, and Roadmap
+
+### Recommended default parameters
+
+#### Real-time (monophonic)
+
+- frame 2048, hop 256 (44.1k)
+- YIN CMND threshold: 0.15
+- retune speed: 25 ms
+- tolerance: 25 cents + 30 ms
+- humanize: 40%
+- formant preserve: ON
+
+#### Offline monophonic editor
+
+- analysis frame 4096, hop 256–512
+- pYIN smoothing: enabled
+- min note length: 80 ms
+- note merge heuristic: merge if gap < 20 ms and pitch centers within 40 cents
+
+#### Polyphonic (Lab)
+
+- STFT: 8192 window, 2048 hop, Blackman–Harris
+- peak floors: adaptive per band (noise percentile + margin)
+- max partials per frame: 100–300 (band-limited)
+- max voices per frame (notes): 6 (hard cap; show warning when exceeded)
+- mask smoothing: 2D gaussian small kernel (time x freq) + temporal median
+
+### Performance targets (no specific constraint assumed)
+
+Real-time:
+
+- added latency budget: **≤10–20 ms** (analysis + shifter)
+- RT thread: no allocations, no locks, fixed-size ring buffers
+- CPU target (typical desktop): ~5–15% of one core for mono tracking + PSOLA; higher for vocoder mode
+
+Offline:
+
+- designed for background threads
+- analysis caching to avoid re-running STFT and tracking repeatedly
+
+Memory:
+
+- cached STFT magnitude/phase for long clips is expensive; store:
+    - downsampled features for UI
+    - sparse peak lists + partial tracks (much lighter)
+    - recompute STFT for preview windows on demand if needed
+
+### Caching and scheduling
+
+Key design: disentangle **analysis cache** from **edit state**.
+
+- Cache key: audio hash + sample rate + analysis params
+- Cache contents:
+    - monophonic: pitch frames, voicing, note blobs
+    - polyphonic: peak lists, partial tracks, note objects, masks metadata
+- Incremental reanalysis:
+    - if user changes analysis params, reanalyze only affected regions
+    - if user splits/merges notes manually, do not discard whole cache—apply local re-optimization
+
+Scheduling:
+
+- analysis runs in a background worker pool
+- UI shows “analysis quality bar” and progress
+- real-time mode uses a lightweight live tracker, independent of offline cache
+
+### Testing and benchmarking methodology
+
+Monophonic pitch accuracy:
+
+- Metrics commonly used in MIR:
+    - Raw Pitch Accuracy (RPA): percent of voiced frames within 50 cents
+    - Raw Chroma Accuracy (RCA): pitch class accuracy ignoring octave
+      Neural pitch literature and tutorials explicitly report these mir_eval metrics and thresholds (10/25/50 cents). citeturn16view0turn5search7
+
+Datasets (practical choices):
+
+- monophonic vocals with ground truth (e.g., MIR-1K-style tasks)
+- synthesized stems with known f0 curves (for regression)
+- instrument monophonic datasets for edge cases (bass, violin)
+
+Polyphonic quality:
+
+- note event F1 (onset tolerance in ms, pitch tolerance in cents)
+- multipitch frame accuracy (pitches active per frame)
+- perceptual listening tests:
+    - MUSHRA-style comparisons on:
+        - small edits (±25 cents)
+        - medium edits (±2 semitones)
+        - timing nudges (±30 ms)
+        - formant shift only
+
+Artifact regression tests:
+
+- click detection at note boundaries (high-pass energy spikes)
+- transient smear detection (spectral flux comparison)
+- phase coherence checks on sustained chords (beating anomalies)
+
+### Prioritized roadmap with effort and risks
+
+Effort estimates assume a skilled team with Rust DSP + UI engineers; person‑months are conservative and include QA.
+
+| Milestone                              | Deliverable                                                                |   Effort | Primary risks                       | Mitigations                                                                                 |
+| -------------------------------------- | -------------------------------------------------------------------------- | -------: | ----------------------------------- | ------------------------------------------------------------------------------------------- |
+| Monophonic real-time MVP               | YIN/pYIN-lite, V/UV, PSOLA shifter, Play/Shape UI                          |   4–6 PM | voicing errors, PSOLA artifacts     | strong V/UV gating; fallback to vocoder on low confidence                                   |
+| Offline monophonic editor              | Blob editor, segmentation, split/merge, per-note controls                  |   6–9 PM | note segmentation quality           | interactive repair tools; conservative segmentation defaults                                |
+| Phase vocoder + transient preservation | high-quality pitch shift + harmonizer voices                               |   4–7 PM | transient smear, phasiness          | peak/phase-locking; transient routing per research guidance citeturn6view2turn11search4 |
+| Formant system                         | LPC + cepstral envelope, preserve/follow/shift                             |   3–5 PM | unnatural timbre under large shifts | per-note envelope constraints; user “follow” option citeturn4search2                     |
+| Polyphonic analysis prototype          | STFT peaks, partial tracking, basic harmonic grouping, confidence overlays |  9–14 PM | ambiguous grouping; slow analysis   | cap voices; NN proposals optional; incremental region analysis                              |
+| Polyphonic editor (Lab)                | manual assignment mode, masks, per-note edits, stable resynth              | 12–18 PM | artifacts in overlapped harmonics   | soft masks + smoothing; boundary fades; transient isolation                                 |
+| NN assistance (optional)               | ONNX multipitch proposals and confidence                                   |   4–8 PM | integration, platform variance      | isolate to offline analysis; ONNX Runtime tuning citeturn5search9turn5search13          |
+| Production hardening                   | benchmarks, datasets, perceptual tests, UX polish                          |  6–10 PM | long-tail bugs                      | golden-audio regression suite; performance profiling                                        |
+
+**IP/patent risk mitigation (polyphonic DNA-like):**
+
+- treat the note-object + spectral attribution approach as an area requiring legal review.
+- avoid implementing a system that too closely mirrors patented claim steps and terminology.
+- ensure product remains valuable with:
+    - monophonic excellence
+    - offline monophonic editing
+    - “universal” time/pitch operations on complex mixes
+    - polyphonic mode restricted to appropriate material and branded clearly as “Lab / experimental if needed”
+
+The patent’s own text explicitly positions the method as not primarily real-time and not intended to separate sources, and the listings indicate a still-active family; that combination is why Knead must include fallback modes and a clear scope for “Lab” polyphonic editing. citeturn6view4turn6view5

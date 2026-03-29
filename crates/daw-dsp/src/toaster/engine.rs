@@ -255,9 +255,10 @@ impl ToasterEngine {
             .map(|_| TransientShaper::new(sample_rate))
             .collect();
 
-        // Pre-allocate bus buffers (resized to match block size in process_block)
-        let bus_buffers_l = std::array::from_fn(|_| Vec::new());
-        let bus_buffers_r = std::array::from_fn(|_| Vec::new());
+        // Pre-allocate bus buffers rigidly to prevent dynamic resizing in the hotpath.
+        let max_block = 4096;
+        let bus_buffers_l = std::array::from_fn(|_| vec![0.0; max_block]);
+        let bus_buffers_r = std::array::from_fn(|_| vec![0.0; max_block]);
         let bus_effects = std::array::from_fn(|_| BusEffects::new());
 
         Self {
@@ -379,14 +380,12 @@ impl ToasterEngine {
     }
 
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32]) {
-        let len = left.len().min(right.len());
+        let len = left.len().min(right.len()).min(self.bus_buffers_l[0].len());
 
-        // --- Ensure bus buffers are large enough and clear them ---------------
+        // --- Clear the required length of pre-allocated bus buffers -----------
         for b in 0..NUM_BUSES {
-            self.bus_buffers_l[b].resize(len, 0.0);
-            self.bus_buffers_r[b].resize(len, 0.0);
-            self.bus_buffers_l[b].fill(0.0);
-            self.bus_buffers_r[b].fill(0.0);
+            self.bus_buffers_l[b][..len].fill(0.0);
+            self.bus_buffers_r[b][..len].fill(0.0);
         }
 
         // Clear master output

@@ -67,6 +67,7 @@ export type Step = {
     retriggerCount: number;     // 0 = none, 1-16
     condition: StepCondition;
     paramLocks: Record<string, number>;
+    soundLock?: DrumEngineType; // Elektron-style per-step engine override
 };
 
 export type Pattern = {

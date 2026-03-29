@@ -1,6 +1,7 @@
 import { type ReactElement } from 'react';
 import { Card } from '#/components/ui/card';
 import { setMidiOutput, clearMidiOutput } from '#/modules/MIDI/useCases/midiRouting';
+import { toggleChordTrackFollow } from '#/modules/Arrangement/useCases/toggleTrackState/toggleChordTrackFollow';
 import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
 
 type TrackMidiOutputSectionProps = {
@@ -45,6 +46,23 @@ export const TrackMidiOutputSection = ({ track, allTracks }: TrackMidiOutputSect
                             MIDI events from this track are routed to the destination track's instruments.
                         </p>
                     ) : null}
+                </Card>
+
+                <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={track.followChordTrack}
+                            onChange={() => toggleChordTrackFollow(track.id)}
+                            className="size-3 rounded border-border accent-[var(--color-accent-orange)]"
+                            aria-label="Follow chord track"
+                        />
+                        <span className="text-[10px] text-foreground/80">Follow Chord Track</span>
+                    </label>
+                    <p className="mt-1.5 text-[9px] text-muted-foreground leading-tight">
+                        Transpose MIDI notes in real-time based on the chord track. Notes are mapped
+                        relative to the chord at each clip's start position.
+                    </p>
                 </Card>
             </div>
         </div>

@@ -41,6 +41,7 @@ export type Track = {
     alternatives: TrackAlternative[];
     vcaGroupId: string | null;
     midiOutputTrackId: string | null;
+    followChordTrack: boolean;
 };
 
 export type StretchMode = 'off' | 'repitch' | 'timestretch';
@@ -154,5 +155,6 @@ export function createTrack(input: { name: string; kind: TrackKind; parentId?: s
         alternatives: [{ id: 'alt-1', name: 'Alternative 1', clips: [] }],
         vcaGroupId: null,
         midiOutputTrackId: null,
+        followChordTrack: false,
     };
 }

@@ -53,7 +53,7 @@ export const EFFECT_GROUPS: EffectGroup[] = [
         description: 'Compression, limiting & gating',
         icon: Activity,
         color: 'bg-[var(--color-accent-peach)]/20 text-[var(--color-accent-peach)]',
-        categories: ['compressor', 'sidechain-compressor', 'limiter', 'gate', 'expander'],
+        categories: ['compressor', 'sidechain-compressor', 'limiter', 'gate', 'expander', 'de-esser'],
     },
     {
         id: 'time-space',
@@ -77,7 +77,7 @@ export const EFFECT_GROUPS: EffectGroup[] = [
         description: 'Gain, panning & routing tools',
         icon: Settings2,
         color: 'bg-gray-500/20 text-gray-400',
-        categories: ['gain', 'autopan', 'auto-pan', 'meter', 'dc'],
+        categories: ['gain', 'autopan', 'auto-pan', 'meter', 'dc', 'widener'],
     },
 ];
 

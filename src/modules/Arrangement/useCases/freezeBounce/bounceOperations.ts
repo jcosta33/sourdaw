@@ -134,6 +134,7 @@ export async function bounceToNewTrack(trackId: string): Promise<void> {
         activeAlternativeId: 'alt-main',
         vcaGroupId: null,
         midiOutputTrackId: null,
+        followChordTrack: false,
     };
 
     const insertIndex = freshState.tracks.findIndex((t) => t.id === trackId) + 1;

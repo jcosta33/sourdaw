@@ -12,8 +12,10 @@ use crate::state::{AppState, PluginInstanceData, PluginRegistryEntry};
 pub use crate::host::scanner::ScannedPlugin as ScannedPluginInfo;
 
 // ── Types ───────────────────────────────────────────────────────────────
+use specta::Type;
+use daw_core::{PluginId, PluginInstanceId};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct PluginParameter {
     pub id: u32,
     pub name: String,
@@ -25,10 +27,10 @@ pub struct PluginParameter {
     pub is_automatable: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct PluginInstance {
-    pub instance_id: String,
-    pub plugin_id: String,
+    pub instance_id: PluginInstanceId,
+    pub plugin_id: PluginId,
     pub name: String,
     pub parameters: Vec<PluginParameter>,
     pub is_active: bool,
@@ -38,6 +40,7 @@ pub struct PluginInstance {
 // ── Scanning commands ───────────────────────────────────────────────────
 
 #[tauri::command]
+#[specta::specta]
 pub async fn scan_plugins(
     paths: Vec<String>,
     state: tauri::State<'_, AppState>,
@@ -65,7 +68,7 @@ pub async fn scan_plugins(
                 String::new()
             };
 
-            registry.insert(p.id.clone(), PluginRegistryEntry {
+            registry.insert(PluginId(p.id.clone()), PluginRegistryEntry {
                 path: p.path.clone(),
                 clap_id,
                 format: p.format.clone(),
@@ -82,6 +85,7 @@ pub async fn scan_plugins(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_default_plugin_paths() -> Result<Vec<String>, String> {
     let mut paths = Vec::new();
 
@@ -121,16 +125,17 @@ pub async fn get_default_plugin_paths() -> Result<Vec<String>, String> {
 // ── Instance lifecycle commands ─────────────────────────────────────────
 
 #[tauri::command]
+#[specta::specta]
 pub async fn load_plugin(
-    plugin_id: String,
-    instance_id: String,
+    plugin_id: PluginId,
+    instance_id: PluginInstanceId,
     state: tauri::State<'_, AppState>,
 ) -> Result<PluginInstance, String> {
     let entry = {
         let registry = state.plugin_registry.lock()
             .map_err(|e| format!("Failed to lock registry: {}", e))?;
         registry.get(&plugin_id).cloned()
-            .ok_or_else(|| format!("Plugin {} not found in registry. Run a scan first.", plugin_id))?
+            .ok_or_else(|| format!("Plugin {} not found in registry. Run a scan first.", plugin_id.0))?
     };
 
     match entry.format.as_str() {
@@ -156,7 +161,7 @@ pub async fn load_plugin(
 
             let mut plugins = state.plugins.lock()
                 .map_err(|e| format!("Failed to lock plugins: {}", e))?;
-            plugins.insert(instance_id, PluginInstanceData {
+            plugins.insert(instance_id.0.clone(), PluginInstanceData {
                 plugin: Box::new(wrapper),
             });
 
@@ -169,15 +174,16 @@ pub async fn load_plugin(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn unload_plugin(
-    instance_id: String,
+    instance_id: PluginInstanceId,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
     let mut plugins = state.plugins.lock()
         .map_err(|e| format!("Failed to lock plugins: {}", e))?;
 
-    if plugins.remove(&instance_id).is_none() {
-        return Err(format!("No plugin instance found with id: {}", instance_id));
+    if plugins.remove(&instance_id.0).is_none() {
+        return Err(format!("No plugin instance found with id: {}", instance_id.0));
     }
 
     Ok(())
@@ -186,8 +192,9 @@ pub async fn unload_plugin(
 // ── Parameter commands ──────────────────────────────────────────────────
 
 #[tauri::command]
+#[specta::specta]
 pub async fn set_plugin_parameter(
-    instance_id: String,
+    instance_id: PluginInstanceId,
     param_id: u32,
     value: f64,
     state: tauri::State<'_, AppState>,
@@ -195,52 +202,55 @@ pub async fn set_plugin_parameter(
     let mut plugins = state.plugins.lock()
         .map_err(|e| format!("Failed to lock plugins: {}", e))?;
 
-    let instance = plugins.get_mut(&instance_id)
-        .ok_or_else(|| format!("No plugin instance: {}", instance_id))?;
+    let instance = plugins.get_mut(&instance_id.0)
+        .ok_or_else(|| format!("No plugin instance: {}", instance_id.0))?;
 
     instance.plugin.set_parameter(param_id, value);
     Ok(())
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_plugin_parameters(
-    instance_id: String,
+    instance_id: PluginInstanceId,
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<PluginParameter>, String> {
     let plugins = state.plugins.lock()
         .map_err(|e| format!("Failed to lock plugins: {}", e))?;
 
-    let instance = plugins.get(&instance_id)
-        .ok_or_else(|| format!("No plugin instance: {}", instance_id))?;
+    let instance = plugins.get(&instance_id.0)
+        .ok_or_else(|| format!("No plugin instance: {}", instance_id.0))?;
 
     Ok(instance.plugin.get_parameters())
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_plugin_state(
-    instance_id: String,
+    instance_id: PluginInstanceId,
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<u8>, String> {
     let plugins = state.plugins.lock()
         .map_err(|e| format!("Failed to lock plugins: {}", e))?;
 
-    let instance = plugins.get(&instance_id)
-        .ok_or_else(|| format!("No plugin instance: {}", instance_id))?;
+    let instance = plugins.get(&instance_id.0)
+        .ok_or_else(|| format!("No plugin instance: {}", instance_id.0))?;
 
     Ok(instance.plugin.get_state())
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn set_plugin_state(
-    instance_id: String,
+    instance_id: PluginInstanceId,
     plugin_state: Vec<u8>,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
     let mut plugins = state.plugins.lock()
         .map_err(|e| format!("Failed to lock plugins: {}", e))?;
 
-    let instance = plugins.get_mut(&instance_id)
-        .ok_or_else(|| format!("No plugin instance: {}", instance_id))?;
+    let instance = plugins.get_mut(&instance_id.0)
+        .ok_or_else(|| format!("No plugin instance: {}", instance_id.0))?;
 
     instance.plugin.set_state(&plugin_state);
     Ok(())

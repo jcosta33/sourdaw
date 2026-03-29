@@ -78,6 +78,14 @@ export const drawClip = (
         ctx.roundRect(x, trackY + padding, w, trackHeight - padding * 2, 3);
         ctx.stroke();
         ctx.setLineDash([]);
+    } else if (clip.isLinkedInstance) {
+        ctx.strokeStyle = 'rgba(120, 180, 255, 0.5)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 2]);
+        ctx.beginPath();
+        ctx.roundRect(x, trackY + padding, w, trackHeight - padding * 2, 3);
+        ctx.stroke();
+        ctx.setLineDash([]);
     } else if (isSelected) {
         ctx.strokeStyle = 'rgba(220, 210, 190, 0.55)';
         ctx.lineWidth = 1.5;
@@ -96,8 +104,10 @@ export const drawClip = (
     ctx.font = 'bold 10px system-ui, sans-serif';
     ctx.fillText(clip.name, x + 6, trackY + 14, w - 12);
 
-    const typeLabel = clip.type === 'midi' ? 'MIDI' : 'AUDIO';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    const typeLabel = clip.isLinkedInstance
+        ? `${clip.type === 'midi' ? 'MIDI' : 'AUDIO'} ⧉`
+        : clip.type === 'midi' ? 'MIDI' : 'AUDIO';
+    ctx.fillStyle = clip.isLinkedInstance ? 'rgba(120, 180, 255, 0.5)' : 'rgba(255, 255, 255, 0.3)';
     ctx.font = '7px system-ui, sans-serif';
     if (w > 50) {
         ctx.fillText(typeLabel, x + 6, trackY + 23, w - 12);

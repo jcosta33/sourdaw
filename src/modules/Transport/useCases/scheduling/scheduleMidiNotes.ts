@@ -14,6 +14,7 @@ import { scheduleFaustNote } from '#/modules/Synth/useCases/faustInstrumentSched
 import { getDrumKitByIndex, scheduleKitNote, type DrumKit } from '#/modules/Synth/useCases/drumKitSynth';
 import { getDrumKitDefByIndex, scheduleDrumKitNote, type DrumKitDef } from '#/modules/Synth/useCases/drumSynthEngine';
 import { getCompensationDelay } from '#/modules/AudioEngine/useCases/latencyCompensation';
+import { getChordAtBeat, transposeForChordTrack } from '#/modules/MIDI/useCases/chordTrack';
 
 export function resolveDrumKit(devices: { type: string; parameterValues: Record<string, number> }[]): DrumKit | null {
     const kitDevice = devices.find((d) => d.type === 'builtin-drum-kit' || d.type === 'drum-kit');
@@ -148,6 +149,13 @@ export function scheduleMidiNotes(
                             continue;
                         }
 
+                        let pitch = note.pitch;
+                        if (track.followChordTrack && !drumKitDef && !drumKit) {
+                            const refChord = getChordAtBeat(clip.startBeat);
+                            const targetChord = getChordAtBeat(noteStartBeat);
+                            pitch = transposeForChordTrack(pitch, refChord, targetChord);
+                        }
+
                         const noteTempo = getTempoAtBeat(changes, noteStartBeat, transport.tempo);
                         const noteBeatsPerSecond = noteTempo / 60;
                         const beatOffset = noteStartBeat - accumulatedPosition;
@@ -162,7 +170,7 @@ export function scheduleMidiNotes(
                                 getAudioContext(),
                                 strip.gainNode,
                                 drumKitDef,
-                                note.pitch,
+                                pitch,
                                 time,
                                 note.velocity,
                                 clip.gain
@@ -172,39 +180,35 @@ export function scheduleMidiNotes(
                                 getAudioContext(),
                                 strip.gainNode,
                                 drumKit,
-                                note.pitch,
+                                pitch,
                                 time,
                                 duration,
                                 note.velocity,
                                 clip.gain
                             );
                         } else if (track.devices.some((d) => d.type === 'fermenter')) {
-                            // Fermenter synthesizer — send noteOn/noteOff via worklet MessagePort
                             const fermenterDevice = track.devices.find((d) => d.type === 'fermenter');
                             if (fermenterDevice) {
                                 const dn = strip.deviceNodes.find((d) => d.deviceId === fermenterDevice.id);
                                 if (dn?.fermenterControls) {
                                     const ctx = getAudioContext();
                                     const scheduleDelay = Math.max(0, time - ctx.currentTime);
-                                    // Schedule noteOn at the precise time using setTimeout
-                                    // (MessagePort messages can't be scheduled at a specific audio time)
                                     if (scheduleDelay <= 0) {
-                                        dn.fermenterControls.noteOn(note.pitch, note.velocity);
+                                        dn.fermenterControls.noteOn(pitch, note.velocity);
                                         setTimeout(() => {
-                                            dn.fermenterControls?.noteOff(note.pitch);
+                                            dn.fermenterControls?.noteOff(pitch);
                                         }, duration * 1000);
                                     } else {
                                         setTimeout(() => {
-                                            dn.fermenterControls?.noteOn(note.pitch, note.velocity);
+                                            dn.fermenterControls?.noteOn(pitch, note.velocity);
                                             setTimeout(() => {
-                                                dn.fermenterControls?.noteOff(note.pitch);
+                                                dn.fermenterControls?.noteOff(pitch);
                                             }, duration * 1000);
                                         }, scheduleDelay * 1000);
                                     }
                                 }
                             }
                         } else if (track.devices.some((d) => d.type === 'levain')) {
-                            // Levain suite — send noteOn/noteOff via worklet MessagePort
                             const levainDevice = track.devices.find((d) => d.type === 'levain');
                             if (levainDevice) {
                                 const dn = strip.deviceNodes.find((d) => d.deviceId === levainDevice.id);
@@ -212,15 +216,15 @@ export function scheduleMidiNotes(
                                     const ctx = getAudioContext();
                                     const scheduleDelay = Math.max(0, time - ctx.currentTime);
                                     if (scheduleDelay <= 0) {
-                                        dn.levainControls.noteOn(note.pitch, note.velocity);
+                                        dn.levainControls.noteOn(pitch, note.velocity);
                                         setTimeout(() => {
-                                            dn.levainControls?.noteOff(note.pitch);
+                                            dn.levainControls?.noteOff(pitch);
                                         }, duration * 1000);
                                     } else {
                                         setTimeout(() => {
-                                            dn.levainControls?.noteOn(note.pitch, note.velocity);
+                                            dn.levainControls?.noteOn(pitch, note.velocity);
                                             setTimeout(() => {
-                                                dn.levainControls?.noteOff(note.pitch);
+                                                dn.levainControls?.noteOff(pitch);
                                             }, duration * 1000);
                                         }, scheduleDelay * 1000);
                                     }
@@ -229,7 +233,7 @@ export function scheduleMidiNotes(
                         } else {
                             const faustDevice = track.devices.find((d) => d.type.startsWith('faust-'));
                             if (faustDevice) {
-                                scheduleFaustNote(track.id, faustDevice.id, note.pitch, time, duration, note.velocity, clip.gain);
+                                scheduleFaustNote(track.id, faustDevice.id, pitch, time, duration, note.velocity, clip.gain);
                             } else {
                                 const mpe =
                                     note.pressure !== undefined || note.slide !== undefined || note.pitchBend !== undefined
@@ -238,7 +242,7 @@ export function scheduleMidiNotes(
                                 scheduleNote(
                                     getAudioContext(),
                                     strip.gainNode,
-                                    note.pitch,
+                                    pitch,
                                     time,
                                     duration,
                                     note.velocity,

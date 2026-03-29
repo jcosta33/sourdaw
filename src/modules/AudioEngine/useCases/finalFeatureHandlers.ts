@@ -1,6 +1,5 @@
 import { type ActionHandler } from '#/modules/Command/useCases/commandQueries';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { setProcessingMode, type BitDepthMode } from '#/modules/AudioEngine/useCases/audioPrecision';
 import { toggleNodeView } from '#/modules/Plugin/useCases/nodeView/toggleNodeView';
 import { setProtocol, type ControlSurfaceProtocol } from '#/modules/AudioEngine/useCases/controlSurface';
 import { addCvOutput, type CvOutputChannel } from '#/modules/Synth/useCases/cvGate';
@@ -15,13 +14,6 @@ import {
 } from '#/modules/AudioEngine/useCases/audioWarping';
 
 export const finalFeatureHandlers: Record<string, ActionHandler<any>> = {
-    setProcessingMode: {
-        execute: async (a: { payload: { mode: string } }) => {
-            setProcessingMode(a.payload.mode as BitDepthMode);
-        },
-        undoable: false,
-        describe: () => ({ label: 'Set Processing Mode' }),
-    },
     detectTransients: {
         execute: async () => {
             // Transient detection requires audio buffer — stub dispatches notification

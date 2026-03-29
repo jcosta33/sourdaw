@@ -1,0 +1,13 @@
+[package]
+name = "daw-engine"
+version = "0.1.0"
+edition = "2021"
+description = "Real-time thread, lock-free communication, and graph processing."
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+daw-core = { path = "../daw-core" }
+rtrb = "0.3"
+cpal = { version = "0.15", features = [] }

@@ -51,4 +51,5 @@ export type ClipRenderModel = {
     fadeOutBeats: number;
     generating?: boolean;
     isGhost?: boolean;
+    isLinkedInstance?: boolean;
 };

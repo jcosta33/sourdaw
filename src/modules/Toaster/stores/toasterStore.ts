@@ -11,6 +11,12 @@ import { type ToasterKit, type PadState, createDefaultKit } from '../models/Toas
 
 const logger = Container.getInstance().get(Logger);
 
+export type MorphState = {
+    enabled: boolean;
+    targetPatternId: string | null;
+    position: number;
+};
+
 export type ToasterState = {
     kit: ToasterKit;
     selectedPadIndex: number;
@@ -19,6 +25,7 @@ export type ToasterState = {
     uiLevel: 1 | 2 | 3 | 4 | 5;
     engineReady: boolean;
     activeVoices: number;
+    morph: MorphState;
 };
 
 export const toasterStore = new Store<ToasterState>(logger, {
@@ -30,6 +37,7 @@ export const toasterStore = new Store<ToasterState>(logger, {
         uiLevel: 1,
         engineReady: false,
         activeVoices: 0,
+        morph: { enabled: false, targetPatternId: null, position: 0 },
     },
 });
 

@@ -4,6 +4,23 @@ pub mod state;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let specta_builder = tauri_specta::ts::builder()
+        .commands(tauri_specta::collect_commands![
+            commands::plugins::scan_plugins,
+            commands::plugins::get_default_plugin_paths,
+            commands::plugins::load_plugin,
+            commands::plugins::unload_plugin,
+            commands::plugins::set_plugin_parameter,
+            commands::plugins::get_plugin_parameters,
+            commands::plugins::get_plugin_state,
+            commands::plugins::set_plugin_state,
+        ]);
+
+    #[cfg(debug_assertions)]
+    specta_builder
+        .export(specta::typescript::ExportConfiguration::new(), "../src/bindings.ts")
+        .expect("Failed to export typescript bindings");
+
     tauri::Builder::default()
         .manage(state::AppState::default())
         .manage(commands::midi::MidiState::default())
@@ -61,6 +78,21 @@ pub fn run() {
             commands::midi::open_midi_input,
             commands::midi::close_midi_input,
         ])
+        .setup(|app| {
+            tauri_specta::Builder::new()
+                .commands(tauri_specta::collect_commands![
+                    commands::plugins::scan_plugins,
+                    commands::plugins::get_default_plugin_paths,
+                    commands::plugins::load_plugin,
+                    commands::plugins::unload_plugin,
+                    commands::plugins::set_plugin_parameter,
+                    commands::plugins::get_plugin_parameters,
+                    commands::plugins::get_plugin_state,
+                    commands::plugins::set_plugin_state,
+                ])
+                .export_for_plugin(specta::typescript::ExportConfiguration::new(), app.handle(), "../src/bindings.ts", "tauri")?;
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

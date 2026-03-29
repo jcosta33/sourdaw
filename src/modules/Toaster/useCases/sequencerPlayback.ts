@@ -6,9 +6,11 @@
 
 import { getAudioTime } from '#/modules/AudioEngine/useCases/engineAccess';
 import { toasterStore } from '../stores/toasterStore';
-import { type Step } from '../models/ToasterKit';
+import { type Step, type Pattern } from '../models/ToasterKit';
 import { triggerToasterPad } from './triggerPad';
-import { setToasterPadParam } from './toasterParamBridge';
+import { setToasterPadParam, setPadEngineImmediate } from './toasterParamBridge';
+import { morphPatterns } from './patternMorph';
+import { TOASTER_ENGINE_MAP } from './loadToasterKit';
 
 let running = false;
 let fillActive = false;
@@ -53,8 +55,16 @@ function tick(currentStep: number, bpm: number, stepsPerBeat: number): void {
     const state = toasterStore.value;
     if (!state) { return; }
 
-    const pattern = state.kit.patterns.find((p) => p.id === state.kit.activePatternId);
-    if (!pattern) { return; }
+    const sourcePattern = state.kit.patterns.find((p) => p.id === state.kit.activePatternId);
+    if (!sourcePattern) { return; }
+
+    let pattern: Pattern = sourcePattern;
+    if (state.morph.enabled && state.morph.targetPatternId) {
+        const targetPattern = state.kit.patterns.find((p) => p.id === state.morph.targetPatternId);
+        if (targetPattern) {
+            pattern = morphPatterns(sourcePattern, targetPattern, state.morph.position);
+        }
+    }
 
     const totalSteps = pattern.stepsPerBar * pattern.bars;
     const stepDurationMs = (60_000 / bpm) / stepsPerBeat;
@@ -68,6 +78,13 @@ function tick(currentStep: number, bpm: number, stepsPerBeat: number): void {
 
         const vel = Math.round(step.velocity * 127);
 
+        // Apply sound lock: swap engine type before triggering
+        const pad = state.kit.pads[track.padIndex];
+        if (step.soundLock && pad) {
+            const lockIdx = TOASTER_ENGINE_MAP[step.soundLock] ?? 0;
+            setPadEngineImmediate(track.padIndex, lockIdx);
+        }
+
         // Apply parameter locks before trigger
         const locks = step.paramLocks;
         for (const [key, value] of Object.entries(locks)) {
@@ -80,7 +97,14 @@ function tick(currentStep: number, bpm: number, stepsPerBeat: number): void {
         const swingMs = stepIdx % 2 === 1 ? state.kit.swing * stepDurationMs * 0.5 : 0;
         const totalDelayMs = Math.max(0, swingMs + microOffsetMs);
 
-        const fire = () => triggerToasterPad(track.padIndex, vel);
+        const fire = () => {
+            triggerToasterPad(track.padIndex, vel);
+            // Restore default engine type after sound-locked trigger
+            if (step.soundLock && pad) {
+                const defaultIdx = TOASTER_ENGINE_MAP[pad.engineType] ?? 0;
+                setPadEngineImmediate(track.padIndex, defaultIdx);
+            }
+        };
 
         if (totalDelayMs > 1) {
             setTimeout(fire, totalDelayMs);

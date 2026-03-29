@@ -16,10 +16,8 @@
     "deps:validate": "depcruise src",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
-    "wasm:fermenter": "cd src-tauri/fermenter && wasm-pack build --target web --out-dir ../../public/wasm/fermenter --no-typescript",
-    "wasm:grinder": "cd src-tauri/grinder && wasm-pack build --target web --out-dir ../../public/wasm/grinder --no-typescript",
-    "wasm:levain": "cd src-tauri/levain && wasm-pack build --target web --out-dir ../../public/wasm/levain --no-typescript",
-    "wasm:all": "npm run wasm:fermenter && npm run wasm:grinder && npm run wasm:levain"
+    "wasm:dsp": "cd crates/daw-dsp && wasm-pack build --target web --out-dir ../../public/wasm/daw-dsp --no-typescript",
+    "wasm:all": "npm run wasm:dsp"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",

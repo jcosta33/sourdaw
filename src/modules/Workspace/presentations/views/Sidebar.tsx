@@ -2,7 +2,7 @@ import { type CSSProperties, type ReactElement, useState, useRef } from 'react';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { Input } from '#/components/ui/input';
 import { Button } from '#/components/ui/button';
-import { Search, Music, FileAudio, Waves, Upload, X } from 'lucide-react';
+import { Search, Music, FileAudio, Waves, Upload, X, Zap } from 'lucide-react';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { toggleSidebar } from '../../useCases/togglePanel/panelToggles';
 import { useTracks } from '../hooks/useTracks';
@@ -13,6 +13,7 @@ import { SamplesTab } from './Sidebar/SamplesTab';
 import { InstrumentsTab } from './Sidebar/InstrumentsTab';
 import { EffectsTab } from './Sidebar/EffectsTab';
 import { OnlineSampleBrowser } from './Sidebar/OnlineSampleBrowser';
+import { MacrosPanel } from './Sidebar/MacrosPanel';
 
 export type SidebarRoute = {
     id: string;
@@ -37,12 +38,13 @@ type SidebarProps = {
 const SAMPLE_LIBRARY: { id: string; name: string; category: string; duration: string }[] = [];
 
 export const Sidebar = ({ style }: SidebarProps): ReactElement => {
-    const [activeTab, setActiveTab] = useState<'library' | 'instruments' | 'effects'>('library');
+    const [activeTab, setActiveTab] = useState<'library' | 'instruments' | 'effects' | 'macros'>('library');
     const [libSubTab, setLibSubTab] = useState<'mine' | 'find'>('mine');
     const [navStacks, setNavStacks] = useState<Record<string, SidebarRoute[]>>({
         library: [{ id: 'library', title: 'Library' }],
         instruments: [{ id: 'instruments', title: 'Instruments' }],
         effects: [{ id: 'effects', title: 'Audio Effects' }],
+        macros: [{ id: 'macros', title: 'Macros' }],
     });
 
     const currentStack = navStacks[activeTab] ?? [];
@@ -191,6 +193,14 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                 >
                     <Waves className="size-3" /> Effects
                 </Button>
+                <Button
+                    variant={activeTab === 'macros' ? 'secondary' : 'ghost'}
+                    size="xs"
+                    className="flex-1 gap-1.5 h-7 text-[10px]"
+                    onClick={() => setActiveTab('macros')}
+                >
+                    <Zap className="size-3" /> Macros
+                </Button>
             </div>
 
             {currentStack.length > 1 ? (
@@ -317,6 +327,8 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                             preview={preview}
                         />
                     ) : null}
+
+                    {activeTab === 'macros' ? <MacrosPanel /> : null}
 
                 </div>
             </ScrollArea>

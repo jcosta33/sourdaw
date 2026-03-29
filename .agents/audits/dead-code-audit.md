@@ -878,3 +878,123 @@ All 11 unresolved imports from legacy Frontify files have been resolved by delet
 ### Audio Warping consolidation (priority)
 
 The AudioEngine/Arrangement warp duplication (Section 2) is the highest-priority remaining architectural issue. Both systems model the same product concern with incompatible schemas. The recommended path is to adopt the AudioEngine model's richer algorithm set into the Arrangement model (which owns the WaveformEditor integration), then delete the AudioEngine version.
+
+---
+
+## 9. INTEGRATION LOG — Completed integrations
+
+### Crown jewels (completed)
+
+1. **Macros Panel** — Mounted as sidebar tab, persistence via localStorage, undo grouping for macro playback.
+2. **Chord Track** — `followChordTrack` on Track model, real-time transposition in `scheduleMidiNotes`, toggle in Inspector.
+3. **Faust Engine** — 12 effect descriptors in `BUILTIN_PLUGINS`, category groups updated, instruments already discoverable via factory presets.
+
+### Credibility tier (completed)
+
+4. **Latency Compensation** — `TrackLatencySection` component in Track Inspector showing device chain latency and PDC delay.
+5. **Clip Gain Envelope** — `getGainAtBeat` wired into `scheduleAudioClips.ts` via a per-clip envelope GainNode (dB→linear conversion).
+
+### Differentiator tier (completed)
+
+6. **Pattern Morph** — `MorphState` added to `ToasterState`, `morphPatterns()` called in sequencer tick loop when morph is active, use cases for setting target/position/toggle.
+7. **Pattern Instance** — `isLinkedInstance` field on `ClipRenderModel`, populated from `clip.parentClipId` in `buildTimelineRenderModel`, dashed blue border + ⧉ badge in clip drawing.
+
+---
+
+## 10. DEEP INVESTIGATION — Concerning items (fine-tooth comb audit)
+
+Each concerning item was investigated by reading all source code, searching the entire codebase for all references, and tracing execution paths end-to-end.
+
+### Audio Precision — VERDICT: Dead toggle / future scaffolding
+
+**What it claims to do:** Toggle between F32 and F64 audio processing precision.
+
+**What actually happens:**
+- `audioPrecisionStore` can be updated via command palette → `setProcessingMode`.
+- **NOTHING reads the store value.** No audio code, engine, worklet, export path, or Rust backend consults `getCurrentPrecision()`.
+- `AudioContext` is created with no precision options (Web Audio API doesn't support F64 in the real-time graph anyway).
+- `nativeF64Supported` is hardcoded `false` — `setNativeF64Support()` is never called.
+- The `void defaultDenominator` pattern in the function explicitly discards the parameter.
+- Rust backend has no precision toggle — just normal `f32`/`f64` usage in algorithms.
+
+**Conclusion:** This is **aspirational infrastructure** for a future where the Tauri native engine might support F64 processing. Today it's a command palette toggle that changes a store value nobody reads. **Not broken — simply unfinished.** Safe to leave as-is or delete; wiring it would require actual native engine work. **Should not be exposed to users** as it would be a non-functional toggle.
+
+### Sound Locks — VERDICT: Broken by design at three levels
+
+**What it claims to do:** Elektron-style per-step engine overrides — each step can specify a different drum engine.
+
+**Level 1 — Data is actively ignored:** `sequencerPlayback.ts` line 83: `if (key.startsWith('_')) { continue; }` — the `_soundLock` key in `paramLocks` is explicitly skipped during playback.
+
+**Level 2 — Wrong param name:** Even if the `_` skip were removed, `_soundLock` is not a key in `PAD_PARAM_MAP`. The engine recognizes `engine_type`, not `_soundLock`. The value would be silently dropped.
+
+**Level 3 — Wrong value type:** `setSoundLock` casts `DrumEngineType` (a string like `'kick-808'`) to `number` via `as unknown as number`. The engine expects a numeric index (0-5 from `TOASTER_ENGINE_MAP`), not a string. The value is fundamentally wrong.
+
+**Additional:** `soundLocks.ts` is **never imported** by any code in `src/`. The use cases are completely disconnected.
+
+**Conclusion:** Sound locks are **broken at every layer of the stack** — data layer, naming layer, and type layer. The `_` prefix convention was intentionally chosen to store metadata in `paramLocks` without affecting playback, but the design was never completed. A real implementation would need: a typed `soundLock` field on `Step` (not a `paramLocks` hack), engine-swap logic at trigger time using `TOASTER_ENGINE_MAP`, and restoration of the pad's default engine after the step. **This is not missing wiring — it's an incomplete design sketch masquerading as an implementation.**
+
+### Sixteen Levels — VERDICT: 3/4 targets are stubs, but fixable
+
+**What it claims to do:** MPC-style mode where 16 pads trigger the same sound at 16 different levels of a chosen parameter (velocity, tune, decay, or filter).
+
+**What actually happens:**
+- `velocity` target works correctly — maps grid index 0-15 to velocity 0.0625-1.0.
+- `tune`, `decay`, and `filter` targets all **fall through to the same velocity mapping** with an explicit comment: *"For now, just vary velocity as the simplest implementation."*
+- The underlying pad parameters ARE real and functional — `tune`, `decay`, `filterCutoff` all drive the Rust DSP engine via `setToasterPadParam` → `PAD_PARAM_MAP` → worklet → Rust `set_param`.
+- **No code imports** `sixteenLevels.ts` — the module is completely disconnected from the UI.
+
+**Conclusion:** The pad engine **can** handle tune/decay/filter parameter changes. The fix is straightforward: replace the stub branches with `setToasterPadParam(targetPad, 'tune' | 'decay' | 'filterCutoff', mappedValue)` before triggering, plus appropriate range mapping (tune: -24 to +24, decay: 0-1, filterCutoff: 20-20000 Hz). **Incomplete but genuinely fixable in ~30 minutes once wired to UI.**
+
+### Note Repeat — VERDICT: Not redundant with ratcheting, but has timing flaw
+
+**What it claims to do:** MPC-style note repeat — hold a pad and it fires repeatedly at a chosen musical rate.
+
+**What actually happens:**
+- Confirmed: uses `setInterval(callback, durationMs)` — no AudioContext clock correction.
+- Completely disconnected from UI — no imports from any component or panel.
+
+**Ratcheting comparison:**
+| Aspect | Ratcheting (`retriggerCount`) | Note Repeat |
+| --- | --- | --- |
+| Trigger | Programmed per step in pattern | Live performance hold |
+| Duration | Subdivisions within one step | Musical note values (1/4, 1/8, 1/16, triplets) |
+| Count | Fixed N extra hits | Open-ended until release |
+| Velocity | Decaying per retrigger | Constant |
+| Timing | AudioContext-corrected via `setTimeout` chain | Raw `setInterval` — will drift |
+
+**Conclusion:** Note repeat and ratcheting are **genuinely different features** serving different workflows (live performance vs. programmed patterns). The `setInterval` timing is the only real problem — the sequencer already demonstrates the correct pattern (chained `setTimeout` with `getAudioTime()` correction). **Fixable timing issue, not redundant code.** Keep the feature but fix the scheduler before wiring to UI.
+
+### Time Signature — VERDICT: Intentionally simplified, mathematically wrong for compound meters
+
+**What it claims to do:** Support time signature changes throughout a project with correct bar/beat display.
+
+**What actually happens:**
+- `getBarBeatAtPosition` receives both `defaultNumerator` and `defaultDenominator` as parameters.
+- The denominator is **explicitly discarded**: `void defaultDenominator;` on the last line.
+- Bar counting uses only the numerator: `bar += Math.floor(beatsInSegment / currentNumerator)`.
+- Per-change entries also only read `change.numerator`, ignoring `change.denominator`.
+
+**Impact:**
+- **Works correctly for:** 4/4, 3/4, 5/4, 7/4 — any meter where the denominator is 4 (quarter note = one beat).
+- **Breaks for:** 6/8 (counted as 6 beats per bar instead of 2 dotted-quarter beats), 12/8, alla breve (2/2). The denominator determines what note value gets one beat, which changes how many "beats" fit in a bar when the DAW's internal beat unit is the quarter note.
+- The store IS consumed by timeline rendering (bar lines, beat ruler) and transport display.
+
+**Fix complexity:** Medium. Would need to convert beats by the ratio `4/denominator` when walking through segments, so that in 6/8, a "beat" is an eighth note (half a quarter) and 6 of them make a bar. The sorted-change-walking algorithm is already correct in structure — just needs the denominator factor applied.
+
+**Conclusion:** **Intentional simplification that works for the vast majority of western music** (4/4, 3/4, 5/4). Not "broken" for common use — broken for compound meters. Worth fixing eventually but not blocking. **Not dead code — actively consumed by renderers and transport.**
+
+### Extension System — VERDICT: Security concern, mostly scaffolding
+
+**What it claims to do:** User scripting and plugin API with permission-scoped access.
+
+**What actually happens:**
+- `runEditorScript` uses `new Function('console', 'daw', code)` — **no sandbox.** Scripts run in the main renderer context with full access to `window`, `document`, `globalThis`, `fetch`, `localStorage`.
+- Comments say "sandboxed execution" but the `Function` constructor doesn't create an isolated realm.
+- **Permissions are decorative:** 14 scopes declared in `ExtensionPermission` type but **never checked** at any call site. No import of `manifest.permissions` outside the type definition.
+- `installExtension` only appends to in-memory store — never called by any code, doesn't load entry points.
+- `createDawApi()` exposes `executeAction` which **dispatches to the full `executeAppAction` registry** — tracks, clips, transport, plugins, AI handlers, everything. Cast with `as any`, no validation.
+- **No Worker**, no iframe, no CSP restriction.
+- No extensions installed, no commands registered, no UI renders the store.
+- The editor content is a hardcoded hello-world string that can only be changed via command palette `runScript` (which runs the default content).
+
+**Conclusion:** The type system is thorough (manifest, permissions, lifecycle) but the runtime is **fundamentally unsafe**. The "sandbox" label is misleading. Today's exposure is limited because: (a) no UI exists to edit scripts, (b) `installExtension` is never called, (c) the default script is harmless. But if any path ever lets users supply custom code, the entire application state is exposed. **This needs a Worker-based sandbox before any further development.** The current implementation is a design document expressed as TypeScript — keep the types, but the runtime needs a complete rewrite before it's safe to expose.

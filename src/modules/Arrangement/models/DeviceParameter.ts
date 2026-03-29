@@ -44,6 +44,7 @@ export type PluginDescriptor = {
 import { BUILTIN_EFFECT_DESCRIPTORS } from './pluginDescriptors/builtinEffectDescriptors';
 import { BUILTIN_INSTRUMENT_DESCRIPTORS } from './pluginDescriptors/builtinInstrumentDescriptors';
 import { NATIVE_DSP_DESCRIPTORS } from './pluginDescriptors/nativeDspDescriptors';
+import { FAUST_EFFECT_DESCRIPTORS } from './pluginDescriptors/faustEffectDescriptors';
 import { FERMENTER_DESCRIPTOR } from './pluginDescriptors/fermenterDescriptor';
 import { TOASTER_DESCRIPTOR } from './pluginDescriptors/toasterDescriptor';
 import { LEVAIN_DESCRIPTOR } from './pluginDescriptors/levainDescriptor';
@@ -115,6 +116,7 @@ export const BUILTIN_PLUGINS: PluginDescriptor[] = [
     ...BUILTIN_EFFECT_DESCRIPTORS,
     ...BUILTIN_INSTRUMENT_DESCRIPTORS,
     ...NATIVE_DSP_DESCRIPTORS,
+    ...FAUST_EFFECT_DESCRIPTORS,
     ...SYNTH_VARIANTS,
     ...DRUM_VARIANTS,
     FERMENTER_DESCRIPTOR,

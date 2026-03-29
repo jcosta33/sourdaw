@@ -63,10 +63,10 @@ pub struct Voice {
     ms20_filter: Ms20Filter,
     sem_filter: SemFilter,
     fm_engine: FmEngine,
-    ks_engine: KarplusStrong,
-    granular_engine: GranularEngine,
-    additive: AdditiveEngine,
-    sampler: SamplerEngine,
+    ks_engine: Option<Box<KarplusStrong>>,
+    granular_engine: Option<Box<GranularEngine>>,
+    additive: Option<Box<AdditiveEngine>>,
+    sampler: Option<Box<SamplerEngine>>,
     amp_env: Envelope,
     filter_env: Envelope,
     lfo: Lfo,
@@ -121,10 +121,10 @@ impl Voice {
             ms20_filter: Ms20Filter::new(),
             sem_filter: SemFilter::new(),
             fm_engine: FmEngine::new(),
-            ks_engine: KarplusStrong::new(sample_rate),
-            granular_engine: GranularEngine::new(),
-            additive: AdditiveEngine::new(),
-            sampler: SamplerEngine::new(),
+            ks_engine: None,
+            granular_engine: None,
+            additive: None,
+            sampler: None,
             amp_env: Envelope::new(sample_rate),
             filter_env: Envelope::new(sample_rate),
             lfo: Lfo::new(),
@@ -184,12 +184,12 @@ impl Voice {
         self.ms20_filter.reset();
         self.sem_filter.reset();
         self.fm_engine.reset();
-        self.ks_engine.reset();
-        self.granular_engine.reset();
-        self.additive.reset();
-        // Trigger sampler with pitch ratio based on MIDI note (C4 = 60 = original pitch)
+        if let Some(ks) = &mut self.ks_engine { ks.reset(); }
+        if let Some(gr) = &mut self.granular_engine { gr.reset(); }
+        if let Some(ad) = &mut self.additive { ad.reset(); }
+
         let pitch_ratio = 2.0f32.powf((note as f32 - 60.0) / 12.0);
-        self.sampler.trigger(pitch_ratio);
+        if let Some(sp) = &mut self.sampler { sp.trigger(pitch_ratio); }
     }
 
     /// Set portamento time in seconds. 0 = no portamento.
@@ -208,14 +208,23 @@ impl Voice {
     }
 
     /// Set engine type: 0=wavetable, 1=polyblep, 2=FM, 3=karplus-strong, 4=granular, 5=additive, 6=sampler.
-    pub fn set_engine(&mut self, engine: u8) {
+    pub fn set_engine(&mut self, engine: u8, sample_rate: f32) {
         self.engine = engine.min(6);
+        match self.engine {
+            3 => if self.ks_engine.is_none() { self.ks_engine = Some(Box::new(KarplusStrong::new(sample_rate))); },
+            4 => if self.granular_engine.is_none() { self.granular_engine = Some(Box::new(GranularEngine::new())); },
+            5 => if self.additive.is_none() { self.additive = Some(Box::new(AdditiveEngine::new())); },
+            6 => if self.sampler.is_none() { self.sampler = Some(Box::new(SamplerEngine::new())); },
+            _ => {}
+        }
     }
 
     /// Set sampler engine parameters.
     pub fn set_sampler_params(&mut self, mode: u8, start: f32, end: f32) {
-        self.sampler.set_mode(mode);
-        self.sampler.set_loop_points(start, end);
+        if let Some(sp) = &mut self.sampler {
+            sp.set_mode(mode);
+            sp.set_loop_points(start, end);
+        }
     }
 
     /// Set analog drift amount (0-1).
@@ -225,51 +234,48 @@ impl Voice {
 
     /// Set additive engine parameters.
     pub fn set_additive_partials(&mut self, n: usize) {
-        self.additive.set_num_partials(n);
+        if let Some(ad) = &mut self.additive { ad.set_num_partials(n); }
     }
 
     pub fn set_additive_tilt(&mut self, tilt: f32) {
-        self.additive.set_tilt(tilt);
+        if let Some(ad) = &mut self.additive { ad.set_tilt(tilt); }
     }
 
     pub fn set_additive_odd(&mut self, emphasis: f32) {
-        self.additive.set_odd_emphasis(emphasis);
+        if let Some(ad) = &mut self.additive { ad.set_odd_emphasis(emphasis); }
     }
 
     pub fn set_additive_inharm(&mut self, inharm: f32) {
-        self.additive.set_inharmonicity(inharm);
+        if let Some(ad) = &mut self.additive { ad.set_inharmonicity(inharm); }
     }
 
     /// Excite the Karplus-Strong engine (call at note-on time).
     pub fn excite_ks(&mut self, freq: f32, sample_rate: f32, brightness: f32) {
-        self.ks_engine.excite(freq, sample_rate, brightness);
+        if let Some(ks) = &mut self.ks_engine { ks.excite(freq, sample_rate, brightness); }
     }
 
     pub fn trigger_sampler(&mut self, pitch_ratio: f32) {
-        self.sampler.trigger(pitch_ratio);
+        if let Some(sp) = &mut self.sampler { sp.trigger(pitch_ratio); }
     }
 
     /// Set Karplus-Strong damping parameter.
     pub fn set_ks_damping(&mut self, damping: f32) {
-        self.ks_engine.set_damping(damping);
+        if let Some(ks) = &mut self.ks_engine { ks.set_damping(damping); }
     }
 
     /// Set granular engine parameters.
     pub fn set_granular_params(
         &mut self,
-        density: f32,
-        grain_size: f32,
-        position: f32,
-        spray: f32,
-        pitch_var: f32,
-        pan_spread: f32,
+        density: f32, grain_size: f32, position: f32, spray: f32, pitch_var: f32, pan_spread: f32,
     ) {
-        self.granular_engine.density = density;
-        self.granular_engine.grain_size = grain_size;
-        self.granular_engine.position = position;
-        self.granular_engine.spray = spray;
-        self.granular_engine.pitch_var = pitch_var;
-        self.granular_engine.pan_spread = pan_spread;
+        if let Some(gr) = &mut self.granular_engine {
+            gr.density = density;
+            gr.grain_size = grain_size;
+            gr.position = position;
+            gr.spray = spray;
+            gr.pitch_var = pitch_var;
+            gr.pan_spread = pan_spread;
+        }
     }
 
     /// Set unison parameters.
@@ -471,19 +477,17 @@ impl Voice {
 
             // Oscillator
             let (mut osc_l, mut osc_r) = if self.engine == 3 {
-                // Karplus-Strong: mono output, no unison
-                let s = self.ks_engine.tick();
+                let s = self.ks_engine.as_mut().map(|ks| ks.tick()).unwrap_or(0.0);
                 (s, s)
             } else if self.engine == 4 {
-                // Granular: native stereo output, no unison
-                self.granular_engine.tick(freq, p.sample_rate, p.tables)
+                self.granular_engine.as_mut()
+                    .map(|gr| gr.tick(freq, p.sample_rate, p.tables))
+                    .unwrap_or((0.0, 0.0))
             } else if self.engine == 5 {
-                // Additive: mono output, no unison
-                let s = self.additive.tick(freq, p.sample_rate);
+                let s = self.additive.as_mut().map(|ad| ad.tick(freq, p.sample_rate)).unwrap_or(0.0);
                 (s, s)
             } else if self.engine == 6 {
-                // Sampler: mono output, no unison
-                let s = self.sampler.tick(p.sample_rate);
+                let s = self.sampler.as_mut().map(|sp| sp.tick(p.sample_rate)).unwrap_or(0.0);
                 (s, s)
             } else if has_unison {
                 let mut ul = 0.0f32;

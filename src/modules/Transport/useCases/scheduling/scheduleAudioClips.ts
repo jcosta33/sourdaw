@@ -8,6 +8,7 @@ import { getCurrentTime, createBufferSource } from '#/modules/AudioEngine/useCas
 import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
 import { getCompensationDelay } from '#/modules/AudioEngine/useCases/latencyCompensation';
 import { resolveClipsWithComping } from '#/modules/Arrangement/useCases/resolveComping';
+import { getGainAtBeat } from '#/modules/Arrangement/useCases/clipGainEnvelope/getGainAtBeat';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { scheduleFrozenTrack } from './scheduleMidiNotes';
 
@@ -110,12 +111,23 @@ export function scheduleAudioClips(
                 const needsFadeGain = hasExplicitFade || needsMicroFadeIn || needsMicroFadeOut;
                 const fadeGain = needsFadeGain ? getAudioContext().createGain() : null;
 
-                if (fadeGain) {
-                    source.connect(fadeGain);
-                    fadeGain.connect(strip.gainNode);
-                } else {
-                    source.connect(strip.gainNode);
+                const envGainDb = getGainAtBeat(clip.id, iterOffsetBeats);
+                const hasEnvGain = envGainDb !== 0;
+                const envGainNode = hasEnvGain ? getAudioContext().createGain() : null;
+                if (envGainNode) {
+                    envGainNode.gain.value = Math.pow(10, envGainDb / 20);
                 }
+
+                let outputNode: AudioNode = strip.gainNode;
+                if (fadeGain) {
+                    fadeGain.connect(outputNode);
+                    outputNode = fadeGain;
+                }
+                if (envGainNode) {
+                    envGainNode.connect(outputNode);
+                    outputNode = envGainNode;
+                }
+                source.connect(outputNode);
 
                 const beatOffset = iterStartBeat - accumulatedPosition;
                 const iterStartTime = getCurrentTime() + beatOffset / (currentTempo / 60) + compensation;
@@ -177,6 +189,9 @@ export function scheduleAudioClips(
                     }
                     if (fadeGain) {
                         fadeGain.disconnect();
+                    }
+                    if (envGainNode) {
+                        envGainNode.disconnect();
                     }
                 };
             }

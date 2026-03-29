@@ -215,7 +215,7 @@ impl Layer {
         if let Some(idx) = target {
             let voice = &mut self.voices[idx];
             // Set engine BEFORE note_on so the voice knows which engine to use
-            voice.set_engine(self.engine);
+            voice.set_engine(self.engine, self.sample_rate);
             voice.set_ks_damping(self.ks_damping);
             voice.note_on(note, vel, self.sample_rate);
             voice.set_envelopes(
@@ -277,7 +277,7 @@ impl Layer {
             );
             voice.set_noise(self.noise_level, self.noise_color);
             voice.set_unison(self.unison_voices, self.unison_detune, self.unison_spread);
-            voice.set_engine(self.engine);
+            voice.set_engine(self.engine, self.sample_rate);
             voice.set_pulse_width(self.pulse_width);
             voice.set_portamento(self.portamento_time, sample_rate);
             voice.set_ks_damping(self.ks_damping);

@@ -254,7 +254,6 @@ export type AppAction =
     | { type: 'nextSetlistItem'; payload?: undefined }
     | { type: 'previousSetlistItem'; payload?: undefined }
     | { type: 'createAdjustmentLayer'; payload: { name: string; effectType: string } }
-    | { type: 'setProcessingMode'; payload: { mode: 'f32' | 'f64' } }
     | { type: 'detectTransients'; payload: { clipId: string; sensitivity?: number } }
     | { type: 'quantizeTransients'; payload: { clipId: string } }
     | { type: 'toggleNodeView'; payload?: undefined }

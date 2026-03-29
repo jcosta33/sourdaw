@@ -141,20 +141,9 @@ export const miscCommands: CommandEntry[] = [
     },
 
     // ── Extension / Scripting ─────────────────────────────────
-    {
-        id: 'toggle-script-editor',
-        label: 'Toggle Script Editor',
-        description: 'Open the TypeScript scripting console to automate DAW operations',
-        category: 'Extension',
-        action: { type: 'toggleScriptEditor' },
-    },
-    {
-        id: 'run-script',
-        label: 'Run Script',
-        description: 'Execute the current script in the editor',
-        category: 'Extension',
-        action: { type: 'runScript' },
-    },
+    // Extension commands removed — runtime is unsandboxed (new Function).
+    // TODO: Rebuild extension system with Worker-based sandbox before re-exposing.
+    // See dead-code-audit.md Section 10 for full security analysis.
 
     // ── Recording ─────────────────────────────────────────────
     {
@@ -204,22 +193,6 @@ export const miscCommands: CommandEntry[] = [
         description: 'Insert a non-destructive compressor layer that applies to tracks below',
         category: 'Mixing',
         action: { type: 'createAdjustmentLayer', payload: { name: 'Compressor Layer', effectType: 'compressor' } },
-    },
-
-    // ── Audio Precision ───────────────────────────────────────
-    {
-        id: 'set-processing-f64',
-        label: 'Enable 64-bit Processing',
-        description: 'Switch audio engine to 64-bit (f64) floating-point processing',
-        category: 'Audio Engine',
-        action: { type: 'setProcessingMode', payload: { mode: 'f64' } },
-    },
-    {
-        id: 'set-processing-f32',
-        label: 'Revert to 32-bit Processing',
-        description: 'Switch audio engine back to 32-bit (f32) floating-point',
-        category: 'Audio Engine',
-        action: { type: 'setProcessingMode', payload: { mode: 'f32' } },
     },
 
     // ── Elastic Audio ─────────────────────────────────────────

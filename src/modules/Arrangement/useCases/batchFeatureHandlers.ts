@@ -1,7 +1,6 @@
 import { type ActionHandler } from '#/modules/Command/useCases/commandQueries';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { searchSamples } from '#/modules/SoundLibrary/useCases/sampleDatabase';
-import { runEditorScript, toggleScriptEditor } from '#/modules/Extension/useCases/extension';
 import { createCompGroup } from '#/modules/Arrangement/useCases/groupComping/compGroupOperations';
 import { togglePunchRecording } from '#/modules/Transport/useCases/punchRecording';
 import { toggleRecord, triggerScene } from '#/modules/Transport/useCases/loopStation';
