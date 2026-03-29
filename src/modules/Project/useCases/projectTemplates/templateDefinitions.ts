@@ -165,7 +165,7 @@ const templates: ProjectTemplate[] = [
         id: 'demo-nebula-drift',
         name: 'Nebula Drift',
         description:
-            'A 2-minute Tangerine Dream–style atmospheric journey: 20 tracks of Fermenter drones, Levain lines, and Toaster pulse with automation, space, and texture.',
+            'A ~5-minute Tangerine Dream–style journey: Fermenter drones, pluck/grain textures, Levain lines, Moog leads & bass, and a full 16-pad Toaster kit (folder-hosted) with heavy automation and spatial FX.',
         category: 'demo',
         create: () => demo5_NebulaDrift(),
     },

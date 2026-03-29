@@ -55,17 +55,20 @@ export const EnvelopeSection = ({
             {/* Precision knobs */}
             <div className="flex items-end gap-2">
                 {[
-                    { label: 'A', value: a, key: 'attack', min: 0.001, max: 5, fmt: `${(a * 1000).toFixed(0)}ms` },
-                    { label: 'D', value: d, key: 'decay', min: 0.001, max: 5, fmt: `${(d * 1000).toFixed(0)}ms` },
-                    { label: 'S', value: s, key: 'sustain', min: 0, max: 1, fmt: `${Math.round(s * 100)}%` },
-                    { label: 'R', value: r, key: 'release', min: 0.001, max: 10, fmt: `${(r * 1000).toFixed(0)}ms` },
-                ].map(({ label, value, key, min, max, fmt }) => (
-                    <div key={key} className="flex flex-col items-center gap-0">
-                        <RotaryKnob value={value} onChange={(v) => handle(key, v)} min={min} max={max} step={key === 'sustain' ? 0.01 : 0.005} defaultValue={key === 'sustain' ? 0.7 : 0.2} size="lg" />
-                        <span className="text-[7px] text-muted-foreground">{label}</span>
-                        <span className="text-[6px] text-muted-foreground/50 font-mono">{fmt}</span>
-                    </div>
-                ))}
+                    { label: 'A', value: a, key: 'Attack', min: 0.001, max: 5, fmt: `${(a * 1000).toFixed(0)}ms` },
+                    { label: 'D', value: d, key: 'Decay', min: 0.001, max: 5, fmt: `${(d * 1000).toFixed(0)}ms` },
+                    { label: 'S', value: s, key: 'Sustain', min: 0, max: 1, fmt: `${Math.round(s * 100)}%` },
+                    { label: 'R', value: r, key: 'Release', min: 0.001, max: 10, fmt: `${(r * 1000).toFixed(0)}ms` },
+                ].map(({ label, value, key, min, max, fmt }) => {
+                    const mappedKey = `${isAmp ? 'amp' : 'filter'}${key}` as const;
+                    return (
+                        <div key={key} className="flex flex-col items-center gap-0">
+                            <RotaryKnob paramId={mappedKey} value={value} onChange={(v) => handle(key.toLowerCase(), v)} min={min} max={max} step={key === 'Sustain' ? 0.01 : 0.005} defaultValue={key === 'Sustain' ? 0.7 : 0.2} size="lg" />
+                            <span className="text-[7px] text-muted-foreground">{label}</span>
+                            <span className="text-[6px] text-muted-foreground/50 font-mono">{fmt}</span>
+                        </div>
+                    );
+                })}
             </div>
         </div>
     );

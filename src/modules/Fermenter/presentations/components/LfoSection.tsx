@@ -77,16 +77,16 @@ export const LfoSection = ({
         {/* Knobs */}
         <div className="flex items-end gap-2">
             <div className="flex flex-col items-center gap-0">
-                <RotaryKnob value={rate} onChange={onRateChange} min={0} max={20} step={0.1} defaultValue={0} size="lg" />
+                <RotaryKnob paramId="lfoRate" value={rate} onChange={onRateChange} min={0} max={20} step={0.1} defaultValue={0} size="lg" />
                 <span className="text-[7px] text-muted-foreground">Rate</span>
                 <span className="text-[6px] text-muted-foreground/50 font-mono">{rate.toFixed(1)}Hz</span>
             </div>
             <div className="flex flex-col items-center gap-0">
-                <RotaryKnob value={pitchAmount} onChange={onPitchAmountChange} min={-1} max={1} step={0.01} defaultValue={0} size="lg" />
+                <RotaryKnob paramId="lfoPitchAmount" value={pitchAmount} onChange={onPitchAmountChange} min={-1} max={1} step={0.01} defaultValue={0} size="lg" />
                 <span className="text-[7px] text-muted-foreground">→ Pitch</span>
             </div>
             <div className="flex flex-col items-center gap-0">
-                <RotaryKnob value={filterAmount} onChange={onFilterAmountChange} min={-1} max={1} step={0.01} defaultValue={0} size="lg" />
+                <RotaryKnob paramId="lfoFilterAmount" value={filterAmount} onChange={onFilterAmountChange} min={-1} max={1} step={0.01} defaultValue={0} size="lg" />
                 <span className="text-[7px] text-muted-foreground">→ Filter</span>
             </div>
         </div>

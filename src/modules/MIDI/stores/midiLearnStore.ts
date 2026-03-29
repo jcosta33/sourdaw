@@ -4,7 +4,7 @@ import { Store } from '#/helpers/Store/Store';
 
 const logger = Container.getInstance().get(Logger);
 
-export type MidiMappingTargetType = 'trackGain' | 'trackPan' | 'deviceParam';
+export type MidiMappingTargetType = 'trackGain' | 'trackPan' | 'deviceParam' | 'fermenterGlobalParam';
 
 export type MidiMapping = {
     id: string;

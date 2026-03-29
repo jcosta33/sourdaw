@@ -12,6 +12,10 @@ import {
     setTrackGain as engineSetTrackGain,
     setTrackPan as engineSetTrackPan,
 } from '#/modules/AudioEngine/useCases/trackAudioControls';
+import { setFermenterParamWithAudio } from '#/modules/Fermenter/useCases/fermenterParamBridge';
+import { recordAutomationValue } from '#/modules/Automation/useCases/automationRecording/recordAutomationValue';
+import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 
 const logger = Container.getInstance().get(Logger);
 
@@ -21,6 +25,7 @@ const VALUE_RANGES: Record<MidiMappingTargetType, { min: number; max: number }> 
     trackGain: { min: 0, max: 1 },
     trackPan: { min: -50, max: 50 },
     deviceParam: { min: 0, max: 1 },
+    fermenterGlobalParam: { min: 0, max: 1 },
 };
 
 function scaleMidiValue(raw: number, min: number, max: number): number {
@@ -122,6 +127,29 @@ export function handleMidiMessage(channel: number, cc: number, value: number): v
             case 'deviceParam': {
                 if (mapping.deviceId && mapping.paramId) {
                     setDeviceParameter(mapping.deviceId, mapping.paramId, scaled);
+                }
+                break;
+            }
+            case 'fermenterGlobalParam': {
+                if (mapping.paramId) {
+                    // Update Fermenter store + audio engine
+                    setFermenterParamWithAudio(mapping.paramId as any, scaled);
+
+                    // Record automation if playing
+                    const transport = getTransportState();
+                    if (transport?.isPlaying) {
+                        const trackState = trackStore.value;
+                        if (trackState) {
+                            for (const track of trackState.tracks) {
+                                if (track.automationMode === 'write' || track.automationMode === 'touch' || track.automationMode === 'latch') {
+                                    const fermenterDevice = track.devices.find((d: any) => d.type === 'fermenter');
+                                    if (fermenterDevice) {
+                                        recordAutomationValue(track.id, `${fermenterDevice.id}:${mapping.paramId}`, scaled, transport.playheadPosition);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 break;
             }

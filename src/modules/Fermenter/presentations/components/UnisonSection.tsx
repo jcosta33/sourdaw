@@ -29,6 +29,7 @@ export const UnisonSection = ({
             <div className="flex items-end gap-3">
                 <div className="flex flex-col items-center gap-1">
                     <RotaryKnob
+                        paramId="unisonVoices"
                         value={voices}
                         onChange={onVoicesChange}
                         min={1} max={16} step={1} defaultValue={1}
@@ -39,6 +40,7 @@ export const UnisonSection = ({
                 </div>
                 <div className="flex flex-col items-center gap-1">
                     <RotaryKnob
+                        paramId="unisonDetune"
                         value={detune}
                         onChange={onDetuneChange}
                         min={0} max={100} step={1} defaultValue={15}
@@ -49,6 +51,7 @@ export const UnisonSection = ({
                 </div>
                 <div className="flex flex-col items-center gap-1">
                     <RotaryKnob
+                        paramId="unisonSpread"
                         value={spread}
                         onChange={onSpreadChange}
                         min={0} max={1} step={0.01} defaultValue={0.7}

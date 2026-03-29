@@ -179,7 +179,7 @@ export function scheduleMidiNotes(
                             const toasterDevice = toasterParentTrack.devices.find((d) => d.type === 'toaster');
                             const parentStrip = ensureTrackStrip(toasterParentTrack.id);
                             if (toasterDevice && parentStrip) {
-                                const dn = parentStrip.deviceNodes.find((d) => d.deviceId === toasterDevice.id);
+                                const dn = parentStrip.deviceNodes.find((d) => d.deviceId === toasterDevice.id || d.type === 'toaster');
                                 if (dn?.toasterControls) {
                                     const children = tracks.filter((t) => t.parentId === toasterParentTrack!.id);
                                     let pad = children.findIndex((t) => t.id === track.id);
@@ -196,12 +196,13 @@ export function scheduleMidiNotes(
                                     if (pad >= 0 && pad < 16) {
                                         const ctx = getAudioContext();
                                         const scheduleDelay = Math.max(0, time - ctx.currentTime);
+                                        const safeVelocity = note.velocity ?? 100;
                                         
                                         if (scheduleDelay <= 0) {
-                                            dn.toasterControls.noteOn(pad, note.velocity, pitchNote);
+                                            dn.toasterControls.noteOn(pad, safeVelocity, pitchNote);
                                         } else {
                                             setTimeout(() => {
-                                                dn.toasterControls?.noteOn(pad, note.velocity, pitchNote);
+                                                dn.toasterControls?.noteOn(pad, safeVelocity, pitchNote);
                                             }, scheduleDelay * 1000);
                                         }
                                     }

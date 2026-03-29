@@ -1,5 +1,7 @@
-import { type ReactElement, type PointerEvent, useRef } from 'react';
+import { type ReactElement, type PointerEvent, useRef, useSyncExternalStore } from 'react';
 import { cn } from '#/helpers/Styles/cn';
+import { midiLearnStore } from '#/modules/MIDI/stores/midiLearnStore';
+import { startMidiLearn } from '#/modules/MIDI/useCases/midiLearn';
 
 type RotaryKnobProps = {
     value: number;
@@ -12,6 +14,10 @@ type RotaryKnobProps = {
     bipolar?: boolean;
     size?: 'sm' | 'md' | 'lg' | 'xl';
     className?: string;
+    paramId?: string;
+    targetType?: 'trackGain' | 'trackPan' | 'deviceParam' | 'fermenterGlobalParam';
+    trackId?: string;
+    deviceId?: string;
 };
 
 const SIZES = { sm: 24, md: 32, lg: 40, xl: 72 } as const;
@@ -35,7 +41,24 @@ export const RotaryKnob = ({
     bipolar = false,
     size = 'md',
     className,
+    paramId,
+    targetType = 'fermenterGlobalParam', // Default to fermenterGlobalParam for now
+    trackId,
+    deviceId,
 }: RotaryKnobProps): ReactElement => {
+    const midiLearnState = useSyncExternalStore(
+        (cb) => midiLearnStore.subscribe(cb),
+        () => midiLearnStore.value
+    );
+    const isLearningThis = Boolean(
+        midiLearnState?.isLearning &&
+        midiLearnState.learningTarget &&
+        midiLearnState.learningTarget.paramId === paramId &&
+        paramId !== undefined
+    );
+    const isMapped = Boolean(
+        midiLearnState?.mappings.some((m) => m.paramId === paramId)
+    );
     // Derive sensible defaults from range when not explicitly provided
     const step = stepProp ?? Math.max(0.001, (max - min) / 200);
     const fineStep = fineStepProp ?? step / 10;
@@ -90,6 +113,18 @@ export const RotaryKnob = ({
         onChange(defaultValue);
     };
 
+    const handleContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
+        if (paramId && targetType) {
+            e.preventDefault();
+            startMidiLearn({
+                targetType,
+                paramId,
+                trackId: trackId ?? 'global',
+                deviceId,
+            });
+        }
+    };
+
     // Visual rotation (-135deg to +135deg → 270deg sweep)
     const normalized = Math.max(0, Math.min(1, (value - min) / (max - min)));
     const rotation = -135 + normalized * 270;
@@ -112,7 +147,14 @@ export const RotaryKnob = ({
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onDoubleClick={handleDoubleClick}
+            onContextMenu={handleContextMenu}
         >
+            {isLearningThis && (
+                <div className="absolute inset-[-4px] rounded-full border border-dashed border-[var(--color-accent-lavender)] animate-pulse pointer-events-none z-10" />
+            )}
+            {isMapped && !isLearningThis && (
+                <div className="absolute top-0 right-0 size-2 rounded-full bg-[var(--color-accent-lavender)]/80 pointer-events-none z-10" />
+            )}
             {/* Outer bezel (well) */}
             <div
                 className={cn(

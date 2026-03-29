@@ -3,6 +3,7 @@ import { getSynthParamsForTrack, scheduleNote } from '#/modules/Synth/useCases/b
 import { startFaustNote } from '#/modules/Synth/useCases/faustInstrumentScheduler';
 import { getTrackById } from '#/modules/Arrangement/useCases/trackQueries';
 import { getDrumKitDefByIndex, scheduleDrumKitNote } from '#/modules/Synth/useCases/drumSynthEngine';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 
 /**
  * Starts a live audition note on a track.
@@ -48,15 +49,39 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
         return () => {};
     }
 
-    // Check for Toaster drum machine on this track
-    const toasterDevice = track?.devices.find((d) => d.type === 'toaster');
+    // Check for Toaster drum machine on this track OR a built folder child track
+    let isToasterChild = false;
+    let toasterParentTrack;
+    if (track?.parentId) {
+        toasterParentTrack = getTrackById(track.parentId);
+        if (toasterParentTrack?.devices.some((d) => d.type === 'toaster')) {
+            isToasterChild = true;
+        }
+    }
+
+    const toasterDevice = track?.devices.find((d) => d.type === 'toaster') || toasterParentTrack?.devices.find((d) => d.type === 'toaster');
+    
     if (toasterDevice) {
-        const dn = strip.deviceNodes.find(
+        const effectiveTrackId = toasterParentTrack ? toasterParentTrack.id : trackId;
+        const parentStrip = engine.ensureTrackStrip(effectiveTrackId);
+        
+        const dn = parentStrip.deviceNodes.find(
             (d) => d.deviceId === toasterDevice.id || d.type === 'toaster'
         );
+        
         if (dn?.toasterControls?.ready) {
-            const pad = pitch - 36;
-            dn.toasterControls.noteOn(pad, velocity);
+            let pad = pitch - 36;
+            
+            if (isToasterChild && toasterParentTrack) {
+                // Determine pad by index of child in parent folder
+                const children = trackStore.value?.tracks.filter((t: any) => t.parentId === toasterParentTrack!.id) || [];
+                const childPad = children.findIndex((t: any) => t.id === trackId);
+                if (childPad !== -1) {
+                    pad = childPad;
+                }
+            }
+            
+            dn.toasterControls.noteOn(pad, velocity ?? 100);
             return () => {
                 dn.toasterControls?.noteOff(pad);
             };

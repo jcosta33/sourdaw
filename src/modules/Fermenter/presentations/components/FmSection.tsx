@@ -57,6 +57,7 @@ export const FmSection = ({
                         <div key={i} className="flex flex-col items-center gap-0.5">
                             <span className={`text-[8px] font-bold ${OP_COLORS[i]}`}>Op {i + 1}</span>
                             <RotaryKnob
+                                paramId={`fmRatio${i + 1}`}
                                 value={ratio}
                                 onChange={(v) => onParam(`fmRatio${i + 1}`, v)}
                                 min={0.5} max={16} step={0.5} defaultValue={i + 1}
@@ -64,6 +65,7 @@ export const FmSection = ({
                             />
                             <span className="text-[7px] text-muted-foreground/60 font-mono">{ratio.toFixed(1)}×</span>
                             <RotaryKnob
+                                paramId={`fmLevel${i + 1}`}
                                 value={level}
                                 onChange={(v) => onParam(`fmLevel${i + 1}`, v)}
                                 min={0} max={1} step={0.01} defaultValue={1}
@@ -79,6 +81,7 @@ export const FmSection = ({
             <div className="flex items-end gap-2 px-1">
                 <div className="flex flex-col items-center gap-0.5">
                     <RotaryKnob
+                        paramId="fmFeedback"
                         value={feedback}
                         onChange={(v) => onParam('fmFeedback', v)}
                         min={0} max={1} step={0.01} defaultValue={0}
@@ -88,6 +91,7 @@ export const FmSection = ({
                 </div>
                 <div className="flex flex-col items-center gap-0.5">
                     <RotaryKnob
+                        paramId="fmModAmount"
                         value={modAmount}
                         onChange={(v) => onParam('fmModAmount', v)}
                         min={0} max={4} step={0.01} defaultValue={1}
