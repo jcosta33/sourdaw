@@ -3,7 +3,7 @@
  * Maps X/Y position to two macro parameters for expressive real-time control.
  * Sits alongside the macro strip in the Play level.
  */
-import { type ReactElement, useRef, useState, useCallback, useEffect } from 'react';
+import { type ReactElement, useRef, useCallback, useEffect } from 'react';
 
 type XYPadProps = {
     xValue: number;  // 0-1
@@ -20,7 +20,7 @@ export const XYPad = ({
     onXChange, onYChange, size = 120,
 }: XYPadProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const [dragging, setDragging] = useState(false);
+    const draggingRef = useRef(false);
 
     const handlePointer = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
         const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
@@ -37,8 +37,11 @@ export const XYPad = ({
         if (!ctx) return;
 
         const dpr = window.devicePixelRatio || 1;
+        // Always reset canvas dimensions — this also clears the context transform
         canvas.width = size * dpr;
         canvas.height = size * dpr;
+        // Reset transform before scaling to prevent accumulation across renders
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.scale(dpr, dpr);
 
         // Background
@@ -92,15 +95,16 @@ export const XYPad = ({
     return (
         <canvas
             ref={canvasRef}
-            style={{ width: size, height: size, cursor: dragging ? 'grabbing' : 'grab' }}
+            style={{ width: size, height: size, cursor: draggingRef.current ? 'grabbing' : 'grab' }}
             className="rounded-lg border border-border/30"
             onPointerDown={(e) => {
-                setDragging(true);
+                draggingRef.current = true;
                 (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
                 handlePointer(e);
             }}
-            onPointerMove={(e) => { if (dragging) handlePointer(e); }}
-            onPointerUp={() => setDragging(false)}
+            onPointerMove={(e) => { if (draggingRef.current) handlePointer(e); }}
+            onPointerUp={() => { draggingRef.current = false; }}
+            onPointerCancel={() => { draggingRef.current = false; }}
         />
     );
 };
