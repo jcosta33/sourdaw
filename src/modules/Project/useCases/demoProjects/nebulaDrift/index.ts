@@ -155,7 +155,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
             type: 'toaster',
             bypassed: false,
             parameterValues: {
-                masterGain: 1,
+                masterGain: 1.35,
                 reverbMix: 0.22,
                 delayMix: 0.08,
                 swing: 0.08,
@@ -415,7 +415,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
     tLevLow.gain = 0.1;
     tLevCall.gain = 0.1;
     tLevAnswer.gain = 0.1;
-    toasterFolder.gain = 1;
+    toasterFolder.gain = 1.25;
 
     tSubDrone.pan = nextPan();
     tDarkMist.pan = nextPan();
@@ -978,11 +978,11 @@ export async function demo5_NebulaDrift(): Promise<void> {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
                 { beat: 70 + i, value: 0, curve: 'linear', tension: 0 },
-                { beat: 98 + i, value: 0.34 + (i % 5) * 0.05, curve: 'smooth', tension: 0.38 },
-                { beat: S.peak, value: 0.32 + (i % 4) * 0.06, curve: 'smooth', tension: 0.32 },
-                { beat: S.breakdown, value: 0.08 + (i % 3) * 0.03, curve: 'linear', tension: 0 },
-                { beat: S.final, value: 0.4 + (i % 4) * 0.05, curve: 'smooth', tension: 0.3 },
-                { beat: TB, value: 0.26 + (i % 5) * 0.04, curve: 'linear', tension: 0 },
+                { beat: 98 + i, value: Math.min(1, 0.55 + (i % 5) * 0.06), curve: 'smooth', tension: 0.36 },
+                { beat: S.peak, value: Math.min(1, 0.52 + (i % 4) * 0.07), curve: 'smooth', tension: 0.3 },
+                { beat: S.breakdown, value: Math.min(1, 0.22 + (i % 3) * 0.05), curve: 'linear', tension: 0 },
+                { beat: S.final, value: Math.min(1, 0.58 + (i % 4) * 0.05), curve: 'smooth', tension: 0.28 },
+                { beat: TB, value: Math.min(1, 0.4 + (i % 5) * 0.05), curve: 'linear', tension: 0 },
             ],
         })
     );
@@ -1170,11 +1170,12 @@ export async function demo5_NebulaDrift(): Promise<void> {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
                 { beat: 62, value: 0, curve: 'linear', tension: 0 },
-                { beat: 92, value: 0.28, curve: 'smooth', tension: 0.38 },
-                { beat: S.peak, value: 0.58, curve: 'linear', tension: 0 },
-                { beat: S.breakdown, value: 0.16, curve: 'smooth', tension: 0.34 },
-                { beat: S.final, value: 0.48, curve: 'smooth', tension: 0.32 },
-                { beat: TB, value: 0.3, curve: 'linear', tension: 0 },
+                { beat: 92, value: 0.52, curve: 'smooth', tension: 0.36 },
+                { beat: S.build1 + 32, value: 0.68, curve: 'smooth', tension: 0.32 },
+                { beat: S.peak, value: 0.92, curve: 'linear', tension: 0 },
+                { beat: S.breakdown, value: 0.38, curve: 'smooth', tension: 0.32 },
+                { beat: S.final, value: 0.78, curve: 'smooth', tension: 0.3 },
+                { beat: TB, value: 0.55, curve: 'linear', tension: 0 },
             ],
         }),
         // Levain — 10% bed at start; slow rise to tuck level; one hero at a time
@@ -1777,10 +1778,11 @@ export async function demo5_NebulaDrift(): Promise<void> {
         }),
         Object.assign(mkLane(toasterFolder.id, 'masterGain', 'Toast master', 0, 2), {
             points: [
-                { beat: S.build1, value: 0.85, curve: 'linear', tension: 0 },
-                { beat: S.peak, value: 1.15, curve: 'exponential', tension: 0.25 },
-                { beat: S.breakdown, value: 0.75, curve: 'linear', tension: 0 },
-                { beat: TB, value: 0.95, curve: 'linear', tension: 0 },
+                { beat: S.build1, value: 1.12, curve: 'linear', tension: 0 },
+                { beat: S.peak, value: 1.48, curve: 'exponential', tension: 0.25 },
+                { beat: S.breakdown, value: 1.02, curve: 'linear', tension: 0 },
+                { beat: S.final, value: 1.32, curve: 'smooth', tension: 0.28 },
+                { beat: TB, value: 1.18, curve: 'linear', tension: 0 },
             ],
         }),
     ];
