@@ -46,9 +46,9 @@ export async function undo(): Promise<void> {
         return;
     }
 
-    const newPast = state.past.slice(0, -1);
     await executeUndo(lastEntry);
 
+    const newPast = state.past.slice(0, -1);
     undoStore.set({
         past: newPast,
         future: [lastEntry, ...state.future],

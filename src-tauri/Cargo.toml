@@ -3,8 +3,8 @@ members = [
     ".",
     "audio-core",
     "fermenter",
-    "grinder",
-    "orchestral"
+    "toaster",
+    "levain"
 ]
 
 [package]

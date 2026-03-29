@@ -18,6 +18,7 @@
     "tailwindcss"
   ],
   "ignoreBinaries": [
-    "prettier"
+    "prettier",
+    "wasm-pack"
   ]
 }

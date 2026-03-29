@@ -8,8 +8,12 @@
  * the wrapper simply uses the same node for inputNode and outputNode.
  */
 
+import { Container } from '#/helpers/DependencyInjector/Container';
+import { Logger } from '#/helpers/Logger/Logger';
 import { type OfflineDeviceNode } from './deviceNodeFactory';
 import { createFaustNode, compileFaustDSP, isFaustModule } from '#/modules/Plugin/useCases/faustEngine/compilerEngine';
+
+const logger = Container.getInstance().get(Logger);
 
 export { isFaustModule };
 
@@ -27,13 +31,13 @@ export async function createFaustDevice(
     // Ensure module is compiled
     const compiled = await compileFaustDSP(faustModuleId);
     if (!compiled) {
-        console.warn(`[FaustDevice] Failed to compile ${faustModuleId}`);
+        logger.warn(`[FaustDevice] Failed to compile ${faustModuleId}`);
         return null;
     }
 
     const node = await createFaustNode(faustModuleId, ctx);
     if (!node) {
-        console.warn(`[FaustDevice] Failed to create node for ${faustModuleId}`);
+        logger.warn(`[FaustDevice] Failed to create node for ${faustModuleId}`);
         return null;
     }
 

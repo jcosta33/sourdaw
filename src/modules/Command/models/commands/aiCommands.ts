@@ -119,7 +119,7 @@ export const aiCommands: CommandEntry[] = [
     {
         id: 'load-rave-strings',
         label: 'Load RAVE: Strings',
-        description: 'Load the orchestral strings neural synthesis model',
+        description: 'Load the levain strings neural synthesis model',
         category: 'AI',
         action: { type: 'loadRaveModel', payload: { modelId: 'rave-strings' } },
     },

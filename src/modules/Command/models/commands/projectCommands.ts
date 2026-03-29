@@ -1,4 +1,5 @@
 import { type CommandEntry } from '../CommandRegistry';
+import { APP_EVENTS } from '#/helpers/Event/appEvents';
 import { saveProject, newProject } from '#/modules/Project/useCases/projectPersistence';
 
 /** Project commands — new, save, export audio, import/export files, version control. */
@@ -29,7 +30,7 @@ export const projectCommands: CommandEntry[] = [
         category: 'Project',
         shortcut: '⌘⇧E',
         action: () => {
-            document.dispatchEvent(new CustomEvent('sourdaw:open-export'));
+            document.dispatchEvent(new CustomEvent(APP_EVENTS.OPEN_EXPORT));
         },
     },
     {

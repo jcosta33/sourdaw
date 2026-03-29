@@ -1,11 +1,15 @@
+import { Container } from '#/helpers/DependencyInjector/Container';
+import { Logger } from '#/helpers/Logger/Logger';
 import { type Device } from '#/modules/Arrangement/useCases/trackQueries';
 import { type OfflineDeviceNode, DEVICE_FACTORIES, applyParams } from '../repositories/deviceNodeFactory';
 import { isFaustModule, createFaustDevice } from '../repositories/faustDeviceFactory';
 import { isNativeDspDevice, NATIVE_DSP_DEVICE_TYPES, createNativeDspNode } from '../engine/NativeDspNode';
 import { isFermenterDevice, createFermenterNode } from '../engine/FermenterNode';
-import { isGrinderDevice, createGrinderNode } from '../engine/GrinderNode';
-import { isOrchestraDevice, createOrchestraNode } from '../engine/OrchestraNode';
+import { isToasterDevice, createToasterNode } from '../engine/ToasterNode';
+import { isLevainDevice, createLevainNode } from '../engine/LevainNode';
 import { isDeviceSupportedOnCurrentPlatform } from '#/modules/Arrangement/useCases/trackQueries';
+
+const logger = Container.getInstance().get(Logger);
 
 // Re-export for consumers
 export type { OfflineDeviceNode } from '../repositories/deviceNodeFactory';
@@ -92,7 +96,7 @@ export async function buildDeviceChain(
                         setBypass: result.setBypass,
                     };
                 } catch (error) {
-                    console.warn(`Native DSP device ${device.type} failed to load:`, error);
+                    logger.warn(`Native DSP device ${device.type} failed to load: ${error}`);
                 }
             }
         } else if (isFermenterDevice(device.type)) {
@@ -117,15 +121,15 @@ export async function buildDeviceChain(
                     setBypass: result.setBypass,
                 };
             } catch (error) {
-                console.warn(`Fermenter device failed to load:`, error);
+                logger.warn(`Fermenter device failed to load: ${error}`);
             }
-        } else if (isGrinderDevice(device.type)) {
+        } else if (isToasterDevice(device.type)) {
             if (isOffline || !(ctx instanceof AudioContext)) {
                 continue;
             }
             // Grinder drum machine — async WASM init + AudioWorkletNode
             try {
-                const result = await createGrinderNode(ctx);
+                const result = await createToasterNode(ctx);
                 await result.ready;
                 // Apply initial params
                 for (const [key, val] of Object.entries(device.parameterValues)) {
@@ -141,15 +145,15 @@ export async function buildDeviceChain(
                     setBypass: result.setBypass,
                 };
             } catch (error) {
-                console.warn(`Grinder device failed to load:`, error);
+                logger.warn(`Grinder device failed to load: ${error}`);
             }
-        } else if (isOrchestraDevice(device.type)) {
+        } else if (isLevainDevice(device.type)) {
             if (isOffline || !(ctx instanceof AudioContext)) {
                 continue;
             }
-            // Orchestral suite — async WASM init + AudioWorkletNode
+            // Levain suite — async WASM init + AudioWorkletNode
             try {
-                const result = await createOrchestraNode(ctx);
+                const result = await createLevainNode(ctx);
                 await result.ready;
                 // Apply initial params
                 for (const [key, val] of Object.entries(device.parameterValues)) {
@@ -165,7 +169,7 @@ export async function buildDeviceChain(
                     setBypass: result.setBypass,
                 };
             } catch (error) {
-                console.warn(`Orchestral device failed to load:`, error);
+                logger.warn(`Levain device failed to load: ${error}`);
             }
         } else if (isFaustModule(device.type)) {
             if (isOffline) {

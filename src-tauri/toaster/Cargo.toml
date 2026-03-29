@@ -1,0 +1,16 @@
+[package]
+name = "toaster"
+version = "0.1.0"
+edition = "2021"
+description = "Grinder drum machine DSP engine — compiles to native and WASM"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = "0.3"

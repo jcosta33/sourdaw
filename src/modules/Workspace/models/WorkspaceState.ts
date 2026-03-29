@@ -39,6 +39,10 @@ export type WorkspaceState = {
     automationSubLanes: Record<string, string[]>; // trackId → parameterIds shown inline
     scratchPadOpen: boolean;
     scratchPadHeight: number;
+    aiPanelWidth: number;
+    fermenterHeight: number;
+    grinderHeight: number;
+    levainHeight: number;
 };
 
 export const defaultWorkspaceState: WorkspaceState = {
@@ -70,4 +74,8 @@ export const defaultWorkspaceState: WorkspaceState = {
     automationSubLanes: {},
     scratchPadOpen: false,
     scratchPadHeight: 120,
+    aiPanelWidth: 340,
+    fermenterHeight: 320,
+    grinderHeight: 420,
+    levainHeight: 340,
 };

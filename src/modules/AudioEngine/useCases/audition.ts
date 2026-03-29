@@ -65,19 +65,19 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
         return () => {};
     }
 
-    // Check for Orchestral instrument on this track
-    const orchestraDevice = track?.devices.find((d) => d.type === 'orchestral');
-    if (orchestraDevice) {
+    // Check for Levain instrument on this track
+    const levainDevice = track?.devices.find((d) => d.type === 'levain');
+    if (levainDevice) {
         const dn = strip.deviceNodes.find(
-            (d) => d.deviceId === orchestraDevice.id || d.type === 'orchestral'
+            (d) => d.deviceId === levainDevice.id || d.type === 'levain'
         );
-        if (dn?.orchestraControls?.ready) {
-            dn.orchestraControls.noteOn(pitch, velocity);
+        if (dn?.levainControls?.ready) {
+            dn.levainControls.noteOn(pitch, velocity);
             return () => {
-                dn.orchestraControls?.noteOff(pitch);
+                dn.levainControls?.noteOff(pitch);
             };
         }
-        // Orchestral not ready — fall through to built-in synth as temporary fallback
+        // Levain not ready — fall through to built-in synth as temporary fallback
     }
 
     // Check for Faust instrument on this track

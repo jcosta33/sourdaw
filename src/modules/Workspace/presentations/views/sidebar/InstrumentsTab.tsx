@@ -7,9 +7,13 @@ import { type SoundPreset, type SoundPresetCategory } from '#/modules/Arrangemen
 import { getFactoryPresets } from '#/modules/Arrangement/useCases/soundPresetLibrary';
 import { getUserPresets, saveCurrentAsPreset, deleteUserPreset } from '#/modules/Arrangement/useCases/preset/presetStorage';
 import { createTrackFromPreset, loadPresetToTrack } from '#/modules/Arrangement/useCases/preset/presetLoading';
-import { createDrumTrackStack } from '#/modules/Grinder/useCases/createDrumTrackStack';
+import { createDrumTrackStack } from '#/modules/Toaster/useCases/createDrumTrackStack';
 
 import { PresetItem } from '../../components/sidebar/PresetItem';
+import { InstrumentCard, FERMENTER_THEME, TOASTER_THEME, LEVAIN_THEME } from '../../components/sidebar/InstrumentCard';
+import { SectionHeader } from '../../components/sidebar/SectionHeader';
+import { EmptyState } from '../../components/sidebar/EmptyState';
+import { NavCard } from '../Sidebar/effectsTabHelpers';
 import { PRESET_CATEGORIES, CATEGORY_ICONS, CATEGORY_COLORS } from '../../components/sidebar/sidebarConstants';
 import { type PreviewHandle } from '../../hooks/usePreviewAudio';
 import { type SidebarRoute } from '../Sidebar';
@@ -36,7 +40,7 @@ const INSTRUMENT_GROUPS: InstrumentGroup[] = [
 ];
 
 // Device types that have their own internal preset explorers (excluded from Sounds)
-const CUSTOM_UI_DEVICE_TYPES = new Set(['fermenter', 'grinder', 'orchestral']);
+const CUSTOM_UI_DEVICE_TYPES = new Set(['fermenter', 'grinder', 'levain']);
 
 // Categories that belong in the Effects tab, not here
 const EFFECTS_CATEGORIES = new Set<SoundPresetCategory>(['fx', 'vocal']);
@@ -160,11 +164,11 @@ export const InstrumentsTab = ({
         createDrumTrackStack();
     };
 
-    const handleAddOrchestralTrack = () => {
+    const handleAddLevainTrack = () => {
         const preset: SoundPreset = {
-            id: 'orchestral-default', name: 'Orchestral', category: 'keys', description: 'Orchestral instrument',
-            trackKind: 'midi', devices: [{ type: 'orchestral', name: 'Orchestral', parameterValues: {} }],
-            tags: ['orchestral', 'strings', 'brass', 'woodwinds'], author: 'Sourdaw', isFactory: true,
+            id: 'levain-default', name: 'Levain', category: 'keys', description: 'Levain instrument',
+            trackKind: 'midi', devices: [{ type: 'levain', name: 'Levain', parameterValues: {} }],
+            tags: ['levain', 'strings', 'brass', 'woodwinds'], author: 'Sourdaw', isFactory: true,
         };
         createTrackFromPreset(preset);
     };
@@ -198,9 +202,7 @@ export const InstrumentsTab = ({
                         />
                     ))
                 ) : (
-                    <div className="flex flex-col items-center justify-center py-10 opacity-60">
-                        <span className="text-xs text-muted-foreground">No instruments found.</span>
-                    </div>
+                    <EmptyState message="No instruments found." />
                 )}
             </div>
         );
@@ -250,9 +252,7 @@ export const InstrumentsTab = ({
                         />
                     ))
                 ) : (
-                    <div className="flex flex-col items-center justify-center py-10 opacity-60">
-                        <span className="text-xs text-muted-foreground">No presets in this category.</span>
-                    </div>
+                    <EmptyState message="No presets in this category." />
                 )}
             </div>
         );
@@ -266,101 +266,37 @@ export const InstrumentsTab = ({
     return (
         <div className="flex flex-col gap-0 animate-in slide-in-from-left-4 duration-200">
             {/* ── Section: Instruments ─────────────────────────────────── */}
-            <div className="flex items-center gap-1.5 px-1 py-0.5 mb-1.5">
-                <span className="text-[9px] font-semibold text-muted-foreground/60 uppercase tracking-widest">
-                    Instruments
-                </span>
-                <div className="flex-1 h-px bg-border/20" />
-            </div>
+            <SectionHeader label="Instruments" />
 
-            {/* ── Fermenter ─────────────────────────────────────────── */}
-            <div className="mb-1.5">
-                <button
-                    type="button"
-                    className="w-full group relative overflow-hidden rounded-lg border border-[var(--color-accent-lavender)]/30 bg-gradient-to-br from-[var(--color-accent-lavender)]/10 via-surface-raised to-[var(--color-accent-lavender)]/5 hover:border-[var(--color-accent-lavender)]/50 hover:from-[var(--color-accent-lavender)]/15 transition-all duration-200 cursor-pointer"
+            <div className="flex flex-col gap-1.5 mb-3">
+                <InstrumentCard
+                    icon={Music2}
+                    label="Fermenter"
+                    badge="Synth"
+                    description="Wavetable + VA oscillators · TPT filter · Mod matrix"
                     onClick={handleAddFermenterTrack}
-                >
-                    <div className="flex items-center gap-3 px-3 py-3">
-                        <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-[var(--color-accent-lavender)]/20 border border-[var(--color-accent-lavender)]/20 shadow-[0_0_12px_rgba(168,130,255,0.15)]">
-                            <Music2 className="size-4.5 text-[var(--color-accent-lavender)]" />
-                        </div>
-                        <div className="flex-1 min-w-0 text-left">
-                            <div className="flex items-center gap-1.5">
-                                <span className="text-[12px] font-bold text-foreground tracking-tight">Fermenter</span>
-                                <span className="px-1 py-px rounded text-[8px] font-bold uppercase tracking-wider bg-[var(--color-accent-lavender)]/20 text-[var(--color-accent-lavender)]">
-                                    Synth
-                                </span>
-                            </div>
-                            <div className="text-[9px] text-muted-foreground/80 leading-tight mt-0.5">
-                                Wavetable + VA oscillators · TPT filter · Mod matrix
-                            </div>
-                        </div>
-                    </div>
-                    <div className="absolute -top-6 -right-6 w-16 h-16 bg-[var(--color-accent-lavender)]/8 rounded-full blur-xl pointer-events-none" />
-                </button>
-            </div>
-
-            {/* ── Grinder ───────────────────────────────────────────── */}
-            <div className="mb-1.5">
-                <button
-                    type="button"
-                    className="w-full group relative overflow-hidden rounded-lg border border-[var(--color-accent-peach)]/30 bg-gradient-to-br from-[var(--color-accent-peach)]/10 via-surface-raised to-[var(--color-accent-peach)]/5 hover:border-[var(--color-accent-peach)]/50 hover:from-[var(--color-accent-peach)]/15 transition-all duration-200 cursor-pointer"
+                    theme={FERMENTER_THEME}
+                />
+                <InstrumentCard
+                    icon={Drum}
+                    label="Toaster"
+                    badge="Drums"
+                    description="808/909 synth engines · Step sequencer · 16 pads"
                     onClick={handleAddGrinderTrack}
-                >
-                    <div className="flex items-center gap-3 px-3 py-3">
-                        <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-[var(--color-accent-peach)]/20 border border-[var(--color-accent-peach)]/20 shadow-[0_0_12px_rgba(232,160,96,0.15)]">
-                            <Drum className="size-4.5 text-[var(--color-accent-peach)]" />
-                        </div>
-                        <div className="flex-1 min-w-0 text-left">
-                            <div className="flex items-center gap-1.5">
-                                <span className="text-[12px] font-bold text-foreground tracking-tight">Grinder</span>
-                                <span className="px-1 py-px rounded text-[8px] font-bold uppercase tracking-wider bg-[var(--color-accent-peach)]/20 text-[var(--color-accent-peach)]">
-                                    Drums
-                                </span>
-                            </div>
-                            <div className="text-[9px] text-muted-foreground/80 leading-tight mt-0.5">
-                                808/909 synth engines · Step sequencer · 16 pads
-                            </div>
-                        </div>
-                    </div>
-                    <div className="absolute -top-6 -right-6 w-16 h-16 bg-[var(--color-accent-peach)]/8 rounded-full blur-xl pointer-events-none" />
-                </button>
-            </div>
-
-            {/* ── Orchestral ─────────────────────────────────────────── */}
-            <div className="mb-3">
-                <button
-                    type="button"
-                    className="w-full group relative overflow-hidden rounded-lg border border-amber-500/30 bg-gradient-to-br from-amber-500/10 via-surface-raised to-amber-500/5 hover:border-amber-500/50 hover:from-amber-500/15 transition-all duration-200 cursor-pointer"
-                    onClick={handleAddOrchestralTrack}
-                >
-                    <div className="flex items-center gap-3 px-3 py-3">
-                        <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-amber-500/20 border border-amber-500/20 shadow-[0_0_12px_rgba(245,158,11,0.15)]">
-                            <Music className="size-4.5 text-amber-400" />
-                        </div>
-                        <div className="flex-1 min-w-0 text-left">
-                            <div className="flex items-center gap-1.5">
-                                <span className="text-[12px] font-bold text-foreground tracking-tight">Orchestral</span>
-                                <span className="px-1 py-px rounded text-[8px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-400">
-                                    Orchestra
-                                </span>
-                            </div>
-                            <div className="text-[9px] text-muted-foreground/80 leading-tight mt-0.5">
-                                Sample playback · Legato · Expression · Multi-mic
-                            </div>
-                        </div>
-                    </div>
-                    <div className="absolute -top-6 -right-6 w-16 h-16 bg-amber-500/8 rounded-full blur-xl pointer-events-none" />
-                </button>
+                    theme={TOASTER_THEME}
+                />
+                <InstrumentCard
+                    icon={Music}
+                    label="Levain"
+                    badge="Orchestra"
+                    description="Sample playback · Legato · Expression · Multi-mic"
+                    onClick={handleAddLevainTrack}
+                    theme={LEVAIN_THEME}
+                />
             </div>
 
             {/* ── Section: Sounds ──────────────────────────────────────── */}
-            <div className="flex items-center gap-1.5 px-1 py-0.5 mb-1.5">
-                <span className="text-[9px] font-semibold text-muted-foreground/60 uppercase tracking-widest">
-                    Sounds
-                </span>
-                <div className="flex-1 h-px bg-border/20" />
-            </div>
+            <SectionHeader label="Sounds" />
 
             {/* My Presets & Save */}
             <div className="flex items-center gap-1 mb-2">
@@ -461,16 +397,8 @@ export const InstrumentsTab = ({
 
                 return (
                     <div key={group.label} className="mb-3">
-                        {/* Group header */}
-                        <div className="flex items-center gap-1.5 px-1 py-0.5 mb-1">
-                            <span className="text-[9px] font-semibold text-muted-foreground/60 uppercase tracking-widest">
-                                {group.label}
-                            </span>
-                            <div className="flex-1 h-px bg-border/20" />
-                        </div>
-
-                        {/* Category buttons */}
-                        <div className="flex flex-col gap-[2px]">
+                        <SectionHeader label={group.label} />
+                        <div className="flex flex-col gap-0">
                             {groupCats.map((cat) => {
                                 const presetsInCat = soundPresets.filter((p) => p.category === cat);
                                 const CatIcon = CATEGORY_ICONS[cat] ?? Folder;
@@ -478,37 +406,15 @@ export const InstrumentsTab = ({
                                 const subtitle = CATEGORY_SUBTITLES[cat] ?? '';
 
                                 return (
-                                    <button
+                                    <NavCard
                                         key={cat}
-                                        type="button"
-                                        className="w-full flex items-center gap-2.5 px-2 py-2 rounded-md hover:bg-surface-raised border border-transparent hover:border-border/30 transition-all group text-left cursor-pointer"
+                                        icon={CatIcon}
+                                        label={cat}
+                                        description={subtitle}
+                                        count={presetsInCat.length}
+                                        color={catColor}
                                         onClick={() => pushRoute({ id: `instruments-${cat}`, title: cat })}
-                                    >
-                                        {/* Icon badge */}
-                                        <div
-                                            className={`flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-md ${catColor}`}
-                                        >
-                                            <CatIcon className="size-3.5" aria-hidden="true" />
-                                        </div>
-
-                                        {/* Label + subtitle */}
-                                        <div className="flex-1 min-w-0">
-                                            <div className="text-[11px] font-medium text-foreground/90 capitalize leading-tight">
-                                                {cat}
-                                            </div>
-                                            <div className="text-[9px] text-muted-foreground/70 leading-tight truncate">
-                                                {subtitle}
-                                            </div>
-                                        </div>
-
-                                        {/* Count + chevron */}
-                                        <div className="flex items-center gap-1 shrink-0">
-                                            <span className="text-[10px] text-muted-foreground group-hover:text-foreground/70 transition-colors tabular-nums">
-                                                {presetsInCat.length}
-                                            </span>
-                                            <ChevronRight className="size-3.5 text-muted-foreground opacity-40 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
-                                        </div>
-                                    </button>
+                                    />
                                 );
                             })}
                         </div>

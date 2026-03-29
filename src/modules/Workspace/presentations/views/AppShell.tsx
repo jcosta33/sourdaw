@@ -8,10 +8,12 @@ import {
     useSyncExternalStore,
 } from 'react';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
+import { updateWorkspaceState } from '../../repositories/workspace';
 import { useProjectState } from '../hooks/useProjectState';
 import { useAppInitialization } from '../hooks/useAppInitialization';
 import { useAppKeyboardShortcuts } from '../hooks/useAppKeyboardShortcuts';
 import { useAppEventHandlers } from '../hooks/useAppEventHandlers';
+import { APP_EVENTS } from '#/helpers/Event/appEvents';
 import { TransportBar } from './TransportBar';
 import { Sidebar } from './Sidebar';
 import { InspectorPanel } from './InspectorPanel';
@@ -24,8 +26,9 @@ import { AutomationBottomPanel } from './AutomationBottomPanel';
 import { ClipView } from './ClipView';
 import { AnalysisPanel } from './AnalysisPanel';
 import { FermenterPanel } from '#/modules/Fermenter/presentations/views/FermenterPanel';
-import { GrinderPanel } from '#/modules/Grinder/presentations/views/GrinderPanel';
-import { OrchestraPanel } from '#/modules/Orchestral/presentations/views/OrchestraPanel';
+import { ToasterPanel } from '#/modules/Toaster/presentations/views/ToasterPanel';
+import { InstrumentBottomPanel } from '../components/InstrumentBottomPanel';
+import { LevainPanel } from '#/modules/Levain/presentations/views/LevainPanel';
 
 import { CommandPalette } from '#/modules/Command/presentations/views/CommandPalette';
 import { VoiceCommandOverlay } from '#/modules/AiRuntime/presentations/views/VoiceCommandOverlay';
@@ -43,7 +46,6 @@ import { StatusBar } from './StatusBar';
 import { ShortcutCheatSheet } from '../components/ShortcutCheatSheet';
 import { UndoHistoryPanel } from '#/modules/Command/presentations/views/UndoHistoryPanel';
 
-import { X } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { DragResizeHandle } from '#/components/ui/DragResizeHandle';
 
@@ -53,11 +55,14 @@ const CollaborationPanelLazy = lazy(() =>
     }))
 );
 
+const clamp = (v: number, min: number, max: number): number => Math.max(min, Math.min(max, v));
+
 type AppShellProps = {
     children: ReactNode;
 };
 
 export const AppShell = ({ children }: AppShellProps): ReactElement => {
+    const workspaceState = useWorkspaceState();
     const {
         sidebarOpen,
         inspectorOpen,
@@ -65,7 +70,15 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         collaborationPanelOpen,
         chatPanelOpen,
         selectedClipId,
-    } = useWorkspaceState();
+        sidebarWidth,
+        inspectorWidth,
+        mixerHeight,
+        chatPanelWidth: chatWidth,
+        aiPanelWidth: aiWidth,
+        fermenterHeight,
+        grinderHeight,
+        levainHeight,
+    } = workspaceState;
 
     const project = useProjectState();
     const aiState = useSyncExternalStore(subscribeAiStore, getAiSnapshot);
@@ -75,7 +88,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const [bottomTab, setBottomTab] = useState<'editor' | 'mixer' | 'session' | 'routing' | 'analysis' | 'automation'>('mixer');
     const [fermenterOpen, setFermenterOpen] = useState(false);
     const [grinderOpen, setGrinderOpen] = useState(false);
-    const [orchestralOpen, setOrchestralOpen] = useState(false);
+    const [levainOpen, setLevainOpen] = useState(false);
 
     // ─── Extracted hooks ───
     useAppInitialization();
@@ -109,8 +122,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                 openMixer();
             }
         };
-        document.addEventListener('sourdaw:show-automation-tab', handler);
-        return () => document.removeEventListener('sourdaw:show-automation-tab', handler);
+        document.addEventListener(APP_EVENTS.SHOW_AUTOMATION_TAB, handler);
+        return () => document.removeEventListener(APP_EVENTS.SHOW_AUTOMATION_TAB, handler);
     }, [mixerOpen]);
 
     // Listen for fermenter panel open (from inspector device click)
@@ -118,8 +131,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         const handler = (): void => {
             setFermenterOpen(true);
         };
-        document.addEventListener('sourdaw:show-fermenter-tab', handler);
-        return () => document.removeEventListener('sourdaw:show-fermenter-tab', handler);
+        document.addEventListener(APP_EVENTS.SHOW_FERMENTER_TAB, handler);
+        return () => document.removeEventListener(APP_EVENTS.SHOW_FERMENTER_TAB, handler);
     }, []);
 
     // Listen for grinder panel open (from inspector device click)
@@ -127,31 +140,28 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         const handler = (): void => {
             setGrinderOpen(true);
         };
-        document.addEventListener('sourdaw:show-grinder-tab', handler);
-        return () => document.removeEventListener('sourdaw:show-grinder-tab', handler);
+        document.addEventListener(APP_EVENTS.SHOW_GRINDER_TAB, handler);
+        return () => document.removeEventListener(APP_EVENTS.SHOW_GRINDER_TAB, handler);
     }, []);
 
-    // Listen for orchestral panel open (from inspector device click)
+    // Listen for levain panel open (from inspector device click)
     useEffect(() => {
         const handler = (): void => {
-            setOrchestralOpen(true);
+            setLevainOpen(true);
         };
-        document.addEventListener('sourdaw:show-orchestral-tab', handler);
-        return () => document.removeEventListener('sourdaw:show-orchestral-tab', handler);
+        document.addEventListener(APP_EVENTS.SHOW_ORCHESTRAL_TAB, handler);
+        return () => document.removeEventListener(APP_EVENTS.SHOW_ORCHESTRAL_TAB, handler);
     }, []);
 
-    // ─── Panel width state (pixels, clamped) ───
-    const [sidebarWidth, setSidebarWidth] = useState(280);
-    const [inspectorWidth, setInspectorWidth] = useState(260);
-
-    const [chatWidth, setChatWidth] = useState(320);
-    const [aiWidth, setAiWidth] = useState(340);
-    const [mixerHeight, setMixerHeight] = useState(300);
-    const [fermenterHeight, setFermenterHeight] = useState(320);
-    const [grinderHeight, setGrinderHeight] = useState(420);
-    const [orchestralHeight, setOrchestralHeight] = useState(340);
-
-    const clamp = (v: number, min: number, max: number): number => Math.max(min, Math.min(max, v));
+    // ─── Panel dimension setters (persisted via workspace store) ───
+    const setSidebarWidth = (fn: (prev: number) => number) => updateWorkspaceState({ sidebarWidth: fn(sidebarWidth) });
+    const setInspectorWidth = (fn: (prev: number) => number) => updateWorkspaceState({ inspectorWidth: fn(inspectorWidth) });
+    const setChatWidth = (fn: (prev: number) => number) => updateWorkspaceState({ chatPanelWidth: fn(chatWidth) });
+    const setAiWidth = (fn: (prev: number) => number) => updateWorkspaceState({ aiPanelWidth: fn(aiWidth) });
+    const setMixerHeight = (fn: (prev: number) => number) => updateWorkspaceState({ mixerHeight: fn(mixerHeight) });
+    const setFermenterHeight = (fn: (prev: number) => number) => updateWorkspaceState({ fermenterHeight: fn(fermenterHeight) });
+    const setGrinderHeight = (fn: (prev: number) => number) => updateWorkspaceState({ grinderHeight: fn(grinderHeight) });
+    const setLevainHeight = (fn: (prev: number) => number) => updateWorkspaceState({ levainHeight: fn(levainHeight) });
 
     return (
         <div className="flex h-screen w-screen flex-col overflow-hidden bg-surface-app">
@@ -194,70 +204,43 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                         {children}
                     </main>
 
-                    {/* Fermenter synth panel — own resizable section */}
                     {fermenterOpen ? (
-                        <>
-                            <DragResizeHandle
-                                side="top"
-                                onResize={(d) => setFermenterHeight((h) => clamp(h + d, 160, 600))}
-                            />
-                            <div
-                                className="contain-strict flex flex-col bg-surface-base border-t border-[var(--color-accent-lavender)]/20 overflow-hidden shrink-0 animate-in slide-in-from-bottom-2 duration-200"
-                                style={{ height: fermenterHeight }}
-                            >
-                                <div className="flex items-center justify-between px-3 py-1 border-b border-border/30 bg-surface-app/50 shrink-0">
-                                    <span className="text-[10px] font-bold text-[var(--color-accent-lavender)] uppercase tracking-wider">Fermenter</span>
-                                    <Button variant="ghost" size="icon-xs" onClick={() => setFermenterOpen(false)} aria-label="Close Fermenter">
-                                        <X className="size-3.5" />
-                                    </Button>
-                                </div>
-                                <FermenterPanel />
-                            </div>
-                        </>
+                        <InstrumentBottomPanel
+                            label="Fermenter"
+                            labelColor="text-[var(--color-accent-lavender)]"
+                            borderColor="border-[var(--color-accent-lavender)]/20"
+                            height={fermenterHeight}
+                            onResize={setFermenterHeight}
+                            onClose={() => setFermenterOpen(false)}
+                        >
+                            <FermenterPanel />
+                        </InstrumentBottomPanel>
                     ) : null}
 
-                    {/* Grinder drum machine panel — own resizable section */}
                     {grinderOpen ? (
-                        <>
-                            <DragResizeHandle
-                                side="top"
-                                onResize={(d) => setGrinderHeight((h) => clamp(h + d, 160, 600))}
-                            />
-                            <div
-                                className="contain-strict flex flex-col bg-surface-base border-t border-[var(--color-accent-peach)]/20 overflow-hidden shrink-0 animate-in slide-in-from-bottom-2 duration-200"
-                                style={{ height: grinderHeight }}
-                            >
-                                <div className="flex items-center justify-between px-3 py-1 border-b border-border/30 bg-surface-app/50 shrink-0">
-                                    <span className="text-[10px] font-bold text-[var(--color-accent-peach)] uppercase tracking-wider">Grinder</span>
-                                    <Button variant="ghost" size="icon-xs" onClick={() => setGrinderOpen(false)} aria-label="Close Grinder">
-                                        <X className="size-3.5" />
-                                    </Button>
-                                </div>
-                                <GrinderPanel />
-                            </div>
-                        </>
+                        <InstrumentBottomPanel
+                            label="Toaster"
+                            labelColor="text-[var(--color-accent-peach)]"
+                            borderColor="border-[var(--color-accent-peach)]/20"
+                            height={grinderHeight}
+                            onResize={setGrinderHeight}
+                            onClose={() => setGrinderOpen(false)}
+                        >
+                            <ToasterPanel />
+                        </InstrumentBottomPanel>
                     ) : null}
 
-                    {/* Orchestral bottom panel */}
-                    {orchestralOpen ? (
-                        <>
-                            <DragResizeHandle
-                                side="top"
-                                onResize={(d) => setOrchestralHeight((h) => clamp(h + d, 160, 600))}
-                            />
-                            <div
-                                className="contain-strict flex flex-col bg-surface-base border-t border-amber-500/20 overflow-hidden shrink-0 animate-in slide-in-from-bottom-2 duration-200"
-                                style={{ height: orchestralHeight }}
-                            >
-                                <div className="flex items-center justify-between px-3 py-1 border-b border-border/30 bg-surface-app/50 shrink-0">
-                                    <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">Orchestral</span>
-                                    <Button variant="ghost" size="icon-xs" onClick={() => setOrchestralOpen(false)} aria-label="Close Orchestral">
-                                        <X className="size-3.5" />
-                                    </Button>
-                                </div>
-                                <OrchestraPanel />
-                            </div>
-                        </>
+                    {levainOpen ? (
+                        <InstrumentBottomPanel
+                            label="Levain"
+                            labelColor="text-amber-400"
+                            borderColor="border-amber-500/20"
+                            height={levainHeight}
+                            onResize={setLevainHeight}
+                            onClose={() => setLevainOpen(false)}
+                        >
+                            <LevainPanel />
+                        </InstrumentBottomPanel>
                     ) : null}
 
                     {/* Mixer bottom panel */}
@@ -384,7 +367,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
             {/* Loading overlay */}
             {project.loading ? (
-                <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-black/90 backdrop-blur-md">
+                <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 backdrop-blur-md" aria-busy="true" aria-live="polite">
                     <div className="flex flex-col items-center gap-6">
                         <div className="relative size-12">
                             <div className="absolute inset-0 rounded-full border-2 border-white/10" />

@@ -203,24 +203,24 @@ export function scheduleMidiNotes(
                                     }
                                 }
                             }
-                        } else if (track.devices.some((d) => d.type === 'orchestral')) {
-                            // Orchestral suite — send noteOn/noteOff via worklet MessagePort
-                            const orchestraDevice = track.devices.find((d) => d.type === 'orchestral');
-                            if (orchestraDevice) {
-                                const dn = strip.deviceNodes.find((d) => d.deviceId === orchestraDevice.id);
-                                if (dn?.orchestraControls) {
+                        } else if (track.devices.some((d) => d.type === 'levain')) {
+                            // Levain suite — send noteOn/noteOff via worklet MessagePort
+                            const levainDevice = track.devices.find((d) => d.type === 'levain');
+                            if (levainDevice) {
+                                const dn = strip.deviceNodes.find((d) => d.deviceId === levainDevice.id);
+                                if (dn?.levainControls) {
                                     const ctx = getAudioContext();
                                     const scheduleDelay = Math.max(0, time - ctx.currentTime);
                                     if (scheduleDelay <= 0) {
-                                        dn.orchestraControls.noteOn(note.pitch, note.velocity);
+                                        dn.levainControls.noteOn(note.pitch, note.velocity);
                                         setTimeout(() => {
-                                            dn.orchestraControls?.noteOff(note.pitch);
+                                            dn.levainControls?.noteOff(note.pitch);
                                         }, duration * 1000);
                                     } else {
                                         setTimeout(() => {
-                                            dn.orchestraControls?.noteOn(note.pitch, note.velocity);
+                                            dn.levainControls?.noteOn(note.pitch, note.velocity);
                                             setTimeout(() => {
-                                                dn.orchestraControls?.noteOff(note.pitch);
+                                                dn.levainControls?.noteOff(note.pitch);
                                             }, duration * 1000);
                                         }, scheduleDelay * 1000);
                                     }

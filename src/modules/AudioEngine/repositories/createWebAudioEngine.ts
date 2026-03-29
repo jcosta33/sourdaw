@@ -1,5 +1,6 @@
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
+import { notifyUser } from '#/helpers/Notification/notifyUser';
 import type { AudioEngine, AudioEngineState, TrackChannelStrip, BusStrip, SendNode } from '../models/AudioEngineState';
 import audioCoreProcessorUrl from '../services/audioCoreProcessor.ts?worker&url';
 import { TrackNode } from '../engine/TrackNode';
@@ -38,6 +39,7 @@ class AudioEngineImpl implements AudioEngine {
             this.masterMeterBuffer = new Float32Array(this.masterAnalyser.frequencyBinCount);
         } catch (error) {
             logger.warn(`Failed to create AudioContext: ${error}`);
+            notifyUser('Audio engine failed to initialize — audio playback is disabled. Try reloading the page.', 'error');
             this.fallbackMode = true;
             this.setupNoopContext();
         }
@@ -62,6 +64,7 @@ class AudioEngineImpl implements AudioEngine {
             this.workletReady = true;
         } catch (error) {
             logger.warn(`AudioWorklet modules failed to load: ${error}`);
+            notifyUser('Some audio processing modules failed to load — certain effects may not work.', 'error');
             this.workletReady = false;
         }
 
@@ -315,7 +318,7 @@ class AudioEngineImpl implements AudioEngine {
         const deadline = Date.now() + timeoutMs;
         while (this.pendingDevicePromises.size > 0) {
             if (Date.now() > deadline) {
-                console.warn(`[AudioEngine] Device loading timed out (${this.pendingDevicePromises.size} pending)`);
+                logger.warn(`[AudioEngine] Device loading timed out (${this.pendingDevicePromises.size} pending)`);
                 this.pendingDevicePromises.clear();
                 return;
             }
@@ -416,9 +419,9 @@ class AudioEngineImpl implements AudioEngine {
                         dn.grinderControls.noteOff(pad);
                     }
                 }
-                if (dn.orchestraControls) {
+                if (dn.levainControls) {
                     for (let note = 0; note < 128; note++) {
-                        dn.orchestraControls.noteOff(note);
+                        dn.levainControls.noteOff(note);
                     }
                 }
             }

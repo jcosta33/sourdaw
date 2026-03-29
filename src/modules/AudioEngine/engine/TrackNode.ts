@@ -6,10 +6,10 @@ import {
     type NativeDspNodeResult,
 } from './NativeDspNode';
 import { isFermenterDevice, createFermenterNode, type FermenterNodeResult } from './FermenterNode';
-import { isGrinderDevice, createGrinderNode, type GrinderNodeResult } from './GrinderNode';
-import { isOrchestraDevice, createOrchestraNode, type OrchestraNodeResult } from './OrchestraNode';
-import { registerOrchestraDevice, unregisterOrchestraDevice } from '#/modules/Orchestral/useCases/orchestralParamBridge';
-import { setEngineReady } from '#/modules/Orchestral/stores/orchestralStore';
+import { isToasterDevice, createToasterNode, type ToasterNodeResult } from './ToasterNode';
+import { isLevainDevice, createLevainNode, type LevainNodeResult } from './LevainNode';
+import { registerLevainDevice, unregisterLevainDevice } from '#/modules/Levain/useCases/levainParamBridge';
+import { setEngineReady } from '#/modules/Levain/stores/levainStore';
 import { isDeviceSupportedOnCurrentPlatform } from '#/modules/Arrangement/useCases/trackQueries';
 import { DEVICE_FACTORIES, applyParams } from '../repositories/deviceNodeFactory';
 import { PluginHostNode } from '../models/PluginHostNode';
@@ -354,7 +354,7 @@ export class TrackNode {
                     .catch((error) => logger.warn(`[WebAudioEngine] Fermenter failed: ${error}`));
                 pendingDevicePromises.add(loadPromise);
                 loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
-            } else if (isGrinderDevice(deviceType)) {
+            } else if (isToasterDevice(deviceType)) {
                 // Grinder drum machine — async WASM init + AudioWorkletNode (instrument, no audio input)
                 const loadingBypass = context.createGain();
                 dn = {
@@ -382,8 +382,8 @@ export class TrackNode {
                     destroy: () => {},
                 };
 
-                const loadPromise = createGrinderNode(context)
-                    .then(async (result: GrinderNodeResult) => {
+                const loadPromise = createToasterNode(context)
+                    .then(async (result: ToasterNodeResult) => {
                         await result.ready;
                         // Replay any params that were set while WASM was loading
                         for (const [name, value] of pendingParams) {
@@ -414,8 +414,8 @@ export class TrackNode {
                     .catch((error) => logger.warn(`[WebAudioEngine] Grinder failed: ${error}`));
                 pendingDevicePromises.add(loadPromise);
                 loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
-            } else if (isOrchestraDevice(deviceType)) {
-                // Orchestral suite — async WASM init + AudioWorkletNode (instrument, no audio input)
+            } else if (isLevainDevice(deviceType)) {
+                // Levain suite — async WASM init + AudioWorkletNode (instrument, no audio input)
                 const loadingBypass = context.createGain();
                 dn = {
                     deviceId,
@@ -430,7 +430,7 @@ export class TrackNode {
                 const queuedSetParam = (name: string, value: number): void => {
                     pendingParams.push([name, value]);
                 };
-                dn.orchestraControls = {
+                dn.levainControls = {
                     ready: false,
                     noteOn: () => {},
                     noteOff: () => {},
@@ -440,21 +440,21 @@ export class TrackNode {
                     destroy: () => {},
                 };
 
-                const loadPromise = createOrchestraNode(context)
-                    .then(async (result: OrchestraNodeResult) => {
+                const loadPromise = createLevainNode(context)
+                    .then(async (result: LevainNodeResult) => {
                         await result.ready;
                         for (const [name, value] of pendingParams) {
                             result.setParam(name, value);
                         }
                         const idx = this.strip.deviceNodes.findIndex((d) => d.deviceId === deviceId);
                         if (idx !== -1) {
-                            const orchestraDn: BuiltinDeviceNode = {
+                            const levainDn: BuiltinDeviceNode = {
                                 deviceId,
                                 type: deviceType,
                                 nodes: [result.workletNode],
                                 inputNode: result.workletNode,
                                 outputNode: result.workletNode,
-                                orchestraControls: {
+                                levainControls: {
                                     ready: true,
                                     noteOn: result.noteOn,
                                     noteOff: result.noteOff,
@@ -464,17 +464,17 @@ export class TrackNode {
                                     destroy: result.destroy,
                                 },
                             };
-                            this.strip.deviceNodes[idx] = orchestraDn;
+                            this.strip.deviceNodes[idx] = levainDn;
                             this.rebuildChain();
                             // Register with param bridge so UI knobs reach the engine
-                            registerOrchestraDevice({
+                            registerLevainDevice({
                                 setParam: result.setParam,
                                 handleCc: result.handleCc,
                             });
                             setEngineReady(true);
                         }
                     })
-                    .catch((error) => logger.warn(`[WebAudioEngine] Orchestral failed: ${error}`));
+                    .catch((error) => logger.warn(`[WebAudioEngine] Levain failed: ${error}`));
                 pendingDevicePromises.add(loadPromise);
                 loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
             } else {
@@ -497,8 +497,8 @@ export class TrackNode {
         if (dn.grinderControls) {
             dn.grinderControls.destroy();
         }
-        if (dn.orchestraControls) {
-            dn.orchestraControls.destroy();
+        if (dn.levainControls) {
+            dn.levainControls.destroy();
         }
         for (const n of dn.nodes) {
             n.disconnect();
@@ -555,8 +555,8 @@ export class TrackNode {
             return;
         }
 
-        if (dn.orchestraControls) {
-            dn.orchestraControls.setParam(paramId, value);
+        if (dn.levainControls) {
+            dn.levainControls.setParam(paramId, value);
             return;
         }
 
@@ -603,8 +603,8 @@ export class TrackNode {
             dn.fermenterControls.setBypass(bypassed);
         } else if (dn.grinderControls) {
             dn.grinderControls.setBypass(bypassed);
-        } else if (dn.orchestraControls) {
-            dn.orchestraControls.setBypass(bypassed);
+        } else if (dn.levainControls) {
+            dn.levainControls.setBypass(bypassed);
         } else if (dn.nativeDspControls) {
             dn.nativeDspControls.setBypass(bypassed);
         } else {
@@ -627,9 +627,9 @@ export class TrackNode {
             if (dn.grinderControls) {
                 dn.grinderControls.destroy();
             }
-            if (dn.orchestraControls) {
-                dn.orchestraControls.destroy();
-                unregisterOrchestraDevice();
+            if (dn.levainControls) {
+                dn.levainControls.destroy();
+                unregisterLevainDevice();
             }
             for (const n of dn.nodes) {
                 n.disconnect();

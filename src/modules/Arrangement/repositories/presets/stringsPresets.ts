@@ -153,7 +153,7 @@ export const stringsPresets: SoundPreset[] = [
             eq('EQ', { 'eq-low-gain': 2, 'eq-low-freq': 250, 'eq-high-gain': -3, 'eq-high-freq': 5000 }),
             reverb('Reverb', { 'rev-size': 0.5, 'rev-decay': 2.5, 'rev-mix': 0.25 }),
         ],
-        tags: ['cello', 'strings', 'bowed', 'expressive', 'orchestral'],
+        tags: ['cello', 'strings', 'bowed', 'expressive', 'levain'],
         author: AUTHOR,
         isFactory: true,
     },

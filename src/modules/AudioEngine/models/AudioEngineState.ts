@@ -37,8 +37,8 @@ export type BuiltinDeviceNode = {
         setBypass: (bypassed: boolean) => void;
         destroy: () => void;
     };
-    /** Controls for the Orchestral suite (MIDI + CC + param updates via MessagePort) */
-    orchestraControls?: {
+    /** Controls for the Levain suite (MIDI + CC + param updates via MessagePort) */
+    levainControls?: {
         ready: boolean;
         noteOn: (note: number, velocity: number) => void;
         noteOff: (note: number) => void;

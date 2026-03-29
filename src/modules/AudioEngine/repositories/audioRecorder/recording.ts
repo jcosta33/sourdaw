@@ -24,13 +24,14 @@ let recordedChunks: Blob[] = [];
 let sourceNode: MediaStreamAudioSourceNode | null = null;
 let onRecordingComplete: ((buffer: AudioBuffer) => void) | null = null;
 
-const cachedMimeType: string | null = null;
+let cachedMimeType: string | null = null;
 
 function getRecorderMimeType(): string {
     if (cachedMimeType) {
         return cachedMimeType;
     }
-    return MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
+    cachedMimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
+    return cachedMimeType;
 }
 
 export async function startAudioRecording(
@@ -100,6 +101,16 @@ export async function startAudioRecording(
         return true;
     } catch (error) {
         logger.error(new Error('Failed to start recording', { cause: error }));
+        if (sourceNode) {
+            sourceNode.disconnect();
+            sourceNode = null;
+        }
+        if (mediaStream) {
+            for (const t of mediaStream.getTracks()) {
+                t.stop();
+            }
+            mediaStream = null;
+        }
         return false;
     }
 }

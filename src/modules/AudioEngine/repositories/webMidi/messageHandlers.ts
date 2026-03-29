@@ -162,13 +162,13 @@ export function handleNoteOn(channel: number, note: number, velocity: number): v
             return; // not ready
         }
 
-        // Orchestral instrument
-        const orchestralDev = instrumentTrack?.devices.find((d) => d.type === 'orchestral');
-        if (orchestralDev) {
-            const dn = strip.deviceNodes.find((d) => d.deviceId === orchestralDev.id || d.type === 'orchestral');
-            if (dn?.orchestraControls?.ready) {
-                dn.orchestraControls.noteOn(note, velocity);
-                (noteData as Record<string, unknown>).orchestraDeviceId = orchestralDev.id;
+        // Levain instrument
+        const levainDev = instrumentTrack?.devices.find((d) => d.type === 'levain');
+        if (levainDev) {
+            const dn = strip.deviceNodes.find((d) => d.deviceId === levainDev.id || d.type === 'levain');
+            if (dn?.levainControls?.ready) {
+                dn.levainControls.noteOn(note, velocity);
+                (noteData as Record<string, unknown>).levainDeviceId = levainDev.id;
                 return;
             }
             return; // not ready
@@ -252,12 +252,12 @@ export function handleNoteOff(_channel: number, note: number): void {
         }
     }
 
-    // Orchestral noteOff — send via worklet MessagePort
-    if ((noteData as any).orchestraDeviceId && targetTrackId) {
+    // Levain noteOff — send via worklet MessagePort
+    if ((noteData as any).levainDeviceId && targetTrackId) {
         const strip = audioEngine.getTrackStrip(targetTrackId);
-        const dn = strip?.deviceNodes.find((d) => d.deviceId === (noteData as any).orchestraDeviceId);
-        if (dn?.orchestraControls) {
-            dn.orchestraControls.noteOff(note);
+        const dn = strip?.deviceNodes.find((d) => d.deviceId === (noteData as any).levainDeviceId);
+        if (dn?.levainControls) {
+            dn.levainControls.noteOff(note);
         }
     }
 
@@ -356,15 +356,15 @@ export function handleCC(channel: number, cc: number, value: number): void {
         audioEngine.setTrackPan(targetTrackId, ((value / 127) * 2 - 1) * 50);
     }
 
-    // Forward expression CCs (CC1, CC2, CC11, CC64) to orchestral engine
+    // Forward expression CCs (CC1, CC2, CC11, CC64) to levain engine
     const trackState = getTrackStoreState();
     const track = trackState?.tracks.find((t) => t.id === targetTrackId);
-    const orchestraDevice = track?.devices.find((d) => d.type === 'orchestral');
-    if (orchestraDevice) {
+    const levainDevice = track?.devices.find((d) => d.type === 'levain');
+    if (levainDevice) {
         const strip = audioEngine.getTrackStrip(targetTrackId);
-        const dn = strip?.deviceNodes.find((d) => d.deviceId === orchestraDevice.id || d.type === 'orchestral');
-        if (dn?.orchestraControls?.ready) {
-            dn.orchestraControls.handleCc(cc, value);
+        const dn = strip?.deviceNodes.find((d) => d.deviceId === levainDevice.id || d.type === 'levain');
+        if (dn?.levainControls?.ready) {
+            dn.levainControls.handleCc(cc, value);
         }
     }
 }

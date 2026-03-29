@@ -18,8 +18,8 @@
     "tauri:build": "tauri build",
     "wasm:fermenter": "cd src-tauri/fermenter && wasm-pack build --target web --out-dir ../../public/wasm/fermenter --no-typescript",
     "wasm:grinder": "cd src-tauri/grinder && wasm-pack build --target web --out-dir ../../public/wasm/grinder --no-typescript",
-    "wasm:orchestral": "cd src-tauri/orchestral && wasm-pack build --target web --out-dir ../../public/wasm/orchestral --no-typescript",
-    "wasm:all": "npm run wasm:fermenter && npm run wasm:grinder && npm run wasm:orchestral"
+    "wasm:levain": "cd src-tauri/levain && wasm-pack build --target web --out-dir ../../public/wasm/levain --no-typescript",
+    "wasm:all": "npm run wasm:fermenter && npm run wasm:grinder && npm run wasm:levain"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",

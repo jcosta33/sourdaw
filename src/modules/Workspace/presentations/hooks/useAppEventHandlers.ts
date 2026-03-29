@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { APP_EVENTS } from '#/helpers/Event/appEvents';
 import { saveProject } from '#/modules/Project/useCases/projectPersistence/saveProject';
 import { newProject } from '#/modules/Project/useCases/projectPersistence/newProject';
 import { undo, redo } from '#/modules/Command/useCases/undoRedo';
@@ -19,6 +20,9 @@ export const useAppEventHandlers = ({ onOpenExport, onOpenPreferences }: AppEven
         const prefsHandler = (): void => onOpenPreferences();
         const saveHandler = (): void => saveProject();
         const newHandler = (): void => {
+            if (!window.confirm('Create a new project? Any unsaved changes will be lost.')) {
+                return;
+            }
             newProject();
             window.location.reload();
         };
@@ -34,21 +38,21 @@ export const useAppEventHandlers = ({ onOpenExport, onOpenPreferences }: AppEven
                 void importMidiFile(file);
             }
         };
-        document.addEventListener('sourdaw:open-export', exportHandler);
-        document.addEventListener('sourdaw:open-preferences', prefsHandler);
-        document.addEventListener('sourdaw:save-project', saveHandler);
-        document.addEventListener('sourdaw:new-project', newHandler);
-        document.addEventListener('sourdaw:undo', undoHandler);
-        document.addEventListener('sourdaw:redo', redoHandler);
-        document.addEventListener('sourdaw:import-midi', midiImportHandler);
+        document.addEventListener(APP_EVENTS.OPEN_EXPORT, exportHandler);
+        document.addEventListener(APP_EVENTS.OPEN_PREFERENCES, prefsHandler);
+        document.addEventListener(APP_EVENTS.SAVE_PROJECT, saveHandler);
+        document.addEventListener(APP_EVENTS.NEW_PROJECT, newHandler);
+        document.addEventListener(APP_EVENTS.UNDO, undoHandler);
+        document.addEventListener(APP_EVENTS.REDO, redoHandler);
+        document.addEventListener(APP_EVENTS.IMPORT_MIDI, midiImportHandler);
         return () => {
-            document.removeEventListener('sourdaw:open-export', exportHandler);
-            document.removeEventListener('sourdaw:open-preferences', prefsHandler);
-            document.removeEventListener('sourdaw:save-project', saveHandler);
-            document.removeEventListener('sourdaw:new-project', newHandler);
-            document.removeEventListener('sourdaw:undo', undoHandler);
-            document.removeEventListener('sourdaw:redo', redoHandler);
-            document.removeEventListener('sourdaw:import-midi', midiImportHandler);
+            document.removeEventListener(APP_EVENTS.OPEN_EXPORT, exportHandler);
+            document.removeEventListener(APP_EVENTS.OPEN_PREFERENCES, prefsHandler);
+            document.removeEventListener(APP_EVENTS.SAVE_PROJECT, saveHandler);
+            document.removeEventListener(APP_EVENTS.NEW_PROJECT, newHandler);
+            document.removeEventListener(APP_EVENTS.UNDO, undoHandler);
+            document.removeEventListener(APP_EVENTS.REDO, redoHandler);
+            document.removeEventListener(APP_EVENTS.IMPORT_MIDI, midiImportHandler);
         };
     }, [onOpenExport, onOpenPreferences]);
 };
