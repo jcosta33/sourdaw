@@ -81,7 +81,7 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
                 }
             }
             
-            dn.toasterControls.noteOn(pad, velocity ?? 100);
+            dn.toasterControls.noteOn(pad, velocity ?? 100, pitch);
             return () => {
                 dn.toasterControls?.noteOff(pad);
             };

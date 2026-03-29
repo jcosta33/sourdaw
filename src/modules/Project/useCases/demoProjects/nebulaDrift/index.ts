@@ -7,6 +7,10 @@
  * so MIDI routes to the parent’s Toaster and audio sums on the parent strip. Folder strips are
  * skipped by ensureTrackStrips — we call addDeviceToStrip(parentId, …) before ensureTrackStrips
  * so the parent node exists when children route to it.
+ *
+ * Toaster pads: MIDI is split into **section clips** (Intro / Build / Peak / Break / Outro); empty
+ * sections are omitted. Notes use **clip-relative** beats and GM pitches `36 + padIndex`.
+ * Toaster folder + pad tracks use **muted oklch** strip/clip colors (not the kit’s bright PAD_COLORS).
  */
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
@@ -18,7 +22,7 @@ import { defaultTransportState } from '#/modules/Transport/useCases/transportQue
 import { createTrack, createAutomationLane } from '#/modules/Arrangement/useCases/trackQueries';
 import type { MidiNote } from '#/modules/Arrangement/useCases/trackQueries';
 import { note, applyPreset, createMidiClip, syncArrangement } from '../demoUtils';
-import { DEFAULT_PAD_NAMES, PAD_COLORS } from '#/modules/Toaster/models/ToasterKit';
+import { DEFAULT_PAD_NAMES } from '#/modules/Toaster/models/ToasterKit';
 
 const TB = 380;
 const bpm = 76;
@@ -84,19 +88,23 @@ const S = {
     end: TB,
 } as const;
 
-/** Sub drone: never above 5% — slow oscillation 0 ↔ 0.05 */
+/** Muted pad / clip tints for the Toaster (low chroma; avoids bright default PAD_COLORS). */
+const NEBULA_TOASTER_PAD_COLORS: readonly string[] = Array.from({ length: 16 }, (_, i) => {
+    const h = Math.round((i * 360) / 16);
+    return `oklch(0.415 0.036 ${h})`;
+});
+
+/** Sub drone: starts at 0%, creeps up very slowly, still capped at 5% by the end. */
 function subDroneGainKeyframes(tb: number) {
-    const pts: Array<{ beat: number; value: number; curve: 'smooth' | 'linear'; tension: number }> = [];
-    const step = 24;
-    for (let b = 0; b <= tb; b += step) {
-        const loud = Math.floor(b / step) % 2 === 1;
-        pts.push({ beat: b, value: loud ? 0.05 : 0, curve: 'smooth', tension: 0.42 });
-    }
-    if (pts[pts.length - 1]!.beat < tb) {
-        const last = pts[pts.length - 1]!.value;
-        pts.push({ beat: tb, value: last, curve: 'linear', tension: 0 });
-    }
-    return pts;
+    return [
+        { beat: 0, value: 0, curve: 'linear' as const, tension: 0 },
+        { beat: 56, value: 0.003, curve: 'smooth' as const, tension: 0.52 },
+        { beat: S.build1, value: 0.01, curve: 'smooth' as const, tension: 0.48 },
+        { beat: S.peak, value: 0.024, curve: 'smooth' as const, tension: 0.42 },
+        { beat: S.breakdown, value: 0.036, curve: 'smooth' as const, tension: 0.38 },
+        { beat: S.final, value: 0.046, curve: 'smooth' as const, tension: 0.34 },
+        { beat: tb, value: 0.05, curve: 'linear' as const, tension: 0 },
+    ];
 }
 
 export async function demo5_NebulaDrift(): Promise<void> {
@@ -119,14 +127,14 @@ export async function demo5_NebulaDrift(): Promise<void> {
     const tMetalTick = createTrack({ name: 'Metal Tick', kind: 'midi', parentId: textureFolder.id });
     const tPluckA = createTrack({ name: 'Pluck Constellation', kind: 'midi', parentId: textureFolder.id });
     const tBellDust = createTrack({ name: 'Bell Dust', kind: 'midi', parentId: textureFolder.id });
-    const tSeqRipple = createTrack({ name: 'Seq Ripple', kind: 'midi', parentId: textureFolder.id });
+    const tSeqRipple = createTrack({ name: 'Ciabatta Growl', kind: 'midi', parentId: textureFolder.id });
 
     const leadFolder = createTrack({ name: '🎹 Leads (Center)', kind: 'folder' });
-    const tLeadMoog = createTrack({ name: 'Lead Moog', kind: 'midi', parentId: leadFolder.id });
+    const tLeadMoog = createTrack({ name: 'Naan Sitar', kind: 'midi', parentId: leadFolder.id });
     const tLeadSync = createTrack({ name: 'Lead Sync', kind: 'midi', parentId: leadFolder.id });
 
     const bassFolder = createTrack({ name: '🎸 Groove Bass', kind: 'folder' });
-    const tBassGroove = createTrack({ name: 'Moog Bass', kind: 'midi', parentId: bassFolder.id });
+    const tBassGroove = createTrack({ name: 'Rye Reese', kind: 'midi', parentId: bassFolder.id });
 
     const levainFolder = createTrack({ name: '🎻 Levain Lines', kind: 'folder' });
     const tLevHigh = createTrack({ name: 'Levain High', kind: 'midi', parentId: levainFolder.id });
@@ -137,6 +145,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
 
     // ── Toaster: folder instrument + 16 pad children (same contract as createDrumTrackStack) ──
     const toasterFolder = createTrack({ name: '⚡ Toaster Kit', kind: 'folder' });
+    toasterFolder.color = 'oklch(0.39 0.024 255)';
     toasterFolder.collapsed = false;
     const toasterDeviceId = `toaster-${crypto.randomUUID().slice(0, 8)}`;
     toasterFolder.devices = [
@@ -162,7 +171,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
         });
         child.devices = [];
         child.outputId = toasterFolder.id;
-        child.color = PAD_COLORS[i] ?? child.color;
+        child.color = NEBULA_TOASTER_PAD_COLORS[i] ?? child.color;
         return child;
     });
 
@@ -180,11 +189,11 @@ export async function demo5_NebulaDrift(): Promise<void> {
     applyPreset(tMetalTick, 'fermenter-metallic-perc');
     applyPreset(tPluckA, 'fermenter-pluck-lead');
     applyPreset(tBellDust, 'fermenter-fm-bell');
-    applyPreset(tSeqRipple, 'fermenter-seq-arp');
+    applyPreset(tSeqRipple, 'fermenter-fm-bass');
 
-    applyPreset(tLeadMoog, 'fermenter-moog-lead');
-    applyPreset(tLeadSync, 'fermenter-sync-lead');
-    applyPreset(tBassGroove, 'fermenter-moog-bass');
+    applyPreset(tLeadMoog, 'fermenter-sitar');
+    applyPreset(tLeadSync, 'fermenter-fm-organ');
+    applyPreset(tBassGroove, 'fermenter-reese-bass');
 
     tLevHigh.devices = [levainDevice({ vibratoDepth: 0.24, humanize: 0.55 })];
     tLevMid.devices = [levainDevice({ vibratoDepth: 0.11, humanize: 0.68 })];
@@ -229,6 +238,16 @@ export async function demo5_NebulaDrift(): Promise<void> {
         'chorus-feedback': 0.28,
         'chorus-mix': 0.42,
     });
+    addDev(tGrainHaze, 'builtin-tremolo', 'Helicopter Chop', {
+        'trem-rate': 6.5,
+        'trem-depth': 0.5,
+        'trem-shape': 1,
+    });
+    addDev(tEtherealVeil, 'builtin-tremolo', 'Veil Chop', {
+        'trem-rate': 3.2,
+        'trem-depth': 0.38,
+        'trem-shape': 1,
+    });
     addDev(tEtherealVeil, 'builtin-reverb', 'Veil Hall', {
         'rev-size': 0.94,
         'rev-decay': 5.8,
@@ -261,6 +280,22 @@ export async function demo5_NebulaDrift(): Promise<void> {
         'filter-cutoff': 2400,
         'filter-resonance': 3.5,
         'filter-type': 0,
+    });
+    addDev(tDarkMist, 'builtin-tremolo', 'Mist Chop', {
+        'trem-rate': 2.6,
+        'trem-depth': 0.26,
+        'trem-shape': 1,
+    });
+    addDev(tRisingMist, 'builtin-tremolo', 'Rise Pulse', {
+        'trem-rate': 3.8,
+        'trem-depth': 0.3,
+        'trem-shape': 1,
+    });
+    addDev(tRisingMist, 'builtin-phaser', 'Rise Bloom', {
+        'phaser-rate': 0.06,
+        'phaser-depth': 0.72,
+        'phaser-feedback': 0.5,
+        'phaser-stages': 6,
     });
 
     // Textural lane FX (aggressive modulation targets)
@@ -297,24 +332,24 @@ export async function demo5_NebulaDrift(): Promise<void> {
         'phaser-feedback': 0.45,
         'phaser-stages': 5,
     });
-    addDev(tSeqRipple, 'builtin-filter', 'Ripple Filter', {
+    addDev(tSeqRipple, 'builtin-filter', 'Growl Filter', {
         'filter-cutoff': 8000,
         'filter-resonance': 4,
         'filter-type': 0,
     });
-    addDev(tSeqRipple, 'builtin-distortion', 'Ripple Drive', {
+    addDev(tSeqRipple, 'builtin-distortion', 'Growl Drive', {
         'dist-drive': 2.5,
         'dist-tone': 2800,
         'dist-mix': 0.14,
     });
 
     // Leads — center-weighted space, not too wet (clarity in the mid)
-    addDev(tLeadMoog, 'builtin-delay', 'Lead Dotted', {
+    addDev(tLeadMoog, 'builtin-delay', 'Sitar Dotted', {
         'delay-time': 375,
         'delay-feedback': 0.32,
         'delay-mix': 0.18,
     });
-    addDev(tLeadMoog, 'builtin-chorus', 'Lead Width', {
+    addDev(tLeadMoog, 'builtin-chorus', 'Sitar Width', {
         'chorus-rate': 0.45,
         'chorus-depth': 6,
         'chorus-mix': 0.22,
@@ -325,7 +360,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
         'rev-damping': 0.32,
         'rev-mix': 0.2,
     });
-    addDev(tBassGroove, 'builtin-eq', 'Bass Pocket', {
+    addDev(tBassGroove, 'builtin-eq', 'Reese Pocket', {
         'eq-low-gain': 2.2,
         'eq-low-freq': 95,
         'eq-low-q': 0.9,
@@ -359,11 +394,11 @@ export async function demo5_NebulaDrift(): Promise<void> {
     let pi = 0;
     const nextPan = () => widePans[pi++ % widePans.length] ?? 0;
 
-    tSubDrone.gain = 0.02;
-    tDarkMist.gain = 1;
+    tSubDrone.gain = 0;
+    tDarkMist.gain = 0;
     tGrainHaze.gain = 1;
     tEtherealVeil.gain = 1;
-    tSweepHorizon.gain = 1;
+    tSweepHorizon.gain = 0.85;
     tWarmHalo.gain = 1;
     tRisingMist.gain = 1;
     tWildDrift.gain = 1;
@@ -375,18 +410,19 @@ export async function demo5_NebulaDrift(): Promise<void> {
     tLeadMoog.gain = 1;
     tLeadSync.gain = 1;
     tBassGroove.gain = 1;
-    tLevHigh.gain = 1;
-    tLevMid.gain = 1;
-    tLevLow.gain = 1;
-    tLevCall.gain = 1;
-    tLevAnswer.gain = 1;
+    tLevHigh.gain = 0.1;
+    tLevMid.gain = 0.1;
+    tLevLow.gain = 0.1;
+    tLevCall.gain = 0.1;
+    tLevAnswer.gain = 0.1;
     toasterFolder.gain = 1;
 
     tSubDrone.pan = nextPan();
     tDarkMist.pan = nextPan();
     tGrainHaze.pan = nextPan();
     tEtherealVeil.pan = nextPan();
-    tSweepHorizon.pan = nextPan();
+    void nextPan(); // keep widePans rotation aligned; Sweep uses automation extremes
+    tSweepHorizon.pan = -50;
     tWarmHalo.pan = nextPan();
     tRisingMist.pan = nextPan();
     tWildDrift.pan = nextPan();
@@ -422,225 +458,391 @@ export async function demo5_NebulaDrift(): Promise<void> {
     const cMet = clip(tMetalTick.id, 'Metal');
     const cPlk = clip(tPluckA.id, 'Pluck');
     const cBell = clip(tBellDust.id, 'Bell');
-    const cSeq = clip(tSeqRipple.id, 'Seq');
-    const cLMo = clip(tLeadMoog.id, 'Moog');
+    const cSeq = clip(tSeqRipple.id, 'Growl');
+    const cLMo = clip(tLeadMoog.id, 'Sitar');
     const cLSy = clip(tLeadSync.id, 'Sync');
-    const cBss = clip(tBassGroove.id, 'Bass');
+    const cBss = clip(tBassGroove.id, 'Reese');
     const cLH = clip(tLevHigh.id, 'High');
     const cLM = clip(tLevMid.id, 'Mid');
     const cLL = clip(tLevLow.id, 'Low');
     const cLC = clip(tLevCall.id, 'Call');
     const cLA = clip(tLevAnswer.id, 'Answer');
 
-    const padClips = toasterPadTracks.map((t, i) => clip(t.id, `Pad ${i}`));
-
     // ── MIDI content ──────────────────────────────────────────────────────
+    const hum = (pitch: number, beat: number, duration: number, velocity: number, salt: number): MidiNote => {
+        const tb = ((salt * 19) % 17) / 120 - 0.07;
+        const td = ((salt * 11) % 7) / 180;
+        const dv = ((salt * 23) % 11) - 5;
+        const v = Math.max(1, Math.min(127, Math.round(velocity + dv)));
+        return note(pitch, beat + tb, Math.max(0.08, duration + td), v);
+    };
+
     const subN: MidiNote[] = [];
-    for (let b = 0; b < TB; b += 20) {
-        subN.push(note(A2, b, 22, 86));
+    for (let b = 0, s = 0; b < TB; b += 20, s++) {
+        subN.push(hum(A2, b, 22, 84, s));
     }
 
     const darkN: MidiNote[] = [];
-    for (let b = 6; b < TB; b += 28) {
-        darkN.push(note(E3, b, 24, 74));
-        darkN.push(note(A3, b + 5, 20, 68));
+    for (let b = 6, s = 0; b < TB; b += 30, s++) {
+        darkN.push(hum(E3, b, 26, 72, s));
+        darkN.push(hum(A3, b + 6.2, 18, 66, s + 40));
     }
 
     const grainN: MidiNote[] = [];
-    for (let b = 0; b < TB; b += 8) {
-        grainN.push(note(G4 + ((b % 24) / 8) * 2, b, 6, 58 + (b % 5) * 3));
+    for (let b = 0, s = 0; b < TB; b += 14, s++) {
+        grainN.push(hum(G4 + ((b % 21) / 7) * 2, b, 7, 54 + (s % 4) * 3, s));
     }
 
     const veilN: MidiNote[] = [];
-    for (let b = 2; b < TB; b += 16) {
-        veilN.push(note(E5, b, 12, 56));
-        veilN.push(note(C5, b + 7, 6, 50));
+    for (let b = 3, s = 0; b < TB; b += 22, s++) {
+        veilN.push(hum(E5, b, 14, 52, s));
+        if (s % 2 === 1) {
+            veilN.push(hum(C5, b + 8.4, 8, 46, s + 11));
+        }
     }
 
     const sweepN: MidiNote[] = [];
-    for (let b = 0; b < TB; b += 6) {
-        sweepN.push(note(A4, b, 4, 66));
-        sweepN.push(note(D5, b + 3, 3.5, 62));
+    for (let b = 1, s = 0; b < TB; b += 11, s++) {
+        sweepN.push(hum(A4, b, 5, 62, s));
+        if (s % 3 === 0) {
+            sweepN.push(hum(D5, b + 4.1, 4, 58, s + 3));
+        }
     }
 
     const warmN: MidiNote[] = [];
-    for (let b = 12; b < TB; b += 40) {
-        warmN.push(note(C4, b, 32, 70));
-        warmN.push(note(E4, b + 14, 22, 64));
+    for (let b = 14, s = 0; b < TB; b += 44, s++) {
+        warmN.push(hum(C4, b, 36, 68, s));
+        warmN.push(hum(E4, b + 16.3, 24, 62, s + 20));
     }
 
     const riseN: MidiNote[] = [];
-    for (let b = 18; b < TB; b += 14) {
-        riseN.push(note(G4, b, 10, 58));
-        riseN.push(note(B4, b + 7, 5, 52));
+    for (let b = 20, s = 0; b < TB; b += 18, s++) {
+        riseN.push(hum(G4, b, 12, 56, s));
+        if (s % 2 === 0) {
+            riseN.push(hum(B4, b + 7.6, 6, 50, s + 7));
+        }
     }
 
     const wildN: MidiNote[] = [];
     const wildP = [D4, F4, A4, C5, E5, G4, A3, D5, Fs4, G4];
-    for (let b = 0; b < TB; b += 4.25) {
-        wildN.push(note(wildP[Math.floor(b) % wildP.length]!, b, 3.2, 54 + (Math.floor(b) % 9) * 2));
+    for (let b = 0, s = 0; b < TB; b += 7.5, s++) {
+        if (b >= S.breakdown && b < S.final && s % 3 === 0) {
+            continue;
+        }
+        wildN.push(hum(wildP[s % wildP.length]!, b, 3.6, 52 + (s % 5) * 2, s));
     }
 
     const stutterN: MidiNote[] = [];
-    for (let b = 16; b < TB; b += 2.5) {
-        if (b >= S.breakdown && b < S.final && Math.floor(b) % 8 === 0) {
+    for (let b = 18, s = 0; b < TB; b += 4.25, s++) {
+        if (b < S.build1 && s % 2 === 0) {
             continue;
         }
-        stutterN.push(note(C5, b, 0.35, 42 + (Math.floor(b) % 7) * 4));
+        if (b >= S.breakdown && b < S.final && s % 3 !== 0) {
+            continue;
+        }
+        stutterN.push(hum(C5, b, 0.42, 40 + (s % 5) * 3, s));
     }
 
     const metalN: MidiNote[] = [];
-    for (let b = 24; b < TB; b += 10.5) {
-        metalN.push(note(E5, b, 0.15, 48));
+    for (let b = 26, s = 0; b < TB; b += 13, s++) {
+        metalN.push(hum(E5, b, 0.18, 46, s));
     }
 
     const pluckN: MidiNote[] = [];
     const pluckPat = [A4, C5, E5, G4, D5, A4, B4, E5, C5, G4, A4, D5];
     let px = 0;
-    for (let b = 8; b < TB - 2; b += 2.25) {
-        const vel = b >= S.peak && b < S.breakdown ? 78 : 62;
-        pluckN.push(note(pluckPat[px % pluckPat.length]!, b, 1.2, vel));
+    for (let b = 10; b < TB - 4; b += 4.5) {
+        if (b >= S.breakdown && b < S.final && px % 3 !== 0) {
+            px++;
+            continue;
+        }
+        const vel = b >= S.peak && b < S.breakdown ? 74 : 58;
+        pluckN.push(hum(pluckPat[px % pluckPat.length]!, b, 1.45, vel, px));
         px++;
     }
 
     const bellN: MidiNote[] = [];
-    for (let b = 4; b < TB; b += 18) {
-        bellN.push(note(G5, b, 3, 44));
-        bellN.push(note(D5, b + 9, 2.5, 40));
+    for (let b = 8, s = 0; b < TB; b += 26, s++) {
+        bellN.push(hum(G5, b, 3.5, 42, s));
+        if (s % 2 === 0) {
+            bellN.push(hum(D5, b + 11.2, 2.8, 38, s + 50));
+        }
     }
 
     const seqN: MidiNote[] = [];
     const seqPat = [E4, A4, C5, B4, G4, D5, E4, A3];
     let sx = 0;
-    for (let b = 4; b < TB; b += 1.5) {
-        if (b >= S.breakdown && b < S.final - 8 && Math.floor(b * 2) % 7 === 0) {
+    for (let b = 6; b < TB; b += 2.75) {
+        const calm = b < S.build1 || (b >= S.breakdown && b < S.final);
+        if (calm && sx % 2 === 0) {
             sx++;
             continue;
         }
-        seqN.push(note(seqPat[sx % seqPat.length]!, b, 0.45, 58));
+        if (b >= S.peak && b < S.breakdown && sx % 5 === 3) {
+            sx++;
+            continue;
+        }
+        seqN.push(hum(seqPat[sx % seqPat.length]!, b, 0.52, 54, sx));
         sx++;
     }
 
     const leadMoogN: MidiNote[] = [];
     const moogPhrase = [A4, C5, E5, A5, G5, E5, D5, C5, B4, A4, E5, D5, C5, A4];
     let mx = 0;
-    let bm = 20;
-    while (bm < TB - 8) {
-        if (!(bm >= S.breakdown && bm < S.final - 12)) {
-            leadMoogN.push(note(moogPhrase[mx % moogPhrase.length]!, bm, 2.4, 72 + (mx % 4) * 3));
+    let bm = 44;
+    while (bm < TB - 10) {
+        if (!(bm >= S.breakdown && bm < S.final - 16)) {
+            if (mx % 6 !== 4) {
+                const vel = bm >= S.peak && bm < S.breakdown ? 74 : 66;
+                leadMoogN.push(hum(moogPhrase[mx % moogPhrase.length]!, bm, 3.1, vel, mx + 100));
+            }
         }
         mx++;
-        const step = bm >= S.build1 && bm < S.breakdown ? 1.65 : 2.75;
+        const busy = bm >= S.peak && bm < S.breakdown;
+        const step = busy ? 2.85 : bm >= S.build1 ? 3.9 : 4.6;
         bm += step;
     }
 
     const leadSyncN: MidiNote[] = [];
     const syncPhrase = [E5, A5, G5, Fs5, E5, D5, E5, A4, C5, E5, D5, B4];
     let sy = 0;
-    for (let b = 28; b < TB - 6; b += 2.2) {
-        const thinBreakdown = b >= S.breakdown + 20 && b < S.final - 20 && Math.floor(b) % 5 === 0;
-        if (thinBreakdown) {
+    for (let b = 92; b < TB - 8; b += 3.6) {
+        if (b >= S.breakdown && b < S.final && sy % 2 === 0) {
             sy++;
             continue;
         }
-        if (b >= S.build1) {
-            leadSyncN.push(note(syncPhrase[sy % syncPhrase.length]!, b, 1.8, 68 + (sy % 5) * 2));
+        if (b >= S.peak && b < S.breakdown && sy % 6 === 2) {
+            sy++;
+            continue;
         }
+        leadSyncN.push(hum(syncPhrase[sy % syncPhrase.length]!, b, 2.1, 64 + (sy % 4) * 2, sy + 200));
         sy++;
     }
 
     const bassN: MidiNote[] = [];
+    let bi = 0;
     for (let b = S.build1; b < TB; b += 2) {
         const step = Math.floor(b / 2) % 8;
         const roots = [A2, A2, E3, A2, G2, A2, D3, E3];
         const root = roots[step] ?? A2;
-        const dur = b >= S.peak && b < S.breakdown ? 1.85 : 1.45;
-        bassN.push(note(root, b, dur, 76));
+        const dur = b >= S.peak && b < S.breakdown ? 1.75 : 1.55;
+        if (bi % 9 === 7) {
+            bi++;
+            continue;
+        }
+        bassN.push(hum(root, b, dur, 72, bi + 300));
+        bi++;
     }
 
     const highN: MidiNote[] = [];
     const highMelody = [E5, G5, A5, G5, E5, D5, C5, A4, E5, G5, E5, D5, C5, G4, A4, C5];
     let hi = 0;
-    for (let b = 14; b < TB - 4; b += 3.2) {
-        highN.push(note(highMelody[hi % highMelody.length]!, b, 2.6, 62 + (hi % 5) * 2));
+    for (let b = 22; b < TB - 8; b += 5.8) {
+        if (hi % 7 === 5) {
+            hi++;
+            continue;
+        }
+        highN.push(hum(highMelody[hi % highMelody.length]!, b, 3, 58 + (hi % 4) * 2, hi + 400));
         hi++;
     }
 
     const midN: MidiNote[] = [];
     const midMelody = [A4, C5, A4, G4, E4, D4, E4, G4, A4, C5, D5, C5, A4, G4, E4, A4];
     let mi = 0;
-    for (let b = 10; b < TB - 6; b += 3.8) {
-        midN.push(note(midMelody[mi % midMelody.length]!, b, 3.4, 68));
+    for (let b = 28; b < TB - 10; b += 6.4) {
+        if (mi % 8 === 6) {
+            mi++;
+            continue;
+        }
+        midN.push(hum(midMelody[mi % midMelody.length]!, b, 3.8, 64, mi + 500));
         mi++;
     }
 
     const lowN: MidiNote[] = [];
-    for (let b = 0; b < TB; b += 9) {
-        lowN.push(note(A3, b, 7, 76));
-        lowN.push(note(E3, b + 4.5, 4, 70));
+    for (let b = 4, s = 0; b < TB; b += 16, s++) {
+        lowN.push(hum(A3, b, 9, 72, s + 600));
+        if (s % 2 === 1) {
+            lowN.push(hum(E3, b + 5.3, 5, 66, s + 601));
+        }
     }
 
     const callN: MidiNote[] = [];
-    for (let b = 24; b < TB; b += 26) {
-        callN.push(note(D5, b, 5.5, 64));
-        callN.push(note(A4, b + 9, 4.5, 58));
-        callN.push(note(E5, b + 17, 3.5, 56));
+    for (let b = 32, s = 0; b < TB; b += 34, s++) {
+        callN.push(hum(D5, b, 6, 60, s + 700));
+        callN.push(hum(A4, b + 10.5, 5, 56, s + 701));
+        if (s % 2 === 0) {
+            callN.push(hum(E5, b + 19.2, 4, 52, s + 702));
+        }
     }
 
     const answerN: MidiNote[] = [];
-    for (let b = 36; b < TB; b += 28) {
-        answerN.push(note(C5, b, 5, 60));
-        answerN.push(note(G4, b + 11, 4, 54));
-        answerN.push(note(E4, b + 20, 5.5, 58));
+    for (let b = 48, s = 0; b < TB; b += 38, s++) {
+        answerN.push(hum(C5, b, 5.5, 58, s + 800));
+        answerN.push(hum(G4, b + 13.4, 4.5, 52, s + 801));
+        if (s % 2 === 1) {
+            answerN.push(hum(E4, b + 22.1, 6, 54, s + 802));
+        }
     }
 
-    const padMidi: MidiNote[][] = Array.from({ length: 16 }, () => []);
-    const p = (pad: number, b: number, vel: number, dur = 0.12) => {
-        padMidi[pad]!.push(note(60, b, dur, vel));
+    // Toaster: one clip per arr.section per pad (skip empty) — notes are beat-relative to clip start
+    const toasterSegLabels = ['Intro', 'Build', 'Peak', 'Break', 'Outro'] as const;
+    const toasterSegRanges: readonly [number, number][] = [
+        [0, S.build1],
+        [S.build1, S.peak],
+        [S.peak, S.breakdown],
+        [S.breakdown, S.final],
+        [S.final, TB],
+    ];
+
+    const toasterSegmentIndex = (absBeat: number): number => {
+        if (absBeat < S.build1) {
+            return 0;
+        }
+        if (absBeat < S.peak) {
+            return 1;
+        }
+        if (absBeat < S.breakdown) {
+            return 2;
+        }
+        if (absBeat < S.final) {
+            return 3;
+        }
+        return 4;
     };
 
-    for (let b = S.build1; b < TB; b += 4) {
+    const padSegNotes: MidiNote[][][] = Array.from({ length: 16 }, () =>
+        toasterSegRanges.map(() => [] as MidiNote[]),
+    );
+
+    const pushToast = (pad: number, absBeat: number, vel: number, dur = 0.12) => {
+        const si = toasterSegmentIndex(absBeat);
+        const [segStart, segEnd] = toasterSegRanges[si]!;
+        if (absBeat < segStart || absBeat >= segEnd) {
+            return;
+        }
+        const rel = absBeat - segStart;
+        padSegNotes[pad]![si]!.push(note(36 + pad, rel, dur, vel));
+    };
+
+    // Intro — sparse pulse before the kit locks (still GM-ish pitches per pad)
+    for (let b = 6; b < S.build1; b += 10) {
+        pushToast(5, b, 32 + (b % 5) * 2, 0.07);
+    }
+    for (let b = 10; b < S.build1; b += 4) {
+        pushToast(2, b, 22 + (b % 4), 0.05);
+    }
+    for (let b = 18; b < S.build1; b += 16) {
+        pushToast(0, b, 42, 0.16);
+    }
+    for (let b = 14; b < S.build1; b += 11) {
+        pushToast(13, b, 28, 0.09);
+    }
+    for (let b = 22; b < S.build1; b += 18) {
+        pushToast(12, b, 34, 0.08);
+    }
+    for (let b = 30; b < S.build1; b += 22) {
+        pushToast(14, b, 30, 0.1);
+    }
+    for (let b = 38; b < S.build1; b += 26) {
+        pushToast(6, b, 36, 0.14);
+    }
+    for (let b = 46; b < S.build1; b += 14) {
+        pushToast(11, b, 32, 0.08);
+    }
+    pushToast(8, 58, 38, 0.14);
+    pushToast(10, 64, 28, 0.32);
+    pushToast(7, 68, 36, 0.12);
+
+    for (let b: number = S.build1; b < TB; b += 4) {
         const intense = b >= S.peak && b < S.breakdown;
         const sparse = b >= S.breakdown && b < S.final;
         if (!sparse || b % 8 === 0) {
-            p(0, b, intense ? 82 : 58);
+            pushToast(0, b, intense ? 86 : 58, 0.14);
         }
         if ((b + 2) % 8 === 0 && (!sparse || b % 16 === 2)) {
-            p(1, b + 0.25, intense ? 68 : 48);
+            pushToast(1, b + 0.25, intense ? 72 : 48, 0.1);
         }
         if (!sparse || b % 4 === 0) {
-            const hVel = intense ? 40 : 28;
+            const hVel = intense ? 42 : sparse ? 24 : 30;
             if (b % 2 === 0) {
-                p(2, b + 0.5, hVel);
+                pushToast(2, b + 0.5, hVel, 0.055);
             }
             if (intense && b % 4 === 2) {
-                p(3, b + 1.5, 36);
+                pushToast(3, b + 1.5, 34, 0.12);
+            }
+            if (intense && b % 4 === 0) {
+                pushToast(2, b + 1.25, hVel - 8, 0.048);
+                pushToast(2, b + 2.5, hVel - 10, 0.048);
             }
         }
-        if (b % 16 === 8 && !sparse) {
-            p(4, b, 52);
+        if ((b % 16 === 8 || intense) && (!sparse || b % 16 === 0)) {
+            pushToast(4, b + 0.08, intense ? 56 : 46, 0.06);
         }
-        if (b % 24 === 12) {
-            p(5, b, 44);
+        if (b % 8 === 4 || (intense && b % 12 === 0)) {
+            pushToast(5, b + 0.15, intense ? 46 : 38, 0.065);
         }
         if (intense && b % 6 === 3) {
-            p(6, b, 38);
-        }
-        if (b % 32 === 4) {
-            p(8, b, 42);
-        }
-        if (b % 20 === 10) {
-            p(10, b, 36);
+            pushToast(6, b + 0.3, 42, 0.11);
+        } else if (!sparse && b % 20 === 10) {
+            pushToast(6, b + 1, 34, 0.1);
         }
         if (intense && b % 8 === 4) {
-            p(12, b, 34);
+            pushToast(7, b + 0.35, 48, 0.13);
+        } else if (b % 24 === 16) {
+            pushToast(7, b + 0.2, 38, 0.11);
         }
-        if (b % 28 === 6) {
-            p(14, b, 32);
+        if (b % 20 === 4 || (intense && b % 10 === 2)) {
+            pushToast(8, b, 42, 0.18);
         }
-        if (b % 40 === 0) {
-            p(15, b, 30);
+        if (b === S.peak || b === S.breakdown || b === S.final) {
+            pushToast(9, b + 0.02, 68, 0.42);
         }
+        if (intense && b % 32 === 0) {
+            pushToast(9, b + 0.08, 58, 0.38);
+        }
+        if (b % 32 === 12 || (intense && b % 16 === 8)) {
+            pushToast(10, b + 0.05, 36, 0.32);
+        }
+        if (b % 16 === 6 || (intense && b % 8 === 2)) {
+            pushToast(11, b + 0.18, intense ? 50 : 38, 0.085);
+        }
+        if ((intense && b % 8 === 6) || b % 20 === 14) {
+            pushToast(12, b + 0.12, intense ? 40 : 28, 0.07);
+        }
+        if ((intense && b % 10 === 4) || (!sparse && !intense && b % 28 === 8)) {
+            pushToast(13, b + 0.22, intense ? 44 : 30, 0.085);
+        }
+        if ((intense && b % 20 === 12) || (!sparse && b % 40 === 16)) {
+            pushToast(14, b + 0.28, 32, 0.1);
+        }
+        if (intense && b % 24 === 8) {
+            pushToast(15, b + 0.16, 30, 0.11);
+        }
+    }
+
+    for (let pi = 0; pi < 16; pi++) {
+        for (let s = 0; s < toasterSegRanges.length; s++) {
+            padSegNotes[pi]![s]!.sort((a, b) => a.startBeat - b.startBeat);
+        }
+    }
+
+    const toasterTrackClips: ReturnType<typeof createMidiClip>[][] = [];
+    const toasterNotesByClipId: Record<string, MidiNote[]> = {};
+    for (let padIdx = 0; padIdx < 16; padIdx++) {
+        const t = toasterPadTracks[padIdx]!;
+        const list: ReturnType<typeof createMidiClip>[] = [];
+        for (let s = 0; s < toasterSegRanges.length; s++) {
+            const arr = padSegNotes[padIdx]![s]!;
+            if (arr.length === 0) {
+                continue;
+            }
+            const [st, en] = toasterSegRanges[s]!;
+            const padName = DEFAULT_PAD_NAMES[padIdx] ?? `Pad ${padIdx + 1}`;
+            const c = createMidiClip(t.id, `${padName} · ${toasterSegLabels[s]}`, st, en, t.color);
+            list.push(c);
+            toasterNotesByClipId[c.id] = arr;
+        }
+        toasterTrackClips.push(list);
     }
 
     const allMidiTracks = [
@@ -693,7 +895,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
     tLevCall.clips = [cLC];
     tLevAnswer.clips = [cLA];
     toasterPadTracks.forEach((t, i) => {
-        t.clips = [padClips[i]!];
+        t.clips = toasterTrackClips[i] ?? [];
     });
 
     const tracks = [
@@ -754,9 +956,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
         [cLC.id]: callN,
         [cLA.id]: answerN,
     };
-    padClips.forEach((pc, i) => {
-        notesByClipId[pc.id] = padMidi[i] ?? [];
-    });
+    Object.assign(notesByClipId, toasterNotesByClipId);
 
     midiStore.set({
         notesByClipId,
@@ -771,23 +971,24 @@ export async function demo5_NebulaDrift(): Promise<void> {
 
     const dim = 0.07;
     const hero = 0.84;
+    const levBed = 0.1;
 
     const padGainLanes = toasterPadTracks.map((pad, i) =>
         Object.assign(mkLane(pad.id, 'gain', `${pad.name} pad`, 0, 1), {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
                 { beat: 70 + i, value: 0, curve: 'linear', tension: 0 },
-                { beat: 98 + i, value: 0.42 + (i % 5) * 0.06, curve: 'smooth', tension: 0.38 },
-                { beat: S.peak, value: 0.38 + (i % 4) * 0.07, curve: 'smooth', tension: 0.32 },
-                { beat: S.breakdown, value: 0.14 + (i % 3) * 0.04, curve: 'linear', tension: 0 },
-                { beat: S.final, value: 0.52 + (i % 4) * 0.05, curve: 'smooth', tension: 0.3 },
-                { beat: TB, value: 0.32 + (i % 5) * 0.04, curve: 'linear', tension: 0 },
+                { beat: 98 + i, value: 0.34 + (i % 5) * 0.05, curve: 'smooth', tension: 0.38 },
+                { beat: S.peak, value: 0.32 + (i % 4) * 0.06, curve: 'smooth', tension: 0.32 },
+                { beat: S.breakdown, value: 0.08 + (i % 3) * 0.03, curve: 'linear', tension: 0 },
+                { beat: S.final, value: 0.4 + (i % 4) * 0.05, curve: 'smooth', tension: 0.3 },
+                { beat: TB, value: 0.26 + (i % 5) * 0.04, curve: 'linear', tension: 0 },
             ],
         })
     );
 
     const lanes = [
-        // Gain orchestration — slow reveals; few parts forward at once; sub capped at 5%
+        // Gain orchestration — slow reveals; few parts forward at once; sub from 0% → ≤5% over the full length
         Object.assign(mkLane(tSubDrone.id, 'gain', 'Sub (≤5%)', 0, 0.05), {
             points: subDroneGainKeyframes(TB),
         }),
@@ -797,9 +998,9 @@ export async function demo5_NebulaDrift(): Promise<void> {
                 { beat: 10, value: 0.08, curve: 'smooth', tension: 0.35 },
                 { beat: 44, value: 0.38, curve: 'smooth', tension: 0.32 },
                 { beat: S.build1, value: 0.48, curve: 'linear', tension: 0 },
-                { beat: S.peak, value: 0.42, curve: 'smooth', tension: 0.28 },
-                { beat: S.breakdown, value: 0.22, curve: 'smooth', tension: 0.3 },
-                { beat: S.final, value: 0.36, curve: 'linear', tension: 0 },
+                { beat: S.peak, value: 0.4, curve: 'smooth', tension: 0.28 },
+                { beat: S.breakdown, value: 0.46, curve: 'smooth', tension: 0.3 },
+                { beat: S.final, value: 0.32, curve: 'linear', tension: 0 },
                 { beat: TB, value: 0.28, curve: 'linear', tension: 0 },
             ],
         }),
@@ -807,12 +1008,12 @@ export async function demo5_NebulaDrift(): Promise<void> {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
                 { beat: 22, value: 0, curve: 'linear', tension: 0 },
-                { beat: 52, value: 0.32, curve: 'smooth', tension: 0.38 },
-                { beat: 110, value: 0.55, curve: 'smooth', tension: 0.3 },
-                { beat: S.peak, value: 0.48, curve: 'linear', tension: 0 },
-                { beat: S.breakdown, value: 0.2, curve: 'smooth', tension: 0.35 },
-                { beat: S.final, value: 0.44, curve: 'linear', tension: 0 },
-                { beat: TB, value: 0.34, curve: 'linear', tension: 0 },
+                { beat: 52, value: 0.28, curve: 'smooth', tension: 0.38 },
+                { beat: 110, value: 0.48, curve: 'smooth', tension: 0.3 },
+                { beat: S.peak, value: 0.44, curve: 'linear', tension: 0 },
+                { beat: S.breakdown, value: 0.1, curve: 'smooth', tension: 0.38 },
+                { beat: S.final, value: 0.38, curve: 'linear', tension: 0 },
+                { beat: TB, value: 0.3, curve: 'linear', tension: 0 },
             ],
         }),
         Object.assign(mkLane(tEtherealVeil.id, 'gain', 'Veil level', 0, 1), {
@@ -821,8 +1022,9 @@ export async function demo5_NebulaDrift(): Promise<void> {
                 { beat: 34, value: 0, curve: 'linear', tension: 0 },
                 { beat: 62, value: 0.28, curve: 'smooth', tension: 0.36 },
                 { beat: 128, value: 0.46, curve: 'smooth', tension: 0.28 },
-                { beat: S.peak, value: 0.38, curve: 'linear', tension: 0 },
-                { beat: S.breakdown, value: 0.18, curve: 'smooth', tension: 0.32 },
+                { beat: S.peak, value: 0.36, curve: 'linear', tension: 0 },
+                { beat: S.breakdown, value: 0.52, curve: 'smooth', tension: 0.32 },
+                { beat: S.final, value: 0.34, curve: 'linear', tension: 0 },
                 { beat: TB, value: 0.32, curve: 'linear', tension: 0 },
             ],
         }),
@@ -830,11 +1032,11 @@ export async function demo5_NebulaDrift(): Promise<void> {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
                 { beat: 40, value: 0, curve: 'linear', tension: 0 },
-                { beat: 68, value: 0.26, curve: 'smooth', tension: 0.35 },
-                { beat: S.build1, value: 0.44, curve: 'linear', tension: 0 },
-                { beat: 168, value: 0.52, curve: 'smooth', tension: 0.3 },
-                { beat: S.breakdown, value: 0.2, curve: 'smooth', tension: 0.3 },
-                { beat: TB, value: 0.36, curve: 'linear', tension: 0 },
+                { beat: 68, value: 0.14, curve: 'smooth', tension: 0.35 },
+                { beat: S.build1, value: 0.22, curve: 'linear', tension: 0 },
+                { beat: 168, value: 0.28, curve: 'smooth', tension: 0.3 },
+                { beat: S.breakdown, value: 0.11, curve: 'smooth', tension: 0.3 },
+                { beat: TB, value: 0.2, curve: 'linear', tension: 0 },
             ],
         }),
         Object.assign(mkLane(tWarmHalo.id, 'gain', 'Halo level', 0, 1), {
@@ -842,10 +1044,11 @@ export async function demo5_NebulaDrift(): Promise<void> {
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
                 { beat: 26, value: 0, curve: 'linear', tension: 0 },
                 { beat: 54, value: 0.3, curve: 'smooth', tension: 0.36 },
-                { beat: 118, value: 0.5, curve: 'smooth', tension: 0.28 },
-                { beat: S.peak, value: 0.4, curve: 'linear', tension: 0 },
-                { beat: S.breakdown, value: 0.24, curve: 'smooth', tension: 0.3 },
-                { beat: TB, value: 0.38, curve: 'linear', tension: 0 },
+                { beat: 118, value: 0.46, curve: 'smooth', tension: 0.28 },
+                { beat: S.peak, value: 0.38, curve: 'linear', tension: 0 },
+                { beat: S.breakdown, value: 0.55, curve: 'smooth', tension: 0.3 },
+                { beat: S.final, value: 0.36, curve: 'linear', tension: 0 },
+                { beat: TB, value: 0.36, curve: 'linear', tension: 0 },
             ],
         }),
         Object.assign(mkLane(tRisingMist.id, 'gain', 'Rising level', 0, 1), {
@@ -853,9 +1056,10 @@ export async function demo5_NebulaDrift(): Promise<void> {
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
                 { beat: 48, value: 0, curve: 'linear', tension: 0 },
                 { beat: 76, value: 0.24, curve: 'smooth', tension: 0.35 },
-                { beat: 142, value: 0.42, curve: 'smooth', tension: 0.28 },
-                { beat: S.breakdown, value: 0.2, curve: 'linear', tension: 0 },
-                { beat: S.final, value: 0.4, curve: 'smooth', tension: 0.3 },
+                { beat: 142, value: 0.38, curve: 'smooth', tension: 0.28 },
+                { beat: S.peak, value: 0.36, curve: 'linear', tension: 0 },
+                { beat: S.breakdown, value: 0.48, curve: 'smooth', tension: 0.32 },
+                { beat: S.final, value: 0.34, curve: 'smooth', tension: 0.3 },
                 { beat: TB, value: 0.3, curve: 'linear', tension: 0 },
             ],
         }),
@@ -863,21 +1067,22 @@ export async function demo5_NebulaDrift(): Promise<void> {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
                 { beat: 58, value: 0, curve: 'linear', tension: 0 },
-                { beat: 84, value: 0.22, curve: 'smooth', tension: 0.36 },
-                { beat: S.peak, value: 0.46, curve: 'smooth', tension: 0.28 },
-                { beat: S.breakdown, value: 0.26, curve: 'smooth', tension: 0.3 },
-                { beat: TB, value: 0.34, curve: 'linear', tension: 0 },
+                { beat: 84, value: 0.2, curve: 'smooth', tension: 0.36 },
+                { beat: S.peak, value: 0.42, curve: 'smooth', tension: 0.28 },
+                { beat: S.breakdown, value: 0.12, curve: 'smooth', tension: 0.34 },
+                { beat: S.final, value: 0.32, curve: 'smooth', tension: 0.3 },
+                { beat: TB, value: 0.28, curve: 'linear', tension: 0 },
             ],
         }),
         Object.assign(mkLane(tGrainStutter.id, 'gain', 'Stutter level', 0, 1), {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
                 { beat: 86, value: 0, curve: 'linear', tension: 0 },
-                { beat: 112, value: 0.28, curve: 'smooth', tension: 0.38 },
-                { beat: 188, value: 0.46, curve: 'smooth', tension: 0.3 },
-                { beat: S.breakdown, value: 0.16, curve: 'linear', tension: 0 },
-                { beat: S.final, value: 0.36, curve: 'smooth', tension: 0.32 },
-                { beat: TB, value: 0.26, curve: 'linear', tension: 0 },
+                { beat: 112, value: 0.24, curve: 'smooth', tension: 0.38 },
+                { beat: 188, value: 0.38, curve: 'smooth', tension: 0.3 },
+                { beat: S.breakdown, value: 0.08, curve: 'linear', tension: 0 },
+                { beat: S.final, value: 0.3, curve: 'smooth', tension: 0.32 },
+                { beat: TB, value: 0.22, curve: 'linear', tension: 0 },
             ],
         }),
         Object.assign(mkLane(tMetalTick.id, 'gain', 'Metal level', 0, 1), {
@@ -894,58 +1099,63 @@ export async function demo5_NebulaDrift(): Promise<void> {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
                 { beat: 78, value: 0, curve: 'linear', tension: 0 },
-                { beat: 104, value: 0.32, curve: 'smooth', tension: 0.36 },
-                { beat: 176, value: 0.52, curve: 'smooth', tension: 0.28 },
-                { beat: S.breakdown, value: 0.18, curve: 'linear', tension: 0 },
-                { beat: S.final, value: 0.42, curve: 'smooth', tension: 0.3 },
-                { beat: TB, value: 0.3, curve: 'linear', tension: 0 },
+                { beat: 104, value: 0.28, curve: 'smooth', tension: 0.36 },
+                { beat: 176, value: 0.42, curve: 'smooth', tension: 0.28 },
+                { beat: S.peak, value: 0.38, curve: 'linear', tension: 0 },
+                { beat: S.breakdown, value: 0.12, curve: 'linear', tension: 0 },
+                { beat: S.final, value: 0.34, curve: 'smooth', tension: 0.3 },
+                { beat: TB, value: 0.26, curve: 'linear', tension: 0 },
             ],
         }),
         Object.assign(mkLane(tBellDust.id, 'gain', 'Bell level', 0, 1), {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
                 { beat: 92, value: 0, curve: 'linear', tension: 0 },
-                { beat: 118, value: 0.24, curve: 'smooth', tension: 0.35 },
-                { beat: S.peak, value: 0.38, curve: 'linear', tension: 0 },
-                { beat: S.breakdown, value: 0.16, curve: 'smooth', tension: 0.3 },
-                { beat: TB, value: 0.28, curve: 'linear', tension: 0 },
+                { beat: 118, value: 0.2, curve: 'smooth', tension: 0.35 },
+                { beat: S.peak, value: 0.32, curve: 'linear', tension: 0 },
+                { beat: S.breakdown, value: 0.1, curve: 'smooth', tension: 0.3 },
+                { beat: S.final, value: 0.26, curve: 'smooth', tension: 0.32 },
+                { beat: TB, value: 0.22, curve: 'linear', tension: 0 },
             ],
         }),
-        Object.assign(mkLane(tSeqRipple.id, 'gain', 'Seq level', 0, 1), {
+        Object.assign(mkLane(tSeqRipple.id, 'gain', 'Growl level', 0, 1), {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
                 { beat: 64, value: 0, curve: 'linear', tension: 0 },
-                { beat: 90, value: 0.3, curve: 'smooth', tension: 0.38 },
-                { beat: S.build1, value: 0.46, curve: 'linear', tension: 0 },
-                { beat: 200, value: 0.5, curve: 'smooth', tension: 0.28 },
-                { beat: S.breakdown, value: 0.2, curve: 'smooth', tension: 0.3 },
-                { beat: TB, value: 0.36, curve: 'linear', tension: 0 },
+                { beat: 90, value: 0.22, curve: 'smooth', tension: 0.38 },
+                { beat: S.build1, value: 0.34, curve: 'linear', tension: 0 },
+                { beat: 200, value: 0.42, curve: 'smooth', tension: 0.28 },
+                { beat: S.breakdown, value: 0.12, curve: 'smooth', tension: 0.32 },
+                { beat: S.final, value: 0.36, curve: 'smooth', tension: 0.3 },
+                { beat: TB, value: 0.28, curve: 'linear', tension: 0 },
             ],
         }),
-        Object.assign(mkLane(tLeadMoog.id, 'gain', 'Moog lead', 0, 1), {
+        Object.assign(mkLane(tLeadMoog.id, 'gain', 'Sitar level', 0, 1), {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
                 { beat: 50, value: 0, curve: 'linear', tension: 0 },
-                { beat: 78, value: 0.22, curve: 'smooth', tension: 0.35 },
-                { beat: 118, value: 0.12, curve: 'linear', tension: 0 },
-                { beat: 162, value: 0.68, curve: 'smooth', tension: 0.32 },
-                { beat: S.breakdown, value: 0.1, curve: 'smooth', tension: 0.28 },
-                { beat: S.final, value: 0.58, curve: 'smooth', tension: 0.35 },
-                { beat: TB, value: 0.18, curve: 'linear', tension: 0 },
+                { beat: 78, value: 0.18, curve: 'smooth', tension: 0.35 },
+                { beat: 118, value: 0.1, curve: 'linear', tension: 0 },
+                { beat: 168, value: 0.58, curve: 'smooth', tension: 0.32 },
+                { beat: S.breakdown, value: 0.08, curve: 'smooth', tension: 0.28 },
+                { beat: 248, value: 0.14, curve: 'linear', tension: 0 },
+                { beat: S.final, value: 0.48, curve: 'smooth', tension: 0.35 },
+                { beat: TB, value: 0.16, curve: 'linear', tension: 0 },
             ],
         }),
         Object.assign(mkLane(tLeadSync.id, 'gain', 'Sync lead', 0, 1), {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
                 { beat: 84, value: 0, curve: 'linear', tension: 0 },
-                { beat: 108, value: 0.18, curve: 'smooth', tension: 0.35 },
-                { beat: 156, value: 0.62, curve: 'smooth', tension: 0.3 },
-                { beat: S.breakdown, value: 0.12, curve: 'linear', tension: 0 },
-                { beat: S.final, value: 0.52, curve: 'smooth', tension: 0.32 },
-                { beat: TB, value: 0.24, curve: 'linear', tension: 0 },
+                { beat: 108, value: 0.14, curve: 'smooth', tension: 0.35 },
+                { beat: 152, value: 0.22, curve: 'linear', tension: 0 },
+                { beat: 210, value: 0.55, curve: 'smooth', tension: 0.3 },
+                { beat: S.breakdown, value: 0.1, curve: 'linear', tension: 0 },
+                { beat: S.final, value: 0.44, curve: 'smooth', tension: 0.32 },
+                { beat: TB, value: 0.2, curve: 'linear', tension: 0 },
             ],
         }),
-        Object.assign(mkLane(tBassGroove.id, 'gain', 'Bass level', 0, 1), {
+        Object.assign(mkLane(tBassGroove.id, 'gain', 'Reese level', 0, 1), {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
                 { beat: S.build1 + 6, value: 0, curve: 'linear', tension: 0 },
@@ -960,59 +1170,64 @@ export async function demo5_NebulaDrift(): Promise<void> {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
                 { beat: 62, value: 0, curve: 'linear', tension: 0 },
-                { beat: 92, value: 0.32, curve: 'smooth', tension: 0.38 },
-                { beat: S.peak, value: 0.72, curve: 'linear', tension: 0 },
-                { beat: S.breakdown, value: 0.22, curve: 'smooth', tension: 0.3 },
-                { beat: S.final, value: 0.62, curve: 'smooth', tension: 0.32 },
-                { beat: TB, value: 0.34, curve: 'linear', tension: 0 },
+                { beat: 92, value: 0.28, curve: 'smooth', tension: 0.38 },
+                { beat: S.peak, value: 0.58, curve: 'linear', tension: 0 },
+                { beat: S.breakdown, value: 0.16, curve: 'smooth', tension: 0.34 },
+                { beat: S.final, value: 0.48, curve: 'smooth', tension: 0.32 },
+                { beat: TB, value: 0.3, curve: 'linear', tension: 0 },
             ],
         }),
-        // Levain — one hero at a time; everyone else tucked down
+        // Levain — 10% bed at start; slow rise to tuck level; one hero at a time
         Object.assign(mkLane(tLevHigh.id, 'gain', 'Levain High spot', 0, 1), {
             points: [
-                { beat: 0, value: dim, curve: 'linear', tension: 0 },
-                { beat: 6, value: hero, curve: 'smooth', tension: 0.3 },
-                { beat: 68, value: hero, curve: 'linear', tension: 0 },
-                { beat: 76, value: dim, curve: 'smooth', tension: 0.3 },
+                { beat: 0, value: levBed, curve: 'linear', tension: 0 },
+                { beat: 40, value: dim, curve: 'smooth', tension: 0.48 },
+                { beat: 44, value: hero, curve: 'smooth', tension: 0.32 },
+                { beat: 114, value: hero, curve: 'linear', tension: 0 },
+                { beat: 122, value: dim, curve: 'smooth', tension: 0.3 },
                 { beat: TB, value: dim, curve: 'linear', tension: 0 },
             ],
         }),
         Object.assign(mkLane(tLevMid.id, 'gain', 'Levain Mid spot', 0, 1), {
             points: [
-                { beat: 0, value: dim, curve: 'linear', tension: 0 },
-                { beat: 74, value: dim, curve: 'linear', tension: 0 },
-                { beat: 80, value: hero, curve: 'smooth', tension: 0.3 },
-                { beat: 144, value: hero, curve: 'linear', tension: 0 },
-                { beat: 152, value: dim, curve: 'smooth', tension: 0.3 },
+                { beat: 0, value: levBed, curve: 'linear', tension: 0 },
+                { beat: 40, value: dim, curve: 'smooth', tension: 0.48 },
+                { beat: 118, value: dim, curve: 'linear', tension: 0 },
+                { beat: 122, value: hero, curve: 'smooth', tension: 0.3 },
+                { beat: 190, value: hero, curve: 'linear', tension: 0 },
+                { beat: 198, value: dim, curve: 'smooth', tension: 0.3 },
                 { beat: TB, value: dim, curve: 'linear', tension: 0 },
             ],
         }),
         Object.assign(mkLane(tLevLow.id, 'gain', 'Levain Low spot', 0, 1), {
             points: [
-                { beat: 0, value: dim, curve: 'linear', tension: 0 },
-                { beat: 150, value: dim, curve: 'linear', tension: 0 },
-                { beat: 156, value: hero, curve: 'smooth', tension: 0.3 },
-                { beat: 220, value: hero, curve: 'linear', tension: 0 },
-                { beat: 228, value: dim, curve: 'smooth', tension: 0.3 },
+                { beat: 0, value: levBed, curve: 'linear', tension: 0 },
+                { beat: 40, value: dim, curve: 'smooth', tension: 0.48 },
+                { beat: 194, value: dim, curve: 'linear', tension: 0 },
+                { beat: 198, value: hero, curve: 'smooth', tension: 0.3 },
+                { beat: 266, value: hero, curve: 'linear', tension: 0 },
+                { beat: 274, value: dim, curve: 'smooth', tension: 0.3 },
                 { beat: TB, value: dim, curve: 'linear', tension: 0 },
             ],
         }),
         Object.assign(mkLane(tLevCall.id, 'gain', 'Levain Call spot', 0, 1), {
             points: [
-                { beat: 0, value: dim, curve: 'linear', tension: 0 },
-                { beat: 226, value: dim, curve: 'linear', tension: 0 },
-                { beat: 232, value: hero, curve: 'smooth', tension: 0.3 },
-                { beat: 296, value: hero, curve: 'linear', tension: 0 },
-                { beat: 304, value: dim, curve: 'smooth', tension: 0.3 },
+                { beat: 0, value: levBed, curve: 'linear', tension: 0 },
+                { beat: 40, value: dim, curve: 'smooth', tension: 0.48 },
+                { beat: 270, value: dim, curve: 'linear', tension: 0 },
+                { beat: 274, value: hero, curve: 'smooth', tension: 0.3 },
+                { beat: 342, value: hero, curve: 'linear', tension: 0 },
+                { beat: 350, value: dim, curve: 'smooth', tension: 0.3 },
                 { beat: TB, value: dim, curve: 'linear', tension: 0 },
             ],
         }),
         Object.assign(mkLane(tLevAnswer.id, 'gain', 'Levain Answer spot', 0, 1), {
             points: [
-                { beat: 0, value: dim, curve: 'linear', tension: 0 },
-                { beat: 302, value: dim, curve: 'linear', tension: 0 },
-                { beat: 308, value: hero, curve: 'smooth', tension: 0.3 },
-                { beat: 372, value: hero, curve: 'linear', tension: 0 },
+                { beat: 0, value: levBed, curve: 'linear', tension: 0 },
+                { beat: 40, value: dim, curve: 'smooth', tension: 0.48 },
+                { beat: 346, value: dim, curve: 'linear', tension: 0 },
+                { beat: 350, value: hero, curve: 'smooth', tension: 0.3 },
+                { beat: 374, value: hero, curve: 'linear', tension: 0 },
                 { beat: TB, value: dim, curve: 'smooth', tension: 0.25 },
             ],
         }),
@@ -1086,9 +1301,12 @@ export async function demo5_NebulaDrift(): Promise<void> {
         }),
         Object.assign(mkLane(tSweepHorizon.id, 'pan', 'Sweep pan', 0, 1), {
             points: [
-                { beat: 0, value: 0.55, curve: 'linear', tension: 0 },
-                { beat: 190, value: 0.12, curve: 'smooth', tension: 0.45 },
-                { beat: TB, value: 0.88, curve: 'smooth', tension: 0.4 },
+                { beat: 0, value: 0.14, curve: 'linear', tension: 0 },
+                { beat: S.build1, value: 0.78, curve: 'smooth', tension: 0.4 },
+                { beat: S.peak, value: 0.22, curve: 'smooth', tension: 0.38 },
+                { beat: S.breakdown, value: 0.58, curve: 'smooth', tension: 0.36 },
+                { beat: S.final, value: 0.26, curve: 'smooth', tension: 0.35 },
+                { beat: TB, value: 0.62, curve: 'linear', tension: 0 },
             ],
         }),
         Object.assign(mkLane(tDarkMist.id, 'filter-cutoff', 'Mist EQ', 200, 12000), {
@@ -1137,7 +1355,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
                 { beat: TB, value: 0.45, curve: 'linear', tension: 0 },
             ],
         }),
-        Object.assign(mkLane(tSeqRipple.id, 'filter-cutoff', 'Ripple cutoff', 100, 12000), {
+        Object.assign(mkLane(tSeqRipple.id, 'filter-cutoff', 'Growl cutoff', 100, 12000), {
             points: [
                 { beat: 32, value: 3200, curve: 'linear', tension: 0 },
                 { beat: S.peak, value: 9800, curve: 'exponential', tension: 0.3 },
@@ -1145,14 +1363,355 @@ export async function demo5_NebulaDrift(): Promise<void> {
                 { beat: TB, value: 7200, curve: 'smooth', tension: 0.36 },
             ],
         }),
-        Object.assign(mkLane(tSeqRipple.id, 'pan', 'Seq pan', 0, 1), {
+        Object.assign(mkLane(tSeqRipple.id, 'pan', 'Growl pan', 0, 1), {
             points: [
                 { beat: 0, value: 0.72, curve: 'linear', tension: 0 },
                 { beat: 220, value: 0.28, curve: 's-curve', tension: 0.5 },
                 { beat: TB, value: 0.68, curve: 'linear', tension: 0 },
             ],
         }),
-        Object.assign(mkLane(tLeadMoog.id, 'pan', 'Moog pan', 0, 1), {
+        // Extreme modulation — helicopter grain, chaos, Hopkins-style space
+        Object.assign(mkLane(masterTrack.id, 'width-amount', 'Master width', 1, 1.52), {
+            points: [
+                { beat: 0, value: 1.04, curve: 'linear', tension: 0 },
+                { beat: S.build1, value: 1.12, curve: 'smooth', tension: 0.32 },
+                { beat: S.peak - 8, value: 1.28, curve: 'smooth', tension: 0.35 },
+                { beat: S.peak, value: 1.14, curve: 'linear', tension: 0 },
+                { beat: S.breakdown, value: 1.02, curve: 'smooth', tension: 0.3 },
+                { beat: S.final, value: 1.18, curve: 'smooth', tension: 0.32 },
+                { beat: TB, value: 1.08, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tGrainHaze.id, 'lfoRate', 'Grain LFO rate', 0, 24), {
+            points: [
+                { beat: 8, value: 0.35, curve: 'linear', tension: 0 },
+                { beat: 56, value: 11, curve: 'stairs', tension: 0, stairSteps: 5 },
+                { beat: 112, value: 3.2, curve: 'step', tension: 0 },
+                { beat: S.build1, value: 14, curve: 'exponential', tension: 0.42 },
+                { beat: S.peak - 16, value: 6, curve: 'step', tension: 0 },
+                { beat: S.peak, value: 17, curve: 'smooth', tension: 0.45 },
+                { beat: S.breakdown, value: 1.2, curve: 'linear', tension: 0 },
+                { beat: 288, value: 10, curve: 'stairs', tension: 0, stairSteps: 4 },
+                { beat: TB, value: 4, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tGrainHaze.id, 'lfoPitchAmount', 'Grain LFO→pitch', -1, 1), {
+            points: [
+                { beat: 0, value: -0.08, curve: 'linear', tension: 0 },
+                { beat: 88, value: 0.62, curve: 'smooth', tension: 0.4 },
+                { beat: 160, value: -0.55, curve: 'step', tension: 0 },
+                { beat: S.peak, value: 0.78, curve: 'exponential', tension: 0.35 },
+                { beat: S.breakdown, value: -0.42, curve: 'linear', tension: 0 },
+                { beat: TB, value: 0.22, curve: 'smooth', tension: 0.3 },
+            ],
+        }),
+        Object.assign(mkLane(tGrainHaze.id, 'grainSize', 'Grain size ms', 5, 500), {
+            points: [
+                { beat: 24, value: 95, curve: 'linear', tension: 0 },
+                { beat: 140, value: 28, curve: 'exponential', tension: 0.3 },
+                { beat: S.peak, value: 220, curve: 'smooth', tension: 0.38 },
+                { beat: S.breakdown, value: 45, curve: 'step', tension: 0 },
+                { beat: TB, value: 160, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tGrainHaze.id, 'trem-rate', 'Heli chop Hz', 0.1, 20), {
+            points: [
+                { beat: 0, value: 4.2, curve: 'linear', tension: 0 },
+                { beat: 72, value: 11, curve: 'stairs', tension: 0, stairSteps: 6 },
+                { beat: S.build1, value: 3.5, curve: 'step', tension: 0 },
+                { beat: S.peak, value: 17, curve: 'exponential', tension: 0.4 },
+                { beat: S.breakdown, value: 6, curve: 'linear', tension: 0 },
+                { beat: TB, value: 8.5, curve: 'smooth', tension: 0.32 },
+            ],
+        }),
+        Object.assign(mkLane(tGrainHaze.id, 'trem-depth', 'Heli depth', 0, 1), {
+            points: [
+                { beat: 40, value: 0.28, curve: 'linear', tension: 0 },
+                { beat: S.peak - 24, value: 0.78, curve: 'smooth', tension: 0.35 },
+                { beat: S.peak, value: 0.35, curve: 'step', tension: 0 },
+                { beat: S.breakdown, value: 0.22, curve: 'linear', tension: 0 },
+                { beat: TB, value: 0.38, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tGrainHaze.id, 'chorus-rate', 'Grain chorus rate', 0.1, 10), {
+            points: [
+                { beat: S.intro, value: 0.35, curve: 'linear', tension: 0 },
+                { beat: S.build1, value: 6.5, curve: 'exponential', tension: 0.36 },
+                { beat: S.breakdown, value: 1.1, curve: 'step', tension: 0 },
+                { beat: TB, value: 3.8, curve: 'smooth', tension: 0.3 },
+            ],
+        }),
+        Object.assign(mkLane(tGrainHaze.id, 'autopan-rate', 'Grain orbit rate', 0.05, 10), {
+            points: [
+                { beat: 0, value: 0.07, curve: 'linear', tension: 0 },
+                { beat: 128, value: 2.4, curve: 'smooth', tension: 0.4 },
+                { beat: S.peak, value: 0.12, curve: 'step', tension: 0 },
+                { beat: 320, value: 5.5, curve: 'stairs', tension: 0, stairSteps: 5 },
+                { beat: TB, value: 0.2, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tWildDrift.id, 'chaosAmount', 'Chaos intensity', 0, 1), {
+            points: [
+                { beat: 16, value: 0.32, curve: 'linear', tension: 0 },
+                { beat: S.build1, value: 0.62, curve: 'smooth', tension: 0.38 },
+                { beat: S.peak, value: 0.82, curve: 'exponential', tension: 0.32 },
+                { beat: S.breakdown, value: 0.28, curve: 'step', tension: 0 },
+                { beat: S.final, value: 0.68, curve: 'smooth', tension: 0.32 },
+                { beat: TB, value: 0.48, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tWildDrift.id, 'lfoRate', 'Wild LFO', 0, 22), {
+            points: [
+                { beat: 0, value: 0.8, curve: 'linear', tension: 0 },
+                { beat: 90, value: 12, curve: 'stairs', tension: 0, stairSteps: 4 },
+                { beat: S.peak, value: 3.5, curve: 'step', tension: 0 },
+                { beat: S.breakdown, value: 15, curve: 'smooth', tension: 0.42 },
+                { beat: TB, value: 6, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tWildDrift.id, 'rev-decay', 'Chaos space decay', 0.1, 18), {
+            points: [
+                { beat: 48, value: 3.2, curve: 'linear', tension: 0 },
+                { beat: S.peak, value: 11, curve: 'exponential', tension: 0.3 },
+                { beat: S.breakdown, value: 2.4, curve: 'step', tension: 0 },
+                { beat: S.final, value: 14, curve: 'smooth', tension: 0.35 },
+                { beat: TB, value: 5.5, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tWildDrift.id, 'delay-time', 'Chaos delay ms', 1, 2000), {
+            points: [
+                { beat: S.build1, value: 280, curve: 'linear', tension: 0 },
+                { beat: S.peak - 8, value: 920, curve: 'exponential', tension: 0.38 },
+                { beat: S.peak, value: 180, curve: 'step', tension: 0 },
+                { beat: S.breakdown, value: 1100, curve: 'smooth', tension: 0.32 },
+                { beat: TB, value: 420, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tSweepHorizon.id, 'lfoRate', 'Sweep LFO Hz', 0, 22), {
+            points: [
+                { beat: 20, value: 0.25, curve: 'linear', tension: 0 },
+                { beat: 100, value: 9, curve: 'stairs', tension: 0, stairSteps: 5 },
+                { beat: S.peak, value: 0.6, curve: 'step', tension: 0 },
+                { beat: S.breakdown, value: 14, curve: 'exponential', tension: 0.4 },
+                { beat: TB, value: 4, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tSweepHorizon.id, 'lfoPitchAmount', 'Sweep LFO→pitch', -1, 1), {
+            points: [
+                { beat: 0, value: 0.02, curve: 'linear', tension: 0 },
+                { beat: S.build1, value: 0.55, curve: 'smooth', tension: 0.35 },
+                { beat: S.peak, value: -0.48, curve: 'step', tension: 0 },
+                { beat: TB, value: 0.28, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tSweepHorizon.id, 'phaser-rate', 'Sweep phaser Hz', 0.1, 10), {
+            points: [
+                { beat: 32, value: 0.12, curve: 'linear', tension: 0 },
+                { beat: S.peak, value: 7.2, curve: 'exponential', tension: 0.36 },
+                { beat: S.breakdown, value: 0.35, curve: 'step', tension: 0 },
+                { beat: 340, value: 5.5, curve: 'stairs', tension: 0, stairSteps: 6 },
+                { beat: TB, value: 1.4, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tSweepHorizon.id, 'phaser-feedback', 'Sweep phaser FB', 0, 0.95), {
+            points: [
+                { beat: 60, value: 0.42, curve: 'linear', tension: 0 },
+                { beat: S.peak, value: 0.82, curve: 'smooth', tension: 0.3 },
+                { beat: S.breakdown, value: 0.28, curve: 'step', tension: 0 },
+                { beat: TB, value: 0.62, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tWarmHalo.id, 'delay-time', 'Halo echo ms', 1, 2000), {
+            points: [
+                { beat: S.intro, value: 380, curve: 'linear', tension: 0 },
+                { beat: S.build1, value: 720, curve: 'smooth', tension: 0.32 },
+                { beat: S.peak, value: 140, curve: 'step', tension: 0 },
+                { beat: S.breakdown, value: 980, curve: 'exponential', tension: 0.34 },
+                { beat: S.final, value: 260, curve: 'stairs', tension: 0, stairSteps: 5 },
+                { beat: TB, value: 520, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tRisingMist.id, 'msegToFilter', 'Rise MSEG→F', -1, 1), {
+            points: [
+                { beat: 0, value: 0.45, curve: 'linear', tension: 0 },
+                { beat: S.build1, value: -0.72, curve: 'smooth', tension: 0.38 },
+                { beat: S.peak, value: 0.88, curve: 'exponential', tension: 0.35 },
+                { beat: S.breakdown, value: -0.35, curve: 'step', tension: 0 },
+                { beat: TB, value: 0.62, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tRisingMist.id, 'lfoRate', 'Rise LFO', 0, 18), {
+            points: [
+                { beat: 40, value: 0.15, curve: 'linear', tension: 0 },
+                { beat: 160, value: 11, curve: 'stairs', tension: 0, stairSteps: 5 },
+                { beat: S.breakdown, value: 0.4, curve: 'step', tension: 0 },
+                { beat: TB, value: 7, curve: 'smooth', tension: 0.33 },
+            ],
+        }),
+        Object.assign(mkLane(tRisingMist.id, 'trem-rate', 'Rise chop Hz', 0.1, 20), {
+            points: [
+                { beat: 0, value: 2.8, curve: 'linear', tension: 0 },
+                { beat: S.peak - 20, value: 14, curve: 'exponential', tension: 0.4 },
+                { beat: S.peak, value: 3.2, curve: 'step', tension: 0 },
+                { beat: TB, value: 6, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tRisingMist.id, 'phaser-rate', 'Rise bloom Hz', 0.1, 10), {
+            points: [
+                { beat: 72, value: 0.08, curve: 'linear', tension: 0 },
+                { beat: S.peak, value: 5.5, curve: 'smooth', tension: 0.36 },
+                { beat: S.breakdown, value: 0.15, curve: 'step', tension: 0 },
+                { beat: TB, value: 2.8, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tDarkMist.id, 'lfoRate', 'Mist LFO', 0, 12), {
+            points: [
+                { beat: 0, value: 0.06, curve: 'linear', tension: 0 },
+                { beat: S.build1, value: 4.5, curve: 'smooth', tension: 0.35 },
+                { beat: S.peak, value: 0.9, curve: 'step', tension: 0 },
+                { beat: S.breakdown, value: 7.5, curve: 'exponential', tension: 0.38 },
+                { beat: TB, value: 2.2, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tDarkMist.id, 'lfoFilterAmount', 'Mist LFO→F', -1, 1), {
+            points: [
+                { beat: 28, value: 0.18, curve: 'linear', tension: 0 },
+                { beat: S.peak, value: 0.72, curve: 'stairs', tension: 0, stairSteps: 4 },
+                { beat: S.breakdown, value: 0.12, curve: 'step', tension: 0 },
+                { beat: TB, value: 0.55, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tDarkMist.id, 'trem-rate', 'Mist chop Hz', 0.1, 20), {
+            points: [
+                { beat: 96, value: 1.8, curve: 'linear', tension: 0 },
+                { beat: S.peak, value: 9, curve: 'exponential', tension: 0.35 },
+                { beat: S.breakdown, value: 2.2, curve: 'step', tension: 0 },
+                { beat: TB, value: 4.5, curve: 'smooth', tension: 0.3 },
+            ],
+        }),
+        Object.assign(mkLane(tEtherealVeil.id, 'lfoRate', 'Veil LFO', 0, 10), {
+            points: [
+                { beat: 0, value: 0.18, curve: 'linear', tension: 0 },
+                { beat: S.build1, value: 5.5, curve: 'stairs', tension: 0, stairSteps: 5 },
+                { beat: S.breakdown, value: 0.25, curve: 'step', tension: 0 },
+                { beat: TB, value: 3.2, curve: 'smooth', tension: 0.32 },
+            ],
+        }),
+        Object.assign(mkLane(tEtherealVeil.id, 'lfoFilterAmount', 'Veil LFO→F', -1, 1), {
+            points: [
+                { beat: 48, value: 0.12, curve: 'linear', tension: 0 },
+                { beat: S.peak, value: 0.68, curve: 'exponential', tension: 0.3 },
+                { beat: S.breakdown, value: -0.42, curve: 'linear', tension: 0 },
+                { beat: TB, value: 0.22, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tEtherealVeil.id, 'rev-decay', 'Veil decay s', 0.1, 20), {
+            points: [
+                { beat: 24, value: 4.5, curve: 'linear', tension: 0 },
+                { beat: S.peak, value: 9.5, curve: 'smooth', tension: 0.28 },
+                { beat: S.breakdown, value: 2.8, curve: 'step', tension: 0 },
+                { beat: TB, value: 6.2, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tEtherealVeil.id, 'trem-rate', 'Veil chop Hz', 0.1, 20), {
+            points: [
+                { beat: 80, value: 2.4, curve: 'linear', tension: 0 },
+                { beat: S.peak, value: 11, curve: 'exponential', tension: 0.38 },
+                { beat: S.breakdown, value: 3.5, curve: 'step', tension: 0 },
+                { beat: TB, value: 5, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tEtherealVeil.id, 'trem-depth', 'Veil chop depth', 0, 1), {
+            points: [
+                { beat: 0, value: 0.22, curve: 'linear', tension: 0 },
+                { beat: S.peak - 32, value: 0.72, curve: 'smooth', tension: 0.3 },
+                { beat: S.breakdown, value: 0.28, curve: 'step', tension: 0 },
+                { beat: TB, value: 0.48, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tSeqRipple.id, 'seqRate', 'Growl seq Hz', 0.5, 20), {
+            points: [
+                { beat: 16, value: 5.5, curve: 'linear', tension: 0 },
+                { beat: S.build1, value: 14, curve: 'stairs', tension: 0, stairSteps: 6 },
+                { beat: S.peak, value: 3.2, curve: 'step', tension: 0 },
+                { beat: S.peak + 8, value: 17, curve: 'step', tension: 0 },
+                { beat: S.breakdown, value: 6, curve: 'smooth', tension: 0.35 },
+                { beat: TB, value: 11, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tGrainStutter.id, 'audioModRate', 'Stutter AM rate', 0, 500), {
+            points: [
+                { beat: 32, value: 0, curve: 'linear', tension: 0 },
+                { beat: S.build1, value: 180, curve: 'smooth', tension: 0.35 },
+                { beat: S.peak, value: 420, curve: 'exponential', tension: 0.32 },
+                { beat: S.breakdown, value: 60, curve: 'step', tension: 0 },
+                { beat: TB, value: 260, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tGrainStutter.id, 'audioModDepth', 'Stutter AM depth', 0, 1), {
+            points: [
+                { beat: 48, value: 0.08, curve: 'linear', tension: 0 },
+                { beat: S.peak, value: 0.62, curve: 'smooth', tension: 0.33 },
+                { beat: TB, value: 0.18, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tBellDust.id, 'chorus-rate', 'Bell shimmer rate', 0.1, 10), {
+            points: [
+                { beat: 0, value: 0.22, curve: 'linear', tension: 0 },
+                { beat: S.peak, value: 7.8, curve: 'exponential', tension: 0.36 },
+                { beat: S.breakdown, value: 0.35, curve: 'step', tension: 0 },
+                { beat: TB, value: 2.2, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tPluckA.id, 'delay-time', 'Pluck dots ms', 1, 2000), {
+            points: [
+                { beat: S.build1, value: 340, curve: 'linear', tension: 0 },
+                { beat: S.peak, value: 780, curve: 'smooth', tension: 0.3 },
+                { beat: S.breakdown, value: 120, curve: 'step', tension: 0 },
+                { beat: TB, value: 520, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tLeadMoog.id, 'delay-time', 'Sitar dots ms', 1, 2000), {
+            points: [
+                { beat: 56, value: 320, curve: 'linear', tension: 0 },
+                { beat: S.peak - 4, value: 900, curve: 'exponential', tension: 0.34 },
+                { beat: S.peak, value: 200, curve: 'step', tension: 0 },
+                { beat: S.breakdown, value: 640, curve: 'smooth', tension: 0.28 },
+                { beat: TB, value: 400, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tLeadMoog.id, 'chorus-mix', 'Sitar width wet', 0, 1), {
+            points: [
+                { beat: 0, value: 0.18, curve: 'linear', tension: 0 },
+                { beat: S.final, value: 0.42, curve: 'smooth', tension: 0.3 },
+                { beat: TB, value: 0.24, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tLeadMoog.id, 'lfoRate', 'Sitar LFO', 0, 12), {
+            points: [
+                { beat: S.build1, value: 0.05, curve: 'linear', tension: 0 },
+                { beat: S.peak, value: 6.5, curve: 'stairs', tension: 0, stairSteps: 5 },
+                { beat: S.breakdown, value: 0.2, curve: 'step', tension: 0 },
+                { beat: TB, value: 3, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tLeadSync.id, 'rev-mix', 'Sync tail wet', 0, 1), {
+            points: [
+                { beat: S.build1, value: 0.12, curve: 'linear', tension: 0 },
+                { beat: S.peak, value: 0.48, curve: 'exponential', tension: 0.3 },
+                { beat: S.breakdown, value: 0.62, curve: 'linear', tension: 0 },
+                { beat: TB, value: 0.22, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tLeadSync.id, 'lfoFilterAmount', 'Sync LFO→F', -1, 1), {
+            points: [
+                { beat: 0, value: 0.1, curve: 'linear', tension: 0 },
+                { beat: S.peak, value: 0.75, curve: 'smooth', tension: 0.35 },
+                { beat: S.breakdown, value: -0.35, curve: 'step', tension: 0 },
+                { beat: TB, value: 0.45, curve: 'linear', tension: 0 },
+            ],
+        }),
+        Object.assign(mkLane(tLeadMoog.id, 'pan', 'Sitar pan', 0, 1), {
             points: [
                 { beat: S.build1, value: 0.48, curve: 'linear', tension: 0 },
                 { beat: S.peak, value: 0.52, curve: 'smooth', tension: 0.2 },
@@ -1160,7 +1719,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
                 { beat: TB, value: 0.5, curve: 'linear', tension: 0 },
             ],
         }),
-        Object.assign(mkLane(tBassGroove.id, 'pan', 'Bass pan', 0, 1), {
+        Object.assign(mkLane(tBassGroove.id, 'pan', 'Reese pan', 0, 1), {
             points: [
                 { beat: 100, value: 0.45, curve: 'linear', tension: 0 },
                 { beat: 260, value: 0.58, curve: 'smooth', tension: 0.35 },

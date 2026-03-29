@@ -176,18 +176,27 @@ export class TrackNode {
             }
         }
 
-        let prev: AudioNode = s.gainNode;
+        let prevs: AudioNode[] = [s.gainNode];
         for (const dn of s.deviceNodes) {
             if ((dn as any)._bypassed) {
                 continue;
             }
             if (dn.inputNode.numberOfInputs > 0) {
-                prev.connect(dn.inputNode);
+                // Effect: all previous outputs connect to this input
+                for (const p of prevs) {
+                    p.connect(dn.inputNode);
+                }
+                prevs = [dn.outputNode];
+            } else {
+                // Generator (Instrument): adds its output to the signal path
+                prevs.push(dn.outputNode);
             }
-            prev = dn.outputNode;
         }
 
-        prev.connect(s.preFaderTap);
+        // Connect all final outputs to the preFaderTap
+        for (const p of prevs) {
+            p.connect(s.preFaderTap);
+        }
         s.preFaderTap.connect(s.faderNode);
         s.faderNode.connect(s.postFaderGain);
         s.postFaderGain.connect(s.panNode);

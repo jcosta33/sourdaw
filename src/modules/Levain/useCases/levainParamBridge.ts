@@ -136,7 +136,7 @@ export function setMacroWithAudio(index: number, value: number): void {
         case 'Space':
             // Blend close vs room mic positions.
             device.setParam('mic_0_volume', 1.0 - value * 0.5);
-            device.setParam('mic_2_volume', value);
+            device.setParam('mic_1_volume', value);
             break;
         case 'Tone':
             device.setParam('tone', value);
