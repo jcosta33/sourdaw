@@ -19,7 +19,7 @@ import { renameTrack } from '#/modules/Arrangement/useCases/renameTrack';
 import { TRACK_COLOR_PRESETS } from '#/helpers/UI/colorPresets';
 import { menuBtnClass } from '#/helpers/UI/contextMenuStyles';
 
-import { LevelMeter } from '../metering/LevelMeter';
+import { LevelMeter } from '../Metering/LevelMeter';
 import { DeviceChainSection } from './DeviceChainSection';
 import { SendsSection } from './SendsSection';
 import { IOSection } from './IOSection';

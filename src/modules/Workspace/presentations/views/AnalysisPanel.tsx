@@ -1,11 +1,11 @@
 import { type ReactElement, type ReactNode, useRef, useState, useEffect } from 'react';
 import { ScrollArea } from '#/components/ui/scroll-area';
-import { LUFSMeter } from './metering/LUFSMeter';
-import { PhaseCorrelationDisplay } from './metering/PhaseCorrelationDisplay';
-import { Oscilloscope } from './metering/Oscilloscope';
-import { SpectrumAnalyzer } from './metering/SpectrumAnalyzer';
-import { Spectrogram } from './metering/Spectrogram';
-import { Goniometer } from './metering/Goniometer';
+import { LUFSMeter } from './Metering/LUFSMeter';
+import { PhaseCorrelationDisplay } from './Metering/PhaseCorrelationDisplay';
+import { Oscilloscope } from './Metering/Oscilloscope';
+import { SpectrumAnalyzer } from './Metering/SpectrumAnalyzer';
+import { Spectrogram } from './Metering/Spectrogram';
+import { Goniometer } from './Metering/Goniometer';
 import { SpatialPanner } from '../components/SpatialPanner';
 import { Wavetable3D } from '../components/Wavetable3D';
 

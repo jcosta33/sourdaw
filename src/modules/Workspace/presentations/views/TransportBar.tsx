@@ -12,7 +12,7 @@ import { AutoScrollToggle } from './Transport/AutoScrollToggle';
 import { SoloModeSelector } from './Transport/SoloModeSelector';
 import { PlayheadDisplay } from './Transport/PlayheadDisplay';
 import { UndoRedoButtons } from './Transport/UndoRedoButtons';
-import { VoiceButton } from '../components/transport/VoiceButton';
+import { VoiceButton } from '../components/Transport/VoiceButton';
 import { PanelToggles } from './Transport/PanelToggles';
 import { ProjectName } from './Transport/ProjectName';
 import { PromptBar } from './PromptBar';

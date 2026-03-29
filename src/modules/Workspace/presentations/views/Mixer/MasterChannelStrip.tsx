@@ -4,7 +4,7 @@ import { cn } from '#/helpers/Styles/cn';
 import { setMasterGain } from '#/modules/Transport/useCases/setMasterGain';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 
-import { LevelMeter } from '../metering/LevelMeter';
+import { LevelMeter } from '../Metering/LevelMeter';
 
 type MasterChannelStripProps = {
     widthClass: string;
