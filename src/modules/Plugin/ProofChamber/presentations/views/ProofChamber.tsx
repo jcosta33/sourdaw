@@ -1,6 +1,5 @@
 import { type ReactElement, useEffect, useSyncExternalStore } from 'react';
 import { SpectrogramView } from './SpectrogramView';
-import { Label } from '#/components/ui/label';
 import { Slider } from '#/components/ui/slider';
 import { Button } from '#/components/ui/button';
 import { 
@@ -124,7 +123,7 @@ function KnobControl({ label, value, min = 0, max = 100, step = 1, displayValue,
 }) {
     return (
         <div className="flex flex-col gap-2 items-center text-center">
-            <Label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{label}</Label>
+            <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{label}</span>
             <Slider 
                 value={[value]} min={min} max={max} step={step}
                 onValueChange={([v]) => onChange(v!)}

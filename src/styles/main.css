@@ -41,6 +41,7 @@
     --color-accent-amber: #c4aa5f;
     --color-accent-red: #c49090;
     --color-accent-orange: #f1a54b;
+    --color-accent-pink: #c18fa3;
 
     /* UI States (muted DAW conventions — readable but not screaming) */
     --color-state-success: var(--color-accent-mint);

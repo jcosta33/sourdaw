@@ -58,6 +58,7 @@
     "@eslint-community/eslint-plugin-eslint-comments": "^4.7.1",
     "@eslint-react/eslint-plugin": "^3.0.0",
     "@eslint/js": "^10.0.1",
+    "@rolldown/plugin-babel": "^0.2.2",
     "@stylistic/eslint-plugin": "^5.10.0",
     "@tanstack/router-plugin": "^1.166.10",
     "@tauri-apps/cli": "^2.10.1",

@@ -1,7 +1,5 @@
 import { type ReactElement, useSyncExternalStore } from 'react';
-import { Label } from '#/components/ui/label';
 import { Slider } from '#/components/ui/slider';
-import { Switch } from '#/components/ui/switch';
 import { kneadStore, updateTrackKneadState } from '#/modules/Knead/stores/kneadStore';
 
 export const KneadControls = ({ trackId }: { trackId: string }): ReactElement => {
@@ -28,7 +26,7 @@ export const KneadControls = ({ trackId }: { trackId: string }): ReactElement =>
             <div className="space-y-3">
                 <div className="space-y-1.5">
                     <div className="flex justify-between items-center">
-                        <Label className="text-xs">Retune Speed</Label>
+                        <span className="text-xs font-medium leading-none">Retune Speed</span>
                         <span className="text-[10px] text-muted-foreground">{kneadState.retuneSpeedMs} ms</span>
                     </div>
                     <Slider 
@@ -40,7 +38,7 @@ export const KneadControls = ({ trackId }: { trackId: string }): ReactElement =>
 
                 <div className="space-y-1.5">
                     <div className="flex justify-between items-center">
-                        <Label className="text-xs">Humanize</Label>
+                        <span className="text-xs font-medium leading-none">Humanize</span>
                         <span className="text-[10px] text-muted-foreground">{kneadState.humanizePercent}%</span>
                     </div>
                     <Slider 
@@ -52,7 +50,7 @@ export const KneadControls = ({ trackId }: { trackId: string }): ReactElement =>
 
                 <div className="space-y-1.5">
                     <div className="flex justify-between items-center">
-                        <Label className="text-xs">Tolerance</Label>
+                        <span className="text-xs font-medium leading-none">Tolerance</span>
                         <span className="text-[10px] text-muted-foreground">{kneadState.toleranceCents} ct</span>
                     </div>
                     <Slider 
@@ -63,10 +61,12 @@ export const KneadControls = ({ trackId }: { trackId: string }): ReactElement =>
                 </div>
 
                 <div className="flex items-center justify-between pt-2">
-                    <Label className="text-xs">Preserve Formants</Label>
-                    <Switch 
+                    <span className="text-xs font-medium leading-none">Preserve Formants</span>
+                    <input 
+                        type="checkbox"
                         checked={kneadState.formantPreserve}
-                        onCheckedChange={(val: boolean) => updateTrackKneadState(trackId, s => ({ ...s, formantPreserve: val }))}
+                        onChange={(e) => updateTrackKneadState(trackId, s => ({ ...s, formantPreserve: e.target.checked }))}
+                        className="cursor-pointer"
                     />
                 </div>
             </div>

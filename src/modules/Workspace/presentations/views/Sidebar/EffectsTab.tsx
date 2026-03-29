@@ -422,7 +422,7 @@ export const EffectsTab = ({
     // ── Route: Root — three top-level section cards ──────────────────────────
 
     return (
-        <div className="flex flex-col gap-0 animate-in slide-in-from-left-4 duration-200">
+        <div className="flex flex-col gap-0 px-1.5 pb-4 animate-in slide-in-from-left-4 duration-200">
             {/* Featured: Premium Plugins */}
             <div className="flex flex-col gap-1.5 mb-3">
                 <InstrumentCard

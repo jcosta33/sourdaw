@@ -2,7 +2,13 @@ import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { newProject } from '../projectPersistence';
-import { demo1_TheCompleteMix, demo2_ElectronicBeat, demo3_AcousticSession, demo4_NativeShowcase } from '../demoProjects';
+import {
+    demo1_TheCompleteMix,
+    demo2_ElectronicBeat,
+    demo3_AcousticSession,
+    demo4_NativeShowcase,
+    demo5_NebulaDrift,
+} from '../demoProjects';
 import { type ProjectTemplate } from '#/modules/Project/models/ProjectTemplateTypes';
 
 let synthDeviceCounter = 0;
@@ -154,6 +160,14 @@ const templates: ProjectTemplate[] = [
         category: 'demo',
         platform: 'native',
         create: () => demo4_NativeShowcase(),
+    },
+    {
+        id: 'demo-nebula-drift',
+        name: 'Nebula Drift',
+        description:
+            'A 2-minute Tangerine Dream–style atmospheric journey: 20 tracks of Fermenter drones, Levain lines, and Toaster pulse with automation, space, and texture.',
+        category: 'demo',
+        create: () => demo5_NebulaDrift(),
     },
 ];
 

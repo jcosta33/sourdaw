@@ -1,9 +1,10 @@
 /// <reference types="vitest" />
 import path from 'path';
 import { defineConfig } from 'vitest/config';
-import react from '@vitejs/plugin-react';
+import react, { reactCompilerPreset } from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite';
+import babel from '@rolldown/plugin-babel';
 
 export default defineConfig({
     base: './',
@@ -12,11 +13,8 @@ export default defineConfig({
     },
     plugins: [
         TanStackRouterVite({ routesDirectory: './src/routes' }),
-        react({
-            babel: {
-                plugins: ['babel-plugin-react-compiler'],
-            },
-        }),
+        babel({ presets: [reactCompilerPreset()] }),
+        react(),
         tailwindcss(),
     ],
     test: {

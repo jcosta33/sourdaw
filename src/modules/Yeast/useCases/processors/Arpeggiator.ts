@@ -51,7 +51,6 @@ export class Arpeggiator implements MidiProcessor {
     private pressCounter = 0;
     private stepIndex = 0;
     private lastStepTimeSamples = -Infinity;
-    private direction = 1; // 1 = forward, -1 = backward (for up-down)
     private activeGenerated: ActiveNote[] = [];
     private scheduled = new ScheduledEventQueue();
     private rngState = 0xDEAD;
@@ -69,7 +68,6 @@ export class Arpeggiator implements MidiProcessor {
                 this.addHeldNote(event.kind.channel, event.kind.note, event.kind.velocity);
                 if (this.restartMode === 'restartOnNote') {
                     this.stepIndex = 0;
-                    this.direction = 1;
                     this.lastStepTimeSamples = event.timeSamples;
                 }
             } else if (event.kind.type === 'noteOff') {
@@ -157,7 +155,6 @@ export class Arpeggiator implements MidiProcessor {
         this.held = [];
         this.latched = [];
         this.stepIndex = 0;
-        this.direction = 1;
         this.lastStepTimeSamples = -Infinity;
         this.activeGenerated = [];
         this.scheduled.clear();

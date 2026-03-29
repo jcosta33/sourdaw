@@ -288,7 +288,7 @@ export const InstrumentsTab = ({
     );
 
     return (
-        <div className="flex flex-col gap-0 animate-in slide-in-from-left-4 duration-200">
+        <div className="flex flex-col gap-0 px-1.5 pb-4 animate-in slide-in-from-left-4 duration-200">
             {/* ── Section: Instruments ─────────────────────────────────── */}
             <SectionHeader label="Instruments" />
 

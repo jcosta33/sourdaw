@@ -3,7 +3,7 @@
  * Supports voicing modes (close, drop 2, spread) and optional strum timing.
  */
 
-import { type MidiEvent, type TransportInfo, samplesPerBeat } from '../../models/MidiEvent';
+import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 import { type MidiProcessor } from '../../models/MidiProcessor';
 
 const CHORD_FORMULAS: Record<string, number[]> = {
