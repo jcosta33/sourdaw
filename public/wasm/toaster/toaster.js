@@ -1,7 +1,5 @@
-/* @ts-self-types="./toaster.d.ts" */
-
 /**
- * WASM-exported Grinder instance for AudioWorklet.
+ * WASM-exported Toaster instance for AudioWorklet.
  */
 export class ToasterInstance {
     __destroy_into_raw() {
@@ -85,7 +83,7 @@ if (Symbol.dispose) ToasterInstance.prototype[Symbol.dispose] = ToasterInstance.
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
-        __wbg___wbindgen_throw_6ddd609b62940d55: function(arg0, arg1) {
+        __wbg___wbindgen_throw_5549492daedad139: function(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
         },
         __wbindgen_init_externref_table: function() {

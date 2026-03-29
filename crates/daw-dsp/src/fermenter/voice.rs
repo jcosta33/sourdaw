@@ -1,20 +1,20 @@
 /// Single synthesizer voice — owns oscillator, filter, envelopes, LFO.
 
-use crate::additive::AdditiveEngine;
-use crate::chaos::{LorenzMod, PerlinMod};
-use crate::envelope::Envelope;
-use crate::filter::{fast_tanh, FilterMode, SvfFilter, MoogLadder, DiodeLadder, FormantFilter, Ms20Filter, SemFilter};
-use crate::fm::FmEngine;
-use crate::granular::GranularEngine;
-use crate::lfo::{Lfo, LfoShape};
-use crate::modulation::ModMatrix;
-use crate::mseg::Mseg;
-use crate::noise::NoiseGen;
-use crate::oscillator::{PolyBlepOsc, UnisonOsc, WavetableOsc, Wavetable};
-use crate::physical::KarplusStrong;
-use crate::sampler::SamplerEngine;
-use crate::spectral::SpectralWarp;
-use crate::stepseq::StepSequencer;
+use super::additive::AdditiveEngine;
+use super::chaos::{LorenzMod, PerlinMod};
+use super::envelope::Envelope;
+use super::filter::{fast_tanh, FilterMode, SvfFilter, MoogLadder, DiodeLadder, FormantFilter, Ms20Filter, SemFilter};
+use super::fm::FmEngine;
+use super::granular::GranularEngine;
+use super::lfo::{Lfo, LfoShape};
+use super::modulation::ModMatrix;
+use super::mseg::Mseg;
+use super::noise::NoiseGen;
+use super::oscillator::{PolyBlepOsc, UnisonOsc, WavetableOsc, Wavetable};
+use super::physical::KarplusStrong;
+use super::sampler::SamplerEngine;
+use super::spectral::SpectralWarp;
+use super::stepseq::StepSequencer;
 
 /// All per-block parameters passed from MasterSynth to Voice::render.
 pub struct VoiceParams<'a> {

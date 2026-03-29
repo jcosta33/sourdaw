@@ -13,6 +13,9 @@ export type GlutenState = {
     grDb: number;
     inputDb: number;
     outputDb: number;
+    crest: number;
+    phaseCorr: number;
+    latency: number;
     uiLevel: 1 | 2 | 3 | 4 | 5;
 };
 
@@ -22,6 +25,9 @@ export const glutenStore = new Store<GlutenState>(logger, {
         grDb: 0,
         inputDb: -100,
         outputDb: -100,
+        crest: 0,
+        phaseCorr: 1,
+        latency: 0,
         uiLevel: 2,
     },
 });
@@ -49,9 +55,14 @@ export function loadGlutenPatch(patch: GlutenPatch): void {
     }
 }
 
-export function updateGlutenMeters(grDb: number, inputDb: number, outputDb: number): void {
+export function updateGlutenMeters(grDb: number, inputDb: number, outputDb: number, crest?: number, phaseCorr?: number, latency?: number): void {
     const state = glutenStore.value;
     if (state) {
-        glutenStore.set({ ...state, grDb, inputDb, outputDb });
+        glutenStore.set({
+            ...state, grDb, inputDb, outputDb,
+            crest: crest ?? state.crest,
+            phaseCorr: phaseCorr ?? state.phaseCorr,
+            latency: latency ?? state.latency,
+        });
     }
 }

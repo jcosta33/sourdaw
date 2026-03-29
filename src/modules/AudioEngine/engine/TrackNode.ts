@@ -8,14 +8,25 @@ import {
 import { isFermenterDevice, createFermenterNode, type FermenterNodeResult } from './FermenterNode';
 import { isToasterDevice, createToasterNode, type ToasterNodeResult } from './ToasterNode';
 import { isLevainDevice, createLevainNode, type LevainNodeResult } from './LevainNode';
+import { isProofChamberDevice, createProofChamberNode, type ProofChamberNodeResult } from './ProofChamberNode';
+import { isGlutenDevice, createGlutenNode, type GlutenNodeResult } from './GlutenNode';
+import { isProofDevice, createProofNode, type ProofNodeResult } from './ProofNode';
+import { isScoringDevice, createScoringNode, type ScoringNodeResult } from './ScoringNode';
+import { updateTunerTelemetry } from '#/modules/Scoring/stores/scoringStore';
+import { updateGlutenMeters } from '#/modules/Gluten/stores/glutenStore';
+import { updateProofMeters } from '#/modules/Proof/stores/proofStore';
+import { registerProofDevice, unregisterProofDevice, syncFullPatch } from '#/modules/Proof/useCases/proofParamBridge';
 import { registerLevainDevice, unregisterLevainDevice } from '#/modules/Levain/useCases/levainParamBridge';
 import { setEngineReady } from '#/modules/Levain/stores/levainStore';
 import { DEVICE_FACTORIES, applyParams, createFaustDeviceNode } from '../useCases/deviceResolvers';
 import { PluginHostNode } from '../models/PluginHostNode';
 import { Container } from '#/helpers/DependencyInjector/Container';
+import { EventBus } from '#/helpers/Event/EventBus';
+import { AudioDeviceLoadedEvent } from '../events/AudioDeviceLoadedEvent';
 import { Logger } from '#/helpers/Logger/Logger';
 
 const logger = Container.getInstance().get(Logger);
+const eventBus = Container.getInstance().get(EventBus);
 
 export interface TrackNodeDeps {
     context: AudioContext;
@@ -352,7 +363,7 @@ export class TrackNode {
                 pendingDevicePromises.add(loadPromise);
                 loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
             } else if (isToasterDevice(deviceType)) {
-                // Grinder drum machine — async WASM init + AudioWorkletNode (instrument, no audio input)
+                // Toaster drum machine — async WASM init + AudioWorkletNode (instrument, no audio input)
                 const loadingBypass = context.createGain();
                 dn = {
                     deviceId,
@@ -367,9 +378,9 @@ export class TrackNode {
                 const queuedSetParam = (name: string, value: number): void => {
                     pendingParams.push([name, value]);
                 };
-                // Expose a provisional grinderControls so updateParam() calls during
+                // Expose a provisional toasterControls so updateParam() calls during
                 // async load get queued instead of silently dropped
-                dn.grinderControls = {
+                dn.toasterControls = {
                     ready: false,
                     noteOn: () => {},
                     noteOff: () => {},
@@ -388,13 +399,13 @@ export class TrackNode {
                         }
                         const idx = this.strip.deviceNodes.findIndex((d) => d.deviceId === deviceId);
                         if (idx !== -1) {
-                            const grinderDn: BuiltinDeviceNode = {
+                            const toasterDn: BuiltinDeviceNode = {
                                 deviceId,
                                 type: deviceType,
                                 nodes: [result.workletNode],
                                 inputNode: result.workletNode,
                                 outputNode: result.workletNode,
-                                grinderControls: {
+                                toasterControls: {
                                     ready: true,
                                     noteOn: result.noteOn,
                                     noteOff: result.noteOff,
@@ -404,11 +415,14 @@ export class TrackNode {
                                     destroy: result.destroy,
                                 },
                             };
-                            this.strip.deviceNodes[idx] = grinderDn;
+                            this.strip.deviceNodes[idx] = toasterDn;
                             this.rebuildChain();
+                            
+                            // Publish event so Toaster can hydrate its WASM module
+                            eventBus.emit(new AudioDeviceLoadedEvent({ deviceId, deviceType }));
                         }
                     })
-                    .catch((error) => logger.warn(`[WebAudioEngine] Grinder failed: ${error}`));
+                    .catch((error) => logger.warn(`[WebAudioEngine] Toaster failed: ${error}`));
                 pendingDevicePromises.add(loadPromise);
                 loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
             } else if (isLevainDevice(deviceType)) {
@@ -474,6 +488,191 @@ export class TrackNode {
                     .catch((error) => logger.warn(`[WebAudioEngine] Levain failed: ${error}`));
                 pendingDevicePromises.add(loadPromise);
                 loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
+            } else if (isProofChamberDevice(deviceType)) {
+                // Proof Chamber reverb — async WASM effect (stereo in/out, has custom UI)
+                const loadingBypass = context.createGain();
+                dn = {
+                    deviceId,
+                    type: deviceType,
+                    nodes: [loadingBypass],
+                    inputNode: loadingBypass,
+                    outputNode: loadingBypass,
+                };
+
+                const pendingParams: Array<[string, number]> = [];
+                dn.nativeDspControls = {
+                    setParam: (name: string, value: number) => { pendingParams.push([name, value]); },
+                    setBypass: () => {},
+                };
+
+                const loadPromise = createProofChamberNode(context)
+                    .then(async (result: ProofChamberNodeResult) => {
+                        await result.ready;
+                        for (const [name, value] of pendingParams) {
+                            result.setParam(name, value);
+                        }
+                        const idx = this.strip.deviceNodes.findIndex((d) => d.deviceId === deviceId);
+                        if (idx !== -1) {
+                            const pcDn: BuiltinDeviceNode = {
+                                deviceId,
+                                type: deviceType,
+                                nodes: [result.workletNode],
+                                inputNode: result.workletNode,
+                                outputNode: result.workletNode,
+                                nativeDspControls: {
+                                    setParam: result.setParam,
+                                    setBypass: result.setBypass,
+                                },
+                            };
+                            this.strip.deviceNodes[idx] = pcDn;
+                            this.rebuildChain();
+                        }
+                    })
+                    .catch((error) => logger.warn(`[WebAudioEngine] Proof Chamber failed: ${error}`));
+                pendingDevicePromises.add(loadPromise);
+                loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
+            } else if (isGlutenDevice(deviceType)) {
+                // Gluten bus compressor — async WASM effect (stereo in/out, has custom UI)
+                const loadingBypass = context.createGain();
+                dn = {
+                    deviceId,
+                    type: deviceType,
+                    nodes: [loadingBypass],
+                    inputNode: loadingBypass,
+                    outputNode: loadingBypass,
+                };
+
+                const pendingParams: Array<[string, number]> = [];
+                dn.nativeDspControls = {
+                    setParam: (name: string, value: number) => { pendingParams.push([name, value]); },
+                    setBypass: () => {},
+                };
+
+                const loadPromise = createGlutenNode(context)
+                    .then(async (result: GlutenNodeResult) => {
+                        await result.ready;
+                        for (const [name, value] of pendingParams) {
+                            result.setParam(name, value);
+                        }
+                        // Wire meter data to store
+                        result.onMeterData((data) => {
+                            updateGlutenMeters(data.grDb, data.inputDb, data.outputDb, data.crest, data.phaseCorr, data.latency);
+                        });
+                        const idx = this.strip.deviceNodes.findIndex((d) => d.deviceId === deviceId);
+                        if (idx !== -1) {
+                            const glutenDn: BuiltinDeviceNode = {
+                                deviceId,
+                                type: deviceType,
+                                nodes: [result.workletNode],
+                                inputNode: result.workletNode,
+                                outputNode: result.workletNode,
+                                nativeDspControls: {
+                                    setParam: result.setParam,
+                                    setBypass: result.setBypass,
+                                },
+                            };
+                            this.strip.deviceNodes[idx] = glutenDn;
+                            this.rebuildChain();
+                        }
+                    })
+                    .catch((error) => logger.warn(`[WebAudioEngine] Gluten failed: ${error}`));
+                pendingDevicePromises.add(loadPromise);
+                loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
+            } else if (isProofDevice(deviceType)) {
+                // Proof mastering suite — async WASM effect (stereo in/out, has custom UI)
+                const loadingBypass = context.createGain();
+                dn = {
+                    deviceId,
+                    type: deviceType,
+                    nodes: [loadingBypass],
+                    inputNode: loadingBypass,
+                    outputNode: loadingBypass,
+                };
+
+                const pendingParams: Array<[string, number]> = [];
+                dn.nativeDspControls = {
+                    setParam: (name: string, value: number) => { pendingParams.push([name, value]); },
+                    setBypass: () => {},
+                };
+
+                const loadPromise = createProofNode(context)
+                    .then(async (result: ProofNodeResult) => {
+                        await result.ready;
+                        for (const [name, value] of pendingParams) {
+                            result.setParam(name, value);
+                        }
+                        // Wire meter data to store
+                        result.onMeterData((data) => {
+                            updateProofMeters(data);
+                        });
+                        // Register param bridge so UI controls reach the engine
+                        registerProofDevice({
+                            setParam: result.setParam,
+                            reorderModules: result.reorderModules,
+                            resetIntegrated: result.resetIntegrated,
+                        });
+                        const idx = this.strip.deviceNodes.findIndex((d) => d.deviceId === deviceId);
+                        if (idx !== -1) {
+                            const proofDn: BuiltinDeviceNode = {
+                                deviceId,
+                                type: deviceType,
+                                nodes: [result.workletNode],
+                                inputNode: result.workletNode,
+                                outputNode: result.workletNode,
+                                nativeDspControls: {
+                                    setParam: result.setParam,
+                                    setBypass: result.setBypass,
+                                },
+                            };
+                            this.strip.deviceNodes[idx] = proofDn;
+                            this.rebuildChain();
+                            // Sync full patch from store to engine
+                            syncFullPatch();
+                        }
+                    })
+                    .catch((error) => logger.warn(`[WebAudioEngine] Proof failed: ${error}`));
+                pendingDevicePromises.add(loadPromise);
+                loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
+            } else if (isScoringDevice(deviceType)) {
+                // Scoring tuner — analyzer effect, audio passes through
+                const loadingBypass = context.createGain();
+                dn = { deviceId, type: deviceType, nodes: [loadingBypass], inputNode: loadingBypass, outputNode: loadingBypass };
+                dn.nativeDspControls = {
+                    setParam: () => {},
+                    setBypass: () => {},
+                };
+                const loadPromise = createScoringNode(context)
+                    .then(async (result: ScoringNodeResult) => {
+                        await result.ready;
+                        // Wire telemetry callback to update the scoring store
+                        result.onTelemetry((data) => {
+                            updateTunerTelemetry({
+                                frequency: data.frequency,
+                                cents: data.cents,
+                                confidence: data.confidence,
+                                noteIndex: data.noteIndex,
+                                octave: data.octave,
+                                midiNote: data.midiNote,
+                                noteName: data.noteName,
+                                active: data.active,
+                            });
+                        });
+                        const idx = this.strip.deviceNodes.findIndex((d) => d.deviceId === deviceId);
+                        if (idx !== -1) {
+                            const scoringDn: BuiltinDeviceNode = {
+                                deviceId, type: deviceType,
+                                nodes: [result.workletNode],
+                                inputNode: result.workletNode,
+                                outputNode: result.workletNode,
+                                nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
+                            };
+                            this.strip.deviceNodes[idx] = scoringDn;
+                            this.rebuildChain();
+                        }
+                    })
+                    .catch((error) => logger.warn(`[WebAudioEngine] Scoring failed: ${error}`));
+                pendingDevicePromises.add(loadPromise);
+                loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
             } else {
                 return;
             }
@@ -491,11 +690,14 @@ export class TrackNode {
         if (dn.fermenterControls) {
             dn.fermenterControls.destroy();
         }
-        if (dn.grinderControls) {
-            dn.grinderControls.destroy();
+        if (dn.toasterControls) {
+            dn.toasterControls.destroy();
         }
         if (dn.levainControls) {
             dn.levainControls.destroy();
+        }
+        if (dn.type === 'proof') {
+            unregisterProofDevice();
         }
         for (const n of dn.nodes) {
             n.disconnect();
@@ -547,8 +749,8 @@ export class TrackNode {
             return;
         }
 
-        if (dn.grinderControls) {
-            dn.grinderControls.setParam(paramId, value);
+        if (dn.toasterControls) {
+            dn.toasterControls.setParam(paramId, value);
             return;
         }
 
@@ -557,7 +759,7 @@ export class TrackNode {
             return;
         }
 
-        if (dn.type.startsWith('native-') && dn.nativeDspControls) {
+        if (dn.nativeDspControls) {
             dn.nativeDspControls.setParam(paramId, value);
         } else if (DEVICE_FACTORIES[dn.type]) {
             applyParams(dn as any, dn.type, { [paramId]: value });
@@ -598,8 +800,8 @@ export class TrackNode {
         }
         if (dn.fermenterControls) {
             dn.fermenterControls.setBypass(bypassed);
-        } else if (dn.grinderControls) {
-            dn.grinderControls.setBypass(bypassed);
+        } else if (dn.toasterControls) {
+            dn.toasterControls.setBypass(bypassed);
         } else if (dn.levainControls) {
             dn.levainControls.setBypass(bypassed);
         } else if (dn.nativeDspControls) {
@@ -621,8 +823,8 @@ export class TrackNode {
             if (dn.fermenterControls) {
                 dn.fermenterControls.destroy();
             }
-            if (dn.grinderControls) {
-                dn.grinderControls.destroy();
+            if (dn.toasterControls) {
+                dn.toasterControls.destroy();
             }
             if (dn.levainControls) {
                 dn.levainControls.destroy();

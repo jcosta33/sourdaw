@@ -1,6 +1,12 @@
 [workspace]
 members = [
-    "crates/*",
+    "crates/daw-core",
+    "crates/daw-engine",
+    "crates/daw-dsp",
+    "crates/daw-io",
+    "crates/daw-plugin-host",
+    "crates/proof-chamber",
+    "crates/scoring",
     "src-tauri"
 ]
 resolver = "2"

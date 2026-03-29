@@ -14,11 +14,16 @@ import { type ReactElement, useState, useRef, useEffect } from 'react';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import {
     type SpaceType,
+    type AlgorithmType,
     type ProofChamberParams,
     DEFAULT_PARAMS,
     SPACE_PRESETS,
     PARAM_MAP,
+    ALGORITHM_MAP,
 } from '../../models/ProofChamberPatch';
+import { DecayEqOverlay } from '../components/DecayEqOverlay';
+import { SignalFlowDiagram } from '../components/SignalFlowDiagram';
+import { IrBrowser } from '../components/IrBrowser';
 
 const SPACES: { id: SpaceType; label: string }[] = [
     { id: 'hall', label: 'Hall' },
@@ -28,6 +33,7 @@ const SPACES: { id: SpaceType; label: string }[] = [
     { id: 'cathedral', label: 'Cathedral' },
     { id: 'shimmer', label: 'Shimmer' },
     { id: 'infinite', label: 'Infinite' },
+    { id: 'spring', label: 'Spring' },
 ];
 
 type ProofChamberPanelProps = {
@@ -37,6 +43,9 @@ type ProofChamberPanelProps = {
 
 export const ProofChamberPanel = ({ onParamChange }: ProofChamberPanelProps): ReactElement => {
     const [params, setParams] = useState<ProofChamberParams>({ ...DEFAULT_PARAMS });
+    const [decayEqMults, setDecayEqMults] = useState([1.0, 1.0, 1.0, 1.0, 1.0, 1.0]);
+    const [showDecayEq, setShowDecayEq] = useState(false);
+    const [showFlow, setShowFlow] = useState(false);
 
     const set = (key: keyof ProofChamberParams, value: number | boolean): void => {
         setParams((prev) => ({ ...prev, [key]: value }));
@@ -50,11 +59,17 @@ export const ProofChamberPanel = ({ onParamChange }: ProofChamberPanelProps): Re
 
     const selectSpace = (space: SpaceType): void => {
         const preset = SPACE_PRESETS[space];
-        const newParams = { ...DEFAULT_PARAMS, ...preset, space };
+        const algo = (preset as Record<string, unknown>).algorithm as AlgorithmType | undefined;
+        const newParams = { ...DEFAULT_PARAMS, ...preset, space, algorithm: algo ?? 'plate' };
         setParams(newParams);
-        // Send all preset params to engine
         if (onParamChange) {
+            // Send algorithm switch first
+            onParamChange('algorithm', ALGORITHM_MAP[newParams.algorithm] ?? 0);
+            // Then send all other params
             for (const [key, val] of Object.entries(newParams)) {
+                if (key === 'algorithm' || key === 'space') {
+                    continue;
+                }
                 const rustKey = PARAM_MAP[key];
                 if (rustKey && typeof val === 'number') {
                     onParamChange(rustKey, val);
@@ -89,13 +104,80 @@ export const ProofChamberPanel = ({ onParamChange }: ProofChamberPanelProps): Re
                         </button>
                     ))}
                 </div>
-                <div className="w-16" /> {/* spacer */}
+                {/* Vintage mode selector */}
+                <div className="flex gap-0.5 bg-surface-base/50 rounded p-0.5">
+                    {[
+                        { id: 0, label: 'Modern' },
+                        { id: 1, label: '80s' },
+                        { id: 2, label: '70s' },
+                    ].map(({ id, label }) => (
+                        <button
+                            key={id}
+                            type="button"
+                            className={`px-1.5 py-0.5 rounded text-[8px] font-medium transition-colors ${
+                                params.vintage === id
+                                    ? 'bg-[var(--color-accent-peach)] text-white'
+                                    : 'text-muted-foreground hover:text-foreground'
+                            }`}
+                            onClick={() => set('vintage', id)}
+                        >
+                            {label}
+                        </button>
+                    ))}
+                </div>
             </div>
 
-            {/* ─── Spectrogram hero ─── */}
-            <div className="flex-1 min-h-[60px] shrink border-b border-border/20">
+            {/* ─── Spectrogram hero + overlays ─── */}
+            <div className="flex-1 min-h-[60px] shrink border-b border-border/20 relative">
                 <ReverbSpectrogram decay={params.decay} damping={params.damping} />
+                {showDecayEq ? (
+                    <DecayEqOverlay
+                        multipliers={decayEqMults}
+                        onChange={(band, mult) => {
+                            const next = [...decayEqMults];
+                            next[band] = mult;
+                            setDecayEqMults(next);
+                            if (onParamChange) {
+                                onParamChange(`decay_eq_${band}`, mult);
+                            }
+                        }}
+                        width={600}
+                        height={120}
+                    />
+                ) : null}
+                {/* Toggle buttons for overlays */}
+                <div className="absolute top-1 right-1 flex gap-0.5">
+                    <button
+                        type="button"
+                        className={`px-1 py-0.5 rounded text-[7px] font-medium transition-colors ${
+                            showDecayEq ? 'bg-[var(--color-accent-cyan)]/30 text-[var(--color-accent-cyan)]' : 'text-muted-foreground/30 hover:text-muted-foreground'
+                        }`}
+                        onClick={() => setShowDecayEq(!showDecayEq)}
+                    >
+                        EQ
+                    </button>
+                    <button
+                        type="button"
+                        className={`px-1 py-0.5 rounded text-[7px] font-medium transition-colors ${
+                            showFlow ? 'bg-[var(--color-accent-cyan)]/30 text-[var(--color-accent-cyan)]' : 'text-muted-foreground/30 hover:text-muted-foreground'
+                        }`}
+                        onClick={() => setShowFlow(!showFlow)}
+                    >
+                        Flow
+                    </button>
+                </div>
             </div>
+
+            {/* ─── Signal flow diagram (toggleable) ─── */}
+            {showFlow ? (
+                <div className="shrink-0 border-b border-border/20 px-2 py-1 bg-surface-app/30">
+                    <SignalFlowDiagram
+                        algorithm={params.algorithm}
+                        shimmerEnabled={params.shimmer}
+                        freezeEnabled={params.freeze}
+                    />
+                </div>
+            ) : null}
 
             {/* ─── Knob row ─── */}
             <div className="shrink-0 overflow-x-auto">
@@ -147,6 +229,17 @@ export const ProofChamberPanel = ({ onParamChange }: ProofChamberPanelProps): Re
 
                     <div className="w-px self-stretch bg-border/15 shrink-0" />
 
+                    {/* Advanced: Gravity, Early/Late */}
+                    <div className="flex items-end gap-2 px-3">
+                        <KnobStack label="Gravity" value={params.gravity} onChange={(v) => set('gravity', v)}
+                            min={-1} max={1} step={0.01} defaultValue={0.5} size="md" bipolar />
+                        <KnobStack label="E/L Bal" value={params.earlyLateBalance} onChange={(v) => set('earlyLateBalance', v)}
+                            min={0} max={1} step={0.01} defaultValue={0.4} size="md"
+                            display={`${Math.round(params.earlyLateBalance * 100)}%`} />
+                    </div>
+
+                    <div className="w-px self-stretch bg-border/15 shrink-0" />
+
                     {/* Special: Shimmer + Freeze */}
                     <div className="flex items-end gap-2 pl-3">
                         <div className="flex flex-col items-center gap-1">
@@ -180,6 +273,16 @@ export const ProofChamberPanel = ({ onParamChange }: ProofChamberPanelProps): Re
                             </button>
                         </div>
                     </div>
+
+                    {/* IR loader (for convolution/hybrid modes) */}
+                    <div className="w-px self-stretch bg-border/15 shrink-0" />
+                    <div className="shrink-0 px-2 w-[160px]">
+                        <IrBrowser
+                            onIrLoaded={(data, channels) => {
+                                console.log(`[ProofChamber] IR loaded: ${data.length} samples, ${channels}ch`);
+                            }}
+                        />
+                    </div>
                 </div>
             </div>
         </div>
@@ -198,11 +301,12 @@ type KnobStackProps = {
     defaultValue: number;
     size: 'sm' | 'md' | 'lg' | 'xl';
     display?: string;
+    bipolar?: boolean;
 };
 
-const KnobStack = ({ label, value, onChange, min, max, step, defaultValue, size, display }: KnobStackProps): ReactElement => (
+const KnobStack = ({ label, value, onChange, min, max, step, defaultValue, size, display, bipolar }: KnobStackProps): ReactElement => (
     <div className="flex flex-col items-center gap-0">
-        <RotaryKnob value={value} onChange={onChange} min={min} max={max} step={step} defaultValue={defaultValue} size={size} />
+        <RotaryKnob value={value} onChange={onChange} min={min} max={max} step={step} defaultValue={defaultValue} size={size} bipolar={bipolar} />
         <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider leading-tight">{label}</span>
         {display ? (
             <span className="text-[6px] text-muted-foreground/40 tabular-nums">{display}</span>
@@ -214,8 +318,12 @@ const KnobStack = ({ label, value, onChange, min, max, step, defaultValue, size,
 
 const ReverbSpectrogram = ({ decay, damping }: { decay: number; damping: number }): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const frameRef = useRef(0);
-    const rafRef = useRef<number>(0);
+    const stateRef = useRef({
+        frame: 0,
+        raf: 0,
+        ripples: [] as { x: number; y: number; age: number; maxAge: number }[],
+        lastTrigger: 0,
+    });
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -227,55 +335,80 @@ const ReverbSpectrogram = ({ decay, damping }: { decay: number; damping: number 
             return;
         }
 
+        const s = stateRef.current;
+
         const draw = (): void => {
             const w = canvas.width;
             const h = canvas.height;
-            frameRef.current++;
+            s.frame++;
 
             // Shift existing image left by 1 pixel (scrolling spectrogram)
             const imageData = ctx.getImageData(1, 0, w - 1, h);
             ctx.putImageData(imageData, 0, 0);
 
             // Draw new column on the right
-            const t = frameRef.current;
+            const t = s.frame;
             for (let y = 0; y < h; y++) {
-                // Frequency: bottom = low, top = high (log scale simulation)
-                const freqNorm = 1.0 - y / h; // 0 at top, 1 at bottom
-
-                // Decay visualization: higher frequencies decay faster with more damping
+                const freqNorm = 1.0 - y / h;
                 const freqDecayMult = 1.0 + damping * freqNorm * 3.0;
                 const amplitude = Math.exp(-t * 0.005 * (1.0 - decay * 0.95) * freqDecayMult);
-
-                // Add some randomness for texture
-                const noise = Math.random() * 0.15;
+                const noise = Math.random() * 0.12;
                 const val = Math.min(1, amplitude * 0.8 + noise * amplitude);
 
-                // Color: cyan-tinted for the theme
-                const r = Math.floor(val * 40);
-                const g = Math.floor(val * 140);
-                const b = Math.floor(val * 170);
-                const a = Math.floor(val * 255);
-
-                ctx.fillStyle = `rgba(${r},${g},${b},${a / 255})`;
+                // Cyan-tinted color
+                const r = Math.floor(val * 30 + val * val * 20);
+                const g = Math.floor(val * 120 + val * val * 40);
+                const b = Math.floor(val * 160 + val * val * 40);
+                ctx.fillStyle = `rgb(${r},${g},${b})`;
                 ctx.fillRect(w - 1, y, 1, 1);
             }
 
-            // Reset every ~5 seconds to keep the visualization dynamic
-            if (frameRef.current > 300) {
-                frameRef.current = 0;
+            // Ripple animation: trigger randomly to simulate transients
+            if (s.frame - s.lastTrigger > 60 + Math.random() * 120) {
+                s.lastTrigger = s.frame;
+                s.ripples.push({
+                    x: w - 1,
+                    y: h * 0.3 + Math.random() * h * 0.4,
+                    age: 0,
+                    maxAge: 30 + decay * 60,
+                });
             }
 
-            rafRef.current = requestAnimationFrame(draw);
+            // Draw ripples
+            for (let ri = s.ripples.length - 1; ri >= 0; ri--) {
+                const rip = s.ripples[ri]!;
+                rip.age++;
+                if (rip.age > rip.maxAge) {
+                    s.ripples.splice(ri, 1);
+                    continue;
+                }
+
+                const progress = rip.age / rip.maxAge;
+                const radius = progress * 40;
+                const alpha = (1.0 - progress) * 0.4;
+
+                ctx.strokeStyle = `rgba(127,184,196,${alpha})`;
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.ellipse(rip.x - s.frame + s.lastTrigger, rip.y, radius, radius * 0.5, 0, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+
+            // Reset scrolling
+            if (s.frame > 300) {
+                s.frame = 0;
+                s.lastTrigger = 0;
+            }
+
+            s.raf = requestAnimationFrame(draw);
         };
 
-        // Initial fill with black
-        ctx.fillStyle = 'rgba(0,0,0,1)';
+        ctx.fillStyle = 'rgb(3,3,3)';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        rafRef.current = requestAnimationFrame(draw);
+        s.raf = requestAnimationFrame(draw);
 
         return () => {
-            cancelAnimationFrame(rafRef.current);
+            cancelAnimationFrame(s.raf);
         };
     }, [decay, damping]);
 

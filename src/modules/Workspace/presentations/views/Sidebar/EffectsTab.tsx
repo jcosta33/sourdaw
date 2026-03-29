@@ -1,5 +1,6 @@
 import { type ReactElement } from 'react';
-import { Sparkles } from 'lucide-react';
+import { Shield, Sparkles } from 'lucide-react';
+import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
 import { type BUILTIN_PLUGINS } from '#/modules/Arrangement/useCases/trackQueries';
 import { type SoundPreset } from '#/modules/Arrangement/useCases/trackQueries';
 import { getFactoryPresets } from '#/modules/Arrangement/useCases/soundPresetLibrary';
@@ -418,8 +419,41 @@ export const EffectsTab = ({
 
     // ── Route: Root — three top-level section cards ──────────────────────────
 
+    const handleAddProof = () => {
+        if (selectedTrackId) {
+            addDevice(selectedTrackId, 'Proof');
+        }
+    };
+
     return (
         <div className="flex flex-col gap-0 animate-in slide-in-from-left-4 duration-200">
+            {/* Featured: Proof Mastering Suite */}
+            <div className="mb-2">
+                <button
+                    type="button"
+                    className="w-full group relative overflow-hidden rounded-lg border border-[var(--color-accent-mint)]/30 bg-gradient-to-br from-[var(--color-accent-mint)]/10 via-surface-raised to-[var(--color-accent-mint)]/5 hover:border-[var(--color-accent-mint)]/50 hover:from-[var(--color-accent-mint)]/15 transition-all duration-200 cursor-pointer"
+                    onClick={handleAddProof}
+                >
+                    <div className="flex items-center gap-3 px-3 py-3">
+                        <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-[var(--color-accent-mint)]/20 border border-[var(--color-accent-mint)]/20">
+                            <Shield className="size-4.5 text-[var(--color-accent-mint)]" />
+                        </div>
+                        <div className="flex-1 min-w-0 text-left">
+                            <div className="flex items-center gap-1.5">
+                                <span className="text-[12px] font-bold text-foreground tracking-tight">Proof</span>
+                                <span className="px-1 py-px rounded text-[8px] font-bold uppercase tracking-wider bg-[var(--color-accent-mint)]/20 text-[var(--color-accent-mint)]">
+                                    Mastering
+                                </span>
+                            </div>
+                            <div className="text-[9px] text-muted-foreground/80 leading-tight mt-0.5">
+                                EQ · Multiband Dynamics · Stereo Imager · Exciter · Limiter
+                            </div>
+                        </div>
+                    </div>
+                    <div className="absolute -top-6 -right-6 w-16 h-16 bg-[var(--color-accent-mint)]/8 rounded-full blur-xl pointer-events-none" />
+                </button>
+            </div>
+
             <NavCard
                 icon={Waves}
                 label="Audio FX"

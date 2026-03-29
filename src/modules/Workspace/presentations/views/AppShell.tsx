@@ -31,6 +31,9 @@ import { ToasterPanel } from '#/modules/Toaster/presentations/views/ToasterPanel
 import { InstrumentBottomPanel } from '../components/InstrumentBottomPanel';
 import { LevainPanel } from '#/modules/Levain/presentations/views/LevainPanel';
 import { ProofChamberPanel } from '#/modules/ProofChamber/presentations/views/ProofChamberPanel';
+import { GlutenPanel } from '#/modules/Gluten/presentations/views/GlutenPanel';
+import { ProofPanel } from '#/modules/Proof/presentations/views/ProofPanel';
+import { ScoringPanel } from '#/modules/Scoring/presentations/views/ScoringPanel';
 
 import { CommandPalette } from '#/modules/Command/presentations/views/CommandPalette';
 import { VoiceCommandOverlay } from '#/modules/AiRuntime/presentations/views/VoiceCommandOverlay';
@@ -76,8 +79,10 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         chatPanelWidth: chatWidth,
         aiPanelWidth: aiWidth,
         fermenterHeight,
-        grinderHeight,
+        toasterHeight,
         levainHeight,
+        glutenHeight,
+        proofHeight,
     } = workspaceState;
 
     const project = useProjectState();
@@ -87,9 +92,12 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const [prefsOpen, setPrefsOpen] = useState(false);
     const [bottomTab, setBottomTab] = useState<'editor' | 'mixer' | 'session' | 'routing' | 'analysis' | 'automation'>('mixer');
     const [fermenterOpen, setFermenterOpen] = useState(false);
-    const [grinderOpen, setGrinderOpen] = useState(false);
+    const [toasterOpen, setToasterOpen] = useState(false);
     const [levainOpen, setLevainOpen] = useState(false);
     const [proofChamberOpen, setProofChamberOpen] = useState(false);
+    const [glutenOpen, setGlutenOpen] = useState(false);
+    const [scoringOpen, setScoringOpen] = useState(false);
+    const [proofOpen, setProofOpen] = useState(false);
 
     // ─── Extracted hooks ───
     useAppInitialization();
@@ -136,13 +144,13 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         return () => document.removeEventListener(APP_EVENTS.SHOW_FERMENTER_TAB, handler);
     }, []);
 
-    // Listen for grinder panel open (from inspector device click)
+    // Listen for toaster panel open (from inspector device click)
     useEffect(() => {
         const handler = (): void => {
-            setGrinderOpen(true);
+            setToasterOpen(true);
         };
-        document.addEventListener(APP_EVENTS.SHOW_GRINDER_TAB, handler);
-        return () => document.removeEventListener(APP_EVENTS.SHOW_GRINDER_TAB, handler);
+        document.addEventListener(APP_EVENTS.SHOW_TOASTER_TAB, handler);
+        return () => document.removeEventListener(APP_EVENTS.SHOW_TOASTER_TAB, handler);
     }, []);
 
     // Listen for levain panel open (from inspector device click)
@@ -163,6 +171,30 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         return () => document.removeEventListener(APP_EVENTS.SHOW_PROOF_CHAMBER_TAB, handler);
     }, []);
 
+    // Listen for Gluten panel open (from inspector device click)
+    useEffect(() => {
+        const handler = (): void => {
+            setGlutenOpen(true);
+        };
+        document.addEventListener(APP_EVENTS.SHOW_GLUTEN_TAB, handler);
+        return () => document.removeEventListener(APP_EVENTS.SHOW_GLUTEN_TAB, handler);
+    }, []);
+
+    // Listen for Proof mastering suite panel open
+    useEffect(() => {
+        const handler = (): void => {
+            setProofOpen(true);
+        };
+        document.addEventListener(APP_EVENTS.SHOW_PROOF_TAB, handler);
+        return () => document.removeEventListener(APP_EVENTS.SHOW_PROOF_TAB, handler);
+    }, []);
+
+    useEffect(() => {
+        const handler = (): void => { setScoringOpen(true); };
+        document.addEventListener(APP_EVENTS.SHOW_SCORING_TAB, handler);
+        return () => document.removeEventListener(APP_EVENTS.SHOW_SCORING_TAB, handler);
+    }, []);
+
     // ─── Panel dimension setters (persisted via workspace store) ───
     const setSidebarWidth = (fn: (prev: number) => number) => updateWorkspaceState({ sidebarWidth: fn(sidebarWidth) });
     const setInspectorWidth = (fn: (prev: number) => number) => updateWorkspaceState({ inspectorWidth: fn(inspectorWidth) });
@@ -170,8 +202,10 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const setAiWidth = (fn: (prev: number) => number) => updateWorkspaceState({ aiPanelWidth: fn(aiWidth) });
     const setMixerHeight = (fn: (prev: number) => number) => updateWorkspaceState({ mixerHeight: fn(mixerHeight) });
     const setFermenterHeight = (fn: (prev: number) => number) => updateWorkspaceState({ fermenterHeight: fn(fermenterHeight) });
-    const setGrinderHeight = (fn: (prev: number) => number) => updateWorkspaceState({ grinderHeight: fn(grinderHeight) });
+    const setToasterHeight = (fn: (prev: number) => number) => updateWorkspaceState({ toasterHeight: fn(toasterHeight) });
     const setLevainHeight = (fn: (prev: number) => number) => updateWorkspaceState({ levainHeight: fn(levainHeight) });
+    const setGlutenHeight = (fn: (prev: number) => number) => updateWorkspaceState({ glutenHeight: fn(glutenHeight) });
+    const setProofHeight = (fn: (prev: number) => number) => updateWorkspaceState({ proofHeight: fn(proofHeight) });
 
     return (
         <div className="flex h-screen w-screen flex-col overflow-hidden bg-surface-app">
@@ -227,14 +261,14 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                         </InstrumentBottomPanel>
                     ) : null}
 
-                    {grinderOpen ? (
+                    {toasterOpen ? (
                         <InstrumentBottomPanel
                             label="Toaster"
                             labelColor="text-[var(--color-accent-peach)]"
                             borderColor="border-[var(--color-accent-peach)]/20"
-                            height={grinderHeight}
-                            onResize={setGrinderHeight}
-                            onClose={() => setGrinderOpen(false)}
+                            height={toasterHeight}
+                            onResize={setToasterHeight}
+                            onClose={() => setToasterOpen(false)}
                         >
                             <ToasterPanel />
                         </InstrumentBottomPanel>
@@ -263,6 +297,45 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                             onClose={() => setProofChamberOpen(false)}
                         >
                             <ProofChamberPanel />
+                        </InstrumentBottomPanel>
+                    ) : null}
+
+                    {glutenOpen ? (
+                        <InstrumentBottomPanel
+                            label="Gluten"
+                            labelColor="text-[var(--color-accent-peach)]"
+                            borderColor="border-[var(--color-accent-peach)]/20"
+                            height={glutenHeight}
+                            onResize={setGlutenHeight}
+                            onClose={() => setGlutenOpen(false)}
+                        >
+                            <GlutenPanel />
+                        </InstrumentBottomPanel>
+                    ) : null}
+
+                    {proofOpen ? (
+                        <InstrumentBottomPanel
+                            label="Proof"
+                            labelColor="text-[var(--color-accent-mint)]"
+                            borderColor="border-[var(--color-accent-mint)]/20"
+                            height={proofHeight}
+                            onResize={setProofHeight}
+                            onClose={() => setProofOpen(false)}
+                        >
+                            <ProofPanel />
+                        </InstrumentBottomPanel>
+                    ) : null}
+
+                    {scoringOpen ? (
+                        <InstrumentBottomPanel
+                            label="Scoring"
+                            labelColor="text-[var(--color-accent-mint)]"
+                            borderColor="border-[var(--color-accent-mint)]/20"
+                            height={280}
+                            onResize={() => {}}
+                            onClose={() => setScoringOpen(false)}
+                        >
+                            <ScoringPanel />
                         </InstrumentBottomPanel>
                     ) : null}
 

@@ -33,6 +33,9 @@ export type GlutenMeterData = {
     grDb: number;
     inputDb: number;
     outputDb: number;
+    crest: number;
+    phaseCorr: number;
+    latency: number;
 };
 
 export type GlutenNodeResult = {
@@ -58,14 +61,13 @@ export async function createGlutenNode(ctx: AudioContext, wasmUrl?: string): Pro
     await ensureWorkletRegistered(ctx);
 
     const node = new AudioWorkletNode(ctx, 'gluten-processor', {
-        numberOfInputs: 1,     // Effect: receives audio input
+        numberOfInputs: 2,     // Input 0: main audio, Input 1: external sidechain
         numberOfOutputs: 1,
         outputChannelCount: [2],
         channelCount: 2,
         channelCountMode: 'explicit',
     });
 
-    let bypassed = false;
     let settled = false;
     let meterCallback: ((data: GlutenMeterData) => void) | null = null;
 
@@ -102,7 +104,6 @@ export async function createGlutenNode(ctx: AudioContext, wasmUrl?: string): Pro
             }
         },
         setBypass(state: boolean) {
-            bypassed = state;
             node.port.postMessage({ type: 'param', name: 'bypass', value: state ? 1 : 0 });
         },
         onMeterData(cb: (data: GlutenMeterData) => void) {

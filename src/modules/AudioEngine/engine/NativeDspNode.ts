@@ -10,7 +10,7 @@ import nativeDspProcessorUrl from '../services/nativeDspProcessor.ts?worker&url'
 // WASM binary URL for passing to the worklet
 const wasmUrl = new URL('../wasm/audio_core_bg.wasm', import.meta.url).href;
 
-export type NativeDspPluginType = 'eq' | 'compressor' | 'limiter' | 'reverb' | 'delay' | 'gate' | 'gain' | 'proof-chamber';
+export type NativeDspPluginType = 'eq' | 'compressor' | 'limiter' | 'reverb' | 'delay' | 'gate' | 'gain';
 
 export const NATIVE_DSP_DEVICE_TYPES: Record<string, NativeDspPluginType> = {
     'native-eq': 'eq',
@@ -20,7 +20,6 @@ export const NATIVE_DSP_DEVICE_TYPES: Record<string, NativeDspPluginType> = {
     'native-delay': 'delay',
     'native-gate': 'gate',
     'native-gain': 'gain',
-    'native-proof-chamber': 'proof-chamber',
 };
 
 export function isNativeDspDevice(deviceType: string): boolean {

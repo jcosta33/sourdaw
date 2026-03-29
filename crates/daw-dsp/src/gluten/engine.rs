@@ -8,7 +8,7 @@ use super::opto::OptoCompressor;
 use super::fet::FetCompressor;
 use super::diode::DiodeCompressor;
 use super::detector::{RmsDetector, DetectionMode};
-use super::sidechain::{SidechainHpf, ThrustFilter};
+use super::sidechain::{SidechainHpf, SidechainLpf, SidechainEq, ThrustFilter};
 use super::stereo::{encode_ms, decode_ms, parallel_mix, StereoMode};
 use super::lookahead::LookaheadDelay;
 use super::params::SmoothedParam;
@@ -41,11 +41,19 @@ pub struct GlutenEngine {
     fet: FetCompressor,
     diode: DiodeCompressor,
     active_topology: Topology,
+    /// Second topology for dual-stage serial routing (Shadow Hills style)
+    blend_topology: Topology,
+    /// 0.0 = single topology, 1.0 = full dual-stage serial
+    blend_amount: f32,
 
     // Sidechain
     sc_hpf_l: SidechainHpf,
     sc_hpf_r: SidechainHpf,
     sc_hpf_freq: f32,
+    sc_lpf_l: SidechainLpf,
+    sc_lpf_r: SidechainLpf,
+    sc_lpf_freq: f32,
+    sc_eq: SidechainEq,
     thrust: ThrustFilter,
 
     // Detector
@@ -67,6 +75,19 @@ pub struct GlutenEngine {
     makeup_gain: SmoothedParam,
     auto_makeup: bool,
     bypassed: bool,
+    /// Delta listen: output only the difference (compressed - dry)
+    delta_listen: bool,
+    /// Use external sidechain input for detection
+    ext_sidechain: bool,
+    ext_sc_left: Vec<f32>,
+    ext_sc_right: Vec<f32>,
+    /// Gain-matched bypass: compensate level difference when bypassing
+    gain_match_bypass: bool,
+    /// Running input loudness estimate (EMA of squared signal, ~400ms)
+    input_loudness: f32,
+    /// Running output loudness estimate
+    output_loudness: f32,
+    loudness_coeff: f32,
 
     // Metering (updated per-block)
     meter_gr_db: f32,
@@ -74,6 +95,18 @@ pub struct GlutenEngine {
     meter_output_db: f32,
     meter_input_peak: f32,
     meter_output_peak: f32,
+    /// GR history ring buffer for scrolling display (256 entries, ~5s at 50fps)
+    gr_history: [f32; 256],
+    gr_history_pos: u8,
+    /// Crest factor: peak/RMS ratio in dB (higher = more transient)
+    meter_crest: f32,
+    /// Phase correlation: +1 = mono, 0 = uncorrelated, -1 = out of phase
+    meter_phase_corr: f32,
+    // Running accumulators for crest/phase (reset per block)
+    rms_accum: f32,
+    lr_product_accum: f32,
+    l_sq_accum: f32,
+    r_sq_accum: f32,
 }
 
 impl GlutenEngine {
@@ -85,10 +118,16 @@ impl GlutenEngine {
             fet: FetCompressor::new(sample_rate),
             diode: DiodeCompressor::new(sample_rate),
             active_topology: Topology::Vca,
+            blend_topology: Topology::Opto,
+            blend_amount: 0.0,
 
             sc_hpf_l: SidechainHpf::new(sample_rate, 80.0),
             sc_hpf_r: SidechainHpf::new(sample_rate, 80.0),
             sc_hpf_freq: 80.0,
+            sc_lpf_l: SidechainLpf::new(sample_rate, 20000.0),
+            sc_lpf_r: SidechainLpf::new(sample_rate, 20000.0),
+            sc_lpf_freq: 20000.0,
+            sc_eq: SidechainEq::new(sample_rate),
             thrust: ThrustFilter::new(sample_rate),
 
             rms_l: RmsDetector::new(sample_rate, 10.0),
@@ -106,12 +145,28 @@ impl GlutenEngine {
             makeup_gain: SmoothedParam::new(0.0, 5.0, sample_rate),
             auto_makeup: false,
             bypassed: false,
+            delta_listen: false,
+            ext_sidechain: false,
+            ext_sc_left: Vec::new(),
+            ext_sc_right: Vec::new(),
+            gain_match_bypass: false,
+            input_loudness: 0.0,
+            output_loudness: 0.0,
+            loudness_coeff: (-1.0 / (0.4 * sample_rate)).exp(), // ~400ms window
 
             meter_gr_db: 0.0,
             meter_input_db: -100.0,
             meter_output_db: -100.0,
             meter_input_peak: 0.0,
             meter_output_peak: 0.0,
+            gr_history: [0.0; 256],
+            gr_history_pos: 0,
+            meter_crest: 0.0,
+            meter_phase_corr: 1.0,
+            rms_accum: 0.0,
+            lr_product_accum: 0.0,
+            l_sq_accum: 0.0,
+            r_sq_accum: 0.0,
         }
     }
 
@@ -127,6 +182,19 @@ impl GlutenEngine {
                     _ => Topology::Vca,
                 };
             }
+            "blend_topology" => {
+                self.blend_topology = match value as u8 {
+                    0 => Topology::Vca,
+                    1 => Topology::Opto,
+                    2 => Topology::Fet,
+                    3 => Topology::Diode,
+                    _ => Topology::Opto,
+                };
+            }
+            "blend_amount" => self.blend_amount = value.clamp(0.0, 1.0),
+            "feed_forward" => {
+                self.vca.set_param("feed_forward", value);
+            }
             "style" => {
                 self.load_style(match value as u8 {
                     0 => CompStyle::Glue,
@@ -141,6 +209,21 @@ impl GlutenEngine {
             "auto_makeup" => self.auto_makeup = value > 0.5,
             "bypass" => self.bypassed = value > 0.5,
 
+            // Amount macro: 0-100% maps to threshold (-5..-40 dB) + ratio (2..8)
+            "amount" => {
+                let pct = value.clamp(0.0, 100.0) / 100.0;
+                let threshold = -5.0 - 35.0 * pct; // -5 to -40
+                let ratio = 2.0 + 6.0 * pct;       // 2:1 to 8:1
+                // Forward to active topology
+                self.vca.set_param("threshold", threshold);
+                self.opto.set_param("threshold", threshold);
+                self.fet.set_param("threshold", threshold);
+                self.diode.set_param("threshold", threshold);
+                self.vca.set_param("ratio", ratio);
+                self.fet.set_param("ratio", ratio);
+                self.diode.set_param("ratio", ratio.min(6.0));
+            }
+
             // Sidechain
             "sc_hpf_freq" => {
                 self.sc_hpf_freq = value.clamp(20.0, 500.0);
@@ -153,6 +236,23 @@ impl GlutenEngine {
                 self.sc_hpf_r.set_enabled(enabled);
             }
             "thrust" => self.thrust.set_mode(value),
+            "sc_lpf_freq" => {
+                self.sc_lpf_freq = value.clamp(1000.0, 20000.0);
+                self.sc_lpf_l.set_freq(self.sample_rate, self.sc_lpf_freq);
+                self.sc_lpf_r.set_freq(self.sample_rate, self.sc_lpf_freq);
+            }
+            "sc_lpf_enabled" => {
+                let enabled = value > 0.5;
+                self.sc_lpf_l.set_enabled(enabled);
+                self.sc_lpf_r.set_enabled(enabled);
+            }
+            "sc_eq_freq" => self.sc_eq.set_freq(value),
+            "sc_eq_gain" => self.sc_eq.set_gain(value),
+            "sc_eq_q" => self.sc_eq.set_q(value),
+            "sc_eq_enabled" => self.sc_eq.set_enabled(value > 0.5),
+            "delta_listen" => self.delta_listen = value > 0.5,
+            "ext_sidechain" => self.ext_sidechain = value > 0.5,
+            "gain_match_bypass" => self.gain_match_bypass = value > 0.5,
 
             // Detection
             "detection" => {
@@ -226,8 +326,26 @@ impl GlutenEngine {
         }
     }
 
+    /// Set external sidechain input for the next process_block call.
+    pub fn set_ext_sc(&mut self, sc_left: &[f32], sc_right: &[f32]) {
+        // Store in temp fields — used by process_block when ext_sidechain is true
+        self.ext_sc_left.clear();
+        self.ext_sc_left.extend_from_slice(sc_left);
+        self.ext_sc_right.clear();
+        self.ext_sc_right.extend_from_slice(sc_right);
+    }
+
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32]) {
         if self.bypassed {
+            if self.gain_match_bypass && self.output_loudness > 1e-10 && self.input_loudness > 1e-10 {
+                // Gain-matched bypass: compensate output level to match input loudness
+                let compensation = (self.input_loudness / self.output_loudness).sqrt();
+                let comp_clamped = compensation.clamp(0.1, 10.0);
+                for i in 0..left.len().min(right.len()) {
+                    left[i] *= comp_clamped;
+                    right[i] *= comp_clamped;
+                }
+            }
             return;
         }
 
@@ -251,17 +369,48 @@ impl GlutenEngine {
                 _ => (dry_l, dry_r),
             };
 
-            // Lookahead: delay the audio signal, process sidechain on undelayed
+            // Lookahead: delay the audio for attack compensation
             let delayed_l = self.lookahead_l.process(proc_l, lookahead_samples);
             let delayed_r = self.lookahead_r.process(proc_r, lookahead_samples);
 
-            // Process through active topology
-            let (wet_l, wet_r, gr_db) = match self.active_topology {
-                Topology::Vca => self.vca.process_sample(delayed_l, delayed_r),
-                Topology::Opto => self.opto.process_sample(delayed_l, delayed_r),
-                Topology::Fet => self.fet.process_sample(delayed_l, delayed_r),
-                Topology::Diode => self.diode.process_sample(delayed_l, delayed_r),
+            // Sidechain source: external aux or derived from main input
+            let (sc_raw_l, sc_raw_r) = if self.ext_sidechain && i < self.ext_sc_left.len() {
+                (self.ext_sc_left[i], self.ext_sc_right.get(i).copied().unwrap_or(0.0))
+            } else {
+                (proc_l, proc_r)
             };
+
+            // Sidechain filtering: HPF → LPF → EQ → Thrust shape the detector input.
+            let sc_l = self.thrust.process(self.sc_eq.process(
+                self.sc_lpf_l.process(self.sc_hpf_l.process(sc_raw_l))
+            ));
+            let sc_r = self.thrust.process(self.sc_eq.process(
+                self.sc_lpf_r.process(self.sc_hpf_r.process(sc_raw_r))
+            ));
+
+            // Process through active topology.
+            // Feed-forward topologies (Diode) use the sidechain-filtered signal
+            // for detection. Feedback topologies (VCA, Opto, FET) detect from
+            // their own previous output, so sidechain filtering has limited effect
+            // on them — this matches hardware behavior where the sidechain filter
+            // is most impactful on feed-forward designs.
+            // Primary topology
+            let (mut wet_l, mut wet_r, gr_db) = self.process_topology(
+                self.active_topology, delayed_l, delayed_r, sc_l, sc_r,
+            );
+
+            // Dual-stage serial routing (Shadow Hills style)
+            // Second topology processes the output of the first
+            if self.blend_amount > 0.001 && self.blend_topology != self.active_topology {
+                let (s2_l, s2_r, gr2) = self.process_topology(
+                    self.blend_topology, wet_l, wet_r, sc_l, sc_r,
+                );
+                // Crossfade between single and dual-stage
+                let b = self.blend_amount;
+                wet_l = wet_l * (1.0 - b) + s2_l * b;
+                wet_r = wet_r * (1.0 - b) + s2_r * b;
+                gr_sum += gr2 * b;
+            }
 
             gr_sum += gr_db;
 
@@ -289,15 +438,55 @@ impl GlutenEngine {
                 _ => (mixed_l, mixed_r),
             };
 
-            left[i] = out_l;
-            right[i] = out_r;
+            // Delta listen: output only the difference (what compression removed)
+            if self.delta_listen {
+                left[i] = dry_l - out_l;
+                right[i] = dry_r - out_r;
+            } else {
+                left[i] = out_l;
+                right[i] = out_r;
+            }
 
-            output_peak = output_peak.max(out_l.abs()).max(out_r.abs());
+            output_peak = output_peak.max(left[i].abs()).max(right[i].abs());
+
+            // Track running loudness for gain-matched bypass (EMA of squared signal)
+            let in_sq = (dry_l * dry_l + dry_r * dry_r) * 0.5;
+            let out_sq = (left[i] * left[i] + right[i] * right[i]) * 0.5;
+            self.input_loudness = self.loudness_coeff * self.input_loudness + (1.0 - self.loudness_coeff) * in_sq;
+            self.output_loudness = self.loudness_coeff * self.output_loudness + (1.0 - self.loudness_coeff) * out_sq;
+
+            // Accumulate for crest factor + phase correlation
+            self.rms_accum += out_sq;
+            self.lr_product_accum += left[i] * right[i];
+            self.l_sq_accum += left[i] * left[i];
+            self.r_sq_accum += right[i] * right[i];
         }
 
         // Update meters
         if len > 0 {
-            self.meter_gr_db = gr_sum / len as f32;
+            let n = len as f32;
+            self.meter_gr_db = gr_sum / n;
+            // Push to GR history ring buffer
+            self.gr_history[self.gr_history_pos as usize] = self.meter_gr_db;
+            self.gr_history_pos = self.gr_history_pos.wrapping_add(1);
+
+            // Crest factor: peak / RMS in dB
+            let rms = (self.rms_accum / n).sqrt();
+            if rms > 1e-10 {
+                self.meter_crest = 20.0 * (output_peak / rms).log10();
+            }
+
+            // Phase correlation: Pearson correlation coefficient
+            let denom = (self.l_sq_accum * self.r_sq_accum).sqrt();
+            if denom > 1e-10 {
+                self.meter_phase_corr = (self.lr_product_accum / denom).clamp(-1.0, 1.0);
+            }
+
+            // Reset accumulators
+            self.rms_accum = 0.0;
+            self.lr_product_accum = 0.0;
+            self.l_sq_accum = 0.0;
+            self.r_sq_accum = 0.0;
         }
         self.meter_input_peak = input_peak;
         self.meter_output_peak = output_peak;
@@ -311,6 +500,16 @@ impl GlutenEngine {
         } else {
             -100.0
         };
+    }
+
+    #[inline]
+    fn process_topology(&mut self, topo: Topology, l: f32, r: f32, sc_l: f32, sc_r: f32) -> (f32, f32, f32) {
+        match topo {
+            Topology::Vca => self.vca.process_sample(l, r),
+            Topology::Opto => self.opto.process_sample(l, r),
+            Topology::Fet => self.fet.process_sample(l, r),
+            Topology::Diode => self.diode.process_sample_with_sc(l, r, sc_l, sc_r),
+        }
     }
 
     fn compute_auto_makeup(&self) -> f32 {
@@ -332,5 +531,17 @@ impl GlutenEngine {
 
     pub fn current_output_db(&self) -> f32 {
         self.meter_output_db
+    }
+
+    pub fn current_crest(&self) -> f32 {
+        self.meter_crest
+    }
+
+    pub fn current_phase_corr(&self) -> f32 {
+        self.meter_phase_corr
+    }
+
+    pub fn latency_samples(&self) -> u32 {
+        (self.lookahead_ms * 0.001 * self.sample_rate) as u32
     }
 }

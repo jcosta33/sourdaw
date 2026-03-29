@@ -25,8 +25,8 @@ export type ActiveNoteData = {
     osc?: OscillatorNode & { _env?: GainNode };
     /** When the note was sent to a Fermenter instance, stores the device ID for noteOff routing */
     fermenterDeviceId?: string;
-    /** When the note was sent to a Grinder instance, stores the device ID for noteOff routing */
-    grinderDeviceId?: string;
+    /** When the note was sent to a Toaster instance, stores the device ID for noteOff routing */
+    toasterDeviceId?: string;
 };
 
 // MIDI message constants

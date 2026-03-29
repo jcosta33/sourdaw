@@ -3,8 +3,8 @@
 //! Real levain sections don't play in perfect unison. This module
 //! simulates the natural behaviors of ensemble playing.
 
-use crate::types::*;
-use crate::humanize::Rng;
+use super::types::*;
+use super::humanize::Rng;
 
 // ---------------------------------------------------------------------------
 // Auto-divisi

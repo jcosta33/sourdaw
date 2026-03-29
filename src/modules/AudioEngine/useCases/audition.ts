@@ -48,20 +48,20 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
         return () => {};
     }
 
-    // Check for Grinder drum machine on this track
-    const grinderDevice = track?.devices.find((d) => d.type === 'grinder');
-    if (grinderDevice) {
+    // Check for Toaster drum machine on this track
+    const toasterDevice = track?.devices.find((d) => d.type === 'toaster');
+    if (toasterDevice) {
         const dn = strip.deviceNodes.find(
-            (d) => d.deviceId === grinderDevice.id || d.type === 'grinder'
+            (d) => d.deviceId === toasterDevice.id || d.type === 'toaster'
         );
-        if (dn?.grinderControls?.ready) {
+        if (dn?.toasterControls?.ready) {
             const pad = pitch - 36;
-            dn.grinderControls.noteOn(pad, velocity);
+            dn.toasterControls.noteOn(pad, velocity);
             return () => {
-                dn.grinderControls?.noteOff(pad);
+                dn.toasterControls?.noteOff(pad);
             };
         }
-        // Grinder not ready — don't fall through to built-in synth (wrong sound)
+        // Toaster not ready — don't fall through to built-in synth (wrong sound)
         return () => {};
     }
 

@@ -12,6 +12,15 @@ export class ProofChamberInstance {
         wasm.__wbg_proofchamberinstance_free(ptr, 0);
     }
     /**
+     * Report plugin latency in samples for PDC (delay compensation).
+     * The convolution head size is the minimum latency.
+     * @returns {number}
+     */
+    get_latency() {
+        const ret = wasm.proofchamberinstance_get_latency(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
      * @returns {string}
      */
     get_param_names() {
@@ -34,6 +43,16 @@ export class ProofChamberInstance {
         return ret >>> 0;
     }
     /**
+     * Load an IR for the convolution engine.
+     * @param {Float32Array} ir_data
+     * @param {number} channels
+     */
+    load_ir(ir_data, channels) {
+        const ptr0 = passArrayF32ToWasm0(ir_data, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.proofchamberinstance_load_ir(this.__wbg_ptr, ptr0, len0, channels);
+    }
+    /**
      * @param {number} sample_rate
      */
     constructor(sample_rate) {
@@ -43,7 +62,6 @@ export class ProofChamberInstance {
         return this;
     }
     /**
-     * Process stereo audio. Input is copied, processed in-place, output returned via pointers.
      * @param {Float32Array} left_in
      * @param {Float32Array} right_in
      * @param {number} frames

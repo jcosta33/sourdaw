@@ -1,7 +1,7 @@
 //! Granular synthesis engine.
 //! Creates clouds of micro-grains from wavetable or noise source.
 
-use crate::oscillator::Wavetable;
+use super::oscillator::Wavetable;
 
 const MAX_GRAINS: usize = 32;
 

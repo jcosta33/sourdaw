@@ -4,12 +4,18 @@
 export class ProofChamberInstance {
     free(): void;
     [Symbol.dispose](): void;
+    /**
+     * Report plugin latency in samples for PDC (delay compensation).
+     * The convolution head size is the minimum latency.
+     */
+    get_latency(): number;
     get_param_names(): string;
     get_right_ptr(): number;
-    constructor(sample_rate: number);
     /**
-     * Process stereo audio. Input is copied, processed in-place, output returned via pointers.
+     * Load an IR for the convolution engine.
      */
+    load_ir(ir_data: Float32Array, channels: number): void;
+    constructor(sample_rate: number);
     process(left_in: Float32Array, right_in: Float32Array, frames: number): number;
     set_param(name: string, value: number): void;
 }
@@ -19,8 +25,10 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_proofchamberinstance_free: (a: number, b: number) => void;
+    readonly proofchamberinstance_get_latency: (a: number) => number;
     readonly proofchamberinstance_get_param_names: (a: number) => [number, number];
     readonly proofchamberinstance_get_right_ptr: (a: number) => number;
+    readonly proofchamberinstance_load_ir: (a: number, b: number, c: number, d: number) => void;
     readonly proofchamberinstance_new: (a: number) => number;
     readonly proofchamberinstance_process: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
     readonly proofchamberinstance_set_param: (a: number, b: number, c: number, d: number) => void;

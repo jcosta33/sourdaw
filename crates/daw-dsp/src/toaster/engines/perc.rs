@@ -51,7 +51,9 @@ pub struct PercEngine {
     bp_ic2: f32,
     // Parameters
     perc_type: PercType,
-    tone_freq: f32,
+    base_freq: f32,
+    tune_ratio: f32,
+    tone: f32,         // 0-1 parameter
     noise_level: f32,
     decay: f32,
     drive: f32,
@@ -68,7 +70,9 @@ impl PercEngine {
             bp_ic1: 0.0,
             bp_ic2: 0.0,
             perc_type: PercType::Cowbell,
-            tone_freq: 800.0,
+            base_freq: 800.0,
+            tune_ratio: 1.0,
+            tone: 0.5,
             noise_level: 0.0,
             decay: 0.1,
             drive: 0.0,
@@ -113,52 +117,64 @@ impl PercEngine {
         output * self.amp_env
     }
 
-    /// Cowbell: two square oscillators at minor 3rd (~540Hz and ~800Hz).
+    /// Cowbell: two saturated sines at minor 3rd (~540Hz and ~800Hz)
+    /// Using fast_tanh(sine * 10) creates a bandlimited square-like wave without hard aliasing.
     fn tick_cowbell(&mut self, sample_rate: f32) -> f32 {
-        let freq1 = self.tone_freq;
-        let freq2 = self.tone_freq * 1.4833; // minor 3rd + octave ratio
+        let freq1 = self.base_freq * self.tune_ratio;
+        let freq2 = freq1 * 1.4833; // minor 3rd + octave ratio
         self.phase1 += freq1 / sample_rate;
         if self.phase1 >= 1.0 { self.phase1 -= 1.0; }
         self.phase2 += freq2 / sample_rate;
         if self.phase2 >= 1.0 { self.phase2 -= 1.0; }
 
-        let sq1 = if self.phase1 < 0.5 { 1.0_f32 } else { -1.0 };
-        let sq2 = if self.phase2 < 0.5 { 1.0_f32 } else { -1.0 };
+        let s1 = (self.phase1 * TAU).sin();
+        let s2 = (self.phase2 * TAU).sin();
+        
+        // Tanh drive to approximate a bandlimited square wave
+        let sq1 = fast_tanh(s1 * 10.0);
+        let sq2 = fast_tanh(s2 * 10.0);
 
-        (sq1 + sq2) * 0.5
+        // tone controls high frequency softening
+        let mix = (sq1 + sq2) * 0.5;
+        let lpf = self.bandpass(mix, 5000.0 * (self.tone + 0.1), 0.5, sample_rate);
+        lpf
     }
 
-    /// Clave: short resonant bandpass impulse.
+    /// Clave: high-Q resonant bandpass excited by a tiny noise burst (Modal Resonator).
     fn tick_clave(&mut self, sample_rate: f32) -> f32 {
-        // Impulse: noise at trigger, then bandpass rings
-        let impulse = noise(&mut self.noise_state) * self.noise_level;
+        // Use phase2 as a simple timer (in seconds)
+        self.phase2 += 1.0 / sample_rate;
+        
+        // 5ms noise burst exciter
+        let click_env = if self.phase2 < 0.005 { 1.0 } else { 0.0 };
+        let impulse = noise(&mut self.noise_state) * click_env;
 
-        // Sine body at tone_freq
-        self.phase1 += self.tone_freq / sample_rate;
-        if self.phase1 >= 1.0 { self.phase1 -= 1.0; }
-        let sine = (self.phase1 * TAU).sin();
-
-        // Resonant bandpass on the impulse
-        let input = sine + impulse;
-        self.bandpass(input, self.tone_freq, 8.0, sample_rate)
+        let tone_hz = self.base_freq * self.tune_ratio;
+        let bp_freq = tone_hz * (0.5 + self.tone);
+        
+        // Modal resonance (high Q)
+        self.bandpass(impulse, bp_freq, 25.0, sample_rate) * 15.0 // Gain compensate high Q
     }
 
     /// Shaker: shaped noise grains.
-    fn tick_shaker(&mut self, _sample_rate: f32) -> f32 {
+    fn tick_shaker(&mut self, sample_rate: f32) -> f32 {
         let raw = noise(&mut self.noise_state);
-        // Simple highpass-ish by subtracting lowpass
-        let hp = raw - self.bp_ic1;
-        self.bp_ic1 += 0.15 * (raw - self.bp_ic1);
-        hp * 0.7 + raw * self.noise_level
+        // Simple bandpass filter reacting to tune and tone
+        let bp_freq = 2000.0 * self.tune_ratio * (0.5 + self.tone * 2.0);
+        let bp = self.bandpass(raw, bp_freq, 1.0, sample_rate);
+        bp * 0.7 + raw * self.noise_level
     }
 
     /// Rim: short sine + noise burst.
     fn tick_rim(&mut self, sample_rate: f32) -> f32 {
-        self.phase1 += self.tone_freq / sample_rate;
+        let tone_hz = self.base_freq * self.tune_ratio * 0.5;
+        self.phase1 += tone_hz / sample_rate;
         if self.phase1 >= 1.0 { self.phase1 -= 1.0; }
         let sine = (self.phase1 * TAU).sin();
         let n = noise(&mut self.noise_state) * self.noise_level;
-        sine * 0.7 + n * 0.3
+        
+        let mixed = sine * 0.7 + n * 0.3;
+        self.bandpass(mixed, tone_hz * (1.0 + self.tone * 2.0), 1.0, sample_rate)
     }
 
     /// SVF bandpass helper.
@@ -190,16 +206,15 @@ impl PercEngine {
                 self.decay = 0.005 + v * 0.995;
             }
             "tune" => {
-                // Shift tone frequency by semitones from default 800Hz
-                let ratio = 2.0f32.powf(value.clamp(-24.0, 24.0) / 12.0);
-                self.tone_freq = (800.0 * ratio).clamp(100.0, 8000.0);
+                // Determine tune ratio from base 800Hz
+                self.tune_ratio = 2.0f32.powf(value.clamp(-24.0, 24.0) / 12.0);
             }
             "tone" => {
-                // 0-1 controls tone frequency in normalized range
-                self.tone_freq = 100.0 + value.clamp(0.0, 1.0) * 7900.0;
+                // 0-1 tone parameter
+                self.tone = value.clamp(0.0, 1.0);
             }
             "drive" => self.drive = value.clamp(0.0, 10.0),
-            "tone_freq" => self.tone_freq = value.clamp(100.0, 8000.0),
+            "base_freq" => self.base_freq = value.clamp(100.0, 8000.0),
             "noise_level" => self.noise_level = value.clamp(0.0, 1.0),
             "type" => {
                 self.perc_type = match value as u32 {

@@ -5,7 +5,7 @@
 //! Delay lines are integer-sample (static per loaded zone) to
 //! avoid artifacts.
 
-use crate::types::MicPosition;
+use super::types::MicPosition;
 
 // ---------------------------------------------------------------------------
 // Mic delay line (simple integer delay)

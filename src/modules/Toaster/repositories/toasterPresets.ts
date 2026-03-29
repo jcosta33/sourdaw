@@ -1,5 +1,5 @@
 /**
- * Grinder factory kit presets — bread-themed drum kits.
+ * Toaster factory kit presets — bread-themed drum kits.
  */
 
 import { type ToasterKit, createDefaultKit, createDefaultPad } from '../models/ToasterKit';
@@ -13,7 +13,7 @@ export type ToasterKitPreset = {
 };
 
 function kit(id: string, name: string, desc: string, tags: string[], overrides: Partial<ToasterKit>): ToasterKitPreset {
-    return { id, name, description: desc, tags: ['grinder', ...tags], kit: { ...createDefaultKit(), name, ...overrides } };
+    return { id, name, description: desc, tags: ['toaster', ...tags], kit: { ...createDefaultKit(), name, ...overrides } };
 }
 
 export const TOASTER_PRESETS: ToasterKitPreset[] = [

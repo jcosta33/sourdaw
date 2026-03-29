@@ -100,7 +100,7 @@ impl LevainInstance {
         sustain: f32,
         release: f32,
     ) {
-        use crate::types::*;
+        use self::types::*;
         let lm = match loop_mode {
             1 => LoopMode::Forward,
             2 => LoopMode::PingPong,

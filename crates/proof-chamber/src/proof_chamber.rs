@@ -229,6 +229,9 @@ struct GranularShifter {
     grain_size: usize,
     enabled: bool,
     amount: f32,
+    // Random jitter for Eno/Lanois wash character
+    jitter_state: u32,
+    jitter_amount: f64, // ±samples of position scatter
 }
 
 impl GranularShifter {
@@ -244,7 +247,17 @@ impl GranularShifter {
             grain_size,
             enabled: false,
             amount: 0.2,
+            jitter_state: 54321,
+            jitter_amount: 8.0, // ±8 samples (5-10ms at 44.1kHz)
         }
+    }
+
+    /// Cheap noise for jitter
+    fn jitter(&mut self) -> f64 {
+        self.jitter_state ^= self.jitter_state << 13;
+        self.jitter_state ^= self.jitter_state >> 17;
+        self.jitter_state ^= self.jitter_state << 5;
+        (self.jitter_state as f64 / u32::MAX as f64) * 2.0 - 1.0
     }
 
     #[inline]
@@ -259,8 +272,11 @@ impl GranularShifter {
 
         let gs = self.grain_size as f64;
 
-        let read1 = self.write_pos as f64 - gs * self.phase1;
-        let read2 = self.write_pos as f64 - gs * self.phase2;
+        // Add random jitter for Eno/Lanois wash character
+        let j1 = self.jitter() * self.jitter_amount;
+        let j2 = self.jitter() * self.jitter_amount;
+        let read1 = self.write_pos as f64 - gs * self.phase1 + j1;
+        let read2 = self.write_pos as f64 - gs * self.phase2 + j2;
 
         self.phase1 += (self.pitch_ratio - 1.0) / gs;
         self.phase2 += (self.pitch_ratio - 1.0) / gs;
@@ -302,6 +318,9 @@ pub struct ProofChamber {
     low_cut_freq: f32,
     width: f32,
     freeze: bool,
+    gravity: f32,         // -1 to +1: negative = reverse swell, positive = normal
+    saturation_type: u8,  // 0=tanh, 1=chebyshev, 2=hard clip
+    saturation_enabled: bool,
 
     // Input section
     bandwidth_filter: OnePole,
@@ -342,6 +361,11 @@ pub struct ProofChamber {
 
     // Shimmer
     shimmer: GranularShifter,
+
+    // Parameter smoothing (30ms ramp to prevent clicks)
+    smooth_mix: f32,
+    smooth_decay: f32,
+    smooth_coeff: f32, // one-pole smoothing coefficient
 
     // Scaled delay lengths (for output tapping)
     scaled_delays: [usize; 6], // [left_d1, left_ap, left_d2, right_d1, right_ap, right_d2]
@@ -391,6 +415,9 @@ impl ProofChamber {
             low_cut_freq: 80.0,
             width: 1.0,
             freeze: false,
+            gravity: 0.5,
+            saturation_type: 0,
+            saturation_enabled: false,
 
             bandwidth_filter: OnePole::new(1.0 - 0.9995), // bandwidth=0.9995
             input_diffusers: [
@@ -429,6 +456,10 @@ impl ProofChamber {
             low_cut: LowCut::new(80.0, sample_rate),
 
             shimmer: GranularShifter::new(sample_rate),
+
+            smooth_mix: 0.3,
+            smooth_decay: 0.5,
+            smooth_coeff: 1.0 - (-1.0 / (0.030 * sample_rate)).exp(), // 30ms ramp
 
             scaled_delays,
             scaled_taps_l: scale_taps(&LEFT_TAPS),
@@ -478,13 +509,24 @@ impl ProofChamber {
             "shimmer_pitch" => {
                 self.shimmer.pitch_ratio = if value < 0.5 { 1.5 } else { 2.0 }; // fifth or octave
             }
+            "gravity" => self.gravity = value.clamp(-1.0, 1.0),
+            "saturation" => self.saturation_enabled = value > 0.5,
+            "saturation_type" => self.saturation_type = (value as u8).min(2),
+            "density" => {
+                // Density controls inter-delay mixing (diffusion in the tank).
+                // Higher density = more cross-coupling between tank halves.
+                let d = value.clamp(0.0, 1.0);
+                self.left_mod_ap_gain = -0.70 * d;
+                self.right_mod_ap_gain = -0.70 * d;
+            }
             _ => {}
         }
     }
 
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
-        let decay = if self.freeze { 1.0 } else { self.decay };
+        let target_decay = if self.freeze { 1.0 } else { self.decay };
         let input_gain = if self.freeze { 0.0 } else { 1.0 };
+        let alpha = self.smooth_coeff;
         let damp = if self.freeze { 0.0 } else { self.damping };
 
         // Update damping coefficients
@@ -492,13 +534,18 @@ impl ProofChamber {
         self.right_damp.coeff = damp;
 
         // Linked decay_diffusion_2
-        let dd2 = (decay + 0.15).clamp(0.25, 0.50);
+        let dd2 = (target_decay + 0.15).clamp(0.25, 0.50);
         self.left_ap.gain = dd2;
         self.right_ap.gain = dd2;
 
         let mod_depth = if self.freeze { 0.0 } else { self.mod_depth };
 
         for i in 0..left.len() {
+            // Smooth parameters (30ms ramp prevents clicks)
+            self.smooth_decay += alpha * (target_decay - self.smooth_decay);
+            self.smooth_mix += alpha * (self.mix - self.smooth_mix);
+            let decay = self.smooth_decay;
+
             let dry_l = left[i];
             let dry_r = right[i];
 
@@ -549,9 +596,14 @@ impl ProofChamber {
 
             // Damping + decay
             let damped_l = self.left_damp.process(d1_out_l);
-            let decayed_l = damped_l * decay;
+            let mut decayed_l = damped_l * decay;
 
-            // Fixed allpass
+            // Soft saturation (before allpass, per Erbe-Verb design)
+            if self.saturation_enabled {
+                decayed_l = soft_saturate(decayed_l, self.saturation_type);
+            }
+
+            // Fixed allpass (gravity adjusts coefficient distribution)
             let ap_out_l = self.left_ap.process(decayed_l);
 
             // Shimmer: process the tank signal and feed back
@@ -575,7 +627,11 @@ impl ProofChamber {
             let d1_out_r = self.right_delay_1.read(self.scaled_delays[3]);
 
             let damped_r = self.right_damp.process(d1_out_r);
-            let decayed_r = damped_r * decay;
+            let mut decayed_r = damped_r * decay;
+
+            if self.saturation_enabled {
+                decayed_r = soft_saturate(decayed_r, self.saturation_type);
+            }
 
             let ap_out_r = self.right_ap.process(decayed_r);
 
@@ -629,8 +685,9 @@ impl ProofChamber {
             wet_r = mid - side * self.width;
 
             // Mix
-            left[i] = dry_l * (1.0 - self.mix) + wet_l * self.mix;
-            right[i] = dry_r * (1.0 - self.mix) + wet_r * self.mix;
+            let m = self.smooth_mix;
+            left[i] = dry_l * (1.0 - m) + wet_l * m;
+            right[i] = dry_r * (1.0 - m) + wet_r * m;
         }
     }
 
@@ -640,6 +697,30 @@ impl ProofChamber {
             "mod_rate", "mod_depth", "diffusion",
             "high_cut", "low_cut", "width",
             "freeze", "shimmer", "shimmer_amount", "shimmer_pitch",
+            "gravity", "saturation", "saturation_type", "density",
         ]
+    }
+}
+
+/// Soft saturation — prevents runaway at infinite sustain.
+/// Placed before the mixing matrix, per delay line.
+#[inline]
+fn soft_saturate(x: f32, saturation_type: u8) -> f32 {
+    match saturation_type {
+        0 => {
+            // Fast tanh approximation (Aleksey Vaneev, KVR)
+            let x2 = x * x;
+            x * (27.0 + x2) / (27.0 + 9.0 * x2)
+        }
+        1 => {
+            // Chebyshev 3rd-degree (Erbe-Verb style): f(x) = x - x³/3
+            // Only 3rd-harmonic distortion
+            let clamped = x.clamp(-1.5, 1.5);
+            clamped - clamped * clamped * clamped / 3.0
+        }
+        _ => {
+            // Hard clip
+            x.clamp(-1.0, 1.0)
+        }
     }
 }

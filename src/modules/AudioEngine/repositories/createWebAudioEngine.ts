@@ -414,9 +414,9 @@ class AudioEngineImpl implements AudioEngine {
                         dn.fermenterControls.noteOff(note);
                     }
                 }
-                if (dn.grinderControls) {
+                if (dn.toasterControls) {
                     for (let pad = 0; pad < 16; pad++) {
-                        dn.grinderControls.noteOff(pad);
+                        dn.toasterControls.noteOff(pad);
                     }
                 }
                 if (dn.levainControls) {

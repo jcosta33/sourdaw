@@ -1,11 +1,11 @@
 /**
- * GrinderNode — AudioWorkletNode wrapper for the Grinder drum machine.
+ * ToasterNode — AudioWorkletNode wrapper for the Toaster drum machine.
  *
  * Same pattern as FermenterNode: caches WASM binary, resumes AudioContext,
  * provides noteOn/noteOff/setParam/setPadParam via MessagePort.
  */
 
-import grinderProcessorUrl from '../services/toasterProcessor.ts?worker&url';
+import toasterProcessorUrl from '../services/toasterProcessor.ts?worker&url';
 
 const DEFAULT_WASM_URL = '/wasm/toaster/toaster_bg.wasm';
 
@@ -14,7 +14,7 @@ let cachedWasmBytes: ArrayBuffer | null = null;
 
 async function ensureWorkletRegistered(ctx: AudioContext): Promise<void> {
     if (!workletRegistrationPromise) {
-        workletRegistrationPromise = ctx.audioWorklet.addModule(grinderProcessorUrl);
+        workletRegistrationPromise = ctx.audioWorklet.addModule(toasterProcessorUrl);
     }
     return workletRegistrationPromise;
 }
@@ -22,7 +22,7 @@ async function ensureWorkletRegistered(ctx: AudioContext): Promise<void> {
 async function fetchWasmBinary(url: string): Promise<ArrayBuffer> {
     if (cachedWasmBytes) { return cachedWasmBytes; }
     const response = await fetch(url);
-    if (!response.ok) { throw new Error(`Failed to fetch Grinder WASM: ${response.status}`); }
+    if (!response.ok) { throw new Error(`Failed to fetch Toaster WASM: ${response.status}`); }
     cachedWasmBytes = await response.arrayBuffer();
     return cachedWasmBytes;
 }
@@ -41,7 +41,7 @@ export type ToasterNodeResult = {
 };
 
 export function isToasterDevice(deviceType: string): boolean {
-    return deviceType === 'grinder';
+    return deviceType === 'toaster';
 }
 
 export async function createToasterNode(ctx: AudioContext, wasmUrl?: string): Promise<ToasterNodeResult> {
@@ -64,7 +64,7 @@ export async function createToasterNode(ctx: AudioContext, wasmUrl?: string): Pr
 
     const readyPromise = new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => {
-            if (!settled) { settled = true; reject(new Error('GrinderNode init timeout (10s)')); }
+            if (!settled) { settled = true; reject(new Error('ToasterNode init timeout (10s)')); }
         }, 10_000);
         node.port.onmessage = (e: MessageEvent) => {
             if (settled) { return; }

@@ -67,10 +67,14 @@ pub struct VcaCompressor {
     release_coeff: f32,
     gr_state: f32,
     auto_rel: AutoRelease,
+    /// VCA type: 0 = Ideal (clean), 1 = THAT 2181 (subtle 2nd), 2 = DBX 202 (warmer)
+    vca_type: u8,
     /// VCA 2nd harmonic distortion amount (0.001 – 0.01 typical).
     vca_k2: f32,
     last_output_l: f32,
     last_output_r: f32,
+    /// Feed-forward mode (false = feedback/SSL default, true = feed-forward)
+    feed_forward: bool,
 }
 
 impl VcaCompressor {
@@ -88,9 +92,11 @@ impl VcaCompressor {
             release_coeff: 0.0,
             gr_state: 0.0,
             auto_rel: AutoRelease::new(sample_rate),
+            vca_type: 1, // THAT 2181 default
             vca_k2: 0.003,
             last_output_l: 0.0,
             last_output_r: 0.0,
+            feed_forward: false,
         };
         c.update_coeffs();
         c
@@ -111,6 +117,17 @@ impl VcaCompressor {
             "range" => self.range = value.clamp(0.0, 60.0),
             "auto_release" => self.auto_release = value > 0.5,
             "vca_character" => self.vca_k2 = value.clamp(0.0, 0.02),
+            "vca_type" => {
+                self.vca_type = (value as u8).clamp(0, 2);
+                // Preset k2 values per VCA type
+                self.vca_k2 = match self.vca_type {
+                    0 => 0.0,     // Ideal: no distortion
+                    1 => 0.003,   // THAT 2181: subtle 2nd harmonic
+                    2 => 0.008,   // DBX 202: warmer, more colored
+                    _ => 0.003,
+                };
+            }
+            "feed_forward" => self.feed_forward = value > 0.5,
             _ => {}
         }
     }
@@ -118,8 +135,12 @@ impl VcaCompressor {
     /// Process one sample pair. Returns (left, right, gain_reduction_db).
     #[inline]
     pub fn process_sample(&mut self, left: f32, right: f32) -> (f32, f32, f32) {
-        // Feedback: detect from previous output
-        let detect = self.last_output_l.abs().max(self.last_output_r.abs());
+        // Detection: feedback (SSL default) or feed-forward
+        let detect = if self.feed_forward {
+            left.abs().max(right.abs())
+        } else {
+            self.last_output_l.abs().max(self.last_output_r.abs())
+        };
         let input_db = linear_to_db(detect);
 
         // Gain computer

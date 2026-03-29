@@ -5,6 +5,7 @@
 //! Requires oversampling for accurate nonlinearity modeling.
 
 use super::gain_computer::{gain_computer, apply_range, db_to_linear, linear_to_db};
+use super::oversample::ConfigurableOversample;
 
 pub struct DiodeCompressor {
     sample_rate: f32,
@@ -22,9 +23,9 @@ pub struct DiodeCompressor {
     limiter_state: f32,
     last_output_l: f32,
     last_output_r: f32,
-    // 2x oversampling state for nonlinearity
-    os_prev_l: f32,
-    os_prev_r: f32,
+    /// Configurable oversamplers for diode bridge nonlinearity (L/R)
+    os_l: ConfigurableOversample,
+    os_r: ConfigurableOversample,
 }
 
 impl DiodeCompressor {
@@ -43,8 +44,8 @@ impl DiodeCompressor {
             limiter_state: 0.0,
             last_output_l: 0.0,
             last_output_r: 0.0,
-            os_prev_l: 0.0,
-            os_prev_r: 0.0,
+            os_l: ConfigurableOversample::new(2),
+            os_r: ConfigurableOversample::new(2),
         };
         c.update_coeffs();
         c
@@ -72,8 +73,18 @@ impl DiodeCompressor {
             "attack" => { self.attack_ms = value.clamp(0.5, 30.0); self.update_coeffs(); }
             "recovery" => { self.recovery = (value as u8).clamp(1, 5); self.update_coeffs(); }
             "limiter_threshold" => self.limiter_threshold = value.clamp(-12.0, 0.0),
+            "oversampling" => { self.os_l.set_rate(value as u8); self.os_r.set_rate(value as u8); }
             _ => {}
         }
+    }
+
+    /// Process with external sidechain signal for detection (feed-forward).
+    /// Audio path uses `left`/`right`, detection uses `sc_l`/`sc_r` (HPF+Thrust filtered).
+    #[inline]
+    pub fn process_sample_with_sc(&mut self, left: f32, right: f32, sc_l: f32, sc_r: f32) -> (f32, f32, f32) {
+        let detect = sc_l.abs().max(sc_r.abs());
+        let input_db = linear_to_db(detect);
+        self.process_with_level(left, right, input_db)
     }
 
     #[inline]
@@ -81,6 +92,11 @@ impl DiodeCompressor {
         // Feed-forward detection (33609 is feed-forward)
         let detect = left.abs().max(right.abs());
         let input_db = linear_to_db(detect);
+        self.process_with_level(left, right, input_db)
+    }
+
+    #[inline]
+    fn process_with_level(&mut self, left: f32, right: f32, input_db: f32) -> (f32, f32, f32) {
 
         // Gain computer — compressor section
         let gc = gain_computer(input_db, self.threshold, self.ratio, 4.0);
@@ -104,9 +120,11 @@ impl DiodeCompressor {
         let total_gr = self.gr_state + self.limiter_state;
         let gr_linear = db_to_linear(total_gr);
 
-        // Diode bridge nonlinearity (odd harmonics + slight even from asymmetry)
-        let wet_l = diode_bridge_color(left * gr_linear, total_gr);
-        let wet_r = diode_bridge_color(right * gr_linear, total_gr);
+        // Diode bridge nonlinearity at configurable oversampled rate
+        let tgr = total_gr;
+        let bridge = |x: f32| -> f32 { diode_bridge_color(x, tgr) };
+        let wet_l = self.os_l.process(left * gr_linear, &bridge);
+        let wet_r = self.os_r.process(right * gr_linear, &bridge);
 
         self.last_output_l = wet_l;
         self.last_output_r = wet_r;
@@ -119,8 +137,8 @@ impl DiodeCompressor {
         self.limiter_state = 0.0;
         self.last_output_l = 0.0;
         self.last_output_r = 0.0;
-        self.os_prev_l = 0.0;
-        self.os_prev_r = 0.0;
+        self.os_l.reset();
+        self.os_r.reset();
     }
 }
 

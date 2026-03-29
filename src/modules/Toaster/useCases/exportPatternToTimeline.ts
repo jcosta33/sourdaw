@@ -1,5 +1,5 @@
 /**
- * Export the current Grinder step pattern as MIDI clips on the child pad tracks.
+ * Export the current Toaster step pattern as MIDI clips on the child pad tracks.
  */
 
 import { toasterStore } from '../stores/toasterStore';
@@ -16,7 +16,7 @@ export function exportPatternToTimeline(): void {
     if (!pattern) { return; }
 
     const tracks = getAllTracks();
-    const parentTrack = tracks.find((t) => t.devices.some((d) => d.type === 'grinder'));
+    const parentTrack = tracks.find((t) => t.devices.some((d) => d.type === 'toaster'));
     if (!parentTrack) { return; }
 
     const childTracks = tracks.filter((t) => t.parentId === parentTrack.id);

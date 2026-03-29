@@ -17,6 +17,7 @@ pub mod sidechain;
 pub mod stereo;
 pub mod lookahead;
 pub mod params;
+pub mod oversample;
 pub mod engine;
 
 use engine::GlutenEngine;
@@ -31,6 +32,9 @@ pub struct GlutenInstance {
     input_right: Vec<f32>,
     output_left: Vec<f32>,
     output_right: Vec<f32>,
+    /// External sidechain input buffers
+    sc_left: Vec<f32>,
+    sc_right: Vec<f32>,
 }
 
 #[wasm_bindgen]
@@ -44,6 +48,8 @@ impl GlutenInstance {
             input_right: vec![0.0; block_size],
             output_left: vec![0.0; block_size],
             output_right: vec![0.0; block_size],
+            sc_left: vec![0.0; block_size],
+            sc_right: vec![0.0; block_size],
         }
     }
 
@@ -55,6 +61,16 @@ impl GlutenInstance {
     /// Get pointer to input right buffer.
     pub fn get_input_right_ptr(&mut self) -> *mut f32 {
         self.input_right.as_mut_ptr()
+    }
+
+    /// Get pointer to external sidechain left buffer.
+    pub fn get_sc_left_ptr(&mut self) -> *mut f32 {
+        self.sc_left.as_mut_ptr()
+    }
+
+    /// Get pointer to external sidechain right buffer.
+    pub fn get_sc_right_ptr(&mut self) -> *mut f32 {
+        self.sc_right.as_mut_ptr()
     }
 
     /// Set a parameter by name.
@@ -73,6 +89,8 @@ impl GlutenInstance {
             self.input_right.resize(size, 0.0);
             self.output_left.resize(size, 0.0);
             self.output_right.resize(size, 0.0);
+            self.sc_left.resize(size, 0.0);
+            self.sc_right.resize(size, 0.0);
         }
 
         // Copy input to output, then process in-place
@@ -105,5 +123,20 @@ impl GlutenInstance {
     /// Get current output level in dB (for metering).
     pub fn get_output_db(&self) -> f32 {
         self.engine.current_output_db()
+    }
+
+    /// Get latency in samples (lookahead delay) for host compensation.
+    pub fn get_latency_samples(&self) -> u32 {
+        self.engine.latency_samples()
+    }
+
+    /// Get crest factor (peak/RMS ratio in dB).
+    pub fn get_crest(&self) -> f32 {
+        self.engine.current_crest()
+    }
+
+    /// Get phase correlation (-1 to +1).
+    pub fn get_phase_corr(&self) -> f32 {
+        self.engine.current_phase_corr()
     }
 }

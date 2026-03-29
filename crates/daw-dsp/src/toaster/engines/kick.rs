@@ -28,6 +28,7 @@ pub struct KickEngine {
     amp_env: f32,
     pitch_env: f32,
     click_env: f32,
+    click_decay_coeff: f32,
     noise_state: u32,
     // Parameters
     base_freq: f32,
@@ -49,6 +50,7 @@ impl KickEngine {
             amp_env: 0.0,
             pitch_env: 0.0,
             click_env: 0.0,
+            click_decay_coeff: 0.0,
             noise_state: 0x12345678,
             base_freq: 50.0,
             pitch_amount: 0.5,
@@ -74,6 +76,7 @@ impl KickEngine {
         let safe_amp_decay = self.amp_decay.max(0.001);
         self.pitch_decay_coeff = (-1.0 / (safe_pitch_decay * sample_rate)).exp();
         self.amp_decay_coeff = (-1.0 / (safe_amp_decay * sample_rate)).exp();
+        self.click_decay_coeff = (-1.0 / (0.005 * sample_rate)).exp(); // 5ms snap
     }
 
     pub fn release(&mut self) {
@@ -99,7 +102,7 @@ impl KickEngine {
         let body = (self.phase * TAU).sin();
 
         // Click = filtered noise burst
-        self.click_env *= 0.99;
+        self.click_env *= self.click_decay_coeff;
         let click = if self.click_env > 0.001 {
             noise(&mut self.noise_state) * self.click_env * self.click_level
         } else {

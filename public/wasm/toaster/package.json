@@ -1,15 +1,13 @@
 {
-  "name": "toaster",
+  "name": "daw-dsp",
   "type": "module",
-  "description": "Grinder drum machine DSP engine — compiles to native and WASM",
+  "description": "Pure mathematical algorithms and DSP components for Sourdaw.",
   "version": "0.1.0",
   "files": [
     "toaster_bg.wasm",
-    "toaster.js",
-    "toaster.d.ts"
+    "toaster.js"
   ],
   "main": "toaster.js",
-  "types": "toaster.d.ts",
   "sideEffects": [
     "./snippets/*"
   ]

@@ -1,20 +1,20 @@
 /**
- * Trigger a Grinder pad via the audio engine.
- * Finds the active Grinder device and sends a noteOn through grinderControls.
+ * Trigger a Toaster pad via the audio engine.
+ * Finds the active Toaster device and sends a noteOn through toasterControls.
  */
 
 import { ensureTrackStrip } from '#/modules/AudioEngine/useCases/engineAccess';
 import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
 
 export function triggerToasterPad(padIndex: number, velocity: number = 100): void {
-    const grinderTrack = getAllTracks().find((t) =>
-        t.devices.some((d) => d.type === 'grinder')
+    const toasterTrack = getAllTracks().find((t) =>
+        t.devices.some((d) => d.type === 'toaster')
     );
-    if (!grinderTrack) { return; }
+    if (!toasterTrack) { return; }
 
-    const strip = ensureTrackStrip(grinderTrack.id);
-    const dn = strip.deviceNodes.find((d) => d.grinderControls?.ready);
-    if (dn?.grinderControls) {
-        dn.grinderControls.noteOn(padIndex, velocity);
+    const strip = ensureTrackStrip(toasterTrack.id);
+    const dn = strip.deviceNodes.find((d) => d.toasterControls?.ready);
+    if (dn?.toasterControls) {
+        dn.toasterControls.noteOn(padIndex, velocity);
     }
 }

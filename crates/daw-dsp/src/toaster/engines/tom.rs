@@ -86,9 +86,9 @@ impl TomEngine {
             return 0.0;
         }
 
-        // Pitch envelope: fast drop from +50% above base to base
+        // Pitch envelope: fast drop from up to +300% above base to base
         self.pitch_env *= self.pitch_decay_coeff;
-        let freq = self.base_freq * (1.0 + self.pitch_amount * self.pitch_env * 0.5);
+        let freq = self.base_freq * (1.0 + self.pitch_amount * self.pitch_env * 3.0);
 
         // Phase accumulator
         self.phase += freq / sample_rate;

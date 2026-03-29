@@ -21,6 +21,8 @@ pub struct SnareEngine {
     phase2: f32,
     body_env: f32,
     body_decay_coeff: f32,
+    pitch_env: f32,
+    pitch_decay_coeff: f32,
     // Noise
     noise_env: f32,
     noise_decay_coeff: f32,
@@ -44,6 +46,8 @@ impl SnareEngine {
             phase2: 0.0,
             body_env: 0.0,
             body_decay_coeff: 0.0,
+            pitch_env: 0.0,
+            pitch_decay_coeff: 0.0,
             noise_env: 0.0,
             noise_decay_coeff: 0.0,
             noise_state: 0xDEADBEEF,
@@ -63,6 +67,7 @@ impl SnareEngine {
         self.phase2 = 0.0;
         self.body_env = velocity;
         self.noise_env = velocity;
+        self.pitch_env = 1.0;
         self.noise_state = 0xDEADBEEF;
         self.bp_ic1 = 0.0;
         self.bp_ic2 = 0.0;
@@ -70,6 +75,7 @@ impl SnareEngine {
         let safe_noise_decay = self.noise_decay.max(0.001);
         self.body_decay_coeff = (-1.0 / (safe_body_decay * sample_rate)).exp();
         self.noise_decay_coeff = (-1.0 / (safe_noise_decay * sample_rate)).exp();
+        self.pitch_decay_coeff = (-1.0 / (0.02 * sample_rate)).exp(); // Fixed 20ms pitch decay
     }
 
     pub fn release(&mut self) {
@@ -84,9 +90,13 @@ impl SnareEngine {
         // Tune ratio
         let tune_ratio = (self.tune / 12.0).exp2();
 
+        // FM Sweep (Knock)
+        self.pitch_env *= self.pitch_decay_coeff;
+        let fm_sweep = 1.0 + self.pitch_env * 2.5;
+
         // Body: two sine resonators
-        let freq1 = 180.0 * tune_ratio;
-        let freq2 = 330.0 * tune_ratio;
+        let freq1 = 200.0 * tune_ratio * fm_sweep;
+        let freq2 = 360.0 * tune_ratio * fm_sweep;
         self.phase1 += freq1 / sample_rate;
         if self.phase1 >= 1.0 { self.phase1 -= 1.0; }
         self.phase2 += freq2 / sample_rate;
@@ -129,10 +139,10 @@ impl SnareEngine {
         match name {
             "tune" => self.tune = value.clamp(-24.0, 24.0),
             "decay" => {
-                // Normalize 0-1 to body decay 0.02-0.5s and noise decay 0.03-0.5s
+                // Normalize 0-1 to body decay 0.02-0.25s and noise decay 0.03-0.25s
                 let v = value.clamp(0.0, 1.0);
-                self.body_decay = 0.02 + v * 0.48;
-                self.noise_decay = 0.03 + v * 0.47;
+                self.body_decay = 0.02 + v * 0.23;
+                self.noise_decay = 0.03 + v * 0.22;
             }
             "tone" => self.tone = value.clamp(0.0, 1.0),
             "drive" => self.snappy = value.clamp(0.0, 10.0) / 10.0,

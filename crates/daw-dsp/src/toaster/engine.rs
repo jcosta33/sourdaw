@@ -1,16 +1,16 @@
-//! Top-level Grinder drum machine engine.
+//! Top-level Toaster drum machine engine.
 //!
 //! Manages pads, polyphonic voice pool, global effects (reverb + delay),
 //! and the per-block processing pipeline.
 
-use crate::engines::DrumEngineType;
-use crate::lofi::LofiProcessor;
-use crate::pad::Pad;
-use crate::transient::TransientShaper;
-use crate::voice::DrumVoice;
+use super::engines::DrumEngineType;
+use super::lofi::LofiProcessor;
+use super::pad::Pad;
+use super::transient::TransientShaper;
+use super::voice::DrumVoice;
 
 // ---------------------------------------------------------------------------
-// Global effects (simple implementations to keep grinder self-contained)
+// Global effects (simple implementations to keep toaster self-contained)
 // ---------------------------------------------------------------------------
 
 /// Send reverb — 8-tap feedback delay network, 100% wet (send effect).
@@ -49,7 +49,7 @@ impl PlateReverb {
         // Read taps
         let mut taps = [0.0f32; 4];
         for i in 0..4 {
-            let len = self.buffers[i].len();
+            let _len = self.buffers[i].len();
             taps[i] = self.buffers[i][self.write_pos[i]];
         }
 
@@ -198,7 +198,7 @@ impl BusEffects {
 /// Maximum polyphony (simultaneous drum hits).
 const MAX_VOICES: usize = 32;
 
-/// The top-level Grinder drum machine engine.
+/// The top-level Toaster drum machine engine.
 pub struct ToasterEngine {
     pads: Vec<Pad>,
     voices: Vec<DrumVoice>,
@@ -218,18 +218,22 @@ impl ToasterEngine {
     pub fn new(sample_rate: f32, num_pads: usize) -> Self {
         // Create default pad layout (typical drum machine mapping)
         let default_types = [
-            DrumEngineType::Kick,
-            DrumEngineType::Snare,
-            DrumEngineType::HiHat,
-            DrumEngineType::HiHat,
-            DrumEngineType::Clap,
-            DrumEngineType::Tom,
-            DrumEngineType::Cymbal,
-            DrumEngineType::Modal,
-            DrumEngineType::Perc,
-            DrumEngineType::Perc,
-            DrumEngineType::Perc,
-            DrumEngineType::Perc,
+            DrumEngineType::Kick,      // kick-808
+            DrumEngineType::Snare,     // snare-808
+            DrumEngineType::HiHat,     // hihat-closed
+            DrumEngineType::HiHat,     // hihat-open
+            DrumEngineType::Clap,      // clap
+            DrumEngineType::Rim,       // rimshot
+            DrumEngineType::Tom,       // tom (Low)
+            DrumEngineType::Tom,       // tom (Mid)
+            DrumEngineType::Tom,       // tom (High)
+            DrumEngineType::Cymbal,    // cymbal
+            DrumEngineType::Cymbal,    // cymbal
+            DrumEngineType::Cowbell,   // cowbell
+            DrumEngineType::Clave,     // clave
+            DrumEngineType::Shaker,    // shaker
+            DrumEngineType::Perc,      // perc-generic
+            DrumEngineType::Perc,      // perc-generic
         ];
 
         let pads: Vec<Pad> = (0..num_pads)
@@ -243,6 +247,10 @@ impl ToasterEngine {
                 if i == 3 {
                     pad.choke_group = 1; // open hat chokes with closed
                 }
+                // Native Base Frequencies for Toms
+                if i == 6 { pad.base_freq = 80.0; }  // Low Tom
+                if i == 7 { pad.base_freq = 120.0; } // Mid Tom
+                if i == 8 { pad.base_freq = 200.0; } // High Tom
                 pad
             })
             .collect();
@@ -324,6 +332,15 @@ impl ToasterEngine {
         self.voices[voice_idx].set_engine_param("decay", pad_cfg.decay);
         self.voices[voice_idx].set_engine_param("tone", pad_cfg.tone);
         self.voices[voice_idx].set_engine_param("drive", pad_cfg.drive);
+        self.voices[voice_idx].set_engine_param("snappy", pad_cfg.snappy);
+        self.voices[voice_idx].set_engine_param("noise_color", pad_cfg.noise_color);
+        if pad_cfg.base_freq > 1.0 {
+            self.voices[voice_idx].set_engine_param("base_freq", pad_cfg.base_freq);
+        }
+        self.voices[voice_idx].set_engine_param("pitch_amount", pad_cfg.pitch_amount);
+        self.voices[voice_idx].set_engine_param("pitch_decay", pad_cfg.pitch_decay);
+        self.voices[voice_idx].set_engine_param("noise_level", pad_cfg.noise_level);
+        self.voices[voice_idx].set_engine_param("open", if pad_cfg.is_open { 1.0 } else { 0.0 });
     }
 
     pub fn note_off(&mut self, pad: u8) {
@@ -417,8 +434,8 @@ impl ToasterEngine {
 
                     // Constant-power pan
                     let pan = pad.pan;
-                    let l_gain = ((1.0 - pan) * 0.5).sqrt();
-                    let r_gain = ((1.0 + pan) * 0.5).sqrt();
+                    let l_gain = ((1.0_f32 - pan) * 0.5_f32).sqrt();
+                    let r_gain = ((1.0_f32 + pan) * 0.5_f32).sqrt();
                     let sl = sample * l_gain;
                     let sr = sample * r_gain;
 

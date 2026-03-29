@@ -27,8 +27,8 @@ export type BuiltinDeviceNode = {
         setBypass: (bypassed: boolean) => void;
         destroy: () => void;
     };
-    /** Controls for the Grinder drum machine (MIDI + param updates via MessagePort) */
-    grinderControls?: {
+    /** Controls for the Toaster drum machine (MIDI + param updates via MessagePort) */
+    toasterControls?: {
         ready: boolean;
         noteOn: (pad: number, velocity: number, midiNote?: number) => void;
         noteOff: (pad: number) => void;

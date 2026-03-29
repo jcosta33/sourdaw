@@ -80,7 +80,7 @@ impl Default for NoteHumanization {
 // Humanizer
 // ---------------------------------------------------------------------------
 
-use crate::types::HumanizeConfig;
+use super::types::HumanizeConfig;
 
 pub struct Humanizer {
     rng: Rng,

@@ -10,7 +10,10 @@ use std::f32::consts::TAU;
 const RATIOS: [f32; 6] = [1.0, 1.4, 1.68, 2.0, 2.4, 2.82];
 
 pub struct HiHatEngine {
-    phases: [f32; 6],
+    phase1: f32,
+    phase2: f32,
+    y_prev1: f32,
+    y_prev2: f32,
     amp_env: f32,
     amp_decay_coeff: f32,
     // Bandpass filters (SVF)
@@ -24,12 +27,16 @@ pub struct HiHatEngine {
     tone: f32,         // mix between low and high bandpass (0-1)
     is_open: bool,     // open vs closed
     base_freq: f32,
+    sample_rate: f32,
 }
 
 impl HiHatEngine {
-    pub fn new(_sample_rate: f32) -> Self {
+    pub fn new(sample_rate: f32) -> Self {
         Self {
-            phases: [0.0; 6],
+            phase1: 0.0,
+            phase2: 0.0,
+            y_prev1: 0.0,
+            y_prev2: 0.0,
             amp_env: 0.0,
             amp_decay_coeff: 0.0,
             bp1_ic1: 0.0,
@@ -41,11 +48,16 @@ impl HiHatEngine {
             tone: 0.5,
             is_open: false,
             base_freq: 320.0,
+            sample_rate,
         }
     }
 
     pub fn trigger(&mut self, velocity: f32, sample_rate: f32) {
-        self.phases = [0.0; 6];
+        self.sample_rate = sample_rate;
+        self.phase1 = 0.0;
+        self.phase2 = 0.0;
+        self.y_prev1 = 0.0;
+        self.y_prev2 = 0.0;
         self.amp_env = velocity;
         self.bp1_ic1 = 0.0;
         self.bp1_ic2 = 0.0;
@@ -53,18 +65,17 @@ impl HiHatEngine {
         self.bp2_ic2 = 0.0;
 
         let actual_decay = if self.is_open {
-            self.decay.clamp(0.35, 1.2)
+            self.decay.clamp(0.25, 0.8)
         } else {
-            self.decay.clamp(0.01, 0.08)
+            self.decay.clamp(0.01, 0.06)
         };
         self.amp_decay_coeff = (-1.0 / (actual_decay * sample_rate)).exp();
     }
 
     pub fn release(&mut self) {
-        // For open hi-hat, release chokes to a fast decay
+        // For open hi-hat, release chokes to a fast 20ms decay
         if self.is_open {
-            // Quick fade (~5ms at 44100)
-            self.amp_decay_coeff = 0.997;
+            self.amp_decay_coeff = (-1.0 / (0.02 * self.sample_rate)).exp();
         }
     }
 
@@ -75,24 +86,34 @@ impl HiHatEngine {
 
         let tune_ratio = (self.tune / 12.0).exp2();
 
-        // Sum 6 square oscillators at metallic ratios
-        let mut sum = 0.0_f32;
-        for i in 0..6 {
-            let freq = self.base_freq * RATIOS[i] * tune_ratio;
-            self.phases[i] += freq / sample_rate;
-            if self.phases[i] >= 1.0 {
-                self.phases[i] -= 1.0;
-            }
-            // Square wave: sign of sine
-            let sq = if (self.phases[i] * TAU).sin() >= 0.0 { 1.0 } else { -1.0 };
-            sum += sq;
-        }
-        sum /= 6.0;
+        // Loopback FM (Phase Mod with feedback). 
+        // High indices create dense, noisy, metallic spectra without raw square aliasing.
+        let fm_index = 4.0; // Heavy metallic mod index
 
-        // Bandpass 1 at ~3.5kHz
-        let bp1_out = self.svf_bandpass(sum, 3500.0, 2.0, sample_rate, true);
-        // Bandpass 2 at ~7kHz
-        let bp2_out = self.svf_bandpass(sum, 7000.0, 2.0, sample_rate, false);
+        // Osc 1
+        let freq1 = self.base_freq * 1.0 * tune_ratio;
+        self.phase1 += freq1 / sample_rate;
+        if self.phase1 >= 1.0 { self.phase1 -= 1.0; }
+        let pm1 = fm_index * self.y_prev1;
+        let y1 = ((self.phase1 + pm1) * TAU).sin();
+        self.y_prev1 = y1;
+
+        // Osc 2 (Inharmonic metallic ratio)
+        let freq2 = self.base_freq * 1.483 * tune_ratio;
+        self.phase2 += freq2 / sample_rate;
+        if self.phase2 >= 1.0 { self.phase2 -= 1.0; }
+        let pm2 = fm_index * self.y_prev2;
+        let y2 = ((self.phase2 + pm2) * TAU).sin();
+        self.y_prev2 = y2;
+
+        let mixed = (y1 + y2) * 0.5;
+
+        // Bandpass 1 at ~3.5kHz scaled by tune ratio
+        let bp1_freq = (3500.0 * tune_ratio).clamp(500.0, 18000.0);
+        let bp1_out = self.svf_bandpass(mixed, bp1_freq, 2.0, sample_rate, true);
+        // Bandpass 2 at ~7kHz scaled by tune ratio
+        let bp2_freq = (7000.0 * tune_ratio).clamp(500.0, 19000.0);
+        let bp2_out = self.svf_bandpass(mixed, bp2_freq, 2.0, sample_rate, false);
 
         // Mix bandpasses
         let filtered = bp1_out * (1.0 - self.tone) + bp2_out * self.tone;
@@ -141,9 +162,9 @@ impl HiHatEngine {
         match name {
             "tune" => self.tune = value.clamp(-24.0, 24.0),
             "decay" => {
-                // Normalize 0-1 to amp decay range 0.01-1.2s
+                // Normalize 0-1 to amp decay range 0.01-0.8s
                 let v = value.clamp(0.0, 1.0);
-                self.decay = 0.01 + v * 1.19;
+                self.decay = 0.01 + v * 0.79;
             }
             "tone" => self.tone = value.clamp(0.0, 1.0),
             "drive" => {

@@ -1,4 +1,3 @@
-pub mod math;
 pub mod yin;
 pub mod voicing;
 pub mod psola;

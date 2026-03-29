@@ -4,17 +4,17 @@
 //! legato, mic mixing, and humanization. The section + voice engine
 //! processes MIDI events and renders audio blocks.
 
-use crate::articulation::ArticulationState;
-use crate::expression::ExpressionState;
-use crate::fallback::FallbackToneEngine;
-use crate::humanize::Humanizer;
-use crate::legato::{LegatoEngine, LegatoResult};
-use crate::mic::MicMixer;
-use crate::performance::{AutoDivisi, AutoArticulation, EnsembleTiming};
-use crate::release::{ReleaseTracker, PedalDeferredRelease};
-use crate::types::*;
-use crate::voice::VoicePool;
-use crate::zone::{SamplePool, ZoneMap};
+use super::articulation::ArticulationState;
+use super::expression::ExpressionState;
+use super::fallback::FallbackToneEngine;
+use super::humanize::Humanizer;
+use super::legato::{LegatoEngine, LegatoResult};
+use super::mic::MicMixer;
+use super::performance::{AutoDivisi, AutoArticulation, EnsembleTiming};
+use super::release::{ReleaseTracker, PedalDeferredRelease};
+use super::types::*;
+use super::voice::VoicePool;
+use super::zone::{SamplePool, ZoneMap};
 
 // ---------------------------------------------------------------------------
 // LevainEngine

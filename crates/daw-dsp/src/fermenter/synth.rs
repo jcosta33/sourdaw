@@ -1,10 +1,10 @@
 /// MasterSynth — top-level Fermenter engine.
 /// Manages layers (each with their own voice pool), processes MIDI, renders audio blocks.
 
-use crate::effects::{Compressor, Distortion, FdnReverb, ParametricEq, PlateReverb, StereoChorus, StereoDelay, StereoPhaser, StereoWidth};
-use crate::layer::Layer;
-use crate::oscillator::Wavetable;
-use crate::params::SmoothedParam;
+use super::effects::{Compressor, Distortion, FdnReverb, ParametricEq, PlateReverb, StereoChorus, StereoDelay, StereoPhaser, StereoWidth};
+use super::layer::Layer;
+use super::oscillator::Wavetable;
+use super::params::SmoothedParam;
 
 /// MIDI event passed from JS to WASM.
 #[derive(Clone, Copy)]

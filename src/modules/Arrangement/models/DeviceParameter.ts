@@ -48,6 +48,8 @@ import { FAUST_EFFECT_DESCRIPTORS } from './pluginDescriptors/faustEffectDescrip
 import { FERMENTER_DESCRIPTOR } from './pluginDescriptors/fermenterDescriptor';
 import { TOASTER_DESCRIPTOR } from './pluginDescriptors/toasterDescriptor';
 import { LEVAIN_DESCRIPTOR } from './pluginDescriptors/levainDescriptor';
+import { GLUTEN_DESCRIPTOR } from './pluginDescriptors/glutenDescriptor';
+import { PROOF_DESCRIPTOR } from './pluginDescriptors/proofDescriptor';
 
 // ── Synth variants (generated from builtin-synth base) ─────────────────────
 function createSynthVariant(id: string, name: string, overrides: Record<string, number>): PluginDescriptor {
@@ -122,6 +124,8 @@ export const BUILTIN_PLUGINS: PluginDescriptor[] = [
     FERMENTER_DESCRIPTOR,
     TOASTER_DESCRIPTOR,
     LEVAIN_DESCRIPTOR,
+    GLUTEN_DESCRIPTOR,
+    PROOF_DESCRIPTOR,
 ];
 
 // ── Utility functions ──────────────────────────────────────────────────────

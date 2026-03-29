@@ -2,11 +2,11 @@
 //! Each layer has its own voice pool, engine selection, filter model,
 //! envelope settings, and modulation amounts. Layers mix to the master output.
 
-use crate::filter::FilterMode;
-use crate::modulation::ModMatrix;
-use crate::oscillator::Wavetable;
-use crate::params::SmoothedParam;
-use crate::voice::{Voice, VoiceParams};
+use super::filter::FilterMode;
+use super::modulation::ModMatrix;
+use super::oscillator::Wavetable;
+use super::params::SmoothedParam;
+use super::voice::{Voice, VoiceParams};
 
 const MAX_VOICES_PER_LAYER: usize = 16;
 

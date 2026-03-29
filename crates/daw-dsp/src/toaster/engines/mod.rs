@@ -34,6 +34,10 @@ pub enum DrumEngineType {
     Cymbal,
     Modal,
     FmPerc,
+    Cowbell,
+    Clave,
+    Shaker,
+    Rim,
 }
 
 impl Default for DrumEngineType {
@@ -53,6 +57,10 @@ pub enum DrumSynthEngine {
     Cymbal(CymbalEngine),
     Modal(ModalEngine),
     FmPerc(FmPercEngine),
+    Cowbell(PercEngine),
+    Clave(PercEngine),
+    Shaker(PercEngine),
+    Rim(PercEngine),
 }
 
 impl DrumSynthEngine {
@@ -67,6 +75,26 @@ impl DrumSynthEngine {
             DrumEngineType::Cymbal => Self::Cymbal(CymbalEngine::new(sample_rate)),
             DrumEngineType::Modal => Self::Modal(ModalEngine::new(sample_rate)),
             DrumEngineType::FmPerc => Self::FmPerc(FmPercEngine::new(sample_rate)),
+            DrumEngineType::Cowbell => {
+                let mut e = PercEngine::new(sample_rate);
+                e.set_param("type", 0.0);
+                Self::Cowbell(e)
+            }
+            DrumEngineType::Clave => {
+                let mut e = PercEngine::new(sample_rate);
+                e.set_param("type", 1.0);
+                Self::Clave(e)
+            }
+            DrumEngineType::Shaker => {
+                let mut e = PercEngine::new(sample_rate);
+                e.set_param("type", 2.0);
+                Self::Shaker(e)
+            }
+            DrumEngineType::Rim => {
+                let mut e = PercEngine::new(sample_rate);
+                e.set_param("type", 3.0);
+                Self::Rim(e)
+            }
         }
     }
 
@@ -81,6 +109,10 @@ impl DrumSynthEngine {
             Self::Cymbal(e) => e.trigger(velocity, sample_rate),
             Self::Modal(e) => e.trigger(velocity, sample_rate),
             Self::FmPerc(e) => e.trigger(velocity, sample_rate),
+            Self::Cowbell(e) => e.trigger(velocity, sample_rate),
+            Self::Clave(e) => e.trigger(velocity, sample_rate),
+            Self::Shaker(e) => e.trigger(velocity, sample_rate),
+            Self::Rim(e) => e.trigger(velocity, sample_rate),
         }
     }
 
@@ -95,6 +127,10 @@ impl DrumSynthEngine {
             Self::Cymbal(e) => e.release(),
             Self::Modal(e) => e.release(),
             Self::FmPerc(e) => e.release(),
+            Self::Cowbell(e) => e.release(),
+            Self::Clave(e) => e.release(),
+            Self::Shaker(e) => e.release(),
+            Self::Rim(e) => e.release(),
         }
     }
 
@@ -109,6 +145,10 @@ impl DrumSynthEngine {
             Self::Cymbal(e) => e.tick(sample_rate),
             Self::Modal(e) => e.tick(sample_rate),
             Self::FmPerc(e) => e.tick(sample_rate),
+            Self::Cowbell(e) => e.tick(sample_rate),
+            Self::Clave(e) => e.tick(sample_rate),
+            Self::Shaker(e) => e.tick(sample_rate),
+            Self::Rim(e) => e.tick(sample_rate),
         }
     }
 
@@ -123,6 +163,10 @@ impl DrumSynthEngine {
             Self::Cymbal(e) => e.is_active(),
             Self::Modal(e) => e.is_active(),
             Self::FmPerc(e) => e.is_active(),
+            Self::Cowbell(e) => e.is_active(),
+            Self::Clave(e) => e.is_active(),
+            Self::Shaker(e) => e.is_active(),
+            Self::Rim(e) => e.is_active(),
         }
     }
 
@@ -137,6 +181,10 @@ impl DrumSynthEngine {
             Self::Cymbal(e) => e.set_param(name, value),
             Self::Modal(e) => e.set_param(name, value),
             Self::FmPerc(e) => e.set_param(name, value),
+            Self::Cowbell(e) => e.set_param(name, value),
+            Self::Clave(e) => e.set_param(name, value),
+            Self::Shaker(e) => e.set_param(name, value),
+            Self::Rim(e) => e.set_param(name, value),
         }
     }
 
@@ -151,6 +199,10 @@ impl DrumSynthEngine {
             Self::Cymbal(_) => DrumEngineType::Cymbal,
             Self::Modal(_) => DrumEngineType::Modal,
             Self::FmPerc(_) => DrumEngineType::FmPerc,
+            Self::Cowbell(_) => DrumEngineType::Cowbell,
+            Self::Clave(_) => DrumEngineType::Clave,
+            Self::Shaker(_) => DrumEngineType::Shaker,
+            Self::Rim(_) => DrumEngineType::Rim,
         }
     }
 }

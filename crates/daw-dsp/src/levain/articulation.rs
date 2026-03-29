@@ -8,7 +8,7 @@
 //!
 //! The state machine is deterministic and runs on the audio thread.
 
-use crate::types::*;
+use super::types::*;
 
 // ---------------------------------------------------------------------------
 // Keyswitch configuration

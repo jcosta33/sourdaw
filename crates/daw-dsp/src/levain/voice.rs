@@ -5,8 +5,8 @@
 //! optional loop crossfading. Voice stealing prioritizes: release tails
 //! past audibility → lowest energy → oldest.
 
-use crate::types::*;
-use crate::zone::SamplePool;
+use super::types::*;
+use super::zone::SamplePool;
 
 // ---------------------------------------------------------------------------
 // Cubic Hermite interpolation (default realtime quality)
@@ -222,7 +222,7 @@ impl SamplePlayback {
 
     /// Configure playback from a zone's sample ref for a given MIDI note.
     /// If `pool` is provided, resolves end=0 to the actual sample frame count.
-    pub fn configure_with_pool(&mut self, sample: &SampleRef, midi_note: u8, gain: f32, pool: &crate::zone::SamplePool) {
+    pub fn configure_with_pool(&mut self, sample: &SampleRef, midi_note: u8, gain: f32, pool: &SamplePool) {
         self.sample_id = sample.sample_id;
         self.root_key = sample.root_key;
         self.tune_cents = sample.tune_cents;
@@ -418,7 +418,7 @@ impl LevainVoice {
         zone: &Zone,
         articulation: ArticulationId,
         gain: f32,
-        pool: &crate::zone::SamplePool,
+        pool: &SamplePool,
     ) {
         self.active = true;
         self.note = note;
@@ -445,7 +445,7 @@ impl LevainVoice {
     }
 
     /// Begin a crossfade to a new sample (for dynamic layer transitions or legato).
-    pub fn start_crossfade(&mut self, new_zone: &Zone, note: u8, crossfade_time_secs: f32, sample_rate: f32, pool: &crate::zone::SamplePool) {
+    pub fn start_crossfade(&mut self, new_zone: &Zone, note: u8, crossfade_time_secs: f32, sample_rate: f32, pool: &SamplePool) {
         // Move current playback to crossfade slot.
         self.crossfade_playback = self.playback.clone();
         self.playback.configure_with_pool(&new_zone.sample, note, 1.0, pool);

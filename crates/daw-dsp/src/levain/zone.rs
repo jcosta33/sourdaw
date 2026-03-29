@@ -5,7 +5,7 @@
 //! counters are maintained per (articulation, note) to prevent machine-gun
 //! repetition.
 
-use crate::types::*;
+use super::types::*;
 
 // ---------------------------------------------------------------------------
 // Configuration

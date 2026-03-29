@@ -1,4 +1,4 @@
-//! Grinder — Sourdaw's drum machine DSP engine.
+//! Toaster — Sourdaw's drum machine DSP engine.
 //!
 //! Compiles to both native (Rust library) and WASM (AudioWorklet).
 //! All DSP is lock-free, allocation-free in the audio path.
@@ -14,7 +14,7 @@ pub mod euclidean;
 use engine::ToasterEngine;
 use wasm_bindgen::prelude::*;
 
-/// WASM-exported Grinder instance for AudioWorklet.
+/// WASM-exported Toaster instance for AudioWorklet.
 #[wasm_bindgen]
 pub struct ToasterInstance {
     engine: ToasterEngine,

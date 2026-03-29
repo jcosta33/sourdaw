@@ -39,6 +39,22 @@ const PARAM_MAP = {
     allButtons: 'all_buttons',
     recovery: 'recovery',
     limiterThreshold: 'limiter_threshold',
+    scLpfFreq: 'sc_lpf_freq',
+    scLpfEnabled: 'sc_lpf_enabled',
+    deltaListen: 'delta_listen',
+    amount: 'amount',
+    gainMatchBypass: 'gain_match_bypass',
+    feedForward: 'feed_forward',
+    blendTopology: 'blend_topology',
+    blendAmount: 'blend_amount',
+    scEqFreq: 'sc_eq_freq',
+    scEqGain: 'sc_eq_gain',
+    scEqQ: 'sc_eq_q',
+    scEqEnabled: 'sc_eq_enabled',
+    vcaType: 'vca_type',
+    jfetK3: 'jfet_k3',
+    xfmrK2: 'xfmr_k2',
+    oversampling: 'oversampling',
 };
 
 class GlutenProcessor extends AudioWorkletProcessor {
@@ -159,6 +175,9 @@ class GlutenProcessor extends AudioWorkletProcessor {
                 grDb: w.gluteninstance_get_gr_db(this._ptr),
                 inputDb: w.gluteninstance_get_input_db(this._ptr),
                 outputDb: w.gluteninstance_get_output_db(this._ptr),
+                crest: w.gluteninstance_get_crest(this._ptr),
+                phaseCorr: w.gluteninstance_get_phase_corr(this._ptr),
+                latency: w.gluteninstance_get_latency_samples(this._ptr),
             });
         }
 

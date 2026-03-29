@@ -6,7 +6,7 @@
 
 use std::f32::consts::TAU;
 
-use crate::engines::{DrumEngineType, DrumSynthEngine};
+use super::engines::{DrumEngineType, DrumSynthEngine};
 
 /// Simple state-variable filter for per-voice filtering.
 pub struct SvfFilter {

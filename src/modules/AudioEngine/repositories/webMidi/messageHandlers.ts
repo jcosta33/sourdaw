@@ -96,71 +96,61 @@ export function handleNoteOn(channel: number, note: number, velocity: number): v
 
     const trackState = getTrackStoreState();
     const track = trackState?.tracks.find((t) => t.id === targetTrackId);
-    const isArmed = track?.armed ?? false;
-    const isRecording = transport?.isRecording ?? false;
+    
+    // Always play live instrument, even when recording
+    let instrumentTrackId = targetTrackId;
+    let instrumentTrack = track;
+    let toasterChildPad: number | null = null;
 
-    if (!(isRecording && isArmed)) {
+    if (track && track.parentId && trackState) {
+        const parent = trackState.tracks.find((t) => t.id === track.parentId);
+        if (parent?.devices.some((d) => d.type === 'toaster')) {
+            instrumentTrackId = parent.id;
+            instrumentTrack = parent;
+            const children = trackState.tracks.filter((t) => t.parentId === parent.id);
+            toasterChildPad = children.findIndex((t) => t.id === track.id);
+        }
+    }
 
-        // ── Resolve instrument track ────────────────────────────────────
-        // A track may be:
-        //   (a) A normal track with its own instrument device
-        //   (b) A Grinder child track (no devices, parentId → Grinder parent)
-        //   (c) Any other child track that routes to its parent's instrument
-        //
-        // For Grinder child tracks: the child represents ONE pad.
-        // Any MIDI note on that child plays that pad's sound.
-        // On the parent Grinder track: MIDI note selects the pad (GM drum map).
+    const strip = engine.ensureTrackStrip(instrumentTrackId);
 
-        let instrumentTrackId = targetTrackId;
-        let instrumentTrack = track;
-        let grinderChildPad: number | null = null;
+    // Fermenter synth
+    const fermenterDev = instrumentTrack?.devices.find((d) => d.type === 'fermenter');
+    if (fermenterDev) {
+        const dn = strip.deviceNodes.find((d) => d.deviceId === fermenterDev.id || d.type === 'fermenter');
+        if (dn?.fermenterControls?.ready) {
+            dn.fermenterControls.noteOn(note, velocity);
+            noteData.fermenterDeviceId = fermenterDev.id;
+        }
+        return; 
+    }
 
-        if (track && track.devices.length === 0 && track.parentId && trackState) {
-            const parent = trackState.tracks.find((t) => t.id === track.parentId);
-            if (parent) {
-                instrumentTrackId = parent.id;
-                instrumentTrack = parent;
-
-                // If parent has a Grinder, determine which pad this child represents
-                if (parent.devices.some((d) => d.type === 'grinder')) {
-                    const children = trackState.tracks.filter(
-                        (t) => t.parentId === parent.id
-                    );
-                    grinderChildPad = children.findIndex((t) => t.id === track.id);
+    // Toaster drum machine
+    const toasterDev = instrumentTrack?.devices.find((d) => d.type === 'toaster');
+    if (toasterDev) {
+        const dn = strip.deviceNodes.find((d) => d.deviceId === toasterDev.id || d.type === 'toaster');
+        if (dn?.toasterControls) {
+            // Note mapping: Logic Pro DMD usually maps C1 (36) to pad 0.
+            // If the user's keyboard is an octave higher (C3 = 60), shift them automatically if playing parent tracks.
+            let pad = toasterChildPad;
+            let pitchNote = note;
+            
+            if (pad === null || pad === -1) {
+                pad = note - 36;
+                // If they played between C3 and D#4, assume they forgot to drop octave and gently remap 
+                if (pad >= 24 && pad <= 39) {
+                    pad = pad - 24; 
                 }
+                // Lock pitch to C3 (60) when playing the kit, so mapping keys don't detune the pads
+                pitchNote = 60;
+            }
+            if (pad >= 0 && pad < 16) {
+                dn.toasterControls.noteOn(pad, velocity, pitchNote);
+                noteData.toasterDeviceId = toasterDev.id;
             }
         }
-
-        const strip = engine.ensureTrackStrip(instrumentTrackId);
-
-        // ── Route to the instrument on the resolved track ───────────────
-
-        // Fermenter synth
-        const fermenterDev = instrumentTrack?.devices.find((d) => d.type === 'fermenter');
-        if (fermenterDev) {
-            const dn = strip.deviceNodes.find((d) => d.deviceId === fermenterDev.id || d.type === 'fermenter');
-            if (dn?.fermenterControls?.ready) {
-                dn.fermenterControls.noteOn(note, velocity);
-                noteData.fermenterDeviceId = fermenterDev.id;
-                return;
-            }
-            return; // not ready — play nothing (don't fall through to wrong sound)
-        }
-
-        // Grinder drum machine
-        const grinderDev = instrumentTrack?.devices.find((d) => d.type === 'grinder');
-        if (grinderDev) {
-            const dn = strip.deviceNodes.find((d) => d.deviceId === grinderDev.id || d.type === 'grinder');
-            if (dn?.grinderControls?.ready) {
-                // Child track → always play that child's pad, MIDI note controls pitch
-                // Parent track → note selects the pad (GM drum map: C1=36 → pad 0)
-                const pad = grinderChildPad ?? (note - 36);
-                dn.grinderControls.noteOn(pad, velocity, note);
-                noteData.grinderDeviceId = grinderDev.id;
-                return;
-            }
-            return; // not ready
-        }
+        return; 
+    }
 
         // Levain instrument
         const levainDev = instrumentTrack?.devices.find((d) => d.type === 'levain');
@@ -218,7 +208,6 @@ export function handleNoteOn(channel: number, note: number, velocity: number): v
         if (osc) {
             noteData.osc = osc;
         }
-    }
 }
 
 export function handleNoteOff(_channel: number, note: number): void {
@@ -242,13 +231,35 @@ export function handleNoteOff(_channel: number, note: number): void {
         }
     }
 
-    // Grinder noteOff — send via worklet MessagePort
-    if (noteData.grinderDeviceId && targetTrackId) {
-        const strip = audioEngine.getTrackStrip(targetTrackId);
-        const dn = strip?.deviceNodes.find((d) => d.deviceId === noteData.grinderDeviceId);
-        if (dn?.grinderControls) {
-            const pad = note - 36;
-            dn.grinderControls.noteOff(pad);
+    // Toaster noteOff — send via worklet MessagePort
+    if (noteData.toasterDeviceId && targetTrackId) {
+        const trackState = getTrackStoreState();
+        const track = trackState?.tracks.find((t) => t.id === targetTrackId);
+        let instrumentTrackId = targetTrackId;
+        let toasterChildPad: number | null = null;
+        
+        if (track && track.devices.length === 0 && track.parentId && trackState) {
+            const parent = trackState.tracks.find((t) => t.id === track.parentId);
+            if (parent?.devices.some(d => d.type === 'toaster')) {
+                instrumentTrackId = parent.id;
+                const children = trackState.tracks.filter(t => t.parentId === parent.id);
+                toasterChildPad = children.findIndex(t => t.id === track.id);
+            }
+        }
+        
+        const strip = audioEngine.getTrackStrip(instrumentTrackId);
+        const dn = strip?.deviceNodes.find((d) => d.deviceId === noteData.toasterDeviceId);
+        if (dn?.toasterControls) {
+            let pad = toasterChildPad;
+            if (pad === null || pad === -1) {
+                pad = note - 36;
+                if (pad >= 24 && pad <= 39) {
+                    pad = pad - 24;
+                }
+            }
+            if (pad >= 0 && pad < 16) {
+                dn.toasterControls.noteOff(pad);
+            }
         }
     }
 

@@ -3,7 +3,6 @@ import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { Save, X, ChevronRight, Star, Folder, Music2, Drum, Music } from 'lucide-react';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
 import { type SoundPreset, type SoundPresetCategory } from '#/modules/Arrangement/useCases/trackQueries';
 import { getFactoryPresets } from '#/modules/Arrangement/useCases/soundPresetLibrary';
 import {
@@ -45,7 +44,7 @@ const INSTRUMENT_GROUPS: InstrumentGroup[] = [
 ];
 
 // Device types that have their own internal preset explorers (excluded from Sounds)
-const CUSTOM_UI_DEVICE_TYPES = new Set(['fermenter', 'grinder', 'levain']);
+const CUSTOM_UI_DEVICE_TYPES = new Set(['fermenter', 'toaster', 'levain']);
 
 // Categories that belong in the Effects tab, not here
 const EFFECTS_CATEGORIES = new Set<SoundPresetCategory>(['fx', 'vocal']);
@@ -121,7 +120,8 @@ export const InstrumentsTab = ({
 
     const handlePresetClick = (preset: SoundPreset) => {
         // Load onto the selected track if it's a compatible kind, else create new
-        const trackKindMatches = selectedTrack?.kind === preset.trackKind ||
+        const trackKindMatches =
+            selectedTrack?.kind === preset.trackKind ||
             (preset.trackKind === 'midi' && selectedTrack?.kind === 'midi') ||
             (preset.trackKind === 'audio' && selectedTrack?.kind === 'audio');
         if (selectedTrackId && trackKindMatches) {
@@ -160,50 +160,37 @@ export const InstrumentsTab = ({
     };
 
     const handleAddFermenterTrack = () => {
-        if (selectedTrack?.kind === 'midi') {
-            // Add Fermenter device to the currently selected MIDI track
-            addDevice(selectedTrack.id, 'fermenter');
-        } else {
-            const preset: SoundPreset = {
-                id: 'fermenter-default',
-                name: 'Fermenter',
-                category: 'synth',
-                description: 'Fermenter synthesizer',
-                trackKind: 'midi',
-                devices: [{ type: 'fermenter', name: 'Fermenter', parameterValues: {} }],
-                tags: ['synth', 'wavetable', 'analog'],
-                author: 'Sourdaw',
-                isFactory: true,
-            };
-            createTrackFromPreset(preset);
-        }
+        const preset: SoundPreset = {
+            id: 'fermenter-default',
+            name: 'Fermenter',
+            category: 'synth',
+            description: 'Fermenter synthesizer',
+            trackKind: 'midi',
+            devices: [{ type: 'fermenter', name: 'Fermenter', parameterValues: {} }],
+            tags: ['synth', 'wavetable', 'analog'],
+            author: 'Sourdaw',
+            isFactory: true,
+        };
+        createTrackFromPreset(preset);
     };
 
-    const handleAddGrinderTrack = () => {
-        if (selectedTrack?.kind === 'midi') {
-            addDevice(selectedTrack.id, 'toaster');
-        } else {
-            createDrumTrackStack();
-        }
+    const handleAddToasterTrack = () => {
+        createDrumTrackStack();
     };
 
     const handleAddLevainTrack = () => {
-        if (selectedTrack?.kind === 'midi') {
-            addDevice(selectedTrack.id, 'levain');
-        } else {
-            const preset: SoundPreset = {
-                id: 'levain-default',
-                name: 'Levain',
-                category: 'keys',
-                description: 'Levain instrument',
-                trackKind: 'midi',
-                devices: [{ type: 'levain', name: 'Levain', parameterValues: {} }],
-                tags: ['levain', 'strings', 'brass', 'woodwinds'],
-                author: 'Sourdaw',
-                isFactory: true,
-            };
-            createTrackFromPreset(preset);
-        }
+        const preset: SoundPreset = {
+            id: 'levain-default',
+            name: 'Levain',
+            category: 'keys',
+            description: 'Levain instrument',
+            trackKind: 'midi',
+            devices: [{ type: 'levain', name: 'Levain', parameterValues: {} }],
+            tags: ['levain', 'strings', 'brass', 'woodwinds'],
+            author: 'Sourdaw',
+            isFactory: true,
+        };
+        createTrackFromPreset(preset);
     };
 
     void userPresetsVersion;
@@ -315,7 +302,7 @@ export const InstrumentsTab = ({
                     label="Toaster"
                     badge="Drums"
                     description="808/909 synth engines · Step sequencer · 16 pads"
-                    onClick={handleAddGrinderTrack}
+                    onClick={handleAddToasterTrack}
                     theme={TOASTER_THEME}
                 />
                 <InstrumentCard

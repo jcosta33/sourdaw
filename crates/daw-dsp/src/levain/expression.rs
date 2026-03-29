@@ -8,8 +8,8 @@
 //! Dynamic crossfading uses equal-power curves to prevent volume dips.
 //! Vibrato LFO with configurable onset delay.
 
-use crate::types::*;
-use crate::voice::OnePoleSmoother;
+use super::types::*;
+use super::voice::OnePoleSmoother;
 
 // ---------------------------------------------------------------------------
 // Dynamic layer crossfader

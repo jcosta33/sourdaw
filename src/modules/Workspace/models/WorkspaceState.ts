@@ -41,8 +41,10 @@ export type WorkspaceState = {
     scratchPadHeight: number;
     aiPanelWidth: number;
     fermenterHeight: number;
-    grinderHeight: number;
+    toasterHeight: number;
     levainHeight: number;
+    glutenHeight: number;
+    proofHeight: number;
 };
 
 export const defaultWorkspaceState: WorkspaceState = {
@@ -76,6 +78,8 @@ export const defaultWorkspaceState: WorkspaceState = {
     scratchPadHeight: 120,
     aiPanelWidth: 340,
     fermenterHeight: 320,
-    grinderHeight: 420,
+    toasterHeight: 420,
     levainHeight: 340,
+    glutenHeight: 300,
+    proofHeight: 340,
 };

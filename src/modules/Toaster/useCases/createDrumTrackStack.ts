@@ -2,11 +2,11 @@
  * Create a drum machine track stack — Logic Pro Drum Machine Designer style.
  *
  * Logic Pro DMD model:
- * - One parent track that IS the drum machine (has the Grinder device)
+ * - One parent track that IS the drum machine (has the Toaster device)
  * - 16 child tracks underneath, one per pad
  * - Each child track is a full channel strip for that pad
  * - Selecting a child track shows that pad's controls
- * - MIDI on a child track routes to the corresponding pad on the parent Grinder
+ * - MIDI on a child track routes to the corresponding pad on the parent Toaster
  * - No extra "instrument" track — the folder IS the instrument
  */
 
@@ -24,11 +24,11 @@ export function createDrumTrackStack(): string | null {
     // Parent is a folder — gives it collapse/expand UI, smaller height, groups children
     const parent = createTrack({ name: 'Toaster Kit', kind: 'folder' });
     parent.collapsed = false;
-    const grinderId = `grinder-${crypto.randomUUID().slice(0, 8)}`;
+    const toasterId = `toaster-${crypto.randomUUID().slice(0, 8)}`;
     parent.devices = [{
-        id: grinderId,
+        id: toasterId,
         name: 'Toaster',
-        type: 'grinder',
+        type: 'toaster',
         bypassed: false,
         parameterValues: {},
     }];
@@ -40,7 +40,7 @@ export function createDrumTrackStack(): string | null {
             kind: 'midi',
             parentId: parent.id,
         });
-        child.devices = [];           // no default synth — routes to parent Grinder
+        child.devices = [];           // no default synth — routes to parent Toaster
         child.outputId = parent.id;    // audio routes through parent
         child.color = PAD_COLORS[i] ?? child.color;
         return child;
@@ -53,8 +53,8 @@ export function createDrumTrackStack(): string | null {
         selectedTrackId: parent.id,
     });
 
-    // Wire the Grinder device into the audio engine
-    addDeviceToStrip(parent.id, grinderId, 'grinder');
+    // Wire the Toaster device into the audio engine
+    addDeviceToStrip(parent.id, toasterId, 'toaster');
 
     eventBus.emit(new TrackAddedEvent({ trackId: parent.id, name: parent.name, kind: parent.kind }));
 

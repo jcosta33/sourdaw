@@ -4,6 +4,7 @@
 //! transformer saturation (even harmonics), "all buttons in" mode.
 
 use super::gain_computer::{gain_computer, apply_range, db_to_linear, linear_to_db};
+use super::oversample::ConfigurableOversample;
 
 pub struct FetCompressor {
     sample_rate: f32,
@@ -18,12 +19,19 @@ pub struct FetCompressor {
     gr_state: f32,
     /// Transformer saturation drive
     xfmr_drive: f32,
+    /// JFET odd-harmonic amount (k3 coefficient)
+    jfet_k3: f32,
+    /// Transformer even-harmonic asymmetry (k2 coefficient)
+    xfmr_k2: f32,
     /// All-buttons-in mode
     all_buttons: bool,
     /// Time since last peak (for all-buttons ratio lag)
     peak_timer: f32,
     last_output_l: f32,
     last_output_r: f32,
+    /// Configurable oversamplers for nonlinear distortion (L/R)
+    os_l: ConfigurableOversample,
+    os_r: ConfigurableOversample,
 }
 
 impl FetCompressor {
@@ -40,10 +48,14 @@ impl FetCompressor {
             release_coeff: 0.0,
             gr_state: 0.0,
             xfmr_drive: 1.2,
+            jfet_k3: 0.15,
+            xfmr_k2: 0.0,
             all_buttons: false,
             peak_timer: 0.0,
             last_output_l: 0.0,
             last_output_r: 0.0,
+            os_l: ConfigurableOversample::new(2),
+            os_r: ConfigurableOversample::new(2),
         };
         c.update_coeffs();
         c
@@ -63,6 +75,9 @@ impl FetCompressor {
             "input_gain" => self.input_gain = value.clamp(-12.0, 24.0),
             "output_gain" => self.output_gain = value.clamp(-24.0, 24.0),
             "xfmr_drive" => self.xfmr_drive = value.clamp(0.0, 3.0),
+            "jfet_k3" => self.jfet_k3 = value.clamp(0.0, 0.5),
+            "xfmr_k2" => self.xfmr_k2 = value.clamp(0.0, 0.3),
+            "oversampling" => { self.os_l.set_rate(value as u8); self.os_r.set_rate(value as u8); }
             "all_buttons" => self.all_buttons = value > 0.5,
             _ => {}
         }
@@ -112,14 +127,21 @@ impl FetCompressor {
         let wet_l = in_l * gr_linear;
         let wet_r = in_r * gr_linear;
 
-        // JFET distortion (odd harmonics from square-law)
-        let dist_l = jfet_distortion(wet_l);
-        let dist_r = jfet_distortion(wet_r);
+        // JFET + transformer distortion at configurable oversampled rate
+        let xfmr = self.xfmr_drive;
+        let k3 = self.jfet_k3;
+        let k2 = self.xfmr_k2;
+        let distortion = |x: f32| -> f32 {
+            let jfet = x - k3 * x * x * x;
+            let xfmr_out = transformer_saturate(jfet, xfmr);
+            xfmr_out + k2 * xfmr_out * xfmr_out
+        };
+        let dist_l = self.os_l.process(wet_l, &distortion);
+        let dist_r = self.os_r.process(wet_r, &distortion);
 
-        // Transformer saturation (even harmonics)
         let output_linear = db_to_linear(self.output_gain);
-        let out_l = transformer_saturate(dist_l, self.xfmr_drive) * output_linear;
-        let out_r = transformer_saturate(dist_r, self.xfmr_drive) * output_linear;
+        let out_l = dist_l * output_linear;
+        let out_r = dist_r * output_linear;
 
         self.last_output_l = out_l;
         self.last_output_r = out_r;
@@ -132,6 +154,8 @@ impl FetCompressor {
         self.peak_timer = 0.0;
         self.last_output_l = 0.0;
         self.last_output_r = 0.0;
+        self.os_l.reset();
+        self.os_r.reset();
     }
 }
 

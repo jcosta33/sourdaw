@@ -1,6 +1,6 @@
-//! Pad configuration for a single drum pad in the Grinder drum machine.
+//! Pad configuration for a single drum pad in the Toaster drum machine.
 
-use crate::engines::DrumEngineType;
+use super::engines::DrumEngineType;
 
 /// One drum pad's configuration. Does not contain DSP state —
 /// that lives in the voice. This is purely parameter storage.
@@ -21,6 +21,15 @@ pub struct Pad {
     pub transient_attack: f32,  // 0-2, 1 = unity
     pub transient_sustain: f32, // 0-2, 1 = unity
     pub bus_route: u8,          // 0 = master direct, 1-4 = bus 1-4
+
+    // Engine-specific parameters that must survive voice recycling
+    pub snappy: f32,
+    pub noise_color: f32,
+    pub base_freq: f32,
+    pub pitch_amount: f32,
+    pub pitch_decay: f32,
+    pub noise_level: f32,
+    pub is_open: bool,
 }
 
 impl Pad {
@@ -42,6 +51,13 @@ impl Pad {
             transient_attack: 1.0,
             transient_sustain: 1.0,
             bus_route: 0,
+            snappy: 0.5,
+            noise_color: 0.5,
+            base_freq: 0.0, // 0 means default
+            pitch_amount: 0.5,
+            pitch_decay: 0.05,
+            noise_level: 0.2,
+            is_open: false,
         }
     }
 
@@ -82,9 +98,20 @@ impl Pad {
                     6 => DrumEngineType::Cymbal,
                     7 => DrumEngineType::Modal,
                     8 => DrumEngineType::FmPerc,
+                    9 => DrumEngineType::Cowbell,
+                    10 => DrumEngineType::Clave,
+                    11 => DrumEngineType::Shaker,
+                    12 => DrumEngineType::Rim,
                     _ => DrumEngineType::Kick,
                 };
             }
+            "snappy" => self.snappy = value.clamp(0.0, 1.0),
+            "noise_color" => self.noise_color = value.clamp(0.0, 1.0),
+            "base_freq" => self.base_freq = value.clamp(20.0, 8000.0),
+            "pitch_amount" => self.pitch_amount = value.clamp(0.0, 2.0),
+            "pitch_decay" => self.pitch_decay = value.clamp(0.0, 1.0),
+            "noise_level" => self.noise_level = value.clamp(0.0, 2.0),
+            "open" => self.is_open = value > 0.5,
             _ => {}
         }
     }

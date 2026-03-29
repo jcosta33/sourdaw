@@ -6,7 +6,7 @@
 //! slow (>300ms) → full transition, medium (100-300ms) → standard,
 //! fast (<100ms) → abbreviated.
 
-use crate::types::*;
+use super::types::*;
 
 // ---------------------------------------------------------------------------
 // Legato configuration

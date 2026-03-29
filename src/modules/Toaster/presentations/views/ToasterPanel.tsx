@@ -1,5 +1,5 @@
 /**
- * Grinder — drum machine panel.
+ * Toaster — drum machine panel.
  *
  * Layout:
  *   Top bar: kit selector + transport
@@ -49,7 +49,7 @@ export const ToasterPanel = (): ReactElement => {
         const selected = tracks.find((t) => t.id === selectedTrackId);
         if (!selected?.parentId) { return; }
         const parent = tracks.find((t) => t.id === selected.parentId);
-        if (!parent?.devices.some((d) => d.type === 'grinder')) { return; }
+        if (!parent?.devices.some((d) => d.type === 'toaster')) { return; }
         const children = tracks.filter((t) => t.parentId === parent.id);
         const padIndex = children.findIndex((t) => t.id === selectedTrackId);
         if (padIndex >= 0 && padIndex !== state.selectedPadIndex) {
