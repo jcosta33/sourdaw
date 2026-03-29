@@ -1,6 +1,5 @@
 import { type ReactElement, type ReactNode } from 'react';
 import { X } from 'lucide-react';
-import { clamp } from '#/helpers/Math/clamp';
 import { Button } from '#/components/ui/button';
 import { DragResizeHandle } from '#/components/ui/DragResizeHandle';
 
@@ -30,7 +29,7 @@ export const InstrumentBottomPanel = ({
     <>
         <DragResizeHandle
             side="top"
-            onResize={(d) => onResize((h) => clamp(h + d, 160, 600))}
+            onResize={(d) => onResize((h) => Math.max(160, h + d))}
         />
         <div
             className={`contain-strict flex flex-col bg-surface-base border-t ${borderColor} overflow-hidden shrink-0 animate-in slide-in-from-bottom-2 duration-200`}

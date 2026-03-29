@@ -68,7 +68,7 @@ pub async fn scan_plugins(
                 String::new()
             };
 
-            registry.insert(PluginId(p.id.clone()), PluginRegistryEntry {
+            registry.insert(p.id.clone(), PluginRegistryEntry {
                 path: p.path.clone(),
                 clap_id,
                 format: p.format.clone(),
@@ -134,7 +134,7 @@ pub async fn load_plugin(
     let entry = {
         let registry = state.plugin_registry.lock()
             .map_err(|e| format!("Failed to lock registry: {}", e))?;
-        registry.get(&plugin_id).cloned()
+        registry.get(&plugin_id.0).cloned()
             .ok_or_else(|| format!("Plugin {} not found in registry. Run a scan first.", plugin_id.0))?
     };
 

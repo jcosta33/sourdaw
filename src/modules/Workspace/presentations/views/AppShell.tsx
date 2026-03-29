@@ -150,8 +150,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         const handler = (): void => {
             setLevainOpen(true);
         };
-        document.addEventListener(APP_EVENTS.SHOW_ORCHESTRAL_TAB, handler);
-        return () => document.removeEventListener(APP_EVENTS.SHOW_ORCHESTRAL_TAB, handler);
+        document.addEventListener(APP_EVENTS.SHOW_LEVAIN_TAB, handler);
+        return () => document.removeEventListener(APP_EVENTS.SHOW_LEVAIN_TAB, handler);
     }, []);
 
     // Listen for Proof Chamber panel open (from inspector device click)
@@ -271,7 +271,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                         <>
                             <DragResizeHandle
                                 side="top"
-                                onResize={(d) => setMixerHeight((h) => clamp(h + d, 120, 800))}
+                                onResize={(d) => setMixerHeight((h) => Math.max(120, h + d))}
                             />
                             <div
                                 className="contain-strict flex flex-col bg-surface-base overflow-hidden shrink-0"

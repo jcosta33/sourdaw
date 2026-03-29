@@ -4,7 +4,8 @@ pub mod state;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let specta_builder = tauri_specta::ts::builder()
+    #[cfg(debug_assertions)]
+    tauri_specta::ts::builder()
         .commands(tauri_specta::collect_commands![
             commands::plugins::scan_plugins,
             commands::plugins::get_default_plugin_paths,
@@ -14,10 +15,7 @@ pub fn run() {
             commands::plugins::get_plugin_parameters,
             commands::plugins::get_plugin_state,
             commands::plugins::set_plugin_state,
-        ]);
-
-    #[cfg(debug_assertions)]
-    specta_builder
+        ])
         .export(specta::typescript::ExportConfiguration::new(), "../src/bindings.ts")
         .expect("Failed to export typescript bindings");
 
@@ -68,7 +66,7 @@ pub fn run() {
             commands::plugins::get_plugin_state,
             commands::plugins::set_plugin_state,
             // audio bridge
-            commands::audio_ipc::audio_ipc,
+            // commands::audio_ipc::audio_ipc, // TODO: re-add when audio_ipc module is implemented
             // Plugin GUI
             commands::plugin_gui::is_plugin_gui_supported,
             commands::plugin_gui::open_plugin_gui,
@@ -78,19 +76,7 @@ pub fn run() {
             commands::midi::open_midi_input,
             commands::midi::close_midi_input,
         ])
-        .setup(|app| {
-            tauri_specta::Builder::new()
-                .commands(tauri_specta::collect_commands![
-                    commands::plugins::scan_plugins,
-                    commands::plugins::get_default_plugin_paths,
-                    commands::plugins::load_plugin,
-                    commands::plugins::unload_plugin,
-                    commands::plugins::set_plugin_parameter,
-                    commands::plugins::get_plugin_parameters,
-                    commands::plugins::get_plugin_state,
-                    commands::plugins::set_plugin_state,
-                ])
-                .export_for_plugin(specta::typescript::ExportConfiguration::new(), app.handle(), "../src/bindings.ts", "tauri")?;
+        .setup(|_app| {
             Ok(())
         })
         .run(tauri::generate_context!())

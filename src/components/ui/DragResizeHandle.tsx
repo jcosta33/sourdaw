@@ -21,6 +21,9 @@ const isVertical = (side: DragResizeHandleProps['side']): boolean => side === 'l
 export const DragResizeHandle = ({ side, onResize, className }: DragResizeHandleProps): ReactElement => {
     const startRef = useRef(0);
     const vertical = isVertical(side);
+    // Always call the latest onResize — avoids stale closure jitter mid-drag
+    const onResizeRef = useRef(onResize);
+    onResizeRef.current = onResize;
 
     const handleMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
         event.preventDefault();
@@ -39,7 +42,7 @@ export const DragResizeHandle = ({ side, onResize, className }: DragResizeHandle
                 // left/top handle: dragging right/down = shrink → invert
                 // right/bottom handle: dragging right/down = grow
                 const delta = side === 'left' || side === 'top' ? -diff : diff;
-                onResize(delta);
+                onResizeRef.current(delta);
             });
         };
 
