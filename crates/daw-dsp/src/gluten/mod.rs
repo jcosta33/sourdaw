@@ -97,6 +97,9 @@ impl GlutenInstance {
         self.output_left[..size].copy_from_slice(&self.input_left[..size]);
         self.output_right[..size].copy_from_slice(&self.input_right[..size]);
 
+        // Pass external sidechain if available
+        self.engine.set_ext_sc(&self.sc_left[..size], &self.sc_right[..size]);
+
         self.engine.process_block(
             &mut self.output_left[..size],
             &mut self.output_right[..size],
