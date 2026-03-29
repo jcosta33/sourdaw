@@ -1,5 +1,5 @@
 import { type ReactElement } from 'react';
-import { Shield, Sparkles, Zap, GitBranch, AudioLines } from 'lucide-react';
+import { Shield, Sparkles, GitBranch, AudioLines, Mic } from 'lucide-react';
 import { InstrumentCard, PROOF_THEME, KNEAD_THEME, YEAST_THEME, SCORING_THEME } from '../../components/Sidebar/InstrumentCard';
 import { APP_EVENTS } from '#/helpers/Event/appEvents';
 import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
@@ -439,10 +439,10 @@ export const EffectsTab = ({
                     theme={PROOF_THEME}
                 />
                 <InstrumentCard
-                    icon={Zap}
+                    icon={Mic}
                     label="Knead"
-                    badge="Amp Sim"
-                    description="Tube Drive · Preamp EQ · Cabinet Simulator"
+                    badge="Tuning"
+                    description="Real-time Pitch Correction · Formant Shifting"
                     onClick={() => {
                         if (selectedTrackId) addDevice(selectedTrackId, 'Knead');
                     }}
