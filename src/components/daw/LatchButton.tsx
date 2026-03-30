@@ -81,8 +81,8 @@ export function LatchButton({
                           transform: 'translateY(1px)',
                       }
                     : {
-                          // Raised with NW light model
-                          background: 'linear-gradient(180deg, #2c2c2c 0%, #242424 40%, #1e1e1e 100%)',
+                          // Raised with NW light model, darkened slightly
+                          background: 'linear-gradient(180deg, #1f1f1f 0%, #181818 40%, #111111 100%)',
                           boxShadow:
                               '0 2px 4px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08)',
                           border: '1px solid var(--color-border-soft)',

@@ -5,7 +5,12 @@
  * version of the project state, and we diff it against the original
  * to figure out what changed, then apply those changes to the real stores.
  */
-import { type EditableProjectState, type EditableTrack, type EditableClip, type EditableDevice } from './serializeProjectState';
+import {
+    type EditableProjectState,
+    type EditableTrack,
+    type EditableClip,
+    type EditableDevice,
+} from './serializeProjectState';
 
 // ── Change types ─────────────────────────────────────────────────────────────
 
@@ -28,10 +33,7 @@ export type ProjectChange =
  * Diff original project state against the LLM-edited version.
  * Returns a list of concrete changes to apply.
  */
-export function diffProjectState(
-    original: EditableProjectState,
-    edited: EditableProjectState,
-): ProjectChange[] {
+export function diffProjectState(original: EditableProjectState, edited: EditableProjectState): ProjectChange[] {
     const changes: ProjectChange[] = [];
 
     // ── Transport changes ────────────────────────────────────────────────
@@ -111,12 +113,7 @@ export function diffProjectState(
     return changes;
 }
 
-function diffClips(
-    trackId: string,
-    orig: EditableTrack,
-    edit: EditableTrack,
-    changes: ProjectChange[],
-): void {
+function diffClips(trackId: string, orig: EditableTrack, edit: EditableTrack, changes: ProjectChange[]): void {
     const origClipIds = new Set(Object.keys(orig.clips));
     const editClipIds = new Set(Object.keys(edit.clips));
 
@@ -147,12 +144,7 @@ function diffClips(
     }
 }
 
-function diffDevices(
-    trackId: string,
-    orig: EditableTrack,
-    edit: EditableTrack,
-    changes: ProjectChange[],
-): void {
+function diffDevices(trackId: string, orig: EditableTrack, edit: EditableTrack, changes: ProjectChange[]): void {
     const origDeviceIds = new Set(Object.keys(orig.devices));
     const editDeviceIds = new Set(Object.keys(edit.devices));
 

@@ -53,10 +53,7 @@ You will receive the current project state as a JSON document. The user will ask
 /**
  * Build the full prompt for a JSON edit request.
  */
-export function buildJsonEditorPrompt(
-    projectJson: string,
-    userRequest: string,
-): { system: string; user: string } {
+export function buildJsonEditorPrompt(projectJson: string, userRequest: string): { system: string; user: string } {
     return {
         system: JSON_EDITOR_SYSTEM_PROMPT,
         user: `Here is the current project state:\n\n${projectJson}\n\nUser request: ${userRequest}\n\nReturn the modified JSON:`,

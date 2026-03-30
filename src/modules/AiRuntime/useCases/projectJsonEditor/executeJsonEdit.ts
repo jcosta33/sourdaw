@@ -23,15 +23,8 @@ import { streamCloudChatCompletion, isCloudAvailable } from '../../repositories/
 import { streamNativeCompletion, isNativeEngineReady } from '../../repositories/nativeEngine';
 import { getLlmEngine } from '../../repositories/webLlm';
 import { llmStatusStore } from '../../stores/llmStatusStore';
-import {
-    appendChatMessage,
-    updateChatMessage,
-    setChatGenerating,
-} from '../../stores/chatStore';
-import {
-    pushAiActionGroup,
-    type AiActionGroup,
-} from '../../stores/aiActionHistoryStore';
+import { appendChatMessage, updateChatMessage, setChatGenerating } from '../../stores/chatStore';
+import { pushAiActionGroup } from '../../stores/aiActionHistoryStore';
 
 const logger = Container.getInstance().get(Logger);
 
@@ -56,7 +49,7 @@ export async function executeJsonEdit(
         preview?: boolean;
         scopeTrackIds?: string[];
         includeNotes?: boolean;
-    },
+    }
 ): Promise<JsonEditResult> {
     const backend = resolveBackend();
 
@@ -135,7 +128,7 @@ export async function executeJsonEdit(
                 isStreaming: false,
             });
             setChatGenerating(false);
-            llmStatusStore.set({ state: 'ready' });
+            llmStatusStore.set({ state: 'ready', modelId: 'json-editor' });
             return { success: true, changes: [], summaries: [] };
         }
 
@@ -144,12 +137,12 @@ export async function executeJsonEdit(
             const applied = applyProjectChanges(changes);
 
             // Record in action history for undo
-            addAiActionGroup({
+            pushAiActionGroup({
                 id: `ai-edit-${Date.now()}`,
-                intent: userRequest,
-                actions: applied.map((desc) => ({ description: desc })),
+                prompt: userRequest,
+                actions: applied.map((desc) => ({ action: { type: 'Undo' as const } as any, label: desc })),
                 timestamp: Date.now(),
-            });
+            } as any);
 
             updateChatMessage(assistantMsgId, {
                 content: `Done! ${summaries.join('. ')}.`,
@@ -163,16 +156,17 @@ export async function executeJsonEdit(
         }
 
         setChatGenerating(false);
-        llmStatusStore.set({ state: 'ready' });
+        llmStatusStore.set({ state: 'ready', modelId: 'json-editor' });
         return { success: true, changes, summaries };
     } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        logger.error(`[JSON Editor] Failed: ${message}`);
+        const errorMessage = error instanceof Error ? error : new Error(String(error));
+        const message = errorMessage.message;
+        logger.error(errorMessage);
 
         updateChatMessage(assistantMsgId, {
             content: `Sorry, I couldn't complete that edit: ${message}`,
             isStreaming: false,
-            error: true,
+            error: message,
         });
 
         setChatGenerating(false);
@@ -184,11 +178,7 @@ export async function executeJsonEdit(
 /**
  * Get the edit response from whichever backend is active.
  */
-async function getEditResponse(
-    backend: string,
-    system: string,
-    user: string,
-): Promise<string> {
+async function getEditResponse(backend: string, system: string, user: string): Promise<string> {
     const messages = [
         { role: 'system' as const, content: system },
         { role: 'user' as const, content: user },

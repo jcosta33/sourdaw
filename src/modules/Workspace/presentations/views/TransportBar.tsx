@@ -111,8 +111,19 @@ export const TransportBar = (): ReactElement => {
                         : 'none'
                  }}
             >
-                {/* Left wing: Core Transport */}
+                {/* Left wing: Time and Tempo */}
                 <div className="flex flex-1 basis-0 justify-start items-center gap-1 min-w-0">
+                    <PlayheadDisplay
+                        tempo={transport.tempo}
+                        numerator={transport.timeSignatureNumerator}
+                        timeDisplayMode={timeDisplayMode}
+                    />
+                    <Sep />
+                    <TempoEditor />
+                </div>
+
+                {/* Center stage: Core Transport */}
+                <div className="flex shrink-0 justify-center items-center gap-1">
                     <TransportControls
                         isPlaying={transport.isPlaying}
                         isRecording={transport.isRecording}
@@ -126,28 +137,17 @@ export const TransportBar = (): ReactElement => {
                         preRollEnabled={transport.preRollEnabled}
                         anyTrackArmed={anyTrackArmed}
                     />
-                    <Sep />
+                </div>
+
+                {/* Right wing: Editing Tools */}
+                <div className="flex flex-1 basis-0 justify-end items-center gap-1 min-w-0">
                     <AutoScrollToggle />
                     <Sep />
                     <SoloModeSelector soloMode={soloMode} />
-                </div>
-
-                {/* Center stage: Editing Tools */}
-                <div className="flex shrink-0 justify-center items-center gap-1">
+                    <Sep />
                     <ToolSelector rippleEditing={rippleEditing} onToggleRipple={toggleRippleEditing} />
                     <Sep />
                     <UndoRedoButtons canUndo={undoState.canUndo} canRedo={undoState.canRedo} />
-                </div>
-
-                {/* Right wing: Time and Tempo */}
-                <div className="flex flex-1 basis-0 justify-end items-center gap-1 min-w-0">
-                    <PlayheadDisplay
-                        tempo={transport.tempo}
-                        numerator={transport.timeSignatureNumerator}
-                        timeDisplayMode={timeDisplayMode}
-                    />
-                    <Sep />
-                    <TempoEditor />
                 </div>
             </div>
         </header>

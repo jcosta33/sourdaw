@@ -69,9 +69,13 @@ function applyChange(change: ProjectChange): void {
 
         case 'update_track': {
             const state = trackStore.value;
-            if (!state) { break; }
+            if (!state) {
+                break;
+            }
             const tracks = state.tracks.map((t) => {
-                if (t.id !== change.id) { return t; }
+                if (t.id !== change.id) {
+                    return t;
+                }
                 return { ...t, [change.field]: change.value };
             });
             trackStore.set({ ...state, tracks });
@@ -80,11 +84,11 @@ function applyChange(change: ProjectChange): void {
 
         case 'reorder_tracks': {
             const state = trackStore.value;
-            if (!state) { break; }
+            if (!state) {
+                break;
+            }
             const trackMap = new Map(state.tracks.map((t) => [t.id, t]));
-            const reordered = change.order
-                .map((id) => trackMap.get(id))
-                .filter(Boolean) as typeof state.tracks;
+            const reordered = change.order.map((id) => trackMap.get(id)).filter(Boolean) as typeof state.tracks;
             // Append any tracks not in the new order (safety)
             for (const t of state.tracks) {
                 if (!change.order.includes(t.id)) {
@@ -110,9 +114,13 @@ function applyChange(change: ProjectChange): void {
 
         case 'remove_clip': {
             const state = trackStore.value;
-            if (!state) { break; }
+            if (!state) {
+                break;
+            }
             const tracks = state.tracks.map((t) => {
-                if (t.id !== change.trackId) { return t; }
+                if (t.id !== change.trackId) {
+                    return t;
+                }
                 return { ...t, clips: t.clips.filter((c) => c.id !== change.clipId) };
             });
             trackStore.set({ ...state, tracks });
@@ -121,13 +129,19 @@ function applyChange(change: ProjectChange): void {
 
         case 'update_clip': {
             const state = trackStore.value;
-            if (!state) { break; }
+            if (!state) {
+                break;
+            }
             const tracks = state.tracks.map((t) => {
-                if (t.id !== change.trackId) { return t; }
+                if (t.id !== change.trackId) {
+                    return t;
+                }
                 return {
                     ...t,
                     clips: t.clips.map((c) => {
-                        if (c.id !== change.clipId) { return c; }
+                        if (c.id !== change.clipId) {
+                            return c;
+                        }
                         return { ...c, [change.field]: change.value };
                     }),
                 };
@@ -143,9 +157,13 @@ function applyChange(change: ProjectChange): void {
 
         case 'remove_device': {
             const state = trackStore.value;
-            if (!state) { break; }
+            if (!state) {
+                break;
+            }
             const tracks = state.tracks.map((t) => {
-                if (t.id !== change.trackId) { return t; }
+                if (t.id !== change.trackId) {
+                    return t;
+                }
                 return { ...t, devices: t.devices.filter((d) => d.id !== change.deviceId) };
             });
             trackStore.set({ ...state, tracks });
@@ -154,13 +172,19 @@ function applyChange(change: ProjectChange): void {
 
         case 'update_device': {
             const state = trackStore.value;
-            if (!state) { break; }
+            if (!state) {
+                break;
+            }
             const tracks = state.tracks.map((t) => {
-                if (t.id !== change.trackId) { return t; }
+                if (t.id !== change.trackId) {
+                    return t;
+                }
                 return {
                     ...t,
                     devices: t.devices.map((d) => {
-                        if (d.id !== change.deviceId) { return d; }
+                        if (d.id !== change.deviceId) {
+                            return d;
+                        }
                         return { ...d, [change.field]: change.value };
                     }),
                 };
@@ -181,20 +205,34 @@ function applyChange(change: ProjectChange): void {
 
 function describeChange(change: ProjectChange): string {
     switch (change.type) {
-        case 'set_tempo': return `Set tempo to ${change.value} BPM`;
-        case 'set_time_signature': return `Set time signature to ${change.numerator}/${change.denominator}`;
-        case 'add_track': return `Added track "${change.track.name}"`;
-        case 'remove_track': return `Removed track`;
-        case 'update_track': return `Changed track ${change.field}`;
-        case 'reorder_tracks': return `Reordered tracks`;
-        case 'add_clip': return `Added clip "${change.clip.name}"`;
-        case 'remove_clip': return `Removed clip`;
-        case 'update_clip': return `Changed clip ${change.field}`;
-        case 'add_device': return `Added ${change.device.type}`;
-        case 'remove_device': return `Removed device`;
-        case 'update_device': return `Changed device ${change.field}`;
-        case 'set_selection': return `Changed selection`;
-        default: return `Unknown change`;
+        case 'set_tempo':
+            return `Set tempo to ${change.value} BPM`;
+        case 'set_time_signature':
+            return `Set time signature to ${change.numerator}/${change.denominator}`;
+        case 'add_track':
+            return `Added track "${change.track.name}"`;
+        case 'remove_track':
+            return `Removed track`;
+        case 'update_track':
+            return `Changed track ${change.field}`;
+        case 'reorder_tracks':
+            return `Reordered tracks`;
+        case 'add_clip':
+            return `Added clip "${change.clip.name}"`;
+        case 'remove_clip':
+            return `Removed clip`;
+        case 'update_clip':
+            return `Changed clip ${change.field}`;
+        case 'add_device':
+            return `Added ${change.device.type}`;
+        case 'remove_device':
+            return `Removed device`;
+        case 'update_device':
+            return `Changed device ${change.field}`;
+        case 'set_selection':
+            return `Changed selection`;
+        default:
+            return `Unknown change`;
     }
 }
 
