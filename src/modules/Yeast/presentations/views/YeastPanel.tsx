@@ -71,8 +71,12 @@ export const YeastPanel = (): ReactElement => {
                 <Level1Play state={state} />
             ) : uiLevel === 2 ? (
                 <Level2Shape state={state} />
-            ) : (
+            ) : uiLevel === 3 ? (
                 <Level3Build state={state} />
+            ) : uiLevel === 4 ? (
+                <Level4Route state={state} />
+            ) : (
+                <Level5Lab state={state} />
             )}
         </div>
     );
@@ -205,9 +209,120 @@ const Level3Build = ({ state }: { state: YeastState }): ReactElement => {
                 ))}
             </div>
 
-            {/* Add processor */}
+            {/* Add processor — show up to current UI level */}
             <div className="flex flex-wrap gap-1 pt-1 border-t border-border/20">
-                {PROCESSOR_TYPES.map((pt) => (
+                {PROCESSOR_TYPES.filter((pt) => pt.level <= 3).map((pt) => (
+                    <button
+                        key={pt.type}
+                        type="button"
+                        className="px-2 py-1 rounded text-[8px] text-muted-foreground hover:text-foreground border border-border/20 hover:border-border/40 cursor-pointer transition-colors"
+                        onClick={() => addYeastProcessor(pt.type)}
+                        title={pt.description}
+                    >
+                        + {pt.name}
+                    </button>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+// ── Level 4: Route ───────────────────────────────────────────────────────────
+
+const Level4Route = ({ state }: { state: YeastState }): ReactElement => {
+    return (
+        <div className="flex-1 flex flex-col px-3 py-2 gap-2 overflow-y-auto">
+            {/* Rack chain (same as Build) */}
+            <div className="flex flex-col gap-1">
+                {state.processors.map((proc, i) => (
+                    <div key={proc.id} className="flex items-center gap-2 px-2 py-1.5 rounded bg-surface-base/50 border border-border/20">
+                        <span className="text-[7px] text-muted-foreground/50 w-3">{i + 1}</span>
+                        <span className={`text-[10px] font-medium flex-1 ${proc.bypassed ? 'text-muted-foreground/40 line-through' : 'text-foreground'}`}>
+                            {proc.name}
+                        </span>
+                        <button
+                            type="button"
+                            className={`text-[7px] px-1 rounded cursor-pointer ${proc.bypassed ? 'text-muted-foreground' : 'text-[var(--color-accent-peach)]'}`}
+                            onClick={() => setYeastProcessorBypass(proc.id, !proc.bypassed)}
+                        >
+                            {proc.bypassed ? 'OFF' : 'ON'}
+                        </button>
+                        <button
+                            type="button"
+                            className="text-[7px] text-muted-foreground hover:text-[var(--color-state-danger)] cursor-pointer"
+                            onClick={() => removeYeastProcessor(proc.id)}
+                        >
+                            X
+                        </button>
+                    </div>
+                ))}
+            </div>
+
+            {/* Add — includes Route-level processors */}
+            <div className="flex flex-wrap gap-1 pt-1 border-t border-border/20">
+                {PROCESSOR_TYPES.filter((pt) => pt.level <= 4).map((pt) => (
+                    <button
+                        key={pt.type}
+                        type="button"
+                        className="px-2 py-1 rounded text-[8px] text-muted-foreground hover:text-foreground border border-border/20 hover:border-border/40 cursor-pointer transition-colors"
+                        onClick={() => addYeastProcessor(pt.type)}
+                        title={pt.description}
+                    >
+                        + {pt.name}
+                    </button>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+// ── Level 5: Lab ─────────────────────────────────────────────────────────────
+
+const Level5Lab = ({ state }: { state: YeastState }): ReactElement => {
+    return (
+        <div className="flex-1 flex flex-col px-3 py-2 gap-2 overflow-y-auto">
+            {/* Full rack chain */}
+            <div className="flex flex-col gap-1">
+                {state.processors.map((proc, i) => (
+                    <div key={proc.id} className="flex items-center gap-2 px-2 py-1.5 rounded bg-surface-base/50 border border-border/20">
+                        <span className="text-[7px] text-muted-foreground/50 w-3">{i + 1}</span>
+                        <span className={`text-[10px] font-medium flex-1 ${proc.bypassed ? 'text-muted-foreground/40 line-through' : 'text-foreground'}`}>
+                            {proc.name}
+                        </span>
+                        <button
+                            type="button"
+                            className={`text-[7px] px-1 rounded cursor-pointer ${proc.bypassed ? 'text-muted-foreground' : 'text-[var(--color-accent-peach)]'}`}
+                            onClick={() => setYeastProcessorBypass(proc.id, !proc.bypassed)}
+                        >
+                            {proc.bypassed ? 'OFF' : 'ON'}
+                        </button>
+                        <button
+                            type="button"
+                            className="text-[7px] text-muted-foreground hover:text-[var(--color-state-danger)] cursor-pointer"
+                            onClick={() => removeYeastProcessor(proc.id)}
+                        >
+                            X
+                        </button>
+                    </div>
+                ))}
+            </div>
+
+            {/* All processors including Lab-level */}
+            <div className="flex flex-wrap gap-1 pt-1 border-t border-border/20">
+                <span className="w-full text-[7px] text-muted-foreground/50 uppercase tracking-widest mb-0.5">Generative</span>
+                {PROCESSOR_TYPES.filter((pt) => pt.level === 5).map((pt) => (
+                    <button
+                        key={pt.type}
+                        type="button"
+                        className="px-2 py-1 rounded text-[8px] text-lime-400/80 hover:text-lime-300 border border-lime-500/20 hover:border-lime-500/40 cursor-pointer transition-colors"
+                        onClick={() => addYeastProcessor(pt.type)}
+                        title={pt.description}
+                    >
+                        + {pt.name}
+                    </button>
+                ))}
+                <span className="w-full text-[7px] text-muted-foreground/50 uppercase tracking-widest mt-1 mb-0.5">Standard</span>
+                {PROCESSOR_TYPES.filter((pt) => pt.level <= 4).map((pt) => (
                     <button
                         key={pt.type}
                         type="button"

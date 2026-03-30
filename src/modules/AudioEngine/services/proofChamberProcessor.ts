@@ -1,6 +1,6 @@
 // @ts-nocheck
 /**
- * AudioWorkletProcessor for Proof Chamber reverb.
+ * AudioWorkletProcessor for Dutch Oven reverb.
  * Stereo in → stereo out effect processor.
  */
 
@@ -37,17 +37,17 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
         const mod = new WebAssembly.Module(wasmBytes);
         const importInfo = WebAssembly.Module.imports(mod);
         const bgImports = {};
-        
+
         let instance;
 
         for (const imp of importInfo) {
             if (imp.module === './proof_chamber_bg.js') {
                 if (imp.name.startsWith('__wbg___wbindgen_throw_')) {
-                    bgImports[imp.name] = function(ptr, len) {
+                    bgImports[imp.name] = function (ptr, len) {
                         throw new Error('WASM error at ptr ' + ptr + ' len ' + len);
                     };
                 } else if (imp.name === '__wbindgen_init_externref_table') {
-                    bgImports[imp.name] = function() {
+                    bgImports[imp.name] = function () {
                         const table = instance.exports.__wbindgen_externrefs;
                         if (table) {
                             const offset = table.grow(4);
@@ -59,9 +59,9 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
                         }
                     };
                 } else if (imp.name.startsWith('__wbg___wbindgen_copy_to_typed_array_')) {
-                    bgImports[imp.name] = function() {};
+                    bgImports[imp.name] = function () {};
                 } else {
-                    bgImports[imp.name] = function() {};
+                    bgImports[imp.name] = function () {};
                 }
             }
         }
@@ -128,7 +128,8 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
 
         // Process
         // Args: (self_ptr, left_ptr, left_len, right_ptr, right_len, frames)
-        const leftOutPtr = w.proofchamberinstance_process(this._ptr, leftInPtr, frames, rightInPtr, frames, frames) >>> 0;
+        const leftOutPtr =
+            w.proofchamberinstance_process(this._ptr, leftInPtr, frames, rightInPtr, frames, frames) >>> 0;
         // Note: left_len === right_len === frames since both are f32 arrays of `frames` elements
         const rightOutPtr = w.proofchamberinstance_get_right_ptr(this._ptr) >>> 0;
 

@@ -16,7 +16,10 @@ export function addDevice(trackId: string, deviceType: string): Device | null {
         return null;
     }
 
-    const plugin = getPlatformPlugins().find((p) => p.name.toLowerCase() === deviceType.toLowerCase());
+    // Search by name first, then by ID — callers may pass either
+    const plugin = getPlatformPlugins().find(
+        (p) => p.name.toLowerCase() === deviceType.toLowerCase() || p.id === deviceType
+    );
     const parameterValues: Record<string, number> = {};
     if (plugin) {
         for (const param of plugin.parameters) {
@@ -26,7 +29,7 @@ export function addDevice(trackId: string, deviceType: string): Device | null {
 
     const device: Device = {
         id: nextDeviceIdStr(),
-        name: deviceType,
+        name: plugin ? plugin.name : deviceType,
         type: plugin ? plugin.id : deviceType,
         bypassed: false,
         parameterValues,

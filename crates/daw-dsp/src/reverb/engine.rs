@@ -1,4 +1,4 @@
-//! Reverb Engine Wrapper for Proof Chamber
+//! Reverb Engine Wrapper for Dutch Oven
 
 use wasm_bindgen::prelude::*;
 use crate::reverb::dattorro::DattorroTank;

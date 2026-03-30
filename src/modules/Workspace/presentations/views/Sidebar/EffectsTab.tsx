@@ -1,6 +1,14 @@
 import { type ReactElement } from 'react';
-import { Shield, Sparkles, GitBranch, AudioLines, Mic } from 'lucide-react';
-import { InstrumentCard, PROOF_THEME, KNEAD_THEME, YEAST_THEME, SCORING_THEME } from '../../components/Sidebar/InstrumentCard';
+import { Shield, Sparkles, GitBranch, AudioLines, Mic, Waves as WavesIcon, Gauge } from 'lucide-react';
+import {
+    InstrumentCard,
+    PROOF_THEME,
+    KNEAD_THEME,
+    YEAST_THEME,
+    SCORING_THEME,
+    PROOF_CHAMBER_THEME,
+    GLUTEN_THEME,
+} from '../../components/Sidebar/InstrumentCard';
 import { APP_EVENTS } from '#/helpers/Event/appEvents';
 import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
 import { type BUILTIN_PLUGINS } from '#/modules/Arrangement/useCases/trackQueries';
@@ -463,16 +471,42 @@ export const EffectsTab = ({
                 />
                 <InstrumentCard
                     icon={AudioLines}
-                    label="Scoring Tuner"
-                    badge="Analysis"
-                    description="Polyphonic pitch tracking · Yin & MPM Transcription"
+                    label="Scoring"
+                    badge="Tuner"
+                    description="Peterson-grade strobe · Polyphonic strings · YIN + MPM"
                     onClick={() => {
                         if (selectedTrackId) {
-                            addDevice(selectedTrackId, 'Scoring');
+                            addDevice(selectedTrackId, 'native-scoring');
                             document.dispatchEvent(new Event(APP_EVENTS.SHOW_SCORING_TAB));
                         }
                     }}
                     theme={SCORING_THEME}
+                />
+                <InstrumentCard
+                    icon={WavesIcon}
+                    label="Dutch Oven"
+                    badge="Reverb"
+                    description="Dattorro plate · FDN · Spring · Convolution · Shimmer"
+                    onClick={() => {
+                        if (selectedTrackId) {
+                            addDevice(selectedTrackId, 'native-proof-chamber');
+                            document.dispatchEvent(new Event(APP_EVENTS.SHOW_PROOF_CHAMBER_TAB));
+                        }
+                    }}
+                    theme={PROOF_CHAMBER_THEME}
+                />
+                <InstrumentCard
+                    icon={Gauge}
+                    label="Gluten"
+                    badge="Dynamics"
+                    description="Bus compressor · SSL-style · Parallel compression"
+                    onClick={() => {
+                        if (selectedTrackId) {
+                            addDevice(selectedTrackId, 'gluten');
+                            document.dispatchEvent(new Event(APP_EVENTS.SHOW_GLUTEN_TAB));
+                        }
+                    }}
+                    theme={GLUTEN_THEME}
                 />
             </div>
 

@@ -70,8 +70,11 @@ export const GrHistory = ({
 
         // Gradient fill
         const grad = ctx.createLinearGradient(0, 0, 0, height);
-        grad.addColorStop(0, `${accent}80`);
-        grad.addColorStop(1, `${accent}10`);
+        // Canvas requires actual color values, not CSS variables.
+        // Ensure we have a valid hex color before appending alpha.
+        const safeAccent = accent.startsWith('#') ? accent : '#c9a07a';
+        grad.addColorStop(0, `${safeAccent}80`);
+        grad.addColorStop(1, `${safeAccent}10`);
 
         ctx.beginPath();
         ctx.moveTo(0, 0);

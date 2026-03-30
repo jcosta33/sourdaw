@@ -3,7 +3,7 @@
  *
  * Layout:
  *   ┌──────────────────────────────────────────────────────────────────┐
- *   │ Top bar: [Proof Chamber] · [Hall|Room|Plate|...] space pills    │
+ *   │ Top bar: [Dutch Oven] · [Hall|Room|Plate|...] space pills    │
  *   ├──────────────────────────────────────────────────────────────────┤
  *   │              [Spectrogram — scrolling freq × time]               │
  *   ├──────────────────────────────────────────────────────────────────┤
@@ -84,9 +84,7 @@ export const ProofChamberPanel = ({ onParamChange }: ProofChamberPanelProps): Re
         <div className="flex flex-col h-full">
             {/* ─── Top bar ─── */}
             <div className="flex items-center justify-between px-3 py-1 shrink-0 border-b border-border/30 bg-surface-app/30">
-                <span className="text-[10px] font-bold text-[var(--color-accent-cyan)] tracking-tight">
-                    Proof Chamber
-                </span>
+                <span className="text-[10px] font-bold text-[var(--color-accent-cyan)] tracking-tight">Dutch Oven</span>
                 {/* Space selector pills */}
                 <div className="flex gap-0.5 bg-surface-base/50 rounded p-0.5">
                     {SPACES.map(({ id, label }) => (
@@ -150,7 +148,9 @@ export const ProofChamberPanel = ({ onParamChange }: ProofChamberPanelProps): Re
                     <button
                         type="button"
                         className={`px-1 py-0.5 rounded text-[7px] font-medium transition-colors ${
-                            showDecayEq ? 'bg-[var(--color-accent-cyan)]/30 text-[var(--color-accent-cyan)]' : 'text-muted-foreground/30 hover:text-muted-foreground'
+                            showDecayEq
+                                ? 'bg-[var(--color-accent-cyan)]/30 text-[var(--color-accent-cyan)]'
+                                : 'text-muted-foreground/30 hover:text-muted-foreground'
                         }`}
                         onClick={() => setShowDecayEq(!showDecayEq)}
                     >
@@ -159,7 +159,9 @@ export const ProofChamberPanel = ({ onParamChange }: ProofChamberPanelProps): Re
                     <button
                         type="button"
                         className={`px-1 py-0.5 rounded text-[7px] font-medium transition-colors ${
-                            showFlow ? 'bg-[var(--color-accent-cyan)]/30 text-[var(--color-accent-cyan)]' : 'text-muted-foreground/30 hover:text-muted-foreground'
+                            showFlow
+                                ? 'bg-[var(--color-accent-cyan)]/30 text-[var(--color-accent-cyan)]'
+                                : 'text-muted-foreground/30 hover:text-muted-foreground'
                         }`}
                         onClick={() => setShowFlow(!showFlow)}
                     >
@@ -184,58 +186,167 @@ export const ProofChamberPanel = ({ onParamChange }: ProofChamberPanelProps): Re
                 <div className="flex items-start gap-0 px-3 py-2 min-w-max">
                     {/* Core: Size, Decay, Mix, Pre-Delay */}
                     <div className="flex items-end gap-2 pr-3">
-                        <KnobStack label="Size" value={params.size} onChange={(v) => set('size', v)}
-                            min={0} max={1} step={0.01} defaultValue={0.75} size="xl" />
-                        <KnobStack label="Decay" value={params.decay} onChange={(v) => set('decay', v)}
-                            min={0} max={0.999} step={0.001} defaultValue={0.5} size="xl"
-                            display={`${(params.decay * 30).toFixed(1)}s`} />
-                        <KnobStack label="Mix" value={params.mix} onChange={(v) => set('mix', v)}
-                            min={0} max={1} step={0.01} defaultValue={0.3} size="xl"
-                            display={`${Math.round(params.mix * 100)}%`} />
-                        <KnobStack label="Pre-Dly" value={params.predelay} onChange={(v) => set('predelay', v)}
-                            min={0} max={500} step={1} defaultValue={15} size="lg"
-                            display={`${Math.round(params.predelay)}ms`} />
+                        <KnobStack
+                            label="Size"
+                            value={params.size}
+                            onChange={(v) => set('size', v)}
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            defaultValue={0.75}
+                            size="xl"
+                        />
+                        <KnobStack
+                            label="Decay"
+                            value={params.decay}
+                            onChange={(v) => set('decay', v)}
+                            min={0}
+                            max={0.999}
+                            step={0.001}
+                            defaultValue={0.5}
+                            size="xl"
+                            display={`${(params.decay * 30).toFixed(1)}s`}
+                        />
+                        <KnobStack
+                            label="Mix"
+                            value={params.mix}
+                            onChange={(v) => set('mix', v)}
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            defaultValue={0.3}
+                            size="xl"
+                            display={`${Math.round(params.mix * 100)}%`}
+                        />
+                        <KnobStack
+                            label="Pre-Dly"
+                            value={params.predelay}
+                            onChange={(v) => set('predelay', v)}
+                            min={0}
+                            max={500}
+                            step={1}
+                            defaultValue={15}
+                            size="lg"
+                            display={`${Math.round(params.predelay)}ms`}
+                        />
                     </div>
 
                     <div className="w-px self-stretch bg-border/15 shrink-0" />
 
                     {/* Tone: High Cut, Low Cut, Damping */}
                     <div className="flex items-end gap-2 px-3">
-                        <KnobStack label="Hi Cut" value={params.highCut} onChange={(v) => set('highCut', v)}
-                            min={1000} max={20000} step={100} defaultValue={12000} size="lg"
-                            display={params.highCut >= 1000 ? `${(params.highCut / 1000).toFixed(1)}k` : `${Math.round(params.highCut)}`} />
-                        <KnobStack label="Lo Cut" value={params.lowCut} onChange={(v) => set('lowCut', v)}
-                            min={20} max={1000} step={5} defaultValue={80} size="lg"
-                            display={`${Math.round(params.lowCut)}Hz`} />
-                        <KnobStack label="Damp" value={params.damping} onChange={(v) => set('damping', v)}
-                            min={0} max={0.999} step={0.001} defaultValue={0.3} size="lg" />
-                        <KnobStack label="Diffuse" value={params.diffusion} onChange={(v) => set('diffusion', v)}
-                            min={0} max={1} step={0.01} defaultValue={0.75} size="md" />
+                        <KnobStack
+                            label="Hi Cut"
+                            value={params.highCut}
+                            onChange={(v) => set('highCut', v)}
+                            min={1000}
+                            max={20000}
+                            step={100}
+                            defaultValue={12000}
+                            size="lg"
+                            display={
+                                params.highCut >= 1000
+                                    ? `${(params.highCut / 1000).toFixed(1)}k`
+                                    : `${Math.round(params.highCut)}`
+                            }
+                        />
+                        <KnobStack
+                            label="Lo Cut"
+                            value={params.lowCut}
+                            onChange={(v) => set('lowCut', v)}
+                            min={20}
+                            max={1000}
+                            step={5}
+                            defaultValue={80}
+                            size="lg"
+                            display={`${Math.round(params.lowCut)}Hz`}
+                        />
+                        <KnobStack
+                            label="Damp"
+                            value={params.damping}
+                            onChange={(v) => set('damping', v)}
+                            min={0}
+                            max={0.999}
+                            step={0.001}
+                            defaultValue={0.3}
+                            size="lg"
+                        />
+                        <KnobStack
+                            label="Diffuse"
+                            value={params.diffusion}
+                            onChange={(v) => set('diffusion', v)}
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            defaultValue={0.75}
+                            size="md"
+                        />
                     </div>
 
                     <div className="w-px self-stretch bg-border/15 shrink-0" />
 
                     {/* Modulation & Width */}
                     <div className="flex items-end gap-2 px-3">
-                        <KnobStack label="Mod" value={params.modDepth} onChange={(v) => set('modDepth', v)}
-                            min={0} max={1} step={0.01} defaultValue={0.3} size="md" />
-                        <KnobStack label="Rate" value={params.modRate} onChange={(v) => set('modRate', v)}
-                            min={0.1} max={5} step={0.1} defaultValue={1.0} size="md"
-                            display={`${params.modRate.toFixed(1)}Hz`} />
-                        <KnobStack label="Width" value={params.width} onChange={(v) => set('width', v)}
-                            min={0} max={2} step={0.01} defaultValue={1.0} size="md"
-                            display={`${Math.round(params.width * 100)}%`} />
+                        <KnobStack
+                            label="Mod"
+                            value={params.modDepth}
+                            onChange={(v) => set('modDepth', v)}
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            defaultValue={0.3}
+                            size="md"
+                        />
+                        <KnobStack
+                            label="Rate"
+                            value={params.modRate}
+                            onChange={(v) => set('modRate', v)}
+                            min={0.1}
+                            max={5}
+                            step={0.1}
+                            defaultValue={1.0}
+                            size="md"
+                            display={`${params.modRate.toFixed(1)}Hz`}
+                        />
+                        <KnobStack
+                            label="Width"
+                            value={params.width}
+                            onChange={(v) => set('width', v)}
+                            min={0}
+                            max={2}
+                            step={0.01}
+                            defaultValue={1.0}
+                            size="md"
+                            display={`${Math.round(params.width * 100)}%`}
+                        />
                     </div>
 
                     <div className="w-px self-stretch bg-border/15 shrink-0" />
 
                     {/* Advanced: Gravity, Early/Late */}
                     <div className="flex items-end gap-2 px-3">
-                        <KnobStack label="Gravity" value={params.gravity} onChange={(v) => set('gravity', v)}
-                            min={-1} max={1} step={0.01} defaultValue={0.5} size="md" bipolar />
-                        <KnobStack label="E/L Bal" value={params.earlyLateBalance} onChange={(v) => set('earlyLateBalance', v)}
-                            min={0} max={1} step={0.01} defaultValue={0.4} size="md"
-                            display={`${Math.round(params.earlyLateBalance * 100)}%`} />
+                        <KnobStack
+                            label="Gravity"
+                            value={params.gravity}
+                            onChange={(v) => set('gravity', v)}
+                            min={-1}
+                            max={1}
+                            step={0.01}
+                            defaultValue={0.5}
+                            size="md"
+                            bipolar
+                        />
+                        <KnobStack
+                            label="E/L Bal"
+                            value={params.earlyLateBalance}
+                            onChange={(v) => set('earlyLateBalance', v)}
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            defaultValue={0.4}
+                            size="md"
+                            display={`${Math.round(params.earlyLateBalance * 100)}%`}
+                        />
                     </div>
 
                     <div className="w-px self-stretch bg-border/15 shrink-0" />
@@ -255,8 +366,16 @@ export const ProofChamberPanel = ({ onParamChange }: ProofChamberPanelProps): Re
                                 Shimmer
                             </button>
                             {params.shimmer ? (
-                                <KnobStack label="Amount" value={params.shimmerAmount} onChange={(v) => set('shimmerAmount', v)}
-                                    min={0} max={1} step={0.01} defaultValue={0.2} size="sm" />
+                                <KnobStack
+                                    label="Amount"
+                                    value={params.shimmerAmount}
+                                    onChange={(v) => set('shimmerAmount', v)}
+                                    min={0}
+                                    max={1}
+                                    step={0.01}
+                                    defaultValue={0.2}
+                                    size="sm"
+                                />
                             ) : null}
                         </div>
                         <div className="flex flex-col items-center gap-1">
@@ -304,13 +423,31 @@ type KnobStackProps = {
     bipolar?: boolean;
 };
 
-const KnobStack = ({ label, value, onChange, min, max, step, defaultValue, size, display, bipolar }: KnobStackProps): ReactElement => (
+const KnobStack = ({
+    label,
+    value,
+    onChange,
+    min,
+    max,
+    step,
+    defaultValue,
+    size,
+    display,
+    bipolar,
+}: KnobStackProps): ReactElement => (
     <div className="flex flex-col items-center gap-0">
-        <RotaryKnob value={value} onChange={onChange} min={min} max={max} step={step} defaultValue={defaultValue} size={size} bipolar={bipolar} />
+        <RotaryKnob
+            value={value}
+            onChange={onChange}
+            min={min}
+            max={max}
+            step={step}
+            defaultValue={defaultValue}
+            size={size}
+            bipolar={bipolar}
+        />
         <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider leading-tight">{label}</span>
-        {display ? (
-            <span className="text-[6px] text-muted-foreground/40 tabular-nums">{display}</span>
-        ) : null}
+        {display ? <span className="text-[6px] text-muted-foreground/40 tabular-nums">{display}</span> : null}
     </div>
 );
 

@@ -1,5 +1,5 @@
 /**
- * ProofChamberNode — AudioWorkletNode wrapper for the Proof Chamber reverb.
+ * ProofChamberNode — AudioWorkletNode wrapper for the Dutch Oven reverb.
  * Stereo effect: audio in → reverb processing → audio out.
  */
 
@@ -25,7 +25,7 @@ async function fetchWasmBinary(url: string): Promise<ArrayBuffer> {
     }
     const response = await fetch(url);
     if (!response.ok) {
-        throw new Error(`Failed to fetch Proof Chamber WASM: ${response.status}`);
+        throw new Error(`Failed to fetch Dutch Oven WASM: ${response.status}`);
     }
     cachedWasmBytes = await response.arrayBuffer();
     return cachedWasmBytes;
@@ -45,9 +45,7 @@ export function isProofChamberDevice(deviceType: string): boolean {
     return deviceType === 'native-proof-chamber';
 }
 
-export async function createProofChamberNode(
-    ctx: BaseAudioContext,
-): Promise<ProofChamberNodeResult> {
+export async function createProofChamberNode(ctx: BaseAudioContext): Promise<ProofChamberNodeResult> {
     if (ctx instanceof AudioContext && ctx.state === 'suspended') {
         await ctx.resume();
     }
@@ -105,7 +103,11 @@ export async function createProofChamberNode(
     };
 
     const disconnect = (): void => {
-        try { node.disconnect(); } catch { /* already disconnected */ }
+        try {
+            node.disconnect();
+        } catch {
+            /* already disconnected */
+        }
     };
 
     const destroy = (): void => {
@@ -114,4 +116,4 @@ export async function createProofChamberNode(
     };
 
     return { workletNode: node, setParam, setBypass, connect, disconnect, destroy, ready: readyPromise };
-};
+}

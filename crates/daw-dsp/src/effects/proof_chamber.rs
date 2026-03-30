@@ -1,4 +1,4 @@
-/// Proof Chamber — flagship reverb plugin.
+/// Dutch Oven — flagship reverb plugin.
 ///
 /// Implements Dattorro's 1997 plate reverb (JAES "Effect Design Part 1")
 /// with exact delay lengths, tap positions, and coefficients from the paper.
@@ -279,7 +279,7 @@ impl GranularShifter {
 }
 
 // ---------------------------------------------------------------------------
-// Proof Chamber — the main reverb engine
+// Dutch Oven — the main reverb engine
 // ---------------------------------------------------------------------------
 
 fn scale_delay(ref_delay: usize, sample_rate: f32) -> usize {

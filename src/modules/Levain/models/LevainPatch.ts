@@ -176,7 +176,7 @@ export const DEFAULT_EXPRESSION_CONFIG: ExpressionConfig = {
 };
 
 export const DEFAULT_LEGATO_CONFIG: LegatoConfig = {
-    enabled: false,
+    enabled: true,
     adaptiveSpeed: true,
     slowThresholdMs: 300,
     fastThresholdMs: 100,

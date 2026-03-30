@@ -1,4 +1,4 @@
-# Proof Chamber: Complete Reverb Plugin Implementation Guide
+# Dutch Oven: Complete Reverb Plugin Implementation Guide
 
 **Target audience:** Audio DSP engineers building a professional, multi-engine reverb plugin for DAW environments. This document specifies every algorithm, delay length, coefficient, matrix, and formula required for implementation. All values are drawn from the primary sources cited inline.
 
@@ -475,7 +475,7 @@ Spring reverb is instantly distinguishable from plate or room because of (1) aud
 
 ### Design philosophy
 
-Proof Chamber uses **progressive disclosure** to serve both producers wanting a quick "set and forget" reverb and engineers requiring deep algorithmic control. Each level reveals more parameters while maintaining the previous level's controls. A real-time **GPU-rendered spectrogram** (inspired by Logic ChromaVerb) shows frequency on the vertical axis, time on the horizontal axis, and brightness/color mapping to amplitude, with frequency-dependent decay visible as the higher bands dimming faster. A ripple animation pulses outward from the center on each transient, with decay rate and color matching the current algorithm settings.
+Dutch Oven uses **progressive disclosure** to serve both producers wanting a quick "set and forget" reverb and engineers requiring deep algorithmic control. Each level reveals more parameters while maintaining the previous level's controls. A real-time **GPU-rendered spectrogram** (inspired by Logic ChromaVerb) shows frequency on the vertical axis, time on the horizontal axis, and brightness/color mapping to amplitude, with frequency-dependent decay visible as the higher bands dimming faster. A ripple animation pulses outward from the center on each transient, with decay rate and color matching the current algorithm settings.
 
 ### Level 1 — Play
 

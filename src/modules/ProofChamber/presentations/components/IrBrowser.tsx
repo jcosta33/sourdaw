@@ -2,7 +2,7 @@
  * IrBrowser — impulse response file loader with drag-and-drop.
  *
  * Drop zone accepts WAV/AIFF files. Decodes and shows the IR waveform.
- * Sends the decoded IR data to the Proof Chamber engine.
+ * Sends the decoded IR data to the Dutch Oven engine.
  */
 import { type ReactElement, useState, useRef, useEffect, type DragEvent } from 'react';
 import { Upload } from 'lucide-react';
@@ -97,7 +97,7 @@ export const IrBrowser = ({ onIrLoaded }: IrBrowserProps): ReactElement => {
         ctx.beginPath();
         for (let i = 0; i < waveform.length; i++) {
             const x = (i / waveform.length) * w;
-            const amp = (waveform[i] ?? 0);
+            const amp = waveform[i] ?? 0;
             const y = h / 2 - amp * h * 0.45;
             if (i === 0) {
                 ctx.moveTo(x, y);
@@ -108,7 +108,7 @@ export const IrBrowser = ({ onIrLoaded }: IrBrowserProps): ReactElement => {
         // Mirror for bottom half
         for (let i = waveform.length - 1; i >= 0; i--) {
             const x = (i / waveform.length) * w;
-            const amp = (waveform[i] ?? 0);
+            const amp = waveform[i] ?? 0;
             const y = h / 2 + amp * h * 0.45;
             ctx.lineTo(x, y);
         }
@@ -120,9 +120,7 @@ export const IrBrowser = ({ onIrLoaded }: IrBrowserProps): ReactElement => {
 
     return (
         <div className="flex flex-col gap-1">
-            <span className="text-[8px] text-muted-foreground/50 uppercase tracking-wider">
-                Impulse Response
-            </span>
+            <span className="text-[8px] text-muted-foreground/50 uppercase tracking-wider">Impulse Response</span>
 
             {/* Drop zone */}
             <div
@@ -132,18 +130,18 @@ export const IrBrowser = ({ onIrLoaded }: IrBrowserProps): ReactElement => {
                         : 'border-border/30 hover:border-border/50'
                 }`}
                 style={{ minHeight: waveform ? 50 : 40 }}
-                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDragging(true);
+                }}
                 onDragLeave={() => setIsDragging(false)}
-                onDrop={(e) => { void handleDrop(e); }}
+                onDrop={(e) => {
+                    void handleDrop(e);
+                }}
             >
                 {waveform ? (
                     <div className="relative">
-                        <canvas
-                            ref={canvasRef}
-                            width={300}
-                            height={50}
-                            className="w-full h-[50px] rounded"
-                        />
+                        <canvas ref={canvasRef} width={300} height={50} className="w-full h-[50px] rounded" />
                         <span className="absolute bottom-1 left-2 text-[7px] text-[var(--color-accent-cyan)]/60">
                             {irName}
                         </span>

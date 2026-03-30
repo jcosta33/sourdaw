@@ -86,7 +86,7 @@ pub struct Humanizer {
     rng: Rng,
     /// The master humanize amount (0.0 = machine, 1.0 = full variation).
     pub amount: f32,
-    config: HumanizeConfig,
+    pub config: HumanizeConfig,
 }
 
 impl Humanizer {

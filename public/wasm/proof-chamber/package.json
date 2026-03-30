@@ -1,7 +1,7 @@
 {
   "name": "proof-chamber",
   "type": "module",
-  "description": "Proof Chamber — flagship Dattorro plate reverb engine for Sourdaw",
+  "description": "Dutch Oven — flagship Dattorro plate reverb engine for Sourdaw",
   "version": "0.1.0",
   "files": [
     "proof_chamber_bg.wasm",

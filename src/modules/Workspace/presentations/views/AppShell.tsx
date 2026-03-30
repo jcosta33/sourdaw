@@ -1,12 +1,4 @@
-import {
-    type ReactElement,
-    type ReactNode,
-    lazy,
-    Suspense,
-    useEffect,
-    useState,
-    useSyncExternalStore,
-} from 'react';
+import { type ReactElement, type ReactNode, lazy, Suspense, useEffect, useState, useSyncExternalStore } from 'react';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
 import { updateWorkspaceState } from '../../useCases/workspaceState';
 import { useProjectState } from '../hooks/useProjectState';
@@ -92,7 +84,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const aiPanelOpen = aiState.isPanelOpen;
     const [exportOpen, setExportOpen] = useState(false);
     const [prefsOpen, setPrefsOpen] = useState(false);
-    const [bottomTab, setBottomTab] = useState<'editor' | 'mixer' | 'session' | 'routing' | 'analysis' | 'automation'>('mixer');
+    const [bottomTab, setBottomTab] = useState<'editor' | 'mixer' | 'session' | 'routing' | 'analysis' | 'automation'>(
+        'mixer'
+    );
     const [fermenterOpen, setFermenterOpen] = useState(false);
     const [toasterOpen, setToasterOpen] = useState(false);
     const [levainOpen, setLevainOpen] = useState(false);
@@ -180,7 +174,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         return () => document.removeEventListener(APP_EVENTS.SHOW_LEVAIN_TAB, handler);
     }, []);
 
-    // Listen for Proof Chamber panel open (from inspector device click)
+    // Listen for Dutch Oven panel open (from inspector device click)
     useEffect(() => {
         const handler = (): void => {
             closeAllDevicePanels();
@@ -231,12 +225,15 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     // ─── Panel dimension setters (persisted via workspace store) ───
     const setSidebarWidth = (fn: (prev: number) => number) => updateWorkspaceState({ sidebarWidth: fn(sidebarWidth) });
-    const setInspectorWidth = (fn: (prev: number) => number) => updateWorkspaceState({ inspectorWidth: fn(inspectorWidth) });
+    const setInspectorWidth = (fn: (prev: number) => number) =>
+        updateWorkspaceState({ inspectorWidth: fn(inspectorWidth) });
     const setChatWidth = (fn: (prev: number) => number) => updateWorkspaceState({ chatPanelWidth: fn(chatWidth) });
     const setAiWidth = (fn: (prev: number) => number) => updateWorkspaceState({ aiPanelWidth: fn(aiWidth) });
     const setMixerHeight = (fn: (prev: number) => number) => updateWorkspaceState({ mixerHeight: fn(mixerHeight) });
-    const setFermenterHeight = (fn: (prev: number) => number) => updateWorkspaceState({ fermenterHeight: fn(fermenterHeight) });
-    const setToasterHeight = (fn: (prev: number) => number) => updateWorkspaceState({ toasterHeight: fn(toasterHeight) });
+    const setFermenterHeight = (fn: (prev: number) => number) =>
+        updateWorkspaceState({ fermenterHeight: fn(fermenterHeight) });
+    const setToasterHeight = (fn: (prev: number) => number) =>
+        updateWorkspaceState({ toasterHeight: fn(toasterHeight) });
     const setLevainHeight = (fn: (prev: number) => number) => updateWorkspaceState({ levainHeight: fn(levainHeight) });
     const setGlutenHeight = (fn: (prev: number) => number) => updateWorkspaceState({ glutenHeight: fn(glutenHeight) });
     const setProofHeight = (fn: (prev: number) => number) => updateWorkspaceState({ proofHeight: fn(proofHeight) });
@@ -324,7 +321,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
                     {proofChamberOpen ? (
                         <InstrumentBottomPanel
-                            label="Proof Chamber"
+                            label="Dutch Oven"
                             labelColor="text-[var(--color-accent-cyan)]"
                             borderColor="border-[var(--color-accent-cyan)]/20"
                             height={340}
@@ -419,7 +416,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                     <Button
                                         variant={bottomTab === 'automation' ? 'secondary' : 'ghost'}
                                         size="xs"
-                                        className={bottomTab === 'automation' ? 'text-[var(--color-accent-lavender)]' : ''}
+                                        className={
+                                            bottomTab === 'automation' ? 'text-[var(--color-accent-lavender)]' : ''
+                                        }
                                         onClick={() => setBottomTab('automation')}
                                     >
                                         Automation
@@ -443,7 +442,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                     <Button
                                         variant={bottomTab === 'analysis' ? 'secondary' : 'ghost'}
                                         size="xs"
-                                        className={bottomTab === 'analysis' ? 'text-[var(--color-accent-lavender)]' : ''}
+                                        className={
+                                            bottomTab === 'analysis' ? 'text-[var(--color-accent-lavender)]' : ''
+                                        }
                                         onClick={() => setBottomTab('analysis')}
                                     >
                                         Analysis
@@ -469,7 +470,6 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                         </>
                     ) : null}
                 </div>
-
 
                 {chatPanelOpen ? (
                     <>
@@ -511,19 +511,19 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
             {/* Loading overlay */}
             {project.loading ? (
-                <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 backdrop-blur-md" aria-busy="true" aria-live="polite">
+                <div
+                    className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 backdrop-blur-md"
+                    aria-busy="true"
+                    aria-live="polite"
+                >
                     <div className="flex flex-col items-center gap-6">
                         <div className="relative size-12">
                             <div className="absolute inset-0 rounded-full border-2 border-white/10" />
                             <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-primary" />
                         </div>
                         <div className="flex flex-col items-center gap-1">
-                            <span className="text-sm font-medium text-foreground">
-                                Loading Project
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                                {project.name}
-                            </span>
+                            <span className="text-sm font-medium text-foreground">Loading Project</span>
+                            <span className="text-xs text-muted-foreground">{project.name}</span>
                         </div>
                     </div>
                 </div>

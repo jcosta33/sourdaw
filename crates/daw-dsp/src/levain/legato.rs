@@ -160,6 +160,13 @@ pub struct LegatoEngine {
 
     /// Last note-on time for adaptive speed detection.
     last_note_on_time: u64,
+
+    /// Runtime-configurable speed thresholds (seconds).
+    pub slow_threshold: f32,
+    pub fast_threshold: f32,
+
+    /// Runtime-configurable portamento velocity threshold (0-127).
+    pub portamento_velocity_threshold: u8,
 }
 
 impl LegatoEngine {
@@ -168,10 +175,13 @@ impl LegatoEngine {
             held_notes: [HeldNote::default(); MAX_HELD_NOTES],
             held_count: 0,
             transitions: LegatoTransitionStore::new(),
-            enabled: false,
+            enabled: true,
             sample_counter: 0,
             sample_rate,
             last_note_on_time: 0,
+            slow_threshold: SLOW_LEGATO_THRESHOLD,
+            fast_threshold: FAST_LEGATO_THRESHOLD,
+            portamento_velocity_threshold: PORTAMENTO_VELOCITY_THRESHOLD,
         }
     }
 
@@ -203,10 +213,10 @@ impl LegatoEngine {
             // Determine adaptive speed.
             let time_since_last =
                 (self.sample_counter - self.last_note_on_time) as f32 / self.sample_rate;
-            let speed = classify_speed(time_since_last);
+            let speed = classify_speed(time_since_last, self.slow_threshold, self.fast_threshold);
 
             // Determine transition type from velocity.
-            let transition_type = if velocity < PORTAMENTO_VELOCITY_THRESHOLD {
+            let transition_type = if velocity < self.portamento_velocity_threshold {
                 TransitionType::Portamento
             } else {
                 TransitionType::Slurred
@@ -327,10 +337,10 @@ impl LegatoEngine {
     }
 }
 
-fn classify_speed(time_since_last_seconds: f32) -> LegatoSpeed {
-    if time_since_last_seconds > SLOW_LEGATO_THRESHOLD {
+fn classify_speed(time_since_last_seconds: f32, slow: f32, fast: f32) -> LegatoSpeed {
+    if time_since_last_seconds > slow {
         LegatoSpeed::Slow
-    } else if time_since_last_seconds > FAST_LEGATO_THRESHOLD {
+    } else if time_since_last_seconds > fast {
         LegatoSpeed::Medium
     } else {
         LegatoSpeed::Fast

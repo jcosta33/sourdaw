@@ -426,7 +426,7 @@ export class TrackNode {
                             };
                             this.strip.deviceNodes[idx] = toasterDn;
                             this.rebuildChain();
-                            
+
                             // Publish event so Toaster can hydrate its WASM module
                             eventBus.emit(new AudioDeviceLoadedEvent({ deviceId, deviceType }));
                         }
@@ -498,7 +498,7 @@ export class TrackNode {
                 pendingDevicePromises.add(loadPromise);
                 loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
             } else if (isProofChamberDevice(deviceType)) {
-                // Proof Chamber reverb — async WASM effect (stereo in/out, has custom UI)
+                // Dutch Oven reverb — async WASM effect (stereo in/out, has custom UI)
                 const loadingBypass = context.createGain();
                 dn = {
                     deviceId,
@@ -510,7 +510,9 @@ export class TrackNode {
 
                 const pendingParams: Array<[string, number]> = [];
                 dn.nativeDspControls = {
-                    setParam: (name: string, value: number) => { pendingParams.push([name, value]); },
+                    setParam: (name: string, value: number) => {
+                        pendingParams.push([name, value]);
+                    },
                     setBypass: () => {},
                 };
 
@@ -537,7 +539,7 @@ export class TrackNode {
                             this.rebuildChain();
                         }
                     })
-                    .catch((error) => logger.warn(`[WebAudioEngine] Proof Chamber failed: ${error}`));
+                    .catch((error) => logger.warn(`[WebAudioEngine] Dutch Oven failed: ${error}`));
                 pendingDevicePromises.add(loadPromise);
                 loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
             } else if (isGlutenDevice(deviceType)) {
@@ -553,7 +555,9 @@ export class TrackNode {
 
                 const pendingParams: Array<[string, number]> = [];
                 dn.nativeDspControls = {
-                    setParam: (name: string, value: number) => { pendingParams.push([name, value]); },
+                    setParam: (name: string, value: number) => {
+                        pendingParams.push([name, value]);
+                    },
                     setBypass: () => {},
                 };
 
@@ -565,7 +569,14 @@ export class TrackNode {
                         }
                         // Wire meter data to store
                         result.onMeterData((data) => {
-                            updateGlutenMeters(data.grDb, data.inputDb, data.outputDb, data.crest, data.phaseCorr, data.latency);
+                            updateGlutenMeters(
+                                data.grDb,
+                                data.inputDb,
+                                data.outputDb,
+                                data.crest,
+                                data.phaseCorr,
+                                data.latency
+                            );
                         });
                         const idx = this.strip.deviceNodes.findIndex((d) => d.deviceId === deviceId);
                         if (idx !== -1) {
@@ -600,7 +611,9 @@ export class TrackNode {
 
                 const pendingParams: Array<[string, number]> = [];
                 dn.nativeDspControls = {
-                    setParam: (name: string, value: number) => { pendingParams.push([name, value]); },
+                    setParam: (name: string, value: number) => {
+                        pendingParams.push([name, value]);
+                    },
                     setBypass: () => {},
                 };
 
@@ -645,7 +658,13 @@ export class TrackNode {
             } else if (isScoringDevice(deviceType)) {
                 // Scoring tuner — analyzer effect, audio passes through
                 const loadingBypass = context.createGain();
-                dn = { deviceId, type: deviceType, nodes: [loadingBypass], inputNode: loadingBypass, outputNode: loadingBypass };
+                dn = {
+                    deviceId,
+                    type: deviceType,
+                    nodes: [loadingBypass],
+                    inputNode: loadingBypass,
+                    outputNode: loadingBypass,
+                };
                 dn.nativeDspControls = {
                     setParam: () => {},
                     setBypass: () => {},
@@ -669,7 +688,8 @@ export class TrackNode {
                         const idx = this.strip.deviceNodes.findIndex((d) => d.deviceId === deviceId);
                         if (idx !== -1) {
                             const scoringDn: BuiltinDeviceNode = {
-                                deviceId, type: deviceType,
+                                deviceId,
+                                type: deviceType,
                                 nodes: [result.workletNode],
                                 inputNode: result.workletNode,
                                 outputNode: result.workletNode,

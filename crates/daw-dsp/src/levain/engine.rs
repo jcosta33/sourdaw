@@ -296,17 +296,78 @@ impl LevainEngine {
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
+            // ── Master ───────────────────────────────────────────────
             "master_gain" => self.master_gain = value.clamp(0.0, 2.0),
-            "humanize" => self.humanizer.set_amount(value),
+
+            // ── Humanization ─────────────────────────────────────────
+            "humanize" | "humanize_amount" => self.humanizer.set_amount(value),
+            "humanize_timing_max_ms" => self.humanizer.config.timing_max = value / 1000.0,
+            "humanize_tuning_max_cents" => self.humanizer.config.tuning_max = value,
+            "humanize_dynamic_max" => {
+                self.humanizer.config.dynamic_max = value.clamp(0.0, 1.0)
+            }
+            "humanize_vibrato_var_max" => {
+                self.humanizer.config.vibrato_var_max = value.clamp(0.0, 1.0)
+            }
+
+            // ── Legato ───────────────────────────────────────────────
             "legato_enabled" => self.legato.enabled = value > 0.5,
-            "vibrato_depth" => self.expression.vibrato.set_depth_cc((value * 127.0) as u8),
+            "legato_adaptive_speed" => {
+                // Not a separate flag currently — adaptive speed is always on when enabled
+            }
+            "legato_slow_threshold_ms" => {
+                self.legato.slow_threshold = (value / 1000.0).max(0.05)
+            }
+            "legato_fast_threshold_ms" => {
+                self.legato.fast_threshold = (value / 1000.0).max(0.01)
+            }
+            "legato_portamento_velocity_threshold" => {
+                self.legato.portamento_velocity_threshold = (value as u8).clamp(0, 127)
+            }
+
+            // ── Expression / Vibrato ─────────────────────────────────
+            "vibrato_depth" => {
+                self.expression.vibrato.set_depth_cc((value * 127.0) as u8)
+            }
+            "expression_vibrato_depth_max" => {
+                self.expression.vibrato.config.vibrato_depth_max = value.max(0.0)
+            }
+            "expression_vibrato_rate_max" => {
+                self.expression.vibrato.config.vibrato_rate_max = value.clamp(0.0, 20.0)
+            }
+            "expression_vibrato_rate_min" => {
+                self.expression.vibrato.config.vibrato_rate_min = value.clamp(0.0, 20.0)
+            }
+            "expression_vibrato_onset_delay" => {
+                self.expression.vibrato.onset_delay = value.clamp(0.0, 2.0)
+            }
+            "expression_dynamic_crossfade_time" => {
+                // Reconfigure the crossfader alpha — store crossfade_time and rebuild.
+                let num_layers = self.expression.crossfader.num_layers;
+                let curve = self.expression.crossfader.curve;
+                self.expression.crossfader =
+                    super::expression::DynamicCrossfader::new(self.sample_rate, value.clamp(0.001, 2.0));
+                self.expression.crossfader.configure(num_layers, curve);
+            }
+
+            // ── Performance intelligence ─────────────────────────────
             "auto_divisi" => self.auto_divisi.enabled = value > 0.5,
             "auto_divisi_size" => self.auto_divisi.section_size = (value as u8).max(1),
             "auto_articulation" => self.auto_articulation.enabled = value > 0.5,
             "ensemble_timing" => self.ensemble_timing.enabled = value > 0.5,
             "attack_spread" => self.ensemble_timing.attack_spread_ms = value,
             "pitch_convergence" => self.ensemble_timing.initial_detune_cents = value,
+
+            // ── Tone / Attack / Release (macro-mapped) ───────────────
+            // "tone" maps to a simple brightness tilt — no EQ in the engine yet, no-op.
+            "tone" => {}
+            // "attack" / "release" would override per-zone ADSR but that
+            // requires tracking a global override — stub for now.
+            "attack" | "release" => {}
+
+            // ── Mic positions ─────────────────────────────────────────
             n if n.starts_with("mic_") => self.handle_mic_param(n, value),
+
             _ => {}
         }
     }

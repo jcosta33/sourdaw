@@ -20,11 +20,11 @@ pub struct DynamicCrossfader {
     /// Current smoothed CC1 value (0.0 - 1.0).
     cc1: OnePoleSmoother,
     /// Number of dynamic layers.
-    num_layers: usize,
+    pub num_layers: usize,
     /// CC1 boundaries per layer: (lo, hi) normalized to 0.0-1.0.
     layer_ranges: [(f32, f32); MAX_VEL_LAYERS],
     /// CC curve shape.
-    curve: CcCurve,
+    pub curve: CcCurve,
 }
 
 impl DynamicCrossfader {
@@ -194,9 +194,9 @@ pub struct VibratoLfo {
     phase: f32,
     rate: f32,        // Hz
     depth: f32,       // cents
-    onset_delay: f32, // seconds
+    pub onset_delay: f32, // seconds
     sample_rate: f32,
-    config: ExpressionConfig,
+    pub config: ExpressionConfig,
 }
 
 impl VibratoLfo {

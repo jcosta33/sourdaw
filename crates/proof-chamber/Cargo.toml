@@ -2,7 +2,7 @@
 name = "proof-chamber"
 version = "0.1.0"
 edition = "2021"
-description = "Proof Chamber — flagship Dattorro plate reverb engine for Sourdaw"
+description = "Dutch Oven — flagship Dattorro plate reverb engine for Sourdaw"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

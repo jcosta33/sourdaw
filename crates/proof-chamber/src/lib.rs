@@ -1,4 +1,4 @@
-//! Proof Chamber — Sourdaw's flagship multi-engine reverb.
+//! Dutch Oven — Sourdaw's flagship multi-engine reverb.
 //!
 //! Algorithms: Dattorro plate, FDN-8, FDN-16, Spring, Convolution, Hybrid.
 //! Features: shimmer, freeze, gravity, saturation, decay rate EQ, vintage modes.

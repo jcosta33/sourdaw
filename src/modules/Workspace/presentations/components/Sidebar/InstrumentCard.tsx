@@ -67,6 +67,22 @@ export const SCORING_THEME: InstrumentCardTheme = {
     glow: 'bg-[var(--color-accent-cyan)]/8',
 };
 
+export const PROOF_CHAMBER_THEME: InstrumentCardTheme = {
+    button: 'border-[var(--color-accent-cyan)]/30 bg-gradient-to-br from-[var(--color-accent-cyan)]/10 via-surface-raised to-[var(--color-accent-cyan)]/5 hover:border-[var(--color-accent-cyan)]/50 hover:from-[var(--color-accent-cyan)]/15',
+    iconBox: 'bg-[var(--color-accent-cyan)]/20 border-[var(--color-accent-cyan)]/20 shadow-[0_0_12px_var(--color-accent-cyan)/15]',
+    iconColor: 'text-[var(--color-accent-cyan)]',
+    badgeColor: 'bg-[var(--color-accent-cyan)]/20 text-[var(--color-accent-cyan)]',
+    glow: 'bg-[var(--color-accent-cyan)]/8',
+};
+
+export const GLUTEN_THEME: InstrumentCardTheme = {
+    button: 'border-[var(--color-accent-orange)]/30 bg-gradient-to-br from-[var(--color-accent-orange)]/10 via-surface-raised to-[var(--color-accent-orange)]/5 hover:border-[var(--color-accent-orange)]/50 hover:from-[var(--color-accent-orange)]/15',
+    iconBox: 'bg-[var(--color-accent-orange)]/20 border-[var(--color-accent-orange)]/20 shadow-[0_0_12px_var(--color-accent-orange)/15]',
+    iconColor: 'text-[var(--color-accent-orange)]',
+    badgeColor: 'bg-[var(--color-accent-orange)]/20 text-[var(--color-accent-orange)]',
+    glow: 'bg-[var(--color-accent-orange)]/8',
+};
+
 export const YEAST_THEME: InstrumentCardTheme = {
     button: 'border-lime-500/30 bg-gradient-to-br from-lime-500/10 via-surface-raised to-lime-500/5 hover:border-lime-500/50 hover:from-lime-500/15',
     iconBox: 'bg-lime-500/20 border-lime-500/20 shadow-[0_0_12px_rgba(132,204,22,0.15)]',
