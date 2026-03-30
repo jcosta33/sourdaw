@@ -55,8 +55,16 @@ export const SessionView = (): ReactElement => {
     return (
         <div className="flex flex-col h-full bg-surface-base">
             {/* Header */}
-            <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border/40 bg-surface-overlay/50">
-                <span className="text-[11px] font-semibold text-foreground">Session</span>
+            <div
+                className="flex items-center gap-2 px-3 py-1.5 shrink-0"
+                style={{
+                    background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
+                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
+                    border: '1px solid rgba(0,0,0,0.4)',
+                    borderBottom: '1px solid rgba(40,40,40,0.3)',
+                }}
+            >
+                <span className="text-[11px] font-semibold text-foreground uppercase tracking-wider">Session</span>
                 <div className="flex-1" />
                 <Button
                     variant="ghost"
@@ -73,8 +81,17 @@ export const SessionView = (): ReactElement => {
             <div className="flex-1 overflow-auto">
                 <div className="flex min-w-max">
                     {/* Scene triggers column */}
-                    <div className="flex flex-col w-10 shrink-0 border-r border-border-soft bg-surface-tray shadow-[inset_-1px_0_0_rgba(255,255,255,0.02)]">
-                        <div className="h-6 flex items-center justify-center text-[10px] text-muted-foreground border-b border-border-hairline bg-surface-base/50">
+                    <div className="flex flex-col w-10 shrink-0 border-r border-border-soft shadow-[inset_-1px_0_0_rgba(255,255,255,0.02)]" style={{ background: 'linear-gradient(180deg, #0a0a0a 0%, #0e0e0e 100%)' }}>
+                        <div
+                            className="h-6 flex items-center justify-center text-[10px] text-muted-foreground uppercase tracking-wider"
+                            style={{
+                                borderBottom: '1px solid transparent',
+                                backgroundImage: 'linear-gradient(to right, rgba(255,255,255,0.06), rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2))',
+                                backgroundSize: '100% 1px',
+                                backgroundRepeat: 'no-repeat',
+                                backgroundPosition: 'bottom',
+                            }}
+                        >
                             Scene
                         </div>
                         {Array.from({ length: SCENE_COUNT }, (_, i) => (

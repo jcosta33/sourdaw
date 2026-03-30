@@ -179,8 +179,13 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
     return (
         <div
             ref={laneRef}
-            className="relative shrink-0 border-b border-border/40 bg-surface-base/50 overflow-hidden select-none"
-            style={{ height: LANE_HEIGHT }}
+            className="relative shrink-0 overflow-hidden select-none"
+            style={{
+                height: LANE_HEIGHT,
+                background: 'linear-gradient(180deg, rgba(8,8,8,0.7) 0%, rgba(14,14,14,0.7) 100%)',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 0 rgba(0,0,0,0.2)',
+                borderBottom: '1px solid rgba(40,40,40,0.3)',
+            }}
             onContextMenu={handleLaneContextMenu}
             role="region"
             aria-label="Timeline markers"
@@ -245,8 +250,16 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
             {contextMenu.kind !== 'none' ? (
                 <div
                     ref={menuRef}
-                    className="fixed z-50 min-w-[140px] rounded-md border border-border bg-popover p-1 shadow-md"
-                    style={{ left: contextMenu.x, top: contextMenu.y }}
+                    className="fixed z-50 min-w-[140px] rounded-md p-1"
+                    style={{
+                        left: contextMenu.x,
+                        top: contextMenu.y,
+                        background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
+                        boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 4px 16px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.03)',
+                        border: '1px solid rgba(0,0,0,0.4)',
+                        borderTop: '1px solid rgba(255,255,255,0.06)',
+                        borderBottom: '1px solid rgba(40,40,40,0.3)',
+                    }}
                 >
                     {contextMenu.kind === 'empty' && (
                         <button
@@ -282,7 +295,7 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                                     />
                                 ))}
                             </div>
-                            <div className="my-0.5 border-t border-border/50" />
+                            <div className="my-0.5 mx-1 h-px" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)' }} />
                             <button
                                 type="button"
                                 className="flex w-full items-center rounded-sm px-2 py-1.5 text-xs text-destructive hover:bg-destructive/10"

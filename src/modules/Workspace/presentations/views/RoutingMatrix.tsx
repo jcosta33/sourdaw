@@ -42,8 +42,16 @@ export const RoutingMatrix = (): ReactElement => {
 
     return (
         <div className="flex flex-col h-full bg-surface-base overflow-auto">
-            <div className="px-3 py-1.5 border-b border-border/40 bg-surface-overlay/50">
-                <span className="text-[11px] font-semibold text-foreground">Routing Matrix</span>
+            <div
+                className="px-3 py-1.5 shrink-0"
+                style={{
+                    background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
+                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
+                    border: '1px solid rgba(0,0,0,0.4)',
+                    borderBottom: '1px solid rgba(40,40,40,0.3)',
+                }}
+            >
+                <span className="text-[11px] font-semibold text-foreground uppercase tracking-wider">Routing Matrix</span>
             </div>
 
             <div className="overflow-auto flex-1 p-2">

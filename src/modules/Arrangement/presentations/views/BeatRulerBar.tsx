@@ -259,7 +259,10 @@ export const BeatRulerBar = (): React.ReactElement => {
         <div
             ref={containerRef}
             className="relative w-full shrink-0 select-none cursor-col-resize"
-            style={{ height: HEIGHT }}
+            style={{
+                height: HEIGHT,
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 0 rgba(0,0,0,0.3)',
+            }}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}

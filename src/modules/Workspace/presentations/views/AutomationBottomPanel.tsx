@@ -159,11 +159,16 @@ export const AutomationBottomPanel = (): ReactElement => {
 
     if (!selectedTrack) {
         return (
-            <div className="flex h-full items-center justify-center bg-surface-base/50">
+            <div
+                className="flex h-full items-center justify-center"
+                style={{
+                    background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
+                }}
+            >
                 <div className="text-center space-y-1">
                     <p className="text-sm text-muted-foreground">No track selected</p>
                     <p className="text-[10px] text-muted-foreground/60">
-                        Select a track to view and edit its automation
+                        Select a track to knead its automation curves
                     </p>
                 </div>
             </div>
@@ -179,7 +184,14 @@ export const AutomationBottomPanel = (): ReactElement => {
                     style={{ width: trackListWidth }}
                 >
                     {/* Track info header */}
-                    <div className="flex items-center gap-2 px-2 h-7 bg-surface-raised/50 border-b border-border/20 shrink-0">
+                    <div
+                        className="flex items-center gap-2 px-2 h-7 shrink-0"
+                        style={{
+                            background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
+                            boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
+                            borderBottom: '1px solid rgba(40,40,40,0.3)',
+                        }}
+                    >
                         <div className="size-2.5 rounded-sm" style={{ backgroundColor: trackColor }} />
                         <span className="text-xs font-medium text-foreground truncate flex-1">{selectedTrack.name}</span>
                     </div>
@@ -339,9 +351,9 @@ export const AutomationBottomPanel = (): ReactElement => {
                     {containerWidth > 0 && trackLanes.length === 0 ? (
                         <div className="flex items-center justify-center h-full">
                             <div className="text-center space-y-2">
-                                <p className="text-xs text-muted-foreground">No automation lanes</p>
+                                <p className="text-xs text-muted-foreground">No automation lanes yet</p>
                                 <p className="text-[10px] text-muted-foreground/60">
-                                    Click "Add Lane" to add Volume, Pan, or device parameter automation
+                                    Click "Add Lane" to shape Volume, Pan, or device parameters over time
                                 </p>
                             </div>
                         </div>

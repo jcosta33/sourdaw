@@ -68,7 +68,15 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
             className="contain-strict flex flex-col bg-surface-raised border-l border-border/50 overflow-hidden shadow-2xl relative select-none"
         >
             {/* Header */}
-            <div className="flex items-center justify-between px-3 h-10 border-b border-border/50 bg-surface-tray sticky top-0 shrink-0 z-10">
+            <div
+                className="flex items-center justify-between px-3 h-10 sticky top-0 shrink-0 z-10"
+                style={{
+                    background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
+                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
+                    border: '1px solid rgba(0,0,0,0.4)',
+                    borderBottom: '1px solid rgba(40,40,40,0.3)',
+                }}
+            >
                 <div className="flex items-center gap-2">
                     <span className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase flex items-center gap-1.5">
                         <Bot className="size-3.5 text-[var(--color-accent-lavender)]" />
@@ -108,10 +116,9 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                 {chatState.messages.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-center px-6 opacity-60">
                         <Bot className="size-8 mx-auto mb-3 text-muted-foreground" />
-                        <h3 className="text-sm font-medium text-foreground mb-1">How can I help you?</h3>
+                        <h3 className="text-sm font-medium text-foreground mb-1">The kitchen is quiet</h3>
                         <p className="text-xs text-muted-foreground">
-                            Ask me questions about music production, navigating this DAW, or to analyze your current
-                            project.
+                            Say something to get the dough rising. Ask about music production, navigating this DAW, or analyzing your project.
                         </p>
                     </div>
                 ) : (
@@ -163,7 +170,14 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
             </div>
 
             {/* Input Footer */}
-            <div className="p-3 bg-surface-tray border-t border-border/50 shrink-0">
+            <div
+                className="p-3 shrink-0"
+                style={{
+                    background: 'linear-gradient(180deg, #0e0e0e 0%, #080808 100%)',
+                    borderTop: '1px solid rgba(40,40,40,0.3)',
+                    boxShadow: '0 -1px 0 rgba(255,255,255,0.03)',
+                }}
+            >
                 <div className="relative rounded-lg bg-surface-base border border-border focus-within:ring-1 focus-within:ring-[var(--color-accent-lavender)]/50 focus-within:border-[var(--color-accent-lavender)]/50 transition-all flex shadow-sm">
                     <textarea
                         ref={textareaRef}

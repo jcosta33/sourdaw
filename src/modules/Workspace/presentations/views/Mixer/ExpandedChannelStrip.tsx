@@ -73,9 +73,10 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
             className={cn(
                 'flex shrink-0 flex-col items-center gap-1.5 rounded-lg p-2',
                 widthClass,
-                'bg-surface-well border border-border-soft border-t-[var(--color-light-edge)] shadow-[0_1px_2px_rgba(0,0,0,0.4)]',
+                'border border-border-soft border-t-[var(--color-light-edge)] shadow-[0_1px_2px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.03)]',
                 isSelected && 'ring-1 ring-ring border-transparent'
             )}
+            style={{ background: 'linear-gradient(180deg, #0c0c0c 0%, #0a0a0a 100%)' }}
             onClick={() => selectTrack(track.id)}
             onContextMenu={handleContextMenu}
             role="group"
@@ -312,7 +313,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                     >
                         {track.armed ? 'Disarm' : 'Arm for Recording'}
                     </button>
-                    <div className="my-1 border-t border-border/50" />
+                    <div className="my-1 h-px" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.06) 50%, transparent 100%)' }} />
                     <button
                         type="button"
                         className={menuBtnClass}
@@ -321,7 +322,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                     >
                         Rename…
                     </button>
-                    <div className="my-1 border-t border-border/50" />
+                    <div className="my-1 h-px" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.06) 50%, transparent 100%)' }} />
                     <div className="px-3 py-1 text-[10px] text-muted-foreground">Color</div>
                     <div className="flex gap-1 px-3 py-1">
                         {TRACK_COLOR_PRESETS.map((c) => (
@@ -335,7 +336,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                             />
                         ))}
                     </div>
-                    <div className="my-1 border-t border-border/50" />
+                    <div className="my-1 h-px" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.06) 50%, transparent 100%)' }} />
                     <div className="px-3 py-1 text-[10px] text-muted-foreground">VCA Group</div>
                     {getAllVCAGroups().map((g) => (
                         <button
@@ -375,7 +376,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                             Remove from VCA
                         </button>
                     )}
-                    <div className="my-1 border-t border-border/50" />
+                    <div className="my-1 h-px" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.06) 50%, transparent 100%)' }} />
                     <button
                         type="button"
                         className={`${menuBtnClass} text-destructive hover:bg-destructive/10`}

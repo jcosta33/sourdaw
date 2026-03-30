@@ -96,7 +96,15 @@ export const GenerativeAiPanel = (): ReactElement | null => {
     return (
         <div className="w-[320px] border-l border-border/40 bg-surface-base flex flex-col h-full shrink-0 animate-in slide-in-from-right-8 duration-200">
             {/* Header */}
-            <div className="flex h-[38px] items-center justify-between border-b border-border/40 px-3 shrink-0 bg-surface-raised/50">
+            <div
+                className="flex h-[38px] items-center justify-between border-b px-3 shrink-0"
+                style={{
+                    background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
+                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
+                    border: '1px solid rgba(0,0,0,0.4)',
+                    borderBottom: '1px solid rgba(40,40,40,0.3)',
+                }}
+            >
                 <div className="flex items-center gap-2">
                     <Sparkles className="size-4 text-[var(--color-accent-lavender)]" />
                     <h2 className="text-xs font-semibold text-foreground tracking-tight">Generate</h2>
@@ -107,7 +115,10 @@ export const GenerativeAiPanel = (): ReactElement | null => {
             </div>
 
             {/* Tabs */}
-            <div className="flex p-2 gap-1 border-b border-border/20 shrink-0">
+            <div
+                className="flex p-2 gap-1 shrink-0"
+                style={{ borderBottom: '1px solid transparent', backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)', backgroundSize: '100% 1px', backgroundRepeat: 'no-repeat', backgroundPosition: 'bottom' }}
+            >
                 <Button
                     variant={activeTab === 'midi' ? 'secondary' : 'ghost'}
                     size="sm"
@@ -188,7 +199,13 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                 </div>
                             </div>
                         ) : (
-                            <div className="flex items-center gap-2 p-3 rounded-md bg-surface-base/50 border border-dashed border-border/50 text-muted-foreground">
+                            <div
+                                className="flex items-center gap-2 p-3 rounded-md border border-dashed border-border/50 text-muted-foreground"
+                                style={{
+                                    background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
+                                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
+                                }}
+                            >
                                 <Upload className="size-4" />
                                 <span className="text-[11px]">Select an audio clip on the timeline</span>
                             </div>
@@ -333,7 +350,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
 
                 {/* Results */}
                 {state.tasks.length > 0 ? (
-                    <div className="p-2 border-t border-border/20">
+                    <div className="p-2" style={{ borderTop: '1px solid transparent', backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)', backgroundSize: '100% 1px', backgroundRepeat: 'no-repeat', backgroundPosition: 'top' }}>
                         <h3 className="text-[10px] font-semibold text-muted-foreground mb-2 px-1 uppercase tracking-wider">
                             Recent
                         </h3>

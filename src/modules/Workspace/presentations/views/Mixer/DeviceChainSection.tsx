@@ -24,7 +24,8 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
 
     return (
         <div className="w-full space-y-0.5">
-            <label className="text-[10px] text-muted-foreground/60 block text-center uppercase tracking-wider">
+            <div className="h-px my-1" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.06) 50%, transparent 100%)' }} />
+            <label className="text-[10px] text-muted-foreground/60 block text-center uppercase tracking-wider font-semibold">
                 Devices
             </label>
             <div className="max-h-[100px] overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-white/10 space-y-0.5">
@@ -104,7 +105,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                             + {p.name}
                         </button>
                     ))}
-                    <div className="px-3 py-0.5 text-[10px] text-muted-foreground/60 uppercase tracking-wider border-t border-border/20 mt-0.5">
+                    <div className="px-3 py-0.5 text-[10px] text-muted-foreground/60 uppercase tracking-wider mt-0.5" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
                         MIDI FX
                     </div>
                     {MIDI_EFFECT_FACTORIES.map((fx) => (

@@ -89,7 +89,15 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
             role="region"
             aria-label="Mixer panel"
         >
-            <div className="flex items-center justify-between border-b border-black/40 border-t-[var(--color-light-edge)] px-3 py-1 bg-surface-tray">
+            <div
+                className="flex items-center justify-between border-b border-black/40 px-3 py-1.5"
+                style={{
+                    background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
+                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
+                    border: '1px solid rgba(0,0,0,0.4)',
+                    borderBottom: '1px solid rgba(40,40,40,0.3)',
+                }}
+            >
                 <h2 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                     Mixer — {tracks.filter((t) => t.kind !== 'folder').length} channels
                 </h2>
@@ -103,7 +111,7 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
                     <Columns3 className="size-3" />
                 </Button>
 
-                <div className="w-px h-4 bg-border/30" />
+                <div className="w-px h-4" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)' }} />
 
                 <Button
                     variant="ghost"
@@ -208,7 +216,7 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
 
                     {tracks.length === 0 ? (
                         <div className="flex flex-1 items-center justify-center">
-                            <p className="text-xs text-muted-foreground">Add tracks to see mixer channels</p>
+                            <p className="text-xs text-muted-foreground italic">No tracks in the oven yet — add some to start mixing</p>
                         </div>
                     ) : null}
                 </div>

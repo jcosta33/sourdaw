@@ -84,7 +84,14 @@ export const ToasterPanel = (): ReactElement => {
     return (
         <div className="flex flex-col h-full">
             {/* ─── Top bar: kit selector, transport, Euclidean, export ─── */}
-            <div className="flex items-center gap-3 px-1 py-1 shrink-0 border-b border-border/30 bg-surface-app/30">
+            <div
+                className="flex items-center gap-3 px-2 py-1 shrink-0"
+                style={{
+                    background: 'linear-gradient(180deg, rgba(20,20,22,0.95) 0%, rgba(14,14,16,0.95) 100%)',
+                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 3px rgba(0,0,0,0.5)',
+                    borderBottom: '1px solid rgba(0,0,0,0.4)',
+                }}
+            >
                 {/* Kit selector */}
                 <div className="relative shrink-0">
                     <select
@@ -109,7 +116,7 @@ export const ToasterPanel = (): ReactElement => {
                     {isPlaying ? <Square className="size-2.5" /> : <Play className="size-2.5" />}
                 </Button>
 
-                <div className="w-px h-4 bg-border/20 shrink-0" />
+                <div className="w-px h-4 shrink-0" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.01) 100%)' }} />
 
                 {/* Euclidean generator */}
                 <div className="flex items-center gap-1 shrink-0">
@@ -125,7 +132,7 @@ export const ToasterPanel = (): ReactElement => {
                     >Apply</button>
                 </div>
 
-                <div className="w-px h-4 bg-border/20 shrink-0" />
+                <div className="w-px h-4 shrink-0" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.01) 100%)' }} />
 
                 {/* Export to timeline */}
                 <button type="button"

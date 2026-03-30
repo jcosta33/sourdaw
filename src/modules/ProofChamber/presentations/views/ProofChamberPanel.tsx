@@ -83,7 +83,14 @@ export const ProofChamberPanel = ({ onParamChange }: ProofChamberPanelProps): Re
     return (
         <div className="flex flex-col h-full">
             {/* ─── Top bar ─── */}
-            <div className="flex items-center justify-between px-3 py-1 shrink-0 border-b border-border/30 bg-surface-app/30">
+            <div
+                className="flex items-center justify-between px-3 py-1 shrink-0"
+                style={{
+                    background: 'linear-gradient(180deg, rgba(20,20,22,0.95) 0%, rgba(14,14,16,0.95) 100%)',
+                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 3px rgba(0,0,0,0.5)',
+                    borderBottom: '1px solid rgba(0,0,0,0.4)',
+                }}
+            >
                 <span className="text-[10px] font-bold text-[var(--color-accent-cyan)] tracking-tight">Dutch Oven</span>
                 {/* Space selector pills */}
                 <div className="flex gap-0.5 bg-surface-base/50 rounded p-0.5">
@@ -126,7 +133,13 @@ export const ProofChamberPanel = ({ onParamChange }: ProofChamberPanelProps): Re
             </div>
 
             {/* ─── Spectrogram hero + overlays ─── */}
-            <div className="flex-1 min-h-[60px] shrink border-b border-border/20 relative">
+            <div
+                className="flex-1 min-h-[60px] shrink relative"
+                style={{
+                    boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.5)',
+                    borderBottom: '1px solid rgba(40,40,40,0.3)',
+                }}
+            >
                 <ReverbSpectrogram decay={params.decay} damping={params.damping} />
                 {showDecayEq ? (
                     <DecayEqOverlay

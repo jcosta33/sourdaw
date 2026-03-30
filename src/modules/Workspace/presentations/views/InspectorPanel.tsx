@@ -31,7 +31,7 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
 
     return (
         <aside
-            className="contain-strict flex shrink-0 flex-col border-l border-border-hairline bg-surface-tray shadow-[inset_1px_0_0_rgba(255,255,255,0.02)] transition-[width,min-width] duration-200 ease-out"
+            className="contain-strict flex shrink-0 flex-col border-l border-border-hairline bg-surface-tray shadow-[inset_1px_0_0_rgba(255,255,255,0.02),inset_0_1px_0_rgba(255,255,255,0.04)] transition-[width,min-width] duration-200 ease-out"
             style={{
                 ...style,
                 width: isDeviceView ? Math.max((style?.width as number) ?? 260, 320) : (style?.width as number) ?? 260,
@@ -39,8 +39,16 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
             }}
             aria-label="Inspector panel"
         >
-            <div className="flex flex-row items-center justify-between border-b border-border/50 px-3 py-2">
-                <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Inspector</h2>
+            <div
+                className="flex flex-row items-center justify-between px-3 py-2"
+                style={{
+                    background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
+                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5), inset 0 -1px 0 rgba(255,255,255,0.03)',
+                    borderTop: '1px solid rgba(255,255,255,0.06)',
+                    borderBottom: '1px solid rgba(0,0,0,0.4)',
+                }}
+            >
+                <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.6)' }}>Inspector</h2>
                 <Button variant="ghost" size="icon-xs" onClick={toggleInspector} aria-label="Close inspector">
                     <X className="size-3.5" />
                 </Button>
@@ -74,9 +82,10 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
                         onSelectDevice={setSelectedDeviceId}
                     />
                 ) : (
-                    <div className="flex items-center justify-center h-full p-6">
-                        <p className="text-xs text-muted-foreground text-center">
-                            Select a track to inspect its properties.
+                    <div className="flex flex-col items-center justify-center h-full p-6 gap-2">
+                        <span className="text-lg opacity-20 select-none" aria-hidden="true">🍞</span>
+                        <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
+                            No track selected — pick a loaf to inspect.
                         </p>
                     </div>
                 )}

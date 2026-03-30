@@ -57,12 +57,18 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                     className={cn(
                         'relative flex shrink-0 items-center gap-1 border-b border-border-soft px-1 cursor-pointer transition-colors',
                         isSelected
-                            ? 'bg-surface-overlay shadow-[inset_0_1px_3px_rgba(0,0,0,0.5)]'
+                            ? 'bg-surface-overlay'
                             : isDrumMachine
                             ? 'bg-surface-panel hover:bg-surface-base'
                             : 'bg-surface-tray hover:bg-surface-base'
                     )}
-                    style={{ height: 26 }}
+                    style={{
+                        height: 26,
+                        boxShadow: isSelected
+                            ? 'inset 0 1px 3px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.03)'
+                            : 'inset 0 1px 0 rgba(255,255,255,0.03)',
+                        borderTop: '1px solid rgba(255,255,255,0.04)',
+                    }}
                     role="row"
                     aria-selected={isSelected}
                     onClick={() => selectTrack(track.id)}
@@ -99,9 +105,15 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                 className={cn(
                     'relative flex shrink-0 flex-col border-b border-border-soft cursor-pointer transition-colors duration-fast',
                     track.parentId ? 'border-l-2 border-l-white/5' : '',
-                    isSelected ? 'bg-surface-base shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)]' : 'hover:bg-surface-panel'
+                    isSelected ? 'bg-surface-base' : 'hover:bg-surface-panel'
                 )}
-                style={{ height: trackHeight }}
+                style={{
+                    height: trackHeight,
+                    boxShadow: isSelected
+                        ? 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)'
+                        : 'inset 0 1px 0 rgba(255,255,255,0.03)',
+                    borderTop: '1px solid rgba(255,255,255,0.04)',
+                }}
                 role="row"
                 aria-selected={isSelected}
                 onClick={() => selectTrack(track.id)}

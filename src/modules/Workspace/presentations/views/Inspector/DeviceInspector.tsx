@@ -71,9 +71,15 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
     return (
         <div className="space-y-4 p-3">
             {/* ── Header: back button + bypass switch ── */}
-            <div className="flex flex-row items-center justify-between mb-4">
-                <div className="flex items-center gap-1">
-                    <Button variant="ghost" size="icon-xs" onClick={onBack} aria-label="Back to track">
+            <div
+                className="flex flex-row items-center justify-between -mx-3 -mt-3 mb-4 px-3 py-2 border-b border-black/40"
+                style={{
+                    background: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.005) 100%)',
+                    borderTop: '1px solid rgba(255,255,255,0.04)',
+                }}
+            >
+                <div className="flex items-center gap-1.5">
+                    <Button variant="ghost" size="icon-xs" className="hover:bg-surface-raised" onClick={onBack} aria-label="Back to track">
                         <ChevronRight className="size-3 rotate-180" />
                     </Button>
                     <h3 className="text-xs font-medium text-foreground">{device.name}</h3>

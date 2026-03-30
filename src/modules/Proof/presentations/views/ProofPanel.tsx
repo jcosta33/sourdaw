@@ -62,7 +62,7 @@ export const ProofPanel = (): ReactElement => {
     );
 
     if (!state) {
-        return <div className="flex items-center justify-center h-full text-muted-foreground text-xs">Loading…</div>;
+        return <div className="flex items-center justify-center h-full text-muted-foreground/40 text-xs italic">Letting the dough rest...</div>;
     }
 
     const { patch, uiLevel } = state;
@@ -70,7 +70,14 @@ export const ProofPanel = (): ReactElement => {
     return (
         <div className="flex flex-col h-full">
             {/* ─── Top bar ─── */}
-            <div className="flex items-center justify-between px-3 py-1 shrink-0 border-b border-border/30 bg-surface-app/30">
+            <div
+                className="flex items-center justify-between px-3 py-1 shrink-0"
+                style={{
+                    background: 'linear-gradient(180deg, rgba(20,20,22,0.95) 0%, rgba(14,14,16,0.95) 100%)',
+                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 3px rgba(0,0,0,0.5)',
+                    borderBottom: '1px solid rgba(0,0,0,0.4)',
+                }}
+            >
                 {/* Left: Preset selector */}
                 <div className="flex items-center gap-2">
                     <select
@@ -550,7 +557,15 @@ const Level5Lab = ({ state }: { state: ProofState }): ReactElement => {
 };
 
 const MeterCard = ({ label, value, unit, alert }: { label: string; value: string; unit: string; alert?: boolean }): ReactElement => (
-    <div className={`px-2 py-1.5 rounded bg-surface-base/50 border ${alert ? 'border-[var(--color-state-danger)]/30' : 'border-border/20'}`}>
+    <div
+        className="px-2 py-1.5 rounded"
+        style={{
+            background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
+            boxShadow: `inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)`,
+            border: alert ? '1px solid rgba(239,68,68,0.3)' : '1px solid rgba(0,0,0,0.4)',
+            borderBottom: alert ? '1px solid rgba(239,68,68,0.2)' : '1px solid rgba(40,40,40,0.3)',
+        }}
+    >
         <span className="text-[7px] text-muted-foreground block">{label}</span>
         <span className={`text-sm font-mono ${alert ? 'text-[var(--color-state-danger)]' : 'text-foreground'}`}>{value}</span>
         {unit ? <span className="text-[7px] text-muted-foreground ml-1">{unit}</span> : null}

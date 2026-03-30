@@ -14,7 +14,16 @@ type TrackClipsSectionProps = {
 export const TrackClipsSection = ({ track, onSelectClip }: TrackClipsSectionProps): ReactElement => {
     return (
         <div>
-            <div className="px-1 mb-2 border-b border-border-hairline pb-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center justify-between">
+            <div
+                className="px-2 py-1.5 mb-2 rounded-sm text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center justify-between"
+                style={{
+                    background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
+                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5), inset 0 -1px 0 rgba(255,255,255,0.03)',
+                    borderTop: '1px solid rgba(255,255,255,0.06)',
+                    borderBottom: '1px solid rgba(0,0,0,0.4)',
+                    textShadow: '0 1px 2px rgba(0,0,0,0.6)',
+                }}
+            >
                 <span>Clips ({track.clips.length})</span>
             </div>
             {track.clips.length > 0 ? (
@@ -66,7 +75,7 @@ export const TrackClipsSection = ({ track, onSelectClip }: TrackClipsSectionProp
                     ))}
                 </div>
             ) : (
-                <p className="text-[10px] text-muted-foreground px-1">No clips on this track.</p>
+                <p className="text-[10px] text-muted-foreground px-1 italic">No crumbs here — record or drag in a clip.</p>
             )}
         </div>
     );

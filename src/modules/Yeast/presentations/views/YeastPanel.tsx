@@ -29,7 +29,7 @@ export const YeastPanel = (): ReactElement => {
     );
 
     if (!state) {
-        return <div className="flex items-center justify-center h-full text-muted-foreground text-xs">Loading…</div>;
+        return <div className="flex items-center justify-center h-full text-muted-foreground/40 text-xs italic">Activating the yeast...</div>;
     }
 
     const { uiLevel } = state;
@@ -37,7 +37,14 @@ export const YeastPanel = (): ReactElement => {
     return (
         <div className="flex flex-col h-full">
             {/* ─── Top bar ─── */}
-            <div className="flex items-center justify-between px-3 py-1 shrink-0 border-b border-border/30 bg-surface-app/30">
+            <div
+                className="flex items-center justify-between px-3 py-1 shrink-0"
+                style={{
+                    background: 'linear-gradient(180deg, rgba(20,20,22,0.95) 0%, rgba(14,14,16,0.95) 100%)',
+                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 3px rgba(0,0,0,0.5)',
+                    borderBottom: '1px solid rgba(0,0,0,0.4)',
+                }}
+            >
                 <span className="text-[10px] font-bold text-[var(--color-accent-peach)] tracking-tight">Yeast</span>
 
                 {/* Level switcher */}

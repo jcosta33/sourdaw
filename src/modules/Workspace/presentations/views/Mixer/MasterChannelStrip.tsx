@@ -19,9 +19,10 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
     return (
         <div
             className={cn(
-                'flex shrink-0 flex-col items-center gap-1.5 rounded-lg bg-surface-recess px-2 py-2 ml-2 border-l-2 border-border-soft shadow-[0_1px_2px_rgba(0,0,0,0.4)]',
+                'flex shrink-0 flex-col items-center gap-1.5 rounded-lg px-2 py-2 ml-2 border border-black/40 shadow-[inset_0_1px_3px_rgba(0,0,0,0.6),0_1px_0_rgba(255,255,255,0.03)]',
                 widthClass
             )}
+            style={{ background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)', borderBottom: '1px solid rgba(40,40,40,0.3)' }}
             role="group"
             aria-label="Master channel"
         >

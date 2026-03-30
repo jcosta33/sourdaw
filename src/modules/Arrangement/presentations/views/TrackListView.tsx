@@ -163,8 +163,14 @@ export const TrackListView = ({
     return (
         <div className="flex h-full shrink-0 flex-col border-r border-border/30 bg-surface-well" style={style}>
             <div
-                className="flex items-end justify-between border-b border-border/30 px-2 pb-1 pt-2 shrink-0 bg-surface-tray"
-                style={{ height: extraHeaderHeight }}
+                className="flex items-end justify-between border-b border-border/30 px-2 pb-1 pt-2 shrink-0"
+                style={{
+                    height: extraHeaderHeight,
+                    background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
+                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
+                    border: '1px solid rgba(0,0,0,0.4)',
+                    borderBottom: '1px solid rgba(40,40,40,0.3)',
+                }}
             >
                 <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">
                     Tracks
@@ -265,10 +271,10 @@ export const TrackListView = ({
                     })}
 
                     {tracks.length === 0 ? (
-                        <div className="p-3 text-center">
-                            <p className="text-xs text-muted-foreground">No tracks yet</p>
-                            <p className="mt-1 text-[10px] text-muted-foreground/60">
-                                Click + or type &quot;add audio track&quot;
+                        <div className="p-6 text-center">
+                            <p className="text-xs text-muted-foreground">No tracks yet — time to start baking</p>
+                            <p className="mt-1.5 text-[10px] text-muted-foreground/50">
+                                Click + to add a track, or type &quot;add audio track&quot;
                             </p>
                         </div>
                     ) : null}

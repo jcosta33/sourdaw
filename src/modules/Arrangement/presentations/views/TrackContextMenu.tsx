@@ -229,10 +229,15 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                     <div className="fixed inset-0 z-40" onClick={close} />
                     <div
                         ref={menuRef}
-                        className="fixed z-50 min-w-[200px] rounded-md border border-border bg-popover py-1 shadow-md animate-in fade-in zoom-in-95"
+                        className="fixed z-50 min-w-[200px] rounded-md py-1 animate-in fade-in zoom-in-95"
                         style={{
                             left: Math.min(position.x, window.innerWidth - 220),
                             top: Math.min(position.y, window.innerHeight - 300),
+                            background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
+                            boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 4px 16px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.03)',
+                            border: '1px solid rgba(0,0,0,0.4)',
+                            borderTop: '1px solid rgba(255,255,255,0.06)',
+                            borderBottom: '1px solid rgba(40,40,40,0.3)',
                         }}
                         role="menu"
                     >
@@ -300,7 +305,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                         ) : (
                             actions.map((item, i) =>
                                 item.label === '---' ? (
-                                    <div key={i} className="my-1 h-px bg-border" />
+                                    <div key={i} className="my-1 mx-2 h-px" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)' }} />
                                 ) : (
                                     <button
                                         type="button"

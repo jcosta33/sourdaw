@@ -276,8 +276,13 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
 
     return (
         <div
-            className="relative shrink-0 border-b border-border/40 bg-surface-base overflow-hidden select-none"
-            style={{ height: BAR_HEIGHT }}
+            className="relative shrink-0 overflow-hidden select-none"
+            style={{
+                height: BAR_HEIGHT,
+                background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
+                boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
+                borderBottom: '1px solid rgba(40,40,40,0.3)',
+            }}
             onContextMenu={handleBarContextMenu}
             role="region"
             aria-label="Arrangement sections"
@@ -366,8 +371,16 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
             {contextMenu.kind !== 'none' ? (
                 <div
                     ref={menuRef}
-                    className="fixed z-50 min-w-[140px] rounded-md border border-border bg-popover p-1 shadow-md"
-                    style={{ left: contextMenu.x, top: contextMenu.y }}
+                    className="fixed z-50 min-w-[140px] rounded-md p-1"
+                    style={{
+                        left: contextMenu.x,
+                        top: contextMenu.y,
+                        background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
+                        boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 4px 16px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.03)',
+                        border: '1px solid rgba(0,0,0,0.4)',
+                        borderTop: '1px solid rgba(255,255,255,0.06)',
+                        borderBottom: '1px solid rgba(40,40,40,0.3)',
+                    }}
                 >
                     {contextMenu.kind === 'empty' && (
                         <button
@@ -403,7 +416,7 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                                     />
                                 ))}
                             </div>
-                            <div className="my-0.5 border-t border-border/50" />
+                            <div className="my-0.5 mx-1 h-px" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)' }} />
                             <button
                                 type="button"
                                 className="flex w-full items-center rounded-sm px-2 py-1.5 text-xs text-popover-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-30 disabled:pointer-events-none"
@@ -426,7 +439,7 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                             >
                                 Move Right
                             </button>
-                            <div className="my-0.5 border-t border-border/50" />
+                            <div className="my-0.5 mx-1 h-px" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)' }} />
                             <button
                                 type="button"
                                 className="flex w-full items-center rounded-sm px-2 py-1.5 text-xs text-destructive hover:bg-destructive/10"

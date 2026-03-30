@@ -215,7 +215,14 @@ export const FermenterPanel = (): ReactElement => {
     return (
         <div className="flex flex-col h-full">
             {/* ─── Top bar ─── */}
-            <div className="flex items-center justify-between px-3 py-1 shrink-0 border-b border-border/30 bg-surface-app/30">
+            <div
+                className="flex items-center justify-between px-3 py-1 shrink-0"
+                style={{
+                    background: 'linear-gradient(180deg, rgba(20,20,22,0.95) 0%, rgba(14,14,16,0.95) 100%)',
+                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 3px rgba(0,0,0,0.5)',
+                    borderBottom: '1px solid rgba(0,0,0,0.4)',
+                }}
+            >
                 <div className="flex items-center gap-2">
                     {/* Preset name — click to open browser flyout */}
                     <button
@@ -246,6 +253,7 @@ export const FermenterPanel = (): ReactElement => {
                     })}
                 </div>
                 <div className="flex items-center gap-2">
+                    <div className="w-px h-4 shrink-0" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.01) 100%)' }} />
                     <Oscilloscope buffer={scopeBuffer} width={80} height={20} />
                     <div className="flex items-center gap-1 text-[9px] text-muted-foreground"><Cpu className="size-3" /><span>{activeVoices}v</span></div>
                     <OutputMeter peakL={peakL} peakR={peakR} height={20} />

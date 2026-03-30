@@ -18,7 +18,8 @@ export const SendsSection = ({ track }: SendsSectionProps): ReactElement | null 
 
     return (
         <div className="w-full space-y-0.5">
-            <label className="text-[10px] text-muted-foreground/60 block text-center uppercase tracking-wider">
+            <div className="h-px my-1" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.06) 50%, transparent 100%)' }} />
+            <label className="text-[10px] text-muted-foreground/60 block text-center uppercase tracking-wider font-semibold">
                 Sends
             </label>
             {buses.map((bus) => {

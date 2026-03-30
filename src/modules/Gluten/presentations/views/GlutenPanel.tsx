@@ -71,7 +71,14 @@ export const GlutenPanel = (): ReactElement => {
     return (
         <div className="flex flex-col h-full">
             {/* ─── Top bar: topology + presets ─── */}
-            <div className="flex items-center gap-3 px-2 py-1 shrink-0 border-b border-border/30 bg-surface-app/30">
+            <div
+                className="flex items-center gap-3 px-2 py-1 shrink-0"
+                style={{
+                    background: 'linear-gradient(180deg, rgba(20,20,22,0.95) 0%, rgba(14,14,16,0.95) 100%)',
+                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 3px rgba(0,0,0,0.5)',
+                    borderBottom: '1px solid rgba(0,0,0,0.4)',
+                }}
+            >
                 {/* Topology selector */}
                 <div className="flex gap-0.5">
                     {TOPOLOGIES.map((topo) => {
@@ -96,7 +103,7 @@ export const GlutenPanel = (): ReactElement => {
                     })}
                 </div>
 
-                <div className="w-px h-4 bg-border/20 shrink-0" />
+                <div className="w-px h-4 shrink-0" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.01) 100%)' }} />
 
                 {/* Preset selector */}
                 <div className="relative shrink-0">
@@ -190,7 +197,14 @@ export const GlutenPanel = (): ReactElement => {
             <div className="flex flex-1 min-h-0 overflow-hidden">
 
                 {/* LEFT: Transfer curve + GR meter + GR history */}
-                <div className="flex flex-col gap-1 p-2 shrink-0">
+                <div
+                    className="flex flex-col gap-1 p-2 shrink-0"
+                    style={{
+                        background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
+                        boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
+                        borderRight: '1px solid rgba(40,40,40,0.3)',
+                    }}
+                >
                     <div className="flex gap-1">
                         <GlutenCurve
                             threshold={patch.threshold}

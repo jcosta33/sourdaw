@@ -8,7 +8,15 @@ export const SignalFlowSection = (): ReactElement => {
 
     return (
         <div>
-            <div className="px-1 mb-2 border-b border-border-hairline pb-1">
+            <div
+                className="px-2 py-1.5 mb-2 rounded-sm"
+                style={{
+                    background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
+                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5), inset 0 -1px 0 rgba(255,255,255,0.03)',
+                    borderTop: '1px solid rgba(255,255,255,0.06)',
+                    borderBottom: '1px solid rgba(0,0,0,0.4)',
+                }}
+            >
                 <button
                     type="button"
                     className="flex w-full items-center gap-1"
@@ -22,7 +30,7 @@ export const SignalFlowSection = (): ReactElement => {
                     ) : (
                         <ChevronRight className="size-3 text-muted-foreground" />
                     )}
-                    <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                    <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.6)' }}>
                         Signal Flow
                     </span>
                 </button>

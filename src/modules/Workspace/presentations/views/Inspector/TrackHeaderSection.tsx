@@ -30,11 +30,27 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
 
     return (
         <div>
-            <div className="px-1 mb-2 border-b border-border-hairline pb-1">
-                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Track</div>
+            <div
+                className="px-2 py-1.5 mb-2 rounded-sm"
+                style={{
+                    background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
+                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5), inset 0 -1px 0 rgba(255,255,255,0.03)',
+                    borderTop: '1px solid rgba(255,255,255,0.06)',
+                    borderBottom: '1px solid rgba(0,0,0,0.4)',
+                }}
+            >
+                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.6)' }}>Track</div>
             </div>
             <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
-                <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-2 space-y-3">
+                <Card
+                    className="rounded-md bg-surface-well shadow-[inset_0_1px_3px_rgba(0,0,0,0.4)] p-2 space-y-3"
+                    style={{
+                        borderTop: '1px solid rgba(255,255,255,0.05)',
+                        borderLeft: '1px solid rgba(255,255,255,0.04)',
+                        borderBottom: '1px solid rgba(0,0,0,0.3)',
+                        borderRight: '1px solid rgba(0,0,0,0.2)',
+                    }}
+                >
                     <div>
                         <label className="text-[10px] text-muted-foreground">Name</label>
                         {editingName ? (
@@ -112,7 +128,15 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                     </div>
                 </Card>
 
-                <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-2 flex flex-col">
+                <Card
+                    className="rounded-md bg-surface-well shadow-[inset_0_1px_3px_rgba(0,0,0,0.4)] p-2 flex flex-col"
+                    style={{
+                        borderTop: '1px solid rgba(255,255,255,0.05)',
+                        borderLeft: '1px solid rgba(255,255,255,0.04)',
+                        borderBottom: '1px solid rgba(0,0,0,0.3)',
+                        borderRight: '1px solid rgba(0,0,0,0.2)',
+                    }}
+                >
                     <label className="text-[10px] text-muted-foreground mb-1">Notes</label>
                     <textarea
                         className="flex-1 w-full rounded border border-border-soft bg-surface-inset shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)] px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-border-focus resize-y min-h-[60px]"
