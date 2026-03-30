@@ -135,19 +135,26 @@ export async function demo_SweetDreams(): Promise<void> {
     });
 
     // ── INSTRUMENTS ──────────────────────────────────────────────────────
-    // Synth Riff R — pulse/saw with Moog ladder filter + chorus
+    // Synth Riff — Oberheim OB-X style: two detuned saws with PWM-like
+    // movement. The original used pulse width modulation via LFO to create
+    // the thickening/thinning effect. Both L and R use the same patch.
     const riffParams = {
+        oscEngine: 1,         // VA analog
         oscWaveform: 1,       // saw
-        filterModel: 1,       // Moog ladder
-        filterCutoff: 2800,
-        filterResonance: 2.5,
-        ampAttack: 0.005,
-        ampDecay: 0.3,
-        ampSustain: 0.6,
-        ampRelease: 0.15,
-        chorusMix: 0.25,
-        chorusRate: 0.8,
-        stereoWidth: 1.2,
+        unisonVoices: 2,      // two detuned saws (like the original OB-X)
+        unisonDetune: 8,      // ~8% detune for width
+        filterModel: 0,       // SVF (clean, not aggressive)
+        filterCutoff: 3500,
+        filterResonance: 1.5,
+        ampAttack: 0.008,
+        ampDecay: 0.2,
+        ampSustain: 0.7,
+        ampRelease: 0.12,
+        lfoRate: 0.3,         // slow LFO for PWM-like sweep
+        lfoFilterAmount: 0.15,
+        chorusMix: 0.2,
+        chorusRate: 0.6,
+        chorusDepth: 6,
     };
     tRiffR.devices = [
         {
@@ -158,7 +165,6 @@ export async function demo_SweetDreams(): Promise<void> {
             parameterValues: { ...riffParams },
         },
     ];
-    // Synth Riff L — same patch, panned opposite
     tRiffL.devices = [
         {
             id: `dev-${crypto.randomUUID()}`,
@@ -169,21 +175,69 @@ export async function demo_SweetDreams(): Promise<void> {
         },
     ];
 
-    // Bass — Pumpernickel (Moog bass)
-    applyPreset(tBass, 'fermenter-moog-bass');
+    // Bass — Roland SH-101 style: simple mono saw, clean filter, punchy
+    // The original bass was an SH-101 sequenced by the drum computer.
+    // NOT a fat Moog — cleaner, thinner, more precise.
+    tBass.devices = [
+        {
+            id: `dev-${crypto.randomUUID()}`,
+            name: 'Fermenter',
+            type: 'fermenter',
+            bypassed: false,
+            parameterValues: {
+                oscEngine: 1,     // VA
+                oscWaveform: 1,   // saw
+                filterModel: 0,   // SVF (clean like SH-101)
+                filterCutoff: 1200,
+                filterResonance: 1.5,
+                ampAttack: 0.003,
+                ampDecay: 0.25,
+                ampSustain: 0.5,
+                ampRelease: 0.1,
+                filterDecay: 0.15,
+                filterEnvAmount: 0.3,
+                reverbMix: 0,     // bone dry
+            },
+        },
+    ];
 
-    // Pad — Vangelis Ciabatta (CS-80 pad)
-    applyPreset(tPad, 'fermenter-cs80-pad');
-
-    // Lead — Baguette Edge (classic lead) with extra portamento
-    applyPreset(tLead, 'fermenter-classic-lead');
-    // Override portamento for smooth vocal-like feel
-    if (tLead.devices[0]) {
-        (tLead.devices[0] as any).parameterValues.portamentoTime = 0.04;
+    // Pad — Oberheim string/pad: Annie Lennox played the OB-X for a string
+    // sound "cut off to make it more attacking." Use the Oberheim preset
+    // with adjusted attack for that cutting quality.
+    applyPreset(tPad, 'fermenter-oberheim-pad');
+    if (tPad.devices[0]) {
+        const pv = (tPad.devices[0] as any).parameterValues;
+        pv.ampAttack = 0.15;      // shorter than default pad — "cut off" per Dave Stewart
+        pv.filterCutoff = 2200;   // slightly darker
+        pv.reverbMix = 0.35;
+        pv.chorusMix = 0.25;
     }
 
-    // Brass stabs — Yamaha Yeast (DX7 brass)
-    applyPreset(tBrass, 'fermenter-dx7-brass');
+    // Lead — vocal substitute. The melody needs a warm, slightly nasal
+    // quality to evoke Annie Lennox's voice. Formant filter gives vowel
+    // character. Use the vocal pad preset with shorter attack.
+    applyPreset(tLead, 'fermenter-vocal-pad');
+    if (tLead.devices[0]) {
+        const pv = (tLead.devices[0] as any).parameterValues;
+        pv.ampAttack = 0.03;      // faster attack for melodic articulation
+        pv.ampRelease = 0.3;
+        pv.portamentoTime = 0.03; // slight legato glide
+        pv.filterCutoff = 3000;
+        pv.filterResonance = 3;   // formant peak for vocal quality
+    }
+
+    // Stab accents — NOT brass. The original has no brass stabs.
+    // Instead, use a soft Juno-style chord stab — the same Cm chord
+    // played staccato as rhythmic punctuation, much gentler.
+    applyPreset(tBrass, 'fermenter-juno-pad');
+    if (tBrass.devices[0]) {
+        const pv = (tBrass.devices[0] as any).parameterValues;
+        pv.ampAttack = 0.01;
+        pv.ampDecay = 0.2;
+        pv.ampSustain = 0.3;
+        pv.ampRelease = 0.15;
+        pv.filterCutoff = 2000;
+    }
 
     // ── EFFECTS CHAINS ──────────────────────────────────────────────────
     // Synth Riff R: chorus + delay
@@ -211,20 +265,14 @@ export async function demo_SweetDreams(): Promise<void> {
         'delay-mix': 0.15,
     });
 
-    // Bass: compressor + slight distortion warmth
+    // Bass: just a compressor — the SH-101 sound was clean and precise
     addDev(tBass, 'builtin-compressor', 'Bass Comp', {
-        'comp-threshold': -15,
-        'comp-ratio': 3,
-        'comp-attack': 10,
-        'comp-release': 150,
-        'comp-knee': 6,
-        'comp-makeup': 2,
-    });
-    addDev(tBass, 'builtin-distortion', 'Bass Warmth', {
-        'dist-drive': 1.5,
-        'dist-tone': 1800,
-        'dist-mix': 0.08,
-        'dist-output': -2,
+        'comp-threshold': -12,
+        'comp-ratio': 4,
+        'comp-attack': 5,
+        'comp-release': 120,
+        'comp-knee': 4,
+        'comp-makeup': 1.5,
     });
 
     // Pad: large reverb + chorus
@@ -254,20 +302,12 @@ export async function demo_SweetDreams(): Promise<void> {
         'rev-mix': 0.2,
     });
 
-    // Brass stabs: short reverb + slight compression
-    addDev(tBrass, 'builtin-reverb', 'Brass Room', {
-        'rev-size': 0.35,
-        'rev-decay': 1.2,
-        'rev-damping': 0.4,
-        'rev-mix': 0.15,
-    });
-    addDev(tBrass, 'builtin-compressor', 'Brass Comp', {
-        'comp-threshold': -14,
-        'comp-ratio': 2.5,
-        'comp-attack': 5,
-        'comp-release': 100,
-        'comp-knee': 4,
-        'comp-makeup': 1.5,
+    // Chord accent: just a touch of reverb for space
+    addDev(tBrass, 'builtin-reverb', 'Accent Space', {
+        'rev-size': 0.4,
+        'rev-decay': 1.5,
+        'rev-damping': 0.35,
+        'rev-mix': 0.2,
     });
 
     // ── MASTER CHAIN ─────────────────────────────────────────────────────
@@ -300,12 +340,12 @@ export async function demo_SweetDreams(): Promise<void> {
     addDev(masterTrack, 'builtin-lufs-meter', 'LUFS', { 'lufs-target': -14 });
 
     // ── INITIAL LEVELS & PANS ────────────────────────────────────────────
-    tRiffR.gain = 0.75;
-    tRiffL.gain = 0.75;
-    tBass.gain = 0;
-    tPad.gain = 0;
-    tLead.gain = 0;
-    tBrass.gain = 0;
+    tRiffR.gain = 0.7;
+    tRiffL.gain = 0.55;   // sits behind the right — glues together as one riff
+    tBass.gain = 0;        // enters via automation
+    tPad.gain = 0;         // enters via automation
+    tLead.gain = 0;        // enters via automation
+    tBrass.gain = 0;       // enters via automation
     toasterFolder.gain = 0;
 
     tRiffR.pan = 40;
@@ -360,21 +400,20 @@ export async function demo_SweetDreams(): Promise<void> {
         [7.5,  C3,  68],
     ];
 
-    // Left channel: syncopated, complementary rhythm (14 notes per 8-beat cycle)
-    // C3 C3 C3 C3 C3 | Ab2 Ab2 Ab2 | G2 G2 | Bb2 Bb2
+    // Left channel: follows the same harmonic movement as the right but
+    // with a slightly different rhythmic feel — longer notes, more legato,
+    // filling in the spaces. This is what makes it sound like ONE riff
+    // when the two are combined. The left was played by Annie on the OB-X
+    // while the right was the SH-101 sequence.
     const riffLPattern: [number, number, number][] = [
-        [0,    C3,  90],
-        [0.5,  C3,  74],
-        [1,    C3,  88],
-        [1.5,  C3,  72],
-        [2,    C3,  85],
-        [3,    Ab2, 88],
-        [3.5,  Ab2, 72],
-        [4,    Ab2, 85],
-        [5,    G2,  90],
-        [5.5,  G2,  74],
-        [6,    Bb2, 86],
-        [6.5,  Bb2, 70],
+        [0,    C3,  82],
+        [1,    C3,  78],
+        [2,    Eb3, 80],
+        [3,    C3,  75],
+        [4,    Ab2, 82],
+        [5,    Ab2, 76],
+        [6,    G2,  80],
+        [7,    C3,  72],
     ];
 
     // Both riffs play throughout; gain automation controls dynamics
@@ -396,7 +435,9 @@ export async function demo_SweetDreams(): Promise<void> {
         for (const [offset, pitch, baseVel] of riffLPattern) {
             const beat = cycleStart + offset;
             if (beat >= TB) break;
-            riffLNotes.push(note(pitch, beat, 0.4, hv(Math.round(baseVel * velMult), 4)));
+            // Longer notes (0.85) and softer than right — quarter-note feel that
+            // fills underneath the right channel's staccato eighths
+            riffLNotes.push(note(pitch, beat, 0.85, hv(Math.round(baseVel * velMult * 0.9), 3)));
         }
     }
 
@@ -409,26 +450,28 @@ export async function demo_SweetDreams(): Promise<void> {
     const bassNotes: MidiNote[] = [];
 
     // 4-bar bass cycle: Cm | Cm | Ab | Ab
+    // Simple quarter-note pulse — the SH-101 was triggered by the drum
+    // machine, giving it a completely mechanical, locked feel.
+    // Moderate velocity — sits UNDER the riffs, not competing.
     const bassPattern: [number, number, number, number][] = [
-        // [offset, pitch, duration, velocity]
-        // Bar 1-2: C pedal, quarter notes with octave jump
-        [0,  C2,  0.9, 95],
-        [1,  C2,  0.9, 80],
-        [2,  C2,  0.9, 90],
-        [3,  C3,  0.9, 78],  // octave jump
-        [4,  C2,  0.9, 92],
-        [5,  C2,  0.9, 80],
-        [6,  C2,  0.9, 88],
-        [7,  C2,  0.9, 75],
-        // Bar 3-4: Ab pedal
-        [8,  Ab1, 0.9, 90],
-        [9,  Ab1, 0.9, 78],
-        [10, Ab1, 0.9, 88],
-        [11, Ab2, 0.9, 76],  // octave jump
-        [12, Ab1, 0.9, 92],
-        [13, Ab1, 0.9, 78],
-        [14, Ab1, 0.9, 85],
-        [15, Ab1, 1.8, 90],  // long note into next cycle
+        // Bar 1-2: C root, quarter notes with one octave jump
+        [0,  C2,  0.85, 72],
+        [1,  C2,  0.85, 65],
+        [2,  C2,  0.85, 70],
+        [3,  C3,  0.85, 60],  // octave jump
+        [4,  C2,  0.85, 72],
+        [5,  C2,  0.85, 64],
+        [6,  C2,  0.85, 68],
+        [7,  C2,  0.85, 62],
+        // Bar 3-4: Ab root
+        [8,  Ab1, 0.85, 70],
+        [9,  Ab1, 0.85, 63],
+        [10, Ab1, 0.85, 68],
+        [11, Ab2, 0.85, 58],  // octave jump
+        [12, Ab1, 0.85, 70],
+        [13, Ab1, 0.85, 62],
+        [14, Ab1, 0.85, 66],
+        [15, Ab1, 1.6,  68],  // slightly longer into next cycle
     ];
 
     // Bridge bass: Cm | Cm | Ab | Ab | Bb | Bb | G | G
@@ -696,24 +739,18 @@ export async function demo_SweetDreams(): Promise<void> {
         }
     }
 
-    // Chorus 1 brass stabs
-    for (let b = S.chorus1; b < S.verse2; b += 4) {
-        addBrassStab(b, 88, 0.3);
-        addBrassStab(b + 1.5, 75, 0.2);
+    // Chorus accents — very sparse, just on downbeats of every other bar.
+    // These are gentle chord punctuation, NOT aggressive brass stabs.
+    // The original song doesn't have distinct stabs — this just adds
+    // a subtle rhythmic accent layer during choruses.
+    for (let b = S.chorus1; b < S.verse2; b += 8) {
+        addBrassStab(b, 55, 0.5);
     }
-
-    // Chorus 2 brass stabs
-    for (let b = S.chorus2; b < S.bridge; b += 4) {
-        addBrassStab(b, 92, 0.35);
-        addBrassStab(b + 1.5, 78, 0.2);
-        if ((b - S.chorus2) % 8 === 4) addBrassStab(b + 3, 70, 0.2);
+    for (let b = S.chorus2; b < S.bridge; b += 8) {
+        addBrassStab(b, 58, 0.5);
     }
-
-    // Final chorus — most intense
-    for (let b = S.finalChorus; b < S.outro; b += 4) {
-        addBrassStab(b, 100, 0.35);
-        addBrassStab(b + 1.5, 82, 0.25);
-        addBrassStab(b + 3, 72, 0.2);
+    for (let b = S.finalChorus; b < S.outro; b += 8) {
+        addBrassStab(b, 62, 0.5);
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -950,13 +987,13 @@ export async function demo_SweetDreams(): Promise<void> {
             points: [
                 { beat: 0, value: 0, curve: 'linear' as const, tension: 0 },
                 { beat: S.verse1, value: 0, curve: 'linear' as const, tension: 0 },
-                { beat: S.verse1 + 4, value: 0.6, curve: 'smooth' as const, tension: 0.35 },
-                { beat: S.chorus1, value: 0.8, curve: 'smooth' as const, tension: 0.3 },
-                { beat: S.verse2, value: 0.6, curve: 'linear' as const, tension: 0 },
-                { beat: S.chorus2, value: 0.8, curve: 'smooth' as const, tension: 0.3 },
-                { beat: S.bridge, value: 0.3, curve: 'smooth' as const, tension: 0.35 },
-                { beat: S.finalChorus, value: 0.85, curve: 'smooth' as const, tension: 0.3 },
-                { beat: S.outro, value: 0.5, curve: 'linear' as const, tension: 0 },
+                { beat: S.verse1 + 4, value: 0.35, curve: 'smooth' as const, tension: 0.35 },
+                { beat: S.chorus1, value: 0.45, curve: 'smooth' as const, tension: 0.3 },
+                { beat: S.verse2, value: 0.35, curve: 'linear' as const, tension: 0 },
+                { beat: S.chorus2, value: 0.45, curve: 'smooth' as const, tension: 0.3 },
+                { beat: S.bridge, value: 0.2, curve: 'smooth' as const, tension: 0.35 },
+                { beat: S.finalChorus, value: 0.5, curve: 'smooth' as const, tension: 0.3 },
+                { beat: S.outro, value: 0.3, curve: 'linear' as const, tension: 0 },
                 { beat: S.outro + 48, value: 0, curve: 'smooth' as const, tension: 0.4 },
                 { beat: TB, value: 0, curve: 'linear' as const, tension: 0 },
             ],
@@ -1014,21 +1051,21 @@ export async function demo_SweetDreams(): Promise<void> {
             ],
         }),
 
-        // ── Brass gain: only during choruses ─────────────────────────────
-        Object.assign(mkLane(tBrass.id, 'gain', 'Brass level', 0, 1), {
+        // ── Accent gain: subtle chord punctuation during choruses ─────────
+        Object.assign(mkLane(tBrass.id, 'gain', 'Accent level', 0, 1), {
             points: [
                 { beat: 0, value: 0, curve: 'linear' as const, tension: 0 },
                 { beat: S.chorus1 - 1, value: 0, curve: 'linear' as const, tension: 0 },
-                { beat: S.chorus1, value: 0.6, curve: 'smooth' as const, tension: 0.3 },
-                { beat: S.verse2 - 1, value: 0.6, curve: 'linear' as const, tension: 0 },
+                { beat: S.chorus1, value: 0.25, curve: 'smooth' as const, tension: 0.3 },
+                { beat: S.verse2 - 1, value: 0.25, curve: 'linear' as const, tension: 0 },
                 { beat: S.verse2, value: 0, curve: 'smooth' as const, tension: 0.3 },
                 { beat: S.chorus2 - 1, value: 0, curve: 'linear' as const, tension: 0 },
-                { beat: S.chorus2, value: 0.68, curve: 'smooth' as const, tension: 0.3 },
-                { beat: S.bridge - 1, value: 0.68, curve: 'linear' as const, tension: 0 },
+                { beat: S.chorus2, value: 0.3, curve: 'smooth' as const, tension: 0.3 },
+                { beat: S.bridge - 1, value: 0.3, curve: 'linear' as const, tension: 0 },
                 { beat: S.bridge, value: 0, curve: 'smooth' as const, tension: 0.3 },
                 { beat: S.finalChorus - 1, value: 0, curve: 'linear' as const, tension: 0 },
-                { beat: S.finalChorus, value: 0.75, curve: 'smooth' as const, tension: 0.3 },
-                { beat: S.outro - 1, value: 0.75, curve: 'linear' as const, tension: 0 },
+                { beat: S.finalChorus, value: 0.35, curve: 'smooth' as const, tension: 0.3 },
+                { beat: S.outro - 1, value: 0.35, curve: 'linear' as const, tension: 0 },
                 { beat: S.outro, value: 0, curve: 'smooth' as const, tension: 0.3 },
                 { beat: TB, value: 0, curve: 'linear' as const, tension: 0 },
             ],
