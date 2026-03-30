@@ -27,11 +27,14 @@ import { DEFAULT_PAD_NAMES } from '#/modules/Toaster/models/ToasterKit';
 const TB = 380;
 const bpm = 76;
 
-const A2 = 45;
 const G2 = 43;
+const A2 = 45;
 const D3 = 50;
 const E3 = 52;
+const F3 = 53;
 const A3 = 57;
+const Bb3 = 58;
+const B3 = 59;
 const C4 = 60;
 const D4 = 62;
 const E4 = 64;
@@ -94,7 +97,8 @@ const NEBULA_TOASTER_PAD_COLORS: readonly string[] = Array.from({ length: 16 }, 
     return `oklch(0.415 0.036 ${h})`;
 });
 
-/** Sub drone: starts at 0%, creeps up very slowly, still capped at 5% by the end. */
+/** Sub drone: starts at 0%, creeps up very slowly, capped at 5% by the end.
+ *  Intentionally barely audible — felt more than heard as a foundation. */
 function subDroneGainKeyframes(tb: number) {
     return [
         { beat: 0, value: 0, curve: 'linear' as const, tension: 0 },
@@ -469,12 +473,13 @@ export async function demo5_NebulaDrift(): Promise<void> {
     const cLA = clip(tLevAnswer.id, 'Answer');
 
     // ── MIDI content ──────────────────────────────────────────────────────
+    // Humanization: wider timing offsets (+-0.2 beats), more velocity variation (+-12)
     const hum = (pitch: number, beat: number, duration: number, velocity: number, salt: number): MidiNote => {
-        const tb = ((salt * 19) % 17) / 120 - 0.07;
-        const td = ((salt * 11) % 7) / 180;
-        const dv = ((salt * 23) % 11) - 5;
+        const tb = ((salt * 19) % 37) / 95 - 0.2; // +-0.2 beats timing offset
+        const td = ((salt * 11) % 13) / 60 - 0.1; // +-0.1 duration variance
+        const dv = ((salt * 23) % 25) - 12; // +-12 velocity variance
         const v = Math.max(1, Math.min(127, Math.round(velocity + dv)));
-        return note(pitch, beat + tb, Math.max(0.08, duration + td), v);
+        return note(pitch, Math.max(0, beat + tb), Math.max(0.08, duration + td), v);
     };
 
     const subN: MidiNote[] = [];
@@ -482,54 +487,119 @@ export async function demo5_NebulaDrift(): Promise<void> {
         subN.push(hum(A2, b, 22, 84, s));
     }
 
+    // Dark Mist — evolving 5ths and 7ths, wider velocity range for more drama
     const darkN: MidiNote[] = [];
-    for (let b = 6, s = 0; b < TB; b += 30, s++) {
-        darkN.push(hum(E3, b, 26, 72, s));
-        darkN.push(hum(A3, b + 6.2, 18, 66, s + 40));
+    const darkIntervals = [
+        [E3, A3],
+        [D3, A3],
+        [E3, B4],
+        [G2, D3],
+        [A2, E3],
+        [F3, C4],
+    ];
+    for (let b = 6, s = 0; b < TB; b += 28, s++) {
+        const pair = darkIntervals[s % darkIntervals.length]!;
+        const vel1 = b >= S.peak && b < S.breakdown ? 88 : 72;
+        const vel2 = vel1 - 8;
+        darkN.push(hum(pair[0]!, b, 24, vel1 + ((s * 5) % 7) - 3, s));
+        darkN.push(hum(pair[1]!, b + 5.5, 18, vel2 + ((s * 3) % 5) - 2, s + 40));
     }
 
+    // Grain Haze — slow granular texture drifting through a pitch field
     const grainN: MidiNote[] = [];
-    for (let b = 0, s = 0; b < TB; b += 14, s++) {
-        grainN.push(hum(G4 + ((b % 21) / 7) * 2, b, 7, 54 + (s % 4) * 3, s));
+    const grainPitches = [G4, A4, D5, E4, C5, G4, B4, F4]; // wider pitch palette
+    for (let b = 0, s = 0; b < TB; b += 12, s++) {
+        const p = grainPitches[s % grainPitches.length]!;
+        const vel = 48 + (s % 6) * 4 + (b >= S.peak ? 10 : 0);
+        grainN.push(hum(p, b, 9, Math.min(90, vel), s));
     }
 
+    // Ethereal Veil — slow drifting intervals, suspended feel
     const veilN: MidiNote[] = [];
-    for (let b = 3, s = 0; b < TB; b += 22, s++) {
-        veilN.push(hum(E5, b, 14, 52, s));
-        if (s % 2 === 1) {
-            veilN.push(hum(C5, b + 8.4, 8, 46, s + 11));
+    const veilPitches = [
+        [E5, C5],
+        [D5, A4],
+        [G5, E5],
+        [A5, E5],
+        [Fs5, D5],
+        [E5, B4],
+    ];
+    for (let b = 3, s = 0; b < TB; b += 20, s++) {
+        const vp = veilPitches[s % veilPitches.length]!;
+        veilN.push(hum(vp[0]!, b, 16, 52 + ((s * 3) % 9), s));
+        if (s % 2 === 1 || b >= S.peak) {
+            veilN.push(hum(vp[1]!, b + 7, 10, 44 + ((s * 5) % 7), s + 11));
         }
     }
 
+    // Sweep Horizon — slow filter sweeps on sustained notes, modal ambiguity
     const sweepN: MidiNote[] = [];
-    for (let b = 1, s = 0; b < TB; b += 11, s++) {
-        sweepN.push(hum(A4, b, 5, 62, s));
+    const sweepPitches = [A4, D5, E5, A4, C5, G4, B4, E5, Fs5, D5];
+    for (let b = 1, s = 0; b < TB; b += 10, s++) {
+        const p = sweepPitches[s % sweepPitches.length]!;
+        const vel = 55 + ((s * 7) % 13) + (b >= S.peak && b < S.breakdown ? 15 : 0);
+        sweepN.push(hum(p, b, 7, Math.min(95, vel), s));
         if (s % 3 === 0) {
-            sweepN.push(hum(D5, b + 4.1, 4, 58, s + 3));
+            sweepN.push(hum(sweepPitches[(s + 3) % sweepPitches.length]!, b + 4.5, 4, vel - 6, s + 3));
         }
     }
 
+    // Warm Halo — rich chord voicings: Am7, Cmaj9, Em7, Dm9, Fmaj7 with slow voice movement
     const warmN: MidiNote[] = [];
-    for (let b = 14, s = 0; b < TB; b += 44, s++) {
-        warmN.push(hum(C4, b, 36, 68, s));
-        warmN.push(hum(E4, b + 16.3, 24, 62, s + 20));
-    }
-
-    const riseN: MidiNote[] = [];
-    for (let b = 20, s = 0; b < TB; b += 18, s++) {
-        riseN.push(hum(G4, b, 12, 56, s));
-        if (s % 2 === 0) {
-            riseN.push(hum(B4, b + 7.6, 6, 50, s + 7));
+    const warmChords: number[][] = [
+        [A3, C4, E4, G4], // Am7
+        [C4, E4, G4, B4, D5], // Cmaj9
+        [E3, G4, B4, D5], // Em7 (wide voicing)
+        [D3, F4, A4, C5, E5], // Dm9
+        [F3, A3, C4, E4], // Fmaj7
+        [G2, B3, D4, F4, A4], // G7 (dominant passing)
+        [A3, C4, E4, G4, B4], // Am9
+        [Bb3, D4, F4, A4], // Bbmaj7 (Mixolydian color)
+    ];
+    let wi = 0;
+    for (let b = 14; b < TB; b += 38, wi++) {
+        const chord = warmChords[wi % warmChords.length]!;
+        const baseVel = b >= S.peak && b < S.breakdown ? 82 : 62;
+        for (let ci = 0; ci < chord.length; ci++) {
+            // Stagger chord tones slightly for a more organic onset
+            const offset = ci * 0.15;
+            const vel = Math.max(40, baseVel - ci * 3 + ((wi * 7 + ci) % 5));
+            warmN.push(hum(chord[ci]!, b + offset, 32, vel, wi * 10 + ci));
         }
     }
 
+    // Rising Mist — slowly ascending gestures, sus chords resolving
+    const riseN: MidiNote[] = [];
+    const risePairs: [number, number][] = [
+        [G4, B4],
+        [A4, D5],
+        [E4, A4],
+        [D4, G4],
+        [C4, E4],
+        [F4, A4],
+    ];
+    for (let b = 20, s = 0; b < TB; b += 16, s++) {
+        const rp = risePairs[s % risePairs.length]!;
+        const vel = 50 + ((s * 5) % 11) + (b >= S.peak ? 14 : 0);
+        riseN.push(hum(rp[0]!, b, 13, vel, s));
+        if (s % 2 === 0 || b >= S.build1) {
+            riseN.push(hum(rp[1]!, b + 6, 8, vel - 6, s + 7));
+        }
+    }
+
+    // Wild Drift — chaotic, unpredictable texture. Wide intervals, chromatic neighbors.
     const wildN: MidiNote[] = [];
-    const wildP = [D4, F4, A4, C5, E5, G4, A3, D5, Fs4, G4];
+    const wildP = [D4, F4, A4, C5, E5, Fs4, Bb3, D5, G4, A3, E5, B4, Fs5];
     for (let b = 0, s = 0; b < TB; b += 7.5, s++) {
-        if (b >= S.breakdown && b < S.final && s % 3 === 0) {
+        // Sparse during breakdown
+        if (b >= S.breakdown && b < S.final && s % 3 !== 0) {
             continue;
         }
-        wildN.push(hum(wildP[s % wildP.length]!, b, 3.6, 52 + (s % 5) * 2, s));
+        // Wider velocity range for chaos
+        const vel = 42 + ((s * 17) % 20) + (b >= S.peak && b < S.breakdown ? 18 : 0);
+        // Varying durations: some very short, some long and ringing
+        const dur = s % 5 === 0 ? 6.0 : s % 5 === 3 ? 1.2 : 3.6;
+        wildN.push(hum(wildP[s % wildP.length]!, b, dur, Math.min(98, vel), s));
     }
 
     const stutterN: MidiNote[] = [];
@@ -548,139 +618,251 @@ export async function demo5_NebulaDrift(): Promise<void> {
         metalN.push(hum(E5, b, 0.18, 46, s));
     }
 
+    // Pluck Constellation — interlocking arpeggios at different rates (Eno-style)
+    // Two interlocked patterns of different lengths create shifting phase relationships
     const pluckN: MidiNote[] = [];
-    const pluckPat = [A4, C5, E5, G4, D5, A4, B4, E5, C5, G4, A4, D5];
+    const pluckA = [A4, E5, C5, G5, D5, A5, E5, B4]; // ascending 8-note pattern
+    const pluckB = [C5, A4, F4, D5, G4, E5]; // descending 6-note counter-pattern (different length = phase)
     let px = 0;
-    for (let b = 10; b < TB - 4; b += 4.5) {
-        if (b >= S.breakdown && b < S.final && px % 3 !== 0) {
+    // Pattern A: every 3.5 beats
+    for (let b = 10; b < TB - 4; b += 3.5) {
+        if (b >= S.breakdown && b < S.final && px % 4 !== 0) {
             px++;
             continue;
         }
-        const vel = b >= S.peak && b < S.breakdown ? 74 : 58;
-        pluckN.push(hum(pluckPat[px % pluckPat.length]!, b, 1.45, vel, px));
+        const baseVel = b >= S.peak && b < S.breakdown ? 85 : b >= S.build1 ? 70 : 55;
+        const vel = baseVel + ((px * 11) % 9) - 4;
+        const dur = px % 3 === 0 ? 2.2 : 1.1; // alternating long/short
+        pluckN.push(hum(pluckA[px % pluckA.length]!, b, dur, Math.max(40, Math.min(100, vel)), px));
         px++;
     }
-
-    const bellN: MidiNote[] = [];
-    for (let b = 8, s = 0; b < TB; b += 26, s++) {
-        bellN.push(hum(G5, b, 3.5, 42, s));
-        if (s % 2 === 0) {
-            bellN.push(hum(D5, b + 11.2, 2.8, 38, s + 50));
+    // Pattern B: every 4.7 beats (different rate = shifting phase like Music for Airports)
+    let pb = 0;
+    for (let b = 18; b < TB - 4; b += 4.7) {
+        if (b < S.build1 && pb % 3 !== 0) {
+            pb++;
+            continue;
+        } // sparse in intro
+        if (b >= S.breakdown && b < S.final && pb % 3 !== 0) {
+            pb++;
+            continue;
         }
+        const vel = b >= S.peak && b < S.breakdown ? 78 : 58;
+        pluckN.push(hum(pluckB[pb % pluckB.length]!, b, 1.8, vel + ((pb * 7) % 5) - 2, pb + 200));
+        pb++;
     }
 
+    // Bell Dust — FM bell tones at irregular intervals, like wind chimes
+    const bellN: MidiNote[] = [];
+    const bellPitches = [G5, D5, A5, E5, B4, Fs5, C5, G5];
+    const bellSpacings = [26, 19, 23, 31, 17, 28]; // irregular spacing for organic feel
+    let bellB = 8,
+        bs = 0;
+    while (bellB < TB) {
+        const p = bellPitches[bs % bellPitches.length]!;
+        const vel = 38 + ((bs * 11) % 15) + (bellB >= S.peak && bellB < S.breakdown ? 12 : 0);
+        bellN.push(hum(p, bellB, 4, Math.min(85, vel), bs));
+        if (bs % 3 === 0) {
+            // Second bell a 5th below, offset
+            bellN.push(hum(bellPitches[(bs + 4) % bellPitches.length]!, bellB + 8, 3, vel - 8, bs + 50));
+        }
+        bellB += bellSpacings[bs % bellSpacings.length]!;
+        bs++;
+    }
+
+    // Berlin-school sequencer — hypnotic 16th-note pattern that evolves across sections.
+    // Intro: 2-3 notes, sparse. Build: adds notes. Peak: full 8-note pattern. Break: stripped.
     const seqN: MidiNote[] = [];
-    const seqPat = [E4, A4, C5, B4, G4, D5, E4, A3];
+    const seqIntro = [A3, E4]; // minimal pulse
+    const seqBuild = [A3, C4, E4, A3, D4]; // expanding
+    const seqPeak = [A3, C4, E4, G4, A4, G4, E4, D4]; // full Berlin pattern
+    const seqBreak = [A3, E4, C4]; // stripped back
+    const seqFinal = [A3, C4, E4, G4, A4, E4]; // rebuilding
+
     let sx = 0;
-    for (let b = 6; b < TB; b += 2.75) {
-        const calm = b < S.build1 || (b >= S.breakdown && b < S.final);
-        if (calm && sx % 2 === 0) {
+    // 16th notes at 76bpm = step every 0.25 beats (but use ~1 beat spacing for musicality)
+    for (let b = 6; b < TB; b += 1.0) {
+        const pat =
+            b < S.build1
+                ? seqIntro
+                : b < S.peak
+                  ? seqBuild
+                  : b < S.breakdown
+                    ? seqPeak
+                    : b < S.final
+                      ? seqBreak
+                      : seqFinal;
+
+        // Intro: very sparse (every 4th step)
+        if (b < S.build1 && sx % 4 !== 0) {
             sx++;
             continue;
         }
-        if (b >= S.peak && b < S.breakdown && sx % 5 === 3) {
+        // Build: every other step initially, filling in
+        const buildProgress = (b - S.build1) / (S.peak - S.build1);
+        if (b >= S.build1 && b < S.peak && sx % 3 === 2 && buildProgress < 0.5) {
             sx++;
             continue;
         }
-        seqN.push(hum(seqPat[sx % seqPat.length]!, b, 0.52, 54, sx));
+        // Break: sparse
+        if (b >= S.breakdown && b < S.final && sx % 3 !== 0) {
+            sx++;
+            continue;
+        }
+
+        const pi = sx % pat.length;
+        // Accent pattern: emphasize downbeats
+        const isAccent = pi === 0 || pi === 4;
+        const baseVel = b >= S.peak && b < S.breakdown ? 80 : 60;
+        const vel = isAccent ? baseVel + 15 : baseVel + ((sx * 13) % 9) - 4;
+
+        seqN.push(hum(pat[pi]!, b, 0.7, Math.max(40, Math.min(100, vel)), sx));
         sx++;
     }
 
+    // Naan Sitar — the track's main hook. A Dorian-flavored melody with yearning intervals.
+    // Phrase A: ascending call with Dorian 6th (F#). Phrase B: answer with suspended resolution.
+    // Phrase C (peak): ecstatic high register. Phrase D (outro): reflective descent.
     const leadMoogN: MidiNote[] = [];
-    const moogPhrase = [A4, C5, E5, A5, G5, E5, D5, C5, B4, A4, E5, D5, C5, A4];
+    const phraseA = [A4, C5, D5, E5, Fs5, E5, D5, C5, A4, G4, A4]; // Dorian ascent
+    const phraseB = [E5, D5, C5, A4, B4, C5, A4, G4, E4, D4, E4, A4]; // answer w/ suspension
+    const phraseC = [A5, G5, E5, Fs5, A5, G5, D5, E5, Fs5, G5, A5, E5]; // ecstatic peak
+    const phraseD = [E5, D5, C5, B4, A4, G4, Fs4, E4, D4, A4]; // reflective outro descent
     let mx = 0;
     let bm = 44;
     while (bm < TB - 10) {
-        if (!(bm >= S.breakdown && bm < S.final - 16)) {
-            if (mx % 6 !== 4) {
-                const vel = bm >= S.peak && bm < S.breakdown ? 74 : 66;
-                leadMoogN.push(hum(moogPhrase[mx % moogPhrase.length]!, bm, 3.1, vel, mx + 100));
+        // Pick phrase based on section
+        const phrase =
+            bm < S.build1
+                ? phraseA
+                : bm < S.peak
+                  ? phraseB
+                  : bm < S.breakdown
+                    ? phraseC
+                    : bm < S.final
+                      ? phraseD
+                      : phraseA;
+        const inBreak = bm >= S.breakdown && bm < S.final - 16;
+        if (!inBreak) {
+            const pi = mx % phrase.length;
+            // Velocity: wide dynamic range, louder at peak
+            const baseVel = bm >= S.peak && bm < S.breakdown ? 88 : bm >= S.build1 ? 76 : 65;
+            const velVar = ((mx * 17) % 11) - 5; // -5 to +5
+            const vel = Math.max(40, Math.min(100, baseVel + velVar));
+            // Duration varies: some long, some short for articulation
+            const dur = pi % 3 === 0 ? 4.2 : pi % 3 === 1 ? 2.4 : 3.5;
+            // Rests: skip every 7th note for breathing room
+            if (mx % 7 !== 6) {
+                leadMoogN.push(hum(phrase[pi]!, bm, dur, vel, mx + 100));
             }
         }
         mx++;
         const busy = bm >= S.peak && bm < S.breakdown;
-        const step = busy ? 2.85 : bm >= S.build1 ? 3.9 : 4.6;
+        const step = busy ? 2.6 : bm >= S.build1 ? 3.5 : 5.2;
         bm += step;
     }
 
+    // Lead Sync — countermelody, responds to Sitar. Mixolydian flavor, more legato.
     const leadSyncN: MidiNote[] = [];
-    const syncPhrase = [E5, A5, G5, Fs5, E5, D5, E5, A4, C5, E5, D5, B4];
+    const syncA = [E5, G5, Fs5, D5, E5, A4, B4, D5]; // Mixolydian response
+    const syncB = [A5, G5, E5, D5, C5, D5, E5, G5, A5, Fs5]; // peak counterpoint
     let sy = 0;
-    for (let b = 92; b < TB - 8; b += 3.6) {
-        if (b >= S.breakdown && b < S.final && sy % 2 === 0) {
+    for (let b = 92; b < TB - 8; b += 4.2) {
+        if (b >= S.breakdown && b < S.final && sy % 3 !== 0) {
             sy++;
             continue;
         }
-        if (b >= S.peak && b < S.breakdown && sy % 6 === 2) {
-            sy++;
-            continue;
-        }
-        leadSyncN.push(hum(syncPhrase[sy % syncPhrase.length]!, b, 2.1, 64 + (sy % 4) * 2, sy + 200));
+        const phrase = b >= S.peak && b < S.breakdown ? syncB : syncA;
+        const pi = sy % phrase.length;
+        // Wider velocity range, accents on phrase starts
+        const baseVel = b >= S.peak && b < S.breakdown ? 82 : 65;
+        const vel = pi === 0 ? baseVel + 12 : baseVel + ((sy * 13) % 7) - 3;
+        // Longer notes for legato feel
+        const dur = pi % 4 === 0 ? 3.8 : pi % 4 === 2 ? 1.6 : 2.8;
+        leadSyncN.push(hum(phrase[pi]!, b, dur, Math.max(40, Math.min(100, vel)), sy + 200));
         sy++;
     }
 
+    // Bass — Berlin-school root movement with syncopation and rests for breathing
     const bassN: MidiNote[] = [];
+    const bassRoots = [A2, A2, E3, A2, G2, A2, D3, E3]; // harmonic foundation
     let bi = 0;
     for (let b = S.build1; b < TB; b += 2) {
         const step = Math.floor(b / 2) % 8;
-        const roots = [A2, A2, E3, A2, G2, A2, D3, E3];
-        const root = roots[step] ?? A2;
-        const dur = b >= S.peak && b < S.breakdown ? 1.75 : 1.55;
-        if (bi % 9 === 7) {
+        const root = bassRoots[step] ?? A2;
+        // Vary duration more: longer sustained notes and short staccato
+        const dur = bi % 4 === 0 ? 3.2 : bi % 4 === 2 ? 0.8 : 1.6;
+        // More varied velocity (40-95 range)
+        const baseVel = b >= S.peak && b < S.breakdown ? 85 : 68;
+        const vel = bi % 4 === 0 ? baseVel + 8 : baseVel - 10 + ((bi * 7) % 11);
+        // More rests: skip ~20% of notes for groove
+        if (bi % 5 === 4 || (b >= S.breakdown && b < S.final && bi % 3 !== 0)) {
             bi++;
             continue;
         }
-        bassN.push(hum(root, b, dur, 72, bi + 300));
+        bassN.push(hum(root, b, dur, Math.max(40, Math.min(95, vel)), bi + 300));
         bi++;
     }
 
+    // Levain High — lyrical melody with wider intervals, Dorian touches
     const highN: MidiNote[] = [];
-    const highMelody = [E5, G5, A5, G5, E5, D5, C5, A4, E5, G5, E5, D5, C5, G4, A4, C5];
+    const highMelody = [E5, Fs5, G5, A5, G5, E5, D5, B4, A4, C5, E5, G5, Fs5, D5, E5, A5];
     let hi = 0;
     for (let b = 22; b < TB - 8; b += 5.8) {
         if (hi % 7 === 5) {
             hi++;
             continue;
         }
-        highN.push(hum(highMelody[hi % highMelody.length]!, b, 3, 58 + (hi % 4) * 2, hi + 400));
+        const vel = 52 + (hi % 5) * 6 + (b >= S.peak && b < S.breakdown ? 16 : 0);
+        const dur = hi % 3 === 0 ? 4.5 : 2.5;
+        highN.push(hum(highMelody[hi % highMelody.length]!, b, dur, Math.min(98, vel), hi + 400));
         hi++;
     }
 
+    // Levain Mid — counterpoint moving in contrary motion to High
     const midN: MidiNote[] = [];
-    const midMelody = [A4, C5, A4, G4, E4, D4, E4, G4, A4, C5, D5, C5, A4, G4, E4, A4];
+    const midMelody = [A4, G4, E4, D4, C4, D4, E4, Fs4, G4, A4, B4, C5, D5, C5, A4, G4];
     let mi = 0;
     for (let b = 28; b < TB - 10; b += 6.4) {
         if (mi % 8 === 6) {
             mi++;
             continue;
         }
-        midN.push(hum(midMelody[mi % midMelody.length]!, b, 3.8, 64, mi + 500));
+        const vel = 58 + ((mi * 7) % 9) + (b >= S.peak ? 10 : 0);
+        midN.push(hum(midMelody[mi % midMelody.length]!, b, 4.2, Math.min(95, vel), mi + 500));
         mi++;
     }
 
+    // Levain Low — slow pedal tones with 5th movement
     const lowN: MidiNote[] = [];
+    const lowRoots = [A3, E3, D3, A3, G2, A3, F3, E3]; // harmonic rhythm
     for (let b = 4, s = 0; b < TB; b += 16, s++) {
-        lowN.push(hum(A3, b, 9, 72, s + 600));
+        const root = lowRoots[s % lowRoots.length]!;
+        lowN.push(hum(root, b, 12, 72 + ((s * 5) % 7) - 3, s + 600));
         if (s % 2 === 1) {
-            lowN.push(hum(E3, b + 5.3, 5, 66, s + 601));
+            lowN.push(hum(root + 7, b + 6, 6, 64, s + 601)); // 5th above
         }
     }
 
+    // Levain Call — longer phrases with dramatic arc
     const callN: MidiNote[] = [];
-    for (let b = 32, s = 0; b < TB; b += 34, s++) {
-        callN.push(hum(D5, b, 6, 60, s + 700));
-        callN.push(hum(A4, b + 10.5, 5, 56, s + 701));
-        if (s % 2 === 0) {
-            callN.push(hum(E5, b + 19.2, 4, 52, s + 702));
+    const callMelody = [D5, E5, Fs5, G5, A5, G5, E5, D5, C5, A4];
+    for (let b = 32, s = 0; b < TB; b += 30, s++) {
+        const len = Math.min(4, callMelody.length);
+        for (let n = 0; n < len; n++) {
+            const vel = 55 + n * 3 + (b >= S.peak ? 12 : 0);
+            callN.push(hum(callMelody[(s * 3 + n) % callMelody.length]!, b + n * 4.5, 4, vel, s * 10 + n + 700));
         }
     }
 
+    // Levain Answer — response phrases in lower register
     const answerN: MidiNote[] = [];
-    for (let b = 48, s = 0; b < TB; b += 38, s++) {
-        answerN.push(hum(C5, b, 5.5, 58, s + 800));
-        answerN.push(hum(G4, b + 13.4, 4.5, 52, s + 801));
-        if (s % 2 === 1) {
-            answerN.push(hum(E4, b + 22.1, 6, 54, s + 802));
+    const answerMelody = [C5, B4, G4, A4, E4, D4, E4, G4, A4, C5];
+    for (let b = 48, s = 0; b < TB; b += 34, s++) {
+        const len = Math.min(3, answerMelody.length);
+        for (let n = 0; n < len; n++) {
+            const vel = 52 + n * 4 + (b >= S.peak ? 10 : 0);
+            answerN.push(hum(answerMelody[(s * 2 + n) % answerMelody.length]!, b + n * 5.2, 5, vel, s * 10 + n + 800));
         }
     }
 
@@ -710,9 +892,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
         return 4;
     };
 
-    const padSegNotes: MidiNote[][][] = Array.from({ length: 16 }, () =>
-        toasterSegRanges.map(() => [] as MidiNote[]),
-    );
+    const padSegNotes: MidiNote[][][] = Array.from({ length: 16 }, () => toasterSegRanges.map(() => [] as MidiNote[]));
 
     const pushToast = (pad: number, absBeat: number, vel: number, dur = 0.12) => {
         const si = toasterSegmentIndex(absBeat);
@@ -724,99 +904,67 @@ export async function demo5_NebulaDrift(): Promise<void> {
         padSegNotes[pad]![si]!.push(note(36 + pad, rel, dur, vel));
     };
 
-    // Intro — sparse pulse before the kit locks (still GM-ish pitches per pad)
-    for (let b = 6; b < S.build1; b += 10) {
-        pushToast(5, b, 32 + (b % 5) * 2, 0.07);
+    // Intro — almost no drums, just occasional distant texture
+    // Pad 5 = metallic shimmer, Pad 13 = subtle click
+    for (let b = 24; b < S.build1; b += 18) {
+        pushToast(5, b, 24 + (b % 5) * 2, 0.07); // very sparse metallic hits
     }
-    for (let b = 10; b < S.build1; b += 4) {
-        pushToast(2, b, 22 + (b % 4), 0.05);
+    for (let b = 45; b < S.build1; b += 24) {
+        pushToast(13, b, 20, 0.05); // distant click
     }
-    for (let b = 18; b < S.build1; b += 16) {
-        pushToast(0, b, 42, 0.16);
-    }
-    for (let b = 14; b < S.build1; b += 11) {
-        pushToast(13, b, 28, 0.09);
-    }
-    for (let b = 22; b < S.build1; b += 18) {
-        pushToast(12, b, 34, 0.08);
-    }
-    for (let b = 30; b < S.build1; b += 22) {
-        pushToast(14, b, 30, 0.1);
-    }
-    for (let b = 38; b < S.build1; b += 26) {
-        pushToast(6, b, 36, 0.14);
-    }
-    for (let b = 46; b < S.build1; b += 14) {
-        pushToast(11, b, 32, 0.08);
-    }
-    pushToast(8, 58, 38, 0.14);
-    pushToast(10, 64, 28, 0.32);
-    pushToast(7, 68, 36, 0.12);
+    pushToast(10, 60, 22, 0.32); // single distant cymbal wash near end of intro
 
+    // Build through Final — ambient/textural percussion, NOT standard dance patterns.
+    // Think: occasional distant thuds, metallic resonances, subtle clicking textures.
+    // Pad 0 = deep thud (not kick), Pad 5 = metallic shimmer, Pad 8 = sub rumble
+    // Pad 10 = cymbal wash, Pad 11 = tiny click, Pad 13 = finger snap
     for (let b: number = S.build1; b < TB; b += 4) {
         const intense = b >= S.peak && b < S.breakdown;
         const sparse = b >= S.breakdown && b < S.final;
-        if (!sparse || b % 8 === 0) {
-            pushToast(0, b, intense ? 86 : 58, 0.14);
+
+        // Deep thud — very sparse, like a distant heartbeat (not a kick pattern)
+        if (b % 16 === 0 && (!sparse || b % 32 === 0)) {
+            pushToast(0, b + 0.1, intense ? 65 : 45, 0.18);
         }
-        if ((b + 2) % 8 === 0 && (!sparse || b % 16 === 2)) {
-            pushToast(1, b + 0.25, intense ? 72 : 48, 0.1);
+
+        // Metallic shimmer — irregular placements
+        if (b % 12 === 4 || (intense && b % 8 === 6)) {
+            pushToast(5, b + 0.15, intense ? 38 : 28, 0.065);
         }
-        if (!sparse || b % 4 === 0) {
-            const hVel = intense ? 42 : sparse ? 24 : 30;
-            if (b % 2 === 0) {
-                pushToast(2, b + 0.5, hVel, 0.055);
-            }
-            if (intense && b % 4 === 2) {
-                pushToast(3, b + 1.5, 34, 0.12);
-            }
-            if (intense && b % 4 === 0) {
-                pushToast(2, b + 1.25, hVel - 8, 0.048);
-                pushToast(2, b + 2.5, hVel - 10, 0.048);
-            }
+
+        // Subtle clicking texture — very quiet, like distant rain
+        if (intense && b % 4 === 2) {
+            pushToast(11, b + 0.2, 30 + ((b >> 2) % 5) * 2, 0.04);
+        } else if (!sparse && b % 8 === 2) {
+            pushToast(11, b + 0.18, 22, 0.035);
         }
-        if ((b % 16 === 8 || intense) && (!sparse || b % 16 === 0)) {
-            pushToast(4, b + 0.08, intense ? 56 : 46, 0.06);
-        }
-        if (b % 8 === 4 || (intense && b % 12 === 0)) {
-            pushToast(5, b + 0.15, intense ? 46 : 38, 0.065);
-        }
-        if (intense && b % 6 === 3) {
-            pushToast(6, b + 0.3, 42, 0.11);
-        } else if (!sparse && b % 20 === 10) {
-            pushToast(6, b + 1, 34, 0.1);
-        }
-        if (intense && b % 8 === 4) {
-            pushToast(7, b + 0.35, 48, 0.13);
-        } else if (b % 24 === 16) {
-            pushToast(7, b + 0.2, 38, 0.11);
-        }
-        if (b % 20 === 4 || (intense && b % 10 === 2)) {
-            pushToast(8, b, 42, 0.18);
-        }
+
+        // Cymbal wash — long, at section transitions and sparse moments
         if (b === S.peak || b === S.breakdown || b === S.final) {
-            pushToast(9, b + 0.02, 68, 0.42);
+            pushToast(10, b + 0.02, 55, 0.5); // section marker wash
         }
-        if (intense && b % 32 === 0) {
-            pushToast(9, b + 0.08, 58, 0.38);
+        if (intense && b % 32 === 16) {
+            pushToast(10, b + 0.05, 35, 0.38); // periodic wash during peak
         }
-        if (b % 32 === 12 || (intense && b % 16 === 8)) {
-            pushToast(10, b + 0.05, 36, 0.32);
+
+        // Sub rumble — only at peak, very occasional
+        if (intense && b % 24 === 0) {
+            pushToast(8, b, 42, 0.22);
         }
-        if (b % 16 === 6 || (intense && b % 8 === 2)) {
-            pushToast(11, b + 0.18, intense ? 50 : 38, 0.085);
+
+        // Finger snap — scattered, human feel
+        if (!sparse && b % 20 === 12) {
+            pushToast(13, b + 0.25, intense ? 36 : 24, 0.06);
         }
-        if ((intense && b % 8 === 6) || b % 20 === 14) {
-            pushToast(12, b + 0.12, intense ? 40 : 28, 0.07);
+
+        // Resonant ping — very rare, like sonar
+        if (b % 40 === 20 && !sparse) {
+            pushToast(6, b + 0.3, 32, 0.14);
         }
-        if ((intense && b % 10 === 4) || (!sparse && !intense && b % 28 === 8)) {
-            pushToast(13, b + 0.22, intense ? 44 : 30, 0.085);
-        }
-        if ((intense && b % 20 === 12) || (!sparse && b % 40 === 16)) {
-            pushToast(14, b + 0.28, 32, 0.1);
-        }
-        if (intense && b % 24 === 8) {
-            pushToast(15, b + 0.16, 30, 0.11);
+
+        // Ghost percussion — barely audible textural layer
+        if (intense && b % 6 === 3) {
+            pushToast(14, b + 0.28, 22, 0.05);
         }
     }
 
@@ -988,182 +1136,182 @@ export async function demo5_NebulaDrift(): Promise<void> {
     );
 
     const lanes = [
-        // Gain orchestration — slow reveals; few parts forward at once; sub from 0% → ≤5% over the full length
-        Object.assign(mkLane(tSubDrone.id, 'gain', 'Sub (≤5%)', 0, 0.05), {
+        // Gain orchestration — slow reveals; few parts forward at once
+        Object.assign(mkLane(tSubDrone.id, 'gain', 'Sub level', 0, 0.05), {
             points: subDroneGainKeyframes(TB),
         }),
         Object.assign(mkLane(tDarkMist.id, 'gain', 'Mist level', 0, 1), {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
-                { beat: 10, value: 0.04, curve: 'smooth', tension: 0.35 },
-                { beat: 44, value: 0.19, curve: 'smooth', tension: 0.32 },
-                { beat: S.build1, value: 0.24, curve: 'linear', tension: 0 },
-                { beat: S.peak, value: 0.2, curve: 'smooth', tension: 0.28 },
-                { beat: S.breakdown, value: 0.23, curve: 'smooth', tension: 0.3 },
-                { beat: S.final, value: 0.16, curve: 'linear', tension: 0 },
-                { beat: TB, value: 0.14, curve: 'linear', tension: 0 },
+                { beat: 10, value: 0.12, curve: 'smooth', tension: 0.35 },
+                { beat: 44, value: 0.35, curve: 'smooth', tension: 0.32 },
+                { beat: S.build1, value: 0.48, curve: 'linear', tension: 0 },
+                { beat: S.peak, value: 0.62, curve: 'smooth', tension: 0.28 },
+                { beat: S.breakdown, value: 0.2, curve: 'smooth', tension: 0.3 },
+                { beat: S.final, value: 0.5, curve: 'linear', tension: 0 },
+                { beat: TB, value: 0.3, curve: 'linear', tension: 0 },
             ],
         }),
         Object.assign(mkLane(tGrainHaze.id, 'gain', 'Grain level', 0, 1), {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
                 { beat: 22, value: 0, curve: 'linear', tension: 0 },
-                { beat: 52, value: 0.28, curve: 'smooth', tension: 0.38 },
-                { beat: 110, value: 0.48, curve: 'smooth', tension: 0.3 },
-                { beat: S.peak, value: 0.44, curve: 'linear', tension: 0 },
-                { beat: S.breakdown, value: 0.1, curve: 'smooth', tension: 0.38 },
-                { beat: S.final, value: 0.38, curve: 'linear', tension: 0 },
-                { beat: TB, value: 0.3, curve: 'linear', tension: 0 },
+                { beat: 52, value: 0.35, curve: 'smooth', tension: 0.38 },
+                { beat: 110, value: 0.55, curve: 'smooth', tension: 0.3 },
+                { beat: S.peak, value: 0.65, curve: 'linear', tension: 0 },
+                { beat: S.breakdown, value: 0.15, curve: 'smooth', tension: 0.38 },
+                { beat: S.final, value: 0.5, curve: 'linear', tension: 0 },
+                { beat: TB, value: 0.35, curve: 'linear', tension: 0 },
             ],
         }),
         Object.assign(mkLane(tEtherealVeil.id, 'gain', 'Veil level', 0, 1), {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
                 { beat: 34, value: 0, curve: 'linear', tension: 0 },
-                { beat: 62, value: 0.28, curve: 'smooth', tension: 0.36 },
-                { beat: 128, value: 0.46, curve: 'smooth', tension: 0.28 },
-                { beat: S.peak, value: 0.36, curve: 'linear', tension: 0 },
-                { beat: S.breakdown, value: 0.52, curve: 'smooth', tension: 0.32 },
-                { beat: S.final, value: 0.34, curve: 'linear', tension: 0 },
-                { beat: TB, value: 0.32, curve: 'linear', tension: 0 },
+                { beat: 62, value: 0.35, curve: 'smooth', tension: 0.36 },
+                { beat: 128, value: 0.55, curve: 'smooth', tension: 0.28 },
+                { beat: S.peak, value: 0.65, curve: 'linear', tension: 0 },
+                { beat: S.breakdown, value: 0.7, curve: 'smooth', tension: 0.32 },
+                { beat: S.final, value: 0.5, curve: 'linear', tension: 0 },
+                { beat: TB, value: 0.45, curve: 'linear', tension: 0 },
             ],
         }),
         Object.assign(mkLane(tSweepHorizon.id, 'gain', 'Sweep level', 0, 1), {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
                 { beat: 40, value: 0, curve: 'linear', tension: 0 },
-                { beat: 68, value: 0.14, curve: 'smooth', tension: 0.35 },
-                { beat: S.build1, value: 0.22, curve: 'linear', tension: 0 },
-                { beat: 168, value: 0.28, curve: 'smooth', tension: 0.3 },
-                { beat: S.breakdown, value: 0.11, curve: 'smooth', tension: 0.3 },
-                { beat: TB, value: 0.2, curve: 'linear', tension: 0 },
+                { beat: 68, value: 0.3, curve: 'smooth', tension: 0.35 },
+                { beat: S.build1, value: 0.45, curve: 'linear', tension: 0 },
+                { beat: 168, value: 0.6, curve: 'smooth', tension: 0.3 },
+                { beat: S.breakdown, value: 0.2, curve: 'smooth', tension: 0.3 },
+                { beat: TB, value: 0.4, curve: 'linear', tension: 0 },
             ],
         }),
         Object.assign(mkLane(tWarmHalo.id, 'gain', 'Halo level', 0, 1), {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
                 { beat: 26, value: 0, curve: 'linear', tension: 0 },
-                { beat: 54, value: 0.3, curve: 'smooth', tension: 0.36 },
-                { beat: 118, value: 0.46, curve: 'smooth', tension: 0.28 },
-                { beat: S.peak, value: 0.38, curve: 'linear', tension: 0 },
-                { beat: S.breakdown, value: 0.55, curve: 'smooth', tension: 0.3 },
-                { beat: S.final, value: 0.36, curve: 'linear', tension: 0 },
-                { beat: TB, value: 0.36, curve: 'linear', tension: 0 },
+                { beat: 54, value: 0.4, curve: 'smooth', tension: 0.36 },
+                { beat: 118, value: 0.6, curve: 'smooth', tension: 0.28 },
+                { beat: S.peak, value: 0.72, curve: 'linear', tension: 0 },
+                { beat: S.breakdown, value: 0.65, curve: 'smooth', tension: 0.3 },
+                { beat: S.final, value: 0.55, curve: 'linear', tension: 0 },
+                { beat: TB, value: 0.45, curve: 'linear', tension: 0 },
             ],
         }),
         Object.assign(mkLane(tRisingMist.id, 'gain', 'Rising level', 0, 1), {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
                 { beat: 48, value: 0, curve: 'linear', tension: 0 },
-                { beat: 76, value: 0.24, curve: 'smooth', tension: 0.35 },
-                { beat: 142, value: 0.38, curve: 'smooth', tension: 0.28 },
-                { beat: S.peak, value: 0.36, curve: 'linear', tension: 0 },
-                { beat: S.breakdown, value: 0.48, curve: 'smooth', tension: 0.32 },
-                { beat: S.final, value: 0.34, curve: 'smooth', tension: 0.3 },
-                { beat: TB, value: 0.3, curve: 'linear', tension: 0 },
+                { beat: 76, value: 0.35, curve: 'smooth', tension: 0.35 },
+                { beat: 142, value: 0.55, curve: 'smooth', tension: 0.28 },
+                { beat: S.peak, value: 0.65, curve: 'linear', tension: 0 },
+                { beat: S.breakdown, value: 0.55, curve: 'smooth', tension: 0.32 },
+                { beat: S.final, value: 0.5, curve: 'smooth', tension: 0.3 },
+                { beat: TB, value: 0.4, curve: 'linear', tension: 0 },
             ],
         }),
         Object.assign(mkLane(tWildDrift.id, 'gain', 'Wild level', 0, 1), {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
                 { beat: 58, value: 0, curve: 'linear', tension: 0 },
-                { beat: 84, value: 0.2, curve: 'smooth', tension: 0.36 },
-                { beat: S.peak, value: 0.42, curve: 'smooth', tension: 0.28 },
-                { beat: S.breakdown, value: 0.12, curve: 'smooth', tension: 0.34 },
-                { beat: S.final, value: 0.32, curve: 'smooth', tension: 0.3 },
-                { beat: TB, value: 0.28, curve: 'linear', tension: 0 },
+                { beat: 84, value: 0.35, curve: 'smooth', tension: 0.36 },
+                { beat: S.peak, value: 0.6, curve: 'smooth', tension: 0.28 },
+                { beat: S.breakdown, value: 0.18, curve: 'smooth', tension: 0.34 },
+                { beat: S.final, value: 0.5, curve: 'smooth', tension: 0.3 },
+                { beat: TB, value: 0.35, curve: 'linear', tension: 0 },
             ],
         }),
         Object.assign(mkLane(tGrainStutter.id, 'gain', 'Stutter level', 0, 1), {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
                 { beat: 86, value: 0, curve: 'linear', tension: 0 },
-                { beat: 112, value: 0.24, curve: 'smooth', tension: 0.38 },
-                { beat: 188, value: 0.38, curve: 'smooth', tension: 0.3 },
-                { beat: S.breakdown, value: 0.08, curve: 'linear', tension: 0 },
-                { beat: S.final, value: 0.3, curve: 'smooth', tension: 0.32 },
-                { beat: TB, value: 0.22, curve: 'linear', tension: 0 },
+                { beat: 112, value: 0.35, curve: 'smooth', tension: 0.38 },
+                { beat: 188, value: 0.55, curve: 'smooth', tension: 0.3 },
+                { beat: S.breakdown, value: 0.12, curve: 'linear', tension: 0 },
+                { beat: S.final, value: 0.45, curve: 'smooth', tension: 0.32 },
+                { beat: TB, value: 0.3, curve: 'linear', tension: 0 },
             ],
         }),
         Object.assign(mkLane(tMetalTick.id, 'gain', 'Metal level', 0, 1), {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
                 { beat: 98, value: 0, curve: 'linear', tension: 0 },
-                { beat: 124, value: 0.26, curve: 'smooth', tension: 0.35 },
-                { beat: S.peak, value: 0.4, curve: 'linear', tension: 0 },
-                { beat: S.breakdown, value: 0.14, curve: 'smooth', tension: 0.3 },
-                { beat: TB, value: 0.3, curve: 'linear', tension: 0 },
+                { beat: 124, value: 0.4, curve: 'smooth', tension: 0.35 },
+                { beat: S.peak, value: 0.55, curve: 'linear', tension: 0 },
+                { beat: S.breakdown, value: 0.2, curve: 'smooth', tension: 0.3 },
+                { beat: TB, value: 0.4, curve: 'linear', tension: 0 },
             ],
         }),
         Object.assign(mkLane(tPluckA.id, 'gain', 'Pluck level', 0, 1), {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
                 { beat: 78, value: 0, curve: 'linear', tension: 0 },
-                { beat: 104, value: 0.28, curve: 'smooth', tension: 0.36 },
-                { beat: 176, value: 0.42, curve: 'smooth', tension: 0.28 },
-                { beat: S.peak, value: 0.38, curve: 'linear', tension: 0 },
-                { beat: S.breakdown, value: 0.12, curve: 'linear', tension: 0 },
-                { beat: S.final, value: 0.34, curve: 'smooth', tension: 0.3 },
-                { beat: TB, value: 0.26, curve: 'linear', tension: 0 },
+                { beat: 104, value: 0.4, curve: 'smooth', tension: 0.36 },
+                { beat: 176, value: 0.6, curve: 'smooth', tension: 0.28 },
+                { beat: S.peak, value: 0.7, curve: 'linear', tension: 0 },
+                { beat: S.breakdown, value: 0.2, curve: 'linear', tension: 0 },
+                { beat: S.final, value: 0.55, curve: 'smooth', tension: 0.3 },
+                { beat: TB, value: 0.35, curve: 'linear', tension: 0 },
             ],
         }),
         Object.assign(mkLane(tBellDust.id, 'gain', 'Bell level', 0, 1), {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
                 { beat: 92, value: 0, curve: 'linear', tension: 0 },
-                { beat: 118, value: 0.2, curve: 'smooth', tension: 0.35 },
-                { beat: S.peak, value: 0.32, curve: 'linear', tension: 0 },
-                { beat: S.breakdown, value: 0.1, curve: 'smooth', tension: 0.3 },
-                { beat: S.final, value: 0.26, curve: 'smooth', tension: 0.32 },
-                { beat: TB, value: 0.22, curve: 'linear', tension: 0 },
+                { beat: 118, value: 0.35, curve: 'smooth', tension: 0.35 },
+                { beat: S.peak, value: 0.5, curve: 'linear', tension: 0 },
+                { beat: S.breakdown, value: 0.15, curve: 'smooth', tension: 0.3 },
+                { beat: S.final, value: 0.4, curve: 'smooth', tension: 0.32 },
+                { beat: TB, value: 0.3, curve: 'linear', tension: 0 },
             ],
         }),
         Object.assign(mkLane(tSeqRipple.id, 'gain', 'Growl level', 0, 1), {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
                 { beat: 64, value: 0, curve: 'linear', tension: 0 },
-                { beat: 90, value: 0.22, curve: 'smooth', tension: 0.38 },
-                { beat: S.build1, value: 0.34, curve: 'linear', tension: 0 },
-                { beat: 200, value: 0.42, curve: 'smooth', tension: 0.28 },
-                { beat: S.breakdown, value: 0.12, curve: 'smooth', tension: 0.32 },
-                { beat: S.final, value: 0.36, curve: 'smooth', tension: 0.3 },
-                { beat: TB, value: 0.28, curve: 'linear', tension: 0 },
+                { beat: 90, value: 0.35, curve: 'smooth', tension: 0.38 },
+                { beat: S.build1, value: 0.5, curve: 'linear', tension: 0 },
+                { beat: 200, value: 0.65, curve: 'smooth', tension: 0.28 },
+                { beat: S.breakdown, value: 0.18, curve: 'smooth', tension: 0.32 },
+                { beat: S.final, value: 0.55, curve: 'smooth', tension: 0.3 },
+                { beat: TB, value: 0.4, curve: 'linear', tension: 0 },
             ],
         }),
         Object.assign(mkLane(tLeadMoog.id, 'gain', 'Sitar level', 0, 1), {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
                 { beat: 50, value: 0, curve: 'linear', tension: 0 },
-                { beat: 78, value: 0.18, curve: 'smooth', tension: 0.35 },
-                { beat: 118, value: 0.1, curve: 'linear', tension: 0 },
-                { beat: 168, value: 0.58, curve: 'smooth', tension: 0.32 },
-                { beat: S.breakdown, value: 0.08, curve: 'smooth', tension: 0.28 },
-                { beat: 248, value: 0.14, curve: 'linear', tension: 0 },
-                { beat: S.final, value: 0.48, curve: 'smooth', tension: 0.35 },
-                { beat: TB, value: 0.16, curve: 'linear', tension: 0 },
+                { beat: 78, value: 0.35, curve: 'smooth', tension: 0.35 },
+                { beat: 118, value: 0.2, curve: 'linear', tension: 0 },
+                { beat: 168, value: 0.75, curve: 'smooth', tension: 0.32 },
+                { beat: S.breakdown, value: 0.1, curve: 'smooth', tension: 0.28 },
+                { beat: 248, value: 0.25, curve: 'linear', tension: 0 },
+                { beat: S.final, value: 0.7, curve: 'smooth', tension: 0.35 },
+                { beat: TB, value: 0.25, curve: 'linear', tension: 0 },
             ],
         }),
         Object.assign(mkLane(tLeadSync.id, 'gain', 'Sync lead', 0, 1), {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
                 { beat: 84, value: 0, curve: 'linear', tension: 0 },
-                { beat: 108, value: 0.14, curve: 'smooth', tension: 0.35 },
-                { beat: 152, value: 0.22, curve: 'linear', tension: 0 },
-                { beat: 210, value: 0.55, curve: 'smooth', tension: 0.3 },
-                { beat: S.breakdown, value: 0.1, curve: 'linear', tension: 0 },
-                { beat: S.final, value: 0.44, curve: 'smooth', tension: 0.32 },
-                { beat: TB, value: 0.2, curve: 'linear', tension: 0 },
+                { beat: 108, value: 0.3, curve: 'smooth', tension: 0.35 },
+                { beat: 152, value: 0.45, curve: 'linear', tension: 0 },
+                { beat: 210, value: 0.7, curve: 'smooth', tension: 0.3 },
+                { beat: S.breakdown, value: 0.15, curve: 'linear', tension: 0 },
+                { beat: S.final, value: 0.6, curve: 'smooth', tension: 0.32 },
+                { beat: TB, value: 0.3, curve: 'linear', tension: 0 },
             ],
         }),
         Object.assign(mkLane(tBassGroove.id, 'gain', 'Reese level', 0, 1), {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
                 { beat: S.build1 + 6, value: 0, curve: 'linear', tension: 0 },
-                { beat: S.build1 + 28, value: 0.19, curve: 'smooth', tension: 0.38 },
-                { beat: S.peak, value: 0.29, curve: 'linear', tension: 0 },
-                { beat: S.breakdown, value: 0.08, curve: 'smooth', tension: 0.32 },
-                { beat: S.final, value: 0.25, curve: 'smooth', tension: 0.3 },
-                { beat: TB, value: 0.14, curve: 'linear', tension: 0 },
+                { beat: S.build1 + 28, value: 0.4, curve: 'smooth', tension: 0.38 },
+                { beat: S.peak, value: 0.6, curve: 'linear', tension: 0 },
+                { beat: S.breakdown, value: 0.15, curve: 'smooth', tension: 0.32 },
+                { beat: S.final, value: 0.5, curve: 'smooth', tension: 0.3 },
+                { beat: TB, value: 0.25, curve: 'linear', tension: 0 },
             ],
         }),
         Object.assign(mkLane(toasterFolder.id, 'gain', 'Toaster bus', 0, 1), {
@@ -1800,24 +1948,49 @@ export async function demo5_NebulaDrift(): Promise<void> {
             { id: crypto.randomUUID(), beat: TB - 12, name: 'Silence', color: 'oklch(0.38 0.08 270)' },
         ],
         sections: [
-            { id: crypto.randomUUID(), startBeat: S.intro, endBeat: S.build1, name: 'Intro Drift', color: 'oklch(0.38 0.08 260)' },
-            { id: crypto.randomUUID(), startBeat: S.build1, endBeat: S.peak, name: 'Currents', color: 'oklch(0.40 0.07 200)' },
-            { id: crypto.randomUUID(), startBeat: S.peak, endBeat: S.breakdown, name: 'Ridge Line', color: 'oklch(0.39 0.09 45)' },
-            { id: crypto.randomUUID(), startBeat: S.breakdown, endBeat: S.final, name: 'Fog Bank', color: 'oklch(0.40 0.07 300)' },
-            { id: crypto.randomUUID(), startBeat: S.final, endBeat: TB, name: 'Afterglow', color: 'oklch(0.38 0.08 270)' },
+            {
+                id: crypto.randomUUID(),
+                startBeat: S.intro,
+                endBeat: S.build1,
+                name: 'Intro Drift',
+                color: 'oklch(0.38 0.08 260)',
+            },
+            {
+                id: crypto.randomUUID(),
+                startBeat: S.build1,
+                endBeat: S.peak,
+                name: 'Currents',
+                color: 'oklch(0.40 0.07 200)',
+            },
+            {
+                id: crypto.randomUUID(),
+                startBeat: S.peak,
+                endBeat: S.breakdown,
+                name: 'Ridge Line',
+                color: 'oklch(0.39 0.09 45)',
+            },
+            {
+                id: crypto.randomUUID(),
+                startBeat: S.breakdown,
+                endBeat: S.final,
+                name: 'Fog Bank',
+                color: 'oklch(0.40 0.07 300)',
+            },
+            {
+                id: crypto.randomUUID(),
+                startBeat: S.final,
+                endBeat: TB,
+                name: 'Afterglow',
+                color: 'oklch(0.38 0.08 270)',
+            },
         ],
     });
 
     syncArrangement(tracks);
 
     const { addDeviceToStrip, updateDeviceParam } = await import('#/modules/AudioEngine/useCases/deviceControls');
-    const {
-        ensureTrackStrip,
-        setTrackGain,
-        setTrackPan,
-        setTrackOutput,
-        setTrackMute,
-    } = await import('#/modules/AudioEngine/useCases/trackAudioControls');
+    const { ensureTrackStrip, setTrackGain, setTrackPan, setTrackOutput, setTrackMute } =
+        await import('#/modules/AudioEngine/useCases/trackAudioControls');
 
     const toasterDev = toasterFolder.devices.find((d) => d.type === 'toaster');
     if (toasterDev) {

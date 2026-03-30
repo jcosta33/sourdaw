@@ -4,8 +4,7 @@ import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { newProject } from '../projectPersistence';
 import {
     demo1_TheCompleteMix,
-    demo2_ElectronicBeat,
-    demo3_AcousticSession,
+    demo_SweetDreams,
     demo4_NativeShowcase,
     demo5_NebulaDrift,
 } from '../demoProjects';
@@ -140,18 +139,11 @@ const templates: ProjectTemplate[] = [
         create: () => demo1_TheCompleteMix(),
     },
     {
-        id: 'demo-electronic',
-        name: 'Psyloops',
-        description: 'A 142 BPM psytrance track in A minor with acid bass, supersaw stabs, dual leads, and 8 sections of builds and drops.',
+        id: 'demo-sweet-dreams',
+        name: 'Sweet Dreams',
+        description: 'A faithful cover of "Sweet Dreams (Are Made of This)" by Eurythmics — showcasing Fermenter synths, Toaster drums, and the full Sourdaw mixing chain.',
         category: 'demo',
-        create: () => demo2_ElectronicBeat(),
-    },
-    {
-        id: 'demo-acoustic',
-        name: 'Midnight Smoke',
-        description: 'A chill 82 BPM jazz track in Eb major with walking bass, Rhodes comping, flute solo, and 7 sections of smooth exploration.',
-        category: 'demo',
-        create: () => demo3_AcousticSession(),
+        create: () => demo_SweetDreams(),
     },
     {
         id: 'demo-native-showcase',

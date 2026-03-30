@@ -48,6 +48,10 @@ export type WorkspaceState = {
     proofHeight: number;
     scoringHeight: number;
     yeastHeight: number;
+    virtualKeyboardOpen: boolean;
+    virtualKeyboardOctave: number;
+    virtualKeyboardHeight: number;
+    virtualKeyboardVelocity: number;
 };
 
 export const defaultWorkspaceState: WorkspaceState = {
@@ -88,4 +92,8 @@ export const defaultWorkspaceState: WorkspaceState = {
     proofHeight: 340,
     scoringHeight: 300,
     yeastHeight: 300,
+    virtualKeyboardOpen: false,
+    virtualKeyboardOctave: 4,
+    virtualKeyboardHeight: 128,
+    virtualKeyboardVelocity: 100,
 };

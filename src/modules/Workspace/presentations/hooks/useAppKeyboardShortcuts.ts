@@ -15,6 +15,7 @@ import {
     toggleMixer,
     toggleTrackList,
     clearClipSelection,
+    toggleVirtualKeyboard,
 } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 
 type ShortcutCallbacks = {
@@ -53,6 +54,10 @@ export const useAppKeyboardShortcuts = ({ onOpenExport, onOpenPreferences }: Sho
             if (mod && e.key === 't' && !e.shiftKey) {
                 e.preventDefault();
                 toggleTrackList();
+            }
+            if (mod && e.key === 'k' && e.shiftKey) {
+                e.preventDefault();
+                toggleVirtualKeyboard();
             }
             if (mod && e.key === 's' && !e.shiftKey) {
                 e.preventDefault();

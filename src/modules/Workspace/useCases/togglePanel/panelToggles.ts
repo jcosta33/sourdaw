@@ -31,6 +31,24 @@ export function toggleMixer(): void {
     updateWorkspaceState({ mixerOpen: !current.mixerOpen });
 }
 
+export function toggleVirtualKeyboard(): void {
+    const current = getWorkspaceState();
+    if (!current) { return; }
+    updateWorkspaceState({ virtualKeyboardOpen: !current.virtualKeyboardOpen });
+}
+
+export function openVirtualKeyboard(): void {
+    updateWorkspaceState({ virtualKeyboardOpen: true });
+}
+
+export function setVirtualKeyboardOctave(octave: number): void {
+    updateWorkspaceState({ virtualKeyboardOctave: Math.max(0, Math.min(8, octave)) });
+}
+
+export function setVirtualKeyboardVelocity(velocity: number): void {
+    updateWorkspaceState({ virtualKeyboardVelocity: Math.max(1, Math.min(127, velocity)) });
+}
+
 export function toggleAutomationPanel(): void {
     const current = getWorkspaceState();
     if (!current) { return; }

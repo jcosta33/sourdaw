@@ -6,7 +6,6 @@
 // ---------------------------------------------------------------------------
 
 export { demo1_TheCompleteMix } from './resonance';
-export { demo2_ElectronicBeat } from './eightyEight';
-export { demo3_AcousticSession } from './cinematic';
+export { demo_SweetDreams } from './sweetDreams';
 export { demo4_NativeShowcase } from './synthwave';
 export { demo5_NebulaDrift } from './nebulaDrift';

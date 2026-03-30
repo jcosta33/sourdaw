@@ -7,6 +7,7 @@ import {
     MessageSquare,
     Settings2,
     Sparkles,
+    Piano,
 } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
@@ -16,6 +17,7 @@ import {
     toggleMixer,
     toggleChatPanel,
     toggleTrackList,
+    toggleVirtualKeyboard,
 } from '../../../useCases/togglePanel/panelToggles';
 import {
     subscribeAiStore,
@@ -30,6 +32,7 @@ type PanelTogglesProps = {
     mixerOpen: boolean;
     chatPanelOpen: boolean;
     trackListOpen: boolean;
+    virtualKeyboardOpen: boolean;
 };
 
 export const PanelToggles = ({
@@ -38,6 +41,7 @@ export const PanelToggles = ({
     mixerOpen,
     chatPanelOpen,
     trackListOpen,
+    virtualKeyboardOpen,
 }: PanelTogglesProps): ReactElement => {
     const aiState = useSyncExternalStore<{ isPanelOpen: boolean }>(subscribeAiStore, getAiSnapshot);
 
@@ -109,6 +113,21 @@ export const PanelToggles = ({
                     </Button>
                 </TooltipTrigger>
                 <TooltipContent>Toggle Bottom Dock (⌘M)</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <Button
+                        variant={virtualKeyboardOpen ? 'secondary' : 'ghost'}
+                        size="icon-sm"
+                        aria-label="Toggle virtual keyboard"
+                        aria-pressed={virtualKeyboardOpen}
+                        onClick={toggleVirtualKeyboard}
+                        className={virtualKeyboardOpen ? 'text-[var(--color-accent-lavender)]' : ''}
+                    >
+                        <Piano className="size-3.5" aria-hidden="true" />
+                    </Button>
+                </TooltipTrigger>
+                <TooltipContent>Toggle Virtual Keyboard (⌘⇧K)</TooltipContent>
             </Tooltip>
             <Tooltip>
                 <TooltipTrigger asChild>

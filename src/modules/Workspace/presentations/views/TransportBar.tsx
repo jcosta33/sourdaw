@@ -42,6 +42,7 @@ export const TransportBar = (): ReactElement => {
         soloMode,
         timeDisplayMode,
         rippleEditing,
+        virtualKeyboardOpen,
     } = useWorkspaceState();
     const transport = useTransportState();
     const audioState = useAudioRecordingState();
@@ -141,6 +142,7 @@ export const TransportBar = (): ReactElement => {
                 mixerOpen={mixerOpen}
                 chatPanelOpen={chatPanelOpen}
                 trackListOpen={trackListOpen}
+                virtualKeyboardOpen={virtualKeyboardOpen}
             />
         </header>
     );

@@ -28,6 +28,8 @@ import { GlutenPanel } from '#/modules/Gluten/presentations/views/GlutenPanel';
 import { ProofPanel } from '#/modules/Proof/presentations/views/ProofPanel';
 import { ScoringPanel } from '#/modules/Scoring/presentations/views/ScoringPanel';
 import { YeastPanel } from '#/modules/Yeast/presentations/views/YeastPanel';
+import { VirtualKeyboard } from '#/modules/VirtualKeyboard/presentations/views/VirtualKeyboard';
+import { toggleVirtualKeyboard } from '../../useCases/togglePanel/panelToggles';
 
 import { CommandPalette } from '#/modules/Command/presentations/views/CommandPalette';
 import { VoiceCommandOverlay } from '#/modules/AiRuntime/presentations/views/VoiceCommandOverlay';
@@ -84,6 +86,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         proofHeight,
         scoringHeight,
         yeastHeight,
+        virtualKeyboardOpen,
+        virtualKeyboardHeight,
     } = workspaceState;
 
     const project = useProjectState();
@@ -529,6 +533,26 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                             </div>
                         </>
                     ) : null}
+
+                    {/* Virtual Keyboard panel */}
+                    {virtualKeyboardOpen ? (
+                        <>
+                            <DragResizeHandle
+                                side="top"
+                                onResize={(d) => {
+                                    const next = Math.max(80, Math.min(400, (virtualKeyboardHeight ?? 160) + d));
+                                    updateWorkspaceState({ virtualKeyboardHeight: next });
+                                }}
+                            />
+                            <div
+                                className="shrink-0 overflow-hidden"
+                                style={{ height: virtualKeyboardHeight ?? 160 }}
+                            >
+                                <VirtualKeyboard onClose={toggleVirtualKeyboard} />
+                            </div>
+                        </>
+                    ) : null}
+
                 </div>
 
                 {chatPanelOpen ? (
