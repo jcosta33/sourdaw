@@ -1,106 +1,81 @@
 /**
- * Native Plugin Bridge Processor — SharedArrayBuffer-based audio bridge.
+ * Native Plugin Bridge Processor — ring-buffer audio bridge via MessagePort.
  *
- * Connects the Web Audio graph to the Rust cpal audio thread via shared memory.
- * The worklet writes input audio to the SAB, the Rust thread reads it, processes
- * through the native plugin, and writes output back to the SAB. The worklet then
- * reads the processed output.
+ * Sends audio blocks to the main thread, which forwards to Rust via Tauri IPC.
+ * The Rust audio thread processes through the CLAP/VST3 plugin and returns
+ * the output via the same path.
  *
- * Layout of SharedArrayBuffer (per instance):
- *   Offset 0:    Control word (Int32) — atomic flag
- *   Offset 4:    Input L  (128 x Float32 = 512 bytes)
- *   Offset 516:  Input R  (128 x Float32 = 512 bytes)
- *   Offset 1028: Output L (128 x Float32 = 512 bytes)
- *   Offset 1540: Output R (128 x Float32 = 512 bytes)
- *   Total: 2052 bytes
- *
- * Control word states:
- *   0 = idle (Rust can read input, process, write output)
- *   1 = input ready (worklet wrote input, waiting for Rust to process)
- *   2 = output ready (Rust wrote output, worklet can read)
+ * Latency: 1 audio block (128 samples ≈ 2.67ms at 48kHz).
+ * The worklet reads the PREVIOUS block's output while sending the current input.
  */
-
-const CONTROL_OFFSET = 0;
-const INPUT_L_OFFSET = 4;
-const INPUT_R_OFFSET = 516;
-const OUTPUT_L_OFFSET = 1028;
-const OUTPUT_R_OFFSET = 1540;
-const BLOCK_SIZE = 128;
-
-const STATE_IDLE = 0;
-const STATE_INPUT_READY = 1;
-const STATE_OUTPUT_READY = 2;
 
 class NativePluginBridgeProcessor extends AudioWorkletProcessor {
     constructor() {
         super();
-        this.sab = null;
-        this.controlView = null;
-        this.inputL = null;
-        this.inputR = null;
-        this.outputL = null;
-        this.outputR = null;
         this.ready = false;
+        this.lastOutputL = null;
+        this.lastOutputR = null;
+        this.enginePluginId = 0;
 
         this.port.onmessage = (event) => {
-            if (event.data.type === 'init' && event.data.sab instanceof SharedArrayBuffer) {
-                this.sab = event.data.sab;
-                this.controlView = new Int32Array(this.sab, CONTROL_OFFSET, 1);
-                this.inputL = new Float32Array(this.sab, INPUT_L_OFFSET, BLOCK_SIZE);
-                this.inputR = new Float32Array(this.sab, INPUT_R_OFFSET, BLOCK_SIZE);
-                this.outputL = new Float32Array(this.sab, OUTPUT_L_OFFSET, BLOCK_SIZE);
-                this.outputR = new Float32Array(this.sab, OUTPUT_R_OFFSET, BLOCK_SIZE);
+            if (event.data.type === 'init') {
+                this.enginePluginId = event.data.enginePluginId;
                 this.ready = true;
+            } else if (event.data.type === 'processed') {
+                // Received processed audio back from Rust
+                const data = event.data.audio;
+                const numSamples = data.length / 2;
+                this.lastOutputL = new Float32Array(numSamples);
+                this.lastOutputR = new Float32Array(numSamples);
+                for (let i = 0; i < numSamples; i++) {
+                    this.lastOutputL[i] = data[i * 2];
+                    this.lastOutputR[i] = data[i * 2 + 1];
+                }
             }
         };
     }
 
     process(inputs, outputs) {
-        if (!this.ready) {
-            // Passthrough while not initialized
-            const input = inputs[0];
-            const output = outputs[0];
-            if (input && output) {
-                for (let ch = 0; ch < input.length; ch++) {
-                    if (output[ch] && input[ch]) {
-                        output[ch].set(input[ch]);
-                    }
-                }
-            }
-            return true;
-        }
-
         const input = inputs[0];
         const output = outputs[0];
         if (!input || !output || input.length < 1) return true;
 
-        const frames = Math.min(input[0].length, BLOCK_SIZE);
+        const frames = input[0].length;
 
-        // Read the previous block's output (if Rust has finished processing)
-        const state = Atomics.load(this.controlView, 0);
-        if (state === STATE_OUTPUT_READY) {
-            // Rust finished processing — read output
-            output[0].set(this.outputL.subarray(0, frames));
+        if (!this.ready) {
+            // Passthrough while not initialized
+            for (let ch = 0; ch < input.length && ch < output.length; ch++) {
+                output[ch].set(input[ch]);
+            }
+            return true;
+        }
+
+        // Write the PREVIOUS block's processed output
+        if (this.lastOutputL && this.lastOutputL.length >= frames) {
+            output[0].set(this.lastOutputL.subarray(0, frames));
             if (output[1]) {
-                output[1].set(this.outputR.subarray(0, frames));
+                output[1].set(this.lastOutputR.subarray(0, frames));
             }
         } else {
-            // Rust hasn't finished yet — passthrough (1 block latency on first block)
+            // No output yet (first block) — passthrough
             for (let ch = 0; ch < input.length && ch < output.length; ch++) {
                 output[ch].set(input[ch]);
             }
         }
 
-        // Write current input for Rust to process next
-        this.inputL.set(input[0].subarray(0, frames));
-        if (input[1]) {
-            this.inputR.set(input[1].subarray(0, frames));
-        } else {
-            this.inputR.set(input[0].subarray(0, frames)); // mono → stereo
+        // Interleave current input and send to main thread for Rust processing
+        const interleaved = new Float32Array(frames * 2);
+        const left = input[0];
+        const right = input[1] ?? input[0];
+        for (let i = 0; i < frames; i++) {
+            interleaved[i * 2] = left[i];
+            interleaved[i * 2 + 1] = right[i];
         }
 
-        // Signal input ready
-        Atomics.store(this.controlView, 0, STATE_INPUT_READY);
+        this.port.postMessage(
+            { type: 'process', audio: interleaved.buffer },
+            [interleaved.buffer] // Transfer ownership for zero-copy
+        );
 
         return true;
     }

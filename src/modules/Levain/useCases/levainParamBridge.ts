@@ -26,6 +26,23 @@ export function registerLevainDevice(device: LevainDevice, port?: MessagePort): 
     activeDevice = device;
     if (port) {
         activePort = port;
+        // Sync the engine with initial samples for the default instrument
+        const state = levainStore.value;
+        if (state?.patch) {
+            loadSamplesForInstrument(state.patch.instrumentId);
+            // Default parameters on load
+            queueParam('master_gain', state.patch.masterGain);
+            queueParam('legato_enabled', state.patch.legato.enabled ? 1 : 0);
+            queueParam('humanize_amount', state.patch.humanize.amount);
+            queueParam('vibrato_depth', state.patch.expression.vibratoDepthMax);
+            
+            // Mic positions
+            state.patch.micPositions.forEach((m, i) => {
+                queueParam(`mic_${i}_volume`, m.volume);
+                queueParam(`mic_${i}_pan`, m.pan);
+                queueParam(`mic_${i}_enabled`, m.enabled ? 1 : 0);
+            });
+        }
     }
 }
 

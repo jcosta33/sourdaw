@@ -241,22 +241,9 @@ export const InstrumentsTab = ({
             renderPresets = soundPresets.filter((p) => p.category === currentCategorySlug);
         }
 
-        const catSlug = currentCategorySlug as SoundPresetCategory;
-        const CatIcon = CATEGORY_ICONS[catSlug] ?? Folder;
-        const catColor = CATEGORY_COLORS[catSlug] ?? '';
-
         return (
             <div className="flex flex-col gap-1.5 animate-in slide-in-from-right-4 duration-200">
-                {/* Category header */}
-                <div className={`flex items-center gap-2 px-2 py-2 rounded-md mb-0.5 ${catColor}`}>
-                    <CatIcon className="size-3.5 shrink-0" aria-hidden="true" />
-                    <span className="text-[11px] font-semibold uppercase tracking-wider capitalize">
-                        {currentCategorySlug === 'user' ? 'My Presets' : currentCategorySlug}
-                    </span>
-                    <span className="ml-auto text-[10px] opacity-70">{renderPresets.length}</span>
-                </div>
-
-                {/* Preset list */}
+                {/* Preset list (header handled by Sidebar back bar with icon) */}
                 {renderPresets.length > 0 ? (
                     renderPresets.map((preset) => (
                         <PresetItem
@@ -273,6 +260,7 @@ export const InstrumentsTab = ({
                                 }
                             }}
                             preview={preview}
+                            hideCategory
                         />
                     ))
                 ) : (
@@ -289,10 +277,12 @@ export const InstrumentsTab = ({
 
     return (
         <div className="flex flex-col gap-0 px-1.5 pb-4 animate-in slide-in-from-left-4 duration-200">
-            {/* ── Fresh from the Oven ─────────────────────────────────── */}
+            {/* ── House Specials ─────────────────────────────────── */}
             <div className="flex flex-col gap-1.5 mb-3">
                 <div className="flex items-center gap-1.5 px-1 mb-0.5">
-                    <span className="text-[9px] font-bold text-[var(--color-accent-orange)] uppercase tracking-widest">Fresh from the Oven</span>
+                    <span className="text-[9px] font-bold text-[var(--color-accent-orange)] uppercase tracking-widest">
+                        Play Dough
+                    </span>
                     <div className="flex-1 h-px bg-[var(--color-accent-orange)]/15" />
                 </div>
                 <InstrumentCard
@@ -323,7 +313,9 @@ export const InstrumentsTab = ({
 
             {/* ── Preset Pantry ── */}
             <div className="flex items-center gap-1.5 px-1 mb-1 mt-1">
-                <span className="text-[9px] font-semibold text-muted-foreground/50 uppercase tracking-widest">Preset Pantry</span>
+                <span className="text-[9px] font-semibold text-muted-foreground/50 uppercase tracking-widest">
+                    Simple Loaves
+                </span>
                 <div className="flex-1 h-px bg-border/15" />
             </div>
 
@@ -442,7 +434,14 @@ export const InstrumentsTab = ({
                                         description={subtitle}
                                         count={presetsInCat.length}
                                         color={catColor}
-                                        onClick={() => pushRoute({ id: `instruments-${cat}`, title: catLabel })}
+                                        onClick={() =>
+                                            pushRoute({
+                                                id: `instruments-${cat}`,
+                                                title: catLabel,
+                                                icon: CatIcon,
+                                                iconColor: catColor.split(' ').find((c) => c.startsWith('text-')),
+                                            })
+                                        }
                                     />
                                 );
                             })}

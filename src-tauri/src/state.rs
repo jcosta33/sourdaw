@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use crate::host::traits::AudioPlugin;
 use crate::host::clap_wrapper::ClapWrapper;
 use daw_engine::EngineHandle;
+use daw_engine::audio_bridge::PluginAudioBridgeHandle;
 
 pub struct PluginInstanceData {
     pub plugin: Box<dyn AudioPlugin>,
@@ -66,6 +67,9 @@ pub struct AppState {
     /// Native audio engine handle (cpal thread + lock-free scheduler).
     /// None until start_native_engine is called.
     pub engine: Arc<Mutex<Option<EngineHandle>>>,
+    /// Audio bridge handles for each plugin instance (main thread side).
+    /// Keyed by engine_plugin_id.
+    pub audio_bridges: Arc<Mutex<HashMap<usize, PluginAudioBridgeHandle>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -83,6 +87,7 @@ impl Default for AppState {
             plugin_registry: Arc::new(Mutex::new(HashMap::new())),
             plugin_windows: Arc::new(Mutex::new(HashMap::new())),
             engine: Arc::new(Mutex::new(None)),
+            audio_bridges: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }

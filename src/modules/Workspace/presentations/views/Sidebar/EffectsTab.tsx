@@ -436,7 +436,9 @@ export const EffectsTab = ({
             {/* House Specials */}
             <div className="flex flex-col gap-1.5 mb-3">
                 <div className="flex items-center gap-1.5 px-1 mb-0.5">
-                    <span className="text-[9px] font-bold text-[var(--color-accent-orange)] uppercase tracking-widest">House Specials</span>
+                    <span className="text-[9px] font-bold text-[var(--color-accent-orange)] uppercase tracking-widest">
+                        Grain Fusion
+                    </span>
                     <div className="flex-1 h-px bg-[var(--color-accent-orange)]/15" />
                 </div>
                 <InstrumentCard
@@ -518,7 +520,9 @@ export const EffectsTab = ({
 
             {/* ── The Pantry ── */}
             <div className="flex items-center gap-1.5 px-1 mb-1 mt-1">
-                <span className="text-[9px] font-semibold text-muted-foreground/50 uppercase tracking-widest">The Pantry</span>
+                <span className="text-[9px] font-semibold text-muted-foreground/50 uppercase tracking-widest">
+                    The Pantry
+                </span>
                 <div className="flex-1 h-px bg-border/15" />
             </div>
 

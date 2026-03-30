@@ -33,29 +33,33 @@ pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThr
             device.build_output_stream(
                 &config.into(),
                 move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                    // 1. Process pending commands lock-free
                     scheduler.update_graph();
 
-                    // For this MVP, we inject a very quiet 440Hz test sine wave to process through our effects chain.
-                    // A proper implementation would pull `daw-core` timeline audio buffers here.
+                    // 2. Process SAB bridges (legacy path)
+                    scheduler.process_bridges();
+
+                    // 3. Process ring-buffer audio bridges (production path)
+                    // Reads input from worklets via main thread, processes through
+                    // CLAP/VST3, writes output back for main thread to return.
+                    scheduler.process_audio_bridges();
+
+                    // 3. Process the native effects chain (for standalone native rendering)
                     let frames = data.len() / 2;
                     let mut left = vec![0.0f32; frames];
                     let mut right = vec![0.0f32; frames];
-                    
-                    for i in 0..frames {
-                        let sample = (phase * 2.0 * std::f32::consts::PI).sin() * 0.05;
-                        left[i] = sample;
-                        right[i] = sample;
-                        phase += 440.0 / sample_rate;
-                        if phase > 1.0 { phase -= 1.0; }
-                    }
 
-                    // Process lock-free effect chain natively
+                    // Silent input — native chain only processes bridged plugins above.
+                    // Standalone native rendering (without Web Audio) would inject
+                    // timeline audio here.
                     scheduler.process_block(&mut left, &mut right, frames);
 
-                    // Interleave output for CPAL
+                    // Interleave output for CPAL (silent unless standalone mode)
                     for (i, frame) in data.chunks_mut(2).enumerate() {
-                        frame[0] = left[i];
-                        frame[1] = right[i];
+                        if i < frames {
+                            frame[0] = left[i];
+                            frame[1] = right[i];
+                        }
                     }
                 },
                 err_fn,

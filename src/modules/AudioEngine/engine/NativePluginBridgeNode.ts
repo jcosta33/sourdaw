@@ -1,37 +1,24 @@
 /**
  * NativePluginBridgeNode — bridges Web Audio ↔ Rust native audio thread
- * via SharedArrayBuffer.
+ * via a ring-buffer and Tauri IPC.
  *
- * Replaces the broken PluginHostNode which used IPC per-block.
- * The SAB is shared between the AudioWorklet and the Rust cpal thread,
- * giving us lock-free zero-copy audio transfer with 1 block of latency.
+ * The worklet sends audio blocks to the main thread via MessagePort.
+ * The main thread forwards to Rust via process_plugin_audio (which uses
+ * a lock-free ring buffer to communicate with the cpal audio thread).
+ * Processed output comes back the same way.
+ *
+ * Latency: 1 audio block (128 samples ≈ 2.67ms at 48kHz).
  */
 
 import { tauriInvoke, isTauri } from '#/helpers/tauriBridge';
 
-const SAB_SIZE = 2052; // control(4) + inputL(512) + inputR(512) + outputL(512) + outputR(512)
-
 export type NativePluginBridgeResult = {
     workletNode: AudioWorkletNode;
     setParam: (paramId: number, value: number) => void;
-    setBypass: (bypassed: boolean) => void;
+    setBypass: (_bypassed: boolean) => void;
     destroy: () => void;
 };
 
-/**
- * Check if SharedArrayBuffer is available (requires COOP/COEP headers or Tauri).
- */
-function isSharedArrayBufferAvailable(): boolean {
-    return typeof SharedArrayBuffer !== 'undefined';
-}
-
-/**
- * Create a native plugin bridge node.
- *
- * @param ctx - AudioContext (must have 'native-plugin-bridge-processor' worklet registered)
- * @param instanceId - The plugin instance ID (for Tauri commands)
- * @param enginePluginId - The ID assigned by the native engine (for param routing)
- */
 export async function createNativePluginBridgeNode(
     ctx: AudioContext,
     instanceId: string,
@@ -45,31 +32,32 @@ export async function createNativePluginBridgeNode(
         channelCountMode: 'explicit',
     });
 
-    if (isSharedArrayBufferAvailable()) {
-        // Create shared memory buffer
-        const sab = new SharedArrayBuffer(SAB_SIZE);
+    // Initialize the worklet with the engine plugin ID
+    node.port.postMessage({ type: 'init', enginePluginId });
 
-        // Send SAB to the worklet
-        node.port.postMessage({ type: 'init', sab }, []);
+    // Relay audio between worklet and Rust
+    node.port.onmessage = async (event: MessageEvent) => {
+        if (event.data.type === 'process' && isTauri()) {
+            const audioBuffer = event.data.audio;
+            const audioData = new Float32Array(audioBuffer);
 
-        // Send SAB to Rust native engine (via Tauri command)
-        // The Rust side will map this memory and read/write audio data directly
-        if (isTauri()) {
             try {
-                await tauriInvoke('register_plugin_bridge', {
-                    instanceId,
+                const processed = await tauriInvoke('process_plugin_audio', {
                     enginePluginId,
-                    // We can't send SharedArrayBuffer through Tauri IPC directly.
-                    // Instead, the Rust audio thread will poll the plugin's output
-                    // and the worklet will handle the SAB communication.
-                    // For now, the Rust side processes independently and we use
-                    // the SAB for the worklet↔main thread data path.
-                });
+                    audioData: Array.from(audioData),
+                }) as number[];
+
+                // Send processed audio back to worklet
+                const resultArray = new Float32Array(processed);
+                node.port.postMessage(
+                    { type: 'processed', audio: resultArray.buffer },
+                    [resultArray.buffer],
+                );
             } catch {
-                // Command may not exist yet — the bridge still works via fallback
+                // If Rust processing fails, the worklet falls back to passthrough
             }
         }
-    }
+    };
 
     return {
         workletNode: node,
@@ -83,7 +71,7 @@ export async function createNativePluginBridgeNode(
             }
         },
         setBypass(_bypassed: boolean) {
-            // TODO: Send bypass command to native engine via rtrb
+            // TODO: Send bypass command to native engine
         },
         destroy() {
             try { node.disconnect(); } catch {}

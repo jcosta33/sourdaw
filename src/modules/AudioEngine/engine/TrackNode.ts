@@ -19,7 +19,6 @@ import { registerProofDevice, unregisterProofDevice, syncFullPatch } from '#/mod
 import { registerLevainDevice, unregisterLevainDevice } from '#/modules/Levain/useCases/levainParamBridge';
 import { setEngineReady } from '#/modules/Levain/stores/levainStore';
 import { DEVICE_FACTORIES, applyParams, createFaustDeviceNode } from '../useCases/deviceResolvers';
-import { PluginHostNode } from '../models/PluginHostNode';
 import { createNativePluginBridgeNode } from './NativePluginBridgeNode';
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { EventBus } from '#/helpers/Event/EventBus';

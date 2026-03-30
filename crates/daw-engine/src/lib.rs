@@ -1,6 +1,8 @@
 pub mod scheduler;
 pub mod audio_thread;
 pub mod plugin_slot;
+pub mod sab_bridge;
+pub mod audio_bridge;
 
 use rtrb::{RingBuffer, Producer};
 use scheduler::GraphCommand;
@@ -59,5 +61,39 @@ impl EngineHandle {
     pub fn set_plugin_param(&mut self, id: usize, param_id: u32, value: f64) -> Result<(), String> {
         self.command_tx.push(GraphCommand::SetPluginParam(id, param_id, value))
             .map_err(|_| "Audio command queue full".to_string())
+    }
+
+    /// Send a MIDI note event to a specific plugin (lock-free).
+    pub fn send_midi_note(&mut self, plugin_id: usize, event: plugin_slot::MidiNoteEvent) -> Result<(), String> {
+        self.command_tx.push(GraphCommand::SendMidiNote(plugin_id, event))
+            .map_err(|_| "Audio command queue full".to_string())
+    }
+
+    /// Update the global transport state (lock-free).
+    pub fn set_transport(&mut self, state: plugin_slot::TransportState) -> Result<(), String> {
+        self.command_tx.push(GraphCommand::SetTransport(state))
+            .map_err(|_| "Audio command queue full".to_string())
+    }
+
+    /// Register a SharedArrayBuffer bridge for a plugin.
+    /// The bridge connects the Web Audio worklet to the native plugin.
+    pub fn register_bridge(&mut self, bridge: sab_bridge::SabBridge) -> Result<(), String> {
+        self.command_tx.push(GraphCommand::RegisterBridge(bridge))
+            .map_err(|_| "Audio command queue full".to_string())
+    }
+
+    /// Unregister a bridge by plugin ID.
+    pub fn unregister_bridge(&mut self, plugin_id: usize) -> Result<(), String> {
+        self.command_tx.push(GraphCommand::UnregisterBridge(plugin_id))
+            .map_err(|_| "Audio command queue full".to_string())
+    }
+
+    /// Create and register a ring-buffer audio bridge for a plugin.
+    /// Returns the handle that the main thread uses to push/pop audio blocks.
+    pub fn create_audio_bridge(&mut self, plugin_id: usize) -> Result<audio_bridge::PluginAudioBridgeHandle, String> {
+        let (bridge, handle) = audio_bridge::create_audio_bridge(plugin_id);
+        self.command_tx.push(GraphCommand::RegisterAudioBridge(bridge))
+            .map_err(|_| "Audio command queue full".to_string())?;
+        Ok(handle)
     }
 }

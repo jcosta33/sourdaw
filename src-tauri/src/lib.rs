@@ -67,12 +67,19 @@ pub fn run() {
             commands::plugins::get_plugin_state,
             commands::plugins::set_plugin_state,
             commands::plugins::start_native_engine,
+            commands::plugins::send_plugin_midi,
+            commands::plugins::update_plugin_transport,
+            commands::plugins::register_plugin_bridge,
+            commands::plugins::process_plugin_audio,
             // audio bridge
             // commands::audio_ipc::audio_ipc, // TODO: re-add when audio_ipc module is implemented
             // Plugin GUI
             commands::plugin_gui::is_plugin_gui_supported,
             commands::plugin_gui::open_plugin_gui,
             commands::plugin_gui::close_plugin_gui,
+            commands::plugin_gui::close_all_plugin_guis,
+            commands::plugin_gui::hide_all_plugin_guis,
+            commands::plugin_gui::show_all_plugin_guis,
             // MIDI bridge
             commands::midi::list_midi_inputs,
             commands::midi::open_midi_input,

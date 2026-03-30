@@ -33,20 +33,40 @@ function noteNameToMidi(name) {
 // ─── Parse filename → { midi, dynamic, rrPos } ───────────────────────────
 
 function parseFilename(filename) {
+    // Map Timpani arbitrary index to common timpani tuning and strip "Hit"
+    if (filename.includes('Timpani1_Hit_')) filename = filename.replace('Timpani1_Hit_', 'timpani_C2_');
+    if (filename.includes('Timpani2_Hit_')) filename = filename.replace('Timpani2_Hit_', 'timpani_G2_');
+    if (filename.includes('Timpani3_Hit_')) filename = filename.replace('Timpani3_Hit_', 'timpani_C3_');
+    if (filename.includes('Timpani4_Hit_')) filename = filename.replace('Timpani4_Hit_', 'timpani_F3_');
+    if (filename.includes('Timpani5_Hit_')) filename = filename.replace('Timpani5_Hit_', 'timpani_C4_');
+
     const base = filename.replace('.wav', '');
     const parts = base.split('_');
+
+    // Strip out generic descriptive parts like "Mid", "Close", "sus", "stac" that might be at the end.
+    // Keep popping until we hit a note, a dynamic, or rr/numeric identifier.
+    while (parts.length > 0) {
+        const p = parts[parts.length - 1];
+        if (!p) break;
+        if (p.match(/^(v\d+|loud|soft|medium|p+?|f+?|m[pf]|rr\d+|\d+|[A-G][b#]?\d+)$/i)) break;
+        parts.pop();
+    }
 
     let rrPos = 0;
     const last = parts[parts.length - 1];
     if (last?.match(/^rr(\d+)$/i)) {
         rrPos = parseInt(last.replace(/^rr/i, ''), 10) - 1;
         parts.pop();
+    } else if (last?.match(/^\d+$/)) {
+        // Handle files like "ViolaEns_susvib_A3_v1_1.wav"
+        rrPos = parseInt(last, 10) - 1;
+        parts.pop();
     }
 
     const velPart = parts[parts.length - 1];
     let dynamic;
-    if (velPart?.match(/^v(\d+)$/i)) {
-        dynamic = velPart; // v1, v2, v3...
+    if (velPart?.match(/^(v\d+|loud|soft|medium)$/i)) {
+        dynamic = velPart.toLowerCase(); // v1, v2, v3...
         parts.pop();
     } else if (['ppp','pp','p','mp','mf','f','ff','fff'].includes(velPart)) {
         dynamic = velPart;
@@ -180,17 +200,24 @@ async function processArt({ files, vscoPath, artType, artId, loopMode, keyRange,
 // ─── Fetch file list via SFZ-free approach: built from common patterns ──
 
 async function fetchFileList(vscoPath) {
-    // Use a single fetch to the raw GitHub tree endpoint (no API rate limit)
-    // Fall back to HEAD-probing common note names
-    const url = `https://api.github.com/repos/sgossner/VSCO-2-CE/contents/${vscoPath.split('/').map(encodeURIComponent).join('/')}`;
-    const res = await fetch(url, {
-        headers: { 'Accept': 'application/vnd.github.v3+json' }
-    });
-    if (res.ok) {
-        const data = await res.json();
-        return data.filter(f => f.name.endsWith('.wav')).map(f => f.name);
+    // SFZ-free approach: scrape the directory listing HTML from github directly.
+    // This avoids the restrictive 60 req/hr API limit from api.github.com.
+    const url = `https://github.com/sgossner/VSCO-2-CE/tree/master/${vscoPath.split('/').map(encodeURIComponent).join('/')}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+        if (res.status === 429) return null; // Extreme HTTP rate limiting
+        console.warn(`    ⚠️  Failed to fetch HTML tree: ${res.status}`);
+        return null; 
     }
-    return null; // rate limited — skip
+    const html = await res.text();
+    const regex = /href="\/sgossner\/VSCO-2-CE\/blob\/master\/([^"]+\.wav)"/gi;
+    const matches = [...html.matchAll(regex)];
+    const uniqueFiles = new Set();
+    for (const match of matches) {
+        const fullPath = decodeURIComponent(match[1]);
+        uniqueFiles.add(fullPath.split('/').pop());
+    }
+    return [...uniqueFiles];
 }
 
 // ─── Instrument definitions with all expected articulations ─────────────
@@ -297,8 +324,8 @@ const INSTRUMENTS = [
     {
         id: 'piccolo', keyRange: [74, 108],
         articulations: [
-            { artType: 'sustain',   artId: 0,  loopMode: 'forward', vscoPath: 'Woodwinds/Piccolo/sus' },
-            { artType: 'staccato',  artId: 8,  loopMode: 'none',    vscoPath: 'Woodwinds/Piccolo/stac' },
+            { artType: 'sustain',   artId: 0,  loopMode: 'forward', vscoPath: 'Woodwinds/Piccolo/Sus' },
+            { artType: 'staccato',  artId: 8,  loopMode: 'none',    vscoPath: 'Woodwinds/Piccolo/Stac' },
         ],
     },
     {

@@ -165,13 +165,43 @@ const SOURCES: readonly SampleSource[] = [
     },
 ];
 
-const CATEGORY_LABELS: Record<string, string> = {
-    drums: 'Drums & Percussion',
-    instruments: 'Instruments',
-    orchestral: 'Orchestral',
-    synths: 'Synths & Electronic',
-    vocals: 'Vocals',
-    general: 'Collections',
+const CATEGORY_META: Record<string, { label: string; color: string; iconColor: string; bgColor: string }> = {
+    drums: {
+        label: 'Drums & Percussion',
+        color: 'text-[var(--color-accent-peach)]',
+        iconColor: 'text-[var(--color-accent-peach)]/70',
+        bgColor: 'bg-[var(--color-accent-peach)]/8',
+    },
+    instruments: {
+        label: 'Instruments',
+        color: 'text-[var(--color-accent-cyan)]',
+        iconColor: 'text-[var(--color-accent-cyan)]/70',
+        bgColor: 'bg-[var(--color-accent-cyan)]/8',
+    },
+    orchestral: {
+        label: 'Orchestral',
+        color: 'text-[var(--color-accent-lavender)]',
+        iconColor: 'text-[var(--color-accent-lavender)]/70',
+        bgColor: 'bg-[var(--color-accent-lavender)]/8',
+    },
+    synths: {
+        label: 'Synths & Electronic',
+        color: 'text-[var(--color-accent-orange)]',
+        iconColor: 'text-[var(--color-accent-orange)]/70',
+        bgColor: 'bg-[var(--color-accent-orange)]/8',
+    },
+    vocals: {
+        label: 'Vocals',
+        color: 'text-pink-400',
+        iconColor: 'text-pink-400/70',
+        bgColor: 'bg-pink-400/8',
+    },
+    general: {
+        label: 'Collections',
+        color: 'text-emerald-400',
+        iconColor: 'text-emerald-400/70',
+        bgColor: 'bg-emerald-400/8',
+    },
 };
 
 const CATEGORY_ORDER = ['drums', 'instruments', 'orchestral', 'synths', 'vocals', 'general'];
@@ -195,10 +225,14 @@ export const OnlineSampleBrowser = (_props: Props): ReactElement => {
             {CATEGORY_ORDER.map((cat) => {
                 const sources = grouped.get(cat);
                 if (!sources) { return null; }
+                const meta = CATEGORY_META[cat] ?? { label: cat, color: 'text-foreground/60', iconColor: 'text-muted-foreground/50', bgColor: '' };
                 return (
-                    <div key={cat} className="space-y-1">
-                        <div className="text-[9px] font-semibold text-foreground/60 uppercase tracking-wider pt-1">
-                            {CATEGORY_LABELS[cat] ?? cat}
+                    <div key={cat} className="space-y-0.5">
+                        <div className="flex items-center gap-1.5 pt-1 px-0.5">
+                            <span className={`text-[9px] font-bold uppercase tracking-widest ${meta.color}`}>
+                                {meta.label}
+                            </span>
+                            <div className={`flex-1 h-px ${meta.bgColor.replace('/8', '/20')}`} />
                         </div>
                         {sources.map((source) => {
                             const Icon = source.icon;
@@ -208,20 +242,22 @@ export const OnlineSampleBrowser = (_props: Props): ReactElement => {
                                     href={source.url}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="flex items-start gap-2 p-1.5 rounded-md hover:bg-white/[0.04] group cursor-pointer"
+                                    className={`flex items-start gap-2 p-1.5 rounded-md hover:${meta.bgColor} group cursor-pointer transition-colors`}
                                 >
-                                    <Icon className="size-3 text-muted-foreground/50 group-hover:text-[var(--color-accent-lavender)] mt-0.5 shrink-0 transition-colors" />
+                                    <div className={`size-5 rounded flex items-center justify-center ${meta.bgColor} shrink-0 mt-0.5`}>
+                                        <Icon className={`size-3 ${meta.iconColor} group-hover:${meta.color} transition-colors`} />
+                                    </div>
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-1">
                                             <span className="text-[10px] font-medium text-foreground/80 group-hover:text-foreground transition-colors">
                                                 {source.name}
                                             </span>
                                             <ExternalLink className="size-2 text-muted-foreground/30 group-hover:text-muted-foreground/60" />
-                                            <span className="text-[7px] font-medium text-[var(--color-state-success)]/70 ml-auto shrink-0">
+                                            <span className="text-[7px] font-medium text-[var(--color-state-success)]/70 ml-auto shrink-0 bg-[var(--color-state-success)]/10 px-1 py-0.5 rounded">
                                                 {source.license}
                                             </span>
                                         </div>
-                                        <div className="text-[9px] text-muted-foreground/50 leading-snug">
+                                        <div className="text-[9px] text-muted-foreground/50 leading-snug mt-0.5">
                                             {source.description}
                                         </div>
                                     </div>

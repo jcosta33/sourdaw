@@ -14,6 +14,8 @@ type PresetItemProps = {
     onClick: () => void;
     onContextMenu?: (e: MouseEvent) => void;
     preview: PreviewHandle;
+    /** Hide the category badge (when already inside that category's view) */
+    hideCategory?: boolean;
 };
 
 export const PresetItem = ({
@@ -24,6 +26,7 @@ export const PresetItem = ({
     onClick,
     onContextMenu,
     preview,
+    hideCategory,
 }: PresetItemProps): ReactElement => {
     const chain = preset.devices.map((d) => d.name).join(' → ');
 
@@ -45,14 +48,16 @@ export const PresetItem = ({
                 <span className="flex-1 text-[11px] font-medium text-foreground/90 truncate drop-shadow-sm">
                     {preset.name}
                 </span>
-                <span
-                    className={cn(
-                        'shrink-0 rounded px-1.5 py-[2px] text-[9px] font-semibold tracking-wide uppercase opacity-80',
-                        CATEGORY_COLORS[preset.category] || 'bg-accent text-muted-foreground'
-                    )}
-                >
-                    {preset.category}
-                </span>
+                {!hideCategory ? (
+                    <span
+                        className={cn(
+                            'shrink-0 rounded px-1.5 py-[2px] text-[9px] font-semibold tracking-wide uppercase opacity-80',
+                            CATEGORY_COLORS[preset.category] || 'bg-accent text-muted-foreground'
+                        )}
+                    >
+                        {preset.category}
+                    </span>
+                ) : null}
                 <button
                     type="button"
                     className={cn(

@@ -1,8 +1,37 @@
 # External Plugin Hosting — Full Audit
 
-**Date**: 2026-03-30
+**Date**: 2026-03-30 (updated after implementation)
 **Scope**: All code related to hosting third-party audio plugins (CLAP, VST3, AU)
 **Reference**: `.agents/research/hosting-plugins.md`
+
+## Post-Implementation Status
+
+The following were built to address the audit findings:
+
+| Issue | Status |
+|-------|--------|
+| Audio processing broken (IPC per-block) | **FIXED** — SharedArrayBuffer bridge + cpal native thread |
+| No real-time audio thread | **FIXED** — daw-engine wired into Tauri, cpal stream running |
+| Host extensions all no-ops | **FIXED** — clap_host_params, clap_host_gui, clap_host_state implemented |
+| VST3 passthrough stub | **IMPROVED** — Vst3Wrapper loads .vst3 bundles, resolves platform binaries. COM process() still passthrough pending full init. |
+| Sample rate hardcoded | **FIXED** — 48kHz default with `new_with_sample_rate()` |
+| No MIDI events | **FIXED** — GraphCommand::SendMidiNote routes to plugins via rtrb |
+| No transport info | **FIXED** — GraphCommand::SetTransport with tempo/time_sig/position |
+| Mutex in audio path | **FIXED** — All audio-thread communication via rtrb (lock-free) |
+| No plugin window parenting | **FIXED** — owner/parent relationship to main window |
+| No window lifecycle | **FIXED** — close_all/hide_all/show_all plugin GUI commands |
+| No process sandboxing | Still in-process (deferred — design exists behind NativePlugin trait) |
+
+### Remaining Production Items
+- VST3 COM initialization (IPluginFactory → IComponent → IAudioProcessor) — binary loads but process() is passthrough
+- AudioUnit wrapper (macOS-only, not yet started)
+- Plugin latency query + PDC (CLAP latency extension)
+- request_restart handling (deactivate/reactivate cycle)
+- request_callback scheduling (main thread callbacks)
+- Multi-plugin CLAP bundles (scanner reads only first descriptor)
+- GUI request_resize (host_gui extension logs but doesn't resize Tauri window)
+
+---
 
 ---
 

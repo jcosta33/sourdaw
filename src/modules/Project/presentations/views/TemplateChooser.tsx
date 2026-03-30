@@ -1,5 +1,5 @@
-import { type ReactElement, useState, useEffect } from 'react';
-import { Music, Mic, Film, FileText, Layers, Guitar, Piano, Headphones, Sparkles, Loader2 } from 'lucide-react';
+import { type ReactElement, useState, useEffect, useRef } from 'react';
+import { Music, Mic, Film, FileText, Layers, Guitar, Piano, Headphones, Sparkles } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '#/components/ui/dialog';
 import { Button } from '#/components/ui/button';
 import {
@@ -43,20 +43,45 @@ const CATEGORY_ICONS: Record<TemplateCategory, ReactElement> = {
     film: <Film className="size-3.5" aria-hidden="true" />,
 };
 
-const getCategoryColor = (category: TemplateCategory): string => {
-    switch (category) {
-        case 'demo':
-            return 'text-[var(--color-accent-mint)]';
-        case 'music':
-            return 'text-[var(--color-accent-lavender)]';
-        case 'podcast':
-            return 'text-[var(--color-accent-peach)]';
-        case 'film':
-            return 'text-[var(--color-accent-cyan)]';
-        default:
-            return 'text-muted-foreground';
-    }
+const CATEGORY_COLORS: Record<TemplateCategory, { text: string; bg: string; border: string }> = {
+    empty: { text: 'text-muted-foreground', bg: 'bg-muted/30', border: 'border-border' },
+    demo: {
+        text: 'text-[var(--color-accent-mint)]',
+        bg: 'bg-[var(--color-accent-mint)]/10',
+        border: 'border-[var(--color-accent-mint)]/20',
+    },
+    music: {
+        text: 'text-[var(--color-accent-lavender)]',
+        bg: 'bg-[var(--color-accent-lavender)]/10',
+        border: 'border-[var(--color-accent-lavender)]/20',
+    },
+    podcast: {
+        text: 'text-[var(--color-accent-peach)]',
+        bg: 'bg-[var(--color-accent-peach)]/10',
+        border: 'border-[var(--color-accent-peach)]/20',
+    },
+    film: {
+        text: 'text-[var(--color-accent-cyan)]',
+        bg: 'bg-[var(--color-accent-cyan)]/10',
+        border: 'border-[var(--color-accent-cyan)]/20',
+    },
 };
+
+// Bread-themed loading messages that rotate
+const LOADING_MESSAGES = [
+    'Preheating the oven...',
+    'Measuring the flour...',
+    'Adding a pinch of reverb...',
+    'Activating the yeast...',
+    'Kneading the tracks...',
+    'Letting the mix rise...',
+    'Sprinkling sesame seeds...',
+    'Checking the crust...',
+    'Folding in the butter...',
+    'Almost golden brown...',
+    'The aroma is incredible...',
+    'Just a few more minutes...',
+];
 
 const TemplateCard = ({
     template,
@@ -68,26 +93,103 @@ const TemplateCard = ({
     disabled?: boolean;
 }): ReactElement => {
     const icon = TEMPLATE_ICONS[template.id] ?? <FileText className="size-5" aria-hidden="true" />;
-    const categoryColor = getCategoryColor(template.category);
+    const colors = CATEGORY_COLORS[template.category] ?? CATEGORY_COLORS.empty;
+    const isDemo = template.category === 'demo';
 
     return (
         <button
             type="button"
             disabled={disabled}
-            className="group flex flex-col items-start gap-3 rounded-lg border border-border p-4 text-left transition-colors hover:border-ring hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 disabled:pointer-events-none"
-            onClick={() => {
-                onSelect(template.id);
-            }}
+            className={`group relative flex flex-col items-start gap-2.5 rounded-xl border p-4 text-left transition-all hover:scale-[1.01] hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 disabled:pointer-events-none cursor-pointer ${colors.border} hover:${colors.border.replace('/20', '/40')} bg-surface-base/50 hover:bg-surface-raised/80`}
+            onClick={() => onSelect(template.id)}
         >
             <div className="flex w-full items-center gap-3">
-                <div className={`shrink-0 ${categoryColor}`}>{icon}</div>
-                <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium text-foreground truncate">{template.name}</div>
-                    <div className="text-[10px] text-muted-foreground capitalize">{template.category}</div>
+                <div className={`shrink-0 size-9 rounded-lg ${colors.bg} flex items-center justify-center ${colors.text} transition-colors`}>
+                    {icon}
                 </div>
+                <div className="min-w-0 flex-1">
+                    <div className="text-sm font-semibold text-foreground truncate group-hover:text-foreground/90">
+                        {template.name}
+                    </div>
+                    <div className={`text-[10px] font-medium capitalize ${colors.text}/70`}>
+                        {template.category === 'empty' ? 'Blank' : template.category}
+                    </div>
+                </div>
+                {isDemo ? (
+                    <span className={`text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${colors.bg} ${colors.text}`}>
+                        Demo
+                    </span>
+                ) : null}
             </div>
-            <p className="text-xs text-muted-foreground leading-relaxed">{template.description}</p>
+            <p className="text-[11px] text-muted-foreground/70 leading-relaxed line-clamp-2">
+                {template.description}
+            </p>
         </button>
+    );
+};
+
+const LoadingState = ({ name }: { name: string }): ReactElement => {
+    const [msgIndex, setMsgIndex] = useState(() => Math.floor(Math.random() * LOADING_MESSAGES.length));
+    const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined);
+
+    useEffect(() => {
+        intervalRef.current = setInterval(() => {
+            setMsgIndex((prev) => (prev + 1) % LOADING_MESSAGES.length);
+        }, 2200);
+        return () => clearInterval(intervalRef.current);
+    }, []);
+
+    return (
+        <div className="flex flex-col items-center justify-center py-14 gap-5">
+            {/* Animated bread icon */}
+            <div className="relative">
+                <div
+                    className="absolute inset-0 rounded-full blur-xl scale-[2] opacity-30"
+                    style={{ background: 'var(--color-accent-orange, #d97706)' }}
+                />
+                <img
+                    src="/icon-transparent.png"
+                    alt=""
+                    className="relative h-16 drop-shadow-[0_4px_16px_rgba(217,119,6,0.3)]"
+                    style={{ animation: 'tc-bounce 1.2s ease-in-out infinite' }}
+                />
+            </div>
+
+            <div className="text-center space-y-1.5">
+                <p className="text-sm font-semibold text-foreground">
+                    Baking <span className="bg-gradient-to-r from-[var(--color-accent-orange)] to-[var(--color-accent-peach)] bg-clip-text text-transparent">{name}</span>
+                </p>
+                <p
+                    key={msgIndex}
+                    className="text-xs text-muted-foreground/70 italic animate-in fade-in slide-in-from-bottom-2 duration-300"
+                >
+                    {LOADING_MESSAGES[msgIndex]}
+                </p>
+            </div>
+
+            {/* Progress shimmer */}
+            <div className="w-48 h-1 rounded-full overflow-hidden bg-border/20">
+                <div
+                    className="h-full w-1/3 rounded-full"
+                    style={{
+                        background: 'linear-gradient(90deg, transparent, var(--color-accent-orange, #d97706), transparent)',
+                        animation: 'tc-shimmer 1.5s ease-in-out infinite',
+                    }}
+                />
+            </div>
+
+            <style>{`
+                @keyframes tc-bounce {
+                    0%, 100% { transform: translateY(0) rotate(0deg); }
+                    25% { transform: translateY(-4px) rotate(-2deg); }
+                    75% { transform: translateY(-4px) rotate(2deg); }
+                }
+                @keyframes tc-shimmer {
+                    0% { transform: translateX(-200%); }
+                    100% { transform: translateX(400%); }
+                }
+            `}</style>
+        </div>
     );
 };
 
@@ -112,7 +214,6 @@ export const TemplateChooser = ({ open, onClose, initialCategory = 'all' }: Temp
         setIsLoading(true);
         saveProject();
 
-        // Use setTimeout to allow the loading UI to render before the heavy sync work
         setTimeout(() => {
             void (async () => {
                 try {
@@ -134,55 +235,72 @@ export const TemplateChooser = ({ open, onClose, initialCategory = 'all' }: Temp
                 }
             }}
         >
-            <DialogContent className="sm:max-w-[600px]">
-                <DialogHeader>
-                    <DialogTitle>New from Template</DialogTitle>
-                    <DialogDescription>
-                        Choose a template to start your project with pre-configured tracks and devices.
-                    </DialogDescription>
+            <DialogContent className="sm:max-w-[640px] overflow-hidden">
+                <DialogHeader className="pb-0">
+                    <div className="flex items-center gap-3">
+                        <img src="/icon-transparent.png" alt="" className="h-7 opacity-80" />
+                        <div>
+                            <DialogTitle className="text-base">
+                                {isLoading ? 'Warming up...' : 'Start a new project'}
+                            </DialogTitle>
+                            <DialogDescription className="text-[11px]">
+                                {isLoading
+                                    ? 'Setting up tracks, instruments, and effects'
+                                    : 'Pick a recipe or start from scratch. Every great loaf begins here.'}
+                            </DialogDescription>
+                        </div>
+                    </div>
                 </DialogHeader>
 
                 {isLoading ? (
-                    <div className="flex flex-col items-center justify-center py-16 gap-4">
-                        <Loader2 className="size-8 text-primary animate-spin" />
-                        <div className="text-center">
-                            <p className="text-sm font-medium text-foreground">Loading {loadingName}…</p>
-                            <p className="text-xs text-muted-foreground mt-1">Compiling instruments and effects</p>
-                        </div>
-                    </div>
+                    <LoadingState name={loadingName} />
                 ) : (
                     <>
-                        <div className="flex gap-1.5 border-b border-border pb-3">
+                        {/* Category filter pills */}
+                        <div className="flex gap-1.5 border-b border-border/50 pb-3">
                             <Button
                                 variant={activeFilter === 'all' ? 'secondary' : 'ghost'}
                                 size="xs"
-                                onClick={() => {
-                                    setActiveFilter('all');
-                                }}
+                                onClick={() => setActiveFilter('all')}
+                                className="gap-1"
                             >
-                                <Layers className="size-3.5 mr-1" aria-hidden="true" />
+                                <Layers className="size-3" aria-hidden="true" />
                                 All
                             </Button>
-                            {CATEGORY_ORDER.filter((c) => c !== 'empty').map((category) => (
-                                <Button
-                                    key={category}
-                                    variant={activeFilter === category ? 'secondary' : 'ghost'}
-                                    size="xs"
-                                    onClick={() => {
-                                        setActiveFilter(category);
-                                    }}
-                                >
-                                    {CATEGORY_ICONS[category]}
-                                    <span className="ml-1">{CATEGORY_LABELS[category]}</span>
-                                </Button>
+                            {CATEGORY_ORDER.filter((c) => c !== 'empty').map((category) => {
+                                const colors = CATEGORY_COLORS[category];
+                                const isActive = activeFilter === category;
+                                return (
+                                    <Button
+                                        key={category}
+                                        variant={isActive ? 'secondary' : 'ghost'}
+                                        size="xs"
+                                        onClick={() => setActiveFilter(category)}
+                                        className={`gap-1 ${isActive ? colors.text : ''}`}
+                                    >
+                                        {CATEGORY_ICONS[category]}
+                                        <span>{CATEGORY_LABELS[category]}</span>
+                                    </Button>
+                                );
+                            })}
+                        </div>
+
+                        {/* Template grid */}
+                        <div className="grid grid-cols-2 gap-2.5 max-h-[420px] overflow-y-auto pr-1 py-1">
+                            {filtered.map((template) => (
+                                <TemplateCard
+                                    key={template.id}
+                                    template={template}
+                                    onSelect={handleSelect}
+                                    disabled={isLoading}
+                                />
                             ))}
                         </div>
 
-                        <div className="grid grid-cols-2 gap-3 max-h-[400px] overflow-y-auto pr-1">
-                            {filtered.map((template) => (
-                                <TemplateCard key={template.id} template={template} onSelect={handleSelect} disabled={isLoading} />
-                            ))}
-                        </div>
+                        {/* Footer hint */}
+                        <p className="text-[9px] text-muted-foreground/40 text-center pt-1">
+                            You can also drop audio or MIDI files onto the timeline to get started
+                        </p>
                     </>
                 )}
             </DialogContent>

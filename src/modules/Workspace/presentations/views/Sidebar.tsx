@@ -1,4 +1,4 @@
-import { type CSSProperties, type ReactElement, useState, useRef } from 'react';
+import { type CSSProperties, type ReactElement, useState, useRef, useEffect, useCallback } from 'react';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { Input } from '#/components/ui/input';
 import { Button } from '#/components/ui/button';
@@ -19,6 +19,10 @@ export type SidebarRoute = {
     id: string;
     title: string;
     payload?: Record<string, any>;
+    /** Optional icon component for the back bar */
+    icon?: React.ComponentType<{ className?: string }>;
+    /** Optional color class for the icon */
+    iconColor?: string;
 };
 
 type UserSample = {
@@ -37,9 +41,102 @@ type SidebarProps = {
 /** User-imported samples only — no placeholder data */
 const SAMPLE_LIBRARY: { id: string; name: string; category: string; duration: string }[] = [];
 
+// ── Tab scroll bar with conditional chevrons ────────────────────────
+
+const TAB_ITEMS: { id: 'instruments' | 'effects' | 'library' | 'macros'; label: string; Icon: typeof Music }[] = [
+    { id: 'instruments', label: 'Instruments', Icon: Music },
+    { id: 'effects', label: 'Effects', Icon: Waves },
+    { id: 'library', label: 'Library', Icon: FileAudio },
+    { id: 'macros', label: 'Macros', Icon: Zap },
+];
+
+const TabScrollBar = ({
+    activeTab,
+    onTabChange,
+}: {
+    activeTab: string;
+    onTabChange: (tab: 'instruments' | 'effects' | 'library' | 'macros') => void;
+}): ReactElement => {
+    const scrollRef = useRef<HTMLDivElement>(null);
+    const [canScrollLeft, setCanScrollLeft] = useState(false);
+    const [canScrollRight, setCanScrollRight] = useState(false);
+
+    const updateScrollState = useCallback(() => {
+        const el = scrollRef.current;
+        if (!el) {
+            return;
+        }
+        const sl = el.scrollLeft;
+        const overflow = el.scrollWidth - el.clientWidth;
+        setCanScrollLeft(sl > 1);
+        setCanScrollRight(overflow > 1 && sl < overflow - 1);
+    }, []);
+
+    useEffect(() => {
+        const el = scrollRef.current;
+        if (!el) {
+            return;
+        }
+        // Delay initial check to after layout settles
+        requestAnimationFrame(updateScrollState);
+        el.addEventListener('scroll', updateScrollState, { passive: true });
+        const ro = new ResizeObserver(() => requestAnimationFrame(updateScrollState));
+        ro.observe(el);
+        return () => {
+            el.removeEventListener('scroll', updateScrollState);
+            ro.disconnect();
+        };
+    }, [updateScrollState]);
+
+    return (
+        <div className="relative border-b border-border/20 shrink-0 bg-surface-base/80">
+            <div
+                ref={scrollRef}
+                className="flex gap-0.5 overflow-x-auto scrollbar-none py-1.5 px-1 w-full"
+            >
+                {TAB_ITEMS.map(({ id, label, Icon }) => (
+                    <Button
+                        key={id}
+                        variant={activeTab === id ? 'secondary' : 'ghost'}
+                        size="xs"
+                        className="shrink-0 gap-1 h-7 text-[10px] px-2"
+                        onClick={() => onTabChange(id)}
+                    >
+                        <Icon className="size-3" /> {label}
+                    </Button>
+                ))}
+            </div>
+
+            {/* Chevrons overlaid, don't take space */}
+            <button
+                type="button"
+                className={`absolute left-0 top-0 bottom-0 w-6 flex items-center justify-center bg-gradient-to-r from-surface-base/90 to-transparent transition-opacity z-10 cursor-pointer ${
+                    canScrollLeft ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                }`}
+                onClick={() => scrollRef.current?.scrollBy({ left: -80, behavior: 'smooth' })}
+                aria-label="Scroll tabs left"
+                tabIndex={canScrollLeft ? 0 : -1}
+            >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><path d="m15 18-6-6 6-6" /></svg>
+            </button>
+            <button
+                type="button"
+                className={`absolute right-0 top-0 bottom-0 w-6 flex items-center justify-center bg-gradient-to-l from-surface-base/90 to-transparent transition-opacity z-10 cursor-pointer ${
+                    canScrollRight ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                }`}
+                onClick={() => scrollRef.current?.scrollBy({ left: 80, behavior: 'smooth' })}
+                aria-label="Scroll tabs right"
+                tabIndex={canScrollRight ? 0 : -1}
+            >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><path d="m9 18 6-6-6-6" /></svg>
+            </button>
+        </div>
+    );
+};
+
 export const Sidebar = ({ style }: SidebarProps): ReactElement => {
-    const [activeTab, setActiveTab] = useState<'library' | 'instruments' | 'effects' | 'macros'>('library');
-    const [libSubTab, setLibSubTab] = useState<'mine' | 'find'>('mine');
+    const [activeTab, setActiveTab] = useState<'library' | 'instruments' | 'effects' | 'macros'>('instruments');
+    const [libSubTab, setLibSubTab] = useState<'mine' | 'find'>('find');
     const [navStacks, setNavStacks] = useState<Record<string, SidebarRoute[]>>({
         library: [{ id: 'library', title: 'Library' }],
         instruments: [{ id: 'instruments', title: 'Instruments' }],
@@ -168,40 +265,7 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                 </Button>
             </div>
 
-            <div className="flex border-b border-border/20 p-2 gap-1 shrink-0 bg-surface-base/80">
-                <Button
-                    variant={activeTab === 'library' ? 'secondary' : 'ghost'}
-                    size="xs"
-                    className="flex-1 gap-1.5 h-7 text-[10px]"
-                    onClick={() => setActiveTab('library')}
-                >
-                    <FileAudio className="size-3" /> Library
-                </Button>
-                <Button
-                    variant={activeTab === 'instruments' ? 'secondary' : 'ghost'}
-                    size="xs"
-                    className="flex-1 gap-1.5 h-7 text-[10px]"
-                    onClick={() => setActiveTab('instruments')}
-                >
-                    <Music className="size-3" /> Insts
-                </Button>
-                <Button
-                    variant={activeTab === 'effects' ? 'secondary' : 'ghost'}
-                    size="xs"
-                    className="flex-1 gap-1.5 h-7 text-[10px]"
-                    onClick={() => setActiveTab('effects')}
-                >
-                    <Waves className="size-3" /> Effects
-                </Button>
-                <Button
-                    variant={activeTab === 'macros' ? 'secondary' : 'ghost'}
-                    size="xs"
-                    className="flex-1 gap-1.5 h-7 text-[10px]"
-                    onClick={() => setActiveTab('macros')}
-                >
-                    <Zap className="size-3" /> Macros
-                </Button>
-            </div>
+            <TabScrollBar activeTab={activeTab} onTabChange={setActiveTab} />
 
             {currentStack.length > 1 ? (
                 <div className="flex items-center gap-1 border-b border-border/50 bg-surface-overlay px-2 py-1.5 h-[34px] shrink-0">
@@ -225,9 +289,12 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                             <path d="m15 18-6-6 6-6" />
                         </svg>
                     </Button>
-                    <span className="text-[10px] font-semibold tracking-wide uppercase text-muted-foreground truncate ml-1">
+                    <span className="text-[10px] font-semibold tracking-wide uppercase text-muted-foreground truncate ml-1 flex-1">
                         {currentRoute.title}
                     </span>
+                    {currentRoute.icon ? (
+                        <currentRoute.icon className={`size-3.5 shrink-0 ${currentRoute.iconColor ?? 'text-muted-foreground/50'}`} />
+                    ) : null}
                 </div>
             ) : null}
 
@@ -242,20 +309,20 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                             {/* Sub-tabs: My Samples | Find Samples */}
                             <div className="flex gap-1 px-2 pb-2">
                                 <Button
-                                    variant={libSubTab === 'mine' ? 'secondary' : 'ghost'}
-                                    size="xs"
-                                    onClick={() => setLibSubTab('mine')}
-                                    className="flex-1"
-                                >
-                                    <FileAudio className="size-3 mr-1" /> My Samples
-                                </Button>
-                                <Button
                                     variant={libSubTab === 'find' ? 'secondary' : 'ghost'}
                                     size="xs"
                                     onClick={() => setLibSubTab('find')}
                                     className="flex-1"
                                 >
                                     <Search className="size-3 mr-1" /> Find Samples
+                                </Button>
+                                <Button
+                                    variant={libSubTab === 'mine' ? 'secondary' : 'ghost'}
+                                    size="xs"
+                                    onClick={() => setLibSubTab('mine')}
+                                    className="flex-1"
+                                >
+                                    <FileAudio className="size-3 mr-1" /> My Samples
                                 </Button>
                             </div>
 

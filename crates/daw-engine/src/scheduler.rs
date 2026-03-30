@@ -5,7 +5,9 @@
 
 use rtrb::Consumer;
 use daw_dsp::knead::engine::KneadEngine;
-use crate::plugin_slot::NativePlugin;
+use crate::plugin_slot::{NativePlugin, MidiNoteEvent, TransportState};
+use crate::sab_bridge::SabBridge;
+use crate::audio_bridge::PluginAudioBridge;
 
 /// Commands sent from the UI/main thread to the audio thread (lock-free via rtrb).
 pub enum GraphCommand {
@@ -16,13 +18,23 @@ pub enum GraphCommand {
     SetBypass(usize, bool),
 
     // External plugins (CLAP/VST3/AU)
-    /// Add a native plugin to the processing chain.
-    /// The Box<dyn NativePlugin> is moved to the audio thread — no sharing.
     AddPlugin(usize, Box<dyn NativePlugin>),
-    /// Remove a native plugin by ID.
     RemovePlugin(usize),
-    /// Set a parameter on a native plugin (param_id, value).
     SetPluginParam(usize, u32, f64),
+
+    // MIDI events (routed to a specific plugin by ID)
+    SendMidiNote(usize, MidiNoteEvent),
+
+    // Transport state (global, affects all plugins)
+    SetTransport(TransportState),
+
+    // SharedArrayBuffer bridge registration (legacy)
+    RegisterBridge(SabBridge),
+    UnregisterBridge(usize),
+
+    // Ring buffer audio bridge (production path)
+    RegisterAudioBridge(PluginAudioBridge),
+    UnregisterAudioBridge(usize),
 }
 
 enum PluginCore {
@@ -34,20 +46,28 @@ struct ActiveEffect {
     id: usize,
     instance: PluginCore,
     bypassed: bool,
+    /// Pending MIDI events for this block (drained each process_block call).
+    pending_midi: Vec<MidiNoteEvent>,
 }
 
 pub struct AudioScheduler {
     effects: Vec<ActiveEffect>,
+    bridges: Vec<SabBridge>,
+    audio_bridges: Vec<PluginAudioBridge>,
     command_rx: Consumer<GraphCommand>,
     sample_rate: f32,
+    transport: TransportState,
 }
 
 impl AudioScheduler {
     pub fn new(command_rx: Consumer<GraphCommand>, sample_rate: f32) -> Self {
         Self {
             effects: Vec::new(),
+            bridges: Vec::new(),
+            audio_bridges: Vec::new(),
             command_rx,
             sample_rate,
+            transport: TransportState::default(),
         }
     }
 
@@ -62,7 +82,9 @@ impl AudioScheduler {
                         _ => None,
                     };
                     if let Some(inst) = instance {
-                        self.effects.push(ActiveEffect { id, instance: inst, bypassed: false });
+                        self.effects.push(ActiveEffect {
+                            id, instance: inst, bypassed: false, pending_midi: Vec::new(),
+                        });
                     }
                 }
                 GraphCommand::RemoveEffect(id) | GraphCommand::RemovePlugin(id) => {
@@ -83,6 +105,7 @@ impl AudioScheduler {
                         id,
                         instance: PluginCore::Native(plugin),
                         bypassed: false,
+                        pending_midi: Vec::new(),
                     });
                 }
                 GraphCommand::SetPluginParam(id, param_id, value) => {
@@ -91,6 +114,94 @@ impl AudioScheduler {
                             plugin.set_param(param_id, value);
                         }
                     }
+                }
+                GraphCommand::SendMidiNote(id, event) => {
+                    if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
+                        effect.pending_midi.push(event);
+                    }
+                }
+                GraphCommand::SetTransport(state) => {
+                    self.transport = state;
+                }
+                GraphCommand::RegisterBridge(bridge) => {
+                    self.bridges.push(bridge);
+                }
+                GraphCommand::UnregisterBridge(plugin_id) => {
+                    self.bridges.retain(|b| b.plugin_id != plugin_id);
+                }
+                GraphCommand::RegisterAudioBridge(bridge) => {
+                    self.audio_bridges.push(bridge);
+                }
+                GraphCommand::UnregisterAudioBridge(plugin_id) => {
+                    self.audio_bridges.retain(|b| b.plugin_id != plugin_id);
+                }
+            }
+        }
+    }
+
+    /// Process SAB bridges — reads input from worklets, processes through plugins,
+    /// writes output back. Called every audio callback regardless of process_block.
+    #[inline]
+    pub fn process_bridges(&mut self) {
+        for bridge in &self.bridges {
+            let mut input_l = [0.0f32; 128];
+            let mut input_r = [0.0f32; 128];
+
+            if bridge.try_read_input(&mut input_l, &mut input_r) {
+                // Find the plugin for this bridge
+                if let Some(effect) = self.effects.iter_mut().find(|e| e.id == bridge.plugin_id) {
+                    if !effect.bypassed {
+                        if let PluginCore::Native(ref mut plugin) = effect.instance {
+                            if effect.pending_midi.is_empty() {
+                                plugin.process_audio(&mut input_l, &mut input_r, 128);
+                            } else {
+                                plugin.process_with_events(
+                                    &mut input_l, &mut input_r, 128,
+                                    &effect.pending_midi, &self.transport,
+                                );
+                                effect.pending_midi.clear();
+                            }
+                        }
+                    }
+                }
+
+                // Write processed output back to SAB
+                bridge.write_output(&input_l, &input_r);
+            }
+        }
+    }
+
+    /// Process ring-buffer audio bridges — reads input blocks from main thread,
+    /// processes through plugins, writes output back for main thread to return to worklet.
+    #[inline]
+    pub fn process_audio_bridges(&mut self) {
+        for bridge in &mut self.audio_bridges {
+            let plugin_id = bridge.plugin_id;
+
+            // Find the matching plugin
+            if let Some(effect) = self.effects.iter_mut().find(|e| e.id == plugin_id) {
+                if effect.bypassed {
+                    // Drain input without processing (passthrough)
+                    bridge.try_process(|left, right, n| {
+                        // output = input (already in the block)
+                        let _ = (left, right, n);
+                    });
+                    continue;
+                }
+
+                if let PluginCore::Native(ref mut plugin) = effect.instance {
+                    let midi = &effect.pending_midi;
+                    let transport = &self.transport;
+
+                    bridge.try_process(|left, right, num_samples| {
+                        if midi.is_empty() {
+                            plugin.process_audio(left, right, num_samples);
+                        } else {
+                            plugin.process_with_events(left, right, num_samples, midi, transport);
+                        }
+                    });
+
+                    effect.pending_midi.clear();
                 }
             }
         }
@@ -101,6 +212,7 @@ impl AudioScheduler {
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
         for effect in &mut self.effects {
             if effect.bypassed {
+                effect.pending_midi.clear();
                 continue;
             }
             match &mut effect.instance {
@@ -108,7 +220,16 @@ impl AudioScheduler {
                     engine.process_analysis_frame(left);
                 }
                 PluginCore::Native(plugin) => {
-                    plugin.process_audio(left, right, num_samples);
+                    if effect.pending_midi.is_empty() {
+                        plugin.process_audio(left, right, num_samples);
+                    } else {
+                        plugin.process_with_events(
+                            left, right, num_samples,
+                            &effect.pending_midi,
+                            &self.transport,
+                        );
+                        effect.pending_midi.clear();
+                    }
                 }
             }
         }
