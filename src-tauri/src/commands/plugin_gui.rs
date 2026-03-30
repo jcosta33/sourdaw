@@ -71,12 +71,28 @@ pub async fn open_plugin_gui(
         return Err("Plugin GUI is already open".to_string());
     }
 
-    let plugin_window = tauri::window::WindowBuilder::new(&app, &window_label)
+    // Get the main window for parenting
+    let main_window = app.get_webview_window("main");
+
+    let mut builder = tauri::window::WindowBuilder::new(&app, &window_label)
         .title(&plugin_name)
         .inner_size(800.0, 600.0)
         .decorations(true)
         .resizable(false) // Most plugin GUIs are fixed-size
-        .visible(false) // Hide until we know the correct size
+        .visible(false); // Hide until we know the correct size
+
+    // Parent the plugin window to the main DAW window so it floats above
+    // and moves/minimizes with it
+    if let Some(ref main_win) = main_window {
+        // owner() on Windows makes the plugin float above the main window
+        // parent() on macOS/Linux makes it a child window
+        #[cfg(target_os = "windows")]
+        { builder = builder.owner(main_win); }
+        #[cfg(not(target_os = "windows"))]
+        { builder = builder.parent(main_win); }
+    }
+
+    let plugin_window = builder
         .build()
         .map_err(|e| format!("Failed to create plugin window: {}", e))?;
 
@@ -148,6 +164,75 @@ pub async fn close_plugin_gui(
     if let Some(label) = window_label {
         if let Some(win) = app.get_window(&label) {
             let _ = win.destroy();
+        }
+    }
+
+    Ok(())
+}
+
+/// Close ALL plugin GUI windows (called on app exit or minimize).
+#[tauri::command]
+pub async fn close_all_plugin_guis(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    // Close all CLAP GUIs
+    {
+        let mut plugins = state.plugins.lock()
+            .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+        for instance in plugins.values_mut() {
+            instance.close_gui();
+        }
+    }
+
+    // Destroy all native windows
+    let labels: Vec<String> = {
+        let mut windows = state.plugin_windows.lock()
+            .map_err(|e| format!("Failed to lock plugin_windows: {}", e))?;
+        let labels: Vec<String> = windows.values().cloned().collect();
+        windows.clear();
+        labels
+    };
+
+    for label in labels {
+        if let Some(win) = app.get_window(&label) {
+            let _ = win.destroy();
+        }
+    }
+
+    Ok(())
+}
+
+/// Hide all plugin GUI windows (called when DAW is minimized).
+#[tauri::command]
+pub async fn hide_all_plugin_guis(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let windows = state.plugin_windows.lock()
+        .map_err(|e| format!("Failed to lock plugin_windows: {}", e))?;
+
+    for label in windows.values() {
+        if let Some(win) = app.get_window(label) {
+            let _ = win.hide();
+        }
+    }
+
+    Ok(())
+}
+
+/// Show all plugin GUI windows (called when DAW is restored from minimized).
+#[tauri::command]
+pub async fn show_all_plugin_guis(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let windows = state.plugin_windows.lock()
+        .map_err(|e| format!("Failed to lock plugin_windows: {}", e))?;
+
+    for label in windows.values() {
+        if let Some(win) = app.get_window(label) {
+            let _ = win.show();
         }
     }
 

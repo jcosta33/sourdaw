@@ -83,10 +83,17 @@ pub fn scan_directory(dir: &Path, plugins: &mut Vec<ScannedPlugin>, errors: &mut
         if let Some(format) = detect_format(&entry_path, is_dir) {
             let name = plugin_name_from_path(&entry_path);
 
-            let (vendor, _clap_id) = if format == "clap" {
-                extract_clap_metadata(&entry_path)
+            let (vendor, clap_id, category, has_ui) = if format == "clap" {
+                let (v, id) = extract_clap_metadata(&entry_path);
+                // CLAP plugins generally have GUIs
+                (v, id, "effect".to_string(), true)
+            } else if format == "vst3" {
+                // VST3 metadata extraction would require loading the bundle
+                // For now, use filename and mark as having UI (most VST3s do)
+                (String::new(), String::new(), "effect".to_string(), true)
             } else {
-                (String::new(), String::new())
+                // AudioUnit
+                (String::new(), String::new(), "effect".to_string(), true)
             };
 
             plugins.push(ScannedPlugin {
@@ -94,13 +101,13 @@ pub fn scan_directory(dir: &Path, plugins: &mut Vec<ScannedPlugin>, errors: &mut
                 name,
                 vendor,
                 format: format.to_string(),
-                category: "effect".to_string(),
+                category,
                 path: entry_path.to_string_lossy().into_owned(),
                 version: String::new(),
                 num_inputs: 2,
                 num_outputs: 2,
                 num_parameters: 0,
-                has_custom_ui: false,
+                has_custom_ui: has_ui,
             });
         } else if is_dir {
             scan_directory(&entry_path, plugins, errors);

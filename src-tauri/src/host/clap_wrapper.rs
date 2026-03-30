@@ -13,7 +13,9 @@ use clap_sys::process::clap_process;
 use clap_sys::audio_buffer::clap_audio_buffer;
 use clap_sys::events::{
     clap_input_events, clap_output_events, clap_event_header,
-    clap_event_param_value, CLAP_EVENT_PARAM_VALUE, CLAP_CORE_EVENT_SPACE_ID,
+    clap_event_param_value, clap_event_note,
+    CLAP_EVENT_PARAM_VALUE, CLAP_EVENT_NOTE_ON, CLAP_EVENT_NOTE_OFF,
+    CLAP_CORE_EVENT_SPACE_ID,
 };
 use clap_sys::ext::params::{
     clap_plugin_params, clap_param_info, CLAP_EXT_PARAMS,
@@ -149,7 +151,12 @@ impl ClapWrapper {
     ///
     /// `plugin_path`: Path to the .clap file (shared library)
     /// `plugin_id`: The CLAP plugin ID to instantiate (from the descriptor)
+    /// `sample_rate`: Optional sample rate (defaults to device rate, falls back to 48000)
     pub fn new(plugin_path: &str, plugin_id: &str) -> Result<Self, String> {
+        Self::new_with_sample_rate(plugin_path, plugin_id, 48000.0)
+    }
+
+    pub fn new_with_sample_rate(plugin_path: &str, plugin_id: &str, sample_rate: f64) -> Result<Self, String> {
         unsafe {
             // 1. Load the shared library
             let library = Library::new(plugin_path)
@@ -248,7 +255,6 @@ impl ClapWrapper {
             }
 
             // 9. Activate the plugin
-            let sample_rate = 44100.0;
             let mut activated = false;
             if let Some(activate_fn) = plugin_ref.activate {
                 let ok = activate_fn(plugin, sample_rate, 32, 4096);
@@ -445,12 +451,83 @@ impl ClapWrapper {
         self.gui_open = false;
         eprintln!("[CLAP] Closed GUI for '{}'", self.name);
     }
-}
 
-impl AudioPlugin for ClapWrapper {
-    fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], num_samples: usize) {
+    /// Process audio with MIDI note events.
+    /// Builds a CLAP input event list from the provided note events.
+    pub fn process_with_midi(
+        &mut self,
+        inputs: &[&[f32]],
+        outputs: &mut [&mut [f32]],
+        num_samples: usize,
+        midi_events: &[(u8, u8, i16, bool)], // (note, velocity, channel, is_on)
+    ) {
+        if !self.activated || self.plugin.is_null() || midi_events.is_empty() {
+            self.process_audio_internal(inputs, outputs, num_samples, &EMPTY_INPUT_EVENTS);
+            return;
+        }
+
+        // Build CLAP note events
+        let mut events: Vec<clap_event_note> = midi_events.iter().map(|(note, vel, ch, is_on)| {
+            clap_event_note {
+                header: clap_event_header {
+                    size: mem::size_of::<clap_event_note>() as u32,
+                    time: 0,
+                    space_id: CLAP_CORE_EVENT_SPACE_ID,
+                    type_: if *is_on { CLAP_EVENT_NOTE_ON } else { CLAP_EVENT_NOTE_OFF },
+                    flags: 0,
+                },
+                note_id: -1,
+                port_index: 0,
+                channel: *ch,
+                key: *note as i16,
+                velocity: *vel as f64 / 127.0,
+            }
+        }).collect();
+
+        // Build a dynamic input events list
+        let events_ptr = events.as_mut_ptr();
+        let events_count = events.len() as u32;
+
+        struct EventListCtx {
+            events: *mut clap_event_note,
+            count: u32,
+        }
+
+        unsafe extern "C" fn event_list_size(list: *const clap_input_events) -> u32 {
+            let ctx = (*list).ctx as *const EventListCtx;
+            (*ctx).count
+        }
+
+        unsafe extern "C" fn event_list_get(
+            list: *const clap_input_events,
+            index: u32,
+        ) -> *const clap_event_header {
+            let ctx = (*list).ctx as *const EventListCtx;
+            if index >= (*ctx).count {
+                return ptr::null();
+            }
+            &(*(*ctx).events.add(index as usize)).header as *const clap_event_header
+        }
+
+        let mut ctx = EventListCtx { events: events_ptr, count: events_count };
+        let input_events = clap_input_events {
+            ctx: &mut ctx as *mut EventListCtx as *mut c_void,
+            size: Some(event_list_size),
+            get: Some(event_list_get),
+        };
+
+        self.process_audio_internal(inputs, outputs, num_samples, &input_events);
+    }
+
+    /// Internal process method that accepts a custom input events list.
+    fn process_audio_internal(
+        &mut self,
+        inputs: &[&[f32]],
+        outputs: &mut [&mut [f32]],
+        num_samples: usize,
+        in_events: &clap_input_events,
+    ) {
         if !self.activated || self.plugin.is_null() {
-            // Passthrough — copy input to output
             for (ch, out) in outputs.iter_mut().enumerate() {
                 if ch < inputs.len() {
                     let len = num_samples.min(inputs[ch].len()).min(out.len());
@@ -467,24 +544,19 @@ impl AudioPlugin for ClapWrapper {
                 None => return,
             };
 
-            // Build CLAP audio buffers from our slices
             let num_channels = inputs.len().min(2) as u32;
 
-            // Input buffer: copy to a local buffer since CLAP wants *mut f32
             let mut input_data: Vec<Vec<f32>> = inputs.iter()
                 .take(2)
                 .map(|ch| ch[..num_samples.min(ch.len())].to_vec())
                 .collect();
-
             let mut input_ptrs: Vec<*mut f32> = input_data.iter_mut()
                 .map(|ch| ch.as_mut_ptr())
                 .collect();
 
-            // Output buffer
             let mut output_data: Vec<Vec<f32>> = (0..num_channels)
                 .map(|_| vec![0.0f32; num_samples])
                 .collect();
-
             let mut output_ptrs: Vec<*mut f32> = output_data.iter_mut()
                 .map(|ch| ch.as_mut_ptr())
                 .collect();
@@ -513,13 +585,12 @@ impl AudioPlugin for ClapWrapper {
                 audio_outputs: &mut output_buffer,
                 audio_inputs_count: 1,
                 audio_outputs_count: 1,
-                in_events: &EMPTY_INPUT_EVENTS,
+                in_events,
                 out_events: &EMPTY_OUTPUT_EVENTS,
             };
 
             let _status = process_fn(self.plugin, &process_data);
 
-            // Copy output back to the caller's buffers
             for (ch_idx, out_ch) in outputs.iter_mut().enumerate() {
                 if ch_idx < output_data.len() {
                     let len = num_samples.min(out_ch.len()).min(output_data[ch_idx].len());
@@ -527,6 +598,12 @@ impl AudioPlugin for ClapWrapper {
                 }
             }
         }
+    }
+}
+
+impl AudioPlugin for ClapWrapper {
+    fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], num_samples: usize) {
+        self.process_audio_internal(inputs, outputs, num_samples, &EMPTY_INPUT_EVENTS);
     }
 
     fn set_parameter(&mut self, param_id: u32, value: f64) {
