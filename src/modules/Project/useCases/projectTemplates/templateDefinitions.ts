@@ -2,12 +2,7 @@ import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { newProject } from '../projectPersistence';
-import {
-    demo1_TheCompleteMix,
-    demo_SweetDreams,
-    demo4_NativeShowcase,
-    demo5_NebulaDrift,
-} from '../demoProjects';
+import { demo1_TheCompleteMix, demo_SweetDreams, demo4_NativeShowcase, demo5_NebulaDrift } from '../demoProjects';
 import { type ProjectTemplate } from '#/modules/Project/models/ProjectTemplateTypes';
 
 let synthDeviceCounter = 0;
@@ -141,14 +136,16 @@ const templates: ProjectTemplate[] = [
     {
         id: 'demo-sweet-dreams',
         name: 'Sweet Dreams',
-        description: 'A faithful cover of "Sweet Dreams (Are Made of This)" by Eurythmics — showcasing Fermenter synths, Toaster drums, and the full Sourdaw mixing chain.',
+        description:
+            'An incredible faithful cover of "Sweet Dreams (Are Made of This)" by Eurythmics — showcasing Fermenter synths, Toaster drums, and the full Sourdaw mixing chain.',
         category: 'demo',
         create: () => demo_SweetDreams(),
     },
     {
         id: 'demo-native-showcase',
         name: 'Brainfeeder (Native Only)',
-        description: 'A 50-track Flying Lotus-style experimental beat showcase using native DSP effects. Only available in the native app.',
+        description:
+            'A 50-track Flying Lotus-style experimental beat showcase using native DSP effects. Only available in the native app.',
         category: 'demo',
         platform: 'native',
         create: () => demo4_NativeShowcase(),

@@ -29,38 +29,38 @@ const TB = 320; // total beats (~2:34 at 125 BPM)
 const bpm = 125;
 
 // ── MIDI pitch constants (C minor) ──────────────────────────────────────
-const C2  = 36;
+const C2 = 36;
 const Ab1 = 32;
-const G2  = 43;
+const G2 = 43;
 const Ab2 = 44;
 const Bb2 = 46;
-const C3  = 48;
+const C3 = 48;
 const Eb3 = 51;
-const G3  = 55;
+const G3 = 55;
 const Ab3 = 56;
 const Bb3 = 58;
-const C4  = 60;
+const C4 = 60;
 const Eb4 = 63;
-const F4  = 65;
-const G4  = 67;
+const F4 = 65;
+const G4 = 67;
 const Ab4 = 68;
 const Bb4 = 70;
-const C5  = 72;
+const C5 = 72;
 const Eb5 = 75;
 
 // ── Section boundaries (beats) ───────────────────────────────────────────
 // 8-bar intro, verse/pre-chorus/chorus pairs, bridge, final chorus, outro
 const S = {
-    intro: 0,          // 8 bars (32 beats) — just the two synth riffs
-    verse1: 32,        // 8 bars (32 beats) — add bass, drums, pad
-    preChorus1: 64,    // 4 bars (16 beats) — melody enters
-    chorus1: 80,       // 8 bars (32 beats) — full arrangement
-    verse2: 112,       // 8 bars (32 beats)
-    preChorus2: 144,   // 4 bars (16 beats)
-    chorus2: 160,      // 8 bars (32 beats)
-    bridge: 192,       // 8 bars (32 beats) — strip back, Bb and G chords
-    finalChorus: 224,  // 8 bars (32 beats) — biggest section
-    outro: 256,        // 8-16 bars (32-64 beats) — fade out
+    intro: 0, // 8 bars (32 beats) — just the two synth riffs
+    verse1: 32, // 8 bars (32 beats) — add bass, drums, pad
+    preChorus1: 64, // 4 bars (16 beats) — melody enters
+    chorus1: 80, // 8 bars (32 beats) — full arrangement
+    verse2: 112, // 8 bars (32 beats)
+    preChorus2: 144, // 4 bars (16 beats)
+    chorus2: 160, // 8 bars (32 beats)
+    bridge: 192, // 8 bars (32 beats) — strip back, Bb and G chords
+    finalChorus: 224, // 8 bars (32 beats) — biggest section
+    outro: 256, // 8-16 bars (32-64 beats) — fade out
     end: TB,
 } as const;
 
@@ -79,7 +79,8 @@ function addDev(t: { devices?: unknown[] }, type: string, name: string, params: 
 }
 
 /** Slight humanization for velocity */
-const hv = (base: number, range = 6) => Math.max(1, Math.min(127, Math.round(base + (Math.random() - 0.5) * range * 2)));
+const hv = (base: number, range = 6) =>
+    Math.max(1, Math.min(127, Math.round(base + (Math.random() - 0.5) * range * 2)));
 
 // ═════════════════════════════════════════════════════════════════════════
 // MAIN EXPORT
@@ -139,18 +140,18 @@ export async function demo_SweetDreams(): Promise<void> {
     // movement. The original used pulse width modulation via LFO to create
     // the thickening/thinning effect. Both L and R use the same patch.
     const riffParams = {
-        oscEngine: 1,         // VA analog
-        oscWaveform: 1,       // saw
-        unisonVoices: 2,      // two detuned saws (like the original OB-X)
-        unisonDetune: 8,      // ~8% detune for width
-        filterModel: 0,       // SVF (clean, not aggressive)
+        oscEngine: 1, // VA analog
+        oscWaveform: 1, // saw
+        unisonVoices: 2, // two detuned saws (like the original OB-X)
+        unisonDetune: 8, // ~8% detune for width
+        filterModel: 0, // SVF (clean, not aggressive)
         filterCutoff: 3500,
         filterResonance: 1.5,
         ampAttack: 0.008,
         ampDecay: 0.2,
         ampSustain: 0.7,
         ampRelease: 0.12,
-        lfoRate: 0.3,         // slow LFO for PWM-like sweep
+        lfoRate: 0.3, // slow LFO for PWM-like sweep
         lfoFilterAmount: 0.15,
         chorusMix: 0.2,
         chorusRate: 0.6,
@@ -185,9 +186,9 @@ export async function demo_SweetDreams(): Promise<void> {
             type: 'fermenter',
             bypassed: false,
             parameterValues: {
-                oscEngine: 1,     // VA
-                oscWaveform: 1,   // saw
-                filterModel: 0,   // SVF (clean like SH-101)
+                oscEngine: 1, // VA
+                oscWaveform: 1, // saw
+                filterModel: 0, // SVF (clean like SH-101)
                 filterCutoff: 1200,
                 filterResonance: 1.5,
                 ampAttack: 0.003,
@@ -196,7 +197,7 @@ export async function demo_SweetDreams(): Promise<void> {
                 ampRelease: 0.1,
                 filterDecay: 0.15,
                 filterEnvAmount: 0.3,
-                reverbMix: 0,     // bone dry
+                reverbMix: 0, // bone dry
             },
         },
     ];
@@ -207,8 +208,8 @@ export async function demo_SweetDreams(): Promise<void> {
     applyPreset(tPad, 'fermenter-oberheim-pad');
     if (tPad.devices[0]) {
         const pv = (tPad.devices[0] as any).parameterValues;
-        pv.ampAttack = 0.15;      // shorter than default pad — "cut off" per Dave Stewart
-        pv.filterCutoff = 2200;   // slightly darker
+        pv.ampAttack = 0.15; // shorter than default pad — "cut off" per Dave Stewart
+        pv.filterCutoff = 2200; // slightly darker
         pv.reverbMix = 0.35;
         pv.chorusMix = 0.25;
     }
@@ -219,11 +220,11 @@ export async function demo_SweetDreams(): Promise<void> {
     applyPreset(tLead, 'fermenter-vocal-pad');
     if (tLead.devices[0]) {
         const pv = (tLead.devices[0] as any).parameterValues;
-        pv.ampAttack = 0.03;      // faster attack for melodic articulation
+        pv.ampAttack = 0.03; // faster attack for melodic articulation
         pv.ampRelease = 0.3;
         pv.portamentoTime = 0.03; // slight legato glide
         pv.filterCutoff = 3000;
-        pv.filterResonance = 3;   // formant peak for vocal quality
+        pv.filterResonance = 3; // formant peak for vocal quality
     }
 
     // Stab accents — NOT brass. The original has no brass stabs.
@@ -341,11 +342,11 @@ export async function demo_SweetDreams(): Promise<void> {
 
     // ── INITIAL LEVELS & PANS ────────────────────────────────────────────
     tRiffR.gain = 0.7;
-    tRiffL.gain = 0.55;   // sits behind the right — glues together as one riff
-    tBass.gain = 0;        // enters via automation
-    tPad.gain = 0;         // enters via automation
-    tLead.gain = 0;        // enters via automation
-    tBrass.gain = 0;       // enters via automation
+    tRiffL.gain = 0.55; // sits behind the right — glues together as one riff
+    tBass.gain = 0; // enters via automation
+    tPad.gain = 0; // enters via automation
+    tLead.gain = 0; // enters via automation
+    tBrass.gain = 0; // enters via automation
     toasterFolder.gain = 0;
 
     tRiffR.pan = 40;
@@ -382,22 +383,22 @@ export async function demo_SweetDreams(): Promise<void> {
     // Right channel: steady eighth notes, 16 per 2-bar (8-beat) cycle
     // C3 C3 C3 C3 | Eb3 Eb3 C3 C3 | Ab2 Ab2 Ab2 C3 | G2 G2 G2 C3
     const riffRPattern: [number, number, number][] = [
-        [0,    C3,  95],
-        [0.5,  C3,  78],
-        [1,    C3,  90],
-        [1.5,  C3,  75],
-        [2,    Eb3, 88],
-        [2.5,  Eb3, 72],
-        [3,    C3,  85],
-        [3.5,  C3,  70],
-        [4,    Ab2, 92],
-        [4.5,  Ab2, 75],
-        [5,    Ab2, 88],
-        [5.5,  C3,  72],
-        [6,    G2,  90],
-        [6.5,  G2,  74],
-        [7,    G2,  86],
-        [7.5,  C3,  68],
+        [0, C3, 95],
+        [0.5, C3, 78],
+        [1, C3, 90],
+        [1.5, C3, 75],
+        [2, Eb3, 88],
+        [2.5, Eb3, 72],
+        [3, C3, 85],
+        [3.5, C3, 70],
+        [4, Ab2, 92],
+        [4.5, Ab2, 75],
+        [5, Ab2, 88],
+        [5.5, C3, 72],
+        [6, G2, 90],
+        [6.5, G2, 74],
+        [7, G2, 86],
+        [7.5, C3, 68],
     ];
 
     // Left channel: follows the same harmonic movement as the right but
@@ -406,14 +407,14 @@ export async function demo_SweetDreams(): Promise<void> {
     // when the two are combined. The left was played by Annie on the OB-X
     // while the right was the SH-101 sequence.
     const riffLPattern: [number, number, number][] = [
-        [0,    C3,  82],
-        [1,    C3,  78],
-        [2,    Eb3, 80],
-        [3,    C3,  75],
-        [4,    Ab2, 82],
-        [5,    Ab2, 76],
-        [6,    G2,  80],
-        [7,    C3,  72],
+        [0, C3, 82],
+        [1, C3, 78],
+        [2, Eb3, 80],
+        [3, C3, 75],
+        [4, Ab2, 82],
+        [5, Ab2, 76],
+        [6, G2, 80],
+        [7, C3, 72],
     ];
 
     // Both riffs play throughout; gain automation controls dynamics
@@ -421,7 +422,8 @@ export async function demo_SweetDreams(): Promise<void> {
     for (let cycle = 0; cycle * 8 < outroFade; cycle++) {
         const cycleStart = cycle * 8;
         if (cycleStart >= TB) break;
-        const isChorus = (cycleStart >= S.chorus1 && cycleStart < S.verse2) ||
+        const isChorus =
+            (cycleStart >= S.chorus1 && cycleStart < S.verse2) ||
             (cycleStart >= S.chorus2 && cycleStart < S.bridge) ||
             (cycleStart >= S.finalChorus && cycleStart < S.outro);
         const isIntro = cycleStart < S.verse1;
@@ -455,39 +457,63 @@ export async function demo_SweetDreams(): Promise<void> {
     // Moderate velocity — sits UNDER the riffs, not competing.
     const bassPattern: [number, number, number, number][] = [
         // Bar 1-2: C root, quarter notes with one octave jump
-        [0,  C2,  0.85, 72],
-        [1,  C2,  0.85, 65],
-        [2,  C2,  0.85, 70],
-        [3,  C3,  0.85, 60],  // octave jump
-        [4,  C2,  0.85, 72],
-        [5,  C2,  0.85, 64],
-        [6,  C2,  0.85, 68],
-        [7,  C2,  0.85, 62],
+        [0, C2, 0.85, 72],
+        [1, C2, 0.85, 65],
+        [2, C2, 0.85, 70],
+        [3, C3, 0.85, 60], // octave jump
+        [4, C2, 0.85, 72],
+        [5, C2, 0.85, 64],
+        [6, C2, 0.85, 68],
+        [7, C2, 0.85, 62],
         // Bar 3-4: Ab root
-        [8,  Ab1, 0.85, 70],
-        [9,  Ab1, 0.85, 63],
+        [8, Ab1, 0.85, 70],
+        [9, Ab1, 0.85, 63],
         [10, Ab1, 0.85, 68],
-        [11, Ab2, 0.85, 58],  // octave jump
+        [11, Ab2, 0.85, 58], // octave jump
         [12, Ab1, 0.85, 70],
         [13, Ab1, 0.85, 62],
         [14, Ab1, 0.85, 66],
-        [15, Ab1, 1.6,  68],  // slightly longer into next cycle
+        [15, Ab1, 1.6, 68], // slightly longer into next cycle
     ];
 
     // Bridge bass: Cm | Cm | Ab | Ab | Bb | Bb | G | G
     const bridgeBassPattern: [number, number, number, number][] = [
         // Cm bars
-        [0,  C2,  0.9, 90], [1,  C2,  0.9, 78], [2,  C2,  0.9, 85], [3,  C2,  0.9, 72],
-        [4,  C2,  0.9, 88], [5,  C2,  0.9, 76], [6,  C2,  0.9, 82], [7,  C2,  0.9, 70],
+        [0, C2, 0.9, 90],
+        [1, C2, 0.9, 78],
+        [2, C2, 0.9, 85],
+        [3, C2, 0.9, 72],
+        [4, C2, 0.9, 88],
+        [5, C2, 0.9, 76],
+        [6, C2, 0.9, 82],
+        [7, C2, 0.9, 70],
         // Ab bars
-        [8,  Ab1, 0.9, 88], [9,  Ab1, 0.9, 75], [10, Ab1, 0.9, 82], [11, Ab1, 0.9, 70],
-        [12, Ab1, 0.9, 85], [13, Ab1, 0.9, 72], [14, Ab1, 0.9, 80], [15, Ab1, 0.9, 68],
+        [8, Ab1, 0.9, 88],
+        [9, Ab1, 0.9, 75],
+        [10, Ab1, 0.9, 82],
+        [11, Ab1, 0.9, 70],
+        [12, Ab1, 0.9, 85],
+        [13, Ab1, 0.9, 72],
+        [14, Ab1, 0.9, 80],
+        [15, Ab1, 0.9, 68],
         // Bb bars
-        [16, Bb2, 0.9, 90], [17, Bb2, 0.9, 78], [18, Bb2, 0.9, 85], [19, Bb2, 0.9, 72],
-        [20, Bb2, 0.9, 88], [21, Bb2, 0.9, 76], [22, Bb2, 0.9, 82], [23, Bb2, 0.9, 70],
+        [16, Bb2, 0.9, 90],
+        [17, Bb2, 0.9, 78],
+        [18, Bb2, 0.9, 85],
+        [19, Bb2, 0.9, 72],
+        [20, Bb2, 0.9, 88],
+        [21, Bb2, 0.9, 76],
+        [22, Bb2, 0.9, 82],
+        [23, Bb2, 0.9, 70],
         // G bars
-        [24, G2,  0.9, 88], [25, G2,  0.9, 75], [26, G2,  0.9, 82], [27, G2,  0.9, 70],
-        [28, G2,  0.9, 85], [29, G2,  0.9, 72], [30, G2,  0.9, 80], [31, G2,  1.8, 88],
+        [24, G2, 0.9, 88],
+        [25, G2, 0.9, 75],
+        [26, G2, 0.9, 82],
+        [27, G2, 0.9, 70],
+        [28, G2, 0.9, 85],
+        [29, G2, 0.9, 72],
+        [30, G2, 0.9, 80],
+        [31, G2, 1.8, 88],
     ];
 
     for (let cycle = Math.floor(S.verse1 / 16); cycle * 16 < S.outro + 32; cycle++) {
@@ -617,80 +643,80 @@ export async function demo_SweetDreams(): Promise<void> {
     // Verse melody — 16 beats (4 bars)
     // Opening: starts on C5, stays around C5-Bb4, descends to G4
     const verseA: [number, number, number][] = [
-        [0,    C5,  1.0],
-        [1.5,  C5,  0.5],
-        [2.5,  C5,  0.5],
-        [3.5,  Bb4, 0.75],
-        [4.5,  Bb4, 0.75],
-        [5.5,  G4,  1.0],
-        [7,    G4,  0.75],
+        [0, C5, 1.0],
+        [1.5, C5, 0.5],
+        [2.5, C5, 0.5],
+        [3.5, Bb4, 0.75],
+        [4.5, Bb4, 0.75],
+        [5.5, G4, 1.0],
+        [7, G4, 0.75],
         // Answering phrase: rises from G4 through Bb4 to C5
-        [8,    G4,  0.5],
-        [9,    Bb4, 0.5],
-        [10,   Bb4, 0.75],
-        [11,   C5,  1.0],
+        [8, G4, 0.5],
+        [9, Bb4, 0.5],
+        [10, Bb4, 0.75],
+        [11, C5, 1.0],
         [12.5, Bb4, 0.75],
-        [13.5, G4,  0.5],
-        [14.5, G4,  1.5],
+        [13.5, G4, 0.5],
+        [14.5, G4, 1.5],
     ];
 
     // Second half of verse — more rhythmic, insistent
     const verseB: [number, number, number][] = [
-        [0,    C5,  0.5],
-        [0.75, C5,  0.5],
-        [1.5,  C5,  0.5],
+        [0, C5, 0.5],
+        [0.75, C5, 0.5],
+        [1.5, C5, 0.5],
         [2.25, Bb4, 0.5],
-        [3,    Bb4, 0.75],
-        [4,    G4,  0.5],
-        [5,    Bb4, 0.5],
-        [6,    G4,  1.75],
+        [3, Bb4, 0.75],
+        [4, G4, 0.5],
+        [5, Bb4, 0.5],
+        [6, G4, 1.75],
         // Conclusive phrase
-        [8,    G4,  0.5],
-        [9,    Bb4, 0.5],
-        [10,   C5,  0.5],
-        [11,   Eb5, 0.75],
-        [12,   C5,  0.5],
-        [13,   Bb4, 0.75],
-        [14,   G4,  0.75],
-        [15,   G4,  0.75],
+        [8, G4, 0.5],
+        [9, Bb4, 0.5],
+        [10, C5, 0.5],
+        [11, Eb5, 0.75],
+        [12, C5, 0.5],
+        [13, Bb4, 0.75],
+        [14, G4, 0.75],
+        [15, G4, 0.75],
     ];
 
     // Pre-chorus — more insistent, repeated notes on C5 and Bb4
     const preChorusPhrase: [number, number, number][] = [
-        [0,    C5,  0.5],
-        [0.75, C5,  0.5],
-        [1.5,  Bb4, 0.5],
-        [2.25, C5,  0.5],
-        [3,    C5,  0.75],
-        [4,    Bb4, 0.5],
-        [5,    Bb4, 0.5],
-        [6,    C5,  1.5],
-        [8,    C5,  0.5],
-        [8.75, C5,  0.5],
-        [9.5,  Bb4, 0.5],
+        [0, C5, 0.5],
+        [0.75, C5, 0.5],
+        [1.5, Bb4, 0.5],
+        [2.25, C5, 0.5],
+        [3, C5, 0.75],
+        [4, Bb4, 0.5],
+        [5, Bb4, 0.5],
+        [6, C5, 1.5],
+        [8, C5, 0.5],
+        [8.75, C5, 0.5],
+        [9.5, Bb4, 0.5],
         [10.5, Bb4, 0.5],
-        [11.5, G4,  0.75],
+        [11.5, G4, 0.75],
         [12.5, Bb4, 0.75],
-        [14,   C5,  1.5],
+        [14, C5, 1.5],
     ];
 
     // Chorus melody — similar range but more rhythmic variation
     const chorusPhrase: [number, number, number][] = [
-        [0,    Eb5, 0.75],
-        [1,    C5,  0.5],
-        [2,    Bb4, 0.5],
-        [3,    C5,  0.5],
-        [4,    Bb4, 0.75],
-        [5.5,  G4,  1.5],
+        [0, Eb5, 0.75],
+        [1, C5, 0.5],
+        [2, Bb4, 0.5],
+        [3, C5, 0.5],
+        [4, Bb4, 0.75],
+        [5.5, G4, 1.5],
         // Second half — variation
-        [8,    Eb5, 0.75],
-        [9,    C5,  0.5],
-        [10,   Bb4, 0.5],
-        [11,   Bb4, 0.5],
-        [12,   G4,  0.5],
-        [13,   Bb4, 0.5],
-        [14,   C5,  0.5],
-        [15,   G4,  1.5],
+        [8, Eb5, 0.75],
+        [9, C5, 0.5],
+        [10, Bb4, 0.5],
+        [11, Bb4, 0.5],
+        [12, G4, 0.5],
+        [13, Bb4, 0.5],
+        [14, C5, 0.5],
+        [15, G4, 1.5],
     ];
 
     // ── Pre-chorus 1 (melody enters here)
@@ -757,7 +783,18 @@ export async function demo_SweetDreams(): Promise<void> {
     // 6. DRUMS — Toaster kit with per-pad clips
     // Pad 0 = Kick (36), Pad 1 = Snare/Clap (37), Pad 2 = Closed HH (38), Pad 3 = Open HH (39)
     // ══════════════════════════════════════════════════════════════════════
-    const toasterSegLabels = ['Intro', 'Verse 1', 'Pre-Ch 1', 'Chorus 1', 'Verse 2', 'Pre-Ch 2', 'Chorus 2', 'Bridge', 'Final Chorus', 'Outro'] as const;
+    const toasterSegLabels = [
+        'Intro',
+        'Verse 1',
+        'Pre-Ch 1',
+        'Chorus 1',
+        'Verse 2',
+        'Pre-Ch 2',
+        'Chorus 2',
+        'Bridge',
+        'Final Chorus',
+        'Outro',
+    ] as const;
     const toasterSegRanges: readonly [number, number][] = [
         [S.intro, S.verse1],
         [S.verse1, S.preChorus1],
@@ -797,9 +834,8 @@ export async function demo_SweetDreams(): Promise<void> {
         const isBridge = b >= S.bridge && b < S.finalChorus;
         // Bridge: only downbeat (beat 1)
         if (isBridge && posInBar !== 0) continue;
-        const isChorus = (b >= S.chorus1 && b < S.verse2) ||
-            (b >= S.chorus2 && b < S.bridge) ||
-            (b >= S.finalChorus && b < S.outro);
+        const isChorus =
+            (b >= S.chorus1 && b < S.verse2) || (b >= S.chorus2 && b < S.bridge) || (b >= S.finalChorus && b < S.outro);
         const vel = isChorus ? hv(100, 4) : hv(88, 4);
         pushToast(0, b, vel, 0.15);
     }
@@ -811,9 +847,8 @@ export async function demo_SweetDreams(): Promise<void> {
         if (posInBar !== 1 && posInBar !== 3) continue;
         const isBridge = b >= S.bridge && b < S.finalChorus;
         if (isBridge && posInBar !== 3) continue; // half-time snare in bridge
-        const isChorus = (b >= S.chorus1 && b < S.verse2) ||
-            (b >= S.chorus2 && b < S.bridge) ||
-            (b >= S.finalChorus && b < S.outro);
+        const isChorus =
+            (b >= S.chorus1 && b < S.verse2) || (b >= S.chorus2 && b < S.bridge) || (b >= S.finalChorus && b < S.outro);
         const vel = isChorus ? hv(105, 4) : hv(90, 5);
         pushToast(1, b, vel, 0.12);
     }
@@ -825,9 +860,8 @@ export async function demo_SweetDreams(): Promise<void> {
         if (isBridge && Math.floor(b * 2) % 4 !== 0) continue; // sparse in bridge
         // Skip where open hat plays (upbeats in choruses)
         const isUpbeat = (b * 2) % 2 === 1;
-        const isChorus = (b >= S.chorus1 && b < S.verse2) ||
-            (b >= S.chorus2 && b < S.bridge) ||
-            (b >= S.finalChorus && b < S.outro);
+        const isChorus =
+            (b >= S.chorus1 && b < S.verse2) || (b >= S.chorus2 && b < S.bridge) || (b >= S.finalChorus && b < S.outro);
         if (isChorus && isUpbeat && Math.floor(b) % 2 === 0) continue; // open hat takes over
 
         const vel = isUpbeat ? hv(60, 5) : hv(75, 5);
@@ -837,9 +871,8 @@ export async function demo_SweetDreams(): Promise<void> {
     // Open Hi-hat: upbeats during choruses
     for (let b = S.chorus1; b < TB; b += 0.5) {
         if (b >= S.outro + 32) break;
-        const isChorus = (b >= S.chorus1 && b < S.verse2) ||
-            (b >= S.chorus2 && b < S.bridge) ||
-            (b >= S.finalChorus && b < S.outro);
+        const isChorus =
+            (b >= S.chorus1 && b < S.verse2) || (b >= S.chorus2 && b < S.bridge) || (b >= S.finalChorus && b < S.outro);
         if (!isChorus) continue;
         const isUpbeat = (b * 2) % 2 === 1;
         if (!isUpbeat) continue;
@@ -1136,16 +1169,76 @@ export async function demo_SweetDreams(): Promise<void> {
             { id: crypto.randomUUID(), beat: S.outro, name: 'Outro', color: 'oklch(0.38 0.06 240)' },
         ],
         sections: [
-            { id: crypto.randomUUID(), startBeat: S.intro, endBeat: S.verse1, name: 'Intro', color: 'oklch(0.40 0.08 260)' },
-            { id: crypto.randomUUID(), startBeat: S.verse1, endBeat: S.preChorus1, name: 'Verse 1', color: 'oklch(0.40 0.07 140)' },
-            { id: crypto.randomUUID(), startBeat: S.preChorus1, endBeat: S.chorus1, name: 'Pre-Chorus 1', color: 'oklch(0.41 0.08 90)' },
-            { id: crypto.randomUUID(), startBeat: S.chorus1, endBeat: S.verse2, name: 'Chorus 1', color: 'oklch(0.42 0.09 30)' },
-            { id: crypto.randomUUID(), startBeat: S.verse2, endBeat: S.preChorus2, name: 'Verse 2', color: 'oklch(0.40 0.07 140)' },
-            { id: crypto.randomUUID(), startBeat: S.preChorus2, endBeat: S.chorus2, name: 'Pre-Chorus 2', color: 'oklch(0.41 0.08 90)' },
-            { id: crypto.randomUUID(), startBeat: S.chorus2, endBeat: S.bridge, name: 'Chorus 2', color: 'oklch(0.42 0.09 30)' },
-            { id: crypto.randomUUID(), startBeat: S.bridge, endBeat: S.finalChorus, name: 'Bridge', color: 'oklch(0.38 0.08 280)' },
-            { id: crypto.randomUUID(), startBeat: S.finalChorus, endBeat: S.outro, name: 'Final Chorus', color: 'oklch(0.44 0.10 20)' },
-            { id: crypto.randomUUID(), startBeat: S.outro, endBeat: S.end, name: 'Outro', color: 'oklch(0.38 0.06 240)' },
+            {
+                id: crypto.randomUUID(),
+                startBeat: S.intro,
+                endBeat: S.verse1,
+                name: 'Intro',
+                color: 'oklch(0.40 0.08 260)',
+            },
+            {
+                id: crypto.randomUUID(),
+                startBeat: S.verse1,
+                endBeat: S.preChorus1,
+                name: 'Verse 1',
+                color: 'oklch(0.40 0.07 140)',
+            },
+            {
+                id: crypto.randomUUID(),
+                startBeat: S.preChorus1,
+                endBeat: S.chorus1,
+                name: 'Pre-Chorus 1',
+                color: 'oklch(0.41 0.08 90)',
+            },
+            {
+                id: crypto.randomUUID(),
+                startBeat: S.chorus1,
+                endBeat: S.verse2,
+                name: 'Chorus 1',
+                color: 'oklch(0.42 0.09 30)',
+            },
+            {
+                id: crypto.randomUUID(),
+                startBeat: S.verse2,
+                endBeat: S.preChorus2,
+                name: 'Verse 2',
+                color: 'oklch(0.40 0.07 140)',
+            },
+            {
+                id: crypto.randomUUID(),
+                startBeat: S.preChorus2,
+                endBeat: S.chorus2,
+                name: 'Pre-Chorus 2',
+                color: 'oklch(0.41 0.08 90)',
+            },
+            {
+                id: crypto.randomUUID(),
+                startBeat: S.chorus2,
+                endBeat: S.bridge,
+                name: 'Chorus 2',
+                color: 'oklch(0.42 0.09 30)',
+            },
+            {
+                id: crypto.randomUUID(),
+                startBeat: S.bridge,
+                endBeat: S.finalChorus,
+                name: 'Bridge',
+                color: 'oklch(0.38 0.08 280)',
+            },
+            {
+                id: crypto.randomUUID(),
+                startBeat: S.finalChorus,
+                endBeat: S.outro,
+                name: 'Final Chorus',
+                color: 'oklch(0.44 0.10 20)',
+            },
+            {
+                id: crypto.randomUUID(),
+                startBeat: S.outro,
+                endBeat: S.end,
+                name: 'Outro',
+                color: 'oklch(0.38 0.06 240)',
+            },
         ],
     });
 
@@ -1180,7 +1273,7 @@ export async function demo_SweetDreams(): Promise<void> {
     await waitForDevices();
 
     projectStore.set({
-        name: 'Sweet Dreams (Demo)',
+        name: 'Sweet Creams (Demo)',
         createdAt: Date.now(),
         updatedAt: Date.now(),
         dirty: false,
