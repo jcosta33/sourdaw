@@ -25,6 +25,8 @@ import { InstrumentBottomPanel } from '../components/InstrumentBottomPanel';
 import { LevainPanel } from '#/modules/Levain/presentations/views/LevainPanel';
 import { ProofChamberPanel } from '#/modules/ProofChamber/presentations/views/ProofChamberPanel';
 import { GlutenPanel } from '#/modules/Gluten/presentations/views/GlutenPanel';
+import { BacteriaPanel } from '#/modules/Bacteria/presentations/views/BacteriaPanel';
+
 import { ProofPanel } from '#/modules/Proof/presentations/views/ProofPanel';
 import { ScoringPanel } from '#/modules/Scoring/presentations/views/ScoringPanel';
 import { YeastPanel } from '#/modules/Yeast/presentations/views/YeastPanel';
@@ -82,6 +84,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         toasterHeight,
         levainHeight,
         glutenHeight,
+        bacteriaHeight,
         proofChamberHeight,
         proofHeight,
         scoringHeight,
@@ -103,6 +106,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const [levainOpen, setLevainOpen] = useState(false);
     const [proofChamberOpen, setProofChamberOpen] = useState(false);
     const [glutenOpen, setGlutenOpen] = useState(false);
+    const [bacteriaOpen, setBacteriaOpen] = useState(false);
     const [scoringOpen, setScoringOpen] = useState(false);
     const [proofOpen, setProofOpen] = useState(false);
     const [yeastOpen, setYeastOpen] = useState(false);
@@ -150,6 +154,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         setLevainOpen(false);
         setProofChamberOpen(false);
         setGlutenOpen(false);
+        setBacteriaOpen(false);
         setScoringOpen(false);
         setProofOpen(false);
         setYeastOpen(false);
@@ -205,6 +210,16 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         return () => document.removeEventListener(APP_EVENTS.SHOW_GLUTEN_TAB, handler);
     }, []);
 
+    // Listen for Bacteria panel open
+    useEffect(() => {
+        const handler = (): void => {
+            closeAllDevicePanels();
+            setBacteriaOpen(true);
+        };
+        document.addEventListener(APP_EVENTS.SHOW_BACTERIA_TAB, handler);
+        return () => document.removeEventListener(APP_EVENTS.SHOW_BACTERIA_TAB, handler);
+    }, []);
+
     // Listen for Proof mastering suite panel open
     useEffect(() => {
         const handler = (): void => {
@@ -247,6 +262,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         updateWorkspaceState({ toasterHeight: fn(toasterHeight) });
     const setLevainHeight = (fn: (prev: number) => number) => updateWorkspaceState({ levainHeight: fn(levainHeight) });
     const setGlutenHeight = (fn: (prev: number) => number) => updateWorkspaceState({ glutenHeight: fn(glutenHeight) });
+    const setBacteriaHeight = (fn: (prev: number) => number) => updateWorkspaceState({ bacteriaHeight: fn(bacteriaHeight) });
     const setProofChamberHeight = (fn: (prev: number) => number) => updateWorkspaceState({ proofChamberHeight: fn(proofChamberHeight) });
     const setProofHeight = (fn: (prev: number) => number) => updateWorkspaceState({ proofHeight: fn(proofHeight) });
     const setScoringHeight = (fn: (prev: number) => number) => updateWorkspaceState({ scoringHeight: fn(scoringHeight) });
@@ -388,6 +404,19 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                             onClose={() => setGlutenOpen(false)}
                         >
                             <GlutenPanel />
+                        </InstrumentBottomPanel>
+                    ) : null}
+
+                    {bacteriaOpen ? (
+                        <InstrumentBottomPanel
+                            label="Bacteria"
+                            labelColor="text-rose-400"
+                            borderColor="border-rose-500/20"
+                            height={bacteriaHeight}
+                            onResize={setBacteriaHeight}
+                            onClose={() => setBacteriaOpen(false)}
+                        >
+                            <BacteriaPanel />
                         </InstrumentBottomPanel>
                     ) : null}
 

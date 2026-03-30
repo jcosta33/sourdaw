@@ -10,10 +10,12 @@ import { isToasterDevice, createToasterNode, type ToasterNodeResult } from './To
 import { isLevainDevice, createLevainNode, type LevainNodeResult } from './LevainNode';
 import { isProofChamberDevice, createProofChamberNode, type ProofChamberNodeResult } from './ProofChamberNode';
 import { isGlutenDevice, createGlutenNode, type GlutenNodeResult } from './GlutenNode';
+import { isBacteriaDevice, createBacteriaNode, type BacteriaNodeResult } from './BacteriaNode';
 import { isProofDevice, createProofNode, type ProofNodeResult } from './ProofNode';
 import { isScoringDevice, createScoringNode, type ScoringNodeResult } from './ScoringNode';
 import { updateTunerTelemetry } from '#/modules/Scoring/stores/scoringStore';
 import { updateGlutenMeters } from '#/modules/Gluten/stores/glutenStore';
+import { updateBacteriaMeters } from '#/modules/Bacteria/stores/bacteriaStore';
 import { updateProofMeters } from '#/modules/Proof/stores/proofStore';
 import { registerProofDevice, unregisterProofDevice, syncFullPatch } from '#/modules/Proof/useCases/proofParamBridge';
 import { registerLevainDevice, unregisterLevainDevice } from '#/modules/Levain/useCases/levainParamBridge';
@@ -639,6 +641,60 @@ export class TrackNode {
                         }
                     })
                     .catch((error) => logger.warn(`[WebAudioEngine] Gluten failed: ${error}`));
+                pendingDevicePromises.add(loadPromise);
+                loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
+            } else if (isBacteriaDevice(deviceType)) {
+                // Bacteria creative multi-effects — async WASM effect
+                const loadingBypass = context.createGain();
+                dn = {
+                    deviceId,
+                    type: deviceType,
+                    nodes: [loadingBypass],
+                    inputNode: loadingBypass,
+                    outputNode: loadingBypass,
+                };
+
+                const pendingParams: Array<[string, number]> = [];
+                dn.nativeDspControls = {
+                    setParam: (name: string, value: number) => {
+                        pendingParams.push([name, value]);
+                    },
+                    setBypass: () => {},
+                };
+
+                const loadPromise = createBacteriaNode(context)
+                    .then(async (result: BacteriaNodeResult) => {
+                        await result.ready;
+                        for (const [name, value] of pendingParams) {
+                            result.setParam(name, value);
+                        }
+                        // Wire meter data to store
+                        result.onMeterData((data) => {
+                            updateBacteriaMeters(
+                                data.inputDb,
+                                data.outputDb,
+                                data.bandLevels,
+                                data.latency
+                            );
+                        });
+                        const idx = this.strip.deviceNodes.findIndex((d) => d.deviceId === deviceId);
+                        if (idx !== -1) {
+                            const bacteriaDn: BuiltinDeviceNode = {
+                                deviceId,
+                                type: deviceType,
+                                nodes: [result.workletNode],
+                                inputNode: result.workletNode,
+                                outputNode: result.workletNode,
+                                nativeDspControls: {
+                                    setParam: result.setParam,
+                                    setBypass: result.setBypass,
+                                },
+                            };
+                            this.strip.deviceNodes[idx] = bacteriaDn;
+                            this.rebuildChain();
+                        }
+                    })
+                    .catch((error) => logger.warn(`[WebAudioEngine] Bacteria failed: ${error}`));
                 pendingDevicePromises.add(loadPromise);
                 loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
             } else if (isProofDevice(deviceType)) {

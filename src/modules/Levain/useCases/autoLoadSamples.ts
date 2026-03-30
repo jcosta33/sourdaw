@@ -6,6 +6,10 @@
 
 import { loadInstrumentFromManifest, WEB_LOD } from '../repositories/sampleLoader';
 import { setSampleLoadProgress } from '../stores/levainStore';
+import { convertFileSrc } from '@tauri-apps/api/core';
+import { resolveResource } from '@tauri-apps/api/path';
+
+const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
 /**
  * Load levain samples for a specific instrument into the worklet node.
@@ -15,7 +19,20 @@ export async function autoLoadLevainSamples(
     nodePort: MessagePort,
     instrumentId: string = 'violin-1',
 ): Promise<void> {
-    const manifestBase = `/samples/levain/${instrumentId}`;
+    let manifestBase = `/samples/levain/${instrumentId}`;
+    
+    // In Tauri desktop, we bypass the embedded frontend cache 
+    // and load massive 1.2GB sample banks straight from OS resources.
+    if (isTauri) {
+        try {
+            // Tauri places parent-relative bundle assets under _up_ to protect the root Resources directory
+            const localPath = await resolveResource(`_up_/public/samples/levain/${instrumentId}`);
+            manifestBase = convertFileSrc(localPath);
+        } catch (e) {
+            console.warn('[Levain] Failed to resolve Tauri resource path:', e);
+        }
+    }
+
     const manifestUrl = `${manifestBase}/manifest.json`;
 
     setSampleLoadProgress(0.01); // trigger UI loading state

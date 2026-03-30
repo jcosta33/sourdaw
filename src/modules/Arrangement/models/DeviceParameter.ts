@@ -51,6 +51,8 @@ import { LEVAIN_DESCRIPTOR } from './pluginDescriptors/levainDescriptor';
 import { GLUTEN_DESCRIPTOR } from './pluginDescriptors/glutenDescriptor';
 import { PROOF_DESCRIPTOR } from './pluginDescriptors/proofDescriptor';
 import { YEAST_DESCRIPTOR } from './pluginDescriptors/yeastDescriptor';
+import { BACTERIA_DESCRIPTOR } from './pluginDescriptors/bacteriaDescriptor';
+import { GRINDER_DESCRIPTOR } from './pluginDescriptors/grinderDescriptor';
 
 // ── Synth variants (generated from builtin-synth base) ─────────────────────
 function createSynthVariant(id: string, name: string, overrides: Record<string, number>): PluginDescriptor {
@@ -126,6 +128,8 @@ export const BUILTIN_PLUGINS: PluginDescriptor[] = [
     TOASTER_DESCRIPTOR,
     LEVAIN_DESCRIPTOR,
     GLUTEN_DESCRIPTOR,
+    BACTERIA_DESCRIPTOR,
+    GRINDER_DESCRIPTOR,
     PROOF_DESCRIPTOR,
     YEAST_DESCRIPTOR,
 ];

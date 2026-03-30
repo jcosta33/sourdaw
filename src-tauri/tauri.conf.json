@@ -6,7 +6,7 @@
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": "pnpm dev",
-    "beforeBuildCommand": "pnpm build"
+    "beforeBuildCommand": "pnpm build && rm -rf dist/samples"
   },
   "app": {
     "windows": [
@@ -21,7 +21,11 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$RESOURCE/**/*"]
+      }
     },
     "withGlobalTauri": true
   },
@@ -35,6 +39,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "resources": ["../public/samples/**/*"],
     "macOS": {
       "entitlements": "Entitlements.plist",
       "infoPlist": "Info.plist",

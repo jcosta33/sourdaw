@@ -44,6 +44,7 @@ export type WorkspaceState = {
     toasterHeight: number;
     levainHeight: number;
     glutenHeight: number;
+    bacteriaHeight: number;
     proofChamberHeight: number;
     proofHeight: number;
     scoringHeight: number;
@@ -88,6 +89,7 @@ export const defaultWorkspaceState: WorkspaceState = {
     toasterHeight: 420,
     levainHeight: 340,
     glutenHeight: 300,
+    bacteriaHeight: 400,
     proofChamberHeight: 380,
     proofHeight: 340,
     scoringHeight: 300,

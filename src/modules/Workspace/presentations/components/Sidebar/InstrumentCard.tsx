@@ -83,6 +83,22 @@ export const GLUTEN_THEME: InstrumentCardTheme = {
     glow: 'bg-[var(--color-accent-orange)]/8',
 };
 
+export const BACTERIA_THEME: InstrumentCardTheme = {
+    button: 'border-rose-500/30 bg-gradient-to-br from-rose-500/10 via-surface-raised to-rose-500/5 hover:border-rose-500/50 hover:from-rose-500/15',
+    iconBox: 'bg-rose-500/20 border-rose-500/20 shadow-[0_0_12px_rgba(244,63,94,0.15)]',
+    iconColor: 'text-rose-400',
+    badgeColor: 'bg-rose-500/20 text-rose-400',
+    glow: 'bg-rose-500/8',
+};
+
+export const GRINDER_THEME: InstrumentCardTheme = {
+    button: 'border-amber-600/30 bg-gradient-to-br from-amber-600/10 via-surface-raised to-amber-600/5 hover:border-amber-600/50 hover:from-amber-600/15',
+    iconBox: 'bg-amber-600/20 border-amber-600/20 shadow-[0_0_12px_rgba(217,119,6,0.15)]',
+    iconColor: 'text-amber-500',
+    badgeColor: 'bg-amber-600/20 text-amber-500',
+    glow: 'bg-amber-600/8',
+};
+
 export const YEAST_THEME: InstrumentCardTheme = {
     button: 'border-lime-500/30 bg-gradient-to-br from-lime-500/10 via-surface-raised to-lime-500/5 hover:border-lime-500/50 hover:from-lime-500/15',
     iconBox: 'bg-lime-500/20 border-lime-500/20 shadow-[0_0_12px_rgba(132,204,22,0.15)]',

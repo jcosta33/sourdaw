@@ -1,0 +1,5 @@
+[build]
+rustflags = ["-Cembed-bitcode=no", "-Zpacked-bundled-libs=no"]
+
+[target.aarch64-apple-darwin]
+ar = "/opt/homebrew/opt/llvm/bin/llvm-ar"

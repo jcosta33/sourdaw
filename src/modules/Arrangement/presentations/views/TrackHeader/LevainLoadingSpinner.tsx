@@ -1,7 +1,7 @@
 import { type ReactElement, useSyncExternalStore } from 'react';
 import { Loader2 } from 'lucide-react';
 import { levainStore } from '#/modules/Levain/stores/levainStore';
-import { type Track } from '../../models/Track';
+import { type Track } from '#/modules/Arrangement/models/Track';
 
 type Props = {
     track: Track;
@@ -9,7 +9,7 @@ type Props = {
 
 export const LevainLoadingSpinner = ({ track }: Props): ReactElement | null => {
     // Only bother checking if this track actually has a levain device
-    const isLevainTrack = track.devices.some((d) => d.type === 'levain');
+    const isLevainTrack = track.devices.some((d: any) => d.type === 'levain');
     
     // We only subscribe if it's a levain track to avoid unnecessary re-renders on pure audio tracks
     const isLoading = useSyncExternalStore(

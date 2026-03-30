@@ -15,7 +15,7 @@
     "lint:fix": "eslint --fix \"src/**/*.{ts,tsx}\"",
     "deps:validate": "depcruise src",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build",
+    "tauri:build": "RUSTFLAGS='-Cembed-bitcode=no -Zpacked-bundled-libs=no' tauri build",
     "wasm:dsp": "cd crates/daw-dsp && wasm-pack build --target web --out-dir ../../public/wasm/daw-dsp --no-typescript && rm -f ../../public/wasm/daw-dsp/.gitignore",
     "wasm:proof-chamber": "cd crates/proof-chamber && wasm-pack build --target web --out-dir ../../public/wasm/proof-chamber --no-typescript && rm -f ../../public/wasm/proof-chamber/.gitignore",
     "wasm:scoring": "cd crates/scoring && wasm-pack build --target web --out-dir ../../public/wasm/scoring --no-typescript && rm -f ../../public/wasm/scoring/.gitignore",

@@ -1,5 +1,5 @@
 import { type ReactElement } from 'react';
-import { Shield, Sparkles, GitBranch, AudioLines, Mic, Waves as WavesIcon, Gauge } from 'lucide-react';
+import { Shield, Sparkles, GitBranch, AudioLines, Mic, Waves as WavesIcon, Gauge, Bug } from 'lucide-react';
 import {
     InstrumentCard,
     PROOF_THEME,
@@ -8,6 +8,7 @@ import {
     SCORING_THEME,
     PROOF_CHAMBER_THEME,
     GLUTEN_THEME,
+    BACTERIA_THEME,
 } from '../../components/Sidebar/InstrumentCard';
 import { APP_EVENTS } from '#/helpers/Event/appEvents';
 import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
@@ -63,7 +64,7 @@ export const EffectsTab = ({
     preview,
 }: EffectsTabProps): ReactElement => {
     // Filter out instruments and premium plugins (which have their own hero cards at the top)
-    const premiumIds = new Set(['native-proof-chamber', 'native-scoring', 'gluten', 'proof', 'knead', 'yeast']);
+    const premiumIds = new Set(['native-proof-chamber', 'native-scoring', 'gluten', 'bacteria', 'proof', 'knead', 'yeast']);
     const effects = plugins.filter((p) => p.category !== 'instrument' && !premiumIds.has(p.id));
     const query = searchQuery.toLowerCase().trim();
 
@@ -515,6 +516,19 @@ export const EffectsTab = ({
                         }
                     }}
                     theme={GLUTEN_THEME}
+                />
+                <InstrumentCard
+                    icon={Bug}
+                    label="Bacteria"
+                    badge="Creative FX"
+                    description="Multi-band mangler · Distortion · Granular · Spectral · Modulation"
+                    onClick={() => {
+                        if (selectedTrackId) {
+                            addDevice(selectedTrackId, 'bacteria');
+                            document.dispatchEvent(new Event(APP_EVENTS.SHOW_BACTERIA_TAB));
+                        }
+                    }}
+                    theme={BACTERIA_THEME}
                 />
             </div>
 
