@@ -277,6 +277,17 @@ function getDefaultKeyRange(id: InstrumentId): [number, number] {
             return [50, 91]; // D3-G6
         case 'bassoon':
             return [34, 75]; // Bb1-Eb5
+        case 'piccolo':
+            return [74, 108]; // D5-C8
+        case 'glockenspiel':
+            return [72, 108]; // C5-C8
+        case 'xylophone':
+        case 'marimba':
+            return [45, 96]; // A2-C7
+        case 'vibraphone':
+            return [53, 89]; // F3-F6
+        case 'timpani':
+            return [36, 57]; // C2-A3
         default:
             return [21, 108]; // full range
     }

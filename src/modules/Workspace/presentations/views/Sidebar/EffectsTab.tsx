@@ -62,7 +62,9 @@ export const EffectsTab = ({
     onToggleFavorite,
     preview,
 }: EffectsTabProps): ReactElement => {
-    const effects = plugins.filter((p) => p.category !== 'instrument');
+    // Filter out instruments and premium plugins (which have their own hero cards at the top)
+    const premiumIds = new Set(['native-proof-chamber', 'native-scoring', 'gluten', 'proof', 'knead', 'yeast']);
+    const effects = plugins.filter((p) => p.category !== 'instrument' && !premiumIds.has(p.id));
     const query = searchQuery.toLowerCase().trim();
 
     // FX chain presets (moved from Instruments tab)
@@ -431,8 +433,12 @@ export const EffectsTab = ({
 
     return (
         <div className="flex flex-col gap-0 px-1.5 pb-4 animate-in slide-in-from-left-4 duration-200">
-            {/* Featured: Premium Plugins */}
+            {/* House Specials */}
             <div className="flex flex-col gap-1.5 mb-3">
+                <div className="flex items-center gap-1.5 px-1 mb-0.5">
+                    <span className="text-[9px] font-bold text-[var(--color-accent-orange)] uppercase tracking-widest">House Specials</span>
+                    <div className="flex-1 h-px bg-[var(--color-accent-orange)]/15" />
+                </div>
                 <InstrumentCard
                     icon={Shield}
                     label="Proof"
@@ -509,6 +515,9 @@ export const EffectsTab = ({
                     theme={GLUTEN_THEME}
                 />
             </div>
+
+            {/* Divider */}
+            <div className="h-px bg-border/20 my-1" />
 
             <NavCard
                 icon={Waves}

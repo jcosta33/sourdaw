@@ -3,6 +3,7 @@ use std::ffi::c_void;
 use std::sync::{Arc, Mutex};
 use crate::host::traits::AudioPlugin;
 use crate::host::clap_wrapper::ClapWrapper;
+use daw_engine::EngineHandle;
 
 pub struct PluginInstanceData {
     pub plugin: Box<dyn AudioPlugin>,
@@ -62,6 +63,9 @@ pub struct AppState {
     pub plugin_registry: Arc<Mutex<HashMap<String, PluginRegistryEntry>>>,
     /// Open plugin GUI windows, keyed by instance_id → window label.
     pub plugin_windows: Arc<Mutex<HashMap<String, String>>>,
+    /// Native audio engine handle (cpal thread + lock-free scheduler).
+    /// None until start_native_engine is called.
+    pub engine: Arc<Mutex<Option<EngineHandle>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -78,6 +82,7 @@ impl Default for AppState {
             plugins: Arc::new(Mutex::new(HashMap::new())),
             plugin_registry: Arc::new(Mutex::new(HashMap::new())),
             plugin_windows: Arc::new(Mutex::new(HashMap::new())),
+            engine: Arc::new(Mutex::new(None)),
         }
     }
 }

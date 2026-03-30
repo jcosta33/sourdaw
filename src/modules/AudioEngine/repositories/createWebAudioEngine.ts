@@ -60,6 +60,7 @@ class AudioEngineImpl implements AudioEngine {
         try {
             await this.context.audioWorklet.addModule('/audio/worklets/sidechain-compressor-processor.js');
             await this.context.audioWorklet.addModule('/audio/worklets/native-plugin-host-processor.js');
+            await this.context.audioWorklet.addModule('/audio/worklets/native-plugin-bridge-processor.js');
             await this.context.audioWorklet.addModule(audioCoreProcessorUrl);
             this.workletReady = true;
         } catch (error) {

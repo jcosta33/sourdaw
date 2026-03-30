@@ -43,6 +43,7 @@ const INSTRUMENTS: { id: InstrumentId; label: string; hasSamples: boolean; famil
     { id: 'tuba', label: 'Tuba', hasSamples: true, family: 'Brass' },
     // Woodwinds
     { id: 'flute', label: 'Flutes', hasSamples: true, family: 'Woodwinds' },
+    { id: 'piccolo', label: 'Piccolo', hasSamples: true, family: 'Woodwinds' },
     { id: 'oboe', label: 'Oboes', hasSamples: true, family: 'Woodwinds' },
     { id: 'clarinet', label: 'Clarinets', hasSamples: true, family: 'Woodwinds' },
     { id: 'bassoon', label: 'Bassoons', hasSamples: true, family: 'Woodwinds' },

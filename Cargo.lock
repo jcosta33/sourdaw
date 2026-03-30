@@ -1473,9 +1473,11 @@ dependencies = [
 name = "daw-engine"
 version = "0.1.0"
 dependencies = [
+ "clap-sys",
  "cpal",
  "daw-core",
  "daw-dsp",
+ "libloading 0.8.9",
  "rtrb",
 ]
 
@@ -6898,6 +6900,7 @@ dependencies = [
  "clap-sys",
  "cpal",
  "daw-core",
+ "daw-engine",
  "dirs 5.0.1",
  "futures-util",
  "hound",

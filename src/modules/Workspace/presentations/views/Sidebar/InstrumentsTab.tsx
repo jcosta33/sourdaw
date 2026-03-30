@@ -16,7 +16,7 @@ import { APP_EVENTS } from '#/helpers/Event/appEvents';
 
 import { PresetItem } from '../../components/Sidebar/PresetItem';
 import { InstrumentCard, FERMENTER_THEME, TOASTER_THEME, LEVAIN_THEME } from '../../components/Sidebar/InstrumentCard';
-import { SectionHeader } from '../../components/Sidebar/SectionHeader';
+// SectionHeader removed — using inline styled dividers instead
 import { EmptyState } from '../../components/Sidebar/EmptyState';
 import { NavCard } from '../Sidebar/effectsTabHelpers';
 import { PRESET_CATEGORIES, CATEGORY_ICONS, CATEGORY_COLORS } from '../../components/Sidebar/sidebarConstants';
@@ -34,7 +34,7 @@ type InstrumentGroup = {
 const INSTRUMENT_GROUPS: InstrumentGroup[] = [
     {
         label: 'Synth Instruments',
-        description: 'Subtractive, FM & Faust synthesis — plays on MIDI tracks',
+        description: 'Subtractive, FM & wavetable synthesis',
         categories: ['synth', 'bass', 'lead', 'pad', 'keys'],
     },
     {
@@ -289,8 +289,11 @@ export const InstrumentsTab = ({
 
     return (
         <div className="flex flex-col gap-0 px-1.5 pb-4 animate-in slide-in-from-left-4 duration-200">
-            {/* ── Section: Instruments ─────────────────────────────────── */}
-            <SectionHeader label="Instruments" />
+            {/* ── Fresh from the Oven ─────────────────────────────────── */}
+            <div className="flex items-center gap-1.5 px-1 mb-1">
+                <span className="text-[9px] font-bold text-[var(--color-accent-orange)] uppercase tracking-widest">Fresh from the Oven</span>
+                <div className="flex-1 h-px bg-[var(--color-accent-orange)]/15" />
+            </div>
 
             <div className="flex flex-col gap-1.5 mb-3">
                 <InstrumentCard
@@ -319,8 +322,8 @@ export const InstrumentsTab = ({
                 />
             </div>
 
-            {/* ── Section: Sounds ──────────────────────────────────────── */}
-            <SectionHeader label="Sounds" />
+            {/* ── Divider ── */}
+            <div className="h-px bg-border/20 my-1" />
 
             {/* My Presets & Save */}
             <div className="flex items-center gap-1 mb-2">
@@ -420,8 +423,7 @@ export const InstrumentsTab = ({
                 }
 
                 return (
-                    <div key={group.label} className="mb-3">
-                        <SectionHeader label={group.label} />
+                    <div key={group.label} className="mb-2">
                         <div className="flex flex-col gap-0">
                             {groupCats.map((cat) => {
                                 const presetsInCat = soundPresets.filter((p) => p.category === cat);
@@ -429,15 +431,16 @@ export const InstrumentsTab = ({
                                 const catColor = CATEGORY_COLORS[cat] ?? '';
                                 const subtitle = CATEGORY_SUBTITLES[cat] ?? '';
 
+                                const catLabel = cat.charAt(0).toUpperCase() + cat.slice(1);
                                 return (
                                     <NavCard
                                         key={cat}
                                         icon={CatIcon}
-                                        label={cat}
+                                        label={catLabel}
                                         description={subtitle}
                                         count={presetsInCat.length}
                                         color={catColor}
-                                        onClick={() => pushRoute({ id: `instruments-${cat}`, title: cat })}
+                                        onClick={() => pushRoute({ id: `instruments-${cat}`, title: catLabel })}
                                     />
                                 );
                             })}

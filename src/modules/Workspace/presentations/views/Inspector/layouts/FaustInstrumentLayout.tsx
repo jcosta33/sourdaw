@@ -34,7 +34,7 @@ const INSTRUMENT_META: Record<string, InstrumentMeta> = {
     'faust-wavetable': { label: 'Wavetable', icon: Waves, color: 'var(--color-accent-blue)' },
     'faust-additive': { label: 'Additive Synth', icon: Music, color: 'var(--color-accent-teal)' },
 };
-const DEFAULT_META: InstrumentMeta = { label: 'Faust Instrument', icon: Mic2, color: 'var(--color-accent-purple)' };
+const DEFAULT_META: InstrumentMeta = { label: 'Instrument', icon: Mic2, color: 'var(--color-accent-purple)' };
 
 // ── Categorization ──
 type ParamCategory = { title: string; match: (name: string) => boolean; primary: boolean };
@@ -119,7 +119,7 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
         return (
             <div className="px-1">
                 <p className="text-[10px] text-muted-foreground">
-                    This Faust instrument has no editable parameters. It may need to be compiled first.
+                    This instrument is loading. Parameters will appear shortly.
                 </p>
             </div>
         );

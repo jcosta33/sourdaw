@@ -4,9 +4,11 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 use crate::host::clap_wrapper::ClapWrapper;
+use crate::host::native_bridge::ClapPluginSlot;
 use crate::host::scanner::{self, ScannedPlugin, ScanResult};
 use crate::host::traits::AudioPlugin;
 use crate::state::{AppState, PluginInstanceData, PluginRegistryEntry};
+use daw_engine::EngineHandle;
 
 // Re-export for use by traits.rs and other modules
 pub use crate::host::scanner::ScannedPlugin as ScannedPluginInfo;
@@ -150,6 +152,25 @@ pub async fn load_plugin(
             let name = wrapper.get_name().to_string();
             let params = wrapper.get_parameters();
 
+            // Send the plugin to the native audio thread for real-time processing
+            let engine_plugin_id = {
+                let mut engine_guard = state.engine.lock()
+                    .map_err(|e| format!("Failed to lock engine: {}", e))?;
+                if let Some(ref mut engine) = *engine_guard {
+                    let slot = ClapPluginSlot { wrapper };
+                    engine.add_plugin(Box::new(slot))?
+                } else {
+                    // Engine not running — fall back to storing in mutex (no audio processing)
+                    eprintln!("[Plugin] Warning: native engine not running, plugin won't process audio");
+                    let mut plugins = state.plugins.lock()
+                        .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+                    plugins.insert(instance_id.0.clone(), PluginInstanceData {
+                        plugin: Box::new(wrapper),
+                    });
+                    0
+                }
+            };
+
             let instance = PluginInstance {
                 instance_id: instance_id.clone(),
                 plugin_id: plugin_id.clone(),
@@ -158,12 +179,6 @@ pub async fn load_plugin(
                 is_active: true,
                 latency_samples: 0,
             };
-
-            let mut plugins = state.plugins.lock()
-                .map_err(|e| format!("Failed to lock plugins: {}", e))?;
-            plugins.insert(instance_id.0.clone(), PluginInstanceData {
-                plugin: Box::new(wrapper),
-            });
 
             Ok(instance)
         }
@@ -254,4 +269,26 @@ pub async fn set_plugin_state(
 
     instance.plugin.set_state(&plugin_state);
     Ok(())
+}
+
+// ── Native audio engine ────────────────────────────────────────────────
+
+#[tauri::command]
+#[specta::specta]
+pub async fn start_native_engine(
+    state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
+    let mut engine_guard = state.engine.lock()
+        .map_err(|e| format!("Failed to lock engine: {}", e))?;
+
+    if engine_guard.is_some() {
+        return Ok("Native engine already running".to_string());
+    }
+
+    let handle = EngineHandle::new()
+        .map_err(|e| format!("Failed to start native audio engine: {}", e))?;
+
+    eprintln!("[Engine] Native audio engine started");
+    *engine_guard = Some(handle);
+    Ok("Native engine started".to_string())
 }

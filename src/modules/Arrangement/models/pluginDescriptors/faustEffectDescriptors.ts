@@ -15,7 +15,7 @@ export const FAUST_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
     {
         id: 'faust-zita-rev1-reverb',
         name: 'Zita-Rev1 Reverb',
-        vendor: 'Faust/Sourdaw',
+        vendor: 'Sourdaw',
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
@@ -28,7 +28,7 @@ export const FAUST_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
     {
         id: 'faust-1176-compressor',
         name: '1176 Compressor',
-        vendor: 'Faust/Sourdaw',
+        vendor: 'Sourdaw',
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
@@ -42,7 +42,7 @@ export const FAUST_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
     {
         id: 'faust-multiband-compressor',
         name: 'Multiband Compressor',
-        vendor: 'Faust/Sourdaw',
+        vendor: 'Sourdaw',
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
@@ -57,7 +57,7 @@ export const FAUST_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
     {
         id: 'faust-pro-parametric-eq',
         name: 'Pro Parametric EQ',
-        vendor: 'Faust/Sourdaw',
+        vendor: 'Sourdaw',
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
@@ -74,7 +74,7 @@ export const FAUST_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
     {
         id: 'faust-tape-delay',
         name: 'Tape Delay',
-        vendor: 'Faust/Sourdaw',
+        vendor: 'Sourdaw',
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
@@ -87,7 +87,7 @@ export const FAUST_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
     {
         id: 'faust-brick-wall-limiter',
         name: 'Brick-Wall Limiter',
-        vendor: 'Faust/Sourdaw',
+        vendor: 'Sourdaw',
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
@@ -99,7 +99,7 @@ export const FAUST_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
     {
         id: 'faust-spring-reverb',
         name: 'Spring Reverb',
-        vendor: 'Faust/Sourdaw',
+        vendor: 'Sourdaw',
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
@@ -111,7 +111,7 @@ export const FAUST_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
     {
         id: 'faust-noise-gate',
         name: 'Noise Gate',
-        vendor: 'Faust/Sourdaw',
+        vendor: 'Sourdaw',
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
@@ -124,7 +124,7 @@ export const FAUST_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
     {
         id: 'faust-gain-utility',
         name: 'Gain Utility',
-        vendor: 'Faust/Sourdaw',
+        vendor: 'Sourdaw',
         format: 'builtin',
         category: 'utility',
         hasCustomUI: false,
@@ -135,7 +135,7 @@ export const FAUST_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
     {
         id: 'faust-lufs-meter',
         name: 'LUFS Meter',
-        vendor: 'Faust/Sourdaw',
+        vendor: 'Sourdaw',
         format: 'builtin',
         category: 'analyzer',
         hasCustomUI: false,
@@ -144,7 +144,7 @@ export const FAUST_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
     {
         id: 'faust-stereo-widener',
         name: 'Stereo Widener',
-        vendor: 'Faust/Sourdaw',
+        vendor: 'Sourdaw',
         format: 'builtin',
         category: 'utility',
         hasCustomUI: false,
@@ -155,7 +155,7 @@ export const FAUST_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
     {
         id: 'faust-de-esser',
         name: 'De-esser',
-        vendor: 'Faust/Sourdaw',
+        vendor: 'Sourdaw',
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,

@@ -32,26 +32,50 @@ function noteNameToMidi(name) {
     return (octave + 1) * 12 + semitone;
 }
 
-// ─── Parse VSCO-2-CE filename into note + dynamic ─────────────────────────
+// ─── Parse VSCO-2-CE filename into note + velocity layer + round robin ────
 
 function parseVscoFilename(filename) {
-    // e.g. LLVln_ArcoVib_A3_f.wav → { note: 'A3', dynamic: 'f' }
-    //      VlnSec_susVib_G3_p.wav → { note: 'G3', dynamic: 'p' }
     const base = filename.replace('.wav', '');
     const parts = base.split('_');
-    // Last part is dynamic (p, mp, mf, f, ff etc.)
-    // Second-to-last is note name
-    const dynamic = parts[parts.length - 1];
-    const notePart = parts[parts.length - 2];
-    if (!notePart || !dynamic) return null;
+
+    // Extract round-robin position (last part if _rr{n})
+    let rrPos = 0;
+    let rrLen = 1;
+    const lastPart = parts[parts.length - 1];
+    if (lastPart && lastPart.match(/^rr(\d+)$/i)) {
+        rrPos = parseInt(lastPart.replace(/^rr/i, ''), 10) - 1; // 0-indexed
+        parts.pop();
+    }
+
+    // Extract velocity layer (last remaining part if _v{n} or _p/_f/_mf etc.)
+    const velPart = parts[parts.length - 1];
+    let velIndex = 0;
+    let dynamic;
+    if (velPart && velPart.match(/^v(\d+)$/i)) {
+        velIndex = parseInt(velPart.replace(/^v/i, ''), 10) - 1; // 0-indexed
+        dynamic = `v${velIndex + 1}`;
+        parts.pop();
+    } else if (velPart && ['ppp','pp','p','mp','mf','f','ff','fff'].includes(velPart)) {
+        dynamic = velPart;
+        parts.pop();
+    } else {
+        dynamic = 'v1';
+    }
+
+    // Note is now the last remaining part
+    const notePart = parts[parts.length - 1];
+    if (!notePart) return null;
+
     const midi = noteNameToMidi(notePart);
     if (midi === null) return null;
-    return { noteName: notePart, midi, dynamic };
+
+    return { noteName: notePart, midi, dynamic, rrPos, rrLen, velIndex };
 }
 
 // ─── Dynamic → velocity range ─────────────────────────────────────────────
 
-const DYNAMIC_ORDER = ['ppp', 'pp', 'p', 'mp', 'mf', 'f', 'ff', 'fff'];
+const DYNAMIC_ORDER = ['ppp', 'pp', 'p', 'mp', 'mf', 'f', 'ff', 'fff',
+    'v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'v8'];
 
 function dynamicsToVelLayers(dynamics) {
     // Sort by dynamic order
@@ -63,8 +87,6 @@ function dynamicsToVelLayers(dynamics) {
         dynamic: d,
         loVel: Math.round((i / count) * 127),
         hiVel: Math.round(((i + 1) / count) * 127) - (i < count - 1 ? 1 : 0),
-        rrPos: 0,
-        rrLen: 1,
     }));
 }
 
@@ -87,10 +109,22 @@ function buildKeyRanges(sortedMidis, instrumentRange) {
 
 // ─── Fetch file list from GitHub API ──────────────────────────────────────
 
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
 async function listGitHubDir(path) {
-    const apiUrl = `https://api.github.com/repos/sgossner/VSCO-2-CE/contents/${encodeURIComponent(path)}`;
+    await sleep(200); // avoid GitHub API rate limiting (60 req/hr unauthenticated)
+    const encoded = path.split('/').map(encodeURIComponent).join('/');
+    const apiUrl = `https://api.github.com/repos/sgossner/VSCO-2-CE/contents/${encoded}`;
     const res = await fetch(apiUrl);
-    if (!res.ok) throw new Error(`GitHub API error for ${path}: ${res.status}`);
+    if (!res.ok) {
+        const remaining = res.headers.get('x-ratelimit-remaining');
+        const reset = res.headers.get('x-ratelimit-reset');
+        if (res.status === 403 && remaining === '0') {
+            const resetDate = reset ? new Date(parseInt(reset) * 1000).toLocaleTimeString() : 'unknown';
+            throw new Error(`GitHub API rate limit exceeded. Resets at ${resetDate}. Re-run after that time.`);
+        }
+        throw new Error(`GitHub API error for ${path}: ${res.status}`);
+    }
     return res.json();
 }
 
@@ -98,7 +132,9 @@ async function listGitHubDir(path) {
 
 async function downloadFile(remotePath, localPath) {
     if (existsSync(localPath)) return false; // skip if already downloaded
-    const url = `${BASE_URL}/${remotePath}`;
+    // Properly encode each path segment (handles spaces, # etc.)
+    const encodedPath = remotePath.split('/').map(encodeURIComponent).join('/');
+    const url = `${BASE_URL}/${encodedPath}`;
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Download failed: ${url} (${res.status})`);
     const buf = Buffer.from(await res.arrayBuffer());
@@ -178,8 +214,8 @@ const INSTRUMENTS = [
         id: 'trumpet',
         keyRange: [54, 82],
         articulations: [
-            { type: 'sustain', id: 0, vscoPath: 'Brass/Trumpet/Sus', loopMode: 'forward' },
-            { type: 'staccato', id: 8, vscoPath: 'Brass/Trumpet/Stacc', loopMode: 'none' },
+            { type: 'sustain', id: 0, vscoPath: 'Brass/Trumpet/susvib', loopMode: 'forward' },
+            { type: 'staccato', id: 8, vscoPath: 'Brass/Trumpet/stac', loopMode: 'none' },
         ],
     },
     {
@@ -210,7 +246,7 @@ const INSTRUMENTS = [
         id: 'flute',
         keyRange: [60, 96],
         articulations: [
-            { type: 'sustain', id: 0, vscoPath: 'Woodwinds/Flute/sus', loopMode: 'forward' },
+            { type: 'sustain', id: 0, vscoPath: 'Woodwinds/Flute/susvib', loopMode: 'forward' },
             { type: 'staccato', id: 8, vscoPath: 'Woodwinds/Flute/stac', loopMode: 'none' },
         ],
     },
@@ -218,15 +254,15 @@ const INSTRUMENTS = [
         id: 'oboe',
         keyRange: [58, 91],
         articulations: [
-            { type: 'sustain', id: 0, vscoPath: 'Woodwinds/Oboe/sus', loopMode: 'forward' },
-            { type: 'staccato', id: 8, vscoPath: 'Woodwinds/Oboe/stac', loopMode: 'none' },
+            { type: 'sustain', id: 0, vscoPath: 'Woodwinds/Oboe/Sus', loopMode: 'forward' },
+            { type: 'staccato', id: 8, vscoPath: 'Woodwinds/Oboe/Stacc', loopMode: 'none' },
         ],
     },
     {
         id: 'clarinet',
         keyRange: [50, 91],
         articulations: [
-            { type: 'sustain', id: 0, vscoPath: 'Woodwinds/Clarinet/sus', loopMode: 'forward' },
+            { type: 'sustain', id: 0, vscoPath: 'Woodwinds/Clarinet/susLong', loopMode: 'forward' },
             { type: 'staccato', id: 8, vscoPath: 'Woodwinds/Clarinet/stac', loopMode: 'none' },
         ],
     },
@@ -293,7 +329,7 @@ async function processArticulation(vscoPath, artType, artId, loopMode, instrumen
         return null;
     }
 
-    // Group by note midi, then by dynamic
+    // Group by note midi, then by dynamic, keeping all RR positions
     const byNote = new Map();
     for (const p of parsed) {
         if (!byNote.has(p.midi)) byNote.set(p.midi, []);
@@ -317,40 +353,47 @@ async function processArticulation(vscoPath, artType, artId, loopMode, instrumen
         const noteSamples = byNote.get(midi) || [];
 
         for (const velLayer of velLayers) {
-            const sample = noteSamples.find(s => s.dynamic === velLayer.dynamic);
-            if (!sample) continue;
+            // Get all RR positions for this note+dynamic
+            const rrSamples = noteSamples
+                .filter(s => s.dynamic === velLayer.dynamic)
+                .sort((a, b) => a.rrPos - b.rrPos);
 
-            // Download the file
-            const localFilename = sample.filename;
-            const localPath = join(outDir, localFilename);
-            const downloaded = await downloadFile(
-                `${vscoPath}/${sample.filename}`,
-                localPath
-            );
-            if (downloaded) downloadCount++;
-            else skipCount++;
+            if (rrSamples.length === 0) continue;
 
-            zones.push({
-                file: localFilename,
-                rootNote: midi,
-                loKey,
-                hiKey,
-                loVel: velLayer.loVel,
-                hiVel: velLayer.hiVel,
-                rrPos: 0,
-                rrLen: 1,
-                micId: 0,
-                isRelease: false,
-                loopMode,
-                loopStart: 0,
-                loopEnd: 0,
-                loopCrossfade: 0,
-                gainDb: 0,
-                attack: artType === 'sustain' || artType === 'tremolo' ? 0.02 : 0.005,
-                decay: 0.1,
-                sustain: 1.0,
-                release: artType === 'sustain' || artType === 'tremolo' ? 0.5 : 0.15,
-            });
+            const rrLen = rrSamples.length;
+
+            for (const sample of rrSamples) {
+                const localFilename = sample.filename;
+                const localPath = join(outDir, localFilename);
+                const downloaded = await downloadFile(
+                    `${vscoPath}/${sample.filename}`,
+                    localPath
+                );
+                if (downloaded) downloadCount++;
+                else skipCount++;
+
+                zones.push({
+                    file: localFilename,
+                    rootNote: midi,
+                    loKey,
+                    hiKey,
+                    loVel: velLayer.loVel,
+                    hiVel: velLayer.hiVel,
+                    rrPos: sample.rrPos,
+                    rrLen,
+                    micId: 0,
+                    isRelease: false,
+                    loopMode,
+                    loopStart: 0,
+                    loopEnd: 0,
+                    loopCrossfade: 0,
+                    gainDb: 0,
+                    attack: artType === 'sustain' || artType === 'tremolo' ? 0.02 : 0.005,
+                    decay: 0.1,
+                    sustain: 1.0,
+                    release: artType === 'sustain' || artType === 'tremolo' ? 0.5 : 0.15,
+                });
+            }
         }
     }
 

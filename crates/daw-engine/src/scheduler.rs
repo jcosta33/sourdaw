@@ -1,33 +1,45 @@
 //! Lock-free Messaging and Task Schedule for Native CPAL engine.
+//!
+//! Handles both built-in DSP effects (Knead) and external plugins (CLAP/VST3)
+//! via the NativePlugin trait. All communication is lock-free via rtrb.
 
-use std::sync::Arc;
-use rtrb::{Consumer, Producer, RingBuffer};
+use rtrb::Consumer;
 use daw_dsp::knead::engine::KneadEngine;
+use crate::plugin_slot::NativePlugin;
 
+/// Commands sent from the UI/main thread to the audio thread (lock-free via rtrb).
 pub enum GraphCommand {
-    /// Add an effect to the end of the processing chain.
-    AddEffect(usize, String), // id, plugin_type
-    /// Remove an effect by ID.
+    // Built-in effects
+    AddEffect(usize, String),
     RemoveEffect(usize),
-    /// Set a parameter on a specific effect ID.
-    SetParam(usize, String, f32), // id, param_name, value
-    /// Set bypass state on a specific effect ID.
+    SetParam(usize, String, f32),
     SetBypass(usize, bool),
+
+    // External plugins (CLAP/VST3/AU)
+    /// Add a native plugin to the processing chain.
+    /// The Box<dyn NativePlugin> is moved to the audio thread — no sharing.
+    AddPlugin(usize, Box<dyn NativePlugin>),
+    /// Remove a native plugin by ID.
+    RemovePlugin(usize),
+    /// Set a parameter on a native plugin (param_id, value).
+    SetPluginParam(usize, u32, f64),
 }
 
-pub enum PluginCore {
+enum PluginCore {
     Knead(KneadEngine),
+    Native(Box<dyn NativePlugin>),
 }
 
-pub struct ActiveEffect {
-    pub id: usize,
-    pub instance: PluginCore,
+struct ActiveEffect {
+    id: usize,
+    instance: PluginCore,
+    bypassed: bool,
 }
 
 pub struct AudioScheduler {
-    pub effects: Vec<ActiveEffect>,
-    pub command_rx: Consumer<GraphCommand>,
-    pub sample_rate: f32,
+    effects: Vec<ActiveEffect>,
+    command_rx: Consumer<GraphCommand>,
+    sample_rate: f32,
 }
 
 impl AudioScheduler {
@@ -50,19 +62,35 @@ impl AudioScheduler {
                         _ => None,
                     };
                     if let Some(inst) = instance {
-                        self.effects.push(ActiveEffect { id, instance: inst });
+                        self.effects.push(ActiveEffect { id, instance: inst, bypassed: false });
                     }
                 }
-                GraphCommand::RemoveEffect(id) => {
+                GraphCommand::RemoveEffect(id) | GraphCommand::RemovePlugin(id) => {
                     self.effects.retain(|e| e.id != id);
                 }
-                GraphCommand::SetParam(id, name, value) => {
-                    if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
-                        // TODO: Map string parameters to methods
+                GraphCommand::SetParam(id, _name, _value) => {
+                    if let Some(_effect) = self.effects.iter_mut().find(|e| e.id == id) {
+                        // TODO: Map string parameters to Knead methods
                     }
                 }
                 GraphCommand::SetBypass(id, bypassed) => {
-                    // TODO: implement bypass natively
+                    if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
+                        effect.bypassed = bypassed;
+                    }
+                }
+                GraphCommand::AddPlugin(id, plugin) => {
+                    self.effects.push(ActiveEffect {
+                        id,
+                        instance: PluginCore::Native(plugin),
+                        bypassed: false,
+                    });
+                }
+                GraphCommand::SetPluginParam(id, param_id, value) => {
+                    if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
+                        if let PluginCore::Native(ref mut plugin) = effect.instance {
+                            plugin.set_param(param_id, value);
+                        }
+                    }
                 }
             }
         }
@@ -70,14 +98,17 @@ impl AudioScheduler {
 
     /// Process a block of audio (called by CPAL render callback).
     #[inline]
-    pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32], frames: usize) {
-        // Iterate contiguous cache-local effects chain
+    pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
         for effect in &mut self.effects {
-            // Process block internally mutates the audio frames in place
+            if effect.bypassed {
+                continue;
+            }
             match &mut effect.instance {
                 PluginCore::Knead(engine) => {
-                    // Knead processes mono input on left channel natively
                     engine.process_analysis_frame(left);
+                }
+                PluginCore::Native(plugin) => {
+                    plugin.process_audio(left, right, num_samples);
                 }
             }
         }

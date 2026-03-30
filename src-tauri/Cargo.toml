@@ -42,3 +42,4 @@ uuid = { version = "1.23.0", features = ["v4"] }
 specta = { version = "2.0.0-rc.20", features = ["derive"] }
 tauri-specta = { version = "2.0.0-rc.20", features = ["derive", "typescript"] }
 daw-core = { path = "../crates/daw-core" }
+daw-engine = { path = "../crates/daw-engine" }

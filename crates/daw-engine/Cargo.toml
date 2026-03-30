@@ -12,3 +12,5 @@ daw-core = { path = "../daw-core" }
 rtrb = "0.3"
 cpal = { version = "0.15", features = [] }
 daw-dsp = { version = "0.1.0", path = "../daw-dsp" }
+clap-sys = "0.3"
+libloading = "0.8"

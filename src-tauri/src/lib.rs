@@ -15,6 +15,7 @@ pub fn run() {
             commands::plugins::get_plugin_parameters,
             commands::plugins::get_plugin_state,
             commands::plugins::set_plugin_state,
+            commands::plugins::start_native_engine,
         ])
         .export(specta::typescript::ExportConfiguration::new(), "../src/bindings.ts")
         .expect("Failed to export typescript bindings");
@@ -65,6 +66,7 @@ pub fn run() {
             commands::plugins::get_plugin_parameters,
             commands::plugins::get_plugin_state,
             commands::plugins::set_plugin_state,
+            commands::plugins::start_native_engine,
             // audio bridge
             // commands::audio_ipc::audio_ipc, // TODO: re-add when audio_ipc module is implemented
             // Plugin GUI
