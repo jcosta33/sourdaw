@@ -1,4 +1,5 @@
 import { type ReactElement, useState, useEffect, useRef } from 'react';
+import { SourdawLogo } from './SourdawLogo';
 
 const LOADING_QUIPS = [
     'Preheating the oven...',
@@ -61,12 +62,7 @@ export const ProjectLoadingOverlay = (): ReactElement => {
                     className="absolute inset-0 rounded-full blur-2xl scale-[2] opacity-30"
                     style={{ background: 'var(--color-accent-orange, #d97706)' }}
                 />
-                <img
-                    src="/icon-transparent.png"
-                    alt="Sourdaw"
-                    className="relative h-24 drop-shadow-[0_4px_20px_rgba(217,119,6,0.4)]"
-                    style={{ animation: 'loading-breathe 3s ease-in-out infinite' }}
-                />
+                <SourdawLogo className="relative h-28 drop-shadow-[0_4px_20px_rgba(217,119,6,0.4)]" />
             </div>
 
             <h1 className="text-2xl font-bold tracking-tight mb-3 bg-gradient-to-r from-amber-400 via-amber-300 to-orange-300 bg-clip-text text-transparent">
@@ -93,10 +89,6 @@ export const ProjectLoadingOverlay = (): ReactElement => {
             </div>
 
             <style>{`
-                @keyframes loading-breathe {
-                    0%, 100% { transform: scale(1); }
-                    50% { transform: scale(1.04); }
-                }
                 @keyframes loading-shimmer {
                     0% { transform: translateX(-200%); }
                     100% { transform: translateX(400%); }

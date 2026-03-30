@@ -106,18 +106,25 @@ export const PlayheadDisplay = ({
                 <TooltipTrigger asChild>
                     <button
                         type="button"
-                        className="flex items-center gap-0.5 font-mono tabular-nums rounded px-2 py-0.5 hover:bg-accent transition-colors font-medium"
+                        className="flex items-center gap-0.5 font-mono tabular-nums rounded-sm px-2.5 py-1 transition-colors font-medium cursor-pointer group"
+                        style={{
+                            background: 'linear-gradient(180deg, #080808 0%, #0d0d0d 100%)',
+                            boxShadow: 'inset 0 1px 4px rgba(0,0,0,0.8), inset 0 0 1px rgba(0,0,0,0.4), 0 1px 0 rgba(255,255,255,0.04)',
+                            border: '1px solid rgba(0,0,0,0.6)',
+                            borderTop: '1px solid rgba(0,0,0,0.7)',
+                            borderBottom: '1px solid rgba(40,40,40,0.4)',
+                        }}
                         onClick={toggleTimeDisplayMode}
                         aria-label="Playhead position — click to switch to wall-clock time"
                     >
-                        <span className="text-[10px] text-muted-foreground/60 uppercase mr-1 font-sans font-normal">
+                        <span className="text-[9px] text-muted-foreground/40 uppercase mr-1.5 font-sans font-medium tracking-wider">
                             Bars
                         </span>
-                        <span ref={seg1Ref} className="text-xl text-foreground min-w-8 text-right">{bar}</span>
-                        <span className="text-sm text-muted-foreground mt-1">:</span>
-                        <span ref={seg2Ref} className="text-xl text-foreground min-w-6">{beat}</span>
-                        <span className="text-sm text-muted-foreground mt-1">:</span>
-                        <span ref={seg3Ref} className="text-sm text-muted-foreground min-w-8 mt-1">
+                        <span ref={seg1Ref} className="text-xl min-w-8 text-right" style={{ color: isPlaying ? '#7fb8a4' : '#b0b0b0' }}>{bar}</span>
+                        <span className="text-sm mt-0.5" style={{ color: 'rgba(255,255,255,0.2)' }}>.</span>
+                        <span ref={seg2Ref} className="text-xl min-w-6" style={{ color: isPlaying ? '#7fb8a4' : '#b0b0b0' }}>{beat}</span>
+                        <span className="text-sm mt-0.5" style={{ color: 'rgba(255,255,255,0.2)' }}>.</span>
+                        <span ref={seg3Ref} className="text-sm min-w-8 mt-0.5" style={{ color: isPlaying ? 'rgba(127,184,164,0.5)' : 'rgba(176,176,176,0.4)' }}>
                             {String(tick).padStart(3, '0')}
                         </span>
                     </button>
@@ -137,18 +144,25 @@ export const PlayheadDisplay = ({
             <TooltipTrigger asChild>
                 <button
                     type="button"
-                    className="flex items-center gap-0.5 font-mono tabular-nums rounded px-2 py-0.5 hover:bg-accent transition-colors font-medium"
+                    className="flex items-center gap-0.5 font-mono tabular-nums rounded-sm px-2.5 py-1 transition-colors font-medium cursor-pointer group"
+                    style={{
+                        background: 'linear-gradient(180deg, #080808 0%, #0d0d0d 100%)',
+                        boxShadow: 'inset 0 1px 4px rgba(0,0,0,0.8), inset 0 0 1px rgba(0,0,0,0.4), 0 1px 0 rgba(255,255,255,0.04)',
+                        border: '1px solid rgba(0,0,0,0.6)',
+                        borderTop: '1px solid rgba(0,0,0,0.7)',
+                        borderBottom: '1px solid rgba(40,40,40,0.4)',
+                    }}
                     onClick={toggleTimeDisplayMode}
                     aria-label="Playhead position — click to switch to bars and beats"
                 >
-                    <span className="text-[10px] text-muted-foreground/60 uppercase mr-1 font-sans font-normal">
+                    <span className="text-[9px] text-muted-foreground/40 uppercase mr-1.5 font-sans font-medium tracking-wider">
                         Time
                     </span>
-                    <span ref={seg1Ref} className="text-xl text-foreground min-w-8 text-right">{String(mins).padStart(2, '0')}</span>
-                    <span className="text-sm text-muted-foreground mt-1">:</span>
-                    <span ref={seg2Ref} className="text-xl text-foreground min-w-6">{String(secs).padStart(2, '0')}</span>
-                    <span className="text-sm text-muted-foreground mt-1">.</span>
-                    <span ref={seg3Ref} className="text-sm text-muted-foreground min-w-8 mt-1">{String(ms).padStart(3, '0')}</span>
+                    <span ref={seg1Ref} className="text-xl min-w-8 text-right" style={{ color: isPlaying ? '#7fb8a4' : '#b0b0b0' }}>{String(mins).padStart(2, '0')}</span>
+                    <span className="text-sm mt-0.5" style={{ color: 'rgba(255,255,255,0.2)' }}>:</span>
+                    <span ref={seg2Ref} className="text-xl min-w-6" style={{ color: isPlaying ? '#7fb8a4' : '#b0b0b0' }}>{String(secs).padStart(2, '0')}</span>
+                    <span className="text-sm mt-0.5" style={{ color: 'rgba(255,255,255,0.2)' }}>.</span>
+                    <span ref={seg3Ref} className="text-sm min-w-8 mt-0.5" style={{ color: isPlaying ? 'rgba(127,184,164,0.5)' : 'rgba(176,176,176,0.4)' }}>{String(ms).padStart(3, '0')}</span>
                 </button>
             </TooltipTrigger>
             <TooltipContent>Click to switch to bars &amp; beats</TooltipContent>

@@ -71,28 +71,13 @@ pub async fn open_plugin_gui(
         return Err("Plugin GUI is already open".to_string());
     }
 
-    // Get the main window for parenting
-    let main_window = app.get_webview_window("main");
-
-    let mut builder = tauri::window::WindowBuilder::new(&app, &window_label)
+    let plugin_window = tauri::window::WindowBuilder::new(&app, &window_label)
         .title(&plugin_name)
         .inner_size(800.0, 600.0)
         .decorations(true)
-        .resizable(false) // Most plugin GUIs are fixed-size
-        .visible(false); // Hide until we know the correct size
-
-    // Parent the plugin window to the main DAW window so it floats above
-    // and moves/minimizes with it
-    if let Some(ref main_win) = main_window {
-        // owner() on Windows makes the plugin float above the main window
-        // parent() on macOS/Linux makes it a child window
-        #[cfg(target_os = "windows")]
-        { builder = builder.owner(main_win); }
-        #[cfg(not(target_os = "windows"))]
-        { builder = builder.parent(main_win); }
-    }
-
-    let plugin_window = builder
+        .resizable(false)
+        .visible(false)
+        .always_on_top(true) // Keep plugin windows above the main DAW window
         .build()
         .map_err(|e| format!("Failed to create plugin window: {}", e))?;
 

@@ -15,7 +15,6 @@ pub fn run() {
             commands::plugins::get_plugin_parameters,
             commands::plugins::get_plugin_state,
             commands::plugins::set_plugin_state,
-            commands::plugins::start_native_engine,
         ])
         .export(specta::typescript::ExportConfiguration::new(), "../src/bindings.ts")
         .expect("Failed to export typescript bindings");

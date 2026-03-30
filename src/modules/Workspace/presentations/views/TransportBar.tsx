@@ -1,5 +1,4 @@
 import { type ReactElement, useSyncExternalStore } from 'react';
-import { Separator } from '#/components/ui/separator';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
 import { useTransportState } from '../hooks/useTransportState';
 import { useAudioRecordingState } from '../hooks/useAudioRecordingState';
@@ -21,10 +20,17 @@ import { TempoEditor } from './TempoEditor';
 import { RecentProjectsMenu } from '#/modules/Project/presentations/views/RecentProjectsMenu';
 import { ArrangementSelector } from '#/modules/Project/presentations/views/ArrangementSelector';
 import { toggleRippleEditing } from '../../useCases/rippleEditing';
-import { Button } from '#/components/ui/button';
 
 const subscribeTrackStore = (cb: () => void) => trackStore.subscribe(() => cb());
 const getTrackStoreSnapshot = (): Track[] => trackStore.value?.tracks ?? [];
+
+/** Lit-edge separator that follows the NW light source model from the design system */
+const Sep = (): ReactElement => (
+    <div
+        className="w-px h-5 mx-0.5 shrink-0"
+        style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)' }}
+    />
+);
 
 export const TransportBar = (): ReactElement => {
     const {
@@ -45,12 +51,21 @@ export const TransportBar = (): ReactElement => {
     const tracks = useSyncExternalStore(subscribeTrackStore, getTrackStoreSnapshot, getTrackStoreSnapshot);
     const anyTrackArmed = tracks.some((t) => t.armed);
 
+    const isRecording = transport.isRecording;
+
     return (
         <header
-            className="flex h-(--spacing-transport-height) shrink-0 items-center gap-1 border-b border-black bg-surface-base px-2"
+            className="flex h-(--spacing-transport-height) shrink-0 items-center gap-1 border-b border-black px-2 transition-colors duration-300"
             style={{
-                boxShadow: 'inset 0 -1px 3px rgba(0,0,0,0.3), 0 1px 0 rgba(255,255,255,0.03)',
-                borderTop: '1px solid rgba(255,255,255,0.04)',
+                background: isRecording
+                    ? 'linear-gradient(180deg, rgba(255,64,50,0.06) 0%, rgba(10,10,10,1) 40%)'
+                    : 'linear-gradient(180deg, rgba(255,255,255,0.02) 0%, rgba(10,10,10,1) 30%)',
+                boxShadow: isRecording
+                    ? 'inset 0 -1px 3px rgba(0,0,0,0.3), 0 1px 0 rgba(255,64,50,0.08), inset 0 1px 0 rgba(255,64,50,0.06)'
+                    : 'inset 0 -1px 3px rgba(0,0,0,0.3), 0 1px 0 rgba(255,255,255,0.03)',
+                borderTop: isRecording
+                    ? '1px solid rgba(255,64,50,0.12)'
+                    : '1px solid rgba(255,255,255,0.04)',
             }}
             role="toolbar"
             aria-label="Transport controls"
@@ -62,11 +77,11 @@ export const TransportBar = (): ReactElement => {
                     <RecentProjectsMenu />
                 </div>
 
-                <Separator orientation="vertical" className="mx-0.5 h-5" />
+                <Sep />
 
                 <ArrangementSelector />
 
-                <Separator orientation="vertical" className="mx-0.5 h-5" />
+                <Sep />
 
                 <TransportControls
                     isPlaying={transport.isPlaying}
@@ -84,11 +99,11 @@ export const TransportBar = (): ReactElement => {
 
                 <AutoScrollToggle />
 
-                <Separator orientation="vertical" className="mx-0.5 h-5" />
+                <Sep />
 
                 <SoloModeSelector soloMode={soloMode} />
 
-                <Separator orientation="vertical" className="mx-0.5 h-5" />
+                <Sep />
 
                 <PlayheadDisplay
                     tempo={transport.tempo}
@@ -96,33 +111,21 @@ export const TransportBar = (): ReactElement => {
                     timeDisplayMode={timeDisplayMode}
                 />
 
-                <Separator orientation="vertical" className="mx-0.5 h-5" />
+                <Sep />
 
                 <TempoEditor />
             </div>
 
             {/* ── Center group: Tools + Undo/Redo + Prompt ── */}
-            <Separator orientation="vertical" className="mx-0.5 h-5" />
+            <Sep />
 
-            <ToolSelector />
+            <ToolSelector rippleEditing={rippleEditing} onToggleRipple={toggleRippleEditing} />
 
-            <Button
-                variant={rippleEditing ? 'secondary' : 'ghost'}
-                size="xs"
-                onClick={toggleRippleEditing}
-                className={rippleEditing ? 'text-[var(--color-accent-peach)] border-[var(--color-accent-peach)]/30 px-1.5' : 'px-1.5'}
-                aria-pressed={rippleEditing}
-                aria-label="Toggle ripple editing"
-                title="Ripple Editing (auto-shift clips on delete)"
-            >
-                <span className="text-[10px] font-bold">R</span>
-            </Button>
-
-            <Separator orientation="vertical" className="mx-0.5 h-5" />
+            <Sep />
 
             <UndoRedoButtons canUndo={undoState.canUndo} canRedo={undoState.canRedo} />
 
-            <Separator orientation="vertical" className="mx-0.5 h-5" />
+            <Sep />
 
             <div className="flex-1 min-w-0 flex items-center gap-1">
                 <PromptBar />
@@ -130,7 +133,7 @@ export const TransportBar = (): ReactElement => {
             </div>
 
             {/* ── Right group: Panel toggles ── */}
-            <Separator orientation="vertical" className="mx-0.5 h-5" />
+            <Sep />
 
             <PanelToggles
                 sidebarOpen={sidebarOpen}

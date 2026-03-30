@@ -11,7 +11,16 @@ export const TempoEditor = (): ReactElement => {
     const t = useTempoEditorState();
 
     return (
-        <div className="relative flex items-center gap-2 px-2 bg-surface-recess shadow-[inset_0_1px_3px_rgba(0,0,0,0.6),0_1px_0_rgba(255,255,255,0.03)] border border-black/60 rounded-sm h-8">
+        <div
+            className="relative flex items-center gap-2 px-2 rounded-sm h-8"
+            style={{
+                background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
+                boxShadow: 'inset 0 1px 4px rgba(0,0,0,0.7), inset 0 0 1px rgba(0,0,0,0.3), 0 1px 0 rgba(255,255,255,0.04)',
+                border: '1px solid rgba(0,0,0,0.5)',
+                borderTop: '1px solid rgba(0,0,0,0.6)',
+                borderBottom: '1px solid rgba(40,40,40,0.3)',
+            }}
+        >
             <Tooltip>
                 <TooltipTrigger asChild>
                     <div>

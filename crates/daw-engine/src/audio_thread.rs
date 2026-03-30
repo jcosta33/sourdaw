@@ -10,6 +10,12 @@ pub struct AudioThreadHandle {
     _stream: cpal::Stream,
 }
 
+// SAFETY: The cpal::Stream is only created and dropped on the main thread.
+// We hold it in Arc<Mutex> in EngineHandle and never access it from other threads.
+// The stream's internal audio callback runs on the cpal audio thread independently.
+unsafe impl Send for AudioThreadHandle {}
+unsafe impl Sync for AudioThreadHandle {}
+
 pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThreadHandle, String> {
     let host = cpal::default_host();
     let device = host.default_output_device()

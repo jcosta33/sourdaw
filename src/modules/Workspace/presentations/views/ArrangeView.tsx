@@ -19,6 +19,7 @@ import { setTrackListWidth } from '#/modules/Workspace/useCases/togglePanel/pane
 import { closeScratchPad } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 import { ResizeHandle } from '#/modules/Workspace/presentations/components/ResizeHandle';
 import { Piano, Upload, LayoutTemplate, Sparkles, Headphones } from 'lucide-react';
+import { SourdawLogo } from '../components/SourdawLogo';
 import { ChordTrackLane } from './Timeline/ChordTrackLane';
 import { ScratchPadView } from './Timeline/ScratchPadView';
 import { chordTrackStore } from '#/modules/Arrangement/stores/chordTrackStore';
@@ -218,12 +219,7 @@ const EmptyArrangeOverlay = (): ReactElement => {
                     <div className="flex flex-col items-center gap-3">
                         <div className="relative">
                             <div className="absolute inset-0 rounded-full bg-[var(--color-accent-orange)]/20 blur-xl scale-150" />
-                            <img
-                                src="/icon-transparent.png"
-                                alt="Sourdaw"
-                                className="relative h-20 drop-shadow-[0_4px_12px_rgba(217,119,6,0.3)]"
-                                style={{ animation: 'welcome-float 4s ease-in-out infinite' }}
-                            />
+                            <SourdawLogo className="relative h-24 drop-shadow-[0_4px_12px_rgba(217,119,6,0.3)]" />
                         </div>
                         <div className="text-center">
                             <h2 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-[var(--color-accent-orange)] via-amber-300 to-[var(--color-accent-peach)] bg-clip-text text-transparent">
@@ -339,13 +335,6 @@ const EmptyArrangeOverlay = (): ReactElement => {
                     </div>
                 </div>
             </div>
-
-            <style>{`
-                @keyframes welcome-float {
-                    0%, 100% { transform: translateY(0px); }
-                    50% { transform: translateY(-6px); }
-                }
-            `}</style>
 
             <TemplateChooser
                 open={templateChooserOpen}

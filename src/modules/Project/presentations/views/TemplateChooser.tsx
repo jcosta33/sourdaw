@@ -1,5 +1,6 @@
 import { type ReactElement, useState, useEffect, useRef } from 'react';
 import { Music, Mic, Film, FileText, Layers, Guitar, Piano, Headphones, Sparkles } from 'lucide-react';
+import { SourdawLogo } from '#/modules/Workspace/presentations/components/SourdawLogo';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '#/components/ui/dialog';
 import { Button } from '#/components/ui/button';
 import {
@@ -147,12 +148,7 @@ const LoadingState = ({ name }: { name: string }): ReactElement => {
                     className="absolute inset-0 rounded-full blur-xl scale-[2] opacity-30"
                     style={{ background: 'var(--color-accent-orange, #d97706)' }}
                 />
-                <img
-                    src="/icon-transparent.png"
-                    alt=""
-                    className="relative h-16 drop-shadow-[0_4px_16px_rgba(217,119,6,0.3)]"
-                    style={{ animation: 'tc-bounce 1.2s ease-in-out infinite' }}
-                />
+                <SourdawLogo className="relative h-20 drop-shadow-[0_4px_16px_rgba(217,119,6,0.3)]" />
             </div>
 
             <div className="text-center space-y-1.5">
@@ -179,11 +175,6 @@ const LoadingState = ({ name }: { name: string }): ReactElement => {
             </div>
 
             <style>{`
-                @keyframes tc-bounce {
-                    0%, 100% { transform: translateY(0) rotate(0deg); }
-                    25% { transform: translateY(-4px) rotate(-2deg); }
-                    75% { transform: translateY(-4px) rotate(2deg); }
-                }
                 @keyframes tc-shimmer {
                     0% { transform: translateX(-200%); }
                     100% { transform: translateX(400%); }
@@ -238,7 +229,7 @@ export const TemplateChooser = ({ open, onClose, initialCategory = 'all' }: Temp
             <DialogContent className="sm:max-w-[640px] overflow-hidden">
                 <DialogHeader className="pb-0">
                     <div className="flex items-center gap-3">
-                        <img src="/icon-transparent.png" alt="" className="h-7 opacity-80" />
+                        <SourdawLogo className="h-7 opacity-80" paused />
                         <div>
                             <DialogTitle className="text-base">
                                 {isLoading ? 'Warming up...' : 'Start a new project'}

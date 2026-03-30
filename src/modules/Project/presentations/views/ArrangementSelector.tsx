@@ -1,6 +1,5 @@
 import { type ReactElement, useState, useRef, useEffect, useSyncExternalStore } from 'react';
 import { ChevronDown, Plus, Copy, ListTree, Check, Edit2 } from 'lucide-react';
-import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { arrangementStore } from '../../stores/arrangementStore';
 import {
@@ -88,19 +87,24 @@ export const ArrangementSelector = (): ReactElement | null => {
         <div className="relative" ref={menuRef}>
             <Tooltip>
                 <TooltipTrigger asChild>
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 px-2 text-[11px] gap-1.5 font-medium border border-transparent hover:border-border/50"
+                    <button
+                        type="button"
+                        className="flex items-center gap-1.5 h-6 px-2 text-[11px] font-medium rounded-sm cursor-pointer hover:bg-white/[0.04] transition-colors"
+                        style={{
+                            background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
+                            boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
+                            border: '1px solid rgba(0,0,0,0.4)',
+                            borderBottom: '1px solid rgba(40,40,40,0.3)',
+                        }}
                         aria-label="Arrangement selector"
                         aria-expanded={open}
                         aria-haspopup="menu"
                         onClick={() => setOpen((prev) => !prev)}
                     >
-                        <ListTree className="size-3 text-muted-foreground" />
-                        <span className="max-w-[120px] truncate">{currentArrangement?.name ?? 'Arrangement'}</span>
-                        <ChevronDown className="size-3 text-muted-foreground opacity-50" />
-                    </Button>
+                        <ListTree className="size-3 text-muted-foreground/60" />
+                        <span className="max-w-[120px] truncate text-foreground/70">{currentArrangement?.name ?? 'Arrangement'}</span>
+                        <ChevronDown className="size-2.5 text-muted-foreground/40" />
+                    </button>
                 </TooltipTrigger>
                 <TooltipContent>Arrangement View Snapshots</TooltipContent>
             </Tooltip>

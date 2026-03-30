@@ -305,7 +305,7 @@ pub async fn set_plugin_state(
 // ── Native audio engine ────────────────────────────────────────────────
 
 #[tauri::command]
-#[specta::specta]
+
 pub async fn start_native_engine(
     state: tauri::State<'_, AppState>,
 ) -> Result<String, String> {
@@ -326,7 +326,7 @@ pub async fn start_native_engine(
 
 /// Send a MIDI note event to a native plugin on the audio thread (lock-free).
 #[tauri::command]
-#[specta::specta]
+
 pub async fn send_plugin_midi(
     engine_plugin_id: usize,
     note: u8,
@@ -347,7 +347,7 @@ pub async fn send_plugin_midi(
 
 /// Update the global transport state for all native plugins (lock-free).
 #[tauri::command]
-#[specta::specta]
+
 pub async fn update_plugin_transport(
     tempo: f64,
     time_sig_num: u16,
@@ -374,7 +374,7 @@ pub async fn update_plugin_transport(
 /// Takes interleaved stereo audio (L0,R0,L1,R1,...), returns processed audio.
 /// Uses the lock-free ring buffer — no mutex on the audio thread.
 #[tauri::command]
-#[specta::specta]
+
 pub async fn process_plugin_audio(
     engine_plugin_id: usize,
     audio_data: Vec<f32>,
@@ -420,7 +420,7 @@ pub async fn process_plugin_audio(
 /// The pointer must point to a valid SharedArrayBuffer of at least 2052 bytes
 /// that remains alive for the lifetime of the plugin.
 #[tauri::command]
-#[specta::specta]
+
 pub async fn register_plugin_bridge(
     engine_plugin_id: usize,
     sab_ptr: usize,

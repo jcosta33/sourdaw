@@ -149,7 +149,17 @@ export const PromptBar = (): ReactElement => {
     // ── Main render ─────────────────────────────────────────────────────
     return (
         <div className="relative flex-1 max-w-lg">
-            <form ref={prompt.formRef} onSubmit={prompt.handleSubmit} className="flex items-center gap-1.5">
+            <form
+                ref={prompt.formRef}
+                onSubmit={prompt.handleSubmit}
+                className="flex items-center gap-1.5 px-2 py-0.5 rounded-sm"
+                style={{
+                    background: 'linear-gradient(180deg, #080808 0%, #0d0d0d 100%)',
+                    boxShadow: 'inset 0 1px 4px rgba(0,0,0,0.7), inset 0 0 1px rgba(0,0,0,0.3), 0 1px 0 rgba(255,255,255,0.04)',
+                    border: '1px solid rgba(0,0,0,0.5)',
+                    borderBottom: '1px solid rgba(40,40,40,0.3)',
+                }}
+            >
                 {prompt.isProcessing ? (
                     <Button
                         size="icon-xs"

@@ -92,6 +92,15 @@ export const WEB_LOD: SampleLodConfig = {
  * Returns { data, frameCount, channels, sampleRate }.
  * Uses a fresh OfflineAudioContext per decode to avoid state issues.
  */
+// Use a single global context for decoding to avoid WKWebView context limits.
+let decodeCtx: OfflineAudioContext | null = null;
+function getDecodeContext(): OfflineAudioContext {
+    if (!decodeCtx) {
+        decodeCtx = new OfflineAudioContext(2, 44100, 44100);
+    }
+    return decodeCtx;
+}
+
 export async function fetchAndDecode(url: string): Promise<{
     data: Float32Array;
     frameCount: number;
@@ -104,9 +113,7 @@ export async function fetchAndDecode(url: string): Promise<{
     }
 
     const arrayBuffer = await response.arrayBuffer();
-    // Use a fresh OfflineAudioContext for each decode — reusing one can fail
-    // in some browsers after startRendering() has been called.
-    const ctx = new OfflineAudioContext(2, 44100, 44100);
+    const ctx = getDecodeContext();
     const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
 
     const channels = audioBuffer.numberOfChannels;
