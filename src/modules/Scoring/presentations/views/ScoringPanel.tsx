@@ -154,23 +154,30 @@ const NeedleDisplay = ({ cents, active, confidence }: { cents: number; active: b
         const h = canvas.height;
         ctx.clearRect(0, 0, w, h);
 
+        // Subtle radial background
+        const bgGrad = ctx.createRadialGradient(w / 2, h * 0.85, 0, w / 2, h * 0.85, h * 0.9);
+        bgGrad.addColorStop(0, 'rgba(12,14,18,0.3)');
+        bgGrad.addColorStop(1, 'rgba(4,4,6,0.0)');
+        ctx.fillStyle = bgGrad;
+        ctx.fillRect(0, 0, w, h);
+
         const cx = w / 2;
         const cy = h * 0.85;
         const radius = h * 0.7;
 
-        // Draw arc
+        // Draw arc — slightly brighter
         const maxAngle = Math.PI * 0.4;
-        ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+        ctx.strokeStyle = 'rgba(255,255,255,0.1)';
         ctx.lineWidth = 3;
         ctx.beginPath();
         ctx.arc(cx, cy, radius, Math.PI + maxAngle, -maxAngle, false);
         ctx.stroke();
 
-        // Color zones
+        // Color zones — richer, more saturated
         const zones = [
-            { range: 2, color: 'rgba(52,211,153,0.15)' },  // green
-            { range: 10, color: 'rgba(250,204,21,0.1)' },   // yellow
-            { range: 50, color: 'rgba(248,113,113,0.08)' },  // red
+            { range: 2, color: 'rgba(52,220,160,0.18)' },   // green
+            { range: 10, color: 'rgba(255,210,30,0.12)' },   // yellow
+            { range: 50, color: 'rgba(255,100,100,0.08)' },  // red
         ];
 
         for (const zone of zones) {
@@ -183,8 +190,11 @@ const NeedleDisplay = ({ cents, active, confidence }: { cents: number; active: b
             ctx.fill();
         }
 
-        // Center mark
-        ctx.strokeStyle = 'rgba(52,211,153,0.5)';
+        // Center mark — with glow
+        ctx.save();
+        ctx.shadowColor = 'rgba(52,220,160,0.4)';
+        ctx.shadowBlur = 6;
+        ctx.strokeStyle = 'rgba(52,220,160,0.6)';
         ctx.lineWidth = 2;
         ctx.beginPath();
         const topX = cx;
@@ -192,6 +202,7 @@ const NeedleDisplay = ({ cents, active, confidence }: { cents: number; active: b
         ctx.moveTo(topX, topY);
         ctx.lineTo(topX, topY + 12);
         ctx.stroke();
+        ctx.restore();
 
         // Needle
         if (active) {
@@ -200,22 +211,31 @@ const NeedleDisplay = ({ cents, active, confidence }: { cents: number; active: b
             const nx = cx + Math.cos(angle) * needleLen;
             const ny = cy + Math.sin(angle) * needleLen;
 
-            ctx.strokeStyle = `rgba(255,255,255,${0.3 + confidence * 0.7})`;
+            // Needle glow
+            ctx.save();
+            ctx.shadowColor = 'rgba(255,255,255,0.25)';
+            ctx.shadowBlur = 6;
+            ctx.strokeStyle = `rgba(255,255,255,${0.35 + confidence * 0.65})`;
             ctx.lineWidth = 2;
             ctx.beginPath();
             ctx.moveTo(cx, cy);
             ctx.lineTo(nx, ny);
             ctx.stroke();
+            ctx.restore();
 
-            // Needle tip dot
+            // Needle tip dot — glow
+            ctx.save();
+            ctx.shadowColor = 'rgba(255,255,255,0.5)';
+            ctx.shadowBlur = 8;
             ctx.fillStyle = 'white';
             ctx.beginPath();
             ctx.arc(nx, ny, 3, 0, Math.PI * 2);
             ctx.fill();
+            ctx.restore();
         }
 
         // Center pivot
-        ctx.fillStyle = 'rgba(255,255,255,0.3)';
+        ctx.fillStyle = 'rgba(255,255,255,0.35)';
         ctx.beginPath();
         ctx.arc(cx, cy, 4, 0, Math.PI * 2);
         ctx.fill();
@@ -251,19 +271,23 @@ const StrobeDisplay = ({ cents, active }: { cents: number; active: boolean }): R
 
             phaseRef.current += effectiveVelocity * 0.016; // ~60fps
 
-            ctx.fillStyle = 'rgb(3,3,3)';
+            // Deep background
+            const bgGrad = ctx.createLinearGradient(0, 0, 0, h);
+            bgGrad.addColorStop(0, 'rgb(4,4,6)');
+            bgGrad.addColorStop(1, 'rgb(2,2,3)');
+            ctx.fillStyle = bgGrad;
             ctx.fillRect(0, 0, w, h);
 
             if (!active) {
-                ctx.fillStyle = 'rgba(255,255,255,0.05)';
+                ctx.fillStyle = 'rgba(255,255,255,0.06)';
                 ctx.font = '12px sans-serif';
                 ctx.textAlign = 'center';
-                ctx.fillText('Waiting for signal…', w / 2, h / 2);
+                ctx.fillText('Waiting for signal...', w / 2, h / 2);
                 rafRef.current = requestAnimationFrame(draw);
                 return;
             }
 
-            // Draw strobe stripes
+            // Draw strobe stripes — richer colors
             const numStripes = 24;
             for (let x = 0; x < w; x++) {
                 const u = x / w + phaseRef.current;
@@ -272,22 +296,26 @@ const StrobeDisplay = ({ cents, active }: { cents: number; active: boolean }): R
                 const intensity = 1.0 - Math.abs(2.0 * frac - 1.0);
                 const powered = Math.pow(intensity, 2.5);
 
-                // Green when near zero, white otherwise
+                // Richer green when near zero, brighter white otherwise
                 const nearZero = Math.abs(cents) < 2;
-                const r = nearZero ? Math.floor(powered * 40) : Math.floor(powered * 200);
-                const g = nearZero ? Math.floor(powered * 200) : Math.floor(powered * 200);
-                const b = nearZero ? Math.floor(powered * 120) : Math.floor(powered * 200);
+                const r = nearZero ? Math.floor(powered * 30) : Math.floor(powered * 210);
+                const g = nearZero ? Math.floor(powered * 220) : Math.floor(powered * 210);
+                const b = nearZero ? Math.floor(powered * 140) : Math.floor(powered * 220);
 
                 ctx.fillStyle = `rgb(${r},${g},${b})`;
                 ctx.fillRect(x, 0, 1, h);
             }
 
-            // Center cage overlay (when near in-tune)
+            // Center cage overlay (when near in-tune) — with glow
             if (Math.abs(cents) < 0.5) {
-                ctx.strokeStyle = 'rgba(52,211,153,0.3)';
+                ctx.save();
+                ctx.shadowColor = 'rgba(52,220,160,0.3)';
+                ctx.shadowBlur = 8;
+                ctx.strokeStyle = 'rgba(52,220,160,0.35)';
                 ctx.lineWidth = 2;
                 const cageW = w * 0.15;
                 ctx.strokeRect(w / 2 - cageW / 2, 2, cageW, h - 4);
+                ctx.restore();
             }
 
             rafRef.current = requestAnimationFrame(draw);
@@ -321,11 +349,26 @@ const HistoryGraph = ({ cents, active }: { cents: number; active: boolean }): Re
 
         const w = canvas.width;
         const h = canvas.height;
-        ctx.fillStyle = 'rgb(5,5,5)';
+
+        // Deep gradient background
+        const bgGrad = ctx.createLinearGradient(0, 0, 0, h);
+        bgGrad.addColorStop(0, 'rgb(8,8,11)');
+        bgGrad.addColorStop(1, 'rgb(4,4,6)');
+        ctx.fillStyle = bgGrad;
         ctx.fillRect(0, 0, w, h);
 
-        // Center line (0 cents)
-        ctx.strokeStyle = 'rgba(52,211,153,0.15)';
+        // Subtle +/-25 cent lines
+        ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+        ctx.lineWidth = 0.5;
+        for (const frac of [0.25, 0.75]) {
+            ctx.beginPath();
+            ctx.moveTo(0, h * frac);
+            ctx.lineTo(w, h * frac);
+            ctx.stroke();
+        }
+
+        // Center line (0 cents) — subtle green
+        ctx.strokeStyle = 'rgba(52,220,160,0.15)';
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(0, h / 2);
@@ -336,7 +379,23 @@ const HistoryGraph = ({ cents, active }: { cents: number; active: boolean }): Re
         const history = historyRef.current;
         if (history.length < 2) { return; }
 
-        ctx.strokeStyle = 'rgba(127,184,196,0.6)';
+        // Glow pass
+        ctx.save();
+        ctx.shadowColor = 'rgba(130,200,220,0.3)';
+        ctx.shadowBlur = 4;
+        ctx.strokeStyle = 'rgba(140,200,220,0.65)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        for (let i = 0; i < history.length; i++) {
+            const x = (i / 300) * w;
+            const y = h / 2 - ((history[i] ?? 0) / 50) * (h / 2);
+            if (i === 0) { ctx.moveTo(x, y); } else { ctx.lineTo(x, y); }
+        }
+        ctx.stroke();
+        ctx.restore();
+
+        // Crisp pass
+        ctx.strokeStyle = 'rgba(140,200,220,0.7)';
         ctx.lineWidth = 1;
         ctx.beginPath();
         for (let i = 0; i < history.length; i++) {

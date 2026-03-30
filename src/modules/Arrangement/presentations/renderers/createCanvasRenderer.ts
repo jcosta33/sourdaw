@@ -49,9 +49,6 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): TimelineRendere
 }
 
 function drawGrid(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, width: number, height: number): void {
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
-    ctx.lineWidth = 1;
-
     const { pixelsPerBeat, viewportStartBeat, timeSignatureNumerator, timeSignatureDenominator } = model;
     const startBeat = Math.floor(viewportStartBeat);
     const tsChanges = timeSignatureMapStore.value?.changes ?? [];
@@ -68,28 +65,48 @@ function drawGrid(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, wid
         currentNumerator = change.numerator;
     }
 
-    for (let beat = startBeat; beat * pixelsPerBeat < width + viewportStartBeat * pixelsPerBeat; beat++) {
-        const x = (beat - viewportStartBeat) * pixelsPerBeat;
+    // Batch beat lines and bar lines separately to minimize strokeStyle changes
+    ctx.lineWidth = 1;
 
+    // Draw beat division lines first (#333-equivalent on #1a1a1a)
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+    ctx.beginPath();
+    let tempBarStart = barStartBeat;
+    let tempNumerator = currentNumerator;
+    for (let beat = startBeat; beat * pixelsPerBeat < width + viewportStartBeat * pixelsPerBeat; beat++) {
         const tsChange = tsChanges.find((c) => c.beat === beat);
         if (tsChange) {
-            barStartBeat = beat;
-            currentNumerator = tsChange.numerator;
+            tempBarStart = beat;
+            tempNumerator = tsChange.numerator;
         }
-
-        const isBarLine = (beat - barStartBeat) % currentNumerator === 0;
-
-        if (isBarLine) {
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
-        } else {
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
+        const isBarLine = (beat - tempBarStart) % tempNumerator === 0;
+        if (!isBarLine) {
+            const x = (beat - viewportStartBeat) * pixelsPerBeat;
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, height);
         }
-
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, height);
-        ctx.stroke();
     }
+    ctx.stroke();
+
+    // Draw bar lines (#555-equivalent — brighter)
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.13)';
+    ctx.beginPath();
+    tempBarStart = barStartBeat;
+    tempNumerator = currentNumerator;
+    for (let beat = startBeat; beat * pixelsPerBeat < width + viewportStartBeat * pixelsPerBeat; beat++) {
+        const tsChange = tsChanges.find((c) => c.beat === beat);
+        if (tsChange) {
+            tempBarStart = beat;
+            tempNumerator = tsChange.numerator;
+        }
+        const isBarLine = (beat - tempBarStart) % tempNumerator === 0;
+        if (isBarLine) {
+            const x = (beat - viewportStartBeat) * pixelsPerBeat;
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, height);
+        }
+    }
+    ctx.stroke();
 
     void timeSignatureDenominator;
 }
@@ -123,15 +140,15 @@ function drawTracks(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, w
         const isSelected = track.id === selectedTrackId;
         const isEven = track.index % 2 === 0;
 
-        // Background
+        // Background — #1a1a1a base with subtle alternation
         if (isFolder) {
             ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
         } else if (isSelected) {
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.012)';
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.018)';
         } else if (isEven) {
             ctx.fillStyle = 'rgba(255, 255, 255, 0.008)';
         } else {
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.04)';
         }
         ctx.fillRect(0, y, width, h);
 
@@ -172,18 +189,18 @@ function drawTracks(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, w
         if (isFolder) {
             // Folder label
             ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
-            ctx.font = 'bold 9px system-ui, sans-serif';
+            ctx.font = '600 9px -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
             ctx.fillText(track.name.toUpperCase(), 10, y + h / 2 + 3);
         } else {
             ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
-            ctx.font = '9px system-ui, sans-serif';
+            ctx.font = '9px -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
             const kindLabel = TRACK_KIND_LABELS[track.kind] ?? '';
             if (track.clips.length === 0) {
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+                ctx.fillStyle = 'rgba(153, 153, 153, 0.5)';
                 ctx.fillText(`${track.name}  ·  ${kindLabel}`, 8, y + h / 2 + 3);
 
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
-                ctx.font = '8px system-ui, sans-serif';
+                ctx.fillStyle = 'rgba(102, 102, 102, 0.4)';
+                ctx.font = '8px -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
                 ctx.fillText('Drop audio/MIDI here or use Draw tool', 8, y + h / 2 + 14);
             }
 
@@ -198,14 +215,16 @@ function drawPlayhead(ctx: CanvasRenderingContext2D, model: TimelineRenderModel,
     const { playheadPosition, viewportStartBeat, pixelsPerBeat } = model;
     const x = (playheadPosition - viewportStartBeat) * pixelsPerBeat;
 
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+    // Playhead line — slightly brighter, clean 1px
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(x, 0);
     ctx.lineTo(x, height);
     ctx.stroke();
 
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    // Playhead triangle indicator
+    ctx.fillStyle = 'rgba(224, 224, 224, 0.95)';
     ctx.beginPath();
     ctx.moveTo(x - 4, 0);
     ctx.lineTo(x + 4, 0);

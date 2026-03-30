@@ -24,7 +24,7 @@ const buttonVariants = cva(
                 surface:
                     'bg-surface-panel text-text-primary border border-border-soft border-t-[var(--color-light-edge)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_1px_2px_rgba(0,0,0,0.5)] hover:bg-surface-raised active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] active:border-black active:translate-y-px',
                 transport:
-                    'bg-surface-panel text-text-primary border border-border-soft border-t-[var(--color-light-edge)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_1px_2px_rgba(0,0,0,0.5)] hover:bg-surface-raised hover:text-accent-cyan active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] active:text-accent-cyan active:border-black active:translate-y-px',
+                    'text-text-primary border border-border-soft border-t-[var(--color-light-edge)] border-l-[rgba(255,255,255,0.04)] border-b-[rgba(0,0,0,0.3)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_2px_4px_rgba(0,0,0,0.5)] hover:brightness-110 hover:text-accent-cyan active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(0,0,0,0.4)] active:text-accent-cyan active:border-black active:translate-y-px [background:linear-gradient(180deg,#2c2c2c_0%,#1e1e1e_100%)] active:[background:linear-gradient(180deg,#111_0%,#1a1a1a_100%)]',
                 danger: 'bg-surface-panel text-text-secondary border border-border-soft border-t-[var(--color-light-edge)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_1px_2px_rgba(0,0,0,0.5)] hover:bg-state-danger hover:text-white hover:border-transparent active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] focus-visible:ring-state-danger/50 active:translate-y-px',
             },
             size: {

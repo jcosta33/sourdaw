@@ -35,6 +35,23 @@ const NODE_H = 28;
 const GAP_X = 16;
 const GAP_Y = 8;
 
+/** Map signal flow node sections to the actual SectionNav section IDs */
+const SECTION_MAP: Record<string, string> = {
+    osc: 'osc',
+    warp: 'osc',
+    filter: 'filter',
+    voicefx: 'fx',
+    dist: 'fx',
+    comp: 'fx',
+    reverb: 'fx',
+    eq: 'fx',
+    delay: 'fx',
+    chorus: 'fx',
+    phaser: 'fx',
+    width: 'fx',
+    master: 'fx',
+};
+
 export const SignalFlowView = ({
     patch, numLayers, activeLayer, onSelectSection,
 }: SignalFlowViewProps): ReactElement => {
@@ -242,12 +259,13 @@ export const SignalFlowView = ({
         ctx.scale(dpr, dpr);
         ctx.clearRect(0, 0, canvasW, canvasH);
 
-        // Draw connections
-        ctx.strokeStyle = 'rgba(255,255,255,0.1)';
-        ctx.lineWidth = 1;
+        // Draw connections with subtle glow
         for (const [from, to] of connections) {
             const fn = nodes[from]!;
             const tn = nodes[to]!;
+            const fromActive = fn.active;
+            ctx.strokeStyle = fromActive ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)';
+            ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.moveTo(fn.x + fn.w, fn.y + fn.h / 2);
             ctx.lineTo(tn.x, tn.y + tn.h / 2);
@@ -256,29 +274,40 @@ export const SignalFlowView = ({
 
         // Draw nodes
         for (const node of nodes) {
-            const alpha = node.active ? 1.0 : 0.3;
+            const alpha = node.active ? 1.0 : 0.35;
             ctx.globalAlpha = alpha;
 
-            // Background
-            ctx.fillStyle = 'rgba(30,30,40,0.8)';
-            ctx.strokeStyle = node.color;
-            ctx.lineWidth = 1;
+            // Node background — recessed look
+            const grad = ctx.createLinearGradient(node.x, node.y, node.x, node.y + node.h);
+            grad.addColorStop(0, 'rgba(18,18,24,0.9)');
+            grad.addColorStop(1, 'rgba(24,24,32,0.9)');
+            ctx.fillStyle = grad;
             ctx.beginPath();
-            ctx.roundRect(node.x, node.y, node.w, node.h, 4);
+            ctx.roundRect(node.x, node.y, node.w, node.h, 5);
             ctx.fill();
+
+            // Border — colored left edge, subtle elsewhere
+            ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+            ctx.lineWidth = 1;
             ctx.stroke();
 
+            // Colored left accent bar
+            ctx.fillStyle = node.color;
+            ctx.beginPath();
+            ctx.roundRect(node.x, node.y, 3, node.h, [5, 0, 0, 5]);
+            ctx.fill();
+
             // Label
-            ctx.fillStyle = '#fff';
-            ctx.font = '9px system-ui';
+            ctx.fillStyle = node.active ? '#e0e0e0' : '#888';
+            ctx.font = 'bold 8px system-ui';
             ctx.textAlign = 'center';
-            ctx.fillText(node.label, node.x + node.w / 2, node.y + 11);
+            ctx.fillText(node.label, node.x + node.w / 2 + 1, node.y + 12);
 
             // Subtitle
             if (node.subtitle) {
                 ctx.fillStyle = node.color;
                 ctx.font = '7px system-ui';
-                ctx.fillText(node.subtitle, node.x + node.w / 2, node.y + 21);
+                ctx.fillText(node.subtitle, node.x + node.w / 2 + 1, node.y + 22);
             }
 
             ctx.globalAlpha = 1.0;
@@ -297,7 +326,7 @@ export const SignalFlowView = ({
                     const my = e.clientY - rect.top;
                     for (const node of nodes) {
                         if (mx >= node.x && mx <= node.x + node.w && my >= node.y && my <= node.y + node.h) {
-                            onSelectSection(node.section);
+                            onSelectSection(SECTION_MAP[node.section] ?? node.section);
                             break;
                         }
                     }

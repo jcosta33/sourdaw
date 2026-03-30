@@ -47,15 +47,26 @@ export const SpectrumAnalyzer = ({
 
             ctx.clearRect(0, 0, width, height);
 
-            // Background
-            ctx.fillStyle = resolveToken('--color-bg-tray', '#0a0a0a');
+            // Background — deep black with subtle noise texture
+            ctx.fillStyle = '#050508';
             ctx.beginPath();
             ctx.roundRect(0, 0, width, height, 4);
             ctx.fill();
+            // Subtle noise overlay
+            ctx.globalAlpha = 0.03;
+            for (let nx = 0; nx < width; nx += 3) {
+                for (let ny = 0; ny < height; ny += 3) {
+                    const v = Math.random() * 255;
+                    ctx.fillStyle = `rgb(${v},${v},${v})`;
+                    ctx.fillRect(nx, ny, 2, 2);
+                }
+            }
+            ctx.globalAlpha = 1;
 
-            // Grid lines (frequency)
-            ctx.strokeStyle = resolveToken('--color-bg-panelRaised', '#1a1a1a');
+            // Grid lines (frequency) — subtle dashed
+            ctx.strokeStyle = 'rgba(255,255,255,0.04)';
             ctx.lineWidth = 0.5;
+            ctx.setLineDash([2, 4]);
             const freqMarks = [50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
             for (const f of freqMarks) {
                 const x = freqToX(f, width, sampleRate);
@@ -67,9 +78,9 @@ export const SpectrumAnalyzer = ({
                 }
             }
 
-            // Grid lines (dB)
+            // Grid lines (dB) — subtle dashed
             const dbMarks = [-60, -48, -36, -24, -12, 0];
-            ctx.fillStyle = resolveToken('--color-text-disabled', '#2a2a2a');
+            ctx.fillStyle = 'rgba(255,255,255,0.15)';
             ctx.font = '7px monospace';
             for (const db of dbMarks) {
                 const y = dbToY(db, height);
@@ -79,9 +90,10 @@ export const SpectrumAnalyzer = ({
                 ctx.stroke();
                 ctx.fillText(`${db}`, 2, y - 2);
             }
+            ctx.setLineDash([]);
 
-            // Frequency labels
-            ctx.fillStyle = resolveToken('--color-text-disabled', '#3a3a3a');
+            // Frequency labels — dim and refined
+            ctx.fillStyle = 'rgba(255,255,255,0.18)';
             ctx.textAlign = 'center';
             for (const f of [100, 1000, 10000]) {
                 const x = freqToX(f, width, sampleRate);
@@ -90,10 +102,13 @@ export const SpectrumAnalyzer = ({
             }
             ctx.textAlign = 'left';
 
-            // Draw spectrum with gradient fill
-            const grad = ctx.createLinearGradient(0, 0, 0, height);
-            grad.addColorStop(0, color);
-            grad.addColorStop(1, `${color}10`);
+            // Draw spectrum with blue→cyan→green→yellow→red gradient fill
+            const grad = ctx.createLinearGradient(0, height, 0, 0);
+            grad.addColorStop(0, 'rgba(0,80,220,0.05)');
+            grad.addColorStop(0.3, 'rgba(0,180,220,0.15)');
+            grad.addColorStop(0.5, 'rgba(0,210,120,0.25)');
+            grad.addColorStop(0.7, 'rgba(200,200,0,0.35)');
+            grad.addColorStop(1, 'rgba(255,50,0,0.45)');
 
             ctx.beginPath();
             ctx.moveTo(0, height);
@@ -122,7 +137,33 @@ export const SpectrumAnalyzer = ({
             ctx.fillStyle = grad;
             ctx.fill();
 
-            // Spectrum line
+            // Spectrum line — glow pass (wider, semi-transparent)
+            ctx.beginPath();
+            for (let i = 1; i < fftSize; i++) {
+                const freq = (i / fftSize) * (sampleRate / 2);
+                if (freq < 20 || freq > 22000) {
+                    continue;
+                }
+
+                const x = freqToX(freq, width, sampleRate);
+                const db = Math.max(-80, freqData[i]!);
+                const tiltedDb = db + 3 * Math.log2(Math.max(1, freq / 1000));
+                const y = dbToY(tiltedDb, height);
+
+                if (i === 1) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            }
+            ctx.strokeStyle = `${color}30`;
+            ctx.lineWidth = 5;
+            ctx.shadowColor = color;
+            ctx.shadowBlur = 8;
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            // Spectrum line — sharp pass
             ctx.beginPath();
             for (let i = 1; i < fftSize; i++) {
                 const freq = (i / fftSize) * (sampleRate / 2);
@@ -153,14 +194,23 @@ export const SpectrumAnalyzer = ({
     }, [trackId, width, height, color]);
 
     return (
-        <canvas
-            ref={canvasRef}
-            width={width}
-            height={height}
-            className="rounded border border-border/30"
-            aria-label="Spectrum analyzer"
-            role="img"
-        />
+        <div className="relative rounded bg-[#0a0a0a] channel-inset overflow-hidden">
+            <canvas
+                ref={canvasRef}
+                width={width}
+                height={height}
+                className="block"
+                aria-label="Spectrum analyzer"
+                role="img"
+            />
+            <div
+                className="absolute inset-0 pointer-events-none rounded"
+                style={{
+                    background:
+                        'linear-gradient(90deg, rgba(10,10,10,1) 0%, transparent 3%, transparent 97%, rgba(10,10,10,1) 100%)',
+                }}
+            />
+        </div>
     );
 };
 

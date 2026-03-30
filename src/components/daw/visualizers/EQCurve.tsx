@@ -61,9 +61,9 @@ const BAND_FREQ_RANGES: Record<BandId, [number, number]> = {
     high: [2000, 20000],
 };
 const BAND_COLORS: Record<BandId, string> = {
-    low: '#e8a87c',  // warm orange
-    mid: '#7fb8c4',  // cyan
-    high: '#b4a0d4',  // lavender
+    low: '#f0944c',  // warm orange (saturated)
+    mid: '#50d0e8',  // cyan (saturated)
+    high: '#c488f0',  // lavender (saturated)
 };
 
 export const EQCurve = ({
@@ -96,17 +96,22 @@ export const EQCurve = ({
         ctx.scale(dpr, dpr);
         ctx.clearRect(0, 0, width, height);
 
+        // Background — deep black with subtle gradient
         const bgColor = resolveToken('--color-bg-tray', '#0a0a0a');
-        ctx.fillStyle = bgColor;
+        const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
+        bgGrad.addColorStop(0, '#0e0e12');
+        bgGrad.addColorStop(1, '#060608');
+        ctx.fillStyle = bgGrad;
         ctx.beginPath();
         ctx.roundRect(0, 0, width, height, 4);
         ctx.fill();
 
         const zeroY = height / 2;
 
-        // Grid
-        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+        // Grid — subtle dotted lines
+        ctx.strokeStyle = 'rgba(255,255,255,0.05)';
         ctx.lineWidth = 0.5;
+        ctx.setLineDash([1, 4]);
         ctx.beginPath();
         ctx.moveTo(0, zeroY);
         ctx.lineTo(width, zeroY);
@@ -126,9 +131,10 @@ export const EQCurve = ({
             ctx.lineTo(width, y);
             ctx.stroke();
         }
+        ctx.setLineDash([]);
 
         // Compute combined curve
-        const accentCyan = resolveToken('--color-accent-cyan', '#7fb8c4');
+        const accentCyan = resolveToken('--color-accent-cyan', '#50d0e8');
         const points: [number, number][] = [];
         for (let i = 0; i <= width; i++) {
             const logFreq = MIN_FREQ * Math.pow(MAX_FREQ / MIN_FREQ, i / width);
@@ -141,16 +147,30 @@ export const EQCurve = ({
             points.push([i, y]);
         }
 
-        // Fill
+        // Fill gradient below curve
         ctx.beginPath();
         ctx.moveTo(0, zeroY);
         for (const [x, y] of points) { ctx.lineTo(x, y); }
         ctx.lineTo(width, zeroY);
         ctx.closePath();
-        ctx.fillStyle = `${accentCyan}18`;
+        const fillGrad = ctx.createLinearGradient(0, 0, 0, height);
+        fillGrad.addColorStop(0, `${accentCyan}30`);
+        fillGrad.addColorStop(1, `${accentCyan}05`);
+        ctx.fillStyle = fillGrad;
         ctx.fill();
 
-        // Stroke
+        // Glow pass — wider stroke, low alpha
+        ctx.beginPath();
+        for (let i = 0; i < points.length; i++) {
+            const [x, y] = points[i]!;
+            if (i === 0) { ctx.moveTo(x, y); }
+            else { ctx.lineTo(x, y); }
+        }
+        ctx.strokeStyle = `${accentCyan}30`;
+        ctx.lineWidth = 5;
+        ctx.stroke();
+
+        // Sharp stroke
         ctx.beginPath();
         for (let i = 0; i < points.length; i++) {
             const [x, y] = points[i]!;
@@ -196,8 +216,8 @@ export const EQCurve = ({
             }
         }
 
-        // Frequency labels
-        ctx.fillStyle = resolveToken('--color-text-disabled', '#3a3a3a');
+        // Frequency labels — very dim
+        ctx.fillStyle = '#383838';
         ctx.font = '7px monospace';
         ctx.textAlign = 'center';
         for (const [label, freq] of [['100', 100], ['1k', 1000], ['10k', 10000]] as const) {

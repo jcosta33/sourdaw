@@ -15,6 +15,8 @@ import { getDrumKitByIndex, scheduleKitNote, type DrumKit } from '#/modules/Synt
 import { getDrumKitDefByIndex, scheduleDrumKitNote, type DrumKitDef } from '#/modules/Synth/useCases/drumSynthEngine';
 import { getCompensationDelay } from '#/modules/AudioEngine/useCases/latencyCompensation';
 import { getChordAtBeat, transposeForChordTrack } from '#/modules/MIDI/useCases/chordTrack';
+import { getYeastRack } from '#/modules/Yeast/stores/yeastStore';
+import { type MidiEvent, type TransportInfo } from '#/modules/Yeast/models/MidiEvent';
 
 export function resolveDrumKit(devices: { type: string; parameterValues: Record<string, number> }[]): DrumKit | null {
     const kitDevice = devices.find((d) => d.type === 'builtin-drum-kit' || d.type === 'drum-kit');
@@ -119,9 +121,79 @@ export function scheduleMidiNotes(
             if (clip.type !== 'midi') {
                 continue;
             }
-            const notes = midiState.notesByClipId[clip.id];
+            let notes = midiState.notesByClipId[clip.id] as NonNullable<typeof midiState.notesByClipId[string]> | undefined;
             if (!notes) {
                 continue;
+            }
+
+            // ── Yeast MIDI FX processing ──
+            // If this track has a Yeast device, run clip notes through the MIDI rack
+            const hasYeast = track.devices.some((d) => d.type === 'yeast');
+            if (hasYeast) {
+                const yeastRack = getYeastRack();
+                if (yeastRack.getProcessorIds().length > 0) {
+                    const spb = (transport.tempo / 60); // beats per second
+                    const yeastTransport: TransportInfo = {
+                        sampleRate: 44100,
+                        bpm: transport.tempo,
+                        ppqPosition: fromBeat,
+                        isPlaying: true,
+                        barIndex: Math.floor(fromBeat / transport.timeSignatureNumerator),
+                        beatInBar: fromBeat % transport.timeSignatureNumerator,
+                        timeSigNum: transport.timeSignatureNumerator,
+                        timeSigDen: transport.timeSignatureDenominator,
+                        loopEnabled: transport.loopStart < transport.loopEnd,
+                        loopStartPpq: transport.loopStart,
+                        loopEndPpq: transport.loopEnd,
+                    };
+
+                    // Convert beat-based notes to sample-accurate MidiEvents
+                    const midiEvents: MidiEvent[] = [];
+                    for (const n of notes) {
+                        const noteStartBeat = clip.startBeat + n.startBeat;
+                        if (noteStartBeat < fromBeat || noteStartBeat >= toBeat) continue;
+                        const timeSamples = Math.round(noteStartBeat * 44100 / spb);
+                        midiEvents.push({
+                            timeSamples,
+                            kind: { type: 'noteOn', channel: 0, note: n.pitch, velocity: n.velocity ?? 100 },
+                        });
+                        const offTimeSamples = Math.round((noteStartBeat + n.duration) * 44100 / spb);
+                        midiEvents.push({
+                            timeSamples: offTimeSamples,
+                            kind: { type: 'noteOff', channel: 0, note: n.pitch },
+                        });
+                    }
+
+                    const blockStartSamples = Math.round(fromBeat * 44100 / spb);
+                    const blockEndSamples = Math.round(toBeat * 44100 / spb);
+                    const processed = yeastRack.processBlock(midiEvents, blockStartSamples, blockEndSamples, yeastTransport);
+
+                    // Convert back to beat-based notes for downstream scheduling
+                    const transformedNotes: NonNullable<typeof midiState.notesByClipId[string]> = [];
+                    for (const evt of processed) {
+                        if (evt.kind.type === 'noteOn') {
+                            const evtNote = evt.kind.note;
+                            const evtVel = evt.kind.velocity;
+                            const startBeat = (evt.timeSamples * spb / 44100) - clip.startBeat;
+                            // Find matching Note Off
+                            const offEvt = processed.find((e) => {
+                                if (e.kind.type !== 'noteOff') return false;
+                                return e.kind.note === evtNote && e.timeSamples > evt.timeSamples;
+                            });
+                            const endBeat = offEvt
+                                ? (offEvt.timeSamples * spb / 44100) - clip.startBeat
+                                : startBeat + 0.25;
+                            transformedNotes.push({
+                                ...notes![0]!,
+                                pitch: evtNote,
+                                velocity: evtVel,
+                                startBeat,
+                                duration: endBeat - startBeat,
+                            });
+                        }
+                    }
+                    notes = transformedNotes;
+                }
             }
 
             const synthParams = (drumKit || drumKitDef) ? null : getSynthParamsForTrack(track.id);

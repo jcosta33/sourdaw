@@ -29,24 +29,24 @@ const dbToColor = (db: number): string => {
     if (db <= DB_FLOOR) return 'transparent';
     const norm = Math.max(0, Math.min(1, (db - DB_FLOOR) / (DB_CEILING - DB_FLOOR)));
 
-    if (norm < 0.25) {
-        // Silent → blue
-        const t = norm / 0.25;
-        return `rgba(60, 100, ${lerp(180, 200, t)}, ${(t * 0.8).toFixed(2)})`;
+    if (norm < 0.3) {
+        // Silent → green (fade in)
+        const t = norm / 0.3;
+        return `rgba(0, ${lerp(120, 204, t)}, ${lerp(40, 68, t)}, ${(t * 0.85).toFixed(2)})`;
     }
-    if (norm < 0.5) {
-        // Blue → green
-        const t = (norm - 0.25) / 0.25;
-        return `rgb(${lerp(60, 50, t)}, ${lerp(100, 180, t)}, ${lerp(200, 80, t)})`;
-    }
-    if (norm < 0.75) {
+    if (norm < 0.65) {
         // Green → yellow
-        const t = (norm - 0.5) / 0.25;
-        return `rgb(${lerp(50, 210, t)}, ${lerp(180, 180, t)}, ${lerp(80, 40, t)})`;
+        const t = (norm - 0.3) / 0.35;
+        return `rgb(${lerp(0, 204, t)}, ${lerp(204, 204, t)}, ${lerp(68, 0, t)})`;
     }
-    // Yellow → red
-    const t = (norm - 0.75) / 0.25;
-    return `rgb(${lerp(210, 220, t)}, ${lerp(180, 60, t)}, ${lerp(40, 50, t)})`;
+    if (norm < 0.85) {
+        // Yellow → orange-red
+        const t = (norm - 0.65) / 0.2;
+        return `rgb(${lerp(204, 255, t)}, ${lerp(204, 51, t)}, 0)`;
+    }
+    // Hot red zone (above -3dB)
+    const t = (norm - 0.85) / 0.15;
+    return `rgb(255, ${lerp(51, 20, t)}, ${lerp(0, 10, t)})`;
 };
 
 export const TrackLevelIndicator = ({ trackId, height }: TrackLevelIndicatorProps): ReactElement => {

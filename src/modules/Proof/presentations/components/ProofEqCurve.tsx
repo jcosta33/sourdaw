@@ -64,31 +64,36 @@ export const ProofEqCurve = ({ patch, width, height }: Props): ReactElement => {
         const w = width;
         const h = height;
 
-        // Background
-        ctx.fillStyle = '#0a0a0a';
+        // Background — deep gradient
+        const bgGrad = ctx.createLinearGradient(0, 0, 0, h);
+        bgGrad.addColorStop(0, '#100f14');
+        bgGrad.addColorStop(0.5, '#0a090e');
+        bgGrad.addColorStop(1, '#07060a');
+        ctx.fillStyle = bgGrad;
         ctx.fillRect(0, 0, w, h);
 
-        // Grid
-        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+        // Grid — subtle
         ctx.lineWidth = 0.5;
         // Frequency grid
         for (const freq of [50, 100, 200, 500, 1000, 2000, 5000, 10000]) {
             const x = freqToX(freq, w);
+            ctx.strokeStyle = (freq === 1000) ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.03)';
             ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
         }
         // dB grid
         for (const db of [-12, -6, 0, 6, 12]) {
             const y = gainToY(db, h);
+            ctx.strokeStyle = db === 0 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.035)';
             ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
         }
         // Zero line
-        ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+        ctx.strokeStyle = 'rgba(255,255,255,0.12)';
         ctx.lineWidth = 1;
         const zeroY = gainToY(0, h);
         ctx.beginPath(); ctx.moveTo(0, zeroY); ctx.lineTo(w, zeroY); ctx.stroke();
 
         // Frequency labels
-        ctx.fillStyle = 'rgba(255,255,255,0.2)';
+        ctx.fillStyle = 'rgba(255,255,255,0.22)';
         ctx.font = '7px system-ui';
         ctx.textAlign = 'center';
         for (const freq of [100, 1000, 10000]) {
@@ -131,11 +136,11 @@ export const ProofEqCurve = ({ patch, width, height }: Props): ReactElement => {
             }
             ctx.lineTo(freqToX(freqs[NUM_POINTS - 1]!, w), zeroY);
             ctx.closePath();
-            ctx.fillStyle = BAND_COLORS[b]! + '15';
+            ctx.fillStyle = BAND_COLORS[b]! + '1a';
             ctx.fill();
         }
 
-        // Draw combined curve
+        // Draw combined curve — glow pass
         ctx.beginPath();
         for (let i = 0; i < NUM_POINTS; i++) {
             const x = freqToX(freqs[i]!, w);
@@ -143,7 +148,16 @@ export const ProofEqCurve = ({ patch, width, height }: Props): ReactElement => {
             if (i === 0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
         }
-        ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+        ctx.save();
+        ctx.shadowColor = 'rgba(200,200,255,0.5)';
+        ctx.shadowBlur = 8;
+        ctx.strokeStyle = 'rgba(230,230,255,0.8)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.restore();
+
+        // Draw combined curve — crisp pass
+        ctx.strokeStyle = 'rgba(240,240,255,0.85)';
         ctx.lineWidth = 1.5;
         ctx.stroke();
 
@@ -154,12 +168,23 @@ export const ProofEqCurve = ({ patch, width, height }: Props): ReactElement => {
             const y = gainToY(band.gain, h);
             const color = BAND_COLORS[b]!;
 
-            // Dot
-            ctx.beginPath();
-            ctx.arc(x, y, band.enabled ? 5 : 3, 0, Math.PI * 2);
-            ctx.fillStyle = band.enabled ? color : color + '40';
-            ctx.fill();
-            ctx.strokeStyle = band.enabled ? '#fff' : 'transparent';
+            // Dot — glow
+            if (band.enabled) {
+                ctx.save();
+                ctx.shadowColor = color;
+                ctx.shadowBlur = 10;
+                ctx.beginPath();
+                ctx.arc(x, y, 5, 0, Math.PI * 2);
+                ctx.fillStyle = color;
+                ctx.fill();
+                ctx.restore();
+            } else {
+                ctx.beginPath();
+                ctx.arc(x, y, 3, 0, Math.PI * 2);
+                ctx.fillStyle = color + '40';
+                ctx.fill();
+            }
+            ctx.strokeStyle = band.enabled ? 'rgba(255,255,255,0.85)' : 'transparent';
             ctx.lineWidth = 1;
             ctx.stroke();
 

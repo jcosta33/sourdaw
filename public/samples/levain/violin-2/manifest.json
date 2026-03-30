@@ -13,7 +13,7 @@
         {
           "file": "VlnEns_susVib_G2_v1.wav",
           "rootNote": 43,
-          "loKey": 55,
+          "loKey": 20,
           "hiKey": 44,
           "loVel": 0,
           "hiVel": 63,
@@ -34,7 +34,7 @@
         {
           "file": "VlnEns_susVib_G2_v2.wav",
           "rootNote": 43,
-          "loKey": 55,
+          "loKey": 20,
           "hiKey": 44,
           "loVel": 64,
           "hiVel": 127,
@@ -481,7 +481,7 @@
         {
           "file": "VlnEns_Spic_G2_v1_rr1.wav",
           "rootNote": 43,
-          "loKey": 55,
+          "loKey": 20,
           "hiKey": 44,
           "loVel": 0,
           "hiVel": 63,
@@ -502,7 +502,7 @@
         {
           "file": "VlnEns_Spic_G2_v1_rr2.wav",
           "rootNote": 43,
-          "loKey": 55,
+          "loKey": 20,
           "hiKey": 44,
           "loVel": 0,
           "hiVel": 63,
@@ -523,7 +523,7 @@
         {
           "file": "VlnEns_Spic_G2_v2_rr1.wav",
           "rootNote": 43,
-          "loKey": 55,
+          "loKey": 20,
           "hiKey": 44,
           "loVel": 64,
           "hiVel": 127,
@@ -544,7 +544,7 @@
         {
           "file": "VlnEns_Spic_G2_v2_rr2.wav",
           "rootNote": 43,
-          "loKey": 55,
+          "loKey": 20,
           "hiKey": 44,
           "loVel": 64,
           "hiVel": 127,
@@ -1411,7 +1411,7 @@
         {
           "file": "VlnEns_Pizz_G2_v1_rr1.wav",
           "rootNote": 43,
-          "loKey": 55,
+          "loKey": 20,
           "hiKey": 44,
           "loVel": 0,
           "hiVel": 63,
@@ -1432,7 +1432,7 @@
         {
           "file": "VlnEns_Pizz_G2_v1_rr2.wav",
           "rootNote": 43,
-          "loKey": 55,
+          "loKey": 20,
           "hiKey": 44,
           "loVel": 0,
           "hiVel": 63,
@@ -1453,7 +1453,7 @@
         {
           "file": "VlnEns_Pizz_G2_v2_rr1.wav",
           "rootNote": 43,
-          "loKey": 55,
+          "loKey": 20,
           "hiKey": 44,
           "loVel": 64,
           "hiVel": 127,
@@ -1474,7 +1474,7 @@
         {
           "file": "VlnEns_Pizz_G2_v2_rr2.wav",
           "rootNote": 43,
-          "loKey": 55,
+          "loKey": 20,
           "hiKey": 44,
           "loVel": 64,
           "hiVel": 127,
@@ -2341,7 +2341,7 @@
         {
           "file": "VlnEns_Trem_G2_v1.wav",
           "rootNote": 43,
-          "loKey": 55,
+          "loKey": 20,
           "hiKey": 44,
           "loVel": 0,
           "hiVel": 63,
@@ -2362,7 +2362,7 @@
         {
           "file": "VlnEns_Trem_G2_v2.wav",
           "rootNote": 43,
-          "loKey": 55,
+          "loKey": 20,
           "hiKey": 44,
           "loVel": 64,
           "hiVel": 127,

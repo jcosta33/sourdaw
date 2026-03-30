@@ -6,7 +6,7 @@
  */
 import { type ReactElement, useRef, useEffect } from 'react';
 import { getMasterAnalyser, getTrackAnalyser } from '#/modules/AudioEngine/useCases/engineAccess';
-import { resolveToken } from '#/helpers/UI/resolveToken';
+
 
 type SpectrogramProps = {
     trackId?: string;
@@ -28,35 +28,41 @@ export const Spectrogram = ({ trackId, width = 300, height = 100 }: SpectrogramP
             return;
         }
 
-        // Pre-build color LUT (256 entries)
+        // Pre-build color LUT (256 entries) — rich blue→cyan→green→yellow→red
         const colorLUT: string[] = [];
         for (let i = 0; i < 256; i++) {
             const t = i / 255;
             let r: number, g: number, b: number;
-            if (t < 0.25) {
-                // Dark slate → slate blue
-                const s = t / 0.25;
+            if (t < 0.15) {
+                // Deep black → dark blue
+                const s = t / 0.15;
                 r = 0;
                 g = 0;
-                b = Math.round(30 + s * 120);
-            } else if (t < 0.5) {
-                // Slate blue → muted teal
-                const s = (t - 0.25) / 0.25;
+                b = Math.round(s * 100);
+            } else if (t < 0.35) {
+                // Dark blue → vivid cyan
+                const s = (t - 0.15) / 0.2;
                 r = 0;
-                g = Math.round(s * 150);
-                b = Math.round(150 - s * 20);
+                g = Math.round(s * 220);
+                b = Math.round(100 + s * 155);
+            } else if (t < 0.55) {
+                // Cyan → green
+                const s = (t - 0.35) / 0.2;
+                r = 0;
+                g = Math.round(220 + s * 35);
+                b = Math.round(255 * (1 - s));
             } else if (t < 0.75) {
-                // Muted teal → dusty amber
-                const s = (t - 0.5) / 0.25;
-                r = Math.round(s * 180);
-                g = Math.round(150 + s * 10);
-                b = Math.round(130 * (1 - s));
+                // Green → yellow
+                const s = (t - 0.55) / 0.2;
+                r = Math.round(s * 255);
+                g = Math.round(255 - s * 30);
+                b = 0;
             } else {
-                // Dusty amber → warm gray
+                // Yellow → hot red/white
                 const s = (t - 0.75) / 0.25;
-                r = Math.round(180 + s * 40);
-                g = Math.round(160 + s * 50);
-                b = Math.round(s * 180);
+                r = 255;
+                g = Math.round(225 * (1 - s * 0.7));
+                b = Math.round(s * 80);
             }
             colorLUT.push(`rgb(${r},${g},${b})`);
         }
@@ -64,8 +70,8 @@ export const Spectrogram = ({ trackId, width = 300, height = 100 }: SpectrogramP
         let rafId = 0;
         columnRef.current = 0;
 
-        // Clear
-        ctx.fillStyle = resolveToken('--color-bg-tray', '#0a0a0a');
+        // Clear — deep black
+        ctx.fillStyle = '#050508';
         ctx.fillRect(0, 0, width, height);
 
         const draw = (): void => {
@@ -97,10 +103,13 @@ export const Spectrogram = ({ trackId, width = 300, height = 100 }: SpectrogramP
                 ctx.fillRect(col, y, 1, 1);
             }
 
-            // Draw cursor line
+            // Draw cursor line — subtle bright with glow
             const nextCol = (col + 1) % width;
-            ctx.fillStyle = resolveToken('--color-text-secondary', '#a3a3a3');
+            ctx.shadowColor = 'rgba(255,255,255,0.5)';
+            ctx.shadowBlur = 4;
+            ctx.fillStyle = 'rgba(255,255,255,0.6)';
             ctx.fillRect(nextCol, 0, 1, height);
+            ctx.shadowBlur = 0;
 
             columnRef.current++;
             rafId = requestAnimationFrame(draw);
@@ -111,13 +120,22 @@ export const Spectrogram = ({ trackId, width = 300, height = 100 }: SpectrogramP
     }, [trackId, width, height]);
 
     return (
-        <canvas
-            ref={canvasRef}
-            width={width}
-            height={height}
-            className="rounded border border-border/30"
-            aria-label="Spectrogram"
-            role="img"
-        />
+        <div className="relative rounded bg-[#0a0a0a] channel-inset overflow-hidden">
+            <canvas
+                ref={canvasRef}
+                width={width}
+                height={height}
+                className="block"
+                aria-label="Spectrogram"
+                role="img"
+            />
+            <div
+                className="absolute inset-0 pointer-events-none rounded"
+                style={{
+                    background:
+                        'linear-gradient(90deg, rgba(10,10,10,1) 0%, transparent 3%, transparent 97%, rgba(10,10,10,1) 100%)',
+                }}
+            />
+        </div>
     );
 };

@@ -58,32 +58,17 @@ export const OscillatorSection = ({
 
             {/* Knob row: Level + Coarse + Fine + (PW) */}
             <div className="flex items-end gap-2">
-                <div className="flex flex-col items-center gap-0">
-                    <RotaryKnob paramId="oscLevel" value={level} onChange={onLevelChange} min={0} max={1} step={0.01} defaultValue={0.8} size="lg" />
-                    <span className="text-[7px] text-muted-foreground">Level</span>
-                </div>
-                <div className="flex flex-col items-center gap-0">
-                    <RotaryKnob paramId="oscCoarse" value={coarse} onChange={onCoarseChange} min={-24} max={24} step={1} defaultValue={0} size="lg" />
-                    <span className="text-[7px] text-muted-foreground">Coarse</span>
-                </div>
-                <div className="flex flex-col items-center gap-0">
-                    <RotaryKnob paramId="oscFine" value={fine} onChange={onFineChange} min={-100} max={100} step={1} defaultValue={0} size="lg" />
-                    <span className="text-[7px] text-muted-foreground">Fine</span>
-                </div>
+                <RotaryKnob paramId="oscLevel" value={level} onChange={onLevelChange} min={0} max={1} step={0.01} defaultValue={0.8} size="lg" label="Level" />
+                <RotaryKnob paramId="oscCoarse" value={coarse} onChange={onCoarseChange} min={-24} max={24} step={1} defaultValue={0} size="lg" label="Coarse" />
+                <RotaryKnob paramId="oscFine" value={fine} onChange={onFineChange} min={-100} max={100} step={1} defaultValue={0} size="lg" label="Fine" />
                 {showPW ? (
-                    <div className="flex flex-col items-center gap-0">
-                        <RotaryKnob paramId="pulseWidth" value={pulseWidth} onChange={onPulseWidthChange} min={0.05} max={0.95} step={0.01} defaultValue={0.5} size="lg" />
-                        <span className="text-[7px] text-muted-foreground">PW</span>
-                    </div>
+                    <RotaryKnob paramId="pulseWidth" value={pulseWidth} onChange={onPulseWidthChange} min={0.05} max={0.95} step={0.01} defaultValue={0.5} size="lg" label="PW" />
                 ) : null}
             </div>
 
             {/* Noise sub-row */}
             <div className="flex items-end gap-2 pt-1 border-t border-border/15">
-                <div className="flex flex-col items-center gap-0">
-                    <RotaryKnob paramId="noiseLevel" value={noiseLevel} onChange={onNoiseLevelChange} min={0} max={1} step={0.01} defaultValue={0} size="md" />
-                    <span className="text-[7px] text-muted-foreground">Noise</span>
-                </div>
+                <RotaryKnob paramId="noiseLevel" value={noiseLevel} onChange={onNoiseLevelChange} min={0} max={1} step={0.01} defaultValue={0} size="md" label="Noise" />
                 <div className="flex gap-0.5 pb-2">
                     {NOISE_COLOR_NAMES.map((name, i) => (
                         <button key={name} type="button"

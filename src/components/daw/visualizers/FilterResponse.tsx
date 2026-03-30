@@ -83,17 +83,21 @@ export const FilterResponse = ({
         ctx.scale(dpr, dpr);
         ctx.clearRect(0, 0, width, height);
 
-        const bg = resolveToken('--color-bg-tray', '#0a0a0a');
-        ctx.fillStyle = bg;
+        // Background — deep gradient
+        const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
+        bgGrad.addColorStop(0, '#0e0e12');
+        bgGrad.addColorStop(1, '#060608');
+        ctx.fillStyle = bgGrad;
         ctx.beginPath();
         ctx.roundRect(0, 0, width, height, 4);
         ctx.fill();
 
         const zeroY = height * 0.6;
 
-        // Grid
-        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+        // Grid — subtle dotted
+        ctx.strokeStyle = 'rgba(255,255,255,0.04)';
         ctx.lineWidth = 0.5;
+        ctx.setLineDash([1, 4]);
         ctx.beginPath();
         ctx.moveTo(0, zeroY);
         ctx.lineTo(width, zeroY);
@@ -106,6 +110,7 @@ export const FilterResponse = ({
             ctx.lineTo(x, height);
             ctx.stroke();
         }
+        ctx.setLineDash([]);
 
         // Cutoff vertical marker
         const cutoffX = freqToX(cutoff, width);
@@ -118,7 +123,7 @@ export const FilterResponse = ({
         ctx.setLineDash([]);
 
         // Compute curve
-        const accentCyan = resolveToken('--color-accent-cyan', '#7fb8c4');
+        const accentCyan = resolveToken('--color-accent-cyan', '#50d0e8');
         const type = Math.round(filterType);
         const points: [number, number][] = [];
 
@@ -130,16 +135,30 @@ export const FilterResponse = ({
             points.push([i, y]);
         }
 
-        // Fill
+        // Fill gradient
         ctx.beginPath();
         ctx.moveTo(0, zeroY);
         for (const [x, y] of points) { ctx.lineTo(x, y); }
         ctx.lineTo(width, zeroY);
         ctx.closePath();
-        ctx.fillStyle = `${accentCyan}14`;
+        const fillGrad = ctx.createLinearGradient(0, 0, 0, height);
+        fillGrad.addColorStop(0, `${accentCyan}28`);
+        fillGrad.addColorStop(1, `${accentCyan}04`);
+        ctx.fillStyle = fillGrad;
         ctx.fill();
 
-        // Stroke
+        // Glow pass
+        ctx.beginPath();
+        for (let i = 0; i < points.length; i++) {
+            const [x, y] = points[i]!;
+            if (i === 0) { ctx.moveTo(x, y); }
+            else { ctx.lineTo(x, y); }
+        }
+        ctx.strokeStyle = `${accentCyan}30`;
+        ctx.lineWidth = 5;
+        ctx.stroke();
+
+        // Sharp stroke
         ctx.beginPath();
         for (let i = 0; i < points.length; i++) {
             const [x, y] = points[i]!;
@@ -164,8 +183,8 @@ export const FilterResponse = ({
             ctx.stroke();
         }
 
-        // Labels
-        ctx.fillStyle = resolveToken('--color-text-disabled', '#3a3a3a');
+        // Labels — very dim
+        ctx.fillStyle = '#383838';
         ctx.font = '7px monospace';
         ctx.textAlign = 'center';
         for (const [label, freq] of [['100', 100], ['1k', 1000], ['10k', 10000]] as const) {

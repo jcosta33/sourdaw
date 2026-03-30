@@ -40,10 +40,7 @@ const K = ({ value, onChange, label, min, max, step, defaultValue, paramId }: {
     value: number; onChange: (v: number) => void; label: string;
     min: number; max: number; step: number; defaultValue: number; paramId: string;
 }): ReactElement => (
-    <div className="flex flex-col items-center gap-0">
-        <RotaryKnob paramId={paramId} value={value} onChange={onChange} min={min} max={max} step={step} defaultValue={defaultValue} size="lg" />
-        <span className="text-[8px] text-muted-foreground">{label}</span>
-    </div>
+    <RotaryKnob paramId={paramId} value={value} onChange={onChange} min={min} max={max} step={step} defaultValue={defaultValue} size="lg" label={label} />
 );
 
 export const EffectsSection = (props: EffectsSectionProps): ReactElement => {

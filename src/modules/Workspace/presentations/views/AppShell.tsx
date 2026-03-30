@@ -1,5 +1,6 @@
 import { type ReactElement, type ReactNode, lazy, Suspense, useEffect, useState, useSyncExternalStore } from 'react';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
+import { useTracks } from '../hooks/useTracks';
 import { updateWorkspaceState } from '../../useCases/workspaceState';
 import { useProjectState } from '../hooks/useProjectState';
 import { useAppInitialization } from '../hooks/useAppInitialization';
@@ -45,6 +46,8 @@ import { ShortcutCheatSheet } from '../components/ShortcutCheatSheet';
 import { UndoHistoryPanel } from '#/modules/Command/presentations/views/UndoHistoryPanel';
 
 import { Button } from '#/components/ui/button';
+import { X } from 'lucide-react';
+import { toggleMixer } from '../../useCases/togglePanel/panelToggles';
 import { DragResizeHandle } from '#/components/ui/DragResizeHandle';
 
 const CollaborationPanelLazy = lazy(() =>
@@ -58,6 +61,8 @@ type AppShellProps = {
 };
 
 export const AppShell = ({ children }: AppShellProps): ReactElement => {
+    const { tracks: allTracks } = useTracks();
+    const hasUserTracks = allTracks.some((t) => t.kind !== 'master' && t.kind !== 'folder');
     const workspaceState = useWorkspaceState();
     const {
         sidebarOpen,
@@ -75,7 +80,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         toasterHeight,
         levainHeight,
         glutenHeight,
+        proofChamberHeight,
         proofHeight,
+        scoringHeight,
         yeastHeight,
     } = workspaceState;
 
@@ -236,8 +243,43 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         updateWorkspaceState({ toasterHeight: fn(toasterHeight) });
     const setLevainHeight = (fn: (prev: number) => number) => updateWorkspaceState({ levainHeight: fn(levainHeight) });
     const setGlutenHeight = (fn: (prev: number) => number) => updateWorkspaceState({ glutenHeight: fn(glutenHeight) });
+    const setProofChamberHeight = (fn: (prev: number) => number) => updateWorkspaceState({ proofChamberHeight: fn(proofChamberHeight) });
     const setProofHeight = (fn: (prev: number) => number) => updateWorkspaceState({ proofHeight: fn(proofHeight) });
+    const setScoringHeight = (fn: (prev: number) => number) => updateWorkspaceState({ scoringHeight: fn(scoringHeight) });
     const setYeastHeight = (fn: (prev: number) => number) => updateWorkspaceState({ yeastHeight: fn(yeastHeight) });
+
+    // When no user tracks exist, show only the welcome screen (full-screen)
+    if (!hasUserTracks) {
+        return (
+            <div className="flex h-screen w-screen flex-col overflow-hidden bg-surface-app">
+                {/* Render children (ArrangeView) which shows EmptyArrangeOverlay */}
+                <div className="flex-1 relative overflow-hidden">{children}</div>
+                {/* Global overlays that need to be available even before first interaction */}
+                <CommandPalette />
+                <VoiceCommandOverlay />
+                <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} />
+                <PreferencesDialog open={prefsOpen} onClose={() => setPrefsOpen(false)} />
+                {project.loading ? (
+                    <div
+                        className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 backdrop-blur-md"
+                        aria-busy="true"
+                        aria-live="polite"
+                    >
+                        <div className="flex flex-col items-center gap-6">
+                            <div className="relative size-12">
+                                <div className="absolute inset-0 rounded-full border-2 border-white/10" />
+                                <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-primary" />
+                            </div>
+                            <div className="flex flex-col items-center gap-1">
+                                <span className="text-sm font-medium text-foreground">Loading Project</span>
+                                <span className="text-xs text-muted-foreground">{project.name}</span>
+                            </div>
+                        </div>
+                    </div>
+                ) : null}
+            </div>
+        );
+    }
 
     return (
         <div className="flex h-screen w-screen flex-col overflow-hidden bg-surface-app">
@@ -324,8 +366,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                             label="Dutch Oven"
                             labelColor="text-[var(--color-accent-cyan)]"
                             borderColor="border-[var(--color-accent-cyan)]/20"
-                            height={340}
-                            onResize={() => {}}
+                            height={proofChamberHeight}
+                            onResize={setProofChamberHeight}
                             onClose={() => setProofChamberOpen(false)}
                         >
                             <ProofChamberPanel />
@@ -363,8 +405,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                             label="Scoring"
                             labelColor="text-[var(--color-accent-mint)]"
                             borderColor="border-[var(--color-accent-mint)]/20"
-                            height={280}
-                            onResize={() => {}}
+                            height={scoringHeight}
+                            onResize={setScoringHeight}
                             onClose={() => setScoringOpen(false)}
                         >
                             <ScoringPanel />
@@ -396,7 +438,14 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 style={{ height: mixerHeight }}
                             >
                                 {/* Bottom panel tab bar */}
-                                <div className="flex items-center gap-0.5 px-2 py-0.5 border-b border-black/40 bg-surface-app shrink-0">
+                                <div
+                                    className="flex items-center gap-0.5 px-2 py-0.5 shrink-0"
+                                    style={{
+                                        background: 'linear-gradient(180deg, #0c0c0c 0%, #0a0a0a 100%)',
+                                        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 3px rgba(0,0,0,0.4)',
+                                        borderBottom: '1px solid rgba(0,0,0,0.4)',
+                                    }}
+                                >
                                     <Button
                                         variant={bottomTab === 'mixer' ? 'secondary' : 'ghost'}
                                         size="xs"
@@ -448,6 +497,17 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                         onClick={() => setBottomTab('analysis')}
                                     >
                                         Analysis
+                                    </Button>
+
+                                    <div className="flex-1" />
+
+                                    <Button
+                                        variant="ghost"
+                                        size="icon-xs"
+                                        onClick={toggleMixer}
+                                        aria-label="Close bottom dock"
+                                    >
+                                        <X className="size-3.5" />
                                     </Button>
                                 </div>
                                 {/* Panel content */}
@@ -509,7 +569,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
             <PreferencesDialog open={prefsOpen} onClose={() => setPrefsOpen(false)} />
             <ShortcutCheatSheet />
 
-            {/* Loading overlay */}
+            {/* Loading overlay for Project */}
             {project.loading ? (
                 <div
                     className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 backdrop-blur-md"

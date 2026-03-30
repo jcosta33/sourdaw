@@ -75,7 +75,11 @@ export const ADSREnvelope = ({
         const bottomY = pad + plotH;
         const sustainY = bottomY - sustain * (plotH - 4);
 
-        const accent = color ?? resolveToken('--color-accent-teal', '#4CB8B8');
+        const rawColor = color ?? resolveToken('--color-accent-teal', '#4CB8B8');
+        // Resolve CSS variable references (e.g. 'var(--color-accent-mint)') to hex for canvas
+        const accent = rawColor.startsWith('var(')
+            ? resolveToken(rawColor.slice(4, -1), '#4CB8B8')
+            : rawColor;
 
         // Store breakpoint positions for hit testing
         breakpointsRef.current = [

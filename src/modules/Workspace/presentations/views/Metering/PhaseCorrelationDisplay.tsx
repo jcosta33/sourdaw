@@ -50,8 +50,8 @@ export const PhaseCorrelationDisplay = ({ width = 160, height = 24 }: PhaseCorre
             // Draw
             ctx.clearRect(0, 0, width, height);
 
-            // Background
-            ctx.fillStyle = resolveToken('--color-bg-panel', '#111');
+            // Background — deep black
+            ctx.fillStyle = '#080808';
             ctx.beginPath();
             ctx.roundRect(0, 0, width, height, 3);
             ctx.fill();
@@ -61,41 +61,49 @@ export const PhaseCorrelationDisplay = ({ width = 160, height = 24 }: PhaseCorre
             const barY = 4;
             const barH = height - 8;
 
-            // Background bar
-            ctx.fillStyle = resolveToken('--color-bg-dialog', '#222');
+            // Background bar — slightly lighter
+            ctx.fillStyle = '#101014';
             ctx.fillRect(2, barY, width - 4, barH);
 
-            // Center line
-            ctx.strokeStyle = resolveToken('--color-text-disabled', '#3a3a3a');
+            // Center line — subtle dashed
+            ctx.strokeStyle = 'rgba(255,255,255,0.12)';
             ctx.lineWidth = 1;
+            ctx.setLineDash([2, 3]);
             ctx.beginPath();
             ctx.moveTo(midX, barY);
             ctx.lineTo(midX, barY + barH);
             ctx.stroke();
+            ctx.setLineDash([]);
 
             // Correlation indicator
             const indicatorX = midX + correlation * (midX - 4);
             const color =
                 correlation > 0.5
-                    ? resolveToken('--color-meter-safe', '#4a9060') // Good mono compatibility
+                    ? resolveToken('--color-meter-safe', '#00CC44') // Good mono compatibility
                     : correlation > 0
-                      ? resolveToken('--color-meter-hot', '#b09040') // Moderate
-                      : resolveToken('--color-meter-clip', '#b05050'); // Phase issues
+                      ? resolveToken('--color-meter-hot', '#CCCC00') // Moderate
+                      : resolveToken('--color-meter-clip', '#FF3300'); // Phase issues
 
-            // Bar from center to correlation value
+            // Bar from center to correlation value — with glow
             const barStart = Math.min(midX, indicatorX);
             const barW = Math.abs(indicatorX - midX);
-            ctx.fillStyle = `${color}99`;
+            ctx.fillStyle = `${color}66`;
+            ctx.shadowColor = color;
+            ctx.shadowBlur = 6;
             ctx.fillRect(barStart, barY + 1, barW, barH - 2);
+            ctx.shadowBlur = 0;
 
-            // Indicator dot
+            // Indicator dot — bright with glow
             ctx.fillStyle = color;
+            ctx.shadowColor = color;
+            ctx.shadowBlur = 8;
             ctx.beginPath();
             ctx.arc(indicatorX, barY + barH / 2, 4, 0, Math.PI * 2);
             ctx.fill();
+            ctx.shadowBlur = 0;
 
-            // Labels
-            ctx.fillStyle = resolveToken('--color-text-tertiary', '#666');
+            // Labels — dim and refined
+            ctx.fillStyle = 'rgba(255,255,255,0.22)';
             ctx.font = '7px monospace';
             ctx.textAlign = 'left';
             ctx.fillText('-1', 4, height - 2);
@@ -112,15 +120,24 @@ export const PhaseCorrelationDisplay = ({ width = 160, height = 24 }: PhaseCorre
     }, [width, height]);
 
     return (
-        <canvas
-            ref={canvasRef}
-            width={width}
-            height={height}
-            className="rounded border border-border/30"
-            aria-label="Phase correlation meter"
-            role="meter"
-            aria-valuemin={-1}
-            aria-valuemax={1}
-        />
+        <div className="relative rounded bg-[#0a0a0a] channel-inset overflow-hidden">
+            <canvas
+                ref={canvasRef}
+                width={width}
+                height={height}
+                className="block"
+                aria-label="Phase correlation meter"
+                role="meter"
+                aria-valuemin={-1}
+                aria-valuemax={1}
+            />
+            <div
+                className="absolute inset-0 pointer-events-none rounded"
+                style={{
+                    background:
+                        'linear-gradient(90deg, rgba(10,10,10,1) 0%, transparent 4%, transparent 96%, rgba(10,10,10,1) 100%)',
+                }}
+            />
+        </div>
     );
 };

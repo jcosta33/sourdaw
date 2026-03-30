@@ -14,6 +14,8 @@ type RotaryKnobProps = {
     bipolar?: boolean;
     size?: 'sm' | 'md' | 'lg' | 'xl';
     className?: string;
+    /** Label rendered below the knob. When set, the component expands its min-width to prevent label overlap. */
+    label?: string;
     paramId?: string;
     targetType?: 'trackGain' | 'trackPan' | 'deviceParam' | 'fermenterGlobalParam';
     trackId?: string;
@@ -41,6 +43,7 @@ export const RotaryKnob = ({
     bipolar = false,
     size = 'md',
     className,
+    label,
     paramId,
     targetType = 'fermenterGlobalParam', // Default to fermenterGlobalParam for now
     trackId,
@@ -141,6 +144,7 @@ export const RotaryKnob = ({
             ref={rootRef}
             className={cn(
                 'group/knob relative flex flex-col items-center select-none touch-none cursor-ns-resize',
+                label && 'min-w-fit',
                 className,
             )}
             onPointerDown={handlePointerDown}
@@ -179,23 +183,30 @@ export const RotaryKnob = ({
                     )}
                     style={{
                         background:
-                            'radial-gradient(ellipse 60% 40% at 50% 35%, rgba(255,255,255,0.12) 0%, transparent 70%), radial-gradient(circle at 50% 40%, #444 0%, #2a2a2a 40%, #1a1a1a 100%)',
+                            'radial-gradient(ellipse 60% 40% at 45% 32%, rgba(255,255,255,0.22) 0%, transparent 65%), radial-gradient(circle at 50% 40%, #4a4a4a 0%, #333 35%, #1e1e1e 80%, #1a1a1a 100%)',
                         boxShadow:
-                            'inset 0 1px 0 rgba(255,255,255,0.08), 0 1px 2px rgba(0,0,0,0.5)',
+                            'inset 0 1px 0 rgba(255,255,255,0.1), 0 1px 3px rgba(0,0,0,0.6)',
                         transform: `rotate(${rotation}deg)`,
                     }}
                 >
                     {/* Position indicator line */}
                     <div
-                        className="absolute left-1/2 -translate-x-1/2 rounded-full bg-text-secondary"
+                        className="absolute left-1/2 -translate-x-1/2 rounded-full"
                         style={{
                             top: '12%',
                             width: px >= 72 ? 3 : 2,
                             height: px >= 72 ? '25%' : '28%',
+                            background: 'linear-gradient(180deg, #ccc 0%, #888 100%)',
+                            boxShadow: '0 0 2px rgba(255,255,255,0.15)',
                         }}
                     />
                 </div>
             </div>
+            {label ? (
+                <span className="text-[7px] text-muted-foreground whitespace-nowrap mt-0.5 leading-none">
+                    {label}
+                </span>
+            ) : null}
         </div>
     );
 };

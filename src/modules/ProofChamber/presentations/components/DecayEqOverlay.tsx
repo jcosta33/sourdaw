@@ -66,7 +66,7 @@ export const DecayEqOverlay = ({
 
         // Draw center line (1.0x = no change)
         const centerY = multToY(1.0, height);
-        ctx.strokeStyle = 'rgba(127,184,196,0.15)';
+        ctx.strokeStyle = 'rgba(127,195,210,0.12)';
         ctx.lineWidth = 1;
         ctx.setLineDash([4, 4]);
         ctx.beginPath();
@@ -75,9 +75,18 @@ export const DecayEqOverlay = ({
         ctx.stroke();
         ctx.setLineDash([]);
 
+        // Additional subtle reference lines at 0.5x and 2.0x
+        ctx.strokeStyle = 'rgba(127,184,196,0.05)';
+        ctx.lineWidth = 0.5;
+        for (const mult of [0.5, 2.0]) {
+            const y = multToY(mult, height);
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(width, y);
+            ctx.stroke();
+        }
+
         // Draw curve through the 6 band points
-        ctx.strokeStyle = 'rgba(127,184,196,0.6)';
-        ctx.lineWidth = 2;
         ctx.beginPath();
         for (let px = 0; px < width; px++) {
             // Convert pixel to frequency
@@ -105,6 +114,18 @@ export const DecayEqOverlay = ({
                 ctx.lineTo(px, y);
             }
         }
+        // Glow pass
+        ctx.save();
+        ctx.shadowColor = 'rgba(127,200,220,0.35)';
+        ctx.shadowBlur = 8;
+        ctx.strokeStyle = 'rgba(127,200,220,0.65)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.restore();
+
+        // Crisp pass
+        ctx.strokeStyle = 'rgba(140,200,220,0.7)';
+        ctx.lineWidth = 1.5;
         ctx.stroke();
 
         // Draw band nodes
@@ -112,25 +133,29 @@ export const DecayEqOverlay = ({
             const x = freqToX(BAND_FREQS[b]!, width);
             const y = multToY(multipliers[b]!, height);
 
-            // Node circle
-            ctx.fillStyle = 'rgba(127,184,196,0.9)';
+            // Node circle — glow
+            ctx.save();
+            ctx.shadowColor = 'rgba(127,210,230,0.5)';
+            ctx.shadowBlur = 10;
+            ctx.fillStyle = 'rgba(130,200,220,0.95)';
             ctx.beginPath();
             ctx.arc(x, y, 5, 0, Math.PI * 2);
             ctx.fill();
+            ctx.restore();
 
             // Node outline
-            ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+            ctx.strokeStyle = 'rgba(255,255,255,0.5)';
             ctx.lineWidth = 1;
             ctx.stroke();
 
             // Label
-            ctx.fillStyle = 'rgba(255,255,255,0.5)';
+            ctx.fillStyle = 'rgba(255,255,255,0.55)';
             ctx.font = '8px sans-serif';
             ctx.textAlign = 'center';
             ctx.fillText(BAND_LABELS[b]!, x, y - 10);
 
             // Value
-            ctx.fillStyle = 'rgba(127,184,196,0.5)';
+            ctx.fillStyle = 'rgba(140,200,220,0.6)';
             ctx.fillText(`${multipliers[b]!.toFixed(1)}×`, x, y + 14);
         }
     }, [multipliers, width, height]);

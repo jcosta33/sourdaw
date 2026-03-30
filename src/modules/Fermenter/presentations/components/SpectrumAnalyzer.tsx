@@ -48,11 +48,26 @@ export const SpectrumAnalyzer = ({
         ctx.scale(dpr, dpr);
 
         ctx.clearRect(0, 0, width, height);
-        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+
+        // Background — deep gradient
+        const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
+        bgGrad.addColorStop(0, 'rgba(12,10,18,0.85)');
+        bgGrad.addColorStop(1, 'rgba(6,5,10,0.85)');
+        ctx.fillStyle = bgGrad;
         ctx.fillRect(0, 0, width, height);
 
+        // Subtle horizontal grid lines
+        ctx.strokeStyle = 'rgba(255,255,255,0.025)';
+        ctx.lineWidth = 0.5;
+        for (const frac of [0.25, 0.5, 0.75]) {
+            ctx.beginPath();
+            ctx.moveTo(0, height * frac);
+            ctx.lineTo(width, height * frac);
+            ctx.stroke();
+        }
+
         if (!buffer || buffer.length === 0) {
-            ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+            ctx.strokeStyle = 'rgba(255,255,255,0.06)';
             ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.moveTo(0, height);
@@ -73,23 +88,40 @@ export const SpectrumAnalyzer = ({
 
         const barW = width / numBins;
 
-        // Draw bars
+        // Draw bars with glow
         for (let i = 0; i < numBins; i++) {
             const norm = mags[i]! / maxMag;
             const barH = norm * (height - 4);
 
-            // Color gradient from cyan (low) to lavender (high freq)
+            // Richer color gradient: saturated cyan to vivid lavender
             const t = i / numBins;
-            const r = Math.round(96 + t * 88);
-            const g = Math.round(200 - t * 70);
-            const b = Math.round(232);
+            const r = Math.round(70 + t * 110);
+            const g = Math.round(210 - t * 80);
+            const b = Math.round(240);
 
-            ctx.fillStyle = `rgba(${r},${g},${b},0.7)`;
+            const barColor = `rgb(${r},${g},${b})`;
+
+            // Glow behind the bar
+            ctx.save();
+            ctx.shadowColor = barColor;
+            ctx.shadowBlur = 6;
+            ctx.fillStyle = `rgba(${r},${g},${b},0.8)`;
             ctx.fillRect(
                 i * barW + 1,
                 height - barH,
                 barW - 2,
                 barH,
+            );
+            ctx.restore();
+
+            // Bar highlight (brighter top portion)
+            const highlightH = Math.min(barH, 3);
+            ctx.fillStyle = `rgba(${Math.min(255, r + 50)},${Math.min(255, g + 40)},${Math.min(255, b + 15)},0.6)`;
+            ctx.fillRect(
+                i * barW + 1,
+                height - barH,
+                barW - 2,
+                highlightH,
             );
         }
     }, [buffer, width, height]);

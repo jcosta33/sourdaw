@@ -8,9 +8,13 @@ import { GRID_SNAP_OPTIONS, type GridSnapOption } from '../../models/Preferences
 // ── SectionTitle ──────────────────────────────────────────────────────
 
 export const SectionTitle = ({ icon, title }: { icon: ReactElement; title: string }): ReactElement => (
-    <div className="flex items-center gap-2 mb-1">
+    <div className="flex items-center gap-2 pb-2 mb-1">
         <span className="text-muted-foreground">{icon}</span>
         <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+        <div
+            className="flex-1 h-px ml-2"
+            style={{ background: 'linear-gradient(90deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)' }}
+        />
     </div>
 );
 

@@ -26,11 +26,20 @@ export function LatchButton({
 }: LatchButtonProps): ReactElement {
     // Variant mapping for the active localized glow and text color
     const activeStyles = {
-        cyan: 'text-accent-cyan drop-shadow-[0_0_3px_var(--color-accent-cyan)]',
-        mint: 'text-accent-mint drop-shadow-[0_0_3px_var(--color-accent-mint)]',
-        amber: 'text-state-solo drop-shadow-[0_0_3px_var(--color-state-solo)]',
-        red: 'text-state-record drop-shadow-[0_0_4px_var(--color-state-record)]',
+        cyan: 'text-accent-cyan drop-shadow-[0_0_4px_var(--color-accent-cyan)]',
+        mint: 'text-accent-mint drop-shadow-[0_0_4px_var(--color-accent-mint)]',
+        amber: 'text-state-solo drop-shadow-[0_0_4px_var(--color-state-solo)]',
+        red: 'text-state-record drop-shadow-[0_0_5px_var(--color-state-record)]',
         neutral: 'text-text-primary',
+    };
+
+    // Active colored glow box-shadows per variant (adds halo around the button itself)
+    const activeGlowShadow: Record<string, string> = {
+        cyan: ', 0 0 8px rgba(127,184,196,0.3)',
+        mint: ', 0 0 8px rgba(125,184,160,0.3)',
+        amber: ', 0 0 8px rgba(247,167,56,0.3)',
+        red: ', 0 0 8px rgba(255,64,50,0.35)',
+        neutral: '',
     };
 
     const sizeStyles = {
@@ -63,20 +72,23 @@ export function LatchButton({
                 active
                     ? {
                           // Reversed gradient + deep inset — sinks INTO the panel
-                          background: 'linear-gradient(180deg, #111 0%, #1a1a1a 100%)',
+                          background: 'linear-gradient(180deg, #111 0%, #181818 50%, #1c1c1c 100%)',
                           boxShadow:
-                              'inset 0 2px 4px rgba(0,0,0,0.6), inset 0 1px 1px rgba(0,0,0,0.4)',
+                              'inset 0 2px 4px rgba(0,0,0,0.6), inset 0 1px 1px rgba(0,0,0,0.4)' + activeGlowShadow[variant],
                           border: '1px solid rgba(0,0,0,0.6)',
                           borderTopColor: 'rgba(0,0,0,0.8)',
+                          borderBottomColor: 'rgba(255,255,255,0.03)',
                           transform: 'translateY(1px)',
                       }
                     : {
-                          // Raised with top-light model
-                          background: 'linear-gradient(180deg, #2a2a2a 0%, #1e1e1e 100%)',
+                          // Raised with NW light model
+                          background: 'linear-gradient(180deg, #2c2c2c 0%, #242424 40%, #1e1e1e 100%)',
                           boxShadow:
                               '0 2px 4px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08)',
                           border: '1px solid var(--color-border-soft)',
                           borderTopColor: 'var(--color-light-edge)',
+                          borderLeftColor: 'rgba(255,255,255,0.04)',
+                          borderBottomColor: 'rgba(0,0,0,0.3)',
                       }
             }
             {...props}

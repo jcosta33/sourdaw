@@ -13,7 +13,7 @@
         {
           "file": "Marimba_hit_Outrigger_F1_loud_01.wav",
           "rootNote": 29,
-          "loKey": 45,
+          "loKey": 20,
           "hiKey": 33,
           "loVel": 0,
           "hiVel": 127,
@@ -203,7 +203,7 @@
           "file": "Marimba_hit_Outrigger_C6_loud_01.wav",
           "rootNote": 84,
           "loKey": 82,
-          "hiKey": 96,
+          "hiKey": 103,
           "loVel": 0,
           "hiVel": 127,
           "rrPos": 0,

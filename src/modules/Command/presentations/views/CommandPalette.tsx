@@ -64,7 +64,15 @@ export const CommandPalette = (): ReactElement | null => {
         >
             <DialogContent className="max-w-md gap-0 overflow-hidden p-0" aria-describedby={undefined}>
                 <DialogTitle className="sr-only">Command Palette</DialogTitle>
-                <div className="flex items-center border-b border-border px-3">
+                <div
+                    className="flex items-center px-3"
+                    style={{
+                        background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
+                        boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
+                        borderBottom: '1px solid rgba(255,255,255,0.06)',
+                        borderRadius: '8px 8px 0 0',
+                    }}
+                >
                     <span className="text-sm text-muted-foreground mr-2">&gt;</span>
                     <Input
                         ref={inputRef}
@@ -77,7 +85,7 @@ export const CommandPalette = (): ReactElement | null => {
                     />
                 </div>
 
-                <div className="max-h-72 overflow-y-auto py-1" role="listbox">
+                <div className="max-h-72 overflow-y-auto py-1" style={{ background: 'linear-gradient(180deg, #0a0a0a 0%, #0e0e0e 100%)' }} role="listbox">
                     {results.map((cmd, i) => (
                         <button
                             type="button"

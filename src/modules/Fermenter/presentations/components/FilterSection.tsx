@@ -80,18 +80,9 @@ export const FilterSection = ({
                     <span className="text-[7px] text-muted-foreground">Reso</span>
                     <span className="text-[6px] text-muted-foreground/50 font-mono">{resonance.toFixed(1)}</span>
                 </div>
-                <div className="flex flex-col items-center gap-0">
-                    <RotaryKnob paramId="filterDrive" value={drive} onChange={onDriveChange} min={0} max={10} step={0.1} defaultValue={0} size="lg" />
-                    <span className="text-[7px] text-muted-foreground">Drive</span>
-                </div>
-                <div className="flex flex-col items-center gap-0">
-                    <RotaryKnob paramId="filterEnvAmount" value={envAmount} onChange={onEnvAmountChange} min={-1} max={1} step={0.01} defaultValue={0.5} size="lg" />
-                    <span className="text-[7px] text-muted-foreground">Env</span>
-                </div>
-                <div className="flex flex-col items-center gap-0">
-                    <RotaryKnob paramId="filterKeytrack" value={keytrack} onChange={onKeytrackChange} min={0} max={1} step={0.01} defaultValue={0} size="lg" />
-                    <span className="text-[7px] text-muted-foreground">Key</span>
-                </div>
+                <RotaryKnob paramId="filterDrive" value={drive} onChange={onDriveChange} min={0} max={10} step={0.1} defaultValue={0} size="lg" label="Drive" />
+                <RotaryKnob paramId="filterEnvAmount" value={envAmount} onChange={onEnvAmountChange} min={-1} max={1} step={0.01} defaultValue={0.5} size="lg" label="Env" />
+                <RotaryKnob paramId="filterKeytrack" value={keytrack} onChange={onKeytrackChange} min={0} max={1} step={0.01} defaultValue={0} size="lg" label="Key" />
             </div>
         </div>
     );

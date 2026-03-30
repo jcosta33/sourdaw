@@ -19,6 +19,7 @@ import { InlineTrackName } from './TrackHeader/InlineTrackName';
 import { ResizeHandle } from './TrackHeader/ResizeHandle';
 import { InputSelector } from './TrackHeader/InputSelector';
 import { TrackLevelIndicator } from './TrackHeader/TrackLevelIndicator';
+import { LevainLoadingSpinner } from './TrackHeader/LevainLoadingSpinner';
 
 const TRACK_KIND_ICON: Record<string, typeof Music> = {
     audio: AudioLines,
@@ -139,6 +140,8 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                             <KindIcon className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
                         ) : null;
                     })()}
+
+                    <LevainLoadingSpinner track={track} />
 
                     <InlineTrackName track={track} />
 

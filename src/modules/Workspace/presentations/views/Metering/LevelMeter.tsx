@@ -64,9 +64,9 @@ export const LevelMeter = ({
         });
         resizeObserver.observe(container);
 
-        const safe = resolveToken('--color-meter-safe', '#4a9060');
-        const hot = resolveToken('--color-meter-hot', '#b09040');
-        const clip = resolveToken('--color-meter-clip', '#b05050');
+        const safe = resolveToken('--color-meter-safe', '#00CC44');
+        const hot = resolveToken('--color-meter-hot', '#CCCC00');
+        const clip = resolveToken('--color-meter-clip', '#FF3300');
 
         const getMeterColor = (db: number): string => {
             if (db > -3) {
@@ -113,6 +113,10 @@ export const LevelMeter = ({
             ctx.clearRect(0, 0, w, h);
 
             if (h > 0 && w > 0) {
+                // Deep black background
+                ctx.fillStyle = '#050508';
+                ctx.fillRect(0, 0, w, h);
+
                 const grad = ctx.createLinearGradient(0, h, 0, 0);
                 grad.addColorStop(0, safe);
                 grad.addColorStop(Math.min(1, dbToPercent(-12) / 100), safe);
@@ -121,19 +125,32 @@ export const LevelMeter = ({
                 grad.addColorStop(Math.min(1, dbToPercent(-3) / 100 + 0.001), clip);
                 grad.addColorStop(1, clip);
 
+                // RMS — dimmer background fill
                 const rmsY = h - (h * rmsPct) / 100;
-                ctx.globalAlpha = 0.45;
+                ctx.globalAlpha = 0.35;
                 ctx.fillStyle = grad;
                 ctx.fillRect(0, rmsY, w, h - rmsY);
 
+                // Peak — bright fill
                 const peakY = h - (h * peakPct) / 100;
                 ctx.globalAlpha = 1.0;
                 ctx.fillRect(0, peakY, w, h - peakY);
 
+                // Segmented LED look — dark gaps every 2px
+                ctx.globalAlpha = 1.0;
+                ctx.fillStyle = '#050508';
+                for (let sy = 0; sy < h; sy += 4) {
+                    ctx.fillRect(0, sy, w, 1);
+                }
+
+                // Peak hold indicator with glow
                 if (holdPct > 0) {
                     const holdY = Math.max(0, h - (h * holdPct) / 100 - 1.5);
                     ctx.fillStyle = getMeterColor(holdDb);
+                    ctx.shadowColor = getMeterColor(holdDb);
+                    ctx.shadowBlur = 6;
                     ctx.fillRect(0, holdY, w, 1.5);
+                    ctx.shadowBlur = 0;
                 }
             }
         };
@@ -166,8 +183,21 @@ export const LevelMeter = ({
                 ))}
             </div>
 
-            <div ref={containerRef} className={cn('relative rounded-sm overflow-hidden bg-muted/20', width)}>
+            <div
+                ref={containerRef}
+                className={cn(
+                    'relative rounded-sm overflow-hidden bg-[#0a0a0a] channel-inset',
+                    width,
+                )}
+            >
                 <canvas ref={canvasRef} className="absolute inset-0 block w-full h-full" />
+                <div
+                    className="absolute inset-0 pointer-events-none rounded-sm"
+                    style={{
+                        background:
+                            'linear-gradient(180deg, rgba(10,10,10,1) 0%, transparent 3%, transparent 97%, rgba(10,10,10,1) 100%)',
+                    }}
+                />
             </div>
         </div>
     );

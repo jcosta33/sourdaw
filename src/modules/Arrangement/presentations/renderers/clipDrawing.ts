@@ -61,13 +61,44 @@ export const drawClip = (
         ctx.globalAlpha = 0.4;
     }
 
-    ctx.fillStyle = clip.color;
+    // Clip body fill with subtle vertical gradient for dimensionality
+    const clipY = trackY + padding;
+    const clipH = trackHeight - padding * 2;
     const baseAlpha = isGhost ? 0.35 : isMuted ? 0.35 : 1;
-    ctx.globalAlpha = baseAlpha * (isSelected ? 0.85 : 0.55);
+    const bodyAlpha = baseAlpha * (isSelected ? 0.85 : 0.55);
+
+    // Create a gradient that darkens slightly toward the bottom for depth
+    const bodyGrad = ctx.createLinearGradient(0, clipY, 0, clipY + clipH);
+    bodyGrad.addColorStop(0, clip.color);
+    bodyGrad.addColorStop(1, clip.color);
+    ctx.fillStyle = bodyGrad;
+    ctx.globalAlpha = bodyAlpha;
     ctx.beginPath();
-    ctx.roundRect(x, trackY + padding, w, trackHeight - padding * 2, 3);
+    ctx.roundRect(x, clipY, w, clipH, 3);
     ctx.fill();
+
+    // Subtle darkening overlay toward bottom edge for depth
+    const depthGrad = ctx.createLinearGradient(0, clipY, 0, clipY + clipH);
+    depthGrad.addColorStop(0, 'rgba(255, 255, 255, 0.06)');
+    depthGrad.addColorStop(0.3, 'transparent');
+    depthGrad.addColorStop(1, 'rgba(0, 0, 0, 0.15)');
+    ctx.fillStyle = depthGrad;
+    ctx.globalAlpha = baseAlpha;
+    ctx.beginPath();
+    ctx.roundRect(x, clipY, w, clipH, 3);
+    ctx.fill();
+
     ctx.globalAlpha = isGhost ? 0.6 : isMuted ? 0.35 : 1;
+
+    // Top-edge highlight for dimensional "lit from above" effect
+    if (!isGhost && !isMuted && w > 8) {
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x + 3, clipY + 0.5);
+        ctx.lineTo(x + w - 3, clipY + 0.5);
+        ctx.stroke();
+    }
 
     if (isGhost) {
         // Ghost clips get a dashed purple border
@@ -75,7 +106,7 @@ export const drawClip = (
         ctx.lineWidth = 1.5;
         ctx.setLineDash([4, 3]);
         ctx.beginPath();
-        ctx.roundRect(x, trackY + padding, w, trackHeight - padding * 2, 3);
+        ctx.roundRect(x, clipY, w, clipH, 3);
         ctx.stroke();
         ctx.setLineDash([]);
     } else if (clip.isLinkedInstance) {
@@ -83,32 +114,33 @@ export const drawClip = (
         ctx.lineWidth = 1;
         ctx.setLineDash([3, 2]);
         ctx.beginPath();
-        ctx.roundRect(x, trackY + padding, w, trackHeight - padding * 2, 3);
+        ctx.roundRect(x, clipY, w, clipH, 3);
         ctx.stroke();
         ctx.setLineDash([]);
     } else if (isSelected) {
         ctx.strokeStyle = 'rgba(220, 210, 190, 0.55)';
         ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.roundRect(x, trackY + padding, w, trackHeight - padding * 2, 3);
+        ctx.roundRect(x, clipY, w, clipH, 3);
         ctx.stroke();
     } else {
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+        // Subtle border: slightly brighter top-left, darker bottom-right
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.10)';
         ctx.lineWidth = 0.5;
         ctx.beginPath();
-        ctx.roundRect(x, trackY + padding, w, trackHeight - padding * 2, 3);
+        ctx.roundRect(x, clipY, w, clipH, 3);
         ctx.stroke();
     }
 
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-    ctx.font = 'bold 10px system-ui, sans-serif';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+    ctx.font = '500 10px -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
     ctx.fillText(clip.name, x + 6, trackY + 14, w - 12);
 
     const typeLabel = clip.isLinkedInstance
         ? `${clip.type === 'midi' ? 'MIDI' : 'AUDIO'} ⧉`
         : clip.type === 'midi' ? 'MIDI' : 'AUDIO';
-    ctx.fillStyle = clip.isLinkedInstance ? 'rgba(120, 180, 255, 0.5)' : 'rgba(255, 255, 255, 0.3)';
-    ctx.font = '7px system-ui, sans-serif';
+    ctx.fillStyle = clip.isLinkedInstance ? 'rgba(120, 180, 255, 0.5)' : 'rgba(255, 255, 255, 0.25)';
+    ctx.font = '7px -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
     if (w > 50) {
         ctx.fillText(typeLabel, x + 6, trackY + 23, w - 12);
     }
@@ -308,7 +340,7 @@ const drawMidiNotePreview = (
         return;
     }
 
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
     const loopLen = clip.loopEnabled && clip.loopLength ? clip.loopLength : clipDuration;
     let loopOffset = 0;
     let iterations = 0;
@@ -354,7 +386,14 @@ const drawWaveformPeaks = (
     const amplitude = (trackHeight - padding * 2) * 0.35;
     const binWidth = w / numBins;
 
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+    // Waveform filled shape with semi-transparent gradient from center to peaks
+    const waveGrad = ctx.createLinearGradient(0, midY - amplitude, 0, midY + amplitude);
+    waveGrad.addColorStop(0, 'rgba(255, 255, 255, 0.28)');
+    waveGrad.addColorStop(0.35, 'rgba(255, 255, 255, 0.12)');
+    waveGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.06)');
+    waveGrad.addColorStop(0.65, 'rgba(255, 255, 255, 0.12)');
+    waveGrad.addColorStop(1, 'rgba(255, 255, 255, 0.28)');
+    ctx.fillStyle = waveGrad;
     ctx.beginPath();
     ctx.moveTo(x + padding, midY);
     for (let i = 0; i < numBins; i++) {

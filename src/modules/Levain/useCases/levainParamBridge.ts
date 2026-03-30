@@ -9,6 +9,8 @@
 import { type LevainPatch } from '../models/LevainPatch';
 import { levainStore, setLevainParam, setMacro } from '../stores/levainStore';
 import { autoLoadLevainSamples } from './autoLoadSamples';
+import { persistDeviceParam } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
+import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
 
 // ---------------------------------------------------------------------------
 // Device reference cache
@@ -21,9 +23,16 @@ type LevainDevice = {
 
 let activeDevice: LevainDevice | null = null;
 let activePort: MessagePort | null = null;
+let activeDeviceId: string | null = null;
 
 export function registerLevainDevice(device: LevainDevice, port?: MessagePort): void {
     activeDevice = device;
+    // Resolve the device ID for store persistence
+    activeDeviceId = null;
+    for (const track of getAllTracks()) {
+        const d = track.devices.find((dev) => dev.type === 'levain');
+        if (d) { activeDeviceId = d.id; break; }
+    }
     if (port) {
         activePort = port;
         // Sync the engine with initial samples for the default instrument
@@ -102,6 +111,9 @@ function flushParam(key: string): void {
     const device = getDevice();
     if (device) {
         device.setParam(key, value);
+    }
+    if (activeDeviceId) {
+        persistDeviceParam(activeDeviceId, key, value);
     }
 }
 

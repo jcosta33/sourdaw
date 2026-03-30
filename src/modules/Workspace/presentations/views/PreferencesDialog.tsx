@@ -107,7 +107,14 @@ export const PreferencesDialog = ({ open, onClose }: PreferencesDialogProps): Re
             <DialogContent className="w-[720px] max-w-[90vw] max-h-[80vh] p-0 bg-surface-raised overflow-hidden">
                 <div className="flex h-[520px]">
                     {/* ── Sidebar navigation ── */}
-                    <nav className="flex flex-col w-[180px] shrink-0 border-r border-border bg-surface-base/60 p-3 gap-0.5">
+                    <nav
+                        className="flex flex-col w-[180px] shrink-0 p-3 gap-0.5"
+                        style={{
+                            background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
+                            boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
+                            borderRight: '1px solid rgba(0,0,0,0.4)',
+                        }}
+                    >
                         <DialogHeader className="mb-3">
                             <DialogTitle className="text-sm font-semibold">Preferences</DialogTitle>
                         </DialogHeader>
@@ -129,7 +136,7 @@ export const PreferencesDialog = ({ open, onClose }: PreferencesDialogProps): Re
                         ))}
 
                         <div className="mt-auto flex flex-col gap-1.5">
-                            <Separator />
+                            <Separator style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)' }} />
                             <Button
                                 variant="ghost"
                                 size="sm"

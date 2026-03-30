@@ -26,6 +26,7 @@ import {
     type ActiveNoteData,
 } from '#/modules/AudioEngine/models/WebMidiTypes';
 import { activeNotes, channelToNote, mpeEnabled, targetTrackId } from './state';
+import { processRealtimeMidiInput } from '#/modules/Yeast/useCases/yeastSchedulingBridge';
 
 function secondsToBeats(seconds: number, tempo: number): number {
     return (seconds * tempo) / 60;
@@ -113,6 +114,54 @@ export function handleNoteOn(channel: number, note: number, velocity: number): v
     }
 
     const strip = engine.ensureTrackStrip(instrumentTrackId);
+
+    // ── Yeast MIDI FX processing for real-time input ──
+    const hasYeast = instrumentTrack?.devices.some((d) => d.type === 'yeast');
+    if (hasYeast) {
+        const sampleTime = Math.round(now * engine.context.sampleRate);
+        const processedEvents = processRealtimeMidiInput(note, velocity, channel, true, sampleTime);
+        // Dispatch each processed Note On to the first instrument on this track
+        for (const evt of processedEvents) {
+            if (evt.kind.type === 'noteOn') {
+                const evtNote = evt.kind.note;
+                const evtVel = evt.kind.velocity;
+                // Try fermenter
+                const fDev = instrumentTrack?.devices.find((d) => d.type === 'fermenter');
+                if (fDev) {
+                    const dn = strip.deviceNodes.find((d) => d.type === 'fermenter');
+                    dn?.fermenterControls?.noteOn(evtNote, evtVel);
+                    continue;
+                }
+                // Try levain
+                const lDev = instrumentTrack?.devices.find((d) => d.type === 'levain');
+                if (lDev) {
+                    const dn = strip.deviceNodes.find((d) => d.type === 'levain');
+                    dn?.levainControls?.noteOn(evtNote, evtVel);
+                    continue;
+                }
+                // Fallback: builtin synth
+                const sp = getSynthParamsForTrack(instrumentTrackId);
+                if (sp) {
+                    scheduleNote(engine.context, strip.gainNode, evtNote, now, 0.5, evtVel, sp);
+                }
+            } else if (evt.kind.type === 'noteOff') {
+                const evtNote = evt.kind.note;
+                const fDev = instrumentTrack?.devices.find((d) => d.type === 'fermenter');
+                if (fDev) {
+                    const dn = strip.deviceNodes.find((d) => d.type === 'fermenter');
+                    dn?.fermenterControls?.noteOff(evtNote);
+                    continue;
+                }
+                const lDev = instrumentTrack?.devices.find((d) => d.type === 'levain');
+                if (lDev) {
+                    const dn = strip.deviceNodes.find((d) => d.type === 'levain');
+                    dn?.levainControls?.noteOff(evtNote);
+                    continue;
+                }
+            }
+        }
+        return;
+    }
 
     // Fermenter synth
     const fermenterDev = instrumentTrack?.devices.find((d) => d.type === 'fermenter');

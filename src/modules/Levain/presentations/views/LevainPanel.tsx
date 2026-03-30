@@ -73,43 +73,9 @@ export const LevainPanel = (): ReactElement => {
     }
 
     const instLabel = INSTRUMENTS.find((i) => i.id === patch.instrumentId)?.label ?? patch.instrumentId;
-    const isLoading = state?.sampleLoadProgress !== null && state?.sampleLoadProgress !== undefined;
 
     return (
         <div className="flex flex-col h-full relative">
-            {/* ─── Loading Overlay ─── */}
-            {isLoading && (
-                <div 
-                    className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-background/60 backdrop-blur-md"
-                    style={{
-                        background: 'radial-gradient(ellipse at 50% 50%, rgba(20,20,22,0.8) 0%, rgba(10,10,12,0.95) 100%)',
-                    }}
-                >
-                    <div className="w-64 flex flex-col items-center gap-4">
-                        <div className="relative mb-2">
-                            <div
-                                className="absolute inset-0 rounded-full blur-xl scale-[1.5] opacity-20"
-                                style={{ background: 'var(--color-accent-orange, #d97706)' }}
-                            />
-                            <div className="text-xl font-bold tracking-tight bg-gradient-to-r from-amber-400 via-amber-300 to-orange-300 bg-clip-text text-transparent transform translate-y-1">
-                                Levain Engine
-                            </div>
-                        </div>
-
-                        <div className="text-[10px] font-bold text-muted-foreground/80 uppercase tracking-widest animate-pulse">
-                            Loading {instLabel}...
-                        </div>
-
-                        <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden shadow-[inset_0_1px_2px_rgba(0,0,0,0.5)] border border-white/5 relative">
-                            <div 
-                                className="absolute top-0 left-0 h-full bg-[var(--color-accent-amber)] transition-all duration-300 ease-out shadow-[0_0_10px_rgba(217,119,6,0.5)]"
-                                style={{ width: `${Math.max(2, state.sampleLoadProgress! * 100)}%` }}
-                            />
-                        </div>
-                    </div>
-                </div>
-            )}
-
             {/* ─── Top bar ─── */}
             <div
                 className="flex items-center justify-between px-3 py-1 shrink-0"

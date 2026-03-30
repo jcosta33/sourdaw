@@ -44,8 +44,14 @@ function Slider({
             <SliderPrimitive.Track
                 data-slot="slider-track"
                 className={cn(
-                    'relative grow overflow-hidden rounded-full bg-surface-inset shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)] border border-border-soft data-[orientation=horizontal]:h-1.5 data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-1.5'
+                    'relative grow overflow-hidden rounded-full border border-black/50 data-[orientation=horizontal]:h-1.5 data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-1.5'
                 )}
+                style={{
+                    background: 'linear-gradient(180deg, #060606 0%, #0a0a0a 100%)',
+                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.8), 0 1px 0 rgba(255,255,255,0.03)',
+                    borderTopColor: 'rgba(0,0,0,0.7)',
+                    borderBottomColor: 'rgba(40,40,40,0.3)',
+                }}
             >
                 <SliderPrimitive.Range
                     data-slot="slider-range"
@@ -90,10 +96,15 @@ function SliderThumbNode({
     return (
         <SliderPrimitive.Thumb
             data-slot="slider-thumb"
-            className="block size-4 shrink-0 rounded-[4px] border border-black shadow-[0_1px_3px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.15)] cursor-pointer outline-none transition-[color,box-shadow] hover:ring-2 hover:ring-accent-cyan/30 focus-visible:ring-4 focus-visible:ring-accent-cyan/40 disabled:pointer-events-none disabled:opacity-50"
+            className="block size-4 shrink-0 rounded-[4px] border cursor-pointer outline-none transition-[color,box-shadow] hover:ring-2 hover:ring-accent-cyan/30 focus-visible:ring-4 focus-visible:ring-accent-cyan/40 disabled:pointer-events-none disabled:opacity-50"
             style={{
-                background: 'linear-gradient(180deg, #555 0%, #3a3a3a 30%, #333 50%, #2a2a2a 70%, #222 100%)',
+                background: 'linear-gradient(180deg, #555 0%, #3e3e3e 25%, #353535 50%, #2c2c2c 75%, #222 100%)',
+                borderColor: 'rgba(255,255,255,0.05)',
                 borderTopColor: 'rgba(255,255,255,0.12)',
+                borderLeftColor: 'rgba(255,255,255,0.06)',
+                borderBottomColor: 'rgba(0,0,0,0.4)',
+                borderRightColor: 'rgba(0,0,0,0.2)',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.1)',
             }}
             onPointerDown={(event) => {
                 if (event.metaKey || event.ctrlKey) {

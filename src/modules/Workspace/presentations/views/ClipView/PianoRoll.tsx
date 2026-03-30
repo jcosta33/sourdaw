@@ -198,8 +198,15 @@ export const PianoRoll = ({
                 }}
             >
                 {/* Piano keys sidebar */}
-                <div className="w-10 shrink-0 border-r border-border/30 bg-surface-raised sticky left-0 z-10">
-                    <div className="bg-surface-raised border-b border-border/30" style={{ height: RULER_HEIGHT }} />
+                <div
+                    className="w-10 shrink-0 sticky left-0 z-10"
+                    style={{
+                        background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
+                        boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
+                        borderRight: '1px solid rgba(0,0,0,0.4)',
+                    }}
+                >
+                    <div style={{ height: RULER_HEIGHT, borderBottom: '1px solid rgba(40,40,40,0.3)' }} />
                     {visiblePitches.map((pitch, row) => {
                         const noteIndex = pitch % 12;
                         const isBlack = [1, 3, 6, 8, 10].includes(noteIndex);

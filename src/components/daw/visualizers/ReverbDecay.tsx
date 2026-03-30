@@ -40,15 +40,19 @@ export const ReverbDecay = ({
 
         ctx.clearRect(0, 0, width, height);
 
-        // Background
-        ctx.fillStyle = resolveToken('--color-bg-tray', '#0a0a0a');
+        // Background — deep gradient
+        const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
+        bgGrad.addColorStop(0, '#0e0e12');
+        bgGrad.addColorStop(1, '#060608');
+        ctx.fillStyle = bgGrad;
         ctx.beginPath();
         ctx.roundRect(0, 0, width, height, 4);
         ctx.fill();
 
-        // Grid  
-        ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+        // Grid — subtle dotted
+        ctx.strokeStyle = 'rgba(255,255,255,0.04)';
         ctx.lineWidth = 0.5;
+        ctx.setLineDash([1, 4]);
         for (let i = 1; i < 4; i++) {
             const y = (i / 4) * height;
             ctx.beginPath();
@@ -56,8 +60,9 @@ export const ReverbDecay = ({
             ctx.lineTo(width, y);
             ctx.stroke();
         }
+        ctx.setLineDash([]);
 
-        const accentLavender = resolveToken('--color-accent-lavender', '#a48bbd');
+        const accentLavender = resolveToken('--color-accent-lavender', '#c488f0');
         const pad = 4;
         const plotW = width - pad * 2;
         const plotH = height - pad * 2;
@@ -106,15 +111,45 @@ export const ReverbDecay = ({
         ctx.lineTo(pad + plotW, pad + plotH);
         ctx.closePath();
 
-        // Gradient fill
+        // Gradient fill — more visible
         const grad = ctx.createLinearGradient(0, pad, 0, pad + plotH);
-        grad.addColorStop(0, `${accentLavender}30`);
-        grad.addColorStop(1, `${accentLavender}05`);
+        grad.addColorStop(0, `${accentLavender}38`);
+        grad.addColorStop(1, `${accentLavender}06`);
         ctx.fillStyle = grad;
         ctx.fill();
 
-        // Stroke outline
-        // Redraw just the top contour
+        // Stroke outline — glow pass
+        ctx.beginPath();
+        for (let i = 0; i <= steps; i++) {
+            const tFrac = i / steps;
+            const x = pad + i;
+            let amp: number;
+
+            if (tFrac < predelayFrac) {
+                amp = 0;
+            } else if (tFrac < predelayFrac + 0.02) {
+                const attackFrac = (tFrac - predelayFrac) / 0.02;
+                amp = attackFrac * (0.6 + size * 0.4);
+            } else {
+                const decayStart = predelayFrac + 0.02;
+                const decayFrac = (tFrac - decayStart) / (1 - decayStart);
+                const tau = decay / 6.9;
+                const normalizedDecay = tau * 1000 / maxTimeMs;
+                const expDecay = Math.exp(-decayFrac / Math.max(normalizedDecay, 0.01));
+                const dampFactor = 1 - damping * 0.3;
+                const ripple = 1 + Math.sin(decayFrac * (30 + size * 50)) * 0.08 * expDecay;
+                amp = (0.6 + size * 0.4) * expDecay * dampFactor * ripple;
+            }
+
+            const y = pad + plotH - amp * plotH;
+            if (i === 0) ctx.moveTo(x, Math.max(pad, y));
+            else ctx.lineTo(x, Math.max(pad, y));
+        }
+        ctx.strokeStyle = `${accentLavender}28`;
+        ctx.lineWidth = 5;
+        ctx.stroke();
+
+        // Stroke outline — sharp pass
         ctx.beginPath();
         for (let i = 0; i <= steps; i++) {
             const tFrac = i / steps;
@@ -163,8 +198,8 @@ export const ReverbDecay = ({
             ctx.fillText(`${Math.round(predelay)}ms`, pdX + 2, pad + 8);
         }
 
-        // Decay label
-        ctx.fillStyle = resolveToken('--color-text-disabled', '#3a3a3a');
+        // Decay label — very dim
+        ctx.fillStyle = '#383838';
         ctx.font = '7px monospace';
         ctx.textAlign = 'right';
         ctx.fillText(`${decay.toFixed(1)}s`, width - pad, height - 2);

@@ -307,7 +307,15 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
 
     return (
         <div className="flex flex-1 flex-col overflow-hidden">
-            <div className="flex items-center gap-2 px-2 py-1 border-b border-border/30 bg-surface-raised">
+            <div
+                className="flex items-center gap-2 px-2 py-1"
+                style={{
+                    background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
+                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
+                    border: '1px solid rgba(0,0,0,0.4)',
+                    borderBottom: '1px solid rgba(40,40,40,0.3)',
+                }}
+            >
                 <span className="text-[10px] text-muted-foreground">Zoom:</span>
                 <Slider
                     value={[zoom * 100]}
@@ -323,7 +331,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                     aria-label="Waveform zoom"
                 />
 
-                <div className="w-px h-4 bg-border/40 mx-1" />
+                <div className="w-px h-4 mx-1" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)' }} />
 
                 <Button
                     variant={warpState.enabled ? 'secondary' : 'ghost'}

@@ -95,7 +95,7 @@ export const XYPad = ({
     return (
         <canvas
             ref={canvasRef}
-            style={{ width: size, height: size, cursor: draggingRef.current ? 'grabbing' : 'grab' }}
+            style={{ width: size, height: size, cursor: draggingRef.current ? 'grabbing' : 'grab', touchAction: 'none' }}
             className="rounded-lg border border-border/30"
             onPointerDown={(e) => {
                 draggingRef.current = true;

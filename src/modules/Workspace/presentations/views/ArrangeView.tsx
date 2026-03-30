@@ -75,6 +75,17 @@ export const ArrangeView = (): ReactElement => {
     const pixelsPerBeat = viewState?.pixelsPerBeat ?? 12;
     const scrollX = viewState?.scrollX ?? 0;
 
+    const hasUserTracks = tracks.filter((t) => t.kind !== 'master' && t.kind !== 'folder').length > 0;
+
+    // Welcome screen — clean, no timeline chrome
+    if (!hasUserTracks) {
+        return (
+            <div className="flex h-full relative">
+                <EmptyArrangeOverlay />
+            </div>
+        );
+    }
+
     return (
         <div className="flex h-full">
             {trackListOpen ? (
@@ -97,9 +108,6 @@ export const ArrangeView = (): ReactElement => {
                 <BeatRulerBar />
                 {hasChords ? <ChordTrackLane pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} /> : null}
                 <TimelineSurface />
-                {tracks.filter((t) => t.kind !== 'master' && t.kind !== 'folder').length === 0 ? (
-                    <EmptyArrangeOverlay />
-                ) : null}
                 {scratchPadOpen ? <ScratchPadView height={scratchPadHeight} onToggle={closeScratchPad} /> : null}
             </div>
         </div>

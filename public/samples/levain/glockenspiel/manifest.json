@@ -13,7 +13,7 @@
         {
           "file": "glock_medium_G4.wav",
           "rootNote": 67,
-          "loKey": 72,
+          "loKey": 20,
           "hiKey": 70,
           "loVel": 0,
           "hiVel": 127,
@@ -119,7 +119,7 @@
           "file": "glock_medium_C7.wav",
           "rootNote": 96,
           "loKey": 95,
-          "hiKey": 108,
+          "hiKey": 103,
           "loVel": 0,
           "hiVel": 127,
           "rrPos": 0,

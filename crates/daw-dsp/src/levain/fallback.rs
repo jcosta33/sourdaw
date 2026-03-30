@@ -97,7 +97,7 @@ impl FallbackToneEngine {
         Self {
             voices: [FallbackVoice::new(); MAX_FALLBACK_VOICES],
             sample_rate,
-            enabled: true,
+            enabled: false,
         }
     }
 

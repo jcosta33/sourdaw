@@ -72,7 +72,11 @@ export const TimelineMinimap = (): ReactElement => {
 
         ctx.clearRect(0, 0, canvasWidth, MINIMAP_HEIGHT);
 
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+        // Dark background with subtle gradient
+        const bgGrad = ctx.createLinearGradient(0, 0, 0, MINIMAP_HEIGHT);
+        bgGrad.addColorStop(0, 'rgba(255, 255, 255, 0.035)');
+        bgGrad.addColorStop(1, 'rgba(0, 0, 0, 0.02)');
+        ctx.fillStyle = bgGrad;
         ctx.fillRect(0, 0, canvasWidth, MINIMAP_HEIGHT);
 
         if (trackCount > 0) {
@@ -86,10 +90,17 @@ export const TimelineMinimap = (): ReactElement => {
                     const x = clip.startBeat * beatsToPixels;
                     const w = Math.max(1, (clip.endBeat - clip.startBeat) * beatsToPixels);
                     const color = clip.color || track.color || 'oklch(0.40 0.08 250)';
+                    const clipH = Math.max(1, clampedLaneHeight - 1);
 
                     ctx.fillStyle = color;
-                    ctx.globalAlpha = 0.85;
-                    ctx.fillRect(x, y, w, Math.max(1, clampedLaneHeight - 1));
+                    ctx.globalAlpha = 0.8;
+                    if (w > 3 && clipH > 2) {
+                        ctx.beginPath();
+                        ctx.roundRect(x, y, w, clipH, 1);
+                        ctx.fill();
+                    } else {
+                        ctx.fillRect(x, y, w, clipH);
+                    }
                 }
             }
             ctx.globalAlpha = 1;
@@ -100,12 +111,25 @@ export const TimelineMinimap = (): ReactElement => {
         const visibleBeats = containerWidth / pixelsPerBeat;
         const viewportWidthPx = Math.max(VIEWPORT_MIN_WIDTH, visibleBeats * beatsToPixels);
 
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+        // Viewport indicator with gradient fill
+        const vpGrad = ctx.createLinearGradient(0, 0, 0, MINIMAP_HEIGHT);
+        vpGrad.addColorStop(0, 'rgba(255, 255, 255, 0.10)');
+        vpGrad.addColorStop(1, 'rgba(255, 255, 255, 0.04)');
+        ctx.fillStyle = vpGrad;
         ctx.fillRect(viewportStartPx, 0, viewportWidthPx, MINIMAP_HEIGHT);
 
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+        // Viewport border — brighter top edge for dimensionality
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
         ctx.lineWidth = 1;
         ctx.strokeRect(viewportStartPx + 0.5, 0.5, viewportWidthPx - 1, MINIMAP_HEIGHT - 1);
+
+        // Brighter top edge on viewport
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(viewportStartPx + 0.5, 0.5);
+        ctx.lineTo(viewportStartPx + viewportWidthPx - 0.5, 0.5);
+        ctx.stroke();
     }, [tracks, pixelsPerBeat, scrollX, containerWidth]);
 
     useEffect(() => {

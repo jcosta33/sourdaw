@@ -6,6 +6,8 @@
 
 import { type ProofPatch } from '../models/ProofPatch';
 import { updateProofPatch, proofStore } from '../stores/proofStore';
+import { persistDeviceParam } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
+import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
 
 type ProofAudioBridge = {
     setParam: (name: string, value: number) => void;
@@ -14,17 +16,32 @@ type ProofAudioBridge = {
 };
 
 let bridge: ProofAudioBridge | null = null;
+let proofDeviceId: string | null = null;
+
+function resolveDeviceId(): string | null {
+    if (proofDeviceId) return proofDeviceId;
+    for (const track of getAllTracks()) {
+        const d = track.devices.find((dev) => dev.type === 'proof');
+        if (d) { proofDeviceId = d.id; return d.id; }
+    }
+    return null;
+}
 
 export function registerProofDevice(b: ProofAudioBridge): void {
     bridge = b;
+    proofDeviceId = null;
+    resolveDeviceId();
 }
 
 export function unregisterProofDevice(): void {
     bridge = null;
+    proofDeviceId = null;
 }
 
 export function setProofParam(name: string, value: number): void {
     bridge?.setParam(name, value);
+    const did = resolveDeviceId();
+    if (did) persistDeviceParam(did, name, value);
 }
 
 /** Set a patch parameter and send to audio engine. */

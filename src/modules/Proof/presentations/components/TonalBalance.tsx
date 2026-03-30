@@ -78,24 +78,29 @@ export const TonalBalance = ({ fftData, sampleRate, fftSize, genre, width, heigh
         const w = width;
         const h = height;
 
-        // Background
-        ctx.fillStyle = '#0a0a0a';
+        // Background — deep gradient
+        const bgGrad = ctx.createLinearGradient(0, 0, 0, h);
+        bgGrad.addColorStop(0, '#0e0d13');
+        bgGrad.addColorStop(0.5, '#09080d');
+        bgGrad.addColorStop(1, '#060509');
+        ctx.fillStyle = bgGrad;
         ctx.fillRect(0, 0, w, h);
 
-        // Grid
-        ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+        // Grid — subtle
         ctx.lineWidth = 0.5;
         for (const freq of [50, 100, 200, 500, 1000, 2000, 5000, 10000]) {
             const x = freqToX(freq, w);
+            ctx.strokeStyle = freq === 1000 ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.03)';
             ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
         }
         for (const db of [-40, -30, -20, -10, 0]) {
             const y = dbToY(db, h);
+            ctx.strokeStyle = db === -20 ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.03)';
             ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
         }
 
         // Frequency labels
-        ctx.fillStyle = 'rgba(255,255,255,0.2)';
+        ctx.fillStyle = 'rgba(255,255,255,0.22)';
         ctx.font = '7px system-ui';
         ctx.textAlign = 'center';
         for (const freq of [100, 1000, 10000]) {
@@ -120,13 +125,17 @@ export const TonalBalance = ({ fftData, sampleRate, fftSize, genre, width, heigh
             if (i === 0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
         }
-        ctx.strokeStyle = 'rgba(76, 184, 184, 0.5)'; // accent-cyan
+        ctx.save();
+        ctx.shadowColor = 'rgba(76,200,200,0.3)';
+        ctx.shadowBlur = 6;
+        ctx.strokeStyle = 'rgba(76, 200, 200, 0.55)';
         ctx.lineWidth = 1.5;
         ctx.setLineDash([4, 4]);
         ctx.stroke();
+        ctx.restore();
         ctx.setLineDash([]);
 
-        // Draw target band (±3dB tolerance)
+        // Draw target band (+-3dB tolerance)
         ctx.beginPath();
         for (let i = 0; i < HARMAN_CURVE.length; i++) {
             const pt = HARMAN_CURVE[i]!;
@@ -141,7 +150,7 @@ export const TonalBalance = ({ fftData, sampleRate, fftSize, genre, width, heigh
             ctx.lineTo(x, y);
         }
         ctx.closePath();
-        ctx.fillStyle = 'rgba(76, 184, 184, 0.05)';
+        ctx.fillStyle = 'rgba(76, 200, 200, 0.06)';
         ctx.fill();
 
         // Draw current spectrum from FFT data
@@ -165,8 +174,9 @@ export const TonalBalance = ({ fftData, sampleRate, fftSize, genre, width, heigh
                 ctx.lineTo(freqToX(MIN_FREQ, w), h);
                 ctx.closePath();
                 const gradient = ctx.createLinearGradient(0, 0, 0, h);
-                gradient.addColorStop(0, 'rgba(168, 130, 255, 0.4)');
-                gradient.addColorStop(1, 'rgba(168, 130, 255, 0.02)');
+                gradient.addColorStop(0, 'rgba(178, 140, 255, 0.45)');
+                gradient.addColorStop(0.5, 'rgba(168, 130, 255, 0.15)');
+                gradient.addColorStop(1, 'rgba(168, 130, 255, 0.01)');
                 ctx.fillStyle = gradient;
                 ctx.fill();
             }
@@ -183,13 +193,17 @@ export const TonalBalance = ({ fftData, sampleRate, fftSize, genre, width, heigh
                 if (!started) { ctx.moveTo(x, y); started = true; }
                 else ctx.lineTo(x, y);
             }
-            ctx.strokeStyle = 'rgba(168, 130, 255, 0.7)';
-            ctx.lineWidth = 1;
+            ctx.save();
+            ctx.shadowColor = 'rgba(178,140,255,0.4)';
+            ctx.shadowBlur = 6;
+            ctx.strokeStyle = 'rgba(178, 140, 255, 0.8)';
+            ctx.lineWidth = 1.5;
             ctx.stroke();
+            ctx.restore();
         }
 
         // Label
-        ctx.fillStyle = 'rgba(76, 184, 184, 0.5)';
+        ctx.fillStyle = 'rgba(76, 200, 200, 0.55)';
         ctx.font = '7px system-ui';
         ctx.textAlign = 'left';
         ctx.fillText('Harman Target', 4, 10);

@@ -7,6 +7,7 @@
  */
 
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
+import { persistDeviceParam } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
 import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
 import { type FermenterPatch } from '../models/FermenterPatch';
 import { setFermenterParam } from '../stores/fermenterStore';
@@ -50,6 +51,7 @@ function flushParam(key: string): void {
 
     for (const { trackId, deviceId } of getActiveDevices()) {
         updateDeviceParam(trackId, deviceId, key, value);
+        persistDeviceParam(deviceId, key, value);
     }
 }
 

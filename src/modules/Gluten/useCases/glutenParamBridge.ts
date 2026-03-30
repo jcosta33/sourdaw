@@ -4,6 +4,7 @@
  * Same rAF-throttled pattern as fermenterParamBridge.
  */
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
+import { persistDeviceParam } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
 import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
 import { type GlutenPatch } from '../models/GlutenPatch';
 import { setGlutenParam } from '../stores/glutenStore';
@@ -43,6 +44,7 @@ function flushParam(key: string): void {
 
     for (const { trackId, deviceId } of getActiveDevices()) {
         updateDeviceParam(trackId, deviceId, key, value);
+        persistDeviceParam(deviceId, key, value);
     }
 }
 

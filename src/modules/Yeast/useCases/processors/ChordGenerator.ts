@@ -26,6 +26,7 @@ export class ChordGenerator implements MidiProcessor {
     readonly name = 'Chord Generator';
 
     private chordType = 'major';
+    private voicing: 'close' | 'drop2' | 'drop3' | 'spread' = 'close';
     private strumMs = 0; // 0 = no strum
     private strumDirection: 'up' | 'down' = 'up';
     private bypassed = false;
@@ -39,7 +40,24 @@ export class ChordGenerator implements MidiProcessor {
     processMidi(input: readonly MidiEvent[], output: MidiEvent[], transport: TransportInfo): void {
         for (const event of input) {
             if (event.kind.type === 'noteOn') {
-                const intervals = CHORD_FORMULAS[this.chordType] ?? [0, 4, 7];
+                let intervals = [...(CHORD_FORMULAS[this.chordType] ?? [0, 4, 7])];
+
+                // Apply voicing transforms
+                if (this.voicing === 'drop2' && intervals.length >= 3) {
+                    // Drop the 2nd-from-top note down an octave
+                    const dropIdx = intervals.length - 2;
+                    intervals[dropIdx] = intervals[dropIdx]! - 12;
+                    intervals.sort((a, b) => a - b);
+                } else if (this.voicing === 'drop3' && intervals.length >= 4) {
+                    // Drop the 3rd-from-top note down an octave
+                    const dropIdx = intervals.length - 3;
+                    intervals[dropIdx] = intervals[dropIdx]! - 12;
+                    intervals.sort((a, b) => a - b);
+                } else if (this.voicing === 'spread' && intervals.length >= 3) {
+                    // Spread: alternate octave offsets for wider voicing
+                    intervals = intervals.map((intv, idx) => intv + (idx % 2 === 1 ? 12 : 0));
+                }
+
                 const strumSamples = this.strumMs * 0.001 * transport.sampleRate;
                 const notes: number[] = [];
 
@@ -88,6 +106,7 @@ export class ChordGenerator implements MidiProcessor {
                 this.chordType = types[Math.round(value)] ?? 'major';
                 break;
             }
+            case 'voicing': this.voicing = (['close', 'drop2', 'drop3', 'spread'] as const)[Math.round(value)] ?? 'close'; break;
             case 'strum_ms': this.strumMs = Math.max(0, Math.min(100, value)); break;
             case 'strum_direction': this.strumDirection = value > 0.5 ? 'down' : 'up'; break;
         }

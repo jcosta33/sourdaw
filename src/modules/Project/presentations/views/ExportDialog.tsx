@@ -206,7 +206,16 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             }}
         >
             <DialogContent className="w-[480px] bg-surface-raised" showCloseButton={!exporting}>
-                <DialogHeader>
+                <DialogHeader
+                    style={{
+                        background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
+                        boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
+                        borderBottom: '1px solid rgba(255,255,255,0.06)',
+                        margin: '-1.5rem -1.5rem 0 -1.5rem',
+                        padding: '0.75rem 1.5rem',
+                        borderRadius: '8px 8px 0 0',
+                    }}
+                >
                     <DialogTitle className="text-sm font-semibold">Export Audio</DialogTitle>
                 </DialogHeader>
 
@@ -231,7 +240,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         </div>
                     </section>
 
-                    <Separator />
+                    <Separator style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)' }} />
 
                     <section>
                         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 block">
@@ -256,7 +265,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         </div>
                     </section>
 
-                    <Separator />
+                    <Separator style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)' }} />
 
                     <div className="grid grid-cols-2 gap-4">
                         <section>
@@ -298,7 +307,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         </section>
                     </div>
 
-                    <Separator />
+                    <Separator style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)' }} />
 
                     {exporting ? (
                         <div className="space-y-1">
@@ -307,7 +316,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                 <span>{progress.toFixed(0)}%</span>
                             </div>
                             <div
-                                className="h-1.5 w-full rounded-full bg-muted/30 overflow-hidden"
+                                className="h-1.5 w-full rounded-full overflow-hidden"
+                                style={{ background: 'rgba(255,255,255,0.06)', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.5)' }}
                                 role="progressbar"
                                 aria-valuenow={Math.round(progress)}
                                 aria-valuemin={0}

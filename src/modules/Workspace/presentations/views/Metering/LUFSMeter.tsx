@@ -38,13 +38,10 @@ export const LUFSMeter = ({ height = 160, width = 48, target = -14 }: LUFSMeterP
         ctx.scale(dpr, dpr);
 
         // Resolve theme tokens once, outside the animation loop
-        const bgColor = resolveToken('--color-bg-tray', '#0a0a0a');
-        const textDisabled = resolveToken('--color-text-disabled', '#3a3a3a');
         const paletteSky = resolveToken('--color-palette-sky', '#5a80a8');
-        const meterClip = resolveToken('--color-meter-clip', '#b05050');
-        const meterHot = resolveToken('--color-meter-hot', '#b09040');
-        const meterSafe = resolveToken('--color-meter-safe', '#4a9060');
-        const paletteGray = resolveToken('--color-palette-gray', '#888');
+        const meterClip = resolveToken('--color-meter-clip', '#FF3300');
+        const meterHot = resolveToken('--color-meter-hot', '#CCCC00');
+        const meterSafe = resolveToken('--color-meter-safe', '#00CC44');
 
         let rafId = 0;
         let lastStateUpdate = 0;
@@ -80,30 +77,40 @@ export const LUFSMeter = ({ height = 160, width = 48, target = -14 }: LUFSMeterP
             const lufsToY = (lufs: number): number =>
                 height - ((Math.max(minLUFS, Math.min(maxLUFS, lufs)) - minLUFS) / range) * height;
 
-            // Background
-            ctx.fillStyle = bgColor;
+            // Background — deep black
+            ctx.fillStyle = '#050508';
             ctx.fillRect(0, 0, width, height);
 
-            // Scale marks
-            ctx.fillStyle = textDisabled;
+            // Scale marks — subtle dashed lines, dim labels
+            ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+            ctx.lineWidth = 0.5;
+            ctx.setLineDash([2, 4]);
+            ctx.fillStyle = 'rgba(255,255,255,0.18)';
             ctx.font = '8px monospace';
             ctx.textAlign = 'right';
             for (let db = 0; db >= minLUFS; db -= 6) {
                 const y = lufsToY(db);
-                ctx.fillRect(0, y, width, 0.5);
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(width, y);
+                ctx.stroke();
                 ctx.fillText(`${db}`, width - 2, y - 2);
             }
+            ctx.setLineDash([]);
 
-            // Target line
+            // Target line — with subtle glow
             const targetY = lufsToY(target);
             ctx.strokeStyle = paletteSky;
             ctx.lineWidth = 1;
+            ctx.shadowColor = paletteSky;
+            ctx.shadowBlur = 4;
             ctx.setLineDash([3, 3]);
             ctx.beginPath();
             ctx.moveTo(0, targetY);
             ctx.lineTo(width, targetY);
             ctx.stroke();
             ctx.setLineDash([]);
+            ctx.shadowBlur = 0;
 
             // Momentary bar
             const barW = 10;
@@ -121,8 +128,16 @@ export const LUFSMeter = ({ height = 160, width = 48, target = -14 }: LUFSMeterP
             ctx.fillStyle = paletteSky;
             ctx.fillRect(26, integY, barW, height - integY);
 
-            // Labels
-            ctx.fillStyle = paletteGray;
+            // Segmented LED look on all bars
+            ctx.fillStyle = '#050508';
+            for (let sy = 0; sy < height; sy += 4) {
+                ctx.fillRect(2, sy, barW, 1);
+                ctx.fillRect(14, sy, barW, 1);
+                ctx.fillRect(26, sy, barW, 1);
+            }
+
+            // Labels — dim and refined
+            ctx.fillStyle = 'rgba(255,255,255,0.25)';
             ctx.font = '7px sans-serif';
             ctx.textAlign = 'center';
             ctx.fillText('M', 7, height - 2);
@@ -138,13 +153,22 @@ export const LUFSMeter = ({ height = 160, width = 48, target = -14 }: LUFSMeterP
 
     return (
         <div className="flex flex-col items-center gap-1">
-            <canvas
-                ref={canvasRef}
-                width={width}
-                height={height}
-                className="rounded border border-border/30"
-                aria-label={`LUFS: Momentary ${momentary > -70 ? momentary.toFixed(1) : '-∞'}, Short-term ${shortTerm > -70 ? shortTerm.toFixed(1) : '-∞'}, Integrated ${integrated > -70 ? integrated.toFixed(1) : '-∞'}`}
-            />
+            <div className="relative rounded bg-[#0a0a0a] channel-inset overflow-hidden">
+                <canvas
+                    ref={canvasRef}
+                    width={width}
+                    height={height}
+                    className="block"
+                    aria-label={`LUFS: Momentary ${momentary > -70 ? momentary.toFixed(1) : '-∞'}, Short-term ${shortTerm > -70 ? shortTerm.toFixed(1) : '-∞'}, Integrated ${integrated > -70 ? integrated.toFixed(1) : '-∞'}`}
+                />
+                <div
+                    className="absolute inset-0 pointer-events-none rounded"
+                    style={{
+                        background:
+                            'linear-gradient(180deg, rgba(10,10,10,1) 0%, transparent 3%, transparent 97%, rgba(10,10,10,1) 100%)',
+                    }}
+                />
+            </div>
             <span className="text-[10px] text-muted-foreground tabular-nums">
                 {integrated > -70 ? integrated.toFixed(1) : '-∞'} LUFS
             </span>

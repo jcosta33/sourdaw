@@ -22,7 +22,7 @@ export const SpatialPanner = ({
     azimuth: initialAzimuth = 0,
     distance: initialDistance = 0.5,
     onChange,
-    color = resolveToken('--color-palette-steel', '#4a7090'),
+    color = resolveToken('--color-palette-steel', '#5090c0'),
 }: SpatialPannerProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [azimuth, setAzimuth] = useState(initialAzimuth);
@@ -45,15 +45,19 @@ export const SpatialPanner = ({
 
         ctx.clearRect(0, 0, size, size);
 
-        // Background
-        ctx.fillStyle = resolveToken('--color-bg-tray', '#0a0a0a');
+        // Background — radial gradient for depth
+        const bgRadial = ctx.createRadialGradient(cx, cy, 0, cx, cy, maxRadius + 4);
+        bgRadial.addColorStop(0, '#10101a');
+        bgRadial.addColorStop(1, '#060608');
+        ctx.fillStyle = bgRadial;
         ctx.beginPath();
         ctx.arc(cx, cy, maxRadius + 4, 0, Math.PI * 2);
         ctx.fill();
 
-        // Distance rings
-        ctx.strokeStyle = resolveToken('--color-bg-panelRaised', '#1a1a1a');
+        // Distance rings — subtle dotted
+        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
         ctx.lineWidth = 0.5;
+        ctx.setLineDash([1, 3]);
         for (const r of [0.25, 0.5, 0.75, 1.0]) {
             ctx.beginPath();
             ctx.arc(cx, cy, maxRadius * r, 0, Math.PI * 2);
@@ -67,9 +71,10 @@ export const SpatialPanner = ({
         ctx.moveTo(cx, cy - maxRadius);
         ctx.lineTo(cx, cy + maxRadius);
         ctx.stroke();
+        ctx.setLineDash([]);
 
-        // Labels
-        ctx.fillStyle = resolveToken('--color-text-disabled', '#3a3a3a');
+        // Labels — very dim
+        ctx.fillStyle = '#383838';
         ctx.font = '7px monospace';
         ctx.textAlign = 'center';
         ctx.fillText('F', cx, cy - maxRadius - 2);
@@ -98,10 +103,16 @@ export const SpatialPanner = ({
         ctx.lineTo(sx, sy);
         ctx.stroke();
 
+        // Source dot — glow ring
+        ctx.fillStyle = `${color}20`;
+        ctx.beginPath();
+        ctx.arc(sx, sy, 10, 0, Math.PI * 2);
+        ctx.fill();
+
         // Source dot
         ctx.fillStyle = color;
         ctx.shadowColor = color;
-        ctx.shadowBlur = 8;
+        ctx.shadowBlur = 12;
         ctx.beginPath();
         ctx.arc(sx, sy, 5, 0, Math.PI * 2);
         ctx.fill();

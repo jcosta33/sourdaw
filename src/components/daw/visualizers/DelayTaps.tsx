@@ -50,13 +50,16 @@ export const DelayTaps = ({
 
         ctx.clearRect(0, 0, width, height);
 
-        // Background
-        ctx.fillStyle = resolveToken('--color-bg-tray', '#0a0a0a');
+        // Background — deep gradient
+        const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
+        bgGrad.addColorStop(0, '#0e0e12');
+        bgGrad.addColorStop(1, '#060608');
+        ctx.fillStyle = bgGrad;
         ctx.beginPath();
         ctx.roundRect(0, 0, width, height, 4);
         ctx.fill();
 
-        const accentCyan = resolveToken('--color-accent-cyan', '#7fb8c4');
+        const accentCyan = resolveToken('--color-accent-cyan', '#50d0e8');
         const pad = 6;
         const plotW = width - pad * 2;
         const plotH = height - pad * 2;
@@ -66,13 +69,15 @@ export const DelayTaps = ({
         const totalDuration = time * maxTaps;
         const barWidth = Math.max(2, Math.min(8, (plotW / maxTaps) * 0.4));
 
-        // Draw baseline
-        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+        // Draw baseline — subtle dotted
+        ctx.strokeStyle = 'rgba(255,255,255,0.04)';
         ctx.lineWidth = 0.5;
+        ctx.setLineDash([1, 4]);
         ctx.beginPath();
         ctx.moveTo(pad, pad + plotH);
         ctx.lineTo(pad + plotW, pad + plotH);
         ctx.stroke();
+        ctx.setLineDash([]);
 
         // Dry signal bar
         ctx.fillStyle = 'rgba(255,255,255,0.15)';
@@ -80,7 +85,7 @@ export const DelayTaps = ({
         ctx.fillRect(pad, pad + plotH - dryBarH, barWidth, dryBarH);
 
         // "D" label for dry
-        ctx.fillStyle = resolveToken('--color-text-disabled', '#3a3a3a');
+        ctx.fillStyle = '#383838';
         ctx.font = '6px monospace';
         ctx.textAlign = 'center';
         ctx.fillText('D', pad + barWidth / 2, pad + plotH - dryBarH - 2);
@@ -112,7 +117,7 @@ export const DelayTaps = ({
             ctx.fillRect(x - barWidth / 2, pad + plotH - barH, barWidth, 1);
         }
 
-        // Connecting decay envelope line
+        // Connecting decay envelope line — glow
         ctx.beginPath();
         ctx.moveTo(pad + barWidth, pad + plotH - mix * plotH);
         for (let tap = 1; tap <= maxTaps; tap++) {
@@ -123,14 +128,29 @@ export const DelayTaps = ({
             const y = pad + plotH - amplitude * plotH;
             ctx.lineTo(x, y);
         }
-        ctx.strokeStyle = `${accentCyan}40`;
+        ctx.strokeStyle = `${accentCyan}20`;
+        ctx.lineWidth = 4;
+        ctx.stroke();
+
+        // Connecting decay envelope line — sharp
+        ctx.beginPath();
+        ctx.moveTo(pad + barWidth, pad + plotH - mix * plotH);
+        for (let tap = 1; tap <= maxTaps; tap++) {
+            const amplitude = mix * Math.pow(feedback, tap);
+            if (amplitude < 0.01) break;
+            const tapTime = time * tap;
+            const x = pad + (tapTime / totalDuration) * plotW;
+            const y = pad + plotH - amplitude * plotH;
+            ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = `${accentCyan}50`;
         ctx.lineWidth = 1;
         ctx.setLineDash([2, 2]);
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // Time label
-        ctx.fillStyle = resolveToken('--color-text-disabled', '#3a3a3a');
+        // Time label — very dim
+        ctx.fillStyle = '#383838';
         ctx.font = '7px monospace';
         ctx.textAlign = 'right';
         ctx.fillText(`${Math.round(time)}ms`, width - pad, height - 2);

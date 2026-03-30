@@ -6,6 +6,26 @@ import { recordAutomationValue } from '#/modules/Automation/useCases/automationR
 
 const RECORDING_MODES: ReadonlySet<AutomationMode> = new Set(['write', 'touch', 'latch']);
 
+/**
+ * Persist a device parameter value to the track store **without** sending
+ * it to the audio engine.  Used by instrument/effect param bridges that
+ * already handle the audio-engine side themselves but need the value
+ * stored so project save captures it.
+ */
+export function persistDeviceParam(deviceId: string, paramId: string, value: number): void {
+    if (!Number.isFinite(value)) return;
+    const state = getTrackState();
+    if (!state) return;
+    const track = state.tracks.find((t) => t.devices.some((d) => d.id === deviceId));
+    if (!track) return;
+    updateTrack(track.id, (t) => ({
+        ...t,
+        devices: t.devices.map((d) =>
+            d.id === deviceId ? { ...d, parameterValues: { ...d.parameterValues, [paramId]: value } } : d
+        ),
+    }));
+}
+
 export function setDeviceParameter(deviceId: string, paramId: string, value: number): void {
     // Guard against invalid values that could crash the audio engine
     if (!Number.isFinite(value)) {

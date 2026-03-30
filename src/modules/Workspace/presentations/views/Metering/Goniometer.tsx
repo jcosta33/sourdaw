@@ -35,10 +35,10 @@ export const Goniometer = ({ size = 120, color = resolveToken('--color-accent-la
             // Phosphor decay: fade previous frame
             if (trailRef.current) {
                 ctx.putImageData(trailRef.current, 0, 0);
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.12)';
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.10)';
                 ctx.fillRect(0, 0, size, size);
             } else {
-                ctx.fillStyle = resolveToken('--color-bg-tray', '#0a0a0a');
+                ctx.fillStyle = '#050508';
                 ctx.fillRect(0, 0, size, size);
             }
 
@@ -46,8 +46,16 @@ export const Goniometer = ({ size = 120, color = resolveToken('--color-accent-la
             const cy = size / 2;
             const scale = size * 0.35;
 
-            // Axis lines (rotated 45°)
-            ctx.strokeStyle = resolveToken('--color-bg-panelRaised', '#1a1a1a');
+            // Circular boundary — dim ring
+            ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.arc(cx, cy, scale, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Axis lines (rotated 45°) — subtle dashed grid
+            ctx.setLineDash([2, 4]);
+            ctx.strokeStyle = 'rgba(255,255,255,0.06)';
             ctx.lineWidth = 0.5;
 
             // L axis (top-left to bottom-right)
@@ -71,11 +79,13 @@ export const Goniometer = ({ size = 120, color = resolveToken('--color-accent-la
             ctx.moveTo(cx - scale, cy);
             ctx.lineTo(cx + scale, cy);
             ctx.stroke();
+            ctx.setLineDash([]);
 
-            // Draw Lissajous pattern
-            // Simulate stereo from mono: L = data, R = slightly shifted data
+            // Draw Lissajous pattern — bright signal traces with glow
             ctx.fillStyle = color;
-            ctx.globalAlpha = 0.6;
+            ctx.shadowColor = color;
+            ctx.shadowBlur = 6;
+            ctx.globalAlpha = 0.7;
 
             const halfLen = Math.floor(data.length / 2);
             for (let i = 0; i < halfLen; i++) {
@@ -93,12 +103,13 @@ export const Goniometer = ({ size = 120, color = resolveToken('--color-accent-la
             }
 
             ctx.globalAlpha = 1;
+            ctx.shadowBlur = 0;
 
             // Save frame for phosphor trail
             trailRef.current = ctx.getImageData(0, 0, size, size);
 
-            // Labels
-            ctx.fillStyle = resolveToken('--color-text-disabled', '#3a3a3a');
+            // Labels — dim and refined
+            ctx.fillStyle = 'rgba(255,255,255,0.2)';
             ctx.font = '8px monospace';
             ctx.textAlign = 'center';
             ctx.fillText('M', cx, 10);
@@ -114,13 +125,22 @@ export const Goniometer = ({ size = 120, color = resolveToken('--color-accent-la
     }, [size, color]);
 
     return (
-        <canvas
-            ref={canvasRef}
-            width={size}
-            height={size}
-            className="rounded border border-border/30"
-            aria-label="Stereo goniometer"
-            role="img"
-        />
+        <div className="relative rounded bg-[#0a0a0a] channel-inset overflow-hidden">
+            <canvas
+                ref={canvasRef}
+                width={size}
+                height={size}
+                className="block"
+                aria-label="Stereo goniometer"
+                role="img"
+            />
+            <div
+                className="absolute inset-0 pointer-events-none rounded"
+                style={{
+                    background:
+                        'radial-gradient(ellipse at center, transparent 60%, rgba(10,10,10,0.8) 100%)',
+                }}
+            />
+        </div>
     );
 };

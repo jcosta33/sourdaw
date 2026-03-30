@@ -71,15 +71,19 @@ export const CompressorCurve = ({
 
         ctx.clearRect(0, 0, width, height);
 
-        // Background
-        ctx.fillStyle = resolveToken('--color-bg-tray', '#0a0a0a');
+        // Background — deep gradient
+        const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
+        bgGrad.addColorStop(0, '#0e0e12');
+        bgGrad.addColorStop(1, '#060608');
+        ctx.fillStyle = bgGrad;
         ctx.beginPath();
         ctx.roundRect(0, 0, width, height, 4);
         ctx.fill();
 
-        // Grid
-        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+        // Grid — subtle dotted
+        ctx.strokeStyle = 'rgba(255,255,255,0.04)';
         ctx.lineWidth = 0.5;
+        ctx.setLineDash([1, 4]);
         for (const db of [-48, -36, -24, -12, 0]) {
             // Horizontal
             ctx.beginPath();
@@ -92,6 +96,7 @@ export const CompressorCurve = ({
             ctx.lineTo(dbToX(db), height - pad);
             ctx.stroke();
         }
+        ctx.setLineDash([]);
 
         // Unity line (1:1)
         ctx.beginPath();
@@ -104,27 +109,54 @@ export const CompressorCurve = ({
         ctx.setLineDash([]);
 
         // Compression curve
-        const accentPeach = resolveToken('--color-accent-peach', '#c4987b');
-        ctx.beginPath();
+        const accentPeach = resolveToken('--color-accent-peach', '#f0944c');
+        const curvePoints: [number, number][] = [];
         const steps = plotW;
         for (let i = 0; i <= steps; i++) {
             const inputDb = DB_MIN + (i / steps) * (DB_MAX - DB_MIN);
             const outputDb = Math.min(DB_MAX, computeOutput(inputDb, threshold, ratio, knee) + makeup);
             const x = dbToX(inputDb);
             const y = dbToY(Math.max(DB_MIN, outputDb));
+            curvePoints.push([x, y]);
+        }
+
+        // Fill below curve — gradient
+        ctx.beginPath();
+        for (let i = 0; i < curvePoints.length; i++) {
+            const [x, y] = curvePoints[i]!;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.lineTo(dbToX(DB_MAX), dbToY(DB_MIN));
+        ctx.lineTo(dbToX(DB_MIN), dbToY(DB_MIN));
+        ctx.closePath();
+        const curveFillGrad = ctx.createLinearGradient(0, pad, 0, pad + plotH);
+        curveFillGrad.addColorStop(0, `${accentPeach}25`);
+        curveFillGrad.addColorStop(1, `${accentPeach}05`);
+        ctx.fillStyle = curveFillGrad;
+        ctx.fill();
+
+        // Glow pass
+        ctx.beginPath();
+        for (let i = 0; i < curvePoints.length; i++) {
+            const [x, y] = curvePoints[i]!;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = `${accentPeach}28`;
+        ctx.lineWidth = 5;
+        ctx.stroke();
+
+        // Sharp stroke
+        ctx.beginPath();
+        for (let i = 0; i < curvePoints.length; i++) {
+            const [x, y] = curvePoints[i]!;
             if (i === 0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
         }
         ctx.strokeStyle = accentPeach;
         ctx.lineWidth = 2;
         ctx.stroke();
-
-        // Fill below curve
-        ctx.lineTo(dbToX(DB_MAX), dbToY(DB_MIN));
-        ctx.lineTo(dbToX(DB_MIN), dbToY(DB_MIN));
-        ctx.closePath();
-        ctx.fillStyle = `${accentPeach}10`;
-        ctx.fill();
 
         // Threshold marker
         const thX = dbToX(threshold);
@@ -150,8 +182,8 @@ export const CompressorCurve = ({
             ctx.stroke();
         }
 
-        // Labels
-        ctx.fillStyle = resolveToken('--color-text-disabled', '#3a3a3a');
+        // Labels — very dim
+        ctx.fillStyle = '#383838';
         ctx.font = '7px monospace';
         ctx.textAlign = 'center';
         ctx.fillText('IN', width / 2, height - 1);

@@ -43,23 +43,34 @@ export const Oscilloscope = ({
             const data = new Float32Array(bufferLength);
             analyser.getFloatTimeDomainData(data);
 
-            // Clear
-            ctx.fillStyle = resolveToken('--color-bg-tray', '#0a0a0a');
+            // Background — deep black with subtle noise texture
+            ctx.fillStyle = '#050508';
             ctx.fillRect(0, 0, width, height);
+            ctx.globalAlpha = 0.025;
+            for (let nx = 0; nx < width; nx += 3) {
+                for (let ny = 0; ny < height; ny += 3) {
+                    const v = Math.random() * 255;
+                    ctx.fillStyle = `rgb(${v},${v},${v})`;
+                    ctx.fillRect(nx, ny, 2, 2);
+                }
+            }
+            ctx.globalAlpha = 1;
 
-            // Grid lines
-            ctx.strokeStyle = resolveToken('--color-bg-panelRaised', '#1a1a1a');
+            // Grid lines — subtle dashed
+            ctx.setLineDash([2, 4]);
+            ctx.strokeStyle = 'rgba(255,255,255,0.04)';
             ctx.lineWidth = 0.5;
             const midY = height / 2;
 
-            // Horizontal center line
+            // Horizontal center line (slightly brighter)
+            ctx.strokeStyle = 'rgba(255,255,255,0.07)';
             ctx.beginPath();
             ctx.moveTo(0, midY);
             ctx.lineTo(width, midY);
             ctx.stroke();
 
             // Quarter lines
-            ctx.strokeStyle = resolveToken('--color-bg-overlay', '#141414');
+            ctx.strokeStyle = 'rgba(255,255,255,0.03)';
             ctx.beginPath();
             ctx.moveTo(0, midY / 2);
             ctx.lineTo(width, midY / 2);
@@ -74,34 +85,13 @@ export const Oscilloscope = ({
                 ctx.lineTo(x, height);
                 ctx.stroke();
             }
+            ctx.setLineDash([]);
 
-            // Draw waveform
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 1.5;
-            ctx.beginPath();
-
+            // Draw waveform — glow pass first (wider, semi-transparent with shadow)
             const sliceWidth = width / bufferLength;
             let x = 0;
 
-            for (let i = 0; i < bufferLength; i++) {
-                const sample = data[i]!;
-                const y = midY - sample * midY * 0.9; // Scale to 90% of half-height
-
-                if (i === 0) {
-                    ctx.moveTo(x, y);
-                } else {
-                    ctx.lineTo(x, y);
-                }
-                x += sliceWidth;
-            }
-
-            ctx.stroke();
-
-            // Glow effect
-            ctx.strokeStyle = `${color}40`;
-            ctx.lineWidth = 4;
             ctx.beginPath();
-            x = 0;
             for (let i = 0; i < bufferLength; i++) {
                 const sample = data[i]!;
                 const y = midY - sample * midY * 0.9;
@@ -112,6 +102,31 @@ export const Oscilloscope = ({
                 }
                 x += sliceWidth;
             }
+            ctx.strokeStyle = `${color}25`;
+            ctx.lineWidth = 6;
+            ctx.shadowColor = color;
+            ctx.shadowBlur = 12;
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            // Draw waveform — sharp pass on top
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            x = 0;
+
+            for (let i = 0; i < bufferLength; i++) {
+                const sample = data[i]!;
+                const y = midY - sample * midY * 0.9;
+
+                if (i === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+                x += sliceWidth;
+            }
+
             ctx.stroke();
 
             rafId = requestAnimationFrame(draw);
@@ -122,12 +137,21 @@ export const Oscilloscope = ({
     }, [trackId, width, height, color]);
 
     return (
-        <canvas
-            ref={canvasRef}
-            width={width}
-            height={height}
-            className="rounded border border-border/30"
-            aria-label="Oscilloscope"
-        />
+        <div className="relative rounded bg-[#0a0a0a] channel-inset overflow-hidden">
+            <canvas
+                ref={canvasRef}
+                width={width}
+                height={height}
+                className="block"
+                aria-label="Oscilloscope"
+            />
+            <div
+                className="absolute inset-0 pointer-events-none rounded"
+                style={{
+                    background:
+                        'linear-gradient(90deg, rgba(10,10,10,1) 0%, transparent 3%, transparent 97%, rgba(10,10,10,1) 100%)',
+                }}
+            />
+        </div>
     );
 };

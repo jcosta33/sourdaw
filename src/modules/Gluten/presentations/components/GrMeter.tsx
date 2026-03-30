@@ -40,8 +40,12 @@ export const GrMeter = ({
 
         ctx.clearRect(0, 0, width, height);
 
-        // Background
-        ctx.fillStyle = resolveToken('--color-bg-tray', '#0a0a0a');
+        // Background — deep gradient
+        const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
+        bgGrad.addColorStop(0, '#0f0e12');
+        bgGrad.addColorStop(0.5, '#0a090d');
+        bgGrad.addColorStop(1, '#07060a');
+        ctx.fillStyle = bgGrad;
         ctx.beginPath();
         ctx.roundRect(0, 0, width, height, 4);
         ctx.fill();
@@ -55,13 +59,18 @@ export const GrMeter = ({
         const grBarH = Math.min(meterHeight, Math.max(0, (-grDb / 30) * meterHeight));
         const grX = (width - barWidth) / 2;
 
-        // GR bar gradient
+        // GR bar gradient with glow
         if (grBarH > 0) {
             const grad = ctx.createLinearGradient(0, meterTop, 0, meterTop + grBarH);
-            grad.addColorStop(0, `${accent}cc`);
-            grad.addColorStop(1, `${accent}40`);
+            grad.addColorStop(0, `${accent}ee`);
+            grad.addColorStop(0.6, `${accent}88`);
+            grad.addColorStop(1, `${accent}30`);
+            ctx.save();
+            ctx.shadowColor = accent;
+            ctx.shadowBlur = 8;
             ctx.fillStyle = grad;
             ctx.fillRect(grX, meterTop, barWidth, grBarH);
+            ctx.restore();
         }
 
         // Peak hold
@@ -86,7 +95,7 @@ export const GrMeter = ({
         }
 
         // Scale markings
-        ctx.fillStyle = 'rgba(255,255,255,0.2)';
+        ctx.fillStyle = 'rgba(255,255,255,0.22)';
         ctx.font = '7px monospace';
         ctx.textAlign = 'right';
         for (const db of [0, -3, -6, -10, -15, -20, -30]) {

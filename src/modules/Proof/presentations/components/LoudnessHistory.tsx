@@ -48,15 +48,19 @@ export const LoudnessHistory = ({ momentaryLufs, targetLufs, integratedLufs, wid
         // Clear
         ctx.clearRect(0, 0, w, h);
 
-        // Background
-        ctx.fillStyle = '#0a0a0a';
+        // Background — deep gradient
+        const bgGrad = ctx.createLinearGradient(0, 0, 0, h);
+        bgGrad.addColorStop(0, '#0e0d13');
+        bgGrad.addColorStop(0.5, '#09080d');
+        bgGrad.addColorStop(1, '#060509');
+        ctx.fillStyle = bgGrad;
         ctx.fillRect(0, 0, w, h);
 
-        // Grid lines
-        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+        // Grid lines — subtle
         ctx.lineWidth = 0.5;
         for (const db of [-6, -12, -18, -24, -36, -48]) {
             const y = ((db - MAX_DB) / (MIN_DB - MAX_DB)) * h;
+            ctx.strokeStyle = (db === -14 || db === -24) ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.035)';
             ctx.beginPath();
             ctx.moveTo(0, y);
             ctx.lineTo(w, y);
@@ -66,17 +70,21 @@ export const LoudnessHistory = ({ momentaryLufs, targetLufs, integratedLufs, wid
         // Target line
         if (targetLufs > MIN_DB) {
             const ty = ((targetLufs - MAX_DB) / (MIN_DB - MAX_DB)) * h;
-            ctx.strokeStyle = 'rgba(76, 184, 184, 0.5)'; // accent-cyan
+            ctx.save();
+            ctx.shadowColor = 'rgba(76,200,200,0.25)';
+            ctx.shadowBlur = 4;
+            ctx.strokeStyle = 'rgba(76, 200, 200, 0.55)';
             ctx.lineWidth = 1;
             ctx.setLineDash([4, 4]);
             ctx.beginPath();
             ctx.moveTo(0, ty);
             ctx.lineTo(w, ty);
             ctx.stroke();
+            ctx.restore();
             ctx.setLineDash([]);
 
             // Label
-            ctx.fillStyle = 'rgba(76, 184, 184, 0.7)';
+            ctx.fillStyle = 'rgba(76, 200, 200, 0.75)';
             ctx.font = '8px system-ui';
             ctx.fillText(`${targetLufs} LUFS`, 4, ty - 3);
         }
@@ -84,7 +92,7 @@ export const LoudnessHistory = ({ momentaryLufs, targetLufs, integratedLufs, wid
         // Integrated LUFS line
         if (integratedLufs > MIN_DB) {
             const iy = ((integratedLufs - MAX_DB) / (MIN_DB - MAX_DB)) * h;
-            ctx.strokeStyle = 'rgba(168, 130, 255, 0.4)'; // accent-lavender
+            ctx.strokeStyle = 'rgba(178, 140, 255, 0.45)';
             ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.moveTo(0, iy);
@@ -110,12 +118,13 @@ export const LoudnessHistory = ({ momentaryLufs, targetLufs, integratedLufs, wid
             ctx.closePath();
 
             const gradient = ctx.createLinearGradient(0, 0, 0, h);
-            gradient.addColorStop(0, 'rgba(76, 184, 184, 0.3)');
-            gradient.addColorStop(1, 'rgba(76, 184, 184, 0.02)');
+            gradient.addColorStop(0, 'rgba(76, 200, 200, 0.35)');
+            gradient.addColorStop(0.4, 'rgba(76, 190, 190, 0.12)');
+            gradient.addColorStop(1, 'rgba(76, 184, 184, 0.01)');
             ctx.fillStyle = gradient;
             ctx.fill();
 
-            // Stroke
+            // Stroke — glow pass
             ctx.beginPath();
             for (let i = 0; i < history.length; i++) {
                 const x = startX + i * stepX;
@@ -124,9 +133,13 @@ export const LoudnessHistory = ({ momentaryLufs, targetLufs, integratedLufs, wid
                 if (i === 0) ctx.moveTo(x, y);
                 else ctx.lineTo(x, y);
             }
-            ctx.strokeStyle = 'rgba(76, 184, 184, 0.8)';
+            ctx.save();
+            ctx.shadowColor = 'rgba(76,210,210,0.4)';
+            ctx.shadowBlur = 6;
+            ctx.strokeStyle = 'rgba(76, 200, 200, 0.85)';
             ctx.lineWidth = 1.5;
             ctx.stroke();
+            ctx.restore();
         }
 
         // dB scale labels

@@ -137,8 +137,11 @@ export const Fader = ({
                 ref={trackRef}
                 className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-[5px] rounded-full overflow-hidden"
                 style={{
-                    background: 'var(--color-bg-tray)',
-                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.8)',
+                    background: 'linear-gradient(90deg, #060606 0%, #0a0a0a 40%, #080808 100%)',
+                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.8), inset 1px 0 1px rgba(0,0,0,0.4), 0 1px 0 rgba(255,255,255,0.03)',
+                    border: '1px solid rgba(0,0,0,0.5)',
+                    borderTopColor: 'rgba(0,0,0,0.7)',
+                    borderBottomColor: 'rgba(40,40,40,0.3)',
                 }}
             >
                 {/* Unity gain line */}
@@ -177,14 +180,16 @@ export const Fader = ({
                 style={{
                     bottom: `calc(${capBottomPct}% - 20px)`,
                     background: isDragging
-                        ? 'linear-gradient(180deg, #4a4a4a 0%, #333 30%, #2a2a2a 50%, #222 70%, #1a1a1a 100%)'
-                        : 'linear-gradient(180deg, #555 0%, #3a3a3a 30%, #333 50%, #2a2a2a 70%, #222 100%)',
-                    border: '1px solid rgba(255,255,255,0.06)',
-                    borderTopColor: isDragging ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.12)',
+                        ? 'linear-gradient(180deg, #4a4a4a 0%, #383838 25%, #2e2e2e 50%, #252525 75%, #1e1e1e 100%)'
+                        : 'linear-gradient(180deg, #555 0%, #3e3e3e 25%, #353535 50%, #2c2c2c 75%, #222 100%)',
+                    border: '1px solid rgba(255,255,255,0.05)',
+                    borderTopColor: isDragging ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.12)',
+                    borderLeftColor: isDragging ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.06)',
                     borderBottomColor: 'rgba(0,0,0,0.4)',
+                    borderRightColor: 'rgba(0,0,0,0.2)',
                     boxShadow: isDragging
                         ? 'inset 0 2px 4px rgba(0,0,0,0.6)'
-                        : 'inset 0 1px 0 rgba(255,255,255,0.08), 0 1px 3px rgba(0,0,0,0.6)',
+                        : 'inset 0 1px 0 rgba(255,255,255,0.08), 0 2px 4px rgba(0,0,0,0.6)',
                 }}
             >
                 {/* Center groove marks */}

@@ -73,16 +73,20 @@ export const GlutenCurve = ({
 
         ctx.clearRect(0, 0, width, height);
 
-        // Background
-        ctx.fillStyle = resolveToken('--color-bg-tray', '#0a0a0a');
+        // Background — deep gradient
+        const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
+        bgGrad.addColorStop(0, '#0f0e12');
+        bgGrad.addColorStop(0.5, '#0a090d');
+        bgGrad.addColorStop(1, '#07060a');
+        ctx.fillStyle = bgGrad;
         ctx.beginPath();
         ctx.roundRect(0, 0, width, height, 6);
         ctx.fill();
 
-        // Grid lines
-        ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+        // Grid lines — subtle
         ctx.lineWidth = 0.5;
         for (const db of [-48, -36, -24, -12, 0]) {
+            ctx.strokeStyle = db === 0 ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.035)';
             ctx.beginPath();
             ctx.moveTo(pad, dbToY(db));
             ctx.lineTo(width - pad, dbToY(db));
@@ -94,7 +98,7 @@ export const GlutenCurve = ({
         }
 
         // Grid labels
-        ctx.fillStyle = 'rgba(255,255,255,0.15)';
+        ctx.fillStyle = 'rgba(255,255,255,0.18)';
         ctx.font = '7px monospace';
         ctx.textAlign = 'center';
         for (const db of [-48, -36, -24, -12]) {
@@ -106,7 +110,7 @@ export const GlutenCurve = ({
         ctx.beginPath();
         ctx.moveTo(dbToX(DB_MIN), dbToY(DB_MIN));
         ctx.lineTo(dbToX(DB_MAX), dbToY(DB_MAX));
-        ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
         ctx.lineWidth = 1;
         ctx.setLineDash([4, 4]);
         ctx.stroke();
@@ -128,10 +132,10 @@ export const GlutenCurve = ({
         ctx.lineTo(dbToX(DB_MAX), dbToY(DB_MAX));
         ctx.lineTo(dbToX(DB_MIN), dbToY(DB_MIN));
         ctx.closePath();
-        ctx.fillStyle = `${accent}12`;
+        ctx.fillStyle = `${accent}18`;
         ctx.fill();
 
-        // Compression curve
+        // Compression curve — glow pass
         ctx.beginPath();
         for (let i = 0; i <= steps; i++) {
             const inDb = DB_MIN + (i / steps) * (DB_MAX - DB_MIN);
@@ -141,8 +145,17 @@ export const GlutenCurve = ({
             if (i === 0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
         }
+        ctx.save();
+        ctx.shadowColor = accent;
+        ctx.shadowBlur = 10;
         ctx.strokeStyle = accent;
         ctx.lineWidth = 2.5;
+        ctx.stroke();
+        ctx.restore();
+
+        // Compression curve — crisp pass
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = 2;
         ctx.stroke();
 
         // Threshold vertical line
@@ -158,11 +171,15 @@ export const GlutenCurve = ({
 
         // Threshold dot (interactive)
         const thY = dbToY(computeOutput(threshold, threshold, ratio, knee) + makeup);
+        ctx.save();
+        ctx.shadowColor = accent;
+        ctx.shadowBlur = 12;
         ctx.beginPath();
         ctx.arc(thX, thY, 6, 0, Math.PI * 2);
         ctx.fillStyle = accent;
         ctx.fill();
-        ctx.strokeStyle = '#ffffff';
+        ctx.restore();
+        ctx.strokeStyle = 'rgba(255,255,255,0.9)';
         ctx.lineWidth = 1.5;
         ctx.stroke();
 

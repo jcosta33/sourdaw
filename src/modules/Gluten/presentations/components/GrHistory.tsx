@@ -46,17 +46,20 @@ export const GrHistory = ({
 
         ctx.clearRect(0, 0, width, height);
 
-        // Background
-        ctx.fillStyle = resolveToken('--color-bg-tray', '#0a0a0a');
+        // Background — deep gradient
+        const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
+        bgGrad.addColorStop(0, '#0f0e12');
+        bgGrad.addColorStop(1, '#08070b');
+        ctx.fillStyle = bgGrad;
         ctx.beginPath();
         ctx.roundRect(0, 0, width, height, 4);
         ctx.fill();
 
         // Grid lines at -6, -12, -18, -24 dB
-        ctx.strokeStyle = 'rgba(255,255,255,0.04)';
         ctx.lineWidth = 0.5;
         for (const db of [-6, -12, -18, -24]) {
             const y = (-db / DB_RANGE) * height;
+            ctx.strokeStyle = db === -12 ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.03)';
             ctx.beginPath();
             ctx.moveTo(0, y);
             ctx.lineTo(width, y);
@@ -73,8 +76,9 @@ export const GrHistory = ({
         // Canvas requires actual color values, not CSS variables.
         // Ensure we have a valid hex color before appending alpha.
         const safeAccent = accent.startsWith('#') ? accent : '#c9a07a';
-        grad.addColorStop(0, `${safeAccent}80`);
-        grad.addColorStop(1, `${safeAccent}10`);
+        grad.addColorStop(0, `${safeAccent}90`);
+        grad.addColorStop(0.4, `${safeAccent}50`);
+        grad.addColorStop(1, `${safeAccent}08`);
 
         ctx.beginPath();
         ctx.moveTo(0, 0);
@@ -90,7 +94,7 @@ export const GrHistory = ({
         ctx.fillStyle = grad;
         ctx.fill();
 
-        // Outline
+        // Outline — glow pass
         ctx.beginPath();
         for (let i = 0; i < HISTORY_LENGTH; i++) {
             const idx = (pos - HISTORY_LENGTH + i + HISTORY_LENGTH * 2) % HISTORY_LENGTH;
@@ -100,6 +104,15 @@ export const GrHistory = ({
             if (i === 0) ctx.moveTo(x, barH);
             else ctx.lineTo(x, barH);
         }
+        ctx.save();
+        ctx.shadowColor = accent;
+        ctx.shadowBlur = 6;
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.restore();
+
+        // Outline — crisp pass
         ctx.strokeStyle = accent;
         ctx.lineWidth = 1;
         ctx.stroke();

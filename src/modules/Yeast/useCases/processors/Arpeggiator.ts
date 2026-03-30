@@ -8,6 +8,7 @@
 
 import { type MidiEvent, type TransportInfo, type RateValue, rateToBeats, samplesPerBeat } from '../../models/MidiEvent';
 import { type MidiProcessor, type ActiveNote, ScheduledEventQueue } from '../../models/MidiProcessor';
+import { type ArpStep, createDefaultPattern } from '../../models/ArpPattern';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -18,7 +19,7 @@ type HeldNote = {
     pressedOrder: number;
 };
 
-type ArpMode = 'up' | 'down' | 'upDown' | 'downUp' | 'random' | 'order' | 'chord';
+type ArpMode = 'up' | 'down' | 'upDown' | 'downUp' | 'random' | 'order' | 'chord' | 'pattern';
 
 type VelocityMode = 'input' | 'fixed' | 'random';
 
@@ -43,6 +44,7 @@ export class Arpeggiator implements MidiProcessor {
     private fixedVelocity = 100;
     private latchEnabled = false;
     private restartMode: RestartMode = 'restartOnNote';
+    private pattern: ArpStep[] = createDefaultPattern(8);
     private bypassed = false;
 
     // State
@@ -110,33 +112,95 @@ export class Arpeggiator implements MidiProcessor {
             // Kill previous step's notes that should end
             this.expireNotes(output, actualTime);
 
+            // Get pattern step (if in pattern mode)
+            const patternStep = this.mode === 'pattern'
+                ? this.pattern[this.stepIndex % this.pattern.length]
+                : null;
+
+            // Skip inactive or rested steps
+            if (patternStep && (!patternStep.active || patternStep.stepType === 'rest')) {
+                this.advanceStep(pool.length);
+                this.lastStepTimeSamples = stepTime;
+                continue;
+            }
+
+            // Tie: extend previous notes' duration, don't emit new Note Ons
+            if (patternStep && patternStep.stepType === 'tie') {
+                for (const an of this.activeGenerated) {
+                    an.offTimeSamples += stepLenSamples;
+                    // Also update the scheduled Note Off
+                }
+                // Re-schedule Note Offs with extended times
+                this.scheduled.clear();
+                for (const an of this.activeGenerated) {
+                    this.scheduled.push({
+                        timeSamples: an.offTimeSamples,
+                        kind: { type: 'noteOff', channel: an.channel, note: an.note },
+                    });
+                }
+                this.advanceStep(pool.length);
+                this.lastStepTimeSamples = stepTime;
+                continue;
+            }
+
+            // Probability check (pattern or global)
+            if (patternStep && patternStep.probability < 1.0) {
+                this.rngState = (this.rngState * 1103515245 + 12345) & 0x7FFFFFFF;
+                if ((this.rngState / 0x7FFFFFFF) > patternStep.probability) {
+                    this.advanceStep(pool.length);
+                    this.lastStepTimeSamples = stepTime;
+                    continue;
+                }
+            }
+
             // Get the note(s) for this step
             const expandedPool = this.expandOctaves(pool);
-            const stepNotes = this.selectStepNotes(expandedPool);
+            let stepNotes = patternStep?.stepType === 'chord'
+                ? expandedPool
+                : this.selectStepNotes(expandedPool);
 
-            // Emit notes
-            const noteDuration = stepLenSamples * this.gate;
-            for (const sn of stepNotes) {
-                const vel = this.computeVelocity(sn.velocity);
+            // Apply per-step octave and semitone offsets
+            if (patternStep && (patternStep.octaveOffset !== 0 || patternStep.semitoneOffset !== 0)) {
+                const offset = patternStep.octaveOffset * 12 + patternStep.semitoneOffset;
+                stepNotes = stepNotes.map((sn) => ({
+                    ...sn,
+                    note: Math.max(0, Math.min(127, sn.note + offset)),
+                }));
+            }
 
-                output.push({
-                    timeSamples: actualTime,
-                    kind: { type: 'noteOn', channel: sn.channel, note: sn.note, velocity: vel },
-                });
+            // Emit notes (with ratchet subdivisions)
+            const ratchetCount = patternStep?.ratchet ?? 1;
+            const ratchetInterval = stepLenSamples / ratchetCount;
+            const baseGate = patternStep ? this.gate * patternStep.gateMul : this.gate;
+            const noteDuration = ratchetInterval * baseGate;
 
-                // Schedule Note Off
-                const offTime = actualTime + noteDuration;
-                this.scheduled.push({
-                    timeSamples: offTime,
-                    kind: { type: 'noteOff', channel: sn.channel, note: sn.note },
-                });
+            for (let ratchetIdx = 0; ratchetIdx < ratchetCount; ratchetIdx++) {
+                const ratchetTime = actualTime + ratchetIdx * ratchetInterval;
 
-                this.activeGenerated.push({
-                    sourceId: this.pressCounter,
+                for (const sn of stepNotes) {
+                    const vel = patternStep?.velocityOverride
+                        ? patternStep.velocity
+                        : this.computeVelocity(sn.velocity);
+
+                    output.push({
+                        timeSamples: ratchetTime,
+                        kind: { type: 'noteOn', channel: sn.channel, note: sn.note, velocity: vel },
+                    });
+
+                    // Schedule Note Off
+                    const offTime = ratchetTime + noteDuration;
+                    this.scheduled.push({
+                        timeSamples: offTime,
+                        kind: { type: 'noteOff', channel: sn.channel, note: sn.note },
+                    });
+
+                    this.activeGenerated.push({
+                        sourceId: this.pressCounter,
                     channel: sn.channel,
                     note: sn.note,
                     offTimeSamples: offTime,
                 });
+                }
             }
 
             // Advance step
@@ -164,9 +228,18 @@ export class Arpeggiator implements MidiProcessor {
     isBypassed(): boolean { return this.bypassed; }
     latencySamples(): number { return 0; }
 
+    /** Set the custom arp pattern (for pattern mode). */
+    setPattern(steps: ArpStep[]): void {
+        this.pattern = steps;
+    }
+
+    /** Get current pattern for UI. */
+    getPattern(): ArpStep[] { return [...this.pattern]; }
+    getCurrentStep(): number { return this.stepIndex; }
+
     setParam(name: string, value: number): void {
         switch (name) {
-            case 'mode': this.mode = (['up', 'down', 'upDown', 'downUp', 'random', 'order', 'chord'] as const)[value] ?? 'up'; break;
+            case 'mode': this.mode = (['up', 'down', 'upDown', 'downUp', 'random', 'order', 'chord', 'pattern'] as const)[value] ?? 'up'; break;
             case 'rate_denom': this.rate = { ...this.rate, denom: Math.max(1, value) }; break;
             case 'rate_type': this.rate = { ...this.rate, type: (['straight', 'dotted', 'triplet'] as const)[value] ?? 'straight' }; break;
             case 'gate': this.gate = Math.max(0.01, Math.min(2.0, value)); break;
@@ -258,6 +331,10 @@ export class Arpeggiator implements MidiProcessor {
             }
             case 'order': return [byOrder[this.stepIndex % byOrder.length]!];
             case 'chord': return byPitch;
+            case 'pattern': {
+                // In pattern mode, use "next" note selection by default
+                return [byPitch[this.stepIndex % byPitch.length]!];
+            }
         }
     }
 

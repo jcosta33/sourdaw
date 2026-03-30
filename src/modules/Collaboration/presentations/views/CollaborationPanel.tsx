@@ -92,8 +92,16 @@ export const CollaborationPanel = (): ReactElement | null => {
     })();
 
     return (
-        <div className="absolute right-2 top-10 z-40 flex w-64 flex-col rounded-lg border border-border bg-popover shadow-xl">
-            <div className="flex items-center justify-between border-b border-border/50 px-3 py-2">
+        <div className="absolute right-2 top-10 z-40 flex w-64 flex-col rounded-lg border border-border bg-popover shadow-xl" style={{ border: '1px solid rgba(0,0,0,0.4)', borderBottom: '1px solid rgba(40,40,40,0.3)' }}>
+            <div
+                className="flex items-center justify-between px-3 py-2"
+                style={{
+                    background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
+                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
+                    borderBottom: '1px solid rgba(255,255,255,0.06)',
+                    borderRadius: '8px 8px 0 0',
+                }}
+            >
                 <div className="flex items-center gap-1.5">
                     <Users className="size-3.5 text-muted-foreground" />
                     <h3 className="text-xs font-medium text-foreground">Collaboration</h3>
@@ -168,6 +176,10 @@ export const CollaborationPanel = (): ReactElement | null => {
                     </>
                 ) : (
                     <>
+                        <p className="text-[10px] text-muted-foreground/50 text-center italic leading-relaxed">
+                            No collaborators yet — every great bakery needs a team.
+                        </p>
+
                         <Button variant="default" size="xs" onClick={handleCreate} className="w-full">
                             Create Session
                         </Button>

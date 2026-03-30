@@ -81,14 +81,8 @@ export const LfoSection = ({
                 <span className="text-[7px] text-muted-foreground">Rate</span>
                 <span className="text-[6px] text-muted-foreground/50 font-mono">{rate.toFixed(1)}Hz</span>
             </div>
-            <div className="flex flex-col items-center gap-0">
-                <RotaryKnob paramId="lfoPitchAmount" value={pitchAmount} onChange={onPitchAmountChange} min={-1} max={1} step={0.01} defaultValue={0} size="lg" />
-                <span className="text-[7px] text-muted-foreground">→ Pitch</span>
-            </div>
-            <div className="flex flex-col items-center gap-0">
-                <RotaryKnob paramId="lfoFilterAmount" value={filterAmount} onChange={onFilterAmountChange} min={-1} max={1} step={0.01} defaultValue={0} size="lg" />
-                <span className="text-[7px] text-muted-foreground">→ Filter</span>
-            </div>
+            <RotaryKnob paramId="lfoPitchAmount" value={pitchAmount} onChange={onPitchAmountChange} min={-1} max={1} step={0.01} defaultValue={0} size="lg" label="→ Pitch" />
+            <RotaryKnob paramId="lfoFilterAmount" value={filterAmount} onChange={onFilterAmountChange} min={-1} max={1} step={0.01} defaultValue={0} size="lg" label="→ Filter" />
         </div>
     </div>
 );

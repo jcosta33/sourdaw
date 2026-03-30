@@ -64,22 +64,27 @@ export const OscillatorWaveform = ({
 
         ctx.clearRect(0, 0, width, height);
 
-        // Background
-        ctx.fillStyle = resolveToken('--color-bg-tray', '#0a0a0a');
+        // Background — deep gradient
+        const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
+        bgGrad.addColorStop(0, '#0e0e12');
+        bgGrad.addColorStop(1, '#060608');
+        ctx.fillStyle = bgGrad;
         ctx.beginPath();
         ctx.roundRect(0, 0, width, height, 4);
         ctx.fill();
 
-        // Center line
-        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+        // Center line — subtle dotted
+        ctx.strokeStyle = 'rgba(255,255,255,0.04)';
         ctx.lineWidth = 0.5;
+        ctx.setLineDash([1, 4]);
         ctx.beginPath();
         ctx.moveTo(pad, height / 2);
         ctx.lineTo(width - pad, height / 2);
         ctx.stroke();
+        ctx.setLineDash([]);
 
-        const accent = resolveToken('--color-accent-blue', '#6BAACE');
-        const accent2 = resolveToken('--color-accent-purple', '#954EB2');
+        const accent = resolveToken('--color-accent-blue', '#58b8e8');
+        const accent2 = resolveToken('--color-accent-purple', '#b060e0');
         const cycles = 2.5;
 
         // Detune ratio for osc2 (slight frequency offset)
@@ -101,7 +106,21 @@ export const OscillatorWaveform = ({
             ctx.stroke();
         }
 
-        // Draw osc1 (main waveform)
+        // Draw osc1 (main waveform) — glow pass
+        ctx.beginPath();
+        for (let i = 0; i <= plotW; i++) {
+            const t = (i / plotW) * cycles;
+            const sample = waveformSample(waveform, t);
+            const x = pad + i;
+            const y = height / 2 - sample * (plotH / 2) * 0.85;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = `${accent}30`;
+        ctx.lineWidth = 5;
+        ctx.stroke();
+
+        // Draw osc1 (main waveform) — sharp stroke
         ctx.beginPath();
         for (let i = 0; i <= plotW; i++) {
             const t = (i / plotW) * cycles;
@@ -115,11 +134,14 @@ export const OscillatorWaveform = ({
         ctx.lineWidth = 2;
         ctx.stroke();
 
-        // Fill under osc1
+        // Fill under osc1 — gradient
         ctx.lineTo(width - pad, height / 2);
         ctx.lineTo(pad, height / 2);
         ctx.closePath();
-        ctx.fillStyle = `${accent}10`;
+        const osc1Fill = ctx.createLinearGradient(0, 0, 0, height);
+        osc1Fill.addColorStop(0, `${accent}22`);
+        osc1Fill.addColorStop(1, `${accent}04`);
+        ctx.fillStyle = osc1Fill;
         ctx.fill();
 
         // Waveform label

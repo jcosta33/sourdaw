@@ -26,7 +26,7 @@ import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import {
-    fermenterStore, setFermenterUiLevel, loadFermenterPatch, type FermenterState,
+    fermenterStore, loadFermenterPatch, type FermenterState,
 } from '../../stores/fermenterStore';
 import { type FermenterPatch, DEFAULT_PATCH } from '../../models/FermenterPatch';
 import { setFermenterParamWithAudio } from '../../useCases/fermenterParamBridge';
@@ -73,7 +73,6 @@ export const FermenterPanel = (): ReactElement => {
         (cb) => fermenterStore.subscribe(cb), () => fermenterStore.value,
     );
     const patch = state?.patch ?? fermenterStore.value!.patch;
-    const uiLevel = state?.uiLevel ?? 1;
     const activeVoices = state?.activeVoices ?? 0;
     const scopeBuffer = state?.scopeBuffer ?? null;
     const peakL = state?.peakL ?? 0;
@@ -209,7 +208,7 @@ export const FermenterPanel = (): ReactElement => {
     );
 
     // ═══════════════════════════════════════════════════════════════════
-    // LAYOUT
+    // LAYOUT — always show everything (former "Lab" level)
     // ═══════════════════════════════════════════════════════════════════
 
     return (
@@ -246,12 +245,6 @@ export const FermenterPanel = (): ReactElement => {
                         </div>
                     )}
                 </div>
-                <div className="flex gap-0.5 bg-surface-base/50 rounded p-0.5">
-                    {(['Play', 'Shape', 'Build', 'Route', 'Lab'] as const).map((label, i) => {
-                        const lvl = (i + 1) as 1 | 2 | 3 | 4 | 5;
-                        return <button key={label} type="button" className={`px-1.5 py-0.5 rounded text-[8px] font-medium transition-colors ${uiLevel === lvl ? 'bg-[var(--color-accent-lavender)] text-white' : 'text-muted-foreground hover:text-foreground'}`} onClick={() => setFermenterUiLevel(lvl)}>{label}</button>;
-                    })}
-                </div>
                 <div className="flex items-center gap-2">
                     <div className="w-px h-4 shrink-0" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.01) 100%)' }} />
                     <Oscilloscope buffer={scopeBuffer} width={80} height={20} />
@@ -260,74 +253,57 @@ export const FermenterPanel = (): ReactElement => {
                 </div>
             </div>
 
-            {/* ─── Main body ─── */}
-            {uiLevel === 1 ? (
-                /* Level 1: Just macros + XY — full width, centered, zen */
-                <div className="flex-1 flex items-center justify-center">
-                    {macroPanel(false)}
+            {/* ─── Main body — full layout with all panels visible ─── */}
+            <div className="flex flex-1 min-h-0 overflow-hidden relative">
+                {/* LEFT: Layer stack */}
+                <div className="w-[120px] shrink-0 border-r border-border/20 flex flex-col overflow-hidden">
+                    <LayerStack numLayers={patch.numLayers} activeLayer={patch.activeLayer} layerLevel={patch.layerLevel} layerPan={patch.layerPan} currentEngine={patch.oscEngine} onActiveLayerChange={(v) => setParam('activeLayer', v)} onNumLayersChange={(v) => setParam('numLayers', v)} onLevelChange={(v) => setParam('layerLevel', v)} onPanChange={(v) => setParam('layerPan', v)} />
                 </div>
-            ) : (
-                /* Level 2+: Two-column layout — no more fixed preset sidebar */
-                <div className="flex flex-1 min-h-0 overflow-hidden relative">
-                    {/* LEFT: Layer stack (Level 3+) */}
-                    {uiLevel >= 3 ? (
-                        <div className="w-[120px] shrink-0 border-r border-border/20 flex flex-col overflow-hidden">
-                            <LayerStack numLayers={patch.numLayers} activeLayer={patch.activeLayer} layerLevel={patch.layerLevel} layerPan={patch.layerPan} currentEngine={patch.oscEngine} onActiveLayerChange={(v) => setParam('activeLayer', v)} onNumLayersChange={(v) => setParam('numLayers', v)} onLevelChange={(v) => setParam('layerLevel', v)} onPanChange={(v) => setParam('layerPan', v)} />
-                        </div>
-                    ) : null}
 
-                    {/* CENTER: Section tabs + content — gets full width at Level 2 */}
-                    <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-                        <div className="px-2 py-1 border-b border-border/20 shrink-0">
-                            <SectionNav active={section} onChange={setSection} />
-                        </div>
-                        <ScrollArea className="flex-1 min-h-0">
-                            <div className="p-3">{sectionContent()}</div>
-                        </ScrollArea>
-                        {/* Signal flow (Level 4+) */}
-                        {uiLevel >= 4 ? (
-                            <div className="border-t border-border/20 shrink-0 overflow-x-auto px-3 py-1">
-                                <SignalFlowView patch={patch} numLayers={patch.numLayers} activeLayer={patch.activeLayer} onSelectSection={(s) => setSection(s as FermenterSection)} />
-                            </div>
-                        ) : null}
+                {/* CENTER: Section tabs + content */}
+                <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+                    <div className="px-2 py-1 border-b border-border/20 shrink-0">
+                        <SectionNav active={section} onChange={setSection} />
                     </div>
+                    <ScrollArea className="flex-1 min-h-0">
+                        <div className="p-3">{sectionContent()}</div>
+                        {/* Signal flow — inside scroll area */}
+                        <div className="border-t border-border/20 overflow-x-auto px-3 py-2">
+                            <SignalFlowView patch={patch} numLayers={patch.numLayers} activeLayer={patch.activeLayer} onSelectSection={(s) => setSection(s as FermenterSection)} />
+                        </div>
+                    </ScrollArea>
+                </div>
 
-                    {/* RIGHT: Macros/XY + Lab tools */}
-                    <div className="w-[150px] shrink-0 border-l border-border/20 overflow-y-auto overflow-x-hidden">
-                        {macroPanel(true)}
-                        {/* Lab tools (Level 5) */}
-                        {uiLevel >= 5 ? (
-                            <div className="p-2 border-t border-border/20 space-y-2">
-                                <TransformPad />
-                                <div className="space-y-1">
-                                    <div className="text-[9px] font-medium text-muted-foreground uppercase tracking-wider">Spectrum</div>
-                                    <SpectrumAnalyzer buffer={scopeBuffer} width={140} height={50} />
-                                </div>
-                            </div>
-                        ) : null}
+                {/* RIGHT: Macros/XY + Transform + Spectrum */}
+                <div className="w-[170px] shrink-0 border-l border-border/20 overflow-y-auto">
+                    {macroPanel(true)}
+                    <div className="p-2 border-t border-border/20 space-y-2">
+                        <TransformPad />
+                        <div className="space-y-1">
+                            <div className="text-[9px] font-medium text-muted-foreground uppercase tracking-wider">Spectrum</div>
+                            <SpectrumAnalyzer buffer={scopeBuffer} width={155} height={50} />
+                        </div>
                     </div>
+                </div>
 
-                    {/* PRESET BROWSER FLYOUT — overlays content, toggled from top bar */}
-                    {presetOpen ? (
-                        <>
-                            {/* Backdrop */}
-                            <div
-                                className="absolute inset-0 z-10"
-                                onClick={() => setPresetOpen(false)}
+                {/* PRESET BROWSER FLYOUT */}
+                {presetOpen ? (
+                    <>
+                        <div
+                            className="absolute inset-0 z-10"
+                            onClick={() => setPresetOpen(false)}
+                        />
+                        <div className="absolute left-0 top-0 bottom-0 z-20 w-[220px] bg-surface-tray border-r border-border/30 shadow-2xl flex flex-col animate-in slide-in-from-left-1 duration-150">
+                            <PresetBrowser
+                                currentName={patch.name}
+                                userPatches={userPatches}
+                                presets={FERMENTER_PRESETS}
+                                onLoadPreset={(id) => { loadPreset(id); setPresetOpen(false); }}
                             />
-                            {/* Panel */}
-                            <div className="absolute left-0 top-0 bottom-0 z-20 w-[220px] bg-surface-tray border-r border-border/30 shadow-2xl flex flex-col animate-in slide-in-from-left-1 duration-150">
-                                <PresetBrowser
-                                    currentName={patch.name}
-                                    userPatches={userPatches}
-                                    presets={FERMENTER_PRESETS}
-                                    onLoadPreset={(id) => { loadPreset(id); setPresetOpen(false); }}
-                                />
-                            </div>
-                        </>
-                    ) : null}
-                </div>
-            )}
+                        </div>
+                    </>
+                ) : null}
+            </div>
         </div>
     );
 };

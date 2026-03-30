@@ -75,10 +75,7 @@ export const ToasterPanel = (): ReactElement => {
 
     // Small knob helper
     const K = useCallback(({ v, k, label, min, max, step, def }: { v: number; k: string; label: string; min: number; max: number; step: number; def: number }) => (
-        <div className="flex flex-col items-center gap-0">
-            <RotaryKnob value={v} onChange={(val) => setP(k, val)} min={min} max={max} step={step} defaultValue={def} size="sm" />
-            <span className="text-[6px] text-muted-foreground leading-none">{label}</span>
-        </div>
+        <RotaryKnob value={v} onChange={(val) => setP(k, val)} min={min} max={max} step={step} defaultValue={def} size="sm" label={label} />
     ), [setP]);
 
     return (

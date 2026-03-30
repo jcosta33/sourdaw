@@ -50,9 +50,11 @@ export const DistortionCurve = ({
 
         ctx.clearRect(0, 0, width, height);
 
-        // Background
-        const bg = resolveToken('--color-bg-tray', '#0a0a0a');
-        ctx.fillStyle = bg;
+        // Background — deep gradient
+        const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
+        bgGrad.addColorStop(0, '#0e0e12');
+        bgGrad.addColorStop(1, '#060608');
+        ctx.fillStyle = bgGrad;
         ctx.beginPath();
         ctx.roundRect(0, 0, width, height, 4);
         ctx.fill();
@@ -62,25 +64,28 @@ export const DistortionCurve = ({
         const gh = height - pad * 2;
 
         // Grid: unity line (45°)
-        ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
         ctx.lineWidth = 0.5;
-        ctx.setLineDash([2, 2]);
+        ctx.setLineDash([2, 3]);
         ctx.beginPath();
         ctx.moveTo(pad, pad + gh);
         ctx.lineTo(pad + gw, pad);
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // Grid: center cross
+        // Grid: center cross — subtle dotted
+        ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+        ctx.setLineDash([1, 4]);
         ctx.beginPath();
         ctx.moveTo(pad + gw / 2, pad);
         ctx.lineTo(pad + gw / 2, pad + gh);
         ctx.moveTo(pad, pad + gh / 2);
         ctx.lineTo(pad + gw, pad + gh / 2);
         ctx.stroke();
+        ctx.setLineDash([]);
 
         // Compute transfer curve
-        const accPeach = resolveToken('--color-accent-peach', '#f0a080');
+        const accPeach = resolveToken('--color-accent-peach', '#f0944c');
         const normalizedDrive = drive / 100; // 0–1
         const points: [number, number][] = [];
         const steps = gw;
@@ -97,7 +102,7 @@ export const DistortionCurve = ({
             points.push([x, y]);
         }
 
-        // Fill under curve
+        // Fill under curve — gradient
         ctx.beginPath();
         ctx.moveTo(pad, pad + gh);
         for (const [x, y] of points) {
@@ -105,10 +110,24 @@ export const DistortionCurve = ({
         }
         ctx.lineTo(pad + gw, pad + gh);
         ctx.closePath();
-        ctx.fillStyle = `${accPeach}14`;
+        const distFillGrad = ctx.createLinearGradient(0, pad, 0, pad + gh);
+        distFillGrad.addColorStop(0, `${accPeach}22`);
+        distFillGrad.addColorStop(1, `${accPeach}04`);
+        ctx.fillStyle = distFillGrad;
         ctx.fill();
 
-        // Stroke curve
+        // Glow pass
+        ctx.beginPath();
+        for (let i = 0; i < points.length; i++) {
+            const [x, y] = points[i]!;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = `${accPeach}28`;
+        ctx.lineWidth = 5;
+        ctx.stroke();
+
+        // Sharp stroke
         ctx.beginPath();
         for (let i = 0; i < points.length; i++) {
             const [x, y] = points[i]!;
@@ -119,8 +138,8 @@ export const DistortionCurve = ({
         ctx.lineWidth = 1.5;
         ctx.stroke();
 
-        // Labels
-        ctx.fillStyle = resolveToken('--color-text-disabled', '#3a3a3a');
+        // Labels — very dim
+        ctx.fillStyle = '#383838';
         ctx.font = '7px monospace';
         ctx.textAlign = 'left';
         ctx.fillText('IN', pad, pad + gh + 9);

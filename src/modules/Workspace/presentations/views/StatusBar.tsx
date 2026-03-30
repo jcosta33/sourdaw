@@ -45,14 +45,19 @@ export const StatusBar = (): ReactElement => {
 
     return (
         <footer
-            className="flex h-6 shrink-0 items-center justify-between border-t border-black/50 bg-surface-tray shadow-[inset_0_1px_2px_rgba(0,0,0,0.4)] px-3"
+            className="flex h-6 shrink-0 items-center justify-between border-t border-black/50 px-3"
+            style={{
+                background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
+                boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
+                borderBottom: '1px solid rgba(40,40,40,0.3)',
+            }}
             role="status"
             aria-label="Application status"
         >
             <div className="flex items-center gap-3">
                 <div className="flex items-center gap-1">
                     <span className="text-[10px] text-muted-foreground">CPU:</span>
-                    <div className="h-2 w-10 rounded-full bg-muted/30 overflow-hidden">
+                    <div className="h-2 w-10 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.5)' }}>
                         <div
                             ref={cpuBarRef}
                             className="h-full rounded-full transition-[width] duration-150 bg-[var(--color-state-success)]"
@@ -96,7 +101,7 @@ export const StatusBar = (): ReactElement => {
                 </span>
 
                 <div className="flex items-center gap-1">
-                    <div className="h-2 w-16 rounded-full bg-muted/30 overflow-hidden">
+                    <div className="h-2 w-16 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.5)' }}>
                         <div
                             ref={masterLevelBarRef}
                             className="h-full rounded-full bg-[var(--color-state-success)] transition-[width] duration-75"
