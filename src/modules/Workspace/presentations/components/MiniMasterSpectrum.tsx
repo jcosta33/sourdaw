@@ -83,7 +83,7 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
             }}
             className={cn(
                 'absolute inset-0 overflow-hidden cursor-pointer transition-colors',
-                isSelected ? 'bg-white/[0.04]' : 'hover:bg-white/[0.02]',
+                isSelected ? 'bg-black/30 shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)]' : 'hover:bg-white/[0.02]',
                 className
             )}
             title="Master Track (Click to inspect)"
@@ -103,17 +103,13 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
             <div className="absolute inset-x-2 top-2 z-10 flex flex-col pointer-events-none">
                 <span 
                     className={cn(
-                        "text-[10px] uppercase tracking-wider font-semibold drop-shadow-md",
-                        isSelected ? "text-[var(--color-accent-orange)]" : "text-muted-foreground"
+                        "text-[10px] uppercase tracking-wider font-semibold drop-shadow-md transition-colors",
+                        isSelected ? "text-foreground" : "text-muted-foreground"
                     )}
                 >
                     Master
                 </span>
             </div>
-            
-            {isSelected && (
-                <div className="absolute inset-0 border border-[var(--color-accent-orange)]/40 pointer-events-none" />
-            )}
         </div>
     );
 };

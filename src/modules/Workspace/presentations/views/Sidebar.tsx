@@ -11,7 +11,8 @@ import { getPlatformPlugins } from '#/modules/Arrangement/useCases/trackQueries'
 import { usePreviewAudio } from '../hooks/usePreviewAudio';
 import { SamplesTab } from './Sidebar/SamplesTab';
 import { InstrumentsTab } from './Sidebar/InstrumentsTab';
-import { EffectsTab } from './Sidebar/EffectsTab';
+import { ColorTab } from './Sidebar/ColorTab';
+import { StageTab } from './Sidebar/StageTab';
 import { OnlineSampleBrowser } from './Sidebar/OnlineSampleBrowser';
 import { MacrosPanel } from './Sidebar/MacrosPanel';
 import { LibraryBrowser } from '#/modules/SampleLibrary/presentations/views/LibraryBrowser';
@@ -44,9 +45,10 @@ const SAMPLE_LIBRARY: { id: string; name: string; category: string; duration: st
 
 // ── Tab scroll bar with conditional chevrons ────────────────────────
 
-const TAB_ITEMS: { id: 'instruments' | 'effects' | 'library' | 'macros'; label: string; Icon: typeof Music }[] = [
+const TAB_ITEMS: { id: 'instruments' | 'color' | 'stage' | 'library' | 'macros'; label: string; Icon: typeof Music }[] = [
     { id: 'instruments', label: 'Instruments', Icon: Music },
-    { id: 'effects', label: 'Effects', Icon: Waves },
+    { id: 'color', label: 'Color', Icon: Zap },
+    { id: 'stage', label: 'Stage', Icon: Waves },
     { id: 'library', label: 'Library', Icon: FileAudio },
     { id: 'macros', label: 'Macros', Icon: Zap },
 ];
@@ -56,7 +58,7 @@ const TabScrollBar = ({
     onTabChange,
 }: {
     activeTab: string;
-    onTabChange: (tab: 'instruments' | 'effects' | 'library' | 'macros') => void;
+    onTabChange: (tab: 'instruments' | 'color' | 'stage' | 'library' | 'macros') => void;
 }): ReactElement => {
     const scrollRef = useRef<HTMLDivElement>(null);
     const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -136,12 +138,13 @@ const TabScrollBar = ({
 };
 
 export const Sidebar = ({ style }: SidebarProps): ReactElement => {
-    const [activeTab, setActiveTab] = useState<'library' | 'instruments' | 'effects' | 'macros'>('instruments');
+    const [activeTab, setActiveTab] = useState<'library' | 'instruments' | 'color' | 'stage' | 'macros'>('instruments');
     const [libSubTab, setLibSubTab] = useState<'mine' | 'find' | 'folders'>('folders');
     const [navStacks, setNavStacks] = useState<Record<string, SidebarRoute[]>>({
         library: [{ id: 'library', title: 'Library' }],
         instruments: [{ id: 'instruments', title: 'Instruments' }],
-        effects: [{ id: 'effects', title: 'Audio Effects' }],
+        color: [{ id: 'color', title: 'Color' }],
+        stage: [{ id: 'stage', title: 'Stage' }],
         macros: [{ id: 'macros', title: 'Macros' }],
     });
 
@@ -398,8 +401,21 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                         />
                     ) : null}
 
-                    {currentRoute.id.startsWith('effects') ? (
-                        <EffectsTab
+                    {currentRoute.id.startsWith('color') ? (
+                        <ColorTab
+                            plugins={filteredPlugins}
+                            selectedTrackId={selectedTrackId}
+                            searchQuery={searchQuery}
+                            currentRoute={currentRoute}
+                            pushRoute={pushRoute}
+                            favorites={favorites}
+                            onToggleFavorite={toggleFavorite}
+                            preview={preview}
+                        />
+                    ) : null}
+
+                    {currentRoute.id.startsWith('stage') ? (
+                        <StageTab
                             plugins={filteredPlugins}
                             selectedTrackId={selectedTrackId}
                             searchQuery={searchQuery}

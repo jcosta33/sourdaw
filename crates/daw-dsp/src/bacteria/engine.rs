@@ -24,15 +24,17 @@ const MAX_MOD_ASSIGNMENTS: usize = 64;
 
 /// Modulation assignment: source → target with amount.
 #[derive(Clone)]
+#[allow(dead_code)]
 struct ModAssignment {
-    source_id: u8,     // 0=lfo1, 1=lfo2, 2=env, 3=lorenz_x, 4=lorenz_z, 5-12=macro1-8
-    target_param: u16, // encoded param identifier
-    amount: f32,       // -1 to 1
+    source_id: u8,
+    target_param: u16,
+    amount: f32,
     active: bool,
 }
 
 /// Macro mapping entry.
 #[derive(Clone)]
+#[allow(dead_code)]
 struct MacroMapping {
     macro_index: u8,
     target_param: u16,
@@ -42,6 +44,7 @@ struct MacroMapping {
 }
 
 /// Per-band processing chain with all effect modules.
+#[allow(dead_code)]
 struct BandChain {
     // DSP processors
     distortion: DistortionProcessor,
@@ -281,6 +284,7 @@ impl RoutingMode {
 }
 
 /// Snapshot state for XY morph (A/B/C/D).
+#[allow(dead_code)]
 struct MorphSnapshot {
     param_values: Vec<(String, f32)>,
 }
@@ -291,6 +295,7 @@ impl MorphSnapshot {
     }
 }
 
+#[allow(dead_code)]
 pub struct BacteriaEngine {
     sample_rate: f32,
 

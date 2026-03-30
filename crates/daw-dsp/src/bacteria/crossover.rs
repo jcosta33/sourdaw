@@ -48,9 +48,7 @@ impl Biquad {
     }
 
     fn process_sample(&mut self, input: f32) -> f32 {
-        let output = self.b0 * input + self.b1 * self.z1 + self.b2 * self.z2
-            - self.a1 * self.z1 - self.a2 * self.z2;
-        // Direct Form II Transposed state update
+        // Direct Form II Transposed
         let out = self.b0 * input + self.z1;
         self.z1 = self.b1 * input - self.a1 * out + self.z2;
         self.z2 = self.b2 * input - self.a2 * out;

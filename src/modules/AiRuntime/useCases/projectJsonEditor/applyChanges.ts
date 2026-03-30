@@ -193,6 +193,31 @@ function applyChange(change: ProjectChange): void {
             break;
         }
 
+        case 'update_clip_notes': {
+            // Apply MIDI note changes via the MIDI store
+            void import('#/modules/MIDI/stores/midiStore').then(({ midiStore }) => {
+                const ms = midiStore.value;
+                if (!ms) {
+                    return;
+                }
+                const newNotes = change.notes.map((n, i) => ({
+                    id: `note-ai-${Date.now()}-${i}`,
+                    pitch: Math.max(0, Math.min(127, n.pitch)),
+                    startBeat: Math.max(0, n.startBeat),
+                    duration: Math.max(0.01, n.duration),
+                    velocity: Math.max(0, Math.min(127, n.velocity)),
+                }));
+                midiStore.set({
+                    ...ms,
+                    notesByClipId: {
+                        ...ms.notesByClipId,
+                        [change.clipId]: newNotes,
+                    },
+                });
+            });
+            break;
+        }
+
         case 'set_selection': {
             const state = trackStore.value;
             if (state && change.trackId) {
@@ -229,6 +254,8 @@ function describeChange(change: ProjectChange): string {
             return `Removed device`;
         case 'update_device':
             return `Changed device ${change.field}`;
+        case 'update_clip_notes':
+            return `Modified ${change.notes.length} MIDI notes`;
         case 'set_selection':
             return `Changed selection`;
         default:

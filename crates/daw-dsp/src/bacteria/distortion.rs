@@ -148,7 +148,7 @@ impl DistortionProcessor {
 
         // Bit depth reduction
         let levels = 2.0_f32.powi(self.bit_depth as i32);
-        ((held * levels).round() / levels)
+        (held * levels).round() / levels
     }
 
     /// Simple tube saturation with bias.

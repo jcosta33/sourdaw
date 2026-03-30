@@ -1,4 +1,106 @@
 /**
+ * WASM-exported Bacteria instance for AudioWorklet.
+ */
+export class BacteriaInstance {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        BacteriaInstanceFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_bacteriainstance_free(ptr, 0);
+    }
+    /**
+     * Get per-band levels packed as: [band0_db, band1_db, ... band5_db].
+     * @returns {number}
+     */
+    get_band_levels_ptr() {
+        const ret = wasm.bacteriainstance_get_band_levels_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Get current input level in dB (for metering).
+     * @returns {number}
+     */
+    get_input_db() {
+        const ret = wasm.bacteriainstance_get_input_db(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Get pointer to input left buffer — caller writes input audio here.
+     * @returns {number}
+     */
+    get_input_left_ptr() {
+        const ret = wasm.bacteriainstance_get_input_left_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Get pointer to input right buffer.
+     * @returns {number}
+     */
+    get_input_right_ptr() {
+        const ret = wasm.bacteriainstance_get_input_right_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Get reported latency in samples.
+     * @returns {number}
+     */
+    get_latency_samples() {
+        const ret = wasm.bacteriainstance_get_latency_samples(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Get current output level in dB (for metering).
+     * @returns {number}
+     */
+    get_output_db() {
+        const ret = wasm.bacteriainstance_get_output_db(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Get pointer to output right buffer (call after process).
+     * @returns {number}
+     */
+    get_right_ptr() {
+        const ret = wasm.bacteriainstance_get_right_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @param {number} sample_rate
+     */
+    constructor(sample_rate) {
+        const ret = wasm.bacteriainstance_new(sample_rate);
+        this.__wbg_ptr = ret >>> 0;
+        BacteriaInstanceFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * Process a block. Input must already be written to input buffers.
+     * Returns pointer to output left buffer.
+     * @param {number} block_size
+     * @returns {number}
+     */
+    process(block_size) {
+        const ret = wasm.bacteriainstance_process(this.__wbg_ptr, block_size);
+        return ret >>> 0;
+    }
+    /**
+     * Set a parameter by name.
+     * @param {string} name
+     * @param {number} value
+     */
+    set_param(name, value) {
+        const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.bacteriainstance_set_param(this.__wbg_ptr, ptr0, len0, value);
+    }
+}
+if (Symbol.dispose) BacteriaInstance.prototype[Symbol.dispose] = BacteriaInstance.prototype.free;
+
+/**
  * WASM-exported Fermenter instance for AudioWorklet.
  */
 export class FermenterInstance {
@@ -210,6 +312,112 @@ export class GlutenInstance {
     }
 }
 if (Symbol.dispose) GlutenInstance.prototype[Symbol.dispose] = GlutenInstance.prototype.free;
+
+/**
+ * WASM-exported Grinder instance for AudioWorklet.
+ */
+export class GrinderInstance {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        GrinderInstanceFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_grinderinstance_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    get_input_db() {
+        const ret = wasm.grinderinstance_get_input_db(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_input_left_ptr() {
+        const ret = wasm.grinderinstance_get_input_left_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get_input_right_ptr() {
+        const ret = wasm.grinderinstance_get_input_right_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get_latency_samples() {
+        const ret = wasm.grinderinstance_get_latency_samples(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get_output_db() {
+        const ret = wasm.grinderinstance_get_output_db(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_power_amp_db() {
+        const ret = wasm.grinderinstance_get_power_amp_db(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_preamp_db() {
+        const ret = wasm.grinderinstance_get_preamp_db(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_right_ptr() {
+        const ret = wasm.grinderinstance_get_right_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get_sag_voltage() {
+        const ret = wasm.grinderinstance_get_sag_voltage(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @param {number} sample_rate
+     */
+    constructor(sample_rate) {
+        const ret = wasm.grinderinstance_new(sample_rate);
+        this.__wbg_ptr = ret >>> 0;
+        GrinderInstanceFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {number} block_size
+     * @returns {number}
+     */
+    process(block_size) {
+        const ret = wasm.grinderinstance_process(this.__wbg_ptr, block_size);
+        return ret >>> 0;
+    }
+    /**
+     * @param {string} name
+     * @param {number} value
+     */
+    set_param(name, value) {
+        const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.grinderinstance_set_param(this.__wbg_ptr, ptr0, len0, value);
+    }
+}
+if (Symbol.dispose) GrinderInstance.prototype[Symbol.dispose] = GrinderInstance.prototype.free;
 
 export class KneadInstance {
     __destroy_into_raw() {
@@ -754,12 +962,18 @@ function __wbg_get_imports() {
     };
 }
 
+const BacteriaInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_bacteriainstance_free(ptr >>> 0, 1));
 const FermenterInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_fermenterinstance_free(ptr >>> 0, 1));
 const GlutenInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_gluteninstance_free(ptr >>> 0, 1));
+const GrinderInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_grinderinstance_free(ptr >>> 0, 1));
 const KneadInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_kneadinstance_free(ptr >>> 0, 1));

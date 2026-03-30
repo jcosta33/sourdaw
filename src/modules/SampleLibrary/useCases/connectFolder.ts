@@ -8,6 +8,7 @@
  */
 import { type LibraryRoot, type SampleRecord, type FolderNode, isAudioFile } from '../models/LibraryTypes';
 import {
+    libraryStore,
     addLibraryRoot,
     addSamples,
     updateLibraryRootStatus,
@@ -250,14 +251,13 @@ function createSampleRecord(rootId: string, relativePath: string, filename: stri
  * Build a folder tree from the current sample records for a given root.
  */
 function rebuildFolderTree(rootId: string): void {
-    const { libraryStore: _store } = require('../stores/libraryStore');
-    const state = _store?.value;
+    const state = libraryStore.value;
     if (!state) {
         return;
     }
 
-    const rootSamples = state.samples.filter((s: SampleRecord) => s.libraryRootId === rootId);
-    const root = state.roots.find((r: LibraryRoot) => r.id === rootId);
+    const rootSamples = state.samples.filter((s) => s.libraryRootId === rootId);
+    const root = state.roots.find((r) => r.id === rootId);
     if (!root) {
         return;
     }
@@ -328,13 +328,12 @@ export function cancelScan(): void {
  * Rescan a library root — re-traverse and reconcile.
  */
 export async function rescanRoot(rootId: string): Promise<void> {
-    const { libraryStore: store } = require('../stores/libraryStore');
-    const state = store?.value;
+    const state = libraryStore.value;
     if (!state) {
         return;
     }
 
-    const root = state.roots.find((r: LibraryRoot) => r.id === rootId);
+    const root = state.roots.find((r) => r.id === rootId);
     if (!root) {
         return;
     }

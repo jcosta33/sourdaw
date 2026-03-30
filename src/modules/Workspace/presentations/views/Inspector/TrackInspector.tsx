@@ -14,6 +14,7 @@ import { TakesSection } from './TakesSection';
 import { SignalFlowSection } from './SignalFlowSection';
 import { MasterVisualizationsSection } from './MasterVisualizationsSection';
 import { TrackLatencySection } from './TrackLatencySection';
+import { TrackNotesSection } from './TrackNotesSection';
 
 type TrackInspectorProps = {
     track: Track;
@@ -44,6 +45,7 @@ export const TrackInspector = ({
             <TakesSection trackId={track.id} />
             {track.kind === 'master' ? <MasterVisualizationsSection /> : null}
             <SignalFlowSection />
+            <TrackNotesSection track={track} />
         </div>
     );
 };

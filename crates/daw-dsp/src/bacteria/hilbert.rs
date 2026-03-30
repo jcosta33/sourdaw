@@ -19,13 +19,9 @@ impl HilbertAllPass {
     }
 
     fn process(&mut self, input: f32) -> f32 {
-        let output = self.coeff * (input - self.z1) + input;
-        // Correct all-pass: y[n] = a*(x[n] - y[n-1]) + x[n-1]
-        let out = self.coeff * (input - self.z1) + self.z1;
-        self.z1 = out; // Store as previous output
-        // Actually use standard form:
-        let y = -self.coeff * input + (1.0 + self.coeff) * self.z1;
-        self.z1 = input;
+        // First-order all-pass: y[n] = a * (x[n] - y[n-1]) + x[n-1]
+        let y = self.coeff * (input - self.z1) + self.z1;
+        self.z1 = y;
         y
     }
 

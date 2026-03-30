@@ -15,6 +15,7 @@ import {
     type EditableTrack,
     type EditableClip,
     type EditableDevice,
+    type EditableNote,
 } from './serializeProjectState';
 
 // ── Change types ─────────────────────────────────────────────────────────────
@@ -38,6 +39,13 @@ export type ProjectChange =
           field: string;
           value: unknown;
           previousValue: unknown;
+      }
+    | {
+          type: 'update_clip_notes';
+          trackId: string;
+          clipId: string;
+          notes: EditableNote[];
+          previousNotes: EditableNote[];
       }
     | { type: 'set_selection'; trackId: string | null; clipIds: string[] };
 
@@ -71,10 +79,7 @@ export type ValidationError = {
  * Validate a set of proposed changes before application.
  * Returns errors for invalid changes; empty array = all valid.
  */
-export function validateChanges(
-    changes: ProjectChange[],
-    original: EditableProjectState,
-): ValidationError[] {
+export function validateChanges(changes: ProjectChange[], original: EditableProjectState): ValidationError[] {
     const errors: ValidationError[] = [];
 
     for (const change of changes) {
@@ -145,9 +150,7 @@ export function validateChanges(
                 // Check track exists
                 if (!original.tracks[change.trackId]) {
                     // Track might be a newly added one — check if there's an add_track for it
-                    const hasAddTrack = changes.some(
-                        (c) => c.type === 'add_track' && c.id === change.trackId,
-                    );
+                    const hasAddTrack = changes.some((c) => c.type === 'add_track' && c.id === change.trackId);
                     if (!hasAddTrack) {
                         errors.push({ change, reason: `Track ${change.trackId} does not exist` });
                     }
@@ -167,6 +170,25 @@ export function validateChanges(
                 const track = original.tracks[change.trackId];
                 if (track && !track.devices[change.deviceId]) {
                     errors.push({ change, reason: `Device ${change.deviceId} does not exist in track` });
+                }
+                break;
+            }
+
+            case 'update_clip_notes': {
+                for (let i = 0; i < change.notes.length; i++) {
+                    const note = change.notes[i]!;
+                    if (note.pitch < 0 || note.pitch > 127) {
+                        errors.push({ change, reason: `Note ${i} pitch ${note.pitch} out of range (0-127)` });
+                    }
+                    if (note.velocity < 0 || note.velocity > 127) {
+                        errors.push({ change, reason: `Note ${i} velocity ${note.velocity} out of range (0-127)` });
+                    }
+                    if (note.duration <= 0) {
+                        errors.push({ change, reason: `Note ${i} duration must be positive` });
+                    }
+                    if (note.startBeat < 0) {
+                        errors.push({ change, reason: `Note ${i} startBeat cannot be negative` });
+                    }
                 }
                 break;
             }
@@ -195,10 +217,7 @@ export function validateChanges(
  * Diff original project state against the LLM-edited version.
  * Returns a list of concrete changes to apply, each carrying its inverse data.
  */
-export function diffProjectState(
-    original: EditableProjectState,
-    edited: EditableProjectState,
-): ProjectChange[] {
+export function diffProjectState(original: EditableProjectState, edited: EditableProjectState): ProjectChange[] {
     const changes: ProjectChange[] = [];
 
     // ── Transport changes ────────────────────────────────────────────────
@@ -278,12 +297,7 @@ export function diffProjectState(
     return changes;
 }
 
-function diffClips(
-    trackId: string,
-    orig: EditableTrack,
-    edit: EditableTrack,
-    changes: ProjectChange[],
-): void {
+function diffClips(trackId: string, orig: EditableTrack, edit: EditableTrack, changes: ProjectChange[]): void {
     const origClipIds = new Set(Object.keys(orig.clips));
     const editClipIds = new Set(Object.keys(edit.clips));
 
@@ -323,15 +337,23 @@ function diffClips(
                 });
             }
         }
+
+        // MIDI note-level diff (when notes are present in both)
+        if (origClip.notes && editClip.notes) {
+            if (JSON.stringify(origClip.notes) !== JSON.stringify(editClip.notes)) {
+                changes.push({
+                    type: 'update_clip_notes',
+                    trackId,
+                    clipId,
+                    notes: editClip.notes,
+                    previousNotes: origClip.notes,
+                });
+            }
+        }
     }
 }
 
-function diffDevices(
-    trackId: string,
-    orig: EditableTrack,
-    edit: EditableTrack,
-    changes: ProjectChange[],
-): void {
+function diffDevices(trackId: string, orig: EditableTrack, edit: EditableTrack, changes: ProjectChange[]): void {
     const origDeviceIds = new Set(Object.keys(orig.devices));
     const editDeviceIds = new Set(Object.keys(edit.devices));
 
@@ -409,6 +431,16 @@ export function summarizeChanges(changes: ProjectChange[]): string[] {
                 return `Remove ${c.removedDevice.type} from track ${c.trackId}`;
             case 'update_device':
                 return `Set device ${c.deviceId} ${c.field} to ${JSON.stringify(c.value)}`;
+            case 'update_clip_notes': {
+                const added = c.notes.length - c.previousNotes.length;
+                if (added > 0) {
+                    return `Added ${added} note${added !== 1 ? 's' : ''} to clip ${c.clipId}`;
+                }
+                if (added < 0) {
+                    return `Removed ${-added} note${added !== -1 ? 's' : ''} from clip ${c.clipId}`;
+                }
+                return `Modified ${c.notes.length} notes in clip ${c.clipId}`;
+            }
             case 'set_selection':
                 return `Change selection`;
             default:
