@@ -27,6 +27,7 @@ export type LevainState = {
     patch: LevainPatch;
     uiLevel: LevainUiLevel;
     engineReady: boolean;
+    sampleLoadProgress: number | null;
     activeVoices: number;
     peakL: number;
     peakR: number;
@@ -38,6 +39,7 @@ export const levainStore = new Store<LevainState>(logger, {
         patch: createDefaultPatch('violin-1'),
         uiLevel: 1,
         engineReady: false,
+        sampleLoadProgress: null,
         activeVoices: 0,
         peakL: 0,
         peakR: 0,
@@ -59,6 +61,13 @@ export function setLevainParam<K extends keyof LevainPatch>(
             ...state,
             patch: { ...state.patch, [key]: value },
         });
+    }
+}
+
+export function setSampleLoadProgress(progress: number | null): void {
+    const state = levainStore.value;
+    if (state) {
+        levainStore.set({ ...state, sampleLoadProgress: progress });
     }
 }
 

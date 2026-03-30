@@ -98,6 +98,10 @@ class LevainProcessor extends AudioWorkletProcessor {
                 );
                 console.log(`[Orchestra] buildZoneMap arts=${msg.numArticulations} mics=${msg.numMics}`);
                 break;
+            case 'clearZones':
+                this._wasm.levaininstance_clear_zones(this._ptr);
+                console.log(`[Orchestra] clearZones`);
+                break;
         }
     }
 

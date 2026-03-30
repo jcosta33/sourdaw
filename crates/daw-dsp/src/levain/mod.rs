@@ -138,6 +138,11 @@ impl LevainInstance {
             .build_zone_map(num_articulations as usize, num_mics as usize);
     }
 
+    /// Clear all loaded zones and samples from the engine.
+    pub fn clear_zones(&mut self) {
+        self.engine.clear_zones();
+    }
+
     /// Process a block of audio. Returns pointer to left channel.
     /// Caller reads left + right from WASM memory.
     pub fn process(&mut self, block_size: u32) -> *const f32 {

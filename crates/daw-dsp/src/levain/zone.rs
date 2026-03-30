@@ -54,6 +54,10 @@ impl SamplePool {
         }
     }
 
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+
     /// Add a sample and return its SampleId.
     pub fn add(&mut self, data: Vec<f32>, frame_count: u32, channels: u8, sample_rate: f32) -> SampleId {
         let id = self.entries.len() as SampleId;
@@ -106,6 +110,15 @@ impl ZoneMap {
             num_mics: 0,
             rr_counters: Vec::new(),
         }
+    }
+
+    pub fn clear(&mut self) {
+        self.zones.clear();
+        self.arena.clear();
+        self.lut.clear();
+        self.rr_counters.clear();
+        self.num_articulations = 0;
+        self.num_mics = 0;
     }
 
     /// Add a zone to the map. Call `build_lut()` after all zones are added.

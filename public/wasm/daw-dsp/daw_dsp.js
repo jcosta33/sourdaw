@@ -315,6 +315,12 @@ export class LevainInstance {
         wasm.levaininstance_build_zone_map(this.__wbg_ptr, num_articulations, num_mics);
     }
     /**
+     * Clear all loaded zones and samples from the engine.
+     */
+    clear_zones() {
+        wasm.levaininstance_clear_zones(this.__wbg_ptr);
+    }
+    /**
      * Get pointer to right channel buffer (call after process).
      * @returns {number}
      */

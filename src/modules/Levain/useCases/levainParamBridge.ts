@@ -117,7 +117,15 @@ export function setLevainParamWithAudio<K extends keyof LevainPatch>(
     setLevainParam(key, value);
 
     // Queue audio engine update.
-    if (typeof value === 'number') {
+    if (key === 'currentArticulation' && typeof value === 'string') {
+        const patch = levainStore.value?.patch;
+        if (patch) {
+            const artIndex = patch.articulations.findIndex(a => a.type === value);
+            if (artIndex !== -1) {
+                queueParam('current_articulation', artIndex);
+            }
+        }
+    } else if (typeof value === 'number') {
         const rustKey = camelToSnake(key as string);
         queueParam(rustKey, value);
     } else if (typeof value === 'boolean') {

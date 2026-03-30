@@ -11,7 +11,6 @@
  * - Velocity layer LOD (reduce to 2-4)
  * - Round-robin LOD (reduce RR count)
  */
-
 import { type ArticulationType } from '../models/LevainPatch';
 
 // ---------------------------------------------------------------------------
@@ -101,6 +100,9 @@ function getDecodeContext(): OfflineAudioContext {
     return decodeCtx;
 }
 
+// Global queue to prevent Safari from crashing on concurrent decode requests
+let decodeQueue = Promise.resolve();
+
 export async function fetchAndDecode(url: string): Promise<{
     data: Float32Array;
     frameCount: number;
@@ -113,23 +115,30 @@ export async function fetchAndDecode(url: string): Promise<{
     }
 
     const arrayBuffer = await response.arrayBuffer();
-    const ctx = getDecodeContext();
-    const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+    
+    // Strictly sequence decoding to avoid WebKit EncodingError
+    return new Promise((resolve, reject) => {
+        decodeQueue = decodeQueue.then(async () => {
+            try {
+                const ctx = getDecodeContext();
+                const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+                const channels = audioBuffer.numberOfChannels;
+                const frameCount = audioBuffer.length;
+                const sampleRate = audioBuffer.sampleRate;
 
-    const channels = audioBuffer.numberOfChannels;
-    const frameCount = audioBuffer.length;
-    const sampleRate = audioBuffer.sampleRate;
-
-    // Interleave channels into a single Float32Array.
-    const data = new Float32Array(frameCount * channels);
-    for (let ch = 0; ch < channels; ch++) {
-        const channelData = audioBuffer.getChannelData(ch);
-        for (let i = 0; i < frameCount; i++) {
-            data[i * channels + ch] = channelData[i] ?? 0;
-        }
-    }
-
-    return { data, frameCount, channels, sampleRate };
+                const data = new Float32Array(frameCount * channels);
+                for (let ch = 0; ch < channels; ch++) {
+                    const channelData = audioBuffer.getChannelData(ch);
+                    for (let i = 0; i < frameCount; i++) {
+                        data[i * channels + ch] = channelData[i] ?? 0;
+                    }
+                }
+                resolve({ data, frameCount, channels, sampleRate });
+            } catch (err) {
+                reject(err);
+            }
+        });
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -182,6 +191,9 @@ export async function loadInstrumentFromManifest(
         numMics = Math.min(numMics, lod.maxMics);
     }
 
+    // Send clear command before adding new samples.
+    nodePort.postMessage({ type: 'clearZones' });
+
     // Load and decode all samples.
     const sampleIdMap = new Map<string, number>();
     let nextSampleId = 0;
@@ -198,28 +210,34 @@ export async function loadInstrumentFromManifest(
         }
 
         const url = `${basePath}/${zone.file}`;
-        const { data, frameCount, channels, sampleRate } = await fetchAndDecode(url);
+        
+        try {
+            const { data, frameCount, channels, sampleRate } = await fetchAndDecode(url);
 
-        // Send sample data to worklet.
-        const transferable = data.buffer;
-        nodePort.postMessage(
-            {
-                type: 'addSample',
-                sampleId: nextSampleId,
-                data: data,
-                frameCount,
-                channels,
-                sampleRate,
-            },
-            [transferable],
-        );
+            // Send sample data to worklet.
+            const transferable = data.buffer;
+            nodePort.postMessage(
+                {
+                    type: 'addSample',
+                    sampleId: nextSampleId,
+                    data: data,
+                    frameCount,
+                    channels,
+                    sampleRate,
+                },
+                [transferable],
+            );
 
-        sampleIdMap.set(zone.file, nextSampleId);
-        nextSampleId++;
-        loaded++;
-
-        if (onProgress) {
-            onProgress(loaded / total);
+            sampleIdMap.set(zone.file, nextSampleId);
+            nextSampleId++;
+        } catch (err) {
+            console.warn(`[Levain] Failed to load sample ${zone.file}:`, err);
+            // DO NOT abort the whole instrument if one file 404s or is bad.
+        } finally {
+            loaded++;
+            if (onProgress) {
+                onProgress(loaded / total);
+            }
         }
     }
 

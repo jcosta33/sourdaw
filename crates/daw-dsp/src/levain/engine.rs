@@ -92,6 +92,16 @@ impl LevainEngine {
         }
     }
 
+    pub fn clear_zones(&mut self) {
+        self.zone_map.clear();
+        self.sample_pool.clear();
+        for voice in &mut self.voice_pool.voices {
+            voice.active = false;
+        }
+        self.auto_divisi.clear();
+        self.fallback.enabled = true;
+    }
+
     // -----------------------------------------------------------------------
     // Sample loading (call from main thread before audio starts)
     // -----------------------------------------------------------------------
@@ -309,6 +319,9 @@ impl LevainEngine {
             "humanize_vibrato_var_max" => {
                 self.humanizer.config.vibrato_var_max = value.clamp(0.0, 1.0)
             }
+
+            // ── Articulation ─────────────────────────────────────────
+            "current_articulation" => self.articulation.current = value as u16,
 
             // ── Legato ───────────────────────────────────────────────
             "legato_enabled" => self.legato.enabled = value > 0.5,
