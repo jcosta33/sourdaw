@@ -4,6 +4,11 @@
  * This is the core of the JSON editor flow: the LLM returns a modified
  * version of the project state, and we diff it against the original
  * to figure out what changed, then apply those changes to the real stores.
+ *
+ * Includes:
+ * - Destructive flag for safety gating
+ * - Inverse change generation for undo
+ * - Semantic validation (timeline, parameter ranges, reference integrity)
  */
 import {
     type EditableProjectState,
@@ -18,22 +23,182 @@ export type ProjectChange =
     | { type: 'set_tempo'; value: number }
     | { type: 'set_time_signature'; numerator: number; denominator: number }
     | { type: 'add_track'; id: string; track: EditableTrack }
-    | { type: 'remove_track'; id: string }
-    | { type: 'update_track'; id: string; field: string; value: unknown }
-    | { type: 'reorder_tracks'; order: string[] }
+    | { type: 'remove_track'; id: string; removedTrack: EditableTrack }
+    | { type: 'update_track'; id: string; field: string; value: unknown; previousValue: unknown }
+    | { type: 'reorder_tracks'; order: string[]; previousOrder: string[] }
     | { type: 'add_clip'; trackId: string; clipId: string; clip: EditableClip }
-    | { type: 'remove_clip'; trackId: string; clipId: string }
-    | { type: 'update_clip'; trackId: string; clipId: string; field: string; value: unknown }
+    | { type: 'remove_clip'; trackId: string; clipId: string; removedClip: EditableClip }
+    | { type: 'update_clip'; trackId: string; clipId: string; field: string; value: unknown; previousValue: unknown }
     | { type: 'add_device'; trackId: string; deviceId: string; device: EditableDevice }
-    | { type: 'remove_device'; trackId: string; deviceId: string }
-    | { type: 'update_device'; trackId: string; deviceId: string; field: string; value: unknown }
+    | { type: 'remove_device'; trackId: string; deviceId: string; removedDevice: EditableDevice }
+    | {
+          type: 'update_device';
+          trackId: string;
+          deviceId: string;
+          field: string;
+          value: unknown;
+          previousValue: unknown;
+      }
     | { type: 'set_selection'; trackId: string | null; clipIds: string[] };
 
 /**
- * Diff original project state against the LLM-edited version.
- * Returns a list of concrete changes to apply.
+ * Whether a change is destructive (requires confirmation before apply).
  */
-export function diffProjectState(original: EditableProjectState, edited: EditableProjectState): ProjectChange[] {
+export function isDestructiveChange(change: ProjectChange): boolean {
+    return (
+        change.type === 'remove_track' ||
+        change.type === 'remove_clip' ||
+        change.type === 'remove_device' ||
+        change.type === 'reorder_tracks'
+    );
+}
+
+/**
+ * Whether any change in the list is destructive.
+ */
+export function hasDestructiveChanges(changes: ProjectChange[]): boolean {
+    return changes.some(isDestructiveChange);
+}
+
+// ── Validation ───────────────────────────────────────────────────────────────
+
+export type ValidationError = {
+    change: ProjectChange;
+    reason: string;
+};
+
+/**
+ * Validate a set of proposed changes before application.
+ * Returns errors for invalid changes; empty array = all valid.
+ */
+export function validateChanges(
+    changes: ProjectChange[],
+    original: EditableProjectState,
+): ValidationError[] {
+    const errors: ValidationError[] = [];
+
+    for (const change of changes) {
+        switch (change.type) {
+            case 'set_tempo': {
+                if (change.value < 20 || change.value > 999) {
+                    errors.push({ change, reason: `Tempo ${change.value} out of range (20-999)` });
+                }
+                break;
+            }
+
+            case 'set_time_signature': {
+                if (change.numerator < 1 || change.numerator > 32) {
+                    errors.push({ change, reason: `Time sig numerator ${change.numerator} out of range (1-32)` });
+                }
+                if (change.denominator < 1 || change.denominator > 32) {
+                    errors.push({
+                        change,
+                        reason: `Time sig denominator ${change.denominator} out of range (1-32)`,
+                    });
+                }
+                break;
+            }
+
+            case 'remove_track': {
+                if (!original.tracks[change.id]) {
+                    errors.push({ change, reason: `Track ${change.id} does not exist` });
+                }
+                break;
+            }
+
+            case 'update_track': {
+                if (!original.tracks[change.id]) {
+                    errors.push({ change, reason: `Track ${change.id} does not exist` });
+                }
+                // Validate gain range
+                if (change.field === 'gain' && typeof change.value === 'number') {
+                    if (change.value < 0 || change.value > 1.5) {
+                        errors.push({ change, reason: `Gain ${change.value} out of range (0-1.5)` });
+                    }
+                }
+                // Validate pan range
+                if (change.field === 'pan' && typeof change.value === 'number') {
+                    if (change.value < -50 || change.value > 50) {
+                        errors.push({ change, reason: `Pan ${change.value} out of range (-50 to 50)` });
+                    }
+                }
+                break;
+            }
+
+            case 'add_clip':
+            case 'update_clip': {
+                // Validate beat ranges
+                const clip = change.type === 'add_clip' ? change.clip : null;
+                if (clip) {
+                    if (clip.startBeat < 0) {
+                        errors.push({ change, reason: `Clip start beat ${clip.startBeat} cannot be negative` });
+                    }
+                    if (clip.endBeat <= clip.startBeat) {
+                        errors.push({ change, reason: `Clip end beat must be after start beat` });
+                    }
+                }
+                if (change.type === 'update_clip') {
+                    if (change.field === 'startBeat' && typeof change.value === 'number' && change.value < 0) {
+                        errors.push({ change, reason: `Start beat cannot be negative` });
+                    }
+                }
+                // Check track exists
+                if (!original.tracks[change.trackId]) {
+                    // Track might be a newly added one — check if there's an add_track for it
+                    const hasAddTrack = changes.some(
+                        (c) => c.type === 'add_track' && c.id === change.trackId,
+                    );
+                    if (!hasAddTrack) {
+                        errors.push({ change, reason: `Track ${change.trackId} does not exist` });
+                    }
+                }
+                break;
+            }
+
+            case 'remove_clip': {
+                const track = original.tracks[change.trackId];
+                if (track && !track.clips[change.clipId]) {
+                    errors.push({ change, reason: `Clip ${change.clipId} does not exist in track` });
+                }
+                break;
+            }
+
+            case 'remove_device': {
+                const track = original.tracks[change.trackId];
+                if (track && !track.devices[change.deviceId]) {
+                    errors.push({ change, reason: `Device ${change.deviceId} does not exist in track` });
+                }
+                break;
+            }
+
+            case 'reorder_tracks': {
+                // All IDs in new order must exist (in original or as added tracks)
+                for (const id of change.order) {
+                    if (!original.tracks[id]) {
+                        const hasAddTrack = changes.some((c) => c.type === 'add_track' && c.id === id);
+                        if (!hasAddTrack) {
+                            errors.push({ change, reason: `Track ${id} in reorder does not exist` });
+                        }
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    return errors;
+}
+
+// ── Diffing ──────────────────────────────────────────────────────────────────
+
+/**
+ * Diff original project state against the LLM-edited version.
+ * Returns a list of concrete changes to apply, each carrying its inverse data.
+ */
+export function diffProjectState(
+    original: EditableProjectState,
+    edited: EditableProjectState,
+): ProjectChange[] {
     const changes: ProjectChange[] = [];
 
     // ── Transport changes ────────────────────────────────────────────────
@@ -52,49 +217,49 @@ export function diffProjectState(original: EditableProjectState, edited: Editabl
     }
 
     // ── Track changes ────────────────────────────────────────────────────
-
     const originalTrackIds = new Set(Object.keys(original.tracks));
     const editedTrackIds = new Set(Object.keys(edited.tracks));
 
-    // Added tracks
     for (const id of editedTrackIds) {
         if (!originalTrackIds.has(id)) {
             changes.push({ type: 'add_track', id, track: edited.tracks[id]! });
         }
     }
 
-    // Removed tracks
     for (const id of originalTrackIds) {
         if (!editedTrackIds.has(id)) {
-            changes.push({ type: 'remove_track', id });
+            changes.push({ type: 'remove_track', id, removedTrack: original.tracks[id]! });
         }
     }
 
-    // Track order change
     if (JSON.stringify(edited.track_order) !== JSON.stringify(original.track_order)) {
-        changes.push({ type: 'reorder_tracks', order: edited.track_order });
+        changes.push({
+            type: 'reorder_tracks',
+            order: edited.track_order,
+            previousOrder: original.track_order,
+        });
     }
 
-    // Modified tracks
     for (const id of editedTrackIds) {
         if (!originalTrackIds.has(id)) {
-            continue; // Already handled as add
+            continue;
         }
-
         const orig = original.tracks[id]!;
         const edit = edited.tracks[id]!;
 
-        // Track-level scalar fields
         for (const field of ['name', 'kind', 'muted', 'soloed', 'armed', 'gain', 'pan', 'color'] as const) {
             if (edit[field] !== orig[field]) {
-                changes.push({ type: 'update_track', id, field, value: edit[field] });
+                changes.push({
+                    type: 'update_track',
+                    id,
+                    field,
+                    value: edit[field],
+                    previousValue: orig[field],
+                });
             }
         }
 
-        // Clip changes within track
         diffClips(id, orig, edit, changes);
-
-        // Device changes within track
         diffDevices(id, orig, edit, changes);
     }
 
@@ -113,7 +278,12 @@ export function diffProjectState(original: EditableProjectState, edited: Editabl
     return changes;
 }
 
-function diffClips(trackId: string, orig: EditableTrack, edit: EditableTrack, changes: ProjectChange[]): void {
+function diffClips(
+    trackId: string,
+    orig: EditableTrack,
+    edit: EditableTrack,
+    changes: ProjectChange[],
+): void {
     const origClipIds = new Set(Object.keys(orig.clips));
     const editClipIds = new Set(Object.keys(edit.clips));
 
@@ -125,7 +295,12 @@ function diffClips(trackId: string, orig: EditableTrack, edit: EditableTrack, ch
 
     for (const clipId of origClipIds) {
         if (!editClipIds.has(clipId)) {
-            changes.push({ type: 'remove_clip', trackId, clipId });
+            changes.push({
+                type: 'remove_clip',
+                trackId,
+                clipId,
+                removedClip: orig.clips[clipId]!,
+            });
         }
     }
 
@@ -138,25 +313,47 @@ function diffClips(trackId: string, orig: EditableTrack, edit: EditableTrack, ch
 
         for (const field of ['name', 'type', 'startBeat', 'endBeat', 'audioBufferId'] as const) {
             if (editClip[field] !== origClip[field]) {
-                changes.push({ type: 'update_clip', trackId, clipId, field, value: editClip[field] });
+                changes.push({
+                    type: 'update_clip',
+                    trackId,
+                    clipId,
+                    field,
+                    value: editClip[field],
+                    previousValue: origClip[field],
+                });
             }
         }
     }
 }
 
-function diffDevices(trackId: string, orig: EditableTrack, edit: EditableTrack, changes: ProjectChange[]): void {
+function diffDevices(
+    trackId: string,
+    orig: EditableTrack,
+    edit: EditableTrack,
+    changes: ProjectChange[],
+): void {
     const origDeviceIds = new Set(Object.keys(orig.devices));
     const editDeviceIds = new Set(Object.keys(edit.devices));
 
     for (const deviceId of editDeviceIds) {
         if (!origDeviceIds.has(deviceId)) {
-            changes.push({ type: 'add_device', trackId, deviceId, device: edit.devices[deviceId]! });
+            changes.push({
+                type: 'add_device',
+                trackId,
+                deviceId,
+                device: edit.devices[deviceId]!,
+            });
         }
     }
 
     for (const deviceId of origDeviceIds) {
         if (!editDeviceIds.has(deviceId)) {
-            changes.push({ type: 'remove_device', trackId, deviceId });
+            changes.push({
+                type: 'remove_device',
+                trackId,
+                deviceId,
+                removedDevice: orig.devices[deviceId]!,
+            });
         }
     }
 
@@ -169,7 +366,14 @@ function diffDevices(trackId: string, orig: EditableTrack, edit: EditableTrack, 
 
         for (const field of ['type', 'bypassed'] as const) {
             if (editDev[field] !== origDev[field]) {
-                changes.push({ type: 'update_device', trackId, deviceId, field, value: editDev[field] });
+                changes.push({
+                    type: 'update_device',
+                    trackId,
+                    deviceId,
+                    field,
+                    value: editDev[field],
+                    previousValue: origDev[field],
+                });
             }
         }
     }
@@ -188,7 +392,7 @@ export function summarizeChanges(changes: ProjectChange[]): string[] {
             case 'add_track':
                 return `Add track "${c.track.name}" (${c.track.kind})`;
             case 'remove_track':
-                return `Remove track ${c.id}`;
+                return `Remove track "${c.removedTrack.name}"`;
             case 'update_track':
                 return `Set track ${c.id} ${c.field} to ${JSON.stringify(c.value)}`;
             case 'reorder_tracks':
@@ -196,13 +400,13 @@ export function summarizeChanges(changes: ProjectChange[]): string[] {
             case 'add_clip':
                 return `Add clip "${c.clip.name}" to track ${c.trackId} at beat ${c.clip.startBeat}`;
             case 'remove_clip':
-                return `Remove clip ${c.clipId} from track ${c.trackId}`;
+                return `Remove clip "${c.removedClip.name}" from track ${c.trackId}`;
             case 'update_clip':
                 return `Set clip ${c.clipId} ${c.field} to ${JSON.stringify(c.value)}`;
             case 'add_device':
                 return `Add ${c.device.type} to track ${c.trackId}`;
             case 'remove_device':
-                return `Remove device ${c.deviceId} from track ${c.trackId}`;
+                return `Remove ${c.removedDevice.type} from track ${c.trackId}`;
             case 'update_device':
                 return `Set device ${c.deviceId} ${c.field} to ${JSON.stringify(c.value)}`;
             case 'set_selection':

@@ -16,6 +16,7 @@ import {
     Settings,
     Eye,
     EyeOff,
+    LayoutTemplate,
 } from 'lucide-react';
 import { MidiDevicePicker } from '#/modules/AudioEngine/presentations/views/MidiDevicePicker';
 import { AudioDevicePicker } from '#/modules/AudioEngine/presentations/views/AudioDevicePicker';
@@ -52,7 +53,7 @@ type PreferencesDialogProps = {
     onClose: () => void;
 };
 
-type PreferencesSection = 'general' | 'appearance' | 'audio' | 'midi' | 'performance' | 'ai' | 'shortcuts';
+type PreferencesSection = 'general' | 'appearance' | 'layout' | 'audio' | 'midi' | 'performance' | 'ai' | 'shortcuts';
 
 type NavItem = {
     id: PreferencesSection;
@@ -63,6 +64,7 @@ type NavItem = {
 const NAV_ITEMS: NavItem[] = [
     { id: 'general', label: 'General', icon: <Settings className="size-3.5" /> },
     { id: 'appearance', label: 'Appearance', icon: <Palette className="size-3.5" /> },
+    { id: 'layout', label: 'Layout', icon: <LayoutTemplate className="size-3.5" /> },
     { id: 'audio', label: 'Audio', icon: <AudioLines className="size-3.5" /> },
     { id: 'midi', label: 'MIDI', icon: <KeyboardMusic className="size-3.5" /> },
     { id: 'performance', label: 'Performance', icon: <Cpu className="size-3.5" /> },
@@ -155,6 +157,7 @@ export const PreferencesDialog = ({ open, onClose }: PreferencesDialogProps): Re
                     <div className="flex-1 overflow-y-auto p-5 space-y-5">
                         {section === 'general' ? <GeneralSection prefs={prefs} update={update} /> : null}
                         {section === 'appearance' ? <AppearanceSection prefs={prefs} update={update} /> : null}
+                        {section === 'layout' ? <LayoutSection prefs={prefs} update={update} /> : null}
                         {section === 'audio' ? <AudioSection prefs={prefs} update={update} /> : null}
                         {section === 'midi' ? <MidiSection prefs={prefs} update={update} /> : null}
                         {section === 'performance' ? <PerformanceSection prefs={prefs} update={update} /> : null}
@@ -319,6 +322,85 @@ const AppearanceSection = ({ prefs, update }: SectionProps): ReactElement => (
             <p className="text-[10px] text-muted-foreground mt-1.5 leading-relaxed">
                 Adjust the global interface size. Useful for high-DPI displays or custom window scaling.
             </p>
+        </FieldGroup>
+    </>
+);
+
+// ── Layout ────────────────────────────────────────────────────────────
+
+const LayoutSection = ({ prefs, update }: SectionProps): ReactElement => (
+    <>
+        <SectionTitle icon={<LayoutTemplate className="size-4" />} title="Layout" />
+
+        <FieldGroup label="Panel Placement">
+            <p className="text-[10px] text-muted-foreground mb-3 leading-relaxed">
+                Choose whether each side-panel docks to the left or right edge of the screen.
+            </p>
+            <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                    <span className="text-xs text-foreground">Browser (Sidebar)</span>
+                    <div className="flex gap-2">
+                        <Button
+                            variant={prefs.panelPlacementSidebar === 'left' ? 'secondary' : 'outline'}
+                            size="xs"
+                            onClick={() => update({ panelPlacementSidebar: 'left' })}
+                        >Left</Button>
+                        <Button
+                            variant={prefs.panelPlacementSidebar === 'right' ? 'secondary' : 'outline'}
+                            size="xs"
+                            onClick={() => update({ panelPlacementSidebar: 'right' })}
+                        >Right</Button>
+                    </div>
+                </div>
+
+                <div className="flex items-center justify-between">
+                    <span className="text-xs text-foreground">Inspector</span>
+                    <div className="flex gap-2">
+                        <Button
+                            variant={prefs.panelPlacementInspector === 'left' ? 'secondary' : 'outline'}
+                            size="xs"
+                            onClick={() => update({ panelPlacementInspector: 'left' })}
+                        >Left</Button>
+                        <Button
+                            variant={prefs.panelPlacementInspector === 'right' ? 'secondary' : 'outline'}
+                            size="xs"
+                            onClick={() => update({ panelPlacementInspector: 'right' })}
+                        >Right</Button>
+                    </div>
+                </div>
+
+                <div className="flex items-center justify-between">
+                    <span className="text-xs text-foreground">Chat Panel</span>
+                    <div className="flex gap-2">
+                        <Button
+                            variant={prefs.panelPlacementChat === 'left' ? 'secondary' : 'outline'}
+                            size="xs"
+                            onClick={() => update({ panelPlacementChat: 'left' })}
+                        >Left</Button>
+                        <Button
+                            variant={prefs.panelPlacementChat === 'right' ? 'secondary' : 'outline'}
+                            size="xs"
+                            onClick={() => update({ panelPlacementChat: 'right' })}
+                        >Right</Button>
+                    </div>
+                </div>
+
+                <div className="flex items-center justify-between">
+                    <span className="text-xs text-foreground">AI Generation</span>
+                    <div className="flex gap-2">
+                        <Button
+                            variant={prefs.panelPlacementAi === 'left' ? 'secondary' : 'outline'}
+                            size="xs"
+                            onClick={() => update({ panelPlacementAi: 'left' })}
+                        >Left</Button>
+                        <Button
+                            variant={prefs.panelPlacementAi === 'right' ? 'secondary' : 'outline'}
+                            size="xs"
+                            onClick={() => update({ panelPlacementAi: 'right' })}
+                        >Right</Button>
+                    </div>
+                </div>
+            </div>
         </FieldGroup>
     </>
 );

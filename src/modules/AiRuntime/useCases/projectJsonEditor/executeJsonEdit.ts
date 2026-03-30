@@ -15,7 +15,7 @@
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
 import { serializeProjectState, type EditableProjectState, getCurrentRevision } from './serializeProjectState';
-import { diffProjectState, summarizeChanges, type ProjectChange } from './diffAndPatch';
+import { diffProjectState, summarizeChanges, validateChanges, hasDestructiveChanges, type ProjectChange } from './diffAndPatch';
 import { applyProjectChanges } from './applyChanges';
 import { buildJsonEditorPrompt } from './jsonEditorPrompt';
 import { resolveBackend, isLlmAvailable } from '../llmOrchestration';
@@ -25,6 +25,10 @@ import { getLlmEngine } from '../../repositories/webLlm';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { appendChatMessage, updateChatMessage, setChatGenerating } from '../../stores/chatStore';
 import { pushAiActionGroup } from '../../stores/aiActionHistoryStore';
+import { pushUndo } from '#/modules/Command/stores/undoStore';
+import { createCallbackUndoEntry, generateGroupId } from '#/modules/Command/models/UndoEntry';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { transportStore } from '#/modules/Transport/stores/transportStore';
 
 const logger = Container.getInstance().get(Logger);
 
@@ -132,25 +136,75 @@ export async function executeJsonEdit(
             return { success: true, changes: [], summaries: [] };
         }
 
-        // 8. Apply or preview
-        if (!options?.preview) {
+        // 8. Validate changes before applying
+        const validationErrors = validateChanges(changes, originalState);
+        if (validationErrors.length > 0) {
+            const errorSummary = validationErrors.map((e) => e.reason).join('; ');
+            updateChatMessage(assistantMsgId, {
+                content: `Edit rejected — validation failed: ${errorSummary}`,
+                isStreaming: false,
+                error: `Validation: ${errorSummary}`,
+            });
+            setChatGenerating(false);
+            llmStatusStore.set({ state: 'ready', modelId: 'json-editor' });
+            return { success: false, changes: [], summaries: [], error: errorSummary };
+        }
+
+        // 9. Force preview for destructive changes unless explicitly opted out
+        const forcePreview = hasDestructiveChanges(changes) && options?.preview !== false;
+        const shouldPreview = options?.preview || forcePreview;
+
+        if (!shouldPreview) {
+            // Snapshot stores before applying so undo can restore them
+            const trackSnapshot = structuredClone(trackStore.value);
+            const transportSnapshot = structuredClone(transportStore.value);
+
             const applied = applyProjectChanges(changes);
 
-            // Record in action history for undo
+            // Capture post-apply state for redo
+            const trackAfter = structuredClone(trackStore.value);
+            const transportAfter = structuredClone(transportStore.value);
+
+            // Create proper undo entry in the command system
+            const { groupId, groupLabel } = generateGroupId(userRequest);
+            const undoEntry = createCallbackUndoEntry(
+                `AI: ${summaries[0] ?? userRequest}`,
+                () => {
+                    // Undo: restore pre-edit snapshots
+                    if (trackSnapshot) { trackStore.set(trackSnapshot); }
+                    if (transportSnapshot) { transportStore.set(transportSnapshot); }
+                },
+                () => {
+                    // Redo: restore post-edit snapshots
+                    if (trackAfter) { trackStore.set(trackAfter); }
+                    if (transportAfter) { transportStore.set(transportAfter); }
+                },
+                'ai',
+            );
+            undoEntry.groupId = groupId;
+            undoEntry.groupLabel = groupLabel;
+            pushUndo(undoEntry);
+
+            // Also record in AI action history panel
             pushAiActionGroup({
                 id: `ai-edit-${Date.now()}`,
                 prompt: userRequest,
-                actions: applied.map((desc) => ({ action: { type: 'Undo' as const } as any, label: desc })),
+                actions: applied.map((desc) => ({ kind: 'jsonEdit' as const, label: desc })),
+                groupId,
                 timestamp: Date.now(),
-            } as any);
+                reverted: false,
+            });
 
             updateChatMessage(assistantMsgId, {
                 content: `Done! ${summaries.join('. ')}.`,
                 isStreaming: false,
             });
         } else {
+            const destructiveWarning = hasDestructiveChanges(changes)
+                ? '\n\n⚠ This includes destructive changes (deletions). '
+                : '';
             updateChatMessage(assistantMsgId, {
-                content: `Preview: ${summaries.join('. ')}.\n\nType "apply" to confirm or "cancel" to discard.`,
+                content: `Preview: ${summaries.join('. ')}.${destructiveWarning}\n\nType "apply" to confirm or "cancel" to discard.`,
                 isStreaming: false,
             });
         }

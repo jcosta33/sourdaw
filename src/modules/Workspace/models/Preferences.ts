@@ -62,6 +62,10 @@ export type Preferences = {
     voiceCommandKey: string;
     theme: 'dark' | 'light';
     uiScale: number;
+    panelPlacementSidebar: 'left' | 'right';
+    panelPlacementInspector: 'left' | 'right';
+    panelPlacementChat: 'left' | 'right';
+    panelPlacementAi: 'left' | 'right';
     bufferSize: BufferSizeOption;
     sampleRate: SampleRateOption;
     metronomeEnabled: boolean;
@@ -82,6 +86,10 @@ export const defaultPreferences: Preferences = {
     voiceCommandKey: 'v',
     theme: 'dark',
     uiScale: 1.0,
+    panelPlacementSidebar: 'left',
+    panelPlacementInspector: 'right',
+    panelPlacementChat: 'right',
+    panelPlacementAi: 'right',
     bufferSize: 512,
     sampleRate: 44100,
     metronomeEnabled: false,

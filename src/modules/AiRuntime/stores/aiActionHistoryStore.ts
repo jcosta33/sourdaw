@@ -5,10 +5,14 @@ import { type AppAction } from '#/modules/Command/useCases/commandQueries';
 
 const logger = Container.getInstance().get(Logger);
 
+export type AiActionEntry =
+    | { kind: 'appAction'; action: AppAction; label: string }
+    | { kind: 'jsonEdit'; label: string };
+
 export type AiActionGroup = {
     id: string;
     prompt: string;
-    actions: Array<{ action: AppAction; label: string }>;
+    actions: AiActionEntry[];
     groupId: string;
     timestamp: number;
     reverted: boolean;

@@ -54,6 +54,8 @@ import { Button } from '#/components/ui/button';
 import { X } from 'lucide-react';
 import { toggleMixer } from '../../useCases/togglePanel/panelToggles';
 import { DragResizeHandle } from '#/components/ui/DragResizeHandle';
+import { preferencesStore } from '../../stores/preferencesStore';
+import { defaultPreferences } from '../../models/Preferences';
 
 const CollaborationPanelLazy = lazy(() =>
     import('#/modules/Collaboration/presentations/views/CollaborationPanel').then((m) => ({
@@ -96,6 +98,10 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     } = workspaceState;
 
     const project = useProjectState();
+    const prefs = useSyncExternalStore(
+        (cb) => preferencesStore.subscribe(cb),
+        () => preferencesStore.value ?? defaultPreferences
+    );
     const aiState = useSyncExternalStore(subscribeAiStore, getAiSnapshot);
     const aiPanelOpen = aiState.isPanelOpen;
     const [exportOpen, setExportOpen] = useState(false);
@@ -328,25 +334,34 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
             {/* ─── Main horizontal layout ─── */}
             <div className="flex flex-1 overflow-hidden">
-                {/* Sidebar */}
-                {sidebarOpen ? (
+                {/* Left dynamically placed panels */}
+                {prefs.panelPlacementSidebar === 'left' && sidebarOpen ? (
                     <>
                         <Sidebar style={{ width: sidebarWidth, minWidth: 180 }} />
-                        <DragResizeHandle
-                            side="right"
-                            onResize={(d) => setSidebarWidth((w) => clamp(w + d, 180, 500))}
-                        />
+                        <DragResizeHandle side="right" onResize={(d) => setSidebarWidth((w) => clamp(w + d, 180, 500))} />
                     </>
                 ) : null}
 
-                {/* Inspector (left of tracks) */}
-                {inspectorOpen ? (
+                {prefs.panelPlacementInspector === 'left' && inspectorOpen ? (
                     <>
                         <InspectorPanel style={{ width: inspectorWidth, minWidth: 200 }} />
-                        <DragResizeHandle
-                            side="right"
-                            onResize={(d) => setInspectorWidth((w) => clamp(w + d, 200, 500))}
-                        />
+                        <DragResizeHandle side="right" onResize={(d) => setInspectorWidth((w) => clamp(w + d, 200, 500))} />
+                    </>
+                ) : null}
+
+                {prefs.panelPlacementChat === 'left' && chatPanelOpen ? (
+                    <>
+                        <ChatPanel style={{ width: chatWidth, minWidth: 200 }} />
+                        <DragResizeHandle side="right" onResize={(d) => setChatWidth((w) => clamp(w + d, 200, 600))} />
+                    </>
+                ) : null}
+
+                {prefs.panelPlacementAi === 'left' && aiPanelOpen ? (
+                    <>
+                        <div className="flex flex-col border-r border-border-hairline bg-surface-tray overflow-hidden" style={{ width: aiWidth, minWidth: 200 }}>
+                            <GenerativeAiPanel />
+                        </div>
+                        <DragResizeHandle side="right" onResize={(d) => setAiWidth((w) => clamp(w + d, 200, 500))} />
                     </>
                 ) : null}
 
@@ -612,20 +627,32 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
                 </div>
 
-                {chatPanelOpen ? (
+                {/* Right dynamically placed panels */}
+                {prefs.panelPlacementSidebar === 'right' && sidebarOpen ? (
+                    <>
+                        <DragResizeHandle side="left" onResize={(d) => setSidebarWidth((w) => clamp(w + d, 180, 500))} />
+                        <Sidebar style={{ width: sidebarWidth, minWidth: 180 }} />
+                    </>
+                ) : null}
+
+                {prefs.panelPlacementInspector === 'right' && inspectorOpen ? (
+                    <>
+                        <DragResizeHandle side="left" onResize={(d) => setInspectorWidth((w) => clamp(w + d, 200, 500))} />
+                        <InspectorPanel style={{ width: inspectorWidth, minWidth: 200 }} />
+                    </>
+                ) : null}
+
+                {prefs.panelPlacementChat === 'right' && chatPanelOpen ? (
                     <>
                         <DragResizeHandle side="left" onResize={(d) => setChatWidth((w) => clamp(w + d, 200, 600))} />
                         <ChatPanel style={{ width: chatWidth, minWidth: 200 }} />
                     </>
                 ) : null}
 
-                {aiPanelOpen ? (
+                {prefs.panelPlacementAi === 'right' && aiPanelOpen ? (
                     <>
                         <DragResizeHandle side="left" onResize={(d) => setAiWidth((w) => clamp(w + d, 200, 500))} />
-                        <div
-                            className="flex flex-col border-l border-border-hairline bg-surface-tray overflow-hidden"
-                            style={{ width: aiWidth, minWidth: 200 }}
-                        >
+                        <div className="flex flex-col border-l border-border-hairline bg-surface-tray overflow-hidden" style={{ width: aiWidth, minWidth: 200 }}>
                             <GenerativeAiPanel />
                         </div>
                     </>

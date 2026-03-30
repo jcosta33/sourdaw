@@ -6,6 +6,14 @@
  */
 export { executeJsonEdit, type JsonEditResult } from './executeJsonEdit';
 export { serializeProjectState, type EditableProjectState } from './serializeProjectState';
-export { diffProjectState, summarizeChanges, type ProjectChange } from './diffAndPatch';
+export {
+    diffProjectState,
+    summarizeChanges,
+    validateChanges,
+    hasDestructiveChanges,
+    isDestructiveChange,
+    type ProjectChange,
+    type ValidationError,
+} from './diffAndPatch';
 export { applyProjectChanges } from './applyChanges';
 export { buildJsonEditorPrompt } from './jsonEditorPrompt';

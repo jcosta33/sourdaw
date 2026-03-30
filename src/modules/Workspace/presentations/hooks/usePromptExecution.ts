@@ -197,7 +197,7 @@ export const usePromptExecution = (): PromptExecutionState => {
             const historyGroup: AiActionGroup = {
                 id: group.groupId,
                 prompt,
-                actions: executedLabels,
+                actions: executedLabels.map(l => ({ kind: 'appAction', action: l.action, label: l.label })),
                 groupId: group.groupId,
                 timestamp: Date.now(),
                 reverted: false,

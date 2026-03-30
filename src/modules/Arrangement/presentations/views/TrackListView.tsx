@@ -33,6 +33,7 @@ import { timelineViewStore, setScrollY } from '#/modules/Arrangement/stores/time
 import { injectPromptCommand } from '#/modules/AiRuntime/useCases/promptInjection';
 import { defaultPreferences, type Preferences } from '#/modules/Workspace/useCases/workspaceQueries';
 import { setTrackHeight } from '#/modules/Workspace/useCases/setTrackHeight';
+import { MiniMasterSpectrum } from '#/modules/Workspace/presentations/components/MiniMasterSpectrum';
 
 
 const HEIGHT_CYCLE: Preferences['trackHeight'][] = ['compact', 'normal', 'large'];
@@ -163,7 +164,7 @@ export const TrackListView = ({
     return (
         <div className="flex h-full shrink-0 flex-col border-r border-border/30 bg-surface-well" style={style}>
             <div
-                className="flex items-end justify-between border-b border-border/30 px-2 pb-1 pt-2 shrink-0"
+                className="relative flex items-end justify-between border-b border-border/30 px-2 pb-1 pt-2 shrink-0 group"
                 style={{
                     height: extraHeaderHeight,
                     background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
@@ -172,10 +173,12 @@ export const TrackListView = ({
                     borderBottom: '1px solid rgba(40,40,40,0.3)',
                 }}
             >
-                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">
-                    Tracks
-                </span>
-                <div className="flex items-center gap-0.5">
+                <MiniMasterSpectrum />
+                
+                <div 
+                    className="relative z-20 flex items-center gap-0.5 ml-auto opacity-80 group-hover:opacity-100 transition-opacity"
+                    onClick={(e) => e.stopPropagation()}
+                >
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <Button
