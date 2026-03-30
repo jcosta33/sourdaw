@@ -9,6 +9,7 @@ import { isToasterDevice, createToasterNode } from '../engine/ToasterNode';
 import { isLevainDevice, createLevainNode } from '../engine/LevainNode';
 import { isGlutenDevice, createGlutenNode } from '../engine/GlutenNode';
 import { isBacteriaDevice, createBacteriaNode } from '../engine/BacteriaNode';
+import { isGrinderDevice, createGrinderNode } from '../engine/GrinderNode';
 import { isProofDevice, createProofNode } from '../engine/ProofNode';
 import { isScoringDevice, createScoringNode } from '../engine/ScoringNode';
 import { isDeviceSupportedOnCurrentPlatform } from '#/modules/Arrangement/useCases/trackQueries';
@@ -215,6 +216,29 @@ export async function buildDeviceChain(
                 };
             } catch (error) {
                 logger.warn(`Bacteria device failed to load: ${error}`);
+            }
+        } else if (isGrinderDevice(device.type)) {
+            if (isOffline || !(ctx instanceof AudioContext)) {
+                continue;
+            }
+            // Grinder amp simulator — async WASM init + AudioWorkletNode
+            try {
+                const result = await createGrinderNode(ctx);
+                await result.ready;
+                for (const [key, val] of Object.entries(device.parameterValues)) {
+                    result.setParam(key, val);
+                }
+                dn = {
+                    inputNode: result.workletNode,
+                    outputNode: result.workletNode,
+                    nodes: [result.workletNode],
+                };
+                nativeDspControls = {
+                    setParam: result.setParam,
+                    setBypass: result.setBypass,
+                };
+            } catch (error) {
+                logger.warn(`Grinder device failed to load: ${error}`);
             }
         } else if (isProofDevice(device.type)) {
             if (isOffline || !(ctx instanceof AudioContext)) {

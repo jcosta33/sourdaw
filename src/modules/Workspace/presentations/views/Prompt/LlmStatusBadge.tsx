@@ -13,9 +13,9 @@ type LlmStatusBadgeProps = {
 
 /** Tier badge color */
 const TIER_COLORS = {
-    native: 'bg-[var(--color-accent-lavender)]/20 text-[var(--color-accent-lavender)] border-[var(--color-accent-lavender)]/30',
+    native: 'bg-primary/20 text-primary border-primary/30',
     cloud: 'bg-[var(--color-accent-cyan)]/20 text-[var(--color-accent-cyan)] border-[var(--color-accent-cyan)]/30',
-    webllm: 'bg-[var(--color-accent-lavender)]/20 text-[var(--color-accent-lavender)] border-[var(--color-accent-lavender)]/30',
+    webllm: 'bg-primary/20 text-primary border-primary/30',
 } as const;
 
 /** Small dropdown panel that appears below the badge. */
@@ -67,11 +67,11 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
         return (
             <div className="relative">
                 <Button
-                    variant="outline"
+                    variant="ghost"
                     size="xs"
                     type="button"
                     onClick={() => setShowPanel((prev) => !prev)}
-                    className="h-6 gap-1 px-2 text-[10px] font-medium border-[var(--color-accent-lavender)]/30 text-[var(--color-accent-lavender)]/80 hover:text-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)]/10 hover:border-[var(--color-accent-lavender)]/50 transition-all"
+                    className="h-6 gap-1 px-2 text-[10px] font-medium text-primary hover:text-primary hover:bg-primary/10 transition-all"
                     title="Load AI model"
                 >
                     <Sparkles className="size-2.5" aria-hidden="true" />
@@ -85,9 +85,9 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                             <div className="flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-1.5">
                                     {backend === 'native' ? (
-                                        <Zap className="size-3 text-[var(--color-accent-lavender)]" aria-hidden="true" />
+                                        <Zap className="size-3 text-primary" aria-hidden="true" />
                                     ) : (
-                                        <Sparkles className="size-3 text-[var(--color-accent-lavender)]" aria-hidden="true" />
+                                        <Sparkles className="size-3 text-primary" aria-hidden="true" />
                                     )}
                                     <span className="text-xs font-semibold text-foreground truncate">
                                         {modelInfo.displayName}
@@ -118,7 +118,7 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
 
                             <Button
                                 size="sm"
-                                className="w-full text-xs h-7 bg-[var(--color-accent-lavender)] hover:brightness-110 text-white border-0"
+                                className="w-full text-xs h-7 bg-primary hover:brightness-110 text-primary-foreground border-0"
                                 onClick={() => {
                                     setShowPanel(false);
                                     onLoad();
@@ -142,8 +142,8 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
     if (status.state === 'loading') {
         return (
             <div className="flex items-center gap-1.5" title={status.text}>
-                <Loader2 className="size-3 animate-spin text-[var(--color-accent-lavender)]" aria-hidden="true" />
-                <span className="text-[10px] text-[var(--color-accent-lavender)] whitespace-nowrap tabular-nums">
+                <Loader2 className="size-3 animate-spin text-primary" aria-hidden="true" />
+                <span className="text-[10px] text-primary whitespace-nowrap tabular-nums">
                     {Math.round(status.progress * 100)}%
                 </span>
             </div>
@@ -155,11 +155,11 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
         return (
             <div className="relative">
                 <Button
-                    variant="outline"
+                    variant="secondary"
                     size="xs"
                     type="button"
                     onClick={() => setShowPanel((prev) => !prev)}
-                    className="h-6 gap-1 px-2 text-[10px] font-medium border-[var(--color-state-success)]/30 text-[var(--color-state-success)]/80 hover:text-[var(--color-state-success)] hover:bg-[var(--color-state-success)]/10 hover:border-[var(--color-state-success)]/50 transition-all"
+                    className="h-6 gap-1 px-2 text-[10px] font-medium text-primary transition-all"
                     title="AI model loaded — click to manage"
                 >
                     {backend === 'native' ? (
@@ -188,8 +188,8 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
 
                         {/* Body */}
                         <div className="px-3 py-2.5 space-y-2.5">
-                            <div className="flex items-center gap-1.5 text-[10px] text-[var(--color-state-success)]">
-                                <div className="size-1.5 rounded-full bg-[var(--color-state-success)] animate-pulse" />
+                            <div className="flex items-center gap-1.5 text-[10px] text-primary">
+                                <div className="size-1.5 rounded-full bg-primary animate-pulse" />
                                 <span>Active · Using {modelInfo.ramUsage} RAM</span>
                             </div>
 
@@ -216,8 +216,8 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
     if (status.state === 'generating') {
         return (
             <div className="flex items-center gap-1.5">
-                <Loader2 className="size-3 animate-spin text-[var(--color-accent-lavender)]" aria-hidden="true" />
-                <span className="text-[10px] text-[var(--color-accent-lavender)] whitespace-nowrap">Thinking…</span>
+                <Loader2 className="size-3 animate-spin text-primary" aria-hidden="true" />
+                <span className="text-[10px] text-primary whitespace-nowrap">Thinking…</span>
             </div>
         );
     }

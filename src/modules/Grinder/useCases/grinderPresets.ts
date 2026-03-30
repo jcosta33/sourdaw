@@ -107,9 +107,7 @@ export const GRINDER_PRESETS: readonly GrinderPreset[] = [
         gain: 5,
         channel: 1,
         master: 5,
-        prePedals: [
-            { id: 'ts1', type: 'overdrive', enabled: true, params: { drive: 4, tone: 6, level: 7 } },
-        ],
+        prePedals: [{ id: 'ts1', type: 'overdrive', enabled: true, params: { drive: 4, tone: 6, level: 7 } }],
     }),
     preset('gr-fuzz-clean', 'Fuzz into Clean', 'Pedal', {
         ampModel: 'clean-twin',
@@ -117,9 +115,7 @@ export const GRINDER_PRESETS: readonly GrinderPreset[] = [
         gain: 3,
         channel: 0,
         master: 6,
-        prePedals: [
-            { id: 'fz1', type: 'fuzz', enabled: true, params: { fuzz: 7, tone: 5, level: 6 } },
-        ],
+        prePedals: [{ id: 'fz1', type: 'fuzz', enabled: true, params: { fuzz: 7, tone: 5, level: 6 } }],
     }),
 
     // ── Performance ──────────────────────────────────────────────────────────
@@ -131,7 +127,12 @@ export const GRINDER_PRESETS: readonly GrinderPreset[] = [
         gateEnabled: true,
         gateThreshold: -50,
         prePedals: [
-            { id: 'comp1', type: 'compressor', enabled: true, params: { threshold: -20, ratio: 4, attack: 10, release: 200 } },
+            {
+                id: 'comp1',
+                type: 'compressor',
+                enabled: true,
+                params: { threshold: -20, ratio: 4, attack: 10, release: 200 },
+            },
             { id: 'od1', type: 'overdrive', enabled: false, params: { drive: 5, tone: 6, level: 5 } },
         ],
         fxLoopPedals: [

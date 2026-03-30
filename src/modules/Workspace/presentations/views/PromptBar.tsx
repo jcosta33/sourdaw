@@ -58,7 +58,7 @@ const TAG_ICONS = {
 const SelectionTagChip = ({ tag, onRemove }: { tag: SelectionTag; onRemove: () => void }): ReactElement => {
     const Icon = TAG_ICONS[tag.icon];
     return (
-        <span className="inline-flex items-center gap-1 rounded-md bg-[var(--color-accent-lavender)]/15 border border-[var(--color-accent-lavender)]/30 px-1.5 py-0.5 text-[10px] text-[var(--color-accent-lavender)] shrink-0">
+        <span className="inline-flex items-center gap-1 rounded-md bg-primary/15 border border-primary/30 px-1.5 py-0.5 text-[10px] text-primary shrink-0">
             <Icon className="size-2.5" aria-hidden="true" />
             <span className="truncate max-w-20">{tag.label}</span>
             <button
@@ -68,7 +68,7 @@ const SelectionTagChip = ({ tag, onRemove }: { tag: SelectionTag; onRemove: () =
                     e.stopPropagation();
                     onRemove();
                 }}
-                className="ml-0.5 hover:text-[var(--color-accent-lavender)] transition-colors"
+                className="ml-0.5 hover:text-primary transition-colors"
                 aria-label={`Remove ${tag.label} from context`}
             >
                 <X className="size-2.5" />
@@ -171,7 +171,7 @@ export const PromptBar = (): ReactElement => {
                         <X className="size-3 text-destructive-foreground" />
                     </Button>
                 ) : prompt.willUseLlm ? (
-                    <Brain className="size-3.5 shrink-0 text-[var(--color-accent-lavender)]" aria-hidden="true" />
+                    <Brain className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
                 ) : (
                     <Zap className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                 )}

@@ -68,7 +68,7 @@ export function updateGrinderMeters(
     outputDb: number,
     sagVoltage?: number,
     latency?: number,
-    neuralCpuPercent?: number,
+    neuralCpuPercent?: number
 ): void {
     const state = grinderStore.value;
     if (state) {

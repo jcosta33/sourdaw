@@ -3,9 +3,7 @@ import { Logger } from '#/helpers/Logger/Logger';
 import { type IntentResult } from '../models/IntentResult';
 import { type ProjectContext } from '../models/ProjectContext';
 import { validateActions } from './validateActions';
-import { parseToolCallsToActions } from './validateLlmOutput';
-import { isLlmAvailable, generateToolCalls, resolveBackend } from './llmOrchestration';
-import { buildActionSystemPromptAsync } from './actionSchema';
+import { isLlmAvailable } from './llmOrchestration';
 import {
     tryPresetMatch,
     buildPresetContext,
@@ -73,49 +71,39 @@ export async function parsePromptToActions(
         return { actions: [], confidence: 0, rawText: prompt, requiresConfirmation: false };
     }
 
-    // 4. LLM path: Hermes 3 function calling for complex/ambiguous instructions
+    // 4. LLM path: JSON editor flow — LLM edits project state directly
     if (isLlmAvailable()) {
         try {
-            const result = await parseLlmPath(prompt, context, signal);
-            if (result.actions.length === 0) {
-                logger.warn(`[AI] LLM path returned 0 actions for prompt: "${prompt}"`);
+            const { executeJsonEdit } = await import('./projectJsonEditor');
+            const result = await executeJsonEdit(prompt);
+
+            if (signal?.aborted) {
+                return { actions: [], confidence: 0, rawText: prompt, requiresConfirmation: false };
             }
-            return result;
+
+            if (result.success && result.changes.length > 0) {
+                // Changes were already applied by executeJsonEdit.
+                // Return empty actions since work is done — the chat panel shows the result.
+                return {
+                    actions: [],
+                    confidence: 0.9,
+                    rawText: prompt,
+                    requiresConfirmation: false,
+                    _jsonEditApplied: true,
+                    _jsonEditSummaries: result.summaries,
+                };
+            }
+
+            if (!result.success) {
+                logger.warn(`[AI] JSON editor failed: ${result.error ?? 'unknown'}`);
+            }
         } catch (error) {
             if (signal?.aborted) {
                 return { actions: [], confidence: 0, rawText: prompt, requiresConfirmation: false };
             }
-            logger.warn(`LLM inference failed, no actions generated: ${String(error)}`);
+            logger.warn(`[AI] JSON editor failed: ${String(error)}`);
         }
     }
 
     return { actions: [], confidence: 0, rawText: prompt, requiresConfirmation: false };
-}
-
-// ── LLM path (native tool calling / Hermes function calling) ─────────────
-
-async function parseLlmPath(prompt: string, context: ProjectContext, signal?: AbortSignal): Promise<IntentResult> {
-    if (signal?.aborted) {
-        return { actions: [], confidence: 0, rawText: prompt, requiresConfirmation: false };
-    }
-
-    // 'hermes' = native mistral.rs with Hermes-3 (structured tool calling, XML fallback)
-    // 'api'    = WebLLM Hermes-3 or Cloud — tools passed natively, no XML parsing
-    const format = resolveBackend() === 'native' ? ('hermes' as const) : ('api' as const);
-    const systemPrompt = await buildActionSystemPromptAsync(context, format);
-    const toolCalls = await generateToolCalls(systemPrompt, prompt);
-
-    if (signal?.aborted) {
-        return { actions: [], confidence: 0, rawText: prompt, requiresConfirmation: false };
-    }
-
-    const actions = parseToolCallsToActions(toolCalls);
-    const validated = validateActions(actions);
-
-    return {
-        actions: validated,
-        confidence: validated.length > 0 ? 0.9 : 0,
-        rawText: prompt,
-        requiresConfirmation: requiresConfirmation(validated),
-    };
 }

@@ -8,6 +8,8 @@ import { initWebMidi } from '#/modules/AudioEngine/useCases/webMidiInput';
 import { loadProject } from '#/modules/Project/useCases/projectPersistence/loadProject';
 import { saveProject } from '#/modules/Project/useCases/projectPersistence/saveProject';
 import { ensureTrackStrips } from '#/modules/Transport/useCases/ensureTrackStrips';
+import { restoreLibrary } from '#/modules/SampleLibrary/repositories/libraryPersistence';
+import { preferencesStore } from '../../stores/preferencesStore';
 
 /**
  * Handles one-time app startup: audio engine + plugins on first user interaction,
@@ -44,6 +46,11 @@ export const useAppInitialization = (): void => {
         };
     }, []);
 
+    // Restore sample library roots and metadata from IndexedDB
+    useEffect(() => {
+        void restoreLibrary();
+    }, []);
+
     useEffect(() => {
         void loadProject().then(() => {
             projectLoaded.current = true;
@@ -60,5 +67,17 @@ export const useAppInitialization = (): void => {
             saveProject();
         }, 30_000);
         return () => clearInterval(interval);
+    }, []);
+
+    // Apply global UI Scaling natively
+    useEffect(() => {
+        const applyDisplayScale = (): void => {
+            const scale = preferencesStore.value?.uiScale ?? 1.0;
+            // The browser's native zoom correctly hits the layout tree without breaking flexbox/absolute boundaries
+            document.documentElement.style.zoom = String(scale);
+        };
+
+        applyDisplayScale();
+        return preferencesStore.subscribe(applyDisplayScale);
     }, []);
 };

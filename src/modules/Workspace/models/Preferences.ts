@@ -61,6 +61,7 @@ export type Preferences = {
     showMinimap: boolean;
     voiceCommandKey: string;
     theme: 'dark' | 'light';
+    uiScale: number;
     bufferSize: BufferSizeOption;
     sampleRate: SampleRateOption;
     metronomeEnabled: boolean;
@@ -80,6 +81,7 @@ export const defaultPreferences: Preferences = {
     showMinimap: false,
     voiceCommandKey: 'v',
     theme: 'dark',
+    uiScale: 1.0,
     bufferSize: 512,
     sampleRate: 44100,
     metronomeEnabled: false,

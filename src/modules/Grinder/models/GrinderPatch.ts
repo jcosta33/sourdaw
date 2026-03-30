@@ -284,7 +284,16 @@ export type GrinderParamDef = {
 export const GRINDER_PARAMS: readonly GrinderParamDef[] = [
     // Input
     { id: 'inputGain', label: 'Input', min: -24, max: 24, default: 0, unit: 'dB', step: 0.5, group: 'input' },
-    { id: 'inputImpedance', label: 'Impedance', min: 10, max: 10000, default: 1000, unit: 'kΩ', step: 10, group: 'input' },
+    {
+        id: 'inputImpedance',
+        label: 'Impedance',
+        min: 10,
+        max: 10000,
+        default: 1000,
+        unit: 'kΩ',
+        step: 10,
+        group: 'input',
+    },
 
     // Gate
     { id: 'gateThreshold', label: 'Gate', min: -80, max: 0, default: -60, unit: 'dB', step: 1, group: 'gate' },
@@ -311,9 +320,36 @@ export const GRINDER_PARAMS: readonly GrinderParamDef[] = [
     { id: 'negFeedback', label: 'NFB', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'power' },
 
     // Transformer
-    { id: 'transformerDrive', label: 'Xfmr Drive', min: 0, max: 1, default: 0.3, unit: '', step: 0.01, group: 'transformer' },
-    { id: 'transformerHysteresis', label: 'Hysteresis', min: 0, max: 1, default: 0.3, unit: '', step: 0.01, group: 'transformer' },
-    { id: 'transformerLfSaturation', label: 'LF Sat', min: 0, max: 1, default: 0.3, unit: '', step: 0.01, group: 'transformer' },
+    {
+        id: 'transformerDrive',
+        label: 'Xfmr Drive',
+        min: 0,
+        max: 1,
+        default: 0.3,
+        unit: '',
+        step: 0.01,
+        group: 'transformer',
+    },
+    {
+        id: 'transformerHysteresis',
+        label: 'Hysteresis',
+        min: 0,
+        max: 1,
+        default: 0.3,
+        unit: '',
+        step: 0.01,
+        group: 'transformer',
+    },
+    {
+        id: 'transformerLfSaturation',
+        label: 'LF Sat',
+        min: 0,
+        max: 1,
+        default: 0.3,
+        unit: '',
+        step: 0.01,
+        group: 'transformer',
+    },
 
     // Cabinet
     { id: 'cabResonanceFreq', label: 'Cab Res', min: 40, max: 200, default: 80, unit: 'Hz', step: 1, group: 'cabinet' },
@@ -329,7 +365,16 @@ export const GRINDER_PARAMS: readonly GrinderParamDef[] = [
     { id: 'tubeAge', label: 'Tube Age', min: 0, max: 1, default: 0, unit: '', step: 0.01, group: 'lab' },
     { id: 'millerCapacitance', label: 'Miller Cap', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'lab' },
     { id: 'gridConduction', label: 'Grid Cond', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'lab' },
-    { id: 'couplingCapCharge', label: 'Coupling Cap', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'lab' },
+    {
+        id: 'couplingCapCharge',
+        label: 'Coupling Cap',
+        min: 0,
+        max: 1,
+        default: 0.5,
+        unit: '',
+        step: 0.01,
+        group: 'lab',
+    },
     { id: 'powerAmpBias', label: 'PA Bias', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'lab' },
 
     // Neural
@@ -340,5 +385,14 @@ export const GRINDER_PARAMS: readonly GrinderParamDef[] = [
     { id: 'outputGain', label: 'Output', min: -24, max: 24, default: 0, unit: 'dB', step: 0.5, group: 'output' },
     { id: 'outputMix', label: 'Mix', min: 0, max: 1, default: 1, unit: '', step: 0.01, group: 'output' },
     { id: 'cleanBlend', label: 'Clean Blend', min: 0, max: 1, default: 0, unit: '', step: 0.01, group: 'output' },
-    { id: 'limiterThreshold', label: 'Limiter', min: -12, max: 0, default: -0.3, unit: 'dB', step: 0.1, group: 'output' },
+    {
+        id: 'limiterThreshold',
+        label: 'Limiter',
+        min: -12,
+        max: 0,
+        default: -0.3,
+        unit: 'dB',
+        step: 0.1,
+        group: 'output',
+    },
 ];

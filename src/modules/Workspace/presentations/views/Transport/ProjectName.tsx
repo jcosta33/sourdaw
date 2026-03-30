@@ -1,7 +1,6 @@
 import { type ReactElement, useState } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { renameProject, saveProject } from '#/modules/Project/useCases/projectPersistence';
-import { SourdawLogo } from '../../components/SourdawLogo';
 
 type ProjectNameProps = {
     name: string;
@@ -22,7 +21,6 @@ export const ProjectName = ({ name, dirty }: ProjectNameProps): ReactElement => 
     if (editing) {
         return (
             <div className="flex items-center gap-1.5 shrink-0">
-                <SourdawLogo className="h-5 w-5 shrink-0 opacity-60" paused />
                 <input
                     className="h-6 w-32 rounded-sm px-1.5 text-xs text-foreground outline-none ring-1 ring-ring font-medium"
                     style={{
@@ -58,12 +56,6 @@ export const ProjectName = ({ name, dirty }: ProjectNameProps): ReactElement => 
                     }}
                     onDoubleClick={() => saveProject()}
                 >
-                    {/* App mark */}
-                    <SourdawLogo
-                        className="h-5 w-5 shrink-0 opacity-70 group-hover:opacity-90 transition-opacity"
-                        paused
-                    />
-
                     {/* Project name in a subtle recessed badge */}
                     <div
                         className="flex items-center gap-1 rounded-sm px-2 py-0.5"

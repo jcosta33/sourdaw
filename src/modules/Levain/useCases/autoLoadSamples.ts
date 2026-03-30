@@ -6,7 +6,6 @@
 
 import { loadInstrumentFromManifest, WEB_LOD } from '../repositories/sampleLoader';
 import { setSampleLoadProgress } from '../stores/levainStore';
-import { convertFileSrc } from '@tauri-apps/api/core';
 import { resolveResource } from '@tauri-apps/api/path';
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -27,6 +26,7 @@ export async function autoLoadLevainSamples(
         try {
             // Tauri places parent-relative bundle assets under _up_ to protect the root Resources directory
             const localPath = await resolveResource(`_up_/public/samples/levain/${instrumentId}`);
+            const { convertFileSrc } = ((await import('@tauri-apps/api/core')) as unknown) as { convertFileSrc: (p: string) => string };
             manifestBase = convertFileSrc(localPath);
         } catch (e) {
             console.warn('[Levain] Failed to resolve Tauri resource path:', e);

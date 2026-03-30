@@ -11,11 +11,13 @@ import { isLevainDevice, createLevainNode, type LevainNodeResult } from './Levai
 import { isProofChamberDevice, createProofChamberNode, type ProofChamberNodeResult } from './ProofChamberNode';
 import { isGlutenDevice, createGlutenNode, type GlutenNodeResult } from './GlutenNode';
 import { isBacteriaDevice, createBacteriaNode, type BacteriaNodeResult } from './BacteriaNode';
+import { isGrinderDevice, createGrinderNode, type GrinderNodeResult } from './GrinderNode';
 import { isProofDevice, createProofNode, type ProofNodeResult } from './ProofNode';
 import { isScoringDevice, createScoringNode, type ScoringNodeResult } from './ScoringNode';
 import { updateTunerTelemetry } from '#/modules/Scoring/stores/scoringStore';
 import { updateGlutenMeters } from '#/modules/Gluten/stores/glutenStore';
 import { updateBacteriaMeters } from '#/modules/Bacteria/stores/bacteriaStore';
+import { updateGrinderMeters } from '#/modules/Grinder/stores/grinderStore';
 import { updateProofMeters } from '#/modules/Proof/stores/proofStore';
 import { registerProofDevice, unregisterProofDevice, syncFullPatch } from '#/modules/Proof/useCases/proofParamBridge';
 import { registerLevainDevice, unregisterLevainDevice } from '#/modules/Levain/useCases/levainParamBridge';
@@ -695,6 +697,61 @@ export class TrackNode {
                         }
                     })
                     .catch((error) => logger.warn(`[WebAudioEngine] Bacteria failed: ${error}`));
+                pendingDevicePromises.add(loadPromise);
+                loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
+            } else if (isGrinderDevice(deviceType)) {
+                // Grinder amp simulator — async WASM effect
+                const loadingBypass = context.createGain();
+                dn = {
+                    deviceId,
+                    type: deviceType,
+                    nodes: [loadingBypass],
+                    inputNode: loadingBypass,
+                    outputNode: loadingBypass,
+                };
+
+                const pendingParams: Array<[string, number]> = [];
+                dn.nativeDspControls = {
+                    setParam: (name: string, value: number) => {
+                        pendingParams.push([name, value]);
+                    },
+                    setBypass: () => {},
+                };
+
+                const loadPromise = createGrinderNode(context)
+                    .then(async (result: GrinderNodeResult) => {
+                        await result.ready;
+                        for (const [name, value] of pendingParams) {
+                            result.setParam(name, value);
+                        }
+                        result.onMeterData((data) => {
+                            updateGrinderMeters(
+                                data.inputDb,
+                                data.preampDb,
+                                data.powerAmpDb,
+                                data.outputDb,
+                                data.sagVoltage,
+                                data.latency,
+                            );
+                        });
+                        const idx = this.strip.deviceNodes.findIndex((d) => d.deviceId === deviceId);
+                        if (idx !== -1) {
+                            const grinderDn: BuiltinDeviceNode = {
+                                deviceId,
+                                type: deviceType,
+                                nodes: [result.workletNode],
+                                inputNode: result.workletNode,
+                                outputNode: result.workletNode,
+                                nativeDspControls: {
+                                    setParam: result.setParam,
+                                    setBypass: result.setBypass,
+                                },
+                            };
+                            this.strip.deviceNodes[idx] = grinderDn;
+                            this.rebuildChain();
+                        }
+                    })
+                    .catch((error) => logger.warn(`[WebAudioEngine] Grinder failed: ${error}`));
                 pendingDevicePromises.add(loadPromise);
                 loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
             } else if (isProofDevice(deviceType)) {

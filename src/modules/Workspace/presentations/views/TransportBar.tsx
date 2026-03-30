@@ -56,7 +56,7 @@ export const TransportBar = (): ReactElement => {
 
     return (
         <header
-            className="flex h-(--spacing-transport-height) shrink-0 items-center gap-1 border-b border-black px-2 transition-colors duration-300"
+            className="flex flex-col h-(--spacing-transport-height) shrink-0 border-b border-black transition-colors duration-300 relative z-50"
             style={{
                 background: isRecording
                     ? 'linear-gradient(180deg, rgba(255,64,50,0.06) 0%, rgba(10,10,10,1) 40%)'
@@ -71,79 +71,85 @@ export const TransportBar = (): ReactElement => {
             role="toolbar"
             aria-label="Transport controls"
         >
-            {/* ── Left group: Project + Transport + Position ── */}
-            <div className="flex items-center gap-1 shrink-0">
-                <div className="flex items-center">
+            {/* ── ROW 1: Meta Layer (Project, AI Copilot, Layout) ── */}
+            <div className="flex w-full flex-1 min-h-[40px] items-center px-2">
+                {/* Left wing (flex-1 basis-0 ensures the center is absolutely geometrically centered) */}
+                <div className="flex flex-1 basis-0 justify-start items-center gap-1 min-w-0">
                     <ProjectName name={project.name} dirty={project.dirty} />
                     <RecentProjectsMenu />
+                    <Sep />
+                    <ArrangementSelector />
                 </div>
 
-                <Sep />
+                {/* Center stage */}
+                <div className="flex shrink-0 justify-center items-center gap-1 w-[40vw] max-w-[800px] min-w-[300px]">
+                    <PromptBar />
+                    <VoiceButton />
+                </div>
 
-                <ArrangementSelector />
-
-                <Sep />
-
-                <TransportControls
-                    isPlaying={transport.isPlaying}
-                    isRecording={transport.isRecording}
-                    isAudioRecording={audioState.isRecording}
-                    isLooping={transport.isLooping}
-                    overdubEnabled={transport.overdubEnabled}
-                    metronomeEnabled={transport.metronomeEnabled}
-                    metronomeVolume={transport.metronomeVolume}
-                    punchInEnabled={transport.punchInEnabled}
-                    countInEnabled={transport.countInEnabled}
-                    preRollEnabled={transport.preRollEnabled}
-                    anyTrackArmed={anyTrackArmed}
-                />
-
-                <AutoScrollToggle />
-
-                <Sep />
-
-                <SoloModeSelector soloMode={soloMode} />
-
-                <Sep />
-
-                <PlayheadDisplay
-                    tempo={transport.tempo}
-                    numerator={transport.timeSignatureNumerator}
-                    timeDisplayMode={timeDisplayMode}
-                />
-
-                <Sep />
-
-                <TempoEditor />
+                {/* Right wing */}
+                <div className="flex flex-1 basis-0 justify-end items-center gap-1 min-w-0">
+                    <PanelToggles
+                        sidebarOpen={sidebarOpen}
+                        inspectorOpen={inspectorOpen}
+                        mixerOpen={mixerOpen}
+                        chatPanelOpen={chatPanelOpen}
+                        trackListOpen={trackListOpen}
+                        virtualKeyboardOpen={virtualKeyboardOpen}
+                    />
+                </div>
             </div>
 
-            {/* ── Center group: Tools + Undo/Redo + Prompt ── */}
-            <Sep />
+            {/* Visual Separator */}
+            <div className="w-full h-px bg-black/40 shadow-[0_1px_0_rgba(255,255,255,0.02)] shrink-0" />
 
-            <ToolSelector rippleEditing={rippleEditing} onToggleRipple={toggleRippleEditing} />
+            {/* ── ROW 2: Action Layer (Transport, Tools, Chronology) ── */}
+            <div className="flex w-full flex-1 min-h-[46px] items-center px-2"
+                 style={{
+                     background: isRecording 
+                        ? 'radial-gradient(ellipse at top, rgba(255,64,50,0.1) 0%, transparent 80%)' 
+                        : 'none'
+                 }}
+            >
+                {/* Left wing: Core Transport */}
+                <div className="flex flex-1 basis-0 justify-start items-center gap-1 min-w-0">
+                    <TransportControls
+                        isPlaying={transport.isPlaying}
+                        isRecording={transport.isRecording}
+                        isAudioRecording={audioState.isRecording}
+                        isLooping={transport.isLooping}
+                        overdubEnabled={transport.overdubEnabled}
+                        metronomeEnabled={transport.metronomeEnabled}
+                        metronomeVolume={transport.metronomeVolume}
+                        punchInEnabled={transport.punchInEnabled}
+                        countInEnabled={transport.countInEnabled}
+                        preRollEnabled={transport.preRollEnabled}
+                        anyTrackArmed={anyTrackArmed}
+                    />
+                    <Sep />
+                    <AutoScrollToggle />
+                    <Sep />
+                    <SoloModeSelector soloMode={soloMode} />
+                </div>
 
-            <Sep />
+                {/* Center stage: Editing Tools */}
+                <div className="flex shrink-0 justify-center items-center gap-1">
+                    <ToolSelector rippleEditing={rippleEditing} onToggleRipple={toggleRippleEditing} />
+                    <Sep />
+                    <UndoRedoButtons canUndo={undoState.canUndo} canRedo={undoState.canRedo} />
+                </div>
 
-            <UndoRedoButtons canUndo={undoState.canUndo} canRedo={undoState.canRedo} />
-
-            <Sep />
-
-            <div className="flex-1 min-w-0 flex items-center gap-1">
-                <PromptBar />
-                <VoiceButton />
+                {/* Right wing: Time and Tempo */}
+                <div className="flex flex-1 basis-0 justify-end items-center gap-1 min-w-0">
+                    <PlayheadDisplay
+                        tempo={transport.tempo}
+                        numerator={transport.timeSignatureNumerator}
+                        timeDisplayMode={timeDisplayMode}
+                    />
+                    <Sep />
+                    <TempoEditor />
+                </div>
             </div>
-
-            {/* ── Right group: Panel toggles ── */}
-            <Sep />
-
-            <PanelToggles
-                sidebarOpen={sidebarOpen}
-                inspectorOpen={inspectorOpen}
-                mixerOpen={mixerOpen}
-                chatPanelOpen={chatPanelOpen}
-                trackListOpen={trackListOpen}
-                virtualKeyboardOpen={virtualKeyboardOpen}
-            />
         </header>
     );
 };

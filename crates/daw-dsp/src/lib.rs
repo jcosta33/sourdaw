@@ -5,4 +5,5 @@ pub mod knead;
 pub mod reverb;
 pub mod gluten;
 pub mod bacteria;
+pub mod grinder;
 pub mod proof;

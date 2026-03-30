@@ -82,3 +82,4 @@ export function loadToasterKitPreset(kit: ToasterKit): void {
         }
     }
 }
+export type { ToasterKit } from '../models/ToasterKit';

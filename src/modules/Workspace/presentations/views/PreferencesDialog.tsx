@@ -294,6 +294,32 @@ const AppearanceSection = ({ prefs, update }: SectionProps): ReactElement => (
             value={prefs.colorblindMode}
             onChange={(v) => update({ colorblindMode: v })}
         />
+
+        <Separator />
+
+        <FieldGroup label="UI Scale">
+            <div className="flex items-center gap-2">
+                <Slider
+                    value={[prefs.uiScale * 100]}
+                    onValueChange={([v]) => {
+                        if (v !== undefined) {
+                            update({ uiScale: v / 100 });
+                        }
+                    }}
+                    min={50}
+                    max={200}
+                    step={5}
+                    className="flex-1"
+                    aria-label="UI Scale"
+                />
+                <span className="text-[10px] font-mono text-muted-foreground w-8 text-right">
+                    {Math.round(prefs.uiScale * 100)}%
+                </span>
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-1.5 leading-relaxed">
+                Adjust the global interface size. Useful for high-DPI displays or custom window scaling.
+            </p>
+        </FieldGroup>
     </>
 );
 

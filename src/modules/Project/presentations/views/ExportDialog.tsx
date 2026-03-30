@@ -5,9 +5,18 @@ import { Logger } from '#/helpers/Logger/Logger';
 import { Button } from '#/components/ui/button';
 import { Separator } from '#/components/ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '#/components/ui/dialog';
-import { Download, X } from 'lucide-react';
-import { renderOffline, exportStems, cancelExport, downloadWav, downloadMp3, downloadFlac } from '../../useCases/exportActions';
+import { Flame, X, CheckCircle2 } from 'lucide-react';
+import {
+    renderOffline,
+    exportStems,
+    cancelExport,
+    encodeWav,
+    encodeMp3,
+    encodeFlac,
+} from '../../useCases/exportActions';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { isTauri } from '#/helpers/tauriBridge';
+import { zipSync } from 'fflate';
 
 const logger = Container.getInstance().get(Logger);
 
@@ -61,6 +70,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     const toggleFormat = (f: ExportFormat) => {
         setFormats((prev) => {
             const next = new Set(prev);
+            // Don't allow empty selections
             if (next.has(f) && next.size > 1) {
                 next.delete(f);
             } else {
@@ -75,6 +85,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         setSampleRate(sr);
         saveExportSettings({ formats: Array.from(formats), sampleRate: sr, bitDepth });
     };
+
     const updateBitDepth = (bd: number) => {
         setBitDepth(bd);
         saveExportSettings({ formats: Array.from(formats), sampleRate, bitDepth: bd });
@@ -83,114 +94,267 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     const handleCancel = () => {
         cancelledRef.current = true;
         cancelExport();
-        setStatusText('Cancelling...');
+        setStatusText('Cooling down...');
+    };
+
+    // Helper: Trigger browser fallback download if Native API fails or is missing
+    const triggerFallbackBlobDownload = (data: Uint8Array | ArrayBuffer, ext: string, blobName: string) => {
+        const mimeMap: Record<string, string> = {
+            '.wav': 'audio/wav',
+            '.mp3': 'audio/mpeg',
+            '.flac': 'audio/flac',
+            '.zip': 'application/zip',
+        };
+        const blob = new Blob([data as unknown as BlobPart], { type: mimeMap[ext] || 'application/octet-stream' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${blobName}${ext}`;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }, 1500); // 1.5s to ensure click dispatches
     };
 
     const handleExport = async () => {
-        setExporting(true);
-        setProgress(0);
-        setStatusText('Preparing...');
         setErrorText('');
         cancelledRef.current = false;
+        const ts = Date.now();
+        const baseName = `Sourdaw_Bake_${ts}`;
+
+        let tauriDirPath: string | null = null;
+        let tauriFilePath: string | null = null;
+        
+        // This Handle uses the new FileSystem Access API
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let webFileHandle: any = null;
+
+        // ── 1. SECURE THE DESTINATION EARLY ──
+        try {
+            if (isTauri()) {
+                const { save, open } = await import('@tauri-apps/plugin-dialog');
+                if (mode === 'stems') {
+                    tauriDirPath = (await open({
+                        directory: true,
+                        multiple: false,
+                        title: 'Select Output Folder for Slices (Stems)',
+                    })) as string | null;
+                    if (!tauriDirPath) return; // User cancelled
+                } else {
+                    const primaryExt = Array.from(formats)[0] || 'wav';
+                    tauriFilePath = await save({
+                        defaultPath: `${baseName}.${primaryExt}`,
+                        filters: [{ name: 'Audio File', extensions: Array.from(formats) }],
+                    });
+                    if (!tauriFilePath) return; // User cancelled
+                }
+            } else {
+                // Web Environment
+                if ('showSaveFilePicker' in window) {
+                    const isZip = mode === 'stems' || formats.size > 1; // Zipping required for >1 file
+                    const primaryExt = Array.from(formats)[0] || 'wav';
+                    const fileExt = isZip ? '.zip' : `.${primaryExt}`;
+                    const mime = isZip
+                        ? 'application/zip'
+                        : primaryExt === 'wav'
+                        ? 'audio/wav'
+                        : primaryExt === 'flac'
+                        ? 'audio/flac'
+                        : 'audio/mpeg';
+
+                    webFileHandle = await (
+                        window as unknown as { showSaveFilePicker: (opts: unknown) => Promise<unknown> }
+                    ).showSaveFilePicker({
+                        suggestedName: `${baseName}${fileExt}`,
+                        types: [{ accept: { [mime]: [fileExt] } }],
+                    });
+                }
+            }
+        } catch (e) {
+            // If user clicked cancel, abort quietly
+            if (e instanceof Error && e.name === 'AbortError') return;
+            // Otherwise, allow it to drop to fallback `<a download>` memory mode
+        }
+
+        // ── 2. PREPARATIONS COMPLETE. START INTENSIVE BAKING ──
+        setExporting(true);
+        setProgress(0);
+        setStatusText('Heating the offline oven...');
 
         try {
             const tracks = trackStore.value?.tracks ?? [];
             const maxBeat = Math.max(16, ...tracks.flatMap((t) => t.clips.map((c) => c.endBeat)));
             const bd = bitDepth as 16 | 24 | 32;
-            const ts = Date.now();
             const formatList = Array.from(formats);
+            
+            // We use fflate purely to zip multiple web stems / formats
+            const zipDirectory: Record<string, Uint8Array> = {};
 
+            const serializeAudio = async (
+                buffer: AudioBuffer,
+                name: string,
+                fractionOffset: number,
+                fractionRange: number
+            ) => {
+                let currentPass = 0;
+                for (const f of formatList) {
+                    if (cancelledRef.current) return;
+                    
+                    const passProgress = (frac: number) => {
+                        const subFraction = (currentPass + frac) / formatList.length;
+                        setProgress(fractionOffset + subFraction * fractionRange);
+                    };
+
+                    setStatusText(`Kneading ${name} (${f.toUpperCase()})...`);
+                    let fileData: Uint8Array | ArrayBuffer;
+
+                    if (f === 'mp3') {
+                        fileData = await encodeMp3(buffer, 128, passProgress);
+                    } else if (f === 'flac') {
+                        fileData = await encodeFlac(buffer, passProgress);
+                    } else {
+                        fileData = await encodeWav(buffer, bd, passProgress);
+                    }
+
+                    const uint8Data = fileData instanceof ArrayBuffer ? new Uint8Array(fileData) : fileData;
+                    const finalFileName = `${name}.${f}`;
+
+                    if (isTauri()) {
+                        const { writeFile } = await import('@tauri-apps/plugin-fs');
+                        // Use join from api if available, or just a simple slash for stems dict
+                        const { join } = await import('@tauri-apps/api/path');
+                        if (mode === 'stems' && tauriDirPath) {
+                            const fullPath = await join(tauriDirPath, finalFileName);
+                            await writeFile(fullPath, uint8Data);
+                        } else if (tauriFilePath) {
+                            // Single fallback mapping for mixdown
+                            const adjustedPath = tauriFilePath.replace(/\.[a-z0-9]+$/i, `.${f}`);
+                            await writeFile(adjustedPath, uint8Data);
+                        }
+                    } else {
+                        // Web: Pack into the zip directory for later synchronous fflate compression
+                        zipDirectory[finalFileName] = uint8Data;
+                    }
+
+                    currentPass++;
+                }
+            };
+
+            // ── ACTUAL PROCESS ORCHESTRATION ──
             if (mode === 'stems') {
-                setStatusText('Rendering stems...');
+                setStatusText('Proofing Slices (rendering stems)...');
                 const stems = await exportStems({
                     durationBeats: maxBeat,
                     sampleRate,
                     onProgress: (frac) => {
                         setProgress(frac * 50);
-                        setStatusText(`Rendering stems... ${Math.round(frac * 100)}%`);
+                        if (Math.round(frac * 100) % 5 === 0) setStatusText(`Proofing slices ${Math.round(frac * 100)}%...`);
                     },
                 });
-                if (cancelledRef.current) { return; }
+                if (cancelledRef.current) return;
 
-                let done = 0;
-                const total = stems.size * formatList.length;
+                let doneStems = 0;
+                const totalStems = stems.size;
+                
                 for (const [trackId, buffer] of stems) {
-                    if (cancelledRef.current) { return; }
+                    if (cancelledRef.current) return;
                     const track = tracks.find((t) => t.id === trackId);
-                    const name = track?.name ?? trackId;
-                    for (const f of formatList) {
-                        if (cancelledRef.current) { return; }
-                        const encodeProgress = (frac: number) => {
-                            setProgress(50 + ((done + frac) / total) * 50);
-                        };
-                        setStatusText(`Encoding ${name} (${f.toUpperCase()})...`);
-                        if (f === 'mp3') {
-                            await downloadMp3(buffer, `${name}-${ts}.mp3`, 128, encodeProgress);
-                        } else if (f === 'flac') {
-                            await downloadFlac(buffer, `${name}-${ts}.flac`, encodeProgress);
-                        } else {
-                            await downloadWav(buffer, `${name}-${ts}.wav`, bd, encodeProgress);
-                        }
-                        done++;
-                    }
+                    const safeTName = (track?.name || trackId).replaceAll(/[^a-zA-Z0-9_\- ]/g, '_');
+                    
+                    // We map the remaining 50% of the progress bar to encoding the slices
+                    const stemOffset = 50 + (doneStems / totalStems) * 50;
+                    const stemRange = 50 / totalStems;
+                    
+                    await serializeAudio(buffer, safeTName, stemOffset, stemRange);
+                    doneStems++;
                 }
             } else {
-                setStatusText('Rendering offline mixdown...');
+                setStatusText('Proofing Whole Loaf (offline mixdown)...');
                 const buffer = await renderOffline({
                     durationBeats: maxBeat,
                     sampleRate,
                     onProgress: (frac) => {
                         setProgress(frac * 60);
-                        setStatusText(`Rendering... ${Math.round(frac * 100)}%`);
+                        if (Math.round(frac * 100) % 5 === 0) setStatusText(`Proofing loaf ${Math.round(frac * 100)}%...`);
                     },
                 });
-                if (cancelledRef.current) { return; }
-                setProgress(60);
+                if (cancelledRef.current) return;
 
-                let formatsDone = 0;
-                for (const f of formatList) {
-                    if (cancelledRef.current) { return; }
-                    const encodeProgress = (frac: number) => {
-                        const perFormat = 40 / formatList.length;
-                        setProgress(60 + formatsDone * perFormat + frac * perFormat);
-                    };
-                    if (f === 'mp3') {
-                        setStatusText('Encoding MP3...');
-                        await downloadMp3(buffer, `sourdaw-export-${ts}.mp3`, 128, encodeProgress);
-                    } else if (f === 'flac') {
-                        setStatusText('Encoding FLAC...');
-                        await downloadFlac(buffer, `sourdaw-export-${ts}.flac`, encodeProgress);
-                    } else {
-                        setStatusText('Encoding WAV...');
-                        await downloadWav(buffer, `sourdaw-export-${ts}.wav`, bd, encodeProgress);
-                    }
-                    formatsDone++;
+                // We map the remaining 40% of the progress bar to encoding the mixdown
+                await serializeAudio(buffer, baseName, 60, 40);
+            }
+
+            if (cancelledRef.current) return;
+
+            // ── 3. FINALIZE WEB SAVES ──
+            if (!isTauri() && Object.keys(zipDirectory).length > 0) {
+                setStatusText('Serving hot audio...');
+                const isSingleFile = Object.keys(zipDirectory).length === 1 && mode !== 'stems';
+                
+                let finalBytes: Uint8Array;
+                let finalExt: string;
+                let finalName: string;
+
+                if (isSingleFile) {
+                    const singleKey = Object.keys(zipDirectory)[0]!;
+                    finalBytes = zipDirectory[singleKey]!;
+                    finalExt = `.${singleKey.split('.').pop()!}`;
+                    finalName = baseName;
+                } else {
+                    // Zip the results synchronously
+                    finalBytes = zipSync(zipDirectory, { level: 0 }); // level 0 for speed, audio doesn't compress well anyway
+                    finalExt = '.zip';
+                    finalName = mode === 'stems' ? `Sourdaw_Slices_${ts}` : `Sourdaw_Bakery_${ts}`;
+                }
+
+                if (webFileHandle) {
+                    // File System Access Method
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+                    const writable = await webFileHandle.createWritable();
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+                    await writable.write(finalBytes);
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+                    await writable.close();
+                } else {
+                    // Fallback
+                    triggerFallbackBlobDownload(finalBytes, finalExt, finalName);
                 }
             }
 
-            if (!cancelledRef.current) {
-                setProgress(100);
-                setStatusText('Complete!');
-                notifyUser('Audio exported successfully');
-            }
+            setProgress(100);
+            setStatusText('Ding! Baking Complete! 🍞');
+            notifyUser('Ding! The audio finished baking', 'success');
+
+            // Optionally auto-close the modal after 2 seconds
+            setTimeout(() => {
+                if (open) onClose();
+            }, 2500);
+
         } catch (error) {
             if (cancelledRef.current) {
-                setStatusText('Export cancelled');
+                setStatusText('Oven turned off.');
             } else {
-                const msg = error instanceof Error ? error.message : 'Unknown error';
+                const msg = error instanceof Error ? error.message : 'Unknown oven malfunction';
                 logger.error(new Error('Export failed', { cause: error }));
                 setErrorText(msg);
-                setStatusText('Export failed');
+                setStatusText('The bread burned...');
             }
         } finally {
-            setExporting(false);
+            if (cancelledRef.current) {
+                setTimeout(() => setExporting(false), 1500);
+            } else if (errorText) {
+                setExporting(false);
+            }
         }
     };
 
     const FORMAT_OPTIONS: { value: ExportFormat; label: string; desc: string }[] = [
-        { value: 'wav', label: 'WAV', desc: 'Uncompressed, lossless' },
-        { value: 'mp3', label: 'MP3', desc: 'Compressed, lossy' },
-        { value: 'flac', label: 'FLAC', desc: 'Compressed, lossless' },
+        { value: 'wav', label: 'WAV', desc: 'Crisp, lossless' },
+        { value: 'mp3', label: 'MP3', desc: 'Lossy crust' },
+        { value: 'flac', label: 'FLAC', desc: 'Gluten-free lossless' },
     ];
 
     const sampleRates = [44100, 48000, 88200, 96000];
@@ -205,79 +369,119 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 }
             }}
         >
-            <DialogContent className="w-[480px] bg-surface-raised" showCloseButton={!exporting}>
+            <DialogContent className="w-[480px] bg-stone-950 border border-orange-900/40 shadow-[0_0_40px_rgba(234,88,12,0.1)] rounded-xl" showCloseButton={!exporting}>
                 <DialogHeader
+                    className="relative overflow-hidden pt-6 pb-4 px-6 rounded-t-xl"
                     style={{
-                        background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
-                        boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
-                        borderBottom: '1px solid rgba(255,255,255,0.06)',
+                        background: 'linear-gradient(180deg, rgba(120,53,15,0.4) 0%, rgba(10,10,10,1) 100%)',
+                        boxShadow: 'inset 0 1px 0 rgba(251,146,60,0.1), inset 0 -1px rgba(251,146,60,0.05)',
                         margin: '-1.5rem -1.5rem 0 -1.5rem',
-                        padding: '0.75rem 1.5rem',
-                        borderRadius: '8px 8px 0 0',
                     }}
                 >
-                    <DialogTitle className="text-sm font-semibold">Export Audio</DialogTitle>
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-amber-500/10 via-transparent to-transparent" />
+                    <DialogTitle className="relative text-base font-semibold text-orange-50/90 flex items-center gap-2">
+                        <Flame className="size-4 text-orange-500" />
+                        The Bakery
+                    </DialogTitle>
+                    <p className="text-xs text-orange-500/60 mt-0.5 tracking-wide">
+                        Export your masterpiece straight from the Sourdaw oven.
+                    </p>
                 </DialogHeader>
 
-                <div className="space-y-4">
+                <div className="space-y-5 px-1 py-2">
+                    {/* MODE ──────────────────────────────────────────────────────── */}
                     <section>
-                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 block">
-                            Mode
+                        <label className="text-[10px] font-bold text-orange-900 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                            <span className="h-1.5 w-1.5 rounded-full bg-orange-500/50" />
+                            Render Order
                         </label>
                         <div className="flex gap-2">
-                            {(['mixdown', 'stems'] as ExportMode[]).map((m) => (
-                                <Button
-                                    key={m}
-                                    variant={mode === m ? 'secondary' : 'outline'}
-                                    size="sm"
-                                    onClick={() => setMode(m)}
-                                    className="capitalize"
-                                    disabled={exporting}
-                                >
-                                    {m}
-                                </Button>
-                            ))}
+                            <Button
+                                variant={mode === 'mixdown' ? 'default' : 'outline'}
+                                size="sm"
+                                onClick={() => setMode('mixdown')}
+                                className={
+                                    mode === 'mixdown'
+                                        ? 'bg-orange-700/20 text-orange-300 border-orange-500/30 hover:bg-orange-700/30 w-full'
+                                        : 'border-orange-900/40 text-muted-foreground hover:text-orange-200 hover:border-orange-500/20 hover:bg-orange-950/20 w-full'
+                                }
+                                disabled={exporting}
+                                style={mode === 'mixdown' ? { boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)' } : {}}
+                            >
+                                Whole Loaf <span className="text-[10px] opacity-60 ml-1">(Mixdown)</span>
+                            </Button>
+                            <Button
+                                variant={mode === 'stems' ? 'default' : 'outline'}
+                                size="sm"
+                                onClick={() => setMode('stems')}
+                                className={
+                                    mode === 'stems'
+                                        ? 'bg-amber-700/20 text-amber-300 border-amber-500/30 hover:bg-amber-700/30 w-full'
+                                        : 'border-orange-900/40 text-muted-foreground hover:text-amber-200 hover:border-amber-500/20 hover:bg-amber-950/20 w-full'
+                                }
+                                disabled={exporting}
+                                style={mode === 'stems' ? { boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)' } : {}}
+                            >
+                                Slices <span className="text-[10px] opacity-60 ml-1">(Stems)</span>
+                            </Button>
                         </div>
                     </section>
 
-                    <Separator style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)' }} />
+                    <Separator className="bg-gradient-to-r from-transparent via-orange-900/30 to-transparent" />
 
+                    {/* FORMAT ────────────────────────────────────────────────────── */}
                     <section>
-                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 block">
-                            Format
+                        <label className="text-[10px] font-bold text-orange-900 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                            <span className="h-1.5 w-1.5 rounded-full bg-orange-500/50" />
+                            Ingredients
                         </label>
                         <div className="grid grid-cols-3 gap-2">
-                            {FORMAT_OPTIONS.map((f) => (
-                                <button
-                                    type="button"
-                                    key={f.value}
-                                    className={`rounded-md border px-3 py-2 text-left transition-colors ${formats.has(f.value) ? 'border-ring bg-accent' : 'border-border hover:bg-accent/50'}`}
-                                    onClick={() => toggleFormat(f.value)}
-                                    aria-pressed={formats.has(f.value)}
-                                    role="checkbox"
-                                    aria-checked={formats.has(f.value)}
-                                    disabled={exporting}
-                                >
-                                    <div className="text-xs font-medium text-foreground">{f.label}</div>
-                                    <div className="text-[10px] text-muted-foreground">{f.desc}</div>
-                                </button>
-                            ))}
+                            {FORMAT_OPTIONS.map((f) => {
+                                const active = formats.has(f.value);
+                                return (
+                                    <button
+                                        type="button"
+                                        key={f.value}
+                                        className={`rounded-lg border px-3 py-2.5 text-left transition-all ${
+                                            active
+                                                ? 'border-orange-500/40 bg-orange-950/40 shadow-[inset_0_1px_0_rgba(251,146,60,0.1)]'
+                                                : 'border-stone-800 bg-stone-900/50 hover:bg-stone-800/80 hover:border-stone-700'
+                                        }`}
+                                        onClick={() => toggleFormat(f.value)}
+                                        aria-pressed={active}
+                                        role="checkbox"
+                                        aria-checked={active}
+                                        disabled={exporting}
+                                    >
+                                        <div className={`text-sm font-semibold ${active ? 'text-orange-200' : 'text-stone-400'}`}>
+                                            {f.label}
+                                        </div>
+                                        <div className={`text-[10px] mt-0.5 ${active ? 'text-orange-400/80' : 'text-stone-600'}`}>
+                                            {f.desc}
+                                        </div>
+                                    </button>
+                                );
+                            })}
                         </div>
                     </section>
 
-                    <Separator style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)' }} />
-
+                    {/* SETTINGS ──────────────────────────────────────────────────── */}
                     <div className="grid grid-cols-2 gap-4">
-                        <section>
-                            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 block">
+                        <section className="bg-stone-950/50 border border-stone-800/50 rounded-lg p-3">
+                            <label className="text-[10px] font-bold text-stone-600 uppercase tracking-widest mb-2 block">
                                 Sample Rate
                             </label>
                             <div className="flex flex-wrap gap-1">
                                 {sampleRates.map((sr) => (
                                     <Button
                                         key={sr}
-                                        variant={sampleRate === sr ? 'secondary' : 'ghost'}
-                                        size="xs"
+                                        variant="ghost"
+                                        size="sm"
+                                        className={`h-6 text-[10px] px-2 rounded-md ${
+                                            sampleRate === sr
+                                                ? 'bg-stone-800 text-stone-200'
+                                                : 'text-stone-500 hover:text-stone-300 hover:bg-stone-800/50'
+                                        }`}
                                         onClick={() => updateSampleRate(sr)}
                                         disabled={exporting}
                                     >
@@ -287,16 +491,21 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                             </div>
                         </section>
 
-                        <section>
-                            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 block">
+                        <section className="bg-stone-950/50 border border-stone-800/50 rounded-lg p-3">
+                            <label className="text-[10px] font-bold text-stone-600 uppercase tracking-widest mb-2 block">
                                 Bit Depth
                             </label>
                             <div className="flex flex-wrap gap-1">
                                 {bitDepths.map((bd) => (
                                     <Button
                                         key={bd}
-                                        variant={bitDepth === bd ? 'secondary' : 'ghost'}
-                                        size="xs"
+                                        variant="ghost"
+                                        size="sm"
+                                        className={`h-6 text-[10px] px-2 rounded-md ${
+                                            bitDepth === bd
+                                                ? 'bg-stone-800 text-stone-200'
+                                                : 'text-stone-500 hover:text-stone-300 hover:bg-stone-800/50'
+                                        }`}
                                         onClick={() => updateBitDepth(bd)}
                                         disabled={exporting}
                                     >
@@ -307,51 +516,90 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         </section>
                     </div>
 
-                    <Separator style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)' }} />
+                    <Separator className="bg-gradient-to-r from-transparent via-orange-900/30 to-transparent" />
 
-                    {exporting ? (
-                        <div className="space-y-1">
-                            <div className="flex justify-between text-xs text-muted-foreground">
-                                <span>{statusText}</span>
-                                <span>{progress.toFixed(0)}%</span>
-                            </div>
-                            <div
-                                className="h-1.5 w-full rounded-full overflow-hidden"
-                                style={{ background: 'rgba(255,255,255,0.06)', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.5)' }}
-                                role="progressbar"
-                                aria-valuenow={Math.round(progress)}
-                                aria-valuemin={0}
-                                aria-valuemax={100}
-                                aria-label="Export progress"
-                            >
+                    {/* PROGRESS & ERRORS ─────────────────────────────────────────── */}
+                    <div className="h-10">
+                        {exporting || progress === 100 ? (
+                            <div className="space-y-1.5 animate-in fade-in duration-300">
+                                <div className="flex justify-between items-end text-xs">
+                                    <span className={`font-medium ${progress === 100 ? 'text-green-400' : 'text-orange-400'}`}>
+                                        {statusText}
+                                    </span>
+                                    <span className="text-orange-500/50 font-mono text-[10px]">{progress.toFixed(0)}%</span>
+                                </div>
                                 <div
-                                    className="h-full rounded-full bg-primary transition-all"
-                                    style={{ width: `${progress}%` }}
-                                />
+                                    className="h-2 w-full rounded-full overflow-hidden bg-stone-900 border border-stone-800 shadow-inner"
+                                    role="progressbar"
+                                    aria-valuenow={Math.round(progress)}
+                                    aria-valuemin={0}
+                                    aria-valuemax={100}
+                                >
+                                    <div
+                                        className={`h-full rounded-full transition-all duration-300 ease-out ${
+                                            progress === 100 
+                                            ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.4)]' 
+                                            : 'bg-gradient-to-r from-amber-600 to-orange-400 shadow-[0_0_12px_rgba(251,146,60,0.6)]'
+                                        }`}
+                                        style={{ width: `${progress}%` }}
+                                    >
+                                        {progress < 100 && (
+                                            <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.4)_50%,transparent_100%)] w-[30%] animate-[shimmer_1.5s_infinite]" />
+                                        )}
+                                    </div>
+                                </div>
                             </div>
-                        </div>
-                    ) : null}
+                        ) : errorText ? (
+                            <div className="h-full flex items-center text-xs text-red-400 bg-red-950/20 border border-red-900/30 rounded-lg px-3 animate-in fade-in">
+                                {errorText}
+                            </div>
+                        ) : (
+                            <div className="h-full flex flex-col justify-center text-[10px] text-stone-500 text-center uppercase tracking-widest">
+                                {isTauri() ? "Desktop Oven Ready" : "Web Oven Ready"}
+                            </div>
+                        )}
+                    </div>
 
-                    {errorText ? (
-                        <div className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
-                            {errorText}
-                        </div>
-                    ) : null}
-
-                    <div className="flex justify-end gap-2">
+                    {/* FOOTER ACTIONS ────────────────────────────────────────────── */}
+                    <div className="flex justify-end gap-2 pt-2">
                         {exporting ? (
-                            <Button variant="destructive" size="sm" onClick={handleCancel}>
+                            <Button 
+                                variant="destructive" 
+                                size="sm" 
+                                onClick={handleCancel}
+                                className="bg-red-950 text-red-400 border border-red-900/50 hover:bg-red-900 hover:text-red-200"
+                            >
                                 <X className="size-3.5 mr-1" />
-                                Cancel Export
+                                Turn off Oven
+                            </Button>
+                        ) : progress === 100 ? (
+                            <Button 
+                                variant="outline" 
+                                size="sm" 
+                                onClick={onClose}
+                                className="border-green-900/50 text-green-400 hover:bg-green-950/30 hover:text-green-300"
+                            >
+                                <CheckCircle2 className="size-3.5 mr-1" />
+                                Close Bakery
                             </Button>
                         ) : (
                             <>
-                                <Button variant="ghost" size="sm" onClick={onClose}>
+                                <Button 
+                                    variant="ghost" 
+                                    size="sm" 
+                                    onClick={onClose}
+                                    className="text-stone-400 hover:text-stone-200"
+                                >
                                     Cancel
                                 </Button>
-                                <Button size="sm" onClick={handleExport} disabled={formats.size === 0}>
-                                    <Download className="size-3.5 mr-1" />
-                                    Export {mode === 'stems' ? 'Stems' : 'Mixdown'}
+                                <Button 
+                                    size="sm" 
+                                    onClick={handleExport} 
+                                    disabled={formats.size === 0}
+                                    className="bg-orange-600 hover:bg-orange-500 text-white shadow-[0_0_15px_rgba(234,88,12,0.3)] hover:shadow-[0_0_20px_rgba(249,115,22,0.5)] border-t border-orange-400/30 transition-all font-medium"
+                                >
+                                    <Flame className="size-3.5 mr-1.5 opacity-80" />
+                                    Start Baking
                                 </Button>
                             </>
                         )}

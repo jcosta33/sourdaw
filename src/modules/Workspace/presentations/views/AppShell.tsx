@@ -26,6 +26,7 @@ import { LevainPanel } from '#/modules/Levain/presentations/views/LevainPanel';
 import { ProofChamberPanel } from '#/modules/ProofChamber/presentations/views/ProofChamberPanel';
 import { GlutenPanel } from '#/modules/Gluten/presentations/views/GlutenPanel';
 import { BacteriaPanel } from '#/modules/Bacteria/presentations/views/BacteriaPanel';
+import { GrinderPanel } from '#/modules/Grinder/presentations/views/GrinderPanel';
 
 import { ProofPanel } from '#/modules/Proof/presentations/views/ProofPanel';
 import { ScoringPanel } from '#/modules/Scoring/presentations/views/ScoringPanel';
@@ -85,6 +86,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         levainHeight,
         glutenHeight,
         bacteriaHeight,
+        grinderHeight,
         proofChamberHeight,
         proofHeight,
         scoringHeight,
@@ -107,6 +109,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const [proofChamberOpen, setProofChamberOpen] = useState(false);
     const [glutenOpen, setGlutenOpen] = useState(false);
     const [bacteriaOpen, setBacteriaOpen] = useState(false);
+    const [grinderOpen, setGrinderOpen] = useState(false);
     const [scoringOpen, setScoringOpen] = useState(false);
     const [proofOpen, setProofOpen] = useState(false);
     const [yeastOpen, setYeastOpen] = useState(false);
@@ -155,6 +158,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         setProofChamberOpen(false);
         setGlutenOpen(false);
         setBacteriaOpen(false);
+        setGrinderOpen(false);
         setScoringOpen(false);
         setProofOpen(false);
         setYeastOpen(false);
@@ -220,6 +224,16 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         return () => document.removeEventListener(APP_EVENTS.SHOW_BACTERIA_TAB, handler);
     }, []);
 
+    // Listen for Grinder panel open
+    useEffect(() => {
+        const handler = (): void => {
+            closeAllDevicePanels();
+            setGrinderOpen(true);
+        };
+        document.addEventListener(APP_EVENTS.SHOW_GRINDER_TAB, handler);
+        return () => document.removeEventListener(APP_EVENTS.SHOW_GRINDER_TAB, handler);
+    }, []);
+
     // Listen for Proof mastering suite panel open
     useEffect(() => {
         const handler = (): void => {
@@ -263,6 +277,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const setLevainHeight = (fn: (prev: number) => number) => updateWorkspaceState({ levainHeight: fn(levainHeight) });
     const setGlutenHeight = (fn: (prev: number) => number) => updateWorkspaceState({ glutenHeight: fn(glutenHeight) });
     const setBacteriaHeight = (fn: (prev: number) => number) => updateWorkspaceState({ bacteriaHeight: fn(bacteriaHeight) });
+    const setGrinderHeight = (fn: (prev: number) => number) => updateWorkspaceState({ grinderHeight: fn(grinderHeight) });
     const setProofChamberHeight = (fn: (prev: number) => number) => updateWorkspaceState({ proofChamberHeight: fn(proofChamberHeight) });
     const setProofHeight = (fn: (prev: number) => number) => updateWorkspaceState({ proofHeight: fn(proofHeight) });
     const setScoringHeight = (fn: (prev: number) => number) => updateWorkspaceState({ scoringHeight: fn(scoringHeight) });
@@ -417,6 +432,19 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                             onClose={() => setBacteriaOpen(false)}
                         >
                             <BacteriaPanel />
+                        </InstrumentBottomPanel>
+                    ) : null}
+
+                    {grinderOpen ? (
+                        <InstrumentBottomPanel
+                            label="Grinder"
+                            labelColor="text-amber-500"
+                            borderColor="border-amber-600/20"
+                            height={grinderHeight}
+                            onResize={setGrinderHeight}
+                            onClose={() => setGrinderOpen(false)}
+                        >
+                            <GrinderPanel />
                         </InstrumentBottomPanel>
                     ) : null}
 

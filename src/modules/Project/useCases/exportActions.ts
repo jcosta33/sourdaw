@@ -6,9 +6,9 @@ import {
     renderOffline as _renderOffline,
     exportStems as _exportStems,
     cancelExport as _cancelExport,
-    downloadWav as _downloadWav,
-    downloadMp3 as _downloadMp3,
-    downloadFlac as _downloadFlac,
+    audioBufferToWav,
+    audioBufferToMp3,
+    audioBufferToFlac,
     type OfflineRenderOptions,
 } from '#/modules/AudioEngine/useCases/offlineRender';
 
@@ -22,22 +22,19 @@ export const exportStems = (opts: OfflineRenderOptions): Promise<Map<string, Aud
 
 export const cancelExport = (): void => _cancelExport();
 
-export const downloadWav = (
+export const encodeWav = (
     buffer: AudioBuffer,
-    filename: string,
     bitDepth?: 16 | 24 | 32,
     onProgress?: (frac: number) => void
-): Promise<void> => _downloadWav(buffer, filename, bitDepth, onProgress);
+): Promise<ArrayBuffer> => audioBufferToWav(buffer, bitDepth, onProgress);
 
-export const downloadMp3 = (
+export const encodeMp3 = (
     buffer: AudioBuffer,
-    filename: string,
     bitRate?: number,
     onProgress?: (frac: number) => void
-): Promise<void> => _downloadMp3(buffer, filename, bitRate, onProgress);
+): Promise<Uint8Array> => audioBufferToMp3(buffer, bitRate, onProgress);
 
-export const downloadFlac = (
+export const encodeFlac = (
     buffer: AudioBuffer,
-    filename: string,
     onProgress?: (frac: number) => void
-): Promise<void> => _downloadFlac(buffer, filename, onProgress);
+): Promise<Uint8Array> => audioBufferToFlac(buffer, onProgress);

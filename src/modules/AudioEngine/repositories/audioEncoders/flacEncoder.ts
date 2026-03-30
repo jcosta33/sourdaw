@@ -213,43 +213,9 @@ async function encodeFlac(buffer: AudioBuffer, onProgress?: (frac: number) => vo
     return out.subarray(0, pos);
 }
 
-async function triggerBlobDownload(blob: Blob, filename: string): Promise<void> {
-    if ('showSaveFilePicker' in window) {
-        try {
-            const handle = await (
-                window as unknown as { showSaveFilePicker: (opts: unknown) => Promise<FileSystemFileHandle> }
-            ).showSaveFilePicker({
-                suggestedName: filename,
-                types: [{ description: 'FLAC file', accept: { 'audio/flac': ['.flac'] } }],
-            });
-            const writable = await handle.createWritable();
-            await writable.write(blob);
-            await writable.close();
-            return;
-        } catch {
-            return;
-        }
-    }
-
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    }, 1000);
-}
-
-export async function downloadFlac(
+export async function audioBufferToFlac(
     buffer: AudioBuffer,
-    filename = 'export.flac',
     onProgress?: (frac: number) => void
-): Promise<void> {
-    const flacData = await encodeFlac(buffer, onProgress);
-    const blob = new Blob([flacData.buffer as ArrayBuffer], { type: 'audio/flac' });
-    await triggerBlobDownload(blob, filename);
+): Promise<Uint8Array> {
+    return await encodeFlac(buffer, onProgress);
 }

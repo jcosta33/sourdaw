@@ -1,49 +1,3 @@
-async function triggerBlobDownload(blob: Blob, filename: string): Promise<void> {
-    if ('showSaveFilePicker' in window) {
-        try {
-            const ext = filename.includes('.') ? filename.slice(filename.lastIndexOf('.')) : '';
-            const mimeMap: Record<string, string> = {
-                '.wav': 'audio/wav',
-                '.mp3': 'audio/mpeg',
-                '.flac': 'audio/flac',
-                '.sourdaw': 'application/json',
-                '.json': 'application/json',
-            };
-            const handle = await (
-                window as unknown as { showSaveFilePicker: (opts: unknown) => Promise<FileSystemFileHandle> }
-            ).showSaveFilePicker({
-                suggestedName: filename,
-                types: ext
-                    ? [
-                          {
-                              description: `${ext.slice(1).toUpperCase()} file`,
-                              accept: { [mimeMap[ext] ?? 'application/octet-stream']: [ext] },
-                          },
-                      ]
-                    : undefined,
-            });
-            const writable = await handle.createWritable();
-            await writable.write(blob);
-            await writable.close();
-            return;
-        } catch {
-            return;
-        }
-    }
-
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    }, 1000);
-}
-
 export async function audioBufferToWav(
     buffer: AudioBuffer,
     bitDepth: 16 | 24 | 32 = 16,
@@ -127,13 +81,3 @@ export async function audioBufferToWav(
     return arrayBuffer;
 }
 
-export async function downloadWav(
-    buffer: AudioBuffer,
-    filename = 'export.wav',
-    bitDepth: 16 | 24 | 32 = 16,
-    onProgress?: (frac: number) => void
-): Promise<void> {
-    const wav = await audioBufferToWav(buffer, bitDepth, onProgress);
-    const blob = new Blob([wav], { type: 'audio/wav' });
-    await triggerBlobDownload(blob, filename);
-}

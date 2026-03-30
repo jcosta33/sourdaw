@@ -2,7 +2,7 @@ import { type CSSProperties, type ReactElement, useState, useRef, useEffect, use
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { Input } from '#/components/ui/input';
 import { Button } from '#/components/ui/button';
-import { Search, Music, FileAudio, Waves, Upload, X, Zap } from 'lucide-react';
+import { Search, Music, FileAudio, Waves, Upload, X, Zap, FolderSync } from 'lucide-react';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { toggleSidebar } from '../../useCases/togglePanel/panelToggles';
 import { useTracks } from '../hooks/useTracks';
@@ -14,6 +14,7 @@ import { InstrumentsTab } from './Sidebar/InstrumentsTab';
 import { EffectsTab } from './Sidebar/EffectsTab';
 import { OnlineSampleBrowser } from './Sidebar/OnlineSampleBrowser';
 import { MacrosPanel } from './Sidebar/MacrosPanel';
+import { LibraryBrowser } from '#/modules/SampleLibrary/presentations/views/LibraryBrowser';
 
 export type SidebarRoute = {
     id: string;
@@ -136,7 +137,7 @@ const TabScrollBar = ({
 
 export const Sidebar = ({ style }: SidebarProps): ReactElement => {
     const [activeTab, setActiveTab] = useState<'library' | 'instruments' | 'effects' | 'macros'>('instruments');
-    const [libSubTab, setLibSubTab] = useState<'mine' | 'find'>('find');
+    const [libSubTab, setLibSubTab] = useState<'mine' | 'find' | 'folders'>('folders');
     const [navStacks, setNavStacks] = useState<Record<string, SidebarRoute[]>>({
         library: [{ id: 'library', title: 'Library' }],
         instruments: [{ id: 'instruments', title: 'Instruments' }],
@@ -306,15 +307,15 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                 >
                     {currentRoute.id === 'library' ? (
                         <>
-                            {/* Sub-tabs: My Samples | Find Samples */}
+                            {/* Sub-tabs: Folders | My Samples | Find Samples */}
                             <div className="flex gap-1 px-2 pb-2">
                                 <Button
-                                    variant={libSubTab === 'find' ? 'secondary' : 'ghost'}
+                                    variant={libSubTab === 'folders' ? 'secondary' : 'ghost'}
                                     size="xs"
-                                    onClick={() => setLibSubTab('find')}
+                                    onClick={() => setLibSubTab('folders')}
                                     className="flex-1"
                                 >
-                                    <Search className="size-3 mr-1" /> Find Samples
+                                    <FolderSync className="size-3 mr-1" /> Folders
                                 </Button>
                                 <Button
                                     variant={libSubTab === 'mine' ? 'secondary' : 'ghost'}
@@ -322,11 +323,26 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                                     onClick={() => setLibSubTab('mine')}
                                     className="flex-1"
                                 >
-                                    <FileAudio className="size-3 mr-1" /> My Samples
+                                    <FileAudio className="size-3 mr-1" /> Imported
+                                </Button>
+                                <Button
+                                    variant={libSubTab === 'find' ? 'secondary' : 'ghost'}
+                                    size="xs"
+                                    onClick={() => setLibSubTab('find')}
+                                    className="flex-1"
+                                >
+                                    <Search className="size-3 mr-1" /> Find
                                 </Button>
                             </div>
 
-                            {libSubTab === 'mine' ? (
+                            {libSubTab === 'folders' ? (
+                                <div className="px-1 flex-1 min-h-0">
+                                    <LibraryBrowser
+                                        preview={preview}
+                                        selectedTrackId={selectedTrackId}
+                                    />
+                                </div>
+                            ) : libSubTab === 'mine' ? (
                                 <div className="px-2">
                                     <div className="flex items-center justify-between pb-1">
                                         <span className="text-[9px] text-muted-foreground">

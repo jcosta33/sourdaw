@@ -55,56 +55,13 @@ async function encodePcmToMp3(
     return result;
 }
 
-async function triggerBlobDownload(blob: Blob, filename: string): Promise<void> {
-    if ('showSaveFilePicker' in window) {
-        try {
-            const ext = filename.includes('.') ? filename.slice(filename.lastIndexOf('.')) : '';
-            const mimeMap: Record<string, string> = { '.mp3': 'audio/mpeg' };
-            const handle = await (
-                window as unknown as { showSaveFilePicker: (opts: unknown) => Promise<FileSystemFileHandle> }
-            ).showSaveFilePicker({
-                suggestedName: filename,
-                types: ext
-                    ? [
-                          {
-                              description: `${ext.slice(1).toUpperCase()} file`,
-                              accept: { [mimeMap[ext] ?? 'application/octet-stream']: [ext] },
-                          },
-                      ]
-                    : undefined,
-            });
-            const writable = await handle.createWritable();
-            await writable.write(blob);
-            await writable.close();
-            return;
-        } catch {
-            return;
-        }
-    }
-
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    }, 1000);
-}
-
-export async function downloadMp3(
+export async function audioBufferToMp3(
     buffer: AudioBuffer,
-    filename = 'export.mp3',
     bitRate = 128,
     onProgress?: (frac: number) => void
-): Promise<void> {
+): Promise<Uint8Array> {
     const { Mp3Encoder } = await import('@breezystack/lamejs');
     const numChannels = Math.min(buffer.numberOfChannels, 2);
     const encoder = new Mp3Encoder(numChannels, buffer.sampleRate, bitRate);
-    const mp3Data = await encodePcmToMp3(buffer, encoder, onProgress);
-    const blob = new Blob([mp3Data.buffer as ArrayBuffer], { type: 'audio/mpeg' });
-    await triggerBlobDownload(blob, filename);
+    return await encodePcmToMp3(buffer, encoder, onProgress);
 }

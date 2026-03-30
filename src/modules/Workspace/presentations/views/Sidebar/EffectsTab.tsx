@@ -1,5 +1,5 @@
 import { type ReactElement } from 'react';
-import { Shield, Sparkles, GitBranch, AudioLines, Mic, Waves as WavesIcon, Gauge, Bug } from 'lucide-react';
+import { Shield, Sparkles, GitBranch, AudioLines, Mic, Waves as WavesIcon, Gauge, Bug, Guitar } from 'lucide-react';
 import {
     InstrumentCard,
     PROOF_THEME,
@@ -9,6 +9,7 @@ import {
     PROOF_CHAMBER_THEME,
     GLUTEN_THEME,
     BACTERIA_THEME,
+    GRINDER_THEME,
 } from '../../components/Sidebar/InstrumentCard';
 import { APP_EVENTS } from '#/helpers/Event/appEvents';
 import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
@@ -64,7 +65,7 @@ export const EffectsTab = ({
     preview,
 }: EffectsTabProps): ReactElement => {
     // Filter out instruments and premium plugins (which have their own hero cards at the top)
-    const premiumIds = new Set(['native-proof-chamber', 'native-scoring', 'gluten', 'bacteria', 'proof', 'knead', 'yeast']);
+    const premiumIds = new Set(['native-proof-chamber', 'native-scoring', 'gluten', 'bacteria', 'grinder', 'proof', 'knead', 'yeast']);
     const effects = plugins.filter((p) => p.category !== 'instrument' && !premiumIds.has(p.id));
     const query = searchQuery.toLowerCase().trim();
 
@@ -529,6 +530,19 @@ export const EffectsTab = ({
                         }
                     }}
                     theme={BACTERIA_THEME}
+                />
+                <InstrumentCard
+                    icon={Guitar}
+                    label="Grinder"
+                    badge="Amp Sim"
+                    description="Tube amp · Cabinet · Pedalboard · Neural capture"
+                    onClick={() => {
+                        if (selectedTrackId) {
+                            addDevice(selectedTrackId, 'grinder');
+                            document.dispatchEvent(new Event(APP_EVENTS.SHOW_GRINDER_TAB));
+                        }
+                    }}
+                    theme={GRINDER_THEME}
                 />
             </div>
 

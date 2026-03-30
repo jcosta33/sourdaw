@@ -61,7 +61,7 @@ export function setGrinderParamWithAudio<K extends keyof GrinderPatch>(key: K, v
     if (!pendingUpdates.has(key)) {
         pendingUpdates.set(
             key,
-            requestAnimationFrame(() => flushParam(key)),
+            requestAnimationFrame(() => flushParam(key))
         );
     }
 }

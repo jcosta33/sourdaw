@@ -9,7 +9,7 @@ import { resolveClipsWithComping } from '#/modules/Arrangement/useCases/resolveC
 import { beatToSeconds, resolveDrumKit, scheduleTrackAutomation } from '../repositories/offlineScheduler';
 
 // Re-export encoders for consumers
-export { audioBufferToWav, downloadWav, downloadMp3, downloadFlac } from '../repositories/audioEncoders';
+export { audioBufferToWav, audioBufferToMp3, audioBufferToFlac } from '../repositories/audioEncoders';
 
 // ── Cancel token ─────────────────────────────────────────────────────
 let cancelFlag = false;
