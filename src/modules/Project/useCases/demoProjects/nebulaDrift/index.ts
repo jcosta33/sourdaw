@@ -995,13 +995,13 @@ export async function demo5_NebulaDrift(): Promise<void> {
         Object.assign(mkLane(tDarkMist.id, 'gain', 'Mist level', 0, 1), {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
-                { beat: 10, value: 0.08, curve: 'smooth', tension: 0.35 },
-                { beat: 44, value: 0.38, curve: 'smooth', tension: 0.32 },
-                { beat: S.build1, value: 0.48, curve: 'linear', tension: 0 },
-                { beat: S.peak, value: 0.4, curve: 'smooth', tension: 0.28 },
-                { beat: S.breakdown, value: 0.46, curve: 'smooth', tension: 0.3 },
-                { beat: S.final, value: 0.32, curve: 'linear', tension: 0 },
-                { beat: TB, value: 0.28, curve: 'linear', tension: 0 },
+                { beat: 10, value: 0.04, curve: 'smooth', tension: 0.35 },
+                { beat: 44, value: 0.19, curve: 'smooth', tension: 0.32 },
+                { beat: S.build1, value: 0.24, curve: 'linear', tension: 0 },
+                { beat: S.peak, value: 0.2, curve: 'smooth', tension: 0.28 },
+                { beat: S.breakdown, value: 0.23, curve: 'smooth', tension: 0.3 },
+                { beat: S.final, value: 0.16, curve: 'linear', tension: 0 },
+                { beat: TB, value: 0.14, curve: 'linear', tension: 0 },
             ],
         }),
         Object.assign(mkLane(tGrainHaze.id, 'gain', 'Grain level', 0, 1), {
@@ -1159,11 +1159,11 @@ export async function demo5_NebulaDrift(): Promise<void> {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
                 { beat: S.build1 + 6, value: 0, curve: 'linear', tension: 0 },
-                { beat: S.build1 + 28, value: 0.38, curve: 'smooth', tension: 0.38 },
-                { beat: S.peak, value: 0.58, curve: 'linear', tension: 0 },
-                { beat: S.breakdown, value: 0.16, curve: 'smooth', tension: 0.32 },
-                { beat: S.final, value: 0.5, curve: 'smooth', tension: 0.3 },
-                { beat: TB, value: 0.28, curve: 'linear', tension: 0 },
+                { beat: S.build1 + 28, value: 0.19, curve: 'smooth', tension: 0.38 },
+                { beat: S.peak, value: 0.29, curve: 'linear', tension: 0 },
+                { beat: S.breakdown, value: 0.08, curve: 'smooth', tension: 0.32 },
+                { beat: S.final, value: 0.25, curve: 'smooth', tension: 0.3 },
+                { beat: TB, value: 0.14, curve: 'linear', tension: 0 },
             ],
         }),
         Object.assign(mkLane(toasterFolder.id, 'gain', 'Toaster bus', 0, 1), {
