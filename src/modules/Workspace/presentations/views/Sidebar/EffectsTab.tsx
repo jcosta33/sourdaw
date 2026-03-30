@@ -516,8 +516,11 @@ export const EffectsTab = ({
                 />
             </div>
 
-            {/* Divider */}
-            <div className="h-px bg-border/20 my-1" />
+            {/* ── The Pantry ── */}
+            <div className="flex items-center gap-1.5 px-1 mb-1 mt-1">
+                <span className="text-[9px] font-semibold text-muted-foreground/50 uppercase tracking-widest">The Pantry</span>
+                <div className="flex-1 h-px bg-border/15" />
+            </div>
 
             <NavCard
                 icon={Waves}
