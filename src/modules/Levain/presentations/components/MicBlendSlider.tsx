@@ -3,22 +3,27 @@
  *
  * Compact: single knob for Close vs Room blend.
  * Full: per-mic Fader strips with volume, pan, enable toggle.
+ *
+ * NOTE: `onSendMicParam` is passed from the parent view so this component
+ * does NOT import from useCases/ directly (DDD: components/ is private).
  */
 import { type ReactElement } from 'react';
 import { Fader } from '#/components/daw/Fader';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { type MicPositionState } from '../../models/LevainPatch';
 import { updateMicPosition } from '../../stores/levainStore';
-import { sendMicParamToEngine } from '../../useCases/levainParamBridge';
 
 type MicBlendSliderProps = {
     micPositions: MicPositionState[];
-    showFull: boolean;
+    showFull?: boolean;
+    /** Forward mic param changes to the audio engine. Provided by the parent view. */
+    onSendMicParam: (micIndex: number, param: string, value: number) => void;
 };
 
 export const MicBlendSlider = ({
     micPositions,
     showFull,
+    onSendMicParam,
 }: MicBlendSliderProps): ReactElement => {
     if (showFull) {
         // Full mic mixer with faders
@@ -40,7 +45,7 @@ export const MicBlendSlider = ({
                                 onClick={() => {
                                     const enabled = !mic.enabled;
                                     updateMicPosition(i, { enabled });
-                                    sendMicParamToEngine(i, 'enabled', enabled ? 1.0 : 0.0);
+                                    onSendMicParam(i, 'enabled', enabled ? 1.0 : 0.0);
                                 }}
                             >
                                 {mic.enabled ? 'ON' : 'OFF'}
@@ -50,7 +55,7 @@ export const MicBlendSlider = ({
                                 onChange={(db) => {
                                     const volume = Math.max(0, Math.min(1, (db + 70) / 76));
                                     updateMicPosition(i, { volume });
-                                    sendMicParamToEngine(i, 'volume', volume);
+                                    onSendMicParam(i, 'volume', volume);
                                 }}
                                 min={-70}
                                 max={6}
@@ -61,7 +66,7 @@ export const MicBlendSlider = ({
                                 value={mic.pan}
                                 onChange={(v) => {
                                     updateMicPosition(i, { pan: v });
-                                    sendMicParamToEngine(i, 'pan', v);
+                                    onSendMicParam(i, 'pan', v);
                                 }}
                                 min={-1}
                                 max={1}
@@ -94,14 +99,14 @@ export const MicBlendSlider = ({
                 <RotaryKnob
                     value={blend}
                     onChange={(v) => {
-                        const closeVol = 1.0 - v * 0.5;
-                        const roomVol = v;
-                        updateMicPosition(0, { volume: closeVol });
-                        sendMicParamToEngine(0, 'volume', closeVol);
+                        const newCloseVol = 1.0 - v * 0.5;
+                        const newRoomVol = v;
+                        updateMicPosition(0, { volume: newCloseVol });
+                        onSendMicParam(0, 'volume', newCloseVol);
                         if (micPositions.length > 2) {
-                            updateMicPosition(2, { volume: roomVol, enabled: roomVol > 0.05 });
-                            sendMicParamToEngine(2, 'volume', roomVol);
-                            sendMicParamToEngine(2, 'enabled', roomVol > 0.05 ? 1.0 : 0.0);
+                            updateMicPosition(2, { volume: newRoomVol, enabled: newRoomVol > 0.05 });
+                            onSendMicParam(2, 'volume', newRoomVol);
+                            onSendMicParam(2, 'enabled', newRoomVol > 0.05 ? 1.0 : 0.0);
                         }
                     }}
                     min={0}

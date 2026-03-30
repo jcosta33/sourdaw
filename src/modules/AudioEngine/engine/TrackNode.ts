@@ -486,11 +486,15 @@ export class TrackNode {
                             };
                             this.strip.deviceNodes[idx] = levainDn;
                             this.rebuildChain();
-                            // Register with param bridge so UI knobs reach the engine
-                            registerLevainDevice({
-                                setParam: result.setParam,
-                                handleCc: result.handleCc,
-                            });
+                            // Register with param bridge so UI knobs reach the engine.
+                            // Pass the port so the bridge can load samples per instrument.
+                            registerLevainDevice(
+                                {
+                                    setParam: result.setParam,
+                                    handleCc: result.handleCc,
+                                },
+                                result.workletNode.port,
+                            );
                             setEngineReady(true);
                         }
                     })

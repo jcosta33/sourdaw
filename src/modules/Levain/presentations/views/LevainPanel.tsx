@@ -13,7 +13,7 @@ import { type ReactElement, useState, useSyncExternalStore } from 'react';
 import { Cpu, ChevronDown } from 'lucide-react';
 
 import { levainStore } from '../../stores/levainStore';
-import { setMacroWithAudio } from '../../useCases/levainParamBridge';
+import { setMacroWithAudio, sendMicParamToEngine } from '../../useCases/levainParamBridge';
 import { loadInstrument } from '../../useCases/loadPreset';
 import { type InstrumentId } from '../../models/LevainPatch';
 
@@ -27,24 +27,31 @@ import { MicBlendSlider } from '../components/MicBlendSlider';
 
 // ── Instruments ─────────────────────────────────────────────────────
 
-// Only show instruments that have sample content available.
-// Currently only solo violin is sampled (VSCO-2-CE).
-// Other instruments will be added as sample content is acquired.
-const INSTRUMENTS: { id: InstrumentId; label: string; hasSamples: boolean }[] = [
-    { id: 'violin-1', label: 'Solo Violin', hasSamples: true },
-    { id: 'violin-2', label: 'Violins II', hasSamples: false },
-    { id: 'viola', label: 'Violas', hasSamples: false },
-    { id: 'cello', label: 'Cellos', hasSamples: false },
-    { id: 'double-bass', label: 'Basses', hasSamples: false },
-    { id: 'trumpet', label: 'Trumpets', hasSamples: false },
-    { id: 'horn', label: 'Horns', hasSamples: false },
-    { id: 'trombone', label: 'Trombones', hasSamples: false },
-    { id: 'flute', label: 'Flutes', hasSamples: false },
-    { id: 'oboe', label: 'Oboes', hasSamples: false },
-    { id: 'clarinet', label: 'Clarinets', hasSamples: false },
-    { id: 'bassoon', label: 'Bassoons', hasSamples: false },
-    { id: 'timpani', label: 'Timpani', hasSamples: false },
-    { id: 'harp', label: 'Harp', hasSamples: false },
+// All instruments with VSCO-2-CE sample content (CC0 — public domain).
+// Harp remains disabled until a suitable CC0 harp library is sourced.
+const INSTRUMENTS: { id: InstrumentId; label: string; hasSamples: boolean; family: string }[] = [
+    // Strings
+    { id: 'violin-1', label: 'Solo Violin', hasSamples: true, family: 'Strings' },
+    { id: 'violin-2', label: 'Violins II', hasSamples: true, family: 'Strings' },
+    { id: 'viola', label: 'Violas', hasSamples: true, family: 'Strings' },
+    { id: 'cello', label: 'Cellos', hasSamples: true, family: 'Strings' },
+    { id: 'double-bass', label: 'Basses', hasSamples: true, family: 'Strings' },
+    // Brass
+    { id: 'trumpet', label: 'Trumpets', hasSamples: true, family: 'Brass' },
+    { id: 'horn', label: 'Horns', hasSamples: true, family: 'Brass' },
+    { id: 'trombone', label: 'Trombones', hasSamples: true, family: 'Brass' },
+    { id: 'tuba', label: 'Tuba', hasSamples: true, family: 'Brass' },
+    // Woodwinds
+    { id: 'flute', label: 'Flutes', hasSamples: true, family: 'Woodwinds' },
+    { id: 'oboe', label: 'Oboes', hasSamples: true, family: 'Woodwinds' },
+    { id: 'clarinet', label: 'Clarinets', hasSamples: true, family: 'Woodwinds' },
+    { id: 'bassoon', label: 'Bassoons', hasSamples: true, family: 'Woodwinds' },
+    // Percussion & Keys
+    { id: 'timpani', label: 'Timpani', hasSamples: true, family: 'Percussion' },
+    { id: 'glockenspiel', label: 'Glockenspiel', hasSamples: true, family: 'Percussion' },
+    { id: 'marimba', label: 'Marimba', hasSamples: true, family: 'Percussion' },
+    // Not yet sourced
+    { id: 'harp', label: 'Harp', hasSamples: false, family: 'Strings' },
 ];
 
 // ═════════════════════════════════════════════════════════════════════
@@ -84,21 +91,32 @@ export const LevainPanel = (): ReactElement => {
                         {instOpen ? (
                             <>
                                 <div className="fixed inset-0 z-40" onClick={() => setInstOpen(false)} />
-                                <div className="absolute top-full left-0 mt-1 z-50 bg-surface-raised border border-border/40 rounded-md shadow-xl py-1 min-w-[140px] max-h-[280px] overflow-y-auto">
-                                    {INSTRUMENTS.filter((i) => i.hasSamples).map((inst) => (
-                                        <button
-                                            key={inst.id}
-                                            type="button"
-                                            className={`w-full text-left px-3 py-1 text-[10px] transition-colors ${
-                                                patch.instrumentId === inst.id
-                                                    ? 'text-[var(--color-accent-amber)] bg-[var(--color-accent-amber)]/10'
-                                                    : 'text-foreground/80 hover:bg-surface-raised hover:text-foreground'
-                                            }`}
-                                            onClick={() => { loadInstrument(inst.id); setInstOpen(false); }}
-                                        >
-                                            {inst.label}
-                                        </button>
-                                    ))}
+                                <div className="absolute top-full left-0 mt-1 z-50 bg-surface-raised border border-border/40 rounded-md shadow-xl py-1 min-w-[160px] max-h-[320px] overflow-y-auto">
+                                    {(['Strings', 'Brass', 'Woodwinds', 'Percussion'] as const).map((family) => {
+                                        const familyInstruments = INSTRUMENTS.filter((i) => i.family === family && i.hasSamples);
+                                        if (familyInstruments.length === 0) return null;
+                                        return (
+                                            <div key={family}>
+                                                <div className="px-3 pt-2 pb-0.5 text-[8px] font-bold uppercase tracking-widest text-muted-foreground/50">
+                                                    {family}
+                                                </div>
+                                                {familyInstruments.map((inst) => (
+                                                    <button
+                                                        key={inst.id}
+                                                        type="button"
+                                                        className={`w-full text-left px-4 py-1 text-[10px] transition-colors ${
+                                                            patch.instrumentId === inst.id
+                                                                ? 'text-[var(--color-accent-amber)] bg-[var(--color-accent-amber)]/10'
+                                                                : 'text-foreground/80 hover:bg-surface-raised hover:text-foreground'
+                                                        }`}
+                                                        onClick={() => { loadInstrument(inst.id); setInstOpen(false); }}
+                                                    >
+                                                        {inst.label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </>
                         ) : null}
@@ -165,6 +183,7 @@ export const LevainPanel = (): ReactElement => {
                             <MicBlendSlider
                                 micPositions={patch.micPositions}
                                 showFull={patch.micPositions.length > 1}
+                                onSendMicParam={sendMicParamToEngine}
                             />
                         </div>
                     </div>

@@ -1,23 +1,24 @@
 /**
- * Preset loading use case — loads a patch into the store and forwards
- * all parameters to the audio engine via the param bridge.
+ * Preset loading use case — loads a patch into the store, forwards
+ * all parameters to the audio engine, and triggers sample loading.
  */
 
 import { type LevainPatch, createDefaultPatch, type InstrumentId } from '../models/LevainPatch';
 import { levainStore } from '../stores/levainStore';
-
-import { setLevainParamWithAudio } from './levainParamBridge';
+import { setLevainParamWithAudio, loadSamplesForInstrument } from './levainParamBridge';
 
 /**
- * Load an instrument with default settings.
+ * Load an instrument with default settings and trigger sample loading.
  */
 export function loadInstrument(instrumentId: InstrumentId): void {
     const patch = createDefaultPatch(instrumentId);
     applyPatch(patch);
+    // Trigger async sample load via the bridge (it holds the worklet port).
+    loadSamplesForInstrument(instrumentId);
 }
 
 /**
- * Apply a complete patch to the store and forward key params to the engine.
+ * Apply a complete patch to the store and forward all params to the engine.
  */
 function applyPatch(patch: LevainPatch): void {
     const state = levainStore.value;
@@ -34,6 +35,9 @@ function applyPatch(patch: LevainPatch): void {
             patch.currentArticulation,
     });
 
-    // Forward key numeric parameters to the audio engine via the param bridge.
+    // Forward all patch parameters to the audio engine.
     setLevainParamWithAudio('masterGain', patch.masterGain);
+    setLevainParamWithAudio('legato', patch.legato);
+    setLevainParamWithAudio('humanize', patch.humanize);
+    setLevainParamWithAudio('expression', patch.expression);
 }

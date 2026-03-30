@@ -8,6 +8,7 @@
 
 import { type LevainPatch } from '../models/LevainPatch';
 import { levainStore, setLevainParam, setMacro } from '../stores/levainStore';
+import { autoLoadLevainSamples } from './autoLoadSamples';
 
 // ---------------------------------------------------------------------------
 // Device reference cache
@@ -19,19 +20,37 @@ type LevainDevice = {
 };
 
 let activeDevice: LevainDevice | null = null;
+let activePort: MessagePort | null = null;
 
-export function registerLevainDevice(device: LevainDevice): void {
+export function registerLevainDevice(device: LevainDevice, port?: MessagePort): void {
     activeDevice = device;
+    if (port) {
+        activePort = port;
+    }
 }
 
 export function unregisterLevainDevice(): void {
     activeDevice = null;
+    activePort = null;
     // Cancel any pending rAF callbacks.
     for (const rafId of pendingUpdates.values()) {
         cancelAnimationFrame(rafId);
     }
     pendingUpdates.clear();
     latestValues.clear();
+}
+
+/**
+ * Load samples for a specific instrument into the active worklet node.
+ * Called when the user switches instruments.
+ */
+export function loadSamplesForInstrument(instrumentId: string): void {
+    if (!activePort) {
+        return;
+    }
+    autoLoadLevainSamples(activePort, instrumentId).catch((err) => {
+        console.warn('[LevainBridge] Sample load failed:', err);
+    });
 }
 
 function getDevice(): LevainDevice | null {

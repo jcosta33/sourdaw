@@ -16,10 +16,13 @@ import { CCGenerator } from './processors/CCGenerator';
 import { GrooveModule } from './processors/GrooveModule';
 import { EuclideanGenerator } from './processors/EuclideanGenerator';
 import { MarkovChain } from './processors/MarkovChain';
+import { MutationEngine } from './processors/MutationEngine';
+import { ChordMemory } from './processors/ChordMemory';
 
 export type ProcessorType =
     | 'arpeggiator'
     | 'chord'
+    | 'chordMemory'
     | 'scale'
     | 'harmonizer'
     | 'repeater'
@@ -30,7 +33,8 @@ export type ProcessorType =
     | 'groove'
     | 'ccGenerator'
     | 'euclidean'
-    | 'markov';
+    | 'markov'
+    | 'mutation';
 
 export const PROCESSOR_TYPES: Array<{ type: ProcessorType; name: string; description: string; level: number }> = [
     // Phase 2 — Playable Core
@@ -48,14 +52,19 @@ export const PROCESSOR_TYPES: Array<{ type: ProcessorType; name: string; descrip
     { type: 'filter', name: 'Note Filter', description: 'Filter notes by range, velocity, or pitch class', level: 3 },
     { type: 'ccGenerator', name: 'CC Generator', description: 'Generate CC messages from LFO shapes', level: 4 },
     // Phase 6 — Lab
+    { type: 'chordMemory', name: 'Chord Memory', description: 'One-finger chord recall (Cthulhu-style)', level: 2 },
+    { type: 'ccGenerator', name: 'CC Generator', description: 'Generate CC messages from LFO shapes', level: 4 },
+    // Phase 6 — Lab
     { type: 'euclidean', name: 'Euclidean', description: 'Distribute hits evenly across steps', level: 5 },
     { type: 'markov', name: 'Markov Chain', description: 'Probabilistic note selection with memory', level: 5 },
+    { type: 'mutation', name: 'Mutation', description: 'Slowly drift parameters for evolving patterns', level: 5 },
 ];
 
 export function createProcessor(type: ProcessorType, id?: string): MidiProcessor {
     switch (type) {
         case 'arpeggiator': return new Arpeggiator(id);
         case 'chord': return new ChordGenerator(id);
+        case 'chordMemory': return new ChordMemory(id);
         case 'scale': return new ScaleQuantizer(id);
         case 'harmonizer': return new Harmonizer(id);
         case 'repeater': return new NoteRepeater(id);
@@ -67,5 +76,6 @@ export function createProcessor(type: ProcessorType, id?: string): MidiProcessor
         case 'ccGenerator': return new CCGenerator(id);
         case 'euclidean': return new EuclideanGenerator(id);
         case 'markov': return new MarkovChain(id);
+        case 'mutation': return new MutationEngine(id);
     }
 }
