@@ -1,0 +1,150 @@
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::Mutex;
+
+use serde::{Deserialize, Serialize};
+use tauri::State;
+
+use daw_collab::discovery::{LanDiscovery, NearbySession};
+use daw_collab::document_store::DocumentStore;
+
+/// Managed state for the CRDT collaboration layer.
+pub struct CollabState {
+    pub store: Mutex<Option<DocumentStore>>,
+    pub discovery: Mutex<Option<LanDiscovery>>,
+}
+
+impl Default for CollabState {
+    fn default() -> Self {
+        Self {
+            store: Mutex::new(None),
+            discovery: Mutex::new(None),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct MergeResultResponse {
+    pub merged_doc_ids: Vec<String>,
+    pub new_doc_ids: Vec<String>,
+}
+
+// -- CRDT document commands --
+
+#[tauri::command]
+pub fn collab_create_project(
+    state: State<'_, CollabState>,
+    name: String,
+    sample_rate: u32,
+) -> Result<bool, String> {
+    let store = DocumentStore::create_project(&name, sample_rate);
+    let mut guard = state.store.lock().map_err(|e| e.to_string())?;
+    *guard = Some(store);
+    Ok(true)
+}
+
+#[tauri::command]
+pub fn collab_save_bundle(
+    state: State<'_, CollabState>,
+    path: String,
+) -> Result<bool, String> {
+    let mut guard = state.store.lock().map_err(|e| e.to_string())?;
+    let store = guard.as_mut().ok_or("No CRDT project loaded")?;
+    let bundle = store.save_all();
+    daw_collab::save_sdaw_bundle(&bundle, &PathBuf::from(path))?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub fn collab_load_bundle(
+    state: State<'_, CollabState>,
+    path: String,
+) -> Result<HashMap<String, Vec<u8>>, String> {
+    let bundle = daw_collab::load_sdaw_bundle(&PathBuf::from(path))?;
+    let store = DocumentStore::load_all(bundle.clone())?;
+    let mut guard = state.store.lock().map_err(|e| e.to_string())?;
+    *guard = Some(store);
+    Ok(bundle)
+}
+
+#[tauri::command]
+pub fn collab_get_document_state(
+    state: State<'_, CollabState>,
+    doc_id: String,
+) -> Result<serde_json::Value, String> {
+    let guard = state.store.lock().map_err(|e| e.to_string())?;
+    let store = guard.as_ref().ok_or("No CRDT project loaded")?;
+    store.export_doc_json(&doc_id)
+}
+
+#[tauri::command]
+pub fn collab_merge_bundle(
+    state: State<'_, CollabState>,
+    path: String,
+) -> Result<MergeResultResponse, String> {
+    let bundle = daw_collab::load_sdaw_bundle(&PathBuf::from(path))?;
+    let mut guard = state.store.lock().map_err(|e| e.to_string())?;
+    let store = guard.as_mut().ok_or("No CRDT project loaded")?;
+    let result = store.merge_bundle(bundle)?;
+    Ok(MergeResultResponse {
+        merged_doc_ids: result.merged_doc_ids,
+        new_doc_ids: result.new_doc_ids,
+    })
+}
+
+#[tauri::command]
+pub fn collab_apply_change(
+    state: State<'_, CollabState>,
+    doc_id: String,
+    change_bytes: Vec<u8>,
+) -> Result<bool, String> {
+    let mut guard = state.store.lock().map_err(|e| e.to_string())?;
+    let store = guard.as_mut().ok_or("No CRDT project loaded")?;
+    let change = daw_collab::automerge::Change::from_bytes(change_bytes)
+        .map_err(|e| format!("Invalid change data: {}", e))?;
+    store.apply_change(&doc_id, change)?;
+    Ok(true)
+}
+
+// -- LAN discovery commands --
+
+#[tauri::command]
+pub fn collab_start_advertising(
+    state: State<'_, CollabState>,
+    session_id: String,
+    host_name: String,
+    project_name: String,
+    port: u16,
+    approval_required: bool,
+) -> Result<bool, String> {
+    let mut guard = state.discovery.lock().map_err(|e| e.to_string())?;
+    let discovery = guard.get_or_insert_with(|| LanDiscovery::new().expect("Failed to init mDNS"));
+    discovery.advertise(&session_id, &host_name, &project_name, port, approval_required)?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub fn collab_stop_advertising(state: State<'_, CollabState>) -> Result<bool, String> {
+    let mut guard = state.discovery.lock().map_err(|e| e.to_string())?;
+    if let Some(discovery) = guard.as_mut() {
+        discovery.stop_advertising()?;
+    }
+    Ok(true)
+}
+
+#[tauri::command]
+pub fn collab_start_browsing(state: State<'_, CollabState>) -> Result<bool, String> {
+    let mut guard = state.discovery.lock().map_err(|e| e.to_string())?;
+    let discovery = guard.get_or_insert_with(|| LanDiscovery::new().expect("Failed to init mDNS"));
+    discovery.start_browsing()?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub fn collab_get_nearby_sessions(state: State<'_, CollabState>) -> Result<Vec<NearbySession>, String> {
+    let guard = state.discovery.lock().map_err(|e| e.to_string())?;
+    match guard.as_ref() {
+        Some(discovery) => Ok(discovery.get_nearby_sessions()),
+        None => Ok(vec![]),
+    }
+}

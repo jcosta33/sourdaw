@@ -71,7 +71,7 @@ export const collaborationPresets: readonly PresetAction[] = [
         label: 'Start Collaboration Session',
         keywords: ['collaboration', 'collab', 'start session', 'multiplayer'],
         category: 'Collaboration',
-        buildAction: () => ({ type: 'createCollabSession' }),
+        buildAction: () => ({ type: 'createCollabSession', payload: { name: 'Host' } }),
     },
     {
         id: 'leave-collab',

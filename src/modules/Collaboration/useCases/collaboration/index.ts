@@ -1,2 +1,12 @@
-export { createSession, joinSession, leaveSession } from './sessionManagement';
-export { broadcastAction, updateCursor, receiveRemoteAction } from './broadcasting';
+export {
+    createSession,
+    joinSession,
+    leaveSession,
+    generateInvite,
+    acceptAnswer,
+    broadcastPresence,
+    onPresence,
+    getTransportSync,
+    getAssetTransfer,
+    getPermissionManager,
+} from './sessionManagement';

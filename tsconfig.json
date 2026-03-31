@@ -1,50 +1,26 @@
 {
-  "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["@webgpu/types"],
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": false,
-    "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "esModuleInterop": true,
-    "jsx": "react-jsx",
-    "skipLibCheck": true,
-    "paths": {
-      "#/*": ["./src/*"]
-    }
-  },
-  "include": ["src", "vite-env.d.ts"],
-  "exclude": [
-    "src/**/*.spec.ts",
-    "src/**/*.spec.tsx",
-    "src/helpers/Configuration",
-    "src/helpers/DOM",
-    "src/helpers/Router",
-    "src/helpers/React/slots",
-    "src/helpers/React/useKeyPressNotifier.ts",
-    "src/helpers/Logger/Writer/SentryWriter.ts",
-    "src/helpers/Logger/Writer/DatadogWriter.ts",
-    "src/helpers/Logger/Writer/ErrorConsoleWriter.ts",
-    "src/helpers/Logger/createLogger.ts",
-    "src/helpers/Store/Storage/CookieStorage.ts",
-    "src/helpers/Store/Storage/SessionStorageStorage.ts",
-    "src/helpers/Store/Storage/SessionStorageKeys.ts",
-    "src/helpers/Store/_tests",
-    "src/helpers/Testing",
-    "src/helpers/UI",
-    "src/helpers/Event/attachTerrificToEventLog.ts",
-    "src/helpers/Event/attachWindowEmitterToEventLog.ts",
-    "src/helpers/Event/eventLogHelpers.ts",
-    "src/helpers/Event/DevToolsEventBus.ts",
-    "src/helpers/Event/createEventBus.ts",
-    "src/helpers/Event/eventLogHelpers.ts"
-  ]
+    "compilerOptions": {
+        "target": "ES2022",
+        "lib": ["ES2022", "DOM", "DOM.Iterable"],
+        "types": ["@webgpu/types"],
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "strict": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "noFallthroughCasesInSwitch": true,
+        "noUncheckedIndexedAccess": true,
+        "exactOptionalPropertyTypes": false,
+        "forceConsistentCasingInFileNames": true,
+        "resolveJsonModule": true,
+        "isolatedModules": true,
+        "esModuleInterop": true,
+        "jsx": "react-jsx",
+        "skipLibCheck": true,
+        "paths": {
+            "#/*": ["./src/*"]
+        }
+    },
+    "include": ["src", "vite-env.d.ts"],
+    "exclude": ["dist", "build", "coverage", "storybook-static", "src/**/*.spec.ts", "src/**/*.spec.tsx"]
 }

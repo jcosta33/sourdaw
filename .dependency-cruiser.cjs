@@ -1,18 +1,30 @@
 /* (c) Copyright Sourdaw Ltd., all rights reserved. */
 
 /** @type {import('dependency-cruiser').IConfiguration} */
+
+// Module roots that participate in Sourdaw's bounded-context architecture.
+const MODULE_ROOT = '^(src/modules/|src/modules/Common/|src/modules/Supporting/)([^/]+)/';
+
+// Contract folders that are explicitly public across module boundaries.
+const MODULE_CONTRACT_FOLDERS = '(errors|events|useCases|stores|presentations/views)/';
+
+// Generic source/test file suffixes.
+const SOURCE_FILE_RE = '[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$';
+const SPEC_FILE_RE = '[.](?:spec|test)[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$';
+const STORY_FILE_RE = '[.]stories[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$';
+
 module.exports = {
     forbidden: [
-        // ─── Cross-module boundary ────────────────────────────────────────────────
+        // ─── Cross-module boundary ───────────────────────────────────────────
         {
             name: 'no-cross-module-internals',
             comment:
                 'Only contract folders (errors, events, useCases, stores, presentations/views) ' +
                 'are accessible across modules. models, repositories, transformers, validators, ' +
-                'services, helpers, engine, worklets, and presentations/hooks/components/renderers/context are module-private.',
+                'services, helpers, engine, worklets, and non-view presentation folders are module-private.',
             severity: 'error',
             from: {
-                path: '^(src/modules/|src/modules/Common/|src/modules/Supporting/)([^/]+/)',
+                path: MODULE_ROOT,
             },
             to: {
                 path: '^src/modules/',
@@ -20,128 +32,90 @@ module.exports = {
                     // Same module: import anything freely
                     '^$1$2',
                     // Cross-module: only contract folders
-                    '^(src/modules/|src/modules/Common/|src/modules/Supporting/)([^/]+/)(errors|events|useCases|stores|presentations/views)/',
+                    `^${MODULE_ROOT.slice(1)}${MODULE_CONTRACT_FOLDERS}`,
                     // Tests
-                    '^(src/modules/|src/modules/Common/|src/modules/Supporting/)([^/]+/)_tests/',
+                    `^${MODULE_ROOT.slice(1)}_tests/`,
                     // Shared primitives (not a module)
                     '^src/shared/',
                 ],
             },
         },
 
-        // ─── Stores are private within the module ─────────────────────────────────
+        // ─── Presentation internals are private across modules ──────────────
+        {
+            name: 'presentations-private-cross-default',
+            severity: 'error',
+            comment:
+                'Across modules, only presentations/views/ is public. All other presentations/* ' +
+                'folders are module-private by default (hooks, components, renderers, context, stores, etc.).',
+            from: { path: MODULE_ROOT },
+            to: {
+                path: '^$1(?!$2)[^/]+/presentations/(?!views/)',
+            },
+        },
+
+        // ─── Presentation stores are private even inside the module ─────────
         {
             name: 'presentation-stores-private-intra',
             severity: 'error',
-            comment: "Within a module, only that module's presentations layer may import its stores.",
-            from: { path: '^(src/modules/)([^/]+)/(?!presentations/).*' },
+            comment:
+                "Within a module, only that module's presentations layer may import its presentations/stores/. " +
+                'For cross-module shared state, use business-layer stores/ instead.',
+            from: { path: '^' + MODULE_ROOT.slice(1) + '(?!presentations/).*' },
             to: { path: '^$1$2/presentations/stores/' },
         },
-        {
-            name: 'presentation-stores-private-cross',
-            severity: 'error',
-            comment:
-                'presentations/stores/ is module-private and cannot be imported by other modules. ' +
-                'For cross-module shared state, use a Store<T> at the business layer (stores/ outside presentations/).',
-            from: { path: '^(src/modules/)([^/]+)/' },
-            to: { path: '^$1(?!$2)[^/]+/presentations/stores/' },
-        },
 
-        // ─── Hooks are private within the module ──────────────────────────────────
-        {
-            name: 'presentations-hooks-private-cross',
-            severity: 'error',
-            comment:
-                'Presentation hooks are module-private and cannot be imported by other modules. ' +
-                'Expose behaviour through useCases/ or presentations/views/ instead.',
-            from: { path: '^(src/modules/)([^/]+)/' },
-            to: { path: '^src/modules/(?!$2)[^/]+/presentations/hooks/' },
-        },
-
-        // ─── Models are private within the module ─────────────────────────────────
+        // ─── Models are private within the module ───────────────────────────
         {
             name: 'models-private-cross',
             severity: 'error',
             comment:
-                'models/ is module-private. Export a DTO from useCases/ for cross-module type contracts. ' +
+                'models/ is module-private. Export DTOs from useCases/ for cross-module type contracts. ' +
                 'Shared primitives (TrackId, Beats, Decibels, etc.) belong in src/shared/types/.',
-            from: { path: '^(src/modules/)([^/]+)/' },
-            to: { path: '^src/modules/(?!$2)[^/]+/models/' },
+            from: { path: MODULE_ROOT },
+            to: { path: '^$1(?!$2)[^/]+/models/' },
         },
 
-        // ─── Validators are private within the module ──────────────────────────────
+        // ─── Validators are private within the module ───────────────────────
         {
             name: 'validators-private-cross',
             severity: 'error',
             comment:
                 'validators/ is module-private. Aggregate invariant enforcement is an internal concern. ' +
                 "Other modules should call the owning module's useCases/, which internally invoke validators.",
-            from: { path: '^(src/modules/)([^/]+)/' },
-            to: { path: '^src/modules/(?!$2)[^/]+/validators/' },
+            from: { path: MODULE_ROOT },
+            to: { path: '^$1(?!$2)[^/]+/validators/' },
         },
 
-        // ─── Services are private within the module ────────────────────────────────
+        // ─── Services are private within the module ─────────────────────────
         {
             name: 'services-private-cross',
             severity: 'error',
             comment:
                 'services/ is module-private. Stateless cross-entity domain logic is an internal concern. ' +
                 "Other modules should call the owning module's useCases/, which internally invoke services.",
-            from: { path: '^(src/modules/)([^/]+)/' },
-            to: { path: '^src/modules/(?!$2)[^/]+/services/' },
+            from: { path: MODULE_ROOT },
+            to: { path: '^$1(?!$2)[^/]+/services/' },
         },
 
-        // ─── Transformers are private within the module ────────────────────────────
+        // ─── Transformers are private within the module ─────────────────────
         {
             name: 'transformers-private-cross',
             severity: 'error',
             comment:
                 'transformers/ is module-private. Mapping logic is an internal concern. ' +
                 'Other modules should use DTOs exported from useCases/.',
-            from: { path: '^(src/modules/)([^/]+)/' },
-            to: { path: '^src/modules/(?!$2)[^/]+/transformers/' },
+            from: { path: MODULE_ROOT },
+            to: { path: '^$1(?!$2)[^/]+/transformers/' },
         },
 
-        // ─── Renderers are private within the module ───────────────────────────────
-        {
-            name: 'renderers-private-cross',
-            severity: 'error',
-            comment:
-                'presentations/renderers/ is module-private. Canvas/WebGL/WebGPU drawing code ' +
-                'is presentation-layer I/O scoped to the owning module.',
-            from: { path: '^(src/modules/)([^/]+)/' },
-            to: { path: '^src/modules/(?!$2)[^/]+/presentations/renderers/' },
-        },
-
-        // ─── Context is private within the module ──────────────────────────────────
-        {
-            name: 'context-private-cross',
-            severity: 'error',
-            comment:
-                'presentations/context/ is module-private. Ephemeral UI state (selection, scroll) ' +
-                'must never be shared across module boundaries.',
-            from: { path: '^(src/modules/)([^/]+)/' },
-            to: { path: '^src/modules/(?!$2)[^/]+/presentations/context/' },
-        },
-
-        // ─── Components are private within the module ──────────────────────────────
-        {
-            name: 'components-private-cross',
-            severity: 'error',
-            comment:
-                'presentations/components/ is module-private. Expose reusable UI through ' +
-                'presentations/views/ (contract) instead.',
-            from: { path: '^(src/modules/)([^/]+)/' },
-            to: { path: '^src/modules/(?!$2)[^/]+/presentations/components/' },
-        },
-
-        // ─── Repositories: only useCases and helpers may import them ──────────────
+        // ─── Repositories: only useCases may import them ────────────────────
         {
             name: 'repositories-only-from-usecases',
             severity: 'error',
             comment: "Within a module, only useCases/ may import that module's repositories/.",
             from: {
-                path: '^(src/modules/)([^/]+)/(?!useCases/|repositories/).*',
+                path: '^' + MODULE_ROOT.slice(1) + '(?!useCases/|repositories/).*',
             },
             to: {
                 path: '^$1$2/repositories/',
@@ -150,69 +124,86 @@ module.exports = {
         {
             name: 'presentations-no-direct-io',
             severity: 'error',
-            comment: 'The presentations layer cannot directly access repositories/.',
-            from: { path: '^src/modules/(.*)/presentations/.+\\.(ts|tsx)$' },
-            to: { path: '^src/modules/$1/repositories/.+\\.(ts|tsx)$' },
+            comment:
+                'The presentations layer cannot directly access repositories/. ' +
+                'Use a hook, adapter, or useCase boundary instead.',
+            from: { path: '^' + MODULE_ROOT.slice(1) + 'presentations/.+' + SOURCE_FILE_RE },
+            to: { path: '^$1$2/repositories/.+' + SOURCE_FILE_RE },
         },
 
-        // ─── Engine classes are private ───────────────────────────────────────────
+        // ─── Engine classes are private across modules ──────────────────────
         {
             name: 'engine-private-cross',
             severity: 'error',
             comment:
-                'engine/ is module-private. Access audio engine behaviour through useCases/ contracts. ' +
+                'engine/ is module-private. Access engine behaviour through useCases/ contracts. ' +
                 'Never import AudioEngine, TrackNode, or other engine classes from another module.',
-            from: { path: '^(src/modules/)([^/]+)/' },
-            to: { path: '^src/modules/(?!$2)[^/]+/engine/' },
+            from: { path: MODULE_ROOT },
+            to: { path: '^$1(?!$2)[^/]+/engine/' },
         },
 
-        // ─── Worklets are isolated ────────────────────────────────────────────────
+        // ─── Worklets are heavily isolated ──────────────────────────────────
         {
-            name: 'worklets-isolated',
+            name: 'worklets-no-module-runtime-imports',
             severity: 'error',
             comment:
-                'AudioWorkletProcessor files in worklets/ run on the audio thread and are isolated. ' +
-                'They may not import from useCases/, repositories/, stores/, or any module layer.',
-            from: { path: '^src/modules/(.*)/worklets/.+\\.(ts|tsx)$' },
+                'AudioWorkletProcessor files in worklets/ run on the audio thread and must not ' +
+                'import runtime/business layers such as useCases/, repositories/, stores/, services/, ' +
+                'validators/, events/, engine/, or any presentations/* folder.',
+            from: { path: '^' + MODULE_ROOT.slice(1) + 'worklets/.+' + SOURCE_FILE_RE },
             to: {
-                path: '^src/modules/$1/(useCases|repositories|presentations)/.+\\.(ts|tsx)$',
+                path:
+                    '^$1$2/(useCases|repositories|stores|services|validators|events|engine|presentations)/.+' +
+                    SOURCE_FILE_RE,
+            },
+        },
+        {
+            name: 'worklets-no-app-or-helper-runtime-imports',
+            severity: 'error',
+            comment:
+                'Worklets must remain isolated from application orchestration, helper runtime layers, and Tauri APIs. ' +
+                'Only import worklet-safe/shared primitives explicitly designed for the audio thread.',
+            from: { path: '^' + MODULE_ROOT.slice(1) + 'worklets/.+' + SOURCE_FILE_RE },
+            to: {
+                path: '^(application|src/helpers/|@tauri-apps/)',
             },
         },
 
-        // ─── Transformers must be pure ────────────────────────────────────────────
+        // ─── Transformers must be pure ──────────────────────────────────────
         {
             name: 'transformers-are-pure',
             severity: 'error',
             comment:
                 'Transformers must be pure functions. They may not import from repositories/, ' +
                 'presentations/stores/, or useCases/.',
-            from: { path: '^src/modules/(.*)/transformers/.+\\.(ts|tsx)$' },
+            from: { path: '^' + MODULE_ROOT.slice(1) + 'transformers/.+' + SOURCE_FILE_RE },
             to: {
-                path: '^src/modules/$1/(repositories|presentations/stores|useCases)/.+\\.(ts|tsx)$',
+                path: '^$1$2/(repositories|presentations/stores|useCases)/.+' + SOURCE_FILE_RE,
             },
         },
 
-        // ─── Components: no direct use case or store access ───────────────────────
+        // ─── Components: no direct useCase or store access ──────────────────
         {
             name: 'components-no-usecase-access',
             severity: 'error',
-            comment: 'Components cannot import use cases directly. ' + 'Access business logic through hooks or views.',
+            comment: 'Components cannot import use cases directly. Access business logic through hooks or views.',
             from: {
-                path: '^src/modules/(.*)/presentations/components/.+\\.(ts|tsx)$',
+                path: '^' + MODULE_ROOT.slice(1) + 'presentations/components/.+' + SOURCE_FILE_RE,
             },
-            to: { path: '^src/modules/$1/useCases/.+\\.(ts|tsx)$' },
+            to: { path: '^$1$2/useCases/.+' + SOURCE_FILE_RE },
         },
         {
             name: 'components-no-store-access',
             severity: 'error',
-            comment: 'Components cannot access stores directly. ' + 'Receive state via props from views or hooks.',
+            comment:
+                'Components cannot access presentation stores directly. Receive state via props from views or hooks.',
             from: {
-                path: '^src/modules/(.*)/presentations/components/.+\\.(ts|tsx)$',
+                path: '^' + MODULE_ROOT.slice(1) + 'presentations/components/.+' + SOURCE_FILE_RE,
             },
-            to: { path: '^src/modules/$1/presentations/stores/.+\\.(ts|tsx)$' },
+            to: { path: '^$1$2/presentations/stores/.+' + SOURCE_FILE_RE },
         },
 
-        // ─── Tauri IPC confined to repositories ───────────────────────────────────
+        // ─── Tauri IPC confined to repositories ─────────────────────────────
         {
             name: 'tauri-ipc-only-in-repositories',
             severity: 'error',
@@ -220,68 +211,88 @@ module.exports = {
                 'Tauri IPC (invoke, listen) may only be called from repositories/. ' +
                 'Use cases and presentations must go through a repository adapter.',
             from: {
-                path: '^src/modules/(?!.*repositories/).*\\.(ts|tsx)$',
+                path: '^src/modules/(?!.*repositories/).*' + SOURCE_FILE_RE,
             },
             to: {
                 path: '^@tauri-apps/',
             },
         },
 
-        // ─── application ↔ src boundary ───────────────────────────────────────────
+        // ─── application ↔ src boundary ─────────────────────────────────────
         {
             name: 'src-to-application-restrictions',
             comment:
-                'From application/, only contract folders (errors, events, useCases, ' +
-                'presentations/views) and src/helpers/ are accessible.',
+                'From application/, only contract folders (errors, events, useCases, stores, ' +
+                'presentations/views), src/helpers/, and src/shared/ are accessible.',
             severity: 'error',
             from: { path: '^application' },
             to: {
                 path: '^src/modules/',
-                pathNot: [
-                    '^src/helpers/',
-                    '^src/shared/',
-                    '^(src/modules/|src/modules/Common/|src/modules/Supporting/)([^/]+/)(errors|events|useCases|stores|presentations/views)/',
-                ],
+                pathNot: ['^src/helpers/', '^src/shared/', `^${MODULE_ROOT.slice(1)}${MODULE_CONTRACT_FOLDERS}`],
             },
         },
 
-        // ─── Shared layer must not import from modules ────────────────────────────
+        // ─── Shared layer must not import from modules ──────────────────────
         {
             name: 'shared-no-module-imports',
             severity: 'error',
             comment:
-                'src/shared/ may only contain pure types and pure functions. ' +
-                'It must never import from src/modules/.',
+                'src/shared/ may only contain pure types and pure functions. It must never import from src/modules/.',
             from: { path: '^src/shared/' },
             to: { path: '^src/modules/' },
         },
 
-        // ─── General ──────────────────────────────────────────────────────────────
+        // ─── General hygiene ────────────────────────────────────────────────
         {
             name: 'not-to-spec',
             comment:
-                'This module depends on a spec (test) file. The sole responsibility of a spec ' +
-                "file is to test code. If there's something in a spec that's of use to other " +
-                "modules, it doesn't have that single responsibility anymore. Factor it out into " +
-                'a separate utility/helper or a mock.',
+                'This module depends on a spec/test file. Spec files must only test code. ' +
+                'If something inside them is reusable, extract it into a dedicated utility, fixture, or mock.',
             severity: 'error',
             from: {},
             to: {
-                path: '[.](?:spec|test)[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$',
+                path: SPEC_FILE_RE,
+            },
+        },
+        {
+            name: 'not-to-story',
+            comment:
+                'Production code must not depend on Storybook stories. Extract reusable fixtures or ' +
+                'presentational helpers into real source modules instead.',
+            severity: 'error',
+            from: {
+                path: '^(src|application)/',
+                pathNot: SPEC_FILE_RE,
+            },
+            to: {
+                path: STORY_FILE_RE,
+            },
+        },
+        {
+            name: 'not-to-fixture-or-mock',
+            comment:
+                'Production code must not depend on fixtures or mocks. Extract reusable data builders ' +
+                'into dedicated source modules if needed.',
+            severity: 'warn',
+            from: {
+                path: '^(src|application)/',
+                pathNot: SPEC_FILE_RE,
+            },
+            to: {
+                path: '(^|/)(__fixtures__|fixtures|mocks?)/',
             },
         },
         {
             name: 'not-to-dev-dep',
             severity: 'warn',
             comment:
-                "This module depends on an npm package from the 'devDependencies' section of " +
-                'your package.json. It looks like something that ships to production, though. To ' +
-                "prevent problems with npm packages that aren't there on production declare it " +
-                "(only!) in the 'dependencies' section of your package.json. If this module is " +
-                'development only - add it to the from.pathNot re of the not-to-dev-dep rule.',
+                "This module depends on an npm package from the 'devDependencies' section of your package.json. " +
+                'It looks like something that ships to production, though. To prevent problems with npm packages ' +
+                "that aren't there in production, declare it in 'dependencies'. If this module is development-only, " +
+                'add an exception to the rule.',
             from: {
-                path: '^(src)',
-                pathNot: '[.](?:spec|test)[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$',
+                path: '^(src|application)',
+                pathNot: SPEC_FILE_RE,
             },
             to: {
                 dependencyTypes: ['npm-dev'],
@@ -293,10 +304,8 @@ module.exports = {
             name: 'optional-deps-used',
             severity: 'info',
             comment:
-                'This module depends on an npm package that is declared as an optional dependency ' +
-                "in your package.json. As this makes sense in limited situations only, it's " +
-                "flagged here. If you're using an optional dependency here by design - add an " +
-                'exception to your dependency-cruiser configuration.',
+                'This module depends on an npm package that is declared as an optional dependency. ' +
+                'This should be intentional and rare.',
             from: {},
             to: {
                 dependencyTypes: ['npm-optional'],
@@ -305,10 +314,8 @@ module.exports = {
         {
             name: 'peer-deps-used',
             comment:
-                'This module depends on an npm package that is declared as a peer dependency ' +
-                'in your package.json. This makes sense if your package is e.g. a plugin, but ' +
-                'in other cases - maybe not so much. If the use of a peer dependency is ' +
-                'intentional add an exception to your dependency-cruiser configuration.',
+                'This module depends on an npm package declared as a peer dependency. ' +
+                'This is fine for plugins/libraries, but should be intentional.',
             severity: 'warn',
             from: {},
             to: {
@@ -344,6 +351,7 @@ module.exports = {
                 highlightFocused: true,
             },
         },
+        // Keep this aligned with the tsconfig that owns your path aliases.
         tsConfig: { fileName: 'tsconfig.json' },
     },
 };

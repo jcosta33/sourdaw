@@ -153,8 +153,8 @@ export type AppAction =
     | { type: 'enableMpe'; payload?: undefined }
     | { type: 'disableMpe'; payload?: undefined }
     | { type: 'getLatencyReport'; payload?: undefined }
-    | { type: 'createCollabSession'; payload?: undefined }
-    | { type: 'joinCollabSession'; payload: { sessionId: string; peerName: string } }
+    | { type: 'createCollabSession'; payload: { name: string } }
+    | { type: 'joinCollabSession'; payload: { inviteString: string; peerName: string } }
     | { type: 'leaveCollabSession'; payload?: undefined }
     | { type: 'scanPlugins'; payload?: undefined }
     | { type: 'loadExternalPlugin'; payload: { pluginId: string; trackId?: string } }

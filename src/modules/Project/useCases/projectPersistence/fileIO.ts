@@ -112,6 +112,7 @@ export async function importProjectFile(file: File): Promise<boolean> {
             updatedAt: data.updatedAt,
             dirty: false,
             loading: false,
+            initialized: true,
         });
 
         if (data.arrangements && data.arrangements.length > 0 && data.activeArrangementId) {

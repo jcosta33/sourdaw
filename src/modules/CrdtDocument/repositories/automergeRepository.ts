@@ -1,0 +1,225 @@
+import * as Automerge from '@automerge/automerge';
+
+import {
+    type DocId,
+    type DocumentBundle,
+    type MergeResult,
+    DOC_PREFIX_ROOT,
+} from '../models/CrdtDocumentTypes';
+
+type AnyDoc = Record<string, unknown>;
+
+/** Callback invoked after any document change for projection. */
+type ChangeListener = () => void;
+
+/**
+ * Singleton repository managing all live Automerge documents for the current project.
+ *
+ * This is the central CRDT state holder. All mutations flow through `changeDoc()`,
+ * which triggers the projection bridge to update existing stores.
+ */
+class AutomergeRepository {
+    private docs = new Map<DocId, Automerge.Doc<AnyDoc>>();
+    private rootId: DocId = DOC_PREFIX_ROOT;
+    private changeListeners = new Set<ChangeListener>();
+    private actorId: string = Automerge.getActorId(Automerge.init()).toString();
+
+    /** Get the root document ID. */
+    getRootId(): DocId {
+        return this.rootId;
+    }
+
+    /** Get the local actor ID. */
+    getActorId(): string {
+        return this.actorId;
+    }
+
+    /** Get a document by ID (read-only). */
+    getDoc<T = AnyDoc>(id: DocId): Automerge.Doc<T> | undefined {
+        return this.docs.get(id) as Automerge.Doc<T> | undefined;
+    }
+
+    /** Check if a document exists. */
+    hasDoc(id: DocId): boolean {
+        return this.docs.has(id);
+    }
+
+    /** List all document IDs. */
+    getDocIds(): DocId[] {
+        return Array.from(this.docs.keys());
+    }
+
+    /** Subscribe to document changes (for the projection bridge). */
+    onChange(listener: ChangeListener): () => void {
+        this.changeListeners.add(listener);
+        return () => {
+            this.changeListeners.delete(listener);
+        };
+    }
+
+    /** Create a new empty project with a root document. */
+    createProject(_name: string): DocId {
+        this.docs.clear();
+
+        this.rootId = DOC_PREFIX_ROOT;
+        this.docs.set(this.rootId, Automerge.init<AnyDoc>());
+
+        return this.rootId;
+    }
+
+    /**
+     * Create a new child document and register it.
+     * Returns the DocId.
+     */
+    createChildDoc(docId: DocId): DocId {
+        const doc = Automerge.init<AnyDoc>();
+        this.docs.set(docId, doc);
+        return docId;
+    }
+
+    /**
+     * Apply a mutation to a document.
+     * This is the primary mutation entry point — all CRDT writes go through here.
+     */
+    changeDoc<T = AnyDoc>(id: DocId, changeFn: Automerge.ChangeFn<T>): void {
+        const doc = this.docs.get(id) as Automerge.Doc<T> | undefined;
+        if (!doc) {
+            throw new Error(`Document not found: ${id}`);
+        }
+
+        const updated = Automerge.change(doc, changeFn);
+        this.docs.set(id, updated as Automerge.Doc<AnyDoc>);
+        this.notifyListeners();
+    }
+
+    /**
+     * Replace a document directly (used by sync protocol after receiveSyncMessage).
+     * Notifies listeners so response sync messages can be generated.
+     */
+    replaceDoc(id: DocId, doc: Automerge.Doc<unknown>): void {
+        this.docs.set(id, doc as Automerge.Doc<AnyDoc>);
+        this.notifyListeners();
+    }
+
+    /**
+     * Merge a remote document's binary state into a local document.
+     * Used for sync and merge-on-open.
+     */
+    mergeRemoteDoc(id: DocId, binary: Uint8Array): void {
+        const incoming = Automerge.load<AnyDoc>(binary);
+
+        if (this.docs.has(id)) {
+            const local = this.docs.get(id)!;
+            const merged = Automerge.merge(local, incoming);
+            this.docs.set(id, merged);
+        } else {
+            this.docs.set(id, incoming);
+        }
+
+        this.notifyListeners();
+    }
+
+    /** Serialize a single document to binary. */
+    saveDoc(id: DocId): Uint8Array | undefined {
+        const doc = this.docs.get(id);
+        if (!doc) {
+            return undefined;
+        }
+        return Automerge.save(doc);
+    }
+
+    /** Serialize all documents as a bundle. */
+    saveAll(): DocumentBundle {
+        const bundle: DocumentBundle = new Map();
+        for (const [id, doc] of this.docs) {
+            bundle.set(id, Automerge.save(doc));
+        }
+        return bundle;
+    }
+
+    /** Load all documents from a bundle, replacing current state. */
+    loadAll(bundle: DocumentBundle): void {
+        this.docs.clear();
+
+        for (const [id, bytes] of bundle) {
+            const doc = Automerge.load<AnyDoc>(bytes);
+            this.docs.set(id, doc);
+
+            if (id.startsWith(DOC_PREFIX_ROOT)) {
+                this.rootId = id;
+            }
+        }
+
+        this.notifyListeners();
+    }
+
+    /**
+     * Merge an external bundle into current state.
+     * Documents with matching IDs are merged; new documents are inserted.
+     */
+    mergeBundle(bundle: DocumentBundle): MergeResult {
+        const result: MergeResult = {
+            mergedDocIds: [],
+            newDocIds: [],
+        };
+
+        for (const [id, bytes] of bundle) {
+            const incoming = Automerge.load<AnyDoc>(bytes);
+
+            if (this.docs.has(id)) {
+                const local = this.docs.get(id)!;
+                const merged = Automerge.merge(local, incoming);
+                this.docs.set(id, merged);
+                result.mergedDocIds.push(id);
+            } else {
+                this.docs.set(id, incoming);
+                result.newDocIds.push(id);
+            }
+        }
+
+        this.notifyListeners();
+        return result;
+    }
+
+    /** Remove a document. */
+    removeDoc(id: DocId): void {
+        this.docs.delete(id);
+    }
+
+    /** Clear all documents and listeners. */
+    reset(): void {
+        this.docs.clear();
+        this.rootId = DOC_PREFIX_ROOT;
+    }
+
+    /** Get the incremental changes since a given set of heads. */
+    getChanges(id: DocId, heads: Automerge.Heads): Uint8Array[] {
+        const doc = this.docs.get(id);
+        if (!doc) {
+            return [];
+        }
+        return Automerge.getChanges(Automerge.view(doc, heads), doc);
+    }
+
+    /** Get the current heads of a document (for sync protocol). */
+    getHeads(id: DocId): Automerge.Heads | undefined {
+        const doc = this.docs.get(id);
+        if (!doc) {
+            return undefined;
+        }
+        return Automerge.getHeads(doc);
+    }
+
+    private notifyListeners(): void {
+        for (const listener of this.changeListeners) {
+            try {
+                listener();
+            } catch (error) {
+                console.error('[AutomergeRepository] Listener error:', error);
+            }
+        }
+    }
+}
+
+/** Singleton instance. */
+export const automergeRepository = new AutomergeRepository();

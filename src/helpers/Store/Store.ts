@@ -45,6 +45,26 @@ export class Store<TDataSchema> {
         this.#notify();
     }
 
+    /**
+     * Hydrate the store from its backing storage without triggering a write-back.
+     * Used after loading Automerge documents to populate the in-memory cache
+     * and notify subscribers of the loaded state.
+     */
+    hydrate(): void {
+        if (this.#storage.hydrate) {
+            let changed: boolean;
+            try {
+                changed = this.#storage.hydrate();
+            } catch (error) {
+                this.#logger.error(new Error('Store hydration failed', { cause: error }));
+                return;
+            }
+            if (changed) {
+                this.#notify();
+            }
+        }
+    }
+
     #notify(): void {
         const value = this.value;
 

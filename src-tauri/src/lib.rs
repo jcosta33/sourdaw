@@ -21,6 +21,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(state::AppState::default())
+        .manage(commands::collab::CollabState::default())
         .manage(commands::midi::MidiState::default())
         .manage(commands::llm::LlmSidecarState::default())
         .manage(commands::native_llm::NativeLlmState::default())
@@ -84,6 +85,18 @@ pub fn run() {
             commands::midi::list_midi_inputs,
             commands::midi::open_midi_input,
             commands::midi::close_midi_input,
+            // CRDT collaboration
+            commands::collab::collab_create_project,
+            commands::collab::collab_save_bundle,
+            commands::collab::collab_load_bundle,
+            commands::collab::collab_get_document_state,
+            commands::collab::collab_merge_bundle,
+            commands::collab::collab_apply_change,
+            // LAN discovery
+            commands::collab::collab_start_advertising,
+            commands::collab::collab_stop_advertising,
+            commands::collab::collab_start_browsing,
+            commands::collab::collab_get_nearby_sessions,
         ])
         .setup(|_app| {
             Ok(())

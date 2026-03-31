@@ -53,6 +53,7 @@ export function newProject(name = 'Untitled Project'): void {
         updatedAt: Date.now(),
         dirty: false,
         loading: false,
+        initialized: true,
     });
     removeProjectJson();
     audioBufferCache.clear();

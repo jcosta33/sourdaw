@@ -99,6 +99,7 @@ export async function loadRecentProject(key: string): Promise<boolean> {
             updatedAt: data.updatedAt,
             dirty: false,
             loading: false,
+            initialized: true,
         });
 
         writeProjectJson(raw);

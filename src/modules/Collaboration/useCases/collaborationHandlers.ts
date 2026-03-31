@@ -5,16 +5,16 @@ type Extract<A extends AppAction, T extends string> = A extends { type: T } ? A 
 
 export const collaborationHandlers = {
     createCollabSession: {
-        execute: () => {
-            createSession();
+        execute: (a) => {
+            createSession(a.payload.name ?? 'Host');
         },
         describe: () => ({ label: 'Create collaboration session' }),
         undoable: false,
     } satisfies ActionHandler<Extract<AppAction, 'createCollabSession'>>,
 
     joinCollabSession: {
-        execute: (a) => {
-            joinSession(a.payload.sessionId, a.payload.peerName);
+        execute: async (a) => {
+            await joinSession(a.payload.inviteString, a.payload.peerName ?? 'Peer');
         },
         describe: () => ({ label: 'Join collaboration session' }),
         undoable: false,

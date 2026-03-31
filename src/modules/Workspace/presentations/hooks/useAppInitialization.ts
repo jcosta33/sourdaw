@@ -6,6 +6,8 @@ import { registerProModulationEffects } from '#/modules/Plugin/useCases/proModul
 import { registerProSynthInstruments } from '#/modules/Synth/useCases/proSynthInstruments';
 import { initWebMidi } from '#/modules/AudioEngine/useCases/webMidiInput';
 import { loadProject } from '#/modules/Project/useCases/projectPersistence/loadProject';
+import { hasCrdtProject } from '#/modules/CrdtDocument/useCases/crdtProjectLifecycle';
+import { projectStore } from '#/modules/Project/stores/projectStore';
 import { saveProject } from '#/modules/Project/useCases/projectPersistence/saveProject';
 import { ensureTrackStrips } from '#/modules/Transport/useCases/ensureTrackStrips';
 import { restoreLibrary } from '#/modules/SampleLibrary/repositories/libraryPersistence';
@@ -52,14 +54,23 @@ export const useAppInitialization = (): void => {
     }, []);
 
     useEffect(() => {
-        void loadProject().then(() => {
+        void (async () => {
+            const hasSaved = await hasCrdtProject();
+            if (hasSaved) {
+                // Returning user — auto-load their project (shows loading spinner).
+                await loadProject();
+            } else {
+                // First-time user — clear the loading flag and show the LaunchScreen.
+                const current = projectStore.value;
+                if (current) {
+                    projectStore.set({ ...current, loading: false, initialized: false });
+                }
+            }
             projectLoaded.current = true;
-            // If audio was already initialized (e.g. user clicked before
-            // project finished loading), reconcile strips now.
             if (audioInitialized.current) {
                 ensureTrackStrips();
             }
-        });
+        })();
     }, []);
 
     useEffect(() => {

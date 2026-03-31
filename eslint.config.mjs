@@ -1,20 +1,407 @@
 // @ts-check
 // Standalone ESLint config for Sourdaw — React 19 + Compiler, TypeScript, Tailwind v4.
-// Cherry-picked from @frontify/eslint-config-{basic,react}, with broken plugins removed
-// and rules tuned for a DAW application.
+// Extended with:
+// - architecture/layer restrictions
+// - import ordering + no default exports
+// - TanStack Query linting
+// - local Sourdaw-specific rules for agentic drift
+// - stronger TypeScript promise/import enforcement
 
 import eslint from '@eslint/js';
 import eslintPluginReact from '@eslint-react/eslint-plugin';
 import eslintPluginComments from '@eslint-community/eslint-plugin-eslint-comments/configs';
 import eslintPluginStylistic from '@stylistic/eslint-plugin';
 import { defineConfig } from 'eslint/config';
+import eslintPluginImport from 'eslint-plugin-import';
 import eslintPluginJsxA11yX from 'eslint-plugin-jsx-a11y-x';
 import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended';
 import eslintPluginPromise from 'eslint-plugin-promise';
 import eslintPluginReactHooks from 'eslint-plugin-react-hooks';
 import eslintPluginUnicorn from 'eslint-plugin-unicorn';
+import eslintPluginQuery from '@tanstack/eslint-plugin-query';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
+
+/**
+ * Small recursive AST walker for local custom rules.
+ * @param {any} node
+ * @param {(node: any) => void} visit
+ */
+function traverse(node, visit) {
+    if (!node || typeof node !== 'object') return;
+    visit(node);
+
+    for (const key of Object.keys(node)) {
+        if (
+            key === 'parent' ||
+            key === 'loc' ||
+            key === 'range' ||
+            key === 'tokens' ||
+            key === 'comments' ||
+            key === 'leadingComments' ||
+            key === 'trailingComments'
+        ) {
+            continue;
+        }
+
+        const value = node[key];
+
+        if (Array.isArray(value)) {
+            for (const item of value) {
+                traverse(item, visit);
+            }
+            continue;
+        }
+
+        traverse(value, visit);
+    }
+}
+
+/**
+ * @param {any} node
+ * @returns {boolean}
+ */
+function isReactEffectCall(node) {
+    if (!node || node.type !== 'CallExpression') return false;
+    return (
+        (node.callee.type === 'Identifier' &&
+            (node.callee.name === 'useEffect' || node.callee.name === 'useLayoutEffect')) ||
+        (node.callee.type === 'MemberExpression' &&
+            node.callee.property?.type === 'Identifier' &&
+            (node.callee.property.name === 'useEffect' || node.callee.property.name === 'useLayoutEffect'))
+    );
+}
+
+/**
+ * @param {any} node
+ * @returns {boolean}
+ */
+function isFunctionLike(node) {
+    return node?.type === 'ArrowFunctionExpression' || node?.type === 'FunctionExpression';
+}
+
+/**
+ * @param {any} callNode
+ * @returns {any | null}
+ */
+function getEffectBody(callNode) {
+    const callback = callNode.arguments?.[0];
+    if (!isFunctionLike(callback)) return null;
+
+    if (callback.body?.type === 'BlockStatement') return callback.body;
+    return callback.body ?? null;
+}
+
+/**
+ * @param {any} node
+ * @returns {boolean}
+ */
+function isFetchLikeCall(node) {
+    if (!node || node.type !== 'CallExpression') return false;
+
+    // fetch(...)
+    if (node.callee.type === 'Identifier' && node.callee.name === 'fetch') return true;
+
+    // axios.get/post/request(...)
+    if (
+        node.callee.type === 'MemberExpression' &&
+        node.callee.object?.type === 'Identifier' &&
+        node.callee.object.name === 'axios' &&
+        node.callee.property?.type === 'Identifier' &&
+        ['get', 'post', 'put', 'patch', 'delete', 'request'].includes(node.callee.property.name)
+    ) {
+        return true;
+    }
+
+    // queryClient.fetchQuery / prefetchQuery / ensureQueryData / refetchQueries / invalidateQueries
+    if (
+        node.callee.type === 'MemberExpression' &&
+        node.callee.property?.type === 'Identifier' &&
+        ['fetchQuery', 'prefetchQuery', 'ensureQueryData', 'refetchQueries', 'invalidateQueries'].includes(
+            node.callee.property.name
+        )
+    ) {
+        return true;
+    }
+
+    // common API client patterns
+    if (
+        node.callee.type === 'MemberExpression' &&
+        node.callee.object?.type === 'Identifier' &&
+        ['api', 'apiClient', 'client', 'http', 'httpClient'].includes(node.callee.object.name)
+    ) {
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * @param {any} node
+ * @returns {boolean}
+ */
+function isUseStateSetterCall(node) {
+    return (
+        node?.type === 'CallExpression' && node.callee?.type === 'Identifier' && /^set[A-Z0-9_]/.test(node.callee.name)
+    );
+}
+
+/**
+ * @param {any} body
+ * @returns {boolean}
+ */
+function bodyContainsAsyncOrFetch(body) {
+    let found = false;
+    traverse(body, (node) => {
+        if (found) return;
+        if (node.type === 'AwaitExpression' || isFetchLikeCall(node)) {
+            found = true;
+        }
+    });
+    return found;
+}
+
+/**
+ * @param {any} body
+ * @returns {boolean}
+ */
+function bodyLooksLikeDerivedStateEffect(body) {
+    let setterCalls = 0;
+    let nonSetterCalls = 0;
+    let assignments = 0;
+
+    traverse(body, (node) => {
+        if (node.type === 'CallExpression') {
+            if (isUseStateSetterCall(node)) {
+                setterCalls += 1;
+            } else if (node.callee?.type !== 'Identifier' || !['console', 'Math'].includes(node.callee.name)) {
+                nonSetterCalls += 1;
+            }
+        }
+
+        if (node.type === 'AssignmentExpression' || node.type === 'UpdateExpression' || node.type === 'NewExpression') {
+            assignments += 1;
+        }
+    });
+
+    return setterCalls > 0 && nonSetterCalls === 0 && assignments === 0;
+}
+
+/**
+ * @param {string} filename
+ * @returns {boolean}
+ */
+function isPresentationFile(filename) {
+    const normalized = filename.replaceAll('\\', '/');
+    return (
+        normalized.includes('/presentations/views/') ||
+        normalized.includes('/presentations/hooks/') ||
+        normalized.includes('/presentations/components/')
+    );
+}
+
+/**
+ * @param {string} filename
+ * @returns {boolean}
+ */
+function isDomainLogicFile(filename) {
+    const normalized = filename.replaceAll('\\', '/');
+    return (
+        normalized.includes('/useCases/') ||
+        normalized.includes('/services/') ||
+        normalized.includes('/validators/') ||
+        normalized.includes('/transformers/')
+    );
+}
+
+const sourdawPlugin = {
+    meta: {
+        name: 'eslint-plugin-sourdaw',
+    },
+    rules: {
+        'no-useeffect-fetching': {
+            meta: {
+                type: 'problem',
+                docs: {
+                    description:
+                        'Disallow fetching/query execution in useEffect/useLayoutEffect. Use TanStack Query hooks.',
+                },
+                schema: [],
+                messages: {
+                    noUseEffectFetching:
+                        'Do not fetch data in useEffect/useLayoutEffect. Use a TanStack Query hook or repository-backed query hook instead.',
+                },
+            },
+            /** @param {import('eslint').Rule.RuleContext} context */
+            create(context) {
+                return {
+                    /** @param {any} node */
+                    CallExpression(node) {
+                        if (!isReactEffectCall(node)) return;
+                        const body = getEffectBody(node);
+                        if (!body) return;
+
+                        let found = false;
+                        traverse(body, (inner) => {
+                            if (found) return;
+                            if (isFetchLikeCall(inner)) {
+                                found = true;
+                                context.report({
+                                    node: inner,
+                                    messageId: 'noUseEffectFetching',
+                                });
+                            }
+                        });
+                    },
+                };
+            },
+        },
+
+        'no-useeffect-derived-state': {
+            meta: {
+                type: 'suggestion',
+                docs: {
+                    description: 'Warn when useEffect/useLayoutEffect appears to only mirror data into local state.',
+                },
+                schema: [],
+                messages: {
+                    noDerivedStateEffect:
+                        'This effect looks like derived state. Derive during render, move to a selector/transformer, or justify the imperative sync explicitly.',
+                },
+            },
+            /** @param {import('eslint').Rule.RuleContext} context */
+            create(context) {
+                return {
+                    /** @param {any} node */
+                    CallExpression(node) {
+                        if (!isReactEffectCall(node)) return;
+                        const body = getEffectBody(node);
+                        if (!body || body.type !== 'BlockStatement') return;
+                        if (bodyContainsAsyncOrFetch(body)) return;
+                        if (!bodyLooksLikeDerivedStateEffect(body)) return;
+
+                        context.report({
+                            node,
+                            messageId: 'noDerivedStateEffect',
+                        });
+                    },
+                };
+            },
+        },
+
+        'no-manual-memoization': {
+            meta: {
+                type: 'problem',
+                docs: {
+                    description:
+                        'Disallow useMemo/useCallback/React.memo in app code. Prefer React Compiler and architectural simplification.',
+                },
+                schema: [],
+                messages: {
+                    noManualMemoization:
+                        'Manual memoization is not allowed here. Prefer architectural simplification and let React Compiler handle memoization.',
+                },
+            },
+            /** @param {import('eslint').Rule.RuleContext} context */
+            create(context) {
+                return {
+                    /** @param {any} node */
+                    CallExpression(node) {
+                        if (
+                            node.callee.type === 'Identifier' &&
+                            (node.callee.name === 'useMemo' || node.callee.name === 'useCallback')
+                        ) {
+                            context.report({
+                                node,
+                                messageId: 'noManualMemoization',
+                            });
+                        }
+
+                        if (
+                            node.callee.type === 'MemberExpression' &&
+                            node.callee.object?.type === 'Identifier' &&
+                            node.callee.object.name === 'React' &&
+                            node.callee.property?.type === 'Identifier' &&
+                            node.callee.property.name === 'memo'
+                        ) {
+                            context.report({
+                                node,
+                                messageId: 'noManualMemoization',
+                            });
+                        }
+                    },
+                };
+            },
+        },
+
+        'no-tauri-api-in-ui': {
+            meta: {
+                type: 'problem',
+                docs: {
+                    description: 'Disallow direct @tauri-apps/api usage in presentation code.',
+                },
+                schema: [],
+                messages: {
+                    noTauriApiInUi:
+                        'Do not use @tauri-apps/api directly in presentation code. Go through a repository, adapter, or use case.',
+                },
+            },
+            /** @param {import('eslint').Rule.RuleContext} context */
+            create(context) {
+                if (!isPresentationFile(context.filename)) return {};
+
+                return {
+                    /** @param {any} node */
+                    ImportDeclaration(node) {
+                        const value = node.source.value;
+                        if (typeof value !== 'string') return;
+
+                        if (value.startsWith('@tauri-apps/api')) {
+                            context.report({
+                                node,
+                                messageId: 'noTauriApiInUi',
+                            });
+                        }
+                    },
+                };
+            },
+        },
+
+        'no-react-in-domain-logic': {
+            meta: {
+                type: 'problem',
+                docs: {
+                    description:
+                        'Disallow React imports in domain logic layers such as useCases/services/validators/transformers.',
+                },
+                schema: [],
+                messages: {
+                    noReactInDomainLogic:
+                        'Do not import React into domain logic layers. Move UI concerns outward or extract pure domain code.',
+                },
+            },
+            /** @param {import('eslint').Rule.RuleContext} context */
+            create(context) {
+                if (!isDomainLogicFile(context.filename)) return {};
+
+                return {
+                    /** @param {any} node */
+                    ImportDeclaration(node) {
+                        const value = node.source.value;
+                        if (typeof value !== 'string') return;
+
+                        if (value === 'react' || value.startsWith('react/')) {
+                            context.report({
+                                node,
+                                messageId: 'noReactInDomainLogic',
+                            });
+                        }
+                    },
+                };
+            },
+        },
+    },
+};
 
 export default defineConfig(
     // ─── Base configs ────────────────────────────────────────────────────────
@@ -22,11 +409,10 @@ export default defineConfig(
     tseslint.configs.recommendedTypeChecked,
     eslintPluginPromise.configs['flat/recommended'],
     eslintPluginComments.recommended,
-
-    // ─── React 19 + Compiler ─────────────────────────────────────────────────
     eslintPluginJsxA11yX.flatConfigs.recommended,
     eslintPluginReact.configs['recommended-type-checked'],
     eslintPluginReactHooks.configs.flat['recommended-latest'],
+    eslintPluginQuery.configs['flat/recommended'],
 
     // ─── Ignores ─────────────────────────────────────────────────────────────
     {
@@ -37,7 +423,7 @@ export default defineConfig(
             'public/',
             'coverage/',
             'storybook-static/',
-            'src/routeTree.gen.ts', // Auto-generated by TanStack Router
+            'src/routeTree.gen.ts',
             '**/*.md',
         ],
     },
@@ -50,6 +436,9 @@ export default defineConfig(
         plugins: {
             unicorn: eslintPluginUnicorn,
             '@stylistic': eslintPluginStylistic,
+            import: eslintPluginImport,
+            '@tanstack/query': eslintPluginQuery,
+            sourdaw: sourdawPlugin,
         },
         languageOptions: {
             ecmaVersion: 'latest',
@@ -64,6 +453,10 @@ export default defineConfig(
         },
         settings: {
             react: { version: 'detect' },
+            'import/resolver': {
+                typescript: true,
+                node: true,
+            },
         },
     },
 
@@ -71,7 +464,7 @@ export default defineConfig(
     {
         files: ['**/*.{js,jsx,ts,tsx,mts,cts}'],
         rules: {
-            // ── Code style (enforced by @stylistic or base) ──────────────────
+            // ── Code style ────────────────────────────────────────────────────
             '@stylistic/linebreak-style': ['error', 'unix'],
             '@stylistic/eol-last': ['error', 'always'],
             '@stylistic/spaced-comment': [
@@ -110,9 +503,36 @@ export default defineConfig(
             'no-useless-concat': 'error',
             'no-useless-escape': 'error',
             'no-useless-rename': ['error', { ignoreDestructuring: false, ignoreImport: false, ignoreExport: false }],
-            'no-undef': 'off', // TypeScript handles this
+            'no-undef': 'off',
+            'no-nested-ternary': 'error',
+            'no-unneeded-ternary': 'error',
+            'default-case-last': 'error',
+            'consistent-return': 'error',
 
-            // ── Unicorn (selective) ──────────────────────────────────────────
+            // ── Import hygiene ────────────────────────────────────────────────
+            'import/no-default-export': 'error',
+            'import/first': 'error',
+            'import/newline-after-import': 'error',
+            'import/no-duplicates': 'error',
+            'import/order': [
+                'error',
+                {
+                    groups: ['builtin', 'external', 'internal', 'parent', 'sibling', 'index', 'object', 'type'],
+                    pathGroups: [
+                        { pattern: 'react', group: 'external', position: 'before' },
+                        { pattern: '@tauri-apps/**', group: 'external', position: 'after' },
+                        { pattern: 'src/**', group: 'internal', position: 'before' },
+                    ],
+                    pathGroupsExcludedImportTypes: ['react'],
+                    'newlines-between': 'always',
+                    alphabetize: {
+                        order: 'asc',
+                        caseInsensitive: true,
+                    },
+                },
+            ],
+
+            // ── Unicorn ───────────────────────────────────────────────────────
             'unicorn/error-message': 'error',
             'unicorn/escape-case': 'error',
             'unicorn/no-instanceof-array': 'error',
@@ -154,6 +574,8 @@ export default defineConfig(
             '@typescript-eslint/await-thenable': 'error',
             '@typescript-eslint/no-for-in-array': 'error',
             '@typescript-eslint/no-unnecessary-type-assertion': 'error',
+            '@typescript-eslint/no-unnecessary-condition': 'warn',
+            '@typescript-eslint/switch-exhaustiveness-check': 'warn',
             '@typescript-eslint/no-unsafe-argument': 'warn',
             '@typescript-eslint/no-unsafe-assignment': 'warn',
             '@typescript-eslint/no-unsafe-call': 'warn',
@@ -174,11 +596,11 @@ export default defineConfig(
             ],
             '@typescript-eslint/unbound-method': 'off',
             '@typescript-eslint/consistent-type-imports': [
-                'warn',
+                'error',
                 { prefer: 'type-imports', fixStyle: 'inline-type-imports' },
             ],
-            '@typescript-eslint/no-misused-promises': ['warn', { checksVoidReturn: { attributes: false } }],
-            '@typescript-eslint/no-floating-promises': 'warn',
+            '@typescript-eslint/no-misused-promises': ['error', { checksVoidReturn: { attributes: false } }],
+            '@typescript-eslint/no-floating-promises': 'error',
             '@typescript-eslint/prefer-promise-reject-errors': 'warn',
         },
     },
@@ -195,20 +617,15 @@ export default defineConfig(
             '@eslint-react/no-children-map': 'off',
             '@eslint-react/no-children-to-array': 'off',
 
-            // React 19: no forwardRef needed (ref is a regular prop)
+            // React 19: no forwardRef needed
             '@eslint-react/no-forward-ref': 'error',
 
             // Naming conventions
             '@eslint-react/naming-convention/context-name': 'error',
 
-            // DAW UX: autoFocus is intentional for inline editors, command palette, tempo fields, etc.
+            // DAW UX allowances
             'jsx-a11y-x/no-autofocus': 'off',
-
-            // DAW surfaces: canvas, SVG lanes, and track headers have legitimate interactions
             'jsx-a11y-x/no-noninteractive-element-interactions': 'off',
-
-            // DAW uses <label> for presentational parameter names (mixer knobs, sliders).
-            // These are visual labels, not form labels. Warn to track but don't block.
             'jsx-a11y-x/label-has-associated-control': [
                 'warn',
                 {
@@ -216,36 +633,29 @@ export default defineConfig(
                     depth: 3,
                 },
             ],
-
-            // DAW interactive surfaces may not have focusable equivalents.
             'jsx-a11y-x/interactive-supports-focus': 'warn',
-
-            // DAW has many interactive surfaces (track headers, mixer strips, automation lanes)
-            // where full keyboard equivalents are complex. Warn instead of error.
             'jsx-a11y-x/click-events-have-key-events': 'warn',
             'jsx-a11y-x/no-static-element-interactions': 'warn',
-
-            // DAW transport/track controls use aria-pressed on various roles.
             'jsx-a11y-x/role-supports-aria-props': 'warn',
 
-            // React Compiler purity rules — DAW canvas/WebGL/automation components
-            // legitimately read refs during render to measure DOM dimensions (e.g.
-            // containerRef.current.clientWidth for pixel-per-beat calculations).
-            // These are valid patterns that React Compiler can't optimize but are
-            // necessary for real-time renderer surfaces.
+            // React Compiler/purity allowances
             'react-hooks/refs': 'warn',
             'react-hooks/purity': 'warn',
             '@eslint-react/purity': 'warn',
-
-            // setState in sync effects is common for derived state from store subscriptions
-            // and layout measurements in DAW panels. Warn to track but don't block.
             'react-hooks/set-state-in-effect': 'warn',
             '@eslint-react/set-state-in-effect': 'warn',
-
-            // IIFEs in JSX are used for inline complex rendering in mixer/inspector panels.
             '@eslint-react/unsupported-syntax': 'warn',
 
-            // No default React import (jsx-transform handles it)
+            // Prevent leaked JSX conditions
+            '@eslint-react/no-leaked-conditional-rendering': 'error',
+
+            // Local architecture rules
+            'sourdaw/no-useeffect-fetching': 'error',
+            'sourdaw/no-useeffect-derived-state': 'warn',
+            'sourdaw/no-manual-memoization': 'error',
+            'sourdaw/no-tauri-api-in-ui': 'error',
+
+            // No default React import
             'no-restricted-syntax': [
                 'error',
                 {
@@ -258,8 +668,17 @@ export default defineConfig(
         },
     },
 
+    // ─── TanStack Query conventions ──────────────────────────────────────────
+    {
+        files: ['**/*.{ts,tsx,mts,cts}'],
+        rules: {
+            '@tanstack/query/exhaustive-deps': 'error',
+            '@tanstack/query/no-unstable-deps': 'error',
+            '@tanstack/query/stable-query-client': 'error',
+        },
+    },
+
     // ─── Business-layer conventions ──────────────────────────────────────────
-    // Prefer function declarations over const arrow functions in non-presentation code.
     {
         files: [
             'src/**/useCases/**/*.ts',
@@ -268,10 +687,113 @@ export default defineConfig(
             'src/**/models/**/*.ts',
             'src/**/stores/**/*.ts',
             'src/**/events/**/*.ts',
+            'src/**/services/**/*.ts',
+            'src/**/validators/**/*.ts',
             'src/helpers/**/*.ts',
         ],
         rules: {
             'func-style': ['warn', 'declaration', { allowArrowFunctions: false }],
+            'sourdaw/no-react-in-domain-logic': 'error',
+        },
+    },
+
+    // ─── Presentation-layer import restrictions ──────────────────────────────
+    {
+        files: [
+            'src/**/presentations/views/**/*.{ts,tsx}',
+            'src/**/presentations/components/**/*.{ts,tsx}',
+            'src/**/presentations/hooks/**/*.{ts,tsx}',
+        ],
+        rules: {
+            '@typescript-eslint/no-restricted-imports': [
+                'error',
+                {
+                    paths: [
+                        {
+                            name: '@tauri-apps/api/core',
+                            message:
+                                'Do not use Tauri APIs directly in presentation code. Go through repositories, adapters, or use cases.',
+                        },
+                        {
+                            name: '@tauri-apps/api/event',
+                            message:
+                                'Do not use Tauri APIs directly in presentation code. Go through repositories, adapters, or use cases.',
+                        },
+                        {
+                            name: '@tauri-apps/api/window',
+                            message:
+                                'Do not use Tauri APIs directly in presentation code. Go through repositories, adapters, or use cases.',
+                        },
+                    ],
+                    patterns: [
+                        {
+                            group: ['**/repositories/**'],
+                            message:
+                                'Do not import repositories directly into presentation code. Go through a hook, use case, or presentation adapter.',
+                        },
+                        {
+                            group: ['**/src-tauri/**', '**/@tauri-apps/api/**'],
+                            message:
+                                'Do not import Tauri bridge code into presentation code. Use repositories/adapters.',
+                        },
+                    ],
+                },
+            ],
+        },
+    },
+
+    // ─── Domain-layer import restrictions ────────────────────────────────────
+    {
+        files: [
+            'src/**/useCases/**/*.{ts,tsx}',
+            'src/**/services/**/*.{ts,tsx}',
+            'src/**/validators/**/*.{ts,tsx}',
+            'src/**/transformers/**/*.{ts,tsx}',
+        ],
+        rules: {
+            '@typescript-eslint/no-restricted-imports': [
+                'error',
+                {
+                    paths: [
+                        {
+                            name: 'react',
+                            message: 'Do not import React into domain logic. Keep domain logic UI-free.',
+                        },
+                        {
+                            name: '@tauri-apps/api/core',
+                            message: 'Do not import Tauri APIs into domain logic. Use repositories or adapters.',
+                        },
+                        {
+                            name: '@tauri-apps/api/event',
+                            message: 'Do not import Tauri APIs into domain logic. Use repositories or adapters.',
+                        },
+                    ],
+                    patterns: [
+                        {
+                            group: ['**/presentations/**'],
+                            message: 'Do not import presentation code into use cases/services/validators/transformers.',
+                        },
+                    ],
+                },
+            ],
+        },
+    },
+
+    // ─── Repository-layer rules ──────────────────────────────────────────────
+    {
+        files: ['src/**/repositories/**/*.{ts,tsx}'],
+        rules: {
+            '@typescript-eslint/no-restricted-imports': [
+                'error',
+                {
+                    patterns: [
+                        {
+                            group: ['**/presentations/**'],
+                            message: 'Repositories must not depend on presentation-layer modules.',
+                        },
+                    ],
+                },
+            ],
         },
     },
 
@@ -280,10 +802,8 @@ export default defineConfig(
         files: ['**/*.{ts,tsx,mts,cts}'],
         ignores: [
             '**/*.spec.{ts,tsx}',
-            // Storage implementations — they ARE the abstraction layer
             'src/helpers/Store/Storage/LocalStorageStorage.ts',
             'src/helpers/Store/Storage/SessionStorageStorage.ts',
-            // Repositories/stores that implement persistence directly
             'src/modules/DevTools/repositories/devToolsStorageRepository.ts',
             'src/modules/Project/repositories/projectRepository.ts',
             'src/modules/Project/useCases/recentProjects.ts',
@@ -294,23 +814,23 @@ export default defineConfig(
                 'warn',
                 {
                     selector: "CallExpression[callee.object.name='localStorage']",
-                    message: 'Do not use `localStorage` directly, use the `Store` with `LocalStorageStorage` instead',
+                    message: 'Do not use `localStorage` directly, use the `Store` with `LocalStorageStorage` instead.',
                 },
                 {
                     selector:
                         "CallExpression[callee.object.object.name='window'][callee.object.property.name='localStorage']",
-                    message: 'Do not use `localStorage` directly, use the `Store` with `LocalStorageStorage` instead',
+                    message: 'Do not use `localStorage` directly, use the `Store` with `LocalStorageStorage` instead.',
                 },
                 {
                     selector: "CallExpression[callee.object.name='sessionStorage']",
                     message:
-                        'Do not use `sessionStorage` directly, use the `Store` with `SessionStorageStorage` instead',
+                        'Do not use `sessionStorage` directly, use the `Store` with `SessionStorageStorage` instead.',
                 },
                 {
                     selector:
                         "CallExpression[callee.object.object.name='window'][callee.object.property.name='sessionStorage']",
                     message:
-                        'Do not use `sessionStorage` directly, use the `Store` with `SessionStorageStorage` instead',
+                        'Do not use `sessionStorage` directly, use the `Store` with `SessionStorageStorage` instead.',
                 },
             ],
         },
@@ -327,6 +847,8 @@ export default defineConfig(
             'jsx-a11y-x/no-static-element-interactions': 'off',
             'jsx-a11y-x/click-events-have-key-events': 'off',
             '@typescript-eslint/unbound-method': 'off',
+            'sourdaw/no-manual-memoization': 'off',
+            'sourdaw/no-useeffect-derived-state': 'off',
         },
     },
 
@@ -339,9 +861,9 @@ export default defineConfig(
     // ─── Prettier (must be last) ─────────────────────────────────────────────
     eslintPluginPrettierRecommended,
     {
-        files: ['**/*.{ts,tsx,mts,cts}'],
+        files: ['**/*.{ts,tsx,mts,cts,js,jsx}'],
         rules: {
-            curly: ['error', 'all'], // Override Prettier's curly brace preference
+            curly: ['error', 'all'],
         },
     }
 );

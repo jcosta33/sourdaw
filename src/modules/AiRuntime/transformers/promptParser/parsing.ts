@@ -184,7 +184,7 @@ export function tryParameterizedPath(normalized: string, context: ProjectContext
 
     const joinMatch = normalized.match(/^join\s+session\s+(.+)$/i);
     if (joinMatch) {
-        return [{ type: 'joinCollabSession', payload: { sessionId: joinMatch[1]!.trim(), peerName: 'Peer' } }];
+        return [{ type: 'joinCollabSession', payload: { inviteString: joinMatch[1]!.trim(), peerName: 'Peer' } }];
     }
 
     const muteTrackMatch = normalized.match(/^(mute|unmute)\s+(?:the\s+)?(.+?)(?:\s+track)?$/i);

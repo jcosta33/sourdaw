@@ -1,8 +1,6 @@
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
 import { type AppAction } from '../models/AppAction';
-import { getCollaborationStoreValue } from '#/modules/Collaboration/useCases/collaborationQueries';
-import { broadcastAction } from '#/modules/Collaboration/useCases/collaboration';
 
 const logger = Container.getInstance().get(Logger);
 import { type ActionHandler } from '../models/ActionHandler';
@@ -200,9 +198,9 @@ export async function executeAppAction(action: AppAction, options?: ExecuteOptio
     // Hook: record action for macro playback
     recordAction(action);
 
-    if (getCollaborationStoreValue()?.sessionId) {
-        broadcastAction(action);
-    }
+    // CRDT sync handles replication — no explicit action broadcasting needed.
+    // The AutomergeStorage writes to the Automerge doc on every store.set(),
+    // and the sync protocol replicates changes to connected peers.
 
     if (undoResult) {
         const entry = createUndoEntry(

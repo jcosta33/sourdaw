@@ -2240,3 +2240,92 @@ A user should see:
 and immediately know what to do.
 
 If the UI makes users think about networking, it is too complicated.
+
+---
+
+# Implementation Notes — Phase 1: AutomergeStorage Approach
+
+## Architecture Decision
+
+Rather than building a separate CRDT document layer with projection bridges and sync subscribers, the implementation integrates Automerge directly into the existing `Store<T>` infrastructure via a new `AutomergeStorage<T>` backend.
+
+The `Storage<T>` interface (`get`, `set`, `clear`, `isSupported`) already abstracts persistence. `LocalStorageStorage` persists to localStorage. `MemoryStorage` is in-memory only. `AutomergeStorage` persists to an Automerge document inside the `automergeRepository` singleton.
+
+This means **every existing handler that calls `store.set()` automatically writes to Automerge**. No handler rewrites required. No projection bridge for local operations. No sync subscribers. The CRDT layer is invisible to the rest of the app.
+
+## What uses AutomergeStorage
+
+All project-state stores:
+
+| Store | Automerge key | Ephemeral fields stripped via `toCrdt` |
+|---|---|---|
+| `trackStore` | `tracks` | `selectedTrackId` |
+| `automationStore` | `automation` | — |
+| `midiStore` | `midi` | — |
+| `transportStore` | `transport` | `isPlaying`, `isRecording`, `playheadPosition`, `overdubEnabled`, `scheduleGrainMs` |
+| `tempoMapStore` | `tempoMap` | — |
+| `timeSignatureMapStore` | `timeSignatureMap` | — |
+| `markerStore` | `markers` | — |
+| `projectStore` | `projectMeta` | `dirty`, `loading` |
+
+All keys live in a single root Automerge document (`DOC_PREFIX_ROOT = 'root'`).
+
+## What does NOT use AutomergeStorage
+
+Ephemeral/UI stores stay on `MemoryStorage` or `LocalStorageStorage`:
+
+- `workspaceStore` — panel layout, zoom, tool selection
+- `collaborationStore` — session/peer state
+- `clipboardStore` — copy/paste buffer
+- `undoStore` — undo/redo history
+- Any `presentations/stores/` — per-module UI preferences
+
+## Hydration flow
+
+`AutomergeStorage` caches values in memory for fast synchronous reads. On load:
+
+1. `loadCrdtProject()` loads Automerge doc binary from IndexedDB into `automergeRepository`
+2. `projectCrdtToStores()` calls `store.hydrate()` on each project store
+3. `hydrate()` reads from the Automerge doc into the cache and notifies subscribers
+4. The UI renders from the cached values
+
+This avoids write-back loops — `hydrate()` populates the cache without calling `set()`, so `AutomergeStorage` doesn't write back to Automerge.
+
+## For remote sync (Phase 2)
+
+When a remote peer sends Automerge sync messages:
+
+1. `automergeRepository.mergeRemoteDoc()` applies the changes
+2. `projectCrdtToStores()` hydrates all stores from the updated doc
+3. Store subscribers fire, UI updates
+
+The `setupProjectionBridge()` subscribes to `automergeRepository.onChange()` for this purpose.
+
+## Multi-document split (future optimization)
+
+Currently all state lives in one root Automerge document. For large sessions, splitting into child documents per track/clip/lane improves sync efficiency (only changed documents need to be transferred). This is a performance optimization, not a correctness requirement. The `AutomergeStorage` approach supports this by changing the `docId` parameter per store instance.
+
+## File inventory
+
+### Rust: `crates/daw-collab/`
+- `document_store.rs` — `DocumentStore` for multi-doc management, merge, save/load
+- `persistence.rs` — `.sdaw` binary format encode/decode + file I/O
+- `schema.rs` — Document ID types and helpers
+
+### Frontend: `src/modules/CrdtDocument/`
+- `models/CrdtDocumentTypes.ts` — `DocId`, `DocumentBundle`, `MergeResult`, `DOC_PREFIX_ROOT`
+- `repositories/automergeRepository.ts` — Singleton managing live Automerge docs
+- `repositories/crdtPersistence.ts` — IndexedDB persistence for Automerge docs
+- `repositories/nativeCrdtPersistence.ts` — Tauri command wrappers
+- `useCases/crdtProjectLifecycle.ts` — Create/load/save project
+- `useCases/crdtMerge.ts` — Import/export `.sdaw`, merge bundles
+- `useCases/mergeOnOpen.ts` — Merge-on-open workflow
+- `useCases/sdawFileFormat.ts` — `.sdaw` binary encode/decode
+- `useCases/projection/projectProjection.ts` — Hydrate stores from Automerge
+- `presentations/views/MergeResultDialog.tsx` — Merge result UI
+
+### Storage backend: `src/helpers/Store/Storage/`
+- `AutomergeStorage.ts` — `Storage<T>` implementation backed by Automerge
+
+### Tauri bridge: `src-tauri/src/commands/`
+- `collab.rs` — Tauri commands for native CRDT persistence

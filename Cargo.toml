@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/daw-core",
+    "crates/daw-collab",
     "crates/daw-engine",
     "crates/daw-dsp",
     "crates/daw-io",

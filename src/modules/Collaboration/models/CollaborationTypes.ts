@@ -1,5 +1,3 @@
-import { type AppAction } from '#/modules/Command/useCases/commandQueries';
-
 export type PeerId = string;
 
 export type PeerInfo = {
@@ -9,31 +7,71 @@ export type PeerInfo = {
     isHost: boolean;
     isConnected: boolean;
     lastSeen: number;
-    cursor?: { trackId: string; beat: number };
+    latencyMs: number | null;
+};
+
+export type JoinRequest = {
+    peerId: PeerId;
+    name: string;
+    timestamp: number;
 };
 
 export type CollaborationState = {
     isEnabled: boolean;
     sessionId: string | null;
     localPeerId: PeerId | null;
+    localName: string;
+    localColor: string;
+    isHost: boolean;
+    approvalRequired: boolean;
+    pendingJoinRequests: JoinRequest[];
     peers: PeerInfo[];
     connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'error';
     error: string | null;
 };
 
-export type SyncMessage =
-    | { type: 'action'; peerId: PeerId; action: AppAction; timestamp: number }
-    | { type: 'state-request'; peerId: PeerId }
-    | { type: 'state-response'; peerId: PeerId; state: unknown }
-    | { type: 'peer-join'; peer: PeerInfo }
-    | { type: 'peer-leave'; peerId: PeerId }
-    | { type: 'cursor-update'; peerId: PeerId; cursor: { trackId: string; beat: number } }
-    | { type: 'ack'; peerId: PeerId; messageId: string };
-
-export type OperationEntry = {
-    id: string;
+/** Presence data broadcast ephemerally — NOT persisted in CRDT. */
+export type PresenceData = {
     peerId: PeerId;
-    action: AppAction;
-    timestamp: number;
-    vectorClock: Record<PeerId, number>;
+    name: string;
+    color: string;
+    view: 'arrangement' | 'mixer' | 'piano-roll' | 'device';
+    cursorBeat: number | null;
+    cursorTrackId: string | null;
+    selectedClipIds: string[];
+    selectedNoteIds: string[];
+    viewportStartBeat: number;
+    viewportEndBeat: number;
+    viewportTrackIds: string[];
+    action: string | null;
 };
+
+/**
+ * Messages sent over the signaling channel (manual exchange or WebSocket).
+ * These are used to establish WebRTC connections, not for project data.
+ */
+export type SignalingMessage =
+    | { type: 'offer'; peerId: PeerId; name: string; sessionId: string; sdp: string }
+    | { type: 'answer'; peerId: PeerId; name: string; sdp: string }
+    | { type: 'ice-candidate'; peerId: PeerId; candidate: string };
+
+/**
+ * Messages sent over WebRTC data channels after connection is established.
+ */
+export type PeerMessage =
+    | { type: 'crdt-sync'; docId: string; data: string }
+    | { type: 'presence'; data: PresenceData }
+    | { type: 'peer-info'; peer: PeerInfo }
+    | { type: 'peer-leave'; peerId: PeerId };
+
+/** Peer colors for up to 8 collaborators. */
+export const PEER_COLORS = [
+    '#3b82f6', // blue
+    '#ef4444', // red
+    '#22c55e', // green
+    '#f59e0b', // amber
+    '#8b5cf6', // violet
+    '#ec4899', // pink
+    '#06b6d4', // cyan
+    '#f97316', // orange
+];

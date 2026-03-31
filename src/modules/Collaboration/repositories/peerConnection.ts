@@ -1,0 +1,257 @@
+import { type PeerId, type PeerMessage } from '../models/CollaborationTypes';
+
+/**
+ * Default ICE servers for NAT traversal.
+ *
+ * STUN only reveals each peer's public IP to themselves — no data
+ * flows through these servers. The actual connection is direct P2P
+ * with DTLS encryption.
+ *
+ * Users can override this via advanced settings to use their own
+ * STUN/TURN servers or disable STUN entirely for strict zero-server mode.
+ */
+const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+];
+
+let customIceServers: RTCIceServer[] | null = null;
+
+/** Override the default ICE servers (for advanced settings / strict zero-server mode). */
+export const setIceServers = (servers: RTCIceServer[] | null): void => {
+    customIceServers = servers;
+};
+
+/** Get the current ICE server configuration. */
+const getIceConfig = (): RTCConfiguration => {
+    const servers = customIceServers ?? DEFAULT_ICE_SERVERS;
+    return { iceServers: servers };
+};
+
+type PeerConnectionCallbacks = {
+    onMessage: (peerId: PeerId, message: PeerMessage) => void;
+    onConnected: (peerId: PeerId) => void;
+    onDisconnected: (peerId: PeerId) => void;
+    onIceCandidate: (peerId: PeerId, candidate: string) => void;
+};
+
+/**
+ * Manages a single WebRTC peer connection with two data channels:
+ * - `crdt-sync`: reliable, ordered — for Automerge sync messages
+ * - `presence`: unreliable, unordered — for ephemeral presence data
+ */
+class PeerConnection {
+    readonly peerId: PeerId;
+    readonly rtc: RTCPeerConnection;
+    private crdtChannel: RTCDataChannel | null = null;
+    private presenceChannel: RTCDataChannel | null = null;
+    private callbacks: PeerConnectionCallbacks;
+    private connected = false;
+
+    constructor(peerId: PeerId, callbacks: PeerConnectionCallbacks) {
+        this.peerId = peerId;
+        this.callbacks = callbacks;
+
+        this.rtc = new RTCPeerConnection(getIceConfig());
+
+        this.rtc.onicecandidate = (event) => {
+            if (event.candidate) {
+                this.callbacks.onIceCandidate(this.peerId, JSON.stringify(event.candidate));
+            }
+        };
+
+        this.rtc.onconnectionstatechange = () => {
+            if (this.rtc.connectionState === 'disconnected' || this.rtc.connectionState === 'failed') {
+                if (this.connected) {
+                    this.connected = false;
+                    this.callbacks.onDisconnected(this.peerId);
+                }
+            }
+        };
+
+        this.rtc.ondatachannel = (event) => {
+            this.setupChannel(event.channel);
+        };
+    }
+
+    /** Create data channels and generate an SDP offer (caller/host side). */
+    async createOffer(): Promise<string> {
+        this.crdtChannel = this.rtc.createDataChannel('crdt-sync', {
+            ordered: true,
+        });
+        this.setupChannel(this.crdtChannel);
+
+        this.presenceChannel = this.rtc.createDataChannel('presence', {
+            ordered: false,
+            maxRetransmits: 0,
+        });
+        this.setupChannel(this.presenceChannel);
+
+        const offer = await this.rtc.createOffer();
+        await this.rtc.setLocalDescription(offer);
+        return JSON.stringify(offer);
+    }
+
+    /** Accept an SDP offer and generate an answer (joiner side). */
+    async acceptOffer(offerSdp: string): Promise<string> {
+        const offer = JSON.parse(offerSdp) as RTCSessionDescriptionInit;
+        await this.rtc.setRemoteDescription(offer);
+        const answer = await this.rtc.createAnswer();
+        await this.rtc.setLocalDescription(answer);
+        return JSON.stringify(answer);
+    }
+
+    /** Apply the remote answer (caller side after receiving joiner's answer). */
+    async acceptAnswer(answerSdp: string): Promise<void> {
+        const answer = JSON.parse(answerSdp) as RTCSessionDescriptionInit;
+        await this.rtc.setRemoteDescription(answer);
+    }
+
+    /** Add a remote ICE candidate. */
+    async addIceCandidate(candidateJson: string): Promise<void> {
+        const candidate = JSON.parse(candidateJson) as RTCIceCandidateInit;
+        await this.rtc.addIceCandidate(candidate);
+    }
+
+    /** Send a message over the CRDT sync channel. */
+    sendCrdtSync(message: PeerMessage): void {
+        if (this.crdtChannel?.readyState === 'open') {
+            this.crdtChannel.send(JSON.stringify(message));
+        }
+    }
+
+    /** Send presence data over the unreliable channel. */
+    sendPresence(message: PeerMessage): void {
+        if (this.presenceChannel?.readyState === 'open') {
+            this.presenceChannel.send(JSON.stringify(message));
+        }
+    }
+
+    /** Check if the CRDT channel is open and ready. */
+    isReady(): boolean {
+        return this.crdtChannel?.readyState === 'open';
+    }
+
+    /** Close the connection and clean up. */
+    close(): void {
+        this.crdtChannel?.close();
+        this.presenceChannel?.close();
+        this.rtc.close();
+        this.connected = false;
+    }
+
+    private setupChannel(channel: RTCDataChannel): void {
+        if (channel.label === 'crdt-sync') {
+            this.crdtChannel = channel;
+        } else if (channel.label === 'presence') {
+            this.presenceChannel = channel;
+        }
+
+        channel.onmessage = (event) => {
+            try {
+                const message = JSON.parse(event.data as string) as PeerMessage;
+                this.callbacks.onMessage(this.peerId, message);
+            } catch {
+                // Ignore malformed messages
+            }
+        };
+
+        channel.onopen = () => {
+            // When the CRDT channel opens, the connection is usable
+            if (channel.label === 'crdt-sync' && !this.connected) {
+                this.connected = true;
+                this.callbacks.onConnected(this.peerId);
+            }
+        };
+
+        channel.onclose = () => {
+            if (channel.label === 'crdt-sync') {
+                this.connected = false;
+                this.callbacks.onDisconnected(this.peerId);
+            }
+        };
+    }
+}
+
+/**
+ * Manages all peer connections for a collaboration session.
+ */
+export class PeerConnectionManager {
+    private peers = new Map<PeerId, PeerConnection>();
+    private callbacks: PeerConnectionCallbacks;
+
+    constructor(callbacks: PeerConnectionCallbacks) {
+        this.callbacks = callbacks;
+    }
+
+    /** Create a new peer connection (before signaling). */
+    createPeer(peerId: PeerId): PeerConnection {
+        if (this.peers.has(peerId)) {
+            this.peers.get(peerId)!.close();
+        }
+        const peer = new PeerConnection(peerId, this.callbacks);
+        this.peers.set(peerId, peer);
+        return peer;
+    }
+
+    /** Get an existing peer connection. */
+    getPeer(peerId: PeerId): PeerConnection | undefined {
+        return this.peers.get(peerId);
+    }
+
+    /** Remove and close a peer connection. */
+    removePeer(peerId: PeerId): void {
+        const peer = this.peers.get(peerId);
+        if (peer) {
+            peer.close();
+            this.peers.delete(peerId);
+        }
+    }
+
+    /** Send a CRDT sync message to a specific peer. */
+    sendCrdtSync(peerId: PeerId, message: PeerMessage): void {
+        this.peers.get(peerId)?.sendCrdtSync(message);
+    }
+
+    /** Send a CRDT sync message to all connected peers. */
+    broadcastCrdtSync(message: PeerMessage): void {
+        for (const peer of this.peers.values()) {
+            if (peer.isReady()) {
+                peer.sendCrdtSync(message);
+            }
+        }
+    }
+
+    /** Send presence data to all connected peers. */
+    broadcastPresence(message: PeerMessage): void {
+        for (const peer of this.peers.values()) {
+            if (peer.isReady()) {
+                peer.sendPresence(message);
+            }
+        }
+    }
+
+    /** Get all connected peer IDs. */
+    getConnectedPeerIds(): PeerId[] {
+        const ids: PeerId[] = [];
+        for (const [id, peer] of this.peers) {
+            if (peer.isReady()) {
+                ids.push(id);
+            }
+        }
+        return ids;
+    }
+
+    /** Get all peer IDs (connected or not). */
+    getAllPeerIds(): PeerId[] {
+        return Array.from(this.peers.keys());
+    }
+
+    /** Close all connections. */
+    closeAll(): void {
+        for (const peer of this.peers.values()) {
+            peer.close();
+        }
+        this.peers.clear();
+    }
+}

@@ -1,9 +1,10 @@
 /// <reference types="vitest" />
-import path from 'path';
+import { fileURLToPath, URL } from 'node:url';
+import { resolve } from 'node:path';
 import { defineConfig } from 'vitest/config';
 import react, { reactCompilerPreset } from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
-import { TanStackRouterVite } from '@tanstack/router-plugin/vite';
+import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import babel from '@rolldown/plugin-babel';
 
 export default defineConfig({
@@ -12,7 +13,7 @@ export default defineConfig({
         keepNames: true, // Fixes @grame/faustwasm AudioWorkletNode mangling
     },
     plugins: [
-        TanStackRouterVite({ routesDirectory: './src/routes' }),
+        tanstackRouter({ routesDirectory: './src/routes' }),
         babel({ presets: [reactCompilerPreset()] }),
         react(),
         tailwindcss(),
@@ -24,7 +25,15 @@ export default defineConfig({
     },
     resolve: {
         alias: {
-            '#': path.resolve(__dirname, './src'),
+            '#': fileURLToPath(new URL('./src', import.meta.url)),
+            // @automerge/automerge v3's `browser` export condition resolves to
+            // `fullfat_bundler.js`, which uses `import * as wasm from "…bg.wasm"` —
+            // the ESM Wasm integration proposal syntax that Rolldown (Vite 8) does
+            // not support. The base64 entrypoint is functionally identical but
+            // inlines the .wasm as a base64 string, sidestepping the issue entirely.
+            '@automerge/automerge': resolve(
+                'node_modules/@automerge/automerge/dist/mjs/entrypoints/fullfat_base64.js',
+            ),
         },
     },
     build: {
