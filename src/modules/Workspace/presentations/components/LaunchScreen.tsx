@@ -1,13 +1,26 @@
 import { type ReactElement, type DragEvent, useState, useEffect, useRef } from 'react';
 import {
-    LayoutTemplate, Sparkles, FolderOpen, Upload, ArrowLeft,
-    Music, Mic, Film, FileText, Guitar, Headphones, Piano, Layers,
+    LayoutTemplate,
+    Sparkles,
+    FolderOpen,
+    Upload,
+    ArrowLeft,
+    Music,
+    Mic,
+    Film,
+    FileText,
+    Guitar,
+    Headphones,
+    Piano,
+    Layers,
 } from 'lucide-react';
 import { SourdawLogo } from './SourdawLogo';
 import { newProject } from '#/modules/Project/useCases/projectPersistence/newProject';
 import {
-    createFromTemplate, getTemplates,
-    type TemplateCategory, type ProjectTemplate,
+    createFromTemplate,
+    getTemplates,
+    type TemplateCategory,
+    type ProjectTemplate,
 } from '#/modules/Project/useCases/projectTemplates';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
@@ -56,25 +69,49 @@ const randomTagline = BREAD_TAGLINES[Math.floor(Math.random() * BREAD_TAGLINES.l
 const CATEGORY_ORDER: Array<TemplateCategory | 'all'> = ['all', 'demo', 'music', 'podcast', 'film'];
 
 const CATEGORY_LABELS: Record<string, string> = {
-    all: 'All', demo: 'Demos', music: 'Music', podcast: 'Podcast', film: 'Film',
+    all: 'All',
+    demo: 'Demos',
+    music: 'Music',
+    podcast: 'Podcast',
+    film: 'Film',
 };
 
 const CATEGORY_COLORS: Record<string, { text: string; bg: string; activeBg: string; border: string }> = {
-    all:     { text: 'text-white/60',                           bg: 'bg-white/5',                               activeBg: 'bg-white/10',                                border: 'border-white/10' },
-    demo:    { text: 'text-[var(--color-accent-mint)]',         bg: 'bg-[var(--color-accent-mint)]/8',          activeBg: 'bg-[var(--color-accent-mint)]/15',           border: 'border-[var(--color-accent-mint)]/25' },
-    music:   { text: 'text-[var(--color-accent-lavender)]',     bg: 'bg-[var(--color-accent-lavender)]/8',      activeBg: 'bg-[var(--color-accent-lavender)]/15',       border: 'border-[var(--color-accent-lavender)]/25' },
-    podcast: { text: 'text-[var(--color-accent-peach)]',        bg: 'bg-[var(--color-accent-peach)]/8',         activeBg: 'bg-[var(--color-accent-peach)]/15',          border: 'border-[var(--color-accent-peach)]/25' },
-    film:    { text: 'text-[var(--color-accent-cyan)]',         bg: 'bg-[var(--color-accent-cyan)]/8',          activeBg: 'bg-[var(--color-accent-cyan)]/15',           border: 'border-[var(--color-accent-cyan)]/25' },
-    empty:   { text: 'text-white/50',                           bg: 'bg-white/5',                               activeBg: 'bg-white/10',                                border: 'border-white/10' },
+    all: { text: 'text-white/60', bg: 'bg-white/5', activeBg: 'bg-white/10', border: 'border-white/10' },
+    demo: {
+        text: 'text-[var(--color-accent-mint)]',
+        bg: 'bg-[var(--color-accent-mint)]/8',
+        activeBg: 'bg-[var(--color-accent-mint)]/15',
+        border: 'border-[var(--color-accent-mint)]/25',
+    },
+    music: {
+        text: 'text-[var(--color-accent-lavender)]',
+        bg: 'bg-[var(--color-accent-lavender)]/8',
+        activeBg: 'bg-[var(--color-accent-lavender)]/15',
+        border: 'border-[var(--color-accent-lavender)]/25',
+    },
+    podcast: {
+        text: 'text-[var(--color-accent-peach)]',
+        bg: 'bg-[var(--color-accent-peach)]/8',
+        activeBg: 'bg-[var(--color-accent-peach)]/15',
+        border: 'border-[var(--color-accent-peach)]/25',
+    },
+    film: {
+        text: 'text-[var(--color-accent-cyan)]',
+        bg: 'bg-[var(--color-accent-cyan)]/8',
+        activeBg: 'bg-[var(--color-accent-cyan)]/15',
+        border: 'border-[var(--color-accent-cyan)]/25',
+    },
+    empty: { text: 'text-white/50', bg: 'bg-white/5', activeBg: 'bg-white/10', border: 'border-white/10' },
 };
 
 const TEMPLATE_ICONS: Record<string, ReactElement> = {
-    empty:               <FileText   className="size-4" aria-hidden="true" />,
-    'basic-band':        <Guitar     className="size-4" aria-hidden="true" />,
-    electronic:          <Headphones className="size-4" aria-hidden="true" />,
-    podcast:             <Mic        className="size-4" aria-hidden="true" />,
-    'film-score':        <Film       className="size-4" aria-hidden="true" />,
-    'singer-songwriter': <Piano      className="size-4" aria-hidden="true" />,
+    empty: <FileText className="size-4" aria-hidden="true" />,
+    'basic-band': <Guitar className="size-4" aria-hidden="true" />,
+    electronic: <Headphones className="size-4" aria-hidden="true" />,
+    podcast: <Mic className="size-4" aria-hidden="true" />,
+    'film-score': <Film className="size-4" aria-hidden="true" />,
+    'singer-songwriter': <Piano className="size-4" aria-hidden="true" />,
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -83,12 +120,18 @@ const TEMPLATE_ICONS: Record<string, ReactElement> = {
 
 const AmbientGlows = (): ReactElement => (
     <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-        <div className="absolute size-[500px] rounded-full blur-3xl opacity-[0.07] -top-20 left-1/4 animate-pulse"
-            style={{ background: 'var(--color-accent-orange)', animationDuration: '7s' }} />
-        <div className="absolute size-80 rounded-full blur-3xl opacity-[0.04] bottom-16 right-16 animate-pulse"
-            style={{ background: 'var(--color-accent-lavender)', animationDuration: '10s', animationDelay: '3s' }} />
-        <div className="absolute size-56 rounded-full blur-3xl opacity-[0.03] top-1/2 left-8 animate-pulse"
-            style={{ background: 'var(--color-accent-cyan)', animationDuration: '13s', animationDelay: '6s' }} />
+        <div
+            className="absolute size-[500px] rounded-full blur-3xl opacity-[0.07] -top-20 left-1/4 animate-pulse"
+            style={{ background: 'var(--color-accent-orange)', animationDuration: '7s' }}
+        />
+        <div
+            className="absolute size-80 rounded-full blur-3xl opacity-[0.04] bottom-16 right-16 animate-pulse"
+            style={{ background: 'var(--color-accent-lavender)', animationDuration: '10s', animationDelay: '3s' }}
+        />
+        <div
+            className="absolute size-56 rounded-full blur-3xl opacity-[0.03] top-1/2 left-8 animate-pulse"
+            style={{ background: 'var(--color-accent-cyan)', animationDuration: '13s', animationDelay: '6s' }}
+        />
     </div>
 );
 
@@ -120,9 +163,8 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
     const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined);
 
     const allTemplates = getTemplates();
-    const filteredTemplates = activeCategory === 'all'
-        ? allTemplates
-        : allTemplates.filter((t) => t.category === activeCategory);
+    const filteredTemplates =
+        activeCategory === 'all' ? allTemplates : allTemplates.filter((t) => t.category === activeCategory);
 
     // Rotate quips during loading
     useEffect(() => {
@@ -142,7 +184,9 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
         setLoadingName('New Project');
         setView('loading');
         // Let the loading animation render before synchronous work
-        setTimeout(() => { newProject(); }, 280);
+        setTimeout(() => {
+            newProject();
+        }, 280);
     };
 
     const handleOpenGrid = (category: TemplateCategory | 'all'): void => {
@@ -174,16 +218,28 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                     await importMidiFile(file);
                     continue;
                 }
-                const isAudio = file.type.startsWith('audio/') ||
+                const isAudio =
+                    file.type.startsWith('audio/') ||
                     ['wav', 'mp3', 'ogg', 'flac', 'aac', 'm4a', 'webm', 'aiff', 'aif'].includes(ext);
-                if (!isAudio) { continue; }
+                if (!isAudio) {
+                    continue;
+                }
                 const track = addTrack({ name: file.name.replace(/\.[^.]+$/, ''), kind: 'audio' });
-                if (!track) { continue; }
+                if (!track) {
+                    continue;
+                }
                 try {
                     const { id: bufferId, buffer } = await decodeAudioFile(file);
                     const tempo = transportStore.value?.tempo ?? 120;
                     const beats = Math.max(4, Math.ceil((buffer.duration / 60) * tempo));
-                    addClip({ trackId: track.id, startBeat: 0, endBeat: beats, name: file.name.replace(/\.[^.]+$/, ''), type: 'audio', audioBufferId: bufferId });
+                    addClip({
+                        trackId: track.id,
+                        startBeat: 0,
+                        endBeat: beats,
+                        name: file.name.replace(/\.[^.]+$/, ''),
+                        type: 'audio',
+                        audioBufferId: bufferId,
+                    });
                 } catch {
                     notifyUser(`Failed to import "${file.name}"`, 'error');
                 }
@@ -199,15 +255,37 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
             aria-modal="true"
             aria-label="Sourdaw — start a project"
             className="fixed inset-0 z-[9999] overflow-hidden"
-            style={{ transition: 'opacity 0.65s cubic-bezier(0.4,0,0.2,1), transform 0.65s cubic-bezier(0.4,0,0.2,1)', opacity: exiting ? 0 : 1, transform: exiting ? 'scale(1.03)' : 'scale(1)', pointerEvents: exiting ? 'none' : undefined, background: 'radial-gradient(ellipse at 50% 35%, rgba(217,119,6,0.10) 0%, rgba(0,0,0,0) 65%), hsl(220,14%,5%)' }}
-            onDragOver={view === 'home' ? (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setIsDragOver(true); } : undefined}
-            onDragLeave={view === 'home' ? (e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) { setIsDragOver(false); } } : undefined}
+            style={{
+                transition: 'opacity 0.65s cubic-bezier(0.4,0,0.2,1), transform 0.65s cubic-bezier(0.4,0,0.2,1)',
+                opacity: exiting ? 0 : 1,
+                transform: exiting ? 'scale(1.03)' : 'scale(1)',
+                pointerEvents: exiting ? 'none' : undefined,
+                background:
+                    'radial-gradient(ellipse at 50% 35%, rgba(217,119,6,0.10) 0%, rgba(0,0,0,0) 65%), hsl(220,14%,5%)',
+            }}
+            onDragOver={
+                view === 'home'
+                    ? (e) => {
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = 'copy';
+                          setIsDragOver(true);
+                      }
+                    : undefined
+            }
+            onDragLeave={
+                view === 'home'
+                    ? (e) => {
+                          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                              setIsDragOver(false);
+                          }
+                      }
+                    : undefined
+            }
             onDrop={view === 'home' ? handleDrop : undefined}
         >
             <AmbientGlows />
 
             <div className="flex h-full items-center justify-center p-6">
-
                 {/* ── HOME ── */}
                 {view === 'home' ? (
                     <div
@@ -247,22 +325,27 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                             />
                         </div>
 
-                        <div className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border border-dashed transition-all w-full justify-center ${
-                            isDragOver
-                                ? 'border-[var(--color-accent-orange)] bg-[var(--color-accent-orange)]/10 text-[var(--color-accent-orange)]'
-                                : 'border-white/[0.10] text-white/20'
-                        }`}>
+                        <div
+                            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border border-dashed transition-all w-full justify-center ${
+                                isDragOver
+                                    ? 'border-[var(--color-accent-orange)] bg-[var(--color-accent-orange)]/10 text-[var(--color-accent-orange)]'
+                                    : 'border-white/[0.10] text-white/20'
+                            }`}
+                        >
                             <Upload className="size-3.5 shrink-0" aria-hidden="true" />
                             <span className="text-[11px]">Drop audio or MIDI to start instantly</span>
                         </div>
 
-                        <p className="text-[9px] text-white/12 tracking-widest uppercase">Sourdaw Studio · Your music, from scratch</p>
+                        <p className="text-[9px] text-white/12 tracking-wider">Sourdaw Studio · Time to cook</p>
                     </div>
                 ) : null}
 
                 {/* ── GRID (Templates / Demos) ── */}
                 {view === 'grid' ? (
-                    <div key="grid" className="animate-in fade-in slide-in-from-bottom-3 duration-400 flex flex-col gap-4 max-w-[620px] w-full">
+                    <div
+                        key="grid"
+                        className="animate-in fade-in slide-in-from-bottom-3 duration-400 flex flex-col gap-4 max-w-[620px] w-full"
+                    >
                         {/* Header */}
                         <div className="flex items-center gap-3">
                             <button
@@ -294,11 +377,17 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                                                 : 'bg-white/[0.03] text-white/35 border-white/[0.06] hover:bg-white/[0.06] hover:text-white/60'
                                         }`}
                                     >
-                                        {cat === 'all' ? <Layers className="size-3" aria-hidden="true" /> :
-                                         cat === 'demo' ? <Sparkles className="size-3" aria-hidden="true" /> :
-                                         cat === 'music' ? <Music className="size-3" aria-hidden="true" /> :
-                                         cat === 'podcast' ? <Mic className="size-3" aria-hidden="true" /> :
-                                         <Film className="size-3" aria-hidden="true" />}
+                                        {cat === 'all' ? (
+                                            <Layers className="size-3" aria-hidden="true" />
+                                        ) : cat === 'demo' ? (
+                                            <Sparkles className="size-3" aria-hidden="true" />
+                                        ) : cat === 'music' ? (
+                                            <Music className="size-3" aria-hidden="true" />
+                                        ) : cat === 'podcast' ? (
+                                            <Mic className="size-3" aria-hidden="true" />
+                                        ) : (
+                                            <Film className="size-3" aria-hidden="true" />
+                                        )}
                                         {CATEGORY_LABELS[cat]}
                                     </button>
                                 );
@@ -309,47 +398,73 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                         <div className="grid grid-cols-2 gap-2.5 max-h-[400px] overflow-y-auto pr-1 scrollbar-thin">
                             {filteredTemplates.map((template) => {
                                 const colors = CATEGORY_COLORS[template.category] ?? CATEGORY_COLORS.empty!;
-                                const icon = TEMPLATE_ICONS[template.id] ?? <FileText className="size-4" aria-hidden="true" />;
+                                const icon = TEMPLATE_ICONS[template.id] ?? (
+                                    <FileText className="size-4" aria-hidden="true" />
+                                );
                                 return (
                                     <button
                                         key={template.id}
                                         type="button"
                                         onClick={() => handleTemplateSelect(template)}
-                                        className={`group flex items-start gap-3 p-4 rounded-xl border transition-all cursor-pointer text-left hover:scale-[1.01] ${colors.border} bg-white/[0.03] hover:bg-white/[0.06] backdrop-blur-sm`}
+                                        className={`group flex items-start gap-3 p-4 rounded-xl border transition-all duration-150 cursor-pointer text-left hover:shadow-[0_4px_16px_rgba(0,0,0,0.4)] hover:brightness-110 ${colors.border} bg-white/[0.03] hover:bg-white/[0.06] backdrop-blur-sm`}
                                     >
-                                        <div className={`mt-0.5 shrink-0 size-8 rounded-lg ${colors.bg} flex items-center justify-center ${colors.text} transition-colors group-hover:${colors.activeBg}`}>
+                                        <div
+                                            className={`mt-0.5 shrink-0 size-8 rounded-lg ${colors.bg} flex items-center justify-center ${colors.text} transition-colors group-hover:${colors.activeBg}`}
+                                        >
                                             {icon}
                                         </div>
                                         <div className="min-w-0">
-                                            <p className={`text-xs font-semibold text-white/80 truncate`}>{template.name}</p>
+                                            <p className={`text-xs font-semibold text-white/80 truncate`}>
+                                                {template.name}
+                                            </p>
                                             <p className={`text-[10px] mt-0.5 ${colors.text}/70 capitalize`}>
                                                 {template.category === 'empty' ? 'Blank' : template.category}
                                             </p>
-                                            <p className="text-[10px] text-white/30 mt-1 leading-relaxed line-clamp-2">{template.description}</p>
+                                            <p className="text-[10px] text-white/30 mt-1 leading-relaxed line-clamp-2">
+                                                {template.description}
+                                            </p>
                                         </div>
                                     </button>
                                 );
                             })}
                         </div>
 
-                        <p className="text-[9px] text-white/15 text-center">Or drop audio / MIDI files on the home screen to import instantly</p>
+                        <p className="text-[9px] text-white/15 text-center">
+                            Or drop audio / MIDI files on the home screen to import instantly
+                        </p>
                     </div>
                 ) : null}
 
                 {/* ── LOADING ── */}
                 {view === 'loading' ? (
-                    <div key="loading" className="animate-in fade-in zoom-in-95 duration-400 flex flex-col items-center gap-6">
+                    <div
+                        key="loading"
+                        className="animate-in fade-in zoom-in-95 duration-400 flex flex-col items-center gap-6"
+                    >
                         <div className="relative">
-                            <div className="absolute inset-0 rounded-full blur-2xl scale-[2.5] opacity-25" style={{ background: 'var(--color-accent-orange)' }} />
+                            <div
+                                className="absolute inset-0 rounded-full blur-2xl scale-[2.5] opacity-25"
+                                style={{ background: 'var(--color-accent-orange)' }}
+                            />
                             <SourdawLogo className="relative h-28 drop-shadow-[0_6px_32px_rgba(217,119,6,0.5)]" />
                         </div>
                         <div className="text-center space-y-2">
                             <p className="text-sm font-semibold text-white/80">
                                 {loadingName ? (
-                                    <>Baking <span className="bg-gradient-to-r from-[var(--color-accent-orange)] to-[var(--color-accent-peach)] bg-clip-text text-transparent">{loadingName}</span></>
-                                ) : 'Setting up your session…'}
+                                    <>
+                                        Baking{' '}
+                                        <span className="bg-gradient-to-r from-[var(--color-accent-orange)] to-[var(--color-accent-peach)] bg-clip-text text-transparent">
+                                            {loadingName}
+                                        </span>
+                                    </>
+                                ) : (
+                                    'Setting up your session…'
+                                )}
                             </p>
-                            <p key={quipIndex} className="text-xs text-white/35 italic animate-in fade-in slide-in-from-bottom-1 duration-300">
+                            <p
+                                key={quipIndex}
+                                className="text-xs text-white/35 italic animate-in fade-in slide-in-from-bottom-1 duration-300"
+                            >
                                 {LOADING_QUIPS[quipIndex]}
                             </p>
                         </div>
@@ -357,7 +472,8 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                             <div
                                 className="h-full w-1/3 rounded-full"
                                 style={{
-                                    background: 'linear-gradient(90deg, transparent, var(--color-accent-orange), transparent)',
+                                    background:
+                                        'linear-gradient(90deg, transparent, var(--color-accent-orange), transparent)',
                                     animation: 'ls-shimmer 1.6s ease-in-out infinite',
                                 }}
                             />
@@ -390,7 +506,8 @@ const ActionCard = ({ id, label, sub, icon, colorVar, onClick }: ActionCardProps
         onClick={onClick}
         onMouseEnter={(e) => {
             (e.currentTarget as HTMLElement).style.background = `color-mix(in srgb, var(${colorVar}) 10%, transparent)`;
-            (e.currentTarget as HTMLElement).style.borderColor = `color-mix(in srgb, var(${colorVar}) 35%, transparent)`;
+            (e.currentTarget as HTMLElement).style.borderColor =
+                `color-mix(in srgb, var(${colorVar}) 35%, transparent)`;
         }}
         onMouseLeave={(e) => {
             (e.currentTarget as HTMLElement).style.background = '';
