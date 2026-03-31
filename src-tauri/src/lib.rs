@@ -39,6 +39,7 @@ pub fn run() {
             commands::native_llm::generate_native_completion,
             commands::native_llm::stream_native_completion,
             commands::native_llm::native_tool_calling,
+            commands::native_llm::schema_constrained_generation,
             commands::native_llm::unload_native_llm,
             commands::native_llm::get_native_llm_status,
             // AI audio processing (DeepFilterNet + Demucs ONNX)

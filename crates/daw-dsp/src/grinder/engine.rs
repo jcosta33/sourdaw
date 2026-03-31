@@ -13,6 +13,7 @@ use super::pedals::{OverdrivePedal, DistortionPedal, FuzzPedal, CompressorPedal,
 use super::neural::NeuralCapture;
 use super::params::{SmoothedParam, db_to_linear, linear_to_db};
 
+#[allow(dead_code)]
 pub struct GrinderEngine {
     sample_rate: f32,
 

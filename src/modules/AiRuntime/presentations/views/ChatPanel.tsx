@@ -13,9 +13,35 @@ import { chatStore, clearChatMessages } from '#/modules/AiRuntime/stores/chatSto
 import { sendChatMessage } from '#/modules/AiRuntime/useCases/sendChatMessage';
 import { toggleChat } from '#/modules/AiRuntime/useCases/aiPanelActions';
 import { Button } from '#/components/ui/button';
-import { X, Send, Trash2, Bot, User, Loader2 } from 'lucide-react';
+import { X, Send, Trash2, Bot, User, Loader2, ChevronRight, ChevronDown, Zap } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
 import { isLlmAvailable } from '#/modules/AiRuntime/useCases/llmOrchestration';
+
+/** Collapsible reasoning block — shows model's internal thinking in a subdued, smaller style. */
+const ReasoningBlock = ({ reasoning }: { reasoning: string }): ReactElement => {
+    const [expanded, setExpanded] = useState(false);
+
+    return (
+        <button
+            type="button"
+            onClick={() => setExpanded(!expanded)}
+            className="flex flex-col w-full max-w-[92%] mb-1 text-left"
+        >
+            <div className="flex items-center gap-1 text-[9px] text-muted-foreground/50 hover:text-muted-foreground/70 transition-colors">
+                {expanded ? <ChevronDown className="size-2.5" /> : <ChevronRight className="size-2.5" />}
+                <span className="font-medium">Reasoning</span>
+                {!expanded ? (
+                    <span className="truncate max-w-[200px] opacity-50">{reasoning.slice(0, 60)}...</span>
+                ) : null}
+            </div>
+            {expanded ? (
+                <div className="mt-1 px-2 py-1.5 rounded bg-surface-inset/50 border border-border/20 text-[9px] text-muted-foreground/40 leading-relaxed whitespace-pre-wrap max-h-[200px] overflow-y-auto">
+                    {reasoning}
+                </div>
+            ) : null}
+        </button>
+    );
+};
 
 type ChatPanelProps = {
     style?: CSSProperties;
@@ -118,7 +144,8 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                         <Bot className="size-8 mx-auto mb-3 text-muted-foreground" />
                         <h3 className="text-sm font-medium text-foreground mb-1">The kitchen is quiet</h3>
                         <p className="text-xs text-muted-foreground">
-                            Say something to get the dough rising. Ask about music production, navigating this DAW, or analyzing your project.
+                            Say something to get the dough rising. Ask about music production, navigating this DAW, or
+                            analyzing your project.
                         </p>
                     </div>
                 ) : (
@@ -132,21 +159,27 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                                 )}
                             >
                                 <div className="flex items-center gap-1.5 mb-1 opacity-70">
-                                    {msg.role === 'assistant' ? (
+                                    {msg.isDsoAction ? (
+                                        <Zap className="size-3 text-emerald-400" />
+                                    ) : msg.role === 'assistant' ? (
                                         <Bot className="size-3 text-[var(--color-accent-lavender)]" />
                                     ) : (
                                         <User className="size-3" />
                                     )}
                                     <span className="text-[10px] font-medium tracking-wide">
-                                        {msg.role === 'assistant' ? 'Assistant' : 'You'}
+                                        {msg.isDsoAction ? 'Action' : msg.role === 'assistant' ? 'Assistant' : 'You'}
                                     </span>
                                 </div>
+                                {/* Reasoning (collapsible) */}
+                                {msg.reasoning ? <ReasoningBlock reasoning={msg.reasoning} /> : null}
                                 <div
                                     className={cn(
                                         'text-xs px-3 py-2.5 rounded-lg max-w-[92%] leading-relaxed',
                                         msg.role === 'user'
                                             ? 'bg-primary text-primary-foreground rounded-tr-sm'
-                                            : 'bg-surface-raised text-foreground border border-border/50 rounded-tl-sm w-full',
+                                            : msg.isDsoAction
+                                              ? 'bg-emerald-500/10 text-foreground border border-emerald-500/20 rounded-tl-sm w-full'
+                                              : 'bg-surface-raised text-foreground border border-border/50 rounded-tl-sm w-full',
                                         msg.error &&
                                             'bg-destructive/10 border-destructive/30 text-destructive-foreground'
                                     )}

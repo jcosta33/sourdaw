@@ -1,5 +1,9 @@
 /**
  * Model metadata types and constants for AI backends.
+ *
+ * Single-model policy: Qwen3-8B is the only planning model.
+ * No automatic fallback to smaller/different models.
+ * If the runtime cannot support Qwen3-8B, AI editing is disabled.
  */
 
 export type ModelInfo = {
@@ -14,31 +18,30 @@ export type NativeModelInfo = ModelInfo & {
 };
 
 /**
- * WebLLM model: Hermes-3-Llama-3.1-8B (~4.9 GB) — same generation as the native GGUF backend.
- * Supports native OpenAI-compatible tool calling (tools + tool_choice) via WebGPU.
- * Used for the command-prompt action engine when the native mistral.rs tier is unavailable.
+ * Single planning model: Qwen3-8B across both browser and native runtimes.
  */
-export const WEBLLM_MODEL_ID = 'Hermes-3-Llama-3.1-8B-q4f16_1-MLC';
+export const WEBLLM_MODEL_ID = 'Qwen3-8B-q4f16_1-MLC';
 
 export const WEBLLM_MODEL_INFO: ModelInfo = {
-    displayName: 'Hermes 3 Llama 3.1 8B',
-    downloadSize: '~4.9 GB',
-    ramUsage: '~6 GB',
+    displayName: 'Qwen3 8B',
+    downloadSize: '~5.0 GB',
+    ramUsage: '~6.5 GB',
     description:
-        'Browser-local AI via WebGPU. Same Hermes-3 model family as the native tier — reliable tool calling for DAW commands, no internet required after first download.',
+        'Browser-local AI via WebGPU. Structured edit planning with response_format schema constraints. No internet required after first download.',
 };
 
 export const NATIVE_MODEL_INFO: NativeModelInfo = {
-    displayName: 'Hermes 3 Llama 3.1 8B',
-    description: 'In-process inference via Metal GPU. Zero setup required — model auto-downloads on first use.',
-    downloadSize: '~4.9 GB (first run only)',
-    ramUsage: '~5.2 GB',
-    huggingFaceId: 'NousResearch/Hermes-3-Llama-3.1-8B',
+    displayName: 'Qwen3 8B',
+    description:
+        'In-process inference via Metal/CUDA GPU. Schema-constrained DSO generation via Constraint::JsonSchema.',
+    downloadSize: '~5.0 GB (first run only)',
+    ramUsage: '~6.0 GB',
+    huggingFaceId: 'Qwen/Qwen3-8B',
 };
 
 export const CLOUD_MODEL_INFO: ModelInfo = {
     displayName: 'Claude Sonnet (Cloud)',
-    description: 'Cloud AI via Anthropic API. Best tool-calling quality. Requires API key. Usage-based pricing.',
+    description: 'Cloud AI via Anthropic API. Fallback for chat only — not used for DSO edit planning.',
     downloadSize: 'None',
     ramUsage: 'None',
 };

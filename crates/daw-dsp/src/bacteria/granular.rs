@@ -49,6 +49,7 @@ impl Grain {
 }
 
 /// Real-time granular engine.
+#[allow(dead_code)]
 pub struct GranularProcessor {
     buffer: Vec<f32>,
     write_pos: usize,

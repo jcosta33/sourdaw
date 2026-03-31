@@ -107,6 +107,14 @@ export const YEAST_THEME: InstrumentCardTheme = {
     glow: 'bg-lime-500/8',
 };
 
+export const CRUST_THEME: InstrumentCardTheme = {
+    button: 'border-sky-500/30 bg-gradient-to-br from-sky-500/10 via-surface-raised to-sky-500/5 hover:border-sky-500/50 hover:from-sky-500/15',
+    iconBox: 'bg-sky-500/20 border-sky-500/20 shadow-[0_0_12px_rgba(14,165,233,0.15)]',
+    iconColor: 'text-sky-400',
+    badgeColor: 'bg-sky-500/20 text-sky-400',
+    glow: 'bg-sky-500/8',
+};
+
 export const InstrumentCard = ({ icon: Icon, label, badge, description, onClick, theme }: InstrumentCardProps): ReactElement => (
     <button
         type="button"

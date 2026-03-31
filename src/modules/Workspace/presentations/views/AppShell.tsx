@@ -31,6 +31,7 @@ import { GrinderPanel } from '#/modules/Grinder/presentations/views/GrinderPanel
 import { ProofPanel } from '#/modules/Proof/presentations/views/ProofPanel';
 import { ScoringPanel } from '#/modules/Scoring/presentations/views/ScoringPanel';
 import { YeastPanel } from '#/modules/Yeast/presentations/views/YeastPanel';
+import { CrustPanel } from '#/modules/Crust/presentations/views/CrustPanel';
 import { VirtualKeyboard } from '#/modules/VirtualKeyboard/presentations/views/VirtualKeyboard';
 import { toggleVirtualKeyboard } from '../../useCases/togglePanel/panelToggles';
 
@@ -95,6 +96,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         yeastHeight,
         virtualKeyboardOpen,
         virtualKeyboardHeight,
+        crustHeight,
     } = workspaceState;
 
     const project = useProjectState();
@@ -119,6 +121,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const [scoringOpen, setScoringOpen] = useState(false);
     const [proofOpen, setProofOpen] = useState(false);
     const [yeastOpen, setYeastOpen] = useState(false);
+    const [crustOpen, setCrustOpen] = useState(false);
 
     // ─── Extracted hooks ───
     useAppInitialization();
@@ -168,6 +171,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         setScoringOpen(false);
         setProofOpen(false);
         setYeastOpen(false);
+        setCrustOpen(false);
     };
 
     // Listen for fermenter panel open (from inspector device click)
@@ -269,6 +273,16 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         return () => document.removeEventListener(APP_EVENTS.SHOW_SCORING_TAB, handler);
     }, []);
 
+    // Listen for Crust limiter panel open
+    useEffect(() => {
+        const handler = (): void => {
+            closeAllDevicePanels();
+            setCrustOpen(true);
+        };
+        document.addEventListener(APP_EVENTS.SHOW_CRUST_TAB, handler);
+        return () => document.removeEventListener(APP_EVENTS.SHOW_CRUST_TAB, handler);
+    }, []);
+
     // ─── Panel dimension setters (persisted via workspace store) ───
     const setSidebarWidth = (fn: (prev: number) => number) => updateWorkspaceState({ sidebarWidth: fn(sidebarWidth) });
     const setInspectorWidth = (fn: (prev: number) => number) =>
@@ -288,6 +302,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const setProofHeight = (fn: (prev: number) => number) => updateWorkspaceState({ proofHeight: fn(proofHeight) });
     const setScoringHeight = (fn: (prev: number) => number) => updateWorkspaceState({ scoringHeight: fn(scoringHeight) });
     const setYeastHeight = (fn: (prev: number) => number) => updateWorkspaceState({ yeastHeight: fn(yeastHeight) });
+    const setCrustHeight = (fn: (prev: number) => number) => updateWorkspaceState({ crustHeight: fn(crustHeight) });
 
     // When no user tracks exist, show only the welcome screen (full-screen)
     if (!hasUserTracks) {
@@ -499,6 +514,19 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                             onClose={() => setYeastOpen(false)}
                         >
                             <YeastPanel />
+                        </InstrumentBottomPanel>
+                    ) : null}
+
+                    {crustOpen ? (
+                        <InstrumentBottomPanel
+                            label="Crust"
+                            labelColor="text-[var(--color-accent-cyan)]"
+                            borderColor="border-[var(--color-accent-cyan)]/20"
+                            height={crustHeight}
+                            onResize={setCrustHeight}
+                            onClose={() => setCrustOpen(false)}
+                        >
+                            <CrustPanel />
                         </InstrumentBottomPanel>
                     ) : null}
 

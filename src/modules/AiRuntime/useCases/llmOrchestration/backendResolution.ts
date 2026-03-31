@@ -3,11 +3,15 @@ import { isCloudAvailable } from '../../repositories/cloudLlm';
 import { type AiBackend } from '#/modules/AiRuntime/models/LlmOrchestrationTypes';
 
 /**
- * Returns the preferred primary backend:
- * - native: when running in Tauri or on localhost (dev mode)
- * - webllm: when WebGPU is available in the browser (Hermes-3 native tool calling)
- * - cloud: when Claude API key is configured but no local options exist
- * - none: no backend available
+ * Resolve the primary backend for DSO edit planning.
+ *
+ * Single-model policy: Qwen3-8B only.
+ * - native: Tauri desktop (mistral.rs with Constraint::JsonSchema)
+ * - webllm: Browser with WebGPU (response_format with EditPlanSchema)
+ * - cloud: Claude API — used for CHAT ONLY, not DSO planning
+ * - none: no backend available — AI editing is disabled
+ *
+ * No automatic fallback between model families.
  */
 export function resolveBackend(): AiBackend {
     if (isTauri()) {
@@ -22,13 +26,25 @@ export function resolveBackend(): AiBackend {
     return 'none';
 }
 
+/**
+ * Whether a DSO-capable backend is available.
+ * Cloud is excluded — it's for chat only, not structured DSO planning.
+ */
+export function isDsoBackendAvailable(): boolean {
+    const backend = resolveBackend();
+    return backend === 'native' || backend === 'webllm';
+}
+
+/**
+ * Whether ANY LLM backend is available (including cloud for chat).
+ */
 export function isLlmAvailable(): boolean {
     return resolveBackend() !== 'none';
 }
 
 /**
  * Returns the ordered fallback chain for inference.
- * Native → WebLLM → Cloud (each only included if potentially available).
+ * Used by the old tool-calling system (chat, not DSO editing).
  */
 export function getBackendChain(): AiBackend[] {
     const chain: AiBackend[] = [];
@@ -36,9 +52,6 @@ export function getBackendChain(): AiBackend[] {
 
     if (primary === 'native') {
         chain.push('native');
-        if (typeof navigator !== 'undefined' && 'gpu' in navigator) {
-            chain.push('webllm');
-        }
     } else if (primary === 'webllm') {
         chain.push('webllm');
     }

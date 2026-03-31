@@ -3,7 +3,7 @@ import { Logger } from '#/helpers/Logger/Logger';
 import { type IntentResult } from '../models/IntentResult';
 import { type ProjectContext } from '../models/ProjectContext';
 import { validateActions } from './validateActions';
-import { isLlmAvailable } from './llmOrchestration';
+import { isDsoBackendAvailable } from './llmOrchestration';
 import {
     tryPresetMatch,
     buildPresetContext,
@@ -19,9 +19,10 @@ const logger = Container.getInstance().get(Logger);
 
 /**
  * Two-tier prompt parsing:
- * 1. Fast-path: fuzzy-match against preset action registry
+ * 1. Fast-path: fuzzy-match against preset action registry (instant, no LLM)
  * 2. Parameterized fast-path: regex for commands that need values (tempo N, transpose N)
- * 3. LLM path: Hermes 3 function calling for complex, compound, or ambiguous natural language
+ * 3. Compound fast-path: multi-track creation etc.
+ * 4. LLM path: DSO editor — Qwen emits typed Domain-Specific Operations via schema-constrained generation
  */
 export async function parsePromptToActions(
     prompt: string,
@@ -71,19 +72,18 @@ export async function parsePromptToActions(
         return { actions: [], confidence: 0, rawText: prompt, requiresConfirmation: false };
     }
 
-    // 4. LLM path: JSON editor flow — LLM edits project state directly
-    if (isLlmAvailable()) {
+    // 4. LLM path: DSO editor — Qwen3-8B emits typed Domain-Specific Operations
+    // Cloud is NOT used for DSO planning (chat only). No model fallback.
+    if (isDsoBackendAvailable()) {
         try {
-            const { executeJsonEdit } = await import('./projectJsonEditor');
-            const result = await executeJsonEdit(prompt);
+            const { executeDsoEdit } = await import('./dsoEditor');
+            const result = await executeDsoEdit(prompt);
 
             if (signal?.aborted) {
                 return { actions: [], confidence: 0, rawText: prompt, requiresConfirmation: false };
             }
 
-            if (result.success && result.changes.length > 0) {
-                // Changes were already applied by executeJsonEdit.
-                // Return empty actions since work is done — the chat panel shows the result.
+            if (result.success) {
                 return {
                     actions: [],
                     confidence: 0.9,
@@ -95,13 +95,13 @@ export async function parsePromptToActions(
             }
 
             if (!result.success) {
-                logger.warn(`[AI] JSON editor failed: ${result.error ?? 'unknown'}`);
+                logger.warn(`[AI] DSO editor failed: ${result.error ?? 'unknown'}`);
             }
         } catch (error) {
             if (signal?.aborted) {
                 return { actions: [], confidence: 0, rawText: prompt, requiresConfirmation: false };
             }
-            logger.warn(`[AI] JSON editor failed: ${String(error)}`);
+            logger.warn(`[AI] DSO editor failed: ${String(error)}`);
         }
     }
 

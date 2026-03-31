@@ -137,6 +137,7 @@ fn sigmoid(x: f32) -> f32 {
 }
 
 /// Neural capture processor supporting multiple architectures.
+#[allow(dead_code)]
 pub struct NeuralCapture {
     // WaveNet-style layers
     conv_layers: Vec<DilatedConv1D>,

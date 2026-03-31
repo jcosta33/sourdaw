@@ -1,5 +1,5 @@
 use mistralrs::{
-    Function, GgufModelBuilder, PagedAttentionMetaBuilder, RequestBuilder,
+    Constraint, Function, GgufModelBuilder, PagedAttentionMetaBuilder, RequestBuilder,
     Response, TextMessageRole, Tool, ToolChoice, ToolType,
 };
 use serde::{Deserialize, Serialize};
@@ -65,9 +65,9 @@ pub struct ToolCallResult {
 
 // ── Model config ─────────────────────────────────────────────────────────
 
-const GGUF_REPO: &str = "NousResearch/Hermes-3-Llama-3.1-8B-GGUF";
-const GGUF_FILE: &str = "Hermes-3-Llama-3.1-8B.Q4_K_M.gguf";
-const GGUF_URL: &str = "https://huggingface.co/NousResearch/Hermes-3-Llama-3.1-8B-GGUF/resolve/main/Hermes-3-Llama-3.1-8B.Q4_K_M.gguf";
+const GGUF_REPO: &str = "Qwen/Qwen3-8B-GGUF";
+const GGUF_FILE: &str = "qwen3-8b-q4_k_m.gguf";
+const GGUF_URL: &str = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/qwen3-8b-q4_k_m.gguf";
 
 // ── Helper ───────────────────────────────────────────────────────────────
 
@@ -265,6 +265,62 @@ pub async fn native_tool_calling(
     }
 
     Ok(results)
+}
+
+/// Schema-constrained streaming generation.
+/// The output is guaranteed to conform to the provided JSON schema at the token level.
+/// This is the primary edit protocol — DSO output via schema constraints.
+#[tauri::command]
+pub async fn schema_constrained_generation(
+    system_prompt: String,
+    user_message: String,
+    json_schema: String,
+    temperature: Option<f32>,
+    max_tokens: Option<usize>,
+    on_event: Channel<LlmStreamEvent>,
+    state: tauri::State<'_, NativeLlmState>,
+) -> Result<(), String> {
+    let model = get_model(&state).await?;
+
+    let mut request = RequestBuilder::new()
+        .add_message(TextMessageRole::System, &system_prompt)
+        .add_message(TextMessageRole::User, &user_message)
+        .set_constraint(Constraint::JsonSchema(json_schema))
+        .set_sampler_temperature(temperature.unwrap_or(0.1) as f64)
+        .set_sampler_top_p(0.9)
+        .set_sampler_max_len(max_tokens.unwrap_or(2048));
+
+    let mut stream = model.stream_chat_request(request).await.map_err(|e| {
+        let msg = format!("Schema-constrained stream init error: {e}");
+        let _ = on_event.send(LlmStreamEvent::Error { message: msg.clone() });
+        msg
+    })?;
+
+    let mut total_tokens: u32 = 0;
+
+    while let Some(chunk) = stream.next().await {
+        match chunk {
+            Response::Chunk(resp) => {
+                if let Some(choice) = resp.choices.first() {
+                    if let Some(ref content) = choice.delta.content {
+                        if !content.is_empty() {
+                            total_tokens += 1;
+                            let _ = on_event.send(LlmStreamEvent::Token { text: content.clone() });
+                        }
+                    }
+                }
+            }
+            Response::Done(_) => break,
+            Response::ModelError(msg, _) => {
+                let _ = on_event.send(LlmStreamEvent::Error { message: msg.to_string() });
+                return Err(msg.to_string());
+            }
+            _ => {}
+        }
+    }
+
+    let _ = on_event.send(LlmStreamEvent::Done { total_tokens });
+    Ok(())
 }
 
 /// Unload model.

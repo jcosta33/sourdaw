@@ -349,6 +349,7 @@ pub struct BacteriaEngine {
 }
 
 /// Simple step sequencer modulation source.
+#[allow(dead_code)]
 struct StepSequencer {
     steps: Vec<f32>,
     num_steps: usize,

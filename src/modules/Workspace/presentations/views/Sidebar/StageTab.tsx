@@ -1,5 +1,5 @@
 import { type ReactElement } from 'react';
-import { Shield, Mic, Waves as WavesIcon, Gauge, Sparkles, AudioLines } from 'lucide-react';
+import { Shield, Mic, Waves as WavesIcon, Gauge, Sparkles, AudioLines, Layers } from 'lucide-react';
 import {
     InstrumentCard,
     PROOF_THEME,
@@ -7,6 +7,7 @@ import {
     SCORING_THEME,
     PROOF_CHAMBER_THEME,
     GLUTEN_THEME,
+    CRUST_THEME,
 } from '../../components/Sidebar/InstrumentCard';
 import { APP_EVENTS } from '#/helpers/Event/appEvents';
 import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
@@ -48,7 +49,7 @@ export const StageTab = ({
     onToggleFavorite,
     preview,
 }: StageTabProps): ReactElement => {
-    const premiumIds = new Set(['proof', 'knead', 'native-scoring', 'native-proof-chamber', 'gluten']);
+    const premiumIds = new Set(['proof', 'knead', 'native-scoring', 'native-proof-chamber', 'gluten', 'crust']);
     
     // Stage plugins are mix utilities, eq, compression, space.
     const isStagePlugin = (p: EffectPlugin) => {
@@ -267,6 +268,20 @@ export const StageTab = ({
                         }
                     }}
                     theme={GLUTEN_THEME}
+                />
+
+                <InstrumentCard
+                    icon={Layers}
+                    label="Crust"
+                    badge="Limiter"
+                    description="Mastering-grade limiter · 5-level"
+                    onClick={() => {
+                        if (selectedTrackId) {
+                            addDevice(selectedTrackId, 'crust');
+                            document.dispatchEvent(new Event(APP_EVENTS.SHOW_CRUST_TAB));
+                        }
+                    }}
+                    theme={CRUST_THEME}
                 />
 
                 <InstrumentCard

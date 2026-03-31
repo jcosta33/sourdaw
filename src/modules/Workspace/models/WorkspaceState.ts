@@ -50,6 +50,7 @@ export type WorkspaceState = {
     proofHeight: number;
     scoringHeight: number;
     yeastHeight: number;
+    crustHeight: number;
     virtualKeyboardOpen: boolean;
     virtualKeyboardOctave: number;
     virtualKeyboardHeight: number;
@@ -96,6 +97,7 @@ export const defaultWorkspaceState: WorkspaceState = {
     proofHeight: 340,
     scoringHeight: 300,
     yeastHeight: 300,
+    crustHeight: 360,
     virtualKeyboardOpen: false,
     virtualKeyboardOctave: 4,
     virtualKeyboardHeight: 128,

@@ -269,17 +269,22 @@ export const usePromptExecution = (): PromptExecutionState => {
                 return;
             }
 
-            await executeWithGroup(result.actions, value);
-
-            if (result.actions.length > 0) {
+            // If the JSON editor already applied changes, we're done
+            if (result._jsonEditApplied) {
+                notifyAiChange(
+                    result._jsonEditSummaries?.join('. ') ?? `Executed: ${value}`,
+                    [],
+                );
+            } else if (result.actions.length > 0) {
+                await executeWithGroup(result.actions, value);
                 notifyAiChange(
                     `Executed: ${value}`,
-                    result.actions.map((a) => a.type)
+                    result.actions.map((a) => a.type),
                 );
             } else {
                 notifyAiChange(
-                    "No actions matched. Try rephrasing, or use the AI Chat panel for open-ended help.",
-                    []
+                    'No actions matched. Try rephrasing, or use the AI Chat panel for open-ended help.',
+                    [],
                 );
             }
         } catch (error) {

@@ -25,6 +25,7 @@ impl ToneStackType {
 }
 
 /// Component values defining a tone stack circuit.
+#[allow(dead_code)]
 struct ToneStackCircuit {
     r1: f32, r2: f32, r3: f32, r4: f32,
     c1: f32, c2: f32, c3: f32,

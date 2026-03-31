@@ -25,6 +25,7 @@ impl TubeParams {
 }
 
 /// Single triode gain stage with grid conduction and coupling cap.
+#[allow(dead_code)]
 pub struct TriodeStage {
     params: TubeParams,
 
