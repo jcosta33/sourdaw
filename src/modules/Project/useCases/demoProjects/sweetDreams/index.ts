@@ -1278,5 +1278,6 @@ export async function demo_SweetDreams(): Promise<void> {
         updatedAt: Date.now(),
         dirty: false,
         loading: false,
+        initialized: true,
     });
 }

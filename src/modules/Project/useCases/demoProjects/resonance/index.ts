@@ -2226,6 +2226,7 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         updatedAt: Date.now(),
         dirty: false,
         loading: false,
+        initialized: true,
     });
 }
 

@@ -1,6 +1,7 @@
 import { type ReactElement, type ReactNode, lazy, Suspense, useEffect, useState, useSyncExternalStore } from 'react';
+import { LaunchScreen } from '../components/LaunchScreen';
+import { ProjectLoadingOverlay } from '../components/ProjectLoadingOverlay';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
-import { useTracks } from '../hooks/useTracks';
 import { updateWorkspaceState } from '../../useCases/workspaceState';
 import { useProjectState } from '../hooks/useProjectState';
 import { useAppInitialization } from '../hooks/useAppInitialization';
@@ -69,8 +70,6 @@ type AppShellProps = {
 };
 
 export const AppShell = ({ children }: AppShellProps): ReactElement => {
-    const { tracks: allTracks } = useTracks();
-    const hasUserTracks = allTracks.some((t) => t.kind !== 'master' && t.kind !== 'folder');
     const workspaceState = useWorkspaceState();
     const {
         sidebarOpen,
@@ -304,38 +303,29 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const setYeastHeight = (fn: (prev: number) => number) => updateWorkspaceState({ yeastHeight: fn(yeastHeight) });
     const setCrustHeight = (fn: (prev: number) => number) => updateWorkspaceState({ crustHeight: fn(crustHeight) });
 
-    // When no user tracks exist, show only the welcome screen (full-screen)
-    if (!hasUserTracks) {
-        return (
-            <div className="flex h-screen w-screen flex-col overflow-hidden bg-surface-app">
-                {/* Render children (ArrangeView) which shows EmptyArrangeOverlay */}
-                <div className="flex-1 relative overflow-hidden">{children}</div>
-                {/* Global overlays that need to be available even before first interaction */}
-                <CommandPalette />
-                <VoiceCommandOverlay />
-                <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} />
-                <PreferencesDialog open={prefsOpen} onClose={() => setPrefsOpen(false)} />
-                {project.loading ? (
-                    <div
-                        className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 backdrop-blur-md"
-                        aria-busy="true"
-                        aria-live="polite"
-                    >
-                        <div className="flex flex-col items-center gap-6">
-                            <div className="relative size-12">
-                                <div className="absolute inset-0 rounded-full border-2 border-white/10" />
-                                <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-primary" />
-                            </div>
-                            <div className="flex flex-col items-center gap-1">
-                                <span className="text-sm font-medium text-foreground">Loading Project</span>
-                                <span className="text-xs text-muted-foreground">{project.name}</span>
-                            </div>
-                        </div>
-                    </div>
-                ) : null}
-            </div>
-        );
-    }
+    // ─── Launch screen overlay state ───────────────────────────────────────
+    // We start hidden (loading:true is the default). Two effects manage transitions:
+    // 1. New-user path: loading clears without initialized → show launch screen
+    // 2. Initialized fires → trigger CSS exit animation → unmount after 700ms
+    const [showLaunch, setShowLaunch] = useState(false);
+    const [launchExiting, setLaunchExiting] = useState(false);
+
+    useEffect(() => {
+        if (!project.initialized && !project.loading && !showLaunch && !launchExiting) {
+            setShowLaunch(true);
+        }
+    }, [project.initialized, project.loading, showLaunch, launchExiting]);
+
+    useEffect(() => {
+        if (project.initialized && !project.loading && showLaunch && !launchExiting) {
+            setLaunchExiting(true);
+            const t = setTimeout(() => {
+                setShowLaunch(false);
+                setLaunchExiting(false);
+            }, 700);
+            return () => clearTimeout(t);
+        }
+    }, [project.initialized, project.loading, showLaunch, launchExiting]);
 
     return (
         <div className="flex h-screen w-screen flex-col overflow-hidden bg-surface-app">
@@ -705,25 +695,11 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
             <PreferencesDialog open={prefsOpen} onClose={() => setPrefsOpen(false)} />
             <ShortcutCheatSheet />
 
-            {/* Loading overlay for Project */}
-            {project.loading ? (
-                <div
-                    className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 backdrop-blur-md"
-                    aria-busy="true"
-                    aria-live="polite"
-                >
-                    <div className="flex flex-col items-center gap-6">
-                        <div className="relative size-12">
-                            <div className="absolute inset-0 rounded-full border-2 border-white/10" />
-                            <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-primary" />
-                        </div>
-                        <div className="flex flex-col items-center gap-1">
-                            <span className="text-sm font-medium text-foreground">Loading Project</span>
-                            <span className="text-xs text-muted-foreground">{project.name}</span>
-                        </div>
-                    </div>
-                </div>
-            ) : null}
+            {/* Loading overlay for returning-user project load */}
+            {project.loading ? <ProjectLoadingOverlay /> : null}
+
+            {/* Launch screen overlay — shown for new users, fades out when project initializes */}
+            {showLaunch ? <LaunchScreen exiting={launchExiting} /> : null}
         </div>
     );
 };

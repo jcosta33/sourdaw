@@ -1435,5 +1435,6 @@ export async function demo4_NativeShowcase(): Promise<void> {
         updatedAt: Date.now(),
         dirty: false,
         loading: false,
+        initialized: true,
     });
 }

@@ -2019,5 +2019,6 @@ export async function demo5_NebulaDrift(): Promise<void> {
         updatedAt: Date.now(),
         dirty: false,
         loading: false,
+        initialized: true,
     });
 }
