@@ -193,8 +193,15 @@ async function scheduleTrackClips(
     }
 
     const automationLanes = getAutomationLanes();
-    const deviceEntries = await buildDeviceChain(offlineCtx, track.devices, trackGain, trackPan);
-    trackPan.connect(destination);
+    let deviceEntries: import('./buildDeviceChain').DeviceNodeEntry[];
+    
+    // Use pre-built device chain if provided (Pass 2 of mixdown), otherwise build it (Stems export)
+    if (deviceEntriesByTrack && deviceEntriesByTrack.has(track.id)) {
+        deviceEntries = deviceEntriesByTrack.get(track.id)!;
+    } else {
+        deviceEntries = await buildDeviceChain(offlineCtx, track.devices, trackGain, trackPan);
+        trackPan.connect(destination);
+    }
 
     scheduleTrackAutomation(
         automationLanes,
@@ -207,9 +214,25 @@ async function scheduleTrackClips(
         changes
     );
 
-    const resolvedClips = resolveClipsWithComping(track.id, track.clips);
+    let clipsToProcess: { clip: import('#/modules/Arrangement/models/Track').Clip; padIndex: number }[] = [];
+    clipsToProcess.push(...resolveClipsWithComping(track.id, track.clips).map(c => ({ clip: c, padIndex: -1 })));
 
-    for (const clip of resolvedClips) {
+    let instrumentEntry = deviceEntries.find((e) => e.instrumentControls);
+    let instrumentControls = instrumentEntry?.instrumentControls ?? null;
+    let isToaster = instrumentEntry?.deviceType === 'toaster';
+
+    // If this is a Toaster track, gather all clips from its child tracks.
+    if (isToaster && allTracks) {
+        const children = allTracks.filter((t) => t.parentId === track.id);
+        for (let i = 0; i < children.length; i++) {
+            const childTrack = children[i];
+            if (!childTrack) continue;
+            const childClips = resolveClipsWithComping(childTrack.id, childTrack.clips);
+            clipsToProcess.push(...childClips.map((c) => ({ clip: c, padIndex: i })));
+        }
+    }
+
+    for (const { clip, padIndex: toasterPadIndex } of clipsToProcess) {
         // Skip muted clips — they should not render audio
         if (clip.muted) {
             continue;
@@ -241,29 +264,13 @@ async function scheduleTrackClips(
                 ? getDrumKitDefByIndex(drumKitDevice.parameterValues.kit ?? drumKitDevice.parameterValues.kitId ?? 0)
                 : null;
 
-            // Check if any device in the chain exposes instrument controls (Fermenter/Toaster/Levain).
-            // These worklet instruments are now fully instantiated on the OfflineAudioContext —
-            // notes are driven by suspend()/resume() scheduling below.
-            let instrumentEntry = deviceEntries.find((e) => e.instrumentControls);
-            let instrumentControls = instrumentEntry?.instrumentControls ?? null;
-            let isToaster = instrumentEntry?.deviceType === 'toaster';
-            let toasterPadIndex = -1; // only used for Toaster child tracks
-
-            // Toaster child track routing: if this track has a parentId and the
-            // parent track has a Toaster device, route notes to the parent's Toaster
-            // using the child's index among siblings as the pad number.
-            if (!instrumentControls && track.parentId && allTracks && deviceEntriesByTrack) {
+            // Only Toaster parent tracks play their own children's clips.
+            // If this is a child track of a Toaster, we skip processing its notes
+            // here because the parent track will gather them and process them.
+            if (!instrumentControls && track.parentId && allTracks) {
                 const parentTrack = allTracks.find((t) => t.id === track.parentId);
                 if (parentTrack?.devices.some((d) => d.type === 'toaster')) {
-                    const parentEntries = deviceEntriesByTrack.get(parentTrack.id);
-                    const parentInstrument = parentEntries?.find((e) => e.instrumentControls);
-                    if (parentInstrument?.instrumentControls) {
-                        instrumentControls = parentInstrument.instrumentControls;
-                        isToaster = true;
-                        // Pad index = child's position among siblings
-                        const children = allTracks.filter((t) => t.parentId === parentTrack.id);
-                        toasterPadIndex = children.findIndex((t) => t.id === track.id);
-                    }
+                    continue; // Let the parent track handle these notes
                 }
             }
 
@@ -510,10 +517,11 @@ export async function renderOffline(
         masterGain.connect(offlineCtx.destination);
 
         // Exclude muted, disabled, and structural (folder) tracks from the render.
-        // Computed once here so schedulingFrac below can reuse it without a second filter pass.
+        // We MUST include folder tracks if they contain a Toaster device, because
+        // child tracks send MIDI to the parent Toaster device to generate audio.
         const eligible =
             tracks && midi
-                ? tracks.tracks.filter((t) => !t.muted && !t.disabled && t.kind !== 'folder')
+                ? tracks.tracks.filter((t) => !t.muted && !t.disabled && (t.kind !== 'folder' || t.devices.some((d) => d.type === 'toaster')))
                 : [];
         let scheduled = 0;
         const pendingWorkletEvents: PendingWorkletEvent[] = [];
@@ -632,9 +640,11 @@ export async function exportStems(
             return stems;
         }
 
-        // Exclude disabled and structural tracks; muted tracks are included as stems
+        // Exclude disabled and structural tracks (unless they host a Toaster); muted tracks are included as stems
         // (users may want silent-in-mixdown stems for later use in a DAW).
-        const eligible = tracks.tracks.filter((t) => !t.disabled && t.kind !== 'folder' && t.kind !== 'master');
+        const eligible = tracks.tracks.filter(
+            (t) => !t.disabled && t.kind !== 'master' && (t.kind !== 'folder' || t.devices.some((d) => d.type === 'toaster'))
+        );
         let done = 0;
 
         // Edge case: no eligible tracks — still complete progress
