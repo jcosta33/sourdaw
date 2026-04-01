@@ -11,14 +11,16 @@ import glutenProcessorUrl from '../services/glutenProcessor.ts?worker&url';
 
 const DEFAULT_WASM_URL = '/wasm/gluten/gluten_bg.wasm';
 
-let workletRegistrationPromise: Promise<void> | null = null;
+const workletRegistrations = new WeakMap<BaseAudioContext, Promise<void>>();
 let cachedWasmBytes: ArrayBuffer | null = null;
 
-async function ensureWorkletRegistered(ctx: AudioContext): Promise<void> {
-    if (!workletRegistrationPromise) {
-        workletRegistrationPromise = ctx.audioWorklet.addModule(glutenProcessorUrl);
+async function ensureWorkletRegistered(ctx: BaseAudioContext): Promise<void> {
+    let promise = workletRegistrations.get(ctx);
+    if (!promise) {
+        promise = ctx.audioWorklet.addModule(glutenProcessorUrl);
+        workletRegistrations.set(ctx, promise);
     }
-    return workletRegistrationPromise;
+    return promise;
 }
 
 async function fetchWasmBinary(url: string): Promise<ArrayBuffer> {
@@ -53,8 +55,8 @@ export function isGlutenDevice(deviceType: string): boolean {
     return deviceType === 'gluten';
 }
 
-export async function createGlutenNode(ctx: AudioContext, wasmUrl?: string): Promise<GlutenNodeResult> {
-    if (ctx.state === 'suspended') {
+export async function createGlutenNode(ctx: BaseAudioContext, wasmUrl?: string): Promise<GlutenNodeResult> {
+    if (ctx instanceof AudioContext && ctx.state === 'suspended') {
         await ctx.resume();
     }
 

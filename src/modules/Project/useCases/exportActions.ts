@@ -6,6 +6,7 @@ import {
     renderOffline as _renderOffline,
     exportStems as _exportStems,
     cancelExport as _cancelExport,
+    isExportActive as _isExportActive,
     audioBufferToWav,
     audioBufferToMp3,
     audioBufferToFlac,
@@ -21,6 +22,9 @@ export const exportStems = (opts: OfflineRenderOptions): Promise<Map<string, Aud
     _exportStems(opts);
 
 export const cancelExport = (): void => _cancelExport();
+
+/** Returns true if a mixdown or stem render is currently in progress. */
+export const isExportActive = (): boolean => _isExportActive();
 
 export const encodeWav = (
     buffer: AudioBuffer,

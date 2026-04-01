@@ -11,14 +11,16 @@ import proofProcessorUrl from '../services/proofProcessor.ts?worker&url';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
-let workletRegistrationPromise: Promise<void> | null = null;
+const workletRegistrations = new WeakMap<BaseAudioContext, Promise<void>>();
 let cachedWasmBytes: ArrayBuffer | null = null;
 
-async function ensureWorkletRegistered(ctx: AudioContext): Promise<void> {
-    if (!workletRegistrationPromise) {
-        workletRegistrationPromise = ctx.audioWorklet.addModule(proofProcessorUrl);
+async function ensureWorkletRegistered(ctx: BaseAudioContext): Promise<void> {
+    let promise = workletRegistrations.get(ctx);
+    if (!promise) {
+        promise = ctx.audioWorklet.addModule(proofProcessorUrl);
+        workletRegistrations.set(ctx, promise);
     }
-    return workletRegistrationPromise;
+    return promise;
 }
 
 async function fetchWasmBinary(url: string): Promise<ArrayBuffer> {
@@ -60,10 +62,10 @@ export function isProofDevice(deviceType: string): boolean {
     return deviceType === 'proof';
 }
 
-export async function createProofNode(ctx: AudioContext, wasmUrl?: string): Promise<ProofNodeResult> {
+export async function createProofNode(ctx: BaseAudioContext, wasmUrl?: string): Promise<ProofNodeResult> {
     await ensureWorkletRegistered(ctx);
 
-    if (ctx.state === 'suspended') {
+    if (ctx instanceof AudioContext && ctx.state === 'suspended') {
         await ctx.resume();
     }
 

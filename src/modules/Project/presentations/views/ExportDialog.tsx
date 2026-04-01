@@ -10,12 +10,15 @@ import {
     renderOffline,
     exportStems,
     cancelExport,
+    isExportActive,
     encodeWav,
     encodeMp3,
     encodeFlac,
 } from '../../useCases/exportActions';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { isTauri } from '#/helpers/tauriBridge';
+import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
+import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
 import { zipSync } from 'fflate';
 
 const logger = Container.getInstance().get(Logger);
@@ -185,6 +188,20 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         setStatusText('Heating the offline oven...');
 
         try {
+            // Restore audio buffers from IndexedDB before rendering.
+            // The primary CRDT load path (loadProject → projectCrdtToStores) does not
+            // call restoreFromIdb, so on a cold page reload the in-memory cache is empty.
+            // This call is idempotent — it skips IDs already in cache — so it is safe
+            // to call on every export regardless of how the project was loaded.
+            const ctx = getAudioContext();
+            if (ctx) {
+                await audioBufferCache.restoreFromIdb(ctx);
+            } else {
+                // Engine not yet initialised (pre-first-gesture) — proceed without
+                // restore; buffers may already be warm from a previous operation.
+                logger.warn('AudioContext not available during export — skipping IDB restore. Buffers may be incomplete.');
+            }
+
             const tracks = trackStore.value?.tracks ?? [];
             const maxBeat = Math.max(16, ...tracks.flatMap((t) => t.clips.map((c) => c.endBeat)));
             const bd = bitDepth as 16 | 24 | 32;
@@ -246,14 +263,29 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             // ── ACTUAL PROCESS ORCHESTRATION ──
             if (mode === 'stems') {
                 setStatusText('Proofing Slices (rendering stems)...');
+                // Accumulate warnings and emit a single summary toast to avoid notification spam
+                const stemWarnings = new Set<string>();
                 const stems = await exportStems({
                     durationBeats: maxBeat,
                     sampleRate,
                     onProgress: (frac) => {
-                        setProgress(frac * 50);
-                        if (Math.round(frac * 100) % 5 === 0) setStatusText(`Proofing slices ${Math.round(frac * 100)}%...`);
+                        const barPct = frac * 50;
+                        setProgress(barPct);
+                        if (Math.round(barPct) % 5 === 0) setStatusText('Proofing slices...');
+                    },
+                    onWarning: (msg) => {
+                        logger.warn(msg);
+                        stemWarnings.add(msg);
                     },
                 });
+                if (stemWarnings.size > 0) {
+                    notifyUser(
+                        stemWarnings.size === 1
+                            ? `Export warning: ${[...stemWarnings][0]}`
+                            : `Export completed with ${stemWarnings.size} warnings — check the console for details.`,
+                        'warning'
+                    );
+                }
                 if (cancelledRef.current) return;
 
                 let doneStems = 0;
@@ -273,14 +305,29 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 }
             } else {
                 setStatusText('Proofing Whole Loaf (offline mixdown)...');
+                // Accumulate warnings and emit a single summary toast to avoid notification spam
+                const mixWarnings = new Set<string>();
                 const buffer = await renderOffline({
                     durationBeats: maxBeat,
                     sampleRate,
                     onProgress: (frac) => {
-                        setProgress(frac * 60);
-                        if (Math.round(frac * 100) % 5 === 0) setStatusText(`Proofing loaf ${Math.round(frac * 100)}%...`);
+                        const barPct = frac * 60;
+                        setProgress(barPct);
+                        if (Math.round(barPct) % 5 === 0) setStatusText('Proofing whole loaf...');
+                    },
+                    onWarning: (msg) => {
+                        logger.warn(msg);
+                        mixWarnings.add(msg);
                     },
                 });
+                if (mixWarnings.size > 0) {
+                    notifyUser(
+                        mixWarnings.size === 1
+                            ? `Export warning: ${[...mixWarnings][0]}`
+                            : `Export completed with ${mixWarnings.size} warnings — check the console for details.`,
+                        'warning'
+                    );
+                }
                 if (cancelledRef.current) return;
 
                 // We map the remaining 40% of the progress bar to encoding the mixdown
@@ -328,7 +375,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             setStatusText('Ding! Baking Complete! 🍞');
             notifyUser('Ding! The audio finished baking', 'success');
 
-            // Optionally auto-close the modal after 2 seconds
+            // Auto-close after 2.5s
             setTimeout(() => {
                 if (open) onClose();
             }, 2500);
@@ -341,11 +388,16 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 logger.error(new Error('Export failed', { cause: error }));
                 setErrorText(msg);
                 setStatusText('The bread burned...');
+                // Reset the bar so a stale half-filled value doesn't render beside the error box
+                setProgress(0);
             }
         } finally {
+            // Always unlock the UI. On cancel, delay briefly so the status text is readable.
             if (cancelledRef.current) {
                 setTimeout(() => setExporting(false), 1500);
-            } else if (errorText) {
+            } else {
+                // Success or error — both unblock the button immediately.
+                // progress===100 drives the "Close Bakery" button state; exporting===false re-enables export.
                 setExporting(false);
             }
         }
@@ -595,7 +647,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                 <Button 
                                     size="sm" 
                                     onClick={handleExport} 
-                                    disabled={formats.size === 0}
+                                    disabled={formats.size === 0 || isExportActive()}
                                     className="bg-orange-600 hover:bg-orange-500 text-white shadow-[0_0_15px_rgba(234,88,12,0.3)] hover:shadow-[0_0_20px_rgba(249,115,22,0.5)] border-t border-orange-400/30 transition-all font-medium"
                                 >
                                     <Flame className="size-3.5 mr-1.5 opacity-80" />

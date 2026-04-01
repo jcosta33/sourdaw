@@ -11,10 +11,10 @@ import { autoLoadLevainSamples } from '#/modules/Levain/useCases/autoLoadSamples
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
-const workletRegistrations = new WeakMap<AudioContext, Promise<void>>();
+const workletRegistrations = new WeakMap<BaseAudioContext, Promise<void>>();
 let cachedWasmBytes: ArrayBuffer | null = null;
 
-async function ensureWorkletRegistered(ctx: AudioContext): Promise<void> {
+async function ensureWorkletRegistered(ctx: BaseAudioContext): Promise<void> {
     let promise = workletRegistrations.get(ctx);
     if (!promise) {
         promise = ctx.audioWorklet.addModule(levainProcessorUrl);
@@ -59,10 +59,10 @@ export function isLevainDevice(deviceType: string): boolean {
  * Await `result.ready` before sending MIDI.
  */
 export async function createLevainNode(
-    ctx: AudioContext,
+    ctx: BaseAudioContext,
     wasmUrl?: string,
 ): Promise<LevainNodeResult> {
-    if (ctx.state === 'suspended') {
+    if (ctx instanceof AudioContext && ctx.state === 'suspended') {
         await ctx.resume();
     }
 

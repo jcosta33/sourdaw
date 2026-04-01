@@ -1,5 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { initializeAudioEngine } from '#/modules/AudioEngine/useCases/initializeAudioEngine';
+import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
+import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
+import { verifyAudioBufferReferences } from '#/modules/Project/useCases/projectPersistence/helpers';
 import { registerBuiltinPlugins } from '#/modules/Plugin/useCases/wamPluginHost/builtinDescriptors';
 import { registerBuiltinFaustDSP } from '#/modules/Plugin/useCases/faustEngine/builtinDSP';
 import { registerProModulationEffects } from '#/modules/Plugin/useCases/proModulationEffects';
@@ -26,18 +29,23 @@ export const useAppInitialization = (): void => {
         const init = (): void => {
             if (!audioInitialized.current) {
                 audioInitialized.current = true;
-                void initializeAudioEngine();
-                void initWebMidi();
-                registerBuiltinPlugins();
-                registerBuiltinFaustDSP();
-                registerProModulationEffects();
-                registerProSynthInstruments();
-                // Reconcile audio engine strips with any tracks that were
-                // restored from the saved project before first interaction.
-                // Without this, instruments are silent on load.
-                if (projectLoaded.current) {
-                    ensureTrackStrips();
-                }
+                void (async () => {
+                    await initializeAudioEngine();
+                    // Restore audio buffers from IndexedDB now that a valid AudioContext
+                    // exists. The CRDT load path runs before any user gesture so it
+                    // cannot create or use an AudioContext — this is the earliest safe
+                    // point to decode and cache the PCM data.
+                    await audioBufferCache.restoreFromIdb(getAudioContext());
+                    verifyAudioBufferReferences();
+                    void initWebMidi();
+                    registerBuiltinPlugins();
+                    registerBuiltinFaustDSP();
+                    registerProModulationEffects();
+                    registerProSynthInstruments();
+                    if (projectLoaded.current) {
+                        ensureTrackStrips();
+                    }
+                })();
             }
         };
         window.addEventListener('click', init, { once: true });

@@ -9,14 +9,16 @@ import fermenterProcessorUrl from '../services/fermenterProcessor.ts?worker&url'
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
-let workletRegistrationPromise: Promise<void> | null = null;
+const workletRegistrations = new WeakMap<BaseAudioContext, Promise<void>>();
 let cachedWasmBytes: ArrayBuffer | null = null;
 
-async function ensureWorkletRegistered(ctx: AudioContext): Promise<void> {
-    if (!workletRegistrationPromise) {
-        workletRegistrationPromise = ctx.audioWorklet.addModule(fermenterProcessorUrl);
+async function ensureWorkletRegistered(ctx: BaseAudioContext): Promise<void> {
+    let promise = workletRegistrations.get(ctx);
+    if (!promise) {
+        promise = ctx.audioWorklet.addModule(fermenterProcessorUrl);
+        workletRegistrations.set(ctx, promise);
     }
-    return workletRegistrationPromise;
+    return promise;
 }
 
 async function fetchWasmBinary(url: string): Promise<ArrayBuffer> {
@@ -49,8 +51,8 @@ export function isFermenterDevice(deviceType: string): boolean {
  * Resumes the AudioContext if suspended (worklet processors only run when active).
  * Caches WASM binary across calls. Await `result.ready` before sending MIDI.
  */
-export async function createFermenterNode(ctx: AudioContext, wasmUrl?: string): Promise<FermenterNodeResult> {
-    if (ctx.state === 'suspended') {
+export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: string): Promise<FermenterNodeResult> {
+    if (ctx instanceof AudioContext && ctx.state === 'suspended') {
         await ctx.resume();
     }
 

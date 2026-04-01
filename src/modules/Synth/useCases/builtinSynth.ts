@@ -3,7 +3,7 @@
  * Delegates to SynthModels for types/defaults.
  */
 
-import { getTrackById } from '#/modules/Arrangement/useCases/trackQueries';
+import { getTrackById, type Device } from '#/modules/Arrangement/useCases/trackQueries';
 import { type SynthParams, defaultSynthParams, type MpeParams } from '#/modules/AudioEngine/useCases/audioEngineQueries';
 
 // Re-export model types for consumers
@@ -296,13 +296,13 @@ export function scheduleNote(
     return osc1;
 }
 
-export function getSynthParamsForTrack(trackId: string): SynthParams {
-    const track = getTrackById(trackId);
-    if (!track) {
-        return { ...defaultSynthParams };
-    }
-
-    const synthDevice = track.devices.find((d) => d.type === 'synth' || d.type.startsWith('builtin-synth'));
+/**
+ * Resolve synth params from an array of device descriptors.
+ * Prefer this over `getSynthParamsForTrack` during offline rendering
+ * to avoid re-reading the live store mid-render.
+ */
+export function getSynthParamsFromDevices(devices: Device[]): SynthParams {
+    const synthDevice = devices.find((d) => d.type === 'synth' || d.type.startsWith('builtin-synth'));
     if (!synthDevice) {
         return { ...defaultSynthParams };
     }
@@ -328,6 +328,22 @@ export function getSynthParamsForTrack(trackId: string): SynthParams {
     }
 
     return result;
+}
+
+/**
+ * Reads synth params from the live track store by track ID.
+ *
+ * Valid for live-engine consumers (transport, mixer, live preview) that always
+ * want the current store value. For offline rendering, prefer
+ * `getSynthParamsFromDevices(track.devices)` to use a stable snapshot and
+ * avoid a live-store read mid-render.
+ */
+export function getSynthParamsForTrack(trackId: string): SynthParams {
+    const track = getTrackById(trackId);
+    if (!track) {
+        return { ...defaultSynthParams };
+    }
+    return getSynthParamsFromDevices(track.devices);
 }
 
 /**

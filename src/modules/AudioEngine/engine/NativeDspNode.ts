@@ -26,14 +26,15 @@ export function isNativeDspDevice(deviceType: string): boolean {
     return deviceType in NATIVE_DSP_DEVICE_TYPES;
 }
 
-let workletRegistered = false;
+const workletRegistrations = new WeakMap<BaseAudioContext, Promise<void>>();
 
 async function ensureWorkletRegistered(ctx: BaseAudioContext): Promise<void> {
-    if (workletRegistered) {
-        return;
+    let promise = workletRegistrations.get(ctx);
+    if (!promise) {
+        promise = ctx.audioWorklet.addModule(nativeDspProcessorUrl);
+        workletRegistrations.set(ctx, promise);
     }
-    await ctx.audioWorklet.addModule(nativeDspProcessorUrl);
-    workletRegistered = true;
+    return promise;
 }
 
 export type NativeDspNodeResult = {

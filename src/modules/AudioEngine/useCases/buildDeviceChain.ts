@@ -27,6 +27,11 @@ export type DeviceNodeEntry = {
         setParam: (name: string, value: number) => void;
         setBypass: (bypassed: boolean) => void;
     };
+    /** Instrument controls for worklet-based synths (Fermenter, Toaster, Levain). */
+    instrumentControls?: {
+        noteOn: (noteOrPad: number, velocity: number, midiNote?: number) => void;
+        noteOff: (noteOrPad: number) => void;
+    };
 };
 
 
@@ -55,11 +60,6 @@ export async function buildDeviceChain(
         return [];
     }
 
-    // AudioWorklet-based devices (Faust, Native DSP) hang on OfflineAudioContext
-    // because addModule() never resolves. Skip them for offline renders — only
-    // built-in Web Audio nodes work reliably in the offline path.
-    const isOffline = ctx instanceof OfflineAudioContext;
-
     const entries: DeviceNodeEntry[] = [];
     let prev: AudioNode = inputNode;
 
@@ -71,11 +71,9 @@ export async function buildDeviceChain(
 
         let dn: OfflineDeviceNode | null = null;
         let nativeDspControls: DeviceNodeEntry['nativeDsp'] = undefined;
+        let instrumentControls: DeviceNodeEntry['instrumentControls'] = undefined;
 
         if (isNativeDspDevice(device.type)) {
-            if (isOffline) {
-                continue;
-            }
             // Native Rust/WASM DSP device
             const pluginType = NATIVE_DSP_DEVICE_TYPES[device.type];
             if (pluginType) {
@@ -100,9 +98,6 @@ export async function buildDeviceChain(
                 }
             }
         } else if (isFermenterDevice(device.type)) {
-            if (isOffline || !(ctx instanceof AudioContext)) {
-                continue;
-            }
             // Fermenter synthesizer — async WASM init + AudioWorkletNode
             try {
                 const result = await createFermenterNode(ctx);
@@ -120,14 +115,15 @@ export async function buildDeviceChain(
                     setParam: result.setParam,
                     setBypass: result.setBypass,
                 };
+                instrumentControls = {
+                    noteOn: result.noteOn,
+                    noteOff: result.noteOff,
+                };
             } catch (error) {
                 logger.warn(`Fermenter device failed to load: ${error}`);
             }
         } else if (isToasterDevice(device.type)) {
-            if (isOffline || !(ctx instanceof AudioContext)) {
-                continue;
-            }
-            // Grinder drum machine — async WASM init + AudioWorkletNode
+            // Toaster drum machine — async WASM init + AudioWorkletNode
             try {
                 const result = await createToasterNode(ctx);
                 await result.ready;
@@ -144,13 +140,14 @@ export async function buildDeviceChain(
                     setParam: result.setParam,
                     setBypass: result.setBypass,
                 };
+                instrumentControls = {
+                    noteOn: result.noteOn,
+                    noteOff: result.noteOff,
+                };
             } catch (error) {
-                logger.warn(`Grinder device failed to load: ${error}`);
+                logger.warn(`Toaster device failed to load: ${error}`);
             }
         } else if (isLevainDevice(device.type)) {
-            if (isOffline || !(ctx instanceof AudioContext)) {
-                continue;
-            }
             // Levain suite — async WASM init + AudioWorkletNode
             try {
                 const result = await createLevainNode(ctx);
@@ -168,13 +165,14 @@ export async function buildDeviceChain(
                     setParam: result.setParam,
                     setBypass: result.setBypass,
                 };
+                instrumentControls = {
+                    noteOn: result.noteOn,
+                    noteOff: result.noteOff,
+                };
             } catch (error) {
                 logger.warn(`Levain device failed to load: ${error}`);
             }
         } else if (isGlutenDevice(device.type)) {
-            if (isOffline || !(ctx instanceof AudioContext)) {
-                continue;
-            }
             // Gluten bus compressor — async WASM init + AudioWorkletNode
             try {
                 const result = await createGlutenNode(ctx);
@@ -195,9 +193,6 @@ export async function buildDeviceChain(
                 logger.warn(`Gluten device failed to load: ${error}`);
             }
         } else if (isBacteriaDevice(device.type)) {
-            if (isOffline || !(ctx instanceof AudioContext)) {
-                continue;
-            }
             // Bacteria creative multi-effects — async WASM init + AudioWorkletNode
             try {
                 const result = await createBacteriaNode(ctx);
@@ -218,9 +213,6 @@ export async function buildDeviceChain(
                 logger.warn(`Bacteria device failed to load: ${error}`);
             }
         } else if (isGrinderDevice(device.type)) {
-            if (isOffline || !(ctx instanceof AudioContext)) {
-                continue;
-            }
             // Grinder amp simulator — async WASM init + AudioWorkletNode
             try {
                 const result = await createGrinderNode(ctx);
@@ -241,9 +233,6 @@ export async function buildDeviceChain(
                 logger.warn(`Grinder device failed to load: ${error}`);
             }
         } else if (isProofDevice(device.type)) {
-            if (isOffline || !(ctx instanceof AudioContext)) {
-                continue;
-            }
             // Proof mastering suite — async WASM init + AudioWorkletNode
             try {
                 const result = await createProofNode(ctx);
@@ -264,9 +253,6 @@ export async function buildDeviceChain(
                 logger.warn(`Proof mastering suite failed to load: ${error}`);
             }
         } else if (isScoringDevice(device.type)) {
-            if (isOffline || !(ctx instanceof AudioContext)) {
-                continue;
-            }
             try {
                 const result = await createScoringNode(ctx);
                 await result.ready;
@@ -286,9 +272,6 @@ export async function buildDeviceChain(
                 logger.warn(`Scoring tuner failed to load: ${error}`);
             }
         } else if (isFaustModule(device.type)) {
-            if (isOffline) {
-                continue;
-            }
             // Faust DSP device — compile and instantiate
             dn = await createFaustDevice(ctx, device.type);
         } else {
@@ -304,9 +287,20 @@ export async function buildDeviceChain(
             continue;
         }
 
-        prev.connect(dn.inputNode);
-        prev = dn.outputNode;
-        entries.push({ deviceId: device.id, deviceType: device.type, node: dn, nativeDsp: nativeDspControls });
+        // Instrument devices (Fermenter, Toaster, Levain) have 0 inputs — they
+        // are audio sources, not pass-through effects. Route their output INTO
+        // the current chain position (trackGain) so:
+        //   Instrument.output → trackGain → [effects] → trackPan → destination
+        // This preserves gain/pan automation on the instrument's output.
+        const isSourceNode = dn.inputNode instanceof AudioWorkletNode && dn.inputNode.numberOfInputs === 0;
+        if (isSourceNode) {
+            dn.outputNode.connect(prev);
+            // Don't advance `prev` — subsequent effects chain from trackGain forward
+        } else {
+            prev.connect(dn.inputNode);
+            prev = dn.outputNode;
+        }
+        entries.push({ deviceId: device.id, deviceType: device.type, node: dn, nativeDsp: nativeDspControls, instrumentControls });
     }
 
     prev.connect(outputNode);

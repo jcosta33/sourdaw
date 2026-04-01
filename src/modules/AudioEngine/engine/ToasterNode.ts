@@ -9,14 +9,16 @@ import toasterProcessorUrl from '../services/toasterProcessor.ts?worker&url';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
-let workletRegistrationPromise: Promise<void> | null = null;
+const workletRegistrations = new WeakMap<BaseAudioContext, Promise<void>>();
 let cachedWasmBytes: ArrayBuffer | null = null;
 
-async function ensureWorkletRegistered(ctx: AudioContext): Promise<void> {
-    if (!workletRegistrationPromise) {
-        workletRegistrationPromise = ctx.audioWorklet.addModule(toasterProcessorUrl);
+async function ensureWorkletRegistered(ctx: BaseAudioContext): Promise<void> {
+    let promise = workletRegistrations.get(ctx);
+    if (!promise) {
+        promise = ctx.audioWorklet.addModule(toasterProcessorUrl);
+        workletRegistrations.set(ctx, promise);
     }
-    return workletRegistrationPromise;
+    return promise;
 }
 
 async function fetchWasmBinary(url: string): Promise<ArrayBuffer> {
@@ -44,8 +46,8 @@ export function isToasterDevice(deviceType: string): boolean {
     return deviceType === 'toaster';
 }
 
-export async function createToasterNode(ctx: AudioContext, wasmUrl?: string): Promise<ToasterNodeResult> {
-    if (ctx.state === 'suspended') {
+export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string): Promise<ToasterNodeResult> {
+    if (ctx instanceof AudioContext && ctx.state === 'suspended') {
         await ctx.resume();
     }
 

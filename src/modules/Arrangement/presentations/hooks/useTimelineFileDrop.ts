@@ -8,8 +8,10 @@ import {
     decodeAudioFile,
 } from '../../useCases/timelineViewActions';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { libraryStore } from '#/modules/SampleLibrary/stores/libraryStore';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
+import { isTauri } from '#/helpers/tauriBridge';
 
 type GetCanvasCoords = (e: DragEvent<HTMLDivElement>) => { x: number; y: number };
 type GetBeatFromX = (x: number) => number;
@@ -43,14 +45,16 @@ export const useTimelineFileDrop = ({
 
         const sampleData = e.dataTransfer.getData('application/x-sourdaw-sample');
         if (sampleData) {
+            setIsImporting(true);
             try {
                 const sample = JSON.parse(sampleData) as {
                     name: string;
                     id: string;
-                    duration: string;
+                    path: string;
+                    libraryRootId: string;
                     durationSeconds?: number;
-                    audioBufferId?: string;
                 };
+
                 let targetTrackId = trackHit ?? trackStore.value?.selectedTrackId;
                 const sampleTargetTrack = targetTrackId
                     ? trackStore.value?.tracks.find((t) => t.id === targetTrackId)
@@ -62,21 +66,56 @@ export const useTimelineFileDrop = ({
                     }
                     targetTrackId = newTrack.id;
                 }
-                const durationBeats = sample.durationSeconds
+
+                // Decode the actual audio file so it goes into audioBufferCache.
+                // Without this, the clip has no bufferId and will be silent in exports.
+                let audioBufferId: string | undefined;
+                let durationBeats = sample.durationSeconds
                     ? Math.max(1, Math.ceil(sample.durationSeconds * 2))
-                    : sample.duration.includes('bar')
-                      ? parseInt(sample.duration) * 4
-                      : 4;
+                    : 4;
+
+                try {
+                    const root = libraryStore.value?.roots.find((r) => r.id === sample.libraryRootId);
+
+                    if (isTauri() && root?.provider === 'tauri' && root.rootRef) {
+                        // Tauri: resolve the absolute path and pass as a File-like object
+                        const { invoke } = await import('@tauri-apps/api/core');
+                        const absPath = `${root.rootRef}/${sample.path}`;
+                        const bytes = (await invoke('read_audio_file', { path: absPath })) as number[];
+                        const file = new File([new Uint8Array(bytes as ArrayLike<number>)], sample.path.split('/').pop() ?? sample.name);
+                        const result = await decodeAudioFile(file);
+                        audioBufferId = result.id;
+                        durationBeats = Math.max(1, Math.ceil((result.buffer.duration / 60) * buildTimelineRenderModel().tempo));
+                    } else if (!isTauri() && root?.provider === 'browser' && root.handle) {
+                        // Browser FileSystem Access API: walk the directory handle to the file
+                        const pathParts = sample.path.split('/');
+                        const fileName = pathParts.pop()!;
+                        let dirHandle: FileSystemDirectoryHandle = root.handle;
+                        for (const part of pathParts) {
+                            dirHandle = await dirHandle.getDirectoryHandle(part);
+                        }
+                        const fileHandle = await dirHandle.getFileHandle(fileName);
+                        const file = await fileHandle.getFile();
+                        const result = await decodeAudioFile(file);
+                        audioBufferId = result.id;
+                        durationBeats = Math.max(1, Math.ceil((result.buffer.duration / 60) * buildTimelineRenderModel().tempo));
+                    }
+                } catch {
+                    notifyUser(`Could not load "${sample.name}" — the file may have moved or permissions were revoked.`, 'warning');
+                }
+
                 addClip({
                     trackId: targetTrackId,
                     startBeat: beat,
                     endBeat: beat + durationBeats,
                     name: sample.name,
                     type: 'audio',
-                    audioBufferId: sample.audioBufferId,
+                    audioBufferId,
                 });
             } catch {
                 /* ignored */
+            } finally {
+                setIsImporting(false);
             }
             return;
         }
