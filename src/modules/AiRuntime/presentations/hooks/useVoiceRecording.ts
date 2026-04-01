@@ -11,6 +11,7 @@ import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
 import { isTauri as isTauriAvailable, tauriInvoke } from '#/helpers/tauriBridge';
 import { injectPromptCommand } from '#/modules/AiRuntime/useCases/promptInjection';
+import { voiceStatusStore } from '#/modules/AiRuntime/stores/voiceStatusStore';
 
 const logger = Container.getInstance().get(Logger);
 
@@ -88,6 +89,16 @@ export const useVoiceRecording = (): VoiceRecordingState => {
     const [transcribing, setTranscribing] = useState(false);
     const [errorText, setErrorText] = useState('');
 
+    // Sync to voiceStatusStore so VoiceButton can reflect state
+    const setListening = (v: boolean): void => {
+        setIsListening(v);
+        voiceStatusStore.set({ isListening: v, transcribing: voiceStatusStore.value?.transcribing ?? false });
+    };
+    const setTranscribingAndStore = (v: boolean): void => {
+        setTranscribing(v);
+        voiceStatusStore.set({ isListening: voiceStatusStore.value?.isListening ?? false, transcribing: v });
+    };
+
     const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const chunksRef = useRef<Blob[]>([]);
@@ -132,12 +143,12 @@ export const useVoiceRecording = (): VoiceRecordingState => {
             await tauriInvoke('start_dictation');
 
             modeRef.current = 'whisper';
-            setIsListening(true);
+            setListening(true);
             setFinalText('');
             setInterimText('Recording...');
         } catch (error: unknown) {
             logger.warn(`Whisper recording failed: ${String(error)}`);
-            setIsListening(false);
+            setListening(false);
         }
     };
 
@@ -145,10 +156,10 @@ export const useVoiceRecording = (): VoiceRecordingState => {
 
     const showError = (msg: string): void => {
         setErrorText(msg);
-        setIsListening(true);
+        setListening(true);
         setTimeout(() => {
             setErrorText('');
-            setIsListening(false);
+            setListening(false);
         }, 3000);
     };
 
@@ -222,7 +233,7 @@ export const useVoiceRecording = (): VoiceRecordingState => {
             recognition.start();
             recognitionRef.current = recognition;
             modeRef.current = 'browser';
-            setIsListening(true);
+            setListening(true);
             setFinalText('');
             setInterimText('');
             setErrorText('');
@@ -240,7 +251,7 @@ export const useVoiceRecording = (): VoiceRecordingState => {
             recognitionRef.current = null;
         }
         if (modeRef.current === 'whisper') {
-            setTranscribing(true);
+            setTranscribingAndStore(true);
             setInterimText('Transcribing...');
             void tauriInvoke('stop_dictation').catch((e: unknown) => {
                 logger.warn(`stop_dictation failed: ${String(e)}`);
@@ -248,7 +259,7 @@ export const useVoiceRecording = (): VoiceRecordingState => {
             // The dictation-result event listener (set in startWhisperRecording) handles the rest
             return;
         }
-        setIsListening(false);
+        setListening(false);
     };
 
     const startListening = (): void => {

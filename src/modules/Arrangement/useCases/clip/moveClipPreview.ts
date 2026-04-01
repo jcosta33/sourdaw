@@ -1,5 +1,6 @@
 import { getTrackState, setTrackState } from '#/modules/Arrangement/repositories/track';
 import { type Clip } from '#/modules/Arrangement/models/Track';
+import { shiftClipMidiNotes } from '#/modules/MIDI/useCases/midiNoteCrud';
 
 export function moveClipPreview(clipId: string, targetTrackId: string, startBeat: number): void {
     const state = getTrackState();
@@ -40,4 +41,10 @@ export function moveClipPreview(clipId: string, targetTrackId: string, startBeat
             t.id === movedClip!.trackId ? { ...t, clips: [...t.clips, movedClip!] } : t
         ),
     });
+
+    // Shift MIDI notes by the incremental delta so they move with the clip during drag
+    const beatDelta = startBeat - oldStartBeat;
+    if (beatDelta !== 0) {
+        shiftClipMidiNotes(clipId, beatDelta);
+    }
 }

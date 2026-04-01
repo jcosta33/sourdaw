@@ -4,6 +4,7 @@ import { Separator } from '#/components/ui/separator';
 import { Slider } from '#/components/ui/slider';
 import { Input } from '#/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '#/components/ui/dialog';
+import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import {
     Sun,
     Moon,
@@ -25,6 +26,7 @@ import { preferencesStore } from '../../stores/preferencesStore';
 import {
     defaultPreferences,
     type Preferences,
+    type SoloModePreference,
     BUFFER_SIZE_OPTIONS,
     SAMPLE_RATE_OPTIONS,
     type BufferSizeOption,
@@ -45,6 +47,7 @@ import {
     GridSubdivisionSection,
 } from './preferencesShared';
 import { ShortcutsSection } from './ShortcutsSection';
+import { setSoloMode } from '../../useCases/togglePanel/panelToggles';
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -93,8 +96,12 @@ export const PreferencesDialog = ({ open, onClose }: PreferencesDialogProps): Re
     const prefsRef = useRef(prefs);
     prefsRef.current = prefs;
 
-    const update = (partial: Partial<Preferences>) => {
+    const update = (partial: Partial<Preferences>): void => {
         preferencesStore.set({ ...prefsRef.current, ...partial });
+        // Keep workspaceStore in sync for features that read soloMode directly
+        if (partial.soloMode !== undefined) {
+            setSoloMode(partial.soloMode);
+        }
     };
 
     return (
@@ -241,18 +248,80 @@ const GeneralSection = ({ prefs, update }: SectionProps): ReactElement => {
             <Separator />
 
             <FieldGroup label="Recording">
-                <div className="space-y-1">
-                    <label className="text-[10px] text-muted-foreground block">Count-In (bars)</label>
-                    <div className="flex gap-1">
-                        {([0, 1, 2, 4] as const).map((bars) => (
+                <div className="space-y-3">
+                    <div className="space-y-1">
+                        <label className="text-[10px] text-muted-foreground block">Count-In (bars)</label>
+                        <div className="flex gap-1">
+                            {([0, 1, 2, 4] as const).map((bars) => (
+                                <Button
+                                    key={bars}
+                                    variant={prefs.recordCountIn === bars ? 'secondary' : 'ghost'}
+                                    size="xs"
+                                    onClick={() => update({ recordCountIn: bars })}
+                                >
+                                    {bars === 0 ? 'Off' : `${bars}`}
+                                </Button>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                            <span className="text-xs text-foreground">Pre-roll</span>
                             <Button
-                                key={bars}
-                                variant={prefs.recordCountIn === bars ? 'secondary' : 'ghost'}
+                                variant={prefs.preRollEnabled ? 'secondary' : 'ghost'}
                                 size="xs"
-                                onClick={() => update({ recordCountIn: bars })}
+                                onClick={() => update({ preRollEnabled: !prefs.preRollEnabled })}
                             >
-                                {bars === 0 ? 'Off' : `${bars}`}
+                                {prefs.preRollEnabled ? 'On' : 'Off'}
                             </Button>
+                        </div>
+                        {prefs.preRollEnabled ? (
+                            <div className="space-y-1">
+                                <label className="text-[10px] text-muted-foreground block">Pre-roll bars</label>
+                                <div className="flex gap-1">
+                                    {([1, 2, 4] as const).map((bars) => (
+                                        <Button
+                                            key={bars}
+                                            variant={prefs.preRollBars === bars ? 'secondary' : 'ghost'}
+                                            size="xs"
+                                            onClick={() => update({ preRollBars: bars })}
+                                        >
+                                            {bars}
+                                        </Button>
+                                    ))}
+                                </div>
+                            </div>
+                        ) : null}
+                    </div>
+                </div>
+            </FieldGroup>
+
+            <Separator />
+
+            <FieldGroup label="Mixer">
+                <div className="space-y-1">
+                    <label className="text-[10px] text-muted-foreground block">Solo Mode</label>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed mb-2">
+                        Determines how soloed tracks affect others. SIP (Solo In Place) is standard.
+                    </p>
+                    <div className="flex gap-1">
+                        {([
+                            { value: 'sip' as SoloModePreference, label: 'SIP', desc: 'Solo In Place — mute all others' },
+                            { value: 'afl' as SoloModePreference, label: 'AFL', desc: 'After Fader Listen — monitor at fader gain' },
+                            { value: 'pfl' as SoloModePreference, label: 'PFL', desc: 'Pre-Fader Listen — monitor at unity gain' },
+                        ]).map((mode) => (
+                            <Tooltip key={mode.value}>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        variant={prefs.soloMode === mode.value ? 'secondary' : 'ghost'}
+                                        size="xs"
+                                        onClick={() => update({ soloMode: mode.value })}
+                                    >
+                                        {mode.label}
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>{mode.desc}</TooltipContent>
+                            </Tooltip>
                         ))}
                     </div>
                 </div>

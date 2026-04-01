@@ -27,6 +27,6 @@ export function applyMelodyToTrack(trackId: string, options: GenerateMelodyOptio
     const { notes } = generateMelody(options);
     for (const note of notes) {
         const duration = Math.max(MIN_NOTE_DURATION, note.duration);
-        addMidiNote(clip.id, note.pitch, note.startBeat, duration, note.velocity);
+        addMidiNote(clip.id, note.pitch, startBeat + note.startBeat, duration, note.velocity);
     }
 }

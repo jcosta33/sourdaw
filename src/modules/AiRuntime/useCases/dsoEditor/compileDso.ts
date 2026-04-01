@@ -847,11 +847,15 @@ async function executeSingleDso(dso: Dso): Promise<void> {
             const { midiStore } = await import('#/modules/MIDI/stores/midiStore');
             const ms = midiStore.value;
             if (ms) {
+                // Find the clip's start beat so we can offset relative note positions to absolute
+                const clip = state.tracks.flatMap((t) => t.clips).find((c) => c.id === dso.clip_id);
+                const clipStartBeat = clip?.startBeat ?? 0;
+
                 const existing = ms.notesByClipId[dso.clip_id] ?? [];
                 const newNotes = dso.notes.map((n: { pitch: number; start_beat: number; duration: number; velocity: number }, i: number) => ({
                     id: `note-ai-${Date.now()}-${i}`,
                     pitch: Math.max(0, Math.min(127, n.pitch)),
-                    startBeat: Math.max(0, n.start_beat),
+                    startBeat: Math.max(0, clipStartBeat + n.start_beat),
                     duration: Math.max(0.01, n.duration),
                     velocity: Math.max(1, Math.min(127, n.velocity)),
                 }));

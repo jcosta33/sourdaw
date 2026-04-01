@@ -1,4 +1,4 @@
-import { type ReactElement } from 'react';
+import { type ReactElement, useSyncExternalStore } from 'react';
 import {
     PanelLeft,
     PanelRight,
@@ -8,6 +8,7 @@ import {
     Settings2,
     Sparkles,
     Piano,
+    Link as LinkIcon,
 } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
@@ -24,7 +25,9 @@ import {
     getAiSnapshot,
 } from '#/modules/AiGeneration/stores/aiStore';
 import { toggleAiPanel } from '#/modules/AiGeneration/useCases/actions/taskManagement';
-import { useSyncExternalStore } from 'react';
+import { subscribeToLinkStatus, getLinkStatusSnapshot } from '#/modules/AudioEngine/stores/linkStatusStore';
+import { enableLink, disableLink } from '#/modules/AudioEngine/useCases/engineAccess';
+
 
 type PanelTogglesProps = {
     sidebarOpen: boolean;
@@ -44,6 +47,15 @@ export const PanelToggles = ({
     virtualKeyboardOpen,
 }: PanelTogglesProps): ReactElement => {
     const aiState = useSyncExternalStore<{ isPanelOpen: boolean }>(subscribeAiStore, getAiSnapshot);
+    const linkEnabled = useSyncExternalStore(subscribeToLinkStatus, getLinkStatusSnapshot);
+
+    const handleLinkToggle = (): void => {
+        if (linkEnabled) {
+            void disableLink();
+        } else {
+            void enableLink().catch(() => {/* graceful no-op if Link not available */});
+        }
+    };
 
     return (
         <div
@@ -159,6 +171,21 @@ export const PanelToggles = ({
                 <TooltipContent>Generate</TooltipContent>
             </Tooltip>
             <div className="w-px h-4 bg-border/40 mx-0.5" />
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <Button
+                        variant={linkEnabled ? 'secondary' : 'ghost'}
+                        size="icon-sm"
+                        aria-label={linkEnabled ? 'Ableton Link active — click to disable' : 'Enable Ableton Link sync'}
+                        aria-pressed={linkEnabled}
+                        onClick={handleLinkToggle}
+                        className={linkEnabled ? 'text-[var(--color-accent-amber)]' : ''}
+                    >
+                        <LinkIcon className="size-3.5" aria-hidden="true" />
+                    </Button>
+                </TooltipTrigger>
+                <TooltipContent>Ableton Link{linkEnabled ? ' (active)' : ''}</TooltipContent>
+            </Tooltip>
             <Tooltip>
                 <TooltipTrigger asChild>
                     <Button

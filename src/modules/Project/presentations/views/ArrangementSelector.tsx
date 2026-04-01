@@ -64,6 +64,11 @@ export const ArrangementSelector = (): ReactElement | null => {
         return null;
     }
 
+    // Only show the selector when there are multiple arrangements
+    if (state.arrangements.length <= 1) {
+        return null;
+    }
+
     const currentArrangement = state.arrangements.find((a) => a.id === state.activeArrangementId);
 
     const handleCreate = () => {

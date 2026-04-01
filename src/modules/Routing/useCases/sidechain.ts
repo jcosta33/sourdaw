@@ -1,13 +1,9 @@
 import { createSidechainRoute, type SidechainRoute } from '#/modules/AudioEngine/useCases/audioEngineQueries';
-
-export type { SidechainRoute };
 import { wireSidechainRoute, unwireSidechainRoute } from '#/modules/AudioEngine/useCases/engineAccess';
 
-type SidechainState = {
-    routes: SidechainRoute[];
-};
+import { sidechainStore } from '../stores/sidechainStore';
 
-let sidechainState: SidechainState = { routes: [] };
+export type { SidechainRoute };
 
 export function addSidechainRoute(
     sourceTrackId: string,
@@ -15,25 +11,29 @@ export function addSidechainRoute(
     targetDeviceId: string,
     targetParameterId = 'threshold'
 ): void {
-    const exists = sidechainState.routes.some(
+    const state = sidechainStore.value;
+    if (!state) {
+        return;
+    }
+
+    const exists = state.routes.some(
         (r) => r.sourceTrackId === sourceTrackId && r.targetDeviceId === targetDeviceId
     );
     if (exists) {
         return;
     }
 
-    // Cycle detection: walk forward from target to see if we reach source
-    if (wouldCreateCycle(sourceTrackId, targetTrackId)) {
+    if (wouldCreateCycle(sourceTrackId, targetTrackId, state.routes)) {
         throw new Error(`Sidechain route ${sourceTrackId} → ${targetTrackId} would create a routing cycle`);
     }
 
     const route = createSidechainRoute(sourceTrackId, targetTrackId, targetDeviceId, targetParameterId);
-    sidechainState = { routes: [...sidechainState.routes, route] };
+    sidechainStore.set({ routes: [...state.routes, route] });
 
     wireSidechainRoute(sourceTrackId, targetTrackId, targetDeviceId);
 }
 
-function wouldCreateCycle(sourceTrackId: string, targetTrackId: string): boolean {
+function wouldCreateCycle(sourceTrackId: string, targetTrackId: string, routes: SidechainRoute[]): boolean {
     if (sourceTrackId === targetTrackId) {
         return true;
     }
@@ -48,7 +48,7 @@ function wouldCreateCycle(sourceTrackId: string, targetTrackId: string): boolean
             continue;
         }
         visited.add(current);
-        for (const route of sidechainState.routes) {
+        for (const route of routes) {
             if (route.sourceTrackId === current) {
                 queue.push(route.targetTrackId);
             }
@@ -58,35 +58,52 @@ function wouldCreateCycle(sourceTrackId: string, targetTrackId: string): boolean
 }
 
 export function removeSidechainRoute(routeId: string): void {
-    const route = sidechainState.routes.find((r) => r.id === routeId);
+    const state = sidechainStore.value;
+    if (!state) {
+        return;
+    }
+
+    const route = state.routes.find((r) => r.id === routeId);
     if (route) {
         unwireSidechainRoute(route.sourceTrackId, route.targetDeviceId);
     }
 
-    sidechainState = {
-        routes: sidechainState.routes.filter((r) => r.id !== routeId),
-    };
+    sidechainStore.set({
+        routes: state.routes.filter((r) => r.id !== routeId),
+    });
 }
 
 export function getSidechainRoutesForTrack(trackId: string): SidechainRoute[] {
-    return sidechainState.routes.filter((r) => r.sourceTrackId === trackId || r.targetTrackId === trackId);
+    const state = sidechainStore.value;
+    if (!state) {
+        return [];
+    }
+    return state.routes.filter((r) => r.sourceTrackId === trackId || r.targetTrackId === trackId);
 }
 
 export function getSidechainSource(targetDeviceId: string): SidechainRoute | null {
-    return sidechainState.routes.find((r) => r.targetDeviceId === targetDeviceId) ?? null;
+    const state = sidechainStore.value;
+    if (!state) {
+        return null;
+    }
+    return state.routes.find((r) => r.targetDeviceId === targetDeviceId) ?? null;
 }
 
 export function getAllSidechainRoutes(): SidechainRoute[] {
-    return sidechainState.routes;
+    return sidechainStore.value?.routes ?? [];
 }
 
 export function setSidechainRoutes(routes: SidechainRoute[]): void {
-    for (const route of sidechainState.routes) {
-        unwireSidechainRoute(route.sourceTrackId, route.targetDeviceId);
+    const state = sidechainStore.value;
+    if (state) {
+        for (const route of state.routes) {
+            unwireSidechainRoute(route.sourceTrackId, route.targetDeviceId);
+        }
     }
-    sidechainState = { routes: [] };
+
+    sidechainStore.set({ routes });
+
     for (const route of routes) {
-        sidechainState = { routes: [...sidechainState.routes, route] };
         wireSidechainRoute(route.sourceTrackId, route.targetTrackId, route.targetDeviceId);
     }
 }

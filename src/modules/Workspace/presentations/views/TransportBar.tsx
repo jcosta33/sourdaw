@@ -8,7 +8,6 @@ import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
 import { TransportControls } from './Transport/TransportControls';
 import { AutoScrollToggle } from './Transport/AutoScrollToggle';
-import { SoloModeSelector } from './Transport/SoloModeSelector';
 import { PlayheadDisplay } from './Transport/PlayheadDisplay';
 import { UndoRedoButtons } from './Transport/UndoRedoButtons';
 import { VoiceButton } from '../components/Transport/VoiceButton';
@@ -39,7 +38,6 @@ export const TransportBar = (): ReactElement => {
         mixerOpen,
         chatPanelOpen,
         trackListOpen,
-        soloMode,
         timeDisplayMode,
         rippleEditing,
         virtualKeyboardOpen,
@@ -51,6 +49,7 @@ export const TransportBar = (): ReactElement => {
 
     const tracks = useSyncExternalStore(subscribeTrackStore, getTrackStoreSnapshot, getTrackStoreSnapshot);
     const anyTrackArmed = tracks.some((t) => t.armed);
+    const anyMidiTrackArmed = tracks.some((t) => t.armed && t.kind === 'midi');
 
     const isRecording = transport.isRecording;
 
@@ -130,20 +129,19 @@ export const TransportBar = (): ReactElement => {
                         isAudioRecording={audioState.isRecording}
                         isLooping={transport.isLooping}
                         overdubEnabled={transport.overdubEnabled}
+                        showOverdub={anyMidiTrackArmed}
+                        anyTrackArmed={anyTrackArmed}
                         metronomeEnabled={transport.metronomeEnabled}
                         metronomeVolume={transport.metronomeVolume}
                         punchInEnabled={transport.punchInEnabled}
                         countInEnabled={transport.countInEnabled}
-                        preRollEnabled={transport.preRollEnabled}
-                        anyTrackArmed={anyTrackArmed}
+                        countInBars={transport.countInBars}
                     />
                 </div>
 
                 {/* Right wing: Editing Tools */}
                 <div className="flex flex-1 basis-0 justify-end items-center gap-1 min-w-0">
                     <AutoScrollToggle />
-                    <Sep />
-                    <SoloModeSelector soloMode={soloMode} />
                     <Sep />
                     <ToolSelector rippleEditing={rippleEditing} onToggleRipple={toggleRippleEditing} />
                     <Sep />

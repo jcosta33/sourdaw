@@ -27,6 +27,6 @@ export function applyChordProgressionToTrack(trackId: string, options: GenerateC
     const { notes } = generateChordProgression(options);
     for (const note of notes) {
         const duration = Math.max(MIN_NOTE_DURATION, note.duration);
-        addMidiNote(clip.id, note.pitch, note.startBeat, duration, note.velocity);
+        addMidiNote(clip.id, note.pitch, startBeat + note.startBeat, duration, note.velocity);
     }
 }

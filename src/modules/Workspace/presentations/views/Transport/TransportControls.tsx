@@ -1,6 +1,6 @@
-import { type ReactElement, useSyncExternalStore } from 'react';
+import { type ReactElement } from 'react';
 import { Slider } from '#/components/ui/slider';
-import { Play, Pause, Square, Circle, Repeat, Scissors, ListOrdered, Link as LinkIcon, Layers } from 'lucide-react';
+import { Play, Pause, Square, Circle, Repeat, Scissors, ListOrdered, Layers } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { LatchButton } from '#/components/daw/LatchButton';
 import { LED } from '#/components/daw/LED';
@@ -16,10 +16,8 @@ import {
     toggleRecording,
     togglePunchEnabled,
     toggleCountIn,
-    togglePreRoll,
+    setCountInBars,
 } from '#/modules/Transport/useCases/transportControls';
-import { enableLink, disableLink } from '#/modules/AudioEngine/useCases/engineAccess';
-import { subscribeToLinkStatus, getLinkStatusSnapshot } from '#/modules/AudioEngine/stores/linkStatusStore';
 
 type TransportControlsProps = {
     isPlaying: boolean;
@@ -27,12 +25,13 @@ type TransportControlsProps = {
     isAudioRecording: boolean;
     isLooping: boolean;
     overdubEnabled: boolean;
+    showOverdub: boolean;
+    anyTrackArmed: boolean;
     metronomeEnabled: boolean;
     metronomeVolume: number;
     punchInEnabled: boolean;
     countInEnabled: boolean;
-    preRollEnabled: boolean;
-    anyTrackArmed: boolean;
+    countInBars: number;
 };
 
 export const TransportControls = ({
@@ -41,24 +40,17 @@ export const TransportControls = ({
     isAudioRecording,
     isLooping,
     overdubEnabled,
+    showOverdub,
+    anyTrackArmed,
     metronomeEnabled,
     metronomeVolume,
     punchInEnabled,
     countInEnabled,
-    preRollEnabled,
-    anyTrackArmed,
+    countInBars,
 }: TransportControlsProps): ReactElement => {
-    const linkEnabled = useSyncExternalStore(subscribeToLinkStatus, getLinkStatusSnapshot);
-
-    const handleLinkToggle = async () => {
-        try {
-            if (linkEnabled) {
-                await disableLink();
-            } else {
-                await enableLink();
-                // Since engine update might not be instant, we can optimistically disable it
-            }
-        } catch {}
+    const cycleCountInBars = (): void => {
+        const next = countInBars >= 4 ? 1 : countInBars >= 2 ? 4 : countInBars >= 1 ? 2 : 1;
+        setCountInBars(next);
     };
 
     return (
@@ -144,38 +136,23 @@ export const TransportControls = ({
                 <TooltipContent>Loop (L)</TooltipContent>
             </Tooltip>
 
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <LatchButton
-                        active={overdubEnabled}
-                        variant="cyan"
-                        size="icon"
-                        aria-label="Overdub"
-                        aria-pressed={overdubEnabled}
-                        onClick={toggleOverdub}
-                    >
-                        <Layers className="size-3.5" aria-hidden="true" />
-                    </LatchButton>
-                </TooltipTrigger>
-                <TooltipContent>MIDI Overdub (+)</TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <LatchButton
-                        active={linkEnabled}
-                        variant="amber"
-                        size="icon"
-                        aria-label="Ableton Link"
-                        aria-pressed={linkEnabled}
-                        onClick={handleLinkToggle}
-                    >
-                        <LinkIcon className="size-3.5" aria-hidden="true" />
-                    </LatchButton>
-                </TooltipTrigger>
-                <TooltipContent>Ableton Link Sync</TooltipContent>
-            </Tooltip>
-            <LED on={linkEnabled} variant="amber" size="sm" />
+            {showOverdub ? (
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <LatchButton
+                            active={overdubEnabled}
+                            variant="cyan"
+                            size="icon"
+                            aria-label="Overdub"
+                            aria-pressed={overdubEnabled}
+                            onClick={toggleOverdub}
+                        >
+                            <Layers className="size-3.5" aria-hidden="true" />
+                        </LatchButton>
+                    </TooltipTrigger>
+                    <TooltipContent>MIDI Overdub (+)</TooltipContent>
+                </Tooltip>
+            ) : null}
 
             <Tooltip>
                 <TooltipTrigger asChild>
@@ -255,22 +232,21 @@ export const TransportControls = ({
                 </TooltipTrigger>
                 <TooltipContent>Count-in</TooltipContent>
             </Tooltip>
-
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <LatchButton
-                        active={preRollEnabled}
-                        variant="cyan"
-                        size="xs"
-                        aria-label="Pre-roll"
-                        aria-pressed={preRollEnabled}
-                        onClick={togglePreRoll}
-                    >
-                        <span className="text-[10px] uppercase font-semibold">PRE</span>
-                    </LatchButton>
-                </TooltipTrigger>
-                <TooltipContent>Pre-roll (start playback N bars before cursor)</TooltipContent>
-            </Tooltip>
+            {countInEnabled ? (
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <button
+                            type="button"
+                            onClick={cycleCountInBars}
+                            className="text-[10px] font-bold tabular-nums w-4 h-5 flex items-center justify-center rounded-sm text-[var(--color-accent-cyan)] hover:bg-white/[0.06] transition-colors"
+                            aria-label={`Count-in bars: ${countInBars}. Click to cycle.`}
+                        >
+                            {countInBars}
+                        </button>
+                    </TooltipTrigger>
+                    <TooltipContent>Count-in bars (click to cycle 1→2→4)</TooltipContent>
+                </Tooltip>
+            ) : null}
         </div>
     );
 };

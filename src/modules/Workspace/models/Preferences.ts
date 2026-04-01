@@ -51,6 +51,8 @@ export const SAMPLE_RATE_OPTIONS: { value: SampleRateOption; label: string }[] =
     { value: 96000, label: '96 kHz' },
 ];
 
+export type SoloModePreference = 'sip' | 'afl' | 'pfl';
+
 export type Preferences = {
     trackHeight: 'compact' | 'normal' | 'large';
     colorblindMode: boolean;
@@ -73,6 +75,9 @@ export type Preferences = {
     recordCountIn: 0 | 1 | 2 | 4;
     defaultVelocity: number;
     midiInputChannel: number | 'all';
+    soloMode: SoloModePreference;
+    preRollEnabled: boolean;
+    preRollBars: 1 | 2 | 4;
 };
 
 export const defaultPreferences: Preferences = {
@@ -97,6 +102,9 @@ export const defaultPreferences: Preferences = {
     recordCountIn: 1,
     defaultVelocity: 100,
     midiInputChannel: 'all',
+    soloMode: 'sip',
+    preRollEnabled: false,
+    preRollBars: 2,
 };
 
 export const TRACK_HEIGHT_VALUES: Record<Preferences['trackHeight'], number> = {

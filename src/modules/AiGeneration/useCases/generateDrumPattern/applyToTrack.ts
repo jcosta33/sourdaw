@@ -22,6 +22,6 @@ export function applyDrumPatternToTrack(trackId: string, options: GenerateDrumPa
 
     const { notes } = generateDrumPattern(options);
     for (const note of notes) {
-        addMidiNote(clip.id, note.pitch, note.startBeat, note.duration, note.velocity);
+        addMidiNote(clip.id, note.pitch, startBeat + note.startBeat, note.duration, note.velocity);
     }
 }

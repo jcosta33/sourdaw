@@ -34,9 +34,15 @@ export function moveClip(clipId: string, targetTrackId: string, startBeat: numbe
         tracks: tracksWithoutClip.map((t) => (t.id === targetTrackId ? { ...t, clips: [...t.clips, movedClip!] } : t)),
     });
 
-    const beatDelta = startBeat - (originalStartBeat ?? oldStartBeat);
-    if (beatDelta !== 0) {
-        shiftClipAutomation(clipId, beatDelta);
-        shiftClipMidiNotes(clipId, beatDelta);
+    // Automation: shift from the original drag start (preview doesn't shift automation)
+    const automationDelta = startBeat - (originalStartBeat ?? oldStartBeat);
+    if (automationDelta !== 0) {
+        shiftClipAutomation(clipId, automationDelta);
+    }
+
+    // MIDI: shift only from the current position (preview already shifts notes incrementally)
+    const midiDelta = startBeat - oldStartBeat;
+    if (midiDelta !== 0) {
+        shiftClipMidiNotes(clipId, midiDelta);
     }
 }
