@@ -5,7 +5,7 @@
 
 import { createSeededRandom, generateSeed } from '#/helpers/SeededRandom/SeededRandom';
 
-export type DrumPatternStyle = 'four-on-floor' | 'breakbeat' | 'trap' | 'jazz' | 'latin' | 'rock' | 'dnb' | 'half-time';
+export type DrumPatternStyle = 'four-on-floor' | 'breakbeat' | 'trap' | 'jazz' | 'latin' | 'rock' | 'dnb' | 'half-time' | 'blues' | 'reggae' | 'lofi' | 'house' | 'techno' | 'synthwave' | 'afrobeat' | 'metal' | 'punk';
 
 export type GenerateDrumPatternOptions = {
     style: DrumPatternStyle;
@@ -89,6 +89,61 @@ function buildPatternForBar(style: DrumPatternStyle): ProbabilityMap[] {
                 { pitch: SNARE, pattern: [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0], velocityBase: 105, velocityRange: 10 },
                 { pitch: HIHAT, pattern: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0], velocityBase: 75, velocityRange: 15 },
                 { pitch: OPEN_HH, pattern: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.4], velocityBase: 70, velocityRange: 10 },
+            ];
+        case 'blues':
+            return [
+                { pitch: KICK, pattern: [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0], velocityBase: 100, velocityRange: 15 },
+                { pitch: SNARE, pattern: [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0], velocityBase: 95, velocityRange: 20 },
+                { pitch: RIDE, pattern: [1, 0, 0.4, 0, 1, 0, 0.4, 0, 1, 0, 0.4, 0, 1, 0, 0.4, 0], velocityBase: 80, velocityRange: 15 },
+                { pitch: HIHAT, pattern: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0], velocityBase: 60, velocityRange: 10 },
+            ];
+        case 'reggae':
+            return [
+                { pitch: KICK, pattern: [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0], velocityBase: 110, velocityRange: 10 },
+                { pitch: SNARE, pattern: [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0], velocityBase: 105, velocityRange: 10 },
+                { pitch: HIHAT, pattern: [1, 0.5, 1, 0.5, 1, 0.5, 1, 0.5, 1, 0.5, 1, 0.5, 1, 0.5, 1, 0.5], velocityBase: 80, velocityRange: 20 },
+            ];
+        case 'lofi':
+            return [
+                { pitch: KICK, pattern: [1, 0, 0, 0, 0, 0, 0.5, 0, 0, 0, 1, 0, 0, 0, 0, 0], velocityBase: 90, velocityRange: 15 },
+                { pitch: SNARE, pattern: [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0.2], velocityBase: 80, velocityRange: 15 },
+                { pitch: HIHAT, pattern: [1, 0, 0.7, 0, 1, 0, 0.7, 0, 1, 0, 0.7, 0, 1, 0, 0.7, 0], velocityBase: 65, velocityRange: 25 },
+            ];
+        case 'house':
+            return [
+                { pitch: KICK, pattern: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0], velocityBase: 115, velocityRange: 5 },
+                { pitch: CLAP, pattern: [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0], velocityBase: 100, velocityRange: 10 },
+                { pitch: OPEN_HH, pattern: [0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0], velocityBase: 85, velocityRange: 10 },
+            ];
+        case 'techno':
+            return [
+                { pitch: KICK, pattern: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0], velocityBase: 120, velocityRange: 2 },
+                { pitch: OPEN_HH, pattern: [0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0], velocityBase: 90, velocityRange: 5 },
+                { pitch: HIHAT, pattern: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0], velocityBase: 80, velocityRange: 5 },
+            ];
+        case 'synthwave':
+            return [
+                { pitch: KICK, pattern: [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0], velocityBase: 120, velocityRange: 5 },
+                { pitch: SNARE, pattern: [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0], velocityBase: 110, velocityRange: 5 },
+                { pitch: HIHAT, pattern: [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0], velocityBase: 90, velocityRange: 10 },
+            ];
+        case 'afrobeat':
+            return [
+                { pitch: KICK, pattern: [1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0], velocityBase: 100, velocityRange: 10 },
+                { pitch: SNARE, pattern: [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0], velocityBase: 90, velocityRange: 10 },
+                { pitch: HIHAT, pattern: [1, 0.4, 0.4, 1, 0.4, 0.4, 1, 0.4, 0.4, 1, 0.4, 0.4, 1, 0.4, 0.4, 1], velocityBase: 70, velocityRange: 15 },
+            ];
+        case 'metal':
+            return [
+                { pitch: KICK, pattern: [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0], velocityBase: 125, velocityRange: 5 },
+                { pitch: SNARE, pattern: [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0], velocityBase: 120, velocityRange: 5 },
+                { pitch: RIDE, pattern: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0], velocityBase: 95, velocityRange: 10 },
+            ];
+        case 'punk':
+            return [
+                { pitch: KICK, pattern: [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0], velocityBase: 120, velocityRange: 10 },
+                { pitch: SNARE, pattern: [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0], velocityBase: 115, velocityRange: 15 },
+                { pitch: HIHAT, pattern: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], velocityBase: 100, velocityRange: 20 },
             ];
     }
 }

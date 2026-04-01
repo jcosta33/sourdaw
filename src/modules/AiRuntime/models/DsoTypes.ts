@@ -49,6 +49,7 @@ export type Dso =
     | {
           op: 'generate_melody';
           track_id: string;
+          start_beat?: number;
           style: string;
           key: string;
           scale: string;
@@ -56,8 +57,16 @@ export type Dso =
           bars: number;
           density: number;
       }
-    | { op: 'generate_chords'; track_id: string; key: string; progression: string; bars: number; voicing: string }
-    | { op: 'generate_drums'; track_id: string; style: string; bars: number; density: number };
+    | {
+          op: 'generate_chords';
+          track_id: string;
+          start_beat?: number;
+          key: string;
+          progression: string;
+          bars: number;
+          voicing: string;
+      }
+    | { op: 'generate_drums'; track_id: string; start_beat?: number; style: string; bars: number; density: number };
 
 // ── EditPlan envelope ────────────────────────────────────────────────────────
 

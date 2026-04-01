@@ -3,7 +3,7 @@ import { getTrackState, setTrackState } from '../repositories/track';
 import { eventBus } from '#/app/bootstrap';
 import { TrackAddedEvent } from '../events/TrackAddedEvent';
 
-type AddTrackInput = { name: string; kind: TrackKind };
+type AddTrackInput = { id?: string; name: string; kind: TrackKind };
 
 export function addTrack(input: AddTrackInput): Track | null {
     const state = getTrackState();

@@ -1,9 +1,15 @@
 import { type ReactElement } from 'react';
 
-import { type MergeOnOpenResult } from '../../useCases/mergeOnOpen';
+export type MergeResultData = {
+    success: boolean;
+    tracksAdded: number;
+    documentsMerged: number;
+    documentsNew: number;
+    error?: string;
+};
 
 type MergeResultDialogProps = {
-    result: MergeOnOpenResult;
+    result: MergeResultData;
     onClose: () => void;
 };
 

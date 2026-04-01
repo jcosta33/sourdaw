@@ -27,6 +27,10 @@ export async function generateWebLlmToolCalls(
     ];
 
     try {
+        // Yield to render loop before first inference — WebGPU shader compilation
+        // locks the GPU and can freeze the compositor.
+        await new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+
         const response = await eng.chat.completions.create({
             messages,
             tools,
@@ -34,7 +38,14 @@ export async function generateWebLlmToolCalls(
             stream: false,
             temperature: 0.1,
             seed: 0,
-        });
+        }) as {
+            choices: Array<{
+                message: {
+                    content: string | null;
+                    tool_calls?: Array<{ function: { name: string; arguments: string } }>;
+                };
+            }>;
+        };
 
         const toolCallsRaw = response.choices[0]?.message?.tool_calls;
 

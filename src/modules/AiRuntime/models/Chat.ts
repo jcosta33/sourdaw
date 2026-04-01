@@ -16,4 +16,6 @@ export type ChatMessage = {
 export type ChatState = {
     messages: ChatMessage[];
     isGenerating: boolean;
+    enableReasoning: boolean;
+    chatMode: 'chat' | 'prompt';
 };

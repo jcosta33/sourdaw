@@ -198,25 +198,40 @@ function extractReasoning(raw: string): { reasoning: string | undefined; cleanRe
 }
 
 function parseEditPlan(responseText: string): EditPlan {
-    // Try direct parse
+    // Strip any residual <think>…</think> that wasn't caught by extractReasoning
+    const clean = responseText.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+
+    // 1. Try direct parse on the clean response
     try {
-        const parsed = JSON.parse(responseText);
+        const parsed = JSON.parse(clean) as Record<string, unknown>;
         if (parsed.kind === 'edit_plan' && Array.isArray(parsed.dsos)) {
             return parsed as EditPlan;
         }
     } catch {
-        // Try to extract JSON from wrapped response
+        // fall through to regex salvage
     }
 
-    const match = responseText.match(/\{[\s\S]*"kind"\s*:\s*"edit_plan"[\s\S]*\}/);
+    // 2. Extract the outermost JSON object that contains "kind":"edit_plan"
+    //    Use a greedy match so we get the full JSON including all nested arrays.
+    const match = clean.match(/\{[\s\S]*"kind"\s*:\s*"edit_plan"[\s\S]*\}/);
     if (match) {
-        const parsed = JSON.parse(match[0]);
-        if (parsed.kind === 'edit_plan' && Array.isArray(parsed.dsos)) {
-            return parsed as EditPlan;
+        try {
+            const parsed = JSON.parse(match[0]) as Record<string, unknown>;
+            if (parsed.kind === 'edit_plan' && Array.isArray(parsed.dsos)) {
+                return parsed as EditPlan;
+            }
+        } catch (e) {
+            const preview = clean.slice(0, 120).replace(/\n/g, ' ');
+            throw new Error(
+                `LLM returned malformed JSON (${e instanceof Error ? e.message : String(e)}). ` +
+                `Response preview: "${preview}…" — ` +
+                `The model may have run out of tokens mid-response. Try a simpler request or increase max_tokens.`
+            );
         }
     }
 
-    throw new Error('LLM response is not a valid EditPlan');
+    const preview = clean.slice(0, 120).replace(/\n/g, ' ');
+    throw new Error(`LLM response is not a valid EditPlan. Preview: "${preview}…"`);
 }
 
 function commitDsos(plan: EditPlan, userRequest: string, assistantMsgId: string, reasoning?: string): string[] {
@@ -326,7 +341,7 @@ async function invokeLlm(backend: string, system: string, user: string, chatMsgI
         updateChatMessage(chatMsgId, { content: 'Generating edit plan...' });
 
         let result = '';
-        const stream = await engine.chat.completions.create({
+        const stream = (await engine.chat.completions.create({
             messages: [
                 { role: 'system', content: system },
                 { role: 'user', content: user },
@@ -338,7 +353,7 @@ async function invokeLlm(backend: string, system: string, user: string, chatMsgI
                 type: 'json_object' as const,
                 schema: EDIT_PLAN_JSON_SCHEMA,
             },
-        });
+        })) as AsyncIterable<{ choices: Array<{ delta?: { content?: string } }> }>;
 
         for await (const chunk of stream) {
             const delta = chunk.choices[0]?.delta?.content;

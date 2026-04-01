@@ -77,7 +77,7 @@ export type PromptExecutionState = {
     confirmPreview: () => Promise<void>;
     cancelPreview: () => void;
     cancelProcessing: () => void;
-    handleLoadModel: () => void;
+    handleLoadModel: (modelId?: string) => void;
     dismissTag: (id: string) => void;
 };
 
@@ -351,9 +351,9 @@ export const usePromptExecution = (): PromptExecutionState => {
         }
     };
 
-    const handleLoadModel = (): void => {
+    const handleLoadModel = (modelId?: string): void => {
         if (isLlmAvailable()) {
-            void initEngine();
+            void initEngine(modelId);
         }
     };
 

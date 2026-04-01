@@ -117,4 +117,7 @@ export type LocalStorageKey =
     | 'sourdaw-export-settings'
 
     // Stores the sidebar collapsed/expanded state
-    | 'sourdaw-sidebar-state';
+    | 'sourdaw-sidebar-state'
+
+    // Stores project branch metadata (branch registry)
+    | 'sourdaw-branches';

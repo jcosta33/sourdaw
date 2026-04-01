@@ -125,6 +125,16 @@ export function toggleCollaborationPanel(): void {
     updateWorkspaceState({ collaborationPanelOpen: !current.collaborationPanelOpen });
 }
 
+export function toggleBranchManager(): void {
+    const current = getWorkspaceState();
+    if (!current) { return; }
+    updateWorkspaceState({ branchManagerOpen: !current.branchManagerOpen });
+}
+
+export function closeBranchManager(): void {
+    updateWorkspaceState({ branchManagerOpen: false });
+}
+
 export function toggleUndoHistory(): void {
     const current = getWorkspaceState();
     if (!current) { return; }

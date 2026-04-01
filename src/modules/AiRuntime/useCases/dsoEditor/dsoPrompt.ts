@@ -73,9 +73,9 @@ Each DSO has an "op" field and operation-specific parameters. Available operatio
 - create_send: {op, from_track_id, to_track_id, gain}
 
 ### Generation operations (use the DAW's built-in algorithmic generators)
-- generate_melody: {op, track_id, key, scale, octave, bars, density} — key: "C","D","E" etc. scale: "major","minor","pentatonic","blues","dorian","mixolydian". octave: 3-6. bars: 1-16. density: 0.3 (sparse) to 1.0 (dense)
-- generate_chords: {op, track_id, key, progression, bars, voicing} — progression: "I-IV-V-I","I-V-vi-IV","ii-V-I","I-vi-IV-V","12-bar-blues". voicing: "basic","spread","drop2","close"
-- generate_drums: {op, track_id, style, bars, density} — style: "rock","pop","hiphop","jazz","electronic","latin","funk". bars: 1-16. density: 0.3-1.0
+- generate_melody: {op, track_id, start_beat, key, scale, octave, bars, density} — key: "C","D","E" etc. scale: "major", "minor", "pentatonic", "blues", "dorian", "lydian", "phrygian", "harmonic-minor", "chromatic", etc. octave: 3-6. bars: 1-16. density: 0.3 (sparse) to 1.0 (dense)
+- generate_chords: {op, track_id, start_beat, key, progression, bars, voicing} — progression: "pop", "jazz", "classical", "edm", "blues", "rnb", "cinematic", "neo-soul", "gospel", "rock", "lofi". voicing: "basic","spread","drop2","close"
+- generate_drums: {op, track_id, start_beat, style, bars, density} — style: "rock", "pop", "hiphop", "jazz", "electronic", "latin", "funk", "breakbeat", "dnb", "blues", "reggae", "lofi", "house", "techno", "synthwave", "afrobeat", "metal", "punk". bars: 1-16. density: 0.3-1.0
 
 ## Name-based referencing
 
@@ -95,7 +95,8 @@ Use NAMES, not internal IDs, for track_id, clip_id, and device_id fields. The sy
 6. Beat/bar math (4/4 time): bar 1 = beat 0, bar 2 = beat 4, bar N = beat (N-1)*4.
 7. Gain: 0.0 = silence, 0.8 = unity, 1.0 = max. "Turn down a bit" = reduce by ~0.1.
 8. Pan: -50 = hard left, 0 = center, 50 = hard right.
-9. When the user says "latest" for a device_id, it refers to the device most recently added by a previous DSO in this same plan.
+10. PREFER built-in generators over add_midi_notes for any music generation task. Use generate_chords, generate_melody, and generate_drums whenever the user asks to generate music, a song, a pattern, a progression, or a beat. Only use add_midi_notes when adding a small number of specific, named notes (e.g. "add a C major chord at beat 0"). NEVER use add_midi_notes to generate a full song or progression — it produces incorrect, out-of-range pitches.
+11. Pitch in add_midi_notes is MIDI note number (0-127). Middle C = 60. A above middle C = 69. Keep all pitches between 48 (C3) and 84 (C6) for normal musical content. Do NOT use frequencies or values above 84 for any standard melodic content.
 
 ## Few-shot examples
 
@@ -164,11 +165,16 @@ User: "Add a compressor to the drum bus and make it pumpy"
 Output:
 {"kind":"edit_plan","moderation":"allow","intent":"Add pumpy compressor to Drum Bus","dsos":[{"op":"insert_device","track_id":"Drum Bus","device_type":"builtin-compressor"},{"op":"set_device_param","device_id":"latest","param_name":"threshold","value":-20},{"op":"set_device_param","device_id":"latest","param_name":"ratio","value":8},{"op":"set_device_param","device_id":"latest","param_name":"attack","value":0.5},{"op":"set_device_param","device_id":"latest","param_name":"release","value":200}]}
 
-### Example 14 — Add a chord progression
-User: "Add a basic I-IV-V-I chord progression in C major"
-State has clip "clp-2" (midi) on track "trk-2"
+### Example 14 — Generate a chord progression (ALWAYS use generate_chords, NOT add_midi_notes)
+User: "Add a 12-bar blues in A"
+State has track "Keys" (midi)
 Output:
-{"kind":"edit_plan","moderation":"allow","intent":"Add I-IV-V-I chord progression in C major (C-F-G-C)","dsos":[{"op":"add_midi_notes","clip_id":"clp-2","notes":[{"pitch":60,"start_beat":0,"duration":4,"velocity":100},{"pitch":64,"start_beat":0,"duration":4,"velocity":100},{"pitch":67,"start_beat":0,"duration":4,"velocity":100},{"pitch":65,"start_beat":4,"duration":4,"velocity":100},{"pitch":69,"start_beat":4,"duration":4,"velocity":100},{"pitch":72,"start_beat":4,"duration":4,"velocity":100},{"pitch":67,"start_beat":8,"duration":4,"velocity":100},{"pitch":71,"start_beat":8,"duration":4,"velocity":100},{"pitch":74,"start_beat":8,"duration":4,"velocity":100},{"pitch":60,"start_beat":12,"duration":4,"velocity":100},{"pitch":64,"start_beat":12,"duration":4,"velocity":100},{"pitch":67,"start_beat":12,"duration":4,"velocity":100}]}]}`;
+{"kind":"edit_plan","moderation":"allow","intent":"Generate a 12-bar blues chord progression in A on the Keys track","dsos":[{"op":"generate_chords","track_id":"Keys","start_beat":0,"key":"A","progression":"12-bar-blues","bars":12,"voicing":"basic"}]}
+
+### Example 15 — Full blues song setup
+User: "Create a blues song"
+Output:
+{"kind":"edit_plan","moderation":"allow","intent":"Set up a 12-bar blues session with drums, bass, and chords","dsos":[{"op":"set_tempo","bpm":120},{"op":"add_track","name":"Drums","kind":"midi"},{"op":"generate_drums","track_id":"Drums","start_beat":0,"style":"jazz","bars":12,"density":0.7},{"op":"add_track","name":"Bass","kind":"midi"},{"op":"generate_melody","track_id":"Bass","start_beat":0,"key":"A","scale":"blues","octave":3,"bars":12,"density":0.6},{"op":"add_track","name":"Guitar","kind":"midi"},{"op":"generate_chords","track_id":"Guitar","start_beat":0,"key":"A","progression":"12-bar-blues","bars":12,"voicing":"basic"}]}`;
 
 // ── Prompt builder ───────────────────────────────────────────────────────────
 

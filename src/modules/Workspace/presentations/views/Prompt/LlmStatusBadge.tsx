@@ -1,24 +1,23 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
-import { Cpu, Download, HardDrive, Loader2, Power, Sparkles, Zap } from 'lucide-react';
+import { Cpu, Download, HardDrive, Loader2, Power, Sparkles, Zap, Check } from 'lucide-react';
 
 import { isLlmAvailable, resolveBackend, unloadEngine } from '#/modules/AiRuntime/useCases/llmOrchestration';
-import { NATIVE_MODEL_INFO, WEBLLM_MODEL_INFO, CLOUD_MODEL_INFO } from '#/modules/AiRuntime/useCases/aiRuntimeQueries';
+import { NATIVE_MODEL_INFO, CLOUD_MODEL_INFO, WEBLLM_MODELS, type ModelInfo } from '#/modules/AiRuntime/models/ModelInfo';
+import { getActiveModelId } from '#/modules/AiRuntime/repositories/webLlm/engineLifecycle';
 import { type LlmEngineStatus } from '#/modules/AiRuntime/stores/llmStatusStore';
 import { Button } from '#/components/ui/button';
 
 type LlmStatusBadgeProps = {
     status: LlmEngineStatus;
-    onLoad: () => void;
+    onLoad: (modelId?: string) => void;
 };
 
-/** Tier badge color */
 const TIER_COLORS = {
     native: 'bg-primary/20 text-primary border-primary/30',
     cloud: 'bg-[var(--color-accent-cyan)]/20 text-[var(--color-accent-cyan)] border-[var(--color-accent-cyan)]/30',
     webllm: 'bg-primary/20 text-primary border-primary/30',
 } as const;
 
-/** Small dropdown panel that appears below the badge. */
 const DropdownPanel = ({ children, onClose }: { children: React.ReactNode; onClose: () => void }): ReactElement => {
     const ref = useRef<HTMLDivElement>(null);
 
@@ -36,7 +35,7 @@ const DropdownPanel = ({ children, onClose }: { children: React.ReactNode; onClo
         <div
             ref={ref}
             className="absolute top-full right-0 mt-2 z-50 rounded-xl border border-border bg-popover shadow-2xl overflow-hidden"
-            style={{ width: '230px' }}
+            style={{ width: '260px' }}
         >
             {children}
         </div>
@@ -45,11 +44,17 @@ const DropdownPanel = ({ children, onClose }: { children: React.ReactNode; onClo
 
 export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactElement | null => {
     const [showPanel, setShowPanel] = useState(false);
+    const [selectedModelId, setSelectedModelId] = useState(getActiveModelId);
     const backend = resolveBackend();
-    const modelInfo =
-        backend === 'native' ? NATIVE_MODEL_INFO : backend === 'cloud' ? CLOUD_MODEL_INFO : WEBLLM_MODEL_INFO;
     const backendLabel = backend === 'native' ? 'Native' : backend === 'cloud' ? 'Cloud' : 'Browser';
     const tierKey = backend === 'native' ? 'native' : backend === 'cloud' ? 'cloud' : 'webllm';
+
+    const modelInfo: ModelInfo =
+        backend === 'native'
+            ? NATIVE_MODEL_INFO
+            : backend === 'cloud'
+              ? CLOUD_MODEL_INFO
+              : WEBLLM_MODELS.find((m) => m.id === selectedModelId) ?? WEBLLM_MODELS[1]!;
 
     if (!isLlmAvailable()) {
         return (
@@ -62,7 +67,7 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
         );
     }
 
-    // ── Idle: styled pill + info popup ──────────────────────────────────────
+    // ── Idle: model selector + load button ─────────────────────────────────
     if (!status || status.state === 'idle') {
         return (
             <div className="relative">
@@ -80,7 +85,6 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
 
                 {showPanel ? (
                     <DropdownPanel onClose={() => setShowPanel(false)}>
-                        {/* Header */}
                         <div className="px-3 pt-3 pb-2 border-b border-border/50 bg-surface-raised/50">
                             <div className="flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-1.5">
@@ -89,9 +93,7 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                                     ) : (
                                         <Sparkles className="size-3 text-primary" aria-hidden="true" />
                                     )}
-                                    <span className="text-xs font-semibold text-foreground truncate">
-                                        {modelInfo.displayName}
-                                    </span>
+                                    <span className="text-xs font-semibold text-foreground">AI Model</span>
                                 </div>
                                 <span
                                     className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full border ${TIER_COLORS[tierKey]} shrink-0`}
@@ -101,27 +103,42 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                             </div>
                         </div>
 
-                        {/* Body */}
-                        <div className="px-3 py-2.5 space-y-2.5">
-                            <p className="text-[10px] text-muted-foreground leading-relaxed">{modelInfo.description}</p>
-
-                            <div className="flex gap-3 text-[10px] text-muted-foreground">
-                                <span className="inline-flex items-center gap-1">
-                                    <Download className="size-3 opacity-60" aria-hidden="true" />
-                                    {modelInfo.downloadSize}
-                                </span>
-                                <span className="inline-flex items-center gap-1">
-                                    <Cpu className="size-3 opacity-60" aria-hidden="true" />
-                                    {modelInfo.ramUsage} RAM
-                                </span>
-                            </div>
+                        <div className="px-2 py-2 space-y-1.5">
+                            {backend === 'webllm' ? (
+                                <>
+                                    {WEBLLM_MODELS.map((model) => (
+                                        <ModelOption
+                                            key={model.id}
+                                            model={model}
+                                            isSelected={model.id === selectedModelId}
+                                            onSelect={() => setSelectedModelId(model.id)}
+                                        />
+                                    ))}
+                                </>
+                            ) : (
+                                <div className="px-1 py-1">
+                                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                                        {modelInfo.description}
+                                    </p>
+                                    <div className="flex gap-3 mt-1.5 text-[10px] text-muted-foreground">
+                                        <span className="inline-flex items-center gap-1">
+                                            <Download className="size-3 opacity-60" aria-hidden="true" />
+                                            {modelInfo.downloadSize}
+                                        </span>
+                                        <span className="inline-flex items-center gap-1">
+                                            <Cpu className="size-3 opacity-60" aria-hidden="true" />
+                                            {modelInfo.ramUsage}
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
 
                             <Button
                                 size="sm"
-                                className="w-full text-xs h-7 bg-primary hover:brightness-110 text-primary-foreground border-0"
+                                className="w-full text-xs h-7 mt-1"
                                 onClick={() => {
                                     setShowPanel(false);
-                                    onLoad();
+                                    onLoad(backend === 'webllm' ? selectedModelId : undefined);
                                 }}
                             >
                                 <HardDrive className="size-3 mr-1.5" aria-hidden="true" />
@@ -129,7 +146,7 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                                     ? 'Start Native Engine'
                                     : backend === 'cloud'
                                       ? 'Connect Cloud AI'
-                                      : 'Load Browser Model'}
+                                      : `Load ${WEBLLM_MODELS.find((m) => m.id === selectedModelId)?.displayName ?? 'Model'}`}
                             </Button>
                         </div>
                     </DropdownPanel>
@@ -172,7 +189,6 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
 
                 {showPanel ? (
                     <DropdownPanel onClose={() => setShowPanel(false)}>
-                        {/* Header */}
                         <div className="px-3 pt-3 pb-2 border-b border-border/50 bg-surface-raised/50">
                             <div className="flex items-center justify-between gap-2">
                                 <span className="text-xs font-semibold text-foreground truncate">
@@ -185,14 +201,11 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                                 </span>
                             </div>
                         </div>
-
-                        {/* Body */}
                         <div className="px-3 py-2.5 space-y-2.5">
                             <div className="flex items-center gap-1.5 text-[10px] text-primary">
                                 <div className="size-1.5 rounded-full bg-primary animate-pulse" />
-                                <span>Active · Using {modelInfo.ramUsage} RAM</span>
+                                <span>Active · {modelInfo.ramUsage} RAM</span>
                             </div>
-
                             <Button
                                 size="sm"
                                 variant="outline"
@@ -222,14 +235,14 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
         );
     }
 
-    // ── Error: retry ────────────────────────────────────────────────────────
+    // ── Error ───────────────────────────────────────────────────────────────
     if (status.state === 'error') {
         return (
             <Button
                 variant="outline"
                 size="xs"
                 type="button"
-                onClick={onLoad}
+                onClick={() => onLoad()}
                 className="h-6 gap-1 px-2 text-[10px] font-medium border-destructive/30 text-destructive/80 hover:text-destructive hover:bg-destructive/10"
                 title={status.message}
             >
@@ -240,3 +253,42 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
 
     return null;
 };
+
+// ── Model option card ───────────────────────────────────────────────────
+
+type ModelOptionProps = {
+    model: ModelInfo;
+    isSelected: boolean;
+    onSelect: () => void;
+};
+
+const ModelOption = ({ model, isSelected, onSelect }: ModelOptionProps): ReactElement => (
+    <button
+        type="button"
+        onClick={onSelect}
+        className={`w-full rounded-lg px-2.5 py-2 text-left transition-colors ${
+            isSelected
+                ? 'bg-primary/10 border border-primary/30'
+                : 'border border-transparent hover:bg-muted/30'
+        }`}
+    >
+        <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium text-foreground">{model.displayName}</span>
+            <div className="flex items-center gap-1.5">
+                <span className="text-[9px] text-muted-foreground">{model.parameterCount}</span>
+                {isSelected ? <Check className="size-3 text-primary" /> : null}
+            </div>
+        </div>
+        <p className="text-[9px] text-muted-foreground mt-0.5 leading-relaxed">{model.description}</p>
+        <div className="flex gap-3 mt-1 text-[9px] text-muted-foreground/70">
+            <span className="inline-flex items-center gap-0.5">
+                <Download className="size-2.5" aria-hidden="true" />
+                {model.downloadSize}
+            </span>
+            <span className="inline-flex items-center gap-0.5">
+                <Cpu className="size-2.5" aria-hidden="true" />
+                {model.ramUsage}
+            </span>
+        </div>
+    </button>
+);

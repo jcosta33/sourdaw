@@ -5,7 +5,7 @@
 
 import { createSeededRandom, generateSeed } from '#/helpers/SeededRandom/SeededRandom';
 
-export type ChordProgressionStyle = 'pop' | 'jazz' | 'classical' | 'edm' | 'blues' | 'rnb' | 'folk' | 'cinematic';
+export type ChordProgressionStyle = 'pop' | 'jazz' | 'classical' | 'edm' | 'blues' | 'rnb' | 'folk' | 'cinematic' | 'neo-soul' | 'gospel' | 'rock' | 'lofi';
 
 export type ChordVoicing = 'close' | 'open' | 'spread' | 'power';
 
@@ -89,6 +89,22 @@ const PROGRESSIONS: Record<ChordProgressionStyle, readonly Progression[]> = {
     cinematic: [
         [0, 5, 2, 6],
         [0, 3, 5, 4],
+    ],
+    'neo-soul': [
+        [1, 5, 2, 4],
+        [3, 6, 2, 5],
+    ],
+    gospel: [
+        [0, 3, 0, 4],
+        [5, 2, 3, 4],
+    ],
+    rock: [
+        [0, 4, 5, 3],
+        [0, 5, 3, 4],
+    ],
+    lofi: [
+        [1, 5, 4, 0],
+        [3, 6, 2, 5],
     ],
 };
 

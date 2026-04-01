@@ -2,6 +2,7 @@
 
 import { type DocId } from '#/modules/CrdtDocument/models/CrdtDocumentTypes';
 import { automergeRepository } from '#/modules/CrdtDocument/repositories/automergeRepository';
+import { getSemanticContext } from '#/modules/CrdtDocument/useCases/semanticChangeContext';
 
 import { type Storage } from './Storage';
 
@@ -118,6 +119,8 @@ export class AutomergeStorage<TDataSchema> implements Storage<TDataSchema> {
         }
 
         const crdtValue = value !== null && this.#toCrdt ? this.#toCrdt(value) : value;
+        const semanticCtx = getSemanticContext();
+        const message = semanticCtx?.message;
 
         automergeRepository.changeDoc(this.#docId, (doc: Record<string, unknown>) => {
             if (crdtValue === null) {
@@ -125,7 +128,7 @@ export class AutomergeStorage<TDataSchema> implements Storage<TDataSchema> {
             } else {
                 doc[this.#key] = this.#toDocSafe(crdtValue);
             }
-        });
+        }, message);
     }
 
     /**

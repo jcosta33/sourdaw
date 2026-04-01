@@ -1,4 +1,5 @@
 import { type ReactElement, useSyncExternalStore, useState } from 'react';
+
 import { Button } from '#/components/ui/button';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { History, Undo2, Trash2, ChevronDown, ChevronRight, X, Bot, User } from 'lucide-react';
@@ -8,45 +9,49 @@ import {
     clearAiHistory,
     type AiActionGroup,
 } from '#/modules/AiRuntime/stores/aiActionHistoryStore';
-import { undoStore } from '#/modules/Command/stores/undoStore';
-import { type UndoEntry } from '#/modules/Command/models/UndoEntry';
+import {
+    actionHistoryStore,
+    clearActionHistory,
+    type ActionHistoryEntry,
+} from '#/modules/CrdtDocument/stores/actionHistoryStore';
 import { revertAiActionGroup } from '#/modules/AiRuntime/useCases/aiHistoryActions';
-import { undo } from '#/modules/Command/useCases/undoRedo';
+import { revertAction, canRevertAction } from '#/modules/CrdtDocument/useCases/revertAction';
 
 const defaultAiState = { groups: [] as AiActionGroup[], panelOpen: false };
-const defaultUndoState = { past: [] as UndoEntry[], future: [] as UndoEntry[] };
+const defaultHistoryState = { entries: [] as ActionHistoryEntry[] };
 
-type HistoryItem = { kind: 'ai'; group: AiActionGroup } | { kind: 'user'; entry: UndoEntry };
+type HistoryItem =
+    | { kind: 'ai'; group: AiActionGroup }
+    | { kind: 'action'; entry: ActionHistoryEntry };
 
 /**
- * Unified Action History — shows both user actions and AI actions
- * in chronological order. AI actions are tagged with a bot icon.
+ * Unified Action History — shows all user and AI actions in chronological order.
+ * AI actions show as expandable groups with batch revert.
+ * User actions show individually with non-linear revert when an inverse exists.
  */
 export const AiActionHistoryPanel = (): ReactElement | null => {
     const aiState = useSyncExternalStore(
         (cb) => aiActionHistoryStore.subscribe(cb),
         () => aiActionHistoryStore.value ?? defaultAiState
     );
-    const undoState = useSyncExternalStore(
-        (cb) => undoStore.subscribe(cb),
-        () => undoStore.value ?? defaultUndoState
+    const historyState = useSyncExternalStore(
+        (cb) => actionHistoryStore.subscribe(cb),
+        () => actionHistoryStore.value ?? defaultHistoryState
     );
 
     if (!aiState.panelOpen) {
         return null;
     }
 
-    // Build unified timeline: AI groups + user undo entries, sorted by time
     const items: HistoryItem[] = [];
 
     for (const group of aiState.groups) {
         items.push({ kind: 'ai', group });
     }
 
-    // User actions from undo store (exclude AI-sourced to avoid duplicates)
-    for (const entry of undoState.past) {
+    for (const entry of historyState.entries) {
         if (entry.source !== 'ai') {
-            items.push({ kind: 'user', entry });
+            items.push({ kind: 'action', entry });
         }
     }
 
@@ -58,18 +63,23 @@ export const AiActionHistoryPanel = (): ReactElement | null => {
 
     const visibleItems = items.slice(0, 50);
 
+    const handleClearAll = () => {
+        clearAiHistory();
+        clearActionHistory();
+    };
+
     return (
         <div className="fixed right-4 bottom-16 z-50 w-80 max-h-[60vh] rounded-lg border border-border bg-surface-raised shadow-xl flex flex-col animate-in slide-in-from-right-5">
             <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
                 <History className="size-3.5 text-[var(--color-accent-lavender)]" />
                 <span className="text-xs font-medium text-foreground flex-1">Action History</span>
-                {aiState.groups.length > 0 ? (
+                {visibleItems.length > 0 ? (
                     <Button
                         variant="ghost"
                         size="icon-xs"
-                        onClick={clearAiHistory}
-                        title="Clear AI history"
-                        aria-label="Clear AI action history"
+                        onClick={handleClearAll}
+                        title="Clear history"
+                        aria-label="Clear action history"
                     >
                         <Trash2 className="size-3" />
                     </Button>
@@ -88,7 +98,7 @@ export const AiActionHistoryPanel = (): ReactElement | null => {
                         item.kind === 'ai' ? (
                             <AiGroupItem key={`ai-${item.group.id}`} group={item.group} />
                         ) : (
-                            <UserActionItem key={`user-${item.entry.id}-${idx}`} entry={item.entry} />
+                            <ActionItem key={`action-${item.entry.id}-${idx}`} entry={item.entry} />
                         )
                     )
                 )}
@@ -147,18 +157,31 @@ const AiGroupItem = ({ group }: { group: AiActionGroup }): ReactElement => {
     );
 };
 
-const UserActionItem = ({ entry }: { entry: UndoEntry }): ReactElement => (
-    <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-border/30 last:border-0">
-        <User className="size-3 text-muted-foreground/50 shrink-0" />
-        <div className="flex-1 min-w-0">
-            <p className="text-[11px] text-foreground/80 truncate">{entry.label}</p>
-            <p className="text-[9px] text-muted-foreground">{formatTimeAgo(entry.timestamp)}</p>
+const ActionItem = ({ entry }: { entry: ActionHistoryEntry }): ReactElement => {
+    const revertable = canRevertAction(entry);
+
+    return (
+        <div className={`flex items-center gap-1.5 px-3 py-1.5 border-b border-border/30 last:border-0 ${entry.reverted ? 'opacity-40' : ''}`}>
+            <User className="size-3 text-muted-foreground/50 shrink-0" />
+            <div className="flex-1 min-w-0">
+                <p className="text-[11px] text-foreground/80 truncate">{entry.label}</p>
+                <p className="text-[9px] text-muted-foreground">{formatTimeAgo(entry.timestamp)}</p>
+            </div>
+            {entry.reverted ? (
+                <span className="text-[8px] text-muted-foreground italic">undone</span>
+            ) : revertable ? (
+                <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={() => void revertAction(entry.id)}
+                    title="Revert this change"
+                >
+                    <Undo2 className="size-3 text-muted-foreground/50" />
+                </Button>
+            ) : null}
         </div>
-        <Button variant="ghost" size="icon-xs" onClick={() => undo()} title="Undo">
-            <Undo2 className="size-3 text-muted-foreground/50" />
-        </Button>
-    </div>
-);
+    );
+};
 
 function formatTimeAgo(timestamp: number): string {
     const seconds = Math.floor((Date.now() - timestamp) / 1000);

@@ -9,17 +9,26 @@ import {
 } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { chatStore, clearChatMessages } from '#/modules/AiRuntime/stores/chatStore';
+import { chatStore, clearChatMessages, toggleReasoning, setChatMode, stopGenerating } from '#/modules/AiRuntime/stores/chatStore';
 import { sendChatMessage } from '#/modules/AiRuntime/useCases/sendChatMessage';
 import { toggleChat } from '#/modules/AiRuntime/useCases/aiPanelActions';
 import { Button } from '#/components/ui/button';
-import { X, Send, Trash2, Bot, User, Loader2, ChevronRight, ChevronDown, Zap } from 'lucide-react';
+import { X, Send, Trash2, Bot, User, ChevronRight, ChevronDown, Zap, Brain, Square } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
 import { isLlmAvailable } from '#/modules/AiRuntime/useCases/llmOrchestration';
 
 /** Collapsible reasoning block — shows model's internal thinking in a subdued, smaller style. */
-const ReasoningBlock = ({ reasoning }: { reasoning: string }): ReactElement => {
-    const [expanded, setExpanded] = useState(false);
+const ReasoningBlock = ({ reasoning, isStreaming }: { reasoning: string; isStreaming?: boolean }): ReactElement => {
+    const [expanded, setExpanded] = useState(isStreaming ?? false);
+    const prevStreamingRef = useRef(isStreaming);
+
+    useEffect(() => {
+        // Auto-collapse when we finish streaming
+        if (prevStreamingRef.current && !isStreaming) {
+            setExpanded(false);
+        }
+        prevStreamingRef.current = isStreaming;
+    }, [isStreaming]);
 
     return (
         <button
@@ -35,8 +44,11 @@ const ReasoningBlock = ({ reasoning }: { reasoning: string }): ReactElement => {
                 ) : null}
             </div>
             {expanded ? (
-                <div className="mt-1 px-2 py-1.5 rounded bg-surface-inset/50 border border-border/20 text-[9px] text-muted-foreground/40 leading-relaxed whitespace-pre-wrap max-h-[200px] overflow-y-auto">
+                <div className="mt-1 px-2 py-1.5 rounded bg-surface-inset/50 border border-border/20 text-[9px] text-muted-foreground/40 leading-relaxed whitespace-pre-wrap max-h-[200px] overflow-y-auto w-full">
                     {reasoning}
+                    {isStreaming && (
+                        <span className="inline-block w-1 h-2.5 bg-muted-foreground/40 ml-1 translate-y-[2px] animate-pulse" />
+                    )}
                 </div>
             ) : null}
         </button>
@@ -171,7 +183,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                                     </span>
                                 </div>
                                 {/* Reasoning (collapsible) */}
-                                {msg.reasoning ? <ReasoningBlock reasoning={msg.reasoning} /> : null}
+                                {msg.reasoning ? <ReasoningBlock reasoning={msg.reasoning} isStreaming={msg.isStreaming && !msg.content} /> : null}
                                 <div
                                     className={cn(
                                         'text-xs px-3 py-2.5 rounded-lg max-w-[92%] leading-relaxed',
@@ -187,7 +199,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                                     {msg.role === 'assistant' ? (
                                         <div className="prose prose-invert prose-xs max-w-none prose-p:my-1.5 prose-pre:my-2 prose-pre:bg-black/40 prose-pre:border prose-pre:border-white/5 prose-a:text-[var(--color-accent-lavender)] hover:prose-a:text-[var(--color-accent-lavender)] prose-ul:my-1.5 prose-ul:pl-4 prose-li:my-0.5 prose-strong:text-[var(--color-accent-lavender)] prose-code:text-[var(--color-accent-lavender)] prose-code:bg-[var(--color-accent-lavender)]/10 prose-code:px-1 prose-code:rounded-sm">
                                             <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
-                                            {msg.isStreaming ? (
+                                            {msg.isStreaming && !!msg.content ? (
                                                 <span className="inline-block w-1.5 h-3.5 bg-[var(--color-accent-lavender)] ml-1 translate-y-[2px] animate-pulse" />
                                             ) : null}
                                         </div>
@@ -211,6 +223,40 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                     boxShadow: '0 -1px 0 rgba(255,255,255,0.03)',
                 }}
             >
+                <div className="flex items-center justify-between mb-2 px-1">
+                    <button
+                        type="button"
+                        onClick={() => setChatMode(chatState.chatMode === 'chat' ? 'prompt' : 'chat')}
+                        disabled={chatState.isGenerating}
+                        className={cn(
+                            "flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium transition-colors border",
+                            chatState.chatMode === 'prompt'
+                                ? "bg-primary/20 text-primary border-primary/30"
+                                : "bg-surface-inset text-muted-foreground border-border/50 hover:bg-white/5"
+                        )}
+                        title={chatState.chatMode === 'prompt' ? "Switch to open-ended chat" : "Switch to command mode to issue actions"}
+                    >
+                        <Zap className="size-3" />
+                        Command Mode
+                    </button>
+                    
+                    <button
+                        type="button"
+                        onClick={toggleReasoning}
+                        disabled={chatState.isGenerating}
+                        className={cn(
+                            "flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium transition-colors border",
+                            chatState.enableReasoning
+                                ? "bg-[var(--color-accent-lavender)]/20 text-[var(--color-accent-lavender)] border-[var(--color-accent-lavender)]/30"
+                                : "bg-surface-inset text-muted-foreground opacity-60 border-border/50 hover:bg-white/5 hover:opacity-100"
+                        )}
+                        title="Toggle model's thinking process"
+                    >
+                        <Brain className="size-3" />
+                        Think
+                    </button>
+                </div>
+
                 <div className="relative rounded-lg bg-surface-base border border-border focus-within:ring-1 focus-within:ring-[var(--color-accent-lavender)]/50 focus-within:border-[var(--color-accent-lavender)]/50 transition-all flex shadow-sm">
                     <textarea
                         ref={textareaRef}
@@ -218,7 +264,11 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                         onChange={(e) => setInputValue(e.target.value)}
                         onKeyDown={handleKeyDown}
                         placeholder={
-                            chatState.isGenerating ? 'AI is thinking...' : 'Send a message... (Shift+Enter for newline)'
+                            chatState.isGenerating
+                                ? 'AI is thinking...'
+                                : chatState.chatMode === 'prompt'
+                                  ? 'Type a command to execute or generate...'
+                                  : 'Send a message... (Shift+Enter for newline)'
                         }
                         className="flex-1 w-full text-xs min-h-[44px] max-h-32 bg-transparent text-foreground placeholder:text-muted-foreground p-3 resize-none focus:outline-none scrollbar-thin scrollbar-thumb-white/10"
                         disabled={chatState.isGenerating || !isLlmAvailable()}
@@ -227,17 +277,20 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                     <div className="shrink-0 flex items-start justify-end p-2 pb-0 opacity-100">
                         <Button
                             size="icon-sm"
-                            disabled={!inputValue.trim() || chatState.isGenerating || !isLlmAvailable()}
-                            onClick={handleSend}
+                            disabled={!chatState.isGenerating && (!inputValue.trim() || !isLlmAvailable())}
+                            onClick={chatState.isGenerating ? stopGenerating : handleSend}
                             className={cn(
                                 'h-7 w-7 transition-all rounded-[6px]',
-                                inputValue.trim() && !chatState.isGenerating
-                                    ? 'bg-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)] text-white shadow-md shadow-[var(--color-accent-lavender)]/20'
-                                    : 'bg-transparent text-muted-foreground hover:bg-white/5'
+                                chatState.isGenerating
+                                    ? 'bg-destructive/20 text-destructive hover:bg-destructive/30 border border-destructive/30'
+                                    : inputValue.trim()
+                                        ? 'bg-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)] text-white shadow-md shadow-[var(--color-accent-lavender)]/20'
+                                        : 'bg-transparent text-muted-foreground hover:bg-white/5'
                             )}
+                            title={chatState.isGenerating ? "Stop Generation" : undefined}
                         >
                             {chatState.isGenerating ? (
-                                <Loader2 className="size-3.5 animate-spin text-[var(--color-accent-lavender)]" />
+                                <Square className="size-3 fill-current" />
                             ) : (
                                 <Send className="size-3.5" />
                             )}

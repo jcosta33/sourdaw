@@ -34,7 +34,7 @@ import { ScoringPanel } from '#/modules/Scoring/presentations/views/ScoringPanel
 import { YeastPanel } from '#/modules/Yeast/presentations/views/YeastPanel';
 import { CrustPanel } from '#/modules/Crust/presentations/views/CrustPanel';
 import { VirtualKeyboard } from '#/modules/VirtualKeyboard/presentations/views/VirtualKeyboard';
-import { toggleVirtualKeyboard } from '../../useCases/togglePanel/panelToggles';
+import { toggleVirtualKeyboard, closeBranchManager } from '../../useCases/togglePanel/panelToggles';
 
 import { CommandPalette } from '#/modules/Command/presentations/views/CommandPalette';
 import { VoiceCommandOverlay } from '#/modules/AiRuntime/presentations/views/VoiceCommandOverlay';
@@ -65,6 +65,12 @@ const CollaborationPanelLazy = lazy(() =>
     }))
 );
 
+const BranchManagerDialogLazy = lazy(() =>
+    import('#/modules/CrdtDocument/presentations/views/BranchManagerDialog').then((m) => ({
+        default: m.BranchManagerDialog,
+    }))
+);
+
 type AppShellProps = {
     children: ReactNode;
 };
@@ -76,6 +82,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         inspectorOpen,
         mixerOpen,
         collaborationPanelOpen,
+        branchManagerOpen,
         chatPanelOpen,
         selectedClipId,
         sidebarWidth,
@@ -682,6 +689,11 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
             {collaborationPanelOpen ? (
                 <Suspense fallback={null}>
                     <CollaborationPanelLazy />
+                </Suspense>
+            ) : null}
+            {branchManagerOpen ? (
+                <Suspense fallback={null}>
+                    <BranchManagerDialogLazy onClose={closeBranchManager} />
                 </Suspense>
             ) : null}
 

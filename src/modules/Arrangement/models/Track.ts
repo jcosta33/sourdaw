@@ -108,7 +108,7 @@ const TRACK_COLOR_PALETTE = [
 
 let trackColorCounter = 0;
 
-export function createTrack(input: { name: string; kind: TrackKind; parentId?: string }): Track {
+export function createTrack(input: { id?: string; name: string; kind: TrackKind; parentId?: string }): Track {
     const color = TRACK_COLOR_PALETTE[trackColorCounter % TRACK_COLOR_PALETTE.length]!;
     trackColorCounter++;
 
@@ -126,7 +126,7 @@ export function createTrack(input: { name: string; kind: TrackKind; parentId?: s
             : [];
 
     return {
-        id: input.kind === 'master' ? 'master' : `track-${crypto.randomUUID().slice(0, 8)}`,
+        id: input.id ?? (input.kind === 'master' ? 'master' : `track-${crypto.randomUUID().slice(0, 8)}`),
         name: input.name,
         kind: input.kind,
         muted: false,

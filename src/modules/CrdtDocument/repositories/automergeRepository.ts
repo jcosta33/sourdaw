@@ -77,17 +77,27 @@ class AutomergeRepository {
         return docId;
     }
 
+    /** Insert or replace a document (used by branching). */
+    insertDoc(docId: DocId, doc: Automerge.Doc<unknown>): void {
+        this.docs.set(docId, doc as Automerge.Doc<AnyDoc>);
+    }
+
     /**
      * Apply a mutation to a document.
      * This is the primary mutation entry point — all CRDT writes go through here.
+     *
+     * @param message - Optional semantic message attached to the Automerge change.
+     *   Used for history inspection (`getHistory()` returns this in `DecodedChange.message`).
      */
-    changeDoc<T = AnyDoc>(id: DocId, changeFn: Automerge.ChangeFn<T>): void {
+    changeDoc<T = AnyDoc>(id: DocId, changeFn: Automerge.ChangeFn<T>, message?: string): void {
         const doc = this.docs.get(id) as Automerge.Doc<T> | undefined;
         if (!doc) {
             throw new Error(`Document not found: ${id}`);
         }
 
-        const updated = Automerge.change(doc, changeFn);
+        const updated = message
+            ? Automerge.change(doc, { message }, changeFn)
+            : Automerge.change(doc, changeFn);
         this.docs.set(id, updated as Automerge.Doc<AnyDoc>);
         this.notifyListeners();
     }
@@ -119,13 +129,22 @@ class AutomergeRepository {
         this.notifyListeners();
     }
 
-    /** Serialize a single document to binary. */
+    /** Serialize a single document to binary (full snapshot). */
     saveDoc(id: DocId): Uint8Array | undefined {
         const doc = this.docs.get(id);
         if (!doc) {
             return undefined;
         }
         return Automerge.save(doc);
+    }
+
+    /** Serialize only the changes since the last save/saveIncremental call. */
+    saveDocIncremental(id: DocId): Uint8Array | undefined {
+        const doc = this.docs.get(id);
+        if (!doc) {
+            return undefined;
+        }
+        return Automerge.saveIncremental(doc);
     }
 
     /** Serialize all documents as a bundle. */
@@ -143,6 +162,10 @@ class AutomergeRepository {
 
         for (const [id, bytes] of bundle) {
             const doc = Automerge.load<AnyDoc>(bytes);
+            // Establish the saveIncremental baseline — tells Automerge
+            // "everything up to here is already persisted" so the next
+            // saveIncremental() only returns new changes.
+            Automerge.save(doc);
             this.docs.set(id, doc);
 
             if (id.startsWith(DOC_PREFIX_ROOT)) {

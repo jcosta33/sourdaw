@@ -9,4 +9,6 @@ export type IntentResult = {
     _jsonEditApplied?: boolean;
     /** Human-readable summaries of applied JSON edit changes */
     _jsonEditSummaries?: string[];
+    /** True if the DSO editor ran, so we don't output generic fallback errors */
+    _jsonEditAttempted?: boolean;
 };

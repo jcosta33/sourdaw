@@ -63,6 +63,13 @@ const SCALE_MAP: Record<string, ScaleType> = {
     blues: 'blues',
     dorian: 'dorian',
     mixolydian: 'mixolydian',
+    lydian: 'lydian',
+    phrygian: 'phrygian',
+    locrian: 'locrian',
+    'harmonic-minor': 'harmonic-minor',
+    'melodic-minor': 'melodic-minor',
+    'whole-tone': 'whole-tone',
+    chromatic: 'chromatic',
 };
 
 const CHORD_STYLE_MAP: Record<string, ChordProgressionStyle> = {
@@ -74,6 +81,10 @@ const CHORD_STYLE_MAP: Record<string, ChordProgressionStyle> = {
     rnb: 'rnb',
     folk: 'folk',
     cinematic: 'cinematic',
+    'neo-soul': 'neo-soul',
+    gospel: 'gospel',
+    rock: 'rock',
+    lofi: 'lofi',
     // Common LLM aliases
     'I-IV-V-I': 'blues',
     'I-V-vi-IV': 'pop',
@@ -96,6 +107,7 @@ const DRUM_STYLE_MAP: Record<string, DrumPatternStyle> = {
     pop: 'four-on-floor',
     hiphop: 'trap',
     jazz: 'jazz',
+    blues: 'blues',
     electronic: 'four-on-floor',
     latin: 'latin',
     funk: 'breakbeat',
@@ -104,6 +116,14 @@ const DRUM_STYLE_MAP: Record<string, DrumPatternStyle> = {
     trap: 'trap',
     dnb: 'dnb',
     'half-time': 'half-time',
+    reggae: 'reggae',
+    lofi: 'lofi',
+    house: 'house',
+    techno: 'techno',
+    synthwave: 'synthwave',
+    afrobeat: 'afrobeat',
+    metal: 'metal',
+    punk: 'punk',
 };
 
 function toMelodyStyle(s: string): MelodyStyle {
@@ -239,11 +259,15 @@ export function resolveDsoNames(dsos: Dso[]): DsoValidationError[] {
     const allClips = state.tracks.flatMap((t) => t.clips);
     const allDevices = state.tracks.flatMap((t) => t.devices);
 
+    // Keep track of dynamically created tracks during this resolve pass
+    const mockTracks: { id: string; name: string }[] = [];
+
     const findTrackId = (nameOrId: string): string | null => {
-        if (state.tracks.some((t) => t.id === nameOrId)) {
-            return nameOrId;
-        }
-        const match = bestMatch(nameOrId, state.tracks, (t) => t.name);
+        if (state.tracks.some((t) => t.id === nameOrId)) return nameOrId;
+        if (mockTracks.some((t) => t.id === nameOrId)) return nameOrId;
+        
+        let match = bestMatch(nameOrId, state.tracks, (t) => t.name);
+        if (!match) match = bestMatch(nameOrId, mockTracks, (t) => t.name) as any;
         return match?.id ?? null;
     };
 
@@ -266,14 +290,36 @@ export function resolveDsoNames(dsos: Dso[]): DsoValidationError[] {
         return match?.id ?? null;
     };
 
-    for (const dso of dsos) {
+    let i = 0;
+    while (i < dsos.length) {
+        const dso = dsos[i]!;
+
         // Resolve track_id fields
         if ('track_id' in dso && typeof dso.track_id === 'string') {
             const resolved = findTrackId(dso.track_id);
             if (resolved) {
                 (dso as Record<string, unknown>).track_id = resolved;
             } else if (!['add_track'].includes(dso.op)) {
-                errors.push({ dso, reason: `Could not find track "${dso.track_id}"` });
+                // Fallback: auto-create this track
+                const newId = `track-${crypto.randomUUID().slice(0, 8)}`;
+                const kindFallback =
+                    dso.op === 'generate_drums' || dso.track_id.toLowerCase().includes('drum') || dso.track_id.toLowerCase().includes('midi')
+                        ? 'midi'
+                        : 'audio';
+
+                // Inject an `add_track` DSO before the current one
+                dsos.splice(i, 0, {
+                    op: 'add_track',
+                    name: dso.track_id, // Use the unresolved name 
+                    kind: kindFallback as any,
+                    track_id: newId,
+                } as any);
+
+                mockTracks.push({ id: newId, name: dso.track_id });
+                (dso as Record<string, unknown>).track_id = newId;
+
+                // Advance to the current DSO we were just processing
+                i++;
             }
         }
 
@@ -324,6 +370,8 @@ export function resolveDsoNames(dsos: Dso[]): DsoValidationError[] {
                 errors.push({ dso, reason: `Could not find device "${dso.device_id}"` });
             }
         }
+
+        i++;
     }
 
     return errors;
@@ -501,7 +549,7 @@ function executeSingleDso(dso: Dso): void {
 
     switch (dso.op) {
         case 'add_track': {
-            addTrack({ name: dso.name, kind: dso.kind as 'audio' | 'midi' | 'bus' | 'master' });
+            addTrack({ id: (dso as any).track_id, name: dso.name, kind: dso.kind as 'audio' | 'midi' | 'bus' | 'master' });
             break;
         }
 
@@ -746,7 +794,15 @@ function executeSingleDso(dso: Dso): void {
         }
 
         case 'set_loop': {
-            // Loop state not yet in transport store — log as pending
+            if (dso.enabled) {
+                void import('#/modules/Transport/useCases/transportControls/setLoopRegion').then(({ setLoopRegion }) =>
+                    setLoopRegion(dso.start_beats, dso.end_beats)
+                );
+            } else {
+                void import('#/modules/Transport/repositories/transport').then(({ updateTransportState }) =>
+                    updateTransportState({ isLooping: false })
+                );
+            }
             break;
         }
 
@@ -824,14 +880,18 @@ function executeSingleDso(dso: Dso): void {
             const style = toMelodyStyle(dso.style);
             void import('#/modules/AiGeneration/useCases/generateMelody/applyToTrack').then(
                 ({ applyMelodyToTrack }) => {
-                    applyMelodyToTrack(dso.track_id, {
-                        style,
-                        key,
-                        scale,
-                        octave: dso.octave,
-                        bars: dso.bars,
-                        density: dso.density,
-                    });
+                    applyMelodyToTrack(
+                        dso.track_id,
+                        {
+                            style,
+                            key,
+                            scale,
+                            octave: dso.octave,
+                            bars: dso.bars,
+                            density: dso.density,
+                        },
+                        dso.start_beat ?? 0
+                    );
                 }
             );
             break;
@@ -843,13 +903,17 @@ function executeSingleDso(dso: Dso): void {
             const voicing = toChordVoicing(dso.voicing);
             void import('#/modules/AiGeneration/useCases/generateChordProgression/applyToTrack').then(
                 ({ applyChordProgressionToTrack }) => {
-                    applyChordProgressionToTrack(dso.track_id, {
-                        style,
-                        key,
-                        scale: 'major',
-                        bars: dso.bars,
-                        voicing,
-                    });
+                    applyChordProgressionToTrack(
+                        dso.track_id,
+                        {
+                            style,
+                            key,
+                            scale: 'major',
+                            bars: dso.bars,
+                            voicing,
+                        },
+                        dso.start_beat ?? 0
+                    );
                 }
             );
             break;
@@ -859,20 +923,40 @@ function executeSingleDso(dso: Dso): void {
             const style = toDrumStyle(dso.style);
             void import('#/modules/AiGeneration/useCases/generateDrumPattern/applyToTrack').then(
                 ({ applyDrumPatternToTrack }) => {
-                    applyDrumPatternToTrack(dso.track_id, {
-                        style,
-                        bars: dso.bars,
-                        density: dso.density,
-                    });
+                    applyDrumPatternToTrack(
+                        dso.track_id,
+                        {
+                            style,
+                            bars: dso.bars,
+                            density: dso.density,
+                        },
+                        dso.start_beat ?? 0
+                    );
                 }
             );
             break;
         }
 
-        case 'transpose_notes':
-        case 'humanize_midi':
-        case 'create_send':
+        case 'transpose_notes': {
+            void import('#/modules/MIDI/useCases/midiNoteTransforms/transposeNotes').then(({ transposeNotes }) =>
+                transposeNotes(dso.clip_id, dso.semitones)
+            );
             break;
+        }
+
+        case 'humanize_midi': {
+            void import('#/modules/MIDI/useCases/midiNoteTransforms/humanizeNotes').then(({ humanizeNotes }) =>
+                humanizeNotes(dso.clip_id, dso.timing_amount)
+            );
+            break;
+        }
+
+        case 'create_send': {
+            void import('#/modules/Arrangement/useCases/device/sendManagement').then(({ setSend }) =>
+                setSend(dso.from_track_id, dso.to_track_id, dso.gain)
+            );
+            break;
+        }
     }
 }
 

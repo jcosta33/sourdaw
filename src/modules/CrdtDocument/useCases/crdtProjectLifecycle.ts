@@ -1,37 +1,66 @@
+import { DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
 import { automergeRepository } from '../repositories/automergeRepository';
-import { hasCrdtDocsInIdb, loadAllFromIdb, saveAllToIdb } from '../repositories/crdtPersistence';
+import {
+    hasCrdtDocsInIdb,
+    loadAllFromIdb,
+    saveAllToIdb,
+    saveIncrementalToIdb,
+    clearIncrementalsFromIdb,
+} from '../repositories/crdtPersistence';
 import { isNativeCrdtAvailable } from '../repositories/nativeCrdtPersistence';
+
+let incrementalSaveCount = 0;
+const COMPACTION_THRESHOLD = 50;
 
 /**
  * Create a new CRDT-backed project.
- * Initializes the Automerge document store and persists to IndexedDB.
  */
 export const createCrdtProject = async (name: string): Promise<void> => {
     automergeRepository.createProject(name);
-    await persistCrdtProject();
+    await compactProject();
 };
 
 /**
- * Load a CRDT project from persistence (IndexedDB or native filesystem).
+ * Load a CRDT project from persistence (IndexedDB).
  * Returns true if a project was loaded, false if none was found.
  */
 export const loadCrdtProject = async (): Promise<boolean> => {
-    // Try IndexedDB first (works in both browser and Tauri)
     const bundle = await loadAllFromIdb();
     if (bundle) {
         automergeRepository.loadAll(bundle);
         return true;
     }
-
     return false;
 };
 
 /**
- * Save the current CRDT project to persistence.
+ * Persist the current project incrementally.
+ *
+ * Uses `Automerge.saveIncremental()` which only serializes changes since
+ * the last save — much faster than a full save for small edits.
+ * Periodically compacts to a full snapshot for fast startup and bounded storage.
  */
 export const persistCrdtProject = async (): Promise<void> => {
+    const chunk = automergeRepository.saveDocIncremental(DOC_PREFIX_ROOT);
+    if (chunk && chunk.length > 0) {
+        await saveIncrementalToIdb(DOC_PREFIX_ROOT, chunk);
+        incrementalSaveCount++;
+    }
+
+    if (incrementalSaveCount >= COMPACTION_THRESHOLD) {
+        await compactProject();
+    }
+};
+
+/**
+ * Write a full snapshot and clear incremental chunks.
+ * Called periodically and on explicit save.
+ */
+export const compactProject = async (): Promise<void> => {
     const bundle = automergeRepository.saveAll();
     await saveAllToIdb(bundle);
+    await clearIncrementalsFromIdb(DOC_PREFIX_ROOT);
+    incrementalSaveCount = 0;
 };
 
 /**

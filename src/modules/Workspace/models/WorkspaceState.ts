@@ -32,6 +32,7 @@ export type WorkspaceState = {
     timeDisplayMode: TimeDisplayMode;
     undoHistoryOpen: boolean;
     collaborationPanelOpen: boolean;
+    branchManagerOpen: boolean;
     chatPanelOpen: boolean;
     chatPanelWidth: number;
     rippleEditing: boolean;
@@ -79,6 +80,7 @@ export const defaultWorkspaceState: WorkspaceState = {
     timeDisplayMode: 'musical',
     undoHistoryOpen: false,
     collaborationPanelOpen: false,
+    branchManagerOpen: false,
     chatPanelOpen: false,
     chatPanelWidth: 320,
     rippleEditing: false,

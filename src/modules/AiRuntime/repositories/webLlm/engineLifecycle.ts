@@ -1,30 +1,50 @@
-import {
-    type ChatCompletionMessageParam,
-    CreateWebWorkerMLCEngine,
-} from '@mlc-ai/web-llm';
-
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
 
-import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
+import { DEFAULT_WEBLLM_MODEL_ID } from '../../models/ModelInfo';
 import { llmStatusStore } from '../../stores/llmStatusStore';
-import LlmWorker from '../llmWorker?worker';
 
 const logger = Container.getInstance().get(Logger);
 
-type WebLlmEngine = Awaited<ReturnType<typeof CreateWebWorkerMLCEngine>>;
+/**
+ * WebLLM engine type — resolved dynamically to avoid loading the 6.2MB
+ * WebLLM bundle on the main thread at import time.
+ */
+type WebLlmEngine = {
+    chat: {
+        completions: {
+            create: (params: Record<string, unknown>) => Promise<unknown>;
+        };
+    };
+};
 
 let engine: WebLlmEngine | null = null;
 let initPromise: Promise<WebLlmEngine> | null = null;
 let engineWorker: Worker | null = null;
+let activeModelId: string = DEFAULT_WEBLLM_MODEL_ID;
 
-export function initWebLlmEngine(): Promise<WebLlmEngine> {
-    if (engine) {
+export function getActiveModelId(): string {
+    return activeModelId;
+}
+
+export function initWebLlmEngine(modelId?: string): Promise<WebLlmEngine> {
+    const targetModel = modelId ?? activeModelId;
+
+    // If already loaded with the same model, return immediately
+    if (engine && targetModel === activeModelId) {
         return Promise.resolve(engine);
     }
-    if (initPromise) {
+
+    // If switching models, unload the current one first
+    if (engine && targetModel !== activeModelId) {
+        unloadWebLlmEngine();
+    }
+
+    if (initPromise && targetModel === activeModelId) {
         return initPromise;
     }
+
+    activeModelId = targetModel;
 
     // WebGPU is required — absent on Linux (WebKitGTK) and older browsers
     if (typeof navigator === 'undefined' || !('gpu' in navigator)) {
@@ -36,13 +56,21 @@ export function initWebLlmEngine(): Promise<WebLlmEngine> {
     initPromise = (async () => {
         llmStatusStore.set({ state: 'loading', progress: 0, text: 'Loading AI engine...' });
 
+        // Dynamic import — avoids loading the 6.2MB WebLLM bundle at app startup.
+        // The bundle is only fetched when the user actually requests model loading.
+        const [{ CreateWebWorkerMLCEngine }, { default: LlmWorker }] = await Promise.all([
+            import('@mlc-ai/web-llm'),
+            import('../llmWorker?worker'),
+        ]);
+
         const worker = new LlmWorker();
         engineWorker = worker;
+
         const created = await CreateWebWorkerMLCEngine(
             worker,
-            WEBLLM_MODEL_ID,
+            targetModel,
             {
-                initProgressCallback: (report) => {
+                initProgressCallback: (report: { progress: number; text: string }) => {
                     llmStatusStore.set({
                         state: 'loading',
                         progress: report.progress,
@@ -53,10 +81,17 @@ export function initWebLlmEngine(): Promise<WebLlmEngine> {
             { context_window_size: 8192 }
         );
 
-        engine = created;
-        llmStatusStore.set({ state: 'ready', modelId: WEBLLM_MODEL_ID });
-        return created;
+        engine = created as unknown as WebLlmEngine;
+        llmStatusStore.set({ state: 'ready', modelId: targetModel });
+        logger.info(`[AI Engine] WebLLM loaded: ${targetModel}`);
+        return engine;
     })();
+
+    initPromise.catch((error) => {
+        llmStatusStore.set({ state: 'error', message: String(error) });
+        initPromise = null;
+        engine = null;
+    });
 
     return initPromise;
 }
@@ -84,7 +119,7 @@ export function getLlmEngine(): WebLlmEngine | null {
  */
 export async function generateWebLlmCompletion(systemPrompt: string, userMessage: string): Promise<string> {
     const eng = await initWebLlmEngine();
-    const messages: ChatCompletionMessageParam[] = [
+    const messages = [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMessage },
     ];
@@ -93,6 +128,6 @@ export async function generateWebLlmCompletion(systemPrompt: string, userMessage
         temperature: 0.3,
         max_tokens: 1024,
         seed: 0,
-    });
+    }) as { choices: Array<{ message: { content: string } }> };
     return response.choices[0]?.message.content ?? '';
 }

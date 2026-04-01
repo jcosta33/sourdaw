@@ -19,7 +19,7 @@ const logger = Container.getInstance().get(Logger);
 /**
  * Initialize the auto-detected backend. Throws on failure.
  */
-export async function initEngine(): Promise<void> {
+export async function initEngine(modelId?: string): Promise<void> {
     const backend = resolveBackend();
 
     if (backend === 'none') {
@@ -41,7 +41,7 @@ export async function initEngine(): Promise<void> {
             if (typeof navigator !== 'undefined' && 'gpu' in navigator) {
                 logger.info('[AI Engine] Falling back to WebLLM...');
                 llmStatusStore.set({ state: 'loading', progress: 0, text: 'Native AI unavailable — loading WebLLM...' });
-                await initWebLlmEngine();
+                await initWebLlmEngine(modelId);
                 return;
             }
 
@@ -61,7 +61,7 @@ export async function initEngine(): Promise<void> {
         return;
     }
 
-    await initWebLlmEngine();
+    await initWebLlmEngine(modelId);
 }
 
 /**

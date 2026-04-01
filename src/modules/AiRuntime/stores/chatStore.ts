@@ -5,9 +5,13 @@ import { type ChatMessage, type ChatState } from '../models/Chat';
 
 const logger = Container.getInstance().get(Logger);
 
+let activeAborter: AbortController | null = null;
+
 const initialChatState: ChatState = {
     messages: [],
     isGenerating: false,
+    enableReasoning: true,
+    chatMode: 'chat',
 };
 
 export const chatStore = new Store<ChatState>(logger, {
@@ -59,9 +63,6 @@ export function setChatGenerating(isGenerating: boolean): void {
     });
 }
 
-/**
- * Clears the chat history.
- */
 export function clearChatMessages(): void {
     const currentState = chatStore.value;
     if (!currentState) {
@@ -73,4 +74,49 @@ export function clearChatMessages(): void {
         messages: [],
         isGenerating: false,
     });
+}
+
+/**
+ * Toggles the reasoning block generation for the AI.
+ */
+export function toggleReasoning(): void {
+    const currentState = chatStore.value;
+    if (!currentState) {
+        return;
+    }
+    chatStore.set({
+        ...currentState,
+        enableReasoning: !currentState.enableReasoning,
+    });
+}
+
+/**
+ * Sets the input mode for the chat panel (chat vs prompt command).
+ */
+export function setChatMode(mode: 'chat' | 'prompt'): void {
+    const currentState = chatStore.value;
+    if (!currentState) {
+        return;
+    }
+    chatStore.set({
+        ...currentState,
+        chatMode: mode,
+    });
+}
+
+/**
+ * Halts the currently active generation process if one exists.
+ */
+export function stopGenerating(): void {
+    if (activeAborter) {
+        activeAborter.abort();
+        activeAborter = null;
+    }
+}
+
+/**
+ * Attaches a signal controller so the UI can halt generation.
+ */
+export function setActiveAborter(aborter: AbortController | null): void {
+    activeAborter = aborter;
 }

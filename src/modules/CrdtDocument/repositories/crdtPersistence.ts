@@ -153,6 +153,83 @@ export const clearCrdtIdb = async (): Promise<void> => {
     });
 };
 
+/** Save an incremental chunk for a document (append, don't replace). */
+export const saveIncrementalToIdb = async (id: DocId, chunk: Uint8Array): Promise<void> => {
+    if (chunk.length === 0) {
+        return;
+    }
+    const database = await openDatabase();
+    if (!database) {
+        return;
+    }
+
+    const key = `${id}:incremental:${Date.now()}`;
+    return new Promise((resolve, reject) => {
+        const tx = database.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        store.put(chunk, key);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+};
+
+/** Load all incremental chunks for a document and apply them to the base. */
+export const loadIncrementalsFromIdb = async (id: DocId): Promise<Uint8Array[]> => {
+    const database = await openDatabase();
+    if (!database) {
+        return [];
+    }
+
+    return new Promise((resolve, reject) => {
+        const tx = database.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const prefix = `${id}:incremental:`;
+        const chunks: Uint8Array[] = [];
+
+        const cursorRequest = store.openCursor();
+        cursorRequest.onsuccess = () => {
+            const cursor = cursorRequest.result;
+            if (cursor) {
+                if (typeof cursor.key === 'string' && cursor.key.startsWith(prefix)) {
+                    chunks.push(cursor.value as Uint8Array);
+                }
+                cursor.continue();
+            }
+        };
+
+        tx.oncomplete = () => resolve(chunks);
+        tx.onerror = () => reject(tx.error);
+    });
+};
+
+/** Remove all incremental chunks for a document (after compaction). */
+export const clearIncrementalsFromIdb = async (id: DocId): Promise<void> => {
+    const database = await openDatabase();
+    if (!database) {
+        return;
+    }
+
+    return new Promise((resolve, reject) => {
+        const tx = database.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        const prefix = `${id}:incremental:`;
+
+        const cursorRequest = store.openCursor();
+        cursorRequest.onsuccess = () => {
+            const cursor = cursorRequest.result;
+            if (cursor) {
+                if (typeof cursor.key === 'string' && cursor.key.startsWith(prefix)) {
+                    cursor.delete();
+                }
+                cursor.continue();
+            }
+        };
+
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+};
+
 /** Check whether any CRDT documents exist in IndexedDB. */
 export const hasCrdtDocsInIdb = async (): Promise<boolean> => {
     const database = await openDatabase();

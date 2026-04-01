@@ -1,5 +1,7 @@
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
+import { setSemanticContext, clearSemanticContext } from '#/modules/CrdtDocument/useCases/semanticChangeContext';
+import { pushActionHistoryEntry } from '#/modules/CrdtDocument/stores/actionHistoryStore';
 import { type AppAction } from '../models/AppAction';
 
 const logger = Container.getInstance().get(Logger);
@@ -193,14 +195,39 @@ export async function executeAppAction(action: AppAction, options?: ExecuteOptio
         undoResult = handler.describe(action);
     }
 
-    await handler.execute(action);
+    // Set semantic context so AutomergeStorage attaches a message to the CRDT change.
+    // This makes `Automerge.getHistory()` return readable change descriptions.
+    const label = undoResult?.label ?? action.type;
+    setSemanticContext({
+        message: label,
+        actionKind: action.type,
+        entityRefs: [],
+    });
 
-    // Hook: record action for macro playback
+    try {
+        await handler.execute(action);
+    } finally {
+        clearSemanticContext();
+    }
+
+    // Record to macro playback
     recordAction(action);
 
-    // CRDT sync handles replication — no explicit action broadcasting needed.
-    // The AutomergeStorage writes to the Automerge doc on every store.set(),
-    // and the sync protocol replicates changes to connected peers.
+    // Record undoable actions to global history (skip UI-only actions like panel toggles)
+    if (handler.undoable) {
+        pushActionHistoryEntry({
+            id: crypto.randomUUID(),
+            label,
+            actionKind: action.type,
+            action,
+            inverseAction: undoResult?.inverseAction ?? null,
+            source: options?.source ?? 'manual',
+            timestamp: Date.now(),
+            groupId: options?.groupId,
+            groupLabel: options?.groupLabel,
+            reverted: false,
+        });
+    }
 
     if (undoResult) {
         const entry = createUndoEntry(
