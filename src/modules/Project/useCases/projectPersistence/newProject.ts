@@ -15,7 +15,14 @@ import { removeProjectJson } from '../../repositories/project';
 import { addTrack as addTrackUseCase } from '#/modules/Arrangement/useCases/addTrack';
 import { clearUndoHistory } from './helpers';
 
+import { createCrdtProject } from '#/modules/CrdtDocument/useCases/crdtProjectLifecycle';
+
 export function newProject(name = 'Untitled Project'): void {
+    // 1. Initialize CRDT Document structure so subsequent .set() calls persist
+    void createCrdtProject(name).catch((error) => {
+        console.error('[newProject] Failed to initialize CRDT structure:', error);
+    });
+
     trackStore.set({ tracks: [], selectedTrackId: null });
     transportStore.set(defaultTransportState);
     automationStore.set({ lanes: [] });

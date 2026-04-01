@@ -300,26 +300,34 @@ export function resolveDsoNames(dsos: Dso[]): DsoValidationError[] {
             if (resolved) {
                 (dso as Record<string, unknown>).track_id = resolved;
             } else if (!['add_track'].includes(dso.op)) {
-                // Fallback: auto-create this track
-                const newId = `track-${crypto.randomUUID().slice(0, 8)}`;
-                const kindFallback =
-                    dso.op === 'generate_drums' || dso.track_id.toLowerCase().includes('drum') || dso.track_id.toLowerCase().includes('midi')
-                        ? 'midi'
-                        : 'audio';
+                // Check if the LLM meant the selected track
+                const selectedTrackId = state.selectedTrackId;
+                const selectedTrack = selectedTrackId ? state.tracks.find((t) => t.id === selectedTrackId) : null;
+                const lowerName = dso.track_id.toLowerCase();
+                const isSelectedRef = lowerName.includes('selected') || lowerName.includes('current') || lowerName.includes('this');
 
-                // Inject an `add_track` DSO before the current one
-                dsos.splice(i, 0, {
-                    op: 'add_track',
-                    name: dso.track_id, // Use the unresolved name 
-                    kind: kindFallback as any,
-                    track_id: newId,
-                } as any);
+                if (isSelectedRef && selectedTrack) {
+                    // Resolve to the actually selected track
+                    (dso as Record<string, unknown>).track_id = selectedTrack.id;
+                } else {
+                    // Fallback: auto-create this track
+                    const newId = `track-${crypto.randomUUID().slice(0, 8)}`;
+                    const kindFallback =
+                        dso.op === 'generate_drums' || lowerName.includes('drum') || lowerName.includes('midi')
+                            ? 'midi'
+                            : 'audio';
 
-                mockTracks.push({ id: newId, name: dso.track_id });
-                (dso as Record<string, unknown>).track_id = newId;
+                    dsos.splice(i, 0, {
+                        op: 'add_track',
+                        name: dso.track_id,
+                        kind: kindFallback as any,
+                        track_id: newId,
+                    } as any);
 
-                // Advance to the current DSO we were just processing
-                i++;
+                    mockTracks.push({ id: newId, name: dso.track_id });
+                    (dso as Record<string, unknown>).track_id = newId;
+                    i++;
+                }
             }
         }
 
@@ -525,13 +533,13 @@ export function validateDsos(dsos: Dso[]): DsoValidationError[] {
  * Execute a list of validated DSOs against the DAW stores.
  * Returns human-readable summaries of each applied operation.
  */
-export function executeDsos(dsos: Dso[]): string[] {
+export async function executeDsos(dsos: Dso[]): Promise<string[]> {
     lastInsertedDeviceId = null;
     const summaries: string[] = [];
 
     for (const dso of dsos) {
         try {
-            executeSingleDso(dso);
+            await executeSingleDso(dso);
             summaries.push(describeDso(dso));
         } catch (error) {
             console.warn(`Failed to execute DSO ${dso.op}:`, error);
@@ -541,7 +549,7 @@ export function executeDsos(dsos: Dso[]): string[] {
     return summaries;
 }
 
-function executeSingleDso(dso: Dso): void {
+async function executeSingleDso(dso: Dso): Promise<void> {
     const state = trackStore.value;
     if (!state) {
         return;
@@ -795,13 +803,11 @@ function executeSingleDso(dso: Dso): void {
 
         case 'set_loop': {
             if (dso.enabled) {
-                void import('#/modules/Transport/useCases/transportControls/setLoopRegion').then(({ setLoopRegion }) =>
-                    setLoopRegion(dso.start_beats, dso.end_beats)
-                );
+                const { setLoopRegion } = await import('#/modules/Transport/useCases/transportControls/setLoopRegion');
+                setLoopRegion(dso.start_beats, dso.end_beats);
             } else {
-                void import('#/modules/Transport/repositories/transport').then(({ updateTransportState }) =>
-                    updateTransportState({ isLooping: false })
-                );
+                const { updateTransportState } = await import('#/modules/Transport/repositories/transport');
+                updateTransportState({ isLooping: false });
             }
             break;
         }
@@ -838,14 +844,11 @@ function executeSingleDso(dso: Dso): void {
         }
 
         case 'add_midi_notes': {
-            // Add MIDI notes to a clip via the MIDI store
-            void import('#/modules/MIDI/stores/midiStore').then(({ midiStore }) => {
-                const ms = midiStore.value;
-                if (!ms) {
-                    return;
-                }
+            const { midiStore } = await import('#/modules/MIDI/stores/midiStore');
+            const ms = midiStore.value;
+            if (ms) {
                 const existing = ms.notesByClipId[dso.clip_id] ?? [];
-                const newNotes = dso.notes.map((n, i) => ({
+                const newNotes = dso.notes.map((n: { pitch: number; start_beat: number; duration: number; velocity: number }, i: number) => ({
                     id: `note-ai-${Date.now()}-${i}`,
                     pitch: Math.max(0, Math.min(127, n.pitch)),
                     startBeat: Math.max(0, n.start_beat),
@@ -859,7 +862,7 @@ function executeSingleDso(dso: Dso): void {
                         [dso.clip_id]: [...existing, ...newNotes],
                     },
                 });
-            });
+            }
             break;
         }
 
@@ -878,21 +881,11 @@ function executeSingleDso(dso: Dso): void {
             const key = noteNameToMidi(dso.key);
             const scale = toScaleType(dso.scale);
             const style = toMelodyStyle(dso.style);
-            void import('#/modules/AiGeneration/useCases/generateMelody/applyToTrack').then(
-                ({ applyMelodyToTrack }) => {
-                    applyMelodyToTrack(
-                        dso.track_id,
-                        {
-                            style,
-                            key,
-                            scale,
-                            octave: dso.octave,
-                            bars: dso.bars,
-                            density: dso.density,
-                        },
-                        dso.start_beat ?? 0
-                    );
-                }
+            const { applyMelodyToTrack } = await import('#/modules/AiGeneration/useCases/generateMelody/applyToTrack');
+            applyMelodyToTrack(
+                dso.track_id,
+                { style, key, scale, octave: dso.octave, bars: dso.bars, density: dso.density },
+                dso.start_beat ?? 0
             );
             break;
         }
@@ -901,60 +894,41 @@ function executeSingleDso(dso: Dso): void {
             const key = noteNameToMidi(dso.key);
             const style = toChordStyle(dso.progression);
             const voicing = toChordVoicing(dso.voicing);
-            void import('#/modules/AiGeneration/useCases/generateChordProgression/applyToTrack').then(
-                ({ applyChordProgressionToTrack }) => {
-                    applyChordProgressionToTrack(
-                        dso.track_id,
-                        {
-                            style,
-                            key,
-                            scale: 'major',
-                            bars: dso.bars,
-                            voicing,
-                        },
-                        dso.start_beat ?? 0
-                    );
-                }
+            const { applyChordProgressionToTrack } = await import('#/modules/AiGeneration/useCases/generateChordProgression/applyToTrack');
+            applyChordProgressionToTrack(
+                dso.track_id,
+                { style, key, scale: 'major', bars: dso.bars, voicing },
+                dso.start_beat ?? 0
             );
             break;
         }
 
         case 'generate_drums': {
             const style = toDrumStyle(dso.style);
-            void import('#/modules/AiGeneration/useCases/generateDrumPattern/applyToTrack').then(
-                ({ applyDrumPatternToTrack }) => {
-                    applyDrumPatternToTrack(
-                        dso.track_id,
-                        {
-                            style,
-                            bars: dso.bars,
-                            density: dso.density,
-                        },
-                        dso.start_beat ?? 0
-                    );
-                }
+            const { applyDrumPatternToTrack } = await import('#/modules/AiGeneration/useCases/generateDrumPattern/applyToTrack');
+            applyDrumPatternToTrack(
+                dso.track_id,
+                { style, bars: dso.bars, density: dso.density },
+                dso.start_beat ?? 0
             );
             break;
         }
 
         case 'transpose_notes': {
-            void import('#/modules/MIDI/useCases/midiNoteTransforms/transposeNotes').then(({ transposeNotes }) =>
-                transposeNotes(dso.clip_id, dso.semitones)
-            );
+            const { transposeNotes } = await import('#/modules/MIDI/useCases/midiNoteTransforms/transposeNotes');
+            transposeNotes(dso.clip_id, dso.semitones);
             break;
         }
 
         case 'humanize_midi': {
-            void import('#/modules/MIDI/useCases/midiNoteTransforms/humanizeNotes').then(({ humanizeNotes }) =>
-                humanizeNotes(dso.clip_id, dso.timing_amount)
-            );
+            const { humanizeNotes } = await import('#/modules/MIDI/useCases/midiNoteTransforms/humanizeNotes');
+            humanizeNotes(dso.clip_id, dso.timing_amount, dso.velocity_amount);
             break;
         }
 
         case 'create_send': {
-            void import('#/modules/Arrangement/useCases/device/sendManagement').then(({ setSend }) =>
-                setSend(dso.from_track_id, dso.to_track_id, dso.gain)
-            );
+            const { setSend } = await import('#/modules/Arrangement/useCases/device/sendManagement');
+            setSend(dso.from_track_id, dso.to_track_id, dso.gain);
             break;
         }
     }

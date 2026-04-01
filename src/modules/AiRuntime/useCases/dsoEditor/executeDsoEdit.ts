@@ -143,7 +143,7 @@ export async function executeDsoEdit(userRequest: string): Promise<DsoEditResult
         const classification = classifyEditPlan(plan);
 
         if (classification === 'confirmation_required') {
-            const summaries = commitDsos(plan, userRequest, assistantMsgId, reasoning);
+            const summaries = await commitDsos(plan, userRequest, assistantMsgId, reasoning);
             const descriptions = plan.dsos.filter((d) => d.op.startsWith('remove')).map((d) => d.op.replace(/_/g, ' '));
             updateChatMessage(assistantMsgId, {
                 content: `Done (destructive): ${summaries.join('. ')}.\n\nRemoved: ${descriptions.join(', ')}. Use Ctrl+Z to undo.`,
@@ -156,7 +156,7 @@ export async function executeDsoEdit(userRequest: string): Promise<DsoEditResult
         }
 
         // 9. Execute with undo support
-        const summaries = commitDsos(plan, userRequest, assistantMsgId, reasoning);
+        const summaries = await commitDsos(plan, userRequest, assistantMsgId, reasoning);
 
         finish();
         return { success: true, plan, summaries };
@@ -234,13 +234,13 @@ function parseEditPlan(responseText: string): EditPlan {
     throw new Error(`LLM response is not a valid EditPlan. Preview: "${preview}…"`);
 }
 
-function commitDsos(plan: EditPlan, userRequest: string, assistantMsgId: string, reasoning?: string): string[] {
+async function commitDsos(plan: EditPlan, userRequest: string, assistantMsgId: string, reasoning?: string): Promise<string[]> {
     // Snapshot for undo
     const trackSnapshot = structuredClone(trackStore.value);
     const transportSnapshot = structuredClone(transportStore.value);
 
     // Execute
-    const summaries = executeDsos(plan.dsos);
+    const summaries = await executeDsos(plan.dsos);
 
     // Snapshot after for redo
     const trackAfter = structuredClone(trackStore.value);
@@ -331,8 +331,9 @@ async function invokeLlm(backend: string, system: string, user: string, chatMsgI
 
     // Cloud is NOT used for DSO planning — Qwen3-8B only, no model fallback.
 
-    // WebLLM (browser) — streaming with response_format schema constraint
-    // Streaming prevents UI freezes since the worker yields tokens incrementally
+    // WebLLM (browser) — streaming with response_format schema constraint.
+    // If grammar-constrained generation fails (smaller models may reject tokens),
+    // retry without the constraint and rely on the system prompt alone.
     if (backend === 'webllm') {
         const engine = getLlmEngine();
         if (!engine) {
@@ -340,30 +341,42 @@ async function invokeLlm(backend: string, system: string, user: string, chatMsgI
         }
         updateChatMessage(chatMsgId, { content: 'Generating edit plan...' });
 
-        let result = '';
-        const stream = (await engine.chat.completions.create({
-            messages: [
-                { role: 'system', content: system },
-                { role: 'user', content: user },
-            ],
-            temperature: 0.1,
-            max_tokens: 1024,
-            stream: true,
-            response_format: {
-                type: 'json_object' as const,
-                schema: EDIT_PLAN_JSON_SCHEMA,
-            },
-        })) as AsyncIterable<{ choices: Array<{ delta?: { content?: string } }> }>;
+        const messages = [
+            { role: 'system' as const, content: system },
+            { role: 'user' as const, content: user },
+        ];
 
-        for await (const chunk of stream) {
-            const delta = chunk.choices[0]?.delta?.content;
-            if (delta) {
-                result += delta;
-                onProgress();
+        // First attempt: with schema constraint
+        try {
+            let result = '';
+            const stream = (await engine.chat.completions.create({
+                messages,
+                temperature: 0.1,
+                max_tokens: 1024,
+                stream: true,
+                response_format: {
+                    type: 'json_object' as const,
+                    schema: EDIT_PLAN_JSON_SCHEMA,
+                },
+            })) as AsyncIterable<{ choices: Array<{ delta?: { content?: string } }> }>;
+
+            for await (const chunk of stream) {
+                const delta = chunk.choices[0]?.delta?.content;
+                if (delta) {
+                    result += delta;
+                    onProgress();
+                }
             }
-        }
 
-        return result;
+            return result;
+        } catch (constraintError) {
+            const activeModel = (await import('../../repositories/webLlm/engineLifecycle')).getActiveModelId();
+            throw new Error(
+                `This edit is too complex for the current model. ` +
+                `Try loading a larger model (Pro) from the AI menu, or simplify your request.\n\n` +
+                `(Grammar constraint failed on ${activeModel})`
+            );
+        }
     }
 
     throw new Error(`No available backend for DSO generation`);

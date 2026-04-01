@@ -191,7 +191,7 @@ export function buildDsoPrompt(
 
     if (summary.selected_tracks.length > 0) {
         const selectedNames = summary.selected_tracks.map((id) => state.tracks[id]?.name ?? id).join(', ');
-        userPrompt += `Selected track: ${selectedNames}\n`;
+        userPrompt += `Currently selected track: "${selectedNames}" — when the user says "selected track", "current track", or "this track", or "the track" or asks for actions to a track without specifying a track name: "${selectedNames}"\n`;
     }
 
     if (summary.recent_edits.length > 0) {

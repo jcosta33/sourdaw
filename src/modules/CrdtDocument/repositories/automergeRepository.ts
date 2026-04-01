@@ -160,17 +160,52 @@ class AutomergeRepository {
     loadAll(bundle: DocumentBundle): void {
         this.docs.clear();
 
-        for (const [id, bytes] of bundle) {
+        const baseDocs = new Map<DocId, Uint8Array>();
+        const incrementals: Array<{ id: DocId; bytes: Uint8Array }> = [];
+
+        // 1. Separate base documents from incremental chunks
+        for (const [key, bytes] of bundle) {
+            if (key.includes(':incremental:')) {
+                incrementals.push({ id: key, bytes });
+            } else {
+                baseDocs.set(key, bytes);
+            }
+        }
+
+        // 2. Load all base documents
+        for (const [id, bytes] of baseDocs) {
             const doc = Automerge.load<AnyDoc>(bytes);
-            // Establish the saveIncremental baseline — tells Automerge
-            // "everything up to here is already persisted" so the next
-            // saveIncremental() only returns new changes.
-            Automerge.save(doc);
             this.docs.set(id, doc);
 
             if (id.startsWith(DOC_PREFIX_ROOT)) {
                 this.rootId = id;
             }
+        }
+
+        // 3. Apply incremental chunks in chronological order
+        incrementals.sort((a, b) => {
+            const timeA = parseInt(a.id.split(':').pop() || '0', 10);
+            const timeB = parseInt(b.id.split(':').pop() || '0', 10);
+            return timeA - timeB;
+        });
+
+        for (const { id: key, bytes } of incrementals) {
+            const docId = key.substring(0, key.indexOf(':incremental:'));
+            const doc = this.docs.get(docId) as Automerge.Doc<AnyDoc> | undefined;
+
+            if (doc) {
+                const updatedDoc = Automerge.loadIncremental(doc, bytes);
+                this.docs.set(docId, updatedDoc as Automerge.Doc<AnyDoc>);
+            } else {
+                console.warn(`[AutomergeRepository] Found incremental chunk for missing doc: ${docId}`);
+            }
+        }
+
+        // 4. Establish the saveIncremental baseline — tells Automerge
+        // "everything up to here is already persisted" so the next
+        // saveIncremental() only returns new changes.
+        for (const doc of this.docs.values()) {
+            Automerge.save(doc);
         }
 
         this.notifyListeners();
