@@ -654,8 +654,12 @@ export async function exportStems(
         }
 
         const frameCount = Math.min(Math.ceil(durationSeconds * sampleRate), MAX_OFFLINE_FRAMES);
+        // Dynamically scale CPU threads based on hardware, clamped to 8 max to prevent OOM
+        const MAX_CONCURRENT_RENDERS = typeof navigator !== 'undefined' 
+            ? Math.max(1, Math.min(navigator.hardwareConcurrency || 4, 8)) 
+            : 4;
 
-        for (const track of eligible) {
+        const tasks = eligible.map((track) => async () => {
             checkCancel();
 
             const offlineCtx = new OfflineAudioContext(2, frameCount, sampleRate);
@@ -705,7 +709,33 @@ export async function exportStems(
             stems.set(track.id, buffer);
             done++;
             onProgress?.(done / eligible.length);
-        }
+        });
+
+        // Run exports concurrently up to the thread limit
+        let activeTasks = 0;
+        let taskIndex = 0;
+        
+        await new Promise<void>((resolve, reject) => {
+            const next = () => {
+                if (cancelFlag) {
+                    reject(new Error('Export cancelled'));
+                    return;
+                }
+                while (activeTasks < MAX_CONCURRENT_RENDERS && taskIndex < tasks.length) {
+                    const task = tasks[taskIndex++];
+                    activeTasks++;
+                    task!()
+                        .then(() => {
+                            activeTasks--;
+                            if (taskIndex >= tasks.length && activeTasks === 0) resolve();
+                            else next();
+                        })
+                        .catch(reject);
+                }
+                if (taskIndex >= tasks.length && activeTasks === 0) resolve();
+            };
+            next();
+        });
 
         return stems;
     } finally {

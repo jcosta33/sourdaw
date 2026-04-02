@@ -10,7 +10,6 @@ import { WaveformEditor } from './ClipView/WaveformEditor';
 import { AutomationLane } from './ClipView/AutomationLane';
 import { KneadEditor } from './ClipView/KneadEditor';
 
-
 export const ClipView = (): ReactElement => {
     const { tracks, selectedTrackId } = useTracks();
     const selectedTrack = tracks.find((t) => t.id === selectedTrackId);
@@ -102,10 +101,6 @@ export const ClipView = (): ReactElement => {
                         </Button>
                     </div>
                 ) : null}
-                <div className="flex-1" />
-                <Button variant="ghost" size="xs" onClick={() => setWorkspaceMode('arrange')}>
-                    Back
-                </Button>
             </div>
 
             <div className="flex flex-1 overflow-hidden">

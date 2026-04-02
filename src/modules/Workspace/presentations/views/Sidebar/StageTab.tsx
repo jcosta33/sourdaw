@@ -1,9 +1,8 @@
 import { type ReactElement } from 'react';
-import { Shield, Mic, Waves as WavesIcon, Gauge, Sparkles, AudioLines, Layers } from 'lucide-react';
+import { Shield, Waves as WavesIcon, Gauge, Sparkles, AudioLines, Layers } from 'lucide-react';
 import {
     InstrumentCard,
     PROOF_THEME,
-    KNEAD_THEME,
     SCORING_THEME,
     PROOF_CHAMBER_THEME,
     GLUTEN_THEME,
@@ -49,7 +48,7 @@ export const StageTab = ({
     onToggleFavorite,
     preview,
 }: StageTabProps): ReactElement => {
-    const premiumIds = new Set(['proof', 'knead', 'native-scoring', 'native-proof-chamber', 'gluten', 'crust']);
+    const premiumIds = new Set(['proof', 'native-scoring', 'native-proof-chamber', 'gluten', 'crust']);
     
     // Stage plugins are mix utilities, eq, compression, space.
     const isStagePlugin = (p: EffectPlugin) => {
@@ -245,17 +244,7 @@ export const StageTab = ({
                     theme={PROOF_THEME}
                 />
                 
-                <InstrumentCard
-                    icon={Mic}
-                    label="Knead"
-                    badge="Tuning"
-                    description="Real-time Pitch Correction"
-                    onClick={() => {
-                        if (selectedTrackId) addDevice(selectedTrackId, 'Knead');
-                    }}
-                    theme={KNEAD_THEME}
-                />
-                
+
                 <InstrumentCard
                     icon={Gauge}
                     label="Gluten"
