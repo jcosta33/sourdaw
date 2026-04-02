@@ -4,7 +4,7 @@
 import { useSyncExternalStore } from 'react';
 import { audioRecordingStore, type AudioRecordingState } from '#/modules/AudioEngine/useCases/audioRecorder';
 
-const defaultState: AudioRecordingState = { isRecording: false };
+const defaultState: AudioRecordingState = { isRecording: false, micPermissionGranted: false };
 
 export function useAudioRecordingState(): AudioRecordingState {
     return useSyncExternalStore(

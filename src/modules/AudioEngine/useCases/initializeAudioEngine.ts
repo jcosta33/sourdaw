@@ -3,9 +3,14 @@ import { getTransportStoreValue } from '#/modules/Transport/useCases/transportQu
 import { registerBuiltinPlugins } from '#/modules/Plugin/useCases/wamPluginHost/builtinDescriptors';
 import { initWAMEnvironment } from '#/modules/Plugin/useCases/wamPluginHost/hostOperations';
 import { registerBuiltinFaustDSP } from '#/modules/Plugin/useCases/faustEngine/builtinDSP';
+import { requestMicPermission } from './audioRecorder';
 
 export async function initializeAudioEngine(): Promise<void> {
     await audioEngine.initialize();
+
+    // Request mic permission early so the prompt appears on first user
+    // interaction instead of at the first record attempt.
+    void requestMicPermission();
 
     const transport = getTransportStoreValue();
     if (transport) {

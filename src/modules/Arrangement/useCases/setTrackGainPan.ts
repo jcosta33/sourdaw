@@ -2,6 +2,7 @@ import { getTrackById, updateTrack } from '../repositories/track';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { recordAutomationValue } from '#/modules/Automation/useCases/automationRecording/recordAutomationValue';
 import { type AutomationMode, type InputMonitoring } from '../models/Track';
+import { startInputMonitoring, stopInputMonitoring } from '#/modules/AudioEngine/useCases/audioRecorder';
 import {
     setTrackGain as engineSetTrackGain,
     setTrackPan as engineSetTrackPan,
@@ -67,4 +68,11 @@ export function setTrackNotes(trackId: string, notes: string): void {
 
 export function setInputMonitoring(trackId: string, mode: InputMonitoring): void {
     updateTrack(trackId, (t) => ({ ...t, inputMonitoring: mode }));
+
+    // Actually start/stop the microphone stream on the audio engine.
+    if (mode === 'on') {
+        void startInputMonitoring(trackId);
+    } else {
+        stopInputMonitoring();
+    }
 }

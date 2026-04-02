@@ -24,6 +24,7 @@ import {
 import { DecayEqOverlay } from '../components/DecayEqOverlay';
 import { SignalFlowDiagram } from '../components/SignalFlowDiagram';
 import { IrBrowser } from '../components/IrBrowser';
+import { updateProofChamberParam } from '../../useCases/proofChamberParamBridge';
 
 const SPACES: { id: SpaceType; label: string }[] = [
     { id: 'hall', label: 'Hall' },
@@ -36,12 +37,8 @@ const SPACES: { id: SpaceType; label: string }[] = [
     { id: 'spring', label: 'Spring' },
 ];
 
-type ProofChamberPanelProps = {
-    deviceId?: string;
-    onParamChange?: (paramId: string, value: number) => void;
-};
 
-export const ProofChamberPanel = ({ onParamChange }: ProofChamberPanelProps): ReactElement => {
+export const ProofChamberPanel = (): ReactElement => {
     const [params, setParams] = useState<ProofChamberParams>({ ...DEFAULT_PARAMS });
     const [decayEqMults, setDecayEqMults] = useState([1.0, 1.0, 1.0, 1.0, 1.0, 1.0]);
     const [showDecayEq, setShowDecayEq] = useState(false);
@@ -51,9 +48,9 @@ export const ProofChamberPanel = ({ onParamChange }: ProofChamberPanelProps): Re
         setParams((prev) => ({ ...prev, [key]: value }));
         // Forward to audio engine
         const rustKey = PARAM_MAP[key];
-        if (rustKey && onParamChange) {
+        if (rustKey) {
             const numVal = typeof value === 'boolean' ? (value ? 1.0 : 0.0) : value;
-            onParamChange(rustKey, numVal);
+            updateProofChamberParam(rustKey, numVal);
         }
     };
 
@@ -62,20 +59,18 @@ export const ProofChamberPanel = ({ onParamChange }: ProofChamberPanelProps): Re
         const algo = (preset as Record<string, unknown>).algorithm as AlgorithmType | undefined;
         const newParams = { ...DEFAULT_PARAMS, ...preset, space, algorithm: algo ?? 'plate' };
         setParams(newParams);
-        if (onParamChange) {
-            // Send algorithm switch first
-            onParamChange('algorithm', ALGORITHM_MAP[newParams.algorithm] ?? 0);
-            // Then send all other params
-            for (const [key, val] of Object.entries(newParams)) {
-                if (key === 'algorithm' || key === 'space') {
-                    continue;
-                }
-                const rustKey = PARAM_MAP[key];
-                if (rustKey && typeof val === 'number') {
-                    onParamChange(rustKey, val);
-                } else if (rustKey && typeof val === 'boolean') {
-                    onParamChange(rustKey, val ? 1.0 : 0.0);
-                }
+        // Send algorithm switch first
+        updateProofChamberParam('algorithm', ALGORITHM_MAP[newParams.algorithm] ?? 0);
+        // Then send all other params
+        for (const [key, val] of Object.entries(newParams)) {
+            if (key === 'algorithm' || key === 'space') {
+                continue;
+            }
+            const rustKey = PARAM_MAP[key];
+            if (rustKey && typeof val === 'number') {
+                updateProofChamberParam(rustKey, val);
+            } else if (rustKey && typeof val === 'boolean') {
+                updateProofChamberParam(rustKey, val ? 1.0 : 0.0);
             }
         }
     };
@@ -148,9 +143,7 @@ export const ProofChamberPanel = ({ onParamChange }: ProofChamberPanelProps): Re
                             const next = [...decayEqMults];
                             next[band] = mult;
                             setDecayEqMults(next);
-                            if (onParamChange) {
-                                onParamChange(`decay_eq_${band}`, mult);
-                            }
+                            updateProofChamberParam(`decay_eq_${band}`, mult);
                         }}
                         width={600}
                         height={120}

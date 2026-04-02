@@ -1,5 +1,8 @@
 /**
  * Audio recording — start/stop microphone recording, store recording state.
+ *
+ * Uses raw PCM capture via a ScriptProcessorNode instead of MediaRecorder so
+ * that we never need to encode-then-decode (WebM is unsupported on WebKit).
  */
 
 import { Container } from '#/helpers/DependencyInjector/Container';
@@ -12,27 +15,49 @@ const logger = Container.getInstance().get(Logger);
 
 export type AudioRecordingState = {
     isRecording: boolean;
+    micPermissionGranted: boolean;
 };
 
 export const audioRecordingStore = new Store<AudioRecordingState>(logger, {
-    initialData: { isRecording: false },
+    initialData: { isRecording: false, micPermissionGranted: false },
 });
 
 let mediaStream: MediaStream | null = null;
-let mediaRecorder: MediaRecorder | null = null;
-let recordedChunks: Blob[] = [];
 let sourceNode: MediaStreamAudioSourceNode | null = null;
+/** Buffer-array of raw Float32 chunks (one per onaudioprocess call) */
+let rawChunks: Float32Array[] = [];
+let scriptProcessor: ScriptProcessorNode | null = null;
 let onRecordingComplete: ((buffer: AudioBuffer) => void) | null = null;
 
-let cachedMimeType: string | null = null;
-
-function getRecorderMimeType(): string {
-    if (cachedMimeType) {
-        return cachedMimeType;
+/**
+ * Pre-request microphone permission so the user sees the prompt on page load
+ * rather than only when they first attempt to record.
+ *
+ * If the browser has already granted permission this is a no-op. The stream is
+ * immediately stopped so that the mic indicator does not stay lit.
+ */
+export async function requestMicPermission(): Promise<boolean> {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false,
+            },
+        });
+        // Stop all tracks immediately — we only needed the permission prompt.
+        for (const t of stream.getTracks()) {
+            t.stop();
+        }
+        audioRecordingStore.set({ ...audioRecordingStore.value!, micPermissionGranted: true });
+        return true;
+    } catch {
+        audioRecordingStore.set({ ...audioRecordingStore.value!, micPermissionGranted: false });
+        return false;
     }
-    cachedMimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
-    return cachedMimeType;
 }
+
+const BUFFER_SIZE = 4096;
 
 export async function startAudioRecording(
     trackId: string,
@@ -59,66 +84,71 @@ export async function startAudioRecording(
         const strip = audioEngine.ensureTrackStrip(trackId);
         sourceNode.connect(strip.gainNode);
 
-        recordedChunks = [];
+        rawChunks = [];
         onRecordingComplete = onComplete;
 
-        mediaRecorder = new MediaRecorder(mediaStream, {
-            mimeType: getRecorderMimeType(),
-        });
-
-        audioRecordingStore.set({ isRecording: true });
-
-        mediaRecorder.ondataavailable = (event) => {
-            if (event.data.size > 0) {
-                recordedChunks.push(event.data);
-            }
+        // Capture raw PCM via ScriptProcessorNode (deprecated but universally
+        // supported — AudioWorklet would be overkill here and we already have a
+        // worklet budget elsewhere).
+        scriptProcessor = ctx.createScriptProcessor(BUFFER_SIZE, 1, 1);
+        scriptProcessor.onaudioprocess = (e: AudioProcessingEvent) => {
+            const input = e.inputBuffer.getChannelData(0);
+            // Copy because the backing buffer is reused by the browser.
+            rawChunks.push(new Float32Array(input));
         };
+        sourceNode.connect(scriptProcessor);
+        // Connect to destination so the processor runs (required by spec).
+        scriptProcessor.connect(ctx.destination);
 
-        mediaRecorder.onstop = async () => {
-            const blob = new Blob(recordedChunks, { type: 'audio/webm' });
-            const arrayBuffer = await blob.arrayBuffer();
-            const buffer = await ctx.decodeAudioData(arrayBuffer);
+        audioRecordingStore.set({ ...audioRecordingStore.value!, isRecording: true });
 
-            if (sourceNode) {
-                sourceNode.disconnect();
-                sourceNode = null;
-            }
-            if (mediaStream) {
-                for (const t of mediaStream.getTracks()) {
-                    t.stop();
-                }
-                mediaStream = null;
-            }
-
-            onRecordingComplete?.(buffer);
-            onRecordingComplete = null;
-            recordedChunks = [];
-
-            audioRecordingStore.set({ isRecording: false });
-        };
-
-        mediaRecorder.start(100);
         return true;
     } catch (error) {
         logger.error(new Error('Failed to start recording', { cause: error }));
-        if (sourceNode) {
-            sourceNode.disconnect();
-            sourceNode = null;
-        }
-        if (mediaStream) {
-            for (const t of mediaStream.getTracks()) {
-                t.stop();
-            }
-            mediaStream = null;
-        }
+        cleanupNodes();
         return false;
     }
 }
 
 export function stopAudioRecording(): void {
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
+    // Disconnect the processor first so no more samples arrive.
+    if (scriptProcessor) {
+        scriptProcessor.onaudioprocess = null;
+        scriptProcessor.disconnect();
+        scriptProcessor = null;
     }
-    mediaRecorder = null;
-    audioRecordingStore.set({ isRecording: false });
+
+    // Build an AudioBuffer from captured PCM chunks.
+    if (rawChunks.length > 0 && onRecordingComplete) {
+        const ctx = audioEngine.context;
+        const totalSamples = rawChunks.reduce((sum, c) => sum + c.length, 0);
+        const buffer = ctx.createBuffer(1, totalSamples, ctx.sampleRate);
+        const channel = buffer.getChannelData(0);
+        let offset = 0;
+        for (const chunk of rawChunks) {
+            channel.set(chunk, offset);
+            offset += chunk.length;
+        }
+        onRecordingComplete(buffer);
+    }
+
+    onRecordingComplete = null;
+    rawChunks = [];
+
+    cleanupNodes();
+
+    audioRecordingStore.set({ ...audioRecordingStore.value!, isRecording: false });
+}
+
+function cleanupNodes(): void {
+    if (sourceNode) {
+        sourceNode.disconnect();
+        sourceNode = null;
+    }
+    if (mediaStream) {
+        for (const t of mediaStream.getTracks()) {
+            t.stop();
+        }
+        mediaStream = null;
+    }
 }
