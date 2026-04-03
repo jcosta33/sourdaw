@@ -16,7 +16,10 @@ const HB: f32 = 0.5625;
 
 impl Oversample2x {
     pub fn new() -> Self {
-        Self { up_z: [0.0; 4], down_z: [0.0; 4] }
+        Self {
+            up_z: [0.0; 4],
+            down_z: [0.0; 4],
+        }
     }
 
     #[inline]
@@ -32,7 +35,8 @@ impl Oversample2x {
 
     #[inline]
     pub fn downsample(&mut self, s0: f32, s1: f32) -> f32 {
-        let filtered = HA * (self.down_z[3] + s1) + HB * (self.down_z[1] + s0) + 0.5 * self.down_z[0];
+        let filtered =
+            HA * (self.down_z[3] + s1) + HB * (self.down_z[1] + s0) + 0.5 * self.down_z[0];
         self.down_z[3] = self.down_z[2];
         self.down_z[2] = self.down_z[1];
         self.down_z[1] = self.down_z[0];
@@ -48,11 +52,7 @@ impl Oversample2x {
 
 /// Process a nonlinear function at 2x oversampled rate.
 #[inline]
-pub fn process_oversampled<F: Fn(f32) -> f32>(
-    os: &mut Oversample2x,
-    input: f32,
-    f: F,
-) -> f32 {
+pub fn process_oversampled<F: Fn(f32) -> f32>(os: &mut Oversample2x, input: f32, f: F) -> f32 {
     let (s0, s1) = os.upsample(input);
     let p0 = f(s0);
     let p1 = f(s1);
@@ -64,7 +64,7 @@ pub fn process_oversampled<F: Fn(f32) -> f32>(
 pub struct ConfigurableOversample {
     stage1: Oversample2x,
     stage2: Oversample2x, // only used for 4x
-    pub rate: u8, // 1, 2, or 4
+    pub rate: u8,         // 1, 2, or 4
 }
 
 impl ConfigurableOversample {

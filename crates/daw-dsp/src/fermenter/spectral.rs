@@ -4,17 +4,17 @@
 #[derive(Clone, Copy)]
 pub enum WarpMode {
     None,
-    Sync,        // Hard sync simulation — wraps the waveform at a variable point
-    Quantize,    // Bit-reduction / sample-rate reduction
-    Squeeze,     // Asymmetric waveshaping — pushes waveform toward one polarity
-    Bend,        // Nonlinear phase distortion — bends the waveform shape
-    Formant,     // Simple formant-like resonance applied to waveform
-    Fold,        // Wavefolding — folds the signal back on itself
+    Sync,     // Hard sync simulation — wraps the waveform at a variable point
+    Quantize, // Bit-reduction / sample-rate reduction
+    Squeeze,  // Asymmetric waveshaping — pushes waveform toward one polarity
+    Bend,     // Nonlinear phase distortion — bends the waveform shape
+    Formant,  // Simple formant-like resonance applied to waveform
+    Fold,     // Wavefolding — folds the signal back on itself
 }
 
 pub struct SpectralWarp {
     mode: WarpMode,
-    amount: f32,    // 0-1 warp intensity
+    amount: f32, // 0-1 warp intensity
     // State for quantize mode
     hold_value: f32,
     hold_counter: f32,
@@ -22,7 +22,12 @@ pub struct SpectralWarp {
 
 impl SpectralWarp {
     pub fn new() -> Self {
-        Self { mode: WarpMode::None, amount: 0.0, hold_value: 0.0, hold_counter: 0.0 }
+        Self {
+            mode: WarpMode::None,
+            amount: 0.0,
+            hold_value: 0.0,
+            hold_counter: 0.0,
+        }
     }
 
     pub fn set_mode(&mut self, mode: u8) {

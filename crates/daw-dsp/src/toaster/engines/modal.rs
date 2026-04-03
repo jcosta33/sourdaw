@@ -208,16 +208,14 @@ impl ModalEngine {
         self.noise_state = 0xFACEFEED;
 
         // Exciter decay: very fast (1-5ms noise burst)
-        self.exciter_decay_coeff =
-            (-1.0 / (self.exciter_length * sample_rate)).exp();
+        self.exciter_decay_coeff = (-1.0 / (self.exciter_length * sample_rate)).exp();
 
         // Overall amplitude envelope: use the longest mode decay + headroom
         let max_decay = self.modes[..self.mode_count]
             .iter()
             .map(|m| m.decay)
             .fold(0.0_f32, f32::max);
-        self.amp_decay_coeff =
-            (-1.0 / ((max_decay + 0.05) * sample_rate)).exp();
+        self.amp_decay_coeff = (-1.0 / ((max_decay + 0.05) * sample_rate)).exp();
 
         // Reset and compute coefficients for all active modes
         for i in 0..self.mode_count {
@@ -264,11 +262,7 @@ impl ModalEngine {
             };
 
             // Apply brightness scaling to higher modes
-            let brightness_scale = if i > 0 {
-                self.brightness
-            } else {
-                1.0
-            };
+            let brightness_scale = if i > 0 { self.brightness } else { 1.0 };
 
             sum += damped * brightness_scale;
         }

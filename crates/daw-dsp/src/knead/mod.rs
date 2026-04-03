@@ -1,10 +1,10 @@
-pub mod yin;
-pub mod voicing;
-pub mod psola;
 pub mod engine;
+pub mod psola;
+pub mod voicing;
+pub mod yin;
 
-use wasm_bindgen::prelude::*;
 use engine::KneadEngine;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct KneadInstance {

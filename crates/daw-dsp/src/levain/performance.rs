@@ -3,8 +3,8 @@
 //! Real levain sections don't play in perfect unison. This module
 //! simulates the natural behaviors of ensemble playing.
 
-use super::types::*;
 use super::humanize::Rng;
+use super::types::*;
 
 // ---------------------------------------------------------------------------
 // Auto-divisi
@@ -159,12 +159,12 @@ impl AutoArticulation {
         }
 
         let count = self.recent_count.min(8);
-        let oldest_idx = if count < 8 {
-            0
+        let oldest_idx = if count < 8 { 0 } else { self.recent_idx };
+        let newest_idx = if self.recent_idx == 0 {
+            7
         } else {
-            self.recent_idx
+            self.recent_idx - 1
         };
-        let newest_idx = if self.recent_idx == 0 { 7 } else { self.recent_idx - 1 };
 
         let time_span = self.recent_note_times[newest_idx] - self.recent_note_times[oldest_idx];
         if time_span <= 0.0 {

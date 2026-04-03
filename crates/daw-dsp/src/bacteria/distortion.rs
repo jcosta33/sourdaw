@@ -36,15 +36,15 @@ impl DistortionMode {
 /// Per-band distortion processor.
 pub struct DistortionProcessor {
     mode: DistortionMode,
-    drive: f32,         // 0–100
-    asymmetry: f32,     // -1 to 1
-    fold_threshold: f32, // 0.1–1.0
-    bit_depth: u32,     // 1–24
-    sr_reduce: u32,     // sample rate divider
-    tube_bias: f32,     // 0–1
+    drive: f32,           // 0–100
+    asymmetry: f32,       // -1 to 1
+    fold_threshold: f32,  // 0.1–1.0
+    bit_depth: u32,       // 1–24
+    sr_reduce: u32,       // sample rate divider
+    tube_bias: f32,       // 0–1
     breakdown_depth: f32, // 0–4 octaves
-    sr_counter: u32,    // sample-rate reduction counter
-    sr_hold: f32,       // held sample for SR reduction
+    sr_counter: u32,      // sample-rate reduction counter
+    sr_hold: f32,         // held sample for SR reduction
 }
 
 impl DistortionProcessor {

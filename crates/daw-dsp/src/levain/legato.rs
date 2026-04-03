@@ -96,9 +96,10 @@ impl LegatoTransitionStore {
         }
 
         // Fallback: same interval, any dynamic, same type.
-        let any_dyn = self.transitions.iter().find(|t| {
-            t.interval == interval && t.transition_type as u8 == transition_type as u8
-        });
+        let any_dyn = self
+            .transitions
+            .iter()
+            .find(|t| t.interval == interval && t.transition_type as u8 == transition_type as u8);
         if any_dyn.is_some() {
             return any_dyn;
         }
@@ -223,7 +224,10 @@ impl LegatoEngine {
             };
 
             // Try to find a recorded transition sample.
-            if let Some(trans) = self.transitions.find(interval, current_dynamic, transition_type) {
+            if let Some(trans) = self
+                .transitions
+                .find(interval, current_dynamic, transition_type)
+            {
                 let (cf_in, cf_out) = crossfade_times(speed);
                 LegatoResult::TrueTransition {
                     from_note: held.note,

@@ -1,7 +1,9 @@
 /// MasterSynth — top-level Fermenter engine.
 /// Manages layers (each with their own voice pool), processes MIDI, renders audio blocks.
-
-use super::effects::{Compressor, Distortion, FdnReverb, ParametricEq, PlateReverb, StereoChorus, StereoDelay, StereoPhaser, StereoWidth};
+use super::effects::{
+    Compressor, Distortion, FdnReverb, ParametricEq, PlateReverb, StereoChorus, StereoDelay,
+    StereoPhaser, StereoWidth,
+};
 use super::layer::Layer;
 use super::oscillator::Wavetable;
 use super::params::SmoothedParam;
@@ -9,18 +11,18 @@ use super::params::SmoothedParam;
 /// MIDI event passed from JS to WASM.
 #[derive(Clone, Copy)]
 pub struct MidiEvent {
-    pub kind: u8,     // 0=noteOff, 1=noteOn
+    pub kind: u8, // 0=noteOff, 1=noteOn
     pub note: u8,
     pub velocity: u8,
-    pub offset: u32,  // Sample offset within the block
+    pub offset: u32, // Sample offset within the block
 }
 
 const MAX_LAYERS: usize = 4;
 
 pub struct MasterSynth {
     layers: [Layer; MAX_LAYERS],
-    num_active_layers: usize,  // 1-4
-    active_layer: usize,       // which layer receives MIDI and param changes (0-3)
+    num_active_layers: usize, // 1-4
+    active_layer: usize,      // which layer receives MIDI and param changes (0-3)
 
     tables: Vec<Wavetable>,
 
@@ -167,37 +169,193 @@ impl MasterSynth {
 
         // Global effect params — handled at MasterSynth level
         match name {
-            "reverb_type" => { self.reverb_type = (value as u8).min(1); return; }
-            "reverb_mix" => { self.reverb_mix.set(value.clamp(0.0, 1.0)); return; }
-            "reverb_decay" => { self.reverb_decay.set(value.clamp(0.0, 0.99)); return; }
-            "eq_low_freq" => { self.eq_low_freq = value.clamp(20.0, 20000.0); self.eq.set_band(0, self.eq_low_freq, self.eq_low_gain, self.eq_low_q, self.sample_rate); return; }
-            "eq_low_gain" => { self.eq_low_gain = value.clamp(-24.0, 24.0); self.eq.set_band(0, self.eq_low_freq, self.eq_low_gain, self.eq_low_q, self.sample_rate); return; }
-            "eq_low_q" => { self.eq_low_q = value.clamp(0.1, 20.0); self.eq.set_band(0, self.eq_low_freq, self.eq_low_gain, self.eq_low_q, self.sample_rate); return; }
-            "eq_mid_freq" => { self.eq_mid_freq = value.clamp(20.0, 20000.0); self.eq.set_band(1, self.eq_mid_freq, self.eq_mid_gain, self.eq_mid_q, self.sample_rate); return; }
-            "eq_mid_gain" => { self.eq_mid_gain = value.clamp(-24.0, 24.0); self.eq.set_band(1, self.eq_mid_freq, self.eq_mid_gain, self.eq_mid_q, self.sample_rate); return; }
-            "eq_mid_q" => { self.eq_mid_q = value.clamp(0.1, 20.0); self.eq.set_band(1, self.eq_mid_freq, self.eq_mid_gain, self.eq_mid_q, self.sample_rate); return; }
-            "eq_high_freq" => { self.eq_high_freq = value.clamp(20.0, 20000.0); self.eq.set_band(2, self.eq_high_freq, self.eq_high_gain, self.eq_high_q, self.sample_rate); return; }
-            "eq_high_gain" => { self.eq_high_gain = value.clamp(-24.0, 24.0); self.eq.set_band(2, self.eq_high_freq, self.eq_high_gain, self.eq_high_q, self.sample_rate); return; }
-            "eq_high_q" => { self.eq_high_q = value.clamp(0.1, 20.0); self.eq.set_band(2, self.eq_high_freq, self.eq_high_gain, self.eq_high_q, self.sample_rate); return; }
-            "delay_time" => { self.delay_time = value.clamp(10.0, 2000.0); return; }
-            "delay_feedback" => { self.delay_feedback = value.clamp(0.0, 0.95); return; }
-            "delay_mix" => { self.delay_mix = value.clamp(0.0, 1.0); return; }
-            "chorus_rate" => { self.chorus_rate = value.clamp(0.1, 5.0); return; }
-            "chorus_depth" => { self.chorus_depth = value.clamp(0.0, 1.0); return; }
-            "chorus_mix" => { self.chorus_mix = value.clamp(0.0, 1.0); return; }
-            "phaser_rate" => { self.phaser_rate = value.clamp(0.1, 5.0); return; }
-            "phaser_depth" => { self.phaser_depth = value.clamp(0.0, 1.0); return; }
-            "phaser_mix" => { self.phaser_mix = value.clamp(0.0, 1.0); return; }
-            "dist_drive" => { self.dist_drive = value.clamp(0.0, 10.0); return; }
-            "dist_tone" => { self.dist_tone = value.clamp(0.0, 1.0); return; }
-            "dist_mix" => { self.dist_mix = value.clamp(0.0, 1.0); return; }
-            "comp_threshold" => { self.comp_threshold = value.clamp(-60.0, 0.0); return; }
-            "comp_ratio" => { self.comp_ratio = value.clamp(1.0, 20.0); return; }
-            "comp_attack" => { self.comp_attack = value.clamp(0.1, 100.0); return; }
-            "comp_release" => { self.comp_release = value.clamp(10.0, 1000.0); return; }
-            "comp_mix" => { self.comp_mix = value.clamp(0.0, 1.0); return; }
-            "master_gain" => { self.master_gain = value.clamp(0.0, 2.0); return; }
-            "stereo_width" => { self.stereo_width = value.clamp(0.0, 2.0); return; }
+            "reverb_type" => {
+                self.reverb_type = (value as u8).min(1);
+                return;
+            }
+            "reverb_mix" => {
+                self.reverb_mix.set(value.clamp(0.0, 1.0));
+                return;
+            }
+            "reverb_decay" => {
+                self.reverb_decay.set(value.clamp(0.0, 0.99));
+                return;
+            }
+            "eq_low_freq" => {
+                self.eq_low_freq = value.clamp(20.0, 20000.0);
+                self.eq.set_band(
+                    0,
+                    self.eq_low_freq,
+                    self.eq_low_gain,
+                    self.eq_low_q,
+                    self.sample_rate,
+                );
+                return;
+            }
+            "eq_low_gain" => {
+                self.eq_low_gain = value.clamp(-24.0, 24.0);
+                self.eq.set_band(
+                    0,
+                    self.eq_low_freq,
+                    self.eq_low_gain,
+                    self.eq_low_q,
+                    self.sample_rate,
+                );
+                return;
+            }
+            "eq_low_q" => {
+                self.eq_low_q = value.clamp(0.1, 20.0);
+                self.eq.set_band(
+                    0,
+                    self.eq_low_freq,
+                    self.eq_low_gain,
+                    self.eq_low_q,
+                    self.sample_rate,
+                );
+                return;
+            }
+            "eq_mid_freq" => {
+                self.eq_mid_freq = value.clamp(20.0, 20000.0);
+                self.eq.set_band(
+                    1,
+                    self.eq_mid_freq,
+                    self.eq_mid_gain,
+                    self.eq_mid_q,
+                    self.sample_rate,
+                );
+                return;
+            }
+            "eq_mid_gain" => {
+                self.eq_mid_gain = value.clamp(-24.0, 24.0);
+                self.eq.set_band(
+                    1,
+                    self.eq_mid_freq,
+                    self.eq_mid_gain,
+                    self.eq_mid_q,
+                    self.sample_rate,
+                );
+                return;
+            }
+            "eq_mid_q" => {
+                self.eq_mid_q = value.clamp(0.1, 20.0);
+                self.eq.set_band(
+                    1,
+                    self.eq_mid_freq,
+                    self.eq_mid_gain,
+                    self.eq_mid_q,
+                    self.sample_rate,
+                );
+                return;
+            }
+            "eq_high_freq" => {
+                self.eq_high_freq = value.clamp(20.0, 20000.0);
+                self.eq.set_band(
+                    2,
+                    self.eq_high_freq,
+                    self.eq_high_gain,
+                    self.eq_high_q,
+                    self.sample_rate,
+                );
+                return;
+            }
+            "eq_high_gain" => {
+                self.eq_high_gain = value.clamp(-24.0, 24.0);
+                self.eq.set_band(
+                    2,
+                    self.eq_high_freq,
+                    self.eq_high_gain,
+                    self.eq_high_q,
+                    self.sample_rate,
+                );
+                return;
+            }
+            "eq_high_q" => {
+                self.eq_high_q = value.clamp(0.1, 20.0);
+                self.eq.set_band(
+                    2,
+                    self.eq_high_freq,
+                    self.eq_high_gain,
+                    self.eq_high_q,
+                    self.sample_rate,
+                );
+                return;
+            }
+            "delay_time" => {
+                self.delay_time = value.clamp(10.0, 2000.0);
+                return;
+            }
+            "delay_feedback" => {
+                self.delay_feedback = value.clamp(0.0, 0.95);
+                return;
+            }
+            "delay_mix" => {
+                self.delay_mix = value.clamp(0.0, 1.0);
+                return;
+            }
+            "chorus_rate" => {
+                self.chorus_rate = value.clamp(0.1, 5.0);
+                return;
+            }
+            "chorus_depth" => {
+                self.chorus_depth = value.clamp(0.0, 1.0);
+                return;
+            }
+            "chorus_mix" => {
+                self.chorus_mix = value.clamp(0.0, 1.0);
+                return;
+            }
+            "phaser_rate" => {
+                self.phaser_rate = value.clamp(0.1, 5.0);
+                return;
+            }
+            "phaser_depth" => {
+                self.phaser_depth = value.clamp(0.0, 1.0);
+                return;
+            }
+            "phaser_mix" => {
+                self.phaser_mix = value.clamp(0.0, 1.0);
+                return;
+            }
+            "dist_drive" => {
+                self.dist_drive = value.clamp(0.0, 10.0);
+                return;
+            }
+            "dist_tone" => {
+                self.dist_tone = value.clamp(0.0, 1.0);
+                return;
+            }
+            "dist_mix" => {
+                self.dist_mix = value.clamp(0.0, 1.0);
+                return;
+            }
+            "comp_threshold" => {
+                self.comp_threshold = value.clamp(-60.0, 0.0);
+                return;
+            }
+            "comp_ratio" => {
+                self.comp_ratio = value.clamp(1.0, 20.0);
+                return;
+            }
+            "comp_attack" => {
+                self.comp_attack = value.clamp(0.1, 100.0);
+                return;
+            }
+            "comp_release" => {
+                self.comp_release = value.clamp(10.0, 1000.0);
+                return;
+            }
+            "comp_mix" => {
+                self.comp_mix = value.clamp(0.0, 1.0);
+                return;
+            }
+            "master_gain" => {
+                self.master_gain = value.clamp(0.0, 2.0);
+                return;
+            }
+            "stereo_width" => {
+                self.stereo_width = value.clamp(0.0, 2.0);
+                return;
+            }
             _ => {}
         }
 
@@ -333,10 +491,8 @@ impl MasterSynth {
         }
 
         // Apply parametric EQ (after reverb/delay/chorus/phaser, before stereo width)
-        self.eq.process_block(
-            &mut left[..block_size],
-            &mut right[..block_size],
-        );
+        self.eq
+            .process_block(&mut left[..block_size], &mut right[..block_size]);
 
         // Apply stereo width (last effect before master gain)
         if (self.stereo_width - 1.0).abs() > 0.001 {

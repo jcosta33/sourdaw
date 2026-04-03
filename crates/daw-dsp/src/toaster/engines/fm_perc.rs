@@ -130,7 +130,8 @@ impl FmPercEngine {
             }
             "tune" => {
                 // Shift base frequency by semitone ratio from default 200Hz
-                self.base_freq = (200.0 * 2.0f32.powf(value.clamp(-24.0, 24.0) / 12.0)).clamp(40.0, 4000.0);
+                self.base_freq =
+                    (200.0 * 2.0f32.powf(value.clamp(-24.0, 24.0) / 12.0)).clamp(40.0, 4000.0);
             }
             "tone" => {
                 // Map 0-1 to mod_amount (FM brightness)

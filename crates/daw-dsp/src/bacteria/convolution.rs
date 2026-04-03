@@ -41,7 +41,11 @@ impl ConvolutionProcessor {
 
     /// Load an impulse response. For mono IRs, uses separation to create stereo.
     pub fn load_ir(&mut self, ir_data: &[f32], channels: usize) {
-        let length = if channels >= 2 { ir_data.len() / 2 } else { ir_data.len() };
+        let length = if channels >= 2 {
+            ir_data.len() / 2
+        } else {
+            ir_data.len()
+        };
         let length = length.min(4096); // Cap IR length for real-time safety
 
         self.ir_length = length;
@@ -72,15 +76,20 @@ impl ConvolutionProcessor {
                 // High-frequency resonance with quick decay
                 for i in 0..length {
                     let t = i as f32 / sample_rate;
-                    ir[i] = (-t * 80.0).exp() * (2200.0 * 2.0 * std::f32::consts::PI * t).sin() * 0.3
-                        + (-t * 120.0).exp() * (4400.0 * 2.0 * std::f32::consts::PI * t).sin() * 0.15;
+                    ir[i] =
+                        (-t * 80.0).exp() * (2200.0 * 2.0 * std::f32::consts::PI * t).sin() * 0.3
+                            + (-t * 120.0).exp()
+                                * (4400.0 * 2.0 * std::f32::consts::PI * t).sin()
+                                * 0.15;
                 }
             }
             "wood" => {
                 // Warm mid-range resonance
                 for i in 0..length {
                     let t = i as f32 / sample_rate;
-                    ir[i] = (-t * 40.0).exp() * (800.0 * 2.0 * std::f32::consts::PI * t).sin() * 0.4
+                    ir[i] = (-t * 40.0).exp()
+                        * (800.0 * 2.0 * std::f32::consts::PI * t).sin()
+                        * 0.4
                         + (-t * 60.0).exp() * (1600.0 * 2.0 * std::f32::consts::PI * t).sin() * 0.2;
                 }
             }
@@ -88,22 +97,31 @@ impl ConvolutionProcessor {
                 // Bright metallic ring
                 for i in 0..length {
                     let t = i as f32 / sample_rate;
-                    ir[i] = (-t * 15.0).exp() * (3500.0 * 2.0 * std::f32::consts::PI * t).sin() * 0.25
+                    ir[i] = (-t * 15.0).exp()
+                        * (3500.0 * 2.0 * std::f32::consts::PI * t).sin()
+                        * 0.25
                         + (-t * 25.0).exp() * (7000.0 * 2.0 * std::f32::consts::PI * t).sin() * 0.1
-                        + (-t * 50.0).exp() * (1200.0 * 2.0 * std::f32::consts::PI * t).sin() * 0.15;
+                        + (-t * 50.0).exp()
+                            * (1200.0 * 2.0 * std::f32::consts::PI * t).sin()
+                            * 0.15;
                 }
             }
             _ => {
                 // Default: subtle cabinet-like
                 for i in 0..length {
                     let t = i as f32 / sample_rate;
-                    ir[i] = (-t * 60.0).exp() * (500.0 * 2.0 * std::f32::consts::PI * t).sin() * 0.3;
+                    ir[i] =
+                        (-t * 60.0).exp() * (500.0 * 2.0 * std::f32::consts::PI * t).sin() * 0.3;
                 }
             }
         }
 
         // Normalize
-        let max_val = ir.iter().map(|x| x.abs()).fold(0.0_f32, f32::max).max(0.001);
+        let max_val = ir
+            .iter()
+            .map(|x| x.abs())
+            .fold(0.0_f32, f32::max)
+            .max(0.001);
         for s in &mut ir {
             *s /= max_val;
         }

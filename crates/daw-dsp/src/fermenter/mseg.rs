@@ -16,7 +16,11 @@ pub struct MsegSegment {
 
 impl Default for MsegSegment {
     fn default() -> Self {
-        Self { level: 0.0, time: 0.1, curve: 0.0 }
+        Self {
+            level: 0.0,
+            time: 0.1,
+            curve: 0.0,
+        }
     }
 }
 
@@ -52,10 +56,26 @@ impl Mseg {
     pub fn new(sample_rate: f32) -> Self {
         // Default: simple attack-sustain-release shape
         let mut segments = [MsegSegment::default(); MSEG_SEGMENTS];
-        segments[0] = MsegSegment { level: 1.0, time: 0.01, curve: 0.0 };  // attack
-        segments[1] = MsegSegment { level: 0.7, time: 0.2, curve: -1.0 };  // decay
-        segments[2] = MsegSegment { level: 0.7, time: 1.0, curve: 0.0 };   // sustain hold
-        segments[3] = MsegSegment { level: 0.0, time: 0.3, curve: -2.0 };  // release
+        segments[0] = MsegSegment {
+            level: 1.0,
+            time: 0.01,
+            curve: 0.0,
+        }; // attack
+        segments[1] = MsegSegment {
+            level: 0.7,
+            time: 0.2,
+            curve: -1.0,
+        }; // decay
+        segments[2] = MsegSegment {
+            level: 0.7,
+            time: 1.0,
+            curve: 0.0,
+        }; // sustain hold
+        segments[3] = MsegSegment {
+            level: 0.0,
+            time: 0.3,
+            curve: -2.0,
+        }; // release
 
         Self {
             segments,

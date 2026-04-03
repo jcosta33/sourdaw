@@ -125,38 +125,6 @@ const SUPPORTED_PRE_PEDALS: readonly SupportedPedalControl[] = [
     },
 ];
 
-const SUPPORTED_FX_PEDALS: readonly SupportedPedalControl[] = [
-    {
-        label: 'Delay',
-        type: 'delay',
-        defaults: {
-            id: 'dl1',
-            type: 'delay',
-            enabled: false,
-            params: { time: 375, feedback: 0.3, mix: 0.25 },
-        },
-        params: [
-            { key: 'time', label: 'Time', min: 60, max: 800, step: 5, defaultValue: 375, unit: 'ms' },
-            { key: 'feedback', label: 'Feedback', min: 0, max: 0.95, step: 0.01, defaultValue: 0.3 },
-            { key: 'mix', label: 'Mix', min: 0, max: 1, step: 0.01, defaultValue: 0.25 },
-        ],
-    },
-    {
-        label: 'Reverb',
-        type: 'reverb',
-        defaults: {
-            id: 'rv1',
-            type: 'reverb',
-            enabled: false,
-            params: { decay: 0.5, mix: 0.15 },
-        },
-        params: [
-            { key: 'decay', label: 'Decay', min: 0, max: 0.95, step: 0.01, defaultValue: 0.5 },
-            { key: 'mix', label: 'Mix', min: 0, max: 1, step: 0.01, defaultValue: 0.15 },
-        ],
-    },
-];
-
 function formatValue(v: number, unit: string): string {
     if (unit === 'dB') {
         return `${v > 0 ? '+' : ''}${v.toFixed(1)}`;
@@ -222,7 +190,7 @@ function upsertPedal(
 
 function updatePedalCollection(
     patch: GrinderPatch,
-    section: 'prePedals' | 'fxLoopPedals',
+    section: 'prePedals',
     type: GrinderPedalType,
     defaults: GrinderPedal,
     update: (pedal: GrinderPedal) => GrinderPedal
@@ -232,15 +200,12 @@ function updatePedalCollection(
         ...patch,
         [section]: nextPedals,
     };
-    if (section === 'fxLoopPedals' && nextPedals.some((pedal) => pedal.enabled)) {
-        nextPatch.fxLoopEnabled = true;
-    }
     loadGrinderPatchWithAudio(nextPatch);
 }
 
 function renderPedalControls(
     patch: GrinderPatch,
-    section: 'prePedals' | 'fxLoopPedals',
+    section: 'prePedals',
     controls: readonly SupportedPedalControl[]
 ): ReactElement {
     return (
@@ -670,26 +635,6 @@ const BuildLevel = ({ state }: { state: GrinderState }): ReactElement => {
                     </div>
                     <span className="text-muted-foreground/30 text-[10px]">→</span>
 
-                    {/* FX Loop */}
-                    {patch.fxLoopEnabled ? (
-                        <>
-                            {patch.fxLoopPedals.map((pedal) => (
-                                <div key={pedal.id} className="flex items-center gap-1">
-                                    <div
-                                        className={`px-2 py-1 rounded border text-[7px] font-medium capitalize ${
-                                            pedal.enabled
-                                                ? 'border-blue-500/30 bg-blue-500/10 text-blue-400'
-                                                : 'border-border/20 text-muted-foreground/30'
-                                        }`}
-                                    >
-                                        {pedal.type}
-                                    </div>
-                                    <span className="text-muted-foreground/30 text-[10px]">→</span>
-                                </div>
-                            ))}
-                        </>
-                    ) : null}
-
                     {/* Cabinet */}
                     <div
                         className={`px-2 py-1 rounded border text-[8px] font-medium ${
@@ -714,27 +659,6 @@ const BuildLevel = ({ state }: { state: GrinderState }): ReactElement => {
                         Pre-Pedals
                     </div>
                     {renderPedalControls(patch, 'prePedals', SUPPORTED_PRE_PEDALS)}
-                </div>
-
-                <div className="mt-3 space-y-1">
-                    <div className="flex items-center justify-between">
-                        <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
-                            FX Loop
-                        </div>
-                        <label className="flex items-center gap-1 text-[8px] text-muted-foreground cursor-pointer">
-                            <input
-                                type="checkbox"
-                                checked={patch.fxLoopEnabled}
-                                onChange={(e) =>
-                                    loadGrinderPatchWithAudio({ ...patch, fxLoopEnabled: e.target.checked })
-                                }
-                                className="size-2.5 rounded"
-                                style={{ accentColor: 'rgb(217,119,6)' }}
-                            />
-                            Enabled
-                        </label>
-                    </div>
-                    {renderPedalControls(patch, 'fxLoopPedals', SUPPORTED_FX_PEDALS)}
                 </div>
 
                 {/* Mic Room */}
@@ -872,7 +796,6 @@ const RouteLevel = ({ state }: { state: GrinderState }): ReactElement => {
                 <div className="flex gap-3">
                     <K v={patch.cleanBlend} k="cleanBlend" label="Clean Blend" min={0} max={1} step={0.01} def={0} />
                     <K v={patch.outputMix} k="outputMix" label="Wet/Dry" min={0} max={1} step={0.01} def={1} />
-                    <K v={patch.fxLoopMix} k="fxLoopMix" label="FX Loop Mix" min={0} max={1} step={0.01} def={1} />
                 </div>
 
                 {/* Per-stage meters */}

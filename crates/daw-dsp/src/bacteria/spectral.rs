@@ -43,8 +43,8 @@ impl SpectralProcessor {
         }
 
         // Simple time-domain spectral blur: recursive smoothing
-        let smoothed = self.blur_alpha * input
-            + (1.0 - self.blur_alpha) * self.smooth_buffer[self.buffer_pos];
+        let smoothed =
+            self.blur_alpha * input + (1.0 - self.blur_alpha) * self.smooth_buffer[self.buffer_pos];
         self.smooth_buffer[self.buffer_pos] = smoothed;
         self.buffer_pos = (self.buffer_pos + 1) % self.smooth_buffer.len();
         self.frozen_value = smoothed;
@@ -97,8 +97,12 @@ impl FrequencyShifter {
         // Simple frequency shifting: multiply by complex exponential
         let phase_inc = self.shift_hz / self.sample_rate;
         self.phase += phase_inc;
-        if self.phase > 1.0 { self.phase -= 1.0; }
-        if self.phase < -1.0 { self.phase += 1.0; }
+        if self.phase > 1.0 {
+            self.phase -= 1.0;
+        }
+        if self.phase < -1.0 {
+            self.phase += 1.0;
+        }
 
         let cos_phase = (self.phase * 2.0 * std::f32::consts::PI).cos();
         let shifted = input * cos_phase;

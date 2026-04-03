@@ -9,14 +9,21 @@ use std::f32::consts::PI;
 /// H_k = Re{DFT_k} - Im{DFT_k} for real input.
 fn fht(data: &mut [f32]) {
     let n = data.len();
-    if !n.is_power_of_two() || n < 2 { return; }
+    if !n.is_power_of_two() || n < 2 {
+        return;
+    }
 
     // Bit-reversal
     let mut j = 0;
     for i in 0..n {
-        if i < j { data.swap(i, j); }
+        if i < j {
+            data.swap(i, j);
+        }
         let mut m = n >> 1;
-        while m >= 1 && j >= m { j -= m; m >>= 1; }
+        while m >= 1 && j >= m {
+            j -= m;
+            m >>= 1;
+        }
         j += m;
     }
 
@@ -56,7 +63,7 @@ pub struct LofiProcessor {
     sr_hold_r: f32,
 
     // Codec artifact via FHT
-    codec_amount: f32,       // 0-1
+    codec_amount: f32, // 0-1
     fht_buffer: Vec<f32>,
     fht_write_pos: usize,
     fht_size: usize,
@@ -65,7 +72,7 @@ pub struct LofiProcessor {
     frame_counter: usize,
 
     // Overall amount
-    amount: f32,             // 0-100
+    amount: f32, // 0-100
 }
 
 impl LofiProcessor {

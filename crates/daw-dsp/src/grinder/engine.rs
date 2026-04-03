@@ -1,17 +1,17 @@
 //! GrinderEngine — top-level amp simulator orchestrator.
 //!
 //! Signal flow: Input → Gate → Pre-Pedals → Preamp → Tone Stack →
-//! FX Loop → Power Amp → Transformer → Cabinet → Speaker → Post FX → Output
+//! Power Amp → Transformer → Cabinet → Speaker → Output
 
-use super::input::{InputConditioner, NoiseGate};
-use super::triode::Preamp;
-use super::tone_stack::ToneStack;
-use super::power_amp::PowerAmp;
-use super::transformer::Transformer;
 use super::cabinet::{CabinetConvolver, SpeakerModel};
-use super::pedals::{OverdrivePedal, DistortionPedal, FuzzPedal, CompressorPedal, DelayPedal, ReverbPedal};
+use super::input::{InputConditioner, NoiseGate};
 use super::neural::NeuralCapture;
-use super::params::{SmoothedParam, db_to_linear, linear_to_db};
+use super::params::{db_to_linear, linear_to_db, SmoothedParam};
+use super::pedals::{CompressorPedal, DistortionPedal, FuzzPedal, OverdrivePedal};
+use super::power_amp::PowerAmp;
+use super::tone_stack::ToneStack;
+use super::transformer::Transformer;
+use super::triode::Preamp;
 
 #[allow(dead_code)]
 pub struct GrinderEngine {
@@ -31,9 +31,6 @@ pub struct GrinderEngine {
     pre_dist: DistortionPedal,
     pre_fuzz: FuzzPedal,
     pre_comp: CompressorPedal,
-    fx_delay: DelayPedal,
-    fx_reverb: ReverbPedal,
-
     // Output
     output_gain: SmoothedParam,
     output_mix: SmoothedParam,
@@ -41,10 +38,6 @@ pub struct GrinderEngine {
     limiter_threshold: f32,
     limiter_enabled: bool,
     bypassed: bool,
-
-    // FX loop
-    fx_loop_enabled: bool,
-    fx_loop_mix: f32,
 
     // Metering
     meter_decay_coeff: f32,
@@ -75,16 +68,12 @@ impl GrinderEngine {
             pre_dist: DistortionPedal::new(sample_rate),
             pre_fuzz: FuzzPedal::new(sample_rate),
             pre_comp: CompressorPedal::new(sample_rate),
-            fx_delay: DelayPedal::new(sample_rate),
-            fx_reverb: ReverbPedal::new(sample_rate),
             output_gain: SmoothedParam::new(1.0, 5.0, sample_rate),
             output_mix: SmoothedParam::new(1.0, 5.0, sample_rate),
             clean_blend: SmoothedParam::new(0.0, 5.0, sample_rate),
             limiter_threshold: db_to_linear(-0.3),
             limiter_enabled: true,
             bypassed: false,
-            fx_loop_enabled: false,
-            fx_loop_mix: 1.0,
             meter_decay_coeff,
             input_peak: 0.0,
             preamp_peak: 0.0,
@@ -99,19 +88,24 @@ impl GrinderEngine {
             "inputGain" | "inputImpedance" | "inputMode" => self.input_cond.set_param(name, value),
 
             // Gate
-            "gateEnabled" | "gateThreshold" | "gateAttack" | "gateRelease" => self.gate.set_param(name, value),
+            "gateEnabled" | "gateThreshold" | "gateAttack" | "gateRelease" => {
+                self.gate.set_param(name, value)
+            }
 
             // Preamp
-            "gain" | "channel" | "bright" | "fat" |
-            "tubeBias" | "tubeAge" | "millerCapacitance" | "gridConduction" | "couplingCapCharge" |
-            "ampModel" => self.preamp.set_param(name, value),
+            "gain" | "channel" | "bright" | "fat" | "tubeBias" | "tubeAge"
+            | "millerCapacitance" | "gridConduction" | "couplingCapCharge" | "ampModel" => {
+                self.preamp.set_param(name, value)
+            }
 
             // Tone stack
-            "toneStackType" | "bass" | "mid" | "treble" | "brightCap" => self.tone_stack.set_param(name, value),
+            "toneStackType" | "bass" | "mid" | "treble" | "brightCap" => {
+                self.tone_stack.set_param(name, value)
+            }
 
             // Power amp
-            "master" | "powerTubeType" | "rectifierType" |
-            "sagAmount" | "sagRecovery" | "negFeedback" | "powerAmpBias" => self.power_amp.set_param(name, value),
+            "master" | "powerTubeType" | "rectifierType" | "sagAmount" | "sagRecovery"
+            | "negFeedback" | "powerAmpBias" => self.power_amp.set_param(name, value),
 
             // Presence/Resonance (power amp negative feedback EQ)
             "presence" | "resonance" => {
@@ -120,19 +114,19 @@ impl GrinderEngine {
             }
 
             // Transformer
-            "transformerDrive" | "transformerHysteresis" | "transformerLfSaturation" => self.transformer.set_param(name, value),
+            "transformerDrive" | "transformerHysteresis" | "transformerLfSaturation" => {
+                self.transformer.set_param(name, value)
+            }
 
             // Cabinet
             "cabEnabled" => self.cabinet.set_enabled(value > 0.5),
-            "cabResonanceFreq" | "cabResonanceQ" | "cabDamping" | "cabOpenBack" |
-            "coneBreakup" | "backEmf" => self.speaker.set_param(name, value),
-
-            // FX loop
-            "fxLoopEnabled" => self.fx_loop_enabled = value > 0.5,
-            "fxLoopMix" => self.fx_loop_mix = value,
+            "cabResonanceFreq" | "cabResonanceQ" | "cabDamping" | "cabOpenBack" | "coneBreakup"
+            | "backEmf" => self.speaker.set_param(name, value),
 
             // Neural
-            "neuralEnabled" | "neuralMix" | "neuralTier" | "neuralCpuBudget" => self.neural.set_param(name, value),
+            "neuralEnabled" | "neuralMix" | "neuralTier" | "neuralCpuBudget" => {
+                self.neural.set_param(name, value)
+            }
 
             // Output
             "outputGain" => self.output_gain.set_target(db_to_linear(value)),
@@ -159,14 +153,6 @@ impl GrinderEngine {
                     if let Some(mapped) = map_prefixed_pedal_param(pedal_param) {
                         self.pre_fuzz.set_param(mapped, value);
                     }
-                } else if let Some(pedal_param) = name.strip_prefix("fxDelay") {
-                    if let Some(mapped) = map_prefixed_pedal_param(pedal_param) {
-                        self.fx_delay.set_param(mapped, value);
-                    }
-                } else if let Some(pedal_param) = name.strip_prefix("fxReverb") {
-                    if let Some(mapped) = map_prefixed_pedal_param(pedal_param) {
-                        self.fx_reverb.set_param(mapped, value);
-                    }
                 }
             }
         }
@@ -190,7 +176,11 @@ impl GrinderEngine {
 
             // Update input peak
             let in_peak = signal.abs();
-            if in_peak > self.input_peak { self.input_peak = in_peak; } else { self.input_peak *= self.meter_decay_coeff; }
+            if in_peak > self.input_peak {
+                self.input_peak = in_peak;
+            } else {
+                self.input_peak *= self.meter_decay_coeff;
+            }
 
             // Noise gate
             signal = self.gate.process_sample(signal);
@@ -206,18 +196,14 @@ impl GrinderEngine {
 
             // Update preamp peak
             let pre_peak = signal.abs();
-            if pre_peak > self.preamp_peak { self.preamp_peak = pre_peak; } else { self.preamp_peak *= self.meter_decay_coeff; }
+            if pre_peak > self.preamp_peak {
+                self.preamp_peak = pre_peak;
+            } else {
+                self.preamp_peak *= self.meter_decay_coeff;
+            }
 
             // Tone stack
             signal = self.tone_stack.process_sample(signal);
-
-            // FX Loop
-            if self.fx_loop_enabled {
-                let fx_dry = signal;
-                signal = self.fx_delay.process_sample(signal);
-                signal = self.fx_reverb.process_sample(signal);
-                signal = fx_dry * (1.0 - self.fx_loop_mix) + signal * self.fx_loop_mix;
-            }
 
             // Neural capture (can replace or blend with circuit model)
             signal = self.neural.process_sample(signal);
@@ -231,7 +217,11 @@ impl GrinderEngine {
 
             // Update power amp peak
             let pa_peak = signal.abs();
-            if pa_peak > self.power_amp_peak { self.power_amp_peak = pa_peak; } else { self.power_amp_peak *= self.meter_decay_coeff; }
+            if pa_peak > self.power_amp_peak {
+                self.power_amp_peak = pa_peak;
+            } else {
+                self.power_amp_peak *= self.meter_decay_coeff;
+            }
 
             // Cabinet (convolution)
             signal = self.cabinet.process_sample(signal);
@@ -254,9 +244,7 @@ impl GrinderEngine {
 
             // Safety limiter
             if self.limiter_enabled {
-                if signal.abs() > self.limiter_threshold {
-                    signal = signal.signum() * self.limiter_threshold;
-                }
+                signal = soft_limit_sample(signal, self.limiter_threshold);
             }
 
             // Stereo output (cab processing creates slight stereo from mic positioning)
@@ -265,16 +253,45 @@ impl GrinderEngine {
 
             // Update output peak
             let out_peak = signal.abs();
-            if out_peak > self.output_peak { self.output_peak = out_peak; } else { self.output_peak *= self.meter_decay_coeff; }
+            if out_peak > self.output_peak {
+                self.output_peak = out_peak;
+            } else {
+                self.output_peak *= self.meter_decay_coeff;
+            }
         }
     }
 
-    pub fn input_db(&self) -> f32 { linear_to_db(self.input_peak) }
-    pub fn preamp_db(&self) -> f32 { linear_to_db(self.preamp_peak) }
-    pub fn power_amp_db(&self) -> f32 { linear_to_db(self.power_amp_peak) }
-    pub fn output_db(&self) -> f32 { linear_to_db(self.output_peak) }
-    pub fn sag_voltage(&self) -> f32 { self.power_amp.sag_voltage() }
-    pub fn latency_samples(&self) -> u32 { 0 }
+    pub fn input_db(&self) -> f32 {
+        linear_to_db(self.input_peak)
+    }
+    pub fn preamp_db(&self) -> f32 {
+        linear_to_db(self.preamp_peak)
+    }
+    pub fn power_amp_db(&self) -> f32 {
+        linear_to_db(self.power_amp_peak)
+    }
+    pub fn output_db(&self) -> f32 {
+        linear_to_db(self.output_peak)
+    }
+    pub fn sag_voltage(&self) -> f32 {
+        self.power_amp.sag_voltage()
+    }
+    pub fn latency_samples(&self) -> u32 {
+        0
+    }
+}
+
+fn soft_limit_sample(input: f32, threshold: f32) -> f32 {
+    let threshold = threshold.clamp(1.0e-4, 0.999);
+    let abs_input = input.abs();
+    if abs_input <= threshold {
+        return input;
+    }
+
+    let sign = input.signum();
+    let excess = (abs_input - threshold) / (1.0 - threshold).max(1.0e-4);
+    let compressed = threshold + (1.0 - (-2.5 * excess).exp()) * (1.0 - threshold);
+    sign * compressed.min(1.0)
 }
 
 fn map_prefixed_pedal_param(name: &str) -> Option<&'static str> {
@@ -288,10 +305,6 @@ fn map_prefixed_pedal_param(name: &str) -> Option<&'static str> {
         "Attack" => Some("attack"),
         "Release" => Some("release"),
         "Fuzz" => Some("fuzz"),
-        "Time" => Some("time"),
-        "Feedback" => Some("feedback"),
-        "Mix" => Some("mix"),
-        "Decay" => Some("decay"),
         _ => None,
     }
 }
@@ -368,7 +381,10 @@ mod tests {
         let el34 = average_abs_output_for_silence(1.0);
         let el84 = average_abs_output_for_silence(2.0);
 
-        assert!(six_l6 < 1.0e-4, "6L6 should stay near silence, got {six_l6}");
+        assert!(
+            six_l6 < 1.0e-4,
+            "6L6 should stay near silence, got {six_l6}"
+        );
         assert!(el34 < 1.0e-4, "EL34 should stay near silence, got {el34}");
         assert!(el84 < 1.0e-4, "EL84 should stay near silence, got {el84}");
     }
@@ -420,5 +436,4 @@ mod tests {
             "prefixed pedal params should audibly change output (dry={dry_avg}, driven={driven_avg})"
         );
     }
-
 }

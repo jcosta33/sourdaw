@@ -30,7 +30,12 @@ impl AllpassDelay {
 
     /// Process with fractional modulation using allpass interpolation as required by Dattorro
     #[inline(always)]
-    pub fn process_modulated(&mut self, input: f32, delay_fractional: f32, pre_filtered_prev: &mut f32) -> f32 {
+    pub fn process_modulated(
+        &mut self,
+        input: f32,
+        delay_fractional: f32,
+        pre_filtered_prev: &mut f32,
+    ) -> f32 {
         let int_delay = delay_fractional.floor() as usize;
         let frac_delay = delay_fractional - int_delay as f32; // alpha
 
@@ -48,7 +53,7 @@ impl AllpassDelay {
 
         let fb = input + interpolated * self.coefficient;
         let output = interpolated - fb * self.coefficient;
-        
+
         self.delay_line.write(fb);
         output
     }

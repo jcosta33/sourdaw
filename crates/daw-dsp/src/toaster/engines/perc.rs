@@ -53,7 +53,7 @@ pub struct PercEngine {
     perc_type: PercType,
     base_freq: f32,
     tune_ratio: f32,
-    tone: f32,         // 0-1 parameter
+    tone: f32, // 0-1 parameter
     noise_level: f32,
     decay: f32,
     drive: f32,
@@ -123,13 +123,17 @@ impl PercEngine {
         let freq1 = self.base_freq * self.tune_ratio;
         let freq2 = freq1 * 1.4833; // minor 3rd + octave ratio
         self.phase1 += freq1 / sample_rate;
-        if self.phase1 >= 1.0 { self.phase1 -= 1.0; }
+        if self.phase1 >= 1.0 {
+            self.phase1 -= 1.0;
+        }
         self.phase2 += freq2 / sample_rate;
-        if self.phase2 >= 1.0 { self.phase2 -= 1.0; }
+        if self.phase2 >= 1.0 {
+            self.phase2 -= 1.0;
+        }
 
         let s1 = (self.phase1 * TAU).sin();
         let s2 = (self.phase2 * TAU).sin();
-        
+
         // Tanh drive to approximate a bandlimited square wave
         let sq1 = fast_tanh(s1 * 10.0);
         let sq2 = fast_tanh(s2 * 10.0);
@@ -144,14 +148,14 @@ impl PercEngine {
     fn tick_clave(&mut self, sample_rate: f32) -> f32 {
         // Use phase2 as a simple timer (in seconds)
         self.phase2 += 1.0 / sample_rate;
-        
+
         // 5ms noise burst exciter
         let click_env = if self.phase2 < 0.005 { 1.0 } else { 0.0 };
         let impulse = noise(&mut self.noise_state) * click_env;
 
         let tone_hz = self.base_freq * self.tune_ratio;
         let bp_freq = tone_hz * (0.5 + self.tone);
-        
+
         // Modal resonance (high Q)
         self.bandpass(impulse, bp_freq, 25.0, sample_rate) * 15.0 // Gain compensate high Q
     }
@@ -169,10 +173,12 @@ impl PercEngine {
     fn tick_rim(&mut self, sample_rate: f32) -> f32 {
         let tone_hz = self.base_freq * self.tune_ratio * 0.5;
         self.phase1 += tone_hz / sample_rate;
-        if self.phase1 >= 1.0 { self.phase1 -= 1.0; }
+        if self.phase1 >= 1.0 {
+            self.phase1 -= 1.0;
+        }
         let sine = (self.phase1 * TAU).sin();
         let n = noise(&mut self.noise_state) * self.noise_level;
-        
+
         let mixed = sine * 0.7 + n * 0.3;
         self.bandpass(mixed, tone_hz * (1.0 + self.tone * 2.0), 1.0, sample_rate)
     }

@@ -33,8 +33,6 @@ export type GrinderPedalType =
     | 'flanger'
     | 'phaser'
     | 'tremolo'
-    | 'delay'
-    | 'reverb'
     | 'eq';
 
 export type GrinderPedal = {
@@ -105,11 +103,6 @@ export type GrinderPatch = {
     presence: number; // 0 – 10
     resonance: number; // 0 – 10
     brightCap: boolean;
-
-    // FX Loop pedals
-    fxLoopPedals: GrinderPedal[];
-    fxLoopEnabled: boolean;
-    fxLoopMix: number; // 0 – 1
 
     // Power amp
     master: number; // 0 – 10
@@ -189,10 +182,10 @@ export const DEFAULT_PATCH: GrinderPatch = {
     inputGain: 0,
     inputMode: 'instrument',
 
-    gateEnabled: true,
+    gateEnabled: false,
     gateThreshold: -60,
-    gateAttack: 0.5,
-    gateRelease: 50,
+    gateAttack: 2,
+    gateRelease: 120,
 
     prePedals: [],
 
@@ -215,10 +208,6 @@ export const DEFAULT_PATCH: GrinderPatch = {
     presence: 5,
     resonance: 5,
     brightCap: false,
-
-    fxLoopPedals: [],
-    fxLoopEnabled: false,
-    fxLoopMix: 1,
 
     master: 5,
     powerTubeType: 'el34',

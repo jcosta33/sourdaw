@@ -8,9 +8,9 @@ const HALFBAND_TAPS: usize = 15;
 /// Half-band lowpass FIR coefficients (Kaiser window, β=5, 15-tap).
 /// Every other coefficient (except center) is zero.
 const HALFBAND_COEFFS: [f32; HALFBAND_TAPS] = [
-    -0.006_903,  0.0,  0.039_377,  0.0, -0.120_882,  0.0,  0.600_408,
-     1.0, // center tap (normalized)
-     0.600_408,  0.0, -0.120_882,  0.0,  0.039_377,  0.0, -0.006_903,
+    -0.006_903, 0.0, 0.039_377, 0.0, -0.120_882, 0.0, 0.600_408,
+    1.0, // center tap (normalized)
+    0.600_408, 0.0, -0.120_882, 0.0, 0.039_377, 0.0, -0.006_903,
 ];
 
 /// 2x oversampler for a single channel.

@@ -54,12 +54,7 @@ pub struct HilbertShifter {
 
 // Chebyshev-optimized coefficients for wideband 90° phase difference (20Hz–20kHz).
 // Chain A coefficients
-const CHAIN_A_COEFFS: [f32; 4] = [
-    0.6923878,
-    0.9360654322959,
-    0.9882295226860,
-    0.9987488452737,
-];
+const CHAIN_A_COEFFS: [f32; 4] = [0.6923878, 0.9360654322959, 0.9882295226860, 0.9987488452737];
 
 // Chain B coefficients
 const CHAIN_B_COEFFS: [f32; 4] = [
@@ -72,8 +67,14 @@ const CHAIN_B_COEFFS: [f32; 4] = [
 impl HilbertShifter {
     pub fn new(sample_rate: f32) -> Self {
         Self {
-            chain_a: CHAIN_A_COEFFS.iter().map(|&c| HilbertAllPass::new(c)).collect(),
-            chain_b: CHAIN_B_COEFFS.iter().map(|&c| HilbertAllPass::new(c)).collect(),
+            chain_a: CHAIN_A_COEFFS
+                .iter()
+                .map(|&c| HilbertAllPass::new(c))
+                .collect(),
+            chain_b: CHAIN_B_COEFFS
+                .iter()
+                .map(|&c| HilbertAllPass::new(c))
+                .collect(),
             phase: 0.0,
             shift_hz: 0.0,
             mix: 0.5,
@@ -112,7 +113,9 @@ impl HilbertShifter {
         // Generate complex exponential
         let phase_inc = self.shift_hz / self.sample_rate;
         self.phase += phase_inc;
-        if self.phase >= 1.0 { self.phase -= 1.0; }
+        if self.phase >= 1.0 {
+            self.phase -= 1.0;
+        }
 
         let angle = self.phase * 2.0 * PI;
         let cos_w = angle.cos();
@@ -132,8 +135,12 @@ impl HilbertShifter {
     }
 
     pub fn reset(&mut self) {
-        for ap in &mut self.chain_a { ap.reset(); }
-        for ap in &mut self.chain_b { ap.reset(); }
+        for ap in &mut self.chain_a {
+            ap.reset();
+        }
+        for ap in &mut self.chain_b {
+            ap.reset();
+        }
         self.phase = 0.0;
     }
 }

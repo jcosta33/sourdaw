@@ -27,29 +27,49 @@ impl ToneStackType {
 /// Component values defining a tone stack circuit.
 #[allow(dead_code)]
 struct ToneStackCircuit {
-    r1: f32, r2: f32, r3: f32, r4: f32,
-    c1: f32, c2: f32, c3: f32,
+    r1: f32,
+    r2: f32,
+    r3: f32,
+    r4: f32,
+    c1: f32,
+    c2: f32,
+    c3: f32,
 }
 
 impl ToneStackCircuit {
     fn fender() -> Self {
         Self {
-            r1: 250e3, r2: 1e6, r3: 25e3, r4: 56e3,
-            c1: 250e-12, c2: 20e-9, c3: 20e-9,
+            r1: 250e3,
+            r2: 1e6,
+            r3: 25e3,
+            r4: 56e3,
+            c1: 250e-12,
+            c2: 20e-9,
+            c3: 20e-9,
         }
     }
 
     fn marshall() -> Self {
         Self {
-            r1: 220e3, r2: 1e6, r3: 22e3, r4: 33e3,
-            c1: 470e-12, c2: 22e-9, c3: 22e-9,
+            r1: 220e3,
+            r2: 1e6,
+            r3: 22e3,
+            r4: 33e3,
+            c1: 470e-12,
+            c2: 22e-9,
+            c3: 22e-9,
         }
     }
 
     fn vox() -> Self {
         Self {
-            r1: 1e6, r2: 1e6, r3: 10e3, r4: 100e3,
-            c1: 50e-12, c2: 22e-9, c3: 22e-9,
+            r1: 1e6,
+            r2: 1e6,
+            r3: 10e3,
+            r4: 100e3,
+            c1: 50e-12,
+            c2: 22e-9,
+            c3: 22e-9,
         }
     }
 }
@@ -98,11 +118,26 @@ impl ToneStack {
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         let changed = match name {
-            "toneStackType" => { self.stack_type = ToneStackType::from_index(value as u32); true }
-            "bass" => { self.bass = value / 10.0; true }
-            "mid" => { self.mid = value / 10.0; true }
-            "treble" => { self.treble = value / 10.0; true }
-            "brightCap" => { self.bright_cap = value > 0.5; true }
+            "toneStackType" => {
+                self.stack_type = ToneStackType::from_index(value as u32);
+                true
+            }
+            "bass" => {
+                self.bass = value / 10.0;
+                true
+            }
+            "mid" => {
+                self.mid = value / 10.0;
+                true
+            }
+            "treble" => {
+                self.treble = value / 10.0;
+                true
+            }
+            "brightCap" => {
+                self.bright_cap = value > 0.5;
+                true
+            }
             _ => false,
         };
         if changed {

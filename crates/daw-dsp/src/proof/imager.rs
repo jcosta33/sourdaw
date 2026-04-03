@@ -52,7 +52,9 @@ impl StereoImager {
                 if self.auto_mono_bass {
                     self.crossover_freqs[0] = self.mono_bass_freq;
                     self.splitter.set_freqs(
-                        self.crossover_freqs[0], self.crossover_freqs[1], self.crossover_freqs[2],
+                        self.crossover_freqs[0],
+                        self.crossover_freqs[1],
+                        self.crossover_freqs[2],
                         self.sample_rate,
                     );
                 }
@@ -77,7 +79,9 @@ impl StereoImager {
                 if idx < 3 {
                     self.crossover_freqs[idx] = (value as f64).clamp(20.0, 20000.0);
                     self.splitter.set_freqs(
-                        self.crossover_freqs[0], self.crossover_freqs[1], self.crossover_freqs[2],
+                        self.crossover_freqs[0],
+                        self.crossover_freqs[1],
+                        self.crossover_freqs[2],
                         self.sample_rate,
                     );
                 }
@@ -120,11 +124,19 @@ impl StereoImager {
             self.r_sq_sum = a * self.r_sq_sum + (1.0 - a) * r * r;
         }
         let denom = (self.l_sq_sum * self.r_sq_sum).sqrt();
-        self.meter_correlation = if denom < 1e-9 { 0.0 } else { (self.lr_sum / denom) as f32 };
+        self.meter_correlation = if denom < 1e-9 {
+            0.0
+        } else {
+            (self.lr_sum / denom) as f32
+        };
     }
 
-    pub fn get_correlation(&self) -> f32 { self.meter_correlation }
-    pub fn is_bypassed(&self) -> bool { self.bypassed }
+    pub fn get_correlation(&self) -> f32 {
+        self.meter_correlation
+    }
+    pub fn is_bypassed(&self) -> bool {
+        self.bypassed
+    }
 }
 
 #[inline]

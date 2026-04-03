@@ -166,7 +166,10 @@ impl ArticulationMap {
     pub fn find_keyswitch(&self, note: u8) -> Option<(ArticulationId, bool)> {
         for i in 0..self.keyswitch_count {
             if self.keyswitches[i].note == note {
-                return Some((self.keyswitches[i].articulation, self.keyswitches[i].momentary));
+                return Some((
+                    self.keyswitches[i].articulation,
+                    self.keyswitches[i].momentary,
+                ));
             }
         }
         None

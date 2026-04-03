@@ -2,7 +2,7 @@
 
 Based on a code-level audit of the recording flow (`src/modules/AudioEngine/repositories/audioRecorder/recording.ts`) and audio buffer management (`src/modules/AudioEngine/stores/audioBufferCache.ts`), the current implementation suffers from severe architectural flaws that will lead to UI freezes, audio dropouts, and browser tab crashes (Out-Of-Memory) during normal DAW usage.
 
-### 🚨 Critical Performance & Memory Bugs
+### 🚨 Critical Performance, Memory & UX Bugs
 
 1. **Deprecated `ScriptProcessorNode` for Recording (`recording.ts`)**
    *   **Issue:** The recording engine uses `ScriptProcessorNode` instead of a modern `AudioWorkletNode`.
@@ -28,6 +28,11 @@ Based on a code-level audit of the recording flow (`src/modules/AudioEngine/repo
    *   **Issue:** The `restoreFromIdb()` function iterates over *every single saved buffer* in IndexedDB and loads them all into RAM at once when the application starts.
    *   **Impact:** If a user has a large project saved, opening the DAW will freeze the browser while gigabytes of audio are pulled from IndexedDB and decoded into memory.
    *   **Fix:** Load audio files lazily (on-demand) just-in-time for playback, or stream them directly from OPFS without loading the entire file into a single `AudioBuffer`.
+
+6. **Static Clip Rendering & Stunted End Bounds (`recording.ts`)**
+   *   **Issue:** During recording, `startRecording()` creates a clip with `startBeat === endBeat`. Because there is no mechanism to update the clip's `endBeat` continuously to match the playhead position in the `requestAnimationFrame` loop, the clip does not visually grow on the timeline while recording. Furthermore, when `stopRecording` is called, it arbitrarily clamps the length using `Math.max(c.startBeat + 1, endBeat)` instead of syncing the clip bounds perfectly to the actual length of the generated `AudioBuffer`.
+   *   **Impact:** The user gets zero visual feedback of the clip growing while recording. When they hit stop, the clip appears unnaturally short (or clamped to exactly 1 beat), forcing the user to manually stretch the clip's edge with the mouse to reveal the full recorded audio/MIDI data.
+   *   **Fix:** The Timeline Renderer should have a special case to visually draw the "active recording clip" bounds dynamically from the `playheadPositionRef`. Additionally, `stopRecording` (or the audio callback) must update the clip's `endBeat` using the exact duration of the recorded `AudioBuffer` or MIDI sequence, rather than a naive playhead read.
 
 ### 🌟 Positives
 *   **Voice Recording (`useVoiceRecording.ts`):** The voice command infrastructure correctly delegates heavy Whisper model inference to Tauri IPC (`start_dictation`), keeping the browser main thread free of AI processing overhead.

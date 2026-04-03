@@ -3,13 +3,13 @@
 //! Compiles to both native (Rust library) and WASM (AudioWorklet).
 //! All DSP is lock-free, allocation-free in the audio path.
 
-pub mod engines;
-pub mod pad;
-pub mod voice;
 pub mod engine;
-pub mod lofi;
-pub mod transient;
+pub mod engines;
 pub mod euclidean;
+pub mod lofi;
+pub mod pad;
+pub mod transient;
+pub mod voice;
 
 use engine::ToasterEngine;
 use wasm_bindgen::prelude::*;

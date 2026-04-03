@@ -22,7 +22,6 @@ const BOOLEAN_PATCH_KEYS: ReadonlySet<keyof GrinderPatch> = new Set([
     'bright',
     'fat',
     'brightCap',
-    'fxLoopEnabled',
     'cabEnabled',
     'cabOpenBack',
     'neuralEnabled',
@@ -53,8 +52,6 @@ const AUDIO_SYNC_KEYS: readonly (keyof GrinderPatch)[] = [
     'presence',
     'resonance',
     'brightCap',
-    'fxLoopEnabled',
-    'fxLoopMix',
     'master',
     'powerTubeType',
     'rectifierType',
@@ -216,9 +213,6 @@ function syncSupportedPedals(patch: GrinderPatch, devices: DeviceRef[]): void {
     const preOverdrive = findFirstPedal(patch.prePedals, ['overdrive', 'boost']);
     const preDistortion = findFirstPedal(patch.prePedals, ['distortion']);
     const preFuzz = findFirstPedal(patch.prePedals, ['fuzz']);
-    const fxDelay = findFirstPedal(patch.fxLoopPedals, ['delay']);
-    const fxReverb = findFirstPedal(patch.fxLoopPedals, ['reverb']);
-
     sendNumericParamToDevices('preCompressorEnabled', preCompressor?.enabled ? 1 : 0, devices);
     sendNumericParamToDevices('preCompressorThreshold', preCompressor?.params.threshold ?? -20, devices);
     sendNumericParamToDevices('preCompressorRatio', preCompressor?.params.ratio ?? 4, devices);
@@ -239,15 +233,6 @@ function syncSupportedPedals(patch: GrinderPatch, devices: DeviceRef[]): void {
     sendNumericParamToDevices('preFuzzFuzz', preFuzz?.params.fuzz ?? 0, devices);
     sendNumericParamToDevices('preFuzzTone', preFuzz?.params.tone ?? 5, devices);
     sendNumericParamToDevices('preFuzzLevel', preFuzz?.params.level ?? 5, devices);
-
-    sendNumericParamToDevices('fxDelayEnabled', fxDelay?.enabled ? 1 : 0, devices);
-    sendNumericParamToDevices('fxDelayTime', fxDelay?.params.time ?? 375, devices);
-    sendNumericParamToDevices('fxDelayFeedback', fxDelay?.params.feedback ?? 0.3, devices);
-    sendNumericParamToDevices('fxDelayMix', fxDelay?.params.mix ?? 0.25, devices);
-
-    sendNumericParamToDevices('fxReverbEnabled', fxReverb?.enabled ? 1 : 0, devices);
-    sendNumericParamToDevices('fxReverbDecay', fxReverb?.params.decay ?? 0.5, devices);
-    sendNumericParamToDevices('fxReverbMix', fxReverb?.params.mix ?? 0.15, devices);
 }
 
 export function setGrinderParamWithAudio<K extends keyof GrinderPatch>(key: K, value: number): void {

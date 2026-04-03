@@ -14,7 +14,13 @@ pub struct BiquadCoeffs {
 
 impl BiquadCoeffs {
     pub fn unity() -> Self {
-        Self { b0: 1.0, b1: 0.0, b2: 0.0, a1: 0.0, a2: 0.0 }
+        Self {
+            b0: 1.0,
+            b1: 0.0,
+            b2: 0.0,
+            a1: 0.0,
+            a2: 0.0,
+        }
     }
 
     pub fn peak(freq: f64, gain_db: f64, q: f64, sr: f64) -> Self {
@@ -23,8 +29,12 @@ impl BiquadCoeffs {
         let alpha = w0.sin() / (2.0 * q);
         let a0 = 1.0 + alpha / a;
         Self::normalize(
-            1.0 + alpha * a, -2.0 * w0.cos(), 1.0 - alpha * a,
-            a0, -2.0 * w0.cos(), 1.0 - alpha / a,
+            1.0 + alpha * a,
+            -2.0 * w0.cos(),
+            1.0 - alpha * a,
+            a0,
+            -2.0 * w0.cos(),
+            1.0 - alpha / a,
         )
     }
 
@@ -65,8 +75,12 @@ impl BiquadCoeffs {
         let alpha = w0.sin() / (2.0 * q);
         let cos_w0 = w0.cos();
         Self::normalize(
-            (1.0 - cos_w0) / 2.0, 1.0 - cos_w0, (1.0 - cos_w0) / 2.0,
-            1.0 + alpha, -2.0 * cos_w0, 1.0 - alpha,
+            (1.0 - cos_w0) / 2.0,
+            1.0 - cos_w0,
+            (1.0 - cos_w0) / 2.0,
+            1.0 + alpha,
+            -2.0 * cos_w0,
+            1.0 - alpha,
         )
     }
 
@@ -75,8 +89,12 @@ impl BiquadCoeffs {
         let alpha = w0.sin() / (2.0 * q);
         let cos_w0 = w0.cos();
         Self::normalize(
-            (1.0 + cos_w0) / 2.0, -(1.0 + cos_w0), (1.0 + cos_w0) / 2.0,
-            1.0 + alpha, -2.0 * cos_w0, 1.0 - alpha,
+            (1.0 + cos_w0) / 2.0,
+            -(1.0 + cos_w0),
+            (1.0 + cos_w0) / 2.0,
+            1.0 + alpha,
+            -2.0 * cos_w0,
+            1.0 - alpha,
         )
     }
 
@@ -84,17 +102,17 @@ impl BiquadCoeffs {
         let w0 = 2.0 * PI * freq / sr;
         let alpha = w0.sin() / (2.0 * q);
         let cos_w0 = w0.cos();
-        Self::normalize(
-            alpha, 0.0, -alpha,
-            1.0 + alpha, -2.0 * cos_w0, 1.0 - alpha,
-        )
+        Self::normalize(alpha, 0.0, -alpha, 1.0 + alpha, -2.0 * cos_w0, 1.0 - alpha)
     }
 
     fn normalize(b0: f64, b1: f64, b2: f64, a0: f64, a1: f64, a2: f64) -> Self {
         let inv = 1.0 / a0;
         Self {
-            b0: (b0 * inv) as f32, b1: (b1 * inv) as f32, b2: (b2 * inv) as f32,
-            a1: (a1 * inv) as f32, a2: (a2 * inv) as f32,
+            b0: (b0 * inv) as f32,
+            b1: (b1 * inv) as f32,
+            b2: (b2 * inv) as f32,
+            a1: (a1 * inv) as f32,
+            a2: (a2 * inv) as f32,
         }
     }
 }
@@ -109,13 +127,17 @@ pub struct BiquadState {
 
 impl BiquadState {
     pub fn new() -> Self {
-        Self { x1: 0.0, x2: 0.0, y1: 0.0, y2: 0.0 }
+        Self {
+            x1: 0.0,
+            x2: 0.0,
+            y1: 0.0,
+            y2: 0.0,
+        }
     }
 
     #[inline]
     pub fn process(&mut self, input: f32, c: &BiquadCoeffs) -> f32 {
-        let out = c.b0 * input + c.b1 * self.x1 + c.b2 * self.x2
-                - c.a1 * self.y1 - c.a2 * self.y2;
+        let out = c.b0 * input + c.b1 * self.x1 + c.b2 * self.x2 - c.a1 * self.y1 - c.a2 * self.y2;
         self.x2 = self.x1;
         self.x1 = input;
         self.y2 = self.y1;
@@ -124,7 +146,9 @@ impl BiquadState {
     }
 
     pub fn reset(&mut self) {
-        self.x1 = 0.0; self.x2 = 0.0;
-        self.y1 = 0.0; self.y2 = 0.0;
+        self.x1 = 0.0;
+        self.x2 = 0.0;
+        self.y1 = 0.0;
+        self.y2 = 0.0;
     }
 }

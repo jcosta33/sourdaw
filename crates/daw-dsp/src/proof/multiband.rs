@@ -6,14 +6,14 @@ const NUM_BANDS: usize = 4;
 
 /// Per-band compressor state.
 struct BandCompressor {
-    threshold: f32,    // dB
-    ratio: f32,        // 1:1 to inf
+    threshold: f32, // dB
+    ratio: f32,     // 1:1 to inf
     attack_coeff: f32,
     release_coeff: f32,
-    knee_width: f32,   // dB
+    knee_width: f32, // dB
     makeup_db: f32,
     auto_makeup: bool,
-    envelope: f32,     // current envelope in dB
+    envelope: f32, // current envelope in dB
     bypassed: bool,
     solo: bool,
     sample_rate: f32,
@@ -48,7 +48,11 @@ impl BandCompressor {
     #[inline]
     fn compute_gr(&mut self, level_db: f32) -> f32 {
         // Envelope follower
-        let coeff = if level_db > self.envelope { self.attack_coeff } else { self.release_coeff };
+        let coeff = if level_db > self.envelope {
+            self.attack_coeff
+        } else {
+            self.release_coeff
+        };
         self.envelope = coeff * self.envelope + (1.0 - coeff) * level_db;
 
         // Gain computer (soft-knee)
@@ -78,7 +82,11 @@ impl BandCompressor {
     fn current_gr_db(&self) -> f32 {
         let slope = 1.0 - 1.0 / self.ratio;
         let overshoot = self.envelope - self.threshold;
-        if overshoot > 0.0 { -slope * overshoot } else { 0.0 }
+        if overshoot > 0.0 {
+            -slope * overshoot
+        } else {
+            0.0
+        }
     }
 }
 
@@ -106,7 +114,10 @@ impl MultibandDynamics {
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
-        if name == "dyn_bypass" { self.bypassed = value > 0.5; return; }
+        if name == "dyn_bypass" {
+            self.bypassed = value > 0.5;
+            return;
+        }
 
         // Crossover frequencies: dyn_xover0, dyn_xover1, dyn_xover2
         if name.starts_with("dyn_xover") {
@@ -115,7 +126,9 @@ impl MultibandDynamics {
                 if idx < 3 {
                     self.crossover_freqs[idx] = (value as f64).clamp(20.0, 20000.0);
                     self.splitter.set_freqs(
-                        self.crossover_freqs[0], self.crossover_freqs[1], self.crossover_freqs[2],
+                        self.crossover_freqs[0],
+                        self.crossover_freqs[1],
+                        self.crossover_freqs[2],
                         self.sample_rate,
                     );
                 }
@@ -124,7 +137,9 @@ impl MultibandDynamics {
         }
 
         // Per-band params: dyn_bandN_param
-        if !name.starts_with("dyn_band") || name.len() < 11 { return; }
+        if !name.starts_with("dyn_band") || name.len() < 11 {
+            return;
+        }
         let idx = match name.as_bytes()[8] {
             b'0'..=b'3' => (name.as_bytes()[8] - b'0') as usize,
             _ => return,
@@ -147,7 +162,9 @@ impl MultibandDynamics {
     }
 
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
-        if self.bypassed { return; }
+        if self.bypassed {
+            return;
+        }
 
         let any_solo = self.bands.iter().any(|b| b.solo);
 
@@ -164,7 +181,11 @@ impl MultibandDynamics {
                 if !band.bypassed {
                     // Detect level (peak of L/R)
                     let peak = l.abs().max(r.abs());
-                    let level_db = if peak > 1e-10 { 20.0 * peak.log10() } else { -100.0 };
+                    let level_db = if peak > 1e-10 {
+                        20.0 * peak.log10()
+                    } else {
+                        -100.0
+                    };
 
                     let gr_lin = {
                         let gr_db = band.compute_gr(level_db);
@@ -194,6 +215,10 @@ impl MultibandDynamics {
         }
     }
 
-    pub fn get_band_gr(&self) -> &[f32; NUM_BANDS] { &self.meter_gr }
-    pub fn is_bypassed(&self) -> bool { self.bypassed }
+    pub fn get_band_gr(&self) -> &[f32; NUM_BANDS] {
+        &self.meter_gr
+    }
+    pub fn is_bypassed(&self) -> bool {
+        self.bypassed
+    }
 }

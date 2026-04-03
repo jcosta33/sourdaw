@@ -7,19 +7,19 @@
 //! Compiles to WASM for AudioWorklet processing.
 
 pub mod biquad;
+pub mod chain;
 pub mod crossover;
-pub mod eq;
-pub mod multiband;
-pub mod imager;
-pub mod exciter;
-pub mod limiter;
 pub mod dither;
-pub mod metering;
-pub mod oversample;
 pub mod dynamic_eq;
+pub mod eq;
+pub mod exciter;
+pub mod imager;
+pub mod limiter;
 pub mod linear_phase_eq;
 pub mod match_eq;
-pub mod chain;
+pub mod metering;
+pub mod multiband;
+pub mod oversample;
 
 use chain::ProofChain;
 use wasm_bindgen::prelude::*;
@@ -51,8 +51,12 @@ impl ProofInstance {
         }
     }
 
-    pub fn get_input_left_ptr(&mut self) -> *mut f32 { self.input_left.as_mut_ptr() }
-    pub fn get_input_right_ptr(&mut self) -> *mut f32 { self.input_right.as_mut_ptr() }
+    pub fn get_input_left_ptr(&mut self) -> *mut f32 {
+        self.input_left.as_mut_ptr()
+    }
+    pub fn get_input_right_ptr(&mut self) -> *mut f32 {
+        self.input_right.as_mut_ptr()
+    }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         self.chain.set_param(name, value);
@@ -76,36 +80,70 @@ impl ProofInstance {
         self.output_left[..size].copy_from_slice(&self.input_left[..size]);
         self.output_right[..size].copy_from_slice(&self.input_right[..size]);
 
-        self.chain.process(&mut self.output_left[..size], &mut self.output_right[..size]);
+        self.chain.process(
+            &mut self.output_left[..size],
+            &mut self.output_right[..size],
+        );
 
         self.output_left.as_ptr()
     }
 
-    pub fn get_right_ptr(&self) -> *const f32 { self.output_right.as_ptr() }
+    pub fn get_right_ptr(&self) -> *const f32 {
+        self.output_right.as_ptr()
+    }
 
     // ── Metering ──────────────────────────────────────────────────────────
 
-    pub fn get_input_lufs(&self) -> f32 { self.chain.input_lufs.get_lufs() }
-    pub fn get_output_lufs(&self) -> f32 { self.chain.output_lufs.get_lufs() }
-    pub fn get_output_st_lufs(&self) -> f32 { self.chain.output_st_lufs.get_lufs() }
-    pub fn get_integrated_lufs(&self) -> f32 { self.chain.integrated_lufs.get_lufs() }
-    pub fn get_true_peak_db(&self) -> f32 { self.chain.true_peak.get_true_peak_db() }
-    pub fn get_lra(&self) -> f32 { self.chain.lra.get_lra() }
-    pub fn get_ab_gain_offset(&self) -> f32 { self.chain.ab_gain_offset_db() }
-    pub fn get_correlation(&self) -> f32 { self.chain.imager.get_correlation() }
-    pub fn get_limiter_gr_db(&self) -> f32 { self.chain.limiter.get_gr_db() }
+    pub fn get_input_lufs(&self) -> f32 {
+        self.chain.input_lufs.get_lufs()
+    }
+    pub fn get_output_lufs(&self) -> f32 {
+        self.chain.output_lufs.get_lufs()
+    }
+    pub fn get_output_st_lufs(&self) -> f32 {
+        self.chain.output_st_lufs.get_lufs()
+    }
+    pub fn get_integrated_lufs(&self) -> f32 {
+        self.chain.integrated_lufs.get_lufs()
+    }
+    pub fn get_true_peak_db(&self) -> f32 {
+        self.chain.true_peak.get_true_peak_db()
+    }
+    pub fn get_lra(&self) -> f32 {
+        self.chain.lra.get_lra()
+    }
+    pub fn get_ab_gain_offset(&self) -> f32 {
+        self.chain.ab_gain_offset_db()
+    }
+    pub fn get_correlation(&self) -> f32 {
+        self.chain.imager.get_correlation()
+    }
+    pub fn get_limiter_gr_db(&self) -> f32 {
+        self.chain.limiter.get_gr_db()
+    }
 
     /// Get per-band dynamics gain reduction. Returns 4 values.
     pub fn get_dynamics_gr(&self, band: u32) -> f32 {
-        self.chain.dynamics.get_band_gr().get(band as usize).copied().unwrap_or(0.0)
+        self.chain
+            .dynamics
+            .get_band_gr()
+            .get(band as usize)
+            .copied()
+            .unwrap_or(0.0)
     }
 
     /// Get inline meter tap data. tap_idx 0 = input, 1-5 = after each module.
     pub fn get_tap_peak_l(&self, tap_idx: u32) -> f32 {
-        self.chain.get_tap(tap_idx as usize).map(|t| t.peak_db_l()).unwrap_or(-100.0)
+        self.chain
+            .get_tap(tap_idx as usize)
+            .map(|t| t.peak_db_l())
+            .unwrap_or(-100.0)
     }
     pub fn get_tap_peak_r(&self, tap_idx: u32) -> f32 {
-        self.chain.get_tap(tap_idx as usize).map(|t| t.peak_db_r()).unwrap_or(-100.0)
+        self.chain
+            .get_tap(tap_idx as usize)
+            .map(|t| t.peak_db_r())
+            .unwrap_or(-100.0)
     }
 
     pub fn get_module_order(&self) -> Vec<u8> {

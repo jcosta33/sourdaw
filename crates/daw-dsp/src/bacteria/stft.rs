@@ -213,8 +213,8 @@ impl StftProcessor {
             // M_avg[k,n] = alpha * M[k,n] + (1-alpha) * M_avg[k,n-1]
             let alpha = 1.0 - self.blur_alpha;
             for k in 0..half {
-                self.smoothed_mags[k] = alpha * self.magnitudes[k]
-                    + (1.0 - alpha) * self.smoothed_mags[k];
+                self.smoothed_mags[k] =
+                    alpha * self.magnitudes[k] + (1.0 - alpha) * self.smoothed_mags[k];
                 self.magnitudes[k] = self.smoothed_mags[k];
             }
         }

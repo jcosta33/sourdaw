@@ -82,7 +82,13 @@ impl Lfo {
                 }
             }
             LfoShape::Saw => 2.0 * self.phase - 1.0,
-            LfoShape::Square => if self.phase < 0.5 { 1.0 } else { -1.0 },
+            LfoShape::Square => {
+                if self.phase < 0.5 {
+                    1.0
+                } else {
+                    -1.0
+                }
+            }
             LfoShape::SampleAndHold => self.sh_value,
         };
 
@@ -184,11 +190,8 @@ impl LorenzAttractor {
             self.y + 0.5 * dt * k2y,
             self.z + 0.5 * dt * k2z,
         );
-        let (k4x, k4y, k4z) = self.derivatives(
-            self.x + dt * k3x,
-            self.y + dt * k3y,
-            self.z + dt * k3z,
-        );
+        let (k4x, k4y, k4z) =
+            self.derivatives(self.x + dt * k3x, self.y + dt * k3y, self.z + dt * k3z);
 
         self.x += dt / 6.0 * (k1x + 2.0 * k2x + 2.0 * k3x + k4x);
         self.y += dt / 6.0 * (k1y + 2.0 * k2y + 2.0 * k3y + k4y);

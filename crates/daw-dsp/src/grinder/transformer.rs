@@ -7,9 +7,9 @@
 /// Output transformer with hysteresis-like behavior.
 pub struct Transformer {
     // Saturation parameters
-    phi_sat: f32,    // saturation flux scaling
-    h_c: f32,        // coercive-force term
-    h_sat: f32,      // saturation-shape scaling
+    phi_sat: f32, // saturation flux scaling
+    h_c: f32,     // coercive-force term
+    h_sat: f32,   // saturation-shape scaling
 
     // State
     flux_state: f32,
@@ -96,8 +96,7 @@ impl Transformer {
 
         // Hysteresis: flux state has memory between samples
         let hysteresis_blend = self.hysteresis * 0.5;
-        self.flux_state = flux * (1.0 - hysteresis_blend)
-            + self.flux_state * hysteresis_blend;
+        self.flux_state = flux * (1.0 - hysteresis_blend) + self.flux_state * hysteresis_blend;
 
         // LF saturation emphasis: saturate LF more heavily
         let lf_saturated = self.flux_response(lf_content * (1.0 + self.lf_saturation * 4.0));

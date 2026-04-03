@@ -26,10 +26,10 @@ pub struct HiHatEngine {
     bp2_ic1: f32,
     bp2_ic2: f32,
     // Parameters
-    tune: f32,         // semitones
-    decay: f32,        // seconds
-    tone: f32,         // mix between low and high bandpass (0-1)
-    is_open: bool,     // open vs closed
+    tune: f32,     // semitones
+    decay: f32,    // seconds
+    tone: f32,     // mix between low and high bandpass (0-1)
+    is_open: bool, // open vs closed
     drive: f32,
     base_freq: f32,
     sample_rate: f32,
@@ -88,7 +88,7 @@ impl HiHatEngine {
 
         let tune_ratio = (self.tune / 12.0).exp2();
 
-        // Loopback FM (Phase Mod with feedback). 
+        // Loopback FM (Phase Mod with feedback).
         // High indices create dense, noisy, metallic spectra without raw square aliasing.
         let fm_index = 4.0; // Heavy metallic mod index
         let mut mixed = 0.0;
@@ -96,7 +96,9 @@ impl HiHatEngine {
         for i in 0..6 {
             let freq = self.base_freq * RATIOS[i] * tune_ratio;
             self.phases[i] += freq / sample_rate;
-            if self.phases[i] >= 1.0 { self.phases[i] -= 1.0; }
+            if self.phases[i] >= 1.0 {
+                self.phases[i] -= 1.0;
+            }
             let pm = fm_index * self.y_prevs[i];
             let y = ((self.phases[i] + pm) * TAU).sin();
             self.y_prevs[i] = y;

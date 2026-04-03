@@ -36,7 +36,9 @@ impl Grain {
     }
 
     fn window_value(&self) -> f32 {
-        if self.size_samples == 0 { return 0.0; }
+        if self.size_samples == 0 {
+            return 0.0;
+        }
         let phase = self.progress as f32 / self.size_samples as f32;
         match self.window {
             GrainWindow::Hann => 0.5 * (1.0 - (2.0 * PI * phase).cos()),
@@ -60,7 +62,7 @@ pub struct GranularProcessor {
 
     // Parameters
     grain_size_ms: f32,
-    density: f32,       // grains per second
+    density: f32, // grains per second
     pos_offset_ms: f32,
     pitch_semitones: f32,
     window: GrainWindow,
@@ -99,7 +101,11 @@ impl GranularProcessor {
             "grainPosOffset" => self.pos_offset_ms = value.clamp(0.0, 2000.0),
             "grainPitch" => self.pitch_semitones = value,
             "grainWindow" => {
-                self.window = if value < 0.5 { GrainWindow::Hann } else { GrainWindow::Gaussian };
+                self.window = if value < 0.5 {
+                    GrainWindow::Hann
+                } else {
+                    GrainWindow::Gaussian
+                };
             }
             "grainFreeze" => self.freeze = value > 0.5,
             "grainMix" => self.mix = value.clamp(0.0, 1.0),
@@ -124,7 +130,9 @@ impl GranularProcessor {
         // Sum active grains
         let mut grain_sum = 0.0;
         for grain in &mut self.grains {
-            if !grain.active { continue; }
+            if !grain.active {
+                continue;
+            }
 
             let win = grain.window_value();
             let read_idx = grain.read_pos as usize % self.buffer_size;

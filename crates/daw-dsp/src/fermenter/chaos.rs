@@ -16,7 +16,9 @@ pub struct LorenzMod {
 impl LorenzMod {
     pub fn new() -> Self {
         Self {
-            x: 0.1, y: 0.0, z: 0.0,
+            x: 0.1,
+            y: 0.0,
+            z: 0.0,
             speed: 1.0,
             smooth_x: 0.0,
             smooth_y: 0.0,

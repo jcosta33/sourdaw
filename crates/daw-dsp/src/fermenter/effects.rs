@@ -149,9 +149,13 @@ impl StereoChorus {
 
             // Advance LFO phases
             self.lfo_phase_l += phase_inc;
-            if self.lfo_phase_l >= 1.0 { self.lfo_phase_l -= 1.0; }
+            if self.lfo_phase_l >= 1.0 {
+                self.lfo_phase_l -= 1.0;
+            }
             self.lfo_phase_r += phase_inc;
-            if self.lfo_phase_r >= 1.0 { self.lfo_phase_r -= 1.0; }
+            if self.lfo_phase_r >= 1.0 {
+                self.lfo_phase_r -= 1.0;
+            }
 
             self.write_pos = (self.write_pos + 1) % self.buffer_l.len();
         }
@@ -160,8 +164,8 @@ impl StereoChorus {
 
 /// 4-stage allpass phaser with swept notch frequencies.
 pub struct StereoPhaser {
-    allpass_l: [f32; 4],  // allpass states for left
-    allpass_r: [f32; 4],  // allpass states for right
+    allpass_l: [f32; 4], // allpass states for left
+    allpass_r: [f32; 4], // allpass states for right
     lfo_phase: f32,
     sample_rate: f32,
 }
@@ -180,14 +184,16 @@ impl StereoPhaser {
         &mut self,
         left: &mut [f32],
         right: &mut [f32],
-        rate: f32,     // LFO rate 0.1-5 Hz
-        depth: f32,    // 0-1
-        mix: f32,      // 0-1 wet/dry
+        rate: f32,  // LFO rate 0.1-5 Hz
+        depth: f32, // 0-1
+        mix: f32,   // 0-1 wet/dry
     ) {
         for i in 0..left.len() {
             // LFO sweeps the allpass frequency
             self.lfo_phase += rate / self.sample_rate;
-            if self.lfo_phase >= 1.0 { self.lfo_phase -= 1.0; }
+            if self.lfo_phase >= 1.0 {
+                self.lfo_phase -= 1.0;
+            }
             let lfo = (self.lfo_phase * core::f32::consts::TAU).sin();
 
             // Map LFO to allpass coefficient range
@@ -237,18 +243,25 @@ pub struct Distortion {
 
 impl Distortion {
     pub fn new() -> Self {
-        Self { prev_l: 0.0, prev_r: 0.0, ds_l: 0.0, ds_r: 0.0 }
+        Self {
+            prev_l: 0.0,
+            prev_r: 0.0,
+            ds_l: 0.0,
+            ds_r: 0.0,
+        }
     }
 
     pub fn process_block(
         &mut self,
         left: &mut [f32],
         right: &mut [f32],
-        drive: f32,    // 0-10
-        tone: f32,     // 0-1 (low=dark, high=bright)
-        mix: f32,      // 0-1
+        drive: f32, // 0-10
+        tone: f32,  // 0-1 (low=dark, high=bright)
+        mix: f32,   // 0-1
     ) {
-        if mix < 0.001 { return; }
+        if mix < 0.001 {
+            return;
+        }
 
         let gain = 1.0 + drive * 3.0;
         // Simple one-pole for tone control (higher tone = less filtering)
@@ -308,27 +321,37 @@ impl Compressor {
         &mut self,
         left: &mut [f32],
         right: &mut [f32],
-        threshold: f32,  // dB (-60 to 0)
-        ratio: f32,      // 1:1 to 20:1
-        attack: f32,     // ms (0.1-100)
-        release: f32,    // ms (10-1000)
-        mix: f32,        // 0-1
+        threshold: f32, // dB (-60 to 0)
+        ratio: f32,     // 1:1 to 20:1
+        attack: f32,    // ms (0.1-100)
+        release: f32,   // ms (10-1000)
+        mix: f32,       // 0-1
         sample_rate: f32,
     ) {
-        if mix < 0.001 { return; }
+        if mix < 0.001 {
+            return;
+        }
 
         let threshold_lin = 10.0f32.powf(threshold / 20.0);
         let att_coeff = (-1.0 / (attack * 0.001 * sample_rate)).exp();
         let rel_coeff = (-1.0 / (release * 0.001 * sample_rate)).exp();
         // Auto makeup: compensate for gain reduction at threshold
-        let makeup = if ratio > 1.0 { (1.0 / ratio - 1.0) * threshold / 20.0 } else { 0.0 };
+        let makeup = if ratio > 1.0 {
+            (1.0 / ratio - 1.0) * threshold / 20.0
+        } else {
+            0.0
+        };
         let makeup_lin = 10.0f32.powf(-makeup / 20.0);
 
         for i in 0..left.len() {
             let input_level = (left[i].abs()).max(right[i].abs());
 
             // Envelope follower
-            let coeff = if input_level > self.envelope { att_coeff } else { rel_coeff };
+            let coeff = if input_level > self.envelope {
+                att_coeff
+            } else {
+                rel_coeff
+            };
             self.envelope = coeff * self.envelope + (1.0 - coeff) * input_level;
 
             // Gain computation
@@ -352,7 +375,9 @@ pub struct StereoWidth;
 impl StereoWidth {
     /// Process a block. width: 0=mono, 1=unchanged, 2=extra wide
     pub fn process_block(left: &mut [f32], right: &mut [f32], width: f32) {
-        if (width - 1.0).abs() < 0.001 { return; } // unity = no-op
+        if (width - 1.0).abs() < 0.001 {
+            return;
+        } // unity = no-op
         let w = width.clamp(0.0, 2.0);
         for i in 0..left.len() {
             let mid = (left[i] + right[i]) * 0.5;
@@ -370,7 +395,7 @@ impl StereoWidth {
 pub struct FdnReverb {
     delays: [Vec<f32>; 4],
     write_pos: [usize; 4],
-    feedback: [f32; 4],    // one-pole filter states for damping
+    feedback: [f32; 4], // one-pole filter states for damping
     damping: f32,
     decay: f32,
     mix: f32,
@@ -407,7 +432,9 @@ impl FdnReverb {
     }
 
     pub fn process(&mut self, in_l: f32, in_r: f32) -> (f32, f32) {
-        if self.mix < 0.001 { return (in_l, in_r); }
+        if self.mix < 0.001 {
+            return (in_l, in_r);
+        }
 
         // Read from delay lines
         let mut taps = [0.0f32; 4];
@@ -441,8 +468,10 @@ impl FdnReverb {
         let wet_l = (taps[0] + taps[2]) * 0.5;
         let wet_r = (taps[1] + taps[3]) * 0.5;
 
-        (in_l * (1.0 - self.mix) + wet_l * self.mix,
-         in_r * (1.0 - self.mix) + wet_r * self.mix)
+        (
+            in_l * (1.0 - self.mix) + wet_l * self.mix,
+            in_r * (1.0 - self.mix) + wet_r * self.mix,
+        )
     }
 }
 
@@ -459,19 +488,30 @@ pub struct ParametricEq {
 
 #[derive(Clone, Copy, Default)]
 struct BiquadState {
-    x1: f32, x2: f32,
-    y1: f32, y2: f32,
+    x1: f32,
+    x2: f32,
+    y1: f32,
+    y2: f32,
 }
 
 #[derive(Clone, Copy)]
 struct BiquadCoeffs {
-    b0: f32, b1: f32, b2: f32,
-    a1: f32, a2: f32,
+    b0: f32,
+    b1: f32,
+    b2: f32,
+    a1: f32,
+    a2: f32,
 }
 
 impl Default for BiquadCoeffs {
     fn default() -> Self {
-        Self { b0: 1.0, b1: 0.0, b2: 0.0, a1: 0.0, a2: 0.0 }
+        Self {
+            b0: 1.0,
+            b1: 0.0,
+            b2: 0.0,
+            a1: 0.0,
+            a2: 0.0,
+        }
     }
 }
 
@@ -491,7 +531,13 @@ impl BiquadCoeffs {
         let a1 = -2.0 * cos_w0;
         let a2 = 1.0 - alpha / a;
 
-        Self { b0: b0/a0, b1: b1/a0, b2: b2/a0, a1: a1/a0, a2: a2/a0 }
+        Self {
+            b0: b0 / a0,
+            b1: b1 / a0,
+            b2: b2 / a0,
+            a1: a1 / a0,
+            a2: a2 / a0,
+        }
     }
 }
 
@@ -519,7 +565,9 @@ impl ParametricEq {
 
     /// Set band parameters. band_idx 0-2.
     pub fn set_band(&mut self, idx: usize, freq: f32, gain_db: f32, q: f32, sample_rate: f32) {
-        if idx >= 3 { return; }
+        if idx >= 3 {
+            return;
+        }
         self.coeffs[idx] = BiquadCoeffs::peaking(
             freq.clamp(20.0, 20000.0),
             gain_db.clamp(-24.0, 24.0),
@@ -531,7 +579,9 @@ impl ParametricEq {
 
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32]) {
         for band_idx in 0..3 {
-            if !self.enabled[band_idx] { continue; }
+            if !self.enabled[band_idx] {
+                continue;
+            }
             let c = self.coeffs[band_idx];
             for i in 0..left.len() {
                 left[i] = self.bands_l[band_idx].process(left[i], &c);
@@ -572,7 +622,10 @@ struct DelayLine {
 
 impl DelayLine {
     fn new(max_len: usize) -> Self {
-        Self { buffer: vec![0.0; max_len.max(1)], write_pos: 0 }
+        Self {
+            buffer: vec![0.0; max_len.max(1)],
+            write_pos: 0,
+        }
     }
 
     #[inline]
@@ -698,6 +751,9 @@ impl PlateReverb {
         let wet_l = self.tank_l;
         let wet_r = self.tank_r;
         let dry = 1.0 - self.mix;
-        (left * dry + wet_l * self.mix, right * dry + wet_r * self.mix)
+        (
+            left * dry + wet_l * self.mix,
+            right * dry + wet_r * self.mix,
+        )
     }
 }

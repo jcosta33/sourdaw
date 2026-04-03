@@ -6,9 +6,9 @@ use super::engines::DrumEngineType;
 /// that lives in the voice. This is purely parameter storage.
 pub struct Pad {
     pub engine_type: DrumEngineType,
-    pub choke_group: u8,        // 0 = none, 1-16 = group
+    pub choke_group: u8, // 0 = none, 1-16 = group
     pub volume: f32,
-    pub pan: f32,               // -1 (left) to +1 (right)
+    pub pan: f32, // -1 (left) to +1 (right)
     pub muted: bool,
     pub tune: f32,              // semitones
     pub decay: f32,             // 0-1 normalized

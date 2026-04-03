@@ -4,7 +4,7 @@
 //! distortion from bridge symmetry, plus even harmonics from transformer/Class-A.
 //! Requires oversampling for accurate nonlinearity modeling.
 
-use super::gain_computer::{gain_computer, apply_range, db_to_linear, linear_to_db};
+use super::gain_computer::{apply_range, db_to_linear, gain_computer, linear_to_db};
 use super::oversample::ConfigurableOversample;
 
 pub struct DiodeCompressor {
@@ -70,10 +70,19 @@ impl DiodeCompressor {
         match name {
             "threshold" => self.threshold = value.clamp(-60.0, 0.0),
             "ratio" => self.ratio = value.clamp(1.5, 6.0), // 33609 has limited ratio range
-            "attack" => { self.attack_ms = value.clamp(0.5, 30.0); self.update_coeffs(); }
-            "recovery" => { self.recovery = (value as u8).clamp(1, 5); self.update_coeffs(); }
+            "attack" => {
+                self.attack_ms = value.clamp(0.5, 30.0);
+                self.update_coeffs();
+            }
+            "recovery" => {
+                self.recovery = (value as u8).clamp(1, 5);
+                self.update_coeffs();
+            }
             "limiter_threshold" => self.limiter_threshold = value.clamp(-12.0, 0.0),
-            "oversampling" => { self.os_l.set_rate(value as u8); self.os_r.set_rate(value as u8); }
+            "oversampling" => {
+                self.os_l.set_rate(value as u8);
+                self.os_r.set_rate(value as u8);
+            }
             _ => {}
         }
     }
@@ -81,7 +90,13 @@ impl DiodeCompressor {
     /// Process with external sidechain signal for detection (feed-forward).
     /// Audio path uses `left`/`right`, detection uses `sc_l`/`sc_r` (HPF+Thrust filtered).
     #[inline]
-    pub fn process_sample_with_sc(&mut self, left: f32, right: f32, sc_l: f32, sc_r: f32) -> (f32, f32, f32) {
+    pub fn process_sample_with_sc(
+        &mut self,
+        left: f32,
+        right: f32,
+        sc_l: f32,
+        sc_r: f32,
+    ) -> (f32, f32, f32) {
         let detect = sc_l.abs().max(sc_r.abs());
         let input_db = linear_to_db(detect);
         self.process_with_level(left, right, input_db)
@@ -97,7 +112,6 @@ impl DiodeCompressor {
 
     #[inline]
     fn process_with_level(&mut self, left: f32, right: f32, input_db: f32) -> (f32, f32, f32) {
-
         // Gain computer — compressor section
         let gc = gain_computer(input_db, self.threshold, self.ratio, 4.0);
         let gc = apply_range(gc, 40.0);
@@ -114,7 +128,11 @@ impl DiodeCompressor {
         let limiter_gc = gain_computer(input_db + self.gr_state, self.limiter_threshold, 20.0, 1.0);
         let limiter_coeff_a = (-1.0 / (0.1 * 0.001 * self.sample_rate)).exp();
         let limiter_coeff_r = (-1.0 / (50.0 * 0.001 * self.sample_rate)).exp();
-        let lim_coeff = if limiter_gc <= self.limiter_state { limiter_coeff_a } else { limiter_coeff_r };
+        let lim_coeff = if limiter_gc <= self.limiter_state {
+            limiter_coeff_a
+        } else {
+            limiter_coeff_r
+        };
         self.limiter_state = lim_coeff * self.limiter_state + (1.0 - lim_coeff) * limiter_gc;
 
         let total_gr = self.gr_state + self.limiter_state;

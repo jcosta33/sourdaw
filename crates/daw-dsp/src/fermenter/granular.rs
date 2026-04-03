@@ -8,21 +8,28 @@ const MAX_GRAINS: usize = 32;
 #[derive(Clone, Copy)]
 struct Grain {
     active: bool,
-    phase: f32,        // playback phase within grain
-    freq: f32,         // playback frequency
-    duration: f32,     // grain duration in samples
-    elapsed: f32,      // samples elapsed
-    pan: f32,          // -1 to 1
-    amplitude: f32,    // 0 to 1
+    phase: f32,          // playback phase within grain
+    freq: f32,           // playback frequency
+    duration: f32,       // grain duration in samples
+    elapsed: f32,        // samples elapsed
+    pan: f32,            // -1 to 1
+    amplitude: f32,      // 0 to 1
     waveform_idx: usize, // which wavetable to read
-    position: f32,     // position in wavetable (for scanning)
+    position: f32,       // position in wavetable (for scanning)
 }
 
 impl Default for Grain {
     fn default() -> Self {
         Self {
-            active: false, phase: 0.0, freq: 440.0, duration: 2000.0,
-            elapsed: 0.0, pan: 0.0, amplitude: 1.0, waveform_idx: 0, position: 0.0,
+            active: false,
+            phase: 0.0,
+            freq: 440.0,
+            duration: 2000.0,
+            elapsed: 0.0,
+            pan: 0.0,
+            amplitude: 1.0,
+            waveform_idx: 0,
+            position: 0.0,
         }
     }
 }
@@ -34,12 +41,12 @@ pub struct GranularEngine {
     /// Random seed for grain parameter variation
     seed: u32,
     // Parameters
-    pub density: f32,      // grains per second (1-100)
-    pub grain_size: f32,   // grain duration in ms (5-500)
-    pub position: f32,     // scan position 0-1 (which part of wavetable)
-    pub spray: f32,        // position randomization 0-1
-    pub pitch_var: f32,    // pitch variation in semitones (0-12)
-    pub pan_spread: f32,   // stereo spread 0-1
+    pub density: f32,    // grains per second (1-100)
+    pub grain_size: f32, // grain duration in ms (5-500)
+    pub position: f32,   // scan position 0-1 (which part of wavetable)
+    pub spray: f32,      // position randomization 0-1
+    pub pitch_var: f32,  // pitch variation in semitones (0-12)
+    pub pan_spread: f32, // stereo spread 0-1
 }
 
 impl GranularEngine {
@@ -79,7 +86,9 @@ impl GranularEngine {
     fn spawn_grain(&mut self, base_freq: f32, sample_rate: f32) {
         // Find inactive grain slot
         let slot = self.grains.iter().position(|g| !g.active);
-        let Some(idx) = slot else { return; };
+        let Some(idx) = slot else {
+            return;
+        };
 
         let pitch_offset = self.rand_bipolar() * self.pitch_var;
         let freq = base_freq * 2.0f32.powf(pitch_offset / 12.0);
@@ -115,7 +124,9 @@ impl GranularEngine {
         let mut out_r = 0.0f32;
 
         for grain in &mut self.grains {
-            if !grain.active { continue; }
+            if !grain.active {
+                continue;
+            }
 
             // Grain envelope (raised cosine window)
             let env_phase = grain.elapsed / grain.duration;
@@ -138,7 +149,9 @@ impl GranularEngine {
 
             // Advance phase
             grain.phase += grain.freq / sample_rate;
-            if grain.phase >= 1.0 { grain.phase -= 1.0; }
+            if grain.phase >= 1.0 {
+                grain.phase -= 1.0;
+            }
             grain.elapsed += 1.0;
 
             // Pan and accumulate

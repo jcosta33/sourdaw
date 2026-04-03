@@ -37,13 +37,13 @@ pub struct SnareEngine {
     bp_ic1: f32,
     bp_ic2: f32,
     // Parameters
-    tune: f32,           // semitone offset
-    body_decay: f32,     // seconds
-    snappy: f32,         // noise amount 0-1
-    noise_color: f32,    // bandpass center freq factor
-    tone: f32,           // body/noise balance
-    noise_decay: f32,    // seconds
-    drive: f32,          // saturation amount
+    tune: f32,        // semitone offset
+    body_decay: f32,  // seconds
+    snappy: f32,      // noise amount 0-1
+    noise_color: f32, // bandpass center freq factor
+    tone: f32,        // body/noise balance
+    noise_decay: f32, // seconds
+    drive: f32,       // saturation amount
 }
 
 impl SnareEngine {
@@ -106,13 +106,16 @@ impl SnareEngine {
         let freq1 = 200.0 * tune_ratio * fm_sweep;
         let freq2 = 360.0 * tune_ratio * fm_sweep;
         self.phase1 += freq1 / sample_rate;
-        if self.phase1 >= 1.0 { self.phase1 -= 1.0; }
+        if self.phase1 >= 1.0 {
+            self.phase1 -= 1.0;
+        }
         self.phase2 += freq2 / sample_rate;
-        if self.phase2 >= 1.0 { self.phase2 -= 1.0; }
+        if self.phase2 >= 1.0 {
+            self.phase2 -= 1.0;
+        }
 
-        let body = ((self.phase1 * TAU).sin() * 0.7
-            + (self.phase2 * TAU).sin() * 0.3)
-            * self.body_env;
+        let body =
+            ((self.phase1 * TAU).sin() * 0.7 + (self.phase2 * TAU).sin() * 0.3) * self.body_env;
         self.body_env *= self.body_decay_coeff;
 
         // Noise through SVF bandpass

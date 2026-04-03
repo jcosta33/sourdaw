@@ -62,7 +62,11 @@ impl AdditiveEngine {
             // Apply tilt (dB/octave)
             let tilt_factor = (2.0f32).powf(self.tilt * (n - 1.0).log2().max(0.0) / 6.0);
             // Odd emphasis: attenuate even harmonics
-            let even_atten = if i % 2 == 1 { 1.0 - self.odd_emphasis } else { 1.0 };
+            let even_atten = if i % 2 == 1 {
+                1.0 - self.odd_emphasis
+            } else {
+                1.0
+            };
 
             self.amplitudes[i] = if i < self.num_partials {
                 (base * tilt_factor * even_atten).clamp(0.0, 1.0)
@@ -88,15 +92,21 @@ impl AdditiveEngine {
             let partial_freq = freq * n * (1.0 + self.inharmonicity * n * n);
 
             // Skip partials above Nyquist (anti-aliasing)
-            if partial_freq >= nyquist { break; }
+            if partial_freq >= nyquist {
+                break;
+            }
 
             let amp = self.amplitudes[i];
-            if amp < 0.0001 { continue; }
+            if amp < 0.0001 {
+                continue;
+            }
 
             output += (self.phases[i] * TAU).sin() * amp;
 
             self.phases[i] += partial_freq / sample_rate;
-            if self.phases[i] >= 1.0 { self.phases[i] -= 1.0; }
+            if self.phases[i] >= 1.0 {
+                self.phases[i] -= 1.0;
+            }
         }
 
         // Normalize by approximate partial count to prevent clipping

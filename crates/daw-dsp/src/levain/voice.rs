@@ -144,8 +144,8 @@ impl AdsrEnvelope {
                 self.level
             }
             EnvelopeStage::Decay => {
-                self.level = self.sustain_level
-                    + (self.level - self.sustain_level) * self.decay_rate;
+                self.level =
+                    self.sustain_level + (self.level - self.sustain_level) * self.decay_rate;
                 if (self.level - self.sustain_level).abs() < 0.001 {
                     self.level = self.sustain_level;
                     self.stage = EnvelopeStage::Sustain;
@@ -222,7 +222,13 @@ impl SamplePlayback {
 
     /// Configure playback from a zone's sample ref for a given MIDI note.
     /// If `pool` is provided, resolves end=0 to the actual sample frame count.
-    pub fn configure_with_pool(&mut self, sample: &SampleRef, midi_note: u8, gain: f32, pool: &SamplePool) {
+    pub fn configure_with_pool(
+        &mut self,
+        sample: &SampleRef,
+        midi_note: u8,
+        gain: f32,
+        pool: &SamplePool,
+    ) {
         self.sample_id = sample.sample_id;
         self.root_key = sample.root_key;
         self.tune_cents = sample.tune_cents;
@@ -301,7 +307,11 @@ impl SamplePlayback {
             }
         };
 
-        let y0 = if pos_floor == 0 { get(0) } else { get(pos_floor - 1) };
+        let y0 = if pos_floor == 0 {
+            get(0)
+        } else {
+            get(pos_floor - 1)
+        };
         let y1 = get(pos_floor);
         let y2 = get(pos_floor + 1);
         let y3 = get(pos_floor + 2);
@@ -322,8 +332,8 @@ impl SamplePlayback {
                 if self.position >= self.loop_end as f64 {
                     let loop_len = (self.loop_end - self.loop_start) as f64;
                     if loop_len > 0.0 {
-                        self.position =
-                            self.loop_start as f64 + (self.position - self.loop_end as f64) % loop_len;
+                        self.position = self.loop_start as f64
+                            + (self.position - self.loop_end as f64) % loop_len;
                     }
                 }
             }
@@ -430,7 +440,8 @@ impl LevainVoice {
         self.mic = zone.mic;
         self.samples_since_on = 0;
 
-        self.playback.configure_with_pool(&zone.sample, note, 1.0, pool);
+        self.playback
+            .configure_with_pool(&zone.sample, note, 1.0, pool);
         self.crossfading = false;
         self.crossfade_amount = 0.0;
 
@@ -445,10 +456,18 @@ impl LevainVoice {
     }
 
     /// Begin a crossfade to a new sample (for dynamic layer transitions or legato).
-    pub fn start_crossfade(&mut self, new_zone: &Zone, note: u8, crossfade_time_secs: f32, sample_rate: f32, pool: &SamplePool) {
+    pub fn start_crossfade(
+        &mut self,
+        new_zone: &Zone,
+        note: u8,
+        crossfade_time_secs: f32,
+        sample_rate: f32,
+        pool: &SamplePool,
+    ) {
         // Move current playback to crossfade slot.
         self.crossfade_playback = self.playback.clone();
-        self.playback.configure_with_pool(&new_zone.sample, note, 1.0, pool);
+        self.playback
+            .configure_with_pool(&new_zone.sample, note, 1.0, pool);
 
         self.crossfade_amount = 0.0;
         let samples = (crossfade_time_secs * sample_rate).max(1.0);

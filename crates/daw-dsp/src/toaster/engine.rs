@@ -18,7 +18,7 @@ use super::voice::DrumVoice;
 pub struct PlateReverb {
     buffers: [Vec<f32>; 4],
     write_pos: [usize; 4],
-    feedback: [f32; 4],   // per-line damping state
+    feedback: [f32; 4], // per-line damping state
     decay: f32,
     damping: f32,
 }
@@ -218,27 +218,30 @@ impl ToasterEngine {
     pub fn new(sample_rate: f32, num_pads: usize) -> Self {
         // Create default pad layout (typical drum machine mapping)
         let default_types = [
-            DrumEngineType::Kick,      // kick-808
-            DrumEngineType::Snare,     // snare-808
-            DrumEngineType::HiHat,     // hihat-closed
-            DrumEngineType::HiHat,     // hihat-open
-            DrumEngineType::Clap,      // clap
-            DrumEngineType::Rim,       // rimshot
-            DrumEngineType::Tom,       // tom (Low)
-            DrumEngineType::Tom,       // tom (Mid)
-            DrumEngineType::Tom,       // tom (High)
-            DrumEngineType::Cymbal,    // cymbal
-            DrumEngineType::Cymbal,    // cymbal
-            DrumEngineType::Cowbell,   // cowbell
-            DrumEngineType::Clave,     // clave
-            DrumEngineType::Shaker,    // shaker
-            DrumEngineType::Perc,      // perc-generic
-            DrumEngineType::Perc,      // perc-generic
+            DrumEngineType::Kick,    // kick-808
+            DrumEngineType::Snare,   // snare-808
+            DrumEngineType::HiHat,   // hihat-closed
+            DrumEngineType::HiHat,   // hihat-open
+            DrumEngineType::Clap,    // clap
+            DrumEngineType::Rim,     // rimshot
+            DrumEngineType::Tom,     // tom (Low)
+            DrumEngineType::Tom,     // tom (Mid)
+            DrumEngineType::Tom,     // tom (High)
+            DrumEngineType::Cymbal,  // cymbal
+            DrumEngineType::Cymbal,  // cymbal
+            DrumEngineType::Cowbell, // cowbell
+            DrumEngineType::Clave,   // clave
+            DrumEngineType::Shaker,  // shaker
+            DrumEngineType::Perc,    // perc-generic
+            DrumEngineType::Perc,    // perc-generic
         ];
 
         let pads: Vec<Pad> = (0..num_pads)
             .map(|i| {
-                let et = default_types.get(i).copied().unwrap_or(DrumEngineType::Perc);
+                let et = default_types
+                    .get(i)
+                    .copied()
+                    .unwrap_or(DrumEngineType::Perc);
                 let mut pad = Pad::new(et);
                 // Set open hi-hat on pad 3 with choke group 1 (shared with closed hat)
                 if i == 2 {
@@ -248,9 +251,15 @@ impl ToasterEngine {
                     pad.choke_group = 1; // open hat chokes with closed
                 }
                 // Native Base Frequencies for Toms
-                if i == 6 { pad.base_freq = 80.0; }  // Low Tom
-                if i == 7 { pad.base_freq = 120.0; } // Mid Tom
-                if i == 8 { pad.base_freq = 200.0; } // High Tom
+                if i == 6 {
+                    pad.base_freq = 80.0;
+                } // Low Tom
+                if i == 7 {
+                    pad.base_freq = 120.0;
+                } // Mid Tom
+                if i == 8 {
+                    pad.base_freq = 200.0;
+                } // High Tom
                 pad
             })
             .collect();
@@ -355,9 +364,7 @@ impl ToasterEngine {
         match name {
             "master_gain" => self.master_gain = value.clamp(0.0, 1.0),
             n if n.starts_with("reverb_") => self.global_reverb.set_param(n, value),
-            n if n.starts_with("delay_") => {
-                self.global_delay.set_param(n, value, self.sample_rate)
-            }
+            n if n.starts_with("delay_") => self.global_delay.set_param(n, value, self.sample_rate),
             "lofi_bits" => self.global_lofi.set_bit_depth(value as u8),
             "lofi_rate" => self.global_lofi.set_rate_reduction(value, self.sample_rate),
             "lofi_mix" => self.global_lofi.set_mix(value),
@@ -365,7 +372,11 @@ impl ToasterEngine {
             n if n.starts_with("bus") && n.len() > 4 => {
                 if let Some(idx) = n.as_bytes().get(3).and_then(|b| {
                     let d = (*b as char).to_digit(10)?;
-                    if d >= 1 && d <= NUM_BUSES as u32 { Some((d - 1) as usize) } else { None }
+                    if d >= 1 && d <= NUM_BUSES as u32 {
+                        Some((d - 1) as usize)
+                    } else {
+                        None
+                    }
                 }) {
                     let suffix = &n[5..]; // skip "busN_"
                     match suffix {
@@ -484,7 +495,8 @@ impl ToasterEngine {
         }
 
         // Apply lo-fi processing after reverb/delay (operates on the full block)
-        self.global_lofi.process_block(left, right, self.sample_rate);
+        self.global_lofi
+            .process_block(left, right, self.sample_rate);
     }
 
     fn find_free_voice(&self) -> usize {
@@ -506,4 +518,3 @@ impl ToasterEngine {
         oldest_idx
     }
 }
-

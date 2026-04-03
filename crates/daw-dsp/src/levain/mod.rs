@@ -6,18 +6,18 @@
 //!
 //! All DSP is lock-free, allocation-free in the audio hot path.
 
-pub mod types;
-pub mod zone;
-pub mod voice;
-pub mod expression;
 pub mod articulation;
-pub mod legato;
-pub mod humanize;
-pub mod mic;
-pub mod release;
-pub mod performance;
-pub mod fallback;
 pub mod engine;
+pub mod expression;
+pub mod fallback;
+pub mod humanize;
+pub mod legato;
+pub mod mic;
+pub mod performance;
+pub mod release;
+pub mod types;
+pub mod voice;
+pub mod zone;
 
 use engine::LevainEngine;
 use wasm_bindgen::prelude::*;
@@ -71,7 +71,8 @@ impl LevainInstance {
         channels: u8,
         sample_rate: f32,
     ) -> u32 {
-        self.engine.add_sample(data, frame_count, channels, sample_rate)
+        self.engine
+            .add_sample(data, frame_count, channels, sample_rate)
     }
 
     /// Add a zone to the zone map. Call build_zone_map() after all zones are added.
@@ -108,8 +109,14 @@ impl LevainInstance {
         };
         let zone = Zone {
             id: zone_id,
-            key: KeyRange { lo: lo_key, hi: hi_key },
-            vel: VelRange { lo: lo_vel, hi: hi_vel },
+            key: KeyRange {
+                lo: lo_key,
+                hi: hi_key,
+            },
+            vel: VelRange {
+                lo: lo_vel,
+                hi: hi_vel,
+            },
             articulation: articulation_id,
             rr_pos,
             rr_len,
@@ -126,7 +133,12 @@ impl LevainInstance {
                 loop_end,
                 loop_crossfade,
             },
-            amp_env: AdsrParams { attack, decay, sustain, release },
+            amp_env: AdsrParams {
+                attack,
+                decay,
+                sustain,
+                release,
+            },
             gain_db,
         };
         self.engine.add_zone(zone);
@@ -167,5 +179,4 @@ impl LevainInstance {
     pub fn active_voices(&self) -> u32 {
         self.engine.active_voice_count() as u32
     }
-
 }

@@ -42,7 +42,11 @@ fn biquad_magnitude(coeffs: &BiquadCoeffs, freq_hz: f64, sr: f64) -> f64 {
     let num_mag = (num_real * num_real + num_imag * num_imag).sqrt();
     let den_mag = (den_real * den_real + den_imag * den_imag).sqrt();
 
-    if den_mag < 1e-10 { 1.0 } else { num_mag / den_mag }
+    if den_mag < 1e-10 {
+        1.0
+    } else {
+        num_mag / den_mag
+    }
 }
 
 /// Band specification for linear phase EQ design.
@@ -87,16 +91,21 @@ impl LinearPhaseEq {
 
     /// Rebuild the FIR filter from band settings.
     pub fn rebuild(&mut self, bands: &[LinearPhaseEqBand]) {
-        self.bands = bands.iter().map(|b| LinearPhaseEqBand {
-            enabled: b.enabled,
-            coeffs: b.coeffs.clone(),
-        }).collect();
+        self.bands = bands
+            .iter()
+            .map(|b| LinearPhaseEqBand {
+                enabled: b.enabled,
+                coeffs: b.coeffs.clone(),
+            })
+            .collect();
 
         // Compute desired magnitude response at each frequency bin
         let mut magnitude = vec![1.0_f64; FIR_SIZE / 2 + 1];
         for i in 0..=FIR_SIZE / 2 {
             let freq = i as f64 * self.sample_rate / FIR_SIZE as f64;
-            if freq < 1.0 { continue; }
+            if freq < 1.0 {
+                continue;
+            }
             for band in &self.bands {
                 if band.enabled {
                     magnitude[i] *= biquad_magnitude(&band.coeffs, freq, self.sample_rate);
@@ -141,8 +150,12 @@ impl LinearPhaseEq {
 
     /// Process stereo audio using overlap-add convolution.
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
-        if self.bypassed { return; }
-        if self.needs_rebuild { return; } // wait for rebuild
+        if self.bypassed {
+            return;
+        }
+        if self.needs_rebuild {
+            return;
+        } // wait for rebuild
 
         // Simple direct-form FIR (not FFT-based for simplicity at this FIR size)
         // For FIR_SIZE=2048, direct convolution is acceptable for real-time at typical block sizes
@@ -165,6 +178,10 @@ impl LinearPhaseEq {
     }
 
     pub fn latency_samples(&self) -> usize {
-        if self.bypassed { 0 } else { HALF_FIR }
+        if self.bypassed {
+            0
+        } else {
+            HALF_FIR
+        }
     }
 }

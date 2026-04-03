@@ -16,7 +16,10 @@ pub struct Lfo {
 
 impl Lfo {
     pub fn new() -> Self {
-        Self { phase: 0.0, shape: LfoShape::Sine }
+        Self {
+            phase: 0.0,
+            shape: LfoShape::Sine,
+        }
     }
 
     pub fn set_shape(&mut self, shape: LfoShape) {
@@ -27,7 +30,9 @@ impl Lfo {
     #[inline]
     pub fn tick(&mut self, rate_hz: f32, sample_rate: f32) -> f32 {
         self.phase += rate_hz / sample_rate;
-        if self.phase >= 1.0 { self.phase -= 1.0; }
+        if self.phase >= 1.0 {
+            self.phase -= 1.0;
+        }
 
         match self.shape {
             LfoShape::Sine => (self.phase * std::f32::consts::TAU).sin(),
@@ -39,7 +44,13 @@ impl Lfo {
                 }
             }
             LfoShape::Saw => 2.0 * self.phase - 1.0,
-            LfoShape::Square => if self.phase < 0.5 { 1.0 } else { -1.0 },
+            LfoShape::Square => {
+                if self.phase < 0.5 {
+                    1.0
+                } else {
+                    -1.0
+                }
+            }
         }
     }
 

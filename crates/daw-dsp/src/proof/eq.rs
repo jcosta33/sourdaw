@@ -78,61 +78,101 @@ impl MasteringEq {
     pub fn new(sr: f64) -> Self {
         let default_freqs = [30.0, 80.0, 250.0, 800.0, 2500.0, 6000.0, 12000.0, 18000.0];
         let default_types = [
-            EqBandType::HighPass, EqBandType::LowShelf,
-            EqBandType::Peak, EqBandType::Peak, EqBandType::Peak, EqBandType::Peak,
-            EqBandType::HighShelf, EqBandType::LowPass,
+            EqBandType::HighPass,
+            EqBandType::LowShelf,
+            EqBandType::Peak,
+            EqBandType::Peak,
+            EqBandType::Peak,
+            EqBandType::Peak,
+            EqBandType::HighShelf,
+            EqBandType::LowPass,
         ];
 
-        let bands = (0..NUM_BANDS).map(|i| {
-            let mut band = MasteringEqBand::new(default_freqs[i], default_types[i]);
-            if i >= 2 && i <= 5 { band.enabled = true; }
-            band
-        }).collect();
+        let bands = (0..NUM_BANDS)
+            .map(|i| {
+                let mut band = MasteringEqBand::new(default_freqs[i], default_types[i]);
+                if i >= 2 && i <= 5 {
+                    band.enabled = true;
+                }
+                band
+            })
+            .collect();
 
-        Self { bands, sample_rate: sr, output_gain: 1.0, bypassed: false }
+        Self {
+            bands,
+            sample_rate: sr,
+            output_gain: 1.0,
+            bypassed: false,
+        }
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
-        if name == "eq_bypass" { self.bypassed = value > 0.5; return; }
+        if name == "eq_bypass" {
+            self.bypassed = value > 0.5;
+            return;
+        }
         if name == "eq_output_gain" {
             self.output_gain = 10.0_f32.powf(value / 20.0);
             return;
         }
 
         // Parse "eq_bandN_param" pattern
-        if !name.starts_with("eq_band") || name.len() < 10 { return; }
+        if !name.starts_with("eq_band") || name.len() < 10 {
+            return;
+        }
         let idx = match name.as_bytes()[7] {
             b'0'..=b'7' => (name.as_bytes()[7] - b'0') as usize,
             _ => return,
         };
-        if idx >= self.bands.len() { return; }
+        if idx >= self.bands.len() {
+            return;
+        }
         let param = &name[9..]; // skip "eq_bandN_"
 
         match param {
-            "freq" => { self.bands[idx].freq = (value as f64).clamp(20.0, 20000.0); self.bands[idx].recompute(self.sample_rate); }
-            "gain" => { self.bands[idx].gain_db = (value as f64).clamp(-18.0, 18.0); self.bands[idx].recompute(self.sample_rate); }
-            "q" => { self.bands[idx].q = (value as f64).clamp(0.1, 10.0); self.bands[idx].recompute(self.sample_rate); }
+            "freq" => {
+                self.bands[idx].freq = (value as f64).clamp(20.0, 20000.0);
+                self.bands[idx].recompute(self.sample_rate);
+            }
+            "gain" => {
+                self.bands[idx].gain_db = (value as f64).clamp(-18.0, 18.0);
+                self.bands[idx].recompute(self.sample_rate);
+            }
+            "q" => {
+                self.bands[idx].q = (value as f64).clamp(0.1, 10.0);
+                self.bands[idx].recompute(self.sample_rate);
+            }
             "type" => {
                 self.bands[idx].band_type = match value as u32 {
-                    0 => EqBandType::Peak, 1 => EqBandType::LowShelf, 2 => EqBandType::HighShelf,
-                    3 => EqBandType::HighPass, 4 => EqBandType::LowPass, _ => EqBandType::Peak,
+                    0 => EqBandType::Peak,
+                    1 => EqBandType::LowShelf,
+                    2 => EqBandType::HighShelf,
+                    3 => EqBandType::HighPass,
+                    4 => EqBandType::LowPass,
+                    _ => EqBandType::Peak,
                 };
                 self.bands[idx].recompute(self.sample_rate);
             }
             "channel" => {
                 self.bands[idx].channel = match value as u32 {
-                    0 => EqBandChannel::Stereo, 1 => EqBandChannel::Mid, 2 => EqBandChannel::Side,
+                    0 => EqBandChannel::Stereo,
+                    1 => EqBandChannel::Mid,
+                    2 => EqBandChannel::Side,
                     _ => EqBandChannel::Stereo,
                 };
             }
-            "enabled" => { self.bands[idx].enabled = value > 0.5; }
+            "enabled" => {
+                self.bands[idx].enabled = value > 0.5;
+            }
             _ => {}
         }
     }
 
     #[inline]
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
-        if self.bypassed { return; }
+        if self.bypassed {
+            return;
+        }
         let inv_sqrt2 = std::f32::consts::FRAC_1_SQRT_2;
 
         for i in 0..left.len() {
@@ -140,7 +180,9 @@ impl MasteringEq {
             let mut r = right[i];
 
             for band in self.bands.iter_mut() {
-                if !band.enabled { continue; }
+                if !band.enabled {
+                    continue;
+                }
 
                 match band.channel {
                     EqBandChannel::Stereo => {
@@ -169,5 +211,7 @@ impl MasteringEq {
         }
     }
 
-    pub fn is_bypassed(&self) -> bool { self.bypassed }
+    pub fn is_bypassed(&self) -> bool {
+        self.bypassed
+    }
 }

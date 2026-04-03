@@ -65,8 +65,13 @@ impl OptoCompressor {
         let excess = (detect_db - self.threshold).max(0.0);
 
         // Program-dependent ratio: increases with excess
-        let max_ratio = if self.limit_mode { 10.0 } else { 3.0 + self.base_ratio };
-        let effective_ratio = self.base_ratio + (max_ratio - self.base_ratio) * (excess / 20.0).min(1.0);
+        let max_ratio = if self.limit_mode {
+            10.0
+        } else {
+            3.0 + self.base_ratio
+        };
+        let effective_ratio =
+            self.base_ratio + (max_ratio - self.base_ratio) * (excess / 20.0).min(1.0);
         let desired_gr_db = excess * (1.0 - 1.0 / effective_ratio);
 
         // Update memory state (CdS charge trapping)
@@ -79,8 +84,7 @@ impl OptoCompressor {
         }
 
         // Release time stretches with memory
-        let tau_release = self.tau_release_fast
-            + (5.0 - self.tau_release_fast) * self.memory_state;
+        let tau_release = self.tau_release_fast + (5.0 - self.tau_release_fast) * self.memory_state;
 
         // Ballistics
         let alpha = if desired_gr_db > self.gr_state {

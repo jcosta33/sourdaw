@@ -76,7 +76,11 @@ impl KarplusStrong {
         // One-pole lowpass in feedback path — determines timbre and decay
         let coeff = 1.0 - self.damping * 0.5;
         let filtered = self.filter_state + coeff * (delayed - self.filter_state);
-        self.filter_state = if filtered.abs() < 1e-15 { 0.0 } else { filtered };
+        self.filter_state = if filtered.abs() < 1e-15 {
+            0.0
+        } else {
+            filtered
+        };
 
         // Write filtered sample back (feedback loop)
         self.buffer[self.write_pos] = filtered;

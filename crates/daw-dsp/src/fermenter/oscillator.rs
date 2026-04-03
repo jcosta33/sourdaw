@@ -23,7 +23,9 @@ impl Wavetable {
 
             for h in 1..=max_harmonics {
                 let amp = harmonics(h);
-                if amp.abs() < 1e-8 { continue; }
+                if amp.abs() < 1e-8 {
+                    continue;
+                }
                 for i in 0..TABLE_SIZE {
                     let phase = std::f32::consts::TAU * (i as f32 / TABLE_SIZE as f32) * h as f32;
                     table[i] += amp * phase.sin();
@@ -39,7 +41,10 @@ impl Wavetable {
             tables.push(table);
         }
 
-        Self { tables, num_levels: NUM_TABLES }
+        Self {
+            tables,
+            num_levels: NUM_TABLES,
+        }
     }
 
     /// Generate standard waveforms.
@@ -96,7 +101,10 @@ pub struct WavetableOsc {
 
 impl WavetableOsc {
     pub fn new() -> Self {
-        Self { phase: 0.0, table_index: 1 } // Default: saw
+        Self {
+            phase: 0.0,
+            table_index: 1,
+        } // Default: saw
     }
 
     pub fn set_waveform(&mut self, index: usize) {
@@ -108,8 +116,12 @@ impl WavetableOsc {
     pub fn tick(&mut self, freq: f32, sample_rate: f32, tables: &[Wavetable]) -> f32 {
         let inc = freq / sample_rate;
         self.phase += inc;
-        if self.phase >= 1.0 { self.phase -= 1.0; }
-        if self.phase < 0.0 { self.phase += 1.0; }
+        if self.phase >= 1.0 {
+            self.phase -= 1.0;
+        }
+        if self.phase < 0.0 {
+            self.phase += 1.0;
+        }
 
         let table = &tables[self.table_index.min(tables.len() - 1)];
         table.read(self.phase, inc)
@@ -135,7 +147,10 @@ pub struct PolyBlepOsc {
 
 impl PolyBlepOsc {
     pub fn new() -> Self {
-        Self { phase: 0.0, pulse_width: 0.5 }
+        Self {
+            phase: 0.0,
+            pulse_width: 0.5,
+        }
     }
 
     pub fn set_pulse_width(&mut self, pw: f32) {
@@ -147,7 +162,9 @@ impl PolyBlepOsc {
     pub fn saw(&mut self, freq: f32, sample_rate: f32) -> f32 {
         let inc = freq / sample_rate;
         self.phase += inc;
-        if self.phase >= 1.0 { self.phase -= 1.0; }
+        if self.phase >= 1.0 {
+            self.phase -= 1.0;
+        }
 
         let mut sample = 2.0 * self.phase - 1.0;
         sample -= poly_blep(self.phase, inc);
@@ -159,9 +176,15 @@ impl PolyBlepOsc {
     pub fn pulse(&mut self, freq: f32, sample_rate: f32) -> f32 {
         let inc = freq / sample_rate;
         self.phase += inc;
-        if self.phase >= 1.0 { self.phase -= 1.0; }
+        if self.phase >= 1.0 {
+            self.phase -= 1.0;
+        }
 
-        let mut sample = if self.phase < self.pulse_width { 1.0 } else { -1.0 };
+        let mut sample = if self.phase < self.pulse_width {
+            1.0
+        } else {
+            -1.0
+        };
         sample += poly_blep(self.phase, inc);
         sample -= poly_blep((self.phase - self.pulse_width + 1.0) % 1.0, inc);
         sample
@@ -181,8 +204,8 @@ impl PolyBlepOsc {
 /// Unison oscillator — wraps multiple WavetableOsc voices with detune and stereo spread.
 pub struct UnisonOsc {
     voices: Vec<WavetableOsc>,
-    detune_cents: f32,   // 0-100
-    stereo_spread: f32,  // 0-1
+    detune_cents: f32,  // 0-100
+    stereo_spread: f32, // 0-1
     voice_count: usize,
 }
 
@@ -199,7 +222,9 @@ impl UnisonOsc {
     /// Set unison voice count (1-16). Resizes the voice array.
     pub fn set_voices(&mut self, count: usize) {
         let count = count.clamp(1, 16);
-        if count == self.voice_count { return; }
+        if count == self.voice_count {
+            return;
+        }
         self.voice_count = count;
         self.voices.resize_with(count, WavetableOsc::new);
     }

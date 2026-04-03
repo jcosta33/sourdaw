@@ -5,24 +5,24 @@
 
 pub mod additive;
 pub mod chaos;
-pub mod params;
+pub mod effects;
 pub mod envelope;
-pub mod oscillator;
 pub mod filter;
+pub mod fm;
+pub mod granular;
+pub mod layer;
 pub mod lfo;
 pub mod modulation;
-pub mod effects;
-pub mod noise;
-pub mod fm;
-pub mod physical;
-pub mod granular;
-pub mod sampler;
 pub mod mseg;
+pub mod noise;
+pub mod oscillator;
+pub mod params;
+pub mod physical;
+pub mod sampler;
 pub mod spectral;
 pub mod stepseq;
-pub mod voice;
-pub mod layer;
 pub mod synth;
+pub mod voice;
 
 use synth::MasterSynth;
 use wasm_bindgen::prelude::*;
@@ -73,7 +73,8 @@ impl FermenterInstance {
         self.left_buf[..size].fill(0.0);
         self.right_buf[..size].fill(0.0);
 
-        self.synth.process_block(&mut self.left_buf[..size], &mut self.right_buf[..size], &[]);
+        self.synth
+            .process_block(&mut self.left_buf[..size], &mut self.right_buf[..size], &[]);
 
         self.left_buf.as_ptr()
     }

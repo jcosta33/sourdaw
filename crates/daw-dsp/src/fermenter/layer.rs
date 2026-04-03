@@ -219,8 +219,14 @@ impl Layer {
             voice.set_ks_damping(self.ks_damping);
             voice.note_on(note, vel, self.sample_rate);
             voice.set_envelopes(
-                self.amp_attack, self.amp_decay, self.amp_sustain, self.amp_release,
-                self.filter_attack, self.filter_decay, self.filter_sustain, self.filter_release,
+                self.amp_attack,
+                self.amp_decay,
+                self.amp_sustain,
+                self.amp_release,
+                self.filter_attack,
+                self.filter_decay,
+                self.filter_sustain,
+                self.filter_release,
             );
             // Excite Karplus-Strong at note-on time (after note_on reset)
             if self.engine == 3 {
@@ -252,7 +258,13 @@ impl Layer {
     }
 
     /// Render all active voices with this layer's params, applying level and pan.
-    pub fn render(&mut self, left: &mut [f32], right: &mut [f32], tables: &[Wavetable], sample_rate: f32) {
+    pub fn render(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        tables: &[Wavetable],
+        sample_rate: f32,
+    ) {
         if self.muted {
             return;
         }
@@ -270,10 +282,18 @@ impl Layer {
 
         // Set parameters on active voices
         for voice in &mut self.voices {
-            if !voice.is_active() { continue; }
+            if !voice.is_active() {
+                continue;
+            }
             voice.set_envelopes(
-                self.amp_attack, self.amp_decay, self.amp_sustain, self.amp_release,
-                self.filter_attack, self.filter_decay, self.filter_sustain, self.filter_release,
+                self.amp_attack,
+                self.amp_decay,
+                self.amp_sustain,
+                self.amp_release,
+                self.filter_attack,
+                self.filter_decay,
+                self.filter_sustain,
+                self.filter_release,
             );
             voice.set_noise(self.noise_level, self.noise_color);
             voice.set_unison(self.unison_voices, self.unison_detune, self.unison_spread);
@@ -333,8 +353,12 @@ impl Layer {
         let level = self.level;
         let pan = self.pan;
         // Equal power pan
-        let pan_l = ((1.0 - pan) * 0.5 * std::f32::consts::FRAC_PI_2).cos().min(1.0);
-        let pan_r = ((1.0 + pan) * 0.5 * std::f32::consts::FRAC_PI_2).cos().min(1.0);
+        let pan_l = ((1.0 - pan) * 0.5 * std::f32::consts::FRAC_PI_2)
+            .cos()
+            .min(1.0);
+        let pan_r = ((1.0 + pan) * 0.5 * std::f32::consts::FRAC_PI_2)
+            .cos()
+            .min(1.0);
         let gain_l = level * pan_l;
         let gain_r = level * pan_r;
 

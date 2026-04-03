@@ -7,10 +7,14 @@ const BUTTERWORTH_Q: f64 = std::f64::consts::FRAC_1_SQRT_2;
 
 /// Single LR-4 crossover point — splits into low and high bands.
 pub struct Lr4Crossover {
-    lp1_l: BiquadState, lp2_l: BiquadState,
-    hp1_l: BiquadState, hp2_l: BiquadState,
-    lp1_r: BiquadState, lp2_r: BiquadState,
-    hp1_r: BiquadState, hp2_r: BiquadState,
+    lp1_l: BiquadState,
+    lp2_l: BiquadState,
+    hp1_l: BiquadState,
+    hp2_l: BiquadState,
+    lp1_r: BiquadState,
+    lp2_r: BiquadState,
+    hp1_r: BiquadState,
+    hp2_r: BiquadState,
     lp_coeffs: BiquadCoeffs,
     hp_coeffs: BiquadCoeffs,
 }
@@ -18,10 +22,14 @@ pub struct Lr4Crossover {
 impl Lr4Crossover {
     pub fn new(freq: f64, sr: f64) -> Self {
         Self {
-            lp1_l: BiquadState::new(), lp2_l: BiquadState::new(),
-            hp1_l: BiquadState::new(), hp2_l: BiquadState::new(),
-            lp1_r: BiquadState::new(), lp2_r: BiquadState::new(),
-            hp1_r: BiquadState::new(), hp2_r: BiquadState::new(),
+            lp1_l: BiquadState::new(),
+            lp2_l: BiquadState::new(),
+            hp1_l: BiquadState::new(),
+            hp2_l: BiquadState::new(),
+            lp1_r: BiquadState::new(),
+            lp2_r: BiquadState::new(),
+            hp1_r: BiquadState::new(),
+            hp2_r: BiquadState::new(),
             lp_coeffs: BiquadCoeffs::lowpass(freq, BUTTERWORTH_Q, sr),
             hp_coeffs: BiquadCoeffs::highpass(freq, BUTTERWORTH_Q, sr),
         }
@@ -35,10 +43,18 @@ impl Lr4Crossover {
     /// Process stereo sample, returns ((low_l, low_r), (high_l, high_r)).
     #[inline]
     pub fn process(&mut self, l: f32, r: f32) -> ((f32, f32), (f32, f32)) {
-        let low_l = self.lp2_l.process(self.lp1_l.process(l, &self.lp_coeffs), &self.lp_coeffs);
-        let low_r = self.lp2_r.process(self.lp1_r.process(r, &self.lp_coeffs), &self.lp_coeffs);
-        let high_l = self.hp2_l.process(self.hp1_l.process(l, &self.hp_coeffs), &self.hp_coeffs);
-        let high_r = self.hp2_r.process(self.hp1_r.process(r, &self.hp_coeffs), &self.hp_coeffs);
+        let low_l = self
+            .lp2_l
+            .process(self.lp1_l.process(l, &self.lp_coeffs), &self.lp_coeffs);
+        let low_r = self
+            .lp2_r
+            .process(self.lp1_r.process(r, &self.lp_coeffs), &self.lp_coeffs);
+        let high_l = self
+            .hp2_l
+            .process(self.hp1_l.process(l, &self.hp_coeffs), &self.hp_coeffs);
+        let high_r = self
+            .hp2_r
+            .process(self.hp1_r.process(r, &self.hp_coeffs), &self.hp_coeffs);
         ((low_l, low_r), (high_l, high_r))
     }
 }

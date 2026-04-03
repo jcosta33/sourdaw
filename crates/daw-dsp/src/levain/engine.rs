@@ -10,8 +10,8 @@ use super::fallback::FallbackToneEngine;
 use super::humanize::Humanizer;
 use super::legato::{LegatoEngine, LegatoResult};
 use super::mic::MicMixer;
-use super::performance::{AutoDivisi, AutoArticulation, EnsembleTiming};
-use super::release::{ReleaseTracker, PedalDeferredRelease};
+use super::performance::{AutoArticulation, AutoDivisi, EnsembleTiming};
+use super::release::{PedalDeferredRelease, ReleaseTracker};
 use super::types::*;
 use super::voice::VoicePool;
 use super::zone::{SamplePool, ZoneMap};
@@ -114,7 +114,8 @@ impl LevainEngine {
         channels: u8,
         sample_rate: f32,
     ) -> SampleId {
-        self.sample_pool.add(data, frame_count, channels, sample_rate)
+        self.sample_pool
+            .add(data, frame_count, channels, sample_rate)
     }
 
     /// Add a zone to the zone map. Call `build_zone_map()` after all zones are added.
@@ -190,13 +191,20 @@ impl LevainEngine {
 
         // Now allocate voice and check legato (after confirming we have a zone).
         let voice_idx = self.voice_pool.allocate();
-        let legato_result =
-            self.legato
-                .note_on(note, velocity, voice_idx, current_dynamic);
+        let legato_result = self
+            .legato
+            .note_on(note, velocity, voice_idx, current_dynamic);
 
         match legato_result {
             LegatoResult::Normal => {
-                self.voice_pool.voices[voice_idx].trigger(note, velocity, &zone, art, gain, &self.sample_pool);
+                self.voice_pool.voices[voice_idx].trigger(
+                    note,
+                    velocity,
+                    &zone,
+                    art,
+                    gain,
+                    &self.sample_pool,
+                );
             }
             LegatoResult::TrueTransition {
                 from_voice,
@@ -210,7 +218,14 @@ impl LevainEngine {
                 // Trigger new voice with the sustain zone, then crossfade.
                 // TODO: when transition sample zones are populated, look up the
                 // transition zone by sample_id and play that instead of the sustain zone.
-                self.voice_pool.voices[voice_idx].trigger(note, velocity, &zone, art, gain, &self.sample_pool);
+                self.voice_pool.voices[voice_idx].trigger(
+                    note,
+                    velocity,
+                    &zone,
+                    art,
+                    gain,
+                    &self.sample_pool,
+                );
                 self.voice_pool.voices[voice_idx].start_crossfade(
                     &zone,
                     note,
@@ -237,7 +252,14 @@ impl LevainEngine {
                     );
                     self.voice_pool.voices[from_voice].note = note;
                 } else {
-                    self.voice_pool.voices[voice_idx].trigger(note, velocity, &zone, art, gain, &self.sample_pool);
+                    self.voice_pool.voices[voice_idx].trigger(
+                        note,
+                        velocity,
+                        &zone,
+                        art,
+                        gain,
+                        &self.sample_pool,
+                    );
                 }
             }
         }
@@ -284,12 +306,13 @@ impl LevainEngine {
             // Collect notes to release (can't borrow self mutably in the closure).
             let mut notes_to_release = [(0u8, 0.0f32); 128];
             let mut release_count = 0usize;
-            self.pedal_deferred.release_pedal(self.sample_rate, |note, cc1, _stagger| {
-                if release_count < 128 {
-                    notes_to_release[release_count] = (note, cc1);
-                    release_count += 1;
-                }
-            });
+            self.pedal_deferred
+                .release_pedal(self.sample_rate, |note, cc1, _stagger| {
+                    if release_count < 128 {
+                        notes_to_release[release_count] = (note, cc1);
+                        release_count += 1;
+                    }
+                });
             for i in 0..release_count {
                 let (note, cc1) = notes_to_release[i];
                 self.auto_divisi.note_off(note);
@@ -313,9 +336,7 @@ impl LevainEngine {
             "humanize" | "humanize_amount" => self.humanizer.set_amount(value),
             "humanize_timing_max_ms" => self.humanizer.config.timing_max = value / 1000.0,
             "humanize_tuning_max_cents" => self.humanizer.config.tuning_max = value,
-            "humanize_dynamic_max" => {
-                self.humanizer.config.dynamic_max = value.clamp(0.0, 1.0)
-            }
+            "humanize_dynamic_max" => self.humanizer.config.dynamic_max = value.clamp(0.0, 1.0),
             "humanize_vibrato_var_max" => {
                 self.humanizer.config.vibrato_var_max = value.clamp(0.0, 1.0)
             }
@@ -328,20 +349,14 @@ impl LevainEngine {
             "legato_adaptive_speed" => {
                 // Not a separate flag currently — adaptive speed is always on when enabled
             }
-            "legato_slow_threshold_ms" => {
-                self.legato.slow_threshold = (value / 1000.0).max(0.05)
-            }
-            "legato_fast_threshold_ms" => {
-                self.legato.fast_threshold = (value / 1000.0).max(0.01)
-            }
+            "legato_slow_threshold_ms" => self.legato.slow_threshold = (value / 1000.0).max(0.05),
+            "legato_fast_threshold_ms" => self.legato.fast_threshold = (value / 1000.0).max(0.01),
             "legato_portamento_velocity_threshold" => {
                 self.legato.portamento_velocity_threshold = (value as u8).clamp(0, 127)
             }
 
             // ── Expression / Vibrato ─────────────────────────────────
-            "vibrato_depth" => {
-                self.expression.vibrato.set_depth_cc((value * 127.0) as u8)
-            }
+            "vibrato_depth" => self.expression.vibrato.set_depth_cc((value * 127.0) as u8),
             "expression_vibrato_depth_max" => {
                 self.expression.vibrato.config.vibrato_depth_max = value.max(0.0)
             }
@@ -358,8 +373,10 @@ impl LevainEngine {
                 // Reconfigure the crossfader alpha — store crossfade_time and rebuild.
                 let num_layers = self.expression.crossfader.num_layers;
                 let curve = self.expression.crossfader.curve;
-                self.expression.crossfader =
-                    super::expression::DynamicCrossfader::new(self.sample_rate, value.clamp(0.001, 2.0));
+                self.expression.crossfader = super::expression::DynamicCrossfader::new(
+                    self.sample_rate,
+                    value.clamp(0.001, 2.0),
+                );
                 self.expression.crossfader.configure(num_layers, curve);
             }
 
@@ -458,7 +475,6 @@ impl LevainEngine {
     pub fn active_voice_count(&self) -> usize {
         self.voice_pool.active_count() + self.fallback.active_count()
     }
-
 }
 
 // ---------------------------------------------------------------------------

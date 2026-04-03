@@ -4,20 +4,20 @@
 //! Handles multi-band splitting, serial/parallel/mid-side routing,
 //! oversampling, modulation routing, macro mapping, and XY morphing.
 
+use super::chorus::ChorusFlanger;
+use super::chorus::Phaser;
+use super::convolution::ConvolutionProcessor;
 use super::crossover::CrossoverEngine;
 use super::distortion::DistortionProcessor;
 use super::filter::SvfFilter;
 use super::granular::GranularProcessor;
-use super::stft::StftProcessor;
-use super::chorus::ChorusFlanger;
-use super::chorus::Phaser;
-use super::lofi::LofiProcessor;
-use super::convolution::ConvolutionProcessor;
-use super::oversample::OversamplingChain;
 use super::hilbert::HilbertShifter;
+use super::lofi::LofiProcessor;
+use super::modulation::{EnvelopeFollower, Lfo, LfoShape, LorenzAttractor};
+use super::oversample::OversamplingChain;
+use super::params::{db_to_linear, linear_to_db, SmoothedParam};
+use super::stft::StftProcessor;
 use super::waveshaper::CustomWaveshaper;
-use super::modulation::{Lfo, EnvelopeFollower, LorenzAttractor, LfoShape};
-use super::params::{SmoothedParam, db_to_linear, linear_to_db};
 
 const MAX_BANDS: usize = 6;
 const MAX_MOD_ASSIGNMENTS: usize = 64;
@@ -291,7 +291,9 @@ struct MorphSnapshot {
 
 impl MorphSnapshot {
     fn new() -> Self {
-        Self { param_values: Vec::new() }
+        Self {
+            param_values: Vec::new(),
+        }
     }
 }
 
@@ -392,7 +394,9 @@ impl StepSequencer {
 
 impl BacteriaEngine {
     pub fn new(sample_rate: f32) -> Self {
-        let bands: Vec<BandChain> = (0..MAX_BANDS).map(|_| BandChain::new(sample_rate)).collect();
+        let bands: Vec<BandChain> = (0..MAX_BANDS)
+            .map(|_| BandChain::new(sample_rate))
+            .collect();
 
         Self {
             sample_rate,
@@ -416,7 +420,12 @@ impl BacteriaEngine {
             macros: [0.5; 8],
             morph_x: 0.5,
             morph_y: 0.5,
-            snapshots: [MorphSnapshot::new(), MorphSnapshot::new(), MorphSnapshot::new(), MorphSnapshot::new()],
+            snapshots: [
+                MorphSnapshot::new(),
+                MorphSnapshot::new(),
+                MorphSnapshot::new(),
+                MorphSnapshot::new(),
+            ],
             input_peak: 0.0,
             output_peak: 0.0,
             band_levels: [0.0; MAX_BANDS],
@@ -458,13 +467,34 @@ impl BacteriaEngine {
             // Crossover
             "bandCount" => {
                 self.band_count = (value as usize).clamp(1, MAX_BANDS);
-                self.crossover.set_bands(self.band_count, &self.crossover_freqs);
+                self.crossover
+                    .set_bands(self.band_count, &self.crossover_freqs);
             }
-            "crossoverFreq1" => { self.crossover_freqs[0] = value; self.crossover.set_bands(self.band_count, &self.crossover_freqs); }
-            "crossoverFreq2" => { self.crossover_freqs[1] = value; self.crossover.set_bands(self.band_count, &self.crossover_freqs); }
-            "crossoverFreq3" => { self.crossover_freqs[2] = value; self.crossover.set_bands(self.band_count, &self.crossover_freqs); }
-            "crossoverFreq4" => { self.crossover_freqs[3] = value; self.crossover.set_bands(self.band_count, &self.crossover_freqs); }
-            "crossoverFreq5" => { self.crossover_freqs[4] = value; self.crossover.set_bands(self.band_count, &self.crossover_freqs); }
+            "crossoverFreq1" => {
+                self.crossover_freqs[0] = value;
+                self.crossover
+                    .set_bands(self.band_count, &self.crossover_freqs);
+            }
+            "crossoverFreq2" => {
+                self.crossover_freqs[1] = value;
+                self.crossover
+                    .set_bands(self.band_count, &self.crossover_freqs);
+            }
+            "crossoverFreq3" => {
+                self.crossover_freqs[2] = value;
+                self.crossover
+                    .set_bands(self.band_count, &self.crossover_freqs);
+            }
+            "crossoverFreq4" => {
+                self.crossover_freqs[3] = value;
+                self.crossover
+                    .set_bands(self.band_count, &self.crossover_freqs);
+            }
+            "crossoverFreq5" => {
+                self.crossover_freqs[4] = value;
+                self.crossover
+                    .set_bands(self.band_count, &self.crossover_freqs);
+            }
             "crossoverSlope" | "crossoverMode" => {}
 
             // Routing
@@ -528,7 +558,13 @@ impl BacteriaEngine {
     }
 
     /// Add a macro mapping.
-    pub fn add_macro_mapping(&mut self, macro_index: u8, target_param: u16, min_value: f32, max_value: f32) {
+    pub fn add_macro_mapping(
+        &mut self,
+        macro_index: u8,
+        target_param: u16,
+        min_value: f32,
+        max_value: f32,
+    ) {
         self.macro_mappings.push(MacroMapping {
             macro_index,
             target_param,
@@ -576,7 +612,8 @@ impl BacteriaEngine {
             }
 
             // Split through crossover
-            self.crossover.process_sample(in_l, in_r, &mut self.bands_l, &mut self.bands_r);
+            self.crossover
+                .process_sample(in_l, in_r, &mut self.bands_l, &mut self.bands_r);
 
             // Check if any band is soloed
             let any_solo = self.bands[..self.band_count].iter().any(|b| b.solo);
@@ -591,7 +628,8 @@ impl BacteriaEngine {
                         if any_solo && !self.bands[b].solo {
                             continue;
                         }
-                        let (bl, br) = self.bands[b].process_sample(self.bands_l[b], self.bands_r[b]);
+                        let (bl, br) =
+                            self.bands[b].process_sample(self.bands_l[b], self.bands_r[b]);
                         sum_l += bl;
                         sum_r += br;
                         self.band_levels[b] = self.bands[b].peak_level;
@@ -605,17 +643,25 @@ impl BacteriaEngine {
                     // Process mid through band 0, side through band 1
                     let (pm, _) = if self.band_count > 0 {
                         self.bands[0].process_sample(mid, mid)
-                    } else { (mid, mid) };
+                    } else {
+                        (mid, mid)
+                    };
                     let (ps, _) = if self.band_count > 1 {
                         self.bands[1].process_sample(side, side)
-                    } else { (side, side) };
+                    } else {
+                        (side, side)
+                    };
 
                     // Decode back to L/R
                     sum_l = pm + ps;
                     sum_r = pm - ps;
 
-                    if self.band_count > 0 { self.band_levels[0] = self.bands[0].peak_level; }
-                    if self.band_count > 1 { self.band_levels[1] = self.bands[1].peak_level; }
+                    if self.band_count > 0 {
+                        self.band_levels[0] = self.bands[0].peak_level;
+                    }
+                    if self.band_count > 1 {
+                        self.band_levels[1] = self.bands[1].peak_level;
+                    }
                 }
             }
 

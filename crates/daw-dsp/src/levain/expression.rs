@@ -192,8 +192,8 @@ impl ExpressionState {
 /// Vibrato LFO with onset delay and per-note variation.
 pub struct VibratoLfo {
     phase: f32,
-    rate: f32,        // Hz
-    depth: f32,       // cents
+    rate: f32,            // Hz
+    depth: f32,           // cents
     pub onset_delay: f32, // seconds
     sample_rate: f32,
     pub config: ExpressionConfig,

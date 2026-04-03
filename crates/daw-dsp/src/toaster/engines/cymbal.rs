@@ -23,11 +23,11 @@ pub struct CymbalEngine {
     shimmer_rate: f32,
     // Parameters
     base_freq: f32,
-    decay: f32,      // seconds
-    tone: f32,       // mix between low and high bandpass (0-1)
+    decay: f32,         // seconds
+    tone: f32,          // mix between low and high bandpass (0-1)
     shimmer_depth: f32, // how much the LFO modulates bandpass freq
-    bp1_freq: f32,   // lower bandpass center
-    bp2_freq: f32,   // upper bandpass center
+    bp1_freq: f32,      // lower bandpass center
+    bp2_freq: f32,      // upper bandpass center
 }
 
 impl CymbalEngine {
@@ -103,13 +103,11 @@ impl CymbalEngine {
 
         // Bandpass 1 (lower, more body)
         let bp1_center = self.bp1_freq * (1.0 + lfo);
-        let bp1_out =
-            self.svf_bandpass(sum, bp1_center, 1.5, sample_rate, true);
+        let bp1_out = self.svf_bandpass(sum, bp1_center, 1.5, sample_rate, true);
 
         // Bandpass 2 (higher, shimmer)
         let bp2_center = self.bp2_freq * (1.0 + lfo * 0.7);
-        let bp2_out =
-            self.svf_bandpass(sum, bp2_center, 1.5, sample_rate, false);
+        let bp2_out = self.svf_bandpass(sum, bp2_center, 1.5, sample_rate, false);
 
         // Mix bandpasses based on tone
         let filtered = bp1_out * (1.0 - self.tone) + bp2_out * self.tone;

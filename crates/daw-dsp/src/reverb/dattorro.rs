@@ -1,7 +1,7 @@
 //! Jon Dattorro's 1997 JAES Plate Reverb Algorithm.
 
-use std::f32::consts::PI;
 use crate::reverb::delay::DelayLine;
+use std::f32::consts::PI;
 
 fn scale_delay(delay: usize, target_sr: f32) -> usize {
     ((delay as f32) * target_sr / 29761.0).round() as usize
@@ -13,8 +13,10 @@ pub struct OnePoleLpf {
 }
 
 impl OnePoleLpf {
-    pub fn new() -> Self { Self { z1: 0.0 } }
-    
+    pub fn new() -> Self {
+        Self { z1: 0.0 }
+    }
+
     #[inline(always)]
     pub fn process(&mut self, input: f32, coefficient: f32) -> f32 {
         let output = input * (1.0 - coefficient) + self.z1 * coefficient;
@@ -25,7 +27,7 @@ impl OnePoleLpf {
 
 pub struct DattorroTank {
     sample_rate: f32,
-    
+
     // Input Diffusion Allpasses
     in_ap1: (DelayLine, f32),
     in_ap2: (DelayLine, f32),
@@ -49,10 +51,10 @@ pub struct DattorroTank {
     r_damp_lpf: OnePoleLpf,
     r_fixed_ap: (DelayLine, f32),
     r_delay2: DelayLine,
-    
+
     // LFO State
     lfo_phase: f32,
-    
+
     // Parameters
     pub bandwidth: f32,
     pub damping: f32,
@@ -67,12 +69,12 @@ pub struct DattorroTank {
 impl DattorroTank {
     pub fn new(sample_rate: f32) -> Self {
         let sc = |d| scale_delay(d, sample_rate);
-        
+
         let exc = scale_delay(16, sample_rate) as f32; // Default excursion peak
 
         Self {
             sample_rate,
-            
+
             in_ap1: (DelayLine::new(sc(142) + 10), 0.750),
             in_ap2: (DelayLine::new(sc(107) + 10), 0.750),
             in_ap3: (DelayLine::new(sc(379) + 10), 0.625),
@@ -93,9 +95,9 @@ impl DattorroTank {
             r_damp_lpf: OnePoleLpf::new(),
             r_fixed_ap: (DelayLine::new(sc(2656) + 10), 0.50),
             r_delay2: DelayLine::new(sc(3163) + 10),
-            
+
             lfo_phase: 0.0,
-            
+
             bandwidth: 0.9995,
             damping: 0.0005,
             decay: 0.50,
@@ -117,17 +119,23 @@ impl DattorroTank {
     }
 
     #[inline(always)]
-    fn process_mod_ap(dl: &mut DelayLine, coeff: f32, fractional_delay: f32, prev: &mut f32, input: f32) -> f32 {
+    fn process_mod_ap(
+        dl: &mut DelayLine,
+        coeff: f32,
+        fractional_delay: f32,
+        prev: &mut f32,
+        input: f32,
+    ) -> f32 {
         let d_int = fractional_delay.floor() as usize;
         let alpha = fractional_delay - d_int as f32;
-        
+
         let d0 = dl.read(d_int);
         let d1 = dl.read(d_int + 1);
-        
+
         let ap_c = (1.0 - alpha) / (1.0 + alpha);
         let inter = d1 + ap_c * (d0 - *prev);
         *prev = inter;
-        
+
         let fb = input + inter * coeff;
         let out = inter - fb * coeff;
         dl.write(fb);
@@ -136,10 +144,10 @@ impl DattorroTank {
 
     pub fn process(&mut self, input_mono: f32) -> (f32, f32) {
         let sc = |d| scale_delay(d, self.sample_rate);
-        
+
         // Input bandwidth filter
         let mut sig = self.bandwidth_lpf.process(input_mono, 1.0 - self.bandwidth);
-        
+
         // 4 Input diffusers
         sig = Self::process_fixed_ap(&mut self.in_ap1.0, self.input_diffusion_1, sc(142), sig);
         sig = Self::process_fixed_ap(&mut self.in_ap2.0, self.input_diffusion_1, sc(107), sig);
@@ -148,7 +156,9 @@ impl DattorroTank {
 
         // LFO advance
         self.lfo_phase += 2.0 * PI * 1.0 / self.sample_rate; // 1Hz base
-        if self.lfo_phase > 2.0 * PI { self.lfo_phase -= 2.0 * PI; }
+        if self.lfo_phase > 2.0 * PI {
+            self.lfo_phase -= 2.0 * PI;
+        }
 
         let lfo_l = self.lfo_phase.sin(); // 1Hz
         let lfo_r = (self.lfo_phase * 0.707).cos(); // 0.707 Hz quadrature-ish
@@ -163,8 +173,14 @@ impl DattorroTank {
 
         // --- LEFT HALF ---
         let l_in = sig + r_out;
-        let mut l_sig = Self::process_mod_ap(&mut self.l_mod_ap, -self.decay_diffusion_1, mod_delay_l, &mut self.l_mod_prev, l_in);
-        
+        let mut l_sig = Self::process_mod_ap(
+            &mut self.l_mod_ap,
+            -self.decay_diffusion_1,
+            mod_delay_l,
+            &mut self.l_mod_prev,
+            l_in,
+        );
+
         // Write/Read Delay 1
         self.l_delay1.write(l_sig);
         l_sig = self.l_delay1.read(sc(4453));
@@ -172,39 +188,49 @@ impl DattorroTank {
         l_sig = self.l_damp_lpf.process(l_sig, self.damping);
         l_sig *= self.decay;
 
-        l_sig = Self::process_fixed_ap(&mut self.l_fixed_ap.0, self.decay_diffusion_2, sc(1800), l_sig);
-        
-        self.l_delay2.write(l_sig);
+        l_sig = Self::process_fixed_ap(
+            &mut self.l_fixed_ap.0,
+            self.decay_diffusion_2,
+            sc(1800),
+            l_sig,
+        );
 
+        self.l_delay2.write(l_sig);
 
         // --- RIGHT HALF ---
         let r_in = sig + l_out;
-        let mut r_sig = Self::process_mod_ap(&mut self.r_mod_ap, -self.decay_diffusion_1, mod_delay_r, &mut self.r_mod_prev, r_in);
-        
+        let mut r_sig = Self::process_mod_ap(
+            &mut self.r_mod_ap,
+            -self.decay_diffusion_1,
+            mod_delay_r,
+            &mut self.r_mod_prev,
+            r_in,
+        );
+
         self.r_delay1.write(r_sig);
         r_sig = self.r_delay1.read(sc(4217));
 
         r_sig = self.r_damp_lpf.process(r_sig, self.damping);
         r_sig *= self.decay;
 
-        r_sig = Self::process_fixed_ap(&mut self.r_fixed_ap.0, self.decay_diffusion_2, sc(2656), r_sig);
+        r_sig = Self::process_fixed_ap(
+            &mut self.r_fixed_ap.0,
+            self.decay_diffusion_2,
+            sc(2656),
+            r_sig,
+        );
 
         self.r_delay2.write(r_sig);
 
-
         // --- MULTI-TAP OUTPUT READS ---
-        let y_l = 
-              0.6 * self.r_delay1.read(sc(266))
-            + 0.6 * self.r_delay1.read(sc(2974))
+        let y_l = 0.6 * self.r_delay1.read(sc(266)) + 0.6 * self.r_delay1.read(sc(2974))
             - 0.6 * self.r_fixed_ap.0.read(sc(1913))
             + 0.6 * self.r_delay2.read(sc(1996))
             - 0.6 * self.l_delay1.read(sc(1990))
             - 0.6 * self.l_fixed_ap.0.read(sc(187))
             - 0.6 * self.l_delay2.read(sc(1066));
 
-        let y_r = 
-              0.6 * self.l_delay1.read(sc(353))
-            + 0.6 * self.l_delay1.read(sc(3627))
+        let y_r = 0.6 * self.l_delay1.read(sc(353)) + 0.6 * self.l_delay1.read(sc(3627))
             - 0.6 * self.l_fixed_ap.0.read(sc(1228))
             + 0.6 * self.l_delay2.read(sc(2673))
             - 0.6 * self.r_delay1.read(sc(2111))

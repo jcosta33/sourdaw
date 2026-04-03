@@ -3,24 +3,24 @@
 //! Routes audio through: sidechain → detector → topology → gain application.
 //! Handles M/S encoding, stereo linking, lookahead, parallel mix.
 
-use super::vca::VcaCompressor;
-use super::opto::OptoCompressor;
-use super::fet::FetCompressor;
+use super::detector::{DetectionMode, RmsDetector};
 use super::diode::DiodeCompressor;
-use super::detector::{RmsDetector, DetectionMode};
-use super::sidechain::{SidechainHpf, SidechainLpf, SidechainEq, ThrustFilter};
-use super::stereo::{encode_ms, decode_ms, parallel_mix, StereoMode};
+use super::fet::FetCompressor;
+use super::gain_computer::{auto_makeup, db_to_linear};
 use super::lookahead::LookaheadDelay;
+use super::opto::OptoCompressor;
 use super::params::SmoothedParam;
-use super::gain_computer::{db_to_linear, auto_makeup};
+use super::sidechain::{SidechainEq, SidechainHpf, SidechainLpf, ThrustFilter};
+use super::stereo::{decode_ms, encode_ms, parallel_mix, StereoMode};
+use super::vca::VcaCompressor;
 
 /// Compressor topology selector.
 #[derive(Clone, Copy, PartialEq)]
 pub enum Topology {
-    Vca,    // SSL G-Bus
-    Opto,   // LA-2A
-    Fet,    // 1176
-    Diode,  // Neve 33609
+    Vca,   // SSL G-Bus
+    Opto,  // LA-2A
+    Fet,   // 1176
+    Diode, // Neve 33609
 }
 
 /// Style presets (Level 1 UI).
@@ -213,8 +213,8 @@ impl GlutenEngine {
             "amount" => {
                 let pct = value.clamp(0.0, 100.0) / 100.0;
                 let threshold = -5.0 - 35.0 * pct; // -5 to -40
-                let ratio = 2.0 + 6.0 * pct;       // 2:1 to 8:1
-                // Forward to active topology
+                let ratio = 2.0 + 6.0 * pct; // 2:1 to 8:1
+                                             // Forward to active topology
                 self.vca.set_param("threshold", threshold);
                 self.opto.set_param("threshold", threshold);
                 self.fet.set_param("threshold", threshold);
@@ -337,7 +337,8 @@ impl GlutenEngine {
 
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32]) {
         if self.bypassed {
-            if self.gain_match_bypass && self.output_loudness > 1e-10 && self.input_loudness > 1e-10 {
+            if self.gain_match_bypass && self.output_loudness > 1e-10 && self.input_loudness > 1e-10
+            {
                 // Gain-matched bypass: compensate output level to match input loudness
                 let compensation = (self.input_loudness / self.output_loudness).sqrt();
                 let comp_clamped = compensation.clamp(0.1, 10.0);
@@ -375,18 +376,23 @@ impl GlutenEngine {
 
             // Sidechain source: external aux or derived from main input
             let (sc_raw_l, sc_raw_r) = if self.ext_sidechain && i < self.ext_sc_left.len() {
-                (self.ext_sc_left[i], self.ext_sc_right.get(i).copied().unwrap_or(0.0))
+                (
+                    self.ext_sc_left[i],
+                    self.ext_sc_right.get(i).copied().unwrap_or(0.0),
+                )
             } else {
                 (proc_l, proc_r)
             };
 
             // Sidechain filtering: HPF → LPF → EQ → Thrust shape the detector input.
-            let sc_l = self.thrust.process(self.sc_eq.process(
-                self.sc_lpf_l.process(self.sc_hpf_l.process(sc_raw_l))
-            ));
-            let sc_r = self.thrust.process(self.sc_eq.process(
-                self.sc_lpf_r.process(self.sc_hpf_r.process(sc_raw_r))
-            ));
+            let sc_l = self.thrust.process(
+                self.sc_eq
+                    .process(self.sc_lpf_l.process(self.sc_hpf_l.process(sc_raw_l))),
+            );
+            let sc_r = self.thrust.process(
+                self.sc_eq
+                    .process(self.sc_lpf_r.process(self.sc_hpf_r.process(sc_raw_r))),
+            );
 
             // Process through active topology.
             // Feed-forward topologies (Diode) use the sidechain-filtered signal
@@ -395,16 +401,14 @@ impl GlutenEngine {
             // on them — this matches hardware behavior where the sidechain filter
             // is most impactful on feed-forward designs.
             // Primary topology
-            let (mut wet_l, mut wet_r, gr_db) = self.process_topology(
-                self.active_topology, delayed_l, delayed_r, sc_l, sc_r,
-            );
+            let (mut wet_l, mut wet_r, gr_db) =
+                self.process_topology(self.active_topology, delayed_l, delayed_r, sc_l, sc_r);
 
             // Dual-stage serial routing (Shadow Hills style)
             // Second topology processes the output of the first
             if self.blend_amount > 0.001 && self.blend_topology != self.active_topology {
-                let (s2_l, s2_r, gr2) = self.process_topology(
-                    self.blend_topology, wet_l, wet_r, sc_l, sc_r,
-                );
+                let (s2_l, s2_r, gr2) =
+                    self.process_topology(self.blend_topology, wet_l, wet_r, sc_l, sc_r);
                 // Crossfade between single and dual-stage
                 let b = self.blend_amount;
                 wet_l = wet_l * (1.0 - b) + s2_l * b;
@@ -433,7 +437,7 @@ impl GlutenEngine {
 
             // M/S decode if needed
             let (out_l, out_r) = match self.stereo_mode {
-                StereoMode::Mid => decode_ms(mixed_l, 0.0), // mid only
+                StereoMode::Mid => decode_ms(mixed_l, 0.0),  // mid only
                 StereoMode::Side => decode_ms(0.0, mixed_r), // side only
                 _ => (mixed_l, mixed_r),
             };
@@ -452,8 +456,10 @@ impl GlutenEngine {
             // Track running loudness for gain-matched bypass (EMA of squared signal)
             let in_sq = (dry_l * dry_l + dry_r * dry_r) * 0.5;
             let out_sq = (left[i] * left[i] + right[i] * right[i]) * 0.5;
-            self.input_loudness = self.loudness_coeff * self.input_loudness + (1.0 - self.loudness_coeff) * in_sq;
-            self.output_loudness = self.loudness_coeff * self.output_loudness + (1.0 - self.loudness_coeff) * out_sq;
+            self.input_loudness =
+                self.loudness_coeff * self.input_loudness + (1.0 - self.loudness_coeff) * in_sq;
+            self.output_loudness =
+                self.loudness_coeff * self.output_loudness + (1.0 - self.loudness_coeff) * out_sq;
 
             // Accumulate for crest factor + phase correlation
             self.rms_accum += out_sq;
@@ -503,7 +509,14 @@ impl GlutenEngine {
     }
 
     #[inline]
-    fn process_topology(&mut self, topo: Topology, l: f32, r: f32, sc_l: f32, sc_r: f32) -> (f32, f32, f32) {
+    fn process_topology(
+        &mut self,
+        topo: Topology,
+        l: f32,
+        r: f32,
+        sc_l: f32,
+        sc_r: f32,
+    ) -> (f32, f32, f32) {
         match topo {
             Topology::Vca => self.vca.process_sample(l, r),
             Topology::Opto => self.opto.process_sample(l, r),

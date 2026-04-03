@@ -6,16 +6,16 @@
 //!
 //! Compiles to both native (Rust library) and WASM (AudioWorklet).
 
-pub mod triode;
-pub mod tone_stack;
-pub mod power_amp;
-pub mod transformer;
 pub mod cabinet;
+pub mod engine;
 pub mod input;
-pub mod pedals;
 pub mod neural;
 pub mod params;
-pub mod engine;
+pub mod pedals;
+pub mod power_amp;
+pub mod tone_stack;
+pub mod transformer;
+pub mod triode;
 
 use engine::GrinderEngine;
 use wasm_bindgen::prelude::*;
@@ -78,10 +78,22 @@ impl GrinderInstance {
         self.output_right.as_ptr()
     }
 
-    pub fn get_input_db(&self) -> f32 { self.engine.input_db() }
-    pub fn get_preamp_db(&self) -> f32 { self.engine.preamp_db() }
-    pub fn get_power_amp_db(&self) -> f32 { self.engine.power_amp_db() }
-    pub fn get_output_db(&self) -> f32 { self.engine.output_db() }
-    pub fn get_sag_voltage(&self) -> f32 { self.engine.sag_voltage() }
-    pub fn get_latency_samples(&self) -> u32 { self.engine.latency_samples() }
+    pub fn get_input_db(&self) -> f32 {
+        self.engine.input_db()
+    }
+    pub fn get_preamp_db(&self) -> f32 {
+        self.engine.preamp_db()
+    }
+    pub fn get_power_amp_db(&self) -> f32 {
+        self.engine.power_amp_db()
+    }
+    pub fn get_output_db(&self) -> f32 {
+        self.engine.output_db()
+    }
+    pub fn get_sag_voltage(&self) -> f32 {
+        self.engine.sag_voltage()
+    }
+    pub fn get_latency_samples(&self) -> u32 {
+        self.engine.latency_samples()
+    }
 }

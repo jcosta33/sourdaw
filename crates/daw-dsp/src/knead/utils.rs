@@ -29,7 +29,8 @@ pub fn blackman_harris_window(len: usize) -> Vec<f32> {
     let n_f32 = len as f32;
     for i in 0..len {
         let phase = std::f32::consts::TAU * i as f32 / n_f32;
-        w[i] = 0.35875 - 0.48829 * phase.cos() + 0.14128 * (2.0 * phase).cos() - 0.01168 * (3.0 * phase).cos();
+        w[i] = 0.35875 - 0.48829 * phase.cos() + 0.14128 * (2.0 * phase).cos()
+            - 0.01168 * (3.0 * phase).cos();
     }
     w
 }

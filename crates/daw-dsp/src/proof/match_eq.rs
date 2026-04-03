@@ -67,12 +67,23 @@ impl SpectrumProfile {
         }
 
         // Average and convert to dB
-        let bins = avg_power.iter().map(|&p| {
-            let avg = if frame_count > 0 { p / frame_count as f64 } else { 1e-20 };
-            (10.0 * avg.max(1e-20).log10()) as f32
-        }).collect();
+        let bins = avg_power
+            .iter()
+            .map(|&p| {
+                let avg = if frame_count > 0 {
+                    p / frame_count as f64
+                } else {
+                    1e-20
+                };
+                (10.0 * avg.max(1e-20).log10()) as f32
+            })
+            .collect();
 
-        Self { bins, sample_rate, fft_size }
+        Self {
+            bins,
+            sample_rate,
+            fft_size,
+        }
     }
 }
 
@@ -188,7 +199,13 @@ impl MatchEq {
         }
     }
 
-    pub fn has_reference(&self) -> bool { self.reference_profile.is_some() }
-    pub fn is_enabled(&self) -> bool { self.enabled && !self.correction_curve.is_empty() }
-    pub fn get_correction_curve(&self) -> &[f32] { &self.correction_curve }
+    pub fn has_reference(&self) -> bool {
+        self.reference_profile.is_some()
+    }
+    pub fn is_enabled(&self) -> bool {
+        self.enabled && !self.correction_curve.is_empty()
+    }
+    pub fn get_correction_curve(&self) -> &[f32] {
+        &self.correction_curve
+    }
 }

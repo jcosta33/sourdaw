@@ -14,19 +14,35 @@ impl SmoothedParam {
         } else {
             0.0
         };
-        Self { current: initial, target: initial, coeff }
+        Self {
+            current: initial,
+            target: initial,
+            coeff,
+        }
     }
 
-    pub fn set_target(&mut self, target: f32) { self.target = target; }
+    pub fn set_target(&mut self, target: f32) {
+        self.target = target;
+    }
     pub fn next(&mut self) -> f32 {
         self.current = self.target + self.coeff * (self.current - self.target);
         self.current
     }
-    pub fn current(&self) -> f32 { self.current }
-    pub fn snap(&mut self) { self.current = self.target; }
+    pub fn current(&self) -> f32 {
+        self.current
+    }
+    pub fn snap(&mut self) {
+        self.current = self.target;
+    }
 }
 
-pub fn db_to_linear(db: f32) -> f32 { 10.0_f32.powf(db / 20.0) }
+pub fn db_to_linear(db: f32) -> f32 {
+    10.0_f32.powf(db / 20.0)
+}
 pub fn linear_to_db(linear: f32) -> f32 {
-    if linear <= 0.0 { -100.0 } else { 20.0 * linear.log10() }
+    if linear <= 0.0 {
+        -100.0
+    } else {
+        20.0 * linear.log10()
+    }
 }

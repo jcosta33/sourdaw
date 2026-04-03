@@ -2,12 +2,12 @@
 //! Uses dual envelope followers (fast + slow) to detect transients.
 
 pub struct TransientShaper {
-    fast_env: f32,       // fast envelope follower state
-    slow_env: f32,       // slow envelope follower state
-    attack_gain: f32,    // transient gain (0-2, 1 = unity)
-    sustain_gain: f32,   // sustain gain (0-2, 1 = unity)
-    fast_coeff: f32,     // ~0.5ms attack
-    slow_coeff: f32,     // ~20ms attack
+    fast_env: f32,     // fast envelope follower state
+    slow_env: f32,     // slow envelope follower state
+    attack_gain: f32,  // transient gain (0-2, 1 = unity)
+    sustain_gain: f32, // sustain gain (0-2, 1 = unity)
+    fast_coeff: f32,   // ~0.5ms attack
+    slow_coeff: f32,   // ~20ms attack
 }
 
 impl TransientShaper {

@@ -7,21 +7,21 @@
 //!
 //! Compiles to both native (Rust library) and WASM (AudioWorklet).
 
+pub mod chorus;
+pub mod convolution;
 pub mod crossover;
 pub mod distortion;
+pub mod engine;
 pub mod filter;
-pub mod modulation;
 pub mod granular;
+pub mod hilbert;
+pub mod lofi;
+pub mod modulation;
+pub mod oversample;
+pub mod params;
 pub mod spectral;
 pub mod stft;
-pub mod chorus;
-pub mod lofi;
-pub mod convolution;
-pub mod oversample;
-pub mod hilbert;
 pub mod waveshaper;
-pub mod params;
-pub mod engine;
 
 use engine::BacteriaEngine;
 use wasm_bindgen::prelude::*;

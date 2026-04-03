@@ -8,14 +8,20 @@ use core::f32::consts::TAU;
 pub struct FmOperator {
     phase: f32,
     prev_output: f32,  // for feedback
-    pub ratio: f32,         // frequency ratio to carrier
-    pub level: f32,         // output level 0-1
-    pub feedback: f32,      // self-feedback amount 0-1
+    pub ratio: f32,    // frequency ratio to carrier
+    pub level: f32,    // output level 0-1
+    pub feedback: f32, // self-feedback amount 0-1
 }
 
 impl FmOperator {
     pub fn new() -> Self {
-        Self { phase: 0.0, prev_output: 0.0, ratio: 1.0, level: 1.0, feedback: 0.0 }
+        Self {
+            phase: 0.0,
+            prev_output: 0.0,
+            ratio: 1.0,
+            level: 1.0,
+            feedback: 0.0,
+        }
     }
 
     pub fn reset(&mut self) {
@@ -29,7 +35,9 @@ impl FmOperator {
         let fb = self.prev_output * self.feedback;
         let output = (self.phase * TAU + mod_input + fb).sin() * self.level;
         self.phase += freq / sample_rate;
-        if self.phase >= 1.0 { self.phase -= 1.0; }
+        if self.phase >= 1.0 {
+            self.phase -= 1.0;
+        }
         self.prev_output = output;
         output
     }
@@ -52,7 +60,12 @@ pub struct FmEngine {
 impl FmEngine {
     pub fn new() -> Self {
         let mut engine = Self {
-            ops: [FmOperator::new(), FmOperator::new(), FmOperator::new(), FmOperator::new()],
+            ops: [
+                FmOperator::new(),
+                FmOperator::new(),
+                FmOperator::new(),
+                FmOperator::new(),
+            ],
             matrix: [[0.0; 4]; 4],
             carriers: 0b0001, // Op 1 is carrier by default
             algorithm: 0,
@@ -132,19 +145,27 @@ impl FmEngine {
     }
 
     pub fn set_ratio(&mut self, op: usize, ratio: f32) {
-        if op < 4 { self.ops[op].ratio = ratio; }
+        if op < 4 {
+            self.ops[op].ratio = ratio;
+        }
     }
 
     pub fn set_level(&mut self, op: usize, level: f32) {
-        if op < 4 { self.ops[op].level = level; }
+        if op < 4 {
+            self.ops[op].level = level;
+        }
     }
 
     pub fn set_feedback(&mut self, op: usize, amount: f32) {
-        if op < 4 { self.ops[op].feedback = amount.clamp(0.0, 1.0); }
+        if op < 4 {
+            self.ops[op].feedback = amount.clamp(0.0, 1.0);
+        }
     }
 
     pub fn set_mod_amount(&mut self, from: usize, to: usize, amount: f32) {
-        if from < 4 && to < 4 { self.matrix[from][to] = amount; }
+        if from < 4 && to < 4 {
+            self.matrix[from][to] = amount;
+        }
     }
 
     /// Process one sample. Returns mono output.

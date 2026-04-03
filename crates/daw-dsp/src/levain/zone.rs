@@ -19,8 +19,7 @@ const VEL_BUCKET_SIZE: u8 = 8;
 const MAX_ZONE_ARENA: usize = 65536;
 
 /// Maximum LUT entries.
-const MAX_LUT_ENTRIES: usize =
-    MAX_ARTICULATIONS * (MAX_MICS as usize) * 128 * VEL_BUCKETS;
+const MAX_LUT_ENTRIES: usize = MAX_ARTICULATIONS * (MAX_MICS as usize) * 128 * VEL_BUCKETS;
 
 // ---------------------------------------------------------------------------
 // Zone list arena — flat storage for zone ID lists
@@ -59,7 +58,13 @@ impl SamplePool {
     }
 
     /// Add a sample and return its SampleId.
-    pub fn add(&mut self, data: Vec<f32>, frame_count: u32, channels: u8, sample_rate: f32) -> SampleId {
+    pub fn add(
+        &mut self,
+        data: Vec<f32>,
+        frame_count: u32,
+        channels: u8,
+        sample_rate: f32,
+    ) -> SampleId {
         let id = self.entries.len() as SampleId;
         self.entries.push(SampleEntry {
             data,
@@ -147,7 +152,8 @@ impl ZoneMap {
 
             for note in zone.key.lo..=zone.key.hi {
                 let vel_lo_bucket = (zone.vel.lo / VEL_BUCKET_SIZE) as usize;
-                let vel_hi_bucket = (zone.vel.hi / VEL_BUCKET_SIZE).min(VEL_BUCKETS as u8 - 1) as usize;
+                let vel_hi_bucket =
+                    (zone.vel.hi / VEL_BUCKET_SIZE).min(VEL_BUCKETS as u8 - 1) as usize;
 
                 for vb in vel_lo_bucket..=vel_hi_bucket {
                     let idx = self.lut_index(art, mic, note as usize, vb);
@@ -162,7 +168,10 @@ impl ZoneMap {
         self.arena.clear();
         for (i, bucket) in buckets.iter().enumerate() {
             if bucket.is_empty() {
-                self.lut[i] = ZoneListRef { offset: 0, count: 0 };
+                self.lut[i] = ZoneListRef {
+                    offset: 0,
+                    count: 0,
+                };
             } else {
                 let offset = self.arena.len() as u32;
                 self.arena.extend_from_slice(bucket);
@@ -212,7 +221,12 @@ impl ZoneMap {
     }
 
     /// Select a zone using round-robin for the given articulation and note.
-    pub fn select_rr(&mut self, articulation: ArticulationId, note: u8, candidates: &[ZoneId]) -> Option<ZoneId> {
+    pub fn select_rr(
+        &mut self,
+        articulation: ArticulationId,
+        note: u8,
+        candidates: &[ZoneId],
+    ) -> Option<ZoneId> {
         if candidates.is_empty() {
             return None;
         }

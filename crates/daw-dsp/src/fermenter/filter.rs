@@ -87,13 +87,16 @@ pub fn fast_tanh(x: f32) -> f32 {
 /// Gives the classic warm, fat low-pass sound. Self-oscillates at high resonance.
 #[derive(Clone)]
 pub struct MoogLadder {
-    s: [f32; 4],     // stage states
+    s: [f32; 4], // stage states
     drive: f32,
 }
 
 impl MoogLadder {
     pub fn new() -> Self {
-        Self { s: [0.0; 4], drive: 0.0 }
+        Self {
+            s: [0.0; 4],
+            drive: 0.0,
+        }
     }
 
     pub fn set_drive(&mut self, drive: f32) {
@@ -135,7 +138,11 @@ pub struct DiodeLadder {
 
 impl DiodeLadder {
     pub fn new() -> Self {
-        Self { s: [0.0; 4], y: [0.0; 4], drive: 0.0 }
+        Self {
+            s: [0.0; 4],
+            y: [0.0; 4],
+            drive: 0.0,
+        }
     }
 
     pub fn set_drive(&mut self, drive: f32) {
@@ -149,7 +156,9 @@ impl DiodeLadder {
 
     #[inline]
     pub fn process(&mut self, input: f32, cutoff: f32, resonance: f32, sample_rate: f32) -> f32 {
-        let f = (core::f32::consts::PI * cutoff / sample_rate).min(0.45 * core::f32::consts::PI).tan();
+        let f = (core::f32::consts::PI * cutoff / sample_rate)
+            .min(0.45 * core::f32::consts::PI)
+            .tan();
         let res = resonance.clamp(0.0, 1.0) * 17.0;
         let vt = 0.0256f32;
 
@@ -190,11 +199,11 @@ pub struct FormantFilter {
 
 // Formant frequency table: [vowel][formant F1, F2, F3] in Hz
 const FORMANT_FREQS: [[f32; 3]; 5] = [
-    [800.0, 1150.0, 2900.0],  // A (as in "father")
-    [350.0, 2000.0, 2800.0],  // E (as in "bed")
-    [270.0, 2140.0, 2950.0],  // I (as in "heed")
-    [450.0, 800.0, 2830.0],   // O (as in "hose")
-    [325.0, 700.0, 2700.0],   // U (as in "hoot")
+    [800.0, 1150.0, 2900.0], // A (as in "father")
+    [350.0, 2000.0, 2800.0], // E (as in "bed")
+    [270.0, 2140.0, 2950.0], // I (as in "heed")
+    [450.0, 800.0, 2830.0],  // O (as in "hose")
+    [325.0, 700.0, 2700.0],  // U (as in "hoot")
 ];
 
 // Formant bandwidth table: [vowel][formant] in Hz
@@ -252,8 +261,7 @@ impl FormantFilter {
         for f in 0..3 {
             // Interpolate formant parameters between adjacent vowels
             let freq = FORMANT_FREQS[idx][f] * (1.0 - frac) + FORMANT_FREQS[next][f] * frac;
-            let bw =
-                (FORMANT_BW[idx][f] * (1.0 - frac) + FORMANT_BW[next][f] * frac) / q_scale;
+            let bw = (FORMANT_BW[idx][f] * (1.0 - frac) + FORMANT_BW[next][f] * frac) / q_scale;
             let gain = FORMANT_GAIN[idx][f] * (1.0 - frac) + FORMANT_GAIN[next][f] * frac;
 
             // 2nd-order bandpass biquad (peaking EQ style)
@@ -293,14 +301,24 @@ pub struct Ms20Filter {
 
 impl Ms20Filter {
     pub fn new() -> Self {
-        Self { hp_s1: 0.0, hp_s2: 0.0, lp_s1: 0.0, lp_s2: 0.0, drive: 0.0 }
+        Self {
+            hp_s1: 0.0,
+            hp_s2: 0.0,
+            lp_s1: 0.0,
+            lp_s2: 0.0,
+            drive: 0.0,
+        }
     }
 
-    pub fn set_drive(&mut self, drive: f32) { self.drive = drive; }
+    pub fn set_drive(&mut self, drive: f32) {
+        self.drive = drive;
+    }
 
     pub fn reset(&mut self) {
-        self.hp_s1 = 0.0; self.hp_s2 = 0.0;
-        self.lp_s1 = 0.0; self.lp_s2 = 0.0;
+        self.hp_s1 = 0.0;
+        self.hp_s2 = 0.0;
+        self.lp_s1 = 0.0;
+        self.lp_s2 = 0.0;
     }
 
     #[inline]
@@ -316,7 +334,8 @@ impl Ms20Filter {
 
         // High-pass Sallen-Key
         let fb_hp = fast_tanh(self.hp_s2 * k);
-        let hp = (driven - fb_hp - self.hp_s1 * (2.0 + k) - self.hp_s2) / (1.0 + (2.0 + k) * g + g * g);
+        let hp =
+            (driven - fb_hp - self.hp_s1 * (2.0 + k) - self.hp_s2) / (1.0 + (2.0 + k) * g + g * g);
         let v1_hp = hp * g;
         let v2_hp = (v1_hp + self.hp_s1 - self.hp_s2) * g;
         self.hp_s1 += 2.0 * v1_hp;
@@ -346,10 +365,16 @@ pub struct SemFilter {
 
 impl SemFilter {
     pub fn new() -> Self {
-        Self { ic1eq: 0.0, ic2eq: 0.0, drive: 0.0 }
+        Self {
+            ic1eq: 0.0,
+            ic2eq: 0.0,
+            drive: 0.0,
+        }
     }
 
-    pub fn set_drive(&mut self, drive: f32) { self.drive = drive; }
+    pub fn set_drive(&mut self, drive: f32) {
+        self.drive = drive;
+    }
 
     pub fn reset(&mut self) {
         self.ic1eq = 0.0;
@@ -359,7 +384,14 @@ impl SemFilter {
     /// Process one sample. `morph` controls filter character:
     /// 0.0=LP, 0.25=BP(low), 0.5=Notch, 0.75=BP(high), 1.0=HP
     #[inline]
-    pub fn process(&mut self, input: f32, cutoff: f32, resonance: f32, morph: f32, sample_rate: f32) -> f32 {
+    pub fn process(
+        &mut self,
+        input: f32,
+        cutoff: f32,
+        resonance: f32,
+        morph: f32,
+        sample_rate: f32,
+    ) -> f32 {
         let g = (core::f32::consts::PI * cutoff.clamp(20.0, 20000.0) / sample_rate).tan();
         let k = 2.0 - resonance.clamp(0.0, 2.0); // invert: high resonance = low damping
 

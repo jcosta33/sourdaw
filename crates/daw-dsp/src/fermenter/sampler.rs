@@ -6,9 +6,9 @@ pub const SAMPLE_BUFFER_SIZE: usize = 44100; // 1 second at 44.1kHz
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum PlaybackMode {
-    OneShot,   // Play once, stop at end
-    Loop,      // Loop between start and end
-    PingPong,  // Bounce between start and end
+    OneShot,  // Play once, stop at end
+    Loop,     // Loop between start and end
+    PingPong, // Bounce between start and end
 }
 
 #[derive(Clone)]
@@ -95,7 +95,9 @@ impl SamplerEngine {
     /// Process one sample. Returns the sample value.
     #[inline]
     pub fn tick(&mut self, _sample_rate: f32) -> f32 {
-        if !self.active { return 0.0; }
+        if !self.active {
+            return 0.0;
+        }
 
         let buf_len = self.buffer.len();
         let pos_f = self.position;

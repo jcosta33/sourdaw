@@ -6,9 +6,13 @@
 /// `rotation` shifts the pattern cyclically.
 pub fn euclidean(hits: usize, steps: usize, rotation: usize, out: &mut [bool]) {
     let steps = steps.min(out.len());
-    if steps == 0 { return; }
+    if steps == 0 {
+        return;
+    }
     out[..steps].fill(false);
-    if hits == 0 { return; }
+    if hits == 0 {
+        return;
+    }
 
     for i in 0..steps {
         // Shift phase to match the standard Bjorklund starting alignment

@@ -32,10 +32,10 @@ pub struct ClapEngine {
     bp_ic1: f32,
     bp_ic2: f32,
     // Parameters
-    spacing: f32,           // seconds between bursts (~0.01)
-    count: usize,           // number of bursts (3-7)
-    tone: f32,              // bandpass center frequency factor
-    reverb_amount: f32,     // tail length
+    spacing: f32,       // seconds between bursts (~0.01)
+    count: usize,       // number of bursts (3-7)
+    tone: f32,          // bandpass center frequency factor
+    reverb_amount: f32, // tail length
     velocity: f32,
 }
 
@@ -158,7 +158,9 @@ impl ClapEngine {
                 // 0-10 drive: map to burst count (more bursts = thicker clap)
                 let v = value.clamp(0.0, 10.0);
                 self.count = (3.0 + v * 0.4) as usize;
-                if self.count > MAX_BURSTS { self.count = MAX_BURSTS; }
+                if self.count > MAX_BURSTS {
+                    self.count = MAX_BURSTS;
+                }
             }
             "spacing" => self.spacing = value.clamp(0.005, 0.03),
             "count" => self.count = (value as usize).clamp(3, MAX_BURSTS),

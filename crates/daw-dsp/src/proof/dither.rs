@@ -8,7 +8,10 @@ pub struct TpdfDither {
 
 impl TpdfDither {
     pub fn new(bit_depth: u32) -> Self {
-        Self { bit_depth, rng_state: 0xDEAD_BEEF }
+        Self {
+            bit_depth,
+            rng_state: 0xDEAD_BEEF,
+        }
     }
 
     pub fn set_bit_depth(&mut self, bits: u32) {
@@ -107,7 +110,9 @@ impl Ditherer {
         match name {
             "dither_mode" => {
                 self.mode = match value as u32 {
-                    0 => DitherMode::Off, 1 => DitherMode::Tpdf, 2 => DitherMode::NoiseShaped,
+                    0 => DitherMode::Off,
+                    1 => DitherMode::Tpdf,
+                    2 => DitherMode::NoiseShaped,
                     _ => DitherMode::Off,
                 };
             }

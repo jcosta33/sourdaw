@@ -25,10 +25,10 @@ struct DynEqBand {
     freq: f64,
     q: f64,
     threshold_db: f32,
-    ratio: f32,           // > 1 for compression
+    ratio: f32, // > 1 for compression
     attack_coeff: f32,
     release_coeff: f32,
-    max_gain_db: f32,     // range limit (±24 dB)
+    max_gain_db: f32, // range limit (±24 dB)
     // Sidechain bandpass filter for level detection
     sc_bp_l: BiquadState,
     sc_bp_r: BiquadState,
@@ -81,7 +81,9 @@ impl DynEqBand {
     /// Process a stereo sample pair. Returns the output with dynamic EQ applied.
     #[inline]
     fn process(&mut self, l: f32, r: f32) -> (f32, f32) {
-        if !self.enabled { return (l, r); }
+        if !self.enabled {
+            return (l, r);
+        }
 
         // 1. Sidechain: bandpass filter the input to detect level in target frequency range
         let sc_l = self.sc_bp_l.process(l, &self.sc_bp_coeffs);
@@ -89,8 +91,16 @@ impl DynEqBand {
         let level = sc_l.abs().max(sc_r.abs());
 
         // 2. Envelope follower
-        let level_db = if level > 1e-10 { 20.0 * level.log10() } else { -100.0 };
-        let coeff = if level_db > self.envelope { self.attack_coeff } else { self.release_coeff };
+        let level_db = if level > 1e-10 {
+            20.0 * level.log10()
+        } else {
+            -100.0
+        };
+        let coeff = if level_db > self.envelope {
+            self.attack_coeff
+        } else {
+            self.release_coeff
+        };
         self.envelope = coeff * self.envelope + (1.0 - coeff) * level_db;
 
         // 3. Gain computer
@@ -118,7 +128,9 @@ impl DynEqBand {
         // 4. Rebuild EQ coefficients with modulated gain and apply
         // For efficiency, we blend between dry and fully-EQ'd based on GR amount
         // rather than rebuilding coefficients per-sample
-        if gr_db.abs() < 0.01 { return (l, r); }
+        if gr_db.abs() < 0.01 {
+            return (l, r);
+        }
 
         // Update EQ band with the computed dynamic gain
         self.eq_coeffs = BiquadCoeffs::peak(self.freq, gr_db as f64, self.q, self.sample_rate);
@@ -146,10 +158,15 @@ impl DynamicEq {
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
-        if name == "dyneq_bypass" { self.bypassed = value > 0.5; return; }
+        if name == "dyneq_bypass" {
+            self.bypassed = value > 0.5;
+            return;
+        }
 
         // Per-band: dyneq_bandN_param
-        if !name.starts_with("dyneq_band") || name.len() < 13 { return; }
+        if !name.starts_with("dyneq_band") || name.len() < 13 {
+            return;
+        }
         let idx = match name.as_bytes()[10] {
             b'0'..=b'3' => (name.as_bytes()[10] - b'0') as usize,
             _ => return,
@@ -158,21 +175,35 @@ impl DynamicEq {
         let band = &mut self.bands[idx];
 
         match param {
-            "freq" => { band.freq = (value as f64).clamp(20.0, 20000.0); band.recompute_sc(); }
-            "q" => { band.q = (value as f64).clamp(0.1, 10.0); band.recompute_sc(); }
+            "freq" => {
+                band.freq = (value as f64).clamp(20.0, 20000.0);
+                band.recompute_sc();
+            }
+            "q" => {
+                band.q = (value as f64).clamp(0.1, 10.0);
+                band.recompute_sc();
+            }
             "threshold" => band.threshold_db = value.clamp(-60.0, 0.0),
             "ratio" => band.ratio = value.clamp(1.0, 20.0),
             "attack" => band.set_attack(value.clamp(1.0, 200.0)),
             "release" => band.set_release(value.clamp(10.0, 2000.0)),
             "range" => band.max_gain_db = value.clamp(0.0, 24.0),
-            "mode" => band.mode = if value > 0.5 { DynEqMode::Expand } else { DynEqMode::Compress },
+            "mode" => {
+                band.mode = if value > 0.5 {
+                    DynEqMode::Expand
+                } else {
+                    DynEqMode::Compress
+                }
+            }
             "enabled" => band.enabled = value > 0.5,
             _ => {}
         }
     }
 
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
-        if self.bypassed { return; }
+        if self.bypassed {
+            return;
+        }
 
         for i in 0..left.len() {
             let mut l = left[i];
@@ -189,5 +220,7 @@ impl DynamicEq {
         }
     }
 
-    pub fn is_bypassed(&self) -> bool { self.bypassed }
+    pub fn is_bypassed(&self) -> bool {
+        self.bypassed
+    }
 }

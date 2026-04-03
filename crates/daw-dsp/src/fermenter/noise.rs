@@ -13,7 +13,9 @@ struct Xorshift32 {
 
 impl Xorshift32 {
     fn new(seed: u32) -> Self {
-        Self { state: if seed == 0 { 1 } else { seed } }
+        Self {
+            state: if seed == 0 { 1 } else { seed },
+        }
     }
 
     #[inline]

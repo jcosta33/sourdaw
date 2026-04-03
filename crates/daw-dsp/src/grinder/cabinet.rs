@@ -76,7 +76,11 @@ impl CabinetConvolver {
         }
 
         // Normalize
-        let max_val = ir.iter().map(|x| x.abs()).fold(0.0_f32, f32::max).max(0.001);
+        let max_val = ir
+            .iter()
+            .map(|x| x.abs())
+            .fold(0.0_f32, f32::max)
+            .max(0.001);
         for s in &mut ir {
             *s /= max_val;
         }

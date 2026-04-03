@@ -6,19 +6,19 @@
 //!
 //! Compiles to both native (Rust library) and WASM (AudioWorklet).
 
-pub mod gain_computer;
 pub mod detector;
-pub mod smoother;
-pub mod vca;
-pub mod opto;
-pub mod fet;
 pub mod diode;
-pub mod sidechain;
-pub mod stereo;
-pub mod lookahead;
-pub mod params;
-pub mod oversample;
 pub mod engine;
+pub mod fet;
+pub mod gain_computer;
+pub mod lookahead;
+pub mod opto;
+pub mod oversample;
+pub mod params;
+pub mod sidechain;
+pub mod smoother;
+pub mod stereo;
+pub mod vca;
 
 use engine::GlutenEngine;
 use wasm_bindgen::prelude::*;
@@ -98,7 +98,8 @@ impl GlutenInstance {
         self.output_right[..size].copy_from_slice(&self.input_right[..size]);
 
         // Pass external sidechain if available
-        self.engine.set_ext_sc(&self.sc_left[..size], &self.sc_right[..size]);
+        self.engine
+            .set_ext_sc(&self.sc_left[..size], &self.sc_right[..size]);
 
         self.engine.process_block(
             &mut self.output_left[..size],

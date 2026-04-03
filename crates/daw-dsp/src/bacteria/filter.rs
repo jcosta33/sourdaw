@@ -111,8 +111,8 @@ impl SvfFilter {
         }
 
         // Modulate cutoff with envelope
-        let mod_cutoff = (self.cutoff * (1.0 + self.env_amount * self.env_level * 4.0))
-            .clamp(20.0, 20000.0);
+        let mod_cutoff =
+            (self.cutoff * (1.0 + self.env_amount * self.env_level * 4.0)).clamp(20.0, 20000.0);
 
         // SVF coefficients (Hal Chamberlin / Andrew Simper variant)
         let g = (PI * mod_cutoff / self.sample_rate).tan();

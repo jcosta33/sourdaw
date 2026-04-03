@@ -19,7 +19,7 @@ impl Default for PsolaConfig {
 /// Offline PSOLA processing over a pre-computed array of pitch marks and target f0 curve.
 pub fn psola_process_offline(
     input: &[f32],
-    pitch_marks: &[usize], // array of epoch indices
+    pitch_marks: &[usize],   // array of epoch indices
     target_f0_curve: &[f32], // parallel to input length
     cfg: &PsolaConfig,
 ) -> Vec<f32> {
@@ -43,7 +43,7 @@ pub fn psola_process_offline(
         let half_grain = period_samples.round() as isize;
         let start = (pm as isize - half_grain).max(0) as usize;
         let end = (pm as isize + half_grain).min(input.len() as isize - 1) as usize;
-        
+
         if end <= start {
             continue;
         }
@@ -61,7 +61,7 @@ pub fn psola_process_offline(
 
         // Determine where this grain lands in the output
         let dst_center = current_out_t.round() as isize;
-        
+
         let out_start = dst_center - half_grain;
         let _out_end = dst_center + half_grain;
 

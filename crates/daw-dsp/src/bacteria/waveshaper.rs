@@ -23,10 +23,14 @@ impl BezierSegment {
         let mt2 = mt * mt;
         let mt3 = mt2 * mt;
 
-        let x = mt3 * self.p0.0 + 3.0 * mt2 * t * self.p1.0
-            + 3.0 * mt * t2 * self.p2.0 + t3 * self.p3.0;
-        let y = mt3 * self.p0.1 + 3.0 * mt2 * t * self.p1.1
-            + 3.0 * mt * t2 * self.p2.1 + t3 * self.p3.1;
+        let x = mt3 * self.p0.0
+            + 3.0 * mt2 * t * self.p1.0
+            + 3.0 * mt * t2 * self.p2.0
+            + t3 * self.p3.0;
+        let y = mt3 * self.p0.1
+            + 3.0 * mt2 * t * self.p1.1
+            + 3.0 * mt * t2 * self.p2.1
+            + t3 * self.p3.1;
         (x, y)
     }
 }

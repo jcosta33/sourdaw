@@ -3,7 +3,7 @@
 //! Feedback topology with dual-time-constant auto-release,
 //! THAT 2181 VCA distortion modeling (2nd harmonic).
 
-use super::gain_computer::{gain_computer, apply_range, db_to_linear, linear_to_db};
+use super::gain_computer::{apply_range, db_to_linear, gain_computer, linear_to_db};
 
 /// SSL-style auto-release with dual RC networks.
 struct AutoRelease {
@@ -111,8 +111,14 @@ impl VcaCompressor {
         match name {
             "threshold" => self.threshold = value.clamp(-60.0, 0.0),
             "ratio" => self.ratio = value.clamp(1.0, 20.0),
-            "attack" => { self.attack_ms = value.clamp(0.02, 250.0); self.update_coeffs(); }
-            "release" => { self.release_ms = value.clamp(25.0, 5000.0); self.update_coeffs(); }
+            "attack" => {
+                self.attack_ms = value.clamp(0.02, 250.0);
+                self.update_coeffs();
+            }
+            "release" => {
+                self.release_ms = value.clamp(25.0, 5000.0);
+                self.update_coeffs();
+            }
             "knee" => self.knee_width = value.clamp(0.0, 30.0),
             "range" => self.range = value.clamp(0.0, 60.0),
             "auto_release" => self.auto_release = value > 0.5,
@@ -121,9 +127,9 @@ impl VcaCompressor {
                 self.vca_type = (value as u8).clamp(0, 2);
                 // Preset k2 values per VCA type
                 self.vca_k2 = match self.vca_type {
-                    0 => 0.0,     // Ideal: no distortion
-                    1 => 0.003,   // THAT 2181: subtle 2nd harmonic
-                    2 => 0.008,   // DBX 202: warmer, more colored
+                    0 => 0.0,   // Ideal: no distortion
+                    1 => 0.003, // THAT 2181: subtle 2nd harmonic
+                    2 => 0.008, // DBX 202: warmer, more colored
                     _ => 0.003,
                 };
             }

@@ -6,21 +6,51 @@
 //! E₁ = (Vpk/Kp) · ln[1 + exp(Kp · (1/μ + (Vgk + Vct)/√(Kvb + Vpk²)))]
 //! Ip = (E₁^Ex / Kg) · (1 + sgn(E₁))
 
+#[derive(Clone, Copy)]
+enum AmpModel {
+    CleanTwin,
+    CrunchJcm,
+    LeadJcm,
+    Ac30TopBoost,
+    Rectifier,
+    Custom,
+}
+
+impl AmpModel {
+    fn from_index(index: u32) -> Self {
+        match index {
+            0 => Self::CleanTwin,
+            1 => Self::CrunchJcm,
+            2 => Self::LeadJcm,
+            3 => Self::Ac30TopBoost,
+            4 => Self::Rectifier,
+            _ => Self::Custom,
+        }
+    }
+}
+
 /// Koren model parameters for a tube type.
 #[derive(Clone)]
 pub struct TubeParams {
-    pub mu: f64,     // amplification factor
-    pub ex: f64,     // transfer curve exponent
-    pub kg: f64,     // plate current scaling
-    pub kp: f64,     // plate voltage scaling
-    pub kvb: f64,    // breakdown voltage parameter
-    pub vct: f64,    // contact potential offset
+    pub mu: f64,  // amplification factor
+    pub ex: f64,  // transfer curve exponent
+    pub kg: f64,  // plate current scaling
+    pub kp: f64,  // plate voltage scaling
+    pub kvb: f64, // breakdown voltage parameter
+    pub vct: f64, // contact potential offset
 }
 
 impl TubeParams {
     /// Default 12AX7 parameters.
     pub fn ax7() -> Self {
-        Self { mu: 100.0, ex: 1.4, kg: 1060.0, kp: 600.0, kvb: 300.0, vct: 0.5 }
+        Self {
+            mu: 100.0,
+            ex: 1.4,
+            kg: 1060.0,
+            kp: 600.0,
+            kvb: 300.0,
+            vct: 0.5,
+        }
     }
 }
 
@@ -103,7 +133,8 @@ impl TriodeStage {
 
         for _ in 0..32 {
             let ip = self.plate_current(vgk, vpk);
-            let target = (self.supply_voltage - ip * self.plate_resistor).clamp(0.0, self.supply_voltage);
+            let target =
+                (self.supply_voltage - ip * self.plate_resistor).clamp(0.0, self.supply_voltage);
             vpk += (target - vpk) * 0.25;
         }
 
@@ -154,7 +185,8 @@ impl TriodeStage {
         self.grid_current = ig;
 
         // Coupling cap charges from grid current, discharges through RC
-        self.coupling_cap_charge += dt * (ig * 1000.0 - self.coupling_cap_charge / self.coupling_cap_tau);
+        self.coupling_cap_charge +=
+            dt * (ig * 1000.0 - self.coupling_cap_charge / self.coupling_cap_tau);
         self.coupling_cap_charge = self.coupling_cap_charge.clamp(-5.0, 5.0);
 
         // Plate current
@@ -162,16 +194,20 @@ impl TriodeStage {
         let ip = self.plate_current(vgk, vpk);
 
         // Update plate voltage: V_plate = V_supply - Ip * R_plate
-        let target_plate_voltage = (self.supply_voltage - ip * self.plate_resistor).clamp(0.0, self.supply_voltage);
+        let target_plate_voltage =
+            (self.supply_voltage - ip * self.plate_resistor).clamp(0.0, self.supply_voltage);
         let plate_tau = 1.0e-4;
         let plate_coeff = 1.0 - (-dt / plate_tau).exp();
         self.plate_voltage += (target_plate_voltage - self.plate_voltage) * plate_coeff;
 
         // Output = inverted plate voltage swing, normalized
-        let output = (self.plate_voltage - self.quiescent_plate_voltage) / (self.supply_voltage * 0.5);
+        let output =
+            (self.plate_voltage - self.quiescent_plate_voltage) / (self.supply_voltage * 0.5);
 
         // Miller capacitance: dynamic low-pass that depends on stage gain
-        let stage_gain = (ip * self.plate_resistor / self.supply_voltage).abs().clamp(0.0, 10.0);
+        let stage_gain = (ip * self.plate_resistor / self.supply_voltage)
+            .abs()
+            .clamp(0.0, 10.0);
         let miller_freq = 20000.0 / (1.0 + self.miller_cap_factor * stage_gain * 2.0);
         let miller_coeff = (-2.0 * std::f64::consts::PI * miller_freq * dt).exp();
         self.miller_lp_state = output + miller_coeff * (self.miller_lp_state - output);
@@ -196,8 +232,12 @@ pub struct Preamp {
     dc_initialized: bool,
     gain: f32,
     bright: bool,
+    fat: bool,
+    amp_model: AmpModel,
     bright_cap_state: f32,
+    fat_low_state: f32,
     channel: u32,
+    sample_rate: f32,
 }
 
 impl Preamp {
@@ -213,8 +253,12 @@ impl Preamp {
             dc_initialized: false,
             gain: 5.0,
             bright: false,
+            fat: false,
+            amp_model: AmpModel::CrunchJcm,
             bright_cap_state: 0.0,
+            fat_low_state: 0.0,
             channel: 1,
+            sample_rate,
         }
     }
 
@@ -222,6 +266,8 @@ impl Preamp {
         match name {
             "gain" => self.gain = value,
             "bright" => self.bright = value > 0.5,
+            "fat" => self.fat = value > 0.5,
+            "ampModel" => self.amp_model = AmpModel::from_index(value as u32),
             "channel" => self.channel = value as u32,
             _ => {
                 for stage in &mut self.stages {
@@ -233,6 +279,19 @@ impl Preamp {
 
     pub fn process_sample(&mut self, input: f32) -> f32 {
         let gain_scale = self.gain / 10.0;
+        let (model_trim, interstage_attenuation, model_brightness, model_low_end): (
+            f32,
+            f32,
+            f32,
+            f32,
+        ) = match self.amp_model {
+            AmpModel::CleanTwin => (0.75, 0.18, 0.05, -0.04),
+            AmpModel::CrunchJcm => (1.00, 0.14, 0.00, 0.02),
+            AmpModel::LeadJcm => (1.15, 0.12, -0.02, 0.05),
+            AmpModel::Ac30TopBoost => (0.95, 0.15, 0.08, -0.03),
+            AmpModel::Rectifier => (1.30, 0.10, -0.08, 0.10),
+            AmpModel::Custom => (1.00, 0.12, 0.00, 0.00),
+        };
 
         // Number of active stages depends on channel
         let num_stages = match self.channel {
@@ -241,13 +300,41 @@ impl Preamp {
             _ => 3, // lead
         };
 
-        let mut signal = input * gain_scale;
+        let mut signal = input * gain_scale * model_trim;
 
-        // Bright cap: high-frequency boost at low gain
-        if self.bright {
+        // Bright voicing: a narrower, smoother top-end lift that stays polite
+        // on hard pick transients instead of acting like a click enhancer.
+        if self.bright || model_brightness.abs() > 0.01 {
+            let dt = 1.0 / self.sample_rate;
+            let bright_cutoff_hz = match self.amp_model {
+                AmpModel::CleanTwin => 1_900.0,
+                AmpModel::CrunchJcm => 2_100.0,
+                AmpModel::LeadJcm => 2_300.0,
+                AmpModel::Ac30TopBoost => 2_600.0,
+                AmpModel::Rectifier => 2_400.0,
+                AmpModel::Custom => 2_100.0,
+            };
+            let bright_coeff = (2.0 * std::f32::consts::PI * bright_cutoff_hz * dt).min(0.22);
+            self.bright_cap_state += (signal - self.bright_cap_state) * bright_coeff;
             let hp = signal - self.bright_cap_state;
-            self.bright_cap_state += (signal - self.bright_cap_state) * 0.05;
-            signal += hp * (1.0 - gain_scale) * 0.3;
+            let switch_amount = if self.bright { 0.045 } else { 0.0 };
+            let channel_trim = match self.channel {
+                0 => 1.0,
+                1 => 0.72,
+                _ => 0.42,
+            };
+            let bright_amount = ((1.0 - gain_scale) * 0.14 + model_brightness + switch_amount)
+                .max(0.0)
+                * channel_trim;
+            signal += hp * bright_amount;
+        }
+
+        if self.fat || model_low_end.abs() > 0.01 {
+            let dt = 1.0 / self.sample_rate;
+            let low_coeff = (2.0 * std::f32::consts::PI * 180.0 * dt).min(0.35);
+            self.fat_low_state += low_coeff * (signal - self.fat_low_state);
+            let fat_amount = (if self.fat { 0.22 } else { 0.0 }) + model_low_end;
+            signal += self.fat_low_state * fat_amount;
         }
 
         let mut final_out = 0.0;
@@ -275,7 +362,7 @@ impl Preamp {
             // before it hits the next grid. Without this divider, crunch/lead
             // channels collapse because every later stage sees an unrealistically
             // huge grid excursion.
-            signal = dc_out * 0.12;
+            signal = dc_out * interstage_attenuation;
         }
 
         if !self.dc_initialized {
@@ -291,6 +378,7 @@ impl Preamp {
             stage.reset();
         }
         self.bright_cap_state = 0.0;
+        self.fat_low_state = 0.0;
         self.dc_x.fill(0.0);
         self.dc_y.fill(0.0);
         self.dc_initialized = false;
@@ -328,5 +416,65 @@ mod tests {
     #[test]
     fn lead_channel_produces_audible_output() {
         assert!(average_abs_output(2) > 1.0e-3);
+    }
+
+    #[test]
+    fn amp_model_and_fat_change_the_preamp_voice() {
+        let total = 4096;
+
+        let mut clean = Preamp::new(48_000.0);
+        clean.set_param("ampModel", 0.0);
+        clean.set_param("gain", 5.0);
+
+        let mut recto = Preamp::new(48_000.0);
+        recto.set_param("ampModel", 4.0);
+        recto.set_param("fat", 1.0);
+        recto.set_param("gain", 5.0);
+
+        let mut diff_sum = 0.0_f32;
+        for n in 0..total {
+            let phase = (n as f32 * 2.0 * std::f32::consts::PI * 110.0) / 48_000.0;
+            let sample = phase.sin() * 0.12;
+            let clean_out = clean.process_sample(sample);
+            let recto_out = recto.process_sample(sample);
+            diff_sum += (clean_out - recto_out).abs();
+        }
+
+        let average_diff = diff_sum / total as f32;
+        assert!(
+            average_diff > 1.0e-3,
+            "amp model and fat controls should audibly change preamp voicing, got diff {average_diff}"
+        );
+    }
+
+    #[test]
+    fn clean_twin_bright_voicing_stays_polite_on_pick_transients() {
+        let mut neutral = Preamp::new(48_000.0);
+        neutral.set_param("ampModel", 0.0);
+        neutral.set_param("channel", 2.0);
+        neutral.set_param("gain", 4.5);
+
+        let mut bright = Preamp::new(48_000.0);
+        bright.set_param("ampModel", 0.0);
+        bright.set_param("channel", 2.0);
+        bright.set_param("gain", 4.5);
+        bright.set_param("bright", 1.0);
+
+        let total = 2048;
+        let mut neutral_peak = 0.0_f32;
+        let mut bright_peak = 0.0_f32;
+
+        for n in 0..total {
+            let env = (-3.8 * n as f32 / total as f32).exp();
+            let sample =
+                ((n as f32 * 2.0 * std::f32::consts::PI * 220.0) / 48_000.0).sin() * 0.18 * env;
+            neutral_peak = neutral_peak.max(neutral.process_sample(sample).abs());
+            bright_peak = bright_peak.max(bright.process_sample(sample).abs());
+        }
+
+        assert!(
+            bright_peak < neutral_peak * 1.45,
+            "bright voicing should add bite without spiky transient clicks (neutral={neutral_peak}, bright={bright_peak})"
+        );
     }
 }

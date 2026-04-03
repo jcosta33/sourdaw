@@ -17,8 +17,8 @@ pub enum SaturationType {
 /// Per-band exciter with saturation and blend control.
 struct BandExciter {
     sat_type: SaturationType,
-    drive: f32,       // 0.0–1.0
-    blend: f32,       // 0.0–1.0 wet/dry
+    drive: f32, // 0.0–1.0
+    blend: f32, // 0.0–1.0 wet/dry
     enabled: bool,
     // Tape pre/de-emphasis
     pre_emph_l: BiquadState,
@@ -54,7 +54,9 @@ impl BandExciter {
 
     #[inline]
     fn process_sample(&mut self, l: f32, r: f32) -> (f32, f32) {
-        if !self.enabled || self.blend < 0.001 { return (l, r); }
+        if !self.enabled || self.blend < 0.001 {
+            return (l, r);
+        }
 
         let drive_amount = 1.0 + self.drive * 3.0;
 
@@ -132,10 +134,15 @@ impl HarmonicExciter {
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
-        if name == "exc_bypass" { self.bypassed = value > 0.5; return; }
+        if name == "exc_bypass" {
+            self.bypassed = value > 0.5;
+            return;
+        }
 
         // Per-band: exc_bandN_param
-        if !name.starts_with("exc_band") || name.len() < 11 { return; }
+        if !name.starts_with("exc_band") || name.len() < 11 {
+            return;
+        }
         let idx = match name.as_bytes()[8] {
             b'0'..=b'3' => (name.as_bytes()[8] - b'0') as usize,
             _ => return,
@@ -145,8 +152,10 @@ impl HarmonicExciter {
         match param {
             "type" => {
                 self.bands[idx].sat_type = match value as u32 {
-                    0 => SaturationType::Tape, 1 => SaturationType::Tube,
-                    2 => SaturationType::Transistor, 3 => SaturationType::Warm,
+                    0 => SaturationType::Tape,
+                    1 => SaturationType::Tube,
+                    2 => SaturationType::Transistor,
+                    3 => SaturationType::Warm,
                     _ => SaturationType::Tape,
                 };
             }
@@ -158,7 +167,9 @@ impl HarmonicExciter {
     }
 
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
-        if self.bypassed { return; }
+        if self.bypassed {
+            return;
+        }
 
         for i in 0..left.len() {
             let band_signals = self.splitter.process(left[i], right[i]);
@@ -176,7 +187,9 @@ impl HarmonicExciter {
         }
     }
 
-    pub fn is_bypassed(&self) -> bool { self.bypassed }
+    pub fn is_bypassed(&self) -> bool {
+        self.bypassed
+    }
 }
 
 #[inline]
@@ -199,7 +212,11 @@ fn transistor_clip(x: f32, drive: f32, knee: f32) -> f32 {
     } else {
         let excess = x.abs() - threshold;
         let knee_region = excess / (knee + 1e-6);
-        let clipped = threshold + knee * (2.0 * knee_region - knee_region * knee_region).max(0.0).min(1.0);
+        let clipped = threshold
+            + knee
+                * (2.0 * knee_region - knee_region * knee_region)
+                    .max(0.0)
+                    .min(1.0);
         clipped * x.signum() / drive.max(0.01)
     }
 }

@@ -87,7 +87,9 @@ impl ModMatrix {
 
         for i in 0..self.active_count {
             let slot = &self.slots[i];
-            if !slot.enabled || slot.amount.abs() < 1e-6 { continue; }
+            if !slot.enabled || slot.amount.abs() < 1e-6 {
+                continue;
+            }
 
             let source_val = match slot.source {
                 ModSource::None => 0.0,

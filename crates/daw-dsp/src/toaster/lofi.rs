@@ -3,9 +3,9 @@
 
 pub struct LofiProcessor {
     // Bit reduction
-    bit_depth: u8,          // 4-16 (16 = off)
+    bit_depth: u8, // 4-16 (16 = off)
     // Sample rate reduction
-    target_rate: f32,       // reduced sample rate (8000-44100)
+    target_rate: f32, // reduced sample rate (8000-44100)
     hold_value_l: f32,
     hold_value_r: f32,
     hold_counter: f32,
@@ -14,7 +14,7 @@ pub struct LofiProcessor {
     filter_state_r: f32,
     filter_coeff: f32,
     // Mix
-    mix: f32,               // 0-1
+    mix: f32, // 0-1
 }
 
 impl LofiProcessor {
@@ -22,9 +22,11 @@ impl LofiProcessor {
         Self {
             bit_depth: 16,
             target_rate: 44100.0,
-            hold_value_l: 0.0, hold_value_r: 0.0,
+            hold_value_l: 0.0,
+            hold_value_r: 0.0,
             hold_counter: 0.0,
-            filter_state_l: 0.0, filter_state_r: 0.0,
+            filter_state_l: 0.0,
+            filter_state_r: 0.0,
             filter_coeff: 1.0,
             mix: 0.0,
         }
@@ -46,7 +48,9 @@ impl LofiProcessor {
     }
 
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32], sample_rate: f32) {
-        if self.mix < 0.001 { return; }
+        if self.mix < 0.001 {
+            return;
+        }
 
         let rate_ratio = sample_rate / self.target_rate;
         let levels = (2.0f32).powi(self.bit_depth as i32 - 1);

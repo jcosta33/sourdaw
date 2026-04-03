@@ -3,16 +3,18 @@
 //! Default order: EQ → Multiband Dynamics → Stereo Imager → Exciter → Limiter
 //! Each stage has an inline MeterTap after it for signal visualization.
 
-use super::eq::MasteringEq;
+use super::dither::Ditherer;
 use super::dynamic_eq::DynamicEq;
+use super::eq::MasteringEq;
+use super::exciter::HarmonicExciter;
+use super::imager::StereoImager;
+use super::limiter::LookaheadLimiter;
 use super::linear_phase_eq::LinearPhaseEq;
 use super::match_eq::MatchEq;
+use super::metering::{
+    IntegratedLufs, LoudnessRange, MeterTap, MomentaryLufs, ShortTermLufs, TruePeakDetector,
+};
 use super::multiband::MultibandDynamics;
-use super::imager::StereoImager;
-use super::exciter::HarmonicExciter;
-use super::limiter::LookaheadLimiter;
-use super::dither::Ditherer;
-use super::metering::{MeterTap, MomentaryLufs, ShortTermLufs, IntegratedLufs, TruePeakDetector, LoudnessRange};
 
 /// Module identifier for the reorderable chain.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -60,7 +62,7 @@ pub struct ProofChain {
     /// A/B comparison: when true, bypasses processing but applies gain offset
     /// so the dry signal matches the processed signal's loudness.
     ab_bypass: bool,
-    ab_gain_offset: f32,  // dB offset applied when in A (bypass) mode
+    ab_gain_offset: f32, // dB offset applied when in A (bypass) mode
 }
 
 impl ProofChain {
@@ -76,7 +78,13 @@ impl ProofChain {
             exciter: HarmonicExciter::new(sr),
             limiter: LookaheadLimiter::new(sr as f32),
             dither: Ditherer::new(16),
-            order: [ModuleId::Eq, ModuleId::Dynamics, ModuleId::Imager, ModuleId::Exciter, ModuleId::Limiter],
+            order: [
+                ModuleId::Eq,
+                ModuleId::Dynamics,
+                ModuleId::Imager,
+                ModuleId::Exciter,
+                ModuleId::Limiter,
+            ],
             taps: core::array::from_fn(|_| MeterTap::new(sr as f32)),
             input_lufs: MomentaryLufs::new(sr),
             output_lufs: MomentaryLufs::new(sr),
@@ -109,22 +117,35 @@ impl ProofChain {
             }
             return;
         }
-        if name.starts_with("eq_") { self.eq.set_param(name, value); }
-        else if name.starts_with("dyneq_") { self.dynamic_eq.set_param(name, value); }
-        else if name.starts_with("match_") { self.match_eq.set_param(name, value); }
-        else if name.starts_with("dyn_") { self.dynamics.set_param(name, value); }
-        else if name.starts_with("img_") { self.imager.set_param(name, value); }
-        else if name.starts_with("exc_") { self.exciter.set_param(name, value); }
-        else if name.starts_with("lim_") { self.limiter.set_param(name, value); }
-        else if name.starts_with("dither_") { self.dither.set_param(name, value); }
+        if name.starts_with("eq_") {
+            self.eq.set_param(name, value);
+        } else if name.starts_with("dyneq_") {
+            self.dynamic_eq.set_param(name, value);
+        } else if name.starts_with("match_") {
+            self.match_eq.set_param(name, value);
+        } else if name.starts_with("dyn_") {
+            self.dynamics.set_param(name, value);
+        } else if name.starts_with("img_") {
+            self.imager.set_param(name, value);
+        } else if name.starts_with("exc_") {
+            self.exciter.set_param(name, value);
+        } else if name.starts_with("lim_") {
+            self.limiter.set_param(name, value);
+        } else if name.starts_with("dither_") {
+            self.dither.set_param(name, value);
+        }
     }
 
     /// Reorder modules. `new_order` contains ModuleId values in desired order.
     pub fn reorder(&mut self, new_order: [u8; NUM_MODULES]) {
         for (i, &id) in new_order.iter().enumerate() {
             self.order[i] = match id {
-                0 => ModuleId::Eq, 1 => ModuleId::Dynamics, 2 => ModuleId::Imager,
-                3 => ModuleId::Exciter, 4 => ModuleId::Limiter, _ => self.order[i],
+                0 => ModuleId::Eq,
+                1 => ModuleId::Dynamics,
+                2 => ModuleId::Imager,
+                3 => ModuleId::Exciter,
+                4 => ModuleId::Limiter,
+                _ => self.order[i],
             };
         }
     }
@@ -223,7 +244,9 @@ impl ProofChain {
         self.taps.get(idx)
     }
 
-    pub fn ab_gain_offset_db(&self) -> f32 { self.ab_gain_offset }
+    pub fn ab_gain_offset_db(&self) -> f32 {
+        self.ab_gain_offset
+    }
 
     pub fn latency_samples(&self) -> usize {
         self.limiter.latency_samples() + self.linear_eq.latency_samples()

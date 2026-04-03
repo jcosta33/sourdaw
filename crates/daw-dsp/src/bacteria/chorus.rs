@@ -33,7 +33,11 @@ impl DelayLine {
     fn read(&self, delay_samples: f32) -> f32 {
         let delay = delay_samples.clamp(0.0, (self.max_samples - 2) as f32);
         let index = self.write_pos as f32 - delay - 1.0;
-        let index = if index < 0.0 { index + self.max_samples as f32 } else { index };
+        let index = if index < 0.0 {
+            index + self.max_samples as f32
+        } else {
+            index
+        };
         let i0 = index as usize % self.max_samples;
         let i1 = (i0 + 1) % self.max_samples;
         let frac = index - index.floor();
@@ -54,11 +58,11 @@ pub struct ChorusFlanger {
     delay_l: DelayLine,
     delay_r: DelayLine,
     lfo_phase: f32,
-    rate: f32,           // Hz
-    depth: f32,          // 0-1
-    feedback: f32,       // -1 to 1
-    mix: f32,            // 0-1
-    base_delay_ms: f32,  // chorus: 7-20ms, flanger: 1-5ms
+    rate: f32,          // Hz
+    depth: f32,         // 0-1
+    feedback: f32,      // -1 to 1
+    mix: f32,           // 0-1
+    base_delay_ms: f32, // chorus: 7-20ms, flanger: 1-5ms
     sample_rate: f32,
     fb_sample_l: f32,
     fb_sample_r: f32,
@@ -96,7 +100,9 @@ impl ChorusFlanger {
         // LFO
         let phase_inc = self.rate / self.sample_rate;
         self.lfo_phase += phase_inc;
-        if self.lfo_phase >= 1.0 { self.lfo_phase -= 1.0; }
+        if self.lfo_phase >= 1.0 {
+            self.lfo_phase -= 1.0;
+        }
 
         let lfo_l = (self.lfo_phase * 2.0 * PI).sin();
         let lfo_r = ((self.lfo_phase + 0.25) * 2.0 * PI).sin(); // 90° offset for stereo
@@ -145,7 +151,10 @@ struct AllPass1 {
 
 impl AllPass1 {
     fn new() -> Self {
-        Self { coeff: 0.0, z1: 0.0 }
+        Self {
+            coeff: 0.0,
+            z1: 0.0,
+        }
     }
 
     fn set_freq(&mut self, freq: f32, sample_rate: f32) {
@@ -220,7 +229,9 @@ impl Phaser {
     pub fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
         let phase_inc = self.rate / self.sample_rate;
         self.lfo_phase += phase_inc;
-        if self.lfo_phase >= 1.0 { self.lfo_phase -= 1.0; }
+        if self.lfo_phase >= 1.0 {
+            self.lfo_phase -= 1.0;
+        }
 
         let lfo = (self.lfo_phase * 2.0 * PI).sin() * 0.5 + 0.5; // 0-1
         let freq = self.min_freq + (self.max_freq - self.min_freq) * lfo * self.depth;
@@ -253,8 +264,12 @@ impl Phaser {
     }
 
     pub fn reset(&mut self) {
-        for s in &mut self.stages_l { s.reset(); }
-        for s in &mut self.stages_r { s.reset(); }
+        for s in &mut self.stages_l {
+            s.reset();
+        }
+        for s in &mut self.stages_r {
+            s.reset();
+        }
         self.lfo_phase = 0.0;
         self.fb_l = 0.0;
         self.fb_r = 0.0;

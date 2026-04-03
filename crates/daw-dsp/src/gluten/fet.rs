@@ -3,7 +3,7 @@
 //! Ultra-fast attack (20µs–800µs), JFET square-law distortion (odd harmonics),
 //! transformer saturation (even harmonics), "all buttons in" mode.
 
-use super::gain_computer::{gain_computer, apply_range, db_to_linear, linear_to_db};
+use super::gain_computer::{apply_range, db_to_linear, gain_computer, linear_to_db};
 use super::oversample::ConfigurableOversample;
 
 pub struct FetCompressor {
@@ -40,7 +40,7 @@ impl FetCompressor {
             sample_rate,
             threshold: -24.0,
             ratio: 4.0,
-            attack_ms: 0.8,  // 800µs — very fast
+            attack_ms: 0.8, // 800µs — very fast
             release_ms: 300.0,
             input_gain: 0.0,
             output_gain: 0.0,
@@ -70,14 +70,23 @@ impl FetCompressor {
         match name {
             "threshold" => self.threshold = value.clamp(-60.0, 0.0),
             "ratio" => self.ratio = value.clamp(1.0, 20.0),
-            "attack" => { self.attack_ms = value.clamp(0.02, 2.0); self.update_coeffs(); }
-            "release" => { self.release_ms = value.clamp(25.0, 5000.0); self.update_coeffs(); }
+            "attack" => {
+                self.attack_ms = value.clamp(0.02, 2.0);
+                self.update_coeffs();
+            }
+            "release" => {
+                self.release_ms = value.clamp(25.0, 5000.0);
+                self.update_coeffs();
+            }
             "input_gain" => self.input_gain = value.clamp(-12.0, 24.0),
             "output_gain" => self.output_gain = value.clamp(-24.0, 24.0),
             "xfmr_drive" => self.xfmr_drive = value.clamp(0.0, 3.0),
             "jfet_k3" => self.jfet_k3 = value.clamp(0.0, 0.5),
             "xfmr_k2" => self.xfmr_k2 = value.clamp(0.0, 0.3),
-            "oversampling" => { self.os_l.set_rate(value as u8); self.os_r.set_rate(value as u8); }
+            "oversampling" => {
+                self.os_l.set_rate(value as u8);
+                self.os_r.set_rate(value as u8);
+            }
             "all_buttons" => self.all_buttons = value > 0.5,
             _ => {}
         }

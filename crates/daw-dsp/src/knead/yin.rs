@@ -30,14 +30,23 @@ pub struct YinResult {
     pub tau: Option<f32>,
 }
 
-pub fn yin_frame(x: &[f32], cfg: &YinConfig, work_buffer_d: &mut [f32], work_buffer_cmnd: &mut [f32]) -> YinResult {
+pub fn yin_frame(
+    x: &[f32],
+    cfg: &YinConfig,
+    work_buffer_d: &mut [f32],
+    work_buffer_cmnd: &mut [f32],
+) -> YinResult {
     let n = cfg.frame_size.min(x.len());
     let tau_min = (cfg.sample_rate / cfg.f0_max).floor() as usize;
     let tau_max = (cfg.sample_rate / cfg.f0_min).ceil() as usize;
     let tau_max = tau_max.min(n - 1);
 
     if n <= tau_max {
-        return YinResult { f0_hz: None, periodicity: 0.0, tau: None };
+        return YinResult {
+            f0_hz: None,
+            periodicity: 0.0,
+            tau: None,
+        };
     }
 
     // 1) Difference function
@@ -97,6 +106,10 @@ pub fn yin_frame(x: &[f32], cfg: &YinConfig, work_buffer_d: &mut [f32], work_buf
             }
         }
         let periodicity = 1.0 - min_val.clamp(0.0, 1.0);
-        YinResult { f0_hz: None, periodicity, tau: None }
+        YinResult {
+            f0_hz: None,
+            periodicity,
+            tau: None,
+        }
     }
 }

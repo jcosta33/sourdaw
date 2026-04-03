@@ -6,7 +6,7 @@ pub struct LookaheadLimiter {
     delay_l: VecDeque<f32>,
     delay_r: VecDeque<f32>,
     gain_buffer: VecDeque<f32>,
-    ceiling: f32,       // linear
+    ceiling: f32, // linear
     ceiling_db: f32,
     release_coeff: f32,
     current_gain: f32,
@@ -65,7 +65,9 @@ impl LookaheadLimiter {
     }
 
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
-        if self.bypassed { return; }
+        if self.bypassed {
+            return;
+        }
 
         let mut peak_out = 0.0_f32;
         let mut max_gr = 0.0_f32;
@@ -106,17 +108,33 @@ impl LookaheadLimiter {
 
             // Track metering
             let gr = 20.0 * self.current_gain.log10();
-            if gr < max_gr { max_gr = gr; }
+            if gr < max_gr {
+                max_gr = gr;
+            }
             let out_peak = left[i].abs().max(right[i].abs());
-            if out_peak > peak_out { peak_out = out_peak; }
+            if out_peak > peak_out {
+                peak_out = out_peak;
+            }
         }
 
         self.meter_gr_db = max_gr;
-        self.meter_output_peak = if peak_out > 1e-10 { 20.0 * peak_out.log10() } else { -100.0 };
+        self.meter_output_peak = if peak_out > 1e-10 {
+            20.0 * peak_out.log10()
+        } else {
+            -100.0
+        };
     }
 
-    pub fn get_gr_db(&self) -> f32 { self.meter_gr_db }
-    pub fn get_output_peak_db(&self) -> f32 { self.meter_output_peak }
-    pub fn latency_samples(&self) -> usize { self.lookahead_samples }
-    pub fn is_bypassed(&self) -> bool { self.bypassed }
+    pub fn get_gr_db(&self) -> f32 {
+        self.meter_gr_db
+    }
+    pub fn get_output_peak_db(&self) -> f32 {
+        self.meter_output_peak
+    }
+    pub fn latency_samples(&self) -> usize {
+        self.lookahead_samples
+    }
+    pub fn is_bypassed(&self) -> bool {
+        self.bypassed
+    }
 }

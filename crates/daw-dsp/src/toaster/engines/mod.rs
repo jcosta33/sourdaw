@@ -2,25 +2,25 @@
 //!
 //! Each engine produces a monophonic drum sound from a trigger event.
 
-pub mod kick;
-pub mod snare;
-pub mod hihat;
 pub mod clap;
-pub mod perc;
-pub mod tom;
 pub mod cymbal;
-pub mod modal;
 pub mod fm_perc;
+pub mod hihat;
+pub mod kick;
+pub mod modal;
+pub mod perc;
+pub mod snare;
+pub mod tom;
 
-use kick::KickEngine;
-use snare::SnareEngine;
-use hihat::HiHatEngine;
 use clap::ClapEngine;
-use perc::PercEngine;
-use tom::TomEngine;
 use cymbal::CymbalEngine;
-use modal::ModalEngine;
 use fm_perc::FmPercEngine;
+use hihat::HiHatEngine;
+use kick::KickEngine;
+use modal::ModalEngine;
+use perc::PercEngine;
+use snare::SnareEngine;
+use tom::TomEngine;
 
 /// Which synthesis algorithm a pad uses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

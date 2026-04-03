@@ -9,14 +9,26 @@ use std::f32::consts::PI;
 /// 2nd-order biquad filter (used to cascade into LR4).
 #[derive(Clone)]
 struct Biquad {
-    b0: f32, b1: f32, b2: f32,
-    a1: f32, a2: f32,
-    z1: f32, z2: f32,
+    b0: f32,
+    b1: f32,
+    b2: f32,
+    a1: f32,
+    a2: f32,
+    z1: f32,
+    z2: f32,
 }
 
 impl Biquad {
     fn new() -> Self {
-        Self { b0: 1.0, b1: 0.0, b2: 0.0, a1: 0.0, a2: 0.0, z1: 0.0, z2: 0.0 }
+        Self {
+            b0: 1.0,
+            b1: 0.0,
+            b2: 0.0,
+            a1: 0.0,
+            a2: 0.0,
+            z1: 0.0,
+            z2: 0.0,
+        }
     }
 
     fn set_butterworth_lp(&mut self, freq: f32, sample_rate: f32) {
@@ -134,8 +146,12 @@ impl CrossoverEngine {
         let num_xovers = n.saturating_sub(1);
 
         self.band_count = n;
-        self.points_l.resize_with(num_xovers, || Lr4CrossoverPoint::new(1000.0, self.sample_rate));
-        self.points_r.resize_with(num_xovers, || Lr4CrossoverPoint::new(1000.0, self.sample_rate));
+        self.points_l.resize_with(num_xovers, || {
+            Lr4CrossoverPoint::new(1000.0, self.sample_rate)
+        });
+        self.points_r.resize_with(num_xovers, || {
+            Lr4CrossoverPoint::new(1000.0, self.sample_rate)
+        });
 
         for i in 0..num_xovers {
             let freq = freqs.get(i).copied().unwrap_or(1000.0).clamp(20.0, 20000.0);
@@ -146,7 +162,13 @@ impl CrossoverEngine {
 
     /// Split a stereo sample into per-band outputs.
     /// Returns arrays of (left, right) for each band.
-    pub fn process_sample(&mut self, left: f32, right: f32, bands_l: &mut [f32], bands_r: &mut [f32]) {
+    pub fn process_sample(
+        &mut self,
+        left: f32,
+        right: f32,
+        bands_l: &mut [f32],
+        bands_r: &mut [f32],
+    ) {
         if self.band_count <= 1 {
             bands_l[0] = left;
             bands_r[0] = right;

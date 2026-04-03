@@ -108,17 +108,15 @@ impl LstmCell {
 
         // Compute gate activations (simplified for single input)
         for g in 0..4 * h {
-            self.gates[g] = input * self.w_ih[g]
-                + self.hidden[g % h] * self.w_hh[g]
-                + self.bias[g];
+            self.gates[g] = input * self.w_ih[g] + self.hidden[g % h] * self.w_hh[g] + self.bias[g];
         }
 
         // Apply gate activations
         for i in 0..h {
-            let i_gate = sigmoid(self.gates[i]);           // input gate
-            let f_gate = sigmoid(self.gates[h + i]);       // forget gate
-            let g_gate = self.gates[2 * h + i].tanh();     // cell gate
-            let o_gate = sigmoid(self.gates[3 * h + i]);   // output gate
+            let i_gate = sigmoid(self.gates[i]); // input gate
+            let f_gate = sigmoid(self.gates[h + i]); // forget gate
+            let g_gate = self.gates[2 * h + i].tanh(); // cell gate
+            let o_gate = sigmoid(self.gates[3 * h + i]); // output gate
 
             self.cell[i] = f_gate * self.cell[i] + i_gate * g_gate;
             self.hidden[i] = o_gate * self.cell[i].tanh();

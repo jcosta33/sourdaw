@@ -1,16 +1,17 @@
 /// Single synthesizer voice — owns oscillator, filter, envelopes, LFO.
-
 use super::additive::AdditiveEngine;
 use super::chaos::{LorenzMod, PerlinMod};
 use super::envelope::Envelope;
-use super::filter::{fast_tanh, FilterMode, SvfFilter, MoogLadder, DiodeLadder, FormantFilter, Ms20Filter, SemFilter};
+use super::filter::{
+    fast_tanh, DiodeLadder, FilterMode, FormantFilter, MoogLadder, Ms20Filter, SemFilter, SvfFilter,
+};
 use super::fm::FmEngine;
 use super::granular::GranularEngine;
 use super::lfo::{Lfo, LfoShape};
 use super::modulation::ModMatrix;
 use super::mseg::Mseg;
 use super::noise::NoiseGen;
-use super::oscillator::{PolyBlepOsc, UnisonOsc, WavetableOsc, Wavetable};
+use super::oscillator::{PolyBlepOsc, UnisonOsc, Wavetable, WavetableOsc};
 use super::physical::KarplusStrong;
 use super::sampler::SamplerEngine;
 use super::spectral::SpectralWarp;
@@ -39,11 +40,11 @@ pub struct VoiceParams<'a> {
     pub per_voice_drive: f32,
     pub warp_mode: u8,
     pub warp_amount: f32,
-    pub audio_mod_rate: f32,     // 0-5000 Hz
-    pub audio_mod_depth: f32,    // 0-1
-    pub audio_mod_target: u8,    // 0=off, 1=pitch(FM), 2=amplitude(AM), 3=filter
-    pub chaos_amount: f32,       // 0-1, how much Lorenz/Perlin modulates
-    pub chaos_speed: f32,        // 0.01-10, speed of chaos modulators
+    pub audio_mod_rate: f32,  // 0-5000 Hz
+    pub audio_mod_depth: f32, // 0-1
+    pub audio_mod_target: u8, // 0=off, 1=pitch(FM), 2=amplitude(AM), 3=filter
+    pub chaos_amount: f32,    // 0-1, how much Lorenz/Perlin modulates
+    pub chaos_speed: f32,     // 0.01-10, speed of chaos modulators
 }
 
 pub struct Voice {
@@ -70,7 +71,7 @@ pub struct Voice {
     amp_env: Envelope,
     filter_env: Envelope,
     lfo: Lfo,
-    audio_lfo: Lfo,          // Second LFO for audio-rate modulation (up to 5000 Hz)
+    audio_lfo: Lfo, // Second LFO for audio-rate modulation (up to 5000 Hz)
     spectral_warp: SpectralWarp,
     mseg: Mseg,
     step_seq: StepSequencer,
@@ -184,12 +185,20 @@ impl Voice {
         self.ms20_filter.reset();
         self.sem_filter.reset();
         self.fm_engine.reset();
-        if let Some(ks) = &mut self.ks_engine { ks.reset(); }
-        if let Some(gr) = &mut self.granular_engine { gr.reset(); }
-        if let Some(ad) = &mut self.additive { ad.reset(); }
+        if let Some(ks) = &mut self.ks_engine {
+            ks.reset();
+        }
+        if let Some(gr) = &mut self.granular_engine {
+            gr.reset();
+        }
+        if let Some(ad) = &mut self.additive {
+            ad.reset();
+        }
 
         let pitch_ratio = 2.0f32.powf((note as f32 - 60.0) / 12.0);
-        if let Some(sp) = &mut self.sampler { sp.trigger(pitch_ratio); }
+        if let Some(sp) = &mut self.sampler {
+            sp.trigger(pitch_ratio);
+        }
     }
 
     /// Set portamento time in seconds. 0 = no portamento.
@@ -211,10 +220,26 @@ impl Voice {
     pub fn set_engine(&mut self, engine: u8, sample_rate: f32) {
         self.engine = engine.min(6);
         match self.engine {
-            3 => if self.ks_engine.is_none() { self.ks_engine = Some(Box::new(KarplusStrong::new(sample_rate))); },
-            4 => if self.granular_engine.is_none() { self.granular_engine = Some(Box::new(GranularEngine::new())); },
-            5 => if self.additive.is_none() { self.additive = Some(Box::new(AdditiveEngine::new())); },
-            6 => if self.sampler.is_none() { self.sampler = Some(Box::new(SamplerEngine::new())); },
+            3 => {
+                if self.ks_engine.is_none() {
+                    self.ks_engine = Some(Box::new(KarplusStrong::new(sample_rate)));
+                }
+            }
+            4 => {
+                if self.granular_engine.is_none() {
+                    self.granular_engine = Some(Box::new(GranularEngine::new()));
+                }
+            }
+            5 => {
+                if self.additive.is_none() {
+                    self.additive = Some(Box::new(AdditiveEngine::new()));
+                }
+            }
+            6 => {
+                if self.sampler.is_none() {
+                    self.sampler = Some(Box::new(SamplerEngine::new()));
+                }
+            }
             _ => {}
         }
     }
@@ -234,39 +259,58 @@ impl Voice {
 
     /// Set additive engine parameters.
     pub fn set_additive_partials(&mut self, n: usize) {
-        if let Some(ad) = &mut self.additive { ad.set_num_partials(n); }
+        if let Some(ad) = &mut self.additive {
+            ad.set_num_partials(n);
+        }
     }
 
     pub fn set_additive_tilt(&mut self, tilt: f32) {
-        if let Some(ad) = &mut self.additive { ad.set_tilt(tilt); }
+        if let Some(ad) = &mut self.additive {
+            ad.set_tilt(tilt);
+        }
     }
 
     pub fn set_additive_odd(&mut self, emphasis: f32) {
-        if let Some(ad) = &mut self.additive { ad.set_odd_emphasis(emphasis); }
+        if let Some(ad) = &mut self.additive {
+            ad.set_odd_emphasis(emphasis);
+        }
     }
 
     pub fn set_additive_inharm(&mut self, inharm: f32) {
-        if let Some(ad) = &mut self.additive { ad.set_inharmonicity(inharm); }
+        if let Some(ad) = &mut self.additive {
+            ad.set_inharmonicity(inharm);
+        }
     }
 
     /// Excite the Karplus-Strong engine (call at note-on time).
     pub fn excite_ks(&mut self, freq: f32, sample_rate: f32, brightness: f32) {
-        if let Some(ks) = &mut self.ks_engine { ks.excite(freq, sample_rate, brightness); }
+        if let Some(ks) = &mut self.ks_engine {
+            ks.excite(freq, sample_rate, brightness);
+        }
     }
 
     pub fn trigger_sampler(&mut self, pitch_ratio: f32) {
-        if let Some(sp) = &mut self.sampler { sp.trigger(pitch_ratio); }
+        if let Some(sp) = &mut self.sampler {
+            sp.trigger(pitch_ratio);
+        }
     }
 
     /// Set Karplus-Strong damping parameter.
     pub fn set_ks_damping(&mut self, damping: f32) {
-        if let Some(ks) = &mut self.ks_engine { ks.set_damping(damping); }
+        if let Some(ks) = &mut self.ks_engine {
+            ks.set_damping(damping);
+        }
     }
 
     /// Set granular engine parameters.
     pub fn set_granular_params(
         &mut self,
-        density: f32, grain_size: f32, position: f32, spray: f32, pitch_var: f32, pan_spread: f32,
+        density: f32,
+        grain_size: f32,
+        position: f32,
+        spray: f32,
+        pitch_var: f32,
+        pan_spread: f32,
     ) {
         if let Some(gr) = &mut self.granular_engine {
             gr.density = density;
@@ -310,7 +354,11 @@ impl Voice {
             for to in 0..4 {
                 if self.fm_engine.matrix[from][to].abs() > 0.001 {
                     // The algorithm sets 1.0 as base; scale by mod_amount
-                    let base = if self.fm_engine.matrix[from][to] > 0.0 { 1.0 } else { -1.0 };
+                    let base = if self.fm_engine.matrix[from][to] > 0.0 {
+                        1.0
+                    } else {
+                        -1.0
+                    };
                     self.fm_engine.matrix[from][to] = base * mod_amount;
                 }
             }
@@ -343,8 +391,14 @@ impl Voice {
     /// Update envelope time/level parameters without restarting them.
     pub fn set_envelopes(
         &mut self,
-        amp_a: f32, amp_d: f32, amp_s: f32, amp_r: f32,
-        filt_a: f32, filt_d: f32, filt_s: f32, filt_r: f32,
+        amp_a: f32,
+        amp_d: f32,
+        amp_s: f32,
+        amp_r: f32,
+        filt_a: f32,
+        filt_d: f32,
+        filt_s: f32,
+        filt_r: f32,
     ) {
         self.amp_env.set_params(amp_a, amp_d, amp_s, amp_r);
         self.filter_env.set_params(filt_a, filt_d, filt_s, filt_r);
@@ -422,10 +476,22 @@ impl Voice {
             let seq_val = self.step_seq.tick(p.seq_rate, p.sample_rate);
 
             // Modulation (control-rate is fine at 128-sample blocks = ~344 Hz)
-            let mods = p.mod_matrix.evaluate(amp, filt_env, lfo_val, 0.0, self.velocity, mseg_val, seq_val);
+            let mods = p.mod_matrix.evaluate(
+                amp,
+                filt_env,
+                lfo_val,
+                0.0,
+                self.velocity,
+                mseg_val,
+                seq_val,
+            );
 
             // Step seq pitch modulation
-            let seq_pitch_mod = if has_seq_pitch { seq_val * p.seq_to_pitch } else { 0.0 };
+            let seq_pitch_mod = if has_seq_pitch {
+                seq_val * p.seq_to_pitch
+            } else {
+                0.0
+            };
 
             // Audio-rate modulation: tick the audio LFO every sample
             let audio_mod = if has_audio_mod {
@@ -446,9 +512,9 @@ impl Voice {
                 let (lorenz_x, lorenz_y) = self.lorenz.tick(p.sample_rate);
                 let perlin = self.perlin.tick(p.sample_rate);
                 (
-                    lorenz_x * p.chaos_amount * 0.1,   // up to ~1.2 semitones of pitch drift
-                    lorenz_y * p.chaos_amount * 0.5,    // filter cutoff variation
-                    perlin * p.chaos_amount * 0.3,      // amplitude tremolo
+                    lorenz_x * p.chaos_amount * 0.1, // up to ~1.2 semitones of pitch drift
+                    lorenz_y * p.chaos_amount * 0.5, // filter cutoff variation
+                    perlin * p.chaos_amount * 0.3,   // amplitude tremolo
                 )
             } else {
                 (0.0, 0.0, 0.0)
@@ -465,9 +531,11 @@ impl Voice {
             // Analog drift simulation (very slow random LFO, ~0.3Hz)
             let freq = if self.drift_amount > 0.001 {
                 self.drift_phase += 0.3 / p.sample_rate;
-                if self.drift_phase >= 1.0 { self.drift_phase -= 1.0; }
-                let drift_lfo = (self.drift_phase * core::f32::consts::TAU * 1.7).sin()
-                    * 0.7 + (self.drift_phase * core::f32::consts::TAU * 0.6).sin() * 0.3;
+                if self.drift_phase >= 1.0 {
+                    self.drift_phase -= 1.0;
+                }
+                let drift_lfo = (self.drift_phase * core::f32::consts::TAU * 1.7).sin() * 0.7
+                    + (self.drift_phase * core::f32::consts::TAU * 0.6).sin() * 0.3;
                 self.drift_value += 0.001 * (drift_lfo - self.drift_value); // very slow smoothing
                 let drift_cents = self.drift_amount * 5.0 * self.drift_value;
                 freq_before_drift * 2.0f32.powf(drift_cents / 1200.0)
@@ -480,19 +548,34 @@ impl Voice {
                 let s = self.ks_engine.as_mut().map(|ks| ks.tick()).unwrap_or(0.0);
                 (s, s)
             } else if self.engine == 4 {
-                self.granular_engine.as_mut()
+                self.granular_engine
+                    .as_mut()
                     .map(|gr| gr.tick(freq, p.sample_rate, p.tables))
                     .unwrap_or((0.0, 0.0))
             } else if self.engine == 5 {
-                let s = self.additive.as_mut().map(|ad| ad.tick(freq, p.sample_rate)).unwrap_or(0.0);
+                let s = self
+                    .additive
+                    .as_mut()
+                    .map(|ad| ad.tick(freq, p.sample_rate))
+                    .unwrap_or(0.0);
                 (s, s)
             } else if self.engine == 6 {
-                let s = self.sampler.as_mut().map(|sp| sp.tick(p.sample_rate)).unwrap_or(0.0);
+                let s = self
+                    .sampler
+                    .as_mut()
+                    .map(|sp| sp.tick(p.sample_rate))
+                    .unwrap_or(0.0);
                 (s, s)
             } else if has_unison {
                 let mut ul = 0.0f32;
                 let mut ur = 0.0f32;
-                self.unison_osc.process_sample_stereo(freq, p.sample_rate, p.tables, &mut ul, &mut ur);
+                self.unison_osc.process_sample_stereo(
+                    freq,
+                    p.sample_rate,
+                    p.tables,
+                    &mut ul,
+                    &mut ur,
+                );
                 (ul, ur)
             } else {
                 let s = match self.engine {
@@ -507,7 +590,13 @@ impl Voice {
             if has_warp {
                 let phase = match self.engine {
                     1 => self.polyblep_osc.phase(),
-                    _ => if has_unison { self.unison_osc.phase() } else { self.osc.phase() },
+                    _ => {
+                        if has_unison {
+                            self.unison_osc.phase()
+                        } else {
+                            self.osc.phase()
+                        }
+                    }
                 };
                 osc_l = self.spectral_warp.process(osc_l, phase);
                 osc_r = self.spectral_warp.process(osc_r, phase);
@@ -532,15 +621,29 @@ impl Voice {
             }
 
             // Filter cutoff with mod matrix + LFO→filter + MSEG→filter + keytracking
-            let lfo_filter_mod = if has_lfo_filter { lfo_val * p.lfo_filter_amount * 2.0 } else { 0.0 };
-            let mseg_filter_mod = if has_mseg_filter { mseg_val * p.mseg_to_filter * 4.0 } else { 0.0 };
+            let lfo_filter_mod = if has_lfo_filter {
+                lfo_val * p.lfo_filter_amount * 2.0
+            } else {
+                0.0
+            };
+            let mseg_filter_mod = if has_mseg_filter {
+                mseg_val * p.mseg_to_filter * 4.0
+            } else {
+                0.0
+            };
             // Audio-rate filter modulation: add to cutoff if target == 3
             let audio_filter_mod = if has_audio_mod && p.audio_mod_target == 3 {
                 audio_mod * 2.0
             } else {
                 0.0
             };
-            let cutoff = (base_cutoff_kt * (1.0 + mods.filter_cutoff * 4.0 + lfo_filter_mod + mseg_filter_mod + audio_filter_mod + chaos_filter))
+            let cutoff = (base_cutoff_kt
+                * (1.0
+                    + mods.filter_cutoff * 4.0
+                    + lfo_filter_mod
+                    + mseg_filter_mod
+                    + audio_filter_mod
+                    + chaos_filter))
                 .clamp(20.0, 20000.0);
             let res = (p.resonance + mods.filter_resonance).clamp(0.5, 20.0);
 
@@ -565,7 +668,8 @@ impl Voice {
                         FilterMode::Notch => 3.0,
                     };
                     let morph = mode_val / 3.0;
-                    self.sem_filter.process(mono, cutoff, res, morph, p.sample_rate)
+                    self.sem_filter
+                        .process(mono, cutoff, res, morph, p.sample_rate)
                 }
                 _ => self.filter.process(mono, cutoff, res, p.sample_rate),
             };
