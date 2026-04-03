@@ -4,8 +4,10 @@ import { Slider } from '#/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { Sparkles, Volume2, VolumeX, Loader2, Music, BarChart3 } from 'lucide-react';
 import { type Clip } from '#/modules/Arrangement/useCases/trackQueries';
-import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration/useCases/actions/audioProcessing';
+import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases/actions/handleAiDenoiseClip';
+import { handleStemSeparationPreview } from '#/modules/AiGeneration/useCases/actions/handleStemSeparationPreview';
 import { polyphonicAudioToMidi } from '#/modules/AudioAnalysis/useCases/polyphonicAudioToMidi';
+import { insertPolyphonicMidiNotes } from '#/modules/AudioAnalysis/useCases/insertPolyphonicMidiNotes';
 import { detectDominantPitch } from '#/modules/AudioAnalysis/useCases/pitchDetection';
 import { summarizeFeatures } from '#/modules/AudioAnalysis/useCases/audioFeatures';
 import { audioToMidi } from '#/modules/AudioAnalysis/useCases/audioToMidi';
@@ -69,8 +71,9 @@ export const ClipAudioAiSection = ({ clip, trackId }: ClipAudioAiSectionProps): 
     const handlePolyMidi = async (): Promise<void> => {
         setIsConvertingPoly(true);
         try {
-            const result = await polyphonicAudioToMidi({ clipId: clip.id, trackId });
+            const result = await polyphonicAudioToMidi({ clipId: clip.id });
             if (result) {
+                insertPolyphonicMidiNotes(result.notes, result.sourceClip, trackId);
                 notifyAiChange('Polyphonic MIDI conversion complete', [
                     `Detected ${result.notes.length} polyphonic notes`,
                     'New MIDI track and clip created',

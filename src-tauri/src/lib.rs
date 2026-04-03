@@ -13,6 +13,7 @@ pub fn run() {
         .manage(commands::speech::DictationState::default())
         .manage(commands::audio_gen::AudioGenState::default())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_persisted_scope::init())
         .invoke_handler(tauri::generate_handler![
             commands::llm::start_llm_sidecar,
             commands::llm::stop_llm_sidecar,

@@ -15,11 +15,7 @@ import { type NoteEventTime } from '@spotify/basic-pitch';
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries/getAllTracks';
-import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
-import { batchAddMidiNotes } from '#/modules/MIDI/useCases/midiNoteCrud';
-import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 
 const logger = Container.getInstance().get(Logger);
 
@@ -27,7 +23,6 @@ const logger = Container.getInstance().get(Logger);
 
 export type PolyphonicAudioToMidiOptions = {
     clipId: string;
-    trackId: string;
     onsetThreshold?: number;
     frameThreshold?: number;
     minNoteLength?: number;
@@ -36,8 +31,8 @@ export type PolyphonicAudioToMidiOptions = {
 
 export type PolyphonicAudioToMidiResult = {
     notes: NoteEventTime[];
-    clipId: string;
-    trackId: string;
+    /** Source clip boundaries, for callers that need to place notes in the timeline. */
+    sourceClip: { startBeat: number; endBeat: number; name: string };
 };
 
 // ── Model singleton ─────────────────────────────────────────────────────
@@ -68,7 +63,7 @@ function getBasicPitchModel(): BasicPitch {
 export async function polyphonicAudioToMidi(
     options: PolyphonicAudioToMidiOptions
 ): Promise<PolyphonicAudioToMidiResult | null> {
-    const { clipId, trackId, onsetThreshold = 0.5, frameThreshold = 0.3, minNoteLength = 11, onProgress } = options;
+    const { clipId, onsetThreshold = 0.5, frameThreshold = 0.3, minNoteLength = 11, onProgress } = options;
 
     // Find the source clip and its audio buffer
     const clip = getAllTracks()
@@ -159,64 +154,8 @@ export async function polyphonicAudioToMidi(
 
     logger.info(`[Basic Pitch] Detected ${String(notesWithTime.length)} polyphonic notes`);
 
-    // Create a MIDI track and clip with the detected notes
-    const result = insertNotesIntoTimeline(notesWithTime, clip, trackId);
-    return result ? { notes: notesWithTime, clipId: result.clipId, trackId: result.trackId } : null;
-}
-
-// ── Timeline insertion ──────────────────────────────────────────────────
-
-type SourceClip = {
-    startBeat: number;
-    endBeat: number;
-    name: string;
-};
-
-function insertNotesIntoTimeline(
-    notes: NoteEventTime[],
-    sourceClip: SourceClip,
-    trackId: string
-): { clipId: string; trackId: string } | null {
-    const tempo = getTransportState()?.tempo ?? 120;
-    const beatsPerSecond = tempo / 60;
-
-    // Create or find MIDI track
-    let midiTrackId = trackId;
-    const existingTrack = getAllTracks().find((t) => t.id === trackId);
-    if (!existingTrack || existingTrack.kind !== 'midi') {
-        const newTrack = addTrack({ name: `${sourceClip.name} (MIDI)`, kind: 'midi' });
-        if (!newTrack) {
-            return null;
-        }
-        midiTrackId = newTrack.id;
-    }
-
-    // Calculate clip boundaries
-    const clipStartBeat = sourceClip.startBeat;
-    const endBeat = sourceClip.endBeat;
-
-    const midiClip = addClip({
-        trackId: midiTrackId,
-        startBeat: clipStartBeat,
-        endBeat: Math.ceil(endBeat),
-        name: `${sourceClip.name} → MIDI (poly)`,
-        type: 'midi',
-    });
-
-    if (!midiClip) {
-        return null;
-    }
-
-    // Insert all detected notes in a single batch store mutation (avoids O(N) CRDT flood)
-    batchAddMidiNotes(
-        midiClip.id,
-        notes.map((note) => ({
-            pitch: note.pitchMidi,
-            startBeat: note.startTimeSeconds * beatsPerSecond,
-            duration: Math.max(0.0625, note.durationSeconds * beatsPerSecond),
-            velocity: Math.max(1, Math.min(127, Math.round(note.amplitude * 127))),
-        }))
-    );
-
-    return { clipId: midiClip.id, trackId: midiTrackId };
+    return {
+        notes: notesWithTime,
+        sourceClip: { startBeat: clip.startBeat, endBeat: clip.endBeat, name: clip.name },
+    };
 }

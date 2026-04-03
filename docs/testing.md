@@ -49,47 +49,37 @@ Test pure business logic found in use cases. This is the simplest and fastest fo
 ```typescript
 // useCases/addTrack.spec.ts
 
-import { injectDependencies } from '#/helpers/DependencyInjector/injectDependencies';
-import { Prophecy } from '#/helpers/Prophecy/Prophecy';
+import { addTrack } from './addTrack';
+import { addTrackApi } from '../repositories/addTrackApi';
+
+vi.mock('../repositories/addTrackApi');
+vi.mock('#/helpers/Event/EventBus', () => import('../_tests/getEventBus.mock'));
 
 describe('addTrack', () => {
+    beforeEach(() => {
+        vi.resetAllMocks();
+    });
+
     it('should create track and emit event on success', async () => {
-        const prophecy = new Prophecy();
         const input = { name: 'Lead Vocals', kind: 'audio' as const };
         const mockTrack = TrackDummy.create(input);
 
-        // Prophesize dependencies
-        const addTrackApiMock = prophecy.prophesize(addTrackApi).mockResolvedValue(mockTrack);
-        const eventBusMock = prophecy.prophesize(EventBus);
-
-        // Inject mocked dependencies
-        injectDependencies(addTrack, {
-            addTrackApi: addTrackApiMock.reveal(),
-            eventBus: eventBusMock.reveal(),
-        });
+        vi.mocked(addTrackApi).mockResolvedValue(mockTrack);
 
         const result = await addTrack(input);
 
         expect(result).toEqual(mockTrack);
-        expect(addTrackApiMock).toHaveBeenCalledWith(input);
-        expect(eventBusMock.emit).toHaveBeenCalledWith(new TrackAddedEvent(mockTrack));
+        expect(vi.mocked(addTrackApi)).toHaveBeenCalledWith(input);
+        expect(emitMock).toHaveBeenCalledWith(new TrackAddedEvent(mockTrack));
     });
 
     it('should throw error when repository fails', async () => {
-        const prophecy = new Prophecy();
         const input = { name: 'Lead Vocals', kind: 'audio' as const };
-        const error = new Error('API Error');
 
-        const addTrackApiMock = prophecy.prophesize(addTrackApi).mockRejectedValue(error);
-        const eventBusMock = prophecy.prophesize(EventBus);
-
-        injectDependencies(addTrack, {
-            addTrackApi: addTrackApiMock.reveal(),
-            eventBus: eventBusMock.reveal(),
-        });
+        vi.mocked(addTrackApi).mockRejectedValue(new Error('API Error'));
 
         await expect(addTrack(input)).rejects.toThrow('API Error');
-        expect(eventBusMock.emit).not.toHaveBeenCalled();
+        expect(emitMock).not.toHaveBeenCalled();
     });
 });
 ```
@@ -104,8 +94,12 @@ Repositories are the bridge to external data sources. The goal is to verify that
 ```typescript
 // repositories/addTrackApi.spec.ts
 
-import { injectDependencies } from '#/helpers/DependencyInjector/injectDependencies';
-import { Prophecy } from '#/helpers/Prophecy/Prophecy';
+import { addTrackApi } from './addTrackApi';
+import { addTrackExecutor } from '../executors/addTrackExecutor';
+import { trackApiToModel } from '../transformers/trackApiToModel';
+
+vi.mock('../executors/addTrackExecutor');
+vi.mock('../transformers/trackApiToModel');
 
 describe('addTrackApi', () => {
     const PROJECT_ID = 'proj-123';
@@ -115,40 +109,29 @@ describe('addTrackApi', () => {
     const CREATE_ITEM_INPUT: AddTrackApiInput = { projectId: PROJECT_ID, name: ITEM_NAME, kind: 'audio' };
     const MOCK_SIGNAL = new AbortController().signal;
 
-    it('should call the executor with the correct parameters and return the transformed item', async () => {
-        const prophecy = new Prophecy();
-        const addTrackExecutorMock = prophecy
-            .prophesize(addTrackExecutor)
-            .mockResolvedValue({ data: { addTrack: MOCKED_ITEM_FROM_API } });
-        const trackApiToModelMock = prophecy.prophesize(trackApiToModel).mockResolvedValue(DUMMY_ITEM);
+    beforeEach(() => {
+        vi.resetAllMocks();
+    });
 
-        injectDependencies(addTrackApi, {
-            addTrackExecutor: addTrackExecutorMock.reveal(),
-            trackApiToModel: trackApiToModelMock.reveal(),
-        });
+    it('should call the executor with the correct parameters and return the transformed item', async () => {
+        vi.mocked(addTrackExecutor).mockResolvedValue({ data: { addTrack: MOCKED_ITEM_FROM_API } });
+        vi.mocked(trackApiToModel).mockReturnValue(DUMMY_ITEM);
 
         const result = await addTrackApi(CREATE_ITEM_INPUT, MOCK_SIGNAL);
 
-        expect(addTrackExecutorMock).toHaveBeenCalledWith({
+        expect(vi.mocked(addTrackExecutor)).toHaveBeenCalledWith({
             input: {
                 projectId: PROJECT_ID,
                 name: ITEM_NAME,
                 kind: 'audio',
             },
         });
-        expect(trackApiToModelMock).toHaveBeenCalledWith(MOCKED_ITEM_FROM_API);
+        expect(vi.mocked(trackApiToModel)).toHaveBeenCalledWith(MOCKED_ITEM_FROM_API);
         expect(result).toEqual(DUMMY_ITEM);
     });
 
     it('should return null when creation fails', async () => {
-        const prophecy = new Prophecy();
-        const addTrackExecutorMock = prophecy
-            .prophesize(addTrackExecutor)
-            .mockResolvedValue({ data: { addTrack: null } });
-
-        injectDependencies(addTrackApi, {
-            addTrackExecutor: addTrackExecutorMock.reveal(),
-        });
+        vi.mocked(addTrackExecutor).mockResolvedValue({ data: { addTrack: null } });
 
         const result = await addTrackApi(CREATE_ITEM_INPUT, MOCK_SIGNAL);
 
@@ -248,29 +231,27 @@ Use the mock event bus to test how components or hooks react to domain events. Y
 ```typescript
 // events/subscribeToTrackAdded.spec.ts
 
-import { injectDependencies } from '#/helpers/DependencyInjector/injectDependencies';
-import { Prophecy } from '#/helpers/Prophecy/Prophecy';
+import { subscribeToTrackAdded } from './subscribeToTrackAdded';
+
+vi.mock('#/helpers/Event/EventBus', () => import('../_tests/getEventBus.mock'));
 
 describe('subscribeToTrackAdded', () => {
+    beforeEach(() => {
+        vi.resetAllMocks();
+    });
+
     it('should subscribe to the event bus and call the callback when the event is triggered', () => {
-        const prophecy = new Prophecy();
         const callback = vi.fn();
         const dummyTrack = TrackDummy.create();
-        const eventBusMock = prophecy.prophesize(EventBus);
-
-        // Inject the mocked event bus
-        injectDependencies(subscribeToTrackAdded, {
-            eventBus: eventBusMock.reveal(),
-        });
 
         // Call the subscription helper
         subscribeToTrackAdded(callback);
 
         // Verify that eventBus.on was called correctly
-        expect(eventBusMock.on).toHaveBeenCalledWith(TrackAddedEvent, expect.any(Function));
+        expect(onMock).toHaveBeenCalledWith(TrackAddedEvent, expect.any(Function));
 
         // Simulate the event being fired by calling the handler passed to eventBus.on
-        const handler = (eventBusMock.on as any).mock.calls[0][1];
+        const handler = onMock.mock.calls[0][1];
         handler({ payload: dummyTrack });
 
         // Assert that the original callback was called with the event payload

@@ -221,26 +221,21 @@ CRDT writes.
 
 ---
 
-### CQ-1 · Multi-export use-case files
-**Severity:** P2 · **Verified:** ✅ confirmed
+### ~~CQ-1 · Multi-export use-case files~~ — DONE
+**Severity:** P2 · **Fixed:** ✅
 
-Two files violate the one-function-per-file use-case rule:
-- `taskManagement.ts` — exports `toggleAiPanel`, `addTask`, `updateTask`, `removeTask` (4 exports)
-- `audioProcessing.ts` — exports `handleAiDenoiseClip`, `handleStemSeparationPreview`, `handleGenerateAudioFallback` (3 exports)
-
-**Fix:** Split each into single-function files.
+`taskManagement.ts` split into `toggleAiPanel.ts`, `addTask.ts`, `updateTask.ts`, `removeTask.ts`.
+`audioProcessing.ts` split into `handleAiDenoiseClip.ts`, `handleStemSeparationPreview.ts`, `handleGenerateAudioFallback.ts`.
+All importers updated. Old files deleted.
 
 ---
 
-### CQ-2 · `polyphonicAudioToMidi` — architectural boundary violation
-**Severity:** P2 · **Verified:** ⚠️ partially fixed
+### ~~CQ-2 · `polyphonicAudioToMidi` — architectural boundary violation~~ — DONE
+**Severity:** P2 · **Fixed:** ✅
 
-The O(N) CRDT flood was fixed — `batchAddMidiNotes` is used (confirmed, line 210
-comment explicitly notes this). The architectural issue remains: the analyser
-still calls `addTrack` (line 187) and `addClip` (lines 198–204) directly,
-embedding timeline orchestration inside a DSP use case.
-
-**Fix:** Return a typed `NoteMap` result from the analyser. Have the caller (a dedicated insertion use case) handle timeline insertion.
+`insertNotesIntoTimeline` extracted to `insertPolyphonicMidiNotes.ts`.
+`polyphonicAudioToMidi` now returns `{ notes, sourceClip }` — no timeline imports.
+`ClipAudioAiSection` calls `insertPolyphonicMidiNotes` after getting the note result.
 
 ---
 

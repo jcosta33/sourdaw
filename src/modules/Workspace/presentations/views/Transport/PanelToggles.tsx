@@ -24,7 +24,7 @@ import {
     subscribeAiStore,
     getAiSnapshot,
 } from '#/modules/AiGeneration/stores/aiStore';
-import { toggleAiPanel } from '#/modules/AiGeneration/useCases/actions/taskManagement';
+import { toggleAiPanel } from '#/modules/AiGeneration/useCases/actions/toggleAiPanel';
 import { subscribeToLinkStatus, getLinkStatusSnapshot } from '#/modules/AudioEngine/stores/linkStatusStore';
 import { enableLink, disableLink } from '#/modules/AudioEngine/useCases/engineAccess';
 

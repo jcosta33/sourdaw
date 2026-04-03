@@ -28,7 +28,8 @@ import {
     removeWarpMarker,
     moveWarpMarker,
 } from '#/modules/Arrangement/useCases/warp';
-import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration/useCases/actions/audioProcessing';
+import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases/actions/handleAiDenoiseClip';
+import { handleStemSeparationPreview } from '#/modules/AiGeneration/useCases/actions/handleStemSeparationPreview';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { audioToMidi } from '#/modules/AudioAnalysis/useCases/audioToMidi';
 import { isTauri } from '#/modules/AudioEngine/useCases/nativeAiBridge';

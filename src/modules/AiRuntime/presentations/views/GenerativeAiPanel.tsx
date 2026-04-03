@@ -11,9 +11,11 @@ import {
     type AiTaskResult,
     type AiState,
 } from '#/modules/AiGeneration/stores/aiStore';
-import { toggleAiPanel, removeTask } from '#/modules/AiGeneration/useCases/actions/taskManagement';
+import { toggleAiPanel } from '#/modules/AiGeneration/useCases/actions/toggleAiPanel';
+import { removeTask } from '#/modules/AiGeneration/useCases/actions/removeTask';
 import { handleGenerateMidiPrompt } from '#/modules/AiGeneration/useCases/actions/handleGenerateMidiPrompt';
-import { handleGenerateAudioFallback, handleStemSeparationPreview } from '#/modules/AiGeneration/useCases/actions/audioProcessing';
+import { handleGenerateAudioFallback } from '#/modules/AiGeneration/useCases/actions/handleGenerateAudioFallback';
+import { handleStemSeparationPreview } from '#/modules/AiGeneration/useCases/actions/handleStemSeparationPreview';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { GenreGrid, MoodGrid, InstrumentGrid } from '../components/GenerativeParamGrids';
 import { PatternBrowser } from './PatternBrowser';

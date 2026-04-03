@@ -13,7 +13,8 @@ import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { pushUndo } from '#/modules/Command/stores/undoStore';
 import { createCallbackUndoEntry } from '#/modules/Command/models/UndoEntry';
 import { generateMidiViaLlm } from '../llmMidiGeneration';
-import { addTask, updateTask } from './taskManagement';
+import { addTask } from './addTask';
+import { updateTask } from './updateTask';
 
 export async function handleGenerateMidiPrompt(prompt: string, numNotes: number = 32, creativity: number = 0.65) {
     const taskId = addTask({ type: 'midi-generation', status: 'processing', prompt });
