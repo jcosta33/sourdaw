@@ -4,16 +4,18 @@
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls';
 import { persistDeviceParam } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
 import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
-import { type GrinderPatch, type GrinderPedal } from '../models/GrinderPatch';
+import { type GrinderPatch, type GrinderPedal, migrateGrinderPatch } from '../models/GrinderPatch';
 import { loadGrinderPatch, setGrinderParam } from '../stores/grinderStore';
 
 type DeviceRef = { trackId: string; deviceId: string };
 
 const AMP_MODELS = ['clean-twin', 'crunch-jcm', 'lead-jcm', 'ac30-tb', 'rectifier', 'custom'] as const;
+const ENGINE_MODES = ['circuit', 'capture', 'hybrid'] as const;
 const INPUT_MODES = ['instrument', 'line', 'reamp'] as const;
 const TONE_STACK_TYPES = ['fender', 'marshall', 'vox'] as const;
 const POWER_TUBE_TYPES = ['6l6', 'el34', 'el84'] as const;
 const RECTIFIER_TYPES = ['tube', 'solid-state', 'variac'] as const;
+const NEURAL_PLACEMENTS = ['amp-capture', 'rig-capture'] as const;
 const NEURAL_TIERS = ['standard', 'lite', 'nano', 'recurrent'] as const;
 const ROUTING_MODES = ['serial', 'parallel', 'wet-dry-wet', 'dual-amp'] as const;
 
@@ -29,6 +31,7 @@ const BOOLEAN_PATCH_KEYS: ReadonlySet<keyof GrinderPatch> = new Set([
 ]);
 
 const AUDIO_SYNC_KEYS: readonly (keyof GrinderPatch)[] = [
+    'engineMode',
     'inputImpedance',
     'inputGain',
     'gateEnabled',
@@ -70,6 +73,7 @@ const AUDIO_SYNC_KEYS: readonly (keyof GrinderPatch)[] = [
     'coneBreakup',
     'backEmf',
     'neuralEnabled',
+    'neuralPlacement',
     'neuralTier',
     'neuralMix',
     'neuralCpuBudget',
@@ -145,6 +149,8 @@ function toPatchValue<K extends keyof GrinderPatch>(key: K, value: number): Grin
     }
 
     switch (key) {
+        case 'engineMode':
+            return getIndexedValue(ENGINE_MODES, value) as GrinderPatch[K];
         case 'ampModel':
             return getIndexedValue(AMP_MODELS, value) as GrinderPatch[K];
         case 'inputMode':
@@ -155,6 +161,8 @@ function toPatchValue<K extends keyof GrinderPatch>(key: K, value: number): Grin
             return getIndexedValue(POWER_TUBE_TYPES, value) as GrinderPatch[K];
         case 'rectifierType':
             return getIndexedValue(RECTIFIER_TYPES, value) as GrinderPatch[K];
+        case 'neuralPlacement':
+            return getIndexedValue(NEURAL_PLACEMENTS, value) as GrinderPatch[K];
         case 'neuralTier':
             return getIndexedValue(NEURAL_TIERS, value) as GrinderPatch[K];
         case 'routingMode':
@@ -174,6 +182,8 @@ function toAudioValue<K extends keyof GrinderPatch>(key: K, value: GrinderPatch[
     }
 
     switch (key) {
+        case 'engineMode':
+            return getOptionIndex(ENGINE_MODES, value as string);
         case 'ampModel':
             return getOptionIndex(AMP_MODELS, value as string);
         case 'inputMode':
@@ -184,6 +194,8 @@ function toAudioValue<K extends keyof GrinderPatch>(key: K, value: GrinderPatch[
             return getOptionIndex(POWER_TUBE_TYPES, value as string);
         case 'rectifierType':
             return getOptionIndex(RECTIFIER_TYPES, value as string);
+        case 'neuralPlacement':
+            return getOptionIndex(NEURAL_PLACEMENTS, value as string);
         case 'neuralTier':
             return getOptionIndex(NEURAL_TIERS, value as string);
         case 'routingMode':
@@ -236,7 +248,16 @@ function syncSupportedPedals(patch: GrinderPatch, devices: DeviceRef[]): void {
 }
 
 export function setGrinderParamWithAudio<K extends keyof GrinderPatch>(key: K, value: number): void {
-    setGrinderParam(key, toPatchValue(key, value));
+    const patchValue = toPatchValue(key, value);
+    setGrinderParam(key, patchValue);
+    if (key === 'engineMode') {
+        setGrinderParam('neuralEnabled', (patchValue !== 'circuit') as GrinderPatch['neuralEnabled']);
+    } else if (key === 'neuralEnabled') {
+        setGrinderParam(
+            'engineMode',
+            (patchValue ? 'hybrid' : 'circuit') as GrinderPatch['engineMode']
+        );
+    }
 
     latestValues.set(key, value);
     if (!pendingUpdates.has(key)) {
@@ -248,11 +269,12 @@ export function setGrinderParamWithAudio<K extends keyof GrinderPatch>(key: K, v
 }
 
 export function loadGrinderPatchWithAudio(patch: GrinderPatch): void {
-    loadGrinderPatch(patch);
+    const migratedPatch = migrateGrinderPatch(patch);
+    loadGrinderPatch(migratedPatch);
 
     const devices = getActiveDevices();
     for (const key of AUDIO_SYNC_KEYS) {
-        const value = toAudioValue(key, patch[key]);
+        const value = toAudioValue(key, migratedPatch[key]);
         if (value === null || !Number.isFinite(value)) {
             continue;
         }
@@ -263,5 +285,5 @@ export function loadGrinderPatchWithAudio(patch: GrinderPatch): void {
         }
     }
 
-    syncSupportedPedals(patch, devices);
+    syncSupportedPedals(migratedPatch, devices);
 }

@@ -5,6 +5,7 @@
  */
 
 const PARAM_MAP = {
+    engineMode: 'engineMode',
     gain: 'gain',
     bass: 'bass',
     mid: 'mid',
@@ -38,6 +39,7 @@ const PARAM_MAP = {
     cleanBlend: 'cleanBlend',
     limiterThreshold: 'limiterThreshold',
     neuralEnabled: 'neuralEnabled',
+    neuralPlacement: 'neuralPlacement',
     neuralMix: 'neuralMix',
     neuralCpuBudget: 'neuralCpuBudget',
     gateEnabled: 'gateEnabled',
@@ -206,8 +208,12 @@ class GrinderProcessor extends AudioWorkletProcessor {
                 preampDb: w.grinderinstance_get_preamp_db(this._ptr),
                 powerAmpDb: w.grinderinstance_get_power_amp_db(this._ptr),
                 outputDb: w.grinderinstance_get_output_db(this._ptr),
+                gateOpen: w.grinderinstance_get_gate_open(this._ptr),
+                gateEnvelopeDb: w.grinderinstance_get_gate_envelope_db(this._ptr),
                 sagVoltage: w.grinderinstance_get_sag_voltage(this._ptr),
                 latency: w.grinderinstance_get_latency_samples(this._ptr),
+                neuralCpuPercent: w.grinderinstance_get_neural_cpu_percent(this._ptr),
+                neuralWarmupProgress: w.grinderinstance_get_neural_warmup_progress(this._ptr),
             });
         }
 

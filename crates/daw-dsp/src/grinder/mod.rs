@@ -90,10 +90,22 @@ impl GrinderInstance {
     pub fn get_output_db(&self) -> f32 {
         self.engine.output_db()
     }
+    pub fn get_gate_open(&self) -> f32 {
+        self.engine.gate_open()
+    }
+    pub fn get_gate_envelope_db(&self) -> f32 {
+        self.engine.gate_envelope_db()
+    }
     pub fn get_sag_voltage(&self) -> f32 {
         self.engine.sag_voltage()
     }
     pub fn get_latency_samples(&self) -> u32 {
         self.engine.latency_samples()
+    }
+    pub fn get_neural_cpu_percent(&self) -> f32 {
+        self.engine.neural_cpu_percent()
+    }
+    pub fn get_neural_warmup_progress(&self) -> f32 {
+        self.engine.neural_warmup_progress()
     }
 }

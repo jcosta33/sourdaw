@@ -26,6 +26,38 @@ impl ModelTier {
     }
 }
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum EngineMode {
+    Circuit,
+    Capture,
+    Hybrid,
+}
+
+impl EngineMode {
+    pub fn from_index(i: u32) -> Self {
+        match i {
+            1 => Self::Capture,
+            2 => Self::Hybrid,
+            _ => Self::Circuit,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum CapturePlacement {
+    Amp,
+    Rig,
+}
+
+impl CapturePlacement {
+    pub fn from_index(i: u32) -> Self {
+        match i {
+            1 => Self::Rig,
+            _ => Self::Amp,
+        }
+    }
+}
+
 /// Simple 1D dilated causal convolution layer.
 struct DilatedConv1D {
     weights: Vec<f32>,
@@ -145,13 +177,18 @@ pub struct NeuralCapture {
     lstm: LstmCell,
 
     tier: ModelTier,
-    enabled: bool,
+    engine_mode: EngineMode,
+    placement: CapturePlacement,
     mix: f32,
+    cpu_budget: u32,
     model_loaded: bool,
+    sample_rate: f32,
+    warmup_samples_total: u32,
+    warmup_samples_remaining: u32,
 }
 
 impl NeuralCapture {
-    pub fn new() -> Self {
+    pub fn new(sample_rate: f32) -> Self {
         // Default WaveNet-style architecture: 10 layers with increasing dilation
         let conv_layers: Vec<DilatedConv1D> = (0..10)
             .map(|i| {
@@ -169,27 +206,44 @@ impl NeuralCapture {
             conv_layers,
             lstm: LstmCell::new(1, 16),
             tier: ModelTier::Standard,
-            enabled: false,
+            engine_mode: EngineMode::Circuit,
+            placement: CapturePlacement::Amp,
             mix: 1.0,
+            cpu_budget: 1,
             model_loaded: false,
+            sample_rate,
+            warmup_samples_total: (sample_rate * 0.040) as u32,
+            warmup_samples_remaining: 0,
         }
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            "neuralEnabled" => self.enabled = value > 0.5,
+            "engineMode" => {
+                self.engine_mode = EngineMode::from_index(value as u32);
+                self.arm_warmup();
+            }
+            "neuralEnabled" => {
+                self.engine_mode = if value > 0.5 {
+                    EngineMode::Hybrid
+                } else {
+                    EngineMode::Circuit
+                };
+                self.arm_warmup();
+            }
+            "neuralPlacement" => self.placement = CapturePlacement::from_index(value as u32),
             "neuralMix" => self.mix = value.clamp(0.0, 1.0),
             "neuralTier" => self.tier = ModelTier::from_index(value as u32),
             "neuralCpuBudget" => {
-                // Adjust active layers based on budget
-                // 0 = eco (fewer layers), 2 = full (all layers)
+                self.cpu_budget = value.round().clamp(0.0, 2.0) as u32;
+                self.arm_warmup();
             }
             _ => {}
         }
     }
 
-    pub fn process_sample(&mut self, input: f32) -> f32 {
-        if !self.enabled {
+    pub fn process_capture(&mut self, input: f32) -> f32 {
+        if self.engine_mode == EngineMode::Circuit {
             return input;
         }
 
@@ -197,7 +251,8 @@ impl NeuralCapture {
             ModelTier::Standard => {
                 // Full WaveNet: all layers
                 let mut signal = input;
-                for layer in &mut self.conv_layers {
+                let active_layers = self.active_layer_count();
+                for layer in self.conv_layers.iter_mut().take(active_layers) {
                     signal = layer.process(signal);
                 }
                 signal
@@ -224,7 +279,8 @@ impl NeuralCapture {
             }
         };
 
-        input * (1.0 - self.mix) + processed * self.mix
+        let activation = self.next_warmup_mix();
+        input * (1.0 - activation) + processed * activation
     }
 
     pub fn reset(&mut self) {
@@ -232,5 +288,86 @@ impl NeuralCapture {
             layer.reset();
         }
         self.lstm.reset();
+        self.warmup_samples_remaining = 0;
+        self.model_loaded = false;
+    }
+
+    pub fn engine_mode(&self) -> EngineMode {
+        self.engine_mode
+    }
+
+    pub fn placement(&self) -> CapturePlacement {
+        self.placement
+    }
+
+    pub fn mix(&self) -> f32 {
+        self.mix
+    }
+
+    pub fn cpu_percent(&self) -> f32 {
+        let base: f32 = match self.tier {
+            ModelTier::Standard => 48.0,
+            ModelTier::Lite => 29.0,
+            ModelTier::Nano => 16.0,
+            ModelTier::Recurrent => 10.0,
+        };
+        let budget_trim: f32 = match self.cpu_budget {
+            0 => 0.72,
+            2 => 1.12,
+            _ => 1.0,
+        };
+        (base * budget_trim).min(99.0_f32)
+    }
+
+    pub fn warmup_progress(&self) -> f32 {
+        if self.engine_mode == EngineMode::Circuit {
+            return 0.0;
+        }
+        if self.warmup_samples_total == 0 {
+            return 1.0;
+        }
+        1.0 - self.warmup_samples_remaining as f32 / self.warmup_samples_total as f32
+    }
+
+    pub fn is_ready(&self) -> bool {
+        self.engine_mode != EngineMode::Circuit && self.model_loaded && self.warmup_samples_remaining == 0
+    }
+
+    pub fn latency_samples(&self) -> u32 {
+        0
+    }
+
+    fn active_layer_count(&self) -> usize {
+        match (self.tier, self.cpu_budget) {
+            (ModelTier::Standard, 0) => 6,
+            (ModelTier::Standard, 1) => 8,
+            (ModelTier::Standard, _) => 10,
+            (ModelTier::Lite, 0) => 4,
+            (ModelTier::Lite, _) => 6,
+            (ModelTier::Nano, 2) => 4,
+            (ModelTier::Nano, _) => 3,
+            (ModelTier::Recurrent, _) => 0,
+        }
+    }
+
+    fn arm_warmup(&mut self) {
+        if self.engine_mode == EngineMode::Circuit {
+            self.warmup_samples_remaining = 0;
+            return;
+        }
+        self.model_loaded = true;
+        self.warmup_samples_total = (self.sample_rate * 0.040).round() as u32;
+        self.warmup_samples_remaining = self.warmup_samples_total;
+    }
+
+    fn next_warmup_mix(&mut self) -> f32 {
+        if self.warmup_samples_remaining == 0 {
+            return 1.0;
+        }
+        self.warmup_samples_remaining = self.warmup_samples_remaining.saturating_sub(1);
+        if self.warmup_samples_remaining == 0 {
+            self.model_loaded = true;
+        }
+        self.warmup_progress().clamp(0.0, 1.0)
     }
 }

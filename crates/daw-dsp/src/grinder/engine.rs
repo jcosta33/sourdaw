@@ -5,7 +5,7 @@
 
 use super::cabinet::{CabinetConvolver, SpeakerModel};
 use super::input::{InputConditioner, NoiseGate};
-use super::neural::NeuralCapture;
+use super::neural::{CapturePlacement, EngineMode, NeuralCapture};
 use super::params::{db_to_linear, linear_to_db, SmoothedParam};
 use super::pedals::{CompressorPedal, DistortionPedal, FuzzPedal, OverdrivePedal};
 use super::power_amp::PowerAmp;
@@ -63,7 +63,7 @@ impl GrinderEngine {
             transformer: Transformer::new(sample_rate),
             cabinet: cab,
             speaker: SpeakerModel::new(sample_rate),
-            neural: NeuralCapture::new(),
+            neural: NeuralCapture::new(sample_rate),
             pre_od: OverdrivePedal::new(sample_rate),
             pre_dist: DistortionPedal::new(sample_rate),
             pre_fuzz: FuzzPedal::new(sample_rate),
@@ -124,7 +124,8 @@ impl GrinderEngine {
             | "backEmf" => self.speaker.set_param(name, value),
 
             // Neural
-            "neuralEnabled" | "neuralMix" | "neuralTier" | "neuralCpuBudget" => {
+            "engineMode" | "neuralEnabled" | "neuralPlacement" | "neuralMix" | "neuralTier"
+            | "neuralCpuBudget" => {
                 self.neural.set_param(name, value)
             }
 
@@ -191,10 +192,31 @@ impl GrinderEngine {
             signal = self.pre_dist.process_sample(signal);
             signal = self.pre_fuzz.process_sample(signal);
 
-            // Preamp
-            signal = self.preamp.process_sample(signal);
+            let amp_input = signal;
+            let circuit_preamp = self.preamp.process_sample(amp_input);
+            let circuit_amp = self.tone_stack.process_sample(circuit_preamp);
+            let neural_capture = self.neural.process_capture(amp_input);
+            let neural_mode = self.neural.engine_mode();
+            let neural_mix = self.neural.mix();
+            let neural_placement = self.neural.placement();
 
-            // Update preamp peak
+            let mut rig_capture_signal = None;
+            signal = match (neural_mode, neural_placement) {
+                (EngineMode::Circuit, _) => circuit_amp,
+                (EngineMode::Capture, CapturePlacement::Amp) => neural_capture,
+                (EngineMode::Capture, CapturePlacement::Rig) => {
+                    rig_capture_signal = Some(neural_capture);
+                    neural_capture
+                }
+                (EngineMode::Hybrid, CapturePlacement::Amp) => {
+                    circuit_amp * (1.0 - neural_mix) + neural_capture * neural_mix
+                }
+                (EngineMode::Hybrid, CapturePlacement::Rig) => {
+                    rig_capture_signal = Some(neural_capture);
+                    circuit_amp
+                }
+            };
+
             let pre_peak = signal.abs();
             if pre_peak > self.preamp_peak {
                 self.preamp_peak = pre_peak;
@@ -202,32 +224,33 @@ impl GrinderEngine {
                 self.preamp_peak *= self.meter_decay_coeff;
             }
 
-            // Tone stack
-            signal = self.tone_stack.process_sample(signal);
+            let should_run_circuit_rig = !matches!(
+                (neural_mode, neural_placement),
+                (EngineMode::Capture, CapturePlacement::Rig)
+            );
+            if should_run_circuit_rig {
+                let back_emf = self.speaker.back_emf();
+                signal = self.power_amp.process_sample(signal + back_emf * 0.1);
+                signal = self.transformer.process_sample(signal);
 
-            // Neural capture (can replace or blend with circuit model)
-            signal = self.neural.process_sample(signal);
+                let pa_peak = signal.abs();
+                if pa_peak > self.power_amp_peak {
+                    self.power_amp_peak = pa_peak;
+                } else {
+                    self.power_amp_peak *= self.meter_decay_coeff;
+                }
 
-            // Power amp (with back-EMF from speaker)
-            let back_emf = self.speaker.back_emf();
-            signal = self.power_amp.process_sample(signal + back_emf * 0.1);
-
-            // Transformer
-            signal = self.transformer.process_sample(signal);
-
-            // Update power amp peak
-            let pa_peak = signal.abs();
-            if pa_peak > self.power_amp_peak {
-                self.power_amp_peak = pa_peak;
+                signal = self.cabinet.process_sample(signal);
+                signal = self.speaker.process_sample(signal);
             } else {
                 self.power_amp_peak *= self.meter_decay_coeff;
             }
 
-            // Cabinet (convolution)
-            signal = self.cabinet.process_sample(signal);
-
-            // Speaker model (parametric resonance + breakup)
-            signal = self.speaker.process_sample(signal);
+            if neural_mode == EngineMode::Hybrid && neural_placement == CapturePlacement::Rig {
+                if let Some(rig_capture) = rig_capture_signal {
+                    signal = signal * (1.0 - neural_mix) + rig_capture * neural_mix;
+                }
+            }
 
             // Output processing
             let og = self.output_gain.next();
@@ -277,7 +300,19 @@ impl GrinderEngine {
         self.power_amp.sag_voltage()
     }
     pub fn latency_samples(&self) -> u32 {
-        0
+        self.neural.latency_samples()
+    }
+    pub fn gate_open(&self) -> f32 {
+        self.gate.gain()
+    }
+    pub fn gate_envelope_db(&self) -> f32 {
+        self.gate.envelope_db()
+    }
+    pub fn neural_cpu_percent(&self) -> f32 {
+        self.neural.cpu_percent()
+    }
+    pub fn neural_warmup_progress(&self) -> f32 {
+        self.neural.warmup_progress()
     }
 }
 

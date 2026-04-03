@@ -10,8 +10,12 @@ pub struct NoiseGate {
     gain_attack_coeff: f32,
     gain_release_coeff: f32,
     hysteresis_linear: f32,
+    floor_gain: f32,
     envelope: f32,
     gate_gain: f32,
+    is_open: bool,
+    hold_samples: u32,
+    hold_counter: u32,
     enabled: bool,
     sample_rate: f32,
 }
@@ -23,10 +27,14 @@ impl NoiseGate {
             detector_attack_coeff: Self::time_to_coeff(0.5, sample_rate),
             detector_release_coeff: Self::time_to_coeff(50.0, sample_rate),
             gain_attack_coeff: Self::time_to_coeff(0.5, sample_rate),
-            gain_release_coeff: Self::time_to_coeff(50.0, sample_rate),
-            hysteresis_linear: db_to_linear(3.0) - 1.0,
+            gain_release_coeff: Self::time_to_coeff(90.0, sample_rate),
+            hysteresis_linear: db_to_linear(2.0) - 1.0,
+            floor_gain: db_to_linear(-48.0),
             envelope: 0.0,
             gate_gain: 1.0,
+            is_open: true,
+            hold_samples: (sample_rate * 0.020) as u32,
+            hold_counter: 0,
             enabled: false,
             sample_rate,
         }
@@ -42,18 +50,17 @@ impl NoiseGate {
                 self.enabled = value > 0.5;
                 if !self.enabled {
                     self.gate_gain = 1.0;
+                    self.is_open = true;
                 }
             }
             "gateThreshold" => self.threshold_linear = db_to_linear(value),
             "gateAttack" => {
-                let coeff = Self::time_to_coeff(value, self.sample_rate);
-                self.detector_attack_coeff = coeff;
-                self.gain_attack_coeff = coeff;
+                self.detector_attack_coeff = Self::time_to_coeff((value * 0.5).max(0.1), self.sample_rate);
+                self.gain_attack_coeff = Self::time_to_coeff(value.max(0.1), self.sample_rate);
             }
             "gateRelease" => {
-                let coeff = Self::time_to_coeff(value, self.sample_rate);
-                self.detector_release_coeff = coeff;
-                self.gain_release_coeff = coeff;
+                self.detector_release_coeff = Self::time_to_coeff((value * 0.6).max(5.0), self.sample_rate);
+                self.gain_release_coeff = Self::time_to_coeff(value.max(5.0), self.sample_rate);
             }
             _ => {}
         }
@@ -75,13 +82,22 @@ impl NoiseGate {
         // Add a little hysteresis so the gate doesn't chatter on marginal notes.
         let open_threshold = self.threshold_linear * (1.0 + self.hysteresis_linear * 0.5);
         let close_threshold = self.threshold_linear * (1.0 - self.hysteresis_linear * 0.5);
-        let target_gain = if self.envelope >= open_threshold {
-            1.0
+        if self.envelope >= open_threshold {
+            self.is_open = true;
+            self.hold_counter = self.hold_samples;
         } else if self.envelope <= close_threshold {
-            0.0
+            if self.hold_counter > 0 {
+                self.hold_counter -= 1;
+            } else {
+                self.is_open = false;
+            }
+        }
+        let target_gain = if self.is_open {
+            1.0
         } else {
             let denom = (open_threshold - close_threshold).max(1.0e-6);
-            ((self.envelope - close_threshold) / denom).clamp(0.0, 1.0)
+            let transition = ((self.envelope - close_threshold) / denom).clamp(0.0, 1.0);
+            self.floor_gain + transition * (1.0 - self.floor_gain)
         };
         let coeff = if target_gain > self.gate_gain {
             self.gain_attack_coeff
@@ -95,7 +111,18 @@ impl NoiseGate {
 
     pub fn reset(&mut self) {
         self.envelope = 0.0;
-        self.gate_gain = if self.enabled { 0.0 } else { 1.0 };
+        self.gate_gain = if self.enabled { self.floor_gain } else { 1.0 };
+        self.is_open = !self.enabled;
+        self.hold_counter = 0;
+    }
+
+    pub fn gain(&self) -> f32 {
+        self.gate_gain
+    }
+
+    pub fn envelope_db(&self) -> f32 {
+        let safe = self.envelope.max(1.0e-6);
+        20.0 * safe.log10()
     }
 }
 

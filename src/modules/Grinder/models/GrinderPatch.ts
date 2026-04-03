@@ -19,6 +19,14 @@ export type GrinderMicType = 'dynamic' | 'ribbon' | 'condenser' | 'room';
 
 export type GrinderNeuralTier = 'standard' | 'lite' | 'nano' | 'recurrent';
 
+export type GrinderEngineMode = 'circuit' | 'capture' | 'hybrid';
+
+export type GrinderNeuralPlacement = 'amp-capture' | 'rig-capture';
+
+export type GrinderNeuralStatus = 'idle' | 'warming' | 'ready';
+
+export type GrinderUiSection = 'browse' | 'amp' | 'drive' | 'cab' | 'neural' | 'lab';
+
 // ── Pedal types ──────────────────────────────────────────────────────────────
 
 export type GrinderPedalType =
@@ -66,6 +74,8 @@ export type GrinderSnapshot = {
 
 export type GrinderPatch = {
     name: string;
+    engineMode: GrinderEngineMode;
+    uiSection: GrinderUiSection;
 
     // Input conditioning
     inputImpedance: number; // kΩ (10 – 10000)
@@ -143,6 +153,11 @@ export type GrinderPatch = {
     // Neural capture
     neuralEnabled: boolean;
     neuralModelId: string;
+    neuralModelName: string;
+    neuralModelFamily: string;
+    neuralStatus: GrinderNeuralStatus;
+    neuralWarmupProgress: number; // 0 – 1
+    neuralPlacement: GrinderNeuralPlacement;
     neuralTier: GrinderNeuralTier;
     neuralMix: number; // 0 – 1 (blend circuit model with neural)
     neuralCpuBudget: number; // 0 = eco, 1 = balanced, 2 = full
@@ -177,6 +192,8 @@ export const DEFAULT_MIC: GrinderMic = {
 
 export const DEFAULT_PATCH: GrinderPatch = {
     name: 'Init',
+    engineMode: 'circuit',
+    uiSection: 'browse',
 
     inputImpedance: 1000,
     inputGain: 0,
@@ -241,6 +258,11 @@ export const DEFAULT_PATCH: GrinderPatch = {
 
     neuralEnabled: false,
     neuralModelId: '',
+    neuralModelName: '',
+    neuralModelFamily: 'NAM-compatible',
+    neuralStatus: 'idle',
+    neuralWarmupProgress: 0,
+    neuralPlacement: 'amp-capture',
     neuralTier: 'standard',
     neuralMix: 1,
     neuralCpuBudget: 1,
@@ -256,6 +278,60 @@ export const DEFAULT_PATCH: GrinderPatch = {
     snapshots: [],
     activeSnapshot: 0,
 };
+
+function cloneMic(mic: Partial<GrinderMic> | undefined, defaults: GrinderMic): GrinderMic {
+    return {
+        ...defaults,
+        ...(mic ?? {}),
+    };
+}
+
+function clonePedal(pedal: Partial<GrinderPedal>, index: number): GrinderPedal {
+    return {
+        id: pedal.id ?? `pedal-${index}`,
+        type: pedal.type ?? 'overdrive',
+        enabled: pedal.enabled ?? false,
+        params: { ...(pedal.params ?? {}) },
+    };
+}
+
+function cloneSnapshot(snapshot: Partial<GrinderSnapshot>, index: number): GrinderSnapshot {
+    return {
+        id: snapshot.id ?? `snapshot-${index}`,
+        name: snapshot.name ?? `Snapshot ${index + 1}`,
+        paramOverrides: { ...(snapshot.paramOverrides ?? {}) },
+        bypassStates: { ...(snapshot.bypassStates ?? {}) },
+    };
+}
+
+export function migrateGrinderPatch(patch: Partial<GrinderPatch> | GrinderPatch): GrinderPatch {
+    const engineMode =
+        patch.engineMode ??
+        ((patch.neuralEnabled ?? DEFAULT_PATCH.neuralEnabled) ? 'hybrid' : DEFAULT_PATCH.engineMode);
+    const neuralEnabled = patch.neuralEnabled ?? engineMode !== 'circuit';
+
+    return {
+        ...DEFAULT_PATCH,
+        ...patch,
+        engineMode,
+        uiSection: patch.uiSection ?? DEFAULT_PATCH.uiSection,
+        prePedals: (patch.prePedals ?? DEFAULT_PATCH.prePedals).map((pedal, index) => clonePedal(pedal, index)),
+        mic1: cloneMic(patch.mic1, DEFAULT_PATCH.mic1),
+        mic2: cloneMic(patch.mic2, DEFAULT_PATCH.mic2),
+        postPedals: (patch.postPedals ?? DEFAULT_PATCH.postPedals).map((pedal, index) =>
+            clonePedal(pedal, index)
+        ),
+        snapshots: (patch.snapshots ?? DEFAULT_PATCH.snapshots).map((snapshot, index) =>
+            cloneSnapshot(snapshot, index)
+        ),
+        neuralEnabled,
+        neuralModelName: patch.neuralModelName ?? patch.neuralModelId ?? DEFAULT_PATCH.neuralModelName,
+        neuralModelFamily: patch.neuralModelFamily ?? DEFAULT_PATCH.neuralModelFamily,
+        neuralStatus: patch.neuralStatus ?? DEFAULT_PATCH.neuralStatus,
+        neuralWarmupProgress: patch.neuralWarmupProgress ?? DEFAULT_PATCH.neuralWarmupProgress,
+        neuralPlacement: patch.neuralPlacement ?? DEFAULT_PATCH.neuralPlacement,
+    };
+}
 
 // ── Parameter definitions ────────────────────────────────────────────────────
 
@@ -367,6 +443,7 @@ export const GRINDER_PARAMS: readonly GrinderParamDef[] = [
     { id: 'powerAmpBias', label: 'PA Bias', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'lab' },
 
     // Neural
+    { id: 'engineMode', label: 'Engine Mode', min: 0, max: 2, default: 0, unit: '', step: 1, group: 'neural' },
     { id: 'neuralMix', label: 'Neural Mix', min: 0, max: 1, default: 1, unit: '', step: 0.01, group: 'neural' },
     { id: 'neuralCpuBudget', label: 'CPU Budget', min: 0, max: 2, default: 1, unit: '', step: 1, group: 'neural' },
 

@@ -1,50 +1,78 @@
-/**
- * Grinder — amp simulator, cabinet loader, pedalboard host panel.
- *
- * 5-level progressive disclosure:
- *   Level 1 (Play): Amp head view — Gain, Bass, Mid, Treble, Master, Cab, Presets
- *   Level 2 (Shape): Model switches, Bright/Fat/Channel, essential pedal tray
- *   Level 3 (Build): Drag-drop pedal chain, cab/mic room, IR browser
- *   Level 4 (Route): Split/merge, stereo, dual-amp, per-stage meters
- *   Level 5 (Lab): Tube bias, sag, transformer, neural loader, diagnostics
- */
-import { type ReactElement, useSyncExternalStore } from 'react';
-import { useState } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { type ReactElement, useState, useSyncExternalStore } from 'react';
+import { Cpu, Radio, Search, Sparkles, Waves } from 'lucide-react';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { grinderStore, type GrinderState, type GrinderUiLevel, setGrinderUiLevel } from '../../stores/grinderStore';
+import { CompressorCurve } from '#/components/daw/visualizers/CompressorCurve';
+import { DistortionCurve } from '#/components/daw/visualizers/DistortionCurve';
+import { grinderStore, type GrinderState } from '../../stores/grinderStore';
 import { loadGrinderPatchWithAudio, setGrinderParamWithAudio } from '../../useCases/grinderParamBridge';
 import { GRINDER_PRESETS } from '../../useCases/grinderPresets';
 import {
     type GrinderAmpModel,
+    type GrinderEngineMode,
     type GrinderPatch,
     type GrinderPedal,
     type GrinderPedalType,
-    type GrinderToneStackType,
     type GrinderPowerTubeType,
     type GrinderRectifierType,
+    type GrinderUiSection,
 } from '../../models/GrinderPatch';
 
-const LEVELS: { id: GrinderUiLevel; label: string; description: string }[] = [
-    { id: 1, label: 'Play', description: 'Amp head view' },
-    { id: 2, label: 'Shape', description: 'Switches & pedal tray' },
-    { id: 3, label: 'Build', description: 'Rig builder & mic room' },
-    { id: 4, label: 'Route', description: 'Signal topology' },
-    { id: 5, label: 'Lab', description: 'Component engineering' },
+const SECTION_TABS: ReadonlyArray<{ id: GrinderUiSection; label: string; icon: typeof Sparkles }> = [
+    { id: 'browse', label: 'Browse', icon: Search },
+    { id: 'amp', label: 'Amp', icon: Radio },
+    { id: 'drive', label: 'Drive', icon: Waves },
+    { id: 'cab', label: 'Cab', icon: Sparkles },
+    { id: 'neural', label: 'Neural', icon: Cpu },
+    { id: 'lab', label: 'Lab', icon: Sparkles },
 ];
 
-const AMP_MODELS: { id: GrinderAmpModel; label: string; description: string }[] = [
-    { id: 'clean-twin', label: 'Clean Twin', description: 'Fender Twin · 6L6 · Blackface clean' },
-    { id: 'crunch-jcm', label: 'British Crunch', description: 'Marshall JCM · EL34 · Rock crunch' },
-    { id: 'lead-jcm', label: 'British Lead', description: 'Marshall Lead · EL34 · High gain' },
-    { id: 'ac30-tb', label: 'AC30 Top Boost', description: 'Vox AC30 · EL84 · Chimey' },
-    { id: 'rectifier', label: 'Rectifier', description: 'Mesa-style · 6L6 · Modern high gain' },
-    { id: 'custom', label: 'Custom', description: 'User-defined topology' },
+const ENGINE_MODES: ReadonlyArray<{ id: GrinderEngineMode; label: string; description: string }> = [
+    { id: 'circuit', label: 'Circuit', description: 'Full amp controls, no capture in the loaf' },
+    { id: 'capture', label: 'Capture', description: 'Run the loaded capture and keep the amp mostly out of it' },
+    { id: 'hybrid', label: 'Hybrid', description: 'Blend the circuit path with the loaded capture' },
 ];
 
-const TONE_STACK_TYPES: GrinderToneStackType[] = ['fender', 'marshall', 'vox'];
-const POWER_TUBE_TYPES: GrinderPowerTubeType[] = ['6l6', 'el34', 'el84'];
-const RECTIFIER_TYPES: GrinderRectifierType[] = ['tube', 'solid-state', 'variac'];
+const AMP_MODELS: ReadonlyArray<{
+    id: GrinderAmpModel;
+    label: string;
+    family: string;
+    voicing: string;
+    tubes: string;
+    accent: string;
+}> = [
+    { id: 'clean-twin', label: 'Clean Twin', family: 'American', voicing: 'Headroom, bloom, glass', tubes: '6L6', accent: 'var(--color-accent-amber)' },
+    { id: 'crunch-jcm', label: 'Crunch JCM', family: 'British', voicing: 'Mid-forward rock bite', tubes: 'EL34', accent: 'var(--color-accent-orange)' },
+    { id: 'lead-jcm', label: 'Lead JCM', family: 'British', voicing: 'Focused sustain and cut', tubes: 'EL34', accent: 'var(--color-accent-peach)' },
+    { id: 'ac30-tb', label: 'AC30 Top Boost', family: 'Class A', voicing: 'Chime, sparkle, chew', tubes: 'EL84', accent: 'var(--color-accent-cyan)' },
+    { id: 'rectifier', label: 'Rectifier', family: 'Modern', voicing: 'Dense low end and grind', tubes: '6L6', accent: 'var(--color-accent-lavender)' },
+    { id: 'custom', label: 'Custom', family: 'Lab', voicing: 'Open-ended voicing lab', tubes: 'Any', accent: 'var(--color-accent-orange)' },
+];
+
+const POWER_TUBES: readonly GrinderPowerTubeType[] = ['6l6', 'el34', 'el84'];
+const RECTIFIERS: readonly GrinderRectifierType[] = ['tube', 'solid-state', 'variac'];
+const NEURAL_LIBRARY = [
+    {
+        id: 'factory-amp-a',
+        name: 'Factory Amp A',
+        family: 'NAM-compatible',
+        placement: 'amp-capture',
+        description: 'Focused head capture with a tight midrange and a smooth top.',
+    },
+    {
+        id: 'factory-rig-b',
+        name: 'Factory Rig B',
+        family: 'A1-ready',
+        placement: 'rig-capture',
+        description: 'Full rig snapshot when you want the whole baked loaf at once.',
+    },
+    {
+        id: 'vintage-stack-c',
+        name: 'Vintage Stack C',
+        family: 'NAM-compatible',
+        placement: 'amp-capture',
+        description: 'Wider low mids with a softer edge on pick attack.',
+    },
+] as const;
 
 type SupportedPedalControl = {
     label: string;
@@ -61,119 +89,72 @@ type SupportedPedalControl = {
     }>;
 };
 
-const SUPPORTED_PRE_PEDALS: readonly SupportedPedalControl[] = [
+const DRIVE_CONTROLS: readonly SupportedPedalControl[] = [
     {
         label: 'Compressor',
         type: 'compressor',
-        defaults: {
-            id: 'comp1',
-            type: 'compressor',
-            enabled: false,
-            params: { threshold: -20, ratio: 4, attack: 10, release: 200 },
-        },
+        defaults: { id: 'comp1', type: 'compressor', enabled: false, params: { threshold: -24, ratio: 3, attack: 16, release: 220 } },
         params: [
-            { key: 'threshold', label: 'Threshold', min: -40, max: 0, step: 1, defaultValue: -20, unit: 'dB' },
-            { key: 'ratio', label: 'Ratio', min: 1, max: 8, step: 0.5, defaultValue: 4 },
-            { key: 'attack', label: 'Attack', min: 1, max: 50, step: 1, defaultValue: 10, unit: 'ms' },
-            { key: 'release', label: 'Release', min: 50, max: 400, step: 5, defaultValue: 200, unit: 'ms' },
+            { key: 'threshold', label: 'Threshold', min: -40, max: 0, step: 1, defaultValue: -24, unit: 'dB' },
+            { key: 'ratio', label: 'Ratio', min: 1, max: 8, step: 0.5, defaultValue: 3 },
+            { key: 'attack', label: 'Attack', min: 1, max: 50, step: 1, defaultValue: 16, unit: 'ms' },
+            { key: 'release', label: 'Release', min: 50, max: 400, step: 5, defaultValue: 220, unit: 'ms' },
         ],
     },
     {
         label: 'Overdrive',
         type: 'overdrive',
-        defaults: {
-            id: 'od1',
-            type: 'overdrive',
-            enabled: false,
-            params: { drive: 4, tone: 6, level: 7 },
-        },
+        defaults: { id: 'od1', type: 'overdrive', enabled: false, params: { drive: 4.5, tone: 5.5, level: 6.8 } },
         params: [
-            { key: 'drive', label: 'Drive', min: 0, max: 10, step: 0.1, defaultValue: 4 },
-            { key: 'tone', label: 'Tone', min: 0, max: 10, step: 0.1, defaultValue: 6 },
-            { key: 'level', label: 'Level', min: 0, max: 10, step: 0.1, defaultValue: 7 },
+            { key: 'drive', label: 'Drive', min: 0, max: 10, step: 0.1, defaultValue: 4.5 },
+            { key: 'tone', label: 'Tone', min: 0, max: 10, step: 0.1, defaultValue: 5.5 },
+            { key: 'level', label: 'Level', min: 0, max: 10, step: 0.1, defaultValue: 6.8 },
         ],
     },
     {
         label: 'Distortion',
         type: 'distortion',
-        defaults: {
-            id: 'dist1',
-            type: 'distortion',
-            enabled: false,
-            params: { drive: 5, tone: 5, level: 6 },
-        },
+        defaults: { id: 'dist1', type: 'distortion', enabled: false, params: { drive: 5.2, tone: 4.4, level: 7.2 } },
         params: [
-            { key: 'drive', label: 'Drive', min: 0, max: 10, step: 0.1, defaultValue: 5 },
-            { key: 'tone', label: 'Tone', min: 0, max: 10, step: 0.1, defaultValue: 5 },
-            { key: 'level', label: 'Level', min: 0, max: 10, step: 0.1, defaultValue: 6 },
+            { key: 'drive', label: 'Drive', min: 0, max: 10, step: 0.1, defaultValue: 5.2 },
+            { key: 'tone', label: 'Tone', min: 0, max: 10, step: 0.1, defaultValue: 4.4 },
+            { key: 'level', label: 'Level', min: 0, max: 10, step: 0.1, defaultValue: 7.2 },
         ],
     },
     {
         label: 'Fuzz',
         type: 'fuzz',
-        defaults: {
-            id: 'fuzz1',
-            type: 'fuzz',
-            enabled: false,
-            params: { fuzz: 7, tone: 5, level: 6 },
-        },
+        defaults: { id: 'fuzz1', type: 'fuzz', enabled: false, params: { fuzz: 6.8, tone: 4.8, level: 6.4 } },
         params: [
-            { key: 'fuzz', label: 'Fuzz', min: 0, max: 10, step: 0.1, defaultValue: 7 },
-            { key: 'tone', label: 'Tone', min: 0, max: 10, step: 0.1, defaultValue: 5 },
-            { key: 'level', label: 'Level', min: 0, max: 10, step: 0.1, defaultValue: 6 },
+            { key: 'fuzz', label: 'Fuzz', min: 0, max: 10, step: 0.1, defaultValue: 6.8 },
+            { key: 'tone', label: 'Tone', min: 0, max: 10, step: 0.1, defaultValue: 4.8 },
+            { key: 'level', label: 'Level', min: 0, max: 10, step: 0.1, defaultValue: 6.4 },
         ],
     },
 ];
 
-function formatValue(v: number, unit: string): string {
+function formatValue(value: number, unit = ''): string {
     if (unit === 'dB') {
-        return `${v > 0 ? '+' : ''}${v.toFixed(1)}`;
+        return `${value > 0 ? '+' : ''}${value.toFixed(1)} dB`;
     }
     if (unit === 'ms') {
-        return v >= 1000 ? `${(v / 1000).toFixed(1)}s` : `${v.toFixed(0)}ms`;
+        return value >= 1000 ? `${(value / 1000).toFixed(2)} s` : `${value.toFixed(0)} ms`;
     }
     if (unit === 'Hz') {
-        return v >= 1000 ? `${(v / 1000).toFixed(1)}k` : `${v.toFixed(0)}`;
+        return value >= 1000 ? `${(value / 1000).toFixed(1)} kHz` : `${value.toFixed(0)} Hz`;
     }
     if (unit === 'kΩ') {
-        return v >= 1000 ? `${(v / 1000).toFixed(0)}MΩ` : `${v.toFixed(0)}kΩ`;
+        return value >= 1000 ? `${(value / 1000).toFixed(1)} MΩ` : `${value.toFixed(0)} kΩ`;
     }
-    return `${v.toFixed(1)}`;
+    if (unit === '%') {
+        return `${value.toFixed(0)}%`;
+    }
+    return value.toFixed(1);
 }
 
-const K = ({
-    v,
-    k,
-    label,
-    min,
-    max,
-    step,
-    def,
-    unit,
-}: {
-    v: number;
-    k: string;
-    label: string;
-    min: number;
-    max: number;
-    step: number;
-    def: number;
-    unit?: string;
-}): ReactElement => (
-    <div className="flex flex-col items-center gap-0">
-        <RotaryKnob
-            value={v}
-            onChange={(val) => setGrinderParamWithAudio(k as never, val)}
-            min={min}
-            max={max}
-            step={step}
-            defaultValue={def}
-            size="sm"
-        />
-        <span className="text-[7px] text-muted-foreground leading-none">{label}</span>
-        {unit ? <span className="text-[6px] text-muted-foreground/40 font-mono">{formatValue(v, unit)}</span> : null}
-    </div>
-);
+function toDbPercent(db: number): number {
+    return Math.max(0, Math.min(1, (db + 72) / 72));
+}
 
 function upsertPedal(
     pedals: readonly GrinderPedal[],
@@ -188,91 +169,511 @@ function upsertPedal(
     return pedals.map((pedal) => (pedal.type === type ? update(pedal) : pedal));
 }
 
-function updatePedalCollection(
-    patch: GrinderPatch,
-    section: 'prePedals',
-    type: GrinderPedalType,
-    defaults: GrinderPedal,
-    update: (pedal: GrinderPedal) => GrinderPedal
-): void {
-    const nextPedals = upsertPedal(patch[section], type, defaults, update);
-    const nextPatch: GrinderPatch = {
-        ...patch,
-        [section]: nextPedals,
-    };
-    loadGrinderPatchWithAudio(nextPatch);
+function GrinderKnob({
+    value,
+    param,
+    label,
+    min,
+    max,
+    step,
+    defaultValue,
+    unit,
+}: {
+    value: number;
+    param: keyof GrinderPatch;
+    label: string;
+    min: number;
+    max: number;
+    step: number;
+    defaultValue: number;
+    unit?: string;
+}): ReactElement {
+    return (
+        <div className="flex min-w-[72px] flex-col items-center gap-1 rounded-[18px] border border-white/8 bg-[var(--color-bg-panelInset)] px-3 py-3 shadow-[var(--shadow-elevation-inset)]">
+            <RotaryKnob
+                value={value}
+                onChange={(next) => setGrinderParamWithAudio(param, next)}
+                min={min}
+                max={max}
+                step={step}
+                defaultValue={defaultValue}
+                size="sm"
+            />
+            <span className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-amber)]">{label}</span>
+            <span className="font-mono text-[10px] text-white/55">{formatValue(value, unit)}</span>
+        </div>
+    );
 }
 
-function renderPedalControls(
-    patch: GrinderPatch,
-    section: 'prePedals',
-    controls: readonly SupportedPedalControl[]
-): ReactElement {
+function StatusMeter({ label, value, accent }: { label: string; value: number; accent: string }): ReactElement {
     return (
-        <div className="flex gap-2 flex-wrap">
-            {controls.map((control) => {
-                const pedal = patch[section].find((entry) => entry.type === control.type) ?? control.defaults;
-                return (
+        <div className="grinder-window flex min-w-[74px] flex-col gap-2 px-3 py-2">
+            <div className="text-[9px] uppercase tracking-[0.24em] text-white/48">{label}</div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-white/6">
+                <div className="h-full rounded-full transition-all duration-150" style={{ width: `${value * 100}%`, background: accent }} />
+            </div>
+        </div>
+    );
+}
+
+function ToneResponseStage({ patch, state }: { patch: GrinderPatch; state: GrinderState }): ReactElement {
+    const points = [
+        [0, 78 - patch.bass * 4],
+        [24, 64 - patch.bass * 2],
+        [45, 60 - patch.mid * 3.6],
+        [68, 64 - patch.treble * 3.4],
+        [100, 70 - patch.presence * 2.8],
+    ];
+
+    return (
+        <div className="grinder-window flex h-full flex-col gap-4 p-4">
+            <div className="flex items-start justify-between">
+                <div>
+                    <div className="text-[10px] uppercase tracking-[0.28em] text-[var(--color-accent-amber)]">Amp Stage</div>
+                    <div className="mt-1 text-xl font-semibold text-white/90">
+                        {AMP_MODELS.find((model) => model.id === patch.ampModel)?.label ?? 'Custom'}
+                    </div>
+                    <div className="text-sm text-white/45">
+                        Channel {patch.channel + 1} · {patch.powerTubeType.toUpperCase()} · {patch.rectifierType}
+                    </div>
+                </div>
+                <div className="grinder-led">{patch.bright ? 'Bright' : patch.fat ? 'Fat' : 'Classic'}</div>
+            </div>
+            <svg viewBox="0 0 100 84" className="h-[180px] w-full rounded-[20px] bg-black/35 p-2" aria-label="Tone stack response">
+                <defs>
+                    <linearGradient id="grinder-tone-fill" x1="0" x2="0" y1="0" y2="1">
+                        <stop offset="0%" stopColor="rgba(229,168,75,0.30)" />
+                        <stop offset="100%" stopColor="rgba(229,168,75,0.02)" />
+                    </linearGradient>
+                </defs>
+                <rect x="0" y="0" width="100" height="84" rx="8" fill="rgba(255,255,255,0.02)" />
+                <path d="M 0 42 L 100 42" stroke="rgba(255,255,255,0.08)" strokeDasharray="2 3" />
+                <path d="M 50 8 L 50 76" stroke="rgba(255,255,255,0.05)" strokeDasharray="2 3" />
+                <path
+                    d={`M ${points.map(([x, y]) => `${x} ${y}`).join(' L ')}`}
+                    fill="none"
+                    stroke="var(--color-accent-amber)"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                />
+                <path
+                    d={`M ${points[0]?.[0] ?? 0} 84 L ${points.map(([x, y]) => `${x} ${y}`).join(' L ')} L ${points[points.length - 1]?.[0] ?? 100} 84 Z`}
+                    fill="url(#grinder-tone-fill)"
+                />
+            </svg>
+            <div className="grid grid-cols-3 gap-3">
+                <StatusMeter label="Input" value={toDbPercent(state.inputDb)} accent="var(--color-accent-cyan)" />
+                <StatusMeter label="Pre" value={toDbPercent(state.preampDb)} accent="var(--color-accent-amber)" />
+                <StatusMeter label="Power" value={toDbPercent(state.powerAmpDb)} accent="var(--color-accent-peach)" />
+            </div>
+        </div>
+    );
+}
+
+function DriveStage({ patch }: { patch: GrinderPatch }): ReactElement {
+    const compressor = patch.prePedals.find((pedal) => pedal.type === 'compressor');
+    const drivePedal = patch.prePedals.find((pedal) => pedal.type === 'distortion')
+        ?? patch.prePedals.find((pedal) => pedal.type === 'overdrive')
+        ?? patch.prePedals.find((pedal) => pedal.type === 'fuzz');
+
+    const driveAmount = drivePedal?.params.drive ?? drivePedal?.params.fuzz ?? 0;
+    const toneAmount = drivePedal?.params.tone ?? 5;
+    const driveMix = patch.outputMix;
+
+    return (
+        <div className="grid h-full grid-cols-[1.1fr_0.9fr] gap-4">
+            <div className="grinder-window flex flex-col gap-4 p-4">
+                <div className="flex items-start justify-between">
+                    <div>
+                        <div className="text-[10px] uppercase tracking-[0.28em] text-[var(--color-accent-peach)]">Drive Surface</div>
+                        <div className="mt-1 text-xl font-semibold text-white/90">{drivePedal?.type ?? 'No drive block'}</div>
+                    </div>
+                    <div className="grinder-led">{drivePedal?.enabled ? 'Live' : 'Bypassed'}</div>
+                </div>
+                <DistortionCurve drive={driveAmount * 10} tone={toneAmount * 800} mix={driveMix} width={320} height={186} />
+                <div className="grid grid-cols-3 gap-3">
+                    <StatusMeter label="OD" value={(patch.prePedals.find((pedal) => pedal.type === 'overdrive')?.params.drive ?? 0) / 10} accent="var(--color-accent-amber)" />
+                    <StatusMeter label="Dist" value={(patch.prePedals.find((pedal) => pedal.type === 'distortion')?.params.drive ?? 0) / 10} accent="var(--color-accent-peach)" />
+                    <StatusMeter label="Fuzz" value={(patch.prePedals.find((pedal) => pedal.type === 'fuzz')?.params.fuzz ?? 0) / 10} accent="var(--color-accent-lavender)" />
+                </div>
+            </div>
+            <div className="grinder-window flex flex-col gap-4 p-4">
+                <div>
+                    <div className="text-[10px] uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]">Sustain</div>
+                    <div className="mt-1 text-xl font-semibold text-white/90">Gate and squeeze</div>
+                </div>
+                <CompressorCurve
+                    threshold={compressor?.params.threshold ?? patch.gateThreshold}
+                    ratio={compressor?.params.ratio ?? 2}
+                    knee={6}
+                    makeup={0}
+                    width={210}
+                    height={186}
+                />
+                <div className="space-y-2 text-sm text-white/55">
+                    <div>Use this side to tune push, edge, and sustain without getting buried in duplicate knobs.</div>
+                    <div>The curve should help you hear what changed, not try to sell you on it.</div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function CabStage({
+    patch,
+    replacePatch,
+}: {
+    patch: GrinderPatch;
+    replacePatch: (next: GrinderPatch) => void;
+}): ReactElement {
+    function updateMicPosition(event: React.MouseEvent<HTMLButtonElement>): void {
+        const bounds = event.currentTarget.getBoundingClientRect();
+        const normalizedX = (event.clientX - bounds.left) / bounds.width;
+        const normalizedY = (event.clientY - bounds.top) / bounds.height;
+        replacePatch({
+            ...patch,
+            mic1: {
+                ...patch.mic1,
+                positionX: Math.max(0, Math.min(1, normalizedX)),
+                positionY: Math.max(0, Math.min(1, normalizedY)),
+            },
+        });
+    }
+
+    return (
+        <div className="grid h-full grid-cols-[1.05fr_0.95fr] gap-4">
+            <div className="grinder-window flex flex-col gap-4 p-4">
+                <div className="flex items-start justify-between">
+                    <div>
+                        <div className="text-[10px] uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]">Cab stage</div>
+                        <div className="mt-1 text-xl font-semibold text-white/90">Speaker field</div>
+                    </div>
+                    <div className="grinder-led">{patch.cabEnabled ? 'Cab In' : 'Cab Out'}</div>
+                </div>
+                <button
+                    type="button"
+                    className="relative flex h-[220px] w-full items-center justify-center overflow-hidden rounded-[24px] border border-white/8 bg-[radial-gradient(circle_at_50%_42%,rgba(111,177,198,0.18),transparent_34%),radial-gradient(circle_at_50%_50%,rgba(229,168,75,0.14),transparent_54%),linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))]"
+                    onClick={updateMicPosition}
+                    aria-label="Move primary mic across the speaker cone"
+                >
+                    <div className="absolute inset-[14%] rounded-full border border-white/8" />
+                    <div className="absolute inset-[24%] rounded-full border border-white/12" />
+                    <div className="absolute inset-[36%] rounded-full border border-[var(--color-accent-amber)]/30" />
                     <div
-                        key={`${section}-${control.type}`}
-                        className="space-y-2 rounded border border-border/20 bg-surface-inset/30 p-2"
+                        className="absolute flex size-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-[var(--color-accent-cyan)]/60 bg-[var(--color-accent-cyan)]/18 shadow-[0_0_24px_rgba(111,177,198,0.25)]"
+                        style={{ left: `${patch.mic1.positionX * 100}%`, top: `${patch.mic1.positionY * 100}%` }}
                     >
-                        <label className="flex items-center gap-1 text-[8px] text-muted-foreground cursor-pointer">
-                            <input
-                                type="checkbox"
-                                checked={pedal.enabled}
-                                onChange={(e) =>
-                                    updatePedalCollection(patch, section, control.type, control.defaults, (current) => ({
-                                        ...current,
-                                        enabled: e.target.checked,
-                                    }))
+                        <span className="text-[10px] font-semibold text-[var(--color-accent-cyan)]">1</span>
+                    </div>
+                    {patch.mic2.enabled ? (
+                        <div
+                            className="absolute flex size-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-[var(--color-accent-peach)]/60 bg-[var(--color-accent-peach)]/18"
+                            style={{ left: `${patch.mic2.positionX * 100}%`, top: `${patch.mic2.positionY * 100}%` }}
+                        >
+                            <span className="text-[10px] font-semibold text-[var(--color-accent-peach)]">2</span>
+                        </div>
+                    ) : null}
+                </button>
+                <div className="grid grid-cols-3 gap-3">
+                    <StatusMeter label="Thump" value={patch.backEmf} accent="var(--color-accent-cyan)" />
+                    <StatusMeter label="Breakup" value={patch.coneBreakup} accent="var(--color-accent-peach)" />
+                    <StatusMeter label="Room" value={patch.roomAmount} accent="var(--color-accent-lavender)" />
+                </div>
+            </div>
+            <div className="grinder-window flex flex-col gap-4 p-4">
+                    <div className="text-[10px] uppercase tracking-[0.28em] text-[var(--color-accent-amber)]">Cab notes</div>
+                <div className="space-y-3 text-sm text-white/58">
+                    <div>Click on the cone to move the primary mic. Center stays sharper; edge rounds the bite.</div>
+                    <div>Use the deck below for the chewy stuff: resonance, damping, breakup, and back-EMF.</div>
+                </div>
+                <div className="rounded-[22px] border border-white/8 bg-black/30 p-4">
+                    <div className="text-[10px] uppercase tracking-[0.2em] text-white/45">Readout</div>
+                    <div className="mt-3 space-y-2 font-mono text-[13px] text-white/70">
+                        <div>mic-x {patch.mic1.positionX.toFixed(2)}</div>
+                        <div>mic-y {patch.mic1.positionY.toFixed(2)}</div>
+                        <div>blend {patch.micBlend.toFixed(2)}</div>
+                        <div>res-q {patch.cabResonanceQ.toFixed(2)}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function NeuralStage({ patch, state }: { patch: GrinderPatch; state: GrinderState }): ReactElement {
+    const modelName = patch.neuralModelName || 'Factory Voice A';
+    const statusLabel = patch.engineMode === 'circuit'
+        ? 'Idle'
+        : state.neuralWarmupProgress >= 1
+            ? 'Ready'
+            : 'Warming';
+
+    return (
+        <div className="grid h-full grid-cols-[1fr_0.94fr] gap-4">
+            <div className="grinder-window flex flex-col gap-4 p-4">
+                <div className="flex items-start justify-between">
+                    <div>
+                        <div className="text-[10px] uppercase tracking-[0.28em] text-[var(--color-accent-lavender)]">Capture engine</div>
+                        <div className="mt-1 text-xl font-semibold text-white/90">{modelName}</div>
+                        <div className="text-sm text-white/45">{patch.neuralModelFamily} · {patch.neuralPlacement === 'amp-capture' ? 'Amp capture' : 'Rig capture'}</div>
+                    </div>
+                    <div className="grinder-led">{statusLabel}</div>
+                </div>
+                <div className="rounded-[24px] border border-white/8 bg-black/35 p-5">
+                    <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.24em] text-white/46">
+                        <span>Blend</span>
+                        <span>{Math.round(patch.neuralMix * 100)}%</span>
+                    </div>
+                    <div className="mt-4 h-4 overflow-hidden rounded-full bg-white/6">
+                        <div className="h-full rounded-full bg-[linear-gradient(90deg,var(--color-accent-lavender),var(--color-accent-cyan))]" style={{ width: `${patch.neuralMix * 100}%` }} />
+                    </div>
+                    <div className="mt-6 grid grid-cols-2 gap-3">
+                        <StatusMeter label="CPU" value={state.neuralCpuPercent / 100} accent="var(--color-accent-lavender)" />
+                        <StatusMeter label="Warm" value={state.neuralWarmupProgress} accent="var(--color-accent-cyan)" />
+                    </div>
+                </div>
+            </div>
+            <div className="grinder-window flex flex-col gap-4 p-4">
+                <div className="text-[10px] uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]">Mode guide</div>
+                <div className="space-y-3 text-sm text-white/58">
+                    <div>Circuit is still the home base, so the front panel keeps making sense even with no capture loaded.</div>
+                    <div>Capture and Hybrid are separate on purpose. No mystery checkbox, no hidden basement mode.</div>
+                </div>
+                <div className="grid gap-2">
+                    {ENGINE_MODES.map((mode) => (
+                        <div key={mode.id} className={`rounded-[18px] border px-4 py-3 ${patch.engineMode === mode.id ? 'border-[var(--color-accent-lavender)]/60 bg-[var(--color-accent-lavender)]/10' : 'border-white/8 bg-black/20'}`}>
+                            <div className="text-sm font-medium text-white/88">{mode.label}</div>
+                            <div className="text-xs text-white/45">{mode.description}</div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function LabStage({ patch, state }: { patch: GrinderPatch; state: GrinderState }): ReactElement {
+    return (
+        <div className="grid h-full grid-cols-[0.92fr_1.08fr] gap-4">
+            <div className="grinder-window flex flex-col gap-4 p-4">
+                <div>
+                    <div className="text-[10px] uppercase tracking-[0.28em] text-[var(--color-accent-orange)]">Diagnostics</div>
+                    <div className="mt-1 text-xl font-semibold text-white/90">Feel check</div>
+                </div>
+                <StatusMeter label="Gate" value={state.gateOpen} accent="var(--color-accent-cyan)" />
+                <StatusMeter label="Sag" value={Math.max(0, Math.min(1, state.sagVoltage))} accent="var(--color-accent-orange)" />
+                <StatusMeter label="Output" value={toDbPercent(state.outputDb)} accent="var(--color-accent-peach)" />
+                <div className="rounded-[22px] border border-white/8 bg-black/25 p-4 font-mono text-[12px] text-white/62">
+                    <div>gate-env {state.gateEnvelopeDb.toFixed(1)} dB</div>
+                    <div>latency {state.latency.toFixed(0)} smp</div>
+                    <div>xformer {patch.transformerDrive.toFixed(2)}</div>
+                    <div>nfb {patch.negFeedback.toFixed(2)}</div>
+                </div>
+            </div>
+            <div className="grinder-window flex flex-col gap-4 p-4">
+                <div className="text-[10px] uppercase tracking-[0.28em] text-[var(--color-accent-amber)]">What lives here</div>
+                <div className="space-y-3 text-sm text-white/58">
+                    <div>Lab is where the chewy, fussy bits live: gate behavior, sag, transformer push, and other feel controls.</div>
+                    <div>If something is still experimental, it belongs here or it stays out of the way.</div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function BrowserRail({
+    patch,
+    replacePatch,
+}: {
+    patch: GrinderPatch;
+    replacePatch: (next: GrinderPatch) => void;
+}): ReactElement {
+    const [query, setQuery] = useState('');
+    const [category, setCategory] = useState('All');
+    const categories = ['All', ...Array.from(new Set(GRINDER_PRESETS.map((preset) => preset.category)))];
+    const filteredPresets = GRINDER_PRESETS.filter((preset) => {
+        const matchesCategory = category === 'All' || preset.category === category;
+        const haystack = `${preset.name} ${preset.category}`.toLowerCase();
+        return matchesCategory && haystack.includes(query.toLowerCase());
+    });
+
+    return (
+        <aside className="grinder-faceplate flex h-full w-[320px] shrink-0 flex-col gap-4 p-4">
+            <div>
+                <div className="text-[10px] uppercase tracking-[0.3em] text-[var(--color-accent-amber)]">Grinder</div>
+                <div className="mt-1 text-[26px] font-semibold tracking-[0.03em] text-white/92">Presets</div>
+                <div className="mt-1 text-sm text-white/46">Pick a loaf, narrow the list, then start turning things.</div>
+            </div>
+            <div className="grinder-window flex min-h-0 flex-1 flex-col gap-3 p-3">
+                <label className="flex items-center gap-2 rounded-[18px] border border-white/6 bg-black/20 px-3 py-2">
+                    <Search className="size-4 text-white/40" />
+                    <input
+                        value={query}
+                        onChange={(event) => setQuery(event.target.value)}
+                        className="w-full bg-transparent text-sm text-white/84 outline-none placeholder:text-white/28"
+                        placeholder="Search presets"
+                        aria-label="Search Grinder presets"
+                    />
+                </label>
+                <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.22em] text-white/34">
+                    <span>{category}</span>
+                    <span>{filteredPresets.length} shown</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                    {categories.map((item) => (
+                        <button
+                            key={item}
+                            type="button"
+                            className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.24em] ${
+                                category === item
+                                    ? 'border-[var(--color-accent-amber)]/60 bg-[var(--color-accent-amber)]/14 text-[var(--color-accent-amber)]'
+                                    : 'border-white/8 bg-black/20 text-white/50'
+                            }`}
+                            onClick={() => setCategory(item)}
+                        >
+                            {item}
+                        </button>
+                    ))}
+                </div>
+                <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+                    {filteredPresets.length > 0 ? filteredPresets.map((preset) => (
+                        <button
+                            key={preset.id}
+                            type="button"
+                            className={`grinder-window flex w-full flex-col items-start gap-1 px-4 py-3 text-left ${
+                                patch.name === preset.patch.name ? 'border-[var(--color-accent-amber)]/60 bg-[var(--color-accent-amber)]/10' : ''
+                            }`}
+                            onClick={() => replacePatch({ ...preset.patch, uiSection: patch.uiSection })}
+                        >
+                            <div className="flex w-full items-center justify-between gap-3">
+                                <span className="text-sm font-medium text-white/88">{preset.name}</span>
+                                <span className="text-[9px] uppercase tracking-[0.2em] text-white/36">{preset.category}</span>
+                            </div>
+                            <span className="text-xs text-white/45">
+                                {preset.patch.ampModel === 'clean-twin' ? 'Clean platform' : AMP_MODELS.find((amp) => amp.id === preset.patch.ampModel)?.label ?? 'House preset'}
+                            </span>
+                        </button>
+                    )) : (
+                        <div className="rounded-[20px] border border-dashed border-white/10 bg-black/18 px-4 py-5 text-sm text-white/46">
+                            Nothing matches that search. Clear it or try another tray.
+                        </div>
+                    )}
+                </div>
+            </div>
+            <div className="grinder-window flex max-h-[30vh] flex-col gap-2 overflow-y-auto p-3">
+                <div className="text-[10px] uppercase tracking-[0.22em] text-[var(--color-accent-cyan)]">Amp lineup</div>
+                <div className="grid gap-2">
+                    {AMP_MODELS.map((amp) => (
+                        <button
+                            key={amp.id}
+                            type="button"
+                            className={`rounded-[20px] border px-4 py-3 text-left transition-colors ${
+                                patch.ampModel === amp.id ? 'border-white/18 bg-white/6' : 'border-white/8 bg-black/16'
+                            }`}
+                            onClick={() => replacePatch({ ...patch, ampModel: amp.id })}
+                        >
+                            <div className="flex items-center justify-between">
+                                <span className="text-sm font-medium text-white/90">{amp.label}</span>
+                                <span className="h-2 w-2 rounded-full" style={{ background: amp.accent }} />
+                            </div>
+                            <div className="mt-1 text-[10px] uppercase tracking-[0.22em] text-white/34">{amp.family} · {amp.tubes}</div>
+                            <div className="mt-2 text-xs text-white/46">{amp.voicing}</div>
+                        </button>
+                    ))}
+                </div>
+            </div>
+        </aside>
+    );
+}
+
+function SectionTabs({
+    patch,
+    replacePatch,
+}: {
+    patch: GrinderPatch;
+    replacePatch: (next: GrinderPatch) => void;
+}): ReactElement {
+    return (
+        <div className="flex flex-wrap gap-2">
+            {SECTION_TABS.map((tab) => {
+                const Icon = tab.icon;
+                const active = patch.uiSection === tab.id;
+                return (
+                    <button
+                        key={tab.id}
+                        type="button"
+                        className={`grinder-tab ${active ? 'grinder-tab-active' : ''}`}
+                        onClick={() => replacePatch({ ...patch, uiSection: tab.id })}
+                    >
+                        <Icon className="size-3.5" />
+                        <span>{tab.label}</span>
+                    </button>
+                );
+            })}
+        </div>
+    );
+}
+
+function DriveDeck({
+    patch,
+    replacePatch,
+}: {
+    patch: GrinderPatch;
+    replacePatch: (next: GrinderPatch) => void;
+}): ReactElement {
+    return (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {DRIVE_CONTROLS.map((control) => {
+                const pedal = patch.prePedals.find((item) => item.type === control.type) ?? control.defaults;
+                return (
+                    <div key={control.type} className="grinder-window flex flex-col gap-3 p-4">
+                        <label className="flex items-center justify-between gap-3">
+                            <span className="text-[11px] uppercase tracking-[0.24em] text-[var(--color-accent-amber)]">{control.label}</span>
+                            <button
+                                type="button"
+                                className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.18em] ${
+                                    pedal.enabled
+                                        ? 'border-[var(--color-accent-amber)]/60 bg-[var(--color-accent-amber)]/14 text-[var(--color-accent-amber)]'
+                                        : 'border-white/8 bg-black/20 text-white/50'
+                                }`}
+                                onClick={() =>
+                                    replacePatch({
+                                        ...patch,
+                                        prePedals: upsertPedal(patch.prePedals, control.type, control.defaults, (current) => ({
+                                            ...current,
+                                            enabled: !current.enabled,
+                                        })),
+                                    })
                                 }
-                                className="size-2.5 rounded"
-                                style={{ accentColor: 'rgb(217,119,6)' }}
-                            />
-                            <span className="font-medium text-foreground/80">{control.label}</span>
+                            >
+                                {pedal.enabled ? 'On' : 'Off'}
+                            </button>
                         </label>
-                        <div className="flex gap-2 flex-wrap">
-                            {control.params.map((param) => {
-                                return (
-                                    <div
-                                        key={`${control.type}-${param.key}`}
-                                        onClick={(event) => event.stopPropagation()}
-                                    >
-                                        <RotaryKnob
-                                            value={pedal.params[param.key] ?? param.defaultValue}
-                                            onChange={(val) =>
-                                                updatePedalCollection(
-                                                    patch,
-                                                    section,
-                                                    control.type,
-                                                    control.defaults,
-                                                    (current) => ({
-                                                        ...current,
-                                                        params: {
-                                                            ...current.params,
-                                                            [param.key]: val,
-                                                        },
-                                                    })
-                                                )
-                                            }
-                                            min={param.min}
-                                            max={param.max}
-                                            step={param.step}
-                                            defaultValue={param.defaultValue}
-                                            size="sm"
-                                        />
-                                        <div className="mt-0.5 text-center text-[7px] text-muted-foreground leading-none">
-                                            {param.label}
-                                        </div>
-                                        {param.unit ? (
-                                            <div className="text-center text-[6px] font-mono text-muted-foreground/40">
-                                                {formatValue(pedal.params[param.key] ?? param.defaultValue, param.unit)}
-                                            </div>
-                                        ) : null}
-                                    </div>
-                                );
-                            })}
+                        <div className="flex flex-wrap gap-3">
+                            {control.params.map((param) => (
+                                <div key={`${control.type}-${param.key}`} className="flex flex-col items-center gap-1">
+                                    <RotaryKnob
+                                        value={pedal.params[param.key] ?? param.defaultValue}
+                                        onChange={(next) =>
+                                            replacePatch({
+                                                ...patch,
+                                                prePedals: upsertPedal(patch.prePedals, control.type, control.defaults, (current) => ({
+                                                    ...current,
+                                                    params: { ...current.params, [param.key]: next },
+                                                })),
+                                            })
+                                        }
+                                        min={param.min}
+                                        max={param.max}
+                                        step={param.step}
+                                        defaultValue={param.defaultValue}
+                                        size="sm"
+                                    />
+                                    <span className="text-[10px] uppercase tracking-[0.22em] text-white/56">{param.label}</span>
+                                    <span className="font-mono text-[10px] text-white/40">{formatValue(pedal.params[param.key] ?? param.defaultValue, param.unit)}</span>
+                                </div>
+                            ))}
                         </div>
                     </div>
                 );
@@ -281,868 +682,348 @@ function renderPedalControls(
     );
 }
 
-// ── Level 1: Play ────────────────────────────────────────────────────────────
-
-const PlayLevel = ({ state }: { state: GrinderState }): ReactElement => {
-    const patch = state.patch;
-    const [presetMenuOpen, setPresetMenuOpen] = useState(false);
-
-    return (
-        <div className="flex flex-1 min-h-0 overflow-hidden">
-            {/* Amp head visual */}
-            <div
-                className="flex-1 flex flex-col items-center justify-center gap-4 p-4"
-                style={{
-                    background: 'radial-gradient(ellipse at center top, rgba(217,119,6,0.06) 0%, rgba(0,0,0,0.95) 70%)',
-                }}
-            >
-                {/* Amp model name */}
-                <div className="text-center">
-                    <div className="text-[11px] font-bold text-amber-400 uppercase tracking-widest">
-                        {AMP_MODELS.find((m) => m.id === patch.ampModel)?.label ?? 'Custom'}
-                    </div>
-                    <div className="text-[8px] text-muted-foreground/40">
-                        {AMP_MODELS.find((m) => m.id === patch.ampModel)?.description}
-                    </div>
-                </div>
-
-                {/* Main amp controls */}
-                <div className="flex gap-5">
-                    <K v={patch.gain} k="gain" label="Gain" min={0} max={10} step={0.1} def={5} />
-                    <K v={patch.bass} k="bass" label="Bass" min={0} max={10} step={0.1} def={5} />
-                    <K v={patch.mid} k="mid" label="Mid" min={0} max={10} step={0.1} def={5} />
-                    <K v={patch.treble} k="treble" label="Treble" min={0} max={10} step={0.1} def={5} />
-                    <K v={patch.master} k="master" label="Master" min={0} max={10} step={0.1} def={5} />
-                </div>
-
-                {/* Presence / Resonance */}
-                <div className="flex gap-4">
-                    <K v={patch.presence} k="presence" label="Presence" min={0} max={10} step={0.1} def={5} />
-                    <K v={patch.resonance} k="resonance" label="Resonance" min={0} max={10} step={0.1} def={5} />
-                </div>
-            </div>
-
-            {/* Right: Preset browser + cab + output */}
-            <div className="w-[180px] shrink-0 p-2 space-y-3 border-l border-border/20">
-                {/* Preset selector */}
-                <div className="relative">
-                    <button
-                        type="button"
-                        className="flex items-center gap-1 w-full bg-surface-inset border border-border/40 rounded px-2 py-1 text-[10px] text-foreground font-medium cursor-pointer"
-                        onClick={() => setPresetMenuOpen(!presetMenuOpen)}
-                    >
-                        <span className="truncate flex-1 text-left">{patch.name}</span>
-                        <ChevronDown className="size-3 text-muted-foreground shrink-0" />
-                    </button>
-                    {presetMenuOpen ? (
-                        <div className="absolute top-full left-0 mt-1 z-50 bg-surface-raised border border-border/40 rounded-md shadow-lg py-0.5 w-full max-h-[200px] overflow-y-auto">
-                            {GRINDER_PRESETS.map((preset) => (
-                                <button
-                                    key={preset.id}
-                                    type="button"
-                                    className={`w-full text-left px-2 py-1 text-[9px] hover:bg-surface-inset transition-colors ${
-                                        preset.patch.name === patch.name
-                                            ? 'text-foreground font-medium'
-                                            : 'text-foreground/70'
-                                    }`}
-                                    onClick={() => {
-                                        loadGrinderPatchWithAudio(preset.patch);
-                                        setPresetMenuOpen(false);
-                                    }}
-                                >
-                                    <span className="block truncate">{preset.name}</span>
-                                    <span className="text-[7px] text-muted-foreground/40">{preset.category}</span>
-                                </button>
-                            ))}
-                        </div>
-                    ) : null}
-                </div>
-
-                {/* Cabinet */}
-                <div className="space-y-1">
-                    <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
-                        Cabinet
-                    </div>
-                    <label className="flex items-center gap-1 text-[8px] text-muted-foreground cursor-pointer">
-                        <input
-                            type="checkbox"
-                            checked={patch.cabEnabled}
-                            onChange={(e) => setGrinderParamWithAudio('cabEnabled' as never, e.target.checked ? 1 : 0)}
-                            className="size-2.5 rounded"
-                            style={{ accentColor: 'rgb(217,119,6)' }}
-                        />
-                        Cab On
-                    </label>
-                </div>
-
-                {/* Output */}
-                <div className="space-y-1">
-                    <K
-                        v={patch.outputGain}
-                        k="outputGain"
-                        label="Output"
-                        min={-24}
-                        max={24}
-                        step={0.5}
-                        def={0}
-                        unit="dB"
-                    />
-                </div>
-
-                {/* Metering */}
-                <div className="space-y-0.5 text-[7px] text-muted-foreground/40 font-mono">
-                    <div>In: {formatValue(state.inputDb, 'dB')}</div>
-                    <div>Pre: {formatValue(state.preampDb, 'dB')}</div>
-                    <div>PA: {formatValue(state.powerAmpDb, 'dB')}</div>
-                    <div>Out: {formatValue(state.outputDb, 'dB')}</div>
-                    {state.sagVoltage < 0.98 ? (
-                        <div className="text-amber-500/60">Sag: {(state.sagVoltage * 100).toFixed(0)}%</div>
-                    ) : null}
-                </div>
-            </div>
-        </div>
-    );
-};
-
-// ── Level 2: Shape ───────────────────────────────────────────────────────────
-
-const ShapeLevel = ({ state }: { state: GrinderState }): ReactElement => {
-    const patch = state.patch;
-
-    return (
-        <div className="flex flex-1 min-h-0 overflow-hidden p-3 gap-3">
-            {/* Left: Amp model + switches */}
-            <div className="space-y-3 w-[200px] shrink-0">
-                <div className="space-y-1">
-                    <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
-                        Amp Model
-                    </div>
-                    <div className="flex flex-col gap-0.5">
-                        {AMP_MODELS.map((model) => (
+function ControlDeck({
+    patch,
+    state,
+    replacePatch,
+}: {
+    patch: GrinderPatch;
+    state: GrinderState;
+    replacePatch: (next: GrinderPatch) => void;
+}): ReactElement {
+    if (patch.uiSection === 'amp') {
+        return (
+            <div className="flex flex-wrap gap-3">
+                <GrinderKnob value={patch.gain} param="gain" label="Gain" min={0} max={10} step={0.1} defaultValue={5} />
+                <GrinderKnob value={patch.master} param="master" label="Master" min={0} max={10} step={0.1} defaultValue={5} />
+                <GrinderKnob value={patch.bass} param="bass" label="Bass" min={0} max={10} step={0.1} defaultValue={5} />
+                <GrinderKnob value={patch.mid} param="mid" label="Mid" min={0} max={10} step={0.1} defaultValue={5} />
+                <GrinderKnob value={patch.treble} param="treble" label="Treble" min={0} max={10} step={0.1} defaultValue={5} />
+                <GrinderKnob value={patch.presence} param="presence" label="Presence" min={0} max={10} step={0.1} defaultValue={5} />
+                <GrinderKnob value={patch.resonance} param="resonance" label="Resonance" min={0} max={10} step={0.1} defaultValue={5} />
+                <div className="grinder-window flex min-w-[240px] flex-col gap-3 px-4 py-4">
+                    <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-amber)]">Voice switches</div>
+                    <div className="flex gap-2">
+                        {[0, 1, 2].map((channel) => (
                             <button
-                                key={model.id}
+                                key={channel}
                                 type="button"
-                                className={`px-2 py-1 rounded text-[8px] font-medium text-left transition-colors ${
-                                    patch.ampModel === model.id
-                                        ? 'bg-amber-600/20 text-amber-400'
-                                        : 'text-muted-foreground/60 hover:text-foreground hover:bg-surface-raised'
+                                className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.18em] ${
+                                    patch.channel === channel ? 'border-[var(--color-accent-amber)]/60 bg-[var(--color-accent-amber)]/14 text-[var(--color-accent-amber)]' : 'border-white/8 bg-black/20 text-white/52'
                                 }`}
-                                onClick={() => setGrinderParamWithAudio('ampModel' as never, AMP_MODELS.indexOf(model))}
+                                onClick={() => setGrinderParamWithAudio('channel', channel)}
                             >
-                                {model.label}
+                                {['Clean', 'Crunch', 'Lead'][channel]}
                             </button>
                         ))}
                     </div>
-                </div>
-
-                {/* Switches */}
-                <div className="space-y-1">
-                    <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
-                        Switches
-                    </div>
                     <div className="flex gap-2">
-                        {/* Channel */}
-                        <div className="flex flex-col items-center gap-0.5">
-                            <div className="flex gap-0.5">
-                                {['Clean', 'Crunch', 'Lead'].map((ch, i) => (
-                                    <button
-                                        key={ch}
-                                        type="button"
-                                        className={`px-1.5 py-0.5 rounded text-[7px] font-medium transition-colors ${
-                                            patch.channel === i
-                                                ? 'bg-amber-600 text-white'
-                                                : 'text-muted-foreground/40 hover:text-foreground'
-                                        }`}
-                                        onClick={() => setGrinderParamWithAudio('channel' as never, i)}
-                                    >
-                                        {ch}
-                                    </button>
-                                ))}
-                            </div>
-                            <span className="text-[6px] text-muted-foreground leading-none">Channel</span>
-                        </div>
-                    </div>
-
-                    <div className="flex gap-3">
-                        <label className="flex items-center gap-1 text-[8px] text-muted-foreground cursor-pointer">
-                            <input
-                                type="checkbox"
-                                checked={patch.bright}
-                                onChange={(e) => setGrinderParamWithAudio('bright' as never, e.target.checked ? 1 : 0)}
-                                className="size-2.5 rounded"
-                                style={{ accentColor: 'rgb(217,119,6)' }}
-                            />
-                            Bright
-                        </label>
-                        <label className="flex items-center gap-1 text-[8px] text-muted-foreground cursor-pointer">
-                            <input
-                                type="checkbox"
-                                checked={patch.fat}
-                                onChange={(e) => setGrinderParamWithAudio('fat' as never, e.target.checked ? 1 : 0)}
-                                className="size-2.5 rounded"
-                                style={{ accentColor: 'rgb(217,119,6)' }}
-                            />
-                            Fat
-                        </label>
-                    </div>
-                </div>
-
-                {/* Tone stack type */}
-                <div className="space-y-0.5">
-                    <span className="text-[7px] text-muted-foreground/40">Tone Stack:</span>
-                    <div className="flex gap-0.5">
-                        {TONE_STACK_TYPES.map((ts, i) => (
+                        {[
+                            { key: 'bright', label: 'Bright', active: patch.bright },
+                            { key: 'fat', label: 'Fat', active: patch.fat },
+                        ].map((item) => (
                             <button
-                                key={ts}
+                                key={item.key}
                                 type="button"
-                                className={`px-1.5 py-0.5 rounded text-[7px] font-medium capitalize transition-colors ${
-                                    patch.toneStackType === ts
-                                        ? 'bg-amber-600 text-white'
-                                        : 'text-muted-foreground/40 hover:text-foreground'
+                                className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.18em] ${
+                                    item.active ? 'border-[var(--color-accent-cyan)]/60 bg-[var(--color-accent-cyan)]/12 text-[var(--color-accent-cyan)]' : 'border-white/8 bg-black/20 text-white/52'
                                 }`}
-                                onClick={() => setGrinderParamWithAudio('toneStackType' as never, i)}
+                                onClick={() => replacePatch({ ...patch, [item.key]: !item.active })}
                             >
-                                {ts}
+                                {item.label}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                        {POWER_TUBES.map((tube) => (
+                            <button
+                                key={tube}
+                                type="button"
+                                className={`rounded-[14px] border px-3 py-2 text-left text-[11px] uppercase tracking-[0.18em] ${
+                                    patch.powerTubeType === tube ? 'border-[var(--color-accent-peach)]/60 bg-[var(--color-accent-peach)]/12 text-[var(--color-accent-peach)]' : 'border-white/8 bg-black/20 text-white/50'
+                                }`}
+                                onClick={() => replacePatch({ ...patch, powerTubeType: tube })}
+                            >
+                                {tube}
+                            </button>
+                        ))}
+                        {RECTIFIERS.map((rectifier) => (
+                            <button
+                                key={rectifier}
+                                type="button"
+                                className={`rounded-[14px] border px-3 py-2 text-left text-[11px] uppercase tracking-[0.18em] ${
+                                    patch.rectifierType === rectifier ? 'border-[var(--color-accent-cyan)]/60 bg-[var(--color-accent-cyan)]/12 text-[var(--color-accent-cyan)]' : 'border-white/8 bg-black/20 text-white/50'
+                                }`}
+                                onClick={() => replacePatch({ ...patch, rectifierType: rectifier })}
+                            >
+                                {rectifier}
                             </button>
                         ))}
                     </div>
                 </div>
             </div>
+        );
+    }
 
-            {/* Right: Quick pedal tray + main controls */}
-            <div className="flex-1 overflow-y-auto space-y-3">
-                {/* Main controls */}
-                <div className="space-y-1">
-                    <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
-                        Amp Controls
-                    </div>
-                    <div className="flex gap-3 flex-wrap">
-                        <K v={patch.gain} k="gain" label="Gain" min={0} max={10} step={0.1} def={5} />
-                        <K v={patch.bass} k="bass" label="Bass" min={0} max={10} step={0.1} def={5} />
-                        <K v={patch.mid} k="mid" label="Mid" min={0} max={10} step={0.1} def={5} />
-                        <K v={patch.treble} k="treble" label="Treble" min={0} max={10} step={0.1} def={5} />
-                        <K v={patch.master} k="master" label="Master" min={0} max={10} step={0.1} def={5} />
-                        <K v={patch.presence} k="presence" label="Presence" min={0} max={10} step={0.1} def={5} />
-                        <K v={patch.resonance} k="resonance" label="Resonance" min={0} max={10} step={0.1} def={5} />
-                    </div>
-                </div>
+    if (patch.uiSection === 'drive') {
+        return <DriveDeck patch={patch} replacePatch={replacePatch} />;
+    }
 
-                {/* Quick pedal tray */}
-                <div className="space-y-1">
-                    <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
-                        Essential Pedals
-                    </div>
+    if (patch.uiSection === 'cab') {
+        return (
+            <div className="flex flex-wrap gap-3">
+                <GrinderKnob value={patch.cabResonanceFreq} param="cabResonanceFreq" label="Res Freq" min={40} max={200} step={1} defaultValue={80} unit="Hz" />
+                <GrinderKnob value={patch.cabResonanceQ} param="cabResonanceQ" label="Res Q" min={0.5} max={10} step={0.1} defaultValue={2} />
+                <GrinderKnob value={patch.cabDamping} param="cabDamping" label="Damping" min={0} max={1} step={0.01} defaultValue={0.5} />
+                <GrinderKnob value={patch.coneBreakup} param="coneBreakup" label="Breakup" min={0} max={1} step={0.01} defaultValue={0.3} />
+                <GrinderKnob value={patch.backEmf} param="backEmf" label="Back EMF" min={0} max={1} step={0.01} defaultValue={0.2} />
+                <GrinderKnob value={patch.micBlend} param="micBlend" label="Mic Blend" min={0} max={1} step={0.01} defaultValue={0} />
+                <GrinderKnob value={patch.roomAmount} param="roomAmount" label="Room" min={0} max={1} step={0.01} defaultValue={0.1} />
+                <div className="grinder-window flex min-w-[220px] flex-col gap-3 px-4 py-4">
+                    <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">Cab toggles</div>
                     <div className="flex gap-2">
-                        {/* Gate */}
-                        <div className="p-2 rounded border border-border/20 bg-surface-inset/50">
-                            <label className="flex items-center gap-1 text-[7px] text-muted-foreground cursor-pointer mb-1">
-                                <input
-                                    type="checkbox"
-                                    checked={patch.gateEnabled}
-                                    onChange={(e) =>
-                                        setGrinderParamWithAudio('gateEnabled' as never, e.target.checked ? 1 : 0)
-                                    }
-                                    className="size-2 rounded"
-                                    style={{ accentColor: 'rgb(217,119,6)' }}
-                                />
-                                Gate
-                            </label>
-                            <K
-                                v={patch.gateThreshold}
-                                k="gateThreshold"
-                                label="Thresh"
-                                min={-80}
-                                max={0}
-                                step={1}
-                                def={-60}
-                                unit="dB"
-                            />
-                        </div>
-
-                        {/* Input */}
-                        <div className="p-2 rounded border border-border/20 bg-surface-inset/50">
-                            <span className="text-[7px] text-muted-foreground block mb-1">Input</span>
-                            <K
-                                v={patch.inputGain}
-                                k="inputGain"
-                                label="Gain"
-                                min={-24}
-                                max={24}
-                                step={0.5}
-                                def={0}
-                                unit="dB"
-                            />
-                        </div>
+                        <button
+                            type="button"
+                            className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.18em] ${
+                                patch.cabEnabled ? 'border-[var(--color-accent-cyan)]/60 bg-[var(--color-accent-cyan)]/12 text-[var(--color-accent-cyan)]' : 'border-white/8 bg-black/20 text-white/52'
+                            }`}
+                            onClick={() => replacePatch({ ...patch, cabEnabled: !patch.cabEnabled })}
+                        >
+                            {patch.cabEnabled ? 'Cab Enabled' : 'Cab Bypassed'}
+                        </button>
+                        <button
+                            type="button"
+                            className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.18em] ${
+                                patch.cabOpenBack ? 'border-[var(--color-accent-peach)]/60 bg-[var(--color-accent-peach)]/12 text-[var(--color-accent-peach)]' : 'border-white/8 bg-black/20 text-white/52'
+                            }`}
+                            onClick={() => replacePatch({ ...patch, cabOpenBack: !patch.cabOpenBack })}
+                        >
+                            {patch.cabOpenBack ? 'Open Back' : 'Closed Back'}
+                        </button>
                     </div>
                 </div>
             </div>
-        </div>
-    );
-};
+        );
+    }
 
-// ── Level 3: Build ───────────────────────────────────────────────────────────
-
-const BuildLevel = ({ state }: { state: GrinderState }): ReactElement => {
-    const patch = state.patch;
-
-    return (
-        <div className="flex flex-1 min-h-0 overflow-hidden">
-            {/* Signal chain */}
-            <div className="flex-1 p-3 overflow-y-auto space-y-2">
-                <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
-                    Signal Chain
-                </div>
-
-                {/* Chain blocks */}
-                <div className="flex gap-1 items-center flex-wrap">
-                    {/* Input */}
-                    <div className="px-2 py-1 rounded border border-amber-600/30 bg-amber-600/10 text-[8px] text-amber-400 font-medium">
-                        Input
-                    </div>
-                    <span className="text-muted-foreground/30 text-[10px]">→</span>
-
-                    {/* Gate */}
-                    <div
-                        className={`px-2 py-1 rounded border text-[8px] font-medium ${
-                            patch.gateEnabled
-                                ? 'border-green-500/30 bg-green-500/10 text-green-400'
-                                : 'border-border/20 text-muted-foreground/30'
-                        }`}
-                    >
-                        Gate
-                    </div>
-                    <span className="text-muted-foreground/30 text-[10px]">→</span>
-
-                    {/* Pre-pedals */}
-                    {patch.prePedals.map((pedal) => (
-                        <div key={pedal.id} className="flex items-center gap-1">
-                            <div
-                                className={`px-2 py-1 rounded border text-[7px] font-medium capitalize ${
-                                    pedal.enabled
-                                        ? 'border-amber-500/30 bg-amber-500/10 text-amber-400'
-                                        : 'border-border/20 text-muted-foreground/30'
-                                }`}
-                            >
-                                {pedal.type}
-                            </div>
-                            <span className="text-muted-foreground/30 text-[10px]">→</span>
-                        </div>
-                    ))}
-
-                    {/* Preamp */}
-                    <div className="px-3 py-1.5 rounded border border-amber-600/40 bg-amber-600/15 text-[9px] text-amber-400 font-bold">
-                        {AMP_MODELS.find((m) => m.id === patch.ampModel)?.label ?? 'Amp'}
-                    </div>
-                    <span className="text-muted-foreground/30 text-[10px]">→</span>
-
-                    {/* Cabinet */}
-                    <div
-                        className={`px-2 py-1 rounded border text-[8px] font-medium ${
-                            patch.cabEnabled
-                                ? 'border-amber-600/30 bg-amber-600/10 text-amber-400'
-                                : 'border-border/20 text-muted-foreground/30'
-                        }`}
-                    >
-                        Cabinet
-                    </div>
-                    <span className="text-muted-foreground/30 text-[10px]">→</span>
-
-                    {/* Output */}
-                    <div className="px-2 py-1 rounded border border-amber-600/30 bg-amber-600/10 text-[8px] text-amber-400 font-medium">
-                        Output
-                    </div>
-                </div>
-
-                {/* Mic Room */}
-                <div className="mt-3 space-y-1">
-                    <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
-                        Pre-Pedals
-                    </div>
-                    {renderPedalControls(patch, 'prePedals', SUPPORTED_PRE_PEDALS)}
-                </div>
-
-                {/* Mic Room */}
-                <div className="mt-3 space-y-1">
-                    <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
-                        Mic Room
-                    </div>
-                    <div className="flex gap-4">
-                        {/* Mic 1 */}
-                        <div className="space-y-1 p-2 rounded border border-border/20 bg-surface-inset/30">
-                            <div className="text-[7px] text-amber-400 font-medium">Mic 1 ({patch.mic1.type})</div>
-                            <div className="flex gap-2">
-                                <K
-                                    v={patch.mic1.positionX}
-                                    k="mic1PositionX"
-                                    label="Center/Edge"
-                                    min={0}
-                                    max={1}
-                                    step={0.01}
-                                    def={0.3}
-                                />
-                                <K
-                                    v={patch.mic1.distance}
-                                    k="mic1Distance"
-                                    label="Distance"
-                                    min={0}
-                                    max={1}
-                                    step={0.01}
-                                    def={0.2}
-                                />
-                            </div>
-                        </div>
-
-                        {/* Mic 2 */}
-                        <div className="space-y-1 p-2 rounded border border-border/20 bg-surface-inset/30">
-                            <div className="flex items-center gap-1">
-                                <input
-                                    type="checkbox"
-                                    checked={patch.mic2.enabled}
-                                    onChange={() => {}}
-                                    className="size-2 rounded"
-                                    style={{ accentColor: 'rgb(217,119,6)' }}
-                                />
-                                <span className="text-[7px] text-muted-foreground">Mic 2 ({patch.mic2.type})</span>
-                            </div>
-                            <K v={patch.micBlend} k="micBlend" label="Blend" min={0} max={1} step={0.01} def={0} />
-                        </div>
-
-                        {/* Room */}
-                        <K v={patch.roomAmount} k="roomAmount" label="Room" min={0} max={1} step={0.01} def={0.1} />
-                    </div>
-                </div>
-
-                {/* Cabinet parameters */}
-                <div className="mt-2 space-y-1">
-                    <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
-                        Speaker
-                    </div>
-                    <div className="flex gap-3 flex-wrap">
-                        <K
-                            v={patch.cabResonanceFreq}
-                            k="cabResonanceFreq"
-                            label="Resonance"
-                            min={40}
-                            max={200}
-                            step={1}
-                            def={80}
-                            unit="Hz"
-                        />
-                        <K v={patch.cabDamping} k="cabDamping" label="Damping" min={0} max={1} step={0.01} def={0.5} />
-                        <K
-                            v={patch.coneBreakup}
-                            k="coneBreakup"
-                            label="Breakup"
-                            min={0}
-                            max={1}
-                            step={0.01}
-                            def={0.3}
-                        />
-                        <K v={patch.backEmf} k="backEmf" label="Back EMF" min={0} max={1} step={0.01} def={0.2} />
-                        <label className="flex items-center gap-1 text-[8px] text-muted-foreground cursor-pointer pb-2">
-                            <input
-                                type="checkbox"
-                                checked={patch.cabOpenBack}
-                                onChange={(e) =>
-                                    setGrinderParamWithAudio('cabOpenBack' as never, e.target.checked ? 1 : 0)
-                                }
-                                className="size-2.5 rounded"
-                                style={{ accentColor: 'rgb(217,119,6)' }}
-                            />
-                            Open Back
-                        </label>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-// ── Level 4: Route ───────────────────────────────────────────────────────────
-
-const RouteLevel = ({ state }: { state: GrinderState }): ReactElement => {
-    const patch = state.patch;
-    const routingModes = ['serial', 'parallel', 'wet-dry-wet', 'dual-amp'] as const;
-
-    return (
-        <div className="flex flex-1 min-h-0 overflow-hidden p-3 gap-3">
-            <div className="flex-1 space-y-3 overflow-y-auto">
-                {/* Routing mode */}
-                <div className="space-y-1">
-                    <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
-                        Signal Routing
-                    </div>
-                    <div className="flex gap-1">
-                        {routingModes.map((mode) => (
+    if (patch.uiSection === 'neural') {
+        return (
+            <div className="flex flex-wrap gap-3">
+                <div className="grinder-window flex min-w-[320px] flex-col gap-3 px-4 py-4">
+                    <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-lavender)]">Engine Mode</div>
+                    <div className="grid grid-cols-3 gap-2">
+                        {ENGINE_MODES.map((mode) => (
                             <button
-                                key={mode}
+                                key={mode.id}
                                 type="button"
-                                className={`px-2 py-1 rounded text-[8px] font-medium capitalize transition-colors ${
-                                    patch.routingMode === mode
-                                        ? 'bg-amber-600/20 text-amber-400'
-                                        : 'text-muted-foreground/50 hover:text-foreground hover:bg-surface-raised'
+                                className={`rounded-[16px] border px-3 py-3 text-left ${
+                                    patch.engineMode === mode.id ? 'border-[var(--color-accent-lavender)]/60 bg-[var(--color-accent-lavender)]/12' : 'border-white/8 bg-black/20'
                                 }`}
                                 onClick={() =>
-                                    setGrinderParamWithAudio('routingMode' as never, routingModes.indexOf(mode))
+                                    replacePatch({
+                                        ...patch,
+                                        engineMode: mode.id,
+                                        neuralEnabled: mode.id !== 'circuit',
+                                    })
                                 }
                             >
-                                {mode.replace(/-/g, ' ')}
+                                <div className="text-sm font-medium text-white/88">{mode.label}</div>
+                                <div className="text-xs text-white/44">{mode.description}</div>
                             </button>
                         ))}
                     </div>
                 </div>
-
-                {/* Clean blend */}
-                <div className="flex gap-3">
-                    <K v={patch.cleanBlend} k="cleanBlend" label="Clean Blend" min={0} max={1} step={0.01} def={0} />
-                    <K v={patch.outputMix} k="outputMix" label="Wet/Dry" min={0} max={1} step={0.01} def={1} />
+                <GrinderKnob value={patch.neuralMix} param="neuralMix" label="Blend" min={0} max={1} step={0.01} defaultValue={1} />
+                <GrinderKnob value={patch.neuralCpuBudget} param="neuralCpuBudget" label="CPU" min={0} max={2} step={1} defaultValue={1} />
+                <div className="grinder-window flex min-w-[240px] flex-col gap-3 px-4 py-4">
+                    <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">Capture Role</div>
+                    <div className="grid gap-2">
+                        {[
+                            { id: 'amp-capture', label: 'Amp capture' },
+                            { id: 'rig-capture', label: 'Rig capture' },
+                        ].map((placement) => (
+                            <button
+                                key={placement.id}
+                                type="button"
+                                className={`rounded-[14px] border px-3 py-2 text-left text-sm ${
+                                    patch.neuralPlacement === placement.id ? 'border-[var(--color-accent-cyan)]/60 bg-[var(--color-accent-cyan)]/10 text-[var(--color-accent-cyan)]' : 'border-white/8 bg-black/20 text-white/52'
+                                }`}
+                                onClick={() => replacePatch({ ...patch, neuralPlacement: placement.id as GrinderPatch['neuralPlacement'] })}
+                            >
+                                {placement.label}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="text-xs text-white/44">Warmup {Math.round(state.neuralWarmupProgress * 100)}% · CPU {Math.round(state.neuralCpuPercent)}%</div>
                 </div>
-
-                {/* Per-stage meters */}
-                <div className="space-y-1">
-                    <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
-                        Gain Staging
+                <div className="grinder-window flex min-w-[360px] flex-1 flex-col gap-3 px-4 py-4">
+                    <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-amber)]">Model Browser</div>
+                    <div className="grid gap-2">
+                        {NEURAL_LIBRARY.map((model) => {
+                            const selected = patch.neuralModelId === model.id;
+                            return (
+                                <button
+                                    key={model.id}
+                                    type="button"
+                                    className={`rounded-[18px] border px-4 py-3 text-left ${
+                                        selected ? 'border-[var(--color-accent-amber)]/60 bg-[var(--color-accent-amber)]/12' : 'border-white/8 bg-black/20'
+                                    }`}
+                                    onClick={() =>
+                                        replacePatch({
+                                            ...patch,
+                                            neuralModelId: model.id,
+                                            neuralModelName: model.name,
+                                            neuralModelFamily: model.family,
+                                            neuralPlacement: model.placement as GrinderPatch['neuralPlacement'],
+                                        })
+                                    }
+                                >
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-sm font-medium text-white/88">{model.name}</span>
+                                        <span className="text-[10px] uppercase tracking-[0.18em] text-white/34">{model.family}</span>
+                                    </div>
+                                    <div className="mt-1 text-xs text-white/44">{model.description}</div>
+                                </button>
+                            );
+                        })}
                     </div>
-                    <div className="grid grid-cols-4 gap-2 text-[7px] font-mono text-muted-foreground/50">
-                        <div>
-                            <div className="text-[6px] uppercase">Input</div>
-                            <div>{formatValue(state.inputDb, 'dB')}</div>
-                        </div>
-                        <div>
-                            <div className="text-[6px] uppercase">Preamp</div>
-                            <div>{formatValue(state.preampDb, 'dB')}</div>
-                        </div>
-                        <div>
-                            <div className="text-[6px] uppercase">Power Amp</div>
-                            <div>{formatValue(state.powerAmpDb, 'dB')}</div>
-                        </div>
-                        <div>
-                            <div className="text-[6px] uppercase">Output</div>
-                            <div>{formatValue(state.outputDb, 'dB')}</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-// ── Level 5: Lab ─────────────────────────────────────────────────────────────
-
-const LabLevel = ({ state }: { state: GrinderState }): ReactElement => {
-    const patch = state.patch;
-
-    return (
-        <div className="flex flex-1 min-h-0 overflow-hidden p-3 gap-3">
-            <div className="flex-1 overflow-y-auto space-y-3">
-                {/* Preamp tube internals */}
-                <div className="space-y-1">
-                    <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
-                        Preamp Tube
-                    </div>
-                    <div className="flex gap-3 flex-wrap">
-                        <K v={patch.tubeBias} k="tubeBias" label="Bias" min={0} max={1} step={0.01} def={0.5} />
-                        <K v={patch.tubeAge} k="tubeAge" label="Age" min={0} max={1} step={0.01} def={0} />
-                        <K
-                            v={patch.millerCapacitance}
-                            k="millerCapacitance"
-                            label="Miller Cap"
-                            min={0}
-                            max={1}
-                            step={0.01}
-                            def={0.5}
-                        />
-                        <K
-                            v={patch.gridConduction}
-                            k="gridConduction"
-                            label="Grid Cond"
-                            min={0}
-                            max={1}
-                            step={0.01}
-                            def={0.5}
-                        />
-                        <K
-                            v={patch.couplingCapCharge}
-                            k="couplingCapCharge"
-                            label="Coupling Cap"
-                            min={0}
-                            max={1}
-                            step={0.01}
-                            def={0.5}
-                        />
-                    </div>
-                </div>
-
-                {/* Power amp */}
-                <div className="space-y-1">
-                    <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
-                        Power Amp
-                    </div>
-                    <div className="flex gap-3 flex-wrap">
-                        <div className="flex flex-col items-center gap-0.5">
-                            <div className="flex gap-0.5">
-                                {POWER_TUBE_TYPES.map((tube, i) => (
-                                    <button
-                                        key={tube}
-                                        type="button"
-                                        className={`px-1.5 py-0.5 rounded text-[7px] font-medium uppercase transition-colors ${
-                                            patch.powerTubeType === tube
-                                                ? 'bg-amber-600 text-white'
-                                                : 'text-muted-foreground/40 hover:text-foreground'
-                                        }`}
-                                        onClick={() => setGrinderParamWithAudio('powerTubeType' as never, i)}
-                                    >
-                                        {tube}
-                                    </button>
-                                ))}
-                            </div>
-                            <span className="text-[6px] text-muted-foreground leading-none">Power Tubes</span>
-                        </div>
-
-                        <div className="flex flex-col items-center gap-0.5">
-                            <div className="flex gap-0.5">
-                                {RECTIFIER_TYPES.map((rect, i) => (
-                                    <button
-                                        key={rect}
-                                        type="button"
-                                        className={`px-1.5 py-0.5 rounded text-[7px] font-medium capitalize transition-colors ${
-                                            patch.rectifierType === rect
-                                                ? 'bg-amber-600 text-white'
-                                                : 'text-muted-foreground/40 hover:text-foreground'
-                                        }`}
-                                        onClick={() => setGrinderParamWithAudio('rectifierType' as never, i)}
-                                    >
-                                        {rect}
-                                    </button>
-                                ))}
-                            </div>
-                            <span className="text-[6px] text-muted-foreground leading-none">Rectifier</span>
-                        </div>
-
-                        <K v={patch.sagAmount} k="sagAmount" label="Sag" min={0} max={1} step={0.01} def={0.4} />
-                        <K
-                            v={patch.sagRecovery}
-                            k="sagRecovery"
-                            label="Recovery"
-                            min={10}
-                            max={2000}
-                            step={1}
-                            def={200}
-                            unit="ms"
-                        />
-                        <K v={patch.negFeedback} k="negFeedback" label="NFB" min={0} max={1} step={0.01} def={0.5} />
-                        <K
-                            v={patch.powerAmpBias}
-                            k="powerAmpBias"
-                            label="PA Bias"
-                            min={0}
-                            max={1}
-                            step={0.01}
-                            def={0.5}
-                        />
-                    </div>
-                </div>
-
-                {/* Transformer */}
-                <div className="space-y-1">
-                    <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
-                        Transformer
-                    </div>
-                    <div className="flex gap-3">
-                        <K
-                            v={patch.transformerDrive}
-                            k="transformerDrive"
-                            label="Drive"
-                            min={0}
-                            max={1}
-                            step={0.01}
-                            def={0.3}
-                        />
-                        <K
-                            v={patch.transformerHysteresis}
-                            k="transformerHysteresis"
-                            label="Hysteresis"
-                            min={0}
-                            max={1}
-                            step={0.01}
-                            def={0.3}
-                        />
-                        <K
-                            v={patch.transformerLfSaturation}
-                            k="transformerLfSaturation"
-                            label="LF Sat"
-                            min={0}
-                            max={1}
-                            step={0.01}
-                            def={0.3}
-                        />
-                    </div>
-                </div>
-
-                {/* Neural */}
-                <div className="space-y-1">
-                    <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
-                        Neural Capture
-                    </div>
-                    <label className="flex items-center gap-1 text-[8px] text-muted-foreground cursor-pointer">
-                        <input
-                            type="checkbox"
-                            checked={patch.neuralEnabled}
-                            onChange={(e) =>
-                                setGrinderParamWithAudio('neuralEnabled' as never, e.target.checked ? 1 : 0)
-                            }
-                            className="size-2.5 rounded"
-                            style={{ accentColor: 'rgb(217,119,6)' }}
-                        />
-                        Enable Neural
-                    </label>
-                    {patch.neuralEnabled ? (
-                        <div className="flex gap-3">
-                            <K v={patch.neuralMix} k="neuralMix" label="Mix" min={0} max={1} step={0.01} def={1} />
-                            <div className="flex flex-col items-center gap-0.5">
-                                <div className="flex gap-0.5">
-                                    {['Eco', 'Balanced', 'Full'].map((label, i) => (
-                                        <button
-                                            key={label}
-                                            type="button"
-                                            className={`px-1.5 py-0.5 rounded text-[7px] font-medium transition-colors ${
-                                                patch.neuralCpuBudget === i
-                                                    ? 'bg-amber-600 text-white'
-                                                    : 'text-muted-foreground/40 hover:text-foreground'
-                                            }`}
-                                            onClick={() => setGrinderParamWithAudio('neuralCpuBudget' as never, i)}
-                                        >
-                                            {label}
-                                        </button>
-                                    ))}
-                                </div>
-                                <span className="text-[6px] text-muted-foreground leading-none">CPU Budget</span>
-                            </div>
-                            {state.neuralCpuPercent > 0 ? (
-                                <span className="text-[7px] text-muted-foreground/40 font-mono self-end pb-1">
-                                    CPU: {state.neuralCpuPercent.toFixed(0)}%
-                                </span>
-                            ) : null}
-                        </div>
-                    ) : null}
-                </div>
-
-                {/* Oversampling & anti-aliasing */}
-                <div className="space-y-1">
-                    <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
-                        Anti-Aliasing
-                    </div>
-                    <div className="text-[7px] text-muted-foreground/40">
-                        Local oversampling + ADAA on nonlinear stages
-                    </div>
-                </div>
-
-                {/* Limiter */}
-                <div className="flex gap-3">
-                    <label className="flex items-center gap-1 text-[8px] text-muted-foreground cursor-pointer">
-                        <input
-                            type="checkbox"
-                            checked={patch.limiterEnabled}
-                            onChange={(e) =>
-                                setGrinderParamWithAudio('limiterEnabled' as never, e.target.checked ? 1 : 0)
-                            }
-                            className="size-2.5 rounded"
-                            style={{ accentColor: 'rgb(217,119,6)' }}
-                        />
-                        Safety Limiter
-                    </label>
-                    <K
-                        v={patch.limiterThreshold}
-                        k="limiterThreshold"
-                        label="Threshold"
-                        min={-12}
-                        max={0}
-                        step={0.1}
-                        def={-0.3}
-                        unit="dB"
-                    />
                 </div>
             </div>
+        );
+    }
 
-            {/* Right: Diagnostics placeholder */}
-            <div className="w-[250px] shrink-0 border border-border/20 rounded-lg p-2 space-y-2">
-                <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
-                    Diagnostics
-                </div>
-                <div className="text-[7px] text-muted-foreground/30 space-y-1 font-mono">
-                    <div>Sag: {(state.sagVoltage * 100).toFixed(1)}%</div>
-                    <div>Latency: {state.latency} smp</div>
-                    <div>Neural CPU: {state.neuralCpuPercent.toFixed(0)}%</div>
-                    <div>Input: {formatValue(state.inputDb, 'dB')}</div>
-                    <div>Preamp: {formatValue(state.preampDb, 'dB')}</div>
-                    <div>Power: {formatValue(state.powerAmpDb, 'dB')}</div>
-                    <div>Output: {formatValue(state.outputDb, 'dB')}</div>
-                </div>
+    if (patch.uiSection === 'lab') {
+        return (
+            <div className="flex flex-wrap gap-3">
+                <GrinderKnob value={patch.gateThreshold} param="gateThreshold" label="Gate" min={-80} max={0} step={1} defaultValue={-60} unit="dB" />
+                <GrinderKnob value={patch.gateAttack} param="gateAttack" label="G Atk" min={0.1} max={50} step={0.1} defaultValue={2} unit="ms" />
+                <GrinderKnob value={patch.gateRelease} param="gateRelease" label="G Rel" min={5} max={500} step={1} defaultValue={120} unit="ms" />
+                <GrinderKnob value={patch.sagAmount} param="sagAmount" label="Sag" min={0} max={1} step={0.01} defaultValue={0.4} />
+                <GrinderKnob value={patch.sagRecovery} param="sagRecovery" label="Recovery" min={10} max={2000} step={10} defaultValue={200} unit="ms" />
+                <GrinderKnob value={patch.negFeedback} param="negFeedback" label="NFB" min={0} max={1} step={0.01} defaultValue={0.5} />
+                <GrinderKnob value={patch.transformerDrive} param="transformerDrive" label="Drive" min={0} max={1} step={0.01} defaultValue={0.3} />
+                <GrinderKnob value={patch.transformerHysteresis} param="transformerHysteresis" label="Hyst" min={0} max={1} step={0.01} defaultValue={0.3} />
+                <GrinderKnob value={patch.transformerLfSaturation} param="transformerLfSaturation" label="LF Sat" min={0} max={1} step={0.01} defaultValue={0.3} />
+                <GrinderKnob value={patch.tubeBias} param="tubeBias" label="Bias" min={0} max={1} step={0.01} defaultValue={0.5} />
             </div>
-        </div>
-    );
-};
-
-// ── Main Panel ───────────────────────────────────────────────────────────────
-
-export const GrinderPanel = (): ReactElement => {
-    const state = useSyncExternalStore<GrinderState | null>(
-        (cb) => grinderStore.subscribe(cb),
-        () => grinderStore.value
-    );
-
-    if (!state) {
-        return <div className="flex items-center justify-center h-full text-muted-foreground">Loading...</div>;
+        );
     }
 
     return (
-        <div className="flex flex-col h-full">
-            {/* ─── Top bar: level selector ─── */}
-            <div
-                className="flex items-center gap-2 px-2 py-1 shrink-0"
-                style={{
-                    background: 'linear-gradient(180deg, rgba(20,18,14,0.95) 0%, rgba(14,12,10,0.95) 100%)',
-                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 3px rgba(0,0,0,0.5)',
-                    borderBottom: '1px solid rgba(0,0,0,0.4)',
-                }}
-            >
-                {/* Level tabs */}
-                <div className="flex gap-0.5">
-                    {LEVELS.map((level) => (
-                        <button
-                            key={level.id}
-                            type="button"
-                            className={`flex items-center gap-1 px-2.5 py-0.5 rounded text-[9px] font-medium transition-all ${
-                                state.uiLevel === level.id
-                                    ? 'bg-amber-600 text-white'
-                                    : 'text-muted-foreground/60 hover:text-foreground'
-                            }`}
-                            onClick={() => setGrinderUiLevel(level.id)}
-                            title={level.description}
-                        >
-                            {level.label}
-                        </button>
-                    ))}
+        <div className="flex flex-wrap gap-3">
+            <div className="grinder-window flex min-w-[280px] flex-col gap-2 px-4 py-4">
+                <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-amber)]">Current preset</div>
+                <div className="text-xl font-semibold text-white/90">{patch.name}</div>
+                <div className="text-sm text-white/46">{patch.engineMode === 'circuit' ? 'Circuit first' : patch.engineMode === 'capture' ? 'Capture loaded' : 'Hybrid loaded'}</div>
+            </div>
+            <div className="grinder-window flex min-w-[220px] flex-col gap-2 px-4 py-4">
+                <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">Quick read</div>
+                <div className="font-mono text-sm text-white/62">gate {Math.round(state.gateOpen * 100)}%</div>
+                <div className="font-mono text-sm text-white/62">sag {state.sagVoltage.toFixed(2)}</div>
+                <div className="font-mono text-sm text-white/62">out {state.outputDb.toFixed(1)} dB</div>
+            </div>
+        </div>
+    );
+}
+
+function HeroStage({
+    patch,
+    state,
+    replacePatch,
+}: {
+    patch: GrinderPatch;
+    state: GrinderState;
+    replacePatch: (next: GrinderPatch) => void;
+}): ReactElement {
+    if (patch.uiSection === 'amp') {
+        return <ToneResponseStage patch={patch} state={state} />;
+    }
+    if (patch.uiSection === 'drive') {
+        return <DriveStage patch={patch} />;
+    }
+    if (patch.uiSection === 'cab') {
+        return <CabStage patch={patch} replacePatch={replacePatch} />;
+    }
+    if (patch.uiSection === 'neural') {
+        return <NeuralStage patch={patch} state={state} />;
+    }
+    if (patch.uiSection === 'lab') {
+        return <LabStage patch={patch} state={state} />;
+    }
+
+    const activeAmp = AMP_MODELS.find((amp) => amp.id === patch.ampModel);
+
+    return (
+        <div className="grid h-full grid-cols-[1.02fr_0.98fr] gap-4">
+            <div className="grinder-window flex flex-col gap-4 p-4">
+                <div className="text-[10px] uppercase tracking-[0.28em] text-[var(--color-accent-amber)]">Current preset</div>
+                <div className="text-3xl font-semibold text-white/92">{patch.name}</div>
+                <div className="max-w-[36rem] text-base leading-7 text-white/54">
+                    This is the loaded rig view. Grab a preset on the left, then hop into Amp, Drive, Cab, Neural, or Lab when you want to get more specific.
                 </div>
-
-                <div className="flex-1" />
-
-                {/* Quick meters */}
-                <div className="flex items-center gap-2 text-[7px] text-muted-foreground/40 font-mono">
-                    <span>In: {formatValue(state.inputDb, 'dB')}</span>
-                    <span>Out: {formatValue(state.outputDb, 'dB')}</span>
-                    {state.sagVoltage < 0.98 ? (
-                        <span className="text-amber-500/60">Sag: {(state.sagVoltage * 100).toFixed(0)}%</span>
-                    ) : null}
+                <div className="grid grid-cols-3 gap-3">
+                    <StatusMeter label="Input" value={toDbPercent(state.inputDb)} accent="var(--color-accent-cyan)" />
+                    <StatusMeter label="Gate" value={state.gateOpen} accent="var(--color-accent-amber)" />
+                    <StatusMeter label="Output" value={toDbPercent(state.outputDb)} accent="var(--color-accent-peach)" />
                 </div>
             </div>
+            <div className="grinder-window flex flex-col gap-4 p-4">
+                <div className="text-[10px] uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]">Loaded rig</div>
+                <div className="text-xl font-semibold text-white/90">{activeAmp?.label ?? 'Custom amp'}</div>
+                <div className="space-y-3 text-sm text-white/56">
+                    <div>Engine: {patch.engineMode === 'capture' ? 'Capture' : patch.engineMode === 'hybrid' ? 'Hybrid' : 'Circuit'}.</div>
+                    <div>Gate: {patch.gateEnabled ? 'enabled' : 'off'} · Cab: {patch.cabEnabled ? 'on' : 'off'} · Neural: {patch.neuralEnabled ? 'on' : 'off'}.</div>
+                    <div>Front-end pedals: {patch.prePedals.filter((pedal) => pedal.enabled).length} active.</div>
+                </div>
+            </div>
+        </div>
+    );
+}
 
-            {/* ─── Level content ─── */}
-            {state.uiLevel === 1 ? <PlayLevel state={state} /> : null}
-            {state.uiLevel === 2 ? <ShapeLevel state={state} /> : null}
-            {state.uiLevel === 3 ? <BuildLevel state={state} /> : null}
-            {state.uiLevel === 4 ? <RouteLevel state={state} /> : null}
-            {state.uiLevel === 5 ? <LabLevel state={state} /> : null}
+function StatusStrip({ state }: { state: GrinderState }): ReactElement {
+    return (
+        <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-8">
+            <StatusMeter label="Input" value={toDbPercent(state.inputDb)} accent="var(--color-accent-cyan)" />
+            <StatusMeter label="Pre" value={toDbPercent(state.preampDb)} accent="var(--color-accent-amber)" />
+            <StatusMeter label="Power" value={toDbPercent(state.powerAmpDb)} accent="var(--color-accent-peach)" />
+            <StatusMeter label="Out" value={toDbPercent(state.outputDb)} accent="var(--color-accent-orange)" />
+            <StatusMeter label="Gate" value={state.gateOpen} accent="var(--color-accent-cyan)" />
+            <StatusMeter label="Sag" value={Math.max(0, Math.min(1, state.sagVoltage))} accent="var(--color-accent-orange)" />
+            <StatusMeter label="Warm" value={state.neuralWarmupProgress} accent="var(--color-accent-lavender)" />
+            <StatusMeter label="CPU" value={state.neuralCpuPercent / 100} accent="var(--color-accent-lavender)" />
+        </div>
+    );
+}
+
+export const GrinderPanel = (): ReactElement => {
+    const state = useSyncExternalStore(
+        grinderStore.subscribe.bind(grinderStore),
+        () => grinderStore.value!,
+    );
+    const patch = state.patch;
+
+    function replacePatch(next: GrinderPatch): void {
+        loadGrinderPatchWithAudio(next);
+    }
+
+    return (
+        <div className="grinder-faceplate flex h-full min-h-0 flex-col overflow-hidden p-4">
+            <div className="flex min-h-0 flex-1 gap-4 overflow-hidden">
+                <BrowserRail patch={patch} replacePatch={replacePatch} />
+                <section className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
+                    <SectionTabs patch={patch} replacePatch={replacePatch} />
+                    <div className="min-h-0 flex-1 overflow-hidden">
+                        <HeroStage patch={patch} state={state} replacePatch={replacePatch} />
+                    </div>
+                    <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.032),rgba(255,255,255,0.012))] p-4 shadow-[var(--shadow-elevation-raised)]">
+                        <div className="mb-3 text-[10px] uppercase tracking-[0.28em] text-[var(--color-accent-amber)]">Control deck</div>
+                        <ControlDeck patch={patch} state={state} replacePatch={replacePatch} />
+                    </div>
+                </section>
+            </div>
+            <div className="mt-4">
+                <StatusStrip state={state} />
+            </div>
         </div>
     );
 };

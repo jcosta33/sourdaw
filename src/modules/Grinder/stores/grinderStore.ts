@@ -4,11 +4,9 @@
 import { Store } from '#/helpers/Store/Store';
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
-import { type GrinderPatch, DEFAULT_PATCH } from '../models/GrinderPatch';
+import { type GrinderPatch, DEFAULT_PATCH, migrateGrinderPatch } from '../models/GrinderPatch';
 
 const logger = Container.getInstance().get(Logger);
-
-export type GrinderUiLevel = 1 | 2 | 3 | 4 | 5;
 
 export type GrinderState = {
     patch: GrinderPatch;
@@ -16,10 +14,12 @@ export type GrinderState = {
     preampDb: number;
     powerAmpDb: number;
     outputDb: number;
+    gateOpen: number;
+    gateEnvelopeDb: number;
     sagVoltage: number;
     latency: number;
     neuralCpuPercent: number;
-    uiLevel: GrinderUiLevel;
+    neuralWarmupProgress: number;
 };
 
 export const grinderStore = new Store<GrinderState>(logger, {
@@ -29,10 +29,12 @@ export const grinderStore = new Store<GrinderState>(logger, {
         preampDb: -100,
         powerAmpDb: -100,
         outputDb: -100,
+        gateOpen: 1,
+        gateEnvelopeDb: -100,
         sagVoltage: 1,
         latency: 0,
         neuralCpuPercent: 0,
-        uiLevel: 1,
+        neuralWarmupProgress: 0,
     },
 });
 
@@ -47,17 +49,10 @@ export function setGrinderParam<K extends keyof GrinderPatch>(key: K, value: Gri
     });
 }
 
-export function setGrinderUiLevel(level: GrinderUiLevel): void {
-    const state = grinderStore.value;
-    if (state) {
-        grinderStore.set({ ...state, uiLevel: level });
-    }
-}
-
 export function loadGrinderPatch(patch: GrinderPatch): void {
     const state = grinderStore.value;
     if (state) {
-        grinderStore.set({ ...state, patch });
+        grinderStore.set({ ...state, patch: migrateGrinderPatch(patch) });
     }
 }
 
@@ -66,9 +61,12 @@ export function updateGrinderMeters(
     preampDb: number,
     powerAmpDb: number,
     outputDb: number,
+    gateOpen?: number,
+    gateEnvelopeDb?: number,
     sagVoltage?: number,
     latency?: number,
-    neuralCpuPercent?: number
+    neuralCpuPercent?: number,
+    neuralWarmupProgress?: number
 ): void {
     const state = grinderStore.value;
     if (state) {
@@ -78,9 +76,12 @@ export function updateGrinderMeters(
             preampDb,
             powerAmpDb,
             outputDb,
+            gateOpen: gateOpen ?? state.gateOpen,
+            gateEnvelopeDb: gateEnvelopeDb ?? state.gateEnvelopeDb,
             sagVoltage: sagVoltage ?? state.sagVoltage,
             latency: latency ?? state.latency,
             neuralCpuPercent: neuralCpuPercent ?? state.neuralCpuPercent,
+            neuralWarmupProgress: neuralWarmupProgress ?? state.neuralWarmupProgress,
         });
     }
 }

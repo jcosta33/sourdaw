@@ -33,8 +33,12 @@ export type GrinderMeterData = {
     preampDb: number;
     powerAmpDb: number;
     outputDb: number;
+    gateOpen: number;
+    gateEnvelopeDb: number;
     sagVoltage: number;
     latency: number;
+    neuralCpuPercent: number;
+    neuralWarmupProgress: number;
 };
 
 export type GrinderNodeResult = {
