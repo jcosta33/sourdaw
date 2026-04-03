@@ -120,4 +120,7 @@ export type LocalStorageKey =
     | 'sourdaw-sidebar-state'
 
     // Stores project branch metadata (branch registry)
-    | 'sourdaw-branches';
+    | 'sourdaw-branches'
+
+    // Stores AI action history (undo groups, timestamps, prompts)
+    | 'sourdaw-ai-history';

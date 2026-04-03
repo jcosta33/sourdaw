@@ -1,6 +1,7 @@
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
 import { Store } from '#/helpers/Store/Store';
+import { LocalStorageStorage } from '#/helpers/Store/Storage/LocalStorageStorage';
 import { type AppAction } from '#/modules/Command/useCases/commandQueries';
 
 const logger = Container.getInstance().get(Logger);
@@ -25,6 +26,7 @@ export type AiActionHistoryState = {
 
 export const aiActionHistoryStore = new Store<AiActionHistoryState>(logger, {
     initialData: { groups: [], panelOpen: false },
+    storage: new LocalStorageStorage('sourdaw-ai-history'),
 });
 
 const MAX_HISTORY = 50;

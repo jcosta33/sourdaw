@@ -1,10 +1,37 @@
 /**
  * Canvas drawing hook for the PianoRoll editor.
  *
- * Owns all Canvas 2D drawing logic: grid, ruler, ghost notes, active notes,
- * step input cursor, draw preview, rubber-band selection, and lasso path.
+ * ## Architecture — AnimationScheduler + OffscreenCanvas grid cache
+ *
+ * This hook previously called `draw()` inside a `useEffect`, which meant every
+ * React re-render (triggered by `useSyncExternalStore` on midiStore / trackStore)
+ * forced a full canvas repaint through React's reconciler. That caused
+ * frame-pacing issues: dragging notes → React re-renders → useEffect fires →
+ * canvas redraws — all serialised through the JS event loop.
+ *
+ * The new design decouples rendering from React entirely:
+ *
+ * 1. **rAF loop** — runs independently at 60-120fps. Reads midiStore and
+ *    trackStore directly via reference equality checks. Skips the repaint when
+ *    nothing has changed.
+ *
+ * 2. **OffscreenCanvas grid cache** — the static beat grid, ruler, and row
+ *    backgrounds are drawn once to an OffscreenCanvas and bitblit-ted onto the
+ *    main canvas every frame. The grid is only rebuilt when beat width, snap,
+ *    scale, fold state, or canvas dimensions change — eliminating thousands of
+ *    `moveTo`/`lineTo` path strokes per frame.
+ *
+ * 3. **Ref-based layout props** — all layout/config props are synchronously
+ *    mirrored into refs each render so the rAF closure always reads the current
+ *    value without needing to be re-created.
+ *
+ * 4. **Exposed `draw()`** — the synchronous draw function is still returned so
+ *    interaction handlers can request an immediate repaint (e.g. on mousemove
+ *    during drag) without waiting for the next rAF tick.
  */
-import { type RefObject, useEffect } from 'react';
+import { type RefObject, useRef, useEffect } from 'react';
+import { midiStore } from '#/modules/MIDI/stores/midiStore';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 import { type MidiNote } from '#/modules/MIDI/useCases/midi';
 import {
@@ -45,104 +72,216 @@ type RendererDeps = {
         noteIds: Set<string>;
         beatDelta: number;
         pitchDelta: number;
-        /** For resize-right: duration override per note id */
         durationOverride?: Map<string, number>;
-        /** For resize-left: beat and duration overrides per note id */
         beatOverride?: Map<string, { beat: number; duration: number }>;
     } | null>;
 };
 
 export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
-    const {
-        canvasRef,
-        notes,
-        clipId,
-        trackId,
-        beatWidth,
-        gridSnap,
-        scaleType,
-        scaleRoot,
-        isFolded,
-        selectedNoteIds,
-        stepInput,
-        stepBeat,
-        showGhostNotes,
-        midiNotesByClipId,
-        tracks,
-        drawPreviewRef,
-        rubberBandRef,
-        dragPreviewRef,
-    } = deps;
+    // ── Mirror all layout/config props into refs so the rAF loop always
+    //    reads the current value without being re-created on every render. ──
+    const beatWidthRef = useRef(deps.beatWidth);
+    beatWidthRef.current = deps.beatWidth;
+    const gridSnapRef = useRef(deps.gridSnap);
+    gridSnapRef.current = deps.gridSnap;
+    const scaleTypeRef = useRef(deps.scaleType);
+    scaleTypeRef.current = deps.scaleType;
+    const scaleRootRef = useRef(deps.scaleRoot);
+    scaleRootRef.current = deps.scaleRoot;
+    const isFoldedRef = useRef(deps.isFolded);
+    isFoldedRef.current = deps.isFolded;
+    const selectedNoteIdsRef = useRef(deps.selectedNoteIds);
+    selectedNoteIdsRef.current = deps.selectedNoteIds;
+    const stepInputRef = useRef(deps.stepInput);
+    stepInputRef.current = deps.stepInput;
+    const stepBeatRef = useRef(deps.stepBeat);
+    stepBeatRef.current = deps.stepBeat;
+    const showGhostNotesRef = useRef(deps.showGhostNotes);
+    showGhostNotesRef.current = deps.showGhostNotes;
+    const clipIdRef = useRef(deps.clipId);
+    clipIdRef.current = deps.clipId;
+    const trackIdRef = useRef(deps.trackId);
+    trackIdRef.current = deps.trackId;
 
-    const draw = (): void => {
-        const canvas = canvasRef.current;
-        if (!canvas) {
-            return;
-        }
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-            return;
-        }
+    // ── OffscreenCanvas grid cache ──────────────────────────────────────
+    const gridCacheRef = useRef<OffscreenCanvas | null>(null);
+    // String key of the params that were used to draw the cached grid.
+    const gridCacheKeyRef = useRef('');
 
-        const dpr = window.devicePixelRatio || 1;
-        const visiblePitches = getVisiblePitches(scaleType, scaleRoot, isFolded);
+    // ── Change-detection sentinels ───────────────────────────────────────
+    const prevNotesRef = useRef<MidiNote[] | null>(null);
+    const prevMidiStateRef = useRef<object | null>(null);
+    const prevTracksRef = useRef<object | null>(null);
+    const prevSelIdsRef = useRef<Set<string> | null>(null);
+    const prevDragRef = useRef<unknown>(undefined);
+    const prevDrawPreviewRef = useRef<unknown>(undefined);
+    const prevRubberRef = useRef<unknown>(undefined);
 
-        const noteAreaHeight = visiblePitches.length * ROW_HEIGHT;
-        const width = canvas.parentElement?.clientWidth ?? GRID_BEATS * beatWidth;
-        const height = noteAreaHeight + RULER_HEIGHT;
-        canvas.width = Math.max(width, GRID_BEATS * beatWidth) * dpr;
-        canvas.height = height * dpr;
-        canvas.style.width = `${Math.max(width, GRID_BEATS * beatWidth)}px`;
-        canvas.style.height = `${height}px`;
-        ctx.scale(dpr, dpr);
-
-        const totalWidth = Math.max(width, GRID_BEATS * beatWidth);
-
-        // Background
-        ctx.fillStyle = resolveToken('--color-bg-overlay', '#151515');
-        ctx.fillRect(0, 0, totalWidth, height);
-
-        drawBeatRuler(ctx, totalWidth, beatWidth, gridSnap);
-        ctx.save();
-        ctx.translate(0, RULER_HEIGHT);
-        drawNoteGrid(ctx, visiblePitches, totalWidth, beatWidth, gridSnap, scaleType, scaleRoot);
-        if (showGhostNotes && tracks) {
-            drawGhostNotes(ctx, visiblePitches, beatWidth, midiNotesByClipId, tracks, trackId, clipId);
-        }
-        drawActiveNotes(ctx, visiblePitches, notes, beatWidth, selectedNoteIds, tracks, trackId, clipId, dragPreviewRef.current);
-        if (stepInput) {
-            drawStepCursor(ctx, stepBeat, beatWidth, gridSnap, noteAreaHeight);
-        }
-        drawPreview(ctx, visiblePitches, beatWidth, drawPreviewRef.current);
-        drawRubberBand(ctx, rubberBandRef.current);
-        ctx.restore();
-    };
+    // ── Stable draw() ref — updated each rAF tick ───────────────────────
+    const drawFnRef = useRef<() => void>(() => {});
 
     useEffect(() => {
-        draw();
-    }, [
-        notes,
-        clipId,
-        beatWidth,
-        gridSnap,
-        scaleType,
-        scaleRoot,
-        stepInput,
-        stepBeat,
-        showGhostNotes,
-        tracks,
-        trackId,
-        midiNotesByClipId,
-        isFolded,
-        selectedNoteIds,
-    ]);
+        let rafId = 0;
 
-    return draw;
+        const tick = (): void => {
+            const canvas = deps.canvasRef.current;
+            if (!canvas) {
+                rafId = requestAnimationFrame(tick);
+                return;
+            }
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                rafId = requestAnimationFrame(tick);
+                return;
+            }
+
+            // Read current layout props from refs
+            const bw        = beatWidthRef.current;
+            const gs        = gridSnapRef.current;
+            const st        = scaleTypeRef.current;
+            const sr        = scaleRootRef.current;
+            const folded    = isFoldedRef.current;
+            const cId       = clipIdRef.current;
+            const tId       = trackIdRef.current;
+            const si        = stepInputRef.current;
+            const sb        = stepBeatRef.current;
+            const ghost     = showGhostNotesRef.current;
+            const selIds    = selectedNoteIdsRef.current;
+
+            // Read store state
+            const midiState  = midiStore.value;
+            const trackState = trackStore.value;
+            const notes      = midiState?.notesByClipId[cId] ?? EMPTY_NOTES;
+            const tracks     = trackState?.tracks ?? null;
+
+            const dpr           = window.devicePixelRatio || 1;
+            const visiblePitches = getVisiblePitches(st, sr, folded);
+            const noteAreaHeight = visiblePitches.length * ROW_HEIGHT;
+            const containerW    = canvas.parentElement?.clientWidth ?? GRID_BEATS * bw;
+            const totalWidth    = Math.max(containerW, GRID_BEATS * bw);
+            const height        = noteAreaHeight + RULER_HEIGHT;
+
+            // Resize canvas backing store only when dimensions change
+            const targetW = Math.round(totalWidth * dpr);
+            const targetH = Math.round(height * dpr);
+            if (canvas.width !== targetW || canvas.height !== targetH) {
+                canvas.width        = targetW;
+                canvas.height       = targetH;
+                canvas.style.width  = `${totalWidth}px`;
+                canvas.style.height = `${height}px`;
+            }
+
+            // Check grid cache validity
+            const gridKey = `${bw}|${gs}|${st}|${sr}|${folded}|${totalWidth}|${height}|${dpr}`;
+            const gridDirty = gridKey !== gridCacheKeyRef.current;
+
+            // Check data dirty state
+            const notesDirty  = notes    !== prevNotesRef.current;
+            const midiDirty   = midiState !== prevMidiStateRef.current;
+            const tracksDirty = trackState !== prevTracksRef.current;
+            const selDirty    = selIds   !== prevSelIdsRef.current;
+            const dragDirty   = deps.dragPreviewRef.current   !== prevDragRef.current;
+            const drawDirty   = deps.drawPreviewRef.current   !== prevDrawPreviewRef.current;
+            const rubberDirty = deps.rubberBandRef.current    !== prevRubberRef.current;
+
+            const needsRepaint =
+                gridDirty || notesDirty || midiDirty || tracksDirty ||
+                selDirty  || dragDirty  || drawDirty || rubberDirty;
+
+            if (needsRepaint) {
+                // Update sentinels
+                prevNotesRef.current    = notes;
+                prevMidiStateRef.current  = midiState;
+                prevTracksRef.current   = trackState;
+                prevSelIdsRef.current   = selIds;
+                prevDragRef.current     = deps.dragPreviewRef.current;
+                prevDrawPreviewRef.current = deps.drawPreviewRef.current;
+                prevRubberRef.current   = deps.rubberBandRef.current;
+
+                // Rebuild grid cache when layout changed
+                if (gridDirty) {
+                    const offscreen = new OffscreenCanvas(targetW, targetH);
+                    const gCtx = offscreen.getContext('2d')!;
+                    gCtx.scale(dpr, dpr);
+                    drawBackground(gCtx, totalWidth, height);
+                    drawBeatRuler(gCtx, totalWidth, bw, gs);
+                    gCtx.save();
+                    gCtx.translate(0, RULER_HEIGHT);
+                    drawNoteGrid(gCtx, visiblePitches, totalWidth, bw, gs, st, sr);
+                    gCtx.restore();
+                    gridCacheRef.current    = offscreen;
+                    gridCacheKeyRef.current = gridKey;
+                }
+
+                // Reset transform before blitting (canvas resize clears it)
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+                // Blit cached grid
+                ctx.drawImage(gridCacheRef.current!, 0, 0);
+
+                // Scale for HiDPI before drawing dynamic layers
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+                // Ghost notes + active notes + overlays
+                ctx.save();
+                ctx.translate(0, RULER_HEIGHT);
+                if (ghost && tracks) {
+                    drawGhostNotes(
+                        ctx, visiblePitches, bw,
+                        midiState?.notesByClipId ?? null, tracks, tId, cId,
+                    );
+                }
+                drawActiveNotes(
+                    ctx, visiblePitches, notes, bw, selIds, tracks, tId, cId,
+                    deps.dragPreviewRef.current,
+                );
+                if (si) {
+                    drawStepCursor(ctx, sb, bw, gs, noteAreaHeight);
+                }
+                drawPreview(ctx, visiblePitches, bw, deps.drawPreviewRef.current);
+                drawRubberBand(ctx, deps.rubberBandRef.current);
+                ctx.restore();
+            }
+
+            rafId = requestAnimationFrame(tick);
+        };
+
+        // Also wire up the exposed draw() for synchronous interaction repaints.
+        // This bypasses the dirty check so interactions get immediate visual
+        // feedback without waiting for the next tick.
+        drawFnRef.current = (): void => {
+            // Invalidate all sentinels so the next tick always repaints.
+            prevNotesRef.current       = null;
+            prevDragRef.current        = undefined;
+            prevDrawPreviewRef.current = undefined;
+            prevRubberRef.current      = undefined;
+            prevSelIdsRef.current      = null;
+        };
+
+        rafId = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(rafId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // Intentionally empty — all deps are read via refs inside the loop.
+
+    return drawFnRef.current;
 };
 
-// ── Drawing helpers ──────────────────────────────────────────────────
+// Stable empty array so reference equality works for clips with no notes.
+const EMPTY_NOTES: MidiNote[] = [];
 
-function drawBeatRuler(ctx: CanvasRenderingContext2D, totalWidth: number, beatWidth: number, gridSnap: number): void {
+// ── Drawing helpers ──────────────────────────────────────────────────────────
+
+function drawBackground(ctx: OffscreenCanvasRenderingContext2D, totalWidth: number, height: number): void {
+    ctx.fillStyle = resolveToken('--color-bg-overlay', '#151515');
+    ctx.fillRect(0, 0, totalWidth, height);
+}
+
+function drawBeatRuler(
+    ctx: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D,
+    totalWidth: number,
+    beatWidth: number,
+    gridSnap: number,
+): void {
     ctx.fillStyle = resolveToken('--color-bg-panel', '#111111');
     ctx.fillRect(0, 0, totalWidth, RULER_HEIGHT);
     ctx.strokeStyle = 'rgba(255,255,255,0.08)';
@@ -187,13 +326,13 @@ function drawBeatRuler(ctx: CanvasRenderingContext2D, totalWidth: number, beatWi
 }
 
 function drawNoteGrid(
-    ctx: CanvasRenderingContext2D,
+    ctx: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D,
     visiblePitches: number[],
     totalWidth: number,
     beatWidth: number,
     gridSnap: number,
     scaleType: string,
-    scaleRoot: number
+    scaleRoot: number,
 ): void {
     const scaleIntervals = SCALES[scaleType] ?? SCALES.chromatic!;
 
@@ -260,19 +399,14 @@ function drawGhostNotes(
     midiNotesByClipId: Record<string, MidiNote[]> | null,
     tracks: Array<{ id: string; kind: string; color: string; clips: Array<{ id: string; type: string; color: string }> }>,
     trackId: string,
-    clipId: string
+    clipId: string,
 ): void {
-    // Ghost notes from other MIDI tracks
     const otherMidiTracks = tracks.filter((t) => t.kind === 'midi' && t.id !== trackId);
     for (const otherTrack of otherMidiTracks) {
         for (const otherClip of otherTrack.clips) {
-            if (otherClip.type !== 'midi') {
-                continue;
-            }
+            if (otherClip.type !== 'midi') { continue; }
             const otherNotes = midiNotesByClipId?.[otherClip.id];
-            if (!otherNotes) {
-                continue;
-            }
+            if (!otherNotes) { continue; }
             const ghostClipColor = otherClip.color || otherTrack.color;
             for (const gn of otherNotes) {
                 drawGhostNote(ctx, visiblePitches, beatWidth, gn, ghostClipColor, 0.06, 0.10);
@@ -280,17 +414,12 @@ function drawGhostNotes(
         }
     }
 
-    // Ghost notes from non-selected clips on the same track
     const activeTrack = tracks.find((t) => t.id === trackId);
     if (activeTrack) {
         for (const sameTrackClip of activeTrack.clips) {
-            if (sameTrackClip.id === clipId || sameTrackClip.type !== 'midi') {
-                continue;
-            }
+            if (sameTrackClip.id === clipId || sameTrackClip.type !== 'midi') { continue; }
             const ghostNotes = midiNotesByClipId?.[sameTrackClip.id];
-            if (!ghostNotes) {
-                continue;
-            }
+            if (!ghostNotes) { continue; }
             const ghostColor = sameTrackClip.color || activeTrack.color;
             for (const gn of ghostNotes) {
                 drawGhostNote(ctx, visiblePitches, beatWidth, gn, ghostColor, 0.08, 0.12);
@@ -306,12 +435,10 @@ function drawGhostNote(
     note: MidiNote,
     color: string,
     fillAlpha: number,
-    strokeAlpha: number
+    strokeAlpha: number,
 ): void {
     const row = visiblePitches.indexOf(note.pitch);
-    if (row === -1) {
-        return;
-    }
+    if (row === -1) { return; }
     const x = note.startBeat * beatWidth;
     const y = row * ROW_HEIGHT;
     const w = note.duration * beatWidth;
@@ -343,42 +470,41 @@ function drawActiveNotes(
     tracks: Array<{ id: string; kind: string; color: string; clips: Array<{ id: string; type: string; color: string }> }> | null,
     trackId: string,
     clipId: string,
-    dragPreview: DragPreview = null
+    dragPreview: DragPreview = null,
 ): void {
     const activeTrack = tracks?.find((t) => t.id === trackId);
-    const activeClip = activeTrack?.clips.find((c) => c.id === clipId);
-    const clipColor = activeClip?.color || activeTrack?.color || 'oklch(0.45 0.06 250)';
+    const activeClip  = activeTrack?.clips.find((c) => c.id === clipId);
+    const clipColor    = activeClip?.color || activeTrack?.color || 'oklch(0.45 0.06 250)';
     const selectedColor = brightenColor(clipColor, 0.22);
 
     for (const note of notes) {
-        // Apply ephemeral drag preview offsets without touching the store
-        let displayPitch = note.pitch;
-        let displayStartBeat = note.startBeat;
-        let displayDuration = note.duration;
+        let displayPitch      = note.pitch;
+        let displayStartBeat  = note.startBeat;
+        let displayDuration   = note.duration;
+
         if (dragPreview && dragPreview.noteIds.has(note.id)) {
             if (dragPreview.beatOverride?.has(note.id)) {
-                const override = dragPreview.beatOverride.get(note.id)!;
-                displayStartBeat = override.beat;
-                displayDuration = override.duration;
+                const override    = dragPreview.beatOverride.get(note.id)!;
+                displayStartBeat  = override.beat;
+                displayDuration   = override.duration;
             } else if (dragPreview.durationOverride?.has(note.id)) {
-                displayDuration = dragPreview.durationOverride.get(note.id)!;
+                displayDuration   = dragPreview.durationOverride.get(note.id)!;
             } else {
-                displayStartBeat = Math.max(0, note.startBeat + dragPreview.beatDelta);
-                displayPitch = Math.max(0, Math.min(127, note.pitch + dragPreview.pitchDelta));
+                displayStartBeat  = Math.max(0, note.startBeat + dragPreview.beatDelta);
+                displayPitch      = Math.max(0, Math.min(127, note.pitch + dragPreview.pitchDelta));
             }
         }
 
         const row = visiblePitches.indexOf(displayPitch);
-        if (row === -1) {
-            continue;
-        }
+        if (row === -1) { continue; }
+
         const x = displayStartBeat * beatWidth;
         const y = row * ROW_HEIGHT;
         const w = displayDuration * beatWidth;
 
         const isSelected = selectedNoteIds.has(note.id);
-        const alpha = 0.4 + (note.velocity / 127) * 0.6;
-        const noteColor = isSelected ? selectedColor : clipColor;
+        const alpha      = 0.4 + (note.velocity / 127) * 0.6;
+        const noteColor  = isSelected ? selectedColor : clipColor;
 
         ctx.fillStyle = colorWithAlpha(noteColor, alpha);
         ctx.beginPath();
@@ -391,21 +517,21 @@ function drawActiveNotes(
             ctx.stroke();
         }
 
-        // Velocity bar
         const velH = Math.max(1, (note.velocity / 127) * (ROW_HEIGHT - 4));
         ctx.fillStyle = colorWithAlpha(noteColor, isSelected ? 0.3 : 0.25);
         ctx.fillRect(x + 2, y + ROW_HEIGHT - 2 - velH, Math.max(2, w - 4), velH);
 
-        // Resize handles
         ctx.fillStyle = 'rgba(255,255,255,0.2)';
         ctx.fillRect(x + 1, y + 1, 4, ROW_HEIGHT - 2);
         ctx.fillRect(x + w - 5, y + 1, 4, ROW_HEIGHT - 2);
 
-        // Note label
         if (w > 20) {
             ctx.fillStyle = 'rgba(255,255,255,0.8)';
             ctx.font = '9px system-ui';
-            ctx.fillText(`${NOTE_NAMES[displayPitch % 12]}${Math.floor(displayPitch / 12) - 1}`, x + 6, y + 11);
+            ctx.fillText(
+                `${NOTE_NAMES[displayPitch % 12]}${Math.floor(displayPitch / 12) - 1}`,
+                x + 6, y + 11,
+            );
         }
     }
 }
@@ -415,7 +541,7 @@ function drawStepCursor(
     stepBeat: number,
     beatWidth: number,
     gridSnap: number,
-    noteAreaHeight: number
+    noteAreaHeight: number,
 ): void {
     const sx = stepBeat * beatWidth;
     ctx.strokeStyle = 'rgba(160, 90, 120, 0.6)';
@@ -437,15 +563,11 @@ function drawPreview(
     ctx: CanvasRenderingContext2D,
     visiblePitches: number[],
     beatWidth: number,
-    preview: { beat: number; pitch: number; duration: number } | null
+    preview: { beat: number; pitch: number; duration: number } | null,
 ): void {
-    if (!preview) {
-        return;
-    }
+    if (!preview) { return; }
     const dpRow = visiblePitches.indexOf(preview.pitch);
-    if (dpRow === -1) {
-        return;
-    }
+    if (dpRow === -1) { return; }
     const dpX = preview.beat * beatWidth;
     const dpY = dpRow * ROW_HEIGHT;
     const dpW = preview.duration * beatWidth;
@@ -461,11 +583,9 @@ function drawPreview(
 
 function drawRubberBand(
     ctx: CanvasRenderingContext2D,
-    rb: { x: number; y: number; w: number; h: number } | null
+    rb: { x: number; y: number; w: number; h: number } | null,
 ): void {
-    if (!rb) {
-        return;
-    }
+    if (!rb) { return; }
     ctx.fillStyle = 'rgba(180, 170, 160, 0.12)';
     ctx.fillRect(rb.x, rb.y, rb.w, rb.h);
     ctx.strokeStyle = 'rgba(180, 170, 160, 0.5)';

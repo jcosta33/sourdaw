@@ -100,7 +100,7 @@ export type LayoutState = 'arrange' | 'mixer' | 'piano-roll';
 
 let layoutStoreInstance: Store<LayoutState>;
 
-export const getDawLayoutStore = (initialState: LayoutState): Store<LayoutState> => {
+export function getDawLayoutStore(initialState: LayoutState): Store<LayoutState> {
     if (!layoutStoreInstance) {
         const logger = Container.getInstance().get(Logger);
         const storage = new LocalStorageStorage<LayoutState>(LAYOUT_STORAGE_KEY);
@@ -111,7 +111,7 @@ export const getDawLayoutStore = (initialState: LayoutState): Store<LayoutState>
         });
     }
     return layoutStoreInstance;
-};
+}
 ```
 
 ### 4. Update the store in response to events
@@ -153,7 +153,7 @@ export const PanelContext = createContext<PanelContextValue | null>(null);
 ```tsx
 // Common/presentations/components/PanelHeader.tsx
 
-import { use } from 'react';
+import { type ReactElement, use } from 'react';
 
 import { PanelContext } from '../context/PanelContext';
 

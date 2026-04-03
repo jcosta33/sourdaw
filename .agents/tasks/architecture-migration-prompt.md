@@ -30,6 +30,7 @@ You must follow these documents as the source of truth:
 - **TypeScript Module Architecture**
 - **Migration Architecture**
 - **Architecture Violations skill**
+- **docs/conventions.md**
 
 Key ideas to preserve:
 
@@ -101,7 +102,7 @@ That means:
 
 ### Allowed example
 
-```typescript
+~~~typescript
 /**
  * TEMPORARY MIGRATION SHIM
  *
@@ -109,7 +110,7 @@ That means:
  * Remove after the global import convergence pass.
  */
 export { addTrack } from '../application/actions/addTrack';
-```
+~~~
 
 ### Forbidden examples
 
@@ -124,13 +125,13 @@ export { addTrack } from '../application/actions/addTrack';
 
 For TypeScript modules, the legacy/public contract surface is:
 
-```text
+~~~text
 errors/
 events/
 useCases/
 stores/
 presentations/views/
-```
+~~~
 
 If other modules currently import from these paths in **`<MODULE_NAME>`**, those imports must keep working after your refactor.
 
@@ -138,19 +139,97 @@ Private internals may be reorganized much more freely.
 
 ---
 
-## 7. Architectural goals for this migration
+## 7. Non-negotiable coding style for this migration
+
+### 7.1 Business layer uses `function` declarations
+
+In the business layer, prefer the `function` keyword over arrow-function exports.
+
+This applies especially to:
+
+- `useCases/`
+- `validators/`
+- `services/`
+- `transformers/`
+- business-layer helpers
+- pure domain logic
+
+Examples:
+
+~~~typescript
+export function addTrack(input: AddTrackInput): void {
+    ...
+}
+
+export function validateClipPlacement(input: ValidateClipPlacementInput): void {
+    ...
+}
+
+export function transformTrackToEngineConfig(track: Track): TrackEngineConfig {
+    ...
+}
+~~~
+
+Avoid this style in the business layer unless there is a strong local reason:
+
+~~~typescript
+export const addTrack = (input: AddTrackInput): void => {
+    ...
+};
+~~~
+
+### 7.2 Presentation layer follows React conventions
+
+In the presentation layer, follow the project’s React conventions from `conventions.md`.
+
+That means in particular:
+
+- React is presentation only
+- no business logic in components or hooks
+- no `useEffect` for fetching
+- no `useEffect` for derived state
+- no manual memoization (`useMemo`, `useCallback`, `React.memo`)
+- no `forwardRef`
+- prefer plain React 19 patterns
+- use TanStack Query for fetching
+- use React Hook Form for forms
+- keep hooks thin
+- use explicit control flow
+- no `&&` rendering shortcuts
+- return `ReactElement`
+- use type-only imports
+- use named exports
+
+If a presentation file is touched, bring it closer to these conventions.
+
+### 7.3 Classes vs functions
+
+Use **functions by default** in the TypeScript business layer.
+
+Use **classes only** where there is real runtime/lifecycle ownership, such as:
+
+- engine/runtime objects
+- long-lived plugin/native handles
+- explicit initialization/disposal
+- runtime controllers
+
+Do **not** introduce classes for ordinary business/domain/application logic.
+
+---
+
+## 8. Architectural goals for this migration
 
 While refactoring **`<MODULE_NAME>`**, optimize for:
 
 - clearer ownership of authoritative state
 - explicit public write boundaries
 - better separation between:
-    - presentation
-    - application/write layer
-    - domain helpers/rules
-    - projections/read state
-    - repositories/I/O
-    - runtime/infrastructure
+  - presentation
+  - application/write layer
+  - domain helpers/rules
+  - projections/read state
+  - repositories/I/O
+  - runtime/infrastructure
 - React-free business logic
 - no hidden write paths through stores/selectors/helpers
 - better runtime isolation
@@ -169,7 +248,7 @@ Do not optimize for:
 
 ---
 
-## 8. Concepts to use correctly
+## 9. Concepts to use correctly
 
 Use these concepts as defined in the architecture docs:
 
@@ -194,7 +273,7 @@ Do not invent alternate meanings for these.
 
 ---
 
-## 9. Required migration process
+## 10. Required migration process
 
 Follow this order.
 
@@ -236,11 +315,13 @@ Move the module toward the target architecture:
 
 - presentation stays presentation-only
 - business writes go through explicit public use cases/actions/commands
+- business-layer functions use the `function` keyword by default
 - repositories become thinner and more honest
 - validators/services/transformers stay private
 - stores stop acting as hidden write APIs
 - runtime state is isolated from UI/business code
 - selectors/projections stay read-oriented
+- presentation code follows React 19 + project conventions
 
 ### Step 5: preserve legacy external paths
 
@@ -262,7 +343,7 @@ Check that:
 
 ---
 
-## 10. Anti-cheating rules
+## 11. Anti-cheating rules
 
 Do not do any of the following:
 
@@ -283,7 +364,7 @@ A boundary is only real if responsibility changes across it.
 
 ---
 
-## 11. Specific things to look for
+## 12. Specific things to look for
 
 You should actively look for and fix cases where:
 
@@ -300,21 +381,21 @@ You should actively look for and fix cases where:
 
 ---
 
-## 12. Output expectations
+## 13. Output expectations
 
 You should produce:
 
 1. the refactored code for **`<MODULE_NAME>`**
 2. any thin temporary migration shim files needed to preserve old external imports
 3. a short summary describing:
-    - what was refactored
-    - what compatibility shims were added
-    - what architectural improvements were made
-    - any remaining limitations or deferred cleanup inside this module
+   - what was refactored
+   - what compatibility shims were added
+   - what architectural improvements were made
+   - any remaining limitations or deferred cleanup inside this module
 
 ---
 
-## 13. Final checklist
+## 14. Final checklist
 
 Before finishing, verify:
 
@@ -327,11 +408,13 @@ Before finishing, verify:
 - the public write boundary is more explicit
 - presentation/business/runtime separation improved
 - repositories are more honest as I/O boundaries
+- business-layer code prefers `function` declarations
+- touched presentation code follows the project’s React conventions
 - behavior was preserved
 
 ---
 
-## 14. Assigned module
+## 15. Assigned module
 
 **`<MODULE_NAME>`**
 

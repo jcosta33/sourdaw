@@ -22,30 +22,33 @@ Your first and best option is to use Shadcn UI components (built on Radix UI pri
 
 ```tsx
 // Project/presentations/components/ProjectSettingsDialog.tsx
+import { type ReactElement } from 'react';
 
-export const ProjectSettingsDialog = () => (
-    <Dialog>
-        <DialogTrigger asChild>
-            <Button variant="outline">Project Settings</Button>
-        </DialogTrigger>
-        <DialogContent>
-            <DialogHeader>
-                <DialogTitle>Project Settings</DialogTitle>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="bpm" className="text-right">
-                        Tempo (BPM)
-                    </Label>
-                    <Input id="bpm" type="number" defaultValue="120" className="col-span-3" />
+export const ProjectSettingsDialog = (): ReactElement => {
+    return (
+        <Dialog>
+            <DialogTrigger asChild>
+                <Button variant="outline">Project Settings</Button>
+            </DialogTrigger>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Project Settings</DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                    <div className="grid grid-cols-4 items-center gap-4">
+                        <Label htmlFor="bpm" className="text-right">
+                            Tempo (BPM)
+                        </Label>
+                        <Input id="bpm" type="number" defaultValue="120" className="col-span-3" />
+                    </div>
                 </div>
-            </div>
-            <DialogFooter>
-                <Button type="submit">Save changes</Button>
-            </DialogFooter>
-        </DialogContent>
-    </Dialog>
-);
+                <DialogFooter>
+                    <Button type="submit">Save changes</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+};
 ```
 
 Why: Shadcn UI manages focus trapping, escape/underlay behavior, roles, and aria attributes for dialogs and many other components. **Using Shadcn is the best way to avoid common pitfalls like forgetting focus management or using non-semantic elements like a `<div>` for a button.**
@@ -62,12 +65,15 @@ If a Shadcn component is not available, you must manually ensure your custom com
 
 ```tsx
 // Track/presentations/components/RemoveTrackButton.tsx
+import { type ReactElement } from 'react';
 
-export const RemoveTrackButton = () => (
-    <Button aria-label={t('TrackControls_remove')} variant="ghost" size="icon">
-        <Trash2Icon className="h-4 w-4" aria-hidden="true" />
-    </Button>
-);
+export const RemoveTrackButton = (): ReactElement => {
+    return (
+        <Button aria-label={t('TrackControls_remove')} variant="ghost" size="icon">
+            <Trash2Icon className="h-4 w-4" aria-hidden="true" />
+        </Button>
+    );
+};
 ```
 
 #### Ensure proper keyboard and focus handling
@@ -90,13 +96,23 @@ The `aria-atomic="true"` attribute ensures that the entire content of the region
 
 ```tsx
 // AiRuntime/presentations/components/AiStatusBanner.tsx
+import { type ReactElement } from 'react';
 
-const AiStatusBanner = ({ messages }) => {
+type Message = {
+    id: string;
+    text: string;
+};
+
+type AiStatusBannerProps = {
+    messages: Message[];
+};
+
+export const AiStatusBanner = ({ messages }: AiStatusBannerProps): ReactElement => {
     return (
         <div aria-live="polite" aria-atomic="true" className="text-sm text-text-secondary">
-            {messages.map((msg) => (
-                <div key={msg.id}>{msg.text}</div>
-            ))}
+            {messages.map((msg) => {
+                return <div key={msg.id}>{msg.text}</div>;
+            })}
         </div>
     );
 };

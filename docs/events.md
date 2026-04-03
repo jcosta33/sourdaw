@@ -64,7 +64,7 @@ export class TrackAddedEvent extends DomainEvent<{ trackId: string; name: string
 Follow consistent naming patterns for clarity, using verbs in their past tense form at the end of each event name:
 
 ```typescript
-// Clear, descriptive names
+// ✅ Clear, descriptive names
 export class TransportStartedEvent extends DomainEvent<TransportStartedPayload> {}
 export class PluginLoadedEvent extends DomainEvent<PluginLoadedPayload> {}
 export class TrackMutedEvent extends DomainEvent<TrackMutedPayload> {}
@@ -203,7 +203,7 @@ Structure event handlers for maintainability:
 ```typescript
 // AiRuntime/useCases/registerAiEventHandlers.ts
 
-export const registerAiEventHandlers = (eventBus: EventBus) => {
+export function registerAiEventHandlers(eventBus: EventBus): () => void {
     // Track activity events
     eventBus.on(TrackAddedEvent, syncAiTrackContext);
     eventBus.on(TrackRemovedEvent, removeAiTrackContext);
@@ -222,7 +222,7 @@ export const registerAiEventHandlers = (eventBus: EventBus) => {
         eventBus.off(TransportStoppedEvent, handleTransportStop);
         eventBus.off(PluginLoadedEvent, analyzeNewPluginParameters);
     };
-};
+}
 ```
 
 ## Testing event flows
@@ -242,7 +242,7 @@ describe('handleTrackAdded', () => {
     it('invalidates mixer tracks query when a track is added', async () => {
         // Arrange
         const queryClientMock = { invalidateQueries: vi.fn() };
-        
+
         const event = new TrackAddedEvent({
             projectId: 'proj-123',
             trackId: 'track-456',

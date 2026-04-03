@@ -300,21 +300,8 @@ export function scheduleMidiNotes(
                             if (fermenterDevice) {
                                 const dn = strip.deviceNodes.find((d) => d.deviceId === fermenterDevice.id);
                                 if (dn?.fermenterControls) {
-                                    const ctx = getAudioContext();
-                                    const scheduleDelay = Math.max(0, time - ctx.currentTime);
-                                    if (scheduleDelay <= 0) {
-                                        dn.fermenterControls.noteOn(pitch, note.velocity);
-                                        setTimeout(() => {
-                                            dn.fermenterControls?.noteOff(pitch);
-                                        }, duration * 1000);
-                                    } else {
-                                        setTimeout(() => {
-                                            dn.fermenterControls?.noteOn(pitch, note.velocity);
-                                            setTimeout(() => {
-                                                dn.fermenterControls?.noteOff(pitch);
-                                            }, duration * 1000);
-                                        }, scheduleDelay * 1000);
-                                    }
+                                    dn.fermenterControls.noteOn(pitch, note.velocity, time);
+                                    dn.fermenterControls.noteOff(pitch, time + duration);
                                 }
                             }
                         } else if (track.devices.some((d) => d.type === 'levain')) {
@@ -322,21 +309,8 @@ export function scheduleMidiNotes(
                             if (levainDevice) {
                                 const dn = strip.deviceNodes.find((d) => d.deviceId === levainDevice.id);
                                 if (dn?.levainControls) {
-                                    const ctx = getAudioContext();
-                                    const scheduleDelay = Math.max(0, time - ctx.currentTime);
-                                    if (scheduleDelay <= 0) {
-                                        dn.levainControls.noteOn(pitch, note.velocity);
-                                        setTimeout(() => {
-                                            dn.levainControls?.noteOff(pitch);
-                                        }, duration * 1000);
-                                    } else {
-                                        setTimeout(() => {
-                                            dn.levainControls?.noteOn(pitch, note.velocity);
-                                            setTimeout(() => {
-                                                dn.levainControls?.noteOff(pitch);
-                                            }, duration * 1000);
-                                        }, scheduleDelay * 1000);
-                                    }
+                                    dn.levainControls.noteOn(pitch, note.velocity, time);
+                                    dn.levainControls.noteOff(pitch, time + duration);
                                 }
                             }
                         } else {

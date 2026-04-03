@@ -37,7 +37,7 @@ This audit was expanded beyond the plugin suite and now covers recurring pattern
 At the time of this expanded pass:
 
 - about `26` shared component files exist under `src/components`
-- roughly `247` presentation view/component files were considered across `src/modules/*/presentations`
+- roughly `249` presentation view/component/contract files were considered across `src/modules/*/presentations`
 - about `36` files still matched the older repeated dark header chrome pattern directly
 - about `9` files define local plugin-shell card helpers like `MetricTile`, `SectionCard`, `SideCard`, or `ControlCard`
 - about `5` presentation files still use raw `input[type="range"]`
@@ -84,6 +84,175 @@ This keeps the implementation order unchanged:
 - DAW header, cluster, and readout primitives still come first
 - empty-state and blocked-state primitives are the next highest-leverage neutral family
 - plugin section, metric, and micro-typography primitives remain the highest-value themed family
+
+### Coverage Notes From The Ongoing Sweep
+
+The exhaustive pass has now explicitly reopened and reviewed:
+
+- shared `src/components/daw/*`, `src/components/daw/visualizers/*`, and `src/components/ui/*`
+- AI runtime, arrangement, audio engine, collaboration, command, CRDT dialog, project, sample library, scoring, and virtual keyboard presentations
+- the newer flagship plugin shells and supporting components for `Gluten`, `Toaster`, `Crust`, `Levain`, `Proof`, `ProofChamber`, and `Yeast`
+- the remaining plugin islands for `Fermenter`, `Bacteria`, and `Grinder`
+- the `Workspace` presentation component layer plus the shell-facing `AnalysisPanel`, `AppShell`, `InspectorPanel`, and `MixerPanel`
+
+The same pass now also explicitly closed the remaining `Workspace` editor and shell families:
+
+- automation, clip view, inspector internals, metering internals, mixer internals, sidebar tabs, transport subcomponents, routing/timeline helpers, and shell dialogs
+- presentation-side outliers that were easy to miss from the earlier Workspace-only remainder count:
+  - `src/modules/Command/presentations/views/keyboardShortcutsContract.ts`
+  - `src/modules/AiRuntime/presentations/components/GenerativeParamGrids.tsx`
+  - `src/modules/AiRuntime/presentations/components/mixAnalysis/MixAnalysisSections.tsx`
+  - `src/modules/Arrangement/presentations/views/TimelineContextMenus.tsx`
+
+Coverage is now exhaustive for the current on-disk target inventory under:
+
+- `src/components/daw/*`
+- `src/components/daw/visualizers/*`
+- `src/components/ui/*`
+- `src/modules/*/presentations/views/*`
+- `src/modules/*/presentations/components/*`
+
+That current inventory is `275` files total:
+
+- `26` shared component files under `src/components`
+- `249` module presentation files under `src/modules/*/presentations`
+
+No remaining presentation view/component families are intentionally left outside this pass.
+
+### Newly Confirmed Repeated Families
+
+4. **Rack rows with inline expand/collapse and bypass badges form a real family.**
+   This is no longer just a Yeast one-off. The same “compact module row + live/bypass badge + expander” grammar is now clearly recurring in:
+   - `src/modules/Yeast/presentations/views/YeastPanel.tsx:404`
+   - `src/modules/Yeast/presentations/views/YeastPanel.tsx:533`
+   - `src/modules/Workspace/presentations/views/Inspector/TrackDevicesSection.tsx`
+   - `src/modules/Workspace/presentations/views/Mixer/DeviceChainSection.tsx`
+
+5. **Hero visualizer + control deck sections are a full plugin family, not isolated local taste.**
+   The same layout shows up repeatedly:
+   - a large canvas or diagram first
+   - a compact row or grid of knobs below
+   - a small header rail with chips or mode buttons
+
+   Clear examples now include:
+   - `src/modules/Fermenter/presentations/components/EnvelopeSection.tsx:39`
+   - `src/modules/Fermenter/presentations/components/FilterSection.tsx:30`
+   - `src/modules/Fermenter/presentations/components/LfoSection.tsx:58`
+   - `src/modules/Levain/presentations/components/ExpressionPanel.tsx:108`
+   - `src/modules/Levain/presentations/components/LegatoTuning.tsx:106`
+   - `src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx:291`
+   - `src/modules/Gluten/presentations/views/GlutenPanel.tsx:430`
+
+6. **“Quick read” and “status tile” sidecards are repeated enough to deserve a neutral primitive pair.**
+   The DAW should stay quieter than the plugins, but the pattern is stable:
+   - small uppercase eyebrow
+   - 2–5 compact metric tiles
+   - a low-contrast diagnostic list in a side rail
+
+   Confirmed again in:
+   - `src/modules/Gluten/presentations/views/GlutenPanel.tsx:536`
+   - `src/modules/Levain/presentations/views/LevainPanel.tsx:318`
+   - `src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx:333`
+   - `src/modules/Proof/presentations/views/ProofPanel.tsx:293`
+   - `src/modules/Scoring/presentations/views/ScoringPanel.tsx:143`
+   - `src/modules/Toaster/presentations/views/ToasterPanel.tsx:286`
+
+7. **Keyboard/split and step-grid editors are recurring enough to track as their own primitive families.**
+   These should not collapse into generic cards, but the chrome, labels, and interaction affordances repeat:
+   - `src/modules/Yeast/presentations/components/KeyboardSplit.tsx:22`
+   - `src/modules/VirtualKeyboard/presentations/views/VirtualKeyboard.tsx:344`
+   - `src/modules/Toaster/presentations/components/StepSequencer.tsx:21`
+   - `src/modules/Yeast/presentations/components/StepPatternEditor.tsx:22`
+
+8. **Launch, loading, notification, and lightweight utility overlays form a real shell-side family.**
+   These are not dialogs and not menus, but they keep repeating the same understated overlay grammar:
+   - branded or task-specific title block
+   - restrained ambient glow or gradient wash
+   - compact status copy or action row
+   - fixed-position or full-screen shell treatment
+
+   Confirmed in:
+   - `src/modules/Workspace/presentations/components/LaunchScreen.tsx`
+   - `src/modules/Workspace/presentations/components/ProjectLoadingOverlay.tsx`
+   - `src/modules/Workspace/presentations/components/NotificationToast.tsx`
+   - `src/modules/AiRuntime/presentations/views/VoiceCommandOverlay.tsx`
+   - `src/modules/Collaboration/presentations/views/PresenceOverlay.tsx`
+
+9. **Measured analysis cards and compact analysis-gallery wrappers are also recurring enough to deserve a neutral family.**
+   The visualizer internals should stay local, but the surrounding chrome is repeating:
+   - a compact header band
+   - an inset measurement well
+   - a shallow, bottom-panel-friendly card height
+   - optional measured canvas host behavior
+
+   Confirmed in:
+   - `src/modules/Workspace/presentations/views/AnalysisPanel.tsx`
+   - `src/modules/Workspace/presentations/components/MiniMasterSpectrum.tsx`
+   - `src/modules/Workspace/presentations/views/Metering/Goniometer.tsx`
+   - `src/modules/Workspace/presentations/views/Metering/Oscilloscope.tsx`
+   - `src/modules/Workspace/presentations/views/Metering/SpectrumAnalyzer.tsx`
+
+10. **Editor control rails and lane toolstrips are now clearly a cross-editor family.**
+    The same compact-height grammar appears across MIDI, audio, automation, and timeline tools:
+    - dense top control strip with micro labels
+    - lane or mode selector tucked into the same rail
+    - bottom-panel-friendly height with immediate controls over descriptive copy
+    - repeated divider seams and quiet segmented groups
+
+    Confirmed in:
+    - `src/modules/Workspace/presentations/views/ClipView.tsx`
+    - `src/modules/Workspace/presentations/views/ClipView/PianoRollToolbar.tsx`
+    - `src/modules/Workspace/presentations/views/ClipView/WaveformEditor.tsx`
+    - `src/modules/Workspace/presentations/views/ClipView/AutomationLane.tsx`
+    - `src/modules/Workspace/presentations/views/AutomationBottomPanel.tsx`
+    - `src/modules/Workspace/presentations/views/Timeline/ChordTrackLane.tsx`
+    - `src/modules/Workspace/presentations/views/Timeline/ScratchPadView.tsx`
+    - `src/modules/Workspace/presentations/views/SessionView.tsx`
+
+11. **Inspector assignment cards and chooser rows are a real neutral family, not just section-local markup.**
+    The same pattern repeats across track management, routing, takes, alternatives, sends, clips, and MIDI destinations:
+    - compact section header with a minimal action button
+    - one- or two-column cards for the current assignment set
+    - inline toggles, remove actions, or chooser controls inside each card
+    - understated neutral chrome rather than plugin-style flair
+
+    Confirmed in:
+    - `src/modules/Workspace/presentations/views/Inspector/TrackDevicesSection.tsx`
+    - `src/modules/Workspace/presentations/views/Inspector/TrackClipsSection.tsx`
+    - `src/modules/Workspace/presentations/views/Inspector/TrackAutomationSection.tsx`
+    - `src/modules/Workspace/presentations/views/Inspector/SendsEditor.tsx`
+    - `src/modules/Workspace/presentations/views/Inspector/TrackAlternativesSection.tsx`
+    - `src/modules/Workspace/presentations/views/Inspector/TakesSection.tsx`
+    - `src/modules/Workspace/presentations/views/Inspector/TrackMidiOutputSection.tsx`
+    - `src/modules/Workspace/presentations/views/Inspector/TrackVcaSection.tsx`
+    - `src/modules/Workspace/presentations/views/Inspector/TrackRoutingSection.tsx`
+
+12. **Device-layout param decks have stabilized into their own inspector-side family.**
+    The registry-backed layouts are different per device, but their framing is now obviously repeated:
+    - section header
+    - one hero visualizer or identity band
+    - repeated two-up parameter cards
+    - optional collapsible advanced groups
+
+    Confirmed in:
+    - `src/modules/Workspace/presentations/views/Inspector/GenericDeviceLayout.tsx`
+    - `src/modules/Workspace/presentations/views/Inspector/layouts/BuiltinSynthLayout.tsx`
+    - `src/modules/Workspace/presentations/views/Inspector/layouts/FaustInstrumentLayout.tsx`
+    - `src/modules/Workspace/presentations/views/Inspector/layouts/NativeEffectLayouts.tsx`
+    - `src/modules/Workspace/presentations/views/Inspector/layouts/EQLayout.tsx`
+    - `src/modules/Workspace/presentations/views/Inspector/layouts/CompressorLayout.tsx`
+    - `src/modules/Workspace/presentations/views/Inspector/layouts/DelayLayout.tsx`
+    - `src/modules/Workspace/presentations/views/Inspector/layouts/ReverbLayout.tsx`
+    - `src/modules/Workspace/presentations/views/Inspector/layouts/ChorusLayout.tsx`
+    - `src/modules/Workspace/presentations/views/Inspector/layouts/DistortionLayout.tsx`
+
+This slightly sharpens the priority order:
+
+- DAW chrome, empty states, and command/picker surfaces remain first
+- rack rows / device rows are now a clear neutral-family follow-up
+- utility overlays and metering-gallery wrappers should join the neutral-family track
+- inspector assignment cards and device-layout param decks now belong on the neutral-family track as well
+- plugin hero-section shells, status tiles, and editor chrome are the next themed-family promotion candidates
 
 ---
 

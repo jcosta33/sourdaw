@@ -17,7 +17,7 @@ First, define a Zod schema to specify the shape and validation rules for your fo
 ```typescript
 // Project/presentations/helpers/getProjectSettingsFormSchema.ts
 
-export const getProjectSettingsFormSchema = (t: TFunction) => {
+export function getProjectSettingsFormSchema(t: TFunction) {
     return z.object({
         name: z
             .string()
@@ -30,7 +30,7 @@ export const getProjectSettingsFormSchema = (t: TFunction) => {
         }),
         bpm: z.number().min(20, t('ProjectSettings_form_bpmMinimum')).nullish(),
     });
-};
+}
 
 export type ProjectSettingsFormData = z.infer<ReturnType<typeof getProjectSettingsFormSchema>>;
 ```
@@ -42,6 +42,7 @@ Use the `<Form />` component wrapper to build your form UI. The `<Form />` compo
 ```tsx
 // Project/presentations/views/ProjectSettingsDialogContent.tsx
 
+import { type ReactElement } from 'react';
 import { Form } from 'Common/Form/Form';
 import { FormTextInput } from 'Common/Form/TextInput/TextInput';
 import { FormDropdown } from 'Common/Form/Dropdown/Dropdown';
@@ -51,7 +52,7 @@ type ProjectSettingsDialogContentProps = {
     closeDialog: () => void;
 };
 
-export const ProjectSettingsDialogContent = ({ projectId, closeDialog }: ProjectSettingsDialogContentProps) => {
+export const ProjectSettingsDialogContent = ({ projectId, closeDialog }: ProjectSettingsDialogContentProps): ReactElement => {
     const { t } = useTranslation();
     const { updateProjectSettings, isPending } = useUpdateProjectSettings();
 
@@ -161,7 +162,7 @@ For deeply nested components that need access to form methods without prop drill
 ```tsx
 import { useFormContext } from 'Common/Form/Context/FormContext';
 
-const SampleRateField = () => {
+const SampleRateField = (): ReactElement => {
     const { setValue, watch } = useFormContext();
     const rate = watch('sampleRate');
 
@@ -173,7 +174,7 @@ const SampleRateField = () => {
 };
 
 // Parent form
-export const ProjectSettingsForm = () => {
+export const ProjectSettingsForm = (): ReactElement => {
     return (
         <Form schema={schema} onSubmit={handleSubmit}>
             <FormTextInput name="name" label={{ children: 'Name' }} />
@@ -201,12 +202,12 @@ export const ProjectSettingsForm = () => {
 For conditional field rendering based on form values, extract the conditional logic into a separate component that uses `useFormContext`. This ensures proper hook usage and component lifecycle management.
 
 ```tsx
-import { useEffect } from 'react';
+import { type ReactElement, useEffect } from 'react';
 import { Form } from 'Common/Form/Form';
 import { useFormContext } from 'Common/Form/Context/FormContext';
 import { FormTextInput } from 'Common/Form/TextInput/TextInput';
 
-export const AudioExportForm = () => {
+export const AudioExportForm = (): ReactElement => {
     const handleSubmit = (formData: AudioExportFormData) => {
         // Handle submission
     };
@@ -251,6 +252,7 @@ const ConditionalAudioFields = () => {
 Use the `useFieldArray` hook to manage dynamic lists of inputs, such as inserting multiple plugins into a track's effects chain. Extract the `control` prop from the `Form` component using the function-as-children pattern and pass it to `useFieldArray` at the component level.
 
 ```tsx
+import { type ReactElement } from 'react';
 import { useFieldArray, type Control } from 'react-hook-form';
 import { Form } from 'Common/Form/Form';
 import { FormTextInput } from 'Common/Form/TextInput/TextInput';
@@ -265,7 +267,7 @@ type PluginChainFormData = {
     plugins: PluginData[];
 };
 
-export const PluginChainForm = () => {
+export const PluginChainForm = (): ReactElement => {
     const handleSubmit = (formData: PluginChainFormData) => {
         // Handle submission
     };
@@ -350,11 +352,12 @@ Connect your form's submission handler to a TanStack Query mutation to process t
 ```tsx
 // Project/presentations/views/ProjectSettingsDialogContent.tsx
 
+import { type ReactElement } from 'react';
 import { Form } from 'Common/Form/Form';
 import { FormTextInput } from 'Common/Form/TextInput/TextInput';
 import { FormDropdown } from 'Common/Form/Dropdown/Dropdown';
 
-export const ProjectSettingsDialogContent = ({ projectId, closeDialog }: ProjectSettingsDialogContentProps) => {
+export const ProjectSettingsDialogContent = ({ projectId, closeDialog }: ProjectSettingsDialogContentProps): ReactElement => {
     const { t } = useTranslation();
     const { saveProjectSettings, isPending } = useSaveProjectSettings();
 
@@ -444,6 +447,7 @@ export const LegacyManualProjectForm = () => {
 };
 
 // ✅ Good: Form component + Zod schema handle validation and state efficiently
+import { type ReactElement } from 'react';
 import * as z from 'zod';
 
 import { Form } from 'Common/Form/Form';
@@ -451,7 +455,7 @@ import { FormTextInput } from 'Common/Form/TextInput/TextInput';
 
 const schemaProjectFormSchema = z.object({ name: z.string().min(1, 'Name required') });
 
-export const SchemaProjectForm = () => {
+export const SchemaProjectForm = (): ReactElement => {
     const handleSubmit = (data: z.infer<typeof schemaProjectFormSchema>) => {
         // ... submit
     };
@@ -686,6 +690,7 @@ export const LegacyProjectSettingsForm = () => {
 **After: Schema-driven with `<Form />`**
 
 ```tsx
+import { type ReactElement } from 'react';
 import * as z from 'zod';
 import { Form } from 'Common/Form/Form';
 import { FormTextInput } from 'Common/Form/TextInput/TextInput';
@@ -697,7 +702,7 @@ const modernFormSchema = z.object({
 
 type FormData = z.infer<typeof modernFormSchema>;
 
-export const ModernProjectSettingsForm = () => {
+export const ModernProjectSettingsForm = (): ReactElement => {
     const handleSubmit = (data: FormData) => {
         // Submit logic - data is already validated
     };
@@ -743,6 +748,7 @@ export const LegacyProjectSettingsComponent = () => {
 **After: Use `<Form />` directly**
 
 ```tsx
+import { type ReactElement } from 'react';
 import * as z from 'zod';
 import { Form } from 'Common/Form/Form';
 import { FormTextInput } from 'Common/Form/TextInput/TextInput';
@@ -752,7 +758,7 @@ const modernComponentSchema = z.object({
     sampleRate: z.string().min(1),
 });
 
-export const ModernComponentSettings = () => {
+export const ModernComponentSettings = (): ReactElement => {
     const handleSubmit = (data: z.infer<typeof modernComponentSchema>) => {
         // Submit logic
     };
