@@ -69,7 +69,7 @@ export const AlphaNoticeDialog = ({ open, onOpenChange }: AlphaNoticeDialogProps
                         <button
                             type="button"
                             className="group flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border border-[var(--color-accent-orange)]/25 bg-[var(--color-accent-orange)]/10 text-[var(--color-accent-orange)] transition-all duration-200 cursor-pointer hover:bg-[var(--color-accent-orange)]/20 hover:border-[var(--color-accent-orange)]/40 hover:shadow-[0_0_16px_rgba(217,119,6,0.2)]"
-                            onClick={() => window.open('https://discord.gg/your-discord-link', '_blank')}
+                            onClick={() => window.open('https://discord.gg/bJHmmfY4', '_blank')}
                         >
                             <DiscordIcon className="size-4" />
                             <span className="text-xs font-semibold">Join the Bakery</span>
