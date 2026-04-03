@@ -22,11 +22,7 @@ export const ProjectName = ({ name, dirty }: ProjectNameProps): ReactElement => 
         return (
             <div className="flex items-center gap-1.5 shrink-0">
                 <input
-                    className="h-6 w-32 rounded-sm px-1.5 text-xs text-foreground outline-none ring-1 ring-ring font-medium"
-                    style={{
-                        background: 'linear-gradient(180deg, #080808 0%, #0d0d0d 100%)',
-                        boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.7)',
-                    }}
+                    className="daw-readout-well h-6 w-32 rounded-sm px-1.5 text-xs font-medium text-foreground outline-none ring-1 ring-ring"
                     value={value}
                     onChange={(e) => setValue(e.target.value)}
                     onBlur={commit}
@@ -57,15 +53,7 @@ export const ProjectName = ({ name, dirty }: ProjectNameProps): ReactElement => 
                     onDoubleClick={() => saveProject()}
                 >
                     {/* Project name in a subtle recessed badge */}
-                    <div
-                        className="flex items-center gap-1 rounded-sm px-2 py-0.5"
-                        style={{
-                            background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
-                            boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
-                            border: '1px solid rgba(0,0,0,0.5)',
-                            borderBottom: '1px solid rgba(40,40,40,0.3)',
-                        }}
-                    >
+                    <div className="daw-readout-well flex items-center gap-1 rounded-sm px-2 py-0.5">
                         <span className="text-xs font-medium text-foreground/80 group-hover:text-foreground truncate max-w-32 transition-colors">
                             {name}
                         </span>

@@ -86,24 +86,25 @@ Publish events from business operations:
 ```typescript
 // Track/useCases/addTrack.ts
 
-type AddTrackOutput = Promise<Track>;
+import { Container } from '#/helpers/DependencyInjector/Container';
+import { EventBus } from '#/helpers/Event/EventBus';
 
-export const addTrack = inject({ createTrackApi, eventBus: EventBus }, ({ createTrackApi, eventBus }) => {
-    return async function ({ projectId, name, kind }: AddTrackInput): AddTrackOutput {
-        const track = await createTrackApi({ projectId, name, kind });
+const eventBus = Container.getInstance().get(EventBus);
 
-        // Publish domain event
-        eventBus.emit(
-            new TrackAddedEvent({
-                trackId: track.id,
-                name: track.name,
-                kind: track.kind,
-            })
-        );
+export async function addTrack({ projectId, name, kind }: AddTrackInput): Promise<Track> {
+    const track = await createTrackApi({ projectId, name, kind });
 
-        return track;
-    };
-});
+    // Publish domain event
+    eventBus.emit(
+        new TrackAddedEvent({
+            trackId: track.id,
+            name: track.name,
+            kind: track.kind,
+        })
+    );
+
+    return track;
+}
 ```
 
 When publishing events, ensure the payload contains sufficient, immutable context so that subscribers can act on the event without needing to make additional API calls to fetch related data.
@@ -119,16 +120,16 @@ Subscribe to events from other domains:
 ```typescript
 // Mixer/useCases/trackEventHandlers.ts
 
-type HandleTrackAddedOutput = Promise<void>;
+import { Container } from '#/helpers/DependencyInjector/Container';
+import { EventBus } from '#/helpers/Event/EventBus';
 
-export const handleTrackAdded = inject({ queryClient: QueryClient }, ({ queryClient }) => {
-    return async function (event: TrackAddedEvent): HandleTrackAddedOutput {
-        // Invalidate the mixer tracks cache so the new track fader appears
-        await queryClient.invalidateQueries({
-            queryKey: ['mixer-tracks', event.payload.projectId],
-        });
-    };
-});
+const eventBus = Container.getInstance().get(EventBus);
+
+export async function handleTrackAdded(event: TrackAddedEvent): Promise<void> {
+    // Update the mixer tracks store so the new track fader appears
+    const store = getMixerTracksStore();
+    store.set([...store.value, event.payload]);
+}
 
 // Register event handlers
 eventBus.on(TrackAddedEvent, handleTrackAdded);
@@ -136,28 +137,28 @@ eventBus.on(TrackAddedEvent, handleTrackAdded);
 
 #### Creating reusable subscription helpers
 
-For events that are frequently subscribed to, you can create a reusable helper function using `inject`. This encapsulates the subscription logic and makes it easy to use in different parts of the application, especially in React hooks.
+For events that are frequently subscribed to, you can create a reusable helper function. This encapsulates the subscription logic and makes it easy to use in different parts of the application, especially in React hooks.
 
 ```ts
 // Common/Flags/useCases/subscribeToFlagsFetchedEvent.ts
-import { inject } from '#/helpers/DependencyInjector/inject';
+import { Container } from '#/helpers/DependencyInjector/Container';
 import { EventBus } from '#/helpers/Event/EventBus';
 import { FlagsFetchedEvent } from '../events/FlagsFetchedEvent';
+
+const eventBus = Container.getInstance().get(EventBus);
 
 type SubscribeToFlagsFetchedEventCallback = (flags: FlagsFetchedEvent['payload']) => void;
 type Unsubscribe = () => void;
 
-export const subscribeToFlagsFetchedEvent = inject({ eventBus: EventBus }, ({ eventBus }) => {
-    return function (callback: SubscribeToFlagsFetchedEventCallback): Unsubscribe {
-        return eventBus.on(FlagsFetchedEvent, (event) => {
-            callback(event.payload);
-        });
-    };
-});
+export function subscribeToFlagsFetchedEvent(callback: SubscribeToFlagsFetchedEventCallback): Unsubscribe {
+    return eventBus.on(FlagsFetchedEvent, (event) => {
+        callback(event.payload);
+    });
+}
 ```
 
 > [!WARNING]
-> Using `inject` in hooks is forbidden as it does not work correctly after the minification process. Use `Container.getInstance()` to resolve dependencies instead.
+> Do not resolve Container dependencies at module scope in hook files — resolve them inside `useEffect` instead. Module-scope resolution in a hook file can evaluate before bootstrap has registered dependencies. See [dependency injection](./dependency-injection.md) for the full rule.
 
 The following example illustrates the anti-pattern and its fix. Note the use of `useEffectEvent` (stable in React 19.2) to capture the latest callback without adding it to the Effect's dependency array, preventing unnecessary re-subscriptions:
 

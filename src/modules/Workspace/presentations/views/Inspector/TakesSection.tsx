@@ -1,4 +1,5 @@
 import { type ReactElement, useSyncExternalStore } from 'react';
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Card } from '#/components/ui/card';
 import { Button } from '#/components/ui/button';
 import { cn } from '#/helpers/Styles/cn';
@@ -37,14 +38,16 @@ export const TakesSection = ({ trackId }: TakesSectionProps): ReactElement | nul
 
     return (
         <div className="pt-2">
-            <div className="px-1 mb-2 border-b border-border-hairline pb-1 flex flex-row items-center justify-between">
-                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                    Takes ({lane.takes.length})
-                </div>
-                <Button variant="ghost" size="xs" onClick={() => flattenComp(trackId)} aria-label="Flatten comp">
-                    Flatten
-                </Button>
-            </div>
+            <DawHeaderBand
+                compact
+                className="mb-2 rounded-sm"
+                title={`Takes (${lane.takes.length})`}
+                actions={
+                    <Button variant="ghost" size="xs" onClick={() => flattenComp(trackId)} aria-label="Flatten comp">
+                        Flatten
+                    </Button>
+                }
+            />
             <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
                 {lane.takes.map((take) => (
                     <Card

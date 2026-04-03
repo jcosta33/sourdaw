@@ -1,4 +1,6 @@
 import { type ReactElement, useSyncExternalStore } from 'react';
+import { DawEmptyState } from '#/components/daw/DawEmptyState';
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Card } from '#/components/ui/card';
 import { audioGraphStore } from '#/modules/AudioEngine/stores/audioGraphStore';
 import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
@@ -17,9 +19,7 @@ export const TrackRoutingSection = ({ track }: TrackRoutingSectionProps): ReactE
 
     return (
         <div>
-            <div className="px-1 mb-2 border-b border-border-hairline pb-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                Routing
-            </div>
+            <DawHeaderBand compact className="mb-2 rounded-sm" title="Routing" />
             {trackRoutes.length > 0 ? (
                 <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
                     {trackRoutes.map((route) => (
@@ -37,7 +37,12 @@ export const TrackRoutingSection = ({ track }: TrackRoutingSectionProps): ReactE
                     ))}
                 </div>
             ) : (
-                <p className="text-[10px] text-muted-foreground px-1">Default routing to master.</p>
+                <DawEmptyState
+                    compact
+                    className="mx-1"
+                    title="Default routing to master"
+                    description="No custom sends or route overrides are active for this track."
+                />
             )}
         </div>
     );

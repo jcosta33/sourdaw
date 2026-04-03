@@ -25,7 +25,7 @@ import { llmStatusStore } from '../../stores/llmStatusStore';
 import { appendChatMessage, updateChatMessage, setChatGenerating } from '../../stores/chatStore';
 import { pushAiActionGroup } from '../../stores/aiActionHistoryStore';
 import { pushUndo } from '#/modules/Command/stores/undoStore';
-import { createCallbackUndoEntry, generateGroupId } from '#/modules/Command/models/UndoEntry';
+import { createUndoEntry, generateGroupId } from '#/modules/Command/models/UndoEntry';
 import { automergeRepository } from '#/modules/CrdtDocument/repositories/automergeRepository';
 
 const logger = Container.getInstance().get(Logger);
@@ -245,12 +245,12 @@ async function commitDsos(plan: EditPlan, userRequest: string, assistantMsgId: s
     // Binary snapshot after — used for redo.
     const bundleAfter = automergeRepository.saveAll();
 
-    // Undo entry
+    // Undo entry — typed ActionUndoEntry (serializable data, no anonymous closures)
     const { groupId, groupLabel } = generateGroupId(userRequest);
-    const undoEntry = createCallbackUndoEntry(
+    const undoEntry = createUndoEntry(
         `AI: ${plan.intent}`,
-        () => { automergeRepository.restoreSnapshot(bundleBefore); },
-        () => { automergeRepository.restoreSnapshot(bundleAfter); },
+        { type: 'restoreDsoSnapshot', payload: { bundle: bundleAfter } },
+        { type: 'restoreDsoSnapshot', payload: { bundle: bundleBefore } },
         'ai'
     );
     undoEntry.groupId = groupId;

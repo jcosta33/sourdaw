@@ -1,3 +1,5 @@
+import { type DocumentBundle } from '#/modules/CrdtDocument/models/CrdtDocumentTypes';
+
 export type AppAction =
     | { type: 'addTrack'; payload: { name: string; kind: TrackKind } }
     | { type: 'removeTrack'; payload: { trackId: string } }
@@ -264,7 +266,8 @@ export type AppAction =
     | { type: 'setRaveBlend'; payload: { blend: number } }
     | { type: 'enableWarping'; payload: { clipId: string } }
     | { type: 'setWarpAlgorithm'; payload: { clipId: string; algorithm: string } }
-    | { type: 'setWarpPitchShift'; payload: { clipId: string; semitones: number } };
+    | { type: 'setWarpPitchShift'; payload: { clipId: string; semitones: number } }
+    | { type: 'restoreDsoSnapshot'; payload: { bundle: DocumentBundle } };
 
 export type TrackKind = 'audio' | 'midi' | 'bus' | 'master' | 'folder';
 

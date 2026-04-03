@@ -1,4 +1,6 @@
 import { type CSSProperties, type ReactElement, useState, useSyncExternalStore } from 'react';
+import { DawEmptyState } from '#/components/daw/DawEmptyState';
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { Button } from '#/components/ui/button';
 import { X } from 'lucide-react';
@@ -39,20 +41,16 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
             }}
             aria-label="Inspector panel"
         >
-            <div
-                className="flex flex-row items-center justify-between px-3 py-2"
-                style={{
-                    background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
-                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5), inset 0 -1px 0 rgba(255,255,255,0.03)',
-                    borderTop: '1px solid rgba(255,255,255,0.06)',
-                    borderBottom: '1px solid rgba(0,0,0,0.4)',
-                }}
-            >
-                <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.6)' }}>Inspector</h2>
-                <Button variant="ghost" size="icon-xs" onClick={toggleInspector} aria-label="Close inspector">
-                    <X className="size-3.5" />
-                </Button>
-            </div>
+            <DawHeaderBand
+                className="rounded-none px-3 py-2"
+                title="Inspector"
+                titleClassName="text-xs font-medium text-muted-foreground uppercase tracking-wider"
+                actions={
+                    <Button variant="ghost" size="icon-xs" onClick={toggleInspector} aria-label="Close inspector">
+                        <X className="size-3.5" />
+                    </Button>
+                }
+            />
 
             <ScrollArea className="flex-1 min-h-0">
                 {selectedDevice && selectedTrack ? (
@@ -82,11 +80,12 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
                         onSelectDevice={setSelectedDeviceId}
                     />
                 ) : (
-                    <div className="flex flex-col items-center justify-center h-full p-6 gap-2">
-                        <span className="text-lg opacity-20 select-none" aria-hidden="true">🍞</span>
-                        <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
-                            No track selected — pick a loaf to inspect.
-                        </p>
+                    <div className="flex h-full items-center justify-center p-6">
+                        <DawEmptyState
+                            className="max-w-64"
+                            title="No track selected"
+                            description="Pick a track, clip, or device to inspect its details."
+                        />
                     </div>
                 )}
             </ScrollArea>

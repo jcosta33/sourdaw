@@ -25,10 +25,7 @@ const getTrackStoreSnapshot = (): Track[] => trackStore.value?.tracks ?? [];
 
 /** Lit-edge separator that follows the NW light source model from the design system */
 const Sep = (): ReactElement => (
-    <div
-        className="w-px h-5 mx-0.5 shrink-0"
-        style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)' }}
-    />
+    <div className="mx-0.5 h-5 w-px shrink-0 daw-seam" />
 );
 
 export const TransportBar = (): ReactElement => {

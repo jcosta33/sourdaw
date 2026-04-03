@@ -1,4 +1,5 @@
 import { type ReactElement, useRef, useSyncExternalStore } from 'react';
+import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { useUndoState } from '../hooks/useUndoState';
 import { useCollaborationState } from '../hooks/useCollaborationState';
 import { useStatusBarMetrics } from '../hooks/useStatusBarMetrics';
@@ -44,121 +45,114 @@ export const StatusBar = (): ReactElement => {
     });
 
     return (
-        <footer
-            className="flex h-6 shrink-0 items-center justify-between border-t border-black/50 px-3"
-            style={{
-                background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
-                boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
-                borderBottom: '1px solid rgba(40,40,40,0.3)',
-            }}
-            role="status"
-            aria-label="Application status"
-        >
-            <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1">
-                    <span className="text-[10px] text-muted-foreground">CPU:</span>
-                    <div className="h-2 w-10 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.5)' }}>
-                        <div
-                            ref={cpuBarRef}
-                            className="h-full rounded-full transition-[width] duration-150 bg-[var(--color-state-success)]"
-                            style={{ width: '0%' }}
-                        />
-                    </div>
-                    <span ref={cpuTextRef} className="text-[10px] font-mono text-muted-foreground w-7 text-right">
-                        0%
-                    </span>
-                </div>
-
-                <div ref={memContainerRef} className="flex items-center gap-1" style={{ display: 'none' }}>
-                    <span className="text-[10px] text-muted-foreground">MEM:</span>
-                    <span ref={memTextRef} className="text-[10px] font-mono text-muted-foreground">
-                        0 MB
-                    </span>
-                </div>
-
-                <div className="flex items-center gap-1">
-                    <span className="text-[10px] text-muted-foreground">GPU:</span>
-                    {llmStatus?.state === 'generating' ? (
-                        <span className="text-[10px] font-mono text-[var(--color-accent-lavender)] animate-pulse">
-                            active
+        <footer role="status" aria-label="Application status">
+            <DawControlStrip className="h-6 justify-between rounded-none border-t border-black/50 px-3">
+                <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1">
+                        <span className="text-[10px] text-muted-foreground">CPU:</span>
+                        <div className="h-2 w-10 overflow-hidden rounded-full" style={{ background: 'rgba(255,255,255,0.06)', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.5)' }}>
+                            <div
+                                ref={cpuBarRef}
+                                className="h-full rounded-full transition-[width] duration-150 bg-[var(--color-state-success)]"
+                                style={{ width: '0%' }}
+                            />
+                        </div>
+                        <span ref={cpuTextRef} className="w-7 text-right font-mono text-[10px] text-muted-foreground">
+                            0%
                         </span>
-                    ) : llmStatus?.state === 'loading' ? (
-                        <span className="text-[10px] font-mono text-[var(--color-state-warning)]">
-                            {Math.round(llmStatus.progress * 100)}%
-                        </span>
-                    ) : llmStatus?.state === 'ready' ? (
-                        <span className="text-[10px] font-mono text-[var(--color-state-success)]/70">ready</span>
-                    ) : (
-                        <span className="text-[10px] font-mono text-muted-foreground/50">idle</span>
-                    )}
-                </div>
-
-                <span ref={sampleRateRef} className="text-[10px] font-mono tabular-nums text-muted-foreground">
-                    0kHz
-                </span>
-                <span ref={latencyRef} className="text-[10px] font-mono tabular-nums text-muted-foreground">
-                    0.0ms
-                </span>
-
-                <div className="flex items-center gap-1">
-                    <div className="h-2 w-16 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.5)' }}>
-                        <div
-                            ref={masterLevelBarRef}
-                            className="h-full rounded-full bg-[var(--color-state-success)] transition-[width] duration-75"
-                            style={{ width: '0%' }}
-                        />
                     </div>
-                    <span
-                        ref={masterLevelTextRef}
-                        className="text-[10px] font-mono text-muted-foreground w-10 text-right"
-                    >
-                        -∞ dB
-                    </span>
-                </div>
-            </div>
 
-            {selectionLabel ? <span className="text-[10px] text-muted-foreground">{selectionLabel}</span> : null}
+                    <div ref={memContainerRef} className="flex items-center gap-1" style={{ display: 'none' }}>
+                        <span className="text-[10px] text-muted-foreground">MEM:</span>
+                        <span ref={memTextRef} className="font-mono text-[10px] text-muted-foreground">
+                            0 MB
+                        </span>
+                    </div>
 
-            <div className="flex items-center gap-3">
-                {undoState.lastAction ? (
-                    <span className="text-[10px] text-muted-foreground/60">Last: {undoState.lastAction.label}</span>
-                ) : null}
-                <Button
-                    variant="ghost"
-                    size="xs"
-                    className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground h-5"
-                    onClick={toggleCollaborationPanel}
-                    aria-label="Toggle collaboration panel"
-                    title="Collaboration"
-                >
-                    <span
-                        className={cn(
-                            'size-1.5 rounded-full',
-                            collab.connectionStatus === 'connected'
-                                ? 'bg-[var(--color-state-success)]'
-                                : 'bg-muted-foreground/50'
+                    <div className="flex items-center gap-1">
+                        <span className="text-[10px] text-muted-foreground">GPU:</span>
+                        {llmStatus?.state === 'generating' ? (
+                            <span className="animate-pulse font-mono text-[10px] text-[var(--color-accent-lavender)]">
+                                active
+                            </span>
+                        ) : llmStatus?.state === 'loading' ? (
+                            <span className="font-mono text-[10px] text-[var(--color-state-warning)]">
+                                {Math.round(llmStatus.progress * 100)}%
+                            </span>
+                        ) : llmStatus?.state === 'ready' ? (
+                            <span className="font-mono text-[10px] text-[var(--color-state-success)]/70">ready</span>
+                        ) : (
+                            <span className="font-mono text-[10px] text-muted-foreground/50">idle</span>
                         )}
+                    </div>
+
+                    <span ref={sampleRateRef} className="font-mono tabular-nums text-[10px] text-muted-foreground">
+                        0kHz
+                    </span>
+                    <span ref={latencyRef} className="font-mono tabular-nums text-[10px] text-muted-foreground">
+                        0.0ms
+                    </span>
+
+                    <div className="flex items-center gap-1">
+                        <div className="h-2 w-16 overflow-hidden rounded-full" style={{ background: 'rgba(255,255,255,0.06)', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.5)' }}>
+                            <div
+                                ref={masterLevelBarRef}
+                                className="h-full rounded-full bg-[var(--color-state-success)] transition-[width] duration-75"
+                                style={{ width: '0%' }}
+                            />
+                        </div>
+                        <span
+                            ref={masterLevelTextRef}
+                            className="w-10 text-right font-mono text-[10px] text-muted-foreground"
+                        >
+                            -∞ dB
+                        </span>
+                    </div>
+                </div>
+
+                {selectionLabel ? <span className="text-[10px] text-muted-foreground">{selectionLabel}</span> : null}
+
+                <div className="flex items-center gap-3">
+                    {undoState.lastAction ? (
+                        <span className="text-[10px] text-muted-foreground/60">Last: {undoState.lastAction.label}</span>
+                    ) : null}
+                    <Button
+                        variant="ghost"
+                        size="xs"
+                        className="flex h-5 items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
+                        onClick={toggleCollaborationPanel}
+                        aria-label="Toggle collaboration panel"
+                        title="Collaboration"
+                    >
+                        <span
+                            className={cn(
+                                'size-1.5 rounded-full',
+                                collab.connectionStatus === 'connected'
+                                    ? 'bg-[var(--color-state-success)]'
+                                    : 'bg-muted-foreground/50'
+                            )}
+                        />
+                        <Users className="size-3" />
+                        {collab.isEnabled ? collab.peers.length : 0}
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="xs"
+                        className="flex h-5 items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
+                        onClick={toggleUndoHistory}
+                        aria-label="Toggle undo history panel"
+                        title="Undo history"
+                    >
+                        <History className="size-3" />
+                        {undoState.undoCount} undo{undoState.undoCount !== 1 ? 's' : ''}
+                    </Button>
+                    <span
+                        ref={engineStateRef}
+                        className="size-1.5 rounded-full bg-muted-foreground/50"
+                        title="Engine: suspended"
                     />
-                    <Users className="size-3" />
-                    {collab.isEnabled ? collab.peers.length : 0}
-                </Button>
-                <Button
-                    variant="ghost"
-                    size="xs"
-                    className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground h-5"
-                    onClick={toggleUndoHistory}
-                    aria-label="Toggle undo history panel"
-                    title="Undo history"
-                >
-                    <History className="size-3" />
-                    {undoState.undoCount} undo{undoState.undoCount !== 1 ? 's' : ''}
-                </Button>
-                <span
-                    ref={engineStateRef}
-                    className="size-1.5 rounded-full bg-muted-foreground/50"
-                    title="Engine: suspended"
-                />
-            </div>
+                </div>
+            </DawControlStrip>
         </footer>
     );
 };

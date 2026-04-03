@@ -6,6 +6,7 @@
  */
 import { type ReactElement, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Card } from '#/components/ui/card';
 import {
     type DeviceLayoutProps,
@@ -39,15 +40,17 @@ const Collapsible = ({ title, defaultOpen, children }: { title: string; defaultO
     const [open, setOpen] = useState(defaultOpen);
     return (
         <div>
-            <button
-                type="button"
-                className="flex items-center gap-1 w-full px-1 mb-2 border-b border-border-hairline pb-1 cursor-pointer hover:bg-surface-raised/50 rounded-t-sm"
-                onClick={() => setOpen(!open)}
-                aria-expanded={open}
-            >
-                <ChevronDown className={`size-3 text-muted-foreground transition-transform ${open ? '' : '-rotate-90'}`} />
-                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{title}</span>
-            </button>
+            <DawHeaderBand compact className="mb-2 rounded-sm hover:bg-surface-raised/50">
+                <button
+                    type="button"
+                    className="flex w-full items-center gap-1"
+                    onClick={() => setOpen(!open)}
+                    aria-expanded={open}
+                >
+                    <ChevronDown className={`size-3 text-muted-foreground transition-transform ${open ? '' : '-rotate-90'}`} />
+                    <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{title}</span>
+                </button>
+            </DawHeaderBand>
             {open ? children : null}
         </div>
     );

@@ -7,6 +7,7 @@
 import { type Dso } from '../../models/DsoTypes';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
+import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { removeTrack } from '#/modules/Arrangement/useCases/removeTrack';
 import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
@@ -549,6 +550,10 @@ export async function executeDsos(dsos: Dso[]): Promise<string[]> {
     return summaries;
 }
 
+/** Options passed to executeAppAction for all DSO sub-operations.
+ *  skipUndo: the batch undo entry is managed by executeDsoEdit, not per-operation. */
+const DSO_EXEC_OPTIONS = { skipUndo: true, source: 'ai' as const };
+
 async function executeSingleDso(dso: Dso): Promise<void> {
     const state = trackStore.value;
     if (!state) {
@@ -567,72 +572,42 @@ async function executeSingleDso(dso: Dso): Promise<void> {
         }
 
         case 'rename_track': {
-            trackStore.set({
-                ...state,
-                tracks: state.tracks.map((t) => (t.id === dso.track_id ? { ...t, name: dso.name } : t)),
-            });
+            await executeAppAction({ type: 'renameTrack', payload: { trackId: dso.track_id, name: dso.name } }, DSO_EXEC_OPTIONS);
             break;
         }
 
         case 'set_track_volume': {
-            trackStore.set({
-                ...state,
-                tracks: state.tracks.map((t) => (t.id === dso.track_id ? { ...t, gain: dso.gain } : t)),
-            });
+            await executeAppAction({ type: 'setTrackGain', payload: { trackId: dso.track_id, gain: dso.gain } }, DSO_EXEC_OPTIONS);
             break;
         }
 
         case 'set_track_pan': {
-            trackStore.set({
-                ...state,
-                tracks: state.tracks.map((t) => (t.id === dso.track_id ? { ...t, pan: dso.pan } : t)),
-            });
+            await executeAppAction({ type: 'setTrackPan', payload: { trackId: dso.track_id, pan: dso.pan } }, DSO_EXEC_OPTIONS);
             break;
         }
 
         case 'mute_track': {
-            trackStore.set({
-                ...state,
-                tracks: state.tracks.map((t) => (t.id === dso.track_id ? { ...t, muted: dso.muted } : t)),
-            });
+            await executeAppAction({ type: 'muteTrack', payload: { trackId: dso.track_id, muted: dso.muted } }, DSO_EXEC_OPTIONS);
             break;
         }
 
         case 'solo_track': {
-            trackStore.set({
-                ...state,
-                tracks: state.tracks.map((t) => (t.id === dso.track_id ? { ...t, soloed: dso.soloed } : t)),
-            });
+            await executeAppAction({ type: 'soloTrack', payload: { trackId: dso.track_id, soloed: dso.soloed } }, DSO_EXEC_OPTIONS);
             break;
         }
 
         case 'arm_track': {
-            trackStore.set({
-                ...state,
-                tracks: state.tracks.map((t) => (t.id === dso.track_id ? { ...t, armed: dso.armed } : t)),
-            });
+            await executeAppAction({ type: 'armTrack', payload: { trackId: dso.track_id, armed: dso.armed } }, DSO_EXEC_OPTIONS);
             break;
         }
 
         case 'color_track': {
-            trackStore.set({
-                ...state,
-                tracks: state.tracks.map((t) => (t.id === dso.track_id ? { ...t, color: dso.color } : t)),
-            });
+            await executeAppAction({ type: 'setTrackColor', payload: { trackId: dso.track_id, color: dso.color } }, DSO_EXEC_OPTIONS);
             break;
         }
 
         case 'reorder_track': {
-            const idx = state.tracks.findIndex((t) => t.id === dso.track_id);
-            if (idx === -1) {
-                break;
-            }
-            const tracks = [...state.tracks];
-            const [removed] = tracks.splice(idx, 1);
-            if (removed) {
-                tracks.splice(Math.max(0, Math.min(tracks.length, dso.new_index)), 0, removed);
-            }
-            trackStore.set({ ...state, tracks });
+            await executeAppAction({ type: 'reorderTrack', payload: { trackId: dso.track_id, newIndex: dso.new_index } }, DSO_EXEC_OPTIONS);
             break;
         }
 
@@ -648,54 +623,20 @@ async function executeSingleDso(dso: Dso): Promise<void> {
         }
 
         case 'remove_clip': {
-            trackStore.set({
-                ...state,
-                tracks: state.tracks.map((t) => ({
-                    ...t,
-                    clips: t.clips.filter((c) => c.id !== dso.clip_id),
-                })),
-            });
+            await executeAppAction({ type: 'removeClip', payload: { clipId: dso.clip_id } }, DSO_EXEC_OPTIONS);
             break;
         }
 
         case 'rename_clip': {
-            trackStore.set({
-                ...state,
-                tracks: state.tracks.map((t) => ({
-                    ...t,
-                    clips: t.clips.map((c) => (c.id === dso.clip_id ? { ...c, name: dso.name } : c)),
-                })),
-            });
+            await executeAppAction({ type: 'renameClip', payload: { clipId: dso.clip_id, name: dso.name } }, DSO_EXEC_OPTIONS);
             break;
         }
 
         case 'move_clip': {
-            // Find the clip, remove from old track, add to destination
-            let movedClip: (typeof state.tracks)[0]['clips'][0] | undefined;
-            const tracksWithout = state.tracks.map((t) => {
-                const clip = t.clips.find((c) => c.id === dso.clip_id);
-                if (clip) {
-                    movedClip = clip;
-                    return { ...t, clips: t.clips.filter((c) => c.id !== dso.clip_id) };
-                }
-                return t;
-            });
-
-            if (movedClip) {
-                const duration = movedClip.endBeat - movedClip.startBeat;
-                const updatedClip = {
-                    ...movedClip,
-                    startBeat: dso.destination_start_beats,
-                    endBeat: dso.destination_start_beats + duration,
-                };
-                const tracksWithMoved = tracksWithout.map((t) => {
-                    if (t.id === dso.destination_track_id) {
-                        return { ...t, clips: [...t.clips, updatedClip] };
-                    }
-                    return t;
-                });
-                trackStore.set({ ...state, tracks: tracksWithMoved });
-            }
+            await executeAppAction(
+                { type: 'moveClip', payload: { clipId: dso.clip_id, trackId: dso.destination_track_id, startBeat: dso.destination_start_beats } },
+                DSO_EXEC_OPTIONS
+            );
             break;
         }
 
@@ -717,24 +658,7 @@ async function executeSingleDso(dso: Dso): Promise<void> {
         }
 
         case 'split_clip': {
-            // Find and split the clip at the given beat
-            trackStore.set({
-                ...state,
-                tracks: state.tracks.map((t) => {
-                    const clip = t.clips.find((c) => c.id === dso.clip_id);
-                    if (!clip || dso.split_at_beats <= clip.startBeat || dso.split_at_beats >= clip.endBeat) {
-                        return t;
-                    }
-                    const left = { ...clip, endBeat: dso.split_at_beats };
-                    const right = {
-                        ...clip,
-                        id: `${clip.id}-split-${Date.now()}`,
-                        name: `${clip.name} (R)`,
-                        startBeat: dso.split_at_beats,
-                    };
-                    return { ...t, clips: [...t.clips.filter((c) => c.id !== dso.clip_id), left, right] };
-                }),
-            });
+            await executeAppAction({ type: 'splitClip', payload: { clipId: dso.clip_id, beat: dso.split_at_beats } }, DSO_EXEC_OPTIONS);
             break;
         }
 
@@ -758,34 +682,17 @@ async function executeSingleDso(dso: Dso): Promise<void> {
         }
 
         case 'remove_device': {
-            trackStore.set({
-                ...state,
-                tracks: state.tracks.map((t) => {
-                    if (t.id !== dso.track_id) {
-                        return t;
-                    }
-                    return { ...t, devices: t.devices.filter((d) => d.id !== dso.device_id) };
-                }),
-            });
+            await executeAppAction({ type: 'removeDevice', payload: { deviceId: dso.device_id } }, DSO_EXEC_OPTIONS);
             break;
         }
 
         case 'bypass_device': {
-            trackStore.set({
-                ...state,
-                tracks: state.tracks.map((t) => ({
-                    ...t,
-                    devices: t.devices.map((d) => (d.id === dso.device_id ? { ...d, bypassed: dso.bypassed } : d)),
-                })),
-            });
+            await executeAppAction({ type: 'bypassDevice', payload: { deviceId: dso.device_id, bypassed: dso.bypassed } }, DSO_EXEC_OPTIONS);
             break;
         }
 
         case 'set_tempo': {
-            const ts = transportStore.value;
-            if (ts) {
-                transportStore.set({ ...ts, tempo: Math.max(20, Math.min(999, dso.bpm)) });
-            }
+            await executeAppAction({ type: 'setTempo', payload: { bpm: Math.max(20, Math.min(999, dso.bpm)) } }, DSO_EXEC_OPTIONS);
             break;
         }
 
@@ -818,28 +725,10 @@ async function executeSingleDso(dso: Dso): Promise<void> {
             if (!resolvedId) {
                 break;
             }
-
-            // Re-read state since insert_device may have mutated it
-            const currentState = trackStore.value;
-            if (!currentState) {
-                break;
-            }
-
-            trackStore.set({
-                ...currentState,
-                tracks: currentState.tracks.map((t) => ({
-                    ...t,
-                    devices: t.devices.map((d) => {
-                        if (d.id !== resolvedId) {
-                            return d;
-                        }
-                        return {
-                            ...d,
-                            parameterValues: { ...(d.parameterValues ?? {}), [dso.param_name]: dso.value },
-                        };
-                    }),
-                })),
-            });
+            await executeAppAction(
+                { type: 'setDeviceParameter', payload: { deviceId: resolvedId, paramId: dso.param_name, value: dso.value } },
+                DSO_EXEC_OPTIONS
+            );
             break;
         }
 
@@ -871,13 +760,7 @@ async function executeSingleDso(dso: Dso): Promise<void> {
         }
 
         case 'set_clip_gain': {
-            trackStore.set({
-                ...state,
-                tracks: state.tracks.map((t) => ({
-                    ...t,
-                    clips: t.clips.map((c) => (c.id === dso.clip_id ? { ...c, gain: dso.gain } : c)),
-                })),
-            });
+            await executeAppAction({ type: 'setClipGain', payload: { clipId: dso.clip_id, gain: dso.gain } }, DSO_EXEC_OPTIONS);
             break;
         }
 
@@ -919,8 +802,7 @@ async function executeSingleDso(dso: Dso): Promise<void> {
         }
 
         case 'transpose_notes': {
-            const { transposeNotes } = await import('#/modules/MIDI/useCases/midiNoteTransforms/transposeNotes');
-            transposeNotes(dso.clip_id, dso.semitones);
+            await executeAppAction({ type: 'transposeNotes', payload: { clipId: dso.clip_id, semitones: dso.semitones } }, DSO_EXEC_OPTIONS);
             break;
         }
 

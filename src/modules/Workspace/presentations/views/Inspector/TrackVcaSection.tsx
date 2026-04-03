@@ -1,4 +1,5 @@
 import { type ReactElement } from 'react';
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Card } from '#/components/ui/card';
 import { Button } from '#/components/ui/button';
 import { Plus } from 'lucide-react';
@@ -12,21 +13,25 @@ type TrackVcaSectionProps = {
 export const TrackVcaSection = ({ track }: TrackVcaSectionProps): ReactElement => {
     return (
         <div>
-            <div className="px-1 mb-2 border-b border-border-hairline pb-1 flex flex-row items-center justify-between">
-                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">VCA Group</div>
-                <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={() => {
-                        const name = `VCA ${getVcaGroups().length + 1}`;
-                        createVcaGroup(name, [track.id]);
-                    }}
-                    aria-label="Create VCA group"
-                    title="Create new VCA group with this track"
-                >
-                    <Plus className="size-3" />
-                </Button>
-            </div>
+            <DawHeaderBand
+                compact
+                className="mb-2 rounded-sm"
+                title="VCA Group"
+                actions={
+                    <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={() => {
+                            const name = `VCA ${getVcaGroups().length + 1}`;
+                            createVcaGroup(name, [track.id]);
+                        }}
+                        aria-label="Create VCA group"
+                        title="Create new VCA group with this track"
+                    >
+                        <Plus className="size-3" />
+                    </Button>
+                }
+            />
             <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
                 <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-2">
                     <div className="flex items-center gap-2">

@@ -1,4 +1,6 @@
 import { type ReactElement } from 'react';
+import { DawEmptyState } from '#/components/daw/DawEmptyState';
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Card } from '#/components/ui/card';
 import { Slider } from '#/components/ui/slider';
 import { Button } from '#/components/ui/button';
@@ -19,17 +21,7 @@ export const SendsEditor = ({ track }: SendsEditorProps): ReactElement => {
 
     return (
         <div>
-            <div
-                className="px-2 py-1.5 mb-2 rounded-sm flex flex-row items-center justify-between"
-                style={{
-                    background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
-                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5), inset 0 -1px 0 rgba(255,255,255,0.03)',
-                    borderTop: '1px solid rgba(255,255,255,0.06)',
-                    borderBottom: '1px solid rgba(0,0,0,0.4)',
-                }}
-            >
-                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.6)' }}>Sends</div>
-            </div>
+            <DawHeaderBand compact className="mb-2 rounded-sm" title="Sends" />
             {buses.length > 0 ? (
                 <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
                     {buses.map((bus) => {
@@ -93,19 +85,24 @@ export const SendsEditor = ({ track }: SendsEditorProps): ReactElement => {
                     })}
                 </div>
             ) : (
-                <div className="px-1">
-                    <p className="text-[10px] text-muted-foreground mb-2 italic">No bus tracks yet — share the batch.</p>
-                    <Button
-                        variant="outline"
-                        size="xs"
-                        onClick={() => {
-                            addTrack({ name: `Bus ${buses.length + 1}`, kind: 'bus' });
-                        }}
-                    >
-                        <Plus className="size-3 mr-1" />
-                        Create Bus
-                    </Button>
-                </div>
+                <DawEmptyState
+                    compact
+                    className="mx-1"
+                    title="No bus tracks yet"
+                    description="Create a bus to start sharing signal between tracks."
+                    action={
+                        <Button
+                            variant="outline"
+                            size="xs"
+                            onClick={() => {
+                                addTrack({ name: `Bus ${buses.length + 1}`, kind: 'bus' });
+                            }}
+                        >
+                            <Plus className="size-3 mr-1" />
+                            Create Bus
+                        </Button>
+                    }
+                />
             )}
         </div>
     );

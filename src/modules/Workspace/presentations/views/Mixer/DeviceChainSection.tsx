@@ -8,7 +8,7 @@ import { reorderDevices } from '#/modules/Arrangement/useCases/device/reorderDev
 import { getPlatformPlugins } from '#/modules/Arrangement/useCases/trackQueries';
 import { openInspector } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
-import { getAllModulationRoutes, MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases/pluginQueries';
+import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases/pluginQueries';
 
 type DeviceChainSectionProps = {
     track: Track;
@@ -66,12 +66,6 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                             <span className="text-[10px] text-muted-foreground">
                                 <span className="text-[9px] text-muted-foreground/50 mr-0.5">≡</span>
                                 {d.name}
-                                {getAllModulationRoutes().some((r) => r.target.deviceId === d.id) ? (
-                                    <span
-                                        className="ml-0.5 inline-block size-1.5 rounded-full bg-[var(--color-accent-lavender)]"
-                                        title="Modulated"
-                                    />
-                                ) : null}
                             </span>
                         </button>
                         <button

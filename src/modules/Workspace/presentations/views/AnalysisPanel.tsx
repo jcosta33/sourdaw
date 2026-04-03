@@ -1,4 +1,5 @@
 import { type ReactElement, type ReactNode, useRef, useState, useEffect } from 'react';
+import { DawAnalysisCard } from '#/components/daw/DawAnalysisCard';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { LUFSMeter } from './Metering/LUFSMeter';
 import { PhaseCorrelationDisplay } from './Metering/PhaseCorrelationDisplay';
@@ -47,102 +48,65 @@ const Measured = ({ children, className = '' }: MeasuredProps): ReactElement => 
     );
 };
 
-/* ── Card wrapper ────────────────────────────────────── */
-type AnalysisCardProps = {
-    title: string;
-    children: ReactNode;
-    className?: string;
-};
-
-const AnalysisCard = ({ title, children, className = '' }: AnalysisCardProps): ReactElement => (
-    <div
-        className={`rounded-lg overflow-hidden flex flex-col min-w-0 min-h-0 ${className}`}
-        style={{
-            background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
-            boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
-            border: '1px solid rgba(0,0,0,0.4)',
-            borderBottom: '1px solid rgba(40,40,40,0.3)',
-        }}
-    >
-        <div
-            className="px-2.5 py-1 shrink-0"
-            style={{
-                borderBottom: '1px solid transparent',
-                backgroundImage: 'linear-gradient(to right, rgba(255,255,255,0.06), rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2))',
-                backgroundSize: '100% 1px',
-                backgroundRepeat: 'no-repeat',
-                backgroundPosition: 'bottom',
-            }}
-        >
-            <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{title}</h3>
-        </div>
-        <div className="flex-1 flex items-center justify-center min-h-0 min-w-0 overflow-hidden">{children}</div>
-    </div>
-);
-
 /* ── Panel ───────────────────────────────────────────── */
 export const AnalysisPanel = (): ReactElement => {
     return (
         <div className="flex flex-col h-full bg-surface-base">
             <ScrollArea className="flex-1">
                 <div className="p-2 flex flex-wrap gap-2">
-                    {/* Wide cards: min 280, max 600, h-[140px] */}
-                    <AnalysisCard title="Spectrum Analyzer" className="min-w-[280px] max-w-[600px] flex-1 h-[140px]">
+                    <DawAnalysisCard title="Spectrum Analyzer" className="min-w-[280px] max-w-[600px] flex-1 h-[140px]">
                         <Measured className="w-full h-full">
                             {({ width, height }) => <SpectrumAnalyzer width={width} height={height} />}
                         </Measured>
-                    </AnalysisCard>
+                    </DawAnalysisCard>
 
-                    <AnalysisCard title="Oscilloscope" className="min-w-[280px] max-w-[600px] flex-1 h-[140px]">
+                    <DawAnalysisCard title="Oscilloscope" className="min-w-[280px] max-w-[600px] flex-1 h-[140px]">
                         <Measured className="w-full h-full">
                             {({ width, height }) => <Oscilloscope width={width} height={height} />}
                         </Measured>
-                    </AnalysisCard>
+                    </DawAnalysisCard>
 
-                    <AnalysisCard title="Spectrogram" className="min-w-[280px] max-w-[600px] flex-1 h-[140px]">
+                    <DawAnalysisCard title="Spectrogram" className="min-w-[280px] max-w-[600px] flex-1 h-[140px]">
                         <Measured className="w-full h-full">
                             {({ width, height }) => <Spectrogram width={width} height={height} />}
                         </Measured>
-                    </AnalysisCard>
+                    </DawAnalysisCard>
 
-                    <AnalysisCard title="Wavetable 3D" className="min-w-[280px] max-w-[600px] flex-1 h-[140px]">
+                    <DawAnalysisCard title="Wavetable 3D" className="min-w-[280px] max-w-[600px] flex-1 h-[140px]">
                         <Measured className="w-full h-full">
                             {({ width, height }) => <Wavetable3D width={width} height={height} />}
                         </Measured>
-                    </AnalysisCard>
+                    </DawAnalysisCard>
 
-                    {/* Square cards: fixed width, same row */}
-                    <AnalysisCard title="Goniometer" className="w-[140px] shrink-0 h-[140px]">
+                    <DawAnalysisCard title="Goniometer" className="w-[140px] shrink-0 h-[140px]">
                         <Measured className="w-full h-full">
                             {({ width, height }) => {
                                 const s = Math.min(width, height);
                                 return <Goniometer size={s} />;
                             }}
                         </Measured>
-                    </AnalysisCard>
+                    </DawAnalysisCard>
 
-                    <AnalysisCard title="Spatial Panner" className="w-[140px] shrink-0 h-[140px]">
+                    <DawAnalysisCard title="Spatial Panner" className="w-[140px] shrink-0 h-[140px]">
                         <Measured className="w-full h-full">
                             {({ width, height }) => {
                                 const s = Math.min(width, height);
                                 return <SpatialPanner size={s} />;
                             }}
                         </Measured>
-                    </AnalysisCard>
+                    </DawAnalysisCard>
 
-                    {/* Tall narrow: LUFS */}
-                    <AnalysisCard title="LUFS" className="w-[80px] shrink-0 h-[140px]">
+                    <DawAnalysisCard title="LUFS" className="w-[80px] shrink-0 h-[140px]">
                         <Measured className="w-full h-full">
                             {({ width, height }) => <LUFSMeter width={Math.min(width, 60)} height={height} />}
                         </Measured>
-                    </AnalysisCard>
+                    </DawAnalysisCard>
 
-                    {/* Full-width bar: Phase Correlation */}
-                    <AnalysisCard title="Phase Correlation" className="w-full h-[48px]">
+                    <DawAnalysisCard title="Phase Correlation" className="w-full h-[48px]">
                         <Measured className="w-full h-full">
                             {({ width }) => <PhaseCorrelationDisplay width={width} height={20} />}
                         </Measured>
-                    </AnalysisCard>
+                    </DawAnalysisCard>
                 </div>
             </ScrollArea>
         </div>

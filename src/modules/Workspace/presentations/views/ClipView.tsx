@@ -1,6 +1,8 @@
 import { type ReactElement, useState, useRef, useSyncExternalStore } from 'react';
 import { useTracks } from '../hooks/useTracks';
 import { Button } from '#/components/ui/button';
+import { DawControlStrip } from '#/components/daw/DawControlStrip';
+import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { setWorkspaceMode } from '../../useCases/setWorkspaceMode';
 import { selectClip } from '../../useCases/togglePanel/panelToggles';
 import { workspaceStore } from '../../stores/workspaceStore';
@@ -28,11 +30,17 @@ export const ClipView = (): ReactElement => {
 
     if (!selectedTrack) {
         return (
-            <div className="flex h-full flex-col items-center justify-center gap-3">
-                <p className="text-sm text-muted-foreground">Select a track to edit clips</p>
-                <Button variant="outline" size="sm" onClick={() => setWorkspaceMode('arrange')}>
-                    Back to Arrange
-                </Button>
+            <div className="flex h-full p-4">
+                <DawEmptyState
+                    className="flex-1"
+                    title="Select a track to edit clips"
+                    description="Choose a track in the arrangement, then return here to edit notes, audio, and clip automation."
+                    action={
+                        <Button variant="outline" size="sm" onClick={() => setWorkspaceMode('arrange')}>
+                            Back to Arrange
+                        </Button>
+                    }
+                />
             </div>
         );
     }
@@ -55,15 +63,7 @@ export const ClipView = (): ReactElement => {
 
     return (
         <div className="flex h-full flex-col">
-            <div
-                className="flex items-center gap-2 px-3 py-1.5"
-                style={{
-                    background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
-                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
-                    border: '1px solid rgba(0,0,0,0.4)',
-                    borderBottom: '1px solid rgba(40,40,40,0.3)',
-                }}
-            >
+            <DawControlStrip className="px-3 py-1.5">
                 <span className="text-xs font-medium text-foreground">{selectedTrack.name}</span>
                 {selectedClip ? <span className="text-xs text-muted-foreground">— {selectedClip.name}</span> : null}
                 {selectedTrack.clips.length > 1 ? (
@@ -101,7 +101,7 @@ export const ClipView = (): ReactElement => {
                         </Button>
                     </div>
                 ) : null}
-            </div>
+            </DawControlStrip>
 
             <div className="flex flex-1 overflow-hidden">
                 {selectedTrack.kind === 'midi' && selectedClip ? (
@@ -119,8 +119,13 @@ export const ClipView = (): ReactElement => {
                 ) : selectedClip ? (
                     <WaveformEditor clipId={selectedClip.audioBufferId ?? selectedClip.id} />
                 ) : (
-                    <div className="flex flex-1 items-center justify-center">
-                        <p className="text-xs text-muted-foreground">No clips on this track. Add a clip first.</p>
+                    <div className="flex flex-1 p-4">
+                        <DawEmptyState
+                            compact
+                            className="flex-1"
+                            title="No clips on this track"
+                            description="Add or record a clip in Arrange view, then return here to edit it."
+                        />
                     </div>
                 )}
             </div>

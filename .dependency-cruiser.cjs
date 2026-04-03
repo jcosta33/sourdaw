@@ -56,6 +56,12 @@ const PRIVATE_PRESENTATION_FOLDERS =
 const PRIVATE_INTERNAL_FOLDERS =
     '(models/|validators/|services/|repositories/|transformers/|engine/|runtime/|worklets/)';
 
+const MODULE_PRESENTATION_PATH_NOT = [
+    '^src/modules/[^/]+/presentations/',
+    '^src/modules/Common/[^/]+/presentations/',
+    '^src/modules/Supporting/[^/]+/presentations/',
+];
+
 // ------------------------------
 // Config
 // ------------------------------
@@ -330,10 +336,10 @@ module.exports = {
             comment: 'React belongs only in presentations/. Business and I/O layers must stay React-free.',
             from: {
                 path: '^(src|application)/.+',
-                pathNot: ['^' + MODULE_ROOT.slice(1) + 'presentations/.+' + SOURCE_FILE_RE],
+                pathNot: MODULE_PRESENTATION_PATH_NOT,
             },
             to: {
-                path: '^react(?:/.*)?$',
+                path: '^react$|^react/',
             },
         },
 
@@ -343,10 +349,10 @@ module.exports = {
             comment: 'react-dom belongs only in presentations/.',
             from: {
                 path: '^(src|application)/.+',
-                pathNot: ['^' + MODULE_ROOT.slice(1) + 'presentations/.+' + SOURCE_FILE_RE],
+                pathNot: MODULE_PRESENTATION_PATH_NOT,
             },
             to: {
-                path: '^react-dom(?:/.*)?$',
+                path: '^react-dom$|^react-dom/',
             },
         },
 

@@ -1,4 +1,5 @@
 import { type ReactElement, useState } from 'react';
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Slider } from '#/components/ui/slider';
 import { Separator } from '#/components/ui/separator';
 import { Button } from '#/components/ui/button';
@@ -83,9 +84,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
             </div>
 
             <section>
-                <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                    Position
-                </h3>
+                <DawHeaderBand compact className="mb-2 rounded-sm" title="Position" />
                 <div className="rounded-md bg-surface-well border border-border-hairline shadow-[inset_0_1px_3px_rgba(0,0,0,0.4)] p-2 space-y-1.5">
                     <div className="flex items-center justify-between">
                         <label className="text-[10px] text-muted-foreground">Start</label>
@@ -111,7 +110,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
             <Separator />
 
             <section>
-                <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Trim</h3>
+                <DawHeaderBand compact className="mb-2 rounded-sm" title="Trim" />
                 <div className="space-y-2">
                     <div>
                         <div className="flex items-center justify-between mb-1">
@@ -152,7 +151,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
             <Separator />
 
             <section>
-                <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Fades</h3>
+                <DawHeaderBand compact className="mb-2 rounded-sm" title="Fades" />
                 <div className="space-y-2">
                     <div>
                         <div className="flex items-center justify-between mb-1">
@@ -198,7 +197,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
             <Separator />
 
             <section>
-                <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Gain</h3>
+                <DawHeaderBand compact className="mb-2 rounded-sm" title="Gain" />
                 <div>
                     <div className="flex items-center justify-between mb-1">
                         <label className="text-[10px] text-muted-foreground">Clip Gain</label>
@@ -227,7 +226,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
             <Separator />
 
             <section>
-                <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Color</h3>
+                <DawHeaderBand compact className="mb-2 rounded-sm" title="Color" />
                 <div className="flex gap-1">
                     {CLIP_COLOR_PRESETS.map((c) => (
                         <button
@@ -249,9 +248,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
             <Separator />
 
             <section>
-                <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                    Properties
-                </h3>
+                <DawHeaderBand compact className="mb-2 rounded-sm" title="Properties" />
                 <div className="rounded-md bg-surface-well border border-border-hairline shadow-[inset_0_1px_3px_rgba(0,0,0,0.4)] p-2 space-y-1.5">
                     <div className="flex items-center justify-between">
                         <label className="text-[10px] text-muted-foreground">Type</label>

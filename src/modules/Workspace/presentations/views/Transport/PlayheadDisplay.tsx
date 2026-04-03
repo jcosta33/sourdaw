@@ -5,8 +5,6 @@ import { toggleTimeDisplayMode } from '../../../useCases/togglePanel/panelToggle
 import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 
-
-
 type PlayheadDisplayProps = {
     tempo: number;
     numerator: number;
@@ -106,14 +104,7 @@ export const PlayheadDisplay = ({
                 <TooltipTrigger asChild>
                     <button
                         type="button"
-                        className="flex items-center gap-0.5 font-mono tabular-nums rounded-sm px-2.5 py-1 transition-colors font-medium cursor-pointer group"
-                        style={{
-                            background: 'linear-gradient(180deg, #080808 0%, #0d0d0d 100%)',
-                            boxShadow: 'inset 0 1px 4px rgba(0,0,0,0.8), inset 0 0 1px rgba(0,0,0,0.4), 0 1px 0 rgba(255,255,255,0.04)',
-                            border: '1px solid rgba(0,0,0,0.6)',
-                            borderTop: '1px solid rgba(0,0,0,0.7)',
-                            borderBottom: '1px solid rgba(40,40,40,0.4)',
-                        }}
+                        className="daw-readout-well group flex cursor-pointer items-center gap-0.5 rounded-sm px-2.5 py-1 font-mono font-medium tabular-nums transition-colors"
                         onClick={toggleTimeDisplayMode}
                         aria-label="Playhead position — click to switch to wall-clock time"
                     >
@@ -144,14 +135,7 @@ export const PlayheadDisplay = ({
             <TooltipTrigger asChild>
                 <button
                     type="button"
-                    className="flex items-center gap-0.5 font-mono tabular-nums rounded-sm px-2.5 py-1 transition-colors font-medium cursor-pointer group"
-                    style={{
-                        background: 'linear-gradient(180deg, #080808 0%, #0d0d0d 100%)',
-                        boxShadow: 'inset 0 1px 4px rgba(0,0,0,0.8), inset 0 0 1px rgba(0,0,0,0.4), 0 1px 0 rgba(255,255,255,0.04)',
-                        border: '1px solid rgba(0,0,0,0.6)',
-                        borderTop: '1px solid rgba(0,0,0,0.7)',
-                        borderBottom: '1px solid rgba(40,40,40,0.4)',
-                    }}
+                    className="daw-readout-well group flex cursor-pointer items-center gap-0.5 rounded-sm px-2.5 py-1 font-mono font-medium tabular-nums transition-colors"
                     onClick={toggleTimeDisplayMode}
                     aria-label="Playhead position — click to switch to bars and beats"
                 >

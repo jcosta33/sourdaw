@@ -3,6 +3,7 @@
  * chord mode, paint mode, lasso mode, and zoom controls.
  */
 import { type ReactElement } from 'react';
+import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { cn } from '#/helpers/Styles/cn';
@@ -58,15 +59,7 @@ export const PianoRollToolbar = ({
     zoom,
     onZoomChange,
 }: PianoRollToolbarProps): ReactElement => (
-    <div
-        className="flex items-center gap-2 px-2 py-1"
-        style={{
-            background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
-            boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
-            border: '1px solid rgba(0,0,0,0.4)',
-            borderBottom: '1px solid rgba(40,40,40,0.3)',
-        }}
-    >
+    <DawControlStrip>
         <span className="text-[10px] text-muted-foreground">Snap:</span>
         {[1, 0.5, 0.25, 0.125].map((v) => (
             <Button
@@ -226,5 +219,5 @@ export const PianoRollToolbar = ({
             className="w-20"
             aria-label="Piano roll zoom"
         />
-    </div>
+    </DawControlStrip>
 );

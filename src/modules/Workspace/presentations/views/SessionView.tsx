@@ -4,6 +4,7 @@
  * Each track has a column of clip slots; each row is a scene.
  */
 import { type ReactElement, useState } from 'react';
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { cn } from '#/helpers/Styles/cn';
 import { Button } from '#/components/ui/button';
 import { Play, Square, Plus } from 'lucide-react';
@@ -54,28 +55,22 @@ export const SessionView = (): ReactElement => {
 
     return (
         <div className="flex flex-col h-full bg-surface-base">
-            {/* Header */}
-            <div
-                className="flex items-center gap-2 px-3 py-1.5 shrink-0"
-                style={{
-                    background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
-                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
-                    border: '1px solid rgba(0,0,0,0.4)',
-                    borderBottom: '1px solid rgba(40,40,40,0.3)',
-                }}
-            >
-                <span className="text-[11px] font-semibold text-foreground uppercase tracking-wider">Session</span>
-                <div className="flex-1" />
-                <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={handleStopAll}
-                    aria-label="Stop all clips"
-                    className="size-5"
-                >
-                    <Square className="size-2.5" />
-                </Button>
-            </div>
+            <DawHeaderBand
+                className="shrink-0"
+                title="Session"
+                titleClassName="text-[11px] font-semibold text-foreground uppercase tracking-wider"
+                actions={
+                    <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={handleStopAll}
+                        aria-label="Stop all clips"
+                        className="size-5"
+                    >
+                        <Square className="size-2.5" />
+                    </Button>
+                }
+            />
 
             {/* Grid */}
             <div className="flex-1 overflow-auto">

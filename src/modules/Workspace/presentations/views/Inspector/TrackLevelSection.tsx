@@ -1,4 +1,5 @@
 import { type ReactElement } from 'react';
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Card } from '#/components/ui/card';
 import { Slider } from '#/components/ui/slider';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
@@ -13,9 +14,7 @@ type TrackLevelSectionProps = {
 export const TrackLevelSection = ({ track }: TrackLevelSectionProps): ReactElement => {
     return (
         <div>
-            <div className="px-1 mb-2 border-b border-border-hairline pb-1">
-                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Level</div>
-            </div>
+            <DawHeaderBand compact className="mb-2 rounded-sm" title="Level" />
             <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
                 <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-3 w-full">
                     <div className="flex flex-col w-full gap-2">

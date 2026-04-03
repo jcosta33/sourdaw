@@ -12,14 +12,7 @@ export const TempoEditor = (): ReactElement => {
 
     return (
         <div
-            className="relative flex items-center gap-2 px-2 rounded-sm h-8"
-            style={{
-                background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
-                boxShadow: 'inset 0 1px 4px rgba(0,0,0,0.7), inset 0 0 1px rgba(0,0,0,0.3), 0 1px 0 rgba(255,255,255,0.04)',
-                border: '1px solid rgba(0,0,0,0.5)',
-                borderTop: '1px solid rgba(0,0,0,0.6)',
-                borderBottom: '1px solid rgba(40,40,40,0.3)',
-            }}
+            className="daw-readout-well relative flex h-8 items-center gap-2 rounded-sm px-2"
         >
             <Tooltip>
                 <TooltipTrigger asChild>

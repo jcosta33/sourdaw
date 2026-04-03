@@ -1,4 +1,5 @@
 import { type ReactElement, useState } from 'react';
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
@@ -90,12 +91,13 @@ export const ClipAudioAiSection = ({ clip, trackId }: ClipAudioAiSectionProps): 
 
     return (
         <section>
-            <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                <Sparkles className="size-3 text-[var(--color-accent-lavender)]" />
-                AI Actions
-            </h3>
+            <DawHeaderBand
+                compact
+                className="mb-2 rounded-sm"
+                title="AI Actions"
+                startSlot={<Sparkles className="size-3 text-[var(--color-accent-lavender)]" aria-hidden="true" />}
+            />
             <div className="space-y-3">
-                {/* Denoise with A/B */}
                 <div className="bg-surface-raised/50 rounded-md p-2 space-y-2 border border-border/30">
                     <div className="flex items-center justify-between">
                         <span className="text-[10px] font-medium text-foreground/90">Denoise</span>
@@ -165,7 +167,6 @@ export const ClipAudioAiSection = ({ clip, trackId }: ClipAudioAiSectionProps): 
                     </Button>
                 </div>
 
-                {/* Quick AI actions */}
                 <div className="flex gap-1">
                     <Button
                         variant="ghost"
@@ -193,7 +194,6 @@ export const ClipAudioAiSection = ({ clip, trackId }: ClipAudioAiSectionProps): 
                     </Button>
                 </div>
 
-                {/* Polyphonic Audio → MIDI */}
                 <div className="bg-surface-raised/50 rounded-md p-2 space-y-1.5 border border-border/30">
                     <div className="flex items-center gap-1.5">
                         <Music className="size-3 text-[var(--color-accent-lavender)]" aria-hidden="true" />
@@ -223,7 +223,6 @@ export const ClipAudioAiSection = ({ clip, trackId }: ClipAudioAiSectionProps): 
                     </Button>
                 </div>
 
-                {/* Audio Analysis */}
                 <div className="bg-surface-raised/50 rounded-md p-2 space-y-1.5 border border-border/30">
                     <div className="flex items-center gap-1.5">
                         <BarChart3 className="size-3 text-[var(--color-accent-lavender)]" aria-hidden="true" />

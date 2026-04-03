@@ -147,57 +147,48 @@ reference implementation.
 
 ---
 
-### AR-2 · `compileDso.ts` bypasses the AppAction registry
-**Severity:** P1 · **Verified:** ✅ confirmed
+### ~~AR-2 · `compileDso.ts` bypasses the AppAction registry~~ — DONE
+**Severity:** P1 · **Fixed:** ✅
 
-The AI DSO compiler calls `addTrack`, `addClip`, `trackStore.set`, etc. directly
-(15+ direct store mutations verified), bypassing `executeAppAction`. AI actions
-don't trigger standard side-effects and can't be routed through the typed command
-system.
-
-**Steps:**
-1. Define canonical `AppAction` types for all DSO operations.
-2. Map each `Dso` intent in `compileDso.ts` to the corresponding `AppAction`.
-3. Dispatch via `executeAppAction` — do not call use-case functions directly.
-
-Prerequisite: the action registry must cover the full DSO surface area first.
-
----
-
-### AR-3 · Anonymous undo closures (`createCallbackUndoEntry`)
-**Severity:** P1 · **Verified:** ✅ confirmed
-
-Anonymous JS closures in the undo stack cannot be serialised for collaborative
-multiplayer sync. Every operation pushed via `createCallbackUndoEntry` (confirmed
-in `executeDsoEdit.ts`, import functions, and AI MIDI generation) is a hole in
-the document log.
-
-**Steps:**
-1. Define an `AppAction` DTO for each operation currently using an anonymous closure.
-2. Replace `createCallbackUndoEntry(before, after)` with `pushTypedAction(action)` storing the semantic delta, not the full state snapshot.
-3. `executeAppAction` becomes the single write path for both do and undo.
-
-Same refactor as AR-2 — should be done together.
+18 direct `trackStore.set()`/`transportStore.set()` mutations in `executeSingleDso()`
+replaced with `executeAppAction(action, { skipUndo: true, source: 'ai' })` calls.
+Covered: `renameTrack`, `setTrackGain`, `setTrackPan`, `muteTrack`, `soloTrack`,
+`armTrack`, `setTrackColor`, `reorderTrack`, `removeClip`, `renameClip`, `moveClip`,
+`splitClip`, `removeDevice`, `bypassDevice`, `setDeviceParameter`, `setClipGain`,
+`setTempo`, `transposeNotes`.
+`skipUndo: true` added to `ExecuteOptions` in `executeAppAction.ts` so individual
+per-DSO undo entries are not pushed (batch undo is managed by `executeDsoEdit`).
+`setDeviceParameter` now also fires `updateDeviceParam` to the audio engine — previously
+missing with the direct store mutation.
+Remaining as direct calls (no matching AppAction type): `set_time_signature`,
+`add_midi_notes`, `humanize_midi`, `create_send`, `generate_*`.
 
 ---
 
-### AR-4 · TrackNode device-initialization branching
-**Severity:** P2 · **Verified:** ⚠️ partially accurate — original count of "18" is wrong; actual count is 10 type-guard branches
+### ~~AR-3 · Anonymous undo closures (`createCallbackUndoEntry`)~~ — DONE
+**Severity:** P1 · **Fixed:** ✅
 
-`TrackNode.ts` has 10 `isXDevice()` branches for device initialisation (Faust,
-Fermenter, Toaster, Levain, ProofChamber, Gluten, Bacteria, Grinder, Proof,
-Scoring). A generic `DEVICE_FACTORIES` registry already handles 19 standard Web
-Audio devices — the 10 branches are for complex instruments that need async WASM
-init, custom control objects, and per-device meter wiring.
+Added `{ type: 'restoreDsoSnapshot'; payload: { bundle: DocumentBundle } }` to
+`AppAction.ts` with a handler in `executeAppAction.ts` that calls
+`automergeRepository.restoreSnapshot(bundle)`.
+`executeDsoEdit.ts` `commitDsos()` now uses `createUndoEntry(label, afterAction,
+beforeAction, 'ai')` instead of `createCallbackUndoEntry`. The Automerge bundle
+snapshots (Map<string, Uint8Array>) are stored as data, not closures — enabling
+future collaborative undo serialization.
+Note: `createCallbackUndoEntry` still used elsewhere (import functions, AI MIDI
+generation) — those are separate closures outside the DSO batch path.
 
-The concern is valid as a scaling friction issue (adding a plugin requires
-editing `TrackNode.ts`) but the current structure is not a classic god-switch —
-branches encode genuinely distinct initialisation paths.
+---
 
-**Steps:**
-1. Define a `DeviceDescriptor` interface with `create(deps): DeviceNodes`, `controls` factory, and `meters` callback.
-2. Each plugin registers its descriptor at boot alongside `registerBuiltinPlugins`.
-3. `TrackNode.addDevice()` replaces the 10 branches with `registry.get(device.type)?.create(deps)`.
+### ~~AR-4 · TrackNode device-initialization branching~~ — DONE
+**Severity:** P2 · **Fixed:** ✅
+
+Created `wasmDeviceRegistry.ts` with `WasmDeviceDescriptor` interface and 10 descriptors
+(NativeDsp, Fermenter, Toaster, Levain, ProofChamber, Gluten, Bacteria, Grinder, Proof, Scoring).
+Each descriptor encapsulates the full async load sequence (loading bypass, pending-params queue,
+WASM init, swap-in, side effects). `TrackNode.addDevice()` replaced the 10 branches with a single
+`findWasmDescriptor(deviceType)?.create(deps)` lookup. Adding a new WASM plugin no longer
+requires editing `TrackNode.ts`.
 
 ---
 

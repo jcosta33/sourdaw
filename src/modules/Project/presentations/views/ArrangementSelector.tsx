@@ -94,13 +94,7 @@ export const ArrangementSelector = (): ReactElement | null => {
                 <TooltipTrigger asChild>
                     <button
                         type="button"
-                        className="flex items-center gap-1.5 h-6 px-2 text-[11px] font-medium rounded-sm cursor-pointer hover:bg-white/[0.04] transition-colors"
-                        style={{
-                            background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
-                            boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
-                            border: '1px solid rgba(0,0,0,0.4)',
-                            borderBottom: '1px solid rgba(40,40,40,0.3)',
-                        }}
+                        className="daw-readout-well flex h-6 cursor-pointer items-center gap-1.5 rounded-sm px-2 text-[11px] font-medium transition-colors hover:bg-white/[0.04]"
                         aria-label="Arrangement selector"
                         aria-expanded={open}
                         aria-haspopup="menu"

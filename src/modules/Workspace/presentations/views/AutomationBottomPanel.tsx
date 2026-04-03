@@ -1,4 +1,5 @@
 import { type ReactElement, type RefObject, type WheelEvent, useRef, useState, useEffect, useSyncExternalStore } from 'react';
+import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { cn } from '#/helpers/Styles/cn';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
@@ -165,12 +166,12 @@ export const AutomationBottomPanel = (): ReactElement => {
                     background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
                 }}
             >
-                <div className="text-center space-y-1">
-                    <p className="text-sm text-muted-foreground">No track selected</p>
-                    <p className="text-[10px] text-muted-foreground/60">
-                        Select a track to knead its automation curves
-                    </p>
-                </div>
+                <DawEmptyState
+                    compact
+                    className="mx-4 w-full max-w-sm"
+                    title="No track selected"
+                    description="Select a track to shape its automation curves."
+                />
             </div>
         );
     }
@@ -349,13 +350,13 @@ export const AutomationBottomPanel = (): ReactElement => {
                 {/* Lanes area */}
                 <div className="flex-1 overflow-y-auto" onWheel={handleWheel}>
                     {containerWidth > 0 && trackLanes.length === 0 ? (
-                        <div className="flex items-center justify-center h-full">
-                            <div className="text-center space-y-2">
-                                <p className="text-xs text-muted-foreground">No automation lanes yet</p>
-                                <p className="text-[10px] text-muted-foreground/60">
-                                    Click "Add Lane" to shape Volume, Pan, or device parameters over time
-                                </p>
-                            </div>
+                        <div className="flex h-full items-center justify-center p-4">
+                            <DawEmptyState
+                                compact
+                                className="w-full max-w-sm"
+                                title="No automation lanes yet"
+                                description='Click "Add Lane" to shape volume, pan, or device parameters over time.'
+                            />
                         </div>
                     ) : containerWidth > 0 ? (
                         trackLanes.map((lane) =>

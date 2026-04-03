@@ -1,5 +1,6 @@
 import { type ReactElement } from 'react';
 import { MousePointer2, Scissors, Pencil, TrendingUp, MoveHorizontal } from 'lucide-react';
+import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 
@@ -26,17 +27,7 @@ export const ToolSelector = ({ rippleEditing, onToggleRipple }: ToolSelectorProp
     const { activeTool } = useWorkspaceState();
 
     return (
-        <div
-            className="flex items-center gap-0.5 px-1 py-0.5 rounded-sm"
-            style={{
-                background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
-                boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
-                border: '1px solid rgba(0,0,0,0.4)',
-                borderBottom: '1px solid rgba(40,40,40,0.3)',
-            }}
-            role="radiogroup"
-            aria-label="Editing tools"
-        >
+        <DawControlStrip className="gap-0.5 rounded-sm px-1 py-0.5" role="radiogroup" aria-label="Editing tools">
             {TOOLS.map((tool) => (
                 <Tooltip key={tool}>
                     <TooltipTrigger asChild>
@@ -56,7 +47,7 @@ export const ToolSelector = ({ rippleEditing, onToggleRipple }: ToolSelectorProp
             ))}
             {onToggleRipple != null ? (
                 <>
-                    <div className="w-px h-4 mx-0.5" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(0,0,0,0.15) 100%)' }} />
+                    <div className="mx-0.5 h-4 w-px daw-seam" />
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <Button
@@ -74,6 +65,6 @@ export const ToolSelector = ({ rippleEditing, onToggleRipple }: ToolSelectorProp
                     </Tooltip>
                 </>
             ) : null}
-        </div>
+        </DawControlStrip>
     );
 };

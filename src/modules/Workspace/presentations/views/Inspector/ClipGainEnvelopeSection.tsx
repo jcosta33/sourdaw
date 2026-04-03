@@ -1,4 +1,5 @@
 import { type ReactElement, useState } from 'react';
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Button } from '#/components/ui/button';
 import { Activity, Plus, RotateCcw } from 'lucide-react';
 import { getClipGainEnvelope } from '#/modules/Arrangement/useCases/clipGainEnvelope/getClipGainEnvelope';
@@ -20,10 +21,12 @@ export const ClipGainEnvelopeSection = ({ clipId, duration }: ClipGainEnvelopeSe
 
     return (
         <section>
-            <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                <Activity className="size-3" aria-hidden="true" />
-                Gain Envelope
-            </h3>
+            <DawHeaderBand
+                compact
+                className="mb-2 rounded-sm"
+                title="Gain Envelope"
+                startSlot={<Activity className="size-3 text-muted-foreground" aria-hidden="true" />}
+            />
             <div className="space-y-2">
                 <div className="flex items-center justify-between">
                     <span className="text-[10px] text-muted-foreground">

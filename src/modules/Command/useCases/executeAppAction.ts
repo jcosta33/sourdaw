@@ -142,6 +142,17 @@ const midiRoutingHandlers: Record<string, ActionHandler<any>> = {
     },
 };
 
+const dsoSnapshotHandlers: Record<string, ActionHandler<any>> = {
+    restoreDsoSnapshot: {
+        execute: async (action) => {
+            const { automergeRepository } = await import('#/modules/CrdtDocument/repositories/automergeRepository');
+            automergeRepository.restoreSnapshot(action.payload.bundle);
+        },
+        undoable: false,
+        describe: () => ({ label: 'Restore DSO Snapshot' }),
+    },
+};
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- handlers are type-safe at definition site; the registry erases the action subtype for dynamic dispatch
 const handlerRegistry: Record<string, ActionHandler<any>> = {
     ...trackHandlers,
@@ -172,12 +183,16 @@ const handlerRegistry: Record<string, ActionHandler<any>> = {
     ...newFeatureHandlers,
     ...batchFeatureHandlers,
     ...finalFeatureHandlers,
+    ...dsoSnapshotHandlers,
 };
 
 export type ExecuteOptions = {
     groupId?: string;
     groupLabel?: string;
     source?: 'manual' | 'prompt' | 'voice' | 'ai';
+    /** When true, skip pushing an undo entry and action history entry.
+     *  Use this when the caller manages batch undo externally (e.g. executeDsoEdit). */
+    skipUndo?: boolean;
 };
 
 export async function executeAppAction(action: AppAction, options?: ExecuteOptions): Promise<void> {
@@ -213,33 +228,35 @@ export async function executeAppAction(action: AppAction, options?: ExecuteOptio
     // Record to macro playback
     recordAction(action);
 
-    // Record undoable actions to global history (skip UI-only actions like panel toggles)
-    if (handler.undoable) {
-        pushActionHistoryEntry({
-            id: crypto.randomUUID(),
-            label,
-            actionKind: action.type,
-            action,
-            inverseAction: undoResult?.inverseAction ?? null,
-            source: options?.source ?? 'manual',
-            timestamp: Date.now(),
-            groupId: options?.groupId,
-            groupLabel: options?.groupLabel,
-            reverted: false,
-        });
-    }
-
-    if (undoResult) {
-        const entry = createUndoEntry(
-            undoResult.label,
-            action,
-            undoResult.inverseAction ?? null,
-            options?.source ?? 'manual'
-        );
-        if (options?.groupId) {
-            entry.groupId = options.groupId;
-            entry.groupLabel = options.groupLabel;
+    if (!options?.skipUndo) {
+        // Record undoable actions to global history (skip UI-only actions like panel toggles)
+        if (handler.undoable) {
+            pushActionHistoryEntry({
+                id: crypto.randomUUID(),
+                label,
+                actionKind: action.type,
+                action,
+                inverseAction: undoResult?.inverseAction ?? null,
+                source: options?.source ?? 'manual',
+                timestamp: Date.now(),
+                groupId: options?.groupId,
+                groupLabel: options?.groupLabel,
+                reverted: false,
+            });
         }
-        pushUndo(entry);
+
+        if (undoResult) {
+            const entry = createUndoEntry(
+                undoResult.label,
+                action,
+                undoResult.inverseAction ?? null,
+                options?.source ?? 'manual'
+            );
+            if (options?.groupId) {
+                entry.groupId = options.groupId;
+                entry.groupLabel = options.groupLabel;
+            }
+            pushUndo(entry);
+        }
     }
 }

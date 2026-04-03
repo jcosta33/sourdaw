@@ -292,7 +292,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                         role="menuitem"
                         onClick={act(async () => {
                             notifyUser('Denoising audio…');
-                            const { handleAiDenoiseClip } = await import('#/modules/AiGeneration/useCases/actions/audioProcessing');
+                            const { handleAiDenoiseClip } = await import('#/modules/AiGeneration/useCases/actions/handleAiDenoiseClip');
                             await handleAiDenoiseClip(clipId, 0.7);
                             notifyAiChange('Audio denoised', ['Noise reduction applied to clip']);
                         })}

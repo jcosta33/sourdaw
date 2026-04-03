@@ -1,4 +1,6 @@
 import { type ReactElement } from 'react';
+import { DawDisplaySurface } from '#/components/daw/DawDisplaySurface';
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { LUFSMeter } from '../Metering/LUFSMeter';
 import { PhaseCorrelationDisplay } from '../Metering/PhaseCorrelationDisplay';
 import { Oscilloscope } from '../Metering/Oscilloscope';
@@ -11,37 +13,35 @@ import { Wavetable3D } from '../../components/Wavetable3D';
 export const MasterVisualizationsSection = (): ReactElement => {
     return (
         <div>
-            <div className="px-1 mb-2 border-b border-border-hairline pb-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                Analysis & Metering
-            </div>
+            <DawHeaderBand compact className="mb-2 rounded-sm" title="Analysis & Metering" />
             <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-3">
-                    <div className="bg-surface-base border border-border/50 border-t-[var(--color-light-edge)] rounded-md p-3 flex items-center justify-center">
+                    <DawDisplaySurface accentTop>
                         <LUFSMeter height={160} width={60} />
-                    </div>
-                    <div className="bg-surface-base border border-border/50 border-t-[var(--color-light-edge)] rounded-md p-3 flex items-center justify-center">
+                    </DawDisplaySurface>
+                    <DawDisplaySurface accentTop>
                         <Goniometer size={180} />
-                    </div>
+                    </DawDisplaySurface>
                 </div>
-                <div className="bg-surface-base border border-border/50 rounded-md p-3 flex items-center justify-center">
+                <DawDisplaySurface>
                     <Oscilloscope width={280} height={100} />
-                </div>
-                <div className="bg-surface-base border border-border/50 rounded-md p-3 flex items-center justify-center">
+                </DawDisplaySurface>
+                <DawDisplaySurface>
                     <SpectrumAnalyzer width={280} height={100} />
-                </div>
-                <div className="bg-surface-base border border-border/50 rounded-md p-3 flex items-center justify-center">
+                </DawDisplaySurface>
+                <DawDisplaySurface>
                     <Spectrogram width={280} height={100} />
-                </div>
-                <div className="bg-surface-base border border-border/50 rounded-md p-3 flex items-center justify-center">
+                </DawDisplaySurface>
+                <DawDisplaySurface>
                     <PhaseCorrelationDisplay width={280} height={30} />
-                </div>
+                </DawDisplaySurface>
                 <div className="flex flex-col gap-3">
-                    <div className="bg-surface-base border border-border/50 border-t-[var(--color-light-edge)] rounded-md p-3 flex items-center justify-center">
+                    <DawDisplaySurface accentTop>
                         <SpatialPanner size={160} />
-                    </div>
-                    <div className="bg-surface-base border border-border/50 border-t-[var(--color-light-edge)] rounded-md p-3 flex items-center justify-center">
+                    </DawDisplaySurface>
+                    <DawDisplaySurface accentTop>
                         <Wavetable3D width={200} height={120} />
-                    </div>
+                    </DawDisplaySurface>
                 </div>
             </div>
         </div>

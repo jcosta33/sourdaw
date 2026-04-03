@@ -1,4 +1,5 @@
 import { type ReactElement } from 'react';
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Card } from '#/components/ui/card';
 import { setMidiOutput, clearMidiOutput } from '#/modules/MIDI/useCases/midiRouting';
 import { toggleChordTrackFollow } from '#/modules/Arrangement/useCases/toggleTrackState/toggleChordTrackFollow';
@@ -12,11 +13,7 @@ type TrackMidiOutputSectionProps = {
 export const TrackMidiOutputSection = ({ track, allTracks }: TrackMidiOutputSectionProps): ReactElement => {
     return (
         <div>
-            <div className="px-1 mb-2 border-b border-border-hairline pb-1">
-                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                    MIDI Output
-                </div>
-            </div>
+            <DawHeaderBand compact className="mb-2 rounded-sm" title="MIDI Output" />
             <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
                 <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-2">
                     <select

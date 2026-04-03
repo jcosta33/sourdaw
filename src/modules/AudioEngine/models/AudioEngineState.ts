@@ -21,8 +21,8 @@ export type BuiltinDeviceNode = {
     /** Controls for the Fermenter synthesizer (MIDI + param updates via MessagePort) */
     fermenterControls?: {
         ready: boolean;
-        noteOn: (note: number, velocity: number) => void;
-        noteOff: (note: number) => void;
+        noteOn: (note: number, velocity: number, time?: number) => void;
+        noteOff: (note: number, time?: number) => void;
         setParam: (name: string, value: number) => void;
         setBypass: (bypassed: boolean) => void;
         destroy: () => void;
@@ -30,8 +30,8 @@ export type BuiltinDeviceNode = {
     /** Controls for the Toaster drum machine (MIDI + param updates via MessagePort) */
     toasterControls?: {
         ready: boolean;
-        noteOn: (pad: number, velocity: number, midiNote?: number) => void;
-        noteOff: (pad: number) => void;
+        noteOn: (pad: number, velocity: number, midiNote?: number, time?: number) => void;
+        noteOff: (pad: number, time?: number) => void;
         setParam: (name: string, value: number) => void;
         setPadParam: (pad: number, name: string, value: number) => void;
         setBypass: (bypassed: boolean) => void;
@@ -40,8 +40,8 @@ export type BuiltinDeviceNode = {
     /** Controls for the Levain suite (MIDI + CC + param updates via MessagePort) */
     levainControls?: {
         ready: boolean;
-        noteOn: (note: number, velocity: number) => void;
-        noteOff: (note: number) => void;
+        noteOn: (note: number, velocity: number, time?: number) => void;
+        noteOff: (note: number, time?: number) => void;
         handleCc: (cc: number, value: number) => void;
         setParam: (name: string, value: number) => void;
         setBypass: (bypassed: boolean) => void;

@@ -1,4 +1,5 @@
 import { type ReactElement } from 'react';
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Card } from '#/components/ui/card';
 import { Button } from '#/components/ui/button';
 import { Plus, Trash2 } from 'lucide-react';
@@ -17,26 +18,28 @@ type TrackAlternativesSectionProps = {
 export const TrackAlternativesSection = ({ track }: TrackAlternativesSectionProps): ReactElement => {
     return (
         <div>
-            <div className="px-1 mb-2 border-b border-border-hairline pb-1 flex flex-row items-center justify-between">
-                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                    Alternatives
-                </div>
-                <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={() => {
-                        const name = `Alt ${track.alternatives.length + 1}`;
-                        handleCreateTrackAlternative({
-                            type: 'createTrackAlternative',
-                            payload: { trackId: track.id, name, duplicateActive: false },
-                        });
-                    }}
-                    aria-label="Create new alternative"
-                    title="New empty alternative"
-                >
-                    <Plus className="size-3" />
-                </Button>
-            </div>
+            <DawHeaderBand
+                compact
+                className="mb-2 rounded-sm"
+                title="Alternatives"
+                actions={
+                    <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={() => {
+                            const name = `Alt ${track.alternatives.length + 1}`;
+                            handleCreateTrackAlternative({
+                                type: 'createTrackAlternative',
+                                payload: { trackId: track.id, name, duplicateActive: false },
+                            });
+                        }}
+                        aria-label="Create new alternative"
+                        title="New empty alternative"
+                    >
+                        <Plus className="size-3" />
+                    </Button>
+                }
+            />
             <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
                 {track.alternatives.map((alt) => (
                     <Card

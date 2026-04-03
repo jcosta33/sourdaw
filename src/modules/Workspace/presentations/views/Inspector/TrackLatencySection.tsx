@@ -1,4 +1,6 @@
 import { type ReactElement } from 'react';
+import { DawEmptyState } from '#/components/daw/DawEmptyState';
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { getTrackLatency, getCompensationDelay } from '#/modules/AudioEngine/useCases/latencyCompensation';
 
 type TrackLatencySectionProps = {
@@ -14,9 +16,7 @@ export const TrackLatencySection = ({ trackId }: TrackLatencySectionProps): Reac
 
     return (
         <div>
-            <div className="px-1 mb-2 border-b border-border-hairline pb-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                Latency
-            </div>
+            <DawHeaderBand compact className="mb-2 rounded-sm" title="Latency" />
             {hasLatency ? (
                 <div className="flex flex-col gap-1 px-1">
                     <div className="flex items-center justify-between">
@@ -35,7 +35,7 @@ export const TrackLatencySection = ({ trackId }: TrackLatencySectionProps): Reac
                     ) : null}
                 </div>
             ) : (
-                <p className="text-[10px] text-muted-foreground/50 px-1">No latency reported.</p>
+                <DawEmptyState compact className="mx-1" title="No latency reported" />
             )}
         </div>
     );

@@ -2,40 +2,54 @@
 
 This document contains a deep, verified analysis of the items flagged as dead code or unused exports by `knip` (as seen in `knip-results.txt`). Unlike a surface-level scan, this audit maps the flagged files against actual engine usages to determine whether the code was superseded by newer architecture or remains a valuable, incomplete feature.
 
-## Executive Summary
+## Executive Summary & Resolution Update
 
-While `knip` successfully identified disconnected code, a deeper architectural review reveals a mix of **superseded dead code** (which should be deleted) and **orphaned domain foundations** (which represent pending epics). 
+**Resolution Update:** The cleanup of "True Dead Code" has been executed. The total number of unused files flagged by `knip` has dropped from 93 to 74. 
+- Obsolete engines (SFZ parser, Modulation System), unused Inspector UI bloat, legacy AI Runtime validators, the abandoned Tauri `PluginHostNode`, and the abandoned `kneadProcessor` have all been safely **deleted**.
+- The remaining 74 flagged files represent valuable **Pending Epics** (like Elastic Audio, Extensions API, Ableton Push integration, and Node-Based plugin routing) or **False Positives** that are actively used. They should **NOT** be deleted.
+
+While `knip` successfully identified disconnected code, a deeper architectural review reveals a mix of **superseded dead code** (which has now been deleted) and **orphaned domain foundations** (which represent pending epics). 
 
 Several major features (like the `sfzParser` and generic `modulationSystem`) were actually replaced by superior, purpose-built engines (`Levain` and `Bacteria`), making their older generic implementations true dead code. Conversely, systems like Elastic Audio and the Git-style Undo Tree remain valuable domain stubs that simply lack UI bindings.
 
 ---
 
-## 1. True Dead Code (Superseded & Safe to Delete)
+## 1. True Dead Code (Superseded & Deleted)
 
-These files and systems were abandoned in favor of better, more specialized architectures built elsewhere in the DAW.
+These files and systems were abandoned in favor of better, more specialized architectures built elsewhere in the DAW. They have been removed from the codebase.
 
 ### 1.1 Generic SFZ Sample Player
 - **Flagged Files:** `src/modules/AudioEngine/useCases/samplePlayer/*` (playback.ts, sfzParser.ts)
 - **Analysis:** This was an early attempt to build a generic SFZ sample parser for the audio engine. However, it has been completely superseded by the **Levain** module (`src/modules/Levain/repositories/sampleLoader.ts` and the `createLevainNode` Rust/WASM sampler), which is a purpose-built, high-performance sampler that natively handles SFZ manifests and streams them directly into the audio hot path.
-- **Verdict:** **DELETE.** The generic `samplePlayer` is obsolete and inferior to the active Levain implementation.
+- **Verdict:** **DELETED.** Obsolete and inferior to the active Levain implementation.
 
 ### 1.2 Generic Modulation System
 - **Flagged Files:** `src/modules/Plugin/useCases/modulationSystem/*` (createModulationRoute, getModulatedValue, etc.)
-- **Analysis:** This generic modulation system attempted to route LFOs to AudioParams globally. As documented in `modulatorLibrary.ts`, this system "has no AudioParam.setValueAtTime() bindings" and was never wired into the playback loop. Instead, the DAW adopted a plugin-local modulation approach, visible in the **Bacteria** multi-effect (which has its own `ModulationDock`, `ModulationCollar`, and WASM-internal modulation routing).
-- **Verdict:** **DELETE.** The global generic modulation system is an abandoned experiment. Future modulation routing is handled natively inside WASM plugin boundaries (like Bacteria) or via explicit Automation tracks, not this orphaned TypeScript map.
+- **Analysis:** This generic modulation system attempted to route LFOs to AudioParams globally. This system "had no AudioParam.setValueAtTime() bindings" and was never wired into the playback loop. Instead, the DAW adopted a plugin-local modulation approach, visible in the **Bacteria** multi-effect.
+- **Verdict:** **DELETED.** The global generic modulation system was an abandoned experiment. Future modulation routing is handled natively inside WASM plugin boundaries.
 
 ### 1.3 Device Inspector Bespoke Layouts
 - **Flagged Files:** 15 files in `src/modules/Workspace/presentations/views/Inspector/layouts/effects/*` (`CompressorLayout.tsx`, `EQLayout.tsx`, etc.)
-- **Analysis:** These are manual React UI layouts for specific built-in effects. They are completely absent from `deviceLayoutRegistry.tsx` (which powers the Inspector). Sourdaw has clearly moved towards generic, schema-driven parameter grids that auto-generate knobs based on the plugin's parameter definitions, making these hardcoded layouts obsolete bloat.
-- **Verdict:** **DELETE.** Unused UI stubs.
+- **Analysis:** These were manual React UI layouts for specific built-in effects. Sourdaw has moved towards generic, schema-driven parameter grids that auto-generate knobs based on the plugin's parameter definitions.
+- **Verdict:** **DELETED.** Unused UI stubs.
 
-### 1.4 Shadcn Component Exports
+### 1.4 AI Runtime Legacy Validation
+- **Flagged Files:** `src/modules/AiRuntime/transformers/*`, `useCases/validateLlmOutput.ts`, `useCases/actionSchema.ts`
+- **Analysis:** The LLM bridge was refactored to enforce a JSON Schema natively via WebLLM's `response_format` and to map directly into Automerge CRDTs. This rendered these manual intermediate TS validators and transformers obsolete bloat.
+- **Verdict:** **DELETED.**
+
+### 1.5 Legacy Audio IPC & Processors
+- **Flagged Files:** `src/modules/AudioEngine/models/PluginHostNode.ts`, `src/modules/AudioEngine/services/kneadProcessor.ts`
+- **Analysis:** `PluginHostNode` was an orphaned AudioWorklet wrapper for the Tauri plugin host. The DAW now routes plugin processing natively or via `SharedArrayBuffer`s. `kneadProcessor.ts` was an unused WASM AudioWorklet processor for the Knead plugin whose pitch logic is handled natively now.
+- **Verdict:** **DELETED.**
+
+### 1.6 Shadcn Component Exports
 - **Flagged Exports:** `CardHeader`, `CardTitle`, etc. in `src/components/ui/card.tsx`
-- **Verdict:** **SAFE TO DELETE / IGNORE.** Standard unused exports from UI library templates.
+- **Verdict:** **IGNORED.** Standard unused exports from UI library templates. Preserved for future use.
 
 ---
 
-## 2. Incomplete Epics (Orphaned but Valuable)
+## 2. Incomplete Epics (Orphaned but Valuable - DO NOT DELETE)
 
 These features have robust domain logic but are missing their final bindings to the React UI or the Audio Graph. They should **not** be deleted, but rather tracked as pending roadmap epics.
 
@@ -54,7 +68,17 @@ These features have robust domain logic but are missing their final bindings to 
 - **Analysis:** Native hardware integration for Ableton Push. The base connect/disconnect commands are registered in `finalFeatureHandlers.ts`, but the actual pad/encoder logic is orphaned.
 - **Verdict:** **KEEP.** Hardware controller mapping logic.
 
-### 2.4 DAWproject Export
+### 2.4 Extensions API
+- **Flagged Files:** `src/modules/Extension/*`
+- **Analysis:** A massive suite of use cases for installing, running, and managing third-party editor scripts.
+- **Verdict:** **KEEP.** Foundation for third-party scripts.
+
+### 2.5 Toaster MPC Features
+- **Flagged Files:** `src/modules/Toaster/useCases/*`
+- **Analysis:** Advanced drum machine logic (16 Levels, Note Repeat, Sound Locks).
+- **Verdict:** **KEEP.** Pending UI wiring.
+
+### 2.6 DAWproject Export
 - **Flagged Files:** `src/modules/Project/useCases/dawProject/*` (exportDawProject, parseDawProject)
 - **Analysis:** Support for the open `DAWproject` file format. A UI command exists (`exportDawProject`) but it currently just fires a `notifyUser` stub instead of executing the actual `exportDawProject` function.
 - **Verdict:** **KEEP.** Essential for Bitwig/Studio One interoperability. The command just needs to be wired up.
@@ -90,6 +114,6 @@ These are features that are actually actively used in the codebase, but were fla
 ## Conclusion
 
 A deep inspection confirms that `knip` captured three distinct phenomena:
-1. **Obsolete generic engines** (SFZ parser, Modulation System) that were replaced by specialized WASM implementations (Levain, Bacteria). **These should be deleted.**
-2. **UI bloat** (Inspector layouts) that were replaced by dynamic generation. **These should be deleted.**
-3. **Pending Epics** (Elastic Audio, Node View, DAWproject, Push) that are fully modeled but lack their final execution bindings. **These must be preserved.**
+1. **Obsolete generic engines** (SFZ parser, Modulation System, legacy AI Validators, old IPC nodes) that were replaced by specialized implementations. **These have been deleted.**
+2. **UI bloat** (Inspector layouts) that were replaced by dynamic generation. **These have been deleted.**
+3. **Pending Epics** (Elastic Audio, Node View, DAWproject, Push, Extensions) that are fully modeled but lack their final execution bindings. **These must be preserved.**

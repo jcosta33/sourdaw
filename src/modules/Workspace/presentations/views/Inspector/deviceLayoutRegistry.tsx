@@ -11,6 +11,7 @@
  *   3. For prefix-based matching (e.g. all faust-*), use resolveDeviceLayout()
  */
 import { type ReactElement, type ComponentType } from 'react';
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { type DeviceParameter } from '#/modules/Arrangement/useCases/trackQueries';
 import { type Device } from '#/modules/Arrangement/useCases/trackQueries';
 
@@ -70,10 +71,5 @@ export const filterParams = (params: DeviceParameter[], ids: string[]): DevicePa
 
 /** Section header with subtle border */
 export const SectionHeader = ({ title }: { title: string }): ReactElement => (
-    <div className="px-1 mb-2 border-b border-border-hairline pb-1">
-        <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-            {title}
-        </div>
-    </div>
+    <DawHeaderBand compact className="mb-2 rounded-sm" title={title} />
 );
-

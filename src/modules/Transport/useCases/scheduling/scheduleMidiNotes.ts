@@ -5,7 +5,10 @@ import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { transportStore } from '../../stores/transportStore';
 import { getTempoAtBeat } from '../../models/TempoMap';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
-import { ensureTrackStrip, setTrackGain as engineSetTrackGain } from '#/modules/AudioEngine/useCases/trackAudioControls';
+import {
+    ensureTrackStrip,
+    setTrackGain as engineSetTrackGain,
+} from '#/modules/AudioEngine/useCases/trackAudioControls';
 import { getCurrentTime, createBufferSource } from '#/modules/AudioEngine/useCases/scheduling';
 import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
 import { resolveClipsWithComping } from '#/modules/Arrangement/useCases/resolveComping';
@@ -27,7 +30,9 @@ export function resolveDrumKit(devices: { type: string; parameterValues: Record<
     return getDrumKitByIndex(kitIndex);
 }
 
-export function resolveDrumKitDef(devices: { type: string; parameterValues: Record<string, number> }[]): DrumKitDef | null {
+export function resolveDrumKitDef(
+    devices: { type: string; parameterValues: Record<string, number> }[]
+): DrumKitDef | null {
     const kitDevice = devices.find((d) => d.type === 'builtin-drum-kit' || d.type === 'drum-kit');
     if (!kitDevice) {
         return null;
@@ -124,7 +129,9 @@ export function scheduleMidiNotes(
             if (clip.type !== 'midi') {
                 continue;
             }
-            let notes = midiState.notesByClipId[clip.id] as NonNullable<typeof midiState.notesByClipId[string]> | undefined;
+            let notes = midiState.notesByClipId[clip.id] as
+                | NonNullable<(typeof midiState.notesByClipId)[string]>
+                | undefined;
             if (!notes) {
                 continue;
             }
@@ -135,7 +142,7 @@ export function scheduleMidiNotes(
             if (hasYeast) {
                 const yeastRack = getYeastRack();
                 if (yeastRack.getProcessorIds().length > 0) {
-                    const spb = (transport.tempo / 60); // beats per second
+                    const spb = transport.tempo / 60; // beats per second
                     const yeastTransport: TransportInfo = {
                         sampleRate: 44100,
                         bpm: transport.tempo,
@@ -155,36 +162,41 @@ export function scheduleMidiNotes(
                     for (const n of notes) {
                         const noteStartBeat = clip.startBeat + n.startBeat;
                         if (noteStartBeat < fromBeat || noteStartBeat >= toBeat) continue;
-                        const timeSamples = Math.round(noteStartBeat * 44100 / spb);
+                        const timeSamples = Math.round((noteStartBeat * 44100) / spb);
                         midiEvents.push({
                             timeSamples,
                             kind: { type: 'noteOn', channel: 0, note: n.pitch, velocity: n.velocity ?? 100 },
                         });
-                        const offTimeSamples = Math.round((noteStartBeat + n.duration) * 44100 / spb);
+                        const offTimeSamples = Math.round(((noteStartBeat + n.duration) * 44100) / spb);
                         midiEvents.push({
                             timeSamples: offTimeSamples,
                             kind: { type: 'noteOff', channel: 0, note: n.pitch },
                         });
                     }
 
-                    const blockStartSamples = Math.round(fromBeat * 44100 / spb);
-                    const blockEndSamples = Math.round(toBeat * 44100 / spb);
-                    const processed = yeastRack.processBlock(midiEvents, blockStartSamples, blockEndSamples, yeastTransport);
+                    const blockStartSamples = Math.round((fromBeat * 44100) / spb);
+                    const blockEndSamples = Math.round((toBeat * 44100) / spb);
+                    const processed = yeastRack.processBlock(
+                        midiEvents,
+                        blockStartSamples,
+                        blockEndSamples,
+                        yeastTransport
+                    );
 
                     // Convert back to beat-based notes for downstream scheduling
-                    const transformedNotes: NonNullable<typeof midiState.notesByClipId[string]> = [];
+                    const transformedNotes: NonNullable<(typeof midiState.notesByClipId)[string]> = [];
                     for (const evt of processed) {
                         if (evt.kind.type === 'noteOn') {
                             const evtNote = evt.kind.note;
                             const evtVel = evt.kind.velocity;
-                            const startBeat = (evt.timeSamples * spb / 44100) - clip.startBeat;
+                            const startBeat = (evt.timeSamples * spb) / 44100 - clip.startBeat;
                             // Find matching Note Off
                             const offEvt = processed.find((e) => {
                                 if (e.kind.type !== 'noteOff') return false;
                                 return e.kind.note === evtNote && e.timeSamples > evt.timeSamples;
                             });
                             const endBeat = offEvt
-                                ? (offEvt.timeSamples * spb / 44100) - clip.startBeat
+                                ? (offEvt.timeSamples * spb) / 44100 - clip.startBeat
                                 : startBeat + 0.25;
                             transformedNotes.push({
                                 ...notes![0]!,
@@ -199,7 +211,7 @@ export function scheduleMidiNotes(
                 }
             }
 
-            const synthParams = (drumKit || drumKitDef) ? null : getSynthParamsForTrack(track.id);
+            const synthParams = drumKit || drumKitDef ? null : getSynthParamsForTrack(track.id);
             const compensation = getCompensationDelay(track.id);
             const clipVisualLength = clip.endBeat - clip.startBeat;
             const loopLen = clip.loopEnabled ? (clip.loopLength ?? clipVisualLength) : clipVisualLength;
@@ -242,10 +254,10 @@ export function scheduleMidiNotes(
 
                         let isToasterChild = false;
                         let toasterParentTrack = null;
-                        
+
                         if (track.parentId) {
-                            toasterParentTrack = tracks.find(t => t.id === track.parentId);
-                            if (toasterParentTrack?.devices.some(d => d.type === 'toaster')) {
+                            toasterParentTrack = tracks.find((t) => t.id === track.parentId);
+                            if (toasterParentTrack?.devices.some((d) => d.type === 'toaster')) {
                                 isToasterChild = true;
                             }
                         }
@@ -254,7 +266,9 @@ export function scheduleMidiNotes(
                             const toasterDevice = toasterParentTrack.devices.find((d) => d.type === 'toaster');
                             const parentStrip = ensureTrackStrip(toasterParentTrack.id);
                             if (toasterDevice && parentStrip) {
-                                const dn = parentStrip.deviceNodes.find((d) => d.deviceId === toasterDevice.id || d.type === 'toaster');
+                                const dn = parentStrip.deviceNodes.find(
+                                    (d) => d.deviceId === toasterDevice.id || d.type === 'toaster'
+                                );
                                 if (dn?.toasterControls) {
                                     const children = tracks.filter((t) => t.parentId === toasterParentTrack!.id);
                                     let pad = children.findIndex((t) => t.id === track.id);
@@ -316,10 +330,20 @@ export function scheduleMidiNotes(
                         } else {
                             const faustDevice = track.devices.find((d) => d.type.startsWith('faust-'));
                             if (faustDevice) {
-                                scheduleFaustNote(track.id, faustDevice.id, pitch, time, duration, note.velocity, clip.gain);
+                                scheduleFaustNote(
+                                    track.id,
+                                    faustDevice.id,
+                                    pitch,
+                                    time,
+                                    duration,
+                                    note.velocity,
+                                    clip.gain
+                                );
                             } else {
                                 const mpe =
-                                    note.pressure !== undefined || note.slide !== undefined || note.pitchBend !== undefined
+                                    note.pressure !== undefined ||
+                                    note.slide !== undefined ||
+                                    note.pitchBend !== undefined
                                         ? { pressure: note.pressure, slide: note.slide, pitchBend: note.pitchBend }
                                         : undefined;
                                 scheduleNote(

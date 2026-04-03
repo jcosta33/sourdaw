@@ -149,6 +149,7 @@ export const RecentProjectsMenu = (): ReactElement => {
                     <Button
                         variant="ghost"
                         size="icon-sm"
+                        className="daw-readout-well"
                         aria-label="Project menu"
                         aria-expanded={open}
                         aria-haspopup="menu"
