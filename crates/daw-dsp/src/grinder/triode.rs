@@ -33,6 +33,7 @@ pub struct TriodeStage {
     vgk: f64,
     vpk: f64,
     plate_voltage: f64,
+    quiescent_plate_voltage: f64,
     supply_voltage: f64,
     plate_resistor: f64,
 
@@ -54,11 +55,12 @@ pub struct TriodeStage {
 
 impl TriodeStage {
     pub fn new(sample_rate: f32) -> Self {
-        Self {
+        let mut stage = Self {
             params: TubeParams::ax7(),
             vgk: -2.0,
             vpk: 200.0,
             plate_voltage: 200.0,
+            quiescent_plate_voltage: 200.0,
             supply_voltage: 300.0,
             plate_resistor: 100_000.0,
             grid_current: 0.0,
@@ -69,13 +71,22 @@ impl TriodeStage {
             bias_offset: 0.0,
             age_factor: 0.0,
             sample_rate: sample_rate as f64,
-        }
+        };
+        stage.recompute_quiescent_plate_voltage();
+        stage.plate_voltage = stage.quiescent_plate_voltage;
+        stage
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            "tubeBias" => self.bias_offset = (value as f64 - 0.5) * 4.0,
-            "tubeAge" => self.age_factor = value as f64,
+            "tubeBias" => {
+                self.bias_offset = (value as f64 - 0.5) * 4.0;
+                self.recompute_quiescent_plate_voltage();
+            }
+            "tubeAge" => {
+                self.age_factor = value as f64;
+                self.recompute_quiescent_plate_voltage();
+            }
             "millerCapacitance" => self.miller_cap_factor = value as f64,
             "gridConduction" => self.coupling_cap_tau = 0.001 + value as f64 * 0.05,
             "couplingCapCharge" => {
@@ -84,6 +95,19 @@ impl TriodeStage {
             }
             _ => {}
         }
+    }
+
+    fn recompute_quiescent_plate_voltage(&mut self) {
+        let mut vpk = self.supply_voltage * 0.67;
+        let vgk = self.vgk + self.bias_offset;
+
+        for _ in 0..32 {
+            let ip = self.plate_current(vgk, vpk);
+            let target = (self.supply_voltage - ip * self.plate_resistor).clamp(0.0, self.supply_voltage);
+            vpk += (target - vpk) * 0.25;
+        }
+
+        self.quiescent_plate_voltage = vpk;
     }
 
     /// Compute plate current using Koren model.
@@ -123,7 +147,7 @@ impl TriodeStage {
         let dt = 1.0 / self.sample_rate;
 
         // Grid voltage = input signal + bias + coupling cap charge offset
-        let vgk = input_d * 50.0 + self.bias_offset - self.coupling_cap_charge;
+        let vgk = self.vgk + input_d * 50.0 + self.bias_offset - self.coupling_cap_charge;
 
         // Grid conduction
         let ig = self.grid_current_model(vgk);
@@ -138,11 +162,13 @@ impl TriodeStage {
         let ip = self.plate_current(vgk, vpk);
 
         // Update plate voltage: V_plate = V_supply - Ip * R_plate
-        self.plate_voltage = self.supply_voltage - ip * self.plate_resistor;
-        self.plate_voltage = self.plate_voltage.clamp(0.0, self.supply_voltage);
+        let target_plate_voltage = (self.supply_voltage - ip * self.plate_resistor).clamp(0.0, self.supply_voltage);
+        let plate_tau = 1.0e-4;
+        let plate_coeff = 1.0 - (-dt / plate_tau).exp();
+        self.plate_voltage += (target_plate_voltage - self.plate_voltage) * plate_coeff;
 
         // Output = inverted plate voltage swing, normalized
-        let output = (self.plate_voltage - self.supply_voltage * 0.5) / (self.supply_voltage * 0.5);
+        let output = (self.plate_voltage - self.quiescent_plate_voltage) / (self.supply_voltage * 0.5);
 
         // Miller capacitance: dynamic low-pass that depends on stage gain
         let stage_gain = (ip * self.plate_resistor / self.supply_voltage).abs().clamp(0.0, 10.0);
@@ -154,7 +180,8 @@ impl TriodeStage {
     }
 
     pub fn reset(&mut self) {
-        self.plate_voltage = self.supply_voltage * 0.67;
+        self.recompute_quiescent_plate_voltage();
+        self.plate_voltage = self.quiescent_plate_voltage;
         self.coupling_cap_charge = 0.0;
         self.grid_current = 0.0;
         self.miller_lp_state = 0.0;
@@ -164,6 +191,9 @@ impl TriodeStage {
 /// Multi-stage preamp (typically 3-4 cascaded triode stages for high-gain amps).
 pub struct Preamp {
     stages: Vec<TriodeStage>,
+    dc_x: Vec<f32>,
+    dc_y: Vec<f32>,
+    dc_initialized: bool,
     gain: f32,
     bright: bool,
     bright_cap_state: f32,
@@ -178,6 +208,9 @@ impl Preamp {
                 TriodeStage::new(sample_rate),
                 TriodeStage::new(sample_rate),
             ],
+            dc_x: vec![0.0; 3],
+            dc_y: vec![0.0; 3],
+            dc_initialized: false,
             gain: 5.0,
             bright: false,
             bright_cap_state: 0.0,
@@ -217,11 +250,40 @@ impl Preamp {
             signal += hp * (1.0 - gain_scale) * 0.3;
         }
 
+        let mut final_out = 0.0;
         for i in 0..num_stages.min(self.stages.len()) {
-            signal = self.stages[i].process_sample(signal);
+            let out = self.stages[i].process_sample(signal);
+
+            if !self.dc_initialized {
+                self.dc_x[i] = out;
+                self.dc_y[i] = 0.0;
+                final_out = 0.0;
+                signal = 0.0;
+                continue;
+            }
+
+            // Simulate the coupling capacitor between gain stages so later stages
+            // do not get driven into a DC-biased cut-off state.
+            let r = 0.999;
+            let dc_out = out - self.dc_x[i] + r * self.dc_y[i];
+            self.dc_x[i] = out;
+            self.dc_y[i] = dc_out;
+
+            final_out = dc_out;
+
+            // A real inter-stage network attenuates the previous plate swing
+            // before it hits the next grid. Without this divider, crunch/lead
+            // channels collapse because every later stage sees an unrealistically
+            // huge grid excursion.
+            signal = dc_out * 0.12;
         }
 
-        signal
+        if !self.dc_initialized {
+            self.dc_initialized = true;
+            return 0.0;
+        }
+
+        final_out
     }
 
     pub fn reset(&mut self) {
@@ -229,5 +291,42 @@ impl Preamp {
             stage.reset();
         }
         self.bright_cap_state = 0.0;
+        self.dc_x.fill(0.0);
+        self.dc_y.fill(0.0);
+        self.dc_initialized = false;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Preamp;
+
+    fn average_abs_output(channel: u32) -> f32 {
+        let mut preamp = Preamp::new(48_000.0);
+        preamp.set_param("channel", channel as f32);
+        preamp.set_param("gain", 6.0);
+
+        let mut sum = 0.0_f32;
+        let total = 2048;
+
+        for n in 0..total {
+            let phase = (n as f32 * 2.0 * std::f32::consts::PI * 220.0) / 48_000.0;
+            let sample = phase.sin() * 0.1;
+            let out = preamp.process_sample(sample);
+            assert!(out.is_finite(), "preamp output should remain finite");
+            sum += out.abs();
+        }
+
+        sum / total as f32
+    }
+
+    #[test]
+    fn crunch_channel_produces_audible_output() {
+        assert!(average_abs_output(1) > 1.0e-3);
+    }
+
+    #[test]
+    fn lead_channel_produces_audible_output() {
+        assert!(average_abs_output(2) > 1.0e-3);
     }
 }

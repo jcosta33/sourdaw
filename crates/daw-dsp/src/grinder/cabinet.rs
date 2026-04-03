@@ -15,10 +15,11 @@ pub struct CabinetConvolver {
     // IR loaded flag
     ir_loaded: bool,
     enabled: bool,
+    sample_rate: f32,
 }
 
 impl CabinetConvolver {
-    pub fn new() -> Self {
+    pub fn new(sample_rate: f32) -> Self {
         Self {
             head_ir: Vec::new(),
             head_buffer: Vec::new(),
@@ -26,6 +27,7 @@ impl CabinetConvolver {
             head_length: 0,
             ir_loaded: false,
             enabled: true,
+            sample_rate,
         }
     }
 
@@ -49,7 +51,7 @@ impl CabinetConvolver {
                 // 4x12 closed-back: tight, punchy
                 ir[0] = 0.8;
                 for i in 1..length {
-                    let t = i as f32 / 44100.0;
+                    let t = i as f32 / self.sample_rate;
                     ir[i] = (-t * 200.0).exp() * (1200.0 * 2.0 * PI * t).sin() * 0.3
                         + (-t * 400.0).exp() * (3500.0 * 2.0 * PI * t).sin() * 0.1;
                 }
@@ -58,7 +60,7 @@ impl CabinetConvolver {
                 // 2x12 open-back: warm, airy
                 ir[0] = 0.6;
                 for i in 1..length {
-                    let t = i as f32 / 44100.0;
+                    let t = i as f32 / self.sample_rate;
                     ir[i] = (-t * 100.0).exp() * (800.0 * 2.0 * PI * t).sin() * 0.4
                         + (-t * 150.0).exp() * (2200.0 * 2.0 * PI * t).sin() * 0.2;
                 }
@@ -67,7 +69,7 @@ impl CabinetConvolver {
                 // 1x12 combo: balanced
                 ir[0] = 0.7;
                 for i in 1..length {
-                    let t = i as f32 / 44100.0;
+                    let t = i as f32 / self.sample_rate;
                     ir[i] = (-t * 150.0).exp() * (1000.0 * 2.0 * PI * t).sin() * 0.35;
                 }
             }

@@ -83,6 +83,7 @@ struct LstmCell {
     // State
     hidden: Vec<f32>,
     cell: Vec<f32>,
+    gates: Vec<f32>,
 }
 
 impl LstmCell {
@@ -95,6 +96,7 @@ impl LstmCell {
             bias: vec![0.0; gate_count * hidden_size],
             hidden: vec![0.0; hidden_size],
             cell: vec![0.0; hidden_size],
+            gates: vec![0.0; gate_count * hidden_size],
         }
     }
 
@@ -102,21 +104,21 @@ impl LstmCell {
         // Simplified single-input LSTM
         // In production this would be a proper matrix multiply
         let h = self.hidden_size;
-        let mut gates = vec![0.0_f32; 4 * h];
+        self.gates.fill(0.0);
 
         // Compute gate activations (simplified for single input)
         for g in 0..4 * h {
-            gates[g] = input * self.w_ih.get(g).copied().unwrap_or(0.01)
-                + self.hidden.get(g % h).copied().unwrap_or(0.0) * self.w_hh.get(g).copied().unwrap_or(0.01)
-                + self.bias.get(g).copied().unwrap_or(0.0);
+            self.gates[g] = input * self.w_ih[g]
+                + self.hidden[g % h] * self.w_hh[g]
+                + self.bias[g];
         }
 
         // Apply gate activations
         for i in 0..h {
-            let i_gate = sigmoid(gates[i]);           // input gate
-            let f_gate = sigmoid(gates[h + i]);       // forget gate
-            let g_gate = gates[2 * h + i].tanh();     // cell gate
-            let o_gate = sigmoid(gates[3 * h + i]);   // output gate
+            let i_gate = sigmoid(self.gates[i]);           // input gate
+            let f_gate = sigmoid(self.gates[h + i]);       // forget gate
+            let g_gate = self.gates[2 * h + i].tanh();     // cell gate
+            let o_gate = sigmoid(self.gates[3 * h + i]);   // output gate
 
             self.cell[i] = f_gate * self.cell[i] + i_gate * g_gate;
             self.hidden[i] = o_gate * self.cell[i].tanh();

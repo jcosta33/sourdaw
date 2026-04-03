@@ -15,8 +15,6 @@ use super::params::{SmoothedParam, db_to_linear, linear_to_db};
 
 #[allow(dead_code)]
 pub struct GrinderEngine {
-    sample_rate: f32,
-
     // Signal chain
     input_cond: InputConditioner,
     gate: NoiseGate,
@@ -42,12 +40,14 @@ pub struct GrinderEngine {
     clean_blend: SmoothedParam,
     limiter_threshold: f32,
     limiter_enabled: bool,
+    bypassed: bool,
 
     // FX loop
     fx_loop_enabled: bool,
     fx_loop_mix: f32,
 
     // Metering
+    meter_decay_coeff: f32,
     input_peak: f32,
     preamp_peak: f32,
     power_amp_peak: f32,
@@ -56,11 +56,12 @@ pub struct GrinderEngine {
 
 impl GrinderEngine {
     pub fn new(sample_rate: f32) -> Self {
-        let mut cab = CabinetConvolver::new();
+        let mut cab = CabinetConvolver::new(sample_rate);
         cab.load_builtin(0); // Default 4x12 cabinet
 
+        let meter_decay_coeff = (-1.0 / (sample_rate * 0.150)).exp();
+
         Self {
-            sample_rate,
             input_cond: InputConditioner::new(sample_rate),
             gate: NoiseGate::new(sample_rate),
             preamp: Preamp::new(sample_rate),
@@ -81,8 +82,10 @@ impl GrinderEngine {
             clean_blend: SmoothedParam::new(0.0, 5.0, sample_rate),
             limiter_threshold: db_to_linear(-0.3),
             limiter_enabled: true,
+            bypassed: false,
             fx_loop_enabled: false,
             fx_loop_mix: 1.0,
+            meter_decay_coeff,
             input_peak: 0.0,
             preamp_peak: 0.0,
             power_amp_peak: 0.0,
@@ -137,12 +140,43 @@ impl GrinderEngine {
             "cleanBlend" => self.clean_blend.set_target(value),
             "limiterEnabled" => self.limiter_enabled = value > 0.5,
             "limiterThreshold" => self.limiter_threshold = db_to_linear(value),
+            "bypass" => self.bypassed = value > 0.5,
 
-            _ => {}
+            _ => {
+                if let Some(pedal_param) = name.strip_prefix("preCompressor") {
+                    if let Some(mapped) = map_prefixed_pedal_param(pedal_param) {
+                        self.pre_comp.set_param(mapped, value);
+                    }
+                } else if let Some(pedal_param) = name.strip_prefix("preOverdrive") {
+                    if let Some(mapped) = map_prefixed_pedal_param(pedal_param) {
+                        self.pre_od.set_param(mapped, value);
+                    }
+                } else if let Some(pedal_param) = name.strip_prefix("preDistortion") {
+                    if let Some(mapped) = map_prefixed_pedal_param(pedal_param) {
+                        self.pre_dist.set_param(mapped, value);
+                    }
+                } else if let Some(pedal_param) = name.strip_prefix("preFuzz") {
+                    if let Some(mapped) = map_prefixed_pedal_param(pedal_param) {
+                        self.pre_fuzz.set_param(mapped, value);
+                    }
+                } else if let Some(pedal_param) = name.strip_prefix("fxDelay") {
+                    if let Some(mapped) = map_prefixed_pedal_param(pedal_param) {
+                        self.fx_delay.set_param(mapped, value);
+                    }
+                } else if let Some(pedal_param) = name.strip_prefix("fxReverb") {
+                    if let Some(mapped) = map_prefixed_pedal_param(pedal_param) {
+                        self.fx_reverb.set_param(mapped, value);
+                    }
+                }
+            }
         }
     }
 
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32]) {
+        if self.bypassed {
+            return;
+        }
+
         let len = left.len().min(right.len());
 
         for i in 0..len {
@@ -156,7 +190,7 @@ impl GrinderEngine {
 
             // Update input peak
             let in_peak = signal.abs();
-            if in_peak > self.input_peak { self.input_peak = in_peak; } else { self.input_peak *= 0.9999; }
+            if in_peak > self.input_peak { self.input_peak = in_peak; } else { self.input_peak *= self.meter_decay_coeff; }
 
             // Noise gate
             signal = self.gate.process_sample(signal);
@@ -172,7 +206,7 @@ impl GrinderEngine {
 
             // Update preamp peak
             let pre_peak = signal.abs();
-            if pre_peak > self.preamp_peak { self.preamp_peak = pre_peak; } else { self.preamp_peak *= 0.9999; }
+            if pre_peak > self.preamp_peak { self.preamp_peak = pre_peak; } else { self.preamp_peak *= self.meter_decay_coeff; }
 
             // Tone stack
             signal = self.tone_stack.process_sample(signal);
@@ -197,7 +231,7 @@ impl GrinderEngine {
 
             // Update power amp peak
             let pa_peak = signal.abs();
-            if pa_peak > self.power_amp_peak { self.power_amp_peak = pa_peak; } else { self.power_amp_peak *= 0.9999; }
+            if pa_peak > self.power_amp_peak { self.power_amp_peak = pa_peak; } else { self.power_amp_peak *= self.meter_decay_coeff; }
 
             // Cabinet (convolution)
             signal = self.cabinet.process_sample(signal);
@@ -231,7 +265,7 @@ impl GrinderEngine {
 
             // Update output peak
             let out_peak = signal.abs();
-            if out_peak > self.output_peak { self.output_peak = out_peak; } else { self.output_peak *= 0.9999; }
+            if out_peak > self.output_peak { self.output_peak = out_peak; } else { self.output_peak *= self.meter_decay_coeff; }
         }
     }
 
@@ -241,4 +275,150 @@ impl GrinderEngine {
     pub fn output_db(&self) -> f32 { linear_to_db(self.output_peak) }
     pub fn sag_voltage(&self) -> f32 { self.power_amp.sag_voltage() }
     pub fn latency_samples(&self) -> u32 { 0 }
+}
+
+fn map_prefixed_pedal_param(name: &str) -> Option<&'static str> {
+    match name {
+        "Enabled" => Some("enabled"),
+        "Drive" => Some("drive"),
+        "Tone" => Some("tone"),
+        "Level" => Some("level"),
+        "Threshold" => Some("threshold"),
+        "Ratio" => Some("ratio"),
+        "Attack" => Some("attack"),
+        "Release" => Some("release"),
+        "Fuzz" => Some("fuzz"),
+        "Time" => Some("time"),
+        "Feedback" => Some("feedback"),
+        "Mix" => Some("mix"),
+        "Decay" => Some("decay"),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::GrinderEngine;
+
+    fn average_abs_output_for_channel(channel: u32, gain: f32) -> f32 {
+        let mut engine = GrinderEngine::new(48_000.0);
+        engine.set_param("channel", channel as f32);
+        engine.set_param("gain", gain);
+        engine.set_param("master", 6.0);
+
+        let total = 4096;
+        let mut left = vec![0.0_f32; total];
+        let mut right = vec![0.0_f32; total];
+
+        for n in 0..total {
+            let phase = (n as f32 * 2.0 * std::f32::consts::PI * 220.0) / 48_000.0;
+            let sample = phase.sin() * 0.15;
+            left[n] = sample;
+            right[n] = sample;
+        }
+
+        engine.process_block(&mut left, &mut right);
+
+        left.iter().map(|sample| sample.abs()).sum::<f32>() / total as f32
+    }
+
+    fn average_abs_output_for_silence(power_tube_type: f32) -> f32 {
+        let mut engine = GrinderEngine::new(48_000.0);
+        engine.set_param("powerTubeType", power_tube_type);
+        engine.set_param("channel", 2.0);
+        engine.set_param("gain", 8.0);
+        engine.set_param("master", 6.0);
+
+        let total = 4096;
+        let mut left = vec![0.0_f32; total];
+        let mut right = vec![0.0_f32; total];
+
+        engine.process_block(&mut left, &mut right);
+
+        left.iter().map(|sample| sample.abs()).sum::<f32>() / total as f32
+    }
+
+    #[test]
+    fn crunch_channel_is_not_effectively_muted() {
+        let clean = average_abs_output_for_channel(0, 4.0);
+        let crunch = average_abs_output_for_channel(1, 6.0);
+
+        assert!(clean > 1.0e-3, "clean channel should produce output");
+        assert!(
+            crunch > clean * 0.25,
+            "crunch channel should remain in a usable loudness range (clean={clean}, crunch={crunch})"
+        );
+    }
+
+    #[test]
+    fn lead_channel_is_not_effectively_muted() {
+        let clean = average_abs_output_for_channel(0, 4.0);
+        let lead = average_abs_output_for_channel(2, 8.0);
+
+        assert!(clean > 1.0e-3, "clean channel should produce output");
+        assert!(
+            lead > clean * 0.25,
+            "lead channel should remain in a usable loudness range (clean={clean}, lead={lead})"
+        );
+    }
+
+    #[test]
+    fn silence_does_not_self_oscillate_across_power_tube_types() {
+        let six_l6 = average_abs_output_for_silence(0.0);
+        let el34 = average_abs_output_for_silence(1.0);
+        let el84 = average_abs_output_for_silence(2.0);
+
+        assert!(six_l6 < 1.0e-4, "6L6 should stay near silence, got {six_l6}");
+        assert!(el34 < 1.0e-4, "EL34 should stay near silence, got {el34}");
+        assert!(el84 < 1.0e-4, "EL84 should stay near silence, got {el84}");
+    }
+
+    #[test]
+    fn prefixed_pedal_params_affect_the_live_signal_path() {
+        let mut dry_engine = GrinderEngine::new(48_000.0);
+        dry_engine.set_param("channel", 1.0);
+        dry_engine.set_param("gain", 6.0);
+        dry_engine.set_param("master", 5.0);
+
+        let mut driven_engine = GrinderEngine::new(48_000.0);
+        driven_engine.set_param("channel", 1.0);
+        driven_engine.set_param("gain", 6.0);
+        driven_engine.set_param("master", 5.0);
+        driven_engine.set_param("preOverdriveEnabled", 1.0);
+        driven_engine.set_param("preOverdriveDrive", 4.0);
+        driven_engine.set_param("preOverdriveTone", 6.0);
+        driven_engine.set_param("preOverdriveLevel", 7.0);
+        driven_engine.set_param("preCompressorEnabled", 1.0);
+        driven_engine.set_param("preCompressorThreshold", -26.0);
+        driven_engine.set_param("preCompressorRatio", 3.0);
+        driven_engine.set_param("preCompressorAttack", 18.0);
+        driven_engine.set_param("preCompressorRelease", 180.0);
+
+        let total = 4096;
+        let mut dry_left = vec![0.0_f32; total];
+        let mut dry_right = vec![0.0_f32; total];
+        let mut driven_left = vec![0.0_f32; total];
+        let mut driven_right = vec![0.0_f32; total];
+
+        for n in 0..total {
+            let phase = (n as f32 * 2.0 * std::f32::consts::PI * 220.0) / 48_000.0;
+            let sample = phase.sin() * 0.1;
+            dry_left[n] = sample;
+            dry_right[n] = sample;
+            driven_left[n] = sample;
+            driven_right[n] = sample;
+        }
+
+        dry_engine.process_block(&mut dry_left, &mut dry_right);
+        driven_engine.process_block(&mut driven_left, &mut driven_right);
+
+        let dry_avg = dry_left.iter().map(|sample| sample.abs()).sum::<f32>() / total as f32;
+        let driven_avg = driven_left.iter().map(|sample| sample.abs()).sum::<f32>() / total as f32;
+
+        assert!(
+            (driven_avg - dry_avg).abs() > 1.0e-3,
+            "prefixed pedal params should audibly change output (dry={dry_avg}, driven={driven_avg})"
+        );
+    }
+
 }

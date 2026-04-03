@@ -711,11 +711,14 @@ export class TrackNode {
                 };
 
                 const pendingParams: Array<[string, number]> = [];
+                let pendingBypass = false;
                 dn.nativeDspControls = {
                     setParam: (name: string, value: number) => {
                         pendingParams.push([name, value]);
                     },
-                    setBypass: () => {},
+                    setBypass: (bypassed: boolean) => {
+                        pendingBypass = bypassed;
+                    },
                 };
 
                 const loadPromise = createGrinderNode(context)
@@ -734,6 +737,9 @@ export class TrackNode {
                                 data.latency,
                             );
                         });
+                        if (pendingBypass) {
+                            result.setBypass(true);
+                        }
                         const idx = this.strip.deviceNodes.findIndex((d) => d.deviceId === deviceId);
                         if (idx !== -1) {
                             const grinderDn: BuiltinDeviceNode = {

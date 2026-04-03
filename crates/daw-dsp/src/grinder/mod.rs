@@ -20,6 +20,8 @@ pub mod engine;
 use engine::GrinderEngine;
 use wasm_bindgen::prelude::*;
 
+const MAX_GRINDER_BLOCK_SIZE: usize = 2048;
+
 /// WASM-exported Grinder instance for AudioWorklet.
 #[wasm_bindgen]
 pub struct GrinderInstance {
@@ -34,13 +36,12 @@ pub struct GrinderInstance {
 impl GrinderInstance {
     #[wasm_bindgen(constructor)]
     pub fn new(sample_rate: f32) -> Self {
-        let block_size = 128;
         Self {
             engine: GrinderEngine::new(sample_rate),
-            input_left: vec![0.0; block_size],
-            input_right: vec![0.0; block_size],
-            output_left: vec![0.0; block_size],
-            output_right: vec![0.0; block_size],
+            input_left: vec![0.0; MAX_GRINDER_BLOCK_SIZE],
+            input_right: vec![0.0; MAX_GRINDER_BLOCK_SIZE],
+            output_left: vec![0.0; MAX_GRINDER_BLOCK_SIZE],
+            output_right: vec![0.0; MAX_GRINDER_BLOCK_SIZE],
         }
     }
 
@@ -58,11 +59,8 @@ impl GrinderInstance {
 
     pub fn process(&mut self, block_size: u32) -> *const f32 {
         let size = block_size as usize;
-        if self.input_left.len() < size {
-            self.input_left.resize(size, 0.0);
-            self.input_right.resize(size, 0.0);
-            self.output_left.resize(size, 0.0);
-            self.output_right.resize(size, 0.0);
+        if size > MAX_GRINDER_BLOCK_SIZE {
+            return std::ptr::null();
         }
 
         self.output_left[..size].copy_from_slice(&self.input_left[..size]);

@@ -45,6 +45,8 @@ const PARAM_MAP = {
     bypass: 'bypass',
 };
 
+const MAX_GRINDER_BLOCK_SIZE = 2048;
+
 class GrinderProcessor extends AudioWorkletProcessor {
     _wasm = null;
     _mem = null;
@@ -138,22 +140,46 @@ class GrinderProcessor extends AudioWorkletProcessor {
         w.grinderinstance_set_param(this._ptr, strPtr, len, value);
     }
 
-    process(inputs, outputs) {
-        if (!this._ready) {
-            return true;
-        }
+    _passthrough(input, output) {
+        const leftIn = input[0];
+        const rightIn = input[1] ?? leftIn;
 
+        if (output[0] && leftIn) {
+            output[0].set(leftIn);
+        }
+        if (output[1] && rightIn) {
+            output[1].set(rightIn);
+        }
+    }
+
+    process(inputs, outputs) {
         const input = inputs[0];
         const output = outputs[0];
-        if (!input || input.length < 2 || !output || output.length < 2) {
+
+        if (!this._ready) {
+            if (input && output) {
+                this._passthrough(input, output);
+            }
+            return true;
+        }
+        if (!input || input.length < 1 || !output || output.length < 1) {
             return true;
         }
 
         const frames = output[0].length;
+        if (frames > MAX_GRINDER_BLOCK_SIZE) {
+            this._passthrough(input, output);
+            return true;
+        }
+
         const w = this._wasm;
 
         const inLeftPtr = w.grinderinstance_get_input_left_ptr(this._ptr) >>> 0;
         const inRightPtr = w.grinderinstance_get_input_right_ptr(this._ptr) >>> 0;
+        if (!inLeftPtr || !inRightPtr) {
+            this._passthrough(input, output);
+            return true;
+        }
 
         const mem = w.memory.buffer;
         new Float32Array(mem, inLeftPtr, frames).set(input[0]);
@@ -161,6 +187,10 @@ class GrinderProcessor extends AudioWorkletProcessor {
 
         const outLeftPtr = w.grinderinstance_process(this._ptr, frames) >>> 0;
         const outRightPtr = w.grinderinstance_get_right_ptr(this._ptr) >>> 0;
+        if (!outLeftPtr || !outRightPtr) {
+            this._passthrough(input, output);
+            return true;
+        }
 
         output[0].set(new Float32Array(mem, outLeftPtr, frames));
         if (output[1]) {

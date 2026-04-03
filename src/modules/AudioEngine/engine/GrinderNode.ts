@@ -7,7 +7,6 @@ import grinderProcessorUrl from '../services/grinderProcessor.ts?worker&url';
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
 const workletRegistrations = new WeakMap<BaseAudioContext, Promise<void>>();
-let cachedWasmBytes: ArrayBuffer | null = null;
 
 async function ensureWorkletRegistered(ctx: BaseAudioContext): Promise<void> {
     let promise = workletRegistrations.get(ctx);
@@ -19,15 +18,14 @@ async function ensureWorkletRegistered(ctx: BaseAudioContext): Promise<void> {
 }
 
 async function fetchWasmBinary(url: string): Promise<ArrayBuffer> {
-    if (cachedWasmBytes) {
-        return cachedWasmBytes;
-    }
-    const response = await fetch(url);
+    // Always fetch fresh bytes so rebuilt local WASM is picked up after a
+    // plugin reload or app restart instead of getting stuck on stale cached
+    // worklet data.
+    const response = await fetch(url, { cache: 'no-store' });
     if (!response.ok) {
         throw new Error(`Failed to fetch Grinder WASM: ${response.status}`);
     }
-    cachedWasmBytes = await response.arrayBuffer();
-    return cachedWasmBytes;
+    return await response.arrayBuffer();
 }
 
 export type GrinderMeterData = {

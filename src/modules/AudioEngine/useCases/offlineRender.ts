@@ -91,6 +91,79 @@ type PendingWorkletEvent = {
     toasterPadIndex: number;
 };
 
+type OfflineTrackStrip = {
+    inputNode: GainNode;
+    preFaderTap: GainNode;
+    faderNode: GainNode;
+    postFaderGain: GainNode;
+    panNode: StereoPannerNode;
+    outputNode: GainNode;
+    deviceEntries: import('./buildDeviceChain').DeviceNodeEntry[];
+};
+
+type OfflineBusStrip = {
+    gainNode: GainNode;
+};
+
+function hasToasterDevice(
+    track: ReturnType<typeof getTrackStoreState> extends { tracks: (infer T)[] } | null ? T : never
+): boolean {
+    return track.devices.some((device) => device.type === 'toaster');
+}
+
+function shouldCreateOfflineStrip(
+    track: ReturnType<typeof getTrackStoreState> extends { tracks: (infer T)[] } | null ? T : never
+): boolean {
+    return track.kind !== 'folder' || hasToasterDevice(track);
+}
+
+async function createOfflineTrackStrip(
+    offlineCtx: OfflineAudioContext,
+    track: ReturnType<typeof getTrackStoreState> extends { tracks: (infer T)[] } | null ? T : never
+): Promise<OfflineTrackStrip> {
+    const inputNode = offlineCtx.createGain();
+    inputNode.gain.value = 1;
+
+    const preFaderTap = offlineCtx.createGain();
+    preFaderTap.gain.value = 1;
+
+    const faderNode = offlineCtx.createGain();
+    faderNode.gain.value = Math.max(0, track.gain);
+
+    const postFaderGain = offlineCtx.createGain();
+    postFaderGain.gain.value = track.muted ? 0 : 1;
+
+    const panNode = offlineCtx.createStereoPanner();
+    panNode.pan.value = Math.max(-1, Math.min(1, track.pan / 50));
+
+    const outputNode = offlineCtx.createGain();
+    outputNode.gain.value = 1;
+
+    const deviceEntries = await buildDeviceChain(offlineCtx, track.devices, inputNode, preFaderTap);
+
+    preFaderTap.connect(faderNode);
+    faderNode.connect(postFaderGain);
+    postFaderGain.connect(panNode);
+    panNode.connect(outputNode);
+
+    return {
+        inputNode,
+        preFaderTap,
+        faderNode,
+        postFaderGain,
+        panNode,
+        outputNode,
+        deviceEntries,
+    };
+}
+
+function createOfflineBusStrip(offlineCtx: OfflineAudioContext, trackGain: number, masterGain: GainNode): OfflineBusStrip {
+    const gainNode = offlineCtx.createGain();
+    gainNode.gain.value = Math.max(0, Math.min(2, trackGain));
+    gainNode.connect(masterGain);
+    return { gainNode };
+}
+
 /**
  * Register suspend points on the OfflineAudioContext for all collected
  * worklet note events. Must be called ONCE after ALL tracks are scheduled
@@ -162,8 +235,9 @@ async function scheduleTrackClips(
     offlineCtx: OfflineAudioContext,
     track: ReturnType<typeof getTrackStoreState> extends { tracks: (infer T)[] } | null ? T : never,
     midi: NonNullable<ReturnType<typeof getMidiStoreState>>,
-    trackGain: GainNode,
-    trackPan: StereoPannerNode,
+    trackInputNode: GainNode,
+    trackGainNode: GainNode,
+    trackPanNode: StereoPannerNode,
     destination: AudioNode,
     durationSeconds: number,
     defaultTempo: number,
@@ -174,14 +248,11 @@ async function scheduleTrackClips(
     deviceEntriesByTrack?: Map<string, import('./buildDeviceChain').DeviceNodeEntry[]>
 ): Promise<void> {
     if (track.frozen && track.frozenBufferId) {
-        trackGain.connect(trackPan);
-        trackPan.connect(destination);
-
         const frozenBuf = audioBufferCache.get(track.frozenBufferId);
         if (frozenBuf) {
             const source = offlineCtx.createBufferSource();
             source.buffer = frozenBuf;
-            source.connect(trackGain);
+            source.connect(trackInputNode);
             source.start(0);
         } else {
             onWarning?.(
@@ -199,15 +270,15 @@ async function scheduleTrackClips(
     if (deviceEntriesByTrack && deviceEntriesByTrack.has(track.id)) {
         deviceEntries = deviceEntriesByTrack.get(track.id)!;
     } else {
-        deviceEntries = await buildDeviceChain(offlineCtx, track.devices, trackGain, trackPan);
-        trackPan.connect(destination);
+        deviceEntries = await buildDeviceChain(offlineCtx, track.devices, trackInputNode, trackPanNode);
+        trackPanNode.connect(destination);
     }
 
     scheduleTrackAutomation(
         automationLanes,
         track.id,
-        trackGain,
-        trackPan,
+        trackGainNode,
+        trackPanNode,
         deviceEntries,
         durationSeconds,
         defaultTempo,
@@ -315,13 +386,13 @@ async function scheduleTrackClips(
                         workletEvents.push({ time: startTime, type: 'on', pitch: note.pitch, velocity: note.velocity, duration });
                         workletEvents.push({ time: endTime, type: 'off', pitch: note.pitch, velocity: 0, duration: 0 });
                     } else if (kitDef) {
-                        scheduleDrumKitNote(offlineCtx, trackGain, kitDef, note.pitch, startTime, note.velocity);
+                        scheduleDrumKitNote(offlineCtx, trackInputNode, kitDef, note.pitch, startTime, note.velocity);
                     } else if (drumKit) {
-                        scheduleKitNote(offlineCtx, trackGain, drumKit, note.pitch, startTime, duration, note.velocity);
+                        scheduleKitNote(offlineCtx, trackInputNode, drumKit, note.pitch, startTime, duration, note.velocity);
                     } else {
                         scheduleNoteOffline(
                             offlineCtx,
-                            trackGain,
+                            trackInputNode,
                             note.pitch,
                             startTime,
                             duration,
@@ -406,7 +477,7 @@ async function scheduleTrackClips(
                 // Always route through a gain node for clip gain + fade envelope.
                 const fadeGain = offlineCtx.createGain();
                 source.connect(fadeGain);
-                fadeGain.connect(trackGain);
+                fadeGain.connect(trackInputNode);
 
                 // Baseline: clip gain for mid-clip iterations (no fade)
                 fadeGain.gain.setValueAtTime(clipGainValue, startSec);
@@ -519,58 +590,98 @@ export async function renderOffline(
         // Exclude muted, disabled, and structural (folder) tracks from the render.
         // We MUST include folder tracks if they contain a Toaster device, because
         // child tracks send MIDI to the parent Toaster device to generate audio.
-        const eligible =
+        const allRenderableTracks =
             tracks && midi
-                ? tracks.tracks.filter((t) => !t.muted && !t.disabled && (t.kind !== 'folder' || t.devices.some((d) => d.type === 'toaster')))
+                ? tracks.tracks.filter((track) => !track.disabled && shouldCreateOfflineStrip(track))
                 : [];
+        const sourceTracks = allRenderableTracks.filter((track) => !track.muted);
         let scheduled = 0;
         const pendingWorkletEvents: PendingWorkletEvent[] = [];
 
-        // Two-pass approach: build device chains first so child tracks (e.g. Toaster
-        // drum pads) can look up their parent's instrument controls.
-        type TrackNodes = { trackGain: GainNode; trackPan: StereoPannerNode };
-        const trackNodesById = new Map<string, TrackNodes>();
+        // Build the same strip topology the live engine uses:
+        // Track input -> devices -> pre-fader tap -> fader -> mute -> pan -> output routing.
+        // Sends tap either pre-fader or post-pan, and buses sum into the master gain.
+        const trackStripsById = new Map<string, OfflineTrackStrip>();
         const deviceEntriesByTrack = new Map<string, import('./buildDeviceChain').DeviceNodeEntry[]>();
+        const busStripsById = new Map<string, OfflineBusStrip>();
 
-        // Pass 1: Build device chains for all eligible tracks
-        for (const track of eligible) {
+        for (const track of allRenderableTracks) {
             checkCancel();
 
-            const trackGain = offlineCtx.createGain();
-            trackGain.gain.value = Math.max(0, track.gain);
-            const trackPan = offlineCtx.createStereoPanner();
-            trackPan.pan.value = Math.max(-1, Math.min(1, track.pan / 50));
-            trackNodesById.set(track.id, { trackGain, trackPan });
-
-            const entries = await buildDeviceChain(offlineCtx, track.devices, trackGain, trackPan);
-            trackPan.connect(masterGain);
-            deviceEntriesByTrack.set(track.id, entries);
+            if (track.kind === 'bus') {
+                busStripsById.set(track.id, createOfflineBusStrip(offlineCtx, track.gain, masterGain));
+            }
         }
 
-        // Pass 2: Schedule clips (with access to all device entries for parent lookups)
-        for (const track of eligible) {
+        for (const track of allRenderableTracks) {
+            checkCancel();
+            const strip = await createOfflineTrackStrip(offlineCtx, track);
+            trackStripsById.set(track.id, strip);
+            deviceEntriesByTrack.set(track.id, strip.deviceEntries);
+        }
+
+        for (const track of allRenderableTracks) {
+            const strip = trackStripsById.get(track.id);
+            if (!strip) {
+                continue;
+            }
+
+            if (track.outputId === 'hw_out' || !track.outputId) {
+                strip.outputNode.connect(masterGain);
+            } else {
+                const busStrip = busStripsById.get(track.outputId);
+                const targetTrackStrip = trackStripsById.get(track.outputId);
+                if (busStrip) {
+                    strip.outputNode.connect(busStrip.gainNode);
+                } else if (targetTrackStrip) {
+                    strip.outputNode.connect(targetTrackStrip.inputNode);
+                } else {
+                    strip.outputNode.connect(masterGain);
+                }
+            }
+
+            for (const send of track.sends) {
+                const busStrip = busStripsById.get(send.busId);
+                if (!busStrip) {
+                    continue;
+                }
+                const sendGain = offlineCtx.createGain();
+                sendGain.gain.value = Math.max(0, Math.min(1, send.level));
+                const tapNode = send.preFader ? strip.preFaderTap : strip.outputNode;
+                tapNode.connect(sendGain);
+                sendGain.connect(busStrip.gainNode);
+            }
+        }
+
+        // Schedule only audible source tracks, but keep the full routing graph alive so
+        // buses, targets, and the master strip behave like live playback.
+        for (const track of sourceTracks) {
             checkCancel();
 
-            const { trackGain, trackPan } = trackNodesById.get(track.id)!;
+            const strip = trackStripsById.get(track.id);
+            if (!strip) {
+                continue;
+            }
 
             await scheduleTrackClips(
                 offlineCtx,
                 track,
                 midi!,
-                trackGain,
-                trackPan,
+                strip.inputNode,
+                strip.faderNode,
+                strip.panNode,
                 masterGain,
                 durationSeconds,
                 defaultTempo,
                 changes,
                 onWarning,
                 pendingWorkletEvents,
-                eligible,
+                sourceTracks,
                 deviceEntriesByTrack
             );
 
             scheduled++;
-            onProgress?.((scheduled / eligible.length) * 0.5); // scheduling = 0-50%
+            onProgress?.((scheduled / Math.max(1, sourceTracks.length)) * 0.5); // scheduling = 0-50%
         }
 
         // Register all worklet note suspend points ONCE after all tracks are scheduled.
@@ -585,7 +696,7 @@ export async function renderOffline(
         // OfflineAudioContext.startRendering() emits no progress events — animate toward 97%
         // using an easing approach. eligible.length > 0 means scheduling reached 50%, so start
         // the simulation from there; otherwise start from 0.
-        const schedulingFrac = eligible.length > 0 ? 0.5 : 0;
+        const schedulingFrac = sourceTracks.length > 0 ? 0.5 : 0;
         let simFrac = schedulingFrac;
         const renderTimer = onProgress
             ? setInterval(() => {
@@ -670,19 +781,26 @@ export async function exportStems(
             trackPan.pan.value = Math.max(-1, Math.min(1, track.pan / 50));
 
             const pendingWorkletEvents: PendingWorkletEvent[] = [];
+            const strip = await createOfflineTrackStrip(offlineCtx, track);
+            const deviceEntriesByTrack = new Map<string, import('./buildDeviceChain').DeviceNodeEntry[]>();
+            deviceEntriesByTrack.set(track.id, strip.deviceEntries);
+            strip.outputNode.connect(offlineCtx.destination);
 
             await scheduleTrackClips(
                 offlineCtx,
                 track,
                 midi,
-                trackGain,
-                trackPan,
+                strip.inputNode,
+                strip.faderNode,
+                strip.panNode,
                 offlineCtx.destination,
                 durationSeconds,
                 defaultTempo,
                 changes,
                 onWarning,
-                pendingWorkletEvents
+                pendingWorkletEvents,
+                [track],
+                deviceEntriesByTrack
             );
 
             schedulePendingSuspends(offlineCtx, pendingWorkletEvents, durationSeconds);

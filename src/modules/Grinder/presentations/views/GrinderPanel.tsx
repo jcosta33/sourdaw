@@ -13,11 +13,13 @@ import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { grinderStore, type GrinderState, type GrinderUiLevel, setGrinderUiLevel } from '../../stores/grinderStore';
-import { setGrinderParamWithAudio } from '../../useCases/grinderParamBridge';
+import { loadGrinderPatchWithAudio, setGrinderParamWithAudio } from '../../useCases/grinderParamBridge';
 import { GRINDER_PRESETS } from '../../useCases/grinderPresets';
-import { loadGrinderPatch } from '../../stores/grinderStore';
 import {
     type GrinderAmpModel,
+    type GrinderPatch,
+    type GrinderPedal,
+    type GrinderPedalType,
     type GrinderToneStackType,
     type GrinderPowerTubeType,
     type GrinderRectifierType,
@@ -43,6 +45,117 @@ const AMP_MODELS: { id: GrinderAmpModel; label: string; description: string }[] 
 const TONE_STACK_TYPES: GrinderToneStackType[] = ['fender', 'marshall', 'vox'];
 const POWER_TUBE_TYPES: GrinderPowerTubeType[] = ['6l6', 'el34', 'el84'];
 const RECTIFIER_TYPES: GrinderRectifierType[] = ['tube', 'solid-state', 'variac'];
+
+type SupportedPedalControl = {
+    label: string;
+    type: GrinderPedalType;
+    defaults: GrinderPedal;
+    params: Array<{
+        key: string;
+        label: string;
+        min: number;
+        max: number;
+        step: number;
+        defaultValue: number;
+        unit?: string;
+    }>;
+};
+
+const SUPPORTED_PRE_PEDALS: readonly SupportedPedalControl[] = [
+    {
+        label: 'Compressor',
+        type: 'compressor',
+        defaults: {
+            id: 'comp1',
+            type: 'compressor',
+            enabled: false,
+            params: { threshold: -20, ratio: 4, attack: 10, release: 200 },
+        },
+        params: [
+            { key: 'threshold', label: 'Threshold', min: -40, max: 0, step: 1, defaultValue: -20, unit: 'dB' },
+            { key: 'ratio', label: 'Ratio', min: 1, max: 8, step: 0.5, defaultValue: 4 },
+            { key: 'attack', label: 'Attack', min: 1, max: 50, step: 1, defaultValue: 10, unit: 'ms' },
+            { key: 'release', label: 'Release', min: 50, max: 400, step: 5, defaultValue: 200, unit: 'ms' },
+        ],
+    },
+    {
+        label: 'Overdrive',
+        type: 'overdrive',
+        defaults: {
+            id: 'od1',
+            type: 'overdrive',
+            enabled: false,
+            params: { drive: 4, tone: 6, level: 7 },
+        },
+        params: [
+            { key: 'drive', label: 'Drive', min: 0, max: 10, step: 0.1, defaultValue: 4 },
+            { key: 'tone', label: 'Tone', min: 0, max: 10, step: 0.1, defaultValue: 6 },
+            { key: 'level', label: 'Level', min: 0, max: 10, step: 0.1, defaultValue: 7 },
+        ],
+    },
+    {
+        label: 'Distortion',
+        type: 'distortion',
+        defaults: {
+            id: 'dist1',
+            type: 'distortion',
+            enabled: false,
+            params: { drive: 5, tone: 5, level: 6 },
+        },
+        params: [
+            { key: 'drive', label: 'Drive', min: 0, max: 10, step: 0.1, defaultValue: 5 },
+            { key: 'tone', label: 'Tone', min: 0, max: 10, step: 0.1, defaultValue: 5 },
+            { key: 'level', label: 'Level', min: 0, max: 10, step: 0.1, defaultValue: 6 },
+        ],
+    },
+    {
+        label: 'Fuzz',
+        type: 'fuzz',
+        defaults: {
+            id: 'fuzz1',
+            type: 'fuzz',
+            enabled: false,
+            params: { fuzz: 7, tone: 5, level: 6 },
+        },
+        params: [
+            { key: 'fuzz', label: 'Fuzz', min: 0, max: 10, step: 0.1, defaultValue: 7 },
+            { key: 'tone', label: 'Tone', min: 0, max: 10, step: 0.1, defaultValue: 5 },
+            { key: 'level', label: 'Level', min: 0, max: 10, step: 0.1, defaultValue: 6 },
+        ],
+    },
+];
+
+const SUPPORTED_FX_PEDALS: readonly SupportedPedalControl[] = [
+    {
+        label: 'Delay',
+        type: 'delay',
+        defaults: {
+            id: 'dl1',
+            type: 'delay',
+            enabled: false,
+            params: { time: 375, feedback: 0.3, mix: 0.25 },
+        },
+        params: [
+            { key: 'time', label: 'Time', min: 60, max: 800, step: 5, defaultValue: 375, unit: 'ms' },
+            { key: 'feedback', label: 'Feedback', min: 0, max: 0.95, step: 0.01, defaultValue: 0.3 },
+            { key: 'mix', label: 'Mix', min: 0, max: 1, step: 0.01, defaultValue: 0.25 },
+        ],
+    },
+    {
+        label: 'Reverb',
+        type: 'reverb',
+        defaults: {
+            id: 'rv1',
+            type: 'reverb',
+            enabled: false,
+            params: { decay: 0.5, mix: 0.15 },
+        },
+        params: [
+            { key: 'decay', label: 'Decay', min: 0, max: 0.95, step: 0.01, defaultValue: 0.5 },
+            { key: 'mix', label: 'Mix', min: 0, max: 1, step: 0.01, defaultValue: 0.15 },
+        ],
+    },
+];
 
 function formatValue(v: number, unit: string): string {
     if (unit === 'dB') {
@@ -93,6 +206,115 @@ const K = ({
         {unit ? <span className="text-[6px] text-muted-foreground/40 font-mono">{formatValue(v, unit)}</span> : null}
     </div>
 );
+
+function upsertPedal(
+    pedals: readonly GrinderPedal[],
+    type: GrinderPedalType,
+    defaults: GrinderPedal,
+    update: (pedal: GrinderPedal) => GrinderPedal
+): GrinderPedal[] {
+    const existing = pedals.find((pedal) => pedal.type === type);
+    if (!existing) {
+        return [...pedals, update(defaults)];
+    }
+    return pedals.map((pedal) => (pedal.type === type ? update(pedal) : pedal));
+}
+
+function updatePedalCollection(
+    patch: GrinderPatch,
+    section: 'prePedals' | 'fxLoopPedals',
+    type: GrinderPedalType,
+    defaults: GrinderPedal,
+    update: (pedal: GrinderPedal) => GrinderPedal
+): void {
+    const nextPedals = upsertPedal(patch[section], type, defaults, update);
+    const nextPatch: GrinderPatch = {
+        ...patch,
+        [section]: nextPedals,
+    };
+    if (section === 'fxLoopPedals' && nextPedals.some((pedal) => pedal.enabled)) {
+        nextPatch.fxLoopEnabled = true;
+    }
+    loadGrinderPatchWithAudio(nextPatch);
+}
+
+function renderPedalControls(
+    patch: GrinderPatch,
+    section: 'prePedals' | 'fxLoopPedals',
+    controls: readonly SupportedPedalControl[]
+): ReactElement {
+    return (
+        <div className="flex gap-2 flex-wrap">
+            {controls.map((control) => {
+                const pedal = patch[section].find((entry) => entry.type === control.type) ?? control.defaults;
+                return (
+                    <div
+                        key={`${section}-${control.type}`}
+                        className="space-y-2 rounded border border-border/20 bg-surface-inset/30 p-2"
+                    >
+                        <label className="flex items-center gap-1 text-[8px] text-muted-foreground cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={pedal.enabled}
+                                onChange={(e) =>
+                                    updatePedalCollection(patch, section, control.type, control.defaults, (current) => ({
+                                        ...current,
+                                        enabled: e.target.checked,
+                                    }))
+                                }
+                                className="size-2.5 rounded"
+                                style={{ accentColor: 'rgb(217,119,6)' }}
+                            />
+                            <span className="font-medium text-foreground/80">{control.label}</span>
+                        </label>
+                        <div className="flex gap-2 flex-wrap">
+                            {control.params.map((param) => {
+                                return (
+                                    <div
+                                        key={`${control.type}-${param.key}`}
+                                        onClick={(event) => event.stopPropagation()}
+                                    >
+                                        <RotaryKnob
+                                            value={pedal.params[param.key] ?? param.defaultValue}
+                                            onChange={(val) =>
+                                                updatePedalCollection(
+                                                    patch,
+                                                    section,
+                                                    control.type,
+                                                    control.defaults,
+                                                    (current) => ({
+                                                        ...current,
+                                                        params: {
+                                                            ...current.params,
+                                                            [param.key]: val,
+                                                        },
+                                                    })
+                                                )
+                                            }
+                                            min={param.min}
+                                            max={param.max}
+                                            step={param.step}
+                                            defaultValue={param.defaultValue}
+                                            size="sm"
+                                        />
+                                        <div className="mt-0.5 text-center text-[7px] text-muted-foreground leading-none">
+                                            {param.label}
+                                        </div>
+                                        {param.unit ? (
+                                            <div className="text-center text-[6px] font-mono text-muted-foreground/40">
+                                                {formatValue(pedal.params[param.key] ?? param.defaultValue, param.unit)}
+                                            </div>
+                                        ) : null}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
 
 // ── Level 1: Play ────────────────────────────────────────────────────────────
 
@@ -159,7 +381,7 @@ const PlayLevel = ({ state }: { state: GrinderState }): ReactElement => {
                                             : 'text-foreground/70'
                                     }`}
                                     onClick={() => {
-                                        loadGrinderPatch(preset.patch);
+                                        loadGrinderPatchWithAudio(preset.patch);
                                         setPresetMenuOpen(false);
                                     }}
                                 >
@@ -484,6 +706,35 @@ const BuildLevel = ({ state }: { state: GrinderState }): ReactElement => {
                     <div className="px-2 py-1 rounded border border-amber-600/30 bg-amber-600/10 text-[8px] text-amber-400 font-medium">
                         Output
                     </div>
+                </div>
+
+                {/* Mic Room */}
+                <div className="mt-3 space-y-1">
+                    <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
+                        Pre-Pedals
+                    </div>
+                    {renderPedalControls(patch, 'prePedals', SUPPORTED_PRE_PEDALS)}
+                </div>
+
+                <div className="mt-3 space-y-1">
+                    <div className="flex items-center justify-between">
+                        <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
+                            FX Loop
+                        </div>
+                        <label className="flex items-center gap-1 text-[8px] text-muted-foreground cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={patch.fxLoopEnabled}
+                                onChange={(e) =>
+                                    loadGrinderPatchWithAudio({ ...patch, fxLoopEnabled: e.target.checked })
+                                }
+                                className="size-2.5 rounded"
+                                style={{ accentColor: 'rgb(217,119,6)' }}
+                            />
+                            Enabled
+                        </label>
+                    </div>
+                    {renderPedalControls(patch, 'fxLoopPedals', SUPPORTED_FX_PEDALS)}
                 </div>
 
                 {/* Mic Room */}

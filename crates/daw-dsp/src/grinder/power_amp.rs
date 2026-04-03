@@ -150,7 +150,14 @@ impl PowerAmp {
         };
 
         // Bias affects crossover distortion
-        let output = clipped + bias_shift * signal.signum() * 0.01;
+        let crossover = if signal > 0.0 {
+            1.0
+        } else if signal < 0.0 {
+            -1.0
+        } else {
+            0.0
+        };
+        let output = clipped + bias_shift * crossover * 0.01;
 
         // Update negative feedback state
         self.feedback_state = output;

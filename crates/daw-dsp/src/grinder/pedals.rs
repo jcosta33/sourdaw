@@ -15,7 +15,7 @@ pub struct OverdrivePedal {
 
 impl OverdrivePedal {
     pub fn new(sample_rate: f32) -> Self {
-        Self { drive: 0.5, tone: 0.5, level: 0.5, enabled: true, lp_state: 0.0, hp_state: 0.0, sample_rate }
+        Self { drive: 0.5, tone: 0.5, level: 0.5, enabled: false, lp_state: 0.0, hp_state: 0.0, sample_rate }
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
@@ -76,7 +76,7 @@ pub struct DistortionPedal {
 
 impl DistortionPedal {
     pub fn new(sample_rate: f32) -> Self {
-        Self { drive: 0.5, tone: 0.5, level: 0.5, enabled: true, lp_state: 0.0, prev_output: 0.0, slew_rate: 0.1, sample_rate }
+        Self { drive: 0.5, tone: 0.5, level: 0.5, enabled: false, lp_state: 0.0, prev_output: 0.0, slew_rate: 0.1, sample_rate }
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
@@ -128,7 +128,7 @@ pub struct FuzzPedal {
 
 impl FuzzPedal {
     pub fn new(sample_rate: f32) -> Self {
-        Self { fuzz: 0.7, tone: 0.5, level: 0.5, enabled: true, bias: 0.5, lp_state: 0.0, sample_rate }
+        Self { fuzz: 0.7, tone: 0.5, level: 0.5, enabled: false, bias: 0.5, lp_state: 0.0, sample_rate }
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
@@ -188,7 +188,7 @@ impl CompressorPedal {
             attack_coeff: (-1.0 / (0.01 * sample_rate)).exp(),
             release_coeff: (-1.0 / (0.2 * sample_rate)).exp(),
             envelope: 0.0,
-            enabled: true,
+            enabled: false,
             sample_rate,
         }
     }
@@ -248,7 +248,7 @@ impl DelayPedal {
             delay_samples: (0.375 * sample_rate as f32) as usize,
             feedback: 0.3,
             mix: 0.25,
-            enabled: true,
+            enabled: false,
             sample_rate,
         }
     }
@@ -311,7 +311,7 @@ impl ReverbPedal {
             ap_write_pos: [0; 2],
             decay: 0.5,
             mix: 0.15,
-            enabled: true,
+            enabled: false,
         }
     }
 

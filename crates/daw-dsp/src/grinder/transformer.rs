@@ -64,8 +64,15 @@ impl Transformer {
     /// Smooth hysteresis function: Φ(H) = sgn(H) · Φ_sat · tanh((|H| - H_c) / H_sat)
     fn flux_response(&self, h: f32) -> f32 {
         let abs_h = h.abs();
-        let inner = (abs_h - self.h_c) / self.h_sat.max(0.01);
-        h.signum() * self.phi_sat * inner.tanh()
+        let inner = (abs_h - self.h_c).max(0.0) / self.h_sat.max(0.01);
+        let sign = if h > 0.0 {
+            1.0
+        } else if h < 0.0 {
+            -1.0
+        } else {
+            0.0
+        };
+        sign * self.phi_sat * inner.tanh()
     }
 
     pub fn process_sample(&mut self, input: f32) -> f32 {

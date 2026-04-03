@@ -11,6 +11,7 @@ import { isGlutenDevice, createGlutenNode } from '../engine/GlutenNode';
 import { isBacteriaDevice, createBacteriaNode } from '../engine/BacteriaNode';
 import { isGrinderDevice, createGrinderNode } from '../engine/GrinderNode';
 import { isProofDevice, createProofNode } from '../engine/ProofNode';
+import { isProofChamberDevice, createProofChamberNode } from '../engine/ProofChamberNode';
 import { isScoringDevice, createScoringNode } from '../engine/ScoringNode';
 import { isDeviceSupportedOnCurrentPlatform } from '#/modules/Arrangement/useCases/trackQueries';
 
@@ -251,6 +252,26 @@ export async function buildDeviceChain(
                 };
             } catch (error) {
                 logger.warn(`Proof mastering suite failed to load: ${error}`);
+            }
+        } else if (isProofChamberDevice(device.type)) {
+            // Dutch Oven reverb — async WASM init + AudioWorkletNode
+            try {
+                const result = await createProofChamberNode(ctx);
+                await result.ready;
+                for (const [key, val] of Object.entries(device.parameterValues)) {
+                    result.setParam(key, val);
+                }
+                dn = {
+                    inputNode: result.workletNode,
+                    outputNode: result.workletNode,
+                    nodes: [result.workletNode],
+                };
+                nativeDspControls = {
+                    setParam: result.setParam,
+                    setBypass: result.setBypass,
+                };
+            } catch (error) {
+                logger.warn(`Dutch Oven reverb failed to load: ${error}`);
             }
         } else if (isScoringDevice(device.type)) {
             try {
