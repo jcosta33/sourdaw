@@ -84,3 +84,13 @@ Currently, descriptors (the metadata telling the UI what sliders to draw) are sc
 2. **Registry Pattern:** Replace the procedural `if/else` instantiation in `buildDeviceChain.ts` with a dynamic `DeviceFactoryRegistry`.
 3. **Deprecate Legacy Redundancy (Future Goal):** Acknowledge that the `builtin-` (Web Audio) layer is redundant relative to the `faust-` layer. Maintain them for now using the new Strategy pattern, but plan to eventually deprecate them to reduce the testing and maintenance surface area.
 4. **WAM 2.0 Alignment:** Align all descriptor formats and parameter-setting APIs with the WAM 2.0 specification as outlined in the `faust-wam-plugins` skill guidelines.
+
+---
+
+## Implementation Progress
+- [x] **Phase 1 & 2: Abstract Factory & Strategies:** Created `AudioDeviceStrategy`, `DeviceFactoryRegistry`, and specific wrappers for Web Audio (`WebAudioDeviceStrategy`), Faust (`FaustDeviceStrategy`), and Native Rust/WASM (`NativeDspDeviceStrategy`).
+- [x] **Phase 3: Refactor `buildDeviceChain.ts`**: Replaced the massive procedural instantiation block with a clean `deviceRegistry.createDevice(ctx, device)` call. Updated the `DeviceNodeEntry` type to center around the new `strategy` object.
+- [ ] **Phase 4: WAM 2.0 Descriptor Unification**: *(Pending)* Consolidate `faustEffectDescriptors.ts` and `builtinEffectDescriptors.ts` into a unified WAM 2.0 registry structure.
+
+> **Note on Native Web Audio Devices (`builtin-`)**
+> The basic Web Audio devices (like `builtin-reverb`, `builtin-compressor`) are explicitly redundant with the Faust DSP suite. While they have been safely wrapped in the `WebAudioDeviceStrategy` for backwards compatibility, they are flagged for future deprecation. The application should ultimately standardize around the Faust/WASM stack as the definitive non-premium factory content layer.

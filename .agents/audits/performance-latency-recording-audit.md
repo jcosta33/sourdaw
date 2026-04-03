@@ -38,7 +38,7 @@ Reviewing any of the core effect processors (e.g., `scoringProcessor.ts`, `levai
 - **Atomic Mapping:** During `init`, assign a specific memory offset to each `AudioWorkletNode`. The worklet writes its RMS, LUFS, pitches, or EQ curve metrics directly into typed indices (`Float32Array`) at 85Hz.
 - **Main Thread Reads:** The React UI natively reads from the `SharedArrayBuffer` using zero-cost memory indexing within `requestAnimationFrame()`, obliterating thousands of object allocations entirely.
 
-> ⬜ **Code-verified:** Confirmed real bug. Telemetry via `postMessage` at audio rate generates significant GC pressure. Architectural fix needed.
+> ⬜ **Code-verified:** Confirmed real bug. Telemetry via `postMessage` at audio rate generates significant GC pressure. Architectural fix needed. **Deferred — transitioning all worklet telemetry to a `SharedArrayBuffer` layout requires assigning fixed memory offsets per plugin instance at init time, coordinating the buffer across all processor types (Grinder, Fermenter, Levain, Toaster, etc.), and updating every UI meter/visualizer to read from SAB instead of `onmessage`. This is a cross-cutting change touching every plugin. Tightly coupled to the MIDI scheduling SAB work; best done together.**
 
 ---
 

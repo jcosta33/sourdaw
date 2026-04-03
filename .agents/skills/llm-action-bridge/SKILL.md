@@ -1,510 +1,270 @@
+# SKILL: llm-action-bridge
+
 ---
+
 name: llm-action-bridge
-description: >
-  Apply when creating, editing, or reviewing any AI/copilot feature, prompt handling, voice-command flow, command execution, local model runtime, tool/action registry, structured-output parsing, or the bridge between local LLM inference and DAW behavior. The key goal is to connect the LLM to safe, typed app actions: models should not directly mutate arbitrary UI or engine state. They should interpret user intent and emit structured actions that the app validates and executes. Use browser-local inference for lightweight tasks, Tauri sidecars for heavier desktop-local models, and keep the action layer deterministic and reversible.
+description: Apply when building or reviewing AI/copilot features, prompt handling, voice-command flows, structured-output parsing, tool/action registries, or execution of AI-generated actions. This is the authoritative skill for connecting local AI to safe DAW behavior.
+
 ---
 
-## Setup
+## Purpose
 
-```ts
-// src/modules/Command/models/AppAction.ts
-export type AddTrackAction = {
-  type: "addTrack";
-  payload: {
-    name: string;
-    kind: "audio" | "midi" | "bus";
-  };
-};
+The AI layer must not directly mutate arbitrary state.
 
-export type RenameTrackAction = {
-  type: "renameTrack";
-  payload: {
-    trackId: string;
-    name: string;
-  };
-};
+Its job is to interpret user intent and emit structured actions that the app validates and executes.
 
-export type SetTempoAction = {
-  type: "setTempo";
-  payload: {
-    bpm: number;
-  };
-};
+This skill exists to keep AI integration:
 
-export type TogglePlaybackAction = {
-  type: "togglePlayback";
-  payload: {};
-};
+- typed
+- auditable
+- deterministic enough for control tasks
+- architecturally safe
+- reversible where possible
+- isolated from direct UI/runtime mutation
 
-export type AppAction =
-  | AddTrackAction
-  | RenameTrackAction
-  | SetTempoAction
-  | TogglePlaybackAction;
-```
+---
 
-```ts
-// src/modules/Command/useCases/executeAppAction.ts
-import type { AppAction } from "#/modules/Command/models/AppAction";
-
-export type ExecuteAppAction = (action: AppAction) => Promise<void>;
-```
-
-```ts
-// src/modules/AiRuntime/useCases/parsePromptToAction.ts
-import type { AppAction } from "#/modules/Command/models/AppAction";
-
-export type ParsePromptToAction = (
-  input: string,
-  context: {
-    selectedTrackId?: string;
-    selectedClipId?: string;
-    activeView?: "arrange" | "mixer" | "piano-roll";
-  },
-) => Promise<AppAction[]>;
-```
-
-```ts
-// src/modules/AiRuntime/presentations/hooks/useAiCommand.ts
-import { useState } from "react";
-
-import type { AppAction } from "#/modules/Command/models/AppAction";
-import { executeAppAction } from "#/modules/Command/useCases/executeAppAction";
-import { parsePromptToAction } from "#/modules/AiRuntime/useCases/parsePromptToAction";
-
-export const useAiCommand = () => {
-  const [isRunning, setIsRunning] = useState(false);
-
-  const runPrompt = async (prompt: string) => {
-    setIsRunning(true);
-
-    try {
-      const actions: AppAction[] = await parsePromptToAction(prompt, {
-        activeView: "arrange",
-      });
-
-      for (const action of actions) {
-        await executeAppAction(action);
-      }
-    } finally {
-      setIsRunning(false);
-    }
-  };
-
-  return {
-    isRunning,
-    runPrompt,
-  };
-};
-```
-
-> **Runtime note**: For the underlying inference infrastructure (mistral.rs in-process LLM, whisper-rs ASR, ONNX Runtime Web for browser inference), see [audio-ai-runtime SKILL.md](./../audio-ai-runtime/SKILL.md). This skill covers the **action contract layer** on top of that infrastructure.
-
-
-## Core Patterns
+## Core model
 
 ### The model outputs actions, not arbitrary mutations
 
-```ts
-// good mental model
-User Prompt
-    -> local model inference
-    -> structured actions
-    -> app validation
-    -> action execution
-    -> UI/audio state updates
+Preferred flow:
+
+```text
+User prompt
+-> local or native inference
+-> structured action(s)
+-> validation
+-> optional confirmation
+-> action execution
+-> normal state/runtime updates
 ```
 
-The LLM must not:
+The model must not:
 
 - mutate React state directly
-- call random methods on engine objects
-- emit arbitrary code to run
-- operate outside the command/action registry
+- call engine objects directly
+- execute arbitrary code
+- bypass the command/action layer
+- reach into hidden internals
+- invent unsupported operations at runtime
 
-The LLM should produce **structured actions** that are:
+### The action registry must be explicit
 
+Actions should be:
+
+- named
 - typed
 - validated
-- reversible when possible
-- executable by the app
+- executable through a known registry
+- easy to audit
+- constrained to what the app actually supports
 
-This is the core architecture for AI integration.
+Do not hide execution behind magical dynamic dispatch unless it remains transparent and strongly typed.
 
-### Prefer action generation over “chatbot answers”
+---
 
-```ts
-// src/modules/Command/models/AppAction.ts
-export type SoloTrackAction = {
-  type: "soloTrack";
-  payload: {
-    trackId: string;
-    enabled: boolean;
-  };
-};
-```
+## Planning vs execution
 
-The AI layer should primarily generate actions like:
+### Planning
 
-- add track
-- rename track
-- move clip
-- set tempo
-- apply device preset
-- open mixer
-- zoom timeline
-- toggle mute/solo
-- create bus
-- insert plugin
-- arm recording
+The model may help:
 
-Do not build the first version around free-form conversational output.
+- interpret ambiguous language
+- propose one or more actions
+- suggest a sequence of steps
+- infer likely targets based on context
 
-The useful behavior is action execution.
+### Execution
 
-### Keep the action registry explicit
+Execution must remain deterministic and architecture-compliant.
 
-```ts
-// src/modules/Command/useCases/executeAppAction.ts
-import type { AppAction } from "#/modules/Command/models/AppAction";
+The execution layer must:
 
-export const executeAppAction = async (action: AppAction): Promise<void> => {
-  switch (action.type) {
-    case "addTrack": {
-      return;
-    }
-    case "renameTrack": {
-      return;
-    }
-    case "setTempo": {
-      return;
-    }
-    case "togglePlayback": {
-      return;
-    }
-  }
-};
-```
+- validate action structure
+- validate referenced IDs/targets
+- enforce ranges and domain rules
+- require confirmation for risky operations where needed
+- call the same action/command boundary used by the rest of the app
 
-The application should have a clear registry of executable actions.
+AI does not get a privileged write path.
 
-Do not hide command execution behind magical dynamic dispatch unless it remains strongly typed and easy to audit.
+---
 
-### Validate model output before execution
-
-```ts
-// src/modules/AiRuntime/helpers/isAppAction.ts
-import { z } from "zod";
-
-export const appActionSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("setTempo"),
-    payload: z.object({
-      bpm: z.number().min(20).max(300),
-    }),
-  }),
-  z.object({
-    type: z.literal("togglePlayback"),
-    payload: z.object({}),
-  }),
-]);
-```
+## Validation rules
 
 All model output must be validated before execution.
 
 Validation should confirm:
 
-- action type is known
-- payload shape is correct
-- numeric ranges are sane
-- referenced ids exist when required
-- destructive actions require confirmation if appropriate
+- known action type
+- correct payload shape
+- sane numeric bounds
+- required IDs exist
+- referenced resources/capabilities are available
+- action order is sensible if multiple actions are emitted
+- destructive or broad-scope operations are gated appropriately
 
 Do not trust raw model output.
 
-### Constrain the LLM to structured output
+---
 
-```ts
-// conceptual result
-[
-  {
-    type: "setTempo",
-    payload: {
-      bpm: 128,
-    },
-  },
-];
-```
+## Action design
 
-Use structured output constraints whenever possible.
+Good AI-driven actions are:
 
-For local models, prefer:
+- specific
+- composable
+- easy to validate
+- aligned to user intent
+- compatible with undo/redo
+- reviewable in logs/history where appropriate
 
-- JSON-only output
-- **llguidance** (Microsoft's constrained decoding, built into mistral.rs) for enforcing JSON schemas
-- grammar-constrained output (GBNF format supported by mistral.rs)
-- deterministic temperature settings for command parsing
+Good early AI targets include:
 
-llguidance enforces structured output at ~50μs/token overhead — effectively zero cost in the context of LLM inference. This is the same engine used by OpenAI's Structured Outputs feature.
+- add track
+- rename track
+- set tempo
+- toggle playback
+- mute/solo
+- create bus
+- insert plugin
+- apply preset
+- navigate to a panel or view
+- select or reveal an object
+- arm recording
 
-This is one of the most important reliability features in the whole AI stack.
+Do not start with uncontrolled “chatbot can do anything” behavior.
 
-### Use browser-local inference for lightweight intent tasks
+---
 
-For browser-local intent classification, embeddings, or reranking, use `@huggingface/transformers` (Transformers.js). See [audio-ai-runtime SKILL.md](./../audio-ai-runtime/SKILL.md) for the full browser inference setup pattern, WebGPU/WASM fallback requirement, and Linux caveat.
+## Runtime placement
 
-Key rule for the action bridge layer: browser-local inference routes through the same `parsePromptToAction` use case as the native runtime. The UI never knows which backend ran.
+### Inference and execution are separate concerns
 
+Inference may run:
 
-### Use native `mistral.rs` for heavier local models
+- browser-local for lightweight tasks
+- native-side for heavier local models
 
-For desktop-local LLM inference, **`mistral.rs` runs in-process as a Rust library** — no sidecar subprocess. The current model is Hermes-3-Llama-3.1-8B with Q4K ISQ quantization (~4.9 GB, auto-downloads from HuggingFace). Supports native tool calling via `set_tools()` + `ToolChoice::Auto`. Tokens stream to the UI via Tauri Channels.
+Execution still goes through the same app action layer either way.
 
-See [audio-ai-runtime SKILL.md](./../audio-ai-runtime/SKILL.md) for the full Rust implementation pattern (`run_local_llm` command, Channel setup, model loading at startup).
+### Keep the action layer deterministic
 
-Preferred runtime for the action bridge layer:
+The model may be probabilistic.
+Execution must not be.
 
-- `mistral.rs` for LLM reasoning / structured action generation (tool calling built-in)
-- `whisper-rs` for local ASR / voice commands (Rust crate, not a subprocess)
+---
 
-Tauri Channels are preferred over the legacy invoke/response pattern for LLM streaming.
+## Confirmation policy
 
+Require confirmation when appropriate for:
 
-### Use `mistral.rs` for prompt-to-action conversion on desktop
+- destructive actions
+- multi-target/bulk changes
+- ambiguous target selection
+- operations likely to surprise the user
+- expensive or irreversible workflows
 
-Use `mistral.rs` for:
+A useful design is:
 
-- prompt-to-action parsing via **tool calling** (native to mistral.rs, no prompt engineering needed)
-- action sequence generation
-- local copilot chat
-- structured command planning
+- AI proposes
+- app validates
+- user confirms when needed
+- command executes normally
 
-Key advantages over the old llama.cpp sidecar approach:
-- built-in tool calling — define DAW actions as tools, model selects them directly
-- **llguidance** for constrained JSON output (same engine as OpenAI Structured Outputs)
-- Tauri Channel streaming — no blocking `invoke`
-- in-process — no subprocess startup latency
+---
 
+## Observability
 
-### Use `whisper-rs` for voice command ASR
+AI action execution should be easy to inspect.
 
-For voice-to-action on desktop, use the `whisper-rs` Rust crate — **not** a whisper.cpp subprocess:
+Prefer systems where it is possible to answer:
 
-```toml
-[dependencies]
-whisper-rs = { version = "0.15", features = ["metal"] }  # macOS; use "cuda" for NVIDIA
-cpal = "0.15"    # real-time mic capture
-rubato = "0.15" # resample mic audio to 16kHz mono
-```
+- what did the model propose?
+- what did validation accept?
+- what actually executed?
+- what failed and why?
 
-Use local ASR for:
+This is important for debugging, safety, and trust.
 
-- push-to-talk command capture
-- quick voice actions
-- hands-free transport control
-- command palette by voice
+---
 
-See [tauri-platform SKILL.md](./../tauri-platform/SKILL.md) for the full `whisper-rs` implementation (mic capture loop, VAD, resampling, transcript-to-action pipeline).
+## Anti-patterns
 
-
-### The UI should talk to the AI layer through stable use cases
-
-```ts
-// src/modules/AiRuntime/useCases/runVoiceCommand.ts
-export type RunVoiceCommand = (transcript: string) => Promise<void>;
-```
-
-The UI should not know:
-
-- which model is used
-- whether inference is browser or native
-- how grammar constraints are built
-- whether output came from ONNX or mistral.rs
-
-The UI should only know about:
-
-- submitting prompt/voice input
-- receiving action previews
-- confirming actions when needed
-- showing execution progress
-- rendering errors or clarifications
-
-### Support action previews before execution
-
-```ts
-// src/modules/AiRuntime/models/PlannedAction.ts
-import type { AppAction } from "#/modules/Command/models/AppAction";
-
-export type PlannedAction = {
-  action: AppAction;
-  label: string;
-  requiresConfirmation: boolean;
-};
-```
-
-The best UX is often:
-
-prompt  
-→ parse into planned actions  
-→ preview  
-→ confirm if needed  
-→ execute
-
-Use previews especially for:
-
-- multi-step sequences
-- destructive operations
-- ambiguous instructions
-- operations affecting many tracks/clips
-
-### Audio actions and AI actions must converge on the same command path
-
-```ts
-// src/modules/Command/models/AppAction.ts
-export type SetMasterGainAction = {
-  type: "setMasterGain";
-  payload: {
-    gain: number;
-  };
-};
-```
-
-If a user manually clicks a button or uses AI to issue the same action, both should hit the same command path where practical.
-
-That means:
-
-- AI does not get a secret execution path
-- manual UI and AI share the same action semantics
-- undo/redo and logging become easier
-- reliability improves
-
-### Keep inference runtime choice flexible
-
-```ts
-// conceptual runtime choice
-if (isDesktop && hasBundledLlm) {
-    use native mistral.rs;
-} else {
-    use browser-local ONNX/Transformers runtime;
-}
-```
-
-Do not over-hardcode one runtime path.
-
-Use the smallest effective local runtime for the task:
-
-- browser-small for lightweight intent/ranking
-- native-heavy for real command reasoning
-- browser ASR only if it meets latency/accuracy needs
-- native ASR when quality matters more
-
-The key is the **action contract**, not the exact model backend.
-
-## Common Mistakes
-
-### CRITICAL Letting the model directly mutate app state
+### 1. Model mutates arbitrary app state
 
 Wrong:
 
-```ts
-// anti-pattern
-const result = await runLocalLlm(prompt);
-eval(result);
-```
+- model directly edits stores, UI state, engine internals, or plugin handles
 
-Correct:
+Right:
 
-```ts
-const actions = await parsePromptToAction(prompt, context);
+- model emits structured actions
 
-for (const action of actions) {
-  await executeAppAction(action);
-}
-```
-
-The model must emit structured actions, not arbitrary executable logic.
-
-### CRITICAL Treating the AI as a free-form chatbot instead of an action planner
+### 2. Free-form chat output as control surface
 
 Wrong:
 
-- ask model for a paragraph
-- parse meaning informally
-- try to guess what to do next
+- execution logic depends on vague natural-language prose
 
-Correct:
+Right:
 
-- ask model for typed action output
-- validate it
-- execute known actions
+- structured, validated actions
 
-The action contract is the product.
-
-### CRITICAL No validation layer on model output
+### 3. Hidden dynamic dispatch
 
 Wrong:
 
-```ts
-const actions = JSON.parse(rawModelOutput);
-await executeAppAction(actions[0]);
-```
+- action execution is hard to audit or depends on stringly magical runtime behavior
 
-Correct:
+Right:
 
-```ts
-const parsed = appActionSchema.array().safeParse(JSON.parse(rawModelOutput));
+- explicit action registry
 
-if (!parsed.success) {
-  throw new Error("Invalid model output");
-}
-```
-
-Always validate model output before execution.
-
-### HIGH Forcing all inference through the browser
+### 4. No validation before execution
 
 Wrong:
 
-- giant local LLM in browser main thread
-- no native runtime
-- slow startup and poor UX on desktop
+- raw model output executes directly
 
-Correct:
+Right:
 
-- browser-local models for small tasks (`@huggingface/transformers`, ONNX Runtime Web)
-- `mistral.rs` in-process for heavier desktop-local reasoning
-- shared action contract across both runtimes
+- validate first, then execute
 
-Heavy local desktop reasoning must move to the Rust tier via `mistral.rs`. ONNX Runtime Web is great for browser inference but cannot handle multi-gigabyte tool-calling models.
-
-
-### HIGH Designing the app around model-specific output formats
+### 5. AI path bypasses normal architecture
 
 Wrong:
 
-- app depends on one model’s quirky response style
-- prompt parsing is brittle
-- swapping runtimes breaks everything
+- AI gets special permission to mutate truth or runtime directly
 
-Correct:
+Right:
 
-- define app actions first
-- generate toward those actions
-- keep the parser/validator as the normalization layer
+- AI uses the same action/command boundary as everything else
 
-The action schema is the stable API, not the model prompt format.
-
-### HIGH Mixing audio engine internals directly into the LLM layer
+### 6. Planning and execution collapse together
 
 Wrong:
 
-- model directly touches AudioWorklet nodes
-- model knows graph wiring details
-- model mutates transport internals
+- model output is treated as directly executable truth
 
-Correct:
+Right:
 
-- model emits actions like `setTempo`, `togglePlayback`, `addTrack`
-- command layer maps those actions to engine operations
+- planning can be flexible; execution remains rigid and validated
 
-Keep model reasoning separate from engine implementation details.
+---
+
+## Review checklist
+
+Before accepting AI-control code, verify:
+
+1. Does the model emit structured actions rather than arbitrary mutations?
+2. Is there an explicit action registry?
+3. Is all model output validated?
+4. Does execution go through the normal action/command boundary?
+5. Are destructive or ambiguous operations gated appropriately?
+6. Does the AI layer avoid direct access to UI/runtime internals?
+7. Is planning separate from execution?
+8. Would this still be safe if the model output were partially wrong?
+
+---

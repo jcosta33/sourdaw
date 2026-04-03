@@ -1,0 +1,36 @@
+import { type Device } from '#/modules/Arrangement/useCases/trackQueries';
+import { type OfflineDeviceNode } from '../../useCases/buildDeviceChain';
+
+export interface AudioDeviceStrategy {
+    readonly node: OfflineDeviceNode;
+    setParam(name: string, value: number): void;
+    setBypass?(bypassed: boolean): void;
+    noteOn?(noteOrPad: number, velocity: number, midiNote?: number): void;
+    noteOff?(noteOrPad: number): void;
+    destroy?(): void;
+}
+
+export type DeviceCreator = (
+    ctx: BaseAudioContext,
+    device: Device
+) => Promise<AudioDeviceStrategy> | AudioDeviceStrategy;
+
+export class DeviceFactoryRegistry {
+    private matchers: Array<{ test: (type: string) => boolean; creator: DeviceCreator }> = [];
+
+    register(test: string | ((type: string) => boolean), creator: DeviceCreator): void {
+        const isMatch = typeof test === 'string' ? (type: string) => type.startsWith(test) : test;
+        this.matchers.push({ test: isMatch, creator });
+    }
+
+    async createDevice(ctx: BaseAudioContext, device: Device): Promise<AudioDeviceStrategy> {
+        for (const matcher of this.matchers) {
+            if (matcher.test(device.type)) {
+                return matcher.creator(ctx, device);
+            }
+        }
+        throw new Error(`No device factory registered for type: ${device.type}`);
+    }
+}
+
+export const deviceRegistry = new DeviceFactoryRegistry();

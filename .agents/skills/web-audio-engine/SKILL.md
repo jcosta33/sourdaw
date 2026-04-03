@@ -1,226 +1,113 @@
+# SKILL: web-audio-engine
+
 ---
+
 name: web-audio-engine
-description: >
-  Apply when creating, editing, or reviewing the core browser audio engine, transport, scheduling, clip playback, buses, automation, metering taps, offline rendering, or worklet-based DSP nodes. Enforces a Web Audio architecture for this project: AudioContext as the runtime graph, AudioWorklet for custom real-time processing, AudioParam automation for precise parameter scheduling, OfflineAudioContext for export/render workflows, and a clean separation where the engine owns timing/routing while the UI only issues commands and observes state.
+description: Apply when creating, editing, or reviewing the browser audio engine, transport, routing, scheduling, clip playback, buses, automation, metering, offline rendering, or AudioWorklet-based DSP. This is the authoritative skill for browser-side audio execution and real-time-safe Web Audio architecture.
+
 ---
 
-## Setup
+## Purpose
 
-```ts
-// src/modules/AudioEngine/models/TransportState.ts
-export type TransportState = {
-  isPlaying: boolean;
-  tempo: number;
-  positionSeconds: number;
-  loopStartSeconds: number | null;
-  loopEndSeconds: number | null;
-};
-```
+This skill exists to keep the browser audio engine correct, fast, deterministic, and architecturally aligned.
 
-```ts
-// src/modules/AudioEngine/useCases/createAudioEngine.ts
-export type AudioEngine = {
-  initialize: () => Promise<void>;
-  resume: () => Promise<void>;
-  suspend: () => Promise<void>;
-  startTransport: (whenSeconds?: number) => Promise<void>;
-  stopTransport: () => Promise<void>;
-  setTempo: (tempo: number) => void;
-  setMasterGain: (gain: number) => void;
-  getTransportState: () => TransportState;
-  dispose: () => Promise<void>;
-};
+The browser audio engine is not:
 
-export type CreateAudioEngine = () => Promise<AudioEngine>;
-```
+- a UI concern
+- a global state bucket
+- a convenience layer for random audio operations
+- a second source of truth
 
-```ts
-// src/modules/AudioEngine/repositories/createWebAudioEngine.ts
-import type { AudioEngine } from "#/modules/AudioEngine/useCases/createAudioEngine";
+The browser audio engine **is**:
 
-export const createWebAudioEngine = async (): Promise<AudioEngine> => {
-  const context = new AudioContext({
-    latencyHint: "interactive",
-  });
+- the runtime executor for audio playback and processing
+- the owner of live timing and transport execution
+- the owner of browser-side graph topology
+- the owner of worklet lifecycle and scheduling windows
+- a derived projection of authoritative project state
 
-  await context.audioWorklet.addModule("/audio/worklets/gain-processor.js");
-
-  const masterGainNode = context.createGain();
-  masterGainNode.connect(context.destination);
-
-  let transportState = {
-    isPlaying: false,
-    tempo: 120,
-    positionSeconds: 0,
-    loopStartSeconds: null,
-    loopEndSeconds: null,
-  };
-
-  return {
-    initialize: async () => {
-      if (context.state !== "running") {
-        await context.resume();
-      }
-    },
-    resume: async () => {
-      await context.resume();
-    },
-    suspend: async () => {
-      await context.suspend();
-    },
-    startTransport: async () => {
-      if (context.state !== "running") {
-        await context.resume();
-      }
-
-      transportState = {
-        ...transportState,
-        isPlaying: true,
-      };
-    },
-    stopTransport: async () => {
-      transportState = {
-        ...transportState,
-        isPlaying: false,
-      };
-    },
-    setTempo: (tempo: number) => {
-      transportState = {
-        ...transportState,
-        tempo,
-      };
-    },
-    setMasterGain: (gain: number) => {
-      masterGainNode.gain.value = gain;
-    },
-    getTransportState: () => {
-      return transportState;
-    },
-    dispose: async () => {
-      await context.close();
-    },
-  };
-};
-```
-
-```ts
-// src/audio/worklets/gain-processor.ts
-class GainProcessor extends AudioWorkletProcessor {
-  static get parameterDescriptors() {
-    return [
-      {
-        name: "gain",
-        defaultValue: 1,
-        minValue: 0,
-        maxValue: 4,
-        automationRate: "a-rate",
-      },
-    ];
-  }
-
-  process(
-    inputs: Float32Array[][],
-    outputs: Float32Array[][],
-    parameters: Record<string, Float32Array>,
-  ) {
-    const input = inputs[0];
-    const output = outputs[0];
-
-    if (!input || !output) {
-      return true;
-    }
-
-    const gain = parameters.gain;
-
-    for (
-      let channelIndex = 0;
-      channelIndex < output.length;
-      channelIndex += 1
-    ) {
-      const inputChannel = input[channelIndex];
-      const outputChannel = output[channelIndex];
-
-      if (!inputChannel || !outputChannel) {
-        continue;
-      }
-
-      for (
-        let sampleIndex = 0;
-        sampleIndex < outputChannel.length;
-        sampleIndex += 1
-      ) {
-        const gainValue = gain.length === 1 ? gain[0] : gain[sampleIndex];
-        outputChannel[sampleIndex] = inputChannel[sampleIndex] * gainValue;
-      }
-    }
-
-    return true;
-  }
-}
-
-registerProcessor("gain-processor", GainProcessor);
-```
-
-## Core Patterns
-
-### The engine owns time, routing, and playback
-
-```ts
-// src/modules/AudioEngine/models/EngineState.ts
-export type EngineState = {
-  transport: TransportState;
-  sampleRate: number;
-  blockSize: number;
-};
-```
-
-The browser audio engine owns:
+This skill should be applied to any code touching:
 
 - transport timing
-- current playback position
-- loop ranges
-- audio routing
-- bus topology
-- worklet node lifecycle
-- scheduling windows
-- playback state
-- offline render orchestration
+- clip scheduling
+- playback position
+- routing or buses
+- automation application
+- worklet processors
+- metering taps
+- offline rendering
+- low-latency audio behavior
 
-The UI does not own those concerns.
+---
+
+## Architectural role
+
+### The engine is a runtime executor, not the business model
+
+Project truth lives outside the engine.
+
+The engine consumes a projection of project truth and turns it into runtime execution.
+
+Project truth may include:
+
+- tracks
+- clips
+- routing definitions
+- plugin/device chains
+- automation data
+- transport configuration
+- markers
+- saved parameter values
+
+The engine may own:
+
+- live playback state
+- runtime graph objects
+- scheduling windows
+- transport execution state
+- meter accumulators
+- temporary runtime caches
+- worklet nodes
+- runtime-only latency state
+
+The engine must not become the owner of persisted semantics.
+
+### The engine owns time, routing, and playback execution
 
 The UI may:
 
 - send commands
-- subscribe to summarized state
-- render meters and cursors
-- display playback state
-- request renders or exports
+- request transport changes
+- request parameter changes
+- subscribe to summarized engine state
+- display meters, playhead, timing readouts, and transport state
 
-### Use `AudioContext` as the live graph root
+The UI must not:
 
-```ts
-// src/modules/AudioEngine/repositories/createProjectGraph.ts
-export type ProjectGraph = {
-  context: AudioContext;
-  destination: AudioNode;
-  masterGainNode: GainNode;
-};
+- own playback time
+- own routing topology
+- mix audio
+- schedule clips directly
+- mutate the live graph ad hoc
+- keep transport truth in React state
 
-export const createProjectGraph = (context: AudioContext): ProjectGraph => {
-  const masterGainNode = context.createGain();
-  masterGainNode.connect(context.destination);
+---
 
-  return {
-    context,
-    destination: masterGainNode,
-    masterGainNode,
-  };
-};
-```
+## Core rules
 
-The live playback graph should be rooted in a single `AudioContext`.
+### 1. Use one live `AudioContext`
 
-Use that context for:
+The live browser engine should be rooted in one `AudioContext`.
+
+Do not create separate contexts for unrelated features such as:
+
+- mixer
+- transport
+- preview playback
+- metering
+- plugin wrappers
+
+Use one live context for:
 
 - source nodes
 - worklet nodes
@@ -228,374 +115,321 @@ Use that context for:
 - automation targets
 - metering taps
 - monitor outputs
+- built-in devices
 
-Do not create ad hoc audio contexts for random features.
+Use explicit separate offline contexts only for offline render/export workflows.
 
-### Use `AudioWorklet` for real-time custom processing
+### 2. Use `AudioWorklet` for custom real-time DSP
 
-```ts
-// src/modules/AudioEngine/repositories/createMeterNode.ts
-export const createMeterNode = (context: AudioContext): AudioWorkletNode => {
-  return new AudioWorkletNode(context, "meter-processor", {
-    numberOfInputs: 1,
-    numberOfOutputs: 1,
-    outputChannelCount: [2],
-  });
-};
-```
+Any custom low-latency DSP must run in `AudioWorklet`.
 
-Any custom low-latency processor belongs in `AudioWorklet`.
+Use worklets for:
 
-Typical uses:
+- gain/pan utility processors
+- metering taps
+- clip playback/mixing helpers
+- sample-accurate automation application
+- low-latency analysis
+- custom filters/processors
+- buffer-domain utilities
 
-- meters
-- gain/pan utilities
-- clip mixing helpers
-- utility filters
-- sample taps
-- scheduler-facing processors
-- custom routing helpers
+Do not use `ScriptProcessorNode`.
 
-Do not put sample processing in React code or ordinary event handlers.
+### 3. Use `AudioParam` whenever possible
 
-### Use `AudioParam` for automation and scheduling
+When a value can be driven with `AudioParam`, prefer it.
 
-```ts
-// src/modules/AudioEngine/useCases/applyGainAutomation.ts
-export const applyGainAutomation = (
-  gainParam: AudioParam,
-  startTime: number,
-  startValue: number,
-  points: Array<{ time: number; value: number }>,
-): void => {
-  gainParam.cancelScheduledValues(startTime);
-  gainParam.setValueAtTime(startValue, startTime);
+Good `AudioParam` candidates:
 
-  for (const point of points) {
-    gainParam.linearRampToValueAtTime(point.value, point.time);
-  }
-};
-```
+- gain
+- pan
+- filter cutoff/resonance
+- envelope-driven parameters
+- time-varying FX parameters
+- automation targets
 
-Use `AudioParam` automation APIs for time-based parameter changes:
+Do not simulate sample-accurate control with React state, UI timers, or arbitrary polling loops.
 
-- `setValueAtTime`
-- `linearRampToValueAtTime`
-- `exponentialRampToValueAtTime`
-- `setTargetAtTime`
-- `cancelScheduledValues`
+### 4. Separate parameter changes from topology changes
 
-Do not emulate automation with UI timers or frame loops.
+This distinction is critical.
 
-### Keep scheduling ahead of the playhead
-
-```ts
-// src/modules/AudioEngine/models/SchedulerWindow.ts
-export type SchedulerWindow = {
-  lookAheadMs: number;
-  scheduleAheadSeconds: number;
-};
-```
-
-Use a scheduler window model for clip and event playback.
-
-The engine should schedule slightly ahead of the current playback position rather than trying to trigger everything exactly at the last moment.
-
-Typical responsibilities include:
-
-- translating timeline positions into audio times
-- scheduling clip starts/stops
-- handling loop wrap boundaries
-- re-scheduling near playhead movement
-- tracking what is already scheduled
-
-Do not let the UI drive sample playback timing.
-
-### Separate source preparation from playback scheduling
-
-```ts
-// src/modules/AudioEngine/models/ClipPlaybackPlan.ts
-export type ClipPlaybackPlan = {
-  clipId: string;
-  bufferStartSeconds: number;
-  projectStartSeconds: number;
-  durationSeconds: number;
-};
-```
-
-Prepare clip playback plans separately from the live scheduling loop.
-
-This keeps:
-
-- timeline logic testable
-- scheduling deterministic
-- transport operations cleaner
-- looping easier to reason about
-
-### Use `OfflineAudioContext` for non-realtime renders
-
-```ts
-// src/modules/AudioEngine/useCases/renderProjectOffline.ts
-export type RenderProjectOffline = (
-  durationSeconds: number,
-  sampleRate: number,
-) => Promise<AudioBuffer>;
-
-export const renderProjectOffline: RenderProjectOffline = async (
-  durationSeconds,
-  sampleRate,
-) => {
-  const length = Math.ceil(durationSeconds * sampleRate);
-  const offlineContext = new OfflineAudioContext({
-    numberOfChannels: 2,
-    length,
-    sampleRate,
-  });
-
-  const gainNode = offlineContext.createGain();
-  gainNode.connect(offlineContext.destination);
-
-  return offlineContext.startRendering();
-};
-```
-
-Use `OfflineAudioContext` for:
-
-- export rendering
-- freeze/bounce workflows
-- offline analysis passes
-- waveform precomputation when appropriate
-- deterministic render jobs
-
-Do not use the live `AudioContext` for export pipelines when an offline render path is more appropriate.
-
-### Metering should be tap-based, not UI-polled business logic
-
-```ts
-// src/modules/AudioEngine/models/MeterReading.ts
-export type MeterReading = {
-  peakLeft: number;
-  peakRight: number;
-  rmsLeft: number;
-  rmsRight: number;
-};
-```
-
-Metering should come from dedicated taps/processors in the audio path.
-
-The UI should observe summarized meter state.
-
-Do not compute meters by pulling arbitrary data out of business objects in React.
-
-### Keep node graph construction deterministic
-
-```ts
-// src/modules/AudioEngine/useCases/createTrackGraph.ts
-export type TrackGraph = {
-  inputNode: GainNode;
-  preFaderNode: GainNode;
-  postFaderNode: GainNode;
-};
-```
-
-Build graph topology through deterministic graph builders.
+#### Parameter changes
 
 Examples:
 
-- track graph
-- bus graph
-- master graph
-- monitor graph
-- analysis tap graph
+- fader movement
+- pan change
+- mute/bypass
+- automation values
+- parameter modulation
+- plugin/device parameter updates
 
-Avoid scattered imperative graph mutations throughout the UI layer.
+These should use fast paths:
 
-### Use explicit command/use-case boundaries for engine actions
+- `AudioParam`
+- direct engine parameter application
+- real-time-safe command paths
+- lightweight node-local updates
 
-```ts
-// src/modules/AudioEngine/useCases/setTempo.ts
-export type SetTempo = (tempo: number) => void;
-```
+These must **not** rebuild the graph.
 
-All engine mutations should happen through explicit engine actions/use cases such as:
+#### Topology changes
 
-- set tempo
-- start transport
-- stop transport
-- seek transport
-- set loop region
-- set track gain
-- mute track
-- solo track
-- arm record
-- connect bus
-- disconnect bus
+Examples:
 
-Do not let arbitrary components poke engine internals directly.
+- add/remove track
+- add/remove bus
+- add/remove plugin/device
+- routing rewiring
+- send/return changes
+- clip source replacement if it changes node structure
 
-### Move heavy numerical kernels to WASM when needed
+These may use slower reconciliation paths.
 
-```ts
-// src/modules/Dsp/repositories/loadDspWasm.ts
-export const loadDspWasm = async () => {
-  const response = await fetch("/wasm/dsp.wasm");
-  const bytes = await response.arrayBuffer();
+### 5. Reconcile rather than recreate
 
-  return WebAssembly.instantiate(bytes, {});
-};
-```
+The engine should prefer targeted reconciliation over full teardown/rebuild.
 
-When real-time JS in a worklet becomes too expensive, move the hot numerical kernel into WASM.
+Good reconciliation granularity:
 
-Typical candidates:
+- apply changed parameter only
+- update changed routing edge only
+- add/remove affected nodes only
+- rebuild only the affected subgraph when practical
 
-- FFT-heavy analysis
-- pitch/time operations
-- resampling
-- convolution helpers
-- heavy feature extraction
-- complex utility DSP
+Bad pattern:
 
-The worklet still owns real-time orchestration; WASM owns the inner kernel.
+- “something changed, rebuild the entire engine”
 
-## Common Mistakes
+### 6. Use `OfflineAudioContext` for export and analysis workflows
 
-### CRITICAL Putting audio timing in React state
+Offline rendering must use an explicit offline path.
+
+Offline flows should:
+
+- recreate the necessary graph deterministically
+- apply project truth intentionally
+- run without UI timing assumptions
+- avoid piggybacking on live playback state
+
+Do not use the live engine as your export engine.
+
+---
+
+## Fast path vs slow path
+
+### Fast path
+
+Use for:
+
+- parameter changes
+- transport state nudges
+- automation value application
+- meter snapshot reads
+- sample-accurate runtime control
+
+Requirements:
+
+- minimal overhead
+- no graph rebuild
+- no heavy object churn
+- no cross-layer leakage
+
+### Slow path
+
+Use for:
+
+- graph rebuilds
+- topology diffs
+- routing changes
+- device/plugin insertion or removal
+- transport reset-level changes
+- offline render preparation
+
+Requirements:
+
+- explicit orchestration
+- clear synchronization boundaries
+- no accidental triggering on hot user gestures unless intentionally coalesced
+
+---
+
+## Real-time safety rules
+
+### Never do this on RT-adjacent paths
+
+Do not:
+
+- allocate unpredictably
+- acquire locks
+- perform DOM work
+- perform React state updates
+- perform filesystem/network I/O
+- call Tauri commands
+- parse JSON
+- log excessively
+- create/destroy arbitrary runtime objects in hot loops
+
+### Worklet isolation rules
+
+Worklets must be isolated from:
+
+- React
+- presentation code
+- domain stores
+- Tauri APIs
+- arbitrary helper singletons
+- non-worklet-safe shared utilities
+
+Treat worklet code as RT-sensitive code, not general app code.
+
+### Scheduling rules
+
+The engine should schedule with a clear look-ahead model or equivalent deterministic transport strategy.
+
+Do not make audio correctness depend on:
+
+- React render cadence
+- component mount order
+- browser animation frame timing
+- view visibility
+
+---
+
+## What belongs where
+
+### Belongs in engine/runtime code
+
+- transport execution
+- scheduling windows
+- graph ownership
+- worklet lifecycle
+- routing execution
+- bus topology
+- metering taps
+- latency compensation runtime application
+- playback position execution
+- offline rendering
+
+### Belongs outside the engine
+
+- UI layout and editor state
+- selection
+- project-level ownership rules
+- save/load workflows
+- command parsing
+- AI intent interpretation
+- non-runtime validation
+- view presentation formatting
+
+---
+
+## Latency and transport guidance
+
+### Latency compensation is an engine concern informed by project truth
+
+Compensation values may be derived from project/plugin/routing truth, but applying them to live playback is an engine/runtime responsibility.
+
+### Transport must be engine-owned
+
+The UI should never become the source of truth for:
+
+- playback phase
+- playhead progression
+- loop execution
+- scheduling boundaries
+
+It may display transport summaries and request transport changes.
+
+---
+
+## Anti-patterns
+
+### 1. Engine in React state
 
 Wrong:
 
-```tsx
-const [position, setPosition] = useState(0);
+- storing `AudioContext`, `AudioNode`, engine instances, or worklet handles in React state, context, or general stores
 
-useEffect(() => {
-  const id = setInterval(() => {
-    setPosition((value) => value + 0.01);
-  }, 10);
+Right:
 
-  return () => {
-    clearInterval(id);
-  };
-}, []);
-```
+- keep runtime objects engine-owned and expose only controlled APIs and summaries
 
-Correct:
-
-```ts
-// transport position lives in the engine and is observed by the UI
-```
-
-React is not the transport clock.
-
-### CRITICAL Processing samples on the main thread
+### 2. Hook-controlled transport truth
 
 Wrong:
 
-```ts
-for (let i = 0; i < samples.length; i += 1) {
-  samples[i] = samples[i] * gain;
-}
-```
+- a hook is the real owner of playback state
 
-Correct:
+Right:
 
-```ts
-// run sample processing inside AudioWorklet or WASM called from AudioWorklet
-```
+- hook sends commands and subscribes to engine summaries
 
-Sample processing must not live in React components, standard hooks, or random UI event handlers.
-
-### CRITICAL Treating automation as UI animation
+### 3. Parameter change triggers graph rebuild
 
 Wrong:
 
-```ts
-requestAnimationFrame(() => {
-  gainNode.gain.value = nextValue;
-});
-```
+- moving a fader rebuilds routing or recreates nodes
 
-Correct:
+Right:
 
-```ts
-gainNode.gain.setValueAtTime(currentValue, startTime);
-gainNode.gain.linearRampToValueAtTime(nextValue, endTime);
-```
+- parameter path stays separate from topology path
 
-Automation belongs on `AudioParam` timelines, not UI timing loops.
-
-### HIGH Building export/bounce on the live audio context
+### 4. Main-thread DSP
 
 Wrong:
 
-```ts
-// render export by playing the live engine and recording it in real time
-```
+- mixing/analyzing/manipulating audio buffers in React hooks or render logic
 
-Correct:
+Right:
 
-```ts
-const offlineContext = new OfflineAudioContext({
-  numberOfChannels: 2,
-  length,
-  sampleRate,
-});
-```
+- use worklets or engine-owned runtime code
 
-Use offline rendering for non-realtime export paths.
-
-### HIGH Letting components mutate the graph directly
+### 5. Ad hoc preview contexts
 
 Wrong:
 
-```tsx
-button.onClick = () => {
-  trackNode.disconnect();
-  trackNode.connect(audioContext.destination);
-};
-```
+- create a fresh `AudioContext` for preview, one-shots, quick meters, etc.
 
-Correct:
+Right:
 
-```ts
-// dispatch a use-case/command that updates graph topology through the engine layer
-```
+- route previews intentionally through the engine unless a distinct offline context is clearly justified
 
-Graph mutations should be centralized and deterministic.
-
-### HIGH Creating too many unrelated audio contexts
+### 6. Engine becomes business model
 
 Wrong:
 
-```ts
-const previewContext = new AudioContext();
-const transportContext = new AudioContext();
-const meteringContext = new AudioContext();
-```
+- engine decides project semantics or becomes persistence truth
 
-Correct:
+Right:
 
-```ts
-const mainContext = new AudioContext({
-  latencyHint: "interactive",
-});
-```
+- engine executes truth projections
 
-Use one main live context unless there is a very strong reason not to.
-
-### HIGH Mixing UI concerns into engine internals
+### 7. Offline render piggybacks on live state
 
 Wrong:
 
-```ts
-if (sidebarIsOpen) {
-  gainNode.gain.value = 0.9;
-}
-```
+- export reuses live engine state and assumes current UI/runtime state is canonical
 
-Correct:
+Right:
 
-```ts
-// engine logic responds to engine commands and transport/routing state only
-```
+- offline render reconstructs intentionally
 
-The engine should not care about random presentation state.
+---
+
+## Review checklist
+
+Before accepting audio-engine code, verify:
+
+1. Does the engine own time/routing/playback rather than the UI?
+2. Is there one live `AudioContext`?
+3. Are custom processors in `AudioWorklet`?
+4. Are parameter updates separated from topology updates?
+5. Does the engine consume truth rather than become truth?
+6. Is reconciliation used rather than blanket rebuilds where practical?
+7. Are RT-sensitive paths free of UI/framework/native-bridge leakage?
+8. Is offline rendering explicit and deterministic?
+9. Did the change reduce or increase runtime leakage into the rest of the app?
+
+---

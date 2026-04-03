@@ -1,19 +1,9 @@
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
 import { type Device } from '#/modules/Arrangement/useCases/trackQueries';
-import { type OfflineDeviceNode, DEVICE_FACTORIES, applyParams } from '../repositories/deviceNodeFactory';
-import { isFaustModule, createFaustDevice } from '../repositories/faustDeviceFactory';
-import { isNativeDspDevice, NATIVE_DSP_DEVICE_TYPES, createNativeDspNode } from '../engine/NativeDspNode';
-import { isFermenterDevice, createFermenterNode } from '../engine/FermenterNode';
-import { isToasterDevice, createToasterNode } from '../engine/ToasterNode';
-import { isLevainDevice, createLevainNode } from '../engine/LevainNode';
-import { isGlutenDevice, createGlutenNode } from '../engine/GlutenNode';
-import { isBacteriaDevice, createBacteriaNode } from '../engine/BacteriaNode';
-import { isGrinderDevice, createGrinderNode } from '../engine/GrinderNode';
-import { isProofDevice, createProofNode } from '../engine/ProofNode';
-import { isProofChamberDevice, createProofChamberNode } from '../engine/ProofChamberNode';
-import { isScoringDevice, createScoringNode } from '../engine/ScoringNode';
+import { type OfflineDeviceNode } from '../repositories/deviceNodeFactory';
 import { isDeviceSupportedOnCurrentPlatform } from '#/modules/Arrangement/useCases/trackQueries';
+import { deviceRegistry, type AudioDeviceStrategy } from '../repositories/deviceStrategy';
 
 const logger = Container.getInstance().get(Logger);
 
@@ -24,25 +14,25 @@ export type DeviceNodeEntry = {
     deviceId: string;
     deviceType: string;
     node: OfflineDeviceNode;
+    strategy: AudioDeviceStrategy;
+    
+    // Kept for backwards compatibility with consumers until fully migrated
     nativeDsp?: {
         setParam: (name: string, value: number) => void;
         setBypass: (bypassed: boolean) => void;
     };
-    /** Instrument controls for worklet-based synths (Fermenter, Toaster, Levain). */
     instrumentControls?: {
         noteOn: (noteOrPad: number, velocity: number, midiNote?: number) => void;
         noteOff: (noteOrPad: number) => void;
     };
 };
 
-
-
 export type BuildDeviceChainOutput = DeviceNodeEntry[];
 
 /**
  * Build an audio device chain, connecting devices between input and output nodes.
  *
- * Supports three device backends:
+ * Supports three device backends via the unified DeviceFactoryRegistry:
  * 1. Built-in Web Audio devices (synchronous)
  * 2. Faust DSP devices (async compilation + AudioWorkletNode)
  * 3. Native Rust/WASM DSP devices (async WASM init + AudioWorkletNode)
@@ -70,243 +60,19 @@ export async function buildDeviceChain(
             continue;
         }
 
-        let dn: OfflineDeviceNode | null = null;
-        let nativeDspControls: DeviceNodeEntry['nativeDsp'] = undefined;
-        let instrumentControls: DeviceNodeEntry['instrumentControls'] = undefined;
-
-        if (isNativeDspDevice(device.type)) {
-            // Native Rust/WASM DSP device
-            const pluginType = NATIVE_DSP_DEVICE_TYPES[device.type];
-            if (pluginType) {
-                try {
-                    const result = await createNativeDspNode(ctx, pluginType);
-                    await result.ready;
-                    // Apply initial params
-                    for (const [key, val] of Object.entries(device.parameterValues)) {
-                        result.setParam(key, val);
-                    }
-                    dn = {
-                        inputNode: result.workletNode,
-                        outputNode: result.workletNode,
-                        nodes: [result.workletNode],
-                    };
-                    nativeDspControls = {
-                        setParam: result.setParam,
-                        setBypass: result.setBypass,
-                    };
-                } catch (error) {
-                    logger.warn(`Native DSP device ${device.type} failed to load: ${error}`);
-                }
-            }
-        } else if (isFermenterDevice(device.type)) {
-            // Fermenter synthesizer — async WASM init + AudioWorkletNode
-            try {
-                const result = await createFermenterNode(ctx);
-                await result.ready;
-                // Apply initial params
-                for (const [key, val] of Object.entries(device.parameterValues)) {
-                    result.setParam(key, val);
-                }
-                dn = {
-                    inputNode: result.workletNode,
-                    outputNode: result.workletNode,
-                    nodes: [result.workletNode],
-                };
-                nativeDspControls = {
-                    setParam: result.setParam,
-                    setBypass: result.setBypass,
-                };
-                instrumentControls = {
-                    noteOn: result.noteOn,
-                    noteOff: result.noteOff,
-                };
-            } catch (error) {
-                logger.warn(`Fermenter device failed to load: ${error}`);
-            }
-        } else if (isToasterDevice(device.type)) {
-            // Toaster drum machine — async WASM init + AudioWorkletNode
-            try {
-                const result = await createToasterNode(ctx);
-                await result.ready;
-                // Apply initial params
-                for (const [key, val] of Object.entries(device.parameterValues)) {
-                    result.setParam(key, val);
-                }
-                dn = {
-                    inputNode: result.workletNode,
-                    outputNode: result.workletNode,
-                    nodes: [result.workletNode],
-                };
-                nativeDspControls = {
-                    setParam: result.setParam,
-                    setBypass: result.setBypass,
-                };
-                instrumentControls = {
-                    noteOn: result.noteOn,
-                    noteOff: result.noteOff,
-                };
-            } catch (error) {
-                logger.warn(`Toaster device failed to load: ${error}`);
-            }
-        } else if (isLevainDevice(device.type)) {
-            // Levain suite — async WASM init + AudioWorkletNode
-            try {
-                const result = await createLevainNode(ctx);
-                await result.ready;
-                // Apply initial params
-                for (const [key, val] of Object.entries(device.parameterValues)) {
-                    result.setParam(key, val);
-                }
-                dn = {
-                    inputNode: result.workletNode,
-                    outputNode: result.workletNode,
-                    nodes: [result.workletNode],
-                };
-                nativeDspControls = {
-                    setParam: result.setParam,
-                    setBypass: result.setBypass,
-                };
-                instrumentControls = {
-                    noteOn: result.noteOn,
-                    noteOff: result.noteOff,
-                };
-            } catch (error) {
-                logger.warn(`Levain device failed to load: ${error}`);
-            }
-        } else if (isGlutenDevice(device.type)) {
-            // Gluten bus compressor — async WASM init + AudioWorkletNode
-            try {
-                const result = await createGlutenNode(ctx);
-                await result.ready;
-                for (const [key, val] of Object.entries(device.parameterValues)) {
-                    result.setParam(key, val);
-                }
-                dn = {
-                    inputNode: result.workletNode,
-                    outputNode: result.workletNode,
-                    nodes: [result.workletNode],
-                };
-                nativeDspControls = {
-                    setParam: result.setParam,
-                    setBypass: result.setBypass,
-                };
-            } catch (error) {
-                logger.warn(`Gluten device failed to load: ${error}`);
-            }
-        } else if (isBacteriaDevice(device.type)) {
-            // Bacteria creative multi-effects — async WASM init + AudioWorkletNode
-            try {
-                const result = await createBacteriaNode(ctx);
-                await result.ready;
-                for (const [key, val] of Object.entries(device.parameterValues)) {
-                    result.setParam(key, val);
-                }
-                dn = {
-                    inputNode: result.workletNode,
-                    outputNode: result.workletNode,
-                    nodes: [result.workletNode],
-                };
-                nativeDspControls = {
-                    setParam: result.setParam,
-                    setBypass: result.setBypass,
-                };
-            } catch (error) {
-                logger.warn(`Bacteria device failed to load: ${error}`);
-            }
-        } else if (isGrinderDevice(device.type)) {
-            // Grinder amp simulator — async WASM init + AudioWorkletNode
-            try {
-                const result = await createGrinderNode(ctx);
-                await result.ready;
-                for (const [key, val] of Object.entries(device.parameterValues)) {
-                    result.setParam(key, val);
-                }
-                dn = {
-                    inputNode: result.workletNode,
-                    outputNode: result.workletNode,
-                    nodes: [result.workletNode],
-                };
-                nativeDspControls = {
-                    setParam: result.setParam,
-                    setBypass: result.setBypass,
-                };
-            } catch (error) {
-                logger.warn(`Grinder device failed to load: ${error}`);
-            }
-        } else if (isProofDevice(device.type)) {
-            // Proof mastering suite — async WASM init + AudioWorkletNode
-            try {
-                const result = await createProofNode(ctx);
-                await result.ready;
-                for (const [key, val] of Object.entries(device.parameterValues)) {
-                    result.setParam(key, val);
-                }
-                dn = {
-                    inputNode: result.workletNode,
-                    outputNode: result.workletNode,
-                    nodes: [result.workletNode],
-                };
-                nativeDspControls = {
-                    setParam: result.setParam,
-                    setBypass: result.setBypass,
-                };
-            } catch (error) {
-                logger.warn(`Proof mastering suite failed to load: ${error}`);
-            }
-        } else if (isProofChamberDevice(device.type)) {
-            // Dutch Oven reverb — async WASM init + AudioWorkletNode
-            try {
-                const result = await createProofChamberNode(ctx);
-                await result.ready;
-                for (const [key, val] of Object.entries(device.parameterValues)) {
-                    result.setParam(key, val);
-                }
-                dn = {
-                    inputNode: result.workletNode,
-                    outputNode: result.workletNode,
-                    nodes: [result.workletNode],
-                };
-                nativeDspControls = {
-                    setParam: result.setParam,
-                    setBypass: result.setBypass,
-                };
-            } catch (error) {
-                logger.warn(`Dutch Oven reverb failed to load: ${error}`);
-            }
-        } else if (isScoringDevice(device.type)) {
-            try {
-                const result = await createScoringNode(ctx);
-                await result.ready;
-                for (const [key, val] of Object.entries(device.parameterValues)) {
-                    result.setParam(key, val);
-                }
-                dn = {
-                    inputNode: result.workletNode,
-                    outputNode: result.workletNode,
-                    nodes: [result.workletNode],
-                };
-                nativeDspControls = {
-                    setParam: result.setParam,
-                    setBypass: result.setBypass,
-                };
-            } catch (error) {
-                logger.warn(`Scoring tuner failed to load: ${error}`);
-            }
-        } else if (isFaustModule(device.type)) {
-            // Faust DSP device — compile and instantiate
-            dn = await createFaustDevice(ctx, device.type);
-        } else {
-            // Built-in Web Audio device — works in both real-time and offline contexts
-            const factory = DEVICE_FACTORIES[device.type];
-            if (factory) {
-                dn = factory(ctx);
-                applyParams(dn, device.type, device.parameterValues);
-            }
-        }
-
-        if (!dn) {
+        let strategy: AudioDeviceStrategy | null = null;
+        try {
+            strategy = await deviceRegistry.createDevice(ctx, device);
+        } catch (error) {
+            logger.warn(`Device ${device.type} failed to load: ${error}`);
             continue;
         }
+
+        if (!strategy) {
+            continue;
+        }
+
+        const dn = strategy.node;
 
         // Instrument devices (Fermenter, Toaster, Levain) have 0 inputs — they
         // are audio sources, not pass-through effects. Route their output INTO
@@ -321,7 +87,22 @@ export async function buildDeviceChain(
             prev.connect(dn.inputNode);
             prev = dn.outputNode;
         }
-        entries.push({ deviceId: device.id, deviceType: device.type, node: dn, nativeDsp: nativeDspControls, instrumentControls });
+
+        entries.push({
+            deviceId: device.id,
+            deviceType: device.type,
+            node: dn,
+            strategy,
+            // Proxies for legacy support (to be phased out completely soon)
+            nativeDsp: {
+                setParam: (name, value) => strategy!.setParam(name, value),
+                setBypass: (bypassed) => strategy!.setBypass?.(bypassed)
+            },
+            instrumentControls: {
+                noteOn: (note, vel, midi) => strategy!.noteOn?.(note, vel, midi),
+                noteOff: (note) => strategy!.noteOff?.(note)
+            }
+        });
     }
 
     prev.connect(outputNode);

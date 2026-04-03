@@ -780,3 +780,429 @@ The central rule is:
 **make the next change safer and more explicit than the previous one.**
 
 That is successful migration.
+
+# Legacy Import Compatibility During Module-by-Module Migration
+
+This document defines how to preserve import stability while migrating a large codebase one module at a time.
+
+It is specifically for the situation where:
+
+- the codebase is large
+- one agent is assigned per module
+- each agent refactors only its assigned module
+- cross-module merge conflicts must be minimized
+- the final global import rewrite will happen later, in one dedicated pass
+
+The goal is:
+
+**allow deep internal refactors inside each module without forcing immediate import updates across the entire codebase.**
+
+This is a migration strategy document, not a permanent architecture pattern.
+
+---
+
+## 1. Core principle
+
+During module-by-module migration, **legacy import paths must remain stable until the final convergence pass**.
+
+That means:
+
+- existing cross-module imports from other modules should continue to work
+- migrated modules may change their internal structure freely
+- migrated modules must preserve a compatibility surface at the old paths
+- one final agent can later update the whole codebase to the new canonical import paths and remove the compatibility layer
+
+This is the only sane way to migrate a large codebase in parallel without creating unmergeable chaos.
+
+---
+
+## 2. Why this is necessary
+
+If every module-refactor agent also updates all external imports to the new architecture at the same time, the result is:
+
+- massive merge conflicts
+- duplicated work
+- rebasing hell
+- cross-module partial breakage
+- agents stepping on each other’s files
+- inconsistent half-migrated import graphs
+
+In a large parallel migration, the architecture must distinguish between:
+
+1. **internal structural migration**
+2. **external import-path migration**
+
+These are separate phases.
+
+---
+
+## 3. Migration rule
+
+### Phase 1: module-local refactor only
+
+Each agent may:
+
+- refactor the internals of its assigned module
+- introduce new internal architecture
+- create new canonical internal files and folders
+- move logic to new boundaries
+- improve ownership and layering
+- add compatibility exports at old paths
+
+Each agent must **not**:
+
+- rewrite imports across unrelated modules
+- force the rest of the codebase onto the new path scheme
+- remove legacy public surfaces that other modules still depend on
+- break existing external import paths unless explicitly instructed
+
+### Phase 2: global import convergence
+
+After all modules have been migrated internally, one dedicated pass may:
+
+- update imports across the whole codebase
+- move callers from legacy paths to canonical new paths
+- remove compatibility shims
+- tighten dependency rules
+- finalize dep-cruiser enforcement against the temporary migration layer
+
+---
+
+## 4. The compatibility contract
+
+During migration, every migrated module must preserve a **legacy compatibility surface** for external callers.
+
+This means:
+
+- if other modules currently import from old paths, those paths should keep working
+- the old path may re-export from the new internal location
+- the old path acts as a temporary compatibility boundary
+- the old path should not contain new business logic
+- the old path should delegate inward to the new architecture
+
+### Important distinction
+
+This is **not** the same thing as fake barrel-export laundering.
+
+It is allowed here because:
+
+- it is explicitly temporary
+- it exists to preserve codebase stability during parallel migration
+- it is part of a defined phased migration strategy
+- it should only preserve already-existing external contracts, not create new ones
+
+The difference is intent and scope.
+
+---
+
+## 5. Allowed temporary pattern
+
+### Allowed: legacy compatibility exports
+
+If a module used to expose:
+
+```text
+src/modules/Arrangement/useCases/addTrack.ts
+```
+
+and after migration the canonical internal implementation becomes something like:
+
+```text
+src/modules/Arrangement/application/actions/addTrack.ts
+```
+
+then during migration it is acceptable to keep:
+
+```typescript
+// src/modules/Arrangement/useCases/addTrack.ts
+export { addTrack } from '../application/actions/addTrack';
+```
+
+This preserves the old external path while allowing internal restructuring.
+
+### Conditions for this to be allowed
+
+1. The old path already existed or was already part of the external contract.
+2. The compatibility file is thin and contains no real logic.
+3. The new canonical implementation lives behind the compatibility surface.
+4. New callers should preferably use the new canonical path only when the migration plan explicitly allows it.
+5. The compatibility layer is temporary and documented.
+
+---
+
+## 6. Forbidden uses of the compatibility layer
+
+The legacy export system must not become a permanent shadow architecture.
+
+### Forbidden
+
+- creating new fake public surfaces just for convenience
+- exporting private internals that were never part of the old contract
+- adding business logic into compatibility files
+- using compatibility exports to bypass the new architecture
+- expanding the old public surface during migration
+- making other modules depend on temporary compatibility shims for new behavior
+- keeping both old and new external paths active indefinitely without a plan to converge
+
+### The compatibility layer is for stability, not for cheating
+
+It exists only to preserve existing import paths while module internals are being modernized.
+
+It must not be used to:
+
+- hide bad boundaries
+- launder new internals outward
+- postpone real cleanup forever
+
+---
+
+## 7. What each module agent should do
+
+When migrating a module, the assigned agent should follow this order:
+
+### Step 1: identify old external contract paths
+
+Before moving files, determine which paths are imported from outside the module.
+
+These paths become the temporary compatibility surface.
+
+### Step 2: perform the internal refactor
+
+The agent may then:
+
+- reorganize internals
+- introduce the new architecture
+- move logic to correct layers
+- split large files
+- isolate adapters
+- improve state ownership
+- create new canonical internal paths
+
+### Step 3: restore old external paths as compatibility exports
+
+For every externally used old path that changed, create a compatibility file at the old path that re-exports the migrated implementation.
+
+### Step 4: do not rewrite the rest of the codebase
+
+Leave external callers alone unless the task explicitly includes the global convergence pass.
+
+### Step 5: document temporary compatibility points if needed
+
+If helpful, leave a brief comment indicating that the file is a temporary migration shim.
+
+Example:
+
+```typescript
+// Temporary migration compatibility export.
+// Preserve legacy external imports until the global import convergence pass.
+export { addTrack } from '../application/actions/addTrack';
+```
+
+---
+
+## 8. What the final convergence agent should do
+
+Only after all module-local migrations are complete should a final agent:
+
+1. find all remaining imports to legacy compatibility paths
+2. rewrite them to canonical new paths
+3. remove now-unused compatibility files
+4. tighten dependency rules
+5. verify no temporary migration shims remain
+6. simplify public surfaces where appropriate
+
+This final step should be deliberate and global.
+
+It should **not** happen piecemeal during the per-module migration phase.
+
+---
+
+## 9. Dependency-cruiser implications
+
+During migration, dependency rules may need to tolerate the temporary compatibility layer.
+
+That means the migration-aware rules should distinguish between:
+
+- **canonical architecture boundaries**
+- **temporary legacy compatibility paths**
+
+### Recommended policy
+
+- keep strict rules for new canonical internals
+- allow a narrowly defined exception for legacy public compatibility re-exports
+- forbid using that exception to expose new internals
+- remove the exception after the final convergence pass
+
+In other words:
+
+**make the migration layer explicit in tooling, not accidental.**
+
+---
+
+## 10. How this differs from malicious compliance
+
+Normally, re-exporting through public paths can be a form of architectural cheating.
+
+This migration pattern is different because it has all of these properties:
+
+- it preserves an already-existing public path
+- it does not widen the public surface
+- it is temporary
+- it is part of a documented migration strategy
+- it allows parallel refactors to merge cleanly
+- it points inward to the new architecture rather than outward to private internals
+
+### Quick test
+
+A compatibility export is legitimate if:
+
+- it preserves an old contract
+- it introduces no new behavior
+- it contains no business logic
+- it will be removed in the final convergence pass
+
+If any of those are false, it is probably fake compliance.
+
+---
+
+## 11. Good examples
+
+### Good: preserve old use case path
+
+```typescript
+// old external path retained
+// src/modules/Transport/useCases/setTempo.ts
+export { setTempo } from '../application/actions/setTempo';
+```
+
+### Good: preserve old error path
+
+```typescript
+// src/modules/Project/errors/ProjectLoadError.ts
+export { ProjectLoadError } from '../domain/errors/ProjectLoadError';
+```
+
+### Good: preserve old public store path
+
+```typescript
+// src/modules/Midi/stores/midiDevicesStore.ts
+export { midiDevicesStore } from '../projections/midiDevicesStore';
+```
+
+These are acceptable if those old paths were already part of the module’s public contract.
+
+---
+
+## 12. Bad examples
+
+### Bad: expose new private internals through old path
+
+```typescript
+// wrong: this was never part of the old contract
+export { internalTrackGraphBuilder } from '../runtime/internalTrackGraphBuilder';
+```
+
+### Bad: add logic to the compatibility file
+
+```typescript
+// wrong: compatibility layer now owns behavior
+import { realAddTrack } from '../application/actions/addTrack';
+
+export const addTrack = (input) => {
+    validateSomethingExtra(input);
+    return realAddTrack(input);
+};
+```
+
+### Bad: create new convenience exports during migration
+
+```typescript
+// wrong: widening the public surface
+export { useTrackMeters } from '../presentations/hooks/useTrackMeters';
+```
+
+### Bad: mix compatibility and canonical ownership indefinitely
+
+```text
+old path remains forever
+new path also used everywhere
+no cleanup pass ever happens
+```
+
+That is not migration. That is permanent duplication.
+
+---
+
+## 13. Rules for agents
+
+When assigned one module only, the agent must assume:
+
+- other modules are out of scope
+- external callers should remain stable
+- legacy import compatibility is required
+- internal cleanup is preferred over external churn
+- the final import rewrite is someone else’s job, later
+
+### Therefore, the agent should optimize for:
+
+- internal architectural correctness
+- preserved external compatibility
+- minimized merge conflict surface
+- temporary shims that are thin and honest
+- no expansion of the old public contract
+
+### The agent should not optimize for:
+
+- immediate codebase-wide canonical imports
+- deleting all old paths right away
+- enforcing the final architecture globally before the codebase is ready
+- making unrelated modules “cleaner” during the local migration
+
+---
+
+## 14. Suggested file annotation for compatibility shims
+
+To make temporary files easy to identify later, add a standard comment at the top:
+
+```typescript
+/**
+ * TEMPORARY MIGRATION SHIM
+ *
+ * Preserves the legacy external import path during module-by-module migration.
+ * Remove after the global import convergence pass.
+ */
+export { addTrack } from '../application/actions/addTrack';
+```
+
+This helps the final cleanup agent find and remove them systematically.
+
+---
+
+## 15. Practical checklist for a module migration agent
+
+Before finishing a module migration, verify:
+
+1. Did I refactor the module internals toward the new architecture?
+2. Did I preserve all old external import paths that other modules still rely on?
+3. Are compatibility files thin re-exports only?
+4. Did I avoid adding business logic to compatibility shims?
+5. Did I avoid widening the public surface?
+6. Did I avoid rewriting unrelated modules’ imports?
+7. Will another agent be able to merge this module cleanly with other module migrations?
+
+If yes, the module migration is correctly staged.
+
+---
+
+## 16. Final rule
+
+**During parallel module migration, preserve external legacy paths and modernize internals.**
+
+Do not force codebase-wide import convergence early.
+
+The migration succeeds in two steps:
+
+1. every module becomes internally correct while externally stable
+2. one final global pass updates imports and removes the compatibility layer
+
+That is the intended strategy.
