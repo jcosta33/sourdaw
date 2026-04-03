@@ -11,23 +11,23 @@ import { setProofParam } from '../../useCases/proofParamBridge';
 const BAND_LABELS = ['Sub', 'Low-Mid', 'Hi-Mid', 'High'] as const;
 const BAND_COLORS = ['var(--color-accent-peach)', 'var(--color-accent-mint)', 'var(--color-accent-cyan)', 'var(--color-accent-lavender)'];
 
-type Props = { patch: ProofPatch; dynGr: [number, number, number, number] };
+type Props = { patch: ProofPatch; dynGr: [number, number, number, number]; deviceId: string };
 
-export const ProofDynSection = ({ patch, dynGr }: Props): ReactElement => {
+export const ProofDynSection = ({ patch, dynGr, deviceId }: Props): ReactElement => {
     const updateBand = (idx: number, key: string, value: number | boolean) => {
         const bands = patch.dynBands.map((b, i) =>
             i === idx ? { ...b, [key]: value } : b
         );
-        updateProofPatch({ dynBands: bands });
+        updateProofPatch(deviceId, { dynBands: bands });
         const paramName = key === 'autoMakeup' ? 'auto_makeup' : key === 'bypassed' ? 'bypass' : key;
-        setProofParam(`dyn_band${idx}_${paramName}`, typeof value === 'boolean' ? (value ? 1 : 0) : value);
+        setProofParam(deviceId, `dyn_band${idx}_${paramName}`, typeof value === 'boolean' ? (value ? 1 : 0) : value);
     };
 
     const updateXover = (idx: number, value: number) => {
         const freqs: [number, number, number] = [...patch.dynCrossoverFreqs];
         freqs[idx] = value;
-        updateProofPatch({ dynCrossoverFreqs: freqs });
-        setProofParam(`dyn_xover${idx}`, value);
+        updateProofPatch(deviceId, { dynCrossoverFreqs: freqs });
+        setProofParam(deviceId, `dyn_xover${idx}`, value);
     };
 
     return (
@@ -38,8 +38,8 @@ export const ProofDynSection = ({ patch, dynGr }: Props): ReactElement => {
                     type="button"
                     className={`text-[7px] px-1.5 py-0.5 rounded cursor-pointer ${patch.dynBypassed ? 'text-muted-foreground' : 'text-[var(--color-accent-peach)]'}`}
                     onClick={() => {
-                        updateProofPatch({ dynBypassed: !patch.dynBypassed });
-                        setProofParam('dyn_bypass', patch.dynBypassed ? 0 : 1);
+                        updateProofPatch(deviceId, { dynBypassed: !patch.dynBypassed });
+                        setProofParam(deviceId, 'dyn_bypass', patch.dynBypassed ? 0 : 1);
                     }}
                 >
                     {patch.dynBypassed ? 'OFF' : 'ON'}

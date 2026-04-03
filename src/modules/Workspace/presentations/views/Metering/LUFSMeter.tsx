@@ -3,6 +3,7 @@
  * Displays momentary, short-term, and integrated loudness on a Canvas2D bar.
  */
 import { type ReactElement, useRef, useEffect, useState } from 'react';
+import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { getMasterAnalyser, getAudioSampleRate } from '#/modules/AudioEngine/useCases/engineAccess';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 import { computeMomentaryLUFS, ShortTermLUFS, IntegratedLUFS } from '#/modules/AudioEngine/useCases/advancedMetering';
@@ -174,9 +175,12 @@ export const LUFSMeter = ({ height = 160, width = 48, target = -14 }: LUFSMeterP
                     }}
                 />
             </div>
-            <span className="text-[10px] text-muted-foreground tabular-nums">
-                {integrated > -70 ? integrated.toFixed(1) : '-∞'} LUFS
-            </span>
+            <DawReadoutRow
+                className="w-full gap-1"
+                label="I"
+                labelClassName="text-[9px] font-medium uppercase tracking-wider text-muted-foreground/70"
+                value={`${integrated > -70 ? integrated.toFixed(1) : '-∞'} LUFS`}
+            />
         </div>
     );
 };

@@ -9,14 +9,14 @@ import { setProofParam } from '../../useCases/proofParamBridge';
 
 const BAND_LABELS = ['Sub', 'Low-Mid', 'Hi-Mid', 'High'] as const;
 
-type Props = { patch: ProofPatch; correlation: number };
+type Props = { patch: ProofPatch; correlation: number; deviceId: string };
 
-export const ProofImagerSection = ({ patch, correlation }: Props): ReactElement => {
+export const ProofImagerSection = ({ patch, correlation, deviceId }: Props): ReactElement => {
     const updateWidth = (idx: number, value: number) => {
         const widths: [number, number, number, number] = [...patch.imgBandWidth];
         widths[idx] = value;
-        updateProofPatch({ imgBandWidth: widths });
-        setProofParam(`img_width${idx}`, value);
+        updateProofPatch(deviceId, { imgBandWidth: widths });
+        setProofParam(deviceId, `img_width${idx}`, value);
     };
 
     // Correlation bar color
@@ -32,8 +32,8 @@ export const ProofImagerSection = ({ patch, correlation }: Props): ReactElement 
                     type="button"
                     className={`text-[7px] px-1.5 py-0.5 rounded cursor-pointer ${patch.imgBypassed ? 'text-muted-foreground' : 'text-[var(--color-accent-mint)]'}`}
                     onClick={() => {
-                        updateProofPatch({ imgBypassed: !patch.imgBypassed });
-                        setProofParam('img_bypass', patch.imgBypassed ? 0 : 1);
+                        updateProofPatch(deviceId, { imgBypassed: !patch.imgBypassed });
+                        setProofParam(deviceId, 'img_bypass', patch.imgBypassed ? 0 : 1);
                     }}
                 >
                     {patch.imgBypassed ? 'OFF' : 'ON'}
@@ -66,15 +66,15 @@ export const ProofImagerSection = ({ patch, correlation }: Props): ReactElement 
                             patch.imgAutoMonoBass ? 'bg-[var(--color-accent-mint)]/20 text-[var(--color-accent-mint)]' : 'text-muted-foreground'
                         }`}
                         onClick={() => {
-                            updateProofPatch({ imgAutoMonoBass: !patch.imgAutoMonoBass });
-                            setProofParam('img_auto_mono_bass', patch.imgAutoMonoBass ? 0 : 1);
+                            updateProofPatch(deviceId, { imgAutoMonoBass: !patch.imgAutoMonoBass });
+                            setProofParam(deviceId, 'img_auto_mono_bass', patch.imgAutoMonoBass ? 0 : 1);
                         }}
                     >
                         Auto Mono Bass
                     </button>
                     <RotaryKnob
                         value={patch.imgMonoBassFreq}
-                        onChange={(v) => { updateProofPatch({ imgMonoBassFreq: v }); setProofParam('img_mono_bass_freq', v); }}
+                        onChange={(v) => { updateProofPatch(deviceId, { imgMonoBassFreq: v }); setProofParam(deviceId, 'img_mono_bass_freq', v); }}
                         min={40} max={200} step={1} defaultValue={80} size="sm"
                     />
                     <span className="text-[6px] text-muted-foreground font-mono">{patch.imgMonoBassFreq.toFixed(0)} Hz</span>

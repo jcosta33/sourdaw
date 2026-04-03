@@ -14,7 +14,6 @@ const initialState: CollaborationState = {
     localColor: '',
     isHost: false,
     approvalRequired: false,
-    pendingJoinRequests: [],
     peers: [],
     connectionStatus: 'disconnected',
     error: null,

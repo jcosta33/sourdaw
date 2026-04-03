@@ -1,4 +1,5 @@
 import { type ReactElement, useSyncExternalStore } from 'react';
+import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores/trackStore';
 import { getAllSidechainRoutes } from '#/modules/Routing/useCases/sidechain';
 import { selectTrack } from '#/modules/Arrangement/useCases/toggleTrackState/selectTrack';
@@ -204,16 +205,12 @@ export const RoutingGraph = (): ReactElement => {
 
     if (tracks.length === 0) {
         return (
-            <div
-                className="flex items-center justify-center p-4 rounded-sm"
-                style={{
-                    background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
-                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
-                    border: '1px solid rgba(0,0,0,0.4)',
-                    borderBottom: '1px solid rgba(40,40,40,0.3)',
-                }}
-            >
-                <p className="text-[10px] text-muted-foreground/50 italic">No tracks to display.</p>
+            <div className="flex items-center justify-center p-4">
+                <DawEmptyState
+                    title="No routing to display"
+                    description="Add tracks or buses to inspect the project signal graph."
+                    className="max-w-xs"
+                />
             </div>
         );
     }

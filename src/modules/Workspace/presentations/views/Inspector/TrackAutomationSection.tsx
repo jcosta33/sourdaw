@@ -1,7 +1,6 @@
 import { type ReactElement, useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
-import { Card } from '#/components/ui/card';
 import { Button } from '#/components/ui/button';
 import { Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
 import { BUILTIN_PLUGINS } from '#/modules/Arrangement/useCases/trackQueries';
@@ -10,6 +9,8 @@ import { toggleAutomationVisibility } from '#/modules/Automation/useCases/automa
 import { removeAutomationLane } from '#/modules/Automation/useCases/automation/removeAutomationLane';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
+import { FloatingMenuSectionLabel, FloatingMenuSeparator } from '../../components/FloatingMenuParts';
+import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
 
 type TrackAutomationSectionProps = {
     track: Track;
@@ -61,12 +62,10 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                         </Button>
                         {showAutoMenu ? (
                             <div
-                                className="absolute right-0 top-full z-50 mt-1 w-48 rounded-md border border-border/50 bg-popover py-1 shadow-lg"
+                                className="daw-floating-surface absolute right-0 top-full z-50 mt-1 w-48 rounded-md py-1"
                                 role="menu"
                             >
-                                <p className="px-3 py-1 text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">
-                                    Track
-                                </p>
+                                <FloatingMenuSectionLabel>Track</FloatingMenuSectionLabel>
                                 <button
                                     type="button"
                                     className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
@@ -91,7 +90,7 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                                 </button>
                                 {track.devices.length > 0 ? (
                                     <>
-                                        <div className="mx-2 my-1 border-t border-border/30" />
+                                        <FloatingMenuSeparator />
                                         {track.devices.map((device) => {
                                             const plugin = BUILTIN_PLUGINS.find(
                                                 (p) => p.name.toLowerCase() === device.type.toLowerCase()
@@ -105,9 +104,7 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                                             }
                                             return (
                                                 <div key={device.id}>
-                                                    <p className="px-3 py-1 text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">
-                                                        {device.name}
-                                                    </p>
+                                                    <FloatingMenuSectionLabel>{device.name}</FloatingMenuSectionLabel>
                                                     {autoParams.map((param) => (
                                                         <button
                                                             type="button"
@@ -139,9 +136,9 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
             {trackLanes.length > 0 ? (
                 <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
                     {trackLanes.map((lane) => (
-                        <Card
+                        <SurfaceCard
                             key={lane.id}
-                            className="flex items-center justify-between rounded-md shadow-none bg-surface-base border-border/50 p-2"
+                            className="flex items-center justify-between"
                         >
                             <span
                                 className="text-[10px] text-foreground font-medium truncate pr-2"
@@ -177,7 +174,7 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                                     <Trash2 className="size-3 text-muted-foreground" />
                                 </Button>
                             </div>
-                        </Card>
+                        </SurfaceCard>
                     ))}
                 </div>
             ) : (

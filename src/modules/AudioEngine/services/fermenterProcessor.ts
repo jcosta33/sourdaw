@@ -7,8 +7,8 @@
  *
  * Messages from main thread:
  *   { type: 'init', wasmBytes: ArrayBuffer }
- *   { type: 'noteOn', note, velocity, scheduleTime? }
- *   { type: 'noteOff', note, scheduleTime? }
+ *   { type: 'noteOn', note, velocity, sampleFrame? }
+ *   { type: 'noteOff', note, sampleFrame? }
  *   { type: 'param', name, value }
  */
 
@@ -131,7 +131,7 @@ class FermenterProcessor extends AudioWorkletProcessor {
     _memory = null;     // WebAssembly.Memory (for direct buffer access in process())
     _ready = false;
     _faulted = false;
-    _queue = [];        // Sorted by scheduleTime (AudioContext seconds)
+    _queue = [];        // Sorted by sampleFrame (integer sample count)
 
     constructor() {
         super();
@@ -165,16 +165,15 @@ class FermenterProcessor extends AudioWorkletProcessor {
         let lo = 0, hi = this._queue.length;
         while (lo < hi) {
             const mid = (lo + hi) >>> 1;
-            if (this._queue[mid].scheduleTime <= msg.scheduleTime) lo = mid + 1;
+            if (this._queue[mid].sampleFrame <= msg.sampleFrame) lo = mid + 1;
             else hi = mid;
         }
         this._queue.splice(lo, 0, msg);
     }
 
     _handleMessage(msg) {
-        if (msg.scheduleTime !== undefined) {
-            const now = currentFrame / sampleRate;
-            if (msg.scheduleTime > now) {
+        if (msg.sampleFrame !== undefined) {
+            if (msg.sampleFrame > currentFrame) {
                 this._enqueue(msg);
                 return;
             }
@@ -199,8 +198,8 @@ class FermenterProcessor extends AudioWorkletProcessor {
         }
     }
 
-    _drainQueue(blockEndTime) {
-        while (this._queue.length > 0 && this._queue[0].scheduleTime <= blockEndTime) {
+    _drainQueue(blockEndFrame) {
+        while (this._queue.length > 0 && this._queue[0].sampleFrame <= blockEndFrame) {
             this._dispatch(this._queue.shift());
         }
     }
@@ -213,8 +212,8 @@ class FermenterProcessor extends AudioWorkletProcessor {
 
         const frames = output[0].length;
 
-        const blockEndTime = (currentFrame + frames) / sampleRate;
-        this._drainQueue(blockEndTime);
+        const blockEndFrame = currentFrame + frames;
+        this._drainQueue(blockEndFrame);
 
         try {
             const leftPtr = this._instance.process(frames);

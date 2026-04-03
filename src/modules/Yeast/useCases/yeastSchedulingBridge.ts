@@ -9,6 +9,7 @@
 import { type MidiEvent, type TransportInfo } from '../models/MidiEvent';
 import { getYeastRack } from '../stores/yeastStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
+import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
 
 /**
  * Process a batch of MIDI events through the Yeast rack for a specific track.
@@ -30,7 +31,7 @@ export function processYeastMidi(
     if (!transport) return events;
 
     const transportInfo: TransportInfo = {
-        sampleRate: 44100, // TODO: get from audio engine
+        sampleRate: getAudioContext().sampleRate,
         bpm: transport.tempo,
         ppqPosition: 0, // approximate
         isPlaying: transport.isPlaying,

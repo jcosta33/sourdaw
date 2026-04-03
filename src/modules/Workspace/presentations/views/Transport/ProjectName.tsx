@@ -1,4 +1,5 @@
 import { type ReactElement, useState } from 'react';
+import { DawStatusDot } from '#/components/daw/DawStatusDot';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { renameProject, saveProject } from '#/modules/Project/useCases/projectPersistence';
 
@@ -58,10 +59,10 @@ export const ProjectName = ({ name, dirty }: ProjectNameProps): ReactElement => 
                             {name}
                         </span>
                         {dirty ? (
-                            <span
-                                className="size-1.5 rounded-full shrink-0 animate-pulse"
+                            <DawStatusDot
+                                tone="peach"
+                                pulse
                                 style={{
-                                    background: 'var(--color-accent-peach, #f0a060)',
                                     boxShadow: '0 0 4px rgba(240,160,96,0.4)',
                                     animationDuration: '2s',
                                 }}

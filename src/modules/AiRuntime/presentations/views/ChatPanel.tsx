@@ -12,6 +12,7 @@ import remarkGfm from 'remark-gfm';
 import { chatStore, clearChatMessages, toggleReasoning, setChatMode, stopGenerating } from '#/modules/AiRuntime/stores/chatStore';
 import { sendChatMessage } from '#/modules/AiRuntime/useCases/sendChatMessage';
 import { toggleChat } from '#/modules/AiRuntime/useCases/aiPanelActions';
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Button } from '#/components/ui/button';
 import { X, Send, Trash2, Bot, User, ChevronRight, ChevronDown, Zap, Brain, Square } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
@@ -106,48 +107,45 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
             className="contain-strict flex flex-col bg-surface-raised border-l border-border/50 overflow-hidden shadow-2xl relative select-none"
         >
             {/* Header */}
-            <div
-                className="flex items-center justify-between px-3 h-10 sticky top-0 shrink-0 z-10"
-                style={{
-                    background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
-                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
-                    border: '1px solid rgba(0,0,0,0.4)',
-                    borderBottom: '1px solid rgba(40,40,40,0.3)',
-                }}
-            >
-                <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase flex items-center gap-1.5">
+            <DawHeaderBand
+                className="sticky top-0 z-10 h-10 px-3"
+                title={
+                    <span className="flex items-center gap-1.5">
                         <Bot className="size-3.5 text-[var(--color-accent-lavender)]" />
                         AI Chat
                     </span>
-                    {!isLlmAvailable() ? (
-                        <span className="text-[9px] text-destructive tracking-normal capitalize ml-2 bg-destructive/10 px-1.5 py-[2px] rounded-sm border border-destructive/20">
-                            Local AI Not Available
-                        </span>
-                    ) : null}
-                </div>
-                <div className="flex items-center gap-1">
-                    <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={clearChatMessages}
-                        className="text-muted-foreground hover:text-foreground hover:bg-muted"
-                        title="Clear Chat History"
-                        disabled={chatState.isGenerating || chatState.messages.length === 0}
-                    >
-                        <Trash2 className="size-3.5" />
-                    </Button>
-                    <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={toggleChat}
-                        className="text-muted-foreground hover:text-foreground hover:bg-muted"
-                        title="Close Chat Panel"
-                    >
-                        <X className="size-3.5" />
-                    </Button>
-                </div>
-            </div>
+                }
+                titleClassName="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
+                actions={
+                    <div className="flex items-center gap-1">
+                        <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            onClick={clearChatMessages}
+                            className="text-muted-foreground hover:text-foreground hover:bg-muted"
+                            title="Clear Chat History"
+                            disabled={chatState.isGenerating || chatState.messages.length === 0}
+                        >
+                            <Trash2 className="size-3.5" />
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            onClick={toggleChat}
+                            className="text-muted-foreground hover:text-foreground hover:bg-muted"
+                            title="Close Chat Panel"
+                        >
+                            <X className="size-3.5" />
+                        </Button>
+                    </div>
+                }
+            >
+                {!isLlmAvailable() ? (
+                    <span className="ml-1 rounded-sm border border-destructive/20 bg-destructive/10 px-1.5 py-[2px] text-[9px] capitalize tracking-normal text-destructive">
+                        Local AI Not Available
+                    </span>
+                ) : null}
+            </DawHeaderBand>
 
             {/* Scrollable message list */}
             <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 select-text">

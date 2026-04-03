@@ -10,11 +10,17 @@ import { loadGlutenPatch, setGlutenParam } from '../stores/glutenStore';
 
 type DeviceRef = { trackId: string; deviceId: string };
 
-let cachedRefs: DeviceRef[] | null = null;
-let cacheStaleTimer: ReturnType<typeof setTimeout> | null = null;
-
 const pendingUpdates = new Map<string, number>();
 const latestValues = new Map<string, number>();
+
+function findDeviceRef(deviceId: string): DeviceRef | null {
+    for (const track of getAllTracks()) {
+        if (track.devices.some((d) => d.id === deviceId)) {
+            return { trackId: track.id, deviceId };
+        }
+    }
+    return null;
+}
 
 const TOPOLOGY_INDEX = {
     vca: 0,
@@ -42,50 +48,19 @@ const STEREO_MODE_INDEX = {
     'dual-mono': 3,
 } as const;
 
-function getActiveDevices(): DeviceRef[] {
-    if (cachedRefs) {
-        return cachedRefs;
-    }
-
-    const refs: DeviceRef[] = [];
-    for (const track of getAllTracks()) {
-        for (const device of track.devices) {
-            if (device.type === 'gluten') {
-                refs.push({ trackId: track.id, deviceId: device.id });
-            }
-        }
-    }
-    cachedRefs = refs;
-
-    if (cacheStaleTimer) {
-        clearTimeout(cacheStaleTimer);
-    }
-    cacheStaleTimer = setTimeout(() => {
-        cachedRefs = null;
-    }, 2000);
-
-    return refs;
+function flushParam(deviceId: string, ref: DeviceRef, key: string): void {
+    const compositeKey = `${deviceId}:${key}`;
+    pendingUpdates.delete(compositeKey);
+    const value = latestValues.get(compositeKey);
+    if (value === undefined) return;
+    latestValues.delete(compositeKey);
+    updateDeviceParam(ref.trackId, ref.deviceId, key, value);
+    persistDeviceParam(ref.deviceId, key, value);
 }
 
-function flushParam(key: string): void {
-    pendingUpdates.delete(key);
-    const value = latestValues.get(key);
-    if (value === undefined) {
-        return;
-    }
-    latestValues.delete(key);
-
-    for (const { trackId, deviceId } of getActiveDevices()) {
-        updateDeviceParam(trackId, deviceId, key, value);
-        persistDeviceParam(deviceId, key, value);
-    }
-}
-
-function pushParamImmediately(key: string, value: number): void {
-    for (const { trackId, deviceId } of getActiveDevices()) {
-        updateDeviceParam(trackId, deviceId, key, value);
-        persistDeviceParam(deviceId, key, value);
-    }
+function pushParamImmediately(ref: DeviceRef, key: string, value: number): void {
+    updateDeviceParam(ref.trackId, ref.deviceId, key, value);
+    persistDeviceParam(ref.deviceId, key, value);
 }
 
 function encodeGlutenValue(key: string, value: unknown): number | null {
@@ -120,25 +95,30 @@ function encodeGlutenValue(key: string, value: unknown): number | null {
     return null;
 }
 
-export function setGlutenParamWithAudio<K extends keyof GlutenPatch>(key: K, value: GlutenPatch[K]): void {
-    setGlutenParam(key, value);
+export function setGlutenParamWithAudio<K extends keyof GlutenPatch>(deviceId: string, key: K, value: GlutenPatch[K]): void {
+    setGlutenParam(deviceId, key, value);
 
     const encodedValue = encodeGlutenValue(key, value);
-    if (encodedValue === null) {
-        return;
-    }
+    if (encodedValue === null) return;
 
-    latestValues.set(key, encodedValue);
-    if (!pendingUpdates.has(key)) {
+    const ref = findDeviceRef(deviceId);
+    if (!ref) return;
+
+    const compositeKey = `${deviceId}:${key}`;
+    latestValues.set(compositeKey, encodedValue);
+    if (!pendingUpdates.has(compositeKey)) {
         pendingUpdates.set(
-            key,
-            requestAnimationFrame(() => flushParam(key))
+            compositeKey,
+            requestAnimationFrame(() => flushParam(deviceId, ref, key))
         );
     }
 }
 
-export function loadGlutenPatchWithAudio(patch: GlutenPatch): void {
-    loadGlutenPatch(patch);
+export function loadGlutenPatchWithAudio(deviceId: string, patch: GlutenPatch): void {
+    loadGlutenPatch(deviceId, patch);
+
+    const ref = findDeviceRef(deviceId);
+    if (!ref) return;
 
     const params: Array<[string, unknown]> = [
         ['topology', patch.topology],
@@ -189,7 +169,7 @@ export function loadGlutenPatchWithAudio(patch: GlutenPatch): void {
     for (const [key, rawValue] of params) {
         const encodedValue = encodeGlutenValue(key, rawValue);
         if (encodedValue !== null) {
-            pushParamImmediately(key, encodedValue);
+            pushParamImmediately(ref, key, encodedValue);
         }
     }
 }

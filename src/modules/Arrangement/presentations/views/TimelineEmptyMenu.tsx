@@ -155,7 +155,7 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
     return createPortal(
         <div
             ref={menuRef}
-            className="fixed z-50 min-w-[180px] rounded-md border border-border bg-popover py-1 shadow-lg"
+            className="daw-floating-surface fixed z-50 min-w-[180px] rounded-md py-1"
             style={{
                 left: Math.min(x, window.innerWidth - 200),
                 top: Math.min(y, window.innerHeight - 400),

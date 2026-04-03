@@ -1,4 +1,4 @@
-import { type ReactElement, type MouseEvent as ReactMouseEvent, type DragEvent, useSyncExternalStore, useState, useRef, useEffect } from 'react';
+import { type ReactElement, type MouseEvent as ReactMouseEvent, type DragEvent, useSyncExternalStore, useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { TimelineSurface } from '#/modules/Arrangement/presentations/views/TimelineSurface';
 import { TimelineMinimap } from '#/modules/Arrangement/presentations/views/TimelineMinimap';
 import { ArrangementBar } from '#/modules/Arrangement/presentations/views/ArrangementBar';
@@ -55,7 +55,7 @@ export const ArrangeView = (): ReactElement => {
         setTrackListWidth(trackListWidthRef.current);
     };
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         const el = timelineContainerRef.current;
         if (!el) return;
         const observer = new ResizeObserver(() => {

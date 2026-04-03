@@ -3,9 +3,10 @@ import { cn } from '#/helpers/Styles/cn';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { addAutomationLane } from '#/modules/Automation/useCases/automation/addAutomationLane';
 import { toggleLaneCollapsed } from '#/modules/Automation/useCases/automation/toggleLaneCollapsed';
-import { Plus, ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { AutomationLaneRow } from './AutomationLaneRow';
-import { getAutomatableParams, AUTOMATION_MODE_CONFIG } from '../../helpers/automationViewHelpers';
+import { AutomationAddLaneControl, AutomationModeControl } from './AutomationControls';
+import { getAutomatableParams } from '../../helpers/automationViewHelpers';
 import { type AutomationMode } from '#/modules/Arrangement/useCases/trackQueries';
 import { type AutomationLane } from '#/modules/Automation/useCases/automation/types';
 import { setAutomationMode } from '#/modules/Arrangement/useCases/toggleTrackState/setAutomationMode';
@@ -20,14 +21,6 @@ type TrackAutomationSectionProps = {
     scrollX: number;
     containerWidth: number;
 };
-
-const MODE_OPTIONS: { value: AutomationMode; label: string }[] = [
-    { value: 'read', label: 'Read' },
-    { value: 'touch', label: 'Touch' },
-    { value: 'latch', label: 'Latch' },
-    { value: 'write', label: 'Write' },
-    { value: 'off', label: 'Off' },
-];
 
 const SPARKLINE_HEIGHT = 24;
 
@@ -84,8 +77,6 @@ export const TrackAutomationSection = ({
     containerWidth,
 }: TrackAutomationSectionProps): ReactElement => {
     const [isExpanded, setIsExpanded] = useState(true);
-    const [showParamPicker, setShowParamPicker] = useState(false);
-    const [showModePicker, setShowModePicker] = useState(false);
 
     const autoState = useSyncExternalStore(
         (cb) => automationStore.subscribe(() => cb()),
@@ -95,11 +86,10 @@ export const TrackAutomationSection = ({
 
     const trackLanes = (autoState?.lanes ?? []).filter((l) => l.trackId === trackId && !l.clipId);
     const availableParams = getAutomatableParams(trackId, devices);
-    const modeConfig = AUTOMATION_MODE_CONFIG[automationMode];
+    const unusedParams = availableParams.filter((param) => !trackLanes.some((lane) => lane.parameterId === param.id));
 
     const handleAddLane = (paramId: string, paramName: string) => {
         addAutomationLane(trackId, paramId, paramName);
-        setShowParamPicker(false);
     };
 
     return (
@@ -115,75 +105,13 @@ export const TrackAutomationSection = ({
                 <span className="text-xs font-medium text-foreground truncate">{trackName}</span>
 
                 {/* Automation mode badge */}
-                <div className="relative ml-auto flex items-center gap-1.5">
-                    <button
-                        type="button"
-                        className={cn(
-                            'px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wider transition-colors',
-                            automationMode === 'write' && 'animate-pulse'
-                        )}
-                        style={{
-                            backgroundColor: `${modeConfig.color}20`,
-                            color: modeConfig.textColor,
-                            border: `1px solid ${modeConfig.color}40`,
-                        }}
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            setShowModePicker(!showModePicker);
-                        }}
-                        aria-label={`Automation mode: ${automationMode}`}
-                    >
-                        {modeConfig.label}
-                    </button>
-
-                    {showModePicker ? (
-                        <>
-                            <div
-                                className="fixed inset-0 z-40"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    setShowModePicker(false);
-                                }}
-                            />
-                            <div className="absolute right-0 top-full mt-1 z-50 bg-popover border border-border rounded-md shadow-xl py-1 min-w-[100px]">
-                                {MODE_OPTIONS.map((opt) => {
-                                    const cfg = AUTOMATION_MODE_CONFIG[opt.value];
-                                    return (
-                                        <button
-                                            type="button"
-                                            key={opt.value}
-                                            className={cn(
-                                                'w-full text-left px-3 py-1.5 text-xs hover:bg-accent/50 transition-colors flex items-center gap-2',
-                                                automationMode === opt.value && 'font-medium'
-                                            )}
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setAutomationMode(trackId, opt.value);
-                                                setShowModePicker(false);
-                                            }}
-                                        >
-                                            <span
-                                                className="size-2 rounded-full"
-                                                style={{ backgroundColor: cfg.color }}
-                                            />
-                                            <span
-                                                style={{
-                                                    color: automationMode === opt.value ? cfg.textColor : undefined,
-                                                }}
-                                            >
-                                                {opt.label}
-                                            </span>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        </>
-                    ) : null}
-
-                    <span className="text-[9px] text-muted-foreground">
-                        {trackLanes.length} lane{trackLanes.length !== 1 ? 's' : ''}
-                    </span>
-                </div>
+                <AutomationModeControl
+                    automationMode={automationMode}
+                    laneCount={trackLanes.length}
+                    align="right"
+                    className="ml-auto"
+                    onModeChange={(mode) => setAutomationMode(trackId, mode)}
+                />
             </div>
 
             {isExpanded ? (
@@ -203,43 +131,8 @@ export const TrackAutomationSection = ({
                         )
                     )}
 
-                    <div className="flex items-center gap-1 px-2 py-1 bg-surface-base/30">
-                        <div className="relative">
-                            <button
-                                type="button"
-                                className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
-                                onClick={() => setShowParamPicker(!showParamPicker)}
-                            >
-                                <Plus className="size-3" />
-                                Add Lane
-                            </button>
-
-                            {showParamPicker && (
-                                <>
-                                    <div className="fixed inset-0 z-40" onClick={() => setShowParamPicker(false)} />
-                                    <div className="absolute left-0 top-full mt-1 z-50 bg-popover border border-border rounded-md shadow-xl py-1 min-w-[200px] max-h-[300px] overflow-y-auto">
-                                        {availableParams
-                                            .filter((p) => !trackLanes.some((l) => l.parameterId === p.id))
-                                            .map((param) => (
-                                                <button
-                                                    type="button"
-                                                    key={param.id}
-                                                    className="w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
-                                                    onClick={() => handleAddLane(param.id, param.name)}
-                                                >
-                                                    {param.name}
-                                                </button>
-                                            ))}
-                                        {availableParams.filter((p) => !trackLanes.some((l) => l.parameterId === p.id))
-                                            .length === 0 && (
-                                            <div className="px-3 py-2 text-[10px] text-muted-foreground italic">
-                                                All parameters have lanes
-                                            </div>
-                                        )}
-                                    </div>
-                                </>
-                            )}
-                        </div>
+                    <div className="bg-surface-base/30 px-2 py-1">
+                        <AutomationAddLaneControl params={unusedParams} onAdd={handleAddLane} />
                     </div>
                 </div>
             ) : null}

@@ -1,7 +1,9 @@
 import { type ReactElement, useState } from 'react';
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { Save, X, ChevronRight, Star, Folder, Music2, Drum, Music } from 'lucide-react';
+import { DawSectionDivider } from '#/components/daw/DawSectionDivider';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { type SoundPreset, type SoundPresetCategory } from '#/modules/Arrangement/useCases/trackQueries';
 import { getFactoryPresets } from '#/modules/Arrangement/useCases/soundPresetLibrary';
@@ -16,8 +18,8 @@ import { APP_EVENTS } from '#/helpers/Event/appEvents';
 
 import { PresetItem } from '../../components/Sidebar/PresetItem';
 import { InstrumentCard, FERMENTER_THEME, TOASTER_THEME, LEVAIN_THEME } from '../../components/Sidebar/InstrumentCard';
-// SectionHeader removed — using inline styled dividers instead
 import { EmptyState } from '../../components/Sidebar/EmptyState';
+import { SearchSummary } from '../../components/Sidebar/SearchSummary';
 import { NavCard } from '../Sidebar/effectsTabHelpers';
 import { PRESET_CATEGORIES, CATEGORY_ICONS, CATEGORY_COLORS } from '../../components/Sidebar/sidebarConstants';
 import { type PreviewHandle } from '../../hooks/usePreviewAudio';
@@ -210,9 +212,7 @@ export const InstrumentsTab = ({
         const allResults = [...soundPresets, ...filteredUser];
         return (
             <div className="flex flex-col gap-1 animate-in fade-in duration-150">
-                <div className="text-[9px] font-medium text-muted-foreground/70 uppercase tracking-widest px-1 py-0.5">
-                    {allResults.length} result{allResults.length !== 1 ? 's' : ''} for &quot;{query}&quot;
-                </div>
+                <SearchSummary count={allResults.length} query={query} className="px-1 py-0.5" />
                 {allResults.length > 0 ? (
                     allResults.map((preset) => (
                         <PresetItem
@@ -279,12 +279,12 @@ export const InstrumentsTab = ({
         <div className="flex flex-col gap-0 px-1.5 pb-4 animate-in slide-in-from-left-4 duration-200">
             {/* ── House Specials ─────────────────────────────────── */}
             <div className="flex flex-col gap-1.5 mb-3">
-                <div className="flex items-center gap-1.5 px-1 mb-0.5">
-                    <span className="text-[9px] font-bold text-[var(--color-accent-orange)] uppercase tracking-widest">
-                        Play Dough
-                    </span>
-                    <div className="flex-1 h-px bg-[var(--color-accent-orange)]/15" />
-                </div>
+                <DawSectionDivider
+                    label="Play Dough"
+                    className="mb-0.5 px-1"
+                    labelClassName="font-bold text-[var(--color-accent-orange)]"
+                    lineClassName="bg-[var(--color-accent-orange)]/15"
+                />
                 <InstrumentCard
                     icon={Music2}
                     label="Fermenter"
@@ -312,12 +312,12 @@ export const InstrumentsTab = ({
             </div>
 
             {/* ── Preset Pantry ── */}
-            <div className="flex items-center gap-1.5 px-1 mb-1 mt-1">
-                <span className="text-[9px] font-semibold text-muted-foreground/50 uppercase tracking-widest">
-                    Simple Loaves
-                </span>
-                <div className="flex-1 h-px bg-border/15" />
-            </div>
+            <DawSectionDivider
+                label="Simple Loaves"
+                className="mb-1 mt-1 px-1"
+                labelClassName="text-muted-foreground/50"
+                lineClassName="bg-border/15"
+            />
 
             {/* My Presets & Save */}
             <div className="flex items-center gap-1 mb-2">
@@ -385,17 +385,18 @@ export const InstrumentsTab = ({
                         </Button>
                     </div>
                     <div className="flex items-center gap-1">
-                        <select
+                        <DawCompactSelect
                             value={saveFormCategory}
                             onChange={(e) => setSaveFormCategory(e.target.value as SoundPresetCategory)}
-                            className="h-6 flex-1 rounded border border-border-soft bg-surface-inset shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)] text-[10px] text-foreground px-1"
+                            tone="inset"
+                            className="flex-1 px-1 text-[10px]"
                         >
                             {PRESET_CATEGORIES.map((cat) => (
                                 <option key={cat} value={cat}>
                                     {cat}
                                 </option>
                             ))}
-                        </select>
+                        </DawCompactSelect>
                         <Button
                             variant="default"
                             size="xs"

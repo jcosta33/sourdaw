@@ -1,11 +1,12 @@
 import { type ReactElement } from 'react';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
-import { Card } from '#/components/ui/card';
 import { Slider } from '#/components/ui/slider';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { MidiLearnButton } from '#/modules/Arrangement/presentations/views/MidiLearnButton';
 import { setTrackGain, setTrackPan } from '#/modules/Arrangement/useCases/setTrackGainPan';
 import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
+import { ControlHeader } from '../../components/Inspector/ControlHeader';
+import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
 
 type TrackLevelSectionProps = {
     track: Track;
@@ -16,17 +17,22 @@ export const TrackLevelSection = ({ track }: TrackLevelSectionProps): ReactEleme
         <div>
             <DawHeaderBand compact className="mb-2 rounded-sm" title="Level" />
             <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
-                <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-3 w-full">
+                <SurfaceCard className="w-full p-3">
                     <div className="flex flex-col w-full gap-2">
-                        <div className="flex items-center justify-between w-full">
-                            <label className="text-[10px] font-medium text-foreground">Gain</label>
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                                <span className="text-[10px] font-mono text-muted-foreground">
-                                    {(track.gain * 100).toFixed(0)}%
-                                </span>
-                                <MidiLearnButton targetType="trackGain" trackId={track.id} />
-                            </div>
-                        </div>
+                        <ControlHeader
+                            className="w-full"
+                            label="Gain"
+                            labelClassName="font-medium text-foreground"
+                            value={
+                                <div className="flex items-center gap-1.5">
+                                    <span className="text-[10px] font-mono text-muted-foreground">
+                                        {(track.gain * 100).toFixed(0)}%
+                                    </span>
+                                    <MidiLearnButton targetType="trackGain" trackId={track.id} />
+                                </div>
+                            }
+                            valueClassName="font-normal"
+                        />
                         <div className="w-full px-1 flex items-center justify-center">
                             <Slider
                                 value={[track.gain * 100]}
@@ -42,8 +48,8 @@ export const TrackLevelSection = ({ track }: TrackLevelSectionProps): ReactEleme
                             />
                         </div>
                     </div>
-                </Card>
-                <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-3 w-full">
+                </SurfaceCard>
+                <SurfaceCard className="w-full p-3">
                     <div className="flex flex-row items-center w-full min-w-0 gap-3">
                         <div className="flex flex-col flex-1 min-w-0 overflow-hidden justify-center gap-1.5">
                             <label className="text-[10px] font-medium text-foreground truncate w-full">Pan</label>
@@ -71,7 +77,7 @@ export const TrackLevelSection = ({ track }: TrackLevelSectionProps): ReactEleme
                             />
                         </div>
                     </div>
-                </Card>
+                </SurfaceCard>
             </div>
         </div>
     );

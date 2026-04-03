@@ -27,7 +27,7 @@ export const createCrdtProject = async (name: string): Promise<void> => {
 export const loadCrdtProject = async (): Promise<boolean> => {
     const bundle = await loadAllFromIdb();
     if (bundle) {
-        automergeRepository.loadAll(bundle);
+        await automergeRepository.loadAll(bundle);
         return true;
     }
     return false;

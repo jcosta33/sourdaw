@@ -10,6 +10,7 @@
  */
 
 import { type ReactElement, type MouseEvent, useSyncExternalStore, useState, useRef, useEffect } from 'react';
+import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { Copy, ArrowUpFromLine, Trash2, ChevronDown, ChevronUp, GripHorizontal } from 'lucide-react';
 import { scratchPadStore, type ScratchPadStoreState } from '#/modules/Arrangement/stores/scratchPadStore';
 import {
@@ -175,9 +176,7 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                 <div className="flex-1 overflow-x-auto overflow-y-hidden px-2 py-1.5">
                     {sections.length === 0 ? (
                         <div className="flex items-center justify-center h-full">
-                            <span className="text-[9px] text-muted-foreground/30">
-                                Click "Capture" to snapshot the current arrangement · Drag to reorder
-                            </span>
+                            <DawInlineHint>Click "Capture" to snapshot the current arrangement · Drag to reorder</DawInlineHint>
                         </div>
                     ) : (
                         <div className="flex gap-1 h-full items-stretch">
@@ -240,7 +239,7 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
             {contextMenu.kind === 'section' ? (
                 <div
                     ref={menuRef}
-                    className="fixed z-50 min-w-[140px] rounded-md border border-border bg-popover p-1 shadow-md"
+                    className="daw-floating-surface fixed z-50 min-w-[140px] rounded-md p-1"
                     style={{ left: contextMenu.x, top: contextMenu.y }}
                 >
                     <button

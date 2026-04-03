@@ -2,7 +2,7 @@ import { type ReactElement, type ReactNode, useState, useSyncExternalStore } fro
 import { Activity, Flame, Radio, Search, SlidersHorizontal, Sun, Zap } from 'lucide-react';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { type GlutenPatch, type GlutenStyle, type GlutenTopology } from '../../models/GlutenPatch';
-import { glutenStore, type GlutenState } from '../../stores/glutenStore';
+import { glutenStore, getGlutenState, type GlutenState } from '../../stores/glutenStore';
 import { GLUTEN_PRESETS } from '../../useCases/glutenPresets';
 import { loadGlutenPatchWithAudio, setGlutenParamWithAudio } from '../../useCases/glutenParamBridge';
 import { GlutenCurve } from '../components/GlutenCurve';
@@ -266,6 +266,7 @@ const ToggleChip = ({
 );
 
 const Knob = ({
+    deviceId,
     value,
     param,
     label,
@@ -275,6 +276,7 @@ const Knob = ({
     defaultValue,
     unit,
 }: {
+    deviceId: string;
     value: number;
     param: keyof GlutenPatch;
     label: string;
@@ -287,7 +289,7 @@ const Knob = ({
     <div className="flex flex-col items-center gap-1">
         <RotaryKnob
             value={value}
-            onChange={(nextValue) => setGlutenParamWithAudio(param, nextValue as GlutenPatch[typeof param])}
+            onChange={(nextValue) => setGlutenParamWithAudio(deviceId,param, nextValue as GlutenPatch[typeof param])}
             min={min}
             max={max}
             step={step}
@@ -301,26 +303,17 @@ const Knob = ({
     </div>
 );
 
-export const GlutenPanel = (): ReactElement => {
-    const state = useSyncExternalStore<GlutenState | null>(
+export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
+    const allInstances = useSyncExternalStore(
         (callback) => glutenStore.subscribe(callback),
         () => glutenStore.value
     );
+    const state: GlutenState = allInstances?.[deviceId] ?? getGlutenState(deviceId);
     const [search, setSearch] = useState('');
     const [category, setCategory] = useState('all');
 
-    const patch = state?.patch ?? glutenStore.value?.patch;
-    if (!patch) {
-        return <div className="h-full" />;
-    }
+    const { patch, grDb, inputDb, outputDb, crest, phaseCorr, latency } = state;
     const currentPatch = patch;
-
-    const grDb = state?.grDb ?? 0;
-    const inputDb = state?.inputDb ?? -100;
-    const outputDb = state?.outputDb ?? -100;
-    const crest = state?.crest ?? 0;
-    const phaseCorr = state?.phaseCorr ?? 1;
-    const latency = state?.latency ?? 0;
 
     const searchTerm = search.trim().toLowerCase();
     const filteredPresets = GLUTEN_PRESETS.filter((preset) => {
@@ -335,7 +328,7 @@ export const GlutenPanel = (): ReactElement => {
     const stageTwoOptions = TOPOLOGIES.filter((topology) => topology !== currentPatch.topology);
 
     function applyPreset(nextPatch: GlutenPatch): void {
-        loadGlutenPatchWithAudio(nextPatch);
+        loadGlutenPatchWithAudio(deviceId, nextPatch);
     }
 
     function applyStyle(style: GlutenStyle): void {
@@ -460,7 +453,7 @@ export const GlutenPanel = (): ReactElement => {
                                             : 'hover:border-white/12 hover:bg-white/[0.02]'
                                     }`}
                                     style={active ? { borderColor: meta.color } : undefined}
-                                    onClick={() => setGlutenParamWithAudio('topology', topology)}
+                                    onClick={() => setGlutenParamWithAudio(deviceId,'topology', topology)}
                                 >
                                     <div className="flex w-full items-center justify-between gap-3">
                                         <div className="flex items-center gap-2">
@@ -526,7 +519,7 @@ export const GlutenPanel = (): ReactElement => {
                                         inputDb={inputDb}
                                         width={360}
                                         height={180}
-                                        onThresholdChange={(value) => setGlutenParamWithAudio('threshold', value)}
+                                        onThresholdChange={(value) => setGlutenParamWithAudio(deviceId,'threshold', value)}
                                         accentColor={accentColor}
                                     />
                                 </div>
@@ -623,6 +616,7 @@ export const GlutenPanel = (): ReactElement => {
                     <ControlCard title="Clamp" detail="Threshold, ratio, and timing stay front and center.">
                         <div className="grid grid-cols-3 gap-x-2 gap-y-3">
                             <Knob
+                                deviceId={deviceId}
                                 value={patch.threshold}
                                 param="threshold"
                                 label="Threshold"
@@ -633,6 +627,7 @@ export const GlutenPanel = (): ReactElement => {
                                 unit="dB"
                             />
                             <Knob
+                                deviceId={deviceId}
                                 value={patch.ratio}
                                 param="ratio"
                                 label="Ratio"
@@ -643,6 +638,7 @@ export const GlutenPanel = (): ReactElement => {
                                 unit=":1"
                             />
                             <Knob
+                                deviceId={deviceId}
                                 value={patch.knee}
                                 param="knee"
                                 label="Knee"
@@ -653,6 +649,7 @@ export const GlutenPanel = (): ReactElement => {
                                 unit="dB"
                             />
                             <Knob
+                                deviceId={deviceId}
                                 value={patch.attack}
                                 param="attack"
                                 label="Attack"
@@ -663,6 +660,7 @@ export const GlutenPanel = (): ReactElement => {
                                 unit="ms"
                             />
                             <Knob
+                                deviceId={deviceId}
                                 value={patch.release}
                                 param="release"
                                 label="Release"
@@ -673,6 +671,7 @@ export const GlutenPanel = (): ReactElement => {
                                 unit="ms"
                             />
                             <Knob
+                                deviceId={deviceId}
                                 value={patch.amount}
                                 param="amount"
                                 label="Amount"
@@ -687,6 +686,7 @@ export const GlutenPanel = (): ReactElement => {
                     <ControlCard title="Finish" detail="Keep the lane honest while you blend and level.">
                         <div className="grid grid-cols-3 gap-x-2 gap-y-3">
                             <Knob
+                                deviceId={deviceId}
                                 value={patch.makeup}
                                 param="makeup"
                                 label="Makeup"
@@ -697,6 +697,7 @@ export const GlutenPanel = (): ReactElement => {
                                 unit="dB"
                             />
                             <Knob
+                                deviceId={deviceId}
                                 value={patch.mix}
                                 param="mix"
                                 label="Mix"
@@ -707,6 +708,7 @@ export const GlutenPanel = (): ReactElement => {
                                 unit="mix"
                             />
                             <Knob
+                                deviceId={deviceId}
                                 value={patch.range}
                                 param="range"
                                 label="Range"
@@ -717,6 +719,7 @@ export const GlutenPanel = (): ReactElement => {
                                 unit="dB"
                             />
                             <Knob
+                                deviceId={deviceId}
                                 value={patch.stereoLink}
                                 param="stereoLink"
                                 label="Link"
@@ -727,6 +730,7 @@ export const GlutenPanel = (): ReactElement => {
                                 unit="link"
                             />
                             <Knob
+                                deviceId={deviceId}
                                 value={patch.lookahead}
                                 param="lookahead"
                                 label="Look"
@@ -737,6 +741,7 @@ export const GlutenPanel = (): ReactElement => {
                                 unit="ms"
                             />
                             <Knob
+                                deviceId={deviceId}
                                 value={patch.blendAmount}
                                 param="blendAmount"
                                 label="Stage 2"
@@ -752,25 +757,25 @@ export const GlutenPanel = (): ReactElement => {
                                 label="Auto rel"
                                 active={patch.autoRelease}
                                 accentColor={accentColor}
-                                onClick={() => setGlutenParamWithAudio('autoRelease', !patch.autoRelease)}
+                                onClick={() => setGlutenParamWithAudio(deviceId,'autoRelease', !patch.autoRelease)}
                             />
                             <ToggleChip
                                 label="Auto gain"
                                 active={patch.autoMakeup}
                                 accentColor={accentColor}
-                                onClick={() => setGlutenParamWithAudio('autoMakeup', !patch.autoMakeup)}
+                                onClick={() => setGlutenParamWithAudio(deviceId,'autoMakeup', !patch.autoMakeup)}
                             />
                             <ToggleChip
                                 label="Delta"
                                 active={patch.deltaListen}
                                 accentColor={accentColor}
-                                onClick={() => setGlutenParamWithAudio('deltaListen', !patch.deltaListen)}
+                                onClick={() => setGlutenParamWithAudio(deviceId,'deltaListen', !patch.deltaListen)}
                             />
                             <ToggleChip
                                 label="Match"
                                 active={patch.gainMatchBypass}
                                 accentColor={accentColor}
-                                onClick={() => setGlutenParamWithAudio('gainMatchBypass', !patch.gainMatchBypass)}
+                                onClick={() => setGlutenParamWithAudio(deviceId,'gainMatchBypass', !patch.gainMatchBypass)}
                             />
                         </div>
                     </ControlCard>
@@ -781,6 +786,7 @@ export const GlutenPanel = (): ReactElement => {
                     >
                         <div className="grid grid-cols-3 gap-x-2 gap-y-3">
                             <Knob
+                                deviceId={deviceId}
                                 value={patch.scHpfFreq}
                                 param="scHpfFreq"
                                 label="SC HPF"
@@ -791,6 +797,7 @@ export const GlutenPanel = (): ReactElement => {
                                 unit="Hz"
                             />
                             <Knob
+                                deviceId={deviceId}
                                 value={patch.scLpfFreq}
                                 param="scLpfFreq"
                                 label="SC LPF"
@@ -801,6 +808,7 @@ export const GlutenPanel = (): ReactElement => {
                                 unit="Hz"
                             />
                             <Knob
+                                deviceId={deviceId}
                                 value={patch.scEqFreq}
                                 param="scEqFreq"
                                 label="SC EQ"
@@ -811,6 +819,7 @@ export const GlutenPanel = (): ReactElement => {
                                 unit="Hz"
                             />
                             <Knob
+                                deviceId={deviceId}
                                 value={patch.scEqGain}
                                 param="scEqGain"
                                 label="EQ Gain"
@@ -821,6 +830,7 @@ export const GlutenPanel = (): ReactElement => {
                                 unit="dB"
                             />
                             <Knob
+                                deviceId={deviceId}
                                 value={patch.scEqQ}
                                 param="scEqQ"
                                 label="EQ Q"
@@ -830,6 +840,7 @@ export const GlutenPanel = (): ReactElement => {
                                 defaultValue={1}
                             />
                             <Knob
+                                deviceId={deviceId}
                                 value={patch.oversampling}
                                 param="oversampling"
                                 label="OS"
@@ -845,25 +856,25 @@ export const GlutenPanel = (): ReactElement => {
                                     label="HPF"
                                     active={patch.scHpfEnabled}
                                     accentColor={accentColor}
-                                    onClick={() => setGlutenParamWithAudio('scHpfEnabled', !patch.scHpfEnabled)}
+                                    onClick={() => setGlutenParamWithAudio(deviceId,'scHpfEnabled', !patch.scHpfEnabled)}
                                 />
                                 <ToggleChip
                                     label="LPF"
                                     active={patch.scLpfEnabled}
                                     accentColor={accentColor}
-                                    onClick={() => setGlutenParamWithAudio('scLpfEnabled', !patch.scLpfEnabled)}
+                                    onClick={() => setGlutenParamWithAudio(deviceId,'scLpfEnabled', !patch.scLpfEnabled)}
                                 />
                                 <ToggleChip
                                     label="SC EQ"
                                     active={patch.scEqEnabled}
                                     accentColor={accentColor}
-                                    onClick={() => setGlutenParamWithAudio('scEqEnabled', !patch.scEqEnabled)}
+                                    onClick={() => setGlutenParamWithAudio(deviceId,'scEqEnabled', !patch.scEqEnabled)}
                                 />
                                 <ToggleChip
                                     label="Ext SC"
                                     active={patch.extSidechain}
                                     accentColor={accentColor}
-                                    onClick={() => setGlutenParamWithAudio('extSidechain', !patch.extSidechain)}
+                                    onClick={() => setGlutenParamWithAudio(deviceId,'extSidechain', !patch.extSidechain)}
                                 />
                             </div>
                             <div className="flex flex-wrap gap-1.5">
@@ -874,7 +885,7 @@ export const GlutenPanel = (): ReactElement => {
                                             key={mode}
                                             type="button"
                                             className={`gluten-chip ${active ? 'gluten-chip-active' : ''}`}
-                                            onClick={() => setGlutenParamWithAudio('detection', mode)}
+                                            onClick={() => setGlutenParamWithAudio(deviceId,'detection', mode)}
                                         >
                                             {mode.toUpperCase()}
                                         </button>
@@ -887,7 +898,7 @@ export const GlutenPanel = (): ReactElement => {
                                             key={mode}
                                             type="button"
                                             className={`gluten-chip ${active ? 'gluten-chip-active' : ''}`}
-                                            onClick={() => setGlutenParamWithAudio('stereoMode', mode)}
+                                            onClick={() => setGlutenParamWithAudio(deviceId,'stereoMode', mode)}
                                         >
                                             {mode === 'dual-mono' ? 'Dual mono' : mode}
                                         </button>
@@ -903,7 +914,7 @@ export const GlutenPanel = (): ReactElement => {
                                             key={thrust}
                                             type="button"
                                             className={`gluten-chip ${active ? 'gluten-chip-active' : ''}`}
-                                            onClick={() => setGlutenParamWithAudio('thrust', thrust)}
+                                            onClick={() => setGlutenParamWithAudio(deviceId,'thrust', thrust)}
                                         >
                                             {labels[thrust]}
                                         </button>
@@ -917,6 +928,7 @@ export const GlutenPanel = (): ReactElement => {
                         {patch.topology === 'fet' ? (
                             <div className="grid grid-cols-3 gap-x-2 gap-y-3">
                                 <Knob
+                                    deviceId={deviceId}
                                     value={patch.inputGain}
                                     param="inputGain"
                                     label="Input"
@@ -927,6 +939,7 @@ export const GlutenPanel = (): ReactElement => {
                                     unit="dB"
                                 />
                                 <Knob
+                                    deviceId={deviceId}
                                     value={patch.outputGain}
                                     param="outputGain"
                                     label="Output"
@@ -937,6 +950,7 @@ export const GlutenPanel = (): ReactElement => {
                                     unit="dB"
                                 />
                                 <Knob
+                                    deviceId={deviceId}
                                     value={patch.xfmrDrive}
                                     param="xfmrDrive"
                                     label="Xfmr"
@@ -946,6 +960,7 @@ export const GlutenPanel = (): ReactElement => {
                                     defaultValue={1.2}
                                 />
                                 <Knob
+                                    deviceId={deviceId}
                                     value={patch.jfetK3}
                                     param="jfetK3"
                                     label="Odd"
@@ -955,6 +970,7 @@ export const GlutenPanel = (): ReactElement => {
                                     defaultValue={0.15}
                                 />
                                 <Knob
+                                    deviceId={deviceId}
                                     value={patch.xfmrK2}
                                     param="xfmrK2"
                                     label="Even"
@@ -968,7 +984,7 @@ export const GlutenPanel = (): ReactElement => {
                                         label="All buttons"
                                         active={patch.allButtons}
                                         accentColor={accentColor}
-                                        onClick={() => setGlutenParamWithAudio('allButtons', !patch.allButtons)}
+                                        onClick={() => setGlutenParamWithAudio(deviceId,'allButtons', !patch.allButtons)}
                                     />
                                 </div>
                             </div>
@@ -985,7 +1001,7 @@ export const GlutenPanel = (): ReactElement => {
                                                 key={labels[index]}
                                                 type="button"
                                                 className={`gluten-chip ${active ? 'gluten-chip-active' : ''}`}
-                                                onClick={() => setGlutenParamWithAudio('limitMode', mode)}
+                                                onClick={() => setGlutenParamWithAudio(deviceId,'limitMode', mode)}
                                             >
                                                 {labels[index]}
                                             </button>
@@ -1008,7 +1024,7 @@ export const GlutenPanel = (): ReactElement => {
                                                 key={value}
                                                 type="button"
                                                 className={`gluten-chip ${active ? 'gluten-chip-active' : ''}`}
-                                                onClick={() => setGlutenParamWithAudio('recovery', value)}
+                                                onClick={() => setGlutenParamWithAudio(deviceId,'recovery', value)}
                                             >
                                                 Recovery {value}
                                             </button>
@@ -1025,6 +1041,7 @@ export const GlutenPanel = (): ReactElement => {
                             <div className="space-y-3">
                                 <div className="grid grid-cols-2 gap-2">
                                     <Knob
+                                        deviceId={deviceId}
                                         value={patch.vcaCharacter}
                                         param="vcaCharacter"
                                         label="Color"
@@ -1034,6 +1051,7 @@ export const GlutenPanel = (): ReactElement => {
                                         defaultValue={0.003}
                                     />
                                     <Knob
+                                        deviceId={deviceId}
                                         value={patch.vcaType}
                                         param="vcaType"
                                         label="VCA type"
@@ -1052,7 +1070,7 @@ export const GlutenPanel = (): ReactElement => {
                                                 key={labels[index]}
                                                 type="button"
                                                 className={`gluten-chip ${active ? 'gluten-chip-active' : ''}`}
-                                                onClick={() => setGlutenParamWithAudio('feedForward', mode)}
+                                                onClick={() => setGlutenParamWithAudio(deviceId,'feedForward', mode)}
                                             >
                                                 {labels[index]}
                                             </button>
@@ -1072,7 +1090,7 @@ export const GlutenPanel = (): ReactElement => {
                                         key={topology}
                                         type="button"
                                         className={`gluten-chip ${active ? 'gluten-chip-active' : ''}`}
-                                        onClick={() => setGlutenParamWithAudio('blendTopology', topology)}
+                                        onClick={() => setGlutenParamWithAudio(deviceId,'blendTopology', topology)}
                                     >
                                         {TOPOLOGY_META[topology].label}
                                     </button>

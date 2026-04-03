@@ -18,7 +18,7 @@ import { getDrumKitByIndex, scheduleKitNote, type DrumKit } from '#/modules/Synt
 import { getDrumKitDefByIndex, scheduleDrumKitNote, type DrumKitDef } from '#/modules/Synth/useCases/drumSynthEngine';
 import { getCompensationDelay } from '#/modules/AudioEngine/useCases/latencyCompensation';
 import { getChordAtBeat, transposeForChordTrack } from '#/modules/MIDI/useCases/chordTrack';
-import { getYeastRack } from '#/modules/Yeast/stores/yeastStore';
+import { getYeastRack, getYeastWorkletNodeAsync } from '#/modules/Yeast/stores/yeastStore';
 import { type MidiEvent, type TransportInfo } from '#/modules/Yeast/models/MidiEvent';
 
 export function resolveDrumKit(devices: { type: string; parameterValues: Record<string, number> }[]): DrumKit | null {
@@ -91,7 +91,7 @@ export function scheduleFrozenTrack(
     return true;
 }
 
-export function scheduleMidiNotes(
+export async function scheduleMidiNotes(
     fromBeat: number,
     toBeat: number,
     accumulatedPosition: number,
@@ -99,7 +99,7 @@ export function scheduleMidiNotes(
     activeAudioSources: AudioBufferSourceNode[],
     transport: NonNullable<typeof transportStore.value>,
     currentTempo: number
-): void {
+): Promise<void> {
     const tracks = trackStore.value?.tracks;
     const midiState = midiStore.value;
     if (!tracks || !midiState) {
@@ -143,8 +143,9 @@ export function scheduleMidiNotes(
                 const yeastRack = getYeastRack();
                 if (yeastRack.getProcessorIds().length > 0) {
                     const spb = transport.tempo / 60; // beats per second
+                    const yeastSr = getAudioContext().sampleRate;
                     const yeastTransport: TransportInfo = {
-                        sampleRate: 44100,
+                        sampleRate: yeastSr,
                         bpm: transport.tempo,
                         ppqPosition: fromBeat,
                         isPlaying: true,
@@ -162,26 +163,26 @@ export function scheduleMidiNotes(
                     for (const n of notes) {
                         const noteStartBeat = clip.startBeat + n.startBeat;
                         if (noteStartBeat < fromBeat || noteStartBeat >= toBeat) continue;
-                        const timeSamples = Math.round((noteStartBeat * 44100) / spb);
+                        const timeSamples = Math.round((noteStartBeat * yeastSr) / spb);
                         midiEvents.push({
                             timeSamples,
                             kind: { type: 'noteOn', channel: 0, note: n.pitch, velocity: n.velocity ?? 100 },
                         });
-                        const offTimeSamples = Math.round(((noteStartBeat + n.duration) * 44100) / spb);
+                        const offTimeSamples = Math.round(((noteStartBeat + n.duration) * yeastSr) / spb);
                         midiEvents.push({
                             timeSamples: offTimeSamples,
                             kind: { type: 'noteOff', channel: 0, note: n.pitch },
                         });
                     }
 
-                    const blockStartSamples = Math.round((fromBeat * 44100) / spb);
-                    const blockEndSamples = Math.round((toBeat * 44100) / spb);
-                    const processed = yeastRack.processBlock(
-                        midiEvents,
-                        blockStartSamples,
-                        blockEndSamples,
-                        yeastTransport
-                    );
+                    const blockStartSamples = Math.round((fromBeat * yeastSr) / spb);
+                    const blockEndSamples = Math.round((toBeat * yeastSr) / spb);
+                    // Use the audio-thread worklet if available; fall back to sync main-thread rack.
+                    const ctx = getAudioContext();
+                    const workletNode = await getYeastWorkletNodeAsync(ctx);
+                    const processed = workletNode
+                        ? await workletNode.processBlock(midiEvents, blockStartSamples, blockEndSamples, yeastTransport)
+                        : yeastRack.processBlock(midiEvents, blockStartSamples, blockEndSamples, yeastTransport);
 
                     // Convert back to beat-based notes for downstream scheduling
                     const transformedNotes: NonNullable<(typeof midiState.notesByClipId)[string]> = [];
@@ -189,14 +190,14 @@ export function scheduleMidiNotes(
                         if (evt.kind.type === 'noteOn') {
                             const evtNote = evt.kind.note;
                             const evtVel = evt.kind.velocity;
-                            const startBeat = (evt.timeSamples * spb) / 44100 - clip.startBeat;
+                            const startBeat = (evt.timeSamples * spb) / yeastSr - clip.startBeat;
                             // Find matching Note Off
                             const offEvt = processed.find((e) => {
                                 if (e.kind.type !== 'noteOff') return false;
                                 return e.kind.note === evtNote && e.timeSamples > evt.timeSamples;
                             });
                             const endBeat = offEvt
-                                ? (offEvt.timeSamples * spb) / 44100 - clip.startBeat
+                                ? (offEvt.timeSamples * spb) / yeastSr - clip.startBeat
                                 : startBeat + 0.25;
                             transformedNotes.push({
                                 ...notes![0]!,
@@ -247,8 +248,11 @@ export function scheduleMidiNotes(
                         const noteBeatsPerSecond = noteTempo / 60;
                         const beatOffset = noteStartBeat - accumulatedPosition;
                         const time = getCurrentTime() + beatOffset / (currentTempo / 60) + compensation;
+                        const sr = getAudioContext().sampleRate;
+                        const sampleFrame = Math.round(time * sr);
                         const noteEndBeat = Math.min(noteStartBeat + note.duration, clip.endBeat);
                         const duration = (noteEndBeat - noteStartBeat) / noteBeatsPerSecond;
+                        const endSampleFrame = Math.round((time + duration) * sr);
 
                         const strip = ensureTrackStrip(track.id);
 
@@ -284,7 +288,7 @@ export function scheduleMidiNotes(
 
                                     if (pad >= 0 && pad < 16) {
                                         const safeVelocity = note.velocity ?? 100;
-                                        dn.toasterControls.noteOn(pad, safeVelocity, pitchNote, time);
+                                        dn.toasterControls.noteOn(pad, safeVelocity, pitchNote, sampleFrame);
                                     }
                                 }
                             }
@@ -314,8 +318,8 @@ export function scheduleMidiNotes(
                             if (fermenterDevice) {
                                 const dn = strip.deviceNodes.find((d) => d.deviceId === fermenterDevice.id);
                                 if (dn?.fermenterControls) {
-                                    dn.fermenterControls.noteOn(pitch, note.velocity, time);
-                                    dn.fermenterControls.noteOff(pitch, time + duration);
+                                    dn.fermenterControls.noteOn(pitch, note.velocity, sampleFrame);
+                                    dn.fermenterControls.noteOff(pitch, endSampleFrame);
                                 }
                             }
                         } else if (track.devices.some((d) => d.type === 'levain')) {
@@ -323,8 +327,8 @@ export function scheduleMidiNotes(
                             if (levainDevice) {
                                 const dn = strip.deviceNodes.find((d) => d.deviceId === levainDevice.id);
                                 if (dn?.levainControls) {
-                                    dn.levainControls.noteOn(pitch, note.velocity, time);
-                                    dn.levainControls.noteOff(pitch, time + duration);
+                                    dn.levainControls.noteOn(pitch, note.velocity, sampleFrame);
+                                    dn.levainControls.noteOff(pitch, endSampleFrame);
                                 }
                             }
                         } else {

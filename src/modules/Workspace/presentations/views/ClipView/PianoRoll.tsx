@@ -15,6 +15,7 @@ import {
     type SetStateAction,
     useRef,
     useEffect,
+    useLayoutEffect,
     useState,
     useSyncExternalStore,
 } from 'react';
@@ -35,6 +36,8 @@ import {
     RULER_HEIGHT,
     getVisiblePitches,
 } from '../../helpers/pianoRollConstants';
+import { DawGridHeaderCell } from '#/components/daw/DawGridHeaderCell';
+import { DawSideRail } from '#/components/daw/DawSideRail';
 
 type PianoRollProps = {
     clipId: string;
@@ -88,11 +91,11 @@ export const PianoRoll = ({
     const notes = midiState?.notesByClipId[clipId] ?? [];
 
     // ── Report layout to parent ──────────────────────────────────────
-    useEffect(() => {
+    useLayoutEffect(() => {
         onBeatWidthChange?.(beatWidth);
     }, [beatWidth, onBeatWidthChange]);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         const canvas = canvasRef.current;
         const parent = canvas?.parentElement;
         if (!parent) { return; }
@@ -207,15 +210,8 @@ export const PianoRoll = ({
                 }}
             >
                 {/* Piano keys sidebar */}
-                <div
-                    className="w-10 shrink-0 sticky left-0 z-10"
-                    style={{
-                        background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
-                        boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
-                        borderRight: '1px solid rgba(0,0,0,0.4)',
-                    }}
-                >
-                    <div style={{ height: RULER_HEIGHT, borderBottom: '1px solid rgba(40,40,40,0.3)' }} />
+                <DawSideRail className="sticky left-0 z-10 w-10">
+                    <DawGridHeaderCell className="px-0" style={{ height: RULER_HEIGHT }} />
                     {visiblePitches.map((pitch, row) => {
                         const noteIndex = pitch % 12;
                         const isBlack = [1, 3, 6, 8, 10].includes(noteIndex);
@@ -232,7 +228,7 @@ export const PianoRoll = ({
                             </div>
                         );
                     })}
-                </div>
+                </DawSideRail>
 
                 {/* Canvas */}
                 <canvas

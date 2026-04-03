@@ -8,6 +8,7 @@
  */
 
 import proofProcessorUrl from '../services/proofProcessor.ts?worker&url';
+import { telemetryAllocator, PROOF_IDX } from './telemetryAllocator';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
@@ -78,6 +79,8 @@ export async function createProofNode(ctx: BaseAudioContext, wasmUrl?: string): 
     let bypassed = false;
     let settled = false;
     let meterCallback: ((data: ProofMeterData) => void) | null = null;
+    let sabSlot = telemetryAllocator.allocateSlot();
+    let pollInterval: ReturnType<typeof setInterval> | null = null;
 
     const readyPromise = new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => {
@@ -87,33 +90,44 @@ export async function createProofNode(ctx: BaseAudioContext, wasmUrl?: string): 
             if (e.data.type === 'ready' && !settled) {
                 settled = true;
                 clearTimeout(timeout);
+                if (sabSlot) {
+                    node.port.postMessage({ type: 'init-sab', sab: sabSlot.sab, byteOffset: sabSlot.byteOffset });
+                    const view = sabSlot.view;
+                    pollInterval = setInterval(() => {
+                        if (meterCallback) {
+                            meterCallback({
+                                inputLufs: view[PROOF_IDX.inputLufs]!,
+                                outputLufs: view[PROOF_IDX.outputLufs]!,
+                                outputStLufs: view[PROOF_IDX.outputStLufs]!,
+                                integratedLufs: view[PROOF_IDX.integratedLufs]!,
+                                truePeakDb: view[PROOF_IDX.truePeakDb]!,
+                                lra: view[PROOF_IDX.lra]!,
+                                correlation: view[PROOF_IDX.correlation]!,
+                                limiterGrDb: view[PROOF_IDX.limiterGrDb]!,
+                                dynGr: [
+                                    view[PROOF_IDX.dynGr0]!,
+                                    view[PROOF_IDX.dynGr1]!,
+                                    view[PROOF_IDX.dynGr2]!,
+                                    view[PROOF_IDX.dynGr3]!,
+                                ],
+                                tapPeaks: [
+                                    { peakL: view[PROOF_IDX.tap0PeakL]!, peakR: view[PROOF_IDX.tap0PeakR]! },
+                                    { peakL: view[PROOF_IDX.tap1PeakL]!, peakR: view[PROOF_IDX.tap1PeakR]! },
+                                    { peakL: view[PROOF_IDX.tap2PeakL]!, peakR: view[PROOF_IDX.tap2PeakR]! },
+                                    { peakL: view[PROOF_IDX.tap3PeakL]!, peakR: view[PROOF_IDX.tap3PeakR]! },
+                                    { peakL: view[PROOF_IDX.tap4PeakL]!, peakR: view[PROOF_IDX.tap4PeakR]! },
+                                    { peakL: view[PROOF_IDX.tap5PeakL]!, peakR: view[PROOF_IDX.tap5PeakR]! },
+                                ],
+                                latency: view[PROOF_IDX.latency]!,
+                            });
+                        }
+                    }, 16);
+                }
                 resolve();
             } else if (e.data.type === 'error' && !settled) {
                 settled = true;
                 clearTimeout(timeout);
                 reject(new Error(e.data.message));
-            } else if (e.data.type === 'meters' && meterCallback) {
-                const d = e.data;
-                meterCallback({
-                    inputLufs: d.inputLufs,
-                    outputLufs: d.outputLufs,
-                    outputStLufs: d.outputStLufs,
-                    integratedLufs: d.integratedLufs,
-                    truePeakDb: d.truePeakDb,
-                    lra: d.lra,
-                    correlation: d.correlation,
-                    limiterGrDb: d.limiterGrDb,
-                    dynGr: [d.dynGr0, d.dynGr1, d.dynGr2, d.dynGr3],
-                    tapPeaks: [
-                        { peakL: d.tap0PeakL, peakR: d.tap0PeakR },
-                        { peakL: d.tap1PeakL, peakR: d.tap1PeakR },
-                        { peakL: d.tap2PeakL, peakR: d.tap2PeakR },
-                        { peakL: d.tap3PeakL, peakR: d.tap3PeakR },
-                        { peakL: d.tap4PeakL, peakR: d.tap4PeakR },
-                        { peakL: d.tap5PeakL, peakR: d.tap5PeakR },
-                    ],
-                    latency: d.latency,
-                });
             }
         };
     });
@@ -144,7 +158,12 @@ export async function createProofNode(ctx: BaseAudioContext, wasmUrl?: string): 
         },
         connect(dest: AudioNode) { node.connect(dest); },
         disconnect() { try { node.disconnect(); } catch { /* already disconnected */ } },
-        destroy() { try { node.disconnect(); } catch {} node.port.close(); },
+        destroy() {
+            if (pollInterval !== null) { clearInterval(pollInterval); pollInterval = null; }
+            if (sabSlot) { telemetryAllocator.releaseSlot(sabSlot.byteOffset); sabSlot = null; }
+            try { node.disconnect(); } catch {}
+            node.port.close();
+        },
         ready: readyPromise,
     };
 }

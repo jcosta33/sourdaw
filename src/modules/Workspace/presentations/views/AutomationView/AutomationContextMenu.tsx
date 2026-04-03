@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 import { cn } from '#/helpers/Styles/cn';
 import { type AutomationPoint, type AutomationCurveType } from '#/modules/Automation/useCases/automation/types';
 import { type AutomationShapeType } from '#/modules/Automation/useCases/automationShapes';
+import { FloatingMenuSectionLabel, FloatingMenuSeparator } from '../../components/FloatingMenuParts';
 import { CURVE_OPTIONS, SHAPE_OPTIONS } from '../../helpers/automationLaneConstants';
 
 type AutomationContextMenuProps = {
@@ -32,7 +33,7 @@ export const AutomationContextMenu = ({
     <>
         <div className="fixed inset-0 z-50" onClick={onClose} />
         <div
-            className="fixed z-50 bg-popover border border-border rounded-md shadow-xl py-1 min-w-[160px]"
+            className="daw-floating-surface fixed z-50 min-w-[160px] rounded-md py-1"
             style={{
                 left: Math.min(x, window.innerWidth - 200),
                 ...(y > window.innerHeight - 300 ? { bottom: window.innerHeight - y } : { top: y }),
@@ -40,9 +41,7 @@ export const AutomationContextMenu = ({
         >
             {section !== 'shape' ? (
                 <>
-                    <div className="px-2 py-1 text-[9px] text-muted-foreground uppercase tracking-wider">
-                        Curve Type
-                    </div>
+                    <FloatingMenuSectionLabel className="px-2">Curve Type</FloatingMenuSectionLabel>
                     {CURVE_OPTIONS.map((opt) => (
                         <button
                             type="button"
@@ -57,10 +56,10 @@ export const AutomationContextMenu = ({
                             {opt.label}
                         </button>
                     ))}
-                    <div className="mx-2 my-1 border-t border-border/30" />
+                    <FloatingMenuSeparator />
                 </>
             ) : null}
-            <div className="px-2 py-1 text-[9px] text-muted-foreground uppercase tracking-wider">Insert Shape</div>
+            <FloatingMenuSectionLabel className="px-2">Insert Shape</FloatingMenuSectionLabel>
             {SHAPE_OPTIONS.map((opt) => (
                 <button
                     type="button"

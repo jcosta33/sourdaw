@@ -13,6 +13,8 @@ import { animationScheduler } from '#/helpers/DOM/AnimationScheduler';
 import { ClipContextMenu, TimelineEmptyMenu } from './TimelineContextMenus';
 import { useTimelineInteractions } from '../hooks/useTimelineInteractions';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
+import { PresenceOverlay } from '#/modules/Collaboration/presentations/views/PresenceOverlay';
+import { TRACK_HEIGHT_VALUES } from '#/modules/Workspace/useCases/workspaceQueries';
 
 import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
@@ -324,7 +326,7 @@ export const TimelineSurface = (): ReactElement => {
             ) : null}
             {isImporting ? (
                 <div className="absolute inset-0 z-20 flex items-center justify-center bg-surface-base/60 pointer-events-none">
-                    <div className="flex items-center gap-2 rounded-md bg-surface-raised px-4 py-2 shadow-lg border border-border">
+                    <div className="daw-floating-surface flex items-center gap-2 rounded-md px-4 py-2">
                         <div className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                         <span className="text-sm font-medium text-foreground">Importing audio…</span>
                     </div>
@@ -350,6 +352,27 @@ export const TimelineSurface = (): ReactElement => {
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
                 onPointerCancel={handlePointerCancel}
+            />
+
+            <PresenceOverlay
+                beatToX={(beat) => {
+                    const view = timelineViewStore.value;
+                    if (!view) return 0;
+                    return (beat - view.scrollX / view.pixelsPerBeat) * view.pixelsPerBeat;
+                }}
+                trackIdToY={(trackId) => {
+                    const model = buildTimelineRenderModel();
+                    const view = timelineViewStore.value;
+                    if (!model || !view) return null;
+                    const scrollY = view.scrollY ?? 0;
+                    let y = 0;
+                    for (const track of model.tracks) {
+                        if (track.id === trackId) return y - scrollY;
+                        y += track.height;
+                    }
+                    return null;
+                }}
+                trackHeight={TRACK_HEIGHT_VALUES['normal']}
             />
 
             {rubberBand ? (

@@ -115,7 +115,7 @@ export const ShortcutsSection = (): ReactElement => {
             </div>
             {editingAction ? (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm pointer-events-auto">
-                    <div className="bg-surface-raised border border-border rounded-lg p-6 shadow-2xl flex flex-col items-center gap-2">
+                    <div className="daw-floating-surface flex flex-col items-center gap-2 rounded-lg p-6">
                         <Keyboard className="size-8 text-primary mb-2" />
                         <h3 className="font-semibold text-lg">Binding: {ACTION_LABELS[editingAction]}</h3>
                         <p className="text-sm text-muted-foreground">Press the desired key combination.</p>

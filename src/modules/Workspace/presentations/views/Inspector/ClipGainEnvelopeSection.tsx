@@ -1,5 +1,6 @@
 import { type ReactElement, useState } from 'react';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Button } from '#/components/ui/button';
 import { Activity, Plus, RotateCcw } from 'lucide-react';
 import { getClipGainEnvelope } from '#/modules/Arrangement/useCases/clipGainEnvelope/getClipGainEnvelope';
@@ -7,6 +8,8 @@ import { toggleClipGainEnvelope } from '#/modules/Arrangement/useCases/clipGainE
 import { addGainEnvelopePoint } from '#/modules/Arrangement/useCases/clipGainEnvelope/addGainEnvelopePoint';
 import { removeGainEnvelopePoint } from '#/modules/Arrangement/useCases/clipGainEnvelope/removeGainEnvelopePoint';
 import { resetClipGainEnvelope } from '#/modules/Arrangement/useCases/clipGainEnvelope/resetClipGainEnvelope';
+import { InsetPanel } from '../../components/Inspector/InsetPanel';
+import { MetaText } from '../../components/Inspector/MetaText';
 
 type ClipGainEnvelopeSectionProps = {
     clipId: string;
@@ -29,10 +32,10 @@ export const ClipGainEnvelopeSection = ({ clipId, duration }: ClipGainEnvelopeSe
             />
             <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-muted-foreground">
+                    <MetaText>
                         {envelope.enabled ? 'Enabled' : 'Disabled'} · {envelope.points.length} point
                         {envelope.points.length !== 1 ? 's' : ''}
-                    </span>
+                    </MetaText>
                     <div className="flex items-center gap-1">
                         <Button
                             variant="ghost"
@@ -75,12 +78,12 @@ export const ClipGainEnvelopeSection = ({ clipId, duration }: ClipGainEnvelopeSe
                     </div>
                 </div>
                 {envelope.enabled && envelope.points.length > 0 ? (
-                    <div className="rounded-md bg-surface-well border border-border-hairline shadow-[inset_0_1px_3px_rgba(0,0,0,0.4)] p-2 space-y-1">
+                    <InsetPanel className="space-y-1">
                         {envelope.points.map((pt) => (
                             <div key={pt.id} className="flex items-center justify-between gap-2">
-                                <span className="text-[9px] font-mono text-muted-foreground w-12 shrink-0">
+                                <DawMicroBadge rounded="full" className="w-12 justify-center px-0 py-0.5 font-mono">
                                     @{pt.beatOffset.toFixed(1)}
-                                </span>
+                                </DawMicroBadge>
                                 <span className="text-[9px] font-mono text-foreground flex-1 text-right">
                                     {pt.gainDb > 0 ? '+' : ''}
                                     {pt.gainDb.toFixed(1)} dB
@@ -99,7 +102,7 @@ export const ClipGainEnvelopeSection = ({ clipId, duration }: ClipGainEnvelopeSe
                                 </Button>
                             </div>
                         ))}
-                    </div>
+                    </InsetPanel>
                 ) : null}
             </div>
         </section>

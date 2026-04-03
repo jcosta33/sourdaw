@@ -3,6 +3,7 @@
  * chord mode, paint mode, lasso mode, and zoom controls.
  */
 import { type ReactElement } from 'react';
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
@@ -76,10 +77,10 @@ export const PianoRollToolbar = ({
         <div className="w-px h-4 mx-1" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)' }} />
 
         <span className="text-[10px] text-muted-foreground">Scale:</span>
-        <select
+        <DawCompactSelect
             value={scaleRoot}
             onChange={(e) => onScaleRootChange(Number(e.target.value))}
-            className="h-5 rounded border border-border/50 bg-surface-overlay px-1 text-[9px] text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            size="micro"
             aria-label="Scale root note"
         >
             {SCALE_ROOT_LABELS.map((label, i) => (
@@ -87,11 +88,11 @@ export const PianoRollToolbar = ({
                     {label}
                 </option>
             ))}
-        </select>
-        <select
+        </DawCompactSelect>
+        <DawCompactSelect
             value={scaleType}
             onChange={(e) => onScaleTypeChange(e.target.value)}
-            className="h-5 rounded border border-border/50 bg-surface-overlay px-1 text-[9px] text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            size="micro"
             aria-label="Scale type"
         >
             {Object.keys(SCALES).map((key) => (
@@ -99,7 +100,7 @@ export const PianoRollToolbar = ({
                     {key}
                 </option>
             ))}
-        </select>
+        </DawCompactSelect>
 
         <Button
             variant={isFolded ? 'secondary' : 'ghost'}
@@ -162,10 +163,10 @@ export const PianoRollToolbar = ({
         </Button>
 
         {chordMode ? (
-            <select
+            <DawCompactSelect
                 value={chordType}
                 onChange={(e) => onChordTypeChange(e.target.value as ChordType)}
-                className="h-5 rounded border border-border/50 bg-surface-overlay px-1 text-[9px] text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                size="micro"
                 aria-label="Chord type"
             >
                 {CHORD_TYPE_KEYS.map((key) => (
@@ -173,7 +174,7 @@ export const PianoRollToolbar = ({
                         {key}
                     </option>
                 ))}
-            </select>
+            </DawCompactSelect>
         ) : null}
 
         <Button

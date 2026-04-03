@@ -3,7 +3,7 @@ import { Cpu, Radio, Search, Sparkles, Waves } from 'lucide-react';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { CompressorCurve } from '#/components/daw/visualizers/CompressorCurve';
 import { DistortionCurve } from '#/components/daw/visualizers/DistortionCurve';
-import { grinderStore, replaceGrinderPatchLocally, type GrinderState } from '../../stores/grinderStore';
+import { grinderStore, getGrinderState, replaceGrinderPatchLocally, type GrinderState } from '../../stores/grinderStore';
 import { loadGrinderPatchWithAudio, setGrinderParamWithAudio } from '../../useCases/grinderParamBridge';
 import { GRINDER_PRESETS } from '../../useCases/grinderPresets';
 import {
@@ -217,6 +217,7 @@ function upsertPedal(
 }
 
 function GrinderKnob({
+    deviceId,
     value,
     param,
     label,
@@ -226,6 +227,7 @@ function GrinderKnob({
     defaultValue,
     unit,
 }: {
+    deviceId: string;
     value: number;
     param: keyof GrinderPatch;
     label: string;
@@ -239,7 +241,7 @@ function GrinderKnob({
         <div className="flex min-w-[72px] flex-col items-center gap-1 rounded-[18px] border border-white/8 bg-[var(--color-bg-panelInset)] px-3 py-3 shadow-[var(--shadow-elevation-inset)]">
             <RotaryKnob
                 value={value}
-                onChange={(next) => setGrinderParamWithAudio(param, next)}
+                onChange={(next) => setGrinderParamWithAudio(deviceId, param, next)}
                 min={min}
                 max={max}
                 step={step}
@@ -687,7 +689,7 @@ function BrowserRail({
     );
 }
 
-function SectionTabs({ patch }: { patch: GrinderPatch }): ReactElement {
+function SectionTabs({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }): ReactElement {
     return (
         <div className="flex flex-wrap gap-1.5">
             {SECTION_TABS.map((tab) => {
@@ -698,7 +700,7 @@ function SectionTabs({ patch }: { patch: GrinderPatch }): ReactElement {
                         key={tab.id}
                         type="button"
                         className={`grinder-tab ${active ? 'grinder-tab-active' : ''}`}
-                        onClick={() => replaceGrinderPatchLocally({ ...patch, uiSection: tab.id })}
+                        onClick={() => replaceGrinderPatchLocally(deviceId, { ...patch, uiSection: tab.id })}
                     >
                         <Icon className="size-3.5" />
                         <span>{tab.label}</span>
@@ -793,10 +795,12 @@ function DriveDeck({
 }
 
 function ControlDeck({
+    deviceId,
     patch,
     state,
     replacePatch,
 }: {
+    deviceId: string;
     patch: GrinderPatch;
     state: GrinderState;
     replacePatch: (next: GrinderPatch) => void;
@@ -805,6 +809,7 @@ function ControlDeck({
         return (
             <div className="flex flex-wrap gap-3">
                 <GrinderKnob
+                    deviceId={deviceId}
                     value={patch.gain}
                     param="gain"
                     label="Gain"
@@ -814,6 +819,7 @@ function ControlDeck({
                     defaultValue={5}
                 />
                 <GrinderKnob
+                    deviceId={deviceId}
                     value={patch.master}
                     param="master"
                     label="Master"
@@ -823,6 +829,7 @@ function ControlDeck({
                     defaultValue={5}
                 />
                 <GrinderKnob
+                    deviceId={deviceId}
                     value={patch.bass}
                     param="bass"
                     label="Bass"
@@ -831,8 +838,9 @@ function ControlDeck({
                     step={0.1}
                     defaultValue={5}
                 />
-                <GrinderKnob value={patch.mid} param="mid" label="Mid" min={0} max={10} step={0.1} defaultValue={5} />
+                <GrinderKnob deviceId={deviceId} value={patch.mid} param="mid" label="Mid" min={0} max={10} step={0.1} defaultValue={5} />
                 <GrinderKnob
+                    deviceId={deviceId}
                     value={patch.treble}
                     param="treble"
                     label="Treble"
@@ -842,6 +850,7 @@ function ControlDeck({
                     defaultValue={5}
                 />
                 <GrinderKnob
+                    deviceId={deviceId}
                     value={patch.presence}
                     param="presence"
                     label="Presence"
@@ -851,6 +860,7 @@ function ControlDeck({
                     defaultValue={5}
                 />
                 <GrinderKnob
+                    deviceId={deviceId}
                     value={patch.resonance}
                     param="resonance"
                     label="Resonance"
@@ -873,7 +883,7 @@ function ControlDeck({
                                         ? 'border-[var(--color-accent-amber)]/60 bg-[var(--color-accent-amber)]/14 text-[var(--color-accent-amber)]'
                                         : 'border-white/8 bg-black/20 text-white/52'
                                 }`}
-                                onClick={() => setGrinderParamWithAudio('channel', channel)}
+                                onClick={() => setGrinderParamWithAudio(deviceId, 'channel', channel)}
                             >
                                 {['Clean', 'Crunch', 'Lead'][channel]}
                             </button>
@@ -941,6 +951,7 @@ function ControlDeck({
         return (
             <div className="flex flex-wrap gap-3">
                 <GrinderKnob
+                    deviceId={deviceId}
                     value={patch.cabResonanceFreq}
                     param="cabResonanceFreq"
                     label="Res Freq"
@@ -951,6 +962,7 @@ function ControlDeck({
                     unit="Hz"
                 />
                 <GrinderKnob
+                    deviceId={deviceId}
                     value={patch.cabResonanceQ}
                     param="cabResonanceQ"
                     label="Res Q"
@@ -960,6 +972,7 @@ function ControlDeck({
                     defaultValue={2}
                 />
                 <GrinderKnob
+                    deviceId={deviceId}
                     value={patch.cabDamping}
                     param="cabDamping"
                     label="Damping"
@@ -969,6 +982,7 @@ function ControlDeck({
                     defaultValue={0.5}
                 />
                 <GrinderKnob
+                    deviceId={deviceId}
                     value={patch.coneBreakup}
                     param="coneBreakup"
                     label="Breakup"
@@ -978,6 +992,7 @@ function ControlDeck({
                     defaultValue={0.3}
                 />
                 <GrinderKnob
+                    deviceId={deviceId}
                     value={patch.backEmf}
                     param="backEmf"
                     label="Back EMF"
@@ -1051,6 +1066,7 @@ function ControlDeck({
                     </div>
                 </div>
                 <GrinderKnob
+                    deviceId={deviceId}
                     value={patch.neuralMix}
                     param="neuralMix"
                     label="Blend"
@@ -1060,6 +1076,7 @@ function ControlDeck({
                     defaultValue={1}
                 />
                 <GrinderKnob
+                    deviceId={deviceId}
                     value={patch.neuralCpuBudget}
                     param="neuralCpuBudget"
                     label="CPU"
@@ -1147,6 +1164,7 @@ function ControlDeck({
         return (
             <div className="flex flex-wrap gap-3">
                 <GrinderKnob
+                    deviceId={deviceId}
                     value={patch.gateThreshold}
                     param="gateThreshold"
                     label="Gate"
@@ -1157,6 +1175,7 @@ function ControlDeck({
                     unit="dB"
                 />
                 <GrinderKnob
+                    deviceId={deviceId}
                     value={patch.gateAttack}
                     param="gateAttack"
                     label="G Atk"
@@ -1167,6 +1186,7 @@ function ControlDeck({
                     unit="ms"
                 />
                 <GrinderKnob
+                    deviceId={deviceId}
                     value={patch.gateRelease}
                     param="gateRelease"
                     label="G Rel"
@@ -1177,6 +1197,7 @@ function ControlDeck({
                     unit="ms"
                 />
                 <GrinderKnob
+                    deviceId={deviceId}
                     value={patch.sagAmount}
                     param="sagAmount"
                     label="Sag"
@@ -1186,6 +1207,7 @@ function ControlDeck({
                     defaultValue={0.4}
                 />
                 <GrinderKnob
+                    deviceId={deviceId}
                     value={patch.sagRecovery}
                     param="sagRecovery"
                     label="Recovery"
@@ -1196,6 +1218,7 @@ function ControlDeck({
                     unit="ms"
                 />
                 <GrinderKnob
+                    deviceId={deviceId}
                     value={patch.negFeedback}
                     param="negFeedback"
                     label="NFB"
@@ -1205,6 +1228,7 @@ function ControlDeck({
                     defaultValue={0.5}
                 />
                 <GrinderKnob
+                    deviceId={deviceId}
                     value={patch.transformerDrive}
                     param="transformerDrive"
                     label="Drive"
@@ -1214,6 +1238,7 @@ function ControlDeck({
                     defaultValue={0.3}
                 />
                 <GrinderKnob
+                    deviceId={deviceId}
                     value={patch.transformerHysteresis}
                     param="transformerHysteresis"
                     label="Hyst"
@@ -1223,6 +1248,7 @@ function ControlDeck({
                     defaultValue={0.3}
                 />
                 <GrinderKnob
+                    deviceId={deviceId}
                     value={patch.transformerLfSaturation}
                     param="transformerLfSaturation"
                     label="LF Sat"
@@ -1232,6 +1258,7 @@ function ControlDeck({
                     defaultValue={0.3}
                 />
                 <GrinderKnob
+                    deviceId={deviceId}
                     value={patch.tubeBias}
                     param="tubeBias"
                     label="Bias"
@@ -1356,12 +1383,16 @@ function StatusStrip({ state }: { state: GrinderState }): ReactElement {
     );
 }
 
-export const GrinderPanel = (): ReactElement => {
-    const state = useSyncExternalStore(grinderStore.subscribe.bind(grinderStore), () => grinderStore.value!);
+export const GrinderPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
+    const allInstances = useSyncExternalStore(
+        (cb) => grinderStore.subscribe(cb),
+        () => grinderStore.value
+    );
+    const state: GrinderState = allInstances?.[deviceId] ?? getGrinderState(deviceId);
     const patch = state.patch;
 
     function replacePatch(next: GrinderPatch): void {
-        loadGrinderPatchWithAudio(next);
+        loadGrinderPatchWithAudio(deviceId, next);
     }
 
     return (
@@ -1369,7 +1400,7 @@ export const GrinderPanel = (): ReactElement => {
             <div className="flex min-h-0 flex-1 gap-3 overflow-hidden">
                 <BrowserRail patch={patch} replacePatch={replacePatch} />
                 <section className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
-                    <SectionTabs patch={patch} />
+                    <SectionTabs deviceId={deviceId} patch={patch} />
                     <div className="min-h-[280px] shrink-0 overflow-hidden">
                         <HeroStage patch={patch} state={state} />
                     </div>
@@ -1377,7 +1408,7 @@ export const GrinderPanel = (): ReactElement => {
                         <div className="mb-2 text-[10px] uppercase tracking-[0.28em] text-[var(--color-accent-amber)]">
                             Control deck
                         </div>
-                        <ControlDeck patch={patch} state={state} replacePatch={replacePatch} />
+                        <ControlDeck deviceId={deviceId} patch={patch} state={state} replacePatch={replacePatch} />
                     </div>
                 </section>
             </div>

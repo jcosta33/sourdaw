@@ -1,10 +1,11 @@
 import { type ReactElement } from 'react';
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
-import { Card } from '#/components/ui/card';
 import { Button } from '#/components/ui/button';
 import { Plus } from 'lucide-react';
 import { assignToVca, removeFromVca, getVcaGroups, createVcaGroup } from '#/modules/Arrangement/useCases/vca';
 import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
+import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
 
 type TrackVcaSectionProps = {
     track: Track;
@@ -33,10 +34,10 @@ export const TrackVcaSection = ({ track }: TrackVcaSectionProps): ReactElement =
                 }
             />
             <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
-                <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-2">
+                <SurfaceCard>
                     <div className="flex items-center gap-2">
-                        <select
-                            className="flex-1 rounded-sm border border-border bg-surface-overlay px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                        <DawCompactSelect
+                            className="flex-1 border-border"
                             value={track.vcaGroupId ?? ''}
                             onChange={(e) => {
                                 const val = e.target.value;
@@ -54,9 +55,9 @@ export const TrackVcaSection = ({ track }: TrackVcaSectionProps): ReactElement =
                                     {g.name}
                                 </option>
                             ))}
-                        </select>
+                        </DawCompactSelect>
                     </div>
-                </Card>
+                </SurfaceCard>
             </div>
         </div>
     );

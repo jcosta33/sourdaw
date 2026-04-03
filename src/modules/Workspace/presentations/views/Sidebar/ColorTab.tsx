@@ -1,5 +1,6 @@
 import { type ReactElement } from 'react';
 import { GitBranch, Bug, Guitar, Sliders, Waves } from 'lucide-react';
+import { DawSectionDivider } from '#/components/daw/DawSectionDivider';
 import {
     InstrumentCard,
     YEAST_THEME,
@@ -14,6 +15,8 @@ import { MODULATOR_PRESETS } from '#/modules/Plugin/useCases/modulatorLibrary';
 import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases/pluginQueries';
 import { type PreviewHandle } from '../../hooks/usePreviewAudio';
 import { type SidebarRoute } from '../Sidebar';
+import { EmptyState } from '../../components/Sidebar/EmptyState';
+import { SearchSummary } from '../../components/Sidebar/SearchSummary';
 import {
     NavCard,
     EffectItem,
@@ -97,19 +100,11 @@ export const ColorTab = ({
 
         return (
             <div className="flex flex-col gap-1 animate-in fade-in duration-150">
-                <div className="text-[9px] font-medium text-muted-foreground/70 uppercase tracking-widest px-1.5 py-0.5">
-                    {total} result{total !== 1 ? 's' : ''} for &quot;{query}&quot;
-                </div>
-                {total === 0 && (
-                    <div className="flex flex-col items-center justify-center py-10 opacity-60">
-                        <span className="text-xs text-muted-foreground">No color effects found.</span>
-                    </div>
-                )}
+                <SearchSummary count={total} query={query} />
+                {total === 0 ? <EmptyState message="No color effects found." /> : null}
                 {filteredEffects.length > 0 && (
                     <>
-                        <div className="flex items-center gap-1 px-1.5 py-0.5 mt-1">
-                            <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">Tone FX</span>
-                        </div>
+                        <DawSectionDivider label="Tone FX" className="mt-1 px-1.5 py-0.5" lineClassName="bg-border/15" />
                         <div className="flex flex-col gap-[2px]">
                             {filteredEffects.map((plugin) => (
                                 <EffectItem key={plugin.id} plugin={plugin} selectedTrackId={selectedTrackId} />
@@ -128,11 +123,7 @@ export const ColorTab = ({
         const items = groupId === 'other' ? uncategorized : (groupedEffects.get(groupId) ?? []);
         return (
             <div className="flex flex-col gap-[2px] animate-in slide-in-from-right-4 duration-200">
-                {items.length === 0 && (
-                    <div className="flex flex-col items-center justify-center py-10 opacity-60">
-                        <span className="text-xs text-muted-foreground">Empty category.</span>
-                    </div>
-                )}
+                {items.length === 0 ? <EmptyState message="Empty category." /> : null}
                 {items.map((plugin) => (
                     <EffectItem key={plugin.id} plugin={plugin} selectedTrackId={selectedTrackId} />
                 ))}
@@ -179,12 +170,12 @@ export const ColorTab = ({
     return (
         <div className="flex flex-col gap-0 px-1.5 pb-4 animate-in slide-in-from-left-4 duration-200">
             <div className="flex flex-col gap-1.5 mb-3">
-                <div className="flex items-center gap-1.5 px-1 mb-0.5">
-                    <span className="text-[9px] font-bold text-[var(--color-accent-orange)] uppercase tracking-widest">
-                        Artisan Additives
-                    </span>
-                    <div className="flex-1 h-px bg-[var(--color-accent-orange)]/15" />
-                </div>
+                <DawSectionDivider
+                    label="Artisan Additives"
+                    className="mb-0.5 px-1"
+                    labelClassName="font-bold text-[var(--color-accent-orange)]"
+                    lineClassName="bg-[var(--color-accent-orange)]/15"
+                />
                 
                 <InstrumentCard
                     icon={Guitar}
@@ -193,8 +184,8 @@ export const ColorTab = ({
                     description="Tube amp · Cabinet · Pedalboard · Neural capture"
                     onClick={() => {
                         if (selectedTrackId) {
-                            addDevice(selectedTrackId, 'grinder');
-                            document.dispatchEvent(new Event(APP_EVENTS.SHOW_GRINDER_TAB));
+                            const device = addDevice(selectedTrackId, 'grinder');
+                            document.dispatchEvent(new CustomEvent(APP_EVENTS.SHOW_GRINDER_TAB, { detail: { deviceId: device?.id } }));
                         }
                     }}
                     theme={GRINDER_THEME}
@@ -207,8 +198,8 @@ export const ColorTab = ({
                     description="Multi-band mangler · Distortion · Granular · Spectral"
                     onClick={() => {
                         if (selectedTrackId) {
-                            addDevice(selectedTrackId, 'bacteria');
-                            document.dispatchEvent(new Event(APP_EVENTS.SHOW_BACTERIA_TAB));
+                            const device = addDevice(selectedTrackId, 'bacteria');
+                            document.dispatchEvent(new CustomEvent(APP_EVENTS.SHOW_BACTERIA_TAB, { detail: { deviceId: device?.id } }));
                         }
                     }}
                     theme={BACTERIA_THEME}
@@ -229,12 +220,12 @@ export const ColorTab = ({
                 />
             </div>
 
-            <div className="flex items-center gap-1.5 px-1 mb-1 mt-1">
-                <span className="text-[9px] font-semibold text-muted-foreground/50 uppercase tracking-widest">
-                    Spices & Herbs
-                </span>
-                <div className="flex-1 h-px bg-border/15" />
-            </div>
+            <DawSectionDivider
+                label="Spices & Herbs"
+                className="mb-1 mt-1 px-1"
+                labelClassName="text-muted-foreground/50"
+                lineClassName="bg-border/15"
+            />
 
             <NavCard
                 icon={Waves}

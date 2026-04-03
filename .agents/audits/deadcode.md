@@ -1,119 +1,160 @@
 # Deep Dead Code Audit (Knip Results)
 
-This document contains a deep, verified analysis of the items flagged as dead code or unused exports by `knip` (as seen in `knip-results.txt`). Unlike a surface-level scan, this audit maps the flagged files against actual engine usages to determine whether the code was superseded by newer architecture or remains a valuable, incomplete feature.
-
-## Executive Summary & Resolution Update
-
-**Resolution Update:** The cleanup of "True Dead Code" has been executed. The total number of unused files flagged by `knip` has dropped from 93 to 74. 
-- Obsolete engines (SFZ parser, Modulation System), unused Inspector UI bloat, legacy AI Runtime validators, the abandoned Tauri `PluginHostNode`, and the abandoned `kneadProcessor` have all been safely **deleted**.
-- The remaining 74 flagged files represent valuable **Pending Epics** (like Elastic Audio, Extensions API, Ableton Push integration, and Node-Based plugin routing) or **False Positives** that are actively used. They should **NOT** be deleted.
-
-While `knip` successfully identified disconnected code, a deeper architectural review reveals a mix of **superseded dead code** (which has now been deleted) and **orphaned domain foundations** (which represent pending epics). 
-
-Several major features (like the `sfzParser` and generic `modulationSystem`) were actually replaced by superior, purpose-built engines (`Levain` and `Bacteria`), making their older generic implementations true dead code. Conversely, systems like Elastic Audio and the Git-style Undo Tree remain valuable domain stubs that simply lack UI bindings.
+Verified analysis of files flagged by `knip` across two audit sessions. Maps each flagged file against actual engine usage to distinguish superseded dead code from valuable pending epics.
 
 ---
 
-## 1. True Dead Code (Superseded & Deleted)
+## Executive Summary
 
-These files and systems were abandoned in favor of better, more specialized architectures built elsewhere in the DAW. They have been removed from the codebase.
+| Session | Knip count | Action |
+|---------|-----------|--------|
+| Baseline | 93 | — |
+| Session 1 (commit bc9c743) | 74 | Deleted obsolete engines, legacy validators, IPC nodes, Inspector layouts |
+| Session 2 (this audit) | 63 | Deleted 8 more; integrated 3 pending features into UI |
 
-### 1.1 Generic SFZ Sample Player
-- **Flagged Files:** `src/modules/AudioEngine/useCases/samplePlayer/*` (playback.ts, sfzParser.ts)
-- **Analysis:** This was an early attempt to build a generic SFZ sample parser for the audio engine. However, it has been completely superseded by the **Levain** module (`src/modules/Levain/repositories/sampleLoader.ts` and the `createLevainNode` Rust/WASM sampler), which is a purpose-built, high-performance sampler that natively handles SFZ manifests and streams them directly into the audio hot path.
-- **Verdict:** **DELETED.** Obsolete and inferior to the active Levain implementation.
-
-### 1.2 Generic Modulation System
-- **Flagged Files:** `src/modules/Plugin/useCases/modulationSystem/*` (createModulationRoute, getModulatedValue, etc.)
-- **Analysis:** This generic modulation system attempted to route LFOs to AudioParams globally. This system "had no AudioParam.setValueAtTime() bindings" and was never wired into the playback loop. Instead, the DAW adopted a plugin-local modulation approach, visible in the **Bacteria** multi-effect.
-- **Verdict:** **DELETED.** The global generic modulation system was an abandoned experiment. Future modulation routing is handled natively inside WASM plugin boundaries.
-
-### 1.3 Device Inspector Bespoke Layouts
-- **Flagged Files:** 15 files in `src/modules/Workspace/presentations/views/Inspector/layouts/effects/*` (`CompressorLayout.tsx`, `EQLayout.tsx`, etc.)
-- **Analysis:** These were manual React UI layouts for specific built-in effects. Sourdaw has moved towards generic, schema-driven parameter grids that auto-generate knobs based on the plugin's parameter definitions.
-- **Verdict:** **DELETED.** Unused UI stubs.
-
-### 1.4 AI Runtime Legacy Validation
-- **Flagged Files:** `src/modules/AiRuntime/transformers/*`, `useCases/validateLlmOutput.ts`, `useCases/actionSchema.ts`
-- **Analysis:** The LLM bridge was refactored to enforce a JSON Schema natively via WebLLM's `response_format` and to map directly into Automerge CRDTs. This rendered these manual intermediate TS validators and transformers obsolete bloat.
-- **Verdict:** **DELETED.**
-
-### 1.5 Legacy Audio IPC & Processors
-- **Flagged Files:** `src/modules/AudioEngine/models/PluginHostNode.ts`, `src/modules/AudioEngine/services/kneadProcessor.ts`
-- **Analysis:** `PluginHostNode` was an orphaned AudioWorklet wrapper for the Tauri plugin host. The DAW now routes plugin processing natively or via `SharedArrayBuffer`s. `kneadProcessor.ts` was an unused WASM AudioWorklet processor for the Knead plugin whose pitch logic is handled natively now.
-- **Verdict:** **DELETED.**
-
-### 1.6 Shadcn Component Exports
-- **Flagged Exports:** `CardHeader`, `CardTitle`, etc. in `src/components/ui/card.tsx`
-- **Verdict:** **IGNORED.** Standard unused exports from UI library templates. Preserved for future use.
+**Current state:** 63 flagged files remain. None are safe to delete — they are either pending epics with real domain value or false positives that knip cannot trace.
 
 ---
 
-## 2. Incomplete Epics (Orphaned but Valuable - DO NOT DELETE)
+## 1. True Dead Code — All Deleted
 
-These features have robust domain logic but are missing their final bindings to the React UI or the Audio Graph. They should **not** be deleted, but rather tracked as pending roadmap epics.
+### 1.1 Generic SFZ Sample Player *(Session 1)*
+- **Files:** `src/modules/AudioEngine/useCases/samplePlayer/` (playback.ts, sfzParser.ts)
+- **Reason:** Superseded by the **Levain** WASM sampler (`sampleLoader.ts`, `createLevainNode`), which natively handles SFZ manifests and streams directly into the audio hot path.
 
-### 2.1 Elastic Audio & Audio Warping
-- **Flagged Files:** `src/modules/AudioEngine/useCases/elasticAudio/*`, plus exports like `addWarpMarker`.
-- **Analysis:** This is a comprehensive transient detection and time-stretching engine. It is entirely disconnected from the active `TrackNode` and offline renderer. It has not been superseded; it simply hasn't been wired into the WebAudio/WASM execution paths yet.
-- **Verdict:** **KEEP.** Highly valuable domain logic awaiting integration into the audio graph.
+### 1.2 Generic Modulation System *(Session 1)*
+- **Files:** `src/modules/Plugin/useCases/modulationSystem/` (createModulationRoute, getModulatedValue, etc.)
+- **Reason:** Never wired into the playback loop. Architecture shifted to plugin-local modulation inside WASM boundaries (Bacteria). Global TS-level routing was an abandoned experiment.
 
-### 2.2 Node-Based Plugin View
-- **Flagged Files:** `src/modules/Plugin/useCases/nodeView/*` (addNode, connectNodes, moveNode)
-- **Analysis:** A node-based UI alternative to the standard mixer channel strip (similar to Bitwig's Grid or Max/MSP). The action `toggleNodeView` is registered in the command palette, but the React canvas UI to drag and connect nodes has not been implemented.
-- **Verdict:** **KEEP.** Valuable alternative routing architecture.
+### 1.3 Device Inspector Bespoke Layouts *(Session 1)*
+- **Files:** 15 files in `Inspector/layouts/effects/` (CompressorLayout, EQLayout, etc. — original set)
+- **Reason:** Replaced by the schema-driven `deviceLayoutRegistry` pattern, which auto-generates knobs from plugin parameter definitions. New layout files in the same folder ARE used — they self-register via `registerDeviceLayout`.
 
-### 2.3 Ableton Push Integration
-- **Flagged Files:** `src/modules/Plugin/useCases/pushIntegration/*` (handlePadPress, setEncoderValue, updateDisplay)
-- **Analysis:** Native hardware integration for Ableton Push. The base connect/disconnect commands are registered in `finalFeatureHandlers.ts`, but the actual pad/encoder logic is orphaned.
-- **Verdict:** **KEEP.** Hardware controller mapping logic.
+### 1.4 AI Runtime Legacy Validation *(Session 1)*
+- **Files:** `src/modules/AiRuntime/transformers/*`, `useCases/validateLlmOutput.ts`, `useCases/actionSchema.ts`
+- **Reason:** LLM bridge was refactored to enforce JSON Schema natively via WebLLM's `response_format`, mapping directly into Automerge CRDTs. Manual TS validators became obsolete.
 
-### 2.4 Extensions API
-- **Flagged Files:** `src/modules/Extension/*`
-- **Analysis:** A massive suite of use cases for installing, running, and managing third-party editor scripts.
-- **Verdict:** **KEEP.** Foundation for third-party scripts.
+### 1.5 Legacy Audio IPC & Processors *(Session 1)*
+- **Files:** `AudioEngine/models/PluginHostNode.ts`, `AudioEngine/services/kneadProcessor.ts`
+- **Reason:** `PluginHostNode` was an orphaned AudioWorklet wrapper; plugin processing now routes natively via `SharedArrayBuffer`. `kneadProcessor` was a WASM AudioWorklet for Knead whose pitch logic moved to native DSP.
 
-### 2.5 Toaster MPC Features
-- **Flagged Files:** `src/modules/Toaster/useCases/*`
-- **Analysis:** Advanced drum machine logic (16 Levels, Note Repeat, Sound Locks).
-- **Verdict:** **KEEP.** Pending UI wiring.
+### 1.6 Orphaned Type Re-exports *(Session 2)*
+- **Files:** `Gluten/useCases/glutenSubscriber.ts`, `Grinder/useCases/grinderSubscriber.ts`
+- **Reason:** Single-line `export type { ... }` facades with no consumers. The types are importable directly from the model files.
 
-### 2.6 DAWproject Export
-- **Flagged Files:** `src/modules/Project/useCases/dawProject/*` (exportDawProject, parseDawProject)
-- **Analysis:** Support for the open `DAWproject` file format. A UI command exists (`exportDawProject`) but it currently just fires a `notifyUser` stub instead of executing the actual `exportDawProject` function.
-- **Verdict:** **KEEP.** Essential for Bitwig/Studio One interoperability. The command just needs to be wired up.
+### 1.7 Orphaned Modulation Types *(Session 2)*
+- **Files:** `Plugin/models/ModulationTypes.ts`
+- **Reason:** Type definitions (ModulationSource, ModulationTarget, ModulationRoute) for the generic modulation system deleted in 1.2. No consumers remain. Future WASM-local modulation will define its own types inside plugin boundaries.
+
+### 1.8 Bacteria UI Components Without Backing *(Session 2)*
+- **Files:** `Bacteria/presentations/components/ModulationCollar.tsx`, `Bacteria/presentations/components/SignalFlowView.tsx`
+- **Reason:** `ModulationCollar` renders modulation arcs on knobs but no modulation data feed exists (the routing system was deleted in 1.2). `SignalFlowView` — Fermenter imports its own local `SignalFlowView` from `../components/`, not this Bacteria copy; this file has zero imports.
+
+### 1.9 Redundant Clip Drag Commit *(Session 2)*
+- **Files:** `Arrangement/useCases/timelineInteractions/commitClipDrag.ts`
+- **Reason:** `useTimelineInteractions.ts` already has a complete, preview-based drag commit implementation (move, trim-start, stretch, multi-clip, undo entries). `commitClipDrag.ts` is a parallel single-pass implementation that was never called. Confirmed zero imports.
+
+### 1.10 Unused DAW Component Primitives *(Session 2)*
+- **Files:** `src/components/daw/DawCompactSectionLabel.tsx`, `src/components/daw/DawParamCard.tsx`
+- **Reason:** Generic label and Card wrapper components with no imports anywhere in the codebase. Added but never used.
+
+### 1.11 Knead Inspector Controls *(Session 2)*
+- **Files:** `Workspace/presentations/views/Inspector/KneadControls.tsx`
+- **Reason:** Redundant with the existing `KneadEditor` component already mounted in `ClipView.tsx`. Knead is architecturally a clip editor (bottom panel), not a device inspector panel. `KneadEditor` handles the full experience including blob visualization, retune/humanize sliders, and the "Enable Pitch Editor" prompt.
 
 ---
 
-## 3. Partially Wired Features & False Positives
+## 2. Newly Integrated *(Session 2)*
 
-These are features that are actually actively used in the codebase, but were flagged by `knip` due to partial implementation or being exported but only used dynamically.
+These were flagged by knip as unused but have now been mounted in the UI.
 
-### 3.1 Clip Gain Envelopes
-- **Flagged Files:** `getGainAtBeat.ts`, `getAllClipGainEnvelopes.ts`
-- **Analysis:** `getGainAtBeat` *is* explicitly imported and used in the core audio scheduler (`src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts`). Knip flagged it either due to a dynamic import quirk or because it is a false positive. Clip gain envelopes are actively rendered in the UI (`ClipGainEnvelopeSection.tsx`).
-- **Verdict:** **FALSE POSITIVE / KEEP.** This code is alive and running in the audio engine.
+### 2.1 SoloModeSelector → TransportBar
+- **File:** `Workspace/presentations/views/Transport/SoloModeSelector.tsx`
+- **Integration:** Mounted in `TransportBar.tsx` Row 2 right wing, between ToolSelector and UndoRedoButtons.
+- **State:** `workspaceState.soloMode` (`'sip' | 'afl' | 'pfl'`) was already persisted. The control is live; full AFL/PFL audio routing is a pending audio engine task.
 
-### 3.2 Non-Linear Undo Tree Navigation
-- **Flagged Files:** `navigateToNode.ts`, `queries.ts`
-- **Analysis:** Sourdaw uses a linear undo history natively, but has the domain logic for a non-linear Git-style Undo Tree. Branches are actively recorded (`undoStore.ts` calls `recordToTree.ts`), but the UI views to navigate or query the tree are unbuilt, leaving the getters orphaned.
-- **Verdict:** **KEEP.** The engine actively records to the tree; it just needs a UI.
+### 2.2 PadMixer → ToasterPanel
+- **File:** `Toaster/presentations/components/PadMixer.tsx`
+- **Integration:** Mounted in `ToasterPanel.tsx` right aside as a "Pad mixer" section between Transport and Fill tools. Writes through `updatePad` (boolean muted/soloed) and `setToasterPadParam` (numeric fields).
 
-### 3.3 Adjustment Layers
-- **Flagged Files:** `src/modules/Arrangement/useCases/adjustmentLayer/*`
-- **Analysis:** The action `createAdjustmentLayer` is registered and executed in `batchFeatureHandlers.ts`. However, the functions to manipulate the regions on the timeline (e.g. `addAdjustmentRegion`) are orphaned because the Arrangement UI doesn't render adjustment layer regions yet.
-- **Verdict:** **KEEP.** The state and creation logic is alive; the view logic is pending.
+### 2.3 PresenceOverlay → TimelineSurface
+- **File:** `Collaboration/presentations/views/PresenceOverlay.tsx`
+- **Integration:** Mounted in `TimelineSurface.tsx` as an absolutely-positioned overlay above the canvas. `beatToX` reads from `timelineViewStore` (scrollX, pixelsPerBeat); `trackIdToY` accumulates heights from `buildTimelineRenderModel()` minus scrollY.
+- **State:** WebRTC presence channel, `usePresence` hook, and Automerge sync are all fully wired end-to-end. The overlay was the only missing piece.
 
-### 3.4 Native Plugin Bridge IPC Getters
-- **Flagged Files:** `getPluginParameters.ts`, `setPluginState.ts`
-- **Analysis:** The Tauri Rust bridge actively processes audio (`NativePluginBridgeNode`), passing parameter changes directly through a SharedArrayBuffer. The explicit Tauri IPC methods to get/set full plugin state (`getPluginParameters.ts`) are orphaned, likely because VST3/AU preset state recall isn't fully implemented yet.
-- **Verdict:** **KEEP.** Necessary for future plugin state persistence.
+---
+
+## 3. Incomplete Epics — DO NOT DELETE
+
+Robust domain logic with real value, missing only their final UI or audio graph bindings.
+
+### 3.1 Adjustment Layers (8 files)
+- **Files:** `Arrangement/useCases/adjustmentLayer/` (addAdjustmentRegion, getActiveLayersAtBeat, getLayerCount, removeAdjustmentLayer, removeAdjustmentRegion, setLayerMix, setLayerParameter, toggleAdjustmentLayer)
+- **Status:** `createAdjustmentLayer` is registered and executed in `batchFeatureHandlers.ts`. State and creation are live. The Arrangement timeline doesn't yet render adjustment layer regions.
+
+### 3.2 Node-Based Plugin View (8 files)
+- **Files:** `Plugin/useCases/nodeView/` (addNode, buildFromDeviceChain, connectNodes, disconnectNodes, moveNode, removeNode, setViewport, toggleBypass)
+- **Status:** `toggleNodeView` is registered in the command palette. The React canvas UI for dragging and connecting nodes has not been built.
+
+### 3.3 Ableton Push Integration (8 files)
+- **Files:** `Plugin/useCases/pushIntegration/` (handlePadPress, handlePadRelease, mapEncoder, setEncoderValue, setPadColor, setPadMode, setScale, updateDisplay)
+- **Status:** Base connect/disconnect commands are registered in `finalFeatureHandlers.ts`. Pad and encoder logic is orphaned from the event dispatch loop.
+
+### 3.4 Extensions API (15 files)
+- **Files:** `Extension/services/scripting.ts`, `Extension/stores/extension.ts`, `Extension/useCases/extension/` (13 use cases)
+- **Status:** Full domain model for installing, running, and managing third-party editor scripts. No UI entry point yet.
+
+### 3.5 Toaster MPC Advanced Features (4 files)
+- **Files:** `Toaster/useCases/noteRepeat.ts`, `sixteenLevels.ts`, `soundLocks.ts`, `setMorphPosition.ts`
+- **Status:** PadMixer is now integrated (§2.2). These four use cases (MPC-style performance features) are still pending UI and sequencer wiring. The morph state model exists in `toasterStore`; interpolation DSP is missing.
+
+### 3.6 CRDT Collaboration Merge UI (3 files)
+- **Files:** `CrdtDocument/presentations/views/MergeResultDialog.tsx`, `CrdtDocument/useCases/crdtMerge.ts`, `CrdtDocument/useCases/sdawFileFormat.ts`
+- **Status:** Full WebRTC + Automerge peer sync is live (confirmed). These files handle the `.sdaw` binary format and a merge conflict dialog. The dialog is not triggered anywhere; the format encoder/decoder is not called from any save/load flow yet.
+
+### 3.7 Native Project File I/O
+- **Files:** `Project/repositories/nativeProjectFiles.ts`
+- **Status:** Tauri-based filesystem operations for `.sourdaw` project files. Not called from any save/load handler yet.
+
+### 3.8 Native Plugin Bridge — Full State Persistence (5 files)
+- **Files:** `Plugin/repositories/pluginBridge/` (getPluginParameters, getPluginState, isPluginGuiSupported, setPluginParameter, setPluginState)
+- **Status:** The Tauri Rust bridge actively processes audio via SharedArrayBuffer. These IPC methods for getting/setting full plugin state (VST3/AU preset recall) are not wired to the preset system. `isPluginGuiSupported` and the GUI launch button in `TrackDevicesSection` are unconnected.
+
+---
+
+## 4. False Positives — Actively Used
+
+Knip flags these because it cannot trace their consumption (re-exports, dynamic registry, external store subscriptions). Verified as live.
+
+| File | Evidence of use |
+|------|----------------|
+| `Levain/repositories/levainPresets.ts` | Imported in 11 files including `LevainPanel.tsx`, preset handlers |
+| `Plugin/ProofChamber/models/ProofChamberState.ts` | Used by `chamberStore.ts` |
+| `Plugin/ProofChamber/presentations/views/ProofChamber.tsx` | Registered in device layout registry and processor |
+| `Plugin/ProofChamber/presentations/views/SpectrogramView.tsx` | Used by `ProofChamber.tsx` |
+| `Plugin/ProofChamber/stores/chamberStore.ts` | Used by `ProofChamber.tsx` and device processor |
+| `ProofChamber/repositories/proofChamberPresets.ts` | Used by `InstrumentsTab.tsx` and preset handlers |
+| `Toaster/models/GrooveTemplates.ts` | Used by `GrooveModule.ts` in the Yeast processor |
+| `Workspace/presentations/components/Sidebar/SectionHeader.tsx` | Re-exported via `deviceLayoutRegistry.tsx`; used by 8+ layout components |
+| `Workspace/useCases/automationSubLanes.ts` | State mutations read by `hitTestAutomationSubLane.ts` |
+| `Arrangement/useCases/clipGainEnvelope/getAllClipGainEnvelopes.ts` | `getGainAtBeat` (same folder) is imported and called at `scheduleAudioClips.ts:113` |
+| `Arrangement/useCases/clipGainEnvelope/moveGainEnvelopePoint.ts` | Referenced by `ClipGainEnvelopeSection.tsx` |
+
+---
+
+## 5. Stale Items from Previous Audit
+
+These were documented as "KEEP" in the original audit but were subsequently removed by commit `bc9c743`.
+
+- **DAWproject export** (`Project/useCases/dawProject/exportDawProject.ts`, `parseDawProject.ts`) — directory is now empty. The `exportDawProject` command in `finalFeatureHandlers.ts` still fires a `notifyUser` stub; the backing implementation is gone.
+- **Undo tree navigation** (`Command/useCases/undoTree/navigateToNode.ts`, `queries.ts`) — deleted. The tree-writing side (`recordToTree.ts`, `branchOperations.ts`, `toggleUndoTree.ts`) remains and is active.
 
 ---
 
 ## Conclusion
 
-A deep inspection confirms that `knip` captured three distinct phenomena:
-1. **Obsolete generic engines** (SFZ parser, Modulation System, legacy AI Validators, old IPC nodes) that were replaced by specialized implementations. **These have been deleted.**
-2. **UI bloat** (Inspector layouts) that were replaced by dynamic generation. **These have been deleted.**
-3. **Pending Epics** (Elastic Audio, Node View, DAWproject, Push, Extensions) that are fully modeled but lack their final execution bindings. **These must be preserved.**
+After two audit sessions, knip has been reduced from **93 → 63** flagged files.
+
+- **30 files deleted** across the two sessions — all confirmed as superseded, redundant, or entirely without consumers.
+- **3 features integrated** into the UI with no regressions.
+- **63 remaining files** are either pending epics (real domain value, missing one integration layer) or false positives (actively used but unreachable by static analysis). None should be deleted.

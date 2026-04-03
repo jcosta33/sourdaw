@@ -5,6 +5,8 @@ import { Slider } from '#/components/ui/slider';
 import { Input } from '#/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '#/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
+import { DawSideRail } from '#/components/daw/DawSideRail';
+import { DawStatusDot } from '#/components/daw/DawStatusDot';
 import {
     Sun,
     Moon,
@@ -116,52 +118,47 @@ export const PreferencesDialog = ({ open, onClose }: PreferencesDialogProps): Re
             <DialogContent className="w-[720px] max-w-[90vw] max-h-[80vh] p-0 bg-surface-raised overflow-hidden">
                 <div className="flex h-[520px]">
                     {/* ── Sidebar navigation ── */}
-                    <nav
-                        className="flex flex-col w-[180px] shrink-0 p-3 gap-0.5"
-                        style={{
-                            background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
-                            boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
-                            borderRight: '1px solid rgba(0,0,0,0.4)',
-                        }}
-                    >
-                        <DialogHeader className="mb-3">
-                            <DialogTitle className="text-sm font-semibold">Preferences</DialogTitle>
-                        </DialogHeader>
-                        {NAV_ITEMS.map((item) => (
-                            <button
-                                type="button"
-                                key={item.id}
-                                className={cn(
-                                    'flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs transition-colors text-left',
-                                    section === item.id
-                                        ? 'bg-primary/10 text-primary font-medium'
-                                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
-                                )}
-                                onClick={() => setSection(item.id)}
-                            >
-                                {item.icon}
-                                {item.label}
-                            </button>
-                        ))}
+                    <DawSideRail className="w-[180px] p-3">
+                        <nav className="flex h-full flex-col gap-0.5">
+                            <DialogHeader className="mb-3">
+                                <DialogTitle className="text-sm font-semibold">Preferences</DialogTitle>
+                            </DialogHeader>
+                            {NAV_ITEMS.map((item) => (
+                                <button
+                                    type="button"
+                                    key={item.id}
+                                    className={cn(
+                                        'flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors',
+                                        section === item.id
+                                            ? 'bg-primary/10 font-medium text-primary'
+                                            : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground'
+                                    )}
+                                    onClick={() => setSection(item.id)}
+                                >
+                                    {item.icon}
+                                    {item.label}
+                                </button>
+                            ))}
 
-                        <div className="mt-auto flex flex-col gap-1.5">
-                            <Separator style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)' }} />
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="w-full justify-start text-xs text-muted-foreground"
-                                onClick={() => preferencesStore.set(defaultPreferences)}
-                            >
-                                Reset Defaults
-                            </Button>
-                            <Button size="sm" className="w-full text-xs" onClick={onClose}>
-                                Done
-                            </Button>
-                        </div>
-                    </nav>
+                            <div className="mt-auto flex flex-col gap-1.5">
+                                <Separator className="daw-seam h-px" />
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="w-full justify-start text-xs text-muted-foreground"
+                                    onClick={() => preferencesStore.set(defaultPreferences)}
+                                >
+                                    Reset Defaults
+                                </Button>
+                                <Button size="sm" className="w-full text-xs" onClick={onClose}>
+                                    Done
+                                </Button>
+                            </div>
+                        </nav>
+                    </DawSideRail>
 
                     {/* ── Content area ── */}
-                    <div className="flex-1 overflow-y-auto p-5 space-y-5">
+                    <div className="flex-1 space-y-5 overflow-y-auto bg-surface-base/60 p-5">
                         {section === 'general' ? <GeneralSection prefs={prefs} update={update} /> : null}
                         {section === 'appearance' ? <AppearanceSection prefs={prefs} update={update} /> : null}
                         {section === 'layout' ? <LayoutSection prefs={prefs} update={update} /> : null}
@@ -608,14 +605,16 @@ const AiSection = (): ReactElement => {
                             backend === 'none' && 'bg-muted text-muted-foreground'
                         )}
                     >
-                        <span
-                            className={cn(
-                                'size-1.5 rounded-full',
-                                backend === 'native' && 'bg-[var(--color-state-success)]',
-                                backend === 'webllm' && 'bg-[var(--color-accent-cyan)]',
-                                backend === 'cloud' && 'bg-[var(--color-accent-lavender)]',
-                                backend === 'none' && 'bg-muted-foreground'
-                            )}
+                        <DawStatusDot
+                            tone={
+                                backend === 'native'
+                                    ? 'success'
+                                    : backend === 'webllm'
+                                      ? 'cyan'
+                                      : backend === 'cloud'
+                                        ? 'primary'
+                                        : 'muted'
+                            }
                         />
                         {backend === 'native'
                             ? 'Native (in-process)'

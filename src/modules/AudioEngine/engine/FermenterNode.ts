@@ -31,8 +31,8 @@ async function fetchWasmBinary(url: string): Promise<ArrayBuffer> {
 
 export type FermenterNodeResult = {
     workletNode: AudioWorkletNode;
-    noteOn: (note: number, velocity: number, scheduleTime?: number) => void;
-    noteOff: (note: number, scheduleTime?: number) => void;
+    noteOn: (note: number, velocity: number, sampleFrame?: number) => void;
+    noteOff: (note: number, sampleFrame?: number) => void;
     setParam: (name: string, value: number) => void;
     setBypass: (bypassed: boolean) => void;
     connect: (dest: AudioNode) => void;
@@ -86,13 +86,13 @@ export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: strin
 
     return {
         workletNode: node,
-        noteOn(note: number, velocity: number, scheduleTime?: number) {
+        noteOn(note: number, velocity: number, sampleFrame?: number) {
             if (!bypassed && note >= 0 && note < 128) {
-                node.port.postMessage({ type: 'noteOn', note, velocity: Math.min(127, Math.max(0, velocity)), scheduleTime });
+                node.port.postMessage({ type: 'noteOn', note, velocity: Math.min(127, Math.max(0, velocity)), sampleFrame });
             }
         },
-        noteOff(note: number, scheduleTime?: number) {
-            node.port.postMessage({ type: 'noteOff', note, scheduleTime });
+        noteOff(note: number, sampleFrame?: number) {
+            node.port.postMessage({ type: 'noteOff', note, sampleFrame });
         },
         setParam(name: string, value: number) {
             if (Number.isFinite(value)) {

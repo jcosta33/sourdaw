@@ -17,60 +17,55 @@ should be tackled together or in dependency order.
 
 ---
 
-### RT-1 · ScriptProcessorNode recording pipeline
-**Severity:** P0 · **Verified:** ✅ confirmed
+### ~~RT-1 · ScriptProcessorNode recording pipeline~~ — DONE
+**Severity:** P0 · **Fixed:** ✅
 
-`recording.ts` uses `ctx.createScriptProcessor(BUFFER_SIZE, 1, 1)` with
-`onaudioprocess`. The node runs on the main JS thread. Each callback pushes
-`new Float32Array(input)` onto an unbounded `rawChunks` array. On
-`stopRecording`, all chunks are concatenated synchronously on the main thread.
+`ScriptProcessorNode` + `rawChunks: Float32Array[]` replaced with:
 
-Consequences: recording competes with React renders for main-thread time,
-causing dropouts; a 1-hour session allocates ~344k `Float32Array` objects;
-stopping recording freezes the UI while the buffer assembles.
+- `recordingProcessor.ts` (AudioWorkletProcessor `'recording-processor'`): Writes 128-sample input
+  blocks into a SAB ring buffer via `Atomics.add`. Zero allocations and zero IPC on the hot path.
+  Registered in `createWebAudioEngine.initialize()`.
+- SAB layout: `[0..3] writeHead (Int32)` · `[4+] ring (Float32, 524 288 entries ≈ 10.9 s @ 48 kHz)`.
+- `recordingWorker.ts` (OPFS Web Worker): Polls the SAB ring every 50 ms, drains new samples into
+  an OPFS temp file (`rec-tmp-<timestamp>.pcm`). On stop: final drain → close writable → read file
+  back → transfer `Float32Array` to main thread (zero-copy via `Transferable`). Removes temp file.
+- `recording.ts` (main thread): Creates SAB + `AudioWorkletNode` + Worker, wires 'ready'/'pcm'
+  message flow. `stopAudioRecording()` is non-blocking; `onRecordingComplete(buffer)` fires after
+  the Worker finishes, unchanged for all callers. `AudioWorkletNode` is a sink (no destination
+  connection needed), so no silent output is injected into the mix.
 
-**Steps:**
-1. Implement a `RecordingWorkletNode` (`AudioWorkletProcessor`) that captures raw PCM on the isolated audio thread.
-2. Allocate a `SharedArrayBuffer` ring queue. The worklet writes 128-sample frames; the main thread drains it.
-3. Wire a background Web Worker to consume the ring and stream PCM to OPFS, keeping memory flat.
-4. On `stopRecording`, the Worker flushes and returns the OPFS file handle — no in-memory concatenation.
-
----
-
-### RT-2 · MIDI note scheduling via `setTimeout`
-**Severity:** P0 · **Verified:** ✅ confirmed
-
-`scheduleMidiNotes.ts` uses `setTimeout` for all Fermenter, Levain, and Toaster
-note-on/note-off events (7 call sites verified). `setTimeout` is subject to
-main-thread backpressure and browser clamping — notes fire with variable jitter,
-destroying groove and timing accuracy.
-
-**Steps:**
-1. Add a timestamped MIDI event queue to each Rust AudioWorklet processor. The queue holds `(sample_frame, event)` pairs.
-2. Push events via `postMessage` well ahead of time inside the existing lookahead window.
-3. Inside each processor's `process()` loop, drain events whose `sample_frame` falls within the current block.
-4. Remove all `setTimeout` calls from `scheduleMidiNotes.ts` for these instruments.
-
-Should be done together with RT-4 since both require new message types in the processor protocol.
+Result: zero main-thread work during capture; memory is flat regardless of session length;
+stopping recording no longer freezes the UI.
 
 ---
 
-### RT-3 · Synchronous Automerge load/merge on main thread
-**Severity:** P0 · **Verified:** ✅ confirmed
+### ~~RT-2 · MIDI note scheduling via `setTimeout`~~ — DONE
+**Severity:** P0 · **Fixed:** ✅
 
-`automergeRepository.loadAll()` calls `Automerge.load()` +
-`Automerge.loadIncremental()` synchronously. `mergeBundle()` calls
-`Automerge.load()` + `Automerge.merge()` synchronously. Loading a large project
-or receiving a large collaboration patch freezes the UI until Automerge finishes
-its WASM parsing.
+All three processors converted from float-seconds `scheduleTime` to integer `sampleFrame`:
+- `fermenterProcessor.ts`, `levainProcessor.ts`, `toasterProcessor.ts`: `_enqueue`/`_handleMessage`/`_drainQueue`/`process()` now compare `sampleFrame` (integer) against `currentFrame` (AudioWorklet global integer). Eliminated `currentFrame / sampleRate` float division on the hot path.
+- `FermenterNode.ts`, `LevainNode.ts`, `ToasterNode.ts`: `noteOn`/`noteOff` parameter renamed `scheduleTime → sampleFrame`.
+- `AudioEngineState.ts`: control interface types updated to `sampleFrame?: number`.
+- `scheduleMidiNotes.ts`: after computing `time`, added `const sr = getAudioContext().sampleRate; const sampleFrame = Math.round(time * sr); const endSampleFrame = Math.round((time + duration) * sr)`. All 5 instrument call sites (`fermenterControls.noteOn/Off`, `levainControls.noteOn/Off`, `toasterControls.noteOn`) now pass integer `sampleFrame`/`endSampleFrame`.
+- Yeast section: replaced all 5 hardcoded `44100` references with `yeastSr = getAudioContext().sampleRate`, fixing a separate correctness bug for non-48kHz contexts.
 
-**Steps:**
-1. Move Automerge WASM initialisation into a dedicated `crdt.worker.ts`. The WASM binary must be re-initialised inside the Worker context.
-2. Expose `load(binary)` and `merge(bundle)` as Worker messages; the Worker returns the hydrated plain-object state.
-3. `automergeRepository` on the main thread posts to the Worker, awaits the state, then calls `notifyListeners()`.
-4. `AutomergeStorage.hydrate()` already handles plain-object state correctly — no changes needed there.
+---
 
-This is the largest single change in the codebase. Coordinate with RT-4 since the Worker also becomes the natural owner of `changeDoc` writes.
+### ~~RT-3 · Synchronous Automerge load/merge on main thread~~ — DONE
+**Severity:** P0 · **Fixed:** ✅
+
+Created `src/modules/CrdtDocument/workers/crdtWorker.ts` with two handlers:
+- `loadBundle`: loads base docs + applies incremental chunks (the heavy WASM loop), saves compacted binaries, returns them.
+- `mergeBundle`: loads current docs + incoming bundle, merges, saves compacted, returns merged binaries + result metadata.
+
+`automergeRepository.ts` changes:
+- Added `getCrdtWorker()` singleton getter (lazy, Vite `new URL` pattern) + `invokeWorker()` promise wrapper with message-ID correlation.
+- `loadAll()` → async: sends bundle to worker, receives compacted binaries, calls `Automerge.load()` once per doc (fast — no incremental chain), updates `this.docs`, calls `notifyListeners()`. Falls back to synchronous `_loadAllSync()` on worker failure.
+- `mergeBundle()` → async: serializes current docs via `saveAll()`, sends both to worker, receives merged compacted binaries, loads each once, notifies. Falls back to `_mergeBundleSync()`.
+
+Callers updated: `crdtProjectLifecycle.loadCrdtProject()` → `await automergeRepository.loadAll(bundle)`. `crdtMerge.importSdawFile()` + `mergeDocumentBundle()` → `await automergeRepository.mergeBundle(bundle)`. All callers were already async functions — zero signature changes upstream.
+
+Main thread WASM work reduced from O(m·n) (repeated loadIncremental) to O(n) (single load of compacted binary).
 
 ---
 
@@ -120,30 +115,33 @@ Wide-scope changes that require planning as a unit. No new infrastructure needed
 
 ---
 
-### AR-1 · Singleton plugin state prevents multi-instancing
-**Severity:** P0 · **Verified:** ✅ confirmed — 11 singleton stores found
+### ~~AR-1 · Singleton plugin state prevents multi-instancing~~ — DONE
+**Severity:** P0 · **Fixed:** ✅
 
-Every device plugin has a single global `Store<T>` instance:
-`bacteriaStore`, `fermenterStore`, `glutenStore`, `grinderStore`, `proofStore`,
-`toasterStore`, `levainStore`, `yeastStore`, `kneadStore`, `scoringStore`,
-`crustStore`. Plugin inspector panels read directly from these globals with no
-`deviceId` scoping — when two instances of the same plugin are on different
-tracks they share state and visually clobber each other.
+Converted 5 telemetry stores from `Store<State>` singletons to `Store<Record<deviceId, State>>`
+instance maps: `bacteriaStore`, `glutenStore`, `grinderStore`, `proofStore`, `scoringStore`.
+All store update/getter functions now take `deviceId` as first argument.
 
-The per-instance infrastructure already exists: `Track.devices[].parameterValues`
-holds generic numeric params per device. The fix is to move plugin-specific UI
-state (metering, patch data, selected module) into that same model and scope
-inspector panels by `deviceId`.
+`AppShell.tsx` changed 5 `useState(false)` panel flags to `useState<string | null>(null)`.
+Device-open events upgraded from `new Event(...)` to `new CustomEvent(..., { detail: { deviceId } })`.
+AppShell extracts `deviceId` from event detail and passes it as a prop to each panel.
 
-Note: `ProofChamber` has a `chamberStore` with an `instances: Record<string, ...>`
-map that is multi-instance-ready but not yet wired up — it can serve as the
-reference implementation.
+All param bridges updated to use `findDeviceRef(deviceId)` (scoped to one device) instead of
+`getActiveDevices()` (broadcast to all instances of the type). Pending-update maps use
+`${deviceId}:${key}` composite keys to prevent cross-instance collisions.
 
-**Steps:**
-1. Remove all per-plugin singleton stores.
-2. Move device state into `tracks[].devices[].parameterValues` (already in CRDT).
-3. Inspector panels receive `deviceId` as a prop and select their slice via a `useDeviceState(deviceId)` selector.
-4. Use the existing `ProofChamber` `chamberStore.instances` pattern as the template.
+`ProofParamBridge` changed from singleton `let bridge` to `Map<string, ProofAudioBridge>`.
+
+Panels updated to accept `deviceId: string` prop and read instance state via
+`allInstances?.[deviceId] ?? getDefaultState(deviceId)`:
+- `GlutenPanel.tsx` — inner `Knob` sub-component receives `deviceId` prop
+- `BacteriaPanel.tsx` — `setGlobalParam`, `K` component, all sub-components threaded
+- `GrinderPanel.tsx` — `GrinderKnob`, `SectionTabs`, `ControlDeck` threaded
+- `ProofPanel.tsx` + all `ProofEqSection`/`ProofDynSection`/`ProofImagerSection`/`ProofExciterSection`/`ProofLimiterSection`/`ProofEqCurve` components threaded
+- `ScoringPanel.tsx` — already updated in previous session
+
+`RT-4` SharedArrayBuffer telemetry polling already uses `deviceId` scoping in the SAB allocator
+(slot-per-device), so telemetry data routes correctly to the right instance store.
 
 ---
 
@@ -192,19 +190,26 @@ requires editing `TrackNode.ts`.
 
 ---
 
-### AR-5 · Yeast sequencer on main thread
-**Severity:** P1 · **Verified:** ✅ confirmed — no YeastWorkletProcessor exists
+### ~~AR-5 · Yeast sequencer on main thread~~ — DONE
+**Severity:** P1 · **Fixed:** ✅
 
-`yeastSchedulingBridge.ts`'s `rack.processBlock(events, ...)` is called from
-the transport scheduler tick (`scheduleMidiNotes.ts` line 172) on the main thread.
-Arpeggiator, Euclidean, and Markov processors all run synchronously during the
-tick. Under dense MIDI and heavy processing this competes with React renders and
-CRDT writes.
+Created `src/modules/Yeast/services/yeastWorkletProcessor.ts` — AudioWorkletProcessor hosting `MidiRack` + all processors in the audio thread. Handles `addProcessor`, `removeProcessor`, `setParam`, `setBypass`, `processBlock` messages; sends `{ type: 'processed', requestId, events }` responses.
 
-**Steps:**
-1. Implement a `YeastWorkletProcessor` (`AudioWorkletProcessor`).
-2. Push scheduling parameters and incoming MIDI into the worklet via `postMessage` during the lookahead window.
-3. The worklet generates and fires events at the correct sample frame.
+Created `src/modules/Yeast/engine/YeastWorkletNode.ts` — wrapper with `processBlock(): Promise<MidiEvent[]>` using per-request ID correlation and a lazy `ensureWorkletRegistered` WeakMap.
+
+`yeastStore.ts` changes:
+- Added `processorTypeMap: Map<id, ProcessorType>` — explicit type tracking (replaces brittle `inferType` heuristic for worklet sync).
+- `addYeastProcessor` now generates an explicit `id`, creates processor with that ID on both main-thread rack and worklet.
+- `removeProcessor`, `setParam`, `setBypass` all mirror to `_workletNode` if set.
+- `getYeastWorkletNodeAsync(ctx)` — lazy singleton that creates the node on first call and syncs any processors added before init.
+
+`scheduleMidiNotes.ts` changes:
+- Function signature: `function → async function`, returns `Promise<void>`.
+- Yeast block: `const workletNode = await getYeastWorkletNodeAsync(ctx)` → `workletNode ? await workletNode.processBlock(...) : rack.processBlock(...)`.
+
+`playheadScheduler.ts`: `tick` converted to `async` arrow const; `await scheduleMidiNotes(...)`.
+
+`yeastSchedulingBridge.ts`: fixed hardcoded `44100` → `getAudioContext().sampleRate` (live MIDI path still uses main-thread rack for low-latency response; scheduled clip path uses worklet).
 
 ---
 

@@ -1,16 +1,23 @@
 /// <reference types="vitest" />
 import { fileURLToPath, URL } from 'node:url';
 import { resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vitest/config';
 import react, { reactCompilerPreset } from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import babel from '@rolldown/plugin-babel';
+import { sentryVitePlugin } from '@sentry/vite-plugin';
+
+const { version } = JSON.parse(readFileSync('./package.json', 'utf-8')) as { version: string };
 
 export default defineConfig({
     base: './',
     server: {
         hmr: process.env.NO_HMR !== '1',
+    },
+    define: {
+        __APP_VERSION__: JSON.stringify(version),
     },
     esbuild: {
         keepNames: true, // Fixes @grame/faustwasm AudioWorkletNode mangling
@@ -20,6 +27,15 @@ export default defineConfig({
         babel({ presets: [reactCompilerPreset()] }),
         react(),
         tailwindcss(),
+        sentryVitePlugin({
+            authToken: process.env.SENTRY_AUTH_TOKEN,
+            org: process.env.SENTRY_ORG,
+            project: process.env.SENTRY_PROJECT,
+            disable: !process.env.SENTRY_AUTH_TOKEN,
+            sourcemaps: {
+                filesToDeleteAfterUpload: ['dist/**/*.map'],
+            },
+        }),
     ],
     test: {
         environment: 'jsdom',
@@ -40,6 +56,7 @@ export default defineConfig({
         },
     },
     build: {
+        sourcemap: 'hidden',
         chunkSizeWarningLimit: 600,
         rolldownOptions: {
             output: {

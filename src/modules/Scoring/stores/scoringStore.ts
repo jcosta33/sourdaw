@@ -1,5 +1,6 @@
 /**
  * Scoring tuner state store.
+ * Keyed by deviceId to support multiple simultaneous instances.
  */
 
 import { Container } from '#/helpers/DependencyInjector/Container';
@@ -9,27 +10,28 @@ import { type TunerState, type DisplayMode, DEFAULT_TUNER_STATE } from '../model
 
 const logger = Container.getInstance().get(Logger);
 
-export const scoringStore = new Store<TunerState>(logger, {
-    initialData: { ...DEFAULT_TUNER_STATE },
-});
+type ScoringInstances = Record<string, TunerState>;
 
-export function updateTunerTelemetry(data: Partial<TunerState>): void {
-    const state = scoringStore.value;
-    if (state) {
-        scoringStore.set({ ...state, ...data });
-    }
+export const scoringStore = new Store<ScoringInstances>(logger, { initialData: {} });
+
+export function getScoringState(deviceId: string): TunerState {
+    return scoringStore.value?.[deviceId] ?? { ...DEFAULT_TUNER_STATE };
 }
 
-export function setDisplayMode(mode: DisplayMode): void {
-    const state = scoringStore.value;
-    if (state) {
-        scoringStore.set({ ...state, mode });
-    }
+export function updateTunerTelemetry(deviceId: string, data: Partial<TunerState>): void {
+    const instances = scoringStore.value ?? {};
+    const existing = instances[deviceId] ?? { ...DEFAULT_TUNER_STATE };
+    scoringStore.set({ ...instances, [deviceId]: { ...existing, ...data } });
 }
 
-export function setA4Reference(hz: number): void {
-    const state = scoringStore.value;
-    if (state) {
-        scoringStore.set({ ...state, a4Reference: hz });
-    }
+export function setDisplayMode(deviceId: string, mode: DisplayMode): void {
+    const instances = scoringStore.value ?? {};
+    const existing = instances[deviceId] ?? { ...DEFAULT_TUNER_STATE };
+    scoringStore.set({ ...instances, [deviceId]: { ...existing, mode } });
+}
+
+export function setA4Reference(deviceId: string, hz: number): void {
+    const instances = scoringStore.value ?? {};
+    const existing = instances[deviceId] ?? { ...DEFAULT_TUNER_STATE };
+    scoringStore.set({ ...instances, [deviceId]: { ...existing, a4Reference: hz } });
 }

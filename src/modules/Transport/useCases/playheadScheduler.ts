@@ -48,7 +48,7 @@ export function startPlayheadScheduler(): void {
 
     const grainMs = state.scheduleGrainMs ?? DEFAULT_SCHEDULE_GRAIN_MS;
 
-    function tick(): void {
+    const tick = async (): Promise<void> => {
         const current = transportStore.value;
         if (!current?.isPlaying) {
             return;
@@ -243,7 +243,7 @@ export function startPlayheadScheduler(): void {
         const scheduleUpTo = newPosition + lookAheadBeats;
 
         scheduleMetronome(lastScheduledBeat, scheduleUpTo, accumulatedPosition, current, currentTempo);
-        scheduleMidiNotes(lastScheduledBeat, scheduleUpTo, accumulatedPosition, lastScheduledBeat, activeAudioSources, current, currentTempo);
+        await scheduleMidiNotes(lastScheduledBeat, scheduleUpTo, accumulatedPosition, lastScheduledBeat, activeAudioSources, current, currentTempo);
         scheduleAudioClips(lastScheduledBeat, scheduleUpTo, accumulatedPosition, scheduledAudioClips, scheduledFrozenTracks, activeAudioSources, current, currentTempo);
         applyVcaGains();
         applyAutomation(newPosition);
@@ -251,7 +251,7 @@ export function startPlayheadScheduler(): void {
         lastScheduledBeat = scheduleUpTo;
 
         timerId = setTimeout(tick, current.scheduleGrainMs ?? grainMs);
-    }
+    };
 
     timerId = setTimeout(tick, grainMs);
 }

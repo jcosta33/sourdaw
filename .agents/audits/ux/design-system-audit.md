@@ -21,11 +21,13 @@ The findings below are aligned with `.agents/specs/look-and-feel.md`:
 
 ## Summary
 
-The codebase has improved a lot, especially in plugin shells and shared `src/components/ui` primitives, but there are still three big gaps:
+The codebase has improved a lot, especially in plugin shells, shared `src/components/ui` primitives, and the first dedicated DAW-shell primitive pass. The work is no longer in a purely “audit-only” state: a meaningful neutral-shell consolidation has already landed. The biggest remaining gaps are now narrower and more internal than they were in the first sweep.
 
-1. **DAW chrome is still heavily duplicated inline** across arrangement, inspector, transport, AI, and utility panels.
-2. **Factory-plugin shell patterns are repeated locally** instead of being promoted into reusable plugin-shell primitives.
-3. **Several controls are still hand-rolled with raw HTML or hardcoded hex styling** where they should use shared components or a thin themed wrapper.
+At this point, the highest-value unresolved areas are:
+
+1. **Compact readout and meter rows are still duplicated inline** across status, analysis, mixer, and other utility readouts.
+2. **Factory-plugin shell patterns are still repeated locally** instead of being promoted into reusable plugin-shell primitives.
+3. **Several controls are still hand-rolled with raw HTML or hardcoded local styling** where they should use shared components or a thin themed wrapper.
 
 This audit was expanded beyond the plugin suite and now covers recurring patterns across:
 
@@ -34,15 +36,118 @@ This audit was expanded beyond the plugin suite and now covers recurring pattern
 - `src/modules/*/presentations/components/*`
 - arrangement, workspace, inspector, transport, AI, project, collaboration, virtual keyboard, sample browser, and the factory plugin panels
 
-At the time of this expanded pass:
+At the time of the exhaustive presentation sweep:
 
 - about `26` shared component files exist under `src/components`
 - roughly `249` presentation view/component/contract files were considered across `src/modules/*/presentations`
-- about `36` files still matched the older repeated dark header chrome pattern directly
 - about `9` files define local plugin-shell card helpers like `MetricTile`, `SectionCard`, `SideCard`, or `ControlCard`
 - about `5` presentation files still use raw `input[type="range"]`
-- about `10` files still expose the tiny uppercase micro-label pattern directly as literal class strings
-- about `10` presentation files already contain repeated empty, blocked, or selection-required state copy blocks
+- multiple presentation files still expose tiny uppercase labels, compact chips, status dots, and readout treatments directly as literal class strings
+- empty, blocked, and selection-required states are much more centralized than they were at the start of the audit, but a few local variants still remain
+
+---
+
+## Implementation Status Update
+
+The following shared primitives and utilities now exist and are live adopters, so the audit should treat those families as partially addressed rather than hypothetical:
+
+- neutral DAW shell primitives:
+  - `src/components/daw/DawHeaderBand.tsx`
+  - `src/components/daw/DawControlStrip.tsx`
+  - `src/components/daw/DawEmptyState.tsx`
+  - `src/components/daw/DawAnalysisCard.tsx`
+  - `src/components/daw/DawDisplaySurface.tsx`
+  - `src/components/daw/DawChannelStripShell.tsx`
+  - `src/components/daw/DawSideRail.tsx`
+  - `src/components/daw/DawGridHeaderCell.tsx`
+  - `src/components/daw/DawUtilityPanel.tsx`
+- small repeated presentation primitives:
+  - `src/components/daw/DawCompactSelect.tsx`
+  - `src/components/daw/DawInlineHint.tsx`
+  - `src/components/daw/DawMicroBadge.tsx`
+  - `src/components/daw/DawSectionDivider.tsx`
+  - `src/components/daw/DawStatusDot.tsx`
+  - `src/components/daw/DawMeterBar.tsx`
+  - `src/components/daw/DawReadoutRow.tsx`
+  - `src/components/daw/DawMiniSectionHeader.tsx`
+- shared utility/material recipes in `src/styles/main.css`:
+  - `daw-header-band`
+  - `daw-floating-surface`
+  - `daw-readout-well`
+  - `daw-side-rail`
+  - `daw-grid-header-cell`
+- sidebar-local shared presentation helpers:
+  - `src/modules/Workspace/presentations/components/Sidebar/SearchSummary.tsx`
+- inspector-local shared presentation helpers:
+  - `src/modules/Workspace/presentations/components/Inspector/ChoiceCard.tsx`
+  - `src/modules/Workspace/presentations/components/Inspector/ControlHeader.tsx`
+  - `src/modules/Workspace/presentations/components/Inspector/InsetPanel.tsx`
+  - `src/modules/Workspace/presentations/components/Inspector/MetaText.tsx`
+  - `src/modules/Workspace/presentations/components/Inspector/SurfaceCard.tsx`
+- workspace-local floating-menu helpers:
+  - `src/modules/Workspace/presentations/components/FloatingMenuParts.tsx`
+- a local shared automation family:
+  - `src/modules/Workspace/presentations/views/AutomationView/AutomationControls.tsx`
+
+These already have real adoption across shell, transport, sidebar, prompt, automation, inspector, mixer, collaboration, command, and arrangement views, including but not limited to:
+
+- `src/modules/Workspace/presentations/views/PreferencesDialog.tsx`
+- `src/modules/Workspace/presentations/views/SessionView.tsx`
+- `src/modules/Workspace/presentations/views/PromptBar.tsx`
+- `src/modules/Workspace/presentations/views/Prompt/LlmStatusBadge.tsx`
+- `src/modules/Workspace/presentations/views/StatusBar.tsx`
+- `src/modules/Workspace/presentations/views/Transport/ProjectName.tsx`
+- `src/modules/Workspace/presentations/views/TempoEditor.tsx`
+- `src/modules/Workspace/presentations/views/ClipView/PianoRollToolbar.tsx`
+- `src/modules/Workspace/presentations/views/ClipView/AutomationLane.tsx`
+- `src/modules/Workspace/presentations/views/Mixer/ExpandedChannelStrip.tsx`
+- `src/modules/Workspace/presentations/views/Mixer/DeviceChainSection.tsx`
+- `src/modules/Workspace/presentations/views/Mixer/SendsSection.tsx`
+- `src/modules/Workspace/presentations/views/Mixer/IOSection.tsx`
+- `src/modules/Workspace/presentations/views/Mixer/IOSection.tsx`
+- `src/modules/Workspace/presentations/views/Inspector/TrackDevicesSection.tsx`
+- `src/modules/Workspace/presentations/views/Inspector/TrackLatencySection.tsx`
+- `src/modules/Workspace/presentations/views/Inspector/TrackLevelSection.tsx`
+- `src/modules/Workspace/presentations/views/Inspector/TrackRoutingSection.tsx`
+- `src/modules/Workspace/presentations/views/Inspector/ClipInspector.tsx`
+- `src/modules/Workspace/presentations/views/Inspector/TrackMidiOutputSection.tsx`
+- `src/modules/Workspace/presentations/views/Inspector/TrackVcaSection.tsx`
+- `src/modules/Workspace/presentations/views/Inspector/DeviceParameterControl.tsx`
+- `src/modules/Workspace/presentations/views/Metering/LUFSMeter.tsx`
+- `src/modules/Workspace/presentations/views/AutomationBottomPanel.tsx`
+- `src/modules/Workspace/presentations/views/AutomationView/TrackAutomationSection.tsx`
+- `src/modules/Workspace/presentations/views/AutomationView/AutomationLaneHeader.tsx`
+- `src/modules/Workspace/presentations/views/Sidebar/ColorTab.tsx`
+- `src/modules/Workspace/presentations/views/Sidebar/StageTab.tsx`
+- `src/modules/Workspace/presentations/views/Sidebar/InstrumentsTab.tsx`
+- `src/modules/Arrangement/presentations/views/ArrangementBar.tsx`
+- `src/modules/Arrangement/presentations/views/TrackHeader/InputSelector.tsx`
+- `src/modules/Arrangement/presentations/views/TrackListView.tsx`
+- `src/modules/Arrangement/presentations/views/TimelineSurface.tsx`
+- `src/modules/Command/presentations/views/CommandPalette.tsx`
+- `src/modules/Command/presentations/views/UndoHistoryPanel.tsx`
+- `src/modules/Collaboration/presentations/views/CollaborationPanel.tsx`
+- `src/modules/AiRuntime/presentations/views/ChatPanel.tsx`
+- `src/modules/AiRuntime/presentations/views/GenerativeAiPanel.tsx`
+- `src/modules/AiRuntime/presentations/views/PatternBrowser.tsx`
+- `src/modules/AiRuntime/presentations/components/mixAnalysis/MixAnalysisSections.tsx`
+
+Because of that, several earlier findings are now only partially open:
+
+- repeated DAW header and shell chrome: substantially addressed, but not complete
+- floating menu/context surfaces: substantially addressed for DAW-facing menus, but not fully eliminated repo-wide
+- empty/blocked states: partially addressed through `DawEmptyState` and sidebar-local empty-state reuse
+- transport/readout wells: partially addressed through `daw-readout-well` and related adopters
+- compact DAW select controls: partially addressed through `DawCompactSelect`
+- tiny micro-label / chip / status-dot families: partially addressed through `DawMicroBadge`, `DawSectionDivider`, `DawStatusDot`, and `SearchSummary`
+
+The highest-priority unresolved areas after this implementation pass are now:
+
+1. compact inline meter/readout rows and status-meter treatments
+2. analysis and metering micro-surfaces
+3. remaining mixer/internal strip-side repeated readouts and labels
+4. plugin-shell cards, metric tiles, and themed chip families that still live locally
+5. remaining raw slider/drawbar families
 
 ---
 
@@ -52,32 +157,32 @@ The earlier audit directions still hold, but a fresh sweep makes three things mo
 
 1. **Transport duplication is broader than the transport folder alone.**
    The shared “micro shell + readout + divider” grammar now clearly spans:
-   - `src/modules/Workspace/presentations/views/Transport/TransportControls.tsx:60`
-   - `src/modules/Workspace/presentations/views/Transport/PanelToggles.tsx:64`
-   - `src/modules/Workspace/presentations/views/Transport/UndoRedoButtons.tsx:17`
-   - `src/modules/Workspace/presentations/views/Transport/SoloModeSelector.tsx:34`
-   - `src/modules/Workspace/presentations/views/Transport/ProjectName.tsx:63`
-   - `src/modules/Workspace/presentations/views/TempoEditor.tsx:17`
-   - `src/modules/Workspace/presentations/views/ToolSelector.tsx:32`
-   - `src/modules/Project/presentations/views/ArrangementSelector.tsx:99`
+    - `src/modules/Workspace/presentations/views/Transport/TransportControls.tsx:60`
+    - `src/modules/Workspace/presentations/views/Transport/PanelToggles.tsx:64`
+    - `src/modules/Workspace/presentations/views/Transport/UndoRedoButtons.tsx:17`
+    - `src/modules/Workspace/presentations/views/Transport/SoloModeSelector.tsx:34`
+    - `src/modules/Workspace/presentations/views/Transport/ProjectName.tsx:63`
+    - `src/modules/Workspace/presentations/views/TempoEditor.tsx:17`
+    - `src/modules/Workspace/presentations/views/ToolSelector.tsx:32`
+    - `src/modules/Project/presentations/views/ArrangementSelector.tsx:99`
 
 2. **Empty and blocked states are a more urgent cross-module family than the original summary made explicit.**
    Clear repeated examples now include:
-   - `src/modules/AudioEngine/presentations/views/PluginBrowser.tsx:48`
-   - `src/modules/AudioEngine/presentations/views/PluginScanSettings.tsx:35`
-   - `src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx:175`
-   - `src/modules/Collaboration/presentations/views/NearbyPanel.tsx:63`
-   - `src/modules/Workspace/presentations/views/AutomationBottomPanel.tsx:169`
-   - `src/modules/Workspace/presentations/views/MixerPanel.tsx:219`
-   - `src/modules/Workspace/presentations/views/AutomationLane/CCLane.tsx:129`
-   - `src/modules/Workspace/presentations/views/AutomationLane/PitchBendLane.tsx:130`
-   - `src/modules/Workspace/presentations/views/Inspector/TrackDevicesSection.tsx:171`
+    - `src/modules/AudioEngine/presentations/views/PluginBrowser.tsx:48`
+    - `src/modules/AudioEngine/presentations/views/PluginScanSettings.tsx:35`
+    - `src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx:175`
+    - `src/modules/Collaboration/presentations/views/NearbyPanel.tsx:63`
+    - `src/modules/Workspace/presentations/views/AutomationBottomPanel.tsx:169`
+    - `src/modules/Workspace/presentations/views/MixerPanel.tsx:219`
+    - `src/modules/Workspace/presentations/views/AutomationLane/CCLane.tsx:129`
+    - `src/modules/Workspace/presentations/views/AutomationLane/PitchBendLane.tsx:130`
+    - `src/modules/Workspace/presentations/views/Inspector/TrackDevicesSection.tsx:171`
 
 3. **The plugin-shell helper island is still concentrated in nine files, but the visual grammar around those helpers has spread farther.**
    Even where modules no longer define local helper components, they still recreate the same small-label, metric, and quick-read grammar directly:
-   - `src/modules/Bacteria/presentations/views/BacteriaPanel.tsx:203`
-   - `src/modules/Crust/presentations/views/CrustPanel.tsx:52`
-   - `src/modules/Fermenter/presentations/views/FermenterPanel.tsx:114`
+    - `src/modules/Bacteria/presentations/views/BacteriaPanel.tsx:203`
+    - `src/modules/Crust/presentations/views/CrustPanel.tsx:52`
+    - `src/modules/Fermenter/presentations/views/FermenterPanel.tsx:114`
 
 This keeps the implementation order unchanged:
 
@@ -99,10 +204,10 @@ The same pass now also explicitly closed the remaining `Workspace` editor and sh
 
 - automation, clip view, inspector internals, metering internals, mixer internals, sidebar tabs, transport subcomponents, routing/timeline helpers, and shell dialogs
 - presentation-side outliers that were easy to miss from the earlier Workspace-only remainder count:
-  - `src/modules/Command/presentations/views/keyboardShortcutsContract.ts`
-  - `src/modules/AiRuntime/presentations/components/GenerativeParamGrids.tsx`
-  - `src/modules/AiRuntime/presentations/components/mixAnalysis/MixAnalysisSections.tsx`
-  - `src/modules/Arrangement/presentations/views/TimelineContextMenus.tsx`
+    - `src/modules/Command/presentations/views/keyboardShortcutsContract.ts`
+    - `src/modules/AiRuntime/presentations/components/GenerativeParamGrids.tsx`
+    - `src/modules/AiRuntime/presentations/components/mixAnalysis/MixAnalysisSections.tsx`
+    - `src/modules/Arrangement/presentations/views/TimelineContextMenus.tsx`
 
 Coverage is now exhaustive for the current on-disk target inventory under:
 
@@ -123,74 +228,74 @@ No remaining presentation view/component families are intentionally left outside
 
 4. **Rack rows with inline expand/collapse and bypass badges form a real family.**
    This is no longer just a Yeast one-off. The same “compact module row + live/bypass badge + expander” grammar is now clearly recurring in:
-   - `src/modules/Yeast/presentations/views/YeastPanel.tsx:404`
-   - `src/modules/Yeast/presentations/views/YeastPanel.tsx:533`
-   - `src/modules/Workspace/presentations/views/Inspector/TrackDevicesSection.tsx`
-   - `src/modules/Workspace/presentations/views/Mixer/DeviceChainSection.tsx`
+    - `src/modules/Yeast/presentations/views/YeastPanel.tsx:404`
+    - `src/modules/Yeast/presentations/views/YeastPanel.tsx:533`
+    - `src/modules/Workspace/presentations/views/Inspector/TrackDevicesSection.tsx`
+    - `src/modules/Workspace/presentations/views/Mixer/DeviceChainSection.tsx`
 
 5. **Hero visualizer + control deck sections are a full plugin family, not isolated local taste.**
    The same layout shows up repeatedly:
-   - a large canvas or diagram first
-   - a compact row or grid of knobs below
-   - a small header rail with chips or mode buttons
+    - a large canvas or diagram first
+    - a compact row or grid of knobs below
+    - a small header rail with chips or mode buttons
 
-   Clear examples now include:
-   - `src/modules/Fermenter/presentations/components/EnvelopeSection.tsx:39`
-   - `src/modules/Fermenter/presentations/components/FilterSection.tsx:30`
-   - `src/modules/Fermenter/presentations/components/LfoSection.tsx:58`
-   - `src/modules/Levain/presentations/components/ExpressionPanel.tsx:108`
-   - `src/modules/Levain/presentations/components/LegatoTuning.tsx:106`
-   - `src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx:291`
-   - `src/modules/Gluten/presentations/views/GlutenPanel.tsx:430`
+    Clear examples now include:
+    - `src/modules/Fermenter/presentations/components/EnvelopeSection.tsx:39`
+    - `src/modules/Fermenter/presentations/components/FilterSection.tsx:30`
+    - `src/modules/Fermenter/presentations/components/LfoSection.tsx:58`
+    - `src/modules/Levain/presentations/components/ExpressionPanel.tsx:108`
+    - `src/modules/Levain/presentations/components/LegatoTuning.tsx:106`
+    - `src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx:291`
+    - `src/modules/Gluten/presentations/views/GlutenPanel.tsx:430`
 
 6. **“Quick read” and “status tile” sidecards are repeated enough to deserve a neutral primitive pair.**
    The DAW should stay quieter than the plugins, but the pattern is stable:
-   - small uppercase eyebrow
-   - 2–5 compact metric tiles
-   - a low-contrast diagnostic list in a side rail
+    - small uppercase eyebrow
+    - 2–5 compact metric tiles
+    - a low-contrast diagnostic list in a side rail
 
-   Confirmed again in:
-   - `src/modules/Gluten/presentations/views/GlutenPanel.tsx:536`
-   - `src/modules/Levain/presentations/views/LevainPanel.tsx:318`
-   - `src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx:333`
-   - `src/modules/Proof/presentations/views/ProofPanel.tsx:293`
-   - `src/modules/Scoring/presentations/views/ScoringPanel.tsx:143`
-   - `src/modules/Toaster/presentations/views/ToasterPanel.tsx:286`
+    Confirmed again in:
+    - `src/modules/Gluten/presentations/views/GlutenPanel.tsx:536`
+    - `src/modules/Levain/presentations/views/LevainPanel.tsx:318`
+    - `src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx:333`
+    - `src/modules/Proof/presentations/views/ProofPanel.tsx:293`
+    - `src/modules/Scoring/presentations/views/ScoringPanel.tsx:143`
+    - `src/modules/Toaster/presentations/views/ToasterPanel.tsx:286`
 
 7. **Keyboard/split and step-grid editors are recurring enough to track as their own primitive families.**
    These should not collapse into generic cards, but the chrome, labels, and interaction affordances repeat:
-   - `src/modules/Yeast/presentations/components/KeyboardSplit.tsx:22`
-   - `src/modules/VirtualKeyboard/presentations/views/VirtualKeyboard.tsx:344`
-   - `src/modules/Toaster/presentations/components/StepSequencer.tsx:21`
-   - `src/modules/Yeast/presentations/components/StepPatternEditor.tsx:22`
+    - `src/modules/Yeast/presentations/components/KeyboardSplit.tsx:22`
+    - `src/modules/VirtualKeyboard/presentations/views/VirtualKeyboard.tsx:344`
+    - `src/modules/Toaster/presentations/components/StepSequencer.tsx:21`
+    - `src/modules/Yeast/presentations/components/StepPatternEditor.tsx:22`
 
 8. **Launch, loading, notification, and lightweight utility overlays form a real shell-side family.**
    These are not dialogs and not menus, but they keep repeating the same understated overlay grammar:
-   - branded or task-specific title block
-   - restrained ambient glow or gradient wash
-   - compact status copy or action row
-   - fixed-position or full-screen shell treatment
+    - branded or task-specific title block
+    - restrained ambient glow or gradient wash
+    - compact status copy or action row
+    - fixed-position or full-screen shell treatment
 
-   Confirmed in:
-   - `src/modules/Workspace/presentations/components/LaunchScreen.tsx`
-   - `src/modules/Workspace/presentations/components/ProjectLoadingOverlay.tsx`
-   - `src/modules/Workspace/presentations/components/NotificationToast.tsx`
-   - `src/modules/AiRuntime/presentations/views/VoiceCommandOverlay.tsx`
-   - `src/modules/Collaboration/presentations/views/PresenceOverlay.tsx`
+    Confirmed in:
+    - `src/modules/Workspace/presentations/components/LaunchScreen.tsx`
+    - `src/modules/Workspace/presentations/components/ProjectLoadingOverlay.tsx`
+    - `src/modules/Workspace/presentations/components/NotificationToast.tsx`
+    - `src/modules/AiRuntime/presentations/views/VoiceCommandOverlay.tsx`
+    - `src/modules/Collaboration/presentations/views/PresenceOverlay.tsx`
 
 9. **Measured analysis cards and compact analysis-gallery wrappers are also recurring enough to deserve a neutral family.**
    The visualizer internals should stay local, but the surrounding chrome is repeating:
-   - a compact header band
-   - an inset measurement well
-   - a shallow, bottom-panel-friendly card height
-   - optional measured canvas host behavior
+    - a compact header band
+    - an inset measurement well
+    - a shallow, bottom-panel-friendly card height
+    - optional measured canvas host behavior
 
-   Confirmed in:
-   - `src/modules/Workspace/presentations/views/AnalysisPanel.tsx`
-   - `src/modules/Workspace/presentations/components/MiniMasterSpectrum.tsx`
-   - `src/modules/Workspace/presentations/views/Metering/Goniometer.tsx`
-   - `src/modules/Workspace/presentations/views/Metering/Oscilloscope.tsx`
-   - `src/modules/Workspace/presentations/views/Metering/SpectrumAnalyzer.tsx`
+    Confirmed in:
+    - `src/modules/Workspace/presentations/views/AnalysisPanel.tsx`
+    - `src/modules/Workspace/presentations/components/MiniMasterSpectrum.tsx`
+    - `src/modules/Workspace/presentations/views/Metering/Goniometer.tsx`
+    - `src/modules/Workspace/presentations/views/Metering/Oscilloscope.tsx`
+    - `src/modules/Workspace/presentations/views/Metering/SpectrumAnalyzer.tsx`
 
 10. **Editor control rails and lane toolstrips are now clearly a cross-editor family.**
     The same compact-height grammar appears across MIDI, audio, automation, and timeline tools:
@@ -210,6 +315,7 @@ No remaining presentation view/component families are intentionally left outside
     - `src/modules/Workspace/presentations/views/SessionView.tsx`
 
 11. **Inspector assignment cards and chooser rows are a real neutral family, not just section-local markup.**
+   Status: partially addressed by the inspector-local `ChoiceCard`, `SurfaceCard`, and `MetaText` helpers now used in `TrackDevicesSection`, `TrackClipsSection`, `TrackAlternativesSection`, `TakesSection`, `TrackRoutingSection`, `TrackMidiOutputSection`, `TrackVcaSection`, `TrackAutomationSection`, and adjacent inspector cards, but the broader chooser-row/assignment family still spans additional inspector and routing/send surfaces.
     The same pattern repeats across track management, routing, takes, alternatives, sends, clips, and MIDI destinations:
     - compact section header with a minimal action button
     - one- or two-column cards for the current assignment set
@@ -273,6 +379,8 @@ The audit below only calls out inline styling when it is really repeating visual
 
 ### 1. Repeated DAW toolbar/header chrome should become shared utilities or wrappers
 
+Status: partially addressed by `DawHeaderBand`, `DawControlStrip`, and the shared DAW shell utilities in `src/styles/main.css`, but a few view-local variants still remain.
+
 The same “dark metal header strip” styling is repeated across many non-plugin views:
 
 - `src/modules/Arrangement/presentations/views/ArrangementBar.tsx:280`
@@ -312,6 +420,8 @@ This is the single largest low-risk consolidation opportunity outside plugin pan
 ---
 
 ### 2. Floating menus and context surfaces are still hand-rolled repeatedly
+
+Status: partially addressed by `daw-floating-surface` and `DawUtilityPanel`; many DAW-facing custom menus have already converged, including arrangement menus plus the mixer/inspector popups in `ExpandedChannelStrip`, `IOSection`, and `TrackDevicesSection`, but this is not yet universal.
 
 Custom floating menu surfaces are repeated instead of using the shared floating/menu treatment:
 
@@ -504,6 +614,8 @@ The keys themselves should stay custom. The framing around them should move clos
 
 ### 8. AI Runtime panels still duplicate a lot of shell work already solved elsewhere
 
+Status: partially addressed. `ChatPanel`, `GenerativeAiPanel`, `PromptBar`, `LlmStatusBadge`, and related utility surfaces are more centralized now, but AI analysis/detail interiors still have local repeated micro-surfaces.
+
 The AI panels still use local header/footer chrome and low-level layout styling:
 
 - `src/modules/AiRuntime/presentations/views/ChatPanel.tsx`
@@ -530,6 +642,8 @@ These should be more understated than plugin shells, but they still should not b
 ---
 
 ### 9. Arrangement and Inspector shells still need a shared “DAW panel chrome” layer
+
+Status: partially addressed by the first neutral-shell primitive pass (`DawHeaderBand`, `DawEmptyState`, `DawSideRail`, `DawGridHeaderCell`, `DawDisplaySurface`, `DawAnalysisCard`), but the surrounding family is not complete.
 
 Beyond toolbar strips, there is repeated broader shell framing in:
 
@@ -591,6 +705,8 @@ These are ideal “small but high-leverage” additions because they will reduce
 
 ### 11. Side-panel and utility-shell layouts are repeated across AI, collaboration, project, and browser surfaces
 
+Status: partially addressed by `DawUtilityPanel`, `DawSideRail`, and shared floating surfaces, but some utility-panel interiors still duplicate local framing and item grammar.
+
 Several non-plugin side panels are structurally similar but still implemented separately:
 
 - `src/modules/AiRuntime/presentations/views/ChatPanel.tsx`
@@ -623,6 +739,8 @@ These should sit below plugin flair in visual intensity and become the standard 
 ---
 
 ### 12. Transport-area components still share a repeated chrome language without shared primitives
+
+Status: partially addressed by `daw-readout-well`, `DawControlStrip`, and several migrated transport/project widgets, but compact readout and meter rows remain duplicated.
 
 The transport cluster still duplicates top-bar and display-well styling in many places:
 
@@ -719,6 +837,8 @@ The current `ArrangeView.tsx` horizontal scrollbar is especially a good candidat
 
 ### 15. Small label systems are duplicated everywhere and need typography tokens or tiny primitives
 
+Status: partially addressed by `DawMicroBadge`, `DawSectionDivider`, sidebar `SearchSummary`, and some migrated micro-label families, but typography is still only partly tokenized.
+
 The app repeats a lot of very small uppercase label styling:
 
 - `text-[8px] uppercase tracking-[0.24em]`
@@ -752,6 +872,8 @@ This is lower urgency than surface primitives, but the repetition level is high 
 ---
 
 ### 16. Empty-state and “desktop required” cards should be standardized
+
+Status: partially addressed by `DawEmptyState` and broader sidebar/utility-panel empty-state reuse, but a few feature-gate and picker-specific variants still remain.
 
 There are multiple variants of informational empty/blocked states:
 
@@ -839,6 +961,8 @@ This would reduce confusion about when something should use a quiet DAW pattern 
 
 ### 19. Sidebar/tab-rail navigation patterns are starting to repeat and should be normalized
 
+Status: partially addressed by `DawSideRail`, `DawGridHeaderCell`, and the sidebar-local summary/divider cleanup, but full rail/nav-item standardization is still open.
+
 There are several horizontally or vertically tabbed navigation bands that are each solving the same problem slightly differently:
 
 - `src/modules/Workspace/presentations/views/Sidebar.tsx`
@@ -902,6 +1026,8 @@ This would clean up a lot of custom list UIs without forcing everything into a s
 
 ### 21. Readout wells and micro-status displays should become shared display primitives
 
+Status: partially addressed by `daw-readout-well`, `DawDisplaySurface`, `DawStatusDot`, `DawMeterBar`, and `DawReadoutRow`, but several compact status clusters and analysis-side adopters remain local.
+
 A number of views render compact hardware-like readouts:
 
 - `PlayheadDisplay.tsx`
@@ -963,6 +1089,8 @@ This would let dialogs feel related without making them look like generic web ad
 
 ### 23. Status/selection/empty-state copy patterns should become reusable content components, not just styles
 
+Status: partially addressed by `DawEmptyState`, `DawInlineHint`, and sidebar `SearchSummary`, but selection-summary and richer blocked-state content patterns are still fragmented.
+
 There are many small status blocks that are structurally similar:
 
 - “No track selected”
@@ -1000,6 +1128,8 @@ These should enforce icon/title/body/action structure so the app stops reinventi
 ---
 
 ### 24. Some repeated separators and seams still exist outside the Separator primitive
+
+Status: partially addressed by `DawSectionDivider` and existing seam utilities, but some local separator recipes remain.
 
 A lot of views still render their own seam lines with custom inline gradients:
 
@@ -1054,6 +1184,8 @@ Standardize around shared dialog internals, not just `Dialog` itself:
 ---
 
 ### 26. Transport controls are split across too many bespoke micro-shells
+
+Status: partially addressed. The transport family is materially more centralized than at audit start, but it still needs a dedicated compact readout/meter-row pass.
 
 The transport area is not only repeating chrome styling; it is also repeating a structural cluster pattern across many tiny components:
 
@@ -1246,7 +1378,9 @@ That would keep modal UX calmer and more consistent without making every dialog 
 
 ---
 
-### 32. The app still lacks a real DAW form kit for selects, small fields, and inline editors
+### 32. The app still lacks a complete DAW form kit for selects, small fields, and inline editors
+
+Status: partially addressed by `DawCompactSelect`, now adopted in `PianoRollToolbar`, `AutomationLane`, `TempoEditor`, `TrackMidiOutputSection`, `TrackVcaSection`, `InputSelector`, `ClipInspector`, `DeviceParameterControl`, `PatternBrowser`, and the save form in `InstrumentsTab`, but the broader field/edit family is still fragmented.
 
 Many module-level views are still styling compact DAW form controls directly instead of composing thin themed wrappers:
 
@@ -1256,6 +1390,8 @@ Many module-level views are still styling compact DAW form controls directly ins
 - `src/modules/Workspace/presentations/views/Inspector/TrackHeaderSection.tsx`
 - `src/modules/Workspace/presentations/views/Inspector/ClipInspector.tsx`
 - `src/modules/Workspace/presentations/views/Inspector/TrackDevicesSection.tsx`
+- `src/modules/Workspace/presentations/views/TempoEditor.tsx`
+- `src/modules/Arrangement/presentations/views/TrackHeader/InputSelector.tsx`
 
 Repeated patterns include:
 
@@ -1269,7 +1405,8 @@ Repeated patterns include:
 
 The design system needs a small DAW form layer, calmer than plugin controls:
 
-- `DawSelect`
+- `DawCompactSelect` for neutral shell selectors
+- `DawSelect` or a broader field wrapper only if the remaining non-compact cases truly converge
 - `DawFieldLabel`
 - `DawInlineEditor`
 - `DawSliderField`
@@ -1280,6 +1417,8 @@ This would eliminate a lot of hand-themed form code while keeping the DAW shell 
 ---
 
 ### 33. Inspector subsections repeat the same local card and well language
+
+Status: partially addressed by the inspector-local `ControlHeader`, `InsetPanel`, `SurfaceCard`, and `MetaText` helpers now shared across `ClipInspector`, `ClipGainEnvelopeSection`, `TrackLevelSection`, `TrackHeaderSection`, `TrackNotesSection`, `SendsEditor`, `ClipAudioAiSection`, `TrackMidiOutputSection`, `TrackVcaSection`, `TrackRoutingSection`, `TrackAutomationSection`, `SignalFlowSection`, `DeviceInspector`, `TrackClipsSection`, `TrackAlternativesSection`, and `TakesSection`, but the broader inspector card/well family is still local and inconsistent.
 
 The inspector is not just repeating section headers; it is also repeating a specific inset-card treatment for local editing blocks:
 
@@ -1342,6 +1481,8 @@ The goal is not to eliminate all typographic classes; it is to stop rebuilding t
 
 ### 35. Floating utility overlays should have their own understated primitive family
 
+Status: partially addressed by `DawUtilityPanel` and the shared floating-surface treatment.
+
 Not every floating UI in the app is a menu or a dialog. Some are lighter utility overlays with their own recurring structure:
 
 - `src/modules/AiRuntime/presentations/views/VoiceCommandOverlay.tsx`
@@ -1369,6 +1510,8 @@ This would keep these surfaces tactile and polished without overloading the menu
 ---
 
 ### 36. Status and metric clusters are still composed ad hoc across DAW shells
+
+Status: partially addressed by the first `DawMeterBar` / `DawReadoutRow` adoption in `StatusBar`, `mixAnalysis`, `TrackLatencySection`, `TrackLevelSection`, `TrackRoutingSection`, `ClipInspector`, and `LUFSMeter`, but this remains one of the highest-value neutral-shell follow-up passes.
 
 Several views build dense little metric groups out of raw spans, bars, pills, and mono readouts instead of using a shared cluster pattern:
 
@@ -1599,6 +1742,8 @@ The important nuance is that not every local helper should be centralized. Only 
 
 ### 44. Embedded mini-visual widgets need a lightweight shared wrapper language
 
+Status: partially addressed by `DawAnalysisCard` and related measured-shell adoption, but analysis/metering internals still repeat local wrappers.
+
 There are several compact visual widgets that are not full panels, but still need consistent framing and labeling:
 
 - `src/modules/Workspace/presentations/components/MiniMasterSpectrum.tsx`
@@ -1653,6 +1798,8 @@ This does not need to be used across the whole DAW, but it should still be part 
 
 ### 46. Automation lane micro-controls are repeating a small but distinct control grammar
 
+Status: partially addressed by `AutomationControls.tsx`, but lane-local readouts and some compact controls still remain fragmented.
+
 Automation editing introduces a lot of tiny overlay controls that are not quite toolbar buttons and not quite inspector controls:
 
 - `src/modules/Workspace/presentations/views/AutomationView/AutomationLaneControls.tsx`
@@ -1678,6 +1825,8 @@ This would help automation, clip editors, and other dense editing overlays feel 
 ---
 
 ### 47. Mixer internals repeat a distinct channel-strip sub-language that should be formalized
+
+Status: partially addressed by `DawChannelStripShell`, `DawMiniSectionHeader`, the shared floating-surface adoption in mixer popups, and the readout-row adoption in adjacent inspector/metering surfaces, but the broader strip-side micro-language is still open.
 
 The mixer already uses strong primitives like `Fader`, `RotaryKnob`, and `LatchButton`, but the strip internals still repeat their own card/surface composition:
 
@@ -1709,6 +1858,8 @@ This would keep the mixer feeling intentional and tactile without rebuilding str
 ---
 
 ### 48. Metering components need a shared wrapper and labeling language even when the rendering stays custom
+
+Status: partially addressed at the micro-family level by `DawMeterBar` / `DawReadoutRow`, but the broader wrapper and labeling language is still open and should stay on the near-term roadmap.
 
 The metering views are correctly custom in their actual rendering logic, but the framing and labeling still repeat:
 
@@ -1765,6 +1916,8 @@ It would work well for analysis, diagnostics, and some AI-side insight panels.
 ---
 
 ### 50. Status badges and model badges deserve a shared pill/badge family
+
+Status: partially addressed by `DawMicroBadge` and `DawStatusDot`, but adoption is still incomplete outside the most obvious prompt/sidebar/transport surfaces.
 
 There are many small status pills, model badges, and approval/format markers across the app:
 
@@ -1847,6 +2000,8 @@ This would keep richer context menus coherent instead of each file inventing its
 ---
 
 ### 53. Prompt and command surfaces are converging on their own compact interaction grammar
+
+Status: partially addressed by the prompt/popup/readout cleanup already landed in `PromptBar`, `LlmStatusBadge`, `CommandPalette`, and related DAW utility surfaces.
 
 There is a growing family of compact “command entry + status + suggestions” surfaces:
 

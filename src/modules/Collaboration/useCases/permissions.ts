@@ -112,7 +112,7 @@ export class PermissionManager {
     }
 
     /** Handle an incoming permission message. */
-    handleMessage(_peerId: PeerId, message: PeerMessage): void {
+    handleMessage(peerId: PeerId, message: PeerMessage): void {
         if (message.type !== 'crdt-sync' || message.docId !== '__permissions__') {
             return;
         }
@@ -120,6 +120,12 @@ export class PermissionManager {
         const data = JSON.parse(message.data) as PermissionMessage;
 
         if (data.type === 'role.grant') {
+            // Only accept grants from a peer the store recognises as the host.
+            const state = collaborationStore.value;
+            const senderIsHost = state?.peers.find((p) => p.id === peerId && p.isHost);
+            if (!senderIsHost) {
+                return;
+            }
             const existing = this.grants.get(data.grant.peerId);
             if (!existing || data.grant.epoch > existing.epoch) {
                 this.grants.set(data.grant.peerId, data.grant);

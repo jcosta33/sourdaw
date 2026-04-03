@@ -1,4 +1,5 @@
 import { type ReactElement, type MouseEvent, useState, useRef, useSyncExternalStore } from 'react';
+import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { cn } from '#/helpers/Styles/cn';
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
@@ -126,7 +127,12 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
     if (!clipId) {
         return (
             <div className="flex h-full items-center justify-center">
-                <p className="text-[10px] text-muted-foreground">No clip selected</p>
+                <DawEmptyState
+                    compact
+                    className="max-w-xs"
+                    title="No clip selected"
+                    description="Choose a MIDI clip to edit this CC lane."
+                />
             </div>
         );
     }

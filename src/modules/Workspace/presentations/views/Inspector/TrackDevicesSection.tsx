@@ -1,7 +1,6 @@
 import { type ReactElement, useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
-import { Card } from '#/components/ui/card';
 import { Button } from '#/components/ui/button';
 import { Plus, Power, Trash2, Monitor, LayoutGrid } from 'lucide-react';
 import { getPlatformPlugins } from '#/modules/Arrangement/useCases/trackQueries';
@@ -17,6 +16,12 @@ import { getPlatformCapabilities, DISABLED_REASONS } from '#/helpers/platformCap
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { cn } from '#/helpers/Styles/cn';
 import { openPluginGui } from '#/modules/Plugin/useCases/pluginLifecycle';
+import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
+import {
+    FloatingMenuDisabledRow,
+    FloatingMenuSectionLabel,
+    FloatingMenuSeparator,
+} from '../../components/FloatingMenuParts';
 
 type TrackDevicesSectionProps = {
     track: Track;
@@ -67,12 +72,10 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                         </Button>
                         {showDeviceMenu ? (
                             <div
-                                className="absolute right-0 top-full z-50 mt-1 w-48 rounded-md border border-border-soft border-t-[var(--color-light-edge)] bg-surface-overlay py-1 shadow-[0_4px_16px_rgba(0,0,0,0.5)]"
+                                className="daw-floating-surface absolute right-0 top-full z-50 mt-1 w-48 rounded-md py-1"
                                 role="menu"
                             >
-                                <p className="px-3 py-1 text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">
-                                    Effects
-                                </p>
+                                <FloatingMenuSectionLabel>Effects</FloatingMenuSectionLabel>
                                 {getPlatformPlugins().filter((p) => p.category === 'effect').map((plugin) => (
                                     <button
                                         type="button"
@@ -87,10 +90,8 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                         {plugin.name}
                                     </button>
                                 ))}
-                                <div className="mx-2 my-1 border-t border-border/30" />
-                                <p className="px-3 py-1 text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">
-                                    Utility
-                                </p>
+                                <FloatingMenuSeparator />
+                                <FloatingMenuSectionLabel>Utility</FloatingMenuSectionLabel>
                                 {getPlatformPlugins().filter((p) => p.category === 'utility').map((plugin) => (
                                     <button
                                         type="button"
@@ -107,10 +108,8 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                 ))}
                                 {getPlatformPlugins().filter((p) => p.category === 'analyzer').length > 0 ? (
                                     <>
-                                        <div className="mx-2 my-1 border-t border-border/30" />
-                                        <p className="px-3 py-1 text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">
-                                            Analyzer
-                                        </p>
+                                        <FloatingMenuSeparator />
+                                        <FloatingMenuSectionLabel>Analyzer</FloatingMenuSectionLabel>
                                         {getPlatformPlugins().filter((p) => p.category === 'analyzer').map((plugin) => (
                                             <button
                                                 type="button"
@@ -127,10 +126,8 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                         ))}
                                     </>
                                 ) : null}
-                                <div className="mx-2 my-1 border-t border-border/30" />
-                                <p className="px-3 py-1 text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">
-                                    External
-                                </p>
+                                <FloatingMenuSeparator />
+                                <FloatingMenuSectionLabel>External</FloatingMenuSectionLabel>
                                 {getPlatformCapabilities().hasNativePlugins && pluginScanState.scannedPlugins.length > 0 ? (
                                     <div className="max-h-32 overflow-y-auto">
                                         {pluginScanState.scannedPlugins.map((plugin) => (
@@ -154,20 +151,18 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                 ) : (
                                     <Tooltip>
                                         <TooltipTrigger asChild>
-                                            <div
-                                                className="flex items-center gap-2 px-3 py-2 opacity-50 cursor-not-allowed"
-                                                aria-disabled="true"
+                                            <FloatingMenuDisabledRow
+                                                icon={
+                                                    <Monitor
+                                                        className="size-3 shrink-0 text-muted-foreground"
+                                                        aria-hidden="true"
+                                                    />
+                                                }
                                             >
-                                                <Monitor
-                                                    className="size-3 text-muted-foreground shrink-0"
-                                                    aria-hidden="true"
-                                                />
-                                                <span className="text-[10px] text-muted-foreground">
-                                                    {getPlatformCapabilities().hasNativePlugins
-                                                        ? 'No plugins found — scan first'
-                                                        : 'Desktop app required'}
-                                                </span>
-                                            </div>
+                                                {getPlatformCapabilities().hasNativePlugins
+                                                    ? 'No plugins found — scan first'
+                                                    : 'Desktop app required'}
+                                            </FloatingMenuDisabledRow>
                                         </TooltipTrigger>
                                         <TooltipContent side="left" className="max-w-56 text-center">
                                             {getPlatformCapabilities().hasNativePlugins
@@ -184,16 +179,16 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
             {track.devices.length > 0 ? (
                 <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
                     {track.devices.map((device, deviceIndex) => (
-                        <Card
+                        <ChoiceCard
                             key={device.id}
                             className={cn(
-                                'flex items-center justify-between rounded-md shadow-none bg-surface-base border-border/50 p-2 cursor-grab active:cursor-grabbing hover:bg-surface-raised transition-colors',
+                                'flex items-center justify-between cursor-grab active:cursor-grabbing',
                                 device.bypassed ? 'opacity-50' : ''
                             )}
                             onClick={() => {
                                 const descriptor = getPluginById(device.type);
                                 if (descriptor?.hasCustomUI) {
-                                    document.dispatchEvent(new Event(`sourdaw:show-${device.type}-tab`));
+                                    document.dispatchEvent(new CustomEvent(`sourdaw:show-${device.type}-tab`, { detail: { deviceId: device.id } }));
                                 } else {
                                     onSelectDevice(device.id);
                                 }
@@ -276,7 +271,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                     <Trash2 className="size-3 text-muted-foreground" />
                                 </Button>
                             </div>
-                        </Card>
+                        </ChoiceCard>
                     ))}
                 </div>
             ) : (

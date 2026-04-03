@@ -1,6 +1,7 @@
 import { type ReactElement } from 'react';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { getTrackLatency, getCompensationDelay } from '#/modules/AudioEngine/useCases/latencyCompensation';
 
 type TrackLatencySectionProps = {
@@ -19,19 +20,17 @@ export const TrackLatencySection = ({ trackId }: TrackLatencySectionProps): Reac
             <DawHeaderBand compact className="mb-2 rounded-sm" title="Latency" />
             {hasLatency ? (
                 <div className="flex flex-col gap-1 px-1">
-                    <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-muted-foreground">Device chain</span>
-                        <span className="text-[10px] font-mono text-foreground/70">
-                            {latency.deviceLatencyMs.toFixed(2)} ms
-                        </span>
-                    </div>
+                    <DawReadoutRow
+                        label="Device chain"
+                        value={`${latency.deviceLatencyMs.toFixed(2)} ms`}
+                        valueClassName="text-foreground/70"
+                    />
                     {compensationMs > 0 ? (
-                        <div className="flex items-center justify-between">
-                            <span className="text-[10px] text-muted-foreground">PDC delay</span>
-                            <span className="text-[10px] font-mono text-foreground/70">
-                                +{compensationMs.toFixed(2)} ms
-                            </span>
-                        </div>
+                        <DawReadoutRow
+                            label="PDC delay"
+                            value={`+${compensationMs.toFixed(2)} ms`}
+                            valueClassName="text-foreground/70"
+                        />
                     ) : null}
                 </div>
             ) : (

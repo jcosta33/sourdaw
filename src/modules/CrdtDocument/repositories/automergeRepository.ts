@@ -9,6 +9,48 @@ import {
 
 type AnyDoc = Record<string, unknown>;
 
+// ── CRDT Worker ───────────────────────────────────────────────────────────────
+// Heavy Automerge WASM ops (load + loadIncremental loops, merge) run in a
+// background Worker so the main thread stays responsive during project open
+// and collaboration patch ingestion.
+
+let _crdtWorker: Worker | null = null;
+let _crdtWorkerNextId = 0;
+
+function getCrdtWorker(): Worker {
+    if (!_crdtWorker) {
+        _crdtWorker = new Worker(
+            new URL('../workers/crdtWorker.ts', import.meta.url),
+            { type: 'module' }
+        );
+    }
+    return _crdtWorker;
+}
+
+type WorkerResponse =
+    | { id: number; type: 'loaded'; compacted: [string, Uint8Array][]; rootId: string }
+    | { id: number; type: 'merged'; compacted: [string, Uint8Array][]; mergedDocIds: string[]; newDocIds: string[] }
+    | { id: number; type: 'error'; message: string };
+
+function invokeWorker(msg: Record<string, unknown>): Promise<WorkerResponse> {
+    return new Promise((resolve, reject) => {
+        const worker = getCrdtWorker();
+        const id = _crdtWorkerNextId++;
+        const handler = (e: MessageEvent): void => {
+            const data = e.data as WorkerResponse;
+            if (data.id !== id) return;
+            worker.removeEventListener('message', handler);
+            if (data.type === 'error') {
+                reject(new Error(data.message));
+            } else {
+                resolve(data);
+            }
+        };
+        worker.addEventListener('message', handler);
+        worker.postMessage({ ...msg, id });
+    });
+}
+
 /** Callback invoked after any document change for projection. */
 type ChangeListener = () => void;
 
@@ -168,14 +210,48 @@ class AutomergeRepository {
         this.notifyListeners();
     }
 
-    /** Load all documents from a bundle, replacing current state. */
-    loadAll(bundle: DocumentBundle): void {
+    /**
+     * Load all documents from a bundle, replacing current state.
+     *
+     * Heavy WASM parsing (Automerge.load + loadIncremental loops) runs in
+     * crdtWorker.ts. The worker returns compacted binaries; main thread calls
+     * Automerge.load() once per doc (fast — no incremental chain to replay).
+     */
+    async loadAll(bundle: DocumentBundle): Promise<void> {
         this.docs.clear();
 
+        let compacted: [string, Uint8Array][];
+        let rootId: string;
+
+        try {
+            const response = await invokeWorker({
+                type: 'loadBundle',
+                bundle: Array.from(bundle.entries()),
+            });
+            if (response.type !== 'loaded') {
+                throw new Error('Unexpected worker response type');
+            }
+            compacted = response.compacted;
+            rootId = response.rootId;
+        } catch (err) {
+            // Worker unavailable — fall back to synchronous parsing on main thread.
+            console.warn('[AutomergeRepository] CRDT worker failed, falling back to synchronous load:', err);
+            return this._loadAllSync(bundle);
+        }
+
+        for (const [id, bytes] of compacted) {
+            this.docs.set(id, Automerge.load<AnyDoc>(bytes));
+        }
+        this.rootId = rootId;
+
+        this.notifyListeners();
+    }
+
+    /** Synchronous fallback for loadAll (used when worker is unavailable). */
+    private _loadAllSync(bundle: DocumentBundle): void {
         const baseDocs = new Map<DocId, Uint8Array>();
         const incrementals: Array<{ id: DocId; bytes: Uint8Array }> = [];
 
-        // 1. Separate base documents from incremental chunks
         for (const [key, bytes] of bundle) {
             if (key.includes(':incremental:')) {
                 incrementals.push({ id: key, bytes });
@@ -184,38 +260,29 @@ class AutomergeRepository {
             }
         }
 
-        // 2. Load all base documents
         for (const [id, bytes] of baseDocs) {
-            const doc = Automerge.load<AnyDoc>(bytes);
-            this.docs.set(id, doc);
-
+            this.docs.set(id, Automerge.load<AnyDoc>(bytes));
             if (id.startsWith(DOC_PREFIX_ROOT)) {
                 this.rootId = id;
             }
         }
 
-        // 3. Apply incremental chunks in chronological order
         incrementals.sort((a, b) => {
-            const timeA = parseInt(a.id.split(':').pop() || '0', 10);
-            const timeB = parseInt(b.id.split(':').pop() || '0', 10);
+            const timeA = parseInt(a.id.split(':').pop() ?? '0', 10);
+            const timeB = parseInt(b.id.split(':').pop() ?? '0', 10);
             return timeA - timeB;
         });
 
         for (const { id: key, bytes } of incrementals) {
             const docId = key.substring(0, key.indexOf(':incremental:'));
-            const doc = this.docs.get(docId) as Automerge.Doc<AnyDoc> | undefined;
-
+            const doc = this.docs.get(docId);
             if (doc) {
-                const updatedDoc = Automerge.loadIncremental(doc, bytes);
-                this.docs.set(docId, updatedDoc as Automerge.Doc<AnyDoc>);
+                this.docs.set(docId, Automerge.loadIncremental(doc, bytes) as Automerge.Doc<AnyDoc>);
             } else {
                 console.warn(`[AutomergeRepository] Found incremental chunk for missing doc: ${docId}`);
             }
         }
 
-        // 4. Establish the saveIncremental baseline — tells Automerge
-        // "everything up to here is already persisted" so the next
-        // saveIncremental() only returns new changes.
         for (const doc of this.docs.values()) {
             Automerge.save(doc);
         }
@@ -226,20 +293,52 @@ class AutomergeRepository {
     /**
      * Merge an external bundle into current state.
      * Documents with matching IDs are merged; new documents are inserted.
+     *
+     * Heavy WASM parsing runs in crdtWorker.ts. The current in-memory docs are
+     * serialised once (Automerge.save — fast), sent to the worker alongside the
+     * incoming bundle, then the worker returns merged compacted binaries.
      */
-    mergeBundle(bundle: DocumentBundle): MergeResult {
-        const result: MergeResult = {
-            mergedDocIds: [],
-            newDocIds: [],
-        };
+    async mergeBundle(bundle: DocumentBundle): Promise<MergeResult> {
+        const current = this.saveAll();
+
+        let compacted: [string, Uint8Array][];
+        let mergedDocIds: string[];
+        let newDocIds: string[];
+
+        try {
+            const response = await invokeWorker({
+                type: 'mergeBundle',
+                current: Array.from(current.entries()),
+                incoming: Array.from(bundle.entries()),
+            });
+            if (response.type !== 'merged') {
+                throw new Error('Unexpected worker response type');
+            }
+            compacted = response.compacted;
+            mergedDocIds = response.mergedDocIds;
+            newDocIds = response.newDocIds;
+        } catch (err) {
+            console.warn('[AutomergeRepository] CRDT worker failed, falling back to synchronous merge:', err);
+            return this._mergeBundleSync(bundle);
+        }
+
+        for (const [id, bytes] of compacted) {
+            this.docs.set(id, Automerge.load<AnyDoc>(bytes));
+        }
+
+        this.notifyListeners();
+        return { mergedDocIds, newDocIds };
+    }
+
+    /** Synchronous fallback for mergeBundle (used when worker is unavailable). */
+    private _mergeBundleSync(bundle: DocumentBundle): MergeResult {
+        const result: MergeResult = { mergedDocIds: [], newDocIds: [] };
 
         for (const [id, bytes] of bundle) {
             const incoming = Automerge.load<AnyDoc>(bytes);
-
-            if (this.docs.has(id)) {
-                const local = this.docs.get(id)!;
-                const merged = Automerge.merge(local, incoming);
-                this.docs.set(id, merged);
+            const local = this.docs.get(id);
+            if (local) {
+                this.docs.set(id, Automerge.merge(local, incoming));
                 result.mergedDocIds.push(id);
             } else {
                 this.docs.set(id, incoming);

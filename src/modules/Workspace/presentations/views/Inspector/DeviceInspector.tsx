@@ -7,6 +7,7 @@ import { MechanicalSwitch } from '#/components/daw/MechanicalSwitch';
 import { type Device } from '#/modules/Arrangement/useCases/trackQueries';
 import { resolveDeviceLayout } from './deviceLayoutRegistry';
 import { GenericDeviceLayout } from './GenericDeviceLayout';
+import { MetaText } from '../../components/Inspector/MetaText';
 import './layouts';
 
 type DeviceInspectorProps = {
@@ -95,7 +96,7 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
                 <GenericDeviceLayout device={device} trackId={trackId} parameters={parameters} />
             ) : (
                 <div className="px-1">
-                    <p className="text-[10px] text-muted-foreground">No parameters available for this device.</p>
+                    <MetaText>No parameters available for this device.</MetaText>
                 </div>
             )}
         </div>

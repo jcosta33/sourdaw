@@ -37,8 +37,8 @@ async function fetchWasmBinary(url: string): Promise<ArrayBuffer> {
 
 export type LevainNodeResult = {
     workletNode: AudioWorkletNode;
-    noteOn: (note: number, velocity: number, scheduleTime?: number) => void;
-    noteOff: (note: number, scheduleTime?: number) => void;
+    noteOn: (note: number, velocity: number, sampleFrame?: number) => void;
+    noteOff: (note: number, sampleFrame?: number) => void;
     setParam: (name: string, value: number) => void;
     handleCc: (cc: number, value: number) => void;
     setBypass: (bypassed: boolean) => void;
@@ -119,14 +119,14 @@ export async function createLevainNode(
         // WASM init failed — no samples to load
     });
 
-    const noteOn = (note: number, velocity: number, scheduleTime?: number): void => {
+    const noteOn = (note: number, velocity: number, sampleFrame?: number): void => {
         if (!bypassed) {
-            node.port.postMessage({ type: 'noteOn', note, velocity, scheduleTime });
+            node.port.postMessage({ type: 'noteOn', note, velocity, sampleFrame });
         }
     };
 
-    const noteOff = (note: number, scheduleTime?: number): void => {
-        node.port.postMessage({ type: 'noteOff', note, scheduleTime });
+    const noteOff = (note: number, sampleFrame?: number): void => {
+        node.port.postMessage({ type: 'noteOff', note, sampleFrame });
     };
 
     const setParam = (name: string, value: number): void => {

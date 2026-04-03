@@ -250,15 +250,10 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
             {contextMenu.kind !== 'none' ? (
                 <div
                     ref={menuRef}
-                    className="fixed z-50 min-w-[140px] rounded-md p-1"
+                    className="daw-floating-surface fixed z-50 min-w-[140px] rounded-md p-1"
                     style={{
                         left: contextMenu.x,
                         top: contextMenu.y,
-                        background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
-                        boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 4px 16px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.03)',
-                        border: '1px solid rgba(0,0,0,0.4)',
-                        borderTop: '1px solid rgba(255,255,255,0.06)',
-                        borderBottom: '1px solid rgba(40,40,40,0.3)',
                     }}
                 >
                     {contextMenu.kind === 'empty' && (

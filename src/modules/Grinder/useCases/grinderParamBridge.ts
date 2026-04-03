@@ -9,6 +9,15 @@ import { loadGrinderPatch, setGrinderParam } from '../stores/grinderStore';
 
 type DeviceRef = { trackId: string; deviceId: string };
 
+function findDeviceRef(deviceId: string): DeviceRef | null {
+    for (const track of getAllTracks()) {
+        if (track.devices.some((d) => d.id === deviceId)) {
+            return { trackId: track.id, deviceId };
+        }
+    }
+    return null;
+}
+
 const AMP_MODELS = ['clean-twin', 'crunch-jcm', 'lead-jcm', 'ac30-tb', 'rectifier', 'custom'] as const;
 const ENGINE_MODES = ['circuit', 'capture', 'hybrid'] as const;
 const INPUT_MODES = ['instrument', 'line', 'reamp'] as const;
@@ -85,49 +94,17 @@ const AUDIO_SYNC_KEYS: readonly (keyof GrinderPatch)[] = [
     'routingMode',
 ] as const;
 
-let cachedRefs: DeviceRef[] | null = null;
-let cacheStaleTimer: ReturnType<typeof setTimeout> | null = null;
-
-function getActiveDevices(): DeviceRef[] {
-    if (cachedRefs) {
-        return cachedRefs;
-    }
-
-    const refs: DeviceRef[] = [];
-    for (const track of getAllTracks()) {
-        for (const device of track.devices) {
-            if (device.type === 'grinder') {
-                refs.push({ trackId: track.id, deviceId: device.id });
-            }
-        }
-    }
-    cachedRefs = refs;
-
-    if (cacheStaleTimer) {
-        clearTimeout(cacheStaleTimer);
-    }
-    cacheStaleTimer = setTimeout(() => {
-        cachedRefs = null;
-    }, 2000);
-
-    return refs;
-}
-
 const pendingUpdates = new Map<string, number>();
 const latestValues = new Map<string, number>();
 
-function flushParam(key: string): void {
-    pendingUpdates.delete(key);
-    const value = latestValues.get(key);
-    if (value === undefined) {
-        return;
-    }
-    latestValues.delete(key);
-
-    for (const { trackId, deviceId } of getActiveDevices()) {
-        updateDeviceParam(trackId, deviceId, key, value);
-        persistDeviceParam(deviceId, key, value);
-    }
+function flushParam(deviceId: string, ref: DeviceRef, key: string): void {
+    const compositeKey = `${deviceId}:${key}`;
+    pendingUpdates.delete(compositeKey);
+    const value = latestValues.get(compositeKey);
+    if (value === undefined) return;
+    latestValues.delete(compositeKey);
+    updateDeviceParam(ref.trackId, ref.deviceId, key, value);
+    persistDeviceParam(ref.deviceId, key, value);
 }
 
 function getIndexedValue<T extends readonly string[]>(options: T, raw: number): T[number] {
@@ -205,85 +182,82 @@ function toAudioValue<K extends keyof GrinderPatch>(key: K, value: GrinderPatch[
     }
 }
 
-function sendNumericParamToDevices(key: string, value: number, devices: DeviceRef[]): void {
-    if (!Number.isFinite(value)) {
-        return;
-    }
-
-    for (const { trackId, deviceId } of devices) {
-        updateDeviceParam(trackId, deviceId, key, value);
-        persistDeviceParam(deviceId, key, value);
-    }
+function sendNumericParamToDevice(ref: DeviceRef, key: string, value: number): void {
+    if (!Number.isFinite(value)) return;
+    updateDeviceParam(ref.trackId, ref.deviceId, key, value);
+    persistDeviceParam(ref.deviceId, key, value);
 }
 
 function findFirstPedal(pedals: readonly GrinderPedal[], types: readonly string[]): GrinderPedal | undefined {
     return pedals.find((pedal) => types.includes(pedal.type));
 }
 
-function syncSupportedPedals(patch: GrinderPatch, devices: DeviceRef[]): void {
+function syncSupportedPedals(patch: GrinderPatch, ref: DeviceRef): void {
     const preCompressor = findFirstPedal(patch.prePedals, ['compressor']);
     const preOverdrive = findFirstPedal(patch.prePedals, ['overdrive', 'boost']);
     const preDistortion = findFirstPedal(patch.prePedals, ['distortion']);
     const preFuzz = findFirstPedal(patch.prePedals, ['fuzz']);
-    sendNumericParamToDevices('preCompressorEnabled', preCompressor?.enabled ? 1 : 0, devices);
-    sendNumericParamToDevices('preCompressorThreshold', preCompressor?.params.threshold ?? -20, devices);
-    sendNumericParamToDevices('preCompressorRatio', preCompressor?.params.ratio ?? 4, devices);
-    sendNumericParamToDevices('preCompressorAttack', preCompressor?.params.attack ?? 10, devices);
-    sendNumericParamToDevices('preCompressorRelease', preCompressor?.params.release ?? 200, devices);
+    sendNumericParamToDevice(ref, 'preCompressorEnabled', preCompressor?.enabled ? 1 : 0);
+    sendNumericParamToDevice(ref, 'preCompressorThreshold', preCompressor?.params.threshold ?? -20);
+    sendNumericParamToDevice(ref, 'preCompressorRatio', preCompressor?.params.ratio ?? 4);
+    sendNumericParamToDevice(ref, 'preCompressorAttack', preCompressor?.params.attack ?? 10);
+    sendNumericParamToDevice(ref, 'preCompressorRelease', preCompressor?.params.release ?? 200);
 
-    sendNumericParamToDevices('preOverdriveEnabled', preOverdrive?.enabled ? 1 : 0, devices);
-    sendNumericParamToDevices('preOverdriveDrive', preOverdrive?.params.drive ?? 0, devices);
-    sendNumericParamToDevices('preOverdriveTone', preOverdrive?.params.tone ?? 5, devices);
-    sendNumericParamToDevices('preOverdriveLevel', preOverdrive?.params.level ?? 5, devices);
+    sendNumericParamToDevice(ref, 'preOverdriveEnabled', preOverdrive?.enabled ? 1 : 0);
+    sendNumericParamToDevice(ref, 'preOverdriveDrive', preOverdrive?.params.drive ?? 0);
+    sendNumericParamToDevice(ref, 'preOverdriveTone', preOverdrive?.params.tone ?? 5);
+    sendNumericParamToDevice(ref, 'preOverdriveLevel', preOverdrive?.params.level ?? 5);
 
-    sendNumericParamToDevices('preDistortionEnabled', preDistortion?.enabled ? 1 : 0, devices);
-    sendNumericParamToDevices('preDistortionDrive', preDistortion?.params.drive ?? 0, devices);
-    sendNumericParamToDevices('preDistortionTone', preDistortion?.params.tone ?? 5, devices);
-    sendNumericParamToDevices('preDistortionLevel', preDistortion?.params.level ?? 5, devices);
+    sendNumericParamToDevice(ref, 'preDistortionEnabled', preDistortion?.enabled ? 1 : 0);
+    sendNumericParamToDevice(ref, 'preDistortionDrive', preDistortion?.params.drive ?? 0);
+    sendNumericParamToDevice(ref, 'preDistortionTone', preDistortion?.params.tone ?? 5);
+    sendNumericParamToDevice(ref, 'preDistortionLevel', preDistortion?.params.level ?? 5);
 
-    sendNumericParamToDevices('preFuzzEnabled', preFuzz?.enabled ? 1 : 0, devices);
-    sendNumericParamToDevices('preFuzzFuzz', preFuzz?.params.fuzz ?? 0, devices);
-    sendNumericParamToDevices('preFuzzTone', preFuzz?.params.tone ?? 5, devices);
-    sendNumericParamToDevices('preFuzzLevel', preFuzz?.params.level ?? 5, devices);
+    sendNumericParamToDevice(ref, 'preFuzzEnabled', preFuzz?.enabled ? 1 : 0);
+    sendNumericParamToDevice(ref, 'preFuzzFuzz', preFuzz?.params.fuzz ?? 0);
+    sendNumericParamToDevice(ref, 'preFuzzTone', preFuzz?.params.tone ?? 5);
+    sendNumericParamToDevice(ref, 'preFuzzLevel', preFuzz?.params.level ?? 5);
 }
 
-export function setGrinderParamWithAudio<K extends keyof GrinderPatch>(key: K, value: number): void {
+export function setGrinderParamWithAudio<K extends keyof GrinderPatch>(deviceId: string, key: K, value: number): void {
     const patchValue = toPatchValue(key, value);
-    setGrinderParam(key, patchValue);
+    setGrinderParam(deviceId, key, patchValue);
     if (key === 'engineMode') {
-        setGrinderParam('neuralEnabled', (patchValue !== 'circuit') as GrinderPatch['neuralEnabled']);
+        setGrinderParam(deviceId, 'neuralEnabled', (patchValue !== 'circuit') as GrinderPatch['neuralEnabled']);
     } else if (key === 'neuralEnabled') {
         setGrinderParam(
+            deviceId,
             'engineMode',
             (patchValue ? 'hybrid' : 'circuit') as GrinderPatch['engineMode']
         );
     }
 
-    latestValues.set(key, value);
-    if (!pendingUpdates.has(key)) {
+    const ref = findDeviceRef(deviceId);
+    if (!ref) return;
+
+    const compositeKey = `${deviceId}:${key}`;
+    latestValues.set(compositeKey, value);
+    if (!pendingUpdates.has(compositeKey)) {
         pendingUpdates.set(
-            key,
-            requestAnimationFrame(() => flushParam(key))
+            compositeKey,
+            requestAnimationFrame(() => flushParam(deviceId, ref, key))
         );
     }
 }
 
-export function loadGrinderPatchWithAudio(patch: GrinderPatch): void {
+export function loadGrinderPatchWithAudio(deviceId: string, patch: GrinderPatch): void {
     const migratedPatch = migrateGrinderPatch(patch);
-    loadGrinderPatch(migratedPatch);
+    loadGrinderPatch(deviceId, migratedPatch);
 
-    const devices = getActiveDevices();
+    const ref = findDeviceRef(deviceId);
+    if (!ref) return;
+
     for (const key of AUDIO_SYNC_KEYS) {
         const value = toAudioValue(key, migratedPatch[key]);
-        if (value === null || !Number.isFinite(value)) {
-            continue;
-        }
-
-        for (const { trackId, deviceId } of devices) {
-            updateDeviceParam(trackId, deviceId, key, value);
-            persistDeviceParam(deviceId, key, value);
-        }
+        if (value === null || !Number.isFinite(value)) continue;
+        updateDeviceParam(ref.trackId, ref.deviceId, key, value);
+        persistDeviceParam(ref.deviceId, key, value);
     }
 
-    syncSupportedPedals(migratedPatch, devices);
+    syncSupportedPedals(migratedPatch, ref);
 }

@@ -1,6 +1,7 @@
 import { type ReactElement } from 'react';
 import { Input } from '#/components/ui/input';
 import { Button } from '#/components/ui/button';
+import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import {
     Sparkles,
     Check,
@@ -107,9 +108,7 @@ const FuzzyResultItem = ({
             {result.preset.isDestructive ? (
                 <AlertTriangle className="size-3 text-[var(--color-state-warning)] shrink-0" aria-label="Destructive action" />
             ) : null}
-            <span className="text-[9px] text-muted-foreground/60 px-1 py-0.5 rounded bg-surface-overlay/50 shrink-0">
-                {result.preset.category}
-            </span>
+            <DawMicroBadge>{result.preset.category}</DawMicroBadge>
         </button>
     );
 };
@@ -220,7 +219,7 @@ export const PromptBar = (): ReactElement => {
                     id="prompt-results"
                     role="listbox"
                     aria-label="Command suggestions"
-                    className="absolute top-full left-0 right-0 mt-1 z-50 rounded-md border border-border-soft border-t-[var(--color-light-edge)] bg-surface-overlay shadow-[0_4px_16px_rgba(0,0,0,0.5)] py-1 max-h-80 overflow-y-auto"
+                    className="daw-floating-surface absolute top-full left-0 right-0 z-50 mt-1 max-h-80 overflow-y-auto rounded-md py-1"
                 >
                     {prompt.value.trim().length === 0 ? (
                         <div className="px-3 py-1 text-[9px] uppercase tracking-wider text-muted-foreground/50 font-medium">

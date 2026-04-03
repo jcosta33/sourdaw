@@ -1,4 +1,5 @@
 import { type ReactElement, useSyncExternalStore } from 'react';
+import { DawChannelStripShell } from '#/components/daw/DawChannelStripShell';
 import { Fader } from '#/components/daw/Fader';
 import { cn } from '#/helpers/Styles/cn';
 import { setMasterGain } from '#/modules/Transport/useCases/setMasterGain';
@@ -17,15 +18,7 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
     );
 
     return (
-        <div
-            className={cn(
-                'flex shrink-0 flex-col items-center gap-1.5 rounded-lg px-2 py-2 ml-2 border border-black/40 shadow-[inset_0_1px_3px_rgba(0,0,0,0.6),0_1px_0_rgba(255,255,255,0.03)]',
-                widthClass
-            )}
-            style={{ background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)', borderBottom: '1px solid rgba(40,40,40,0.3)' }}
-            role="group"
-            aria-label="Master channel"
-        >
+        <DawChannelStripShell className={cn('ml-2', widthClass)} aria-label="Master channel">
             <div className="h-1 w-full rounded-full bg-border-active" />
             <span className="text-[10px] font-bold text-text-primary uppercase tracking-wider">Master</span>
 
@@ -47,6 +40,6 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
             <span className="text-[10px] font-mono text-text-secondary mt-1">
                 {masterGain === 0 ? '-∞' : `${((masterGain / 80 - 1) * 12).toFixed(1)} dB`}
             </span>
-        </div>
+        </DawChannelStripShell>
     );
 };

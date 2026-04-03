@@ -3,6 +3,7 @@ import {
     type MouseEvent,
     useRef,
     useEffect,
+    useLayoutEffect,
     useState,
     useSyncExternalStore,
 } from 'react';
@@ -36,7 +37,7 @@ export const TimelineMinimap = (): ReactElement => {
     const pixelsPerBeat = viewState?.pixelsPerBeat ?? 12;
     const scrollX = viewState?.scrollX ?? 0;
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         const canvas = canvasRef.current;
         const container = containerRef.current;
         if (!canvas || !container) {
@@ -132,7 +133,7 @@ export const TimelineMinimap = (): ReactElement => {
         ctx.stroke();
     }, [tracks, pixelsPerBeat, scrollX, containerWidth]);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         const container = containerRef.current;
         if (!container) {
             return;

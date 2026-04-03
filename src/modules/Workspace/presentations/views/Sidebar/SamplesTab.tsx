@@ -1,5 +1,6 @@
 import { type ReactElement } from 'react';
 import { Folder, File, Star, Upload } from 'lucide-react';
+import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { cn } from '#/helpers/Styles/cn';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
@@ -48,10 +49,13 @@ export const SamplesTab = ({
     return (
         <div className="space-y-2">
             {samples.length === 0 ? (
-                <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
-                    <Upload className="size-6 text-muted-foreground/40" />
-                    <p className="text-xs text-muted-foreground">No samples yet</p>
-                    <p className="text-[10px] text-muted-foreground/60">Click Import above or drag audio files here</p>
+                <div className="px-3 py-4">
+                    <DawEmptyState
+                        compact
+                        icon={<Upload className="size-4" />}
+                        title="No samples yet"
+                        description="Click Import above or drag audio files here."
+                    />
                 </div>
             ) : null}
             {categories.map((cat) => (

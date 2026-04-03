@@ -2,7 +2,7 @@ import { type ReactElement, useState, useEffect, useRef } from 'react';
 import QRCode from 'qrcode';
 
 import { Button } from '#/components/ui/button';
-import { Copy, Check } from 'lucide-react';
+import { Copy, Check, AlertTriangle } from 'lucide-react';
 
 type QrInviteProps = {
     inviteString: string;
@@ -16,27 +16,58 @@ type QrInviteProps = {
 export const QrInvite = ({ inviteString }: QrInviteProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [copied, setCopied] = useState(false);
+    const [tooLong, setTooLong] = useState(false);
+    const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
-        if (canvasRef.current && inviteString) {
-            QRCode.toCanvas(canvasRef.current, inviteString, {
-                width: 200,
-                margin: 2,
-                color: {
-                    dark: '#ffffff',
-                    light: '#00000000',
-                },
-            }).catch(() => {
-                // QR generation failed — invite string may be too long
-            });
-        }
+        return () => {
+            if (copiedTimerRef.current !== null) {
+                clearTimeout(copiedTimerRef.current);
+            }
+        };
+    }, []);
+
+    useEffect(() => {
+        if (!canvasRef.current || !inviteString) return;
+        setTooLong(false);
+        QRCode.toCanvas(canvasRef.current, inviteString, {
+            width: 200,
+            margin: 2,
+            color: {
+                dark: '#ffffff',
+                light: '#00000000',
+            },
+        }).catch(() => {
+            setTooLong(true);
+        });
     }, [inviteString]);
 
     const handleCopy = () => {
         void navigator.clipboard.writeText(inviteString);
         setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+        if (copiedTimerRef.current !== null) {
+            clearTimeout(copiedTimerRef.current);
+        }
+        copiedTimerRef.current = setTimeout(() => {
+            setCopied(false);
+            copiedTimerRef.current = null;
+        }, 2000);
     };
+
+    if (tooLong) {
+        return (
+            <div className="flex flex-col items-center gap-2 rounded border border-border bg-muted/20 px-3 py-4">
+                <AlertTriangle className="size-4 text-[var(--color-state-warning)]" />
+                <p className="text-[10px] text-muted-foreground text-center">
+                    Invite is too long to encode as a QR code. Use Copy Invite instead.
+                </p>
+                <Button variant="outline" size="xs" onClick={handleCopy} className="w-full gap-1.5">
+                    {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+                    {copied ? 'Copied' : 'Copy Invite'}
+                </Button>
+            </div>
+        );
+    }
 
     return (
         <div className="flex flex-col items-center gap-2">

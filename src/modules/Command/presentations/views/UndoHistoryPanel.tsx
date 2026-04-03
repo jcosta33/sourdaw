@@ -3,8 +3,11 @@ import { undoStore, type UndoStoreState } from '../../stores/undoStore';
 import { undoToIndex } from '../../useCases/undoRedo';
 import { closeUndoHistory } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { cn } from '#/helpers/Styles/cn';
 import { X, Undo2, Redo2 } from 'lucide-react';
+import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { Button } from '#/components/ui/button';
 
 const defaultState: UndoStoreState = { past: [], future: [] };
@@ -34,17 +37,27 @@ export const UndoHistoryPanel = (): ReactElement | null => {
     const pastCount = state.past.length;
 
     return (
-        <div className="absolute right-2 top-10 z-40 flex w-56 flex-col rounded-lg border border-border bg-popover shadow-xl">
-            <div className="flex items-center justify-between border-b border-border/50 px-3 py-2">
-                <h3 className="text-xs font-medium text-foreground">Undo History</h3>
-                <Button variant="ghost" size="icon-xs" onClick={close} aria-label="Close undo history">
-                    <X className="size-3" />
-                </Button>
-            </div>
+        <DawUtilityPanel className="absolute right-2 top-10 z-40 w-56">
+            <DawHeaderBand
+                className="rounded-t-lg px-3 py-2"
+                title="Undo History"
+                titleClassName="text-xs font-medium normal-case tracking-normal text-foreground"
+                actions={
+                    <Button variant="ghost" size="icon-xs" onClick={close} aria-label="Close undo history">
+                        <X className="size-3" />
+                    </Button>
+                }
+            />
 
             <div className="max-h-72 overflow-y-auto">
                 {state.past.length === 0 && state.future.length === 0 ? (
-                    <div className="px-3 py-4 text-center text-xs text-muted-foreground">No history yet</div>
+                    <div className="p-3">
+                        <DawEmptyState
+                            compact
+                            title="No history yet"
+                            description="Your edit timeline will appear here as you work."
+                        />
+                    </div>
                 ) : null}
 
                 {state.future.length > 0 ? (
@@ -106,6 +119,6 @@ export const UndoHistoryPanel = (): ReactElement | null => {
                     </div>
                 ) : null}
             </div>
-        </div>
+        </DawUtilityPanel>
     );
 };

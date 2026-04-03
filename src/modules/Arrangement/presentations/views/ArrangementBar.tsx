@@ -17,6 +17,7 @@ import {
     reorderSection,
 } from '../../useCases/marker/sectionOperations';
 import { type ArrangementSection } from '../../models/Marker';
+import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { cn } from '#/helpers/Styles/cn';
 import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
 
@@ -276,13 +277,8 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
 
     return (
         <div
-            className="relative shrink-0 overflow-hidden select-none"
-            style={{
-                height: BAR_HEIGHT,
-                background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
-                boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
-                borderBottom: '1px solid rgba(40,40,40,0.3)',
-            }}
+            className="daw-header-band relative shrink-0 overflow-hidden select-none"
+            style={{ height: BAR_HEIGHT }}
             onContextMenu={handleBarContextMenu}
             role="region"
             aria-label="Arrangement sections"
@@ -364,22 +360,17 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
 
             {sections.length === 0 ? (
                 <div className="flex items-center justify-center h-full">
-                    <span className="text-[9px] text-muted-foreground/40">Right-click to add arrangement sections</span>
+                    <DawInlineHint>Right-click to add arrangement sections</DawInlineHint>
                 </div>
             ) : null}
 
             {contextMenu.kind !== 'none' ? (
                 <div
                     ref={menuRef}
-                    className="fixed z-50 min-w-[140px] rounded-md p-1"
+                    className="daw-floating-surface fixed z-50 min-w-[140px] rounded-md p-1"
                     style={{
                         left: contextMenu.x,
                         top: contextMenu.y,
-                        background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
-                        boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 4px 16px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.03)',
-                        border: '1px solid rgba(0,0,0,0.4)',
-                        borderTop: '1px solid rgba(255,255,255,0.06)',
-                        borderBottom: '1px solid rgba(40,40,40,0.3)',
                     }}
                 >
                     {contextMenu.kind === 'empty' && (

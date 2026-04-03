@@ -1,8 +1,19 @@
 /**
- * Audio recording — start/stop microphone recording, store recording state.
+ * Audio recording — start/stop microphone recording via AudioWorklet + SAB.
  *
- * Uses raw PCM capture via a ScriptProcessorNode instead of MediaRecorder so
- * that we never need to encode-then-decode (WebM is unsupported on WebKit).
+ * Replaces the deprecated ScriptProcessorNode pipeline:
+ *
+ *   OLD: ScriptProcessorNode on the main thread → copies every 4096-sample block
+ *        into a growing rawChunks array → concatenates on stop (UI freeze).
+ *
+ *   NEW: AudioWorkletNode ('recording-processor') writes 128-sample blocks into
+ *        a SharedArrayBuffer ring on the audio thread (zero IPC, zero allocs).
+ *        A background OPFS Worker drains the ring to a temp file every 50 ms,
+ *        keeping main-thread memory flat. On stop the Worker transfers the
+ *        complete Float32Array back; main thread creates the AudioBuffer.
+ *
+ * The processor must be registered in createWebAudioEngine.initialize() before
+ * the first call to startAudioRecording.
  */
 
 import { Container } from '#/helpers/DependencyInjector/Container';
@@ -22,19 +33,23 @@ export const audioRecordingStore = new Store<AudioRecordingState>(logger, {
     initialData: { isRecording: false, micPermissionGranted: false },
 });
 
+// ── Ring buffer sizing ────────────────────────────────────────────────────────
+// 2^19 floats = 524 288 samples ≈ 10.9 s @ 48 kHz.
+// The OPFS worker drains every 50 ms (~2 400 samples) so the ring stays nearly
+// empty under normal conditions. The extra headroom covers transient stalls.
+const RING_FLOATS = 524_288;
+const SAB_BYTES = 4 + RING_FLOATS * Float32Array.BYTES_PER_ELEMENT; // 4-byte writeHead + ring
+
+// ── Module-level recording state ─────────────────────────────────────────────
 let mediaStream: MediaStream | null = null;
 let sourceNode: MediaStreamAudioSourceNode | null = null;
-/** Buffer-array of raw Float32 chunks (one per onaudioprocess call) */
-let rawChunks: Float32Array[] = [];
-let scriptProcessor: ScriptProcessorNode | null = null;
+let recordingNode: AudioWorkletNode | null = null;
+let recordingWorker: Worker | null = null;
 let onRecordingComplete: ((buffer: AudioBuffer) => void) | null = null;
 
 /**
- * Pre-request microphone permission so the user sees the prompt on page load
- * rather than only when they first attempt to record.
- *
- * If the browser has already granted permission this is a no-op. The stream is
- * immediately stopped so that the mic indicator does not stay lit.
+ * Pre-request microphone permission so the browser prompt fires on page load
+ * rather than at first-record time. The stream is stopped immediately.
  */
 export async function requestMicPermission(): Promise<boolean> {
     try {
@@ -45,10 +60,7 @@ export async function requestMicPermission(): Promise<boolean> {
                 autoGainControl: false,
             },
         });
-        // Stop all tracks immediately — we only needed the permission prompt.
-        for (const t of stream.getTracks()) {
-            t.stop();
-        }
+        for (const t of stream.getTracks()) t.stop();
         audioRecordingStore.set({ ...audioRecordingStore.value!, micPermissionGranted: true });
         return true;
     } catch {
@@ -56,8 +68,6 @@ export async function requestMicPermission(): Promise<boolean> {
         return false;
     }
 }
-
-const BUFFER_SIZE = 4096;
 
 export async function startAudioRecording(
     trackId: string,
@@ -74,33 +84,68 @@ export async function startAudioRecording(
         if (selectedInputId) {
             audioConstraints.deviceId = { exact: selectedInputId };
         }
-        mediaStream = await navigator.mediaDevices.getUserMedia({
-            audio: audioConstraints,
-        });
+
+        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
 
         const ctx = audioEngine.context;
         sourceNode = ctx.createMediaStreamSource(mediaStream);
 
+        // Monitor via the track strip (same as before).
         const strip = audioEngine.ensureTrackStrip(trackId);
         sourceNode.connect(strip.gainNode);
 
-        rawChunks = [];
         onRecordingComplete = onComplete;
 
-        // Capture raw PCM via ScriptProcessorNode (deprecated but universally
-        // supported — AudioWorklet would be overkill here and we already have a
-        // worklet budget elsewhere).
-        scriptProcessor = ctx.createScriptProcessor(BUFFER_SIZE, 1, 1);
-        scriptProcessor.onaudioprocess = (e: AudioProcessingEvent) => {
-            const input = e.inputBuffer.getChannelData(0);
-            // Copy because the backing buffer is reused by the browser.
-            rawChunks.push(new Float32Array(input));
-        };
-        sourceNode.connect(scriptProcessor);
-        // Connect to destination so the processor runs (required by spec).
-        scriptProcessor.connect(ctx.destination);
+        // ── SAB ring ─────────────────────────────────────────────────────────
+        const sab = new SharedArrayBuffer(SAB_BYTES);
 
-        audioRecordingStore.set({ ...audioRecordingStore.value!, isRecording: true });
+        // ── AudioWorkletNode (recording-processor) ───────────────────────────
+        // numberOfOutputs: 0 — sink node, no destination connection needed.
+        recordingNode = new AudioWorkletNode(ctx, 'recording-processor', {
+            numberOfInputs: 1,
+            numberOfOutputs: 0,
+            channelCount: 1,
+            channelCountMode: 'explicit',
+            channelInterpretation: 'discrete',
+        });
+        recordingNode.port.postMessage({ type: 'init', sab });
+        sourceNode.connect(recordingNode);
+
+        // ── OPFS Worker ──────────────────────────────────────────────────────
+        recordingWorker = new Worker(
+            new URL('../../workers/recordingWorker.ts', import.meta.url),
+            { type: 'module' }
+        );
+
+        // Wire up the PCM-complete handler before sending 'start'.
+        recordingWorker.onmessage = ({ data }: MessageEvent): void => {
+            const msg = data as
+                | { type: 'ready' }
+                | { type: 'pcm'; samples: Float32Array; sampleRate: number }
+                | { type: 'error'; message: string };
+
+            if (msg.type === 'ready') {
+                // Both sides are initialised — begin capture.
+                recordingNode?.port.postMessage({ type: 'start' });
+                recordingWorker?.postMessage({ type: 'start' });
+                audioRecordingStore.set({ ...audioRecordingStore.value!, isRecording: true });
+            } else if (msg.type === 'pcm') {
+                // Worker has flushed OPFS → build AudioBuffer on the main thread.
+                buildAndDeliver(msg.samples, msg.sampleRate, ctx);
+            } else if (msg.type === 'error') {
+                logger.error(new Error(`Recording worker error: ${msg.message}`));
+                cleanupNodes();
+                audioRecordingStore.set({ ...audioRecordingStore.value!, isRecording: false });
+            }
+        };
+
+        recordingWorker.onerror = (e): void => {
+            logger.error(new Error('Recording worker crashed', { cause: e }));
+            cleanupNodes();
+            audioRecordingStore.set({ ...audioRecordingStore.value!, isRecording: false });
+        };
+
+        recordingWorker.postMessage({ type: 'init', sab, sampleRate: ctx.sampleRate });
 
         return true;
     } catch (error) {
@@ -111,44 +156,57 @@ export async function startAudioRecording(
 }
 
 export function stopAudioRecording(): void {
-    // Disconnect the processor first so no more samples arrive.
-    if (scriptProcessor) {
-        scriptProcessor.onaudioprocess = null;
-        scriptProcessor.disconnect();
-        scriptProcessor = null;
-    }
+    // Tell the worklet to stop writing — it will ack with 'stopped' (ignored).
+    recordingNode?.port.postMessage({ type: 'stop' });
 
-    // Build an AudioBuffer from captured PCM chunks.
-    if (rawChunks.length > 0 && onRecordingComplete) {
-        const ctx = audioEngine.context;
-        const totalSamples = rawChunks.reduce((sum, c) => sum + c.length, 0);
-        const buffer = ctx.createBuffer(1, totalSamples, ctx.sampleRate);
-        const channel = buffer.getChannelData(0);
-        let offset = 0;
-        for (const chunk of rawChunks) {
-            channel.set(chunk, offset);
-            offset += chunk.length;
-        }
-        onRecordingComplete(buffer);
-    }
+    // Tell the OPFS worker to do a final drain and send back the PCM.
+    // The 'pcm' handler in startAudioRecording delivers the AudioBuffer.
+    recordingWorker?.postMessage({ type: 'stop' });
 
-    onRecordingComplete = null;
-    rawChunks = [];
-
+    // Disconnect audio nodes immediately so monitoring stops.
     cleanupNodes();
 
     audioRecordingStore.set({ ...audioRecordingStore.value!, isRecording: false });
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function buildAndDeliver(
+    samples: Float32Array,
+    sampleRate: number,
+    ctx: AudioContext
+): void {
+    const cb = onRecordingComplete;
+    onRecordingComplete = null;
+
+    if (!cb || samples.length === 0) {
+        terminateWorker();
+        return;
+    }
+
+    const buffer = ctx.createBuffer(1, samples.length, sampleRate);
+    buffer.getChannelData(0).set(samples);
+    cb(buffer);
+
+    terminateWorker();
+}
+
+function terminateWorker(): void {
+    recordingWorker?.terminate();
+    recordingWorker = null;
+}
+
 function cleanupNodes(): void {
+    if (recordingNode) {
+        recordingNode.disconnect();
+        recordingNode = null;
+    }
     if (sourceNode) {
         sourceNode.disconnect();
         sourceNode = null;
     }
     if (mediaStream) {
-        for (const t of mediaStream.getTracks()) {
-            t.stop();
-        }
+        for (const t of mediaStream.getTracks()) t.stop();
         mediaStream = null;
     }
 }

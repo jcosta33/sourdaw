@@ -11,7 +11,7 @@
  * - Routes through triggerLiveNoteOn/Off use cases → same path as a physical MIDI controller.
  */
 
-import { type ReactElement, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { type ReactElement, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { ChevronLeft, ChevronRight, Minus, Plus, X } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
@@ -166,7 +166,7 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
     const heldKeys = useRef<Set<string>>(new Set());
 
     // Scroll to current octave on mount and when octave changes
-    useEffect(() => {
+    useLayoutEffect(() => {
         if (!scrollRef.current) {
             return;
         }
@@ -177,25 +177,22 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
 
     // ── Note helpers ──────────────────────────────────────────────────────────
 
-    const triggerNoteOn = useCallback(
-        (midiNote: number) => {
-            if (midiNote < 0 || midiNote > 127) {
-                return;
+    const triggerNoteOn = (midiNote: number) => {
+        if (midiNote < 0 || midiNote > 127) {
+            return;
+        }
+        triggerLiveNoteOn(0, midiNote, velocity);
+        setPressedNotes((prev) => {
+            if (prev.has(midiNote)) {
+                return prev;
             }
-            triggerLiveNoteOn(0, midiNote, velocity);
-            setPressedNotes((prev) => {
-                if (prev.has(midiNote)) {
-                    return prev;
-                }
-                const next = new Set(prev);
-                next.add(midiNote);
-                return next;
-            });
-        },
-        [velocity]
-    );
+            const next = new Set(prev);
+            next.add(midiNote);
+            return next;
+        });
+    };
 
-    const triggerNoteOff = useCallback((midiNote: number) => {
+    const triggerNoteOff = (midiNote: number) => {
         triggerLiveNoteOff(0, midiNote);
         setPressedNotes((prev) => {
             if (!prev.has(midiNote)) {
@@ -205,82 +202,64 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
             next.delete(midiNote);
             return next;
         });
-    }, []);
+    };
 
     // ── Mouse interaction ─────────────────────────────────────────────────────
 
-    const onWhitePointerDown = useCallback(
-        (midiNote: number, event: React.PointerEvent<HTMLDivElement>) => {
-            event.preventDefault();
-            (event.currentTarget as HTMLDivElement).setPointerCapture(event.pointerId);
-            if (mouseNote.current !== null && mouseNote.current !== midiNote) {
-                triggerNoteOff(mouseNote.current);
-            }
+    const onWhitePointerDown = (midiNote: number, event: React.PointerEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        (event.currentTarget as HTMLDivElement).setPointerCapture(event.pointerId);
+        if (mouseNote.current !== null && mouseNote.current !== midiNote) {
+            triggerNoteOff(mouseNote.current);
+        }
+        mouseNote.current = midiNote;
+        triggerNoteOn(midiNote);
+        panelRef.current?.focus({ preventScroll: true });
+    };
+
+    const onWhitePointerUp = (midiNote: number, event: React.PointerEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        if (mouseNote.current === midiNote) {
+            triggerNoteOff(midiNote);
+            mouseNote.current = null;
+        }
+    };
+
+    const onWhitePointerEnter = (midiNote: number, event: React.PointerEvent<HTMLDivElement>) => {
+        if (event.buttons === 1 && mouseNote.current !== null && mouseNote.current !== midiNote) {
+            triggerNoteOff(mouseNote.current);
             mouseNote.current = midiNote;
             triggerNoteOn(midiNote);
-            panelRef.current?.focus({ preventScroll: true });
-        },
-        [triggerNoteOn, triggerNoteOff]
-    );
+        }
+    };
 
-    const onWhitePointerUp = useCallback(
-        (midiNote: number, event: React.PointerEvent<HTMLDivElement>) => {
-            event.preventDefault();
-            if (mouseNote.current === midiNote) {
-                triggerNoteOff(midiNote);
-                mouseNote.current = null;
-            }
-        },
-        [triggerNoteOff]
-    );
+    const onBlackPointerDown = (midiNote: number, event: React.PointerEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (mouseNote.current !== null && mouseNote.current !== midiNote) {
+            triggerNoteOff(mouseNote.current);
+        }
+        mouseNote.current = midiNote;
+        triggerNoteOn(midiNote);
+        panelRef.current?.focus({ preventScroll: true });
+    };
 
-    const onWhitePointerEnter = useCallback(
-        (midiNote: number, event: React.PointerEvent<HTMLDivElement>) => {
-            if (event.buttons === 1 && mouseNote.current !== null && mouseNote.current !== midiNote) {
-                triggerNoteOff(mouseNote.current);
-                mouseNote.current = midiNote;
-                triggerNoteOn(midiNote);
-            }
-        },
-        [triggerNoteOn, triggerNoteOff]
-    );
+    const onBlackPointerUp = (midiNote: number, event: React.PointerEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (mouseNote.current === midiNote) {
+            triggerNoteOff(midiNote);
+            mouseNote.current = null;
+        }
+    };
 
-    const onBlackPointerDown = useCallback(
-        (midiNote: number, event: React.PointerEvent<HTMLDivElement>) => {
-            event.preventDefault();
-            event.stopPropagation();
-            if (mouseNote.current !== null && mouseNote.current !== midiNote) {
-                triggerNoteOff(mouseNote.current);
-            }
+    const onBlackPointerEnter = (midiNote: number, event: React.PointerEvent<HTMLDivElement>) => {
+        if (event.buttons === 1 && mouseNote.current !== null && mouseNote.current !== midiNote) {
+            triggerNoteOff(mouseNote.current);
             mouseNote.current = midiNote;
             triggerNoteOn(midiNote);
-            panelRef.current?.focus({ preventScroll: true });
-        },
-        [triggerNoteOn, triggerNoteOff]
-    );
-
-    const onBlackPointerUp = useCallback(
-        (midiNote: number, event: React.PointerEvent<HTMLDivElement>) => {
-            event.preventDefault();
-            event.stopPropagation();
-            if (mouseNote.current === midiNote) {
-                triggerNoteOff(midiNote);
-                mouseNote.current = null;
-            }
-        },
-        [triggerNoteOff]
-    );
-
-    const onBlackPointerEnter = useCallback(
-        (midiNote: number, event: React.PointerEvent<HTMLDivElement>) => {
-            if (event.buttons === 1 && mouseNote.current !== null && mouseNote.current !== midiNote) {
-                triggerNoteOff(mouseNote.current);
-                mouseNote.current = midiNote;
-                triggerNoteOn(midiNote);
-            }
-        },
-        [triggerNoteOn, triggerNoteOff]
-    );
+        }
+    };
 
     // Release mouse note on global pointer-up (handles releasing outside panel)
     useEffect(() => {
@@ -292,65 +271,59 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
         };
         window.addEventListener('pointerup', onGlobalUp);
         return () => window.removeEventListener('pointerup', onGlobalUp);
-    }, [triggerNoteOff]);
+    }, []);
 
     // ── Computer keyboard ─────────────────────────────────────────────────────
 
-    const onKeyDown = useCallback(
-        (event: React.KeyboardEvent<HTMLDivElement>) => {
-            if (event.metaKey || event.ctrlKey || event.altKey) {
-                return;
-            }
-            const key = event.key.toLowerCase();
+    const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+        if (event.metaKey || event.ctrlKey || event.altKey) {
+            return;
+        }
+        const key = event.key.toLowerCase();
 
-            if (key === 'z') {
-                event.preventDefault();
-                setVirtualKeyboardOctave(octave - 1);
-                return;
-            }
-            if (key === 'x') {
-                event.preventDefault();
-                setVirtualKeyboardOctave(octave + 1);
-                return;
-            }
+        if (key === 'z') {
+            event.preventDefault();
+            setVirtualKeyboardOctave(octave - 1);
+            return;
+        }
+        if (key === 'x') {
+            event.preventDefault();
+            setVirtualKeyboardOctave(octave + 1);
+            return;
+        }
 
-            if (heldKeys.current.has(key)) {
-                return;
-            }
-            heldKeys.current.add(key);
+        if (heldKeys.current.has(key)) {
+            return;
+        }
+        heldKeys.current.add(key);
 
-            const whiteSemi = KEYBOARD_WHITE_MAP[key];
-            if (whiteSemi !== undefined) {
-                event.preventDefault();
-                triggerNoteOn(octave * 12 + whiteSemi);
-                return;
-            }
-            const blackSemi = KEYBOARD_BLACK_MAP[key];
-            if (blackSemi !== undefined) {
-                event.preventDefault();
-                triggerNoteOn(octave * 12 + blackSemi);
-            }
-        },
-        [octave, triggerNoteOn]
-    );
+        const whiteSemi = KEYBOARD_WHITE_MAP[key];
+        if (whiteSemi !== undefined) {
+            event.preventDefault();
+            triggerNoteOn(octave * 12 + whiteSemi);
+            return;
+        }
+        const blackSemi = KEYBOARD_BLACK_MAP[key];
+        if (blackSemi !== undefined) {
+            event.preventDefault();
+            triggerNoteOn(octave * 12 + blackSemi);
+        }
+    };
 
-    const onKeyUp = useCallback(
-        (event: React.KeyboardEvent<HTMLDivElement>) => {
-            const key = event.key.toLowerCase();
-            heldKeys.current.delete(key);
+    const onKeyUp = (event: React.KeyboardEvent<HTMLDivElement>) => {
+        const key = event.key.toLowerCase();
+        heldKeys.current.delete(key);
 
-            const whiteSemi = KEYBOARD_WHITE_MAP[key];
-            if (whiteSemi !== undefined) {
-                triggerNoteOff(octave * 12 + whiteSemi);
-                return;
-            }
-            const blackSemi = KEYBOARD_BLACK_MAP[key];
-            if (blackSemi !== undefined) {
-                triggerNoteOff(octave * 12 + blackSemi);
-            }
-        },
-        [octave, triggerNoteOff]
-    );
+        const whiteSemi = KEYBOARD_WHITE_MAP[key];
+        if (whiteSemi !== undefined) {
+            triggerNoteOff(octave * 12 + whiteSemi);
+            return;
+        }
+        const blackSemi = KEYBOARD_BLACK_MAP[key];
+        if (blackSemi !== undefined) {
+            triggerNoteOff(octave * 12 + blackSemi);
+        }
+    };
 
     const onBlur = () => {
         heldKeys.current.clear();

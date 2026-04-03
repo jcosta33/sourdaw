@@ -2,6 +2,7 @@
  * Lane header strip — parameter name badge, current value, mode indicators.
  */
 import { type ReactElement } from 'react';
+import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { formatParameterValue } from '../../helpers/automationLaneConstants';
 
 type AutomationLaneHeaderProps = {
@@ -29,28 +30,28 @@ export const AutomationLaneHeader = ({
 }: AutomationLaneHeaderProps): ReactElement => (
     <div className="absolute top-1 left-2 z-10 flex items-center gap-1.5">
         <div className="size-2 rounded-full" style={{ backgroundColor: curveColor }} />
-        <span className="text-[9px] font-medium text-muted-foreground bg-surface-base/90 px-1.5 py-0.5 rounded backdrop-blur-sm">
+        <DawMicroBadge className="border-border/20 bg-surface-base/90 text-muted-foreground backdrop-blur-sm">
             {parameterName}
-        </span>
+        </DawMicroBadge>
         {currentValue !== null ? (
-            <span className="text-[9px] font-mono text-foreground/60 bg-surface-base/80 px-1 py-0.5 rounded">
+            <DawMicroBadge className="border-border/20 bg-surface-base/80 font-mono text-foreground/60">
                 {formatParameterValue(currentValue, parameterId)}
-            </span>
+            </DawMicroBadge>
         ) : null}
         {isDrawMode ? (
-            <span className="text-[9px] font-mono text-[var(--color-accent-peach)]/80 bg-[var(--color-accent-peach)]/10 px-1 py-0.5 rounded">
+            <DawMicroBadge tone="peach" className="font-mono text-[var(--color-accent-peach)]/80">
                 DRAW
-            </span>
+            </DawMicroBadge>
         ) : null}
         {isVirginTerritory ? (
-            <span className="text-[9px] font-mono text-[var(--color-state-success)]/80 bg-[var(--color-state-success)]/10 px-1 py-0.5 rounded">
+            <DawMicroBadge tone="success" className="font-mono text-[var(--color-state-success)]/80">
                 VT
-            </span>
+            </DawMicroBadge>
         ) : null}
         {isYZoomed ? (
-            <span className="text-[9px] font-mono text-[var(--color-accent-cyan)]/80 bg-[var(--color-accent-cyan)]/10 px-1 py-0.5 rounded">
+            <DawMicroBadge tone="cyan" className="font-mono text-[var(--color-accent-cyan)]/80">
                 Y:{(viewMin * 100).toFixed(0)}–{(viewMax * 100).toFixed(0)}%
-            </span>
+            </DawMicroBadge>
         ) : null}
     </div>
 );

@@ -1,5 +1,6 @@
 /**
  * Reactive state for the Bacteria creative multi-effects processor.
+ * Keyed by deviceId to support multiple simultaneous instances.
  */
 import { Store } from '#/helpers/Store/Store';
 import { Container } from '#/helpers/DependencyInjector/Container';
@@ -25,87 +26,86 @@ export type BacteriaState = {
     activeModule: string;
 };
 
-export const bacteriaStore = new Store<BacteriaState>(logger, {
-    initialData: {
-        patch: DEFAULT_PATCH,
-        inputDb: -100,
-        outputDb: -100,
-        bandLevels: [0, 0, 0, 0, 0, 0],
-        latency: 0,
-        activeBand: 0,
-        uiLevel: 1,
-        activeModule: 'distortion',
-    },
-});
+export const DEFAULT_BACTERIA_STATE: BacteriaState = {
+    patch: DEFAULT_PATCH,
+    inputDb: -100,
+    outputDb: -100,
+    bandLevels: [0, 0, 0, 0, 0, 0],
+    latency: 0,
+    activeBand: 0,
+    uiLevel: 1,
+    activeModule: 'distortion',
+};
 
-export function setBacteriaParam<K extends keyof BacteriaPatch>(key: K, value: BacteriaPatch[K]): void {
-    const state = bacteriaStore.value;
-    if (!state) {
-        return;
-    }
-    bacteriaStore.set({
-        ...state,
-        patch: { ...state.patch, [key]: value },
-    });
+type BacteriaInstances = Record<string, BacteriaState>;
+
+export const bacteriaStore = new Store<BacteriaInstances>(logger, { initialData: {} });
+
+export function getBacteriaState(deviceId: string): BacteriaState {
+    return bacteriaStore.value?.[deviceId] ?? { ...DEFAULT_BACTERIA_STATE, patch: { ...DEFAULT_PATCH } };
+}
+
+export function setBacteriaParam<K extends keyof BacteriaPatch>(deviceId: string, key: K, value: BacteriaPatch[K]): void {
+    const instances = bacteriaStore.value ?? {};
+    const state = instances[deviceId] ?? { ...DEFAULT_BACTERIA_STATE, patch: { ...DEFAULT_PATCH } };
+    bacteriaStore.set({ ...instances, [deviceId]: { ...state, patch: { ...state.patch, [key]: value } } });
 }
 
 export function setBacteriaBandParam<K extends keyof BacteriaPatch['bands'][0]>(
+    deviceId: string,
     bandIndex: number,
     key: K,
     value: BacteriaPatch['bands'][0][K]
 ): void {
-    const state = bacteriaStore.value;
-    if (!state) {
-        return;
-    }
+    const instances = bacteriaStore.value ?? {};
+    const state = instances[deviceId] ?? { ...DEFAULT_BACTERIA_STATE, patch: { ...DEFAULT_PATCH } };
     const bands = [...state.patch.bands];
-    if (bandIndex < 0 || bandIndex >= bands.length) {
-        return;
-    }
+    if (bandIndex < 0 || bandIndex >= bands.length) return;
     bands[bandIndex] = { ...bands[bandIndex]!, [key]: value };
+    bacteriaStore.set({ ...instances, [deviceId]: { ...state, patch: { ...state.patch, bands } } });
+}
+
+export function setBacteriaUiLevel(deviceId: string, level: BacteriaUiLevel): void {
+    const instances = bacteriaStore.value ?? {};
+    const state = instances[deviceId] ?? { ...DEFAULT_BACTERIA_STATE, patch: { ...DEFAULT_PATCH } };
+    bacteriaStore.set({ ...instances, [deviceId]: { ...state, uiLevel: level } });
+}
+
+export function setBacteriaActiveBand(deviceId: string, index: number): void {
+    const instances = bacteriaStore.value ?? {};
+    const state = instances[deviceId] ?? { ...DEFAULT_BACTERIA_STATE, patch: { ...DEFAULT_PATCH } };
+    bacteriaStore.set({ ...instances, [deviceId]: { ...state, activeBand: index } });
+}
+
+export function setBacteriaActiveModule(deviceId: string, module: string): void {
+    const instances = bacteriaStore.value ?? {};
+    const state = instances[deviceId] ?? { ...DEFAULT_BACTERIA_STATE, patch: { ...DEFAULT_PATCH } };
+    bacteriaStore.set({ ...instances, [deviceId]: { ...state, activeModule: module } });
+}
+
+export function loadBacteriaPatch(deviceId: string, patch: BacteriaPatch): void {
+    const instances = bacteriaStore.value ?? {};
+    const state = instances[deviceId] ?? { ...DEFAULT_BACTERIA_STATE, patch: { ...DEFAULT_PATCH } };
+    bacteriaStore.set({ ...instances, [deviceId]: { ...state, patch } });
+}
+
+export function updateBacteriaMeters(
+    deviceId: string,
+    inputDb: number,
+    outputDb: number,
+    bandLevels?: number[],
+    latency?: number,
+): void {
+    const instances = bacteriaStore.value ?? {};
+    const state = instances[deviceId] ?? { ...DEFAULT_BACTERIA_STATE, patch: { ...DEFAULT_PATCH } };
     bacteriaStore.set({
-        ...state,
-        patch: { ...state.patch, bands },
-    });
-}
-
-export function setBacteriaUiLevel(level: BacteriaUiLevel): void {
-    const state = bacteriaStore.value;
-    if (state) {
-        bacteriaStore.set({ ...state, uiLevel: level });
-    }
-}
-
-export function setBacteriaActiveBand(index: number): void {
-    const state = bacteriaStore.value;
-    if (state) {
-        bacteriaStore.set({ ...state, activeBand: index });
-    }
-}
-
-export function setBacteriaActiveModule(module: string): void {
-    const state = bacteriaStore.value;
-    if (state) {
-        bacteriaStore.set({ ...state, activeModule: module });
-    }
-}
-
-export function loadBacteriaPatch(patch: BacteriaPatch): void {
-    const state = bacteriaStore.value;
-    if (state) {
-        bacteriaStore.set({ ...state, patch });
-    }
-}
-
-export function updateBacteriaMeters(inputDb: number, outputDb: number, bandLevels?: number[], latency?: number): void {
-    const state = bacteriaStore.value;
-    if (state) {
-        bacteriaStore.set({
+        ...instances,
+        [deviceId]: {
             ...state,
             inputDb,
             outputDb,
             bandLevels: bandLevels ?? state.bandLevels,
             latency: latency ?? state.latency,
-        });
-    }
+        },
+    });
 }

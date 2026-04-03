@@ -1,6 +1,8 @@
-import { type ReactElement, useState, useRef, useEffect } from 'react';
+import { type ReactElement, useState, useRef, useLayoutEffect } from 'react';
 import { Search, Music, Plus, SlidersHorizontal } from 'lucide-react';
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { Button } from '#/components/ui/button';
+import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { cn } from '#/helpers/Styles/cn';
 import {
     PATTERN_CATEGORIES,
@@ -32,7 +34,7 @@ const PREVIEW_PADDING = 2;
 const MiniPianoRoll = ({ notes, lengthBeats }: { notes: PatternNote[]; lengthBeats: number }): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas || notes.length === 0) {
             return;
@@ -91,10 +93,10 @@ const CompactSelect = <T extends string>({
 }): ReactElement => (
     <div className="flex flex-col gap-0.5">
         <span className="text-[9px] uppercase tracking-wider text-muted-foreground/60 font-medium">{label}</span>
-        <select
+        <DawCompactSelect
             value={value ?? ''}
             onChange={(e) => onChange(e.target.value ? (e.target.value as T) : undefined)}
-            className="h-6 bg-surface-base border border-border/60 rounded text-[11px] text-foreground/90 px-1 focus:outline-none focus:ring-1 focus:ring-purple-500/50 appearance-none cursor-pointer"
+            className="border-border/60 bg-surface-base px-1 text-[11px] text-foreground/90 focus-visible:ring-purple-500/50"
             aria-label={label}
         >
             <option value="">{allLabel}</option>
@@ -103,7 +105,7 @@ const CompactSelect = <T extends string>({
                     {o.label}
                 </option>
             ))}
-        </select>
+        </DawCompactSelect>
     </div>
 );
 
@@ -187,15 +189,12 @@ const TemplateCard = ({
                     </Button>
                 </div>
                 <div className="flex items-center gap-1 flex-wrap">
-                    <span
-                        className={cn(
-                            'text-[9px] font-medium px-1.5 py-0.5 rounded-full border',
-                            categoryBgColors[template.category],
-                            categoryColors[template.category]
-                        )}
+                    <DawMicroBadge
+                        rounded="full"
+                        className={cn(categoryBgColors[template.category], categoryColors[template.category])}
                     >
                         {template.category}
-                    </span>
+                    </DawMicroBadge>
                     <span className="text-[9px] text-muted-foreground/50">{template.lengthBeats}b</span>
                 </div>
                 <p className="text-[9px] text-muted-foreground/60 leading-tight line-clamp-1">{template.description}</p>

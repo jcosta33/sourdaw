@@ -1,7 +1,7 @@
 import { type ReactElement, useState } from 'react';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
-import { Card } from '#/components/ui/card';
 import { ChevronRight, ChevronDown } from 'lucide-react';
+import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
 import { RoutingGraph } from '../RoutingGraph';
 
 export const SignalFlowSection = (): ReactElement => {
@@ -30,11 +30,11 @@ export const SignalFlowSection = (): ReactElement => {
             </DawHeaderBand>
             {expanded ? (
                 <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
-                    <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-2">
+                    <SurfaceCard>
                         <div className="rounded bg-surface-overlay p-1">
                             <RoutingGraph />
                         </div>
-                    </Card>
+                    </SurfaceCard>
                 </div>
             ) : null}
         </div>

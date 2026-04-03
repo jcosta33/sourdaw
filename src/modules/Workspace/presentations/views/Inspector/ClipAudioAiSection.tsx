@@ -15,6 +15,7 @@ import { audioToMidi } from '#/modules/AudioAnalysis/useCases/audioToMidi';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { notifyAiChange } from '#/modules/AiRuntime/useCases/notifyAiChange';
+import { ControlHeader } from '../../components/Inspector/ControlHeader';
 
 type ClipAudioAiSectionProps = {
     clip: Clip;
@@ -135,10 +136,7 @@ export const ClipAudioAiSection = ({ clip, trackId }: ClipAudioAiSectionProps): 
                         ) : null}
                     </div>
                     <div className="space-y-1">
-                        <div className="flex items-center justify-between">
-                            <label className="text-[10px] text-muted-foreground">Strength</label>
-                            <span className="text-[10px] text-muted-foreground">{denoiseStrength}%</span>
-                        </div>
+                        <ControlHeader label="Strength" value={`${denoiseStrength}%`} valueClassName="font-normal" />
                         <Slider
                             value={[denoiseStrength]}
                             onValueChange={([v]) => setDenoiseStrength(v!)}

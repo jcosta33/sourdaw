@@ -5,7 +5,7 @@ import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { type PadState } from '../../models/ToasterKit';
-import { selectPad, setStepVelocity, toasterStore, toggleStep, type ToasterState } from '../../stores/toasterStore';
+import { selectPad, setStepVelocity, toasterStore, toggleStep, updatePad, type ToasterState } from '../../stores/toasterStore';
 import { applyEuclideanToTrack } from '../../useCases/applyEuclidean';
 import { exportPatternToTimeline } from '../../useCases/exportPatternToTimeline';
 import { loadToasterKitPreset } from '../../useCases/loadToasterKit';
@@ -14,6 +14,7 @@ import { setToasterKitParam, setToasterPadParam } from '../../useCases/toasterPa
 import { TOASTER_PRESETS } from '../../useCases/toasterQueries';
 import { triggerToasterPad } from '../../useCases/triggerPad';
 import { PadGrid } from '../components/PadGrid';
+import { PadMixer } from '../components/PadMixer';
 import { StepSequencer } from '../components/StepSequencer';
 
 const MetricTile = ({ label, value, detail }: { label: string; value: string; detail: string }): ReactElement => (
@@ -135,6 +136,18 @@ export const ToasterPanel = (): ReactElement => {
 
     function triggerPad(index: number): void {
         triggerToasterPad(index, 100);
+    }
+
+    function handlePadParam(padIndex: number, key: string, value: number): void {
+        if (key === 'muted') {
+            updatePad(padIndex, { muted: value > 0 });
+            return;
+        }
+        if (key === 'soloed') {
+            updatePad(padIndex, { soloed: value > 0 });
+            return;
+        }
+        setToasterPadParam(padIndex, key as keyof PadState, value);
     }
 
     return (
@@ -341,6 +354,10 @@ export const ToasterPanel = (): ReactElement => {
                             <Cpu className="size-3" />
                             {activeVoices} voices
                         </div>
+                    </SectionCard>
+
+                    <SectionCard title="Pad mixer" detail="Per-pad level, pan, mute, and solo.">
+                        <PadMixer pads={kit.pads} onPadParam={handlePadParam} />
                     </SectionCard>
 
                     <SectionCard

@@ -1,4 +1,5 @@
 import { type ReactElement, useState } from 'react';
+import { DawMiniSectionHeader } from '#/components/daw/DawMiniSectionHeader';
 import { cn } from '#/helpers/Styles/cn';
 import { selectTrack } from '#/modules/Arrangement/useCases/toggleTrackState/selectTrack';
 import { bypassDevice } from '#/modules/Arrangement/useCases/device/bypassDevice';
@@ -24,10 +25,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
 
     return (
         <div className="w-full space-y-0.5">
-            <div className="h-px my-1" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.06) 50%, transparent 100%)' }} />
-            <label className="text-[10px] text-muted-foreground/60 block text-center uppercase tracking-wider font-semibold">
-                Devices
-            </label>
+            <DawMiniSectionHeader label="Devices" />
             <div className="max-h-[100px] overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-white/10 space-y-0.5">
                 {track.devices.map((d, deviceIndex) => (
                     <div key={d.id} className="group relative">

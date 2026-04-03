@@ -1,9 +1,10 @@
 import { type ReactElement, useSyncExternalStore } from 'react';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
-import { Card } from '#/components/ui/card';
+import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { audioGraphStore } from '#/modules/AudioEngine/stores/audioGraphStore';
 import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
+import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
 
 type TrackRoutingSectionProps = {
     track: Track;
@@ -23,17 +24,14 @@ export const TrackRoutingSection = ({ track }: TrackRoutingSectionProps): ReactE
             {trackRoutes.length > 0 ? (
                 <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
                     {trackRoutes.map((route) => (
-                        <Card
+                        <SurfaceCard
                             key={route.id}
-                            className="rounded-md shadow-none bg-surface-base border-border/50 p-2 flex items-center justify-between"
                         >
-                            <span className="text-[10px] text-muted-foreground">
-                                {route.sourceId === track.id ? `→ ${route.destinationId}` : `← ${route.sourceId}`}
-                            </span>
-                            <span className="text-[10px] font-mono text-muted-foreground">
-                                {(route.gain * 100).toFixed(0)}%
-                            </span>
-                        </Card>
+                            <DawReadoutRow
+                                label={route.sourceId === track.id ? `→ ${route.destinationId}` : `← ${route.sourceId}`}
+                                value={`${(route.gain * 100).toFixed(0)}%`}
+                            />
+                        </SurfaceCard>
                     ))}
                 </div>
             ) : (

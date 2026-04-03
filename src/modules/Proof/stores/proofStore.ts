@@ -1,5 +1,6 @@
 /**
  * Proof mastering suite store — patch state + real-time metering data.
+ * Keyed by deviceId to support multiple simultaneous instances.
  */
 
 import { Container } from '#/helpers/DependencyInjector/Container';
@@ -29,7 +30,7 @@ export type ProofState = {
     abBypass: boolean;
 };
 
-const defaultState: ProofState = {
+export const DEFAULT_PROOF_STATE: ProofState = {
     patch: { ...DEFAULT_PATCH },
     uiLevel: 1,
     inputLufs: -100,
@@ -46,33 +47,38 @@ const defaultState: ProofState = {
     abBypass: false,
 };
 
-export const proofStore = new Store<ProofState>(logger, { initialData: defaultState });
+type ProofInstances = Record<string, ProofState>;
 
-export function setProofUiLevel(level: 1 | 2 | 3 | 4 | 5): void {
-    const state = proofStore.value;
-    if (state) {
-        proofStore.set({ ...state, uiLevel: level });
-    }
+export const proofStore = new Store<ProofInstances>(logger, { initialData: {} });
+
+export function getProofState(deviceId: string): ProofState {
+    return proofStore.value?.[deviceId] ?? { ...DEFAULT_PROOF_STATE, patch: { ...DEFAULT_PATCH } };
 }
 
-export function updateProofPatch(patch: Partial<ProofPatch>): void {
-    const state = proofStore.value;
-    if (state) {
-        proofStore.set({ ...state, patch: { ...state.patch, ...patch } });
-    }
+export function setProofUiLevel(deviceId: string, level: 1 | 2 | 3 | 4 | 5): void {
+    const instances = proofStore.value ?? {};
+    const state = instances[deviceId] ?? { ...DEFAULT_PROOF_STATE, patch: { ...DEFAULT_PATCH } };
+    proofStore.set({ ...instances, [deviceId]: { ...state, uiLevel: level } });
 }
 
-export function loadProofPatch(patch: ProofPatch): void {
-    const state = proofStore.value;
-    if (state) {
-        proofStore.set({ ...state, patch });
-    }
+export function updateProofPatch(deviceId: string, patch: Partial<ProofPatch>): void {
+    const instances = proofStore.value ?? {};
+    const state = instances[deviceId] ?? { ...DEFAULT_PROOF_STATE, patch: { ...DEFAULT_PATCH } };
+    proofStore.set({ ...instances, [deviceId]: { ...state, patch: { ...state.patch, ...patch } } });
 }
 
-export function updateProofMeters(meters: ProofMeterData): void {
-    const state = proofStore.value;
-    if (state) {
-        proofStore.set({
+export function loadProofPatch(deviceId: string, patch: ProofPatch): void {
+    const instances = proofStore.value ?? {};
+    const state = instances[deviceId] ?? { ...DEFAULT_PROOF_STATE, patch: { ...DEFAULT_PATCH } };
+    proofStore.set({ ...instances, [deviceId]: { ...state, patch } });
+}
+
+export function updateProofMeters(deviceId: string, meters: ProofMeterData): void {
+    const instances = proofStore.value ?? {};
+    const state = instances[deviceId] ?? { ...DEFAULT_PROOF_STATE, patch: { ...DEFAULT_PATCH } };
+    proofStore.set({
+        ...instances,
+        [deviceId]: {
             ...state,
             inputLufs: meters.inputLufs,
             outputLufs: meters.outputLufs,
@@ -85,6 +91,6 @@ export function updateProofMeters(meters: ProofMeterData): void {
             dynGr: meters.dynGr,
             tapPeaks: meters.tapPeaks,
             latency: meters.latency,
-        });
-    }
+        },
+    });
 }

@@ -9,15 +9,15 @@ import { setProofParam } from '../../useCases/proofParamBridge';
 
 const BAND_LABELS = ['Sub', 'Low-Mid', 'Hi-Mid', 'High'] as const;
 const SAT_TYPES = ['Tape', 'Tube', 'Transistor', 'Warm'] as const;
-type Props = { patch: ProofPatch };
+type Props = { patch: ProofPatch; deviceId: string };
 
-export const ProofExciterSection = ({ patch }: Props): ReactElement => {
+export const ProofExciterSection = ({ patch, deviceId }: Props): ReactElement => {
     const updateBand = (idx: number, key: string, value: number | boolean) => {
         const bands = patch.excBands.map((b, i) =>
             i === idx ? { ...b, [key]: value } : b
         );
-        updateProofPatch({ excBands: bands });
-        setProofParam(`exc_band${idx}_${key}`, typeof value === 'boolean' ? (value ? 1 : 0) : value);
+        updateProofPatch(deviceId, { excBands: bands });
+        setProofParam(deviceId, `exc_band${idx}_${key}`, typeof value === 'boolean' ? (value ? 1 : 0) : value);
     };
 
     return (
@@ -28,8 +28,8 @@ export const ProofExciterSection = ({ patch }: Props): ReactElement => {
                     type="button"
                     className={`text-[7px] px-1.5 py-0.5 rounded cursor-pointer ${patch.excBypassed ? 'text-muted-foreground' : 'text-[var(--color-accent-lavender)]'}`}
                     onClick={() => {
-                        updateProofPatch({ excBypassed: !patch.excBypassed });
-                        setProofParam('exc_bypass', patch.excBypassed ? 0 : 1);
+                        updateProofPatch(deviceId, { excBypassed: !patch.excBypassed });
+                        setProofParam(deviceId, 'exc_bypass', patch.excBypassed ? 0 : 1);
                     }}
                 >
                     {patch.excBypassed ? 'OFF' : 'ON'}

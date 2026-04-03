@@ -394,7 +394,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
             {waveCtxMenu ? (
                 <div
                     ref={waveCtxRef}
-                    className="fixed z-50 min-w-[160px] rounded-md border border-border bg-popover py-1 shadow-lg"
+                    className="daw-floating-surface fixed z-50 min-w-[160px] rounded-md py-1"
                     style={{ left: waveCtxMenu.x, top: waveCtxMenu.y }}
                     role="menu"
                 >

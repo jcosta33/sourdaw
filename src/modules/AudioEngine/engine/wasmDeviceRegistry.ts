@@ -260,7 +260,7 @@ const glutenDescriptor: WasmDeviceDescriptor = {
                     result.setParam(name, value);
                 }
                 result.onMeterData((data) => {
-                    updateGlutenMeters(data.grDb, data.inputDb, data.outputDb, data.crest, data.phaseCorr, data.latency);
+                    updateGlutenMeters(deviceId, data.grDb, data.inputDb, data.outputDb, data.crest, data.phaseCorr, data.latency);
                 });
                 onLoaded({
                     deviceId,
@@ -292,7 +292,7 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
                     result.setParam(name, value);
                 }
                 result.onMeterData((data) => {
-                    updateBacteriaMeters(data.inputDb, data.outputDb, data.bandLevels, data.latency);
+                    updateBacteriaMeters(deviceId, data.inputDb, data.outputDb, data.bandLevels, data.latency);
                 });
                 onLoaded({
                     deviceId,
@@ -326,6 +326,7 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                 }
                 result.onMeterData((data) => {
                     updateGrinderMeters(
+                        deviceId,
                         data.inputDb, data.preampDb, data.powerAmpDb, data.outputDb,
                         data.gateOpen, data.gateEnvelopeDb, data.sagVoltage, data.latency,
                         data.neuralCpuPercent, data.neuralWarmupProgress,
@@ -363,8 +364,8 @@ const proofDescriptor: WasmDeviceDescriptor = {
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
-                result.onMeterData((data) => { updateProofMeters(data); });
-                registerProofDevice({
+                result.onMeterData((data) => { updateProofMeters(deviceId, data); });
+                registerProofDevice(deviceId, {
                     setParam: result.setParam,
                     reorderModules: result.reorderModules,
                     resetIntegrated: result.resetIntegrated,
@@ -377,7 +378,7 @@ const proofDescriptor: WasmDeviceDescriptor = {
                     outputNode: result.workletNode,
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
-                syncFullPatch();
+                syncFullPatch(deviceId);
             })
             .catch((err) => logger.warn(`[WebAudioEngine] Proof failed: ${err}`));
         return { placeholder, loadPromise };
@@ -393,7 +394,7 @@ const scoringDescriptor: WasmDeviceDescriptor = {
             .then(async (result: ScoringNodeResult) => {
                 await result.ready;
                 result.onTelemetry((data) => {
-                    updateTunerTelemetry({
+                    updateTunerTelemetry(deviceId, {
                         frequency: data.frequency,
                         cents: data.cents,
                         confidence: data.confidence,

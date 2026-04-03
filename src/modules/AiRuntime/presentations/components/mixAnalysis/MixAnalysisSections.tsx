@@ -1,4 +1,7 @@
 import { type ReactElement } from 'react';
+import { DawMeterBar } from '#/components/daw/DawMeterBar';
+import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
+import { DawStatusDot } from '#/components/daw/DawStatusDot';
 import { AlertCircle, AlertTriangle, Info, Volume2 } from 'lucide-react';
 import { type MixAnalysis, type MixIssue } from '#/modules/AiRuntime/models/MixAnalysis';
 
@@ -55,18 +58,13 @@ export const FrequencyBar = ({ label, range, db }: FrequencyBarProps): ReactElem
     const normalizedWidth = Math.max(0, Math.min(100, ((db + 100) / 100) * 100));
     return (
         <div className="space-y-0.5">
-            <div className="flex items-center justify-between">
-                <span className="text-[10px] text-muted-foreground" title={range}>
-                    {label}
-                </span>
-                <span className="text-[10px] font-mono text-muted-foreground">{db.toFixed(1)} dB</span>
-            </div>
-            <div className="h-1.5 w-full rounded-full bg-surface-overlay">
-                <div
-                    className={`h-full rounded-full transition-all ${levelColor(db)}`}
-                    style={{ width: `${String(normalizedWidth)}%` }}
-                />
-            </div>
+            <DawReadoutRow label={<span title={range}>{label}</span>} value={`${db.toFixed(1)} dB`} />
+            <DawMeterBar
+                size="sm"
+                className="w-full bg-surface-overlay shadow-none"
+                fillClassName={`h-full rounded-full transition-all ${levelColor(db)}`}
+                value={normalizedWidth}
+            />
         </div>
     );
 };
@@ -79,18 +77,14 @@ export const OverallLevel = ({ level }: OverallLevelProps): ReactElement => (
     <section>
         <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Master Level</h3>
         <div className="flex items-center gap-3">
-            <div className={`size-2.5 rounded-full ${levelColor(level.peakDb)}`} />
+            <DawStatusDot className={`size-2.5 ${levelColor(level.peakDb)}`} />
             <div className="flex-1 space-y-0.5">
-                <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-muted-foreground">Peak</span>
-                    <span className={`text-xs font-mono font-medium ${levelTextColor(level.peakDb)}`}>
-                        {level.peakDb.toFixed(1)} dB
-                    </span>
-                </div>
-                <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-muted-foreground">RMS</span>
-                    <span className="text-xs font-mono text-muted-foreground">{level.rmsDb.toFixed(1)} dB</span>
-                </div>
+                <DawReadoutRow
+                    label="Peak"
+                    value={`${level.peakDb.toFixed(1)} dB`}
+                    valueClassName={`text-xs font-medium ${levelTextColor(level.peakDb)}`}
+                />
+                <DawReadoutRow label="RMS" value={`${level.rmsDb.toFixed(1)} dB`} valueClassName="text-xs" />
             </div>
         </div>
     </section>
@@ -141,7 +135,7 @@ export const TrackLevelsList = ({ trackLevels }: TrackLevelsListProps): ReactEle
                             >
                                 {tl.peakDb.toFixed(1)} dB
                             </span>
-                            <div className={`size-1.5 rounded-full ${levelColor(tl.peakDb)}`} />
+                            <DawStatusDot className={levelColor(tl.peakDb)} />
                         </div>
                     </div>
                 ))}

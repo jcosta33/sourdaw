@@ -1,5 +1,4 @@
 import { type ReactElement, useState } from 'react';
-import { Card } from '#/components/ui/card';
 import { Input } from '#/components/ui/input';
 import { Button } from '#/components/ui/button';
 import { Snowflake, Zap } from 'lucide-react';
@@ -8,6 +7,8 @@ import { setTrackColor } from '#/modules/Arrangement/useCases/setTrackGainPan';
 import { freezeTrack, unfreezeTrack } from '#/modules/Arrangement/useCases/freezeBounce';
 import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
 import { TRACK_COLOR_PRESETS } from '#/helpers/UI/colorPresets';
+import { InsetPanel } from '../../components/Inspector/InsetPanel';
+import { MetaText } from '../../components/Inspector/MetaText';
 
 type TrackHeaderSectionProps = {
     track: Track;
@@ -30,7 +31,7 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
 
     return (
         <div className="flex flex-col">
-            <Card
+            <InsetPanel
                 className="rounded-md bg-surface-well shadow-[inset_0_1px_3px_rgba(0,0,0,0.4)] p-2 space-y-3"
                 style={{
                     borderTop: '1px solid rgba(255,255,255,0.05)',
@@ -40,7 +41,7 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                 }}
             >
                 <div>
-                    <label className="text-[10px] text-muted-foreground block mb-1">Name</label>
+                    <MetaText className="mb-1 block">Name</MetaText>
                     {editingName ? (
                         <Input
                             value={nameValue}
@@ -71,7 +72,7 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
 
                 <div className="flex items-center gap-2 justify-between">
                     <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-muted-foreground">Kind:</span>
+                        <MetaText>Kind:</MetaText>
                         <span className="text-[10px] font-medium text-foreground capitalize">{track.kind}</span>
                     </div>
 
@@ -96,7 +97,7 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                 </div>
 
                 <div className="space-y-1.5 pt-1">
-                    <label className="text-[10px] text-muted-foreground block">Color</label>
+                    <MetaText className="block">Color</MetaText>
                     <div className="flex flex-wrap gap-1">
                         {TRACK_COLOR_PRESETS.map((c) => (
                             <button
@@ -114,7 +115,7 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                         ))}
                     </div>
                 </div>
-            </Card>
+            </InsetPanel>
         </div>
     );
 };

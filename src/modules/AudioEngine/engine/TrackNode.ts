@@ -341,7 +341,7 @@ export class TrackNode {
             dn.levainControls.destroy();
         }
         if (dn.type === 'proof') {
-            unregisterProofDevice();
+            unregisterProofDevice(deviceId);
         }
         for (const n of dn.nodes) {
             n.disconnect();

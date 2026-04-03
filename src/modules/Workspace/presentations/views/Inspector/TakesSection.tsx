@@ -1,12 +1,13 @@
 import { type ReactElement, useSyncExternalStore } from 'react';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
-import { Card } from '#/components/ui/card';
+import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Button } from '#/components/ui/button';
-import { cn } from '#/helpers/Styles/cn';
 import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
 import { setCompRegion } from '#/modules/Arrangement/useCases/comping/setCompRegion';
 import { selectTake } from '#/modules/Arrangement/useCases/comping/selectTake';
 import { flattenComp } from '#/modules/Arrangement/useCases/comping/flattenComp';
+import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
+import { MetaText } from '../../components/Inspector/MetaText';
 
 type TakesSectionProps = {
     trackId: string;
@@ -50,22 +51,23 @@ export const TakesSection = ({ trackId }: TakesSectionProps): ReactElement | nul
             />
             <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
                 {lane.takes.map((take) => (
-                    <Card
+                    <ChoiceCard
                         key={take.id}
-                        className={cn(
-                            'flex flex-col justify-center rounded-md shadow-none bg-surface-base border-border/50 p-2 gap-2',
-                            take.selected ? 'ring-1 ring-primary/30' : ''
-                        )}
+                        className="flex flex-col justify-center gap-2"
+                        selected={take.selected}
+                        interactive={false}
                     >
                         <div className="flex items-center justify-between w-full">
                             <div className="min-w-0 flex-1">
                                 <span className="text-xs text-foreground font-medium truncate block">{take.name}</span>
-                                <span className="text-[10px] text-muted-foreground">
+                                <MetaText>
                                     beat {take.startBeat}–{take.endBeat}
-                                </span>
+                                </MetaText>
                             </div>
                             {take.selected ? (
-                                <span className="text-[10px] font-medium text-primary ml-2 shrink-0">Active</span>
+                                <DawMicroBadge tone="primary" className="ml-2 shrink-0">
+                                    Active
+                                </DawMicroBadge>
                             ) : null}
                         </div>
                         {!take.selected ? (
@@ -79,7 +81,7 @@ export const TakesSection = ({ trackId }: TakesSectionProps): ReactElement | nul
                                 Set Active
                             </Button>
                         ) : null}
-                    </Card>
+                    </ChoiceCard>
                 ))}
             </div>
         </div>

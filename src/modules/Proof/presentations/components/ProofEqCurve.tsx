@@ -42,11 +42,12 @@ const peakingMag = (f: number, fc: number, gainDb: number, Q: number): number =>
 
 type Props = {
     patch: ProofPatch;
+    deviceId: string;
     width: number;
     height: number;
 };
 
-export const ProofEqCurve = ({ patch, width, height }: Props): ReactElement => {
+export const ProofEqCurve = ({ patch, deviceId, width, height }: Props): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const dragBandRef = useRef<number | null>(null);
 
@@ -242,9 +243,9 @@ export const ProofEqCurve = ({ patch, width, height }: Props): ReactElement => {
         const bands = patch.eqBands.map((b, i) =>
             i === idx ? { ...b, freq: newFreq, gain: newGain } : b
         );
-        updateProofPatch({ eqBands: bands });
-        setProofParam(`eq_band${idx}_freq`, newFreq);
-        setProofParam(`eq_band${idx}_gain`, newGain);
+        updateProofPatch(deviceId, { eqBands: bands });
+        setProofParam(deviceId, `eq_band${idx}_freq`, newFreq);
+        setProofParam(deviceId, `eq_band${idx}_gain`, newGain);
     };
 
     const handlePointerUp = () => {

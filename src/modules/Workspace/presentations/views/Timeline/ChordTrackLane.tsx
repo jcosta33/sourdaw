@@ -7,6 +7,7 @@
  */
 
 import { type ReactElement, type MouseEvent, useSyncExternalStore, useState, useRef, useEffect } from 'react';
+import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { Music2, Plus, Power, Trash2 } from 'lucide-react';
 import { chordTrackStore, type ChordTrackState } from '#/modules/Arrangement/stores/chordTrackStore';
 import {
@@ -248,9 +249,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                 {/* Empty state hint */}
                 {state.events.length === 0 ? (
                     <div className="flex items-center justify-center h-full">
-                        <span className="text-[9px] text-muted-foreground/30">
-                            Right-click to add chords · Drag to reposition
-                        </span>
+                        <DawInlineHint>Right-click to add chords · Drag to reposition</DawInlineHint>
                     </div>
                 ) : null}
             </div>
@@ -259,7 +258,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
             {contextMenu.kind !== 'none' ? (
                 <div
                     ref={menuRef}
-                    className="fixed z-50 min-w-[140px] rounded-md border border-border bg-popover p-1 shadow-md"
+                    className="daw-floating-surface fixed z-50 min-w-[140px] rounded-md p-1"
                     style={{ left: contextMenu.x, top: contextMenu.y }}
                 >
                     {contextMenu.kind === 'empty' && (
@@ -348,7 +347,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
 // ── Chord picker popover ──────────────────────────────────────────────────
 
 const ChordPickerPopover = ({ onPick }: { onPick: (root: number, quality: ChordType) => void }): ReactElement => (
-    <div className="absolute left-0 top-full z-50 mt-1 w-48 rounded-md border border-border bg-popover p-1.5 shadow-lg max-h-56 overflow-y-auto">
+    <div className="daw-floating-surface absolute left-0 top-full z-50 mt-1 max-h-56 w-48 overflow-y-auto rounded-md p-1.5">
         {ROOT_NAMES.map((name, rootIdx) => (
             <div key={name}>
                 <div className="px-1.5 pt-1 pb-0.5 text-[9px] font-bold text-muted-foreground/50 uppercase tracking-wider">

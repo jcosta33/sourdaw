@@ -1,4 +1,5 @@
 import { type ReactElement, useState } from 'react';
+import { DawMiniSectionHeader } from '#/components/daw/DawMiniSectionHeader';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
 import { Button } from '#/components/ui/button';
@@ -25,10 +26,8 @@ export const IOSection = ({ track }: IOSectionProps): ReactElement => {
     ];
 
     return (
-        <div className="w-full space-y-0.5 border-t border-border/30 pt-1.5 mt-1">
-            <label className="text-[10px] text-muted-foreground/60 block text-center uppercase tracking-wider">
-                I/O
-            </label>
+        <div className="w-full space-y-0.5">
+            <DawMiniSectionHeader label="I/O" />
 
             <div className="flex items-center justify-between px-0.5">
                 <span className="text-[6px] text-muted-foreground/50 uppercase">In</span>
@@ -54,7 +53,7 @@ export const IOSection = ({ track }: IOSectionProps): ReactElement => {
 
                 {outputOpen ? (
                     <div
-                        className="absolute bottom-full right-0 z-50 mb-1 min-w-20 rounded-md border border-border-soft border-t-[var(--color-light-edge)] bg-surface-overlay py-1 shadow-[0_4px_16px_rgba(0,0,0,0.5)]"
+                        className="daw-floating-surface absolute bottom-full right-0 z-50 mb-1 min-w-20 rounded-md py-1"
                         role="listbox"
                         aria-label="Output routing"
                     >

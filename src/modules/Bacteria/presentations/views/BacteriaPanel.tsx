@@ -5,6 +5,7 @@ import {
     bacteriaStore,
     type BacteriaState,
     type BacteriaUiLevel,
+    getBacteriaState,
     setBacteriaActiveBand,
     setBacteriaActiveModule,
     setBacteriaUiLevel,
@@ -133,11 +134,12 @@ function getModuleMeta(moduleId: string) {
     return EFFECT_MODULES[0]!;
 }
 
-function setGlobalParam<K extends keyof BacteriaPatch>(key: K, value: BacteriaPatch[K]): void {
-    setBacteriaParamWithAudio(key, value);
+function setGlobalParam<K extends keyof BacteriaPatch>(deviceId: string, key: K, value: BacteriaPatch[K]): void {
+    setBacteriaParamWithAudio(deviceId, key, value);
 }
 
 const K = ({
+    deviceId,
     v,
     k,
     label,
@@ -148,6 +150,7 @@ const K = ({
     unit,
     onChangeFn,
 }: {
+    deviceId: string;
     v: number;
     k: string;
     label: string;
@@ -162,7 +165,7 @@ const K = ({
         <RotaryKnob
             value={v}
             onChange={(val: number) =>
-                (onChangeFn ?? ((key, value) => setGlobalParam(key as keyof BacteriaPatch, value as never)))(k, val)
+                (onChangeFn ?? ((key, value) => setGlobalParam(deviceId, key as keyof BacteriaPatch, value as never)))(k, val)
             }
             min={min}
             max={max}
@@ -234,12 +237,14 @@ const BandMeters = ({ state }: { state: BacteriaState }): ReactElement => (
 );
 
 const PresetRail = ({
+    deviceId,
     state,
     query,
     category,
     onQueryChange,
     onCategoryChange,
 }: {
+    deviceId: string;
     state: BacteriaState;
     query: string;
     category: string;
@@ -320,7 +325,7 @@ const PresetRail = ({
                                     className={`bacteria-window flex w-full flex-col items-start gap-1 px-3 py-2 text-left ${
                                         active ? 'border-[var(--color-accent-cyan)]/35' : ''
                                     }`}
-                                    onClick={() => loadBacteriaPatchWithAudio(preset.patch)}
+                                    onClick={() => loadBacteriaPatchWithAudio(deviceId, preset.patch)}
                                 >
                                     <span className="text-[11px] font-medium text-foreground">{preset.name}</span>
                                     <span className="text-[8px] uppercase tracking-[0.22em] text-muted-foreground/50">
@@ -347,7 +352,7 @@ const PresetRail = ({
     );
 };
 
-const PlayHero = ({ state }: { state: BacteriaState }): ReactElement => (
+const PlayHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState }): ReactElement => (
     <div className="grid h-full min-h-0 grid-cols-[minmax(250px,0.92fr)_minmax(0,1.2fr)] gap-2.5 p-2.5">
         <div className="bacteria-window flex min-h-0 flex-col gap-3 p-3">
             <SectionHeader
@@ -360,8 +365,8 @@ const PlayHero = ({ state }: { state: BacteriaState }): ReactElement => (
                 <XYMorphPad
                     x={state.patch.morphX}
                     y={state.patch.morphY}
-                    onChangeX={(value) => setGlobalParam('morphX', value)}
-                    onChangeY={(value) => setGlobalParam('morphY', value)}
+                    onChangeX={(value) => setGlobalParam(deviceId, 'morphX', value)}
+                    onChangeY={(value) => setGlobalParam(deviceId, 'morphY', value)}
                     snapshots={state.patch.snapshots}
                     width={264}
                     height={212}
@@ -412,9 +417,9 @@ const PlayHero = ({ state }: { state: BacteriaState }): ReactElement => (
                     ]}
                     crossoverMode={state.patch.crossoverMode}
                     activeBand={state.activeBand}
-                    onBandSelect={setBacteriaActiveBand}
+                    onBandSelect={(index) => setBacteriaActiveBand(deviceId, index)}
                     onCrossoverChange={(index, freq) =>
-                        setGlobalParam(`crossoverFreq${index + 1}` as keyof BacteriaPatch, freq as never)
+                        setGlobalParam(deviceId, `crossoverFreq${index + 1}` as keyof BacteriaPatch, freq as never)
                     }
                 />
             </div>
@@ -428,6 +433,7 @@ const PlayHero = ({ state }: { state: BacteriaState }): ReactElement => (
                     />
                     <div className="flex flex-wrap gap-4">
                         <K
+                            deviceId={deviceId}
                             v={state.patch.inputGain}
                             k="inputGain"
                             label="Input"
@@ -438,6 +444,7 @@ const PlayHero = ({ state }: { state: BacteriaState }): ReactElement => (
                             unit="dB"
                         />
                         <K
+                            deviceId={deviceId}
                             v={state.patch.outputGain}
                             k="outputGain"
                             label="Output"
@@ -447,7 +454,7 @@ const PlayHero = ({ state }: { state: BacteriaState }): ReactElement => (
                             def={0}
                             unit="dB"
                         />
-                        <K v={state.patch.mix} k="mix" label="Mix" min={0} max={1} step={0.01} def={1} />
+                        <K deviceId={deviceId} v={state.patch.mix} k="mix" label="Mix" min={0} max={1} step={0.01} def={1} />
                     </div>
                 </div>
                 <BandMeters state={state} />
@@ -456,7 +463,7 @@ const PlayHero = ({ state }: { state: BacteriaState }): ReactElement => (
     </div>
 );
 
-const PlayDeck = ({ state }: { state: BacteriaState }): ReactElement => (
+const PlayDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState }): ReactElement => (
     <div className="flex h-full min-h-0 flex-col gap-2.5 overflow-y-auto p-2.5">
         <div className="bacteria-window flex flex-col gap-3 p-3">
             <SectionHeader
@@ -469,6 +476,7 @@ const PlayDeck = ({ state }: { state: BacteriaState }): ReactElement => (
                 {([1, 2, 3, 4, 5, 6, 7, 8] as const).map((index) => (
                     <K
                         key={index}
+                        deviceId={deviceId}
                         v={state.patch[`macro${index}` as keyof BacteriaPatch] as number}
                         k={`macro${index}`}
                         label={`Macro ${index}`}
@@ -488,14 +496,14 @@ const PlayDeck = ({ state }: { state: BacteriaState }): ReactElement => (
                 description="Fine-tune the resting position without dragging the pad."
             />
             <div className="flex flex-wrap gap-4">
-                <K v={state.patch.morphX} k="morphX" label="X" min={0} max={1} step={0.01} def={0.5} />
-                <K v={state.patch.morphY} k="morphY" label="Y" min={0} max={1} step={0.01} def={0.5} />
+                <K deviceId={deviceId} v={state.patch.morphX} k="morphX" label="X" min={0} max={1} step={0.01} def={0.5} />
+                <K deviceId={deviceId} v={state.patch.morphY} k="morphY" label="Y" min={0} max={1} step={0.01} def={0.5} />
             </div>
         </div>
     </div>
 );
 
-const ShapeHero = ({ state }: { state: BacteriaState }): ReactElement => {
+const ShapeHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState }): ReactElement => {
     const moduleMeta = getModuleMeta(state.activeModule);
 
     return (
@@ -532,9 +540,9 @@ const ShapeHero = ({ state }: { state: BacteriaState }): ReactElement => {
                     ]}
                     crossoverMode={state.patch.crossoverMode}
                     activeBand={state.activeBand}
-                    onBandSelect={setBacteriaActiveBand}
+                    onBandSelect={(index) => setBacteriaActiveBand(deviceId, index)}
                     onCrossoverChange={(index, freq) =>
-                        setGlobalParam(`crossoverFreq${index + 1}` as keyof BacteriaPatch, freq as never)
+                        setGlobalParam(deviceId, `crossoverFreq${index + 1}` as keyof BacteriaPatch, freq as never)
                     }
                 />
             </div>
@@ -556,9 +564,10 @@ const ShapeHero = ({ state }: { state: BacteriaState }): ReactElement => {
                             index={index}
                             band={state.patch.bands[index]!}
                             isActive={state.activeBand === index}
-                            onSelect={() => setBacteriaActiveBand(index)}
+                            onSelect={() => setBacteriaActiveBand(deviceId, index)}
                             onParamChange={(key, value) =>
                                 setBacteriaBandParamWithAudio(
+                                    deviceId,
                                     index,
                                     key as keyof BacteriaPatch['bands'][0],
                                     value as never
@@ -572,7 +581,7 @@ const ShapeHero = ({ state }: { state: BacteriaState }): ReactElement => {
     );
 };
 
-const BuildHero = ({ state }: { state: BacteriaState }): ReactElement => (
+const BuildHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState }): ReactElement => (
     <div className="flex h-full min-h-0 flex-col gap-2.5 p-2.5">
         <div className="bacteria-window flex flex-col gap-3 p-3">
             <SectionHeader
@@ -606,9 +615,9 @@ const BuildHero = ({ state }: { state: BacteriaState }): ReactElement => (
                 ]}
                 crossoverMode={state.patch.crossoverMode}
                 activeBand={state.activeBand}
-                onBandSelect={setBacteriaActiveBand}
+                onBandSelect={(index) => setBacteriaActiveBand(deviceId, index)}
                 onCrossoverChange={(index, freq) =>
-                    setGlobalParam(`crossoverFreq${index + 1}` as keyof BacteriaPatch, freq as never)
+                    setGlobalParam(deviceId, `crossoverFreq${index + 1}` as keyof BacteriaPatch, freq as never)
                 }
             />
         </div>
@@ -628,9 +637,9 @@ const BuildHero = ({ state }: { state: BacteriaState }): ReactElement => (
                         index={index}
                         band={state.patch.bands[index]!}
                         isActive={state.activeBand === index}
-                        onSelect={() => setBacteriaActiveBand(index)}
+                        onSelect={() => setBacteriaActiveBand(deviceId, index)}
                         onParamChange={(key, value) =>
-                            setBacteriaBandParamWithAudio(index, key as keyof BacteriaPatch['bands'][0], value as never)
+                            setBacteriaBandParamWithAudio(deviceId, index, key as keyof BacteriaPatch['bands'][0], value as never)
                         }
                     />
                 ))}
@@ -720,13 +729,13 @@ const LabHero = ({ state }: { state: BacteriaState }): ReactElement => (
     </div>
 );
 
-function renderShapeControls(state: BacteriaState): ReactElement {
+function renderShapeControls(deviceId: string, state: BacteriaState): ReactElement {
     const patch = state.patch;
     const band = patch.bands[state.activeBand] ?? patch.bands[0]!;
     const activeModule = state.activeModule;
 
     const setBandParam = <K extends keyof BacteriaPatch['bands'][0]>(key: K, value: BacteriaPatch['bands'][0][K]) => {
-        setBacteriaBandParamWithAudio(state.activeBand, key, value);
+        setBacteriaBandParamWithAudio(deviceId, state.activeBand, key, value);
     };
 
     return (
@@ -747,7 +756,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                                 key={module.id}
                                 type="button"
                                 className={`bacteria-chip ${active ? 'bacteria-chip-active' : ''}`}
-                                onClick={() => setBacteriaActiveModule(module.id)}
+                                onClick={() => setBacteriaActiveModule(deviceId, module.id)}
                             >
                                 {module.label}
                             </button>
@@ -797,6 +806,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                                 step={1}
                                 def={25}
                                 unit="%"
+                                deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
                             <K
@@ -807,10 +817,12 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                                 max={1}
                                 step={0.01}
                                 def={0}
+                                deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
                             {band.distortionMode === 'foldback' ? (
                                 <K
+                                    deviceId={deviceId}
                                     v={band.foldbackThreshold}
                                     k="foldbackThreshold"
                                     label="Fold"
@@ -824,6 +836,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                             {band.distortionMode === 'bitcrush' ? (
                                 <>
                                     <K
+                                        deviceId={deviceId}
                                         v={band.bitDepth}
                                         k="bitDepth"
                                         label="Bits"
@@ -834,6 +847,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                                         onChangeFn={setBandParam as never}
                                     />
                                     <K
+                                        deviceId={deviceId}
                                         v={band.sampleRateReduce}
                                         k="sampleRateReduce"
                                         label="Rate div"
@@ -847,6 +861,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                             ) : null}
                             {band.distortionMode === 'tube' ? (
                                 <K
+                                    deviceId={deviceId}
                                     v={band.tubeBias}
                                     k="tubeBias"
                                     label="Bias"
@@ -859,6 +874,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                             ) : null}
                             {band.distortionMode === 'breakdown' ? (
                                 <K
+                                    deviceId={deviceId}
                                     v={band.breakdownDepth}
                                     k="breakdownDepth"
                                     label="Depth"
@@ -908,6 +924,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                                 step={1}
                                 def={8000}
                                 unit="Hz"
+                                deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
                             <K
@@ -918,6 +935,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                                 max={1}
                                 step={0.01}
                                 def={0.3}
+                                deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
                             <K
@@ -928,6 +946,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                                 max={1}
                                 step={0.01}
                                 def={0}
+                                deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
                             <K
@@ -939,6 +958,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                                 step={0.1}
                                 def={5}
                                 unit="ms"
+                                deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
                             <K
@@ -950,6 +970,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                                 step={1}
                                 def={200}
                                 unit="ms"
+                                deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
                         </div>
@@ -976,6 +997,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                                 step={0.01}
                                 def={1.5}
                                 unit="Hz"
+                                deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
                             <K
@@ -986,6 +1008,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                                 max={1}
                                 step={0.01}
                                 def={0.4}
+                                deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
                             <K
@@ -996,6 +1019,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                                 max={1}
                                 step={0.01}
                                 def={0.2}
+                                deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
                             <K
@@ -1006,6 +1030,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                                 max={1}
                                 step={0.01}
                                 def={0.5}
+                                deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
                         </div>
@@ -1032,6 +1057,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                                 step={0.01}
                                 def={0.5}
                                 unit="Hz"
+                                deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
                             <K
@@ -1042,6 +1068,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                                 max={1}
                                 step={0.01}
                                 def={0.7}
+                                deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
                             <K
@@ -1052,6 +1079,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                                 max={1}
                                 step={0.01}
                                 def={0.5}
+                                deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
                             <K
@@ -1062,6 +1090,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                                 max={1}
                                 step={0.01}
                                 def={0.5}
+                                deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
                         </div>
@@ -1098,6 +1127,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                                 step={1}
                                 def={80}
                                 unit="ms"
+                                deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
                             <K
@@ -1108,6 +1138,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                                 max={100}
                                 step={1}
                                 def={15}
+                                deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
                             <K
@@ -1119,6 +1150,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                                 step={1}
                                 def={100}
                                 unit="ms"
+                                deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
                             <K
@@ -1130,6 +1162,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                                 step={0.1}
                                 def={0}
                                 unit="st"
+                                deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
                             <K
@@ -1140,6 +1173,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                                 max={1}
                                 step={0.01}
                                 def={0.5}
+                                deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
                         </div>
@@ -1175,6 +1209,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                                 max={1}
                                 step={0.01}
                                 def={0.5}
+                                deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
                             <K
@@ -1185,6 +1220,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                                 max={1}
                                 step={0.01}
                                 def={0.5}
+                                deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
                         </div>
@@ -1211,6 +1247,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                                 step={0.1}
                                 def={0}
                                 unit="Hz"
+                                deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
                             <K
@@ -1221,6 +1258,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                                 max={1}
                                 step={0.01}
                                 def={0.5}
+                                deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
                         </div>
@@ -1247,6 +1285,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                                 step={1}
                                 def={0}
                                 unit="%"
+                                deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
                             <K
@@ -1257,6 +1296,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                                 max={1}
                                 step={0.01}
                                 def={0}
+                                deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
                         </div>
@@ -1282,6 +1322,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                                 max={1}
                                 step={0.01}
                                 def={0.3}
+                                deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
                             <K
@@ -1292,6 +1333,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                                 max={1}
                                 step={0.01}
                                 def={0.5}
+                                deviceId={deviceId}
                                 onChangeFn={setBandParam as never}
                             />
                         </div>
@@ -1307,6 +1349,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                 />
                 <div className="flex flex-wrap gap-4">
                     <K
+                        deviceId={deviceId}
                         v={patch.lfo1Rate}
                         k="lfo1Rate"
                         label="LFO 1"
@@ -1316,8 +1359,9 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                         def={2}
                         unit="Hz"
                     />
-                    <K v={patch.lfo1Amount} k="lfo1Amount" label="LFO Amt" min={0} max={1} step={0.01} def={0.5} />
+                    <K deviceId={deviceId} v={patch.lfo1Amount} k="lfo1Amount" label="LFO Amt" min={0} max={1} step={0.01} def={0.5} />
                     <K
+                        deviceId={deviceId}
                         v={patch.envFollowerAttack}
                         k="envFollowerAttack"
                         label="Env Atk"
@@ -1328,6 +1372,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
                         unit="ms"
                     />
                     <K
+                        deviceId={deviceId}
                         v={patch.envFollowerRelease}
                         k="envFollowerRelease"
                         label="Env Rel"
@@ -1343,7 +1388,7 @@ function renderShapeControls(state: BacteriaState): ReactElement {
     );
 }
 
-const BuildDeck = ({ state }: { state: BacteriaState }): ReactElement => (
+const BuildDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState }): ReactElement => (
     <div className="flex h-full min-h-0 flex-col gap-2.5 overflow-y-auto p-2.5">
         <div className="bacteria-window flex flex-col gap-3 p-3">
             <SectionHeader
@@ -1358,9 +1403,9 @@ const BuildDeck = ({ state }: { state: BacteriaState }): ReactElement => (
                         type="button"
                         className={`bacteria-chip ${state.patch.bandCount === count ? 'bacteria-chip-active' : ''}`}
                         onClick={() => {
-                            setGlobalParam('bandCount', count);
+                            setGlobalParam(deviceId, 'bandCount', count);
                             if (state.activeBand >= count) {
-                                setBacteriaActiveBand(count - 1);
+                                setBacteriaActiveBand(deviceId, count - 1);
                             }
                         }}
                     >
@@ -1374,7 +1419,7 @@ const BuildDeck = ({ state }: { state: BacteriaState }): ReactElement => (
                         key={slope}
                         type="button"
                         className={`bacteria-chip ${state.patch.crossoverSlope === index ? 'bacteria-chip-active' : ''}`}
-                        onClick={() => setGlobalParam('crossoverSlope', index)}
+                        onClick={() => setGlobalParam(deviceId, 'crossoverSlope', index)}
                     >
                         {slope} dB
                     </button>
@@ -1386,7 +1431,7 @@ const BuildDeck = ({ state }: { state: BacteriaState }): ReactElement => (
                         key={mode}
                         type="button"
                         className={`bacteria-chip ${state.patch.crossoverMode === mode ? 'bacteria-chip-active' : ''}`}
-                        onClick={() => setGlobalParam('crossoverMode', mode)}
+                        onClick={() => setGlobalParam(deviceId, 'crossoverMode', mode)}
                     >
                         {mode === 'lr4' ? 'LR4' : 'Linear'}
                     </button>
@@ -1410,7 +1455,7 @@ const BuildDeck = ({ state }: { state: BacteriaState }): ReactElement => (
     </div>
 );
 
-const RouteDeck = ({ state }: { state: BacteriaState }): ReactElement => (
+const RouteDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState }): ReactElement => (
     <div className="flex h-full min-h-0 flex-col gap-2.5 overflow-y-auto p-2.5">
         <div className="bacteria-window flex flex-col gap-3 p-3">
             <SectionHeader
@@ -1424,7 +1469,7 @@ const RouteDeck = ({ state }: { state: BacteriaState }): ReactElement => (
                         key={mode}
                         type="button"
                         className={`bacteria-chip ${state.patch.globalRouting === mode ? 'bacteria-chip-active' : ''}`}
-                        onClick={() => setGlobalParam('globalRouting', mode)}
+                        onClick={() => setGlobalParam(deviceId, 'globalRouting', mode)}
                     >
                         {mode === 'serial' ? 'Serial' : mode === 'parallel' ? 'Parallel' : 'Mid/side'}
                     </button>
@@ -1448,7 +1493,7 @@ const RouteDeck = ({ state }: { state: BacteriaState }): ReactElement => (
                                     key={mode}
                                     type="button"
                                     className={`bacteria-chip ${state.patch.bands[index]?.routingMode === mode ? 'bacteria-chip-active' : ''}`}
-                                    onClick={() => setBacteriaBandParamWithAudio(index, 'routingMode', mode)}
+                                    onClick={() => setBacteriaBandParamWithAudio(deviceId, index, 'routingMode', mode)}
                                 >
                                     {mode === 'mid-side' ? 'M/S' : mode}
                                 </button>
@@ -1461,7 +1506,7 @@ const RouteDeck = ({ state }: { state: BacteriaState }): ReactElement => (
     </div>
 );
 
-const LabDeck = ({ state }: { state: BacteriaState }): ReactElement => (
+const LabDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState }): ReactElement => (
     <div className="flex h-full min-h-0 flex-col gap-2.5 overflow-y-auto p-2.5">
         <div className="bacteria-window flex flex-col gap-3 p-3">
             <SectionHeader
@@ -1471,6 +1516,7 @@ const LabDeck = ({ state }: { state: BacteriaState }): ReactElement => (
             />
             <div className="flex flex-wrap gap-4">
                 <K
+                    deviceId={deviceId}
                     v={state.patch.lfo1Rate}
                     k="lfo1Rate"
                     label="LFO 1"
@@ -1480,8 +1526,9 @@ const LabDeck = ({ state }: { state: BacteriaState }): ReactElement => (
                     def={2}
                     unit="Hz"
                 />
-                <K v={state.patch.lfo1Amount} k="lfo1Amount" label="Amt 1" min={0} max={1} step={0.01} def={0.5} />
+                <K deviceId={deviceId} v={state.patch.lfo1Amount} k="lfo1Amount" label="Amt 1" min={0} max={1} step={0.01} def={0.5} />
                 <K
+                    deviceId={deviceId}
                     v={state.patch.lfo2Rate}
                     k="lfo2Rate"
                     label="LFO 2"
@@ -1491,7 +1538,7 @@ const LabDeck = ({ state }: { state: BacteriaState }): ReactElement => (
                     def={0.5}
                     unit="Hz"
                 />
-                <K v={state.patch.lfo2Amount} k="lfo2Amount" label="Amt 2" min={0} max={1} step={0.01} def={0.5} />
+                <K deviceId={deviceId} v={state.patch.lfo2Amount} k="lfo2Amount" label="Amt 2" min={0} max={1} step={0.01} def={0.5} />
             </div>
             <div className="flex flex-wrap gap-2">
                 {['Sin', 'Tri', 'Saw', 'Sq', 'S&H'].map((shape, index) => (
@@ -1499,7 +1546,7 @@ const LabDeck = ({ state }: { state: BacteriaState }): ReactElement => (
                         key={`lfo1-${shape}`}
                         type="button"
                         className={`bacteria-chip ${state.patch.lfo1Shape === index ? 'bacteria-chip-active' : ''}`}
-                        onClick={() => setGlobalParam('lfo1Shape', index)}
+                        onClick={() => setGlobalParam(deviceId, 'lfo1Shape', index)}
                     >
                         LFO1 {shape}
                     </button>
@@ -1511,7 +1558,7 @@ const LabDeck = ({ state }: { state: BacteriaState }): ReactElement => (
                         key={`lfo2-${shape}`}
                         type="button"
                         className={`bacteria-chip ${state.patch.lfo2Shape === index ? 'bacteria-chip-active' : ''}`}
-                        onClick={() => setGlobalParam('lfo2Shape', index)}
+                        onClick={() => setGlobalParam(deviceId, 'lfo2Shape', index)}
                     >
                         LFO2 {shape}
                     </button>
@@ -1527,6 +1574,7 @@ const LabDeck = ({ state }: { state: BacteriaState }): ReactElement => (
             />
             <div className="flex flex-wrap gap-4">
                 <K
+                    deviceId={deviceId}
                     v={state.patch.envFollowerAttack}
                     k="envFollowerAttack"
                     label="Env Atk"
@@ -1537,6 +1585,7 @@ const LabDeck = ({ state }: { state: BacteriaState }): ReactElement => (
                     unit="ms"
                 />
                 <K
+                    deviceId={deviceId}
                     v={state.patch.envFollowerRelease}
                     k="envFollowerRelease"
                     label="Env Rel"
@@ -1546,8 +1595,9 @@ const LabDeck = ({ state }: { state: BacteriaState }): ReactElement => (
                     def={200}
                     unit="ms"
                 />
-                <K v={state.patch.stepSeqSteps} k="stepSeqSteps" label="Steps" min={1} max={32} step={1} def={16} />
+                <K deviceId={deviceId} v={state.patch.stepSeqSteps} k="stepSeqSteps" label="Steps" min={1} max={32} step={1} def={16} />
                 <K
+                    deviceId={deviceId}
                     v={state.patch.stepSeqRate}
                     k="stepSeqRate"
                     label="Step Hz"
@@ -1557,24 +1607,24 @@ const LabDeck = ({ state }: { state: BacteriaState }): ReactElement => (
                     def={4}
                     unit="Hz"
                 />
-                <K v={state.patch.lorenzSigma} k="lorenzSigma" label="Sigma" min={1} max={30} step={0.1} def={10} />
-                <K v={state.patch.lorenzRho} k="lorenzRho" label="Rho" min={1} max={50} step={0.1} def={28} />
-                <K v={state.patch.lorenzBeta} k="lorenzBeta" label="Beta" min={0.1} max={10} step={0.01} def={2.667} />
-                <K v={state.patch.lorenzSpeed} k="lorenzSpeed" label="Speed" min={0.01} max={10} step={0.01} def={1} />
+                <K deviceId={deviceId} v={state.patch.lorenzSigma} k="lorenzSigma" label="Sigma" min={1} max={30} step={0.1} def={10} />
+                <K deviceId={deviceId} v={state.patch.lorenzRho} k="lorenzRho" label="Rho" min={1} max={50} step={0.1} def={28} />
+                <K deviceId={deviceId} v={state.patch.lorenzBeta} k="lorenzBeta" label="Beta" min={0.1} max={10} step={0.01} def={2.667} />
+                <K deviceId={deviceId} v={state.patch.lorenzSpeed} k="lorenzSpeed" label="Speed" min={0.01} max={10} step={0.01} def={1} />
             </div>
         </div>
     </div>
 );
 
-function renderHero(state: BacteriaState): ReactElement {
+function renderHero(deviceId: string, state: BacteriaState): ReactElement {
     if (state.uiLevel === 1) {
-        return <PlayHero state={state} />;
+        return <PlayHero deviceId={deviceId} state={state} />;
     }
     if (state.uiLevel === 2) {
-        return <ShapeHero state={state} />;
+        return <ShapeHero deviceId={deviceId} state={state} />;
     }
     if (state.uiLevel === 3) {
-        return <BuildHero state={state} />;
+        return <BuildHero deviceId={deviceId} state={state} />;
     }
     if (state.uiLevel === 4) {
         return <RouteHero state={state} />;
@@ -1582,34 +1632,31 @@ function renderHero(state: BacteriaState): ReactElement {
     return <LabHero state={state} />;
 }
 
-function renderDeck(state: BacteriaState): ReactElement {
+function renderDeck(deviceId: string, state: BacteriaState): ReactElement {
     if (state.uiLevel === 1) {
-        return <PlayDeck state={state} />;
+        return <PlayDeck deviceId={deviceId} state={state} />;
     }
     if (state.uiLevel === 2) {
-        return renderShapeControls(state);
+        return renderShapeControls(deviceId, state);
     }
     if (state.uiLevel === 3) {
-        return <BuildDeck state={state} />;
+        return <BuildDeck deviceId={deviceId} state={state} />;
     }
     if (state.uiLevel === 4) {
-        return <RouteDeck state={state} />;
+        return <RouteDeck deviceId={deviceId} state={state} />;
     }
-    return <LabDeck state={state} />;
+    return <LabDeck deviceId={deviceId} state={state} />;
 }
 
-export const BacteriaPanel = (): ReactElement => {
-    const state = useSyncExternalStore<BacteriaState | null>(
+export const BacteriaPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
+    const allInstances = useSyncExternalStore(
         (cb) => bacteriaStore.subscribe(cb),
         () => bacteriaStore.value
     );
+    const state: BacteriaState = allInstances?.[deviceId] ?? getBacteriaState(deviceId);
     const [presetQuery, setPresetQuery] = useState('');
     const [presetCategory, setPresetCategory] = useState('All');
     const [, startFilterTransition] = useTransition();
-
-    if (!state) {
-        return <div className="flex h-full items-center justify-center text-muted-foreground">Loading...</div>;
-    }
 
     const activeLevel = getActiveLevel(state.uiLevel);
     const activeBand = state.patch.bands[state.activeBand] ?? state.patch.bands[0]!;
@@ -1618,6 +1665,7 @@ export const BacteriaPanel = (): ReactElement => {
     return (
         <div className="bacteria-faceplate flex h-full min-h-0 gap-2.5 overflow-hidden p-2.5">
             <PresetRail
+                deviceId={deviceId}
                 state={state}
                 query={presetQuery}
                 category={presetCategory}
@@ -1652,7 +1700,7 @@ export const BacteriaPanel = (): ReactElement => {
                                     type="button"
                                     className={`bacteria-chip ${active ? 'bacteria-chip-active' : ''}`}
                                     title={level.description}
-                                    onClick={() => setBacteriaUiLevel(level.id)}
+                                    onClick={() => setBacteriaUiLevel(deviceId, level.id)}
                                 >
                                     {level.label}
                                 </button>
@@ -1667,7 +1715,7 @@ export const BacteriaPanel = (): ReactElement => {
                                     key={index}
                                     type="button"
                                     className={`bacteria-chip ${state.activeBand === index ? 'bacteria-chip-active' : ''}`}
-                                    onClick={() => setBacteriaActiveBand(index)}
+                                    onClick={() => setBacteriaActiveBand(deviceId, index)}
                                 >
                                     Band {index + 1}
                                 </button>
@@ -1689,7 +1737,7 @@ export const BacteriaPanel = (): ReactElement => {
                             type="button"
                             className={`bacteria-chip ${Boolean(state.patch.bypass) ? 'bacteria-chip-active' : ''}`}
                             aria-pressed={Boolean(state.patch.bypass)}
-                            onClick={() => setGlobalParam('bypass', !Boolean(state.patch.bypass))}
+                            onClick={() => setGlobalParam(deviceId, 'bypass', !Boolean(state.patch.bypass))}
                         >
                             {Boolean(state.patch.bypass) ? 'Bypassed' : 'Live'}
                         </button>
@@ -1697,8 +1745,8 @@ export const BacteriaPanel = (): ReactElement => {
                 </header>
 
                 <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.45fr)_minmax(320px,0.92fr)] gap-2.5 overflow-hidden">
-                    <section className="bacteria-window min-h-0 overflow-hidden">{renderHero(state)}</section>
-                    <section className="bacteria-window min-h-0 overflow-hidden">{renderDeck(state)}</section>
+                    <section className="bacteria-window min-h-0 overflow-hidden">{renderHero(deviceId, state)}</section>
+                    <section className="bacteria-window min-h-0 overflow-hidden">{renderDeck(deviceId, state)}</section>
                 </div>
 
                 <footer className="grid shrink-0 grid-cols-[repeat(4,minmax(0,auto))_minmax(0,1fr)] gap-2.5">

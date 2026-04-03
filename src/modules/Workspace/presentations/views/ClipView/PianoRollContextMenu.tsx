@@ -97,7 +97,7 @@ export const PianoRollContextMenu = ({
     return (
         <div
             ref={ref}
-            className="fixed z-50 min-w-[170px] rounded-md border border-border bg-popover py-1 shadow-lg"
+            className="daw-floating-surface fixed z-50 min-w-[170px] rounded-md py-1"
             style={{ left: menu.x, top: menu.y }}
             role="menu"
         >

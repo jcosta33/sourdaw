@@ -53,6 +53,7 @@ import { ShortcutCheatSheet } from '../components/ShortcutCheatSheet';
 import { UndoHistoryPanel } from '#/modules/Command/presentations/views/UndoHistoryPanel';
 
 import { Button } from '#/components/ui/button';
+import { AlphaNoticeDialog } from '../components/AlphaNoticeDialog';
 import { X } from 'lucide-react';
 import { toggleMixer } from '../../useCases/togglePanel/panelToggles';
 import { DragResizeHandle } from '#/components/ui/DragResizeHandle';
@@ -74,6 +75,8 @@ const BranchManagerDialogLazy = lazy(() =>
 type AppShellProps = {
     children: ReactNode;
 };
+
+let hasShownAlphaNotice = false;
 
 export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const workspaceState = useWorkspaceState();
@@ -114,6 +117,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const aiPanelOpen = aiState.isPanelOpen;
     const [exportOpen, setExportOpen] = useState(false);
     const [prefsOpen, setPrefsOpen] = useState(false);
+    const [showAlphaNotice, setShowAlphaNotice] = useState(false);
     const [bottomTab, setBottomTab] = useState<'editor' | 'mixer' | 'session' | 'routing' | 'analysis' | 'automation'>(
         'mixer'
     );
@@ -121,11 +125,11 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const [toasterOpen, setToasterOpen] = useState(false);
     const [levainOpen, setLevainOpen] = useState(false);
     const [proofChamberOpen, setProofChamberOpen] = useState(false);
-    const [glutenOpen, setGlutenOpen] = useState(false);
-    const [bacteriaOpen, setBacteriaOpen] = useState(false);
-    const [grinderOpen, setGrinderOpen] = useState(false);
-    const [scoringOpen, setScoringOpen] = useState(false);
-    const [proofOpen, setProofOpen] = useState(false);
+    const [glutenDeviceId, setGlutenDeviceId] = useState<string | null>(null);
+    const [bacteriaDeviceId, setBacteriaDeviceId] = useState<string | null>(null);
+    const [grinderDeviceId, setGrinderDeviceId] = useState<string | null>(null);
+    const [scoringDeviceId, setScoringDeviceId] = useState<string | null>(null);
+    const [proofDeviceId, setProofDeviceId] = useState<string | null>(null);
     const [yeastOpen, setYeastOpen] = useState(false);
     const [crustOpen, setCrustOpen] = useState(false);
 
@@ -144,6 +148,17 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         const cleanup = startShortcutEngine();
         return cleanup;
     }, []);
+
+    // Show alpha notice when project initializes
+    useEffect(() => {
+        if (project.initialized && !hasShownAlphaNotice) {
+            const hasDismissed = localStorage.getItem('sourdaw-alpha-notice-dismissed') === 'true';
+            if (!hasDismissed) {
+                setShowAlphaNotice(true);
+            }
+            hasShownAlphaNotice = true;
+        }
+    }, [project.initialized]);
 
     // Auto-switch bottom tab when clip selected
     useEffect(() => {
@@ -171,11 +186,11 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         setToasterOpen(false);
         setLevainOpen(false);
         setProofChamberOpen(false);
-        setGlutenOpen(false);
-        setBacteriaOpen(false);
-        setGrinderOpen(false);
-        setScoringOpen(false);
-        setProofOpen(false);
+        setGlutenDeviceId(null);
+        setBacteriaDeviceId(null);
+        setGrinderDeviceId(null);
+        setScoringDeviceId(null);
+        setProofDeviceId(null);
         setYeastOpen(false);
         setCrustOpen(false);
     };
@@ -222,9 +237,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     // Listen for Gluten panel open (from inspector device click)
     useEffect(() => {
-        const handler = (): void => {
+        const handler = (e: Event): void => {
             closeAllDevicePanels();
-            setGlutenOpen(true);
+            setGlutenDeviceId((e as CustomEvent<{ deviceId?: string }>).detail?.deviceId ?? null);
         };
         document.addEventListener(APP_EVENTS.SHOW_GLUTEN_TAB, handler);
         return () => document.removeEventListener(APP_EVENTS.SHOW_GLUTEN_TAB, handler);
@@ -232,9 +247,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     // Listen for Bacteria panel open
     useEffect(() => {
-        const handler = (): void => {
+        const handler = (e: Event): void => {
             closeAllDevicePanels();
-            setBacteriaOpen(true);
+            setBacteriaDeviceId((e as CustomEvent<{ deviceId?: string }>).detail?.deviceId ?? null);
         };
         document.addEventListener(APP_EVENTS.SHOW_BACTERIA_TAB, handler);
         return () => document.removeEventListener(APP_EVENTS.SHOW_BACTERIA_TAB, handler);
@@ -242,9 +257,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     // Listen for Grinder panel open
     useEffect(() => {
-        const handler = (): void => {
+        const handler = (e: Event): void => {
             closeAllDevicePanels();
-            setGrinderOpen(true);
+            setGrinderDeviceId((e as CustomEvent<{ deviceId?: string }>).detail?.deviceId ?? null);
         };
         document.addEventListener(APP_EVENTS.SHOW_GRINDER_TAB, handler);
         return () => document.removeEventListener(APP_EVENTS.SHOW_GRINDER_TAB, handler);
@@ -252,9 +267,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     // Listen for Proof mastering suite panel open
     useEffect(() => {
-        const handler = (): void => {
+        const handler = (e: Event): void => {
             closeAllDevicePanels();
-            setProofOpen(true);
+            setProofDeviceId((e as CustomEvent<{ deviceId?: string }>).detail?.deviceId ?? null);
         };
         document.addEventListener(APP_EVENTS.SHOW_PROOF_TAB, handler);
         return () => document.removeEventListener(APP_EVENTS.SHOW_PROOF_TAB, handler);
@@ -271,9 +286,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     }, []);
 
     useEffect(() => {
-        const handler = (): void => {
+        const handler = (e: Event): void => {
             closeAllDevicePanels();
-            setScoringOpen(true);
+            setScoringDeviceId((e as CustomEvent<{ deviceId?: string }>).detail?.deviceId ?? null);
         };
         document.addEventListener(APP_EVENTS.SHOW_SCORING_TAB, handler);
         return () => document.removeEventListener(APP_EVENTS.SHOW_SCORING_TAB, handler);
@@ -436,68 +451,68 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                         </InstrumentBottomPanel>
                     ) : null}
 
-                    {glutenOpen ? (
+                    {glutenDeviceId !== null ? (
                         <InstrumentBottomPanel
                             label="Gluten"
                             labelColor="text-[var(--color-accent-peach)]"
                             borderColor="border-[var(--color-accent-peach)]/20"
                             height={glutenHeight}
                             onResize={setGlutenHeight}
-                            onClose={() => setGlutenOpen(false)}
+                            onClose={() => setGlutenDeviceId(null)}
                         >
-                            <GlutenPanel />
+                            <GlutenPanel deviceId={glutenDeviceId} />
                         </InstrumentBottomPanel>
                     ) : null}
 
-                    {bacteriaOpen ? (
+                    {bacteriaDeviceId !== null ? (
                         <InstrumentBottomPanel
                             label="Bacteria"
                             labelColor="text-rose-400"
                             borderColor="border-rose-500/20"
                             height={bacteriaHeight}
                             onResize={setBacteriaHeight}
-                            onClose={() => setBacteriaOpen(false)}
+                            onClose={() => setBacteriaDeviceId(null)}
                         >
-                            <BacteriaPanel />
+                            <BacteriaPanel deviceId={bacteriaDeviceId} />
                         </InstrumentBottomPanel>
                     ) : null}
 
-                    {grinderOpen ? (
+                    {grinderDeviceId !== null ? (
                         <InstrumentBottomPanel
                             label="Grinder"
                             labelColor="text-amber-500"
                             borderColor="border-amber-600/20"
                             height={grinderHeight}
                             onResize={setGrinderHeight}
-                            onClose={() => setGrinderOpen(false)}
+                            onClose={() => setGrinderDeviceId(null)}
                         >
-                            <GrinderPanel />
+                            <GrinderPanel deviceId={grinderDeviceId} />
                         </InstrumentBottomPanel>
                     ) : null}
 
-                    {proofOpen ? (
+                    {proofDeviceId !== null ? (
                         <InstrumentBottomPanel
                             label="Proof"
                             labelColor="text-[var(--color-accent-mint)]"
                             borderColor="border-[var(--color-accent-mint)]/20"
                             height={proofHeight}
                             onResize={setProofHeight}
-                            onClose={() => setProofOpen(false)}
+                            onClose={() => setProofDeviceId(null)}
                         >
-                            <ProofPanel />
+                            <ProofPanel deviceId={proofDeviceId} />
                         </InstrumentBottomPanel>
                     ) : null}
 
-                    {scoringOpen ? (
+                    {scoringDeviceId !== null ? (
                         <InstrumentBottomPanel
                             label="Scoring"
                             labelColor="text-[var(--color-accent-mint)]"
                             borderColor="border-[var(--color-accent-mint)]/20"
                             height={scoringHeight}
                             onResize={setScoringHeight}
-                            onClose={() => setScoringOpen(false)}
+                            onClose={() => setScoringDeviceId(null)}
                         >
-                            <ScoringPanel />
+                            <ScoringPanel deviceId={scoringDeviceId} />
                         </InstrumentBottomPanel>
                     ) : null}
 
@@ -706,6 +721,16 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
             <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} />
             <PreferencesDialog open={prefsOpen} onClose={() => setPrefsOpen(false)} />
             <ShortcutCheatSheet />
+
+            <AlphaNoticeDialog 
+                open={showAlphaNotice} 
+                onOpenChange={(open) => {
+                    if (!open) {
+                        localStorage.setItem('sourdaw-alpha-notice-dismissed', 'true');
+                    }
+                    setShowAlphaNotice(open);
+                }} 
+            />
 
             {/* Loading overlay for returning-user project load */}
             {project.loading ? <ProjectLoadingOverlay /> : null}

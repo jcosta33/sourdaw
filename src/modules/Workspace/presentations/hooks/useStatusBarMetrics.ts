@@ -1,4 +1,5 @@
 import { type RefObject, useEffect, useRef } from 'react';
+import { getDawStatusDotClassName } from '#/components/daw/DawStatusDot';
 import { getEngineState, getMasterPeakLevel } from '#/modules/AudioEngine/useCases/engineAccess';
 import { animationScheduler } from '#/helpers/DOM/AnimationScheduler';
 
@@ -126,9 +127,9 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
                 refs.latency.current.textContent = `${(engineInfo.baseLatency * 1000).toFixed(1)}ms`;
             }
             if (refs.engineState.current) {
-                refs.engineState.current.className = `size-1.5 rounded-full ${
-                    engineInfo.state === 'running' ? 'bg-[var(--color-state-success)]' : 'bg-muted-foreground/50'
-                }`;
+                refs.engineState.current.className = getDawStatusDotClassName({
+                    tone: engineInfo.state === 'running' ? 'success' : 'muted',
+                });
                 refs.engineState.current.title = `Engine: ${engineInfo.state}`;
             }
 

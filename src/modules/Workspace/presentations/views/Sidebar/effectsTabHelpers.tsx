@@ -20,6 +20,7 @@ import {
     AlertCircle,
 } from 'lucide-react';
 import { type LucideIcon } from 'lucide-react';
+import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
 import { type BUILTIN_PLUGINS } from '#/modules/Arrangement/useCases/trackQueries';
 
@@ -212,19 +213,18 @@ export const EffectItem = ({
 // ── UnimplementedBadge ───────────────────────────────────────────────────────
 
 export const UnimplementedBadge = (): ReactElement => (
-    <span
-        className="inline-flex items-center gap-0.5 text-[9px] font-medium px-1.5 py-0.5 rounded bg-[var(--color-accent-peach)]/10 text-[var(--color-accent-peach)]/70 shrink-0 ml-1"
-        title="Not yet implemented — no audio effect"
-    >
+    <DawMicroBadge tone="peach" className="ml-1 text-[var(--color-accent-peach)]/70" title="Not yet implemented — no audio effect">
         <AlertCircle className="size-2.5" aria-hidden="true" />
         Soon
-    </span>
+    </DawMicroBadge>
 );
 
 // ── SoonBadge ────────────────────────────────────────────────────────────────
 
 export const SoonBadge = (): ReactElement => (
-    <span className="text-[9px] text-[var(--color-accent-peach)]/60 font-normal">soon</span>
+    <DawMicroBadge tone="peach" className="border-transparent bg-transparent px-0 text-[var(--color-accent-peach)]/60 shadow-none">
+        soon
+    </DawMicroBadge>
 );
 
 // ── Music2 re-export for EffectsTab convenience ──────────────────────────────

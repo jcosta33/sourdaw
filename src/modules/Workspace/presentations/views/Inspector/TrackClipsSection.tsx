@@ -1,12 +1,14 @@
 import { type ReactElement } from 'react';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
-import { Card } from '#/components/ui/card';
+import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Button } from '#/components/ui/button';
 import { Check, X, Sparkles } from 'lucide-react';
 import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
 import { acceptGhostClip } from '#/modules/Arrangement/useCases/clip/acceptGhostClip';
 import { dismissGhostClip } from '#/modules/Arrangement/useCases/clip/dismissGhostClip';
+import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
+import { MetaText } from '../../components/Inspector/MetaText';
 
 type TrackClipsSectionProps = {
     track: Track;
@@ -20,9 +22,9 @@ export const TrackClipsSection = ({ track, onSelectClip }: TrackClipsSectionProp
             {track.clips.length > 0 ? (
                 <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
                     {track.clips.map((clip) => (
-                        <Card
+                        <ChoiceCard
                             key={clip.id}
-                            className={`rounded-md shadow-none bg-surface-base p-2 cursor-pointer hover:bg-surface-raised flex flex-col justify-center ${
+                            className={`flex flex-col justify-center ${
                                 clip.isGhost ? 'border-[var(--color-accent-lavender)]/60 border-dashed' : 'border-border/50'
                             }`}
                             onClick={() => {
@@ -32,10 +34,11 @@ export const TrackClipsSection = ({ track, onSelectClip }: TrackClipsSectionProp
                             <div className="flex items-center gap-1.5">
                                 {clip.isGhost ? <Sparkles className="size-3 text-[var(--color-accent-lavender)] shrink-0" /> : null}
                                 <span className="text-xs text-foreground font-medium truncate">{clip.name}</span>
+                                {clip.isGhost ? <DawMicroBadge tone="primary">Ghost</DawMicroBadge> : null}
                             </div>
-                            <span className="text-[10px] text-muted-foreground">
+                            <MetaText>
                                 bar {Math.floor(clip.startBeat / 4) + 1}–{Math.floor(clip.endBeat / 4) + 1}
-                            </span>
+                            </MetaText>
                             {clip.isGhost ? (
                                 <div className="flex items-center gap-1 mt-1.5 pt-1.5 border-t border-border/30">
                                     <Button
@@ -62,7 +65,7 @@ export const TrackClipsSection = ({ track, onSelectClip }: TrackClipsSectionProp
                                     </Button>
                                 </div>
                             ) : null}
-                        </Card>
+                        </ChoiceCard>
                     ))}
                 </div>
             ) : (

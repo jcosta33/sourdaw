@@ -1,4 +1,5 @@
 import { type ReactElement, useState, useEffect } from 'react';
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { Tooltip, TooltipTrigger, TooltipContent } from '#/components/ui/tooltip';
 import { getAudioDevices, type AudioDeviceInfo } from '../../../useCases/trackViewActions';
 import { setTrackInput } from '#/modules/Arrangement/useCases/setTrackInput';
@@ -22,8 +23,9 @@ export const InputSelector = ({ trackId, inputId }: InputSelectorProps): ReactEl
     return (
         <Tooltip>
             <TooltipTrigger asChild>
-                <select
-                    className="h-4 max-w-16 truncate rounded bg-surface-overlay text-[9px] text-muted-foreground border border-border/50 px-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
+                <DawCompactSelect
+                    size="micro"
+                    className="h-4 max-w-16 truncate px-0.5 text-muted-foreground"
                     value={inputId ?? ''}
                     onClick={(e) => e.stopPropagation()}
                     onChange={(e) => {
@@ -38,7 +40,7 @@ export const InputSelector = ({ trackId, inputId }: InputSelectorProps): ReactEl
                             {d.label}
                         </option>
                     ))}
-                </select>
+                </DawCompactSelect>
             </TooltipTrigger>
             <TooltipContent side="bottom">Audio input source</TooltipContent>
         </Tooltip>

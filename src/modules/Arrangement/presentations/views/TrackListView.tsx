@@ -6,6 +6,7 @@ import {
     useRef,
     useState,
     useEffect,
+    useLayoutEffect,
     useSyncExternalStore,
 } from 'react';
 import {
@@ -34,6 +35,8 @@ import { injectPromptCommand } from '#/modules/AiRuntime/useCases/promptInjectio
 import { defaultPreferences, type Preferences } from '#/modules/Workspace/useCases/workspaceQueries';
 import { setTrackHeight } from '#/modules/Workspace/useCases/setTrackHeight';
 import { MiniMasterSpectrum } from '#/modules/Workspace/presentations/components/MiniMasterSpectrum';
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { DawEmptyState } from '#/components/daw/DawEmptyState';
 
 
 const HEIGHT_CYCLE: Preferences['trackHeight'][] = ['compact', 'normal', 'large'];
@@ -69,7 +72,7 @@ export const TrackListView = ({
         () => 0
     );
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         const el = scrollRef.current;
         if (!el) {
             return;
@@ -163,74 +166,69 @@ export const TrackListView = ({
 
     return (
         <div className="flex h-full shrink-0 flex-col border-r border-border/30 bg-surface-well" style={style}>
-            <div
-                className="relative flex items-end justify-between border-b border-border/30 px-2 pb-1 pt-2 shrink-0 group"
-                style={{
-                    height: extraHeaderHeight,
-                    background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
-                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
-                    border: '1px solid rgba(0,0,0,0.4)',
-                    borderBottom: '1px solid rgba(40,40,40,0.3)',
-                }}
+            <DawHeaderBand
+                className="group relative shrink-0 items-end px-2 pb-1 pt-2"
+                style={{ height: extraHeaderHeight }}
+                actions={
+                    <div
+                        className="relative z-20 ml-auto flex items-center gap-0.5 opacity-80 transition-opacity group-hover:opacity-100"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    variant="ghost"
+                                    size="icon-xs"
+                                    aria-label={`Track height: ${HEIGHT_LABELS[currentHeight]}`}
+                                    onClick={() => {
+                                        const idx = HEIGHT_CYCLE.indexOf(currentHeight);
+                                        const next = HEIGHT_CYCLE[(idx + 1) % HEIGHT_CYCLE.length]!;
+                                        setTrackHeight(next);
+                                    }}
+                                >
+                                    <Rows3 className="size-3" aria-hidden="true" />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Track height: {HEIGHT_LABELS[currentHeight]}</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    variant="ghost"
+                                    size="icon-xs"
+                                    aria-label="Auto-organize with AI"
+                                    onClick={() =>
+                                        injectPromptCommand(
+                                            'Auto-organize my project into color-coded instrument folders and standardized names.'
+                                        )
+                                    }
+                                >
+                                    <Wand2 className="size-3 text-[var(--color-accent-lavender)]" aria-hidden="true" />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Auto-organize with AI</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    variant="ghost"
+                                    size="icon-xs"
+                                    aria-label="Add folder"
+                                    onClick={() =>
+                                        createFolder(`Folder ${tracks.filter((t) => t.kind === 'folder').length + 1}`)
+                                    }
+                                >
+                                    <FolderPlus className="size-3" aria-hidden="true" />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Add Folder</TooltipContent>
+                        </Tooltip>
+                        <AddTrackMenu trackCount={tracks.length} />
+                    </div>
+                }
             >
                 <MiniMasterSpectrum />
-                
-                <div 
-                    className="relative z-20 flex items-center gap-0.5 ml-auto opacity-80 group-hover:opacity-100 transition-opacity"
-                    onClick={(e) => e.stopPropagation()}
-                >
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <Button
-                                variant="ghost"
-                                size="icon-xs"
-                                aria-label={`Track height: ${HEIGHT_LABELS[currentHeight]}`}
-                                onClick={() => {
-                                    const idx = HEIGHT_CYCLE.indexOf(currentHeight);
-                                    const next = HEIGHT_CYCLE[(idx + 1) % HEIGHT_CYCLE.length]!;
-                                    setTrackHeight(next);
-                                }}
-                            >
-                                <Rows3 className="size-3" aria-hidden="true" />
-                            </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Track height: {HEIGHT_LABELS[currentHeight]}</TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <Button
-                                variant="ghost"
-                                size="icon-xs"
-                                aria-label="Auto-organize with AI"
-                                onClick={() =>
-                                    injectPromptCommand(
-                                        'Auto-organize my project into color-coded instrument folders and standardized names.'
-                                    )
-                                }
-                            >
-                                <Wand2 className="size-3 text-[var(--color-accent-lavender)]" aria-hidden="true" />
-                            </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Auto-organize with AI</TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <Button
-                                variant="ghost"
-                                size="icon-xs"
-                                aria-label="Add folder"
-                                onClick={() =>
-                                    createFolder(`Folder ${tracks.filter((t) => t.kind === 'folder').length + 1}`)
-                                }
-                            >
-                                <FolderPlus className="size-3" aria-hidden="true" />
-                            </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Add Folder</TooltipContent>
-                    </Tooltip>
-                    <AddTrackMenu trackCount={tracks.length} />
-                </div>
-            </div>
+            </DawHeaderBand>
 
             <div
                 ref={scrollRef}
@@ -274,11 +272,12 @@ export const TrackListView = ({
                     })}
 
                     {tracks.length === 0 ? (
-                        <div className="p-6 text-center">
-                            <p className="text-xs text-muted-foreground">No tracks yet — time to start baking</p>
-                            <p className="mt-1.5 text-[10px] text-muted-foreground/50">
-                                Click + to add a track, or type &quot;add audio track&quot;
-                            </p>
+                        <div className="p-4">
+                            <DawEmptyState
+                                compact
+                                title="No tracks yet"
+                                description='Click + to add a track, or type "add audio track".'
+                            />
                         </div>
                     ) : null}
                 </div>

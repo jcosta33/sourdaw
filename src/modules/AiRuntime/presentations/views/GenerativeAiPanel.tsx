@@ -1,5 +1,6 @@
 import { type ReactElement, useState, useSyncExternalStore } from 'react';
 import { X, Sparkles, Music, RefreshCw, AudioWaveform, Play, Plus, Loader2, Music4, Library, Info, Upload } from 'lucide-react';
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { isTauri } from '#/helpers/tauriBridge';
@@ -98,29 +99,20 @@ export const GenerativeAiPanel = (): ReactElement | null => {
     return (
         <div className="w-[320px] border-l border-border/40 bg-surface-base flex flex-col h-full shrink-0 animate-in slide-in-from-right-8 duration-200">
             {/* Header */}
-            <div
-                className="flex h-[38px] items-center justify-between border-b px-3 shrink-0"
-                style={{
-                    background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
-                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
-                    border: '1px solid rgba(0,0,0,0.4)',
-                    borderBottom: '1px solid rgba(40,40,40,0.3)',
-                }}
-            >
-                <div className="flex items-center gap-2">
-                    <Sparkles className="size-4 text-[var(--color-accent-lavender)]" />
-                    <h2 className="text-xs font-semibold text-foreground tracking-tight">Generate</h2>
-                </div>
-                <Button variant="ghost" size="icon-xs" onClick={toggleAiPanel} className="h-6 w-6">
-                    <X className="size-3.5" />
-                </Button>
-            </div>
+            <DawHeaderBand
+                className="h-[38px] px-3"
+                startSlot={<Sparkles className="size-4 text-[var(--color-accent-lavender)]" />}
+                title="Generate"
+                titleClassName="text-xs font-semibold normal-case tracking-tight text-foreground"
+                actions={
+                    <Button variant="ghost" size="icon-xs" onClick={toggleAiPanel} className="h-6 w-6">
+                        <X className="size-3.5" />
+                    </Button>
+                }
+            />
 
             {/* Tabs */}
-            <div
-                className="flex p-2 gap-1 shrink-0"
-                style={{ borderBottom: '1px solid transparent', backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)', backgroundSize: '100% 1px', backgroundRepeat: 'no-repeat', backgroundPosition: 'bottom' }}
-            >
+            <div className="daw-analysis-card-header flex shrink-0 gap-1 p-2">
                 <Button
                     variant={activeTab === 'midi' ? 'secondary' : 'ghost'}
                     size="sm"
@@ -201,13 +193,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                 </div>
                             </div>
                         ) : (
-                            <div
-                                className="flex items-center gap-2 p-3 rounded-md border border-dashed border-border/50 text-muted-foreground"
-                                style={{
-                                    background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
-                                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
-                                }}
-                            >
+                            <div className="daw-readout-well flex items-center gap-2 rounded-md border border-dashed border-border/50 p-3 text-muted-foreground">
                                 <Upload className="size-4" />
                                 <span className="text-[11px]">Select an audio clip on the timeline</span>
                             </div>

@@ -1,15 +1,15 @@
 import { type ReactElement } from 'react';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
-import { Card } from '#/components/ui/card';
+import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Button } from '#/components/ui/button';
 import { Plus, Trash2 } from 'lucide-react';
-import { cn } from '#/helpers/Styles/cn';
 import {
     handleCreateTrackAlternative,
     handleSwitchTrackAlternative,
     handleDeleteTrackAlternative,
 } from '#/modules/Command/useCases/trackAlternativeHandlers';
 import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
+import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
 
 type TrackAlternativesSectionProps = {
     track: Track;
@@ -42,12 +42,10 @@ export const TrackAlternativesSection = ({ track }: TrackAlternativesSectionProp
             />
             <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
                 {track.alternatives.map((alt) => (
-                    <Card
+                    <ChoiceCard
                         key={alt.id}
-                        className={cn(
-                            'flex flex-col justify-center rounded-md shadow-none bg-surface-base border-border/50 p-2 cursor-pointer transition-colors',
-                            alt.id === track.activeAlternativeId ? 'ring-1 ring-primary/30' : 'hover:bg-surface-raised'
-                        )}
+                        className="flex flex-col justify-center"
+                        selected={alt.id === track.activeAlternativeId}
                         onClick={() => {
                             if (alt.id !== track.activeAlternativeId) {
                                 handleSwitchTrackAlternative({
@@ -60,7 +58,7 @@ export const TrackAlternativesSection = ({ track }: TrackAlternativesSectionProp
                         <div className="flex items-center justify-between w-full">
                             <span className="truncate text-xs font-medium text-foreground">{alt.name}</span>
                             <div className="flex items-center gap-0.5 shrink-0">
-                                <span className="text-[10px] text-muted-foreground mr-1">{alt.clips.length}c</span>
+                                <DawMicroBadge className="mr-1">{alt.clips.length}c</DawMicroBadge>
                                 {track.alternatives.length > 1 ? (
                                     <Button
                                         variant="ghost"
@@ -80,7 +78,7 @@ export const TrackAlternativesSection = ({ track }: TrackAlternativesSectionProp
                                 ) : null}
                             </div>
                         </div>
-                    </Card>
+                    </ChoiceCard>
                 ))}
             </div>
         </div>

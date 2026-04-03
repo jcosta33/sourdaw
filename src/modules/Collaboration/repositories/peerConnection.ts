@@ -89,7 +89,8 @@ class PeerConnection {
 
         const offer = await this.rtc.createOffer();
         await this.rtc.setLocalDescription(offer);
-        return JSON.stringify(offer);
+        await this.waitForIceGathering();
+        return JSON.stringify(this.rtc.localDescription);
     }
 
     /** Accept an SDP offer and generate an answer (joiner side). */
@@ -98,7 +99,8 @@ class PeerConnection {
         await this.rtc.setRemoteDescription(offer);
         const answer = await this.rtc.createAnswer();
         await this.rtc.setLocalDescription(answer);
-        return JSON.stringify(answer);
+        await this.waitForIceGathering();
+        return JSON.stringify(this.rtc.localDescription);
     }
 
     /** Apply the remote answer (caller side after receiving joiner's answer). */
@@ -120,6 +122,34 @@ class PeerConnection {
         }
     }
 
+    /**
+     * Send a message over the CRDT sync channel, waiting for the send buffer
+     * to drain if it exceeds the high-water mark. Use this for bulk transfers
+     * (asset chunks) to avoid overflowing the channel buffer.
+     */
+    async sendCrdtSyncBuffered(message: PeerMessage): Promise<void> {
+        const channel = this.crdtChannel;
+        if (!channel || channel.readyState !== 'open') {
+            return;
+        }
+
+        const HIGH_WATER_MARK = 256 * 1024;
+        if (channel.bufferedAmount > HIGH_WATER_MARK) {
+            await new Promise<void>((resolve) => {
+                channel.bufferedAmountLowThreshold = HIGH_WATER_MARK / 2;
+                const prev = channel.onbufferedamountlow;
+                channel.onbufferedamountlow = () => {
+                    channel.onbufferedamountlow = prev;
+                    resolve();
+                };
+            });
+        }
+
+        if (channel.readyState === 'open') {
+            channel.send(JSON.stringify(message));
+        }
+    }
+
     /** Send presence data over the unreliable channel. */
     sendPresence(message: PeerMessage): void {
         if (this.presenceChannel?.readyState === 'open') {
@@ -138,6 +168,35 @@ class PeerConnection {
         this.presenceChannel?.close();
         this.rtc.close();
         this.connected = false;
+    }
+
+    /**
+     * Wait for ICE gathering to complete before returning the local SDP.
+     * This ensures the SDP contains all candidates for the manual copy-paste flow.
+     * Times out after 10 seconds to avoid hanging on unreachable STUN servers.
+     */
+    private waitForIceGathering(): Promise<void> {
+        return new Promise((resolve) => {
+            if (this.rtc.iceGatheringState === 'complete') {
+                resolve();
+                return;
+            }
+
+            const timeout = setTimeout(() => {
+                this.rtc.removeEventListener('icegatheringstatechange', onStateChange);
+                resolve();
+            }, 10_000);
+
+            const onStateChange = () => {
+                if (this.rtc.iceGatheringState === 'complete') {
+                    clearTimeout(timeout);
+                    this.rtc.removeEventListener('icegatheringstatechange', onStateChange);
+                    resolve();
+                }
+            };
+
+            this.rtc.addEventListener('icegatheringstatechange', onStateChange);
+        });
     }
 
     private setupChannel(channel: RTCDataChannel): void {
@@ -165,7 +224,7 @@ class PeerConnection {
         };
 
         channel.onclose = () => {
-            if (channel.label === 'crdt-sync') {
+            if (channel.label === 'crdt-sync' && this.connected) {
                 this.connected = false;
                 this.callbacks.onDisconnected(this.peerId);
             }
@@ -211,6 +270,11 @@ export class PeerConnectionManager {
     /** Send a CRDT sync message to a specific peer. */
     sendCrdtSync(peerId: PeerId, message: PeerMessage): void {
         this.peers.get(peerId)?.sendCrdtSync(message);
+    }
+
+    /** Send a CRDT sync message with backpressure (for bulk transfers). */
+    async sendCrdtSyncBuffered(peerId: PeerId, message: PeerMessage): Promise<void> {
+        await this.peers.get(peerId)?.sendCrdtSyncBuffered(message);
     }
 
     /** Send a CRDT sync message to all connected peers. */

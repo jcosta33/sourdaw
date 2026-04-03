@@ -75,18 +75,6 @@ export const PresenceOverlay = ({
                             />
                         ) : null}
 
-                        {/* Selected clip highlights */}
-                        {presence.selectedClipIds.map((clipId) => (
-                            <div
-                                key={clipId}
-                                className="absolute inset-0 pointer-events-none"
-                                style={{
-                                    // Clip highlighting would need clip position data
-                                    // which is available from the track store.
-                                    // For now, this is a placeholder for the rendering hook.
-                                }}
-                            />
-                        ))}
                     </div>
                 );
             })}

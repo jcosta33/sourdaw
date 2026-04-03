@@ -14,9 +14,10 @@ type Props = {
     patch: ProofPatch;
     limiterGrDb: number;
     truePeakDb: number;
+    deviceId: string;
 };
 
-export const ProofLimiterSection = ({ patch, limiterGrDb, truePeakDb }: Props): ReactElement => {
+export const ProofLimiterSection = ({ patch, limiterGrDb, truePeakDb, deviceId }: Props): ReactElement => {
     return (
         <div className="flex flex-col gap-1.5 px-2">
             <div className="flex items-center justify-between">
@@ -25,8 +26,8 @@ export const ProofLimiterSection = ({ patch, limiterGrDb, truePeakDb }: Props): 
                     type="button"
                     className={`text-[7px] px-1.5 py-0.5 rounded cursor-pointer ${patch.limBypassed ? 'text-muted-foreground' : 'text-[var(--color-state-danger)]'}`}
                     onClick={() => {
-                        updateProofPatch({ limBypassed: !patch.limBypassed });
-                        setProofParam('lim_bypass', patch.limBypassed ? 0 : 1);
+                        updateProofPatch(deviceId, { limBypassed: !patch.limBypassed });
+                        setProofParam(deviceId, 'lim_bypass', patch.limBypassed ? 0 : 1);
                     }}
                 >
                     {patch.limBypassed ? 'OFF' : 'ON'}
@@ -37,21 +38,21 @@ export const ProofLimiterSection = ({ patch, limiterGrDb, truePeakDb }: Props): 
                 {/* Controls */}
                 <div className="flex gap-3">
                     <div className="flex flex-col items-center gap-0.5">
-                        <RotaryKnob value={patch.limCeiling} onChange={(v) => { updateProofPatch({ limCeiling: v }); setProofParam('lim_ceiling', v); }}
+                        <RotaryKnob value={patch.limCeiling} onChange={(v) => { updateProofPatch(deviceId, { limCeiling: v }); setProofParam(deviceId, 'lim_ceiling', v); }}
                             min={-12} max={0} step={0.1} defaultValue={-1} size="md" />
                         <span className="text-[7px] text-muted-foreground">Ceiling</span>
                         <span className="text-[6px] text-muted-foreground font-mono">{patch.limCeiling.toFixed(1)} dBTP</span>
                     </div>
 
                     <div className="flex flex-col items-center gap-0.5">
-                        <RotaryKnob value={patch.limRelease} onChange={(v) => { updateProofPatch({ limRelease: v }); setProofParam('lim_release', v); }}
+                        <RotaryKnob value={patch.limRelease} onChange={(v) => { updateProofPatch(deviceId, { limRelease: v }); setProofParam(deviceId, 'lim_release', v); }}
                             min={10} max={500} step={1} defaultValue={100} size="md" />
                         <span className="text-[7px] text-muted-foreground">Release</span>
                         <span className="text-[6px] text-muted-foreground font-mono">{patch.limRelease.toFixed(0)} ms</span>
                     </div>
 
                     <div className="flex flex-col items-center gap-0.5">
-                        <RotaryKnob value={patch.limLookahead} onChange={(v) => { updateProofPatch({ limLookahead: v }); setProofParam('lim_lookahead', v); }}
+                        <RotaryKnob value={patch.limLookahead} onChange={(v) => { updateProofPatch(deviceId, { limLookahead: v }); setProofParam(deviceId, 'lim_lookahead', v); }}
                             min={0.5} max={10} step={0.5} defaultValue={5} size="md" />
                         <span className="text-[7px] text-muted-foreground">Lookahead</span>
                         <span className="text-[6px] text-muted-foreground font-mono">{patch.limLookahead.toFixed(1)} ms</span>
@@ -87,8 +88,8 @@ export const ProofLimiterSection = ({ patch, limiterGrDb, truePeakDb }: Props): 
                         value={DITHER_VALUES.indexOf(patch.ditherMode as typeof DITHER_VALUES[number])}
                         onChange={(e) => {
                             const mode = DITHER_VALUES[parseInt(e.target.value)]!;
-                            updateProofPatch({ ditherMode: mode });
-                            setProofParam('dither_mode', parseInt(e.target.value));
+                            updateProofPatch(deviceId, { ditherMode: mode });
+                            setProofParam(deviceId, 'dither_mode', parseInt(e.target.value));
                         }}
                     >
                         {DITHER_MODES.map((label, i) => (
@@ -102,8 +103,8 @@ export const ProofLimiterSection = ({ patch, limiterGrDb, truePeakDb }: Props): 
                             value={patch.ditherBits}
                             onChange={(e) => {
                                 const bits = parseInt(e.target.value);
-                                updateProofPatch({ ditherBits: bits });
-                                setProofParam('dither_bits', bits);
+                                updateProofPatch(deviceId, { ditherBits: bits });
+                                setProofParam(deviceId, 'dither_bits', bits);
                             }}
                         >
                             <option value={16}>16</option>

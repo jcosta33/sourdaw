@@ -139,7 +139,7 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
                             </Button>
 
                             {showSnapshots && snapshots.length > 0 ? (
-                                <div ref={snapshotsRef} className="absolute top-full right-0 z-50 mt-1 min-w-[140px] rounded-lg border border-border bg-popover p-1 shadow-lg">
+                                <div ref={snapshotsRef} className="daw-floating-surface absolute top-full right-0 z-50 mt-1 min-w-[140px] rounded-lg p-1">
                                     {snapshots.map((snap) => (
                                         <div key={snap.id} className="flex items-center gap-1">
                                             {editingSnapshotId === snap.id ? (

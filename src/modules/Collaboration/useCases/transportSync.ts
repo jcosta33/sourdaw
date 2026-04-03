@@ -49,7 +49,9 @@ export class TransportSync {
         }
 
         this.pingInterval = setInterval(() => {
-            this.sendClockPing();
+            if (this.peerManager.getConnectedPeerIds().length > 0) {
+                this.sendClockPing();
+            }
         }, 2000);
     }
 
@@ -66,9 +68,6 @@ export class TransportSync {
     /** Check if the local peer is the transport leader. */
     isLeader(): boolean {
         const state = collaborationStore.value;
-        if (!this.leaderId && state?.localPeerId && state.isHost) {
-            this.leaderId = state.localPeerId;
-        }
         return this.leaderId !== null && this.leaderId === state?.localPeerId;
     }
 
@@ -98,7 +97,7 @@ export class TransportSync {
     }
 
     /** Leader: broadcast stop command. */
-    stop_playback(positionBeats: number): void {
+    stopPlayback(positionBeats: number): void {
         if (!this.isLeader()) {
             return;
         }
@@ -236,11 +235,12 @@ export class TransportSync {
             return;
         }
 
+        const now = performance.now();
         const pong: ClockSyncMessage = {
             type: 'clock.pong',
             sendTime: msg.sendTime,
-            receiveTime: performance.now(),
-            respondTime: performance.now(),
+            receiveTime: now,
+            respondTime: now,
             seq: msg.seq,
         };
 

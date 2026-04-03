@@ -40,8 +40,8 @@ export class AssetTransfer {
     private peerManager: PeerConnectionManager;
     private callbacks: AssetTransferCallbacks;
 
-    /** Local content store: hash → Blob */
-    private localAssets = new Map<string, Blob>();
+    /** Local content store: hash → { blob, name } */
+    private localAssets = new Map<string, { blob: Blob; name: string }>();
 
     /** In-flight incoming transfers: hash → { chunks, received bitmap } */
     private incomingTransfers = new Map<string, {
@@ -56,9 +56,9 @@ export class AssetTransfer {
     }
 
     /** Register a local asset (e.g. after recording or importing). */
-    async addLocalAsset(blob: Blob, _name: string): Promise<string> {
+    async addLocalAsset(blob: Blob, name: string): Promise<string> {
         const hash = await hashBlob(blob);
-        this.localAssets.set(hash, blob);
+        this.localAssets.set(hash, { blob, name });
         return hash;
     }
 
@@ -69,7 +69,7 @@ export class AssetTransfer {
 
     /** Get a local asset by hash. */
     getAsset(hash: string): Blob | undefined {
-        return this.localAssets.get(hash);
+        return this.localAssets.get(hash)?.blob;
     }
 
     /** Request a missing asset from connected peers. */
@@ -105,18 +105,19 @@ export class AssetTransfer {
     }
 
     private async handleAssetRequest(peerId: PeerId, hash: string, missingChunks: number[]): Promise<void> {
-        const blob = this.localAssets.get(hash);
-        if (!blob) {
+        const entry = this.localAssets.get(hash);
+        if (!entry) {
             return;
         }
 
+        const { blob, name } = entry;
         const chunkCount = Math.ceil(blob.size / CHUNK_SIZE);
         const manifest: AssetManifest = {
             hash,
             size: blob.size,
             chunkSize: CHUNK_SIZE,
             chunkCount,
-            name: hash,
+            name,
             mime: blob.type || 'application/octet-stream',
         };
 
@@ -138,7 +139,7 @@ export class AssetTransfer {
             const buffer = await slice.arrayBuffer();
             const base64 = arrayBufferToBase64(buffer);
 
-            this.peerManager.sendCrdtSync(peerId, {
+            await this.peerManager.sendCrdtSyncBuffered(peerId, {
                 type: 'crdt-sync',
                 docId: '__asset__',
                 data: JSON.stringify({
@@ -177,14 +178,14 @@ export class AssetTransfer {
 
         // Check if all chunks received
         if (transfer.receivedBitmap.size === transfer.manifest.chunkCount) {
-            this.assembleAsset(hash, transfer);
+            void this.assembleAsset(hash, transfer);
         }
     }
 
-    private assembleAsset(hash: string, transfer: {
+    private async assembleAsset(hash: string, transfer: {
         manifest: AssetManifest;
         chunks: Map<number, Uint8Array>;
-    }): void {
+    }): Promise<void> {
         const sortedChunks: Uint8Array[] = [];
         for (let i = 0; i < transfer.manifest.chunkCount; i++) {
             const chunk = transfer.chunks.get(i);
@@ -203,7 +204,16 @@ export class AssetTransfer {
         }
 
         const blob = new Blob([assembled], { type: transfer.manifest.mime });
-        this.localAssets.set(hash, blob);
+
+        // Verify integrity before accepting the asset.
+        const actualHash = await hashBlob(blob);
+        if (actualHash !== hash) {
+            this.incomingTransfers.delete(hash);
+            console.error(`[AssetTransfer] Integrity check failed for ${hash}: received ${actualHash}`);
+            return;
+        }
+
+        this.localAssets.set(hash, { blob, name: transfer.manifest.name });
         this.incomingTransfers.delete(hash);
         this.callbacks.onAssetAvailable(hash);
     }

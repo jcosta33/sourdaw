@@ -27,12 +27,16 @@ let assetTransfer: AssetTransfer | null = null;
 let permissionManager: PermissionManager | null = null;
 let cleanupProjectionBridge: (() => void) | null = null;
 let presenceListeners = new Set<(data: PresenceData) => void>();
+/** Tracks the host-assigned peer slot ID for the in-flight invite, if any. */
+let pendingInviteId: PeerId | null = null;
 
 const generatePeerId = (): PeerId => crypto.randomUUID();
 const generateSessionId = (): string => crypto.randomUUID().slice(0, 8);
 
-const assignPeerColor = (index: number): string => {
-    return PEER_COLORS[index % PEER_COLORS.length]!;
+/** Pick the first color from PEER_COLORS not already in use. */
+const pickPeerColor = (excludeColors: string[]): string => {
+    const used = new Set(excludeColors);
+    return PEER_COLORS.find((c) => !used.has(c)) ?? PEER_COLORS[0]!;
 };
 
 const getLocalPeerInfo = (): PeerInfo => {
@@ -58,7 +62,7 @@ export const createSession = (name: string): string => {
 
     const peerId = generatePeerId();
     const sessionId = generateSessionId();
-    const color = assignPeerColor(0);
+    const color = pickPeerColor([]);
 
     peerManager = new PeerConnectionManager({
         onMessage: handlePeerMessage,
@@ -106,9 +110,8 @@ export const createSession = (name: string): string => {
         localColor: color,
         isHost: true,
         approvalRequired: false,
-        pendingJoinRequests: [],
         peers: [],
-        connectionStatus: 'connected',
+        connectionStatus: 'disconnected',
         error: null,
     });
 
@@ -124,7 +127,14 @@ export const generateInvite = async (): Promise<string> => {
         throw new Error('No active session');
     }
 
+    // Clean up any previously generated invite that was never answered.
+    if (pendingInviteId) {
+        peerManager.removePeer(pendingInviteId);
+        pendingInviteId = null;
+    }
+
     const joinerPeerId = generatePeerId();
+    pendingInviteId = joinerPeerId;
     const peer = peerManager.createPeer(joinerPeerId);
     const sdp = await peer.createOffer();
 
@@ -135,9 +145,10 @@ export const generateInvite = async (): Promise<string> => {
         name: state.localName,
         sessionId: state.sessionId!,
         sdp,
+        pendingPeerId: joinerPeerId,
     };
 
-    return btoa(JSON.stringify(invite));
+    return await compressInvite(JSON.stringify(invite));
 };
 
 /**
@@ -153,7 +164,8 @@ export const joinSession = async (inviteString: string, name: string): Promise<s
 
     let invite: SignalingMessage;
     try {
-        invite = JSON.parse(atob(inviteString.trim())) as SignalingMessage;
+        const json = await decompressInvite(inviteString.trim());
+        invite = JSON.parse(json) as SignalingMessage;
     } catch {
         throw new Error('Invalid invite — must be a valid invite string');
     }
@@ -163,7 +175,8 @@ export const joinSession = async (inviteString: string, name: string): Promise<s
     }
 
     const peerId = generatePeerId();
-    const color = assignPeerColor(1);
+    // Pick a color that doesn't clash with the host's (always the first color).
+    const color = pickPeerColor([PEER_COLORS[0]!]);
 
     peerManager = new PeerConnectionManager({
         onMessage: handlePeerMessage,
@@ -211,14 +224,13 @@ export const joinSession = async (inviteString: string, name: string): Promise<s
         peers: [{
             id: invite.peerId,
             name: invite.name,
-            color: assignPeerColor(0),
+            color: PEER_COLORS[0]!,
             isHost: true,
             isConnected: false,
             lastSeen: Date.now(),
             latencyMs: null,
         }],
         approvalRequired: false,
-        pendingJoinRequests: [],
         connectionStatus: 'connecting',
         error: null,
     });
@@ -228,16 +240,18 @@ export const joinSession = async (inviteString: string, name: string): Promise<s
         peerId,
         name,
         sdp: answerSdp,
+        pendingPeerId: invite.pendingPeerId,
     };
 
-    return btoa(JSON.stringify(answer));
+    return await compressInvite(JSON.stringify(answer));
 };
 
 /**
  * Accept an answer from a joiner (host side, completes the connection).
  */
 export const acceptAnswer = async (answerString: string): Promise<void> => {
-    const answer = JSON.parse(atob(answerString)) as SignalingMessage;
+    const json = await decompressInvite(answerString);
+    const answer = JSON.parse(json) as SignalingMessage;
     if (answer.type !== 'answer') {
         throw new Error('Invalid answer');
     }
@@ -246,40 +260,36 @@ export const acceptAnswer = async (answerString: string): Promise<void> => {
         throw new Error('No active session');
     }
 
-    // In the v1 manual flow, there's one pending peer at a time.
-    // Find the first non-connected peer and apply the answer.
-    const allPeerIds = peerManager.getAllPeerIds();
-    for (const id of allPeerIds) {
-        const peer = peerManager.getPeer(id);
-        if (peer && !peer.isReady()) {
-            await peer.acceptAnswer(answer.sdp);
-
-            // Add the joiner to our peer list
-            const state = collaborationStore.value;
-            if (state) {
-                const joinerInfo: PeerInfo = {
-                    id: answer.peerId,
-                    name: answer.name,
-                    color: assignPeerColor(state.peers.length + 1),
-                    isHost: false,
-                    isConnected: false,
-                    lastSeen: Date.now(),
-                    latencyMs: null,
-                };
-                collaborationStore.set({
-                    ...state,
-                    peers: [...state.peers, joinerInfo],
-                });
-            }
-            return;
-        }
+    const peer = peerManager.getPeer(answer.pendingPeerId);
+    if (!peer) {
+        throw new Error('No pending peer connection matches this answer — the invite may have expired');
     }
 
-    throw new Error('No pending peer connection to accept answer for');
+    await peer.acceptAnswer(answer.sdp);
+    pendingInviteId = null;
+
+    // Add the joiner to our peer list
+    const state = collaborationStore.value;
+    if (state) {
+        const joinerInfo: PeerInfo = {
+            id: answer.peerId,
+            name: answer.name,
+            color: pickPeerColor([state.localColor, ...state.peers.map((p) => p.color)]),
+            isHost: false,
+            isConnected: false,
+            lastSeen: Date.now(),
+            latencyMs: null,
+        };
+        collaborationStore.set({
+            ...state,
+            peers: [...state.peers, joinerInfo],
+        });
+    }
 };
 
 /** Tear down all subsystems without changing store state. */
 const cleanupSubsystems = (): void => {
+    pendingInviteId = null;
     if (automergeSync) {
         automergeSync.stop();
         automergeSync = null;
@@ -325,7 +335,6 @@ export const leaveSession = (): void => {
         localColor: '',
         isHost: false,
         approvalRequired: false,
-        pendingJoinRequests: [],
         peers: [],
         connectionStatus: 'disconnected',
         error: null,
@@ -421,6 +430,11 @@ const handlePeerDisconnected = (peerId: PeerId): void => {
     automergeSync?.removePeer(peerId);
     updatePeerConnectionState(peerId, false);
 
+    // If the disconnected peer was the transport leader, elect a new one.
+    if (transportSync && transportSync.getLeaderId() === peerId) {
+        transportSync.electNewLeader();
+    }
+
     const state = collaborationStore.value;
     if (state) {
         const anyConnected = state.peers.some((p) => p.isConnected && p.id !== peerId);
@@ -487,4 +501,63 @@ const updatePeerConnectionState = (peerId: PeerId, isConnected: boolean): void =
         ),
     });
 };
+
+// -- Invite compression --
+// Invites embed a full ICE-complete SDP, which can be several KB.
+// Compressing with deflate-raw before base64 keeps QR codes scannable
+// and makes copy-paste strings manageable.
+// The 'z:' prefix lets joiners detect and decompress transparently,
+// so old uncompressed invites continue to work during any transition.
+
+async function compressInvite(json: string): Promise<string> {
+    const bytes = new TextEncoder().encode(json);
+    const stream = new CompressionStream('deflate-raw');
+    const writer = stream.writable.getWriter();
+    void writer.write(bytes);
+    void writer.close();
+    const chunks: Uint8Array[] = [];
+    const reader = stream.readable.getReader();
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value!);
+    }
+    const total = chunks.reduce((n, c) => n + c.length, 0);
+    const result = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+        result.set(chunk, offset);
+        offset += chunk.length;
+    }
+    const binary = Array.from(result, (b) => String.fromCharCode(b)).join('');
+    return 'z:' + btoa(binary);
+}
+
+async function decompressInvite(raw: string): Promise<string> {
+    if (!raw.startsWith('z:')) {
+        // Legacy uncompressed invite: plain base64 JSON.
+        return atob(raw);
+    }
+    const binary = atob(raw.slice(2));
+    const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+    const stream = new DecompressionStream('deflate-raw');
+    const writer = stream.writable.getWriter();
+    void writer.write(bytes);
+    void writer.close();
+    const chunks: Uint8Array[] = [];
+    const reader = stream.readable.getReader();
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value!);
+    }
+    const total = chunks.reduce((n, c) => n + c.length, 0);
+    const result = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+        result.set(chunk, offset);
+        offset += chunk.length;
+    }
+    return new TextDecoder().decode(result);
+}
 

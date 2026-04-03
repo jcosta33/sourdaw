@@ -1,4 +1,5 @@
 import { type ReactElement, type RefObject, useState } from 'react';
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { VelocityLane } from '../AutomationLane/VelocityLane';
 import { ProbabilityLane } from '../AutomationLane/ProbabilityLane';
 import { PressureLane } from '../AutomationLane/PressureLane';
@@ -109,11 +110,11 @@ export const AutomationLane = ({
                 <label htmlFor="lane-selector" className="text-[9px] text-muted-foreground shrink-0">
                     Lane:
                 </label>
-                <select
+                <DawCompactSelect
                     id="lane-selector"
                     value={selectedLane}
                     onChange={(e) => setSelectedLane(e.target.value)}
-                    className="h-5 rounded border border-border/50 bg-surface-overlay px-1 text-[9px] text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    size="micro"
                     aria-label="Automation lane type"
                 >
                     {LANE_OPTIONS.map((opt) => (
@@ -121,7 +122,7 @@ export const AutomationLane = ({
                             {opt.label}
                         </option>
                     ))}
-                </select>
+                </DawCompactSelect>
             </div>
 
             <div className="flex flex-1 min-h-0">

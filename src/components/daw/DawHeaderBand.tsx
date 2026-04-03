@@ -1,7 +1,7 @@
 import { type HTMLAttributes, type ReactElement, type ReactNode } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 
-type DawHeaderBandProps = HTMLAttributes<HTMLDivElement> & {
+type DawHeaderBandProps = Omit<HTMLAttributes<HTMLDivElement>, 'title'> & {
     title?: ReactNode;
     actions?: ReactNode;
     startSlot?: ReactNode;

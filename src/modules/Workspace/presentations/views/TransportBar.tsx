@@ -10,6 +10,7 @@ import { TransportControls } from './Transport/TransportControls';
 import { AutoScrollToggle } from './Transport/AutoScrollToggle';
 import { PlayheadDisplay } from './Transport/PlayheadDisplay';
 import { UndoRedoButtons } from './Transport/UndoRedoButtons';
+import { SoloModeSelector } from './Transport/SoloModeSelector';
 import { VoiceButton } from '../components/Transport/VoiceButton';
 import { PanelToggles } from './Transport/PanelToggles';
 import { ProjectName } from './Transport/ProjectName';
@@ -38,6 +39,7 @@ export const TransportBar = (): ReactElement => {
         timeDisplayMode,
         rippleEditing,
         virtualKeyboardOpen,
+        soloMode,
     } = useWorkspaceState();
     const transport = useTransportState();
     const audioState = useAudioRecordingState();
@@ -141,6 +143,8 @@ export const TransportBar = (): ReactElement => {
                     <AutoScrollToggle />
                     <Sep />
                     <ToolSelector rippleEditing={rippleEditing} onToggleRipple={toggleRippleEditing} />
+                    <Sep />
+                    <SoloModeSelector soloMode={soloMode} />
                     <Sep />
                     <UndoRedoButtons canUndo={undoState.canUndo} canRedo={undoState.canRedo} />
                 </div>

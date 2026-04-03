@@ -17,7 +17,7 @@ import { armTrack } from '#/modules/Arrangement/useCases/recording';
 import { removeTrack } from '#/modules/Arrangement/useCases/removeTrack';
 import { renameTrack } from '#/modules/Arrangement/useCases/renameTrack';
 import { TRACK_COLOR_PRESETS } from '#/helpers/UI/colorPresets';
-import { menuBtnClass } from '#/helpers/UI/contextMenuStyles';
+import { menuBtnClass, menuSepClass } from '#/helpers/UI/contextMenuStyles';
 
 import { LevelMeter } from '../Metering/LevelMeter';
 import { DeviceChainSection } from './DeviceChainSection';
@@ -277,7 +277,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
             {ctxMenu ? (
                 <div
                     ref={ctxRef}
-                    className="fixed z-50 min-w-[160px] max-h-[70vh] overflow-y-auto rounded-md border border-border-soft border-t-[var(--color-light-edge)] bg-surface-overlay py-1 shadow-[0_4px_16px_rgba(0,0,0,0.5)]"
+                    className="daw-floating-surface fixed z-50 max-h-[70vh] min-w-[160px] overflow-y-auto rounded-md py-1"
                     style={{ left: ctxMenu.x, top: ctxMenu.y }}
                     role="menu"
                 >
@@ -313,7 +313,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                     >
                         {track.armed ? 'Disarm' : 'Arm for Recording'}
                     </button>
-                    <div className="my-1 h-px" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.06) 50%, transparent 100%)' }} />
+                    <div className={menuSepClass} />
                     <button
                         type="button"
                         className={menuBtnClass}
@@ -322,7 +322,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                     >
                         Rename…
                     </button>
-                    <div className="my-1 h-px" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.06) 50%, transparent 100%)' }} />
+                    <div className={menuSepClass} />
                     <div className="px-3 py-1 text-[10px] text-muted-foreground">Color</div>
                     <div className="flex gap-1 px-3 py-1">
                         {TRACK_COLOR_PRESETS.map((c) => (
@@ -336,7 +336,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                             />
                         ))}
                     </div>
-                    <div className="my-1 h-px" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.06) 50%, transparent 100%)' }} />
+                    <div className={menuSepClass} />
                     <div className="px-3 py-1 text-[10px] text-muted-foreground">VCA Group</div>
                     {getAllVCAGroups().map((g) => (
                         <button
@@ -376,7 +376,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                             Remove from VCA
                         </button>
                     )}
-                    <div className="my-1 h-px" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.06) 50%, transparent 100%)' }} />
+                    <div className={menuSepClass} />
                     <button
                         type="button"
                         className={`${menuBtnClass} text-destructive hover:bg-destructive/10`}

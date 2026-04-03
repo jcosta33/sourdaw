@@ -1,6 +1,6 @@
 import { type ReactElement, useSyncExternalStore } from 'react';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { proofStore, setProofUiLevel, type ProofState } from '../../stores/proofStore';
+import { proofStore, setProofUiLevel, getProofState, type ProofState } from '../../stores/proofStore';
 import { setProofParamWithPatch, setProofParam } from '../../useCases/proofParamBridge';
 import { PROOF_PRESETS } from '../../useCases/proofPresets';
 import { TARGET_LUFS, type ProofTarget } from '../../models/ProofPatch';
@@ -117,24 +117,24 @@ const SideCard = ({
     </section>
 );
 
-function renderLevel(state: ProofState): ReactElement {
+function renderLevel(state: ProofState, deviceId: string): ReactElement {
     if (state.uiLevel === 1) {
-        return <Level1Play state={state} />;
+        return <Level1Play state={state} deviceId={deviceId} />;
     }
 
     if (state.uiLevel === 2) {
-        return <Level2Shape state={state} />;
+        return <Level2Shape state={state} deviceId={deviceId} />;
     }
 
     if (state.uiLevel === 3) {
-        return <Level3Build state={state} />;
+        return <Level3Build state={state} deviceId={deviceId} />;
     }
 
     if (state.uiLevel === 4) {
-        return <Level4Route state={state} />;
+        return <Level4Route state={state} deviceId={deviceId} />;
     }
 
-    return <Level5Lab state={state} />;
+    return <Level5Lab state={state} deviceId={deviceId} />;
 }
 
 function isModuleBypassed(state: ProofState, moduleIndex: number): boolean {
@@ -159,19 +159,12 @@ function isModuleBypassed(state: ProofState, moduleIndex: number): boolean {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export const ProofPanel = (): ReactElement => {
-    const state = useSyncExternalStore<ProofState | null>(
+export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
+    const allInstances = useSyncExternalStore(
         (cb) => proofStore.subscribe(cb),
         () => proofStore.value
     );
-
-    if (!state) {
-        return (
-            <div className="flex items-center justify-center h-full text-muted-foreground/40 text-xs italic">
-                Letting the dough rest...
-            </div>
-        );
-    }
+    const state: ProofState = allInstances?.[deviceId] ?? getProofState(deviceId);
 
     const { patch, uiLevel } = state;
     const levelMeta = getLevelMeta(uiLevel);
@@ -200,7 +193,7 @@ export const ProofPanel = (): ReactElement => {
                                                         ? 'border-white/18 bg-white/[0.03]'
                                                         : 'hover:border-white/12 hover:bg-white/[0.02]'
                                                 }`}
-                                                onClick={() => loadProofPatchWithAudio(preset.patch)}
+                                                onClick={() => loadProofPatchWithAudio(deviceId, preset.patch)}
                                             >
                                                 <span className="text-[11px] font-medium text-foreground">
                                                     {preset.name}
@@ -225,8 +218,8 @@ export const ProofPanel = (): ReactElement => {
                                                 type="button"
                                                 className={`proof-chip ${active ? 'proof-chip-active' : ''}`}
                                                 onClick={() => {
-                                                    setProofParamWithPatch('target', option.value);
-                                                    setProofParamWithPatch('targetLufs', option.lufs);
+                                                    setProofParamWithPatch(deviceId, 'target', option.value);
+                                                    setProofParamWithPatch(deviceId, 'targetLufs', option.lufs);
                                                 }}
                                             >
                                                 {option.label}
@@ -250,7 +243,7 @@ export const ProofPanel = (): ReactElement => {
                                                         ? 'border-white/18 bg-white/[0.03]'
                                                         : 'hover:border-white/12 hover:bg-white/[0.02]'
                                                 }`}
-                                                onClick={() => setProofUiLevel(entry.level)}
+                                                onClick={() => setProofUiLevel(deviceId, entry.level)}
                                             >
                                                 <span className="text-[11px] font-medium text-foreground">
                                                     {entry.label}
@@ -297,7 +290,7 @@ export const ProofPanel = (): ReactElement => {
                         </div>
                     </div>
 
-                    <div className="proof-window min-h-0 flex-1 overflow-auto p-3">{renderLevel(state)}</div>
+                    <div className="proof-window min-h-0 flex-1 overflow-auto p-3">{renderLevel(state, deviceId)}</div>
                 </section>
 
                 <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
@@ -365,22 +358,21 @@ export const ProofPanel = (): ReactElement => {
                                 className={`proof-chip ${state.abBypass ? 'proof-chip-active' : ''}`}
                                 onClick={() => {
                                     const next = !state.abBypass;
-                                    setProofParam('ab_bypass', next ? 1 : 0);
-                                    const proofState = proofStore.value;
-                                    if (proofState) {
-                                        proofStore.set({ ...proofState, abBypass: next });
-                                    }
+                                    setProofParam(deviceId, 'ab_bypass', next ? 1 : 0);
+                                    const instances = proofStore.value ?? {};
+                                    const current = instances[deviceId] ?? getProofState(deviceId);
+                                    proofStore.set({ ...instances, [deviceId]: { ...current, abBypass: next } });
                                 }}
                             >
                                 {state.abBypass ? 'A / dry' : 'B / wet'}
                             </button>
-                            <button type="button" className="proof-chip" onClick={() => resetIntegratedMeters()}>
+                            <button type="button" className="proof-chip" onClick={() => resetIntegratedMeters(deviceId)}>
                                 Reset loudness
                             </button>
                             <div className="flex flex-col items-center gap-1 pt-1">
                                 <RotaryKnob
                                     value={patch.limCeiling}
-                                    onChange={(value) => setProofParamWithPatch('limCeiling', value)}
+                                    onChange={(value) => setProofParamWithPatch(deviceId, 'limCeiling', value)}
                                     min={-12}
                                     max={0}
                                     step={0.1}
@@ -404,7 +396,7 @@ export const ProofPanel = (): ReactElement => {
 
 // ── Level 1: Play ────────────────────────────────────────────────────────────
 
-const Level1Play = ({ state }: { state: ProofState }): ReactElement => {
+const Level1Play = ({ state, deviceId }: { state: ProofState; deviceId: string }): ReactElement => {
     const { patch } = state;
 
     return (
@@ -423,8 +415,8 @@ const Level1Play = ({ state }: { state: ProofState }): ReactElement => {
                                     : 'text-muted-foreground hover:text-foreground border border-transparent hover:border-border/30'
                             }`}
                             onClick={() => {
-                                setProofParamWithPatch('target', opt.value);
-                                setProofParamWithPatch('targetLufs', opt.lufs);
+                                setProofParamWithPatch(deviceId, 'target', opt.value);
+                                setProofParamWithPatch(deviceId, 'targetLufs', opt.lufs);
                             }}
                         >
                             {opt.label} ({opt.lufs} LUFS)
@@ -473,7 +465,7 @@ const Level1Play = ({ state }: { state: ProofState }): ReactElement => {
                 <span className="text-[8px] text-muted-foreground uppercase tracking-widest">Ceiling</span>
                 <RotaryKnob
                     value={patch.limCeiling}
-                    onChange={(v) => setProofParamWithPatch('limCeiling', v)}
+                    onChange={(v) => setProofParamWithPatch(deviceId, 'limCeiling', v)}
                     min={-12}
                     max={0}
                     step={0.1}
@@ -488,7 +480,7 @@ const Level1Play = ({ state }: { state: ProofState }): ReactElement => {
 
 // ── Level 2: Shape ───────────────────────────────────────────────────────────
 
-const Level2Shape = ({ state }: { state: ProofState }): ReactElement => {
+const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string }): ReactElement => {
     const { patch } = state;
     const bypasses = [patch.eqBypassed, patch.dynBypassed, patch.imgBypassed, patch.excBypassed, patch.limBypassed];
     const bypassKeys = ['eqBypassed', 'dynBypassed', 'imgBypassed', 'excBypassed', 'limBypassed'] as const;
@@ -521,7 +513,7 @@ const Level2Shape = ({ state }: { state: ProofState }): ReactElement => {
                                         : `border border-current/20`
                                 }`}
                                 style={{ color: bypassed ? undefined : color }}
-                                onClick={() => setProofParamWithPatch(bypassKeys[moduleIdx]!, !bypassed)}
+                                onClick={() => setProofParamWithPatch(deviceId, bypassKeys[moduleIdx]!, !bypassed)}
                             >
                                 {label}
                             </button>
@@ -556,7 +548,7 @@ const Level2Shape = ({ state }: { state: ProofState }): ReactElement => {
                     onChange={(v) => {
                         const bands = [...patch.dynBands];
                         bands.forEach((b) => (b.threshold = v));
-                        setProofParamWithPatch('dynBands' as never, bands as never);
+                        setProofParamWithPatch(deviceId, 'dynBands' as never, bands as never);
                     }}
                     min={-60}
                     max={0}
@@ -572,7 +564,7 @@ const Level2Shape = ({ state }: { state: ProofState }): ReactElement => {
                         const widths: [number, number, number, number] = [...patch.imgBandWidth];
                         widths[2] = v;
                         widths[3] = v;
-                        setProofParamWithPatch('imgBandWidth', widths);
+                        setProofParamWithPatch(deviceId, 'imgBandWidth', widths);
                     }}
                     min={0}
                     max={2}
@@ -590,7 +582,7 @@ const Level2Shape = ({ state }: { state: ProofState }): ReactElement => {
                             b.drive = v;
                             b.enabled = v > 0.01;
                         });
-                        setProofParamWithPatch('excBands' as never, bands as never);
+                        setProofParamWithPatch(deviceId, 'excBands' as never, bands as never);
                     }}
                     min={0}
                     max={1}
@@ -602,7 +594,7 @@ const Level2Shape = ({ state }: { state: ProofState }): ReactElement => {
                     sublabel="Ceiling"
                     bypassed={patch.limBypassed}
                     value={patch.limCeiling}
-                    onChange={(v) => setProofParamWithPatch('limCeiling', v)}
+                    onChange={(v) => setProofParamWithPatch(deviceId, 'limCeiling', v)}
                     min={-12}
                     max={0}
                     unit="dBTP"
@@ -615,22 +607,22 @@ const Level2Shape = ({ state }: { state: ProofState }): ReactElement => {
 
 // ── Level 3: Build ───────────────────────────────────────────────────────────
 
-const Level3Build = ({ state }: { state: ProofState }): ReactElement => {
+const Level3Build = ({ state, deviceId }: { state: ProofState; deviceId: string }): ReactElement => {
     const { patch } = state;
 
     return (
         <div className="flex-1 flex min-h-0 overflow-hidden">
             {/* Module controls — scrollable */}
             <div className="flex-1 overflow-y-auto py-2 space-y-3">
-                <ProofEqSection patch={patch} />
+                <ProofEqSection patch={patch} deviceId={deviceId} />
                 <div className="mx-2 border-t border-border/20" />
-                <ProofDynSection patch={patch} dynGr={state.dynGr} />
+                <ProofDynSection patch={patch} dynGr={state.dynGr} deviceId={deviceId} />
                 <div className="mx-2 border-t border-border/20" />
-                <ProofImagerSection patch={patch} correlation={state.correlation} />
+                <ProofImagerSection patch={patch} correlation={state.correlation} deviceId={deviceId} />
                 <div className="mx-2 border-t border-border/20" />
-                <ProofExciterSection patch={patch} />
+                <ProofExciterSection patch={patch} deviceId={deviceId} />
                 <div className="mx-2 border-t border-border/20" />
-                <ProofLimiterSection patch={patch} limiterGrDb={state.limiterGrDb} truePeakDb={state.truePeakDb} />
+                <ProofLimiterSection patch={patch} limiterGrDb={state.limiterGrDb} truePeakDb={state.truePeakDb} deviceId={deviceId} />
             </div>
 
             {/* Right: Loudness history + summary */}
@@ -679,7 +671,7 @@ const Level3Build = ({ state }: { state: ProofState }): ReactElement => {
 
 // ── Level 4: Route ───────────────────────────────────────────────────────────
 
-const Level4Route = ({ state }: { state: ProofState }): ReactElement => {
+const Level4Route = ({ state, deviceId }: { state: ProofState; deviceId: string }): ReactElement => {
     const { patch } = state;
 
     const moveModule = (fromIdx: number, direction: -1 | 1) => {
@@ -689,7 +681,7 @@ const Level4Route = ({ state }: { state: ProofState }): ReactElement => {
         const temp = newOrder[fromIdx]!;
         newOrder[fromIdx] = newOrder[toIdx]!;
         newOrder[toIdx] = temp;
-        reorderChain(newOrder);
+        reorderChain(deviceId, newOrder);
     };
 
     return (
@@ -749,7 +741,7 @@ const Level4Route = ({ state }: { state: ProofState }): ReactElement => {
                     <span className="text-[8px] text-muted-foreground">Input Gain</span>
                     <RotaryKnob
                         value={patch.inputGain}
-                        onChange={(v) => setProofParamWithPatch('inputGain', v)}
+                        onChange={(v) => setProofParamWithPatch(deviceId, 'inputGain', v)}
                         min={-24}
                         max={24}
                         step={0.5}
@@ -765,7 +757,7 @@ const Level4Route = ({ state }: { state: ProofState }): ReactElement => {
                     <span className="text-[8px] text-muted-foreground">Output Gain</span>
                     <RotaryKnob
                         value={patch.outputGain}
-                        onChange={(v) => setProofParamWithPatch('outputGain', v)}
+                        onChange={(v) => setProofParamWithPatch(deviceId, 'outputGain', v)}
                         min={-24}
                         max={24}
                         step={0.5}
@@ -784,7 +776,7 @@ const Level4Route = ({ state }: { state: ProofState }): ReactElement => {
 
 // ── Level 5: Lab ─────────────────────────────────────────────────────────────
 
-const Level5Lab = ({ state }: { state: ProofState }): ReactElement => {
+const Level5Lab = ({ state, deviceId }: { state: ProofState; deviceId: string }): ReactElement => {
     const { patch } = state;
     const targetLufs = TARGET_LUFS[patch.target] ?? -14;
     const delta = state.integratedLufs > -100 ? state.integratedLufs - targetLufs : 0;
@@ -861,7 +853,7 @@ const Level5Lab = ({ state }: { state: ProofState }): ReactElement => {
                 <button
                     type="button"
                     className="text-[8px] text-muted-foreground hover:text-foreground border border-border/30 px-2 py-1 rounded cursor-pointer"
-                    onClick={resetIntegratedMeters}
+                    onClick={() => resetIntegratedMeters(deviceId)}
                 >
                     Reset Integrated LUFS + True Peak
                 </button>
@@ -909,10 +901,8 @@ const MeterCard = ({
     alert?: boolean;
 }): ReactElement => (
     <div
-        className="px-2 py-1.5 rounded"
+        className="daw-readout-well rounded px-2 py-1.5"
         style={{
-            background: 'linear-gradient(180deg, #080808 0%, #0e0e0e 100%)',
-            boxShadow: `inset 0 1px 3px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)`,
             border: alert ? '1px solid rgba(239,68,68,0.3)' : '1px solid rgba(0,0,0,0.4)',
             borderBottom: alert ? '1px solid rgba(239,68,68,0.2)' : '1px solid rgba(40,40,40,0.3)',
         }}

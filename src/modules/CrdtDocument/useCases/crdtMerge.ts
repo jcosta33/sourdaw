@@ -74,7 +74,7 @@ export const importSdawFile = async (file: File): Promise<MergeResult | null> =>
             await forkProjectBranch(`Import ${file.name}`);
         }
 
-        const result = automergeRepository.mergeBundle(bundle);
+        const result = await automergeRepository.mergeBundle(bundle);
         projectCrdtToStores();
 
         await persistCrdtProject();
@@ -98,7 +98,7 @@ export const exportSdawFile = (): Blob => {
  * Merge a document bundle into the current project.
  */
 export const mergeDocumentBundle = async (bundle: DocumentBundle): Promise<MergeResult> => {
-    const result = automergeRepository.mergeBundle(bundle);
+    const result = await automergeRepository.mergeBundle(bundle);
     projectCrdtToStores();
     await persistCrdtProject();
     return result;

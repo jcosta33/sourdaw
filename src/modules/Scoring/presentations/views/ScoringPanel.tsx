@@ -2,7 +2,7 @@ import { type ReactElement, useEffect, useRef, useSyncExternalStore } from 'reac
 import { Activity, Waves } from 'lucide-react';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { type DisplayMode } from '../../models/ScoringState';
-import { scoringStore, setA4Reference, setDisplayMode } from '../../stores/scoringStore';
+import { scoringStore, getScoringState, setA4Reference, setDisplayMode } from '../../stores/scoringStore';
 
 const MODES: ReadonlyArray<{ id: DisplayMode; label: string; detail: string }> = [
     { id: 'needle', label: 'Needle', detail: 'Classic center read' },
@@ -44,19 +44,12 @@ function SectionCard({
     );
 }
 
-export const ScoringPanel = (): ReactElement => {
-    const state = useSyncExternalStore(
+export const ScoringPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
+    const allInstances = useSyncExternalStore(
         (callback) => scoringStore.subscribe(callback),
         () => scoringStore.value
     );
-
-    if (!state) {
-        return (
-            <div className="flex h-full items-center justify-center text-xs italic text-muted-foreground/40">
-                Sharpening the blade...
-            </div>
-        );
-    }
+    const state = allInstances?.[deviceId] ?? getScoringState(deviceId);
 
     const { noteName, octave, cents, confidence, active, mode, a4Reference, frequency } = state;
     const absoluteCents = Math.abs(cents);
@@ -97,7 +90,7 @@ export const ScoringPanel = (): ReactElement => {
                                             ? 'border-white/16 bg-white/[0.03]'
                                             : 'hover:border-white/12 hover:bg-white/[0.02]'
                                     }`}
-                                    onClick={() => setDisplayMode(entry.id)}
+                                    onClick={() => setDisplayMode(deviceId, entry.id)}
                                 >
                                     <div>
                                         <div className="text-[11px] font-medium text-white/88">{entry.label}</div>
@@ -114,7 +107,7 @@ export const ScoringPanel = (): ReactElement => {
                     <div className="flex items-center justify-center">
                         <RotaryKnob
                             value={a4Reference}
-                            onChange={(value) => setA4Reference(Math.round(value))}
+                            onChange={(value) => setA4Reference(deviceId, Math.round(value))}
                             min={400}
                             max={490}
                             step={1}

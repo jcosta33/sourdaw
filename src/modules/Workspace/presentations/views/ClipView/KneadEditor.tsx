@@ -1,4 +1,4 @@
-import { type ReactElement, useRef, useEffect, useSyncExternalStore } from 'react';
+import { type ReactElement, useRef, useEffect, useLayoutEffect, useSyncExternalStore } from 'react';
 import { kneadStore } from '#/modules/Knead/stores/kneadStore';
 import { useTracks } from '../../hooks/useTracks';
 import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
@@ -145,7 +145,7 @@ export const KneadEditor = ({ trackId, clipId: _clipId }: { trackId: string; cli
         };
     }, [kneadState, hasKnead]);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         const resizeCanvas = () => {
             if (canvasRef.current) {
                 const parent = canvasRef.current.parentElement;

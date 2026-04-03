@@ -1,4 +1,5 @@
 import { type ReactElement } from 'react';
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { Input } from '#/components/ui/input';
 import { Button } from '#/components/ui/button';
 import { ValueField } from '#/components/daw/ValueField';
@@ -85,18 +86,19 @@ export const TempoEditor = (): ReactElement => {
                         aria-label="Time signature numerator"
                     />
                     <span className="text-xs text-muted-foreground">/</span>
-                    <select
+                    <DawCompactSelect
                         value={t.denValue}
                         onChange={(e) => t.setDenValue(e.target.value)}
                         onBlur={t.commitTimeSig}
-                        className="h-6 w-10 rounded bg-surface-overlay text-center font-mono text-xs text-foreground outline-none"
+                        align="center"
+                        className="w-10 font-mono"
                         aria-label="Time signature denominator"
                     >
                         <option value="2">2</option>
                         <option value="4">4</option>
                         <option value="8">8</option>
                         <option value="16">16</option>
-                    </select>
+                    </DawCompactSelect>
                 </div>
             ) : (
                 <Tooltip>
@@ -122,7 +124,7 @@ export const TempoEditor = (): ReactElement => {
                     ref={t.mapPanelRef}
                     role="dialog"
                     aria-label="Tempo map editor"
-                    className="absolute left-0 top-full z-50 mt-1 w-72 rounded-md border border-border bg-popover p-2 shadow-lg"
+                    className="daw-floating-surface absolute left-0 top-full z-50 mt-1 w-72 rounded-md p-2"
                 >
                     <h3 className="mb-1.5 text-xs font-semibold text-foreground">Tempo Map</h3>
 
@@ -221,15 +223,15 @@ export const TempoEditor = (): ReactElement => {
                             placeholder="BPM"
                             aria-label="New tempo change BPM"
                         />
-                        <select
+                        <DawCompactSelect
                             value={t.newCurve}
                             onChange={(e) => t.setNewCurve(e.target.value as 'instant' | 'linear')}
-                            className="h-6 rounded bg-muted px-1 text-xs text-foreground outline-none"
+                            className="bg-muted px-1"
                             aria-label="New tempo change curve type"
                         >
                             <option value="instant">instant</option>
                             <option value="linear">linear</option>
-                        </select>
+                        </DawCompactSelect>
                         <Button
                             variant="ghost"
                             size="icon-xs"

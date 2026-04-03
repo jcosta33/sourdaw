@@ -11,32 +11,13 @@ import { loadBacteriaPatch, setBacteriaParam, setBacteriaBandParam } from '../st
 
 type DeviceRef = { trackId: string; deviceId: string };
 
-let cachedRefs: DeviceRef[] | null = null;
-let cacheStaleTimer: ReturnType<typeof setTimeout> | null = null;
-
-function getActiveDevices(): DeviceRef[] {
-    if (cachedRefs) {
-        return cachedRefs;
-    }
-
-    const refs: DeviceRef[] = [];
+function findDeviceRef(deviceId: string): DeviceRef | null {
     for (const track of getAllTracks()) {
-        for (const device of track.devices) {
-            if (device.type === 'bacteria') {
-                refs.push({ trackId: track.id, deviceId: device.id });
-            }
+        if (track.devices.some((d) => d.id === deviceId)) {
+            return { trackId: track.id, deviceId };
         }
     }
-    cachedRefs = refs;
-
-    if (cacheStaleTimer) {
-        clearTimeout(cacheStaleTimer);
-    }
-    cacheStaleTimer = setTimeout(() => {
-        cachedRefs = null;
-    }, 2000);
-
-    return refs;
+    return null;
 }
 
 const pendingUpdates = new Map<string, number>();
@@ -79,25 +60,19 @@ const ROUTING_MODE_INDEX = {
     'mid-side': 2,
 } as const;
 
-function flushParam(key: string): void {
-    pendingUpdates.delete(key);
-    const value = latestValues.get(key);
-    if (value === undefined) {
-        return;
-    }
-    latestValues.delete(key);
-
-    for (const { trackId, deviceId } of getActiveDevices()) {
-        updateDeviceParam(trackId, deviceId, key, value);
-        persistDeviceParam(deviceId, key, value);
-    }
+function flushParam(deviceId: string, ref: DeviceRef, key: string): void {
+    const compositeKey = `${deviceId}:${key}`;
+    pendingUpdates.delete(compositeKey);
+    const value = latestValues.get(compositeKey);
+    if (value === undefined) return;
+    latestValues.delete(compositeKey);
+    updateDeviceParam(ref.trackId, ref.deviceId, key, value);
+    persistDeviceParam(ref.deviceId, key, value);
 }
 
-function pushParamImmediately(key: string, value: number): void {
-    for (const { trackId, deviceId } of getActiveDevices()) {
-        updateDeviceParam(trackId, deviceId, key, value);
-        persistDeviceParam(deviceId, key, value);
-    }
+function pushParamImmediately(ref: DeviceRef, key: string, value: number): void {
+    updateDeviceParam(ref.trackId, ref.deviceId, key, value);
+    persistDeviceParam(ref.deviceId, key, value);
 }
 
 function encodePatchValue(key: string, value: unknown): number | null {
@@ -136,8 +111,11 @@ function encodePatchValue(key: string, value: unknown): number | null {
     return null;
 }
 
-export function loadBacteriaPatchWithAudio(patch: BacteriaPatch): void {
-    loadBacteriaPatch(patch);
+export function loadBacteriaPatchWithAudio(deviceId: string, patch: BacteriaPatch): void {
+    loadBacteriaPatch(deviceId, patch);
+
+    const ref = findDeviceRef(deviceId);
+    if (!ref) return;
 
     const globalParams: Array<[string, unknown]> = [
         ['mix', patch.mix],
@@ -182,7 +160,7 @@ export function loadBacteriaPatchWithAudio(patch: BacteriaPatch): void {
     for (const [key, rawValue] of globalParams) {
         const encodedValue = encodePatchValue(key, rawValue);
         if (encodedValue !== null) {
-            pushParamImmediately(key, encodedValue);
+            pushParamImmediately(ref, key, encodedValue);
         }
     }
 
@@ -247,7 +225,7 @@ export function loadBacteriaPatchWithAudio(patch: BacteriaPatch): void {
         for (const [key, rawValue] of bandParams) {
             const encodedValue = encodePatchValue(key, rawValue);
             if (encodedValue !== null) {
-                pushParamImmediately(`band${bandIndex}_${key}`, encodedValue);
+                pushParamImmediately(ref, `band${bandIndex}_${key}`, encodedValue);
             }
         }
     });
@@ -257,19 +235,21 @@ export function loadBacteriaPatchWithAudio(patch: BacteriaPatch): void {
  * Set a Bacteria global parameter — updates UI store immediately,
  * throttles audio engine updates to rAF.
  */
-export function setBacteriaParamWithAudio<K extends keyof BacteriaPatch>(key: K, value: BacteriaPatch[K]): void {
-    setBacteriaParam(key, value);
+export function setBacteriaParamWithAudio<K extends keyof BacteriaPatch>(deviceId: string, key: K, value: BacteriaPatch[K]): void {
+    setBacteriaParam(deviceId, key, value);
 
     const encodedValue = encodePatchValue(key, value);
-    if (encodedValue === null) {
-        return;
-    }
+    if (encodedValue === null) return;
 
-    latestValues.set(key, encodedValue);
-    if (!pendingUpdates.has(key)) {
+    const ref = findDeviceRef(deviceId);
+    if (!ref) return;
+
+    const compositeKey = `${deviceId}:${key}`;
+    latestValues.set(compositeKey, encodedValue);
+    if (!pendingUpdates.has(compositeKey)) {
         pendingUpdates.set(
-            key,
-            requestAnimationFrame(() => flushParam(key))
+            compositeKey,
+            requestAnimationFrame(() => flushParam(deviceId, ref, key))
         );
     }
 }
@@ -279,23 +259,26 @@ export function setBacteriaParamWithAudio<K extends keyof BacteriaPatch>(key: K,
  * throttles audio engine updates to rAF with a band-prefixed key.
  */
 export function setBacteriaBandParamWithAudio<K extends keyof BacteriaPatch['bands'][0]>(
+    deviceId: string,
     bandIndex: number,
     key: K,
     value: BacteriaPatch['bands'][0][K]
 ): void {
-    setBacteriaBandParam(bandIndex, key, value);
+    setBacteriaBandParam(deviceId, bandIndex, key, value);
 
     const prefixedKey = `band${bandIndex}_${key}`;
     const encodedValue = encodePatchValue(String(key), value);
-    if (encodedValue === null) {
-        return;
-    }
+    if (encodedValue === null) return;
 
-    latestValues.set(prefixedKey, encodedValue);
-    if (!pendingUpdates.has(prefixedKey)) {
+    const ref = findDeviceRef(deviceId);
+    if (!ref) return;
+
+    const compositeKey = `${deviceId}:${prefixedKey}`;
+    latestValues.set(compositeKey, encodedValue);
+    if (!pendingUpdates.has(compositeKey)) {
         pendingUpdates.set(
-            prefixedKey,
-            requestAnimationFrame(() => flushParam(prefixedKey))
+            compositeKey,
+            requestAnimationFrame(() => flushParam(deviceId, ref, prefixedKey))
         );
     }
 }

@@ -1,4 +1,5 @@
 import { type ReactElement, type ChangeEvent, useSyncExternalStore } from 'react';
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { BipolarSlider } from '#/components/ui/bipolar-slider';
 import { cn } from '#/helpers/Styles/cn';
@@ -74,8 +75,8 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
     const renderSliderOrKnob = () => {
         if (isChoice) {
             return (
-                <select
-                    className="w-[80px] rounded bg-surface px-1.5 py-1 text-xs text-foreground border border-border/50 focus:outline-none focus:ring-1 focus:ring-primary"
+                <DawCompactSelect
+                    className="w-[80px] bg-surface px-1.5 focus-visible:ring-primary"
                     value={Math.round(value)}
                     onChange={handleChoiceChange}
                     aria-label={param.name}
@@ -85,7 +86,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                             {label}
                         </option>
                     ))}
-                </select>
+                </DawCompactSelect>
             );
         }
 

@@ -10,12 +10,6 @@ export type PeerInfo = {
     latencyMs: number | null;
 };
 
-export type JoinRequest = {
-    peerId: PeerId;
-    name: string;
-    timestamp: number;
-};
-
 export type CollaborationState = {
     isEnabled: boolean;
     sessionId: string | null;
@@ -24,7 +18,6 @@ export type CollaborationState = {
     localColor: string;
     isHost: boolean;
     approvalRequired: boolean;
-    pendingJoinRequests: JoinRequest[];
     peers: PeerInfo[];
     connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'error';
     error: string | null;
@@ -51,9 +44,8 @@ export type PresenceData = {
  * These are used to establish WebRTC connections, not for project data.
  */
 export type SignalingMessage =
-    | { type: 'offer'; peerId: PeerId; name: string; sessionId: string; sdp: string }
-    | { type: 'answer'; peerId: PeerId; name: string; sdp: string }
-    | { type: 'ice-candidate'; peerId: PeerId; candidate: string };
+    | { type: 'offer'; peerId: PeerId; name: string; sessionId: string; sdp: string; pendingPeerId: PeerId }
+    | { type: 'answer'; peerId: PeerId; name: string; sdp: string; pendingPeerId: PeerId };
 
 /**
  * Messages sent over WebRTC data channels after connection is established.

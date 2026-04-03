@@ -1,5 +1,7 @@
 import { type ReactElement, useState } from 'react';
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { Slider } from '#/components/ui/slider';
 import { Separator } from '#/components/ui/separator';
 import { Button } from '#/components/ui/button';
@@ -14,6 +16,8 @@ import { renameClip } from '#/modules/Arrangement/useCases/clipEditing/renameCli
 import { setClipFollowAction } from '#/modules/Arrangement/useCases/clipEditing/setClipFollowAction';
 import { type Clip } from '#/modules/Arrangement/useCases/trackQueries';
 import { CLIP_COLOR_PRESETS } from '#/helpers/UI/colorPresets';
+import { ControlHeader } from '../../components/Inspector/ControlHeader';
+import { InsetPanel } from '../../components/Inspector/InsetPanel';
 import { ClipGainEnvelopeSection } from './ClipGainEnvelopeSection';
 import { ClipAudioAiSection } from './ClipAudioAiSection';
 import { ClipMidiAiSection } from './ClipMidiAiSection';
@@ -85,26 +89,15 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
 
             <section>
                 <DawHeaderBand compact className="mb-2 rounded-sm" title="Position" />
-                <div className="rounded-md bg-surface-well border border-border-hairline shadow-[inset_0_1px_3px_rgba(0,0,0,0.4)] p-2 space-y-1.5">
-                    <div className="flex items-center justify-between">
-                        <label className="text-[10px] text-muted-foreground">Start</label>
-                        <span className="text-[10px] font-mono text-foreground">
-                            Bar {startBar} (beat {clip.startBeat})
-                        </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                        <label className="text-[10px] text-muted-foreground">End</label>
-                        <span className="text-[10px] font-mono text-foreground">
-                            Bar {endBar} (beat {clip.endBeat})
-                        </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                        <label className="text-[10px] text-muted-foreground">Length</label>
-                        <span className="text-[10px] font-mono text-foreground">
-                            {duration} beats ({(duration / 4).toFixed(1)} bars)
-                        </span>
-                    </div>
-                </div>
+                <InsetPanel className="space-y-1.5">
+                    <DawReadoutRow label="Start" value={`Bar ${startBar} (beat ${clip.startBeat})`} valueClassName="text-foreground" />
+                    <DawReadoutRow label="End" value={`Bar ${endBar} (beat ${clip.endBeat})`} valueClassName="text-foreground" />
+                    <DawReadoutRow
+                        label="Length"
+                        value={`${duration} beats (${(duration / 4).toFixed(1)} bars)`}
+                        valueClassName="text-foreground"
+                    />
+                </InsetPanel>
             </section>
 
             <Separator />
@@ -113,9 +106,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                 <DawHeaderBand compact className="mb-2 rounded-sm" title="Trim" />
                 <div className="space-y-2">
                     <div>
-                        <div className="flex items-center justify-between mb-1">
-                            <label className="text-[10px] text-muted-foreground">Trim Start</label>
-                        </div>
+                        <ControlHeader className="mb-1" label="Trim Start" />
                         <Slider
                             value={[clip.startBeat]}
                             onValueChange={([v]) => {
@@ -129,9 +120,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                         />
                     </div>
                     <div>
-                        <div className="flex items-center justify-between mb-1">
-                            <label className="text-[10px] text-muted-foreground">Trim End</label>
-                        </div>
+                        <ControlHeader className="mb-1" label="Trim End" />
                         <Slider
                             value={[clip.endBeat]}
                             onValueChange={([v]) => {
@@ -154,12 +143,12 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                 <DawHeaderBand compact className="mb-2 rounded-sm" title="Fades" />
                 <div className="space-y-2">
                     <div>
-                        <div className="flex items-center justify-between mb-1">
-                            <label className="text-[10px] text-muted-foreground">Fade In</label>
-                            <span className="text-[10px] font-mono text-foreground">
-                                {clip.fadeInBeats.toFixed(2)} beats
-                            </span>
-                        </div>
+                        <ControlHeader
+                            className="mb-1"
+                            label="Fade In"
+                            value={`${clip.fadeInBeats.toFixed(2)} beats`}
+                            valueClassName="text-foreground"
+                        />
                         <Slider
                             value={[clip.fadeInBeats]}
                             onValueChange={([v]) => {
@@ -173,12 +162,12 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                         />
                     </div>
                     <div>
-                        <div className="flex items-center justify-between mb-1">
-                            <label className="text-[10px] text-muted-foreground">Fade Out</label>
-                            <span className="text-[10px] font-mono text-foreground">
-                                {clip.fadeOutBeats.toFixed(2)} beats
-                            </span>
-                        </div>
+                        <ControlHeader
+                            className="mb-1"
+                            label="Fade Out"
+                            value={`${clip.fadeOutBeats.toFixed(2)} beats`}
+                            valueClassName="text-foreground"
+                        />
                         <Slider
                             value={[clip.fadeOutBeats]}
                             onValueChange={([v]) => {
@@ -199,12 +188,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
             <section>
                 <DawHeaderBand compact className="mb-2 rounded-sm" title="Gain" />
                 <div>
-                    <div className="flex items-center justify-between mb-1">
-                        <label className="text-[10px] text-muted-foreground">Clip Gain</label>
-                        <span className="text-[10px] font-mono text-muted-foreground">
-                            {(clip.gain * 100).toFixed(0)}%
-                        </span>
-                    </div>
+                    <ControlHeader className="mb-1" label="Clip Gain" value={`${(clip.gain * 100).toFixed(0)}%`} />
                     <Slider
                         value={[clip.gain * 100]}
                         onValueChange={([v]) => {
@@ -249,22 +233,18 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
 
             <section>
                 <DawHeaderBand compact className="mb-2 rounded-sm" title="Properties" />
-                <div className="rounded-md bg-surface-well border border-border-hairline shadow-[inset_0_1px_3px_rgba(0,0,0,0.4)] p-2 space-y-1.5">
-                    <div className="flex items-center justify-between">
-                        <label className="text-[10px] text-muted-foreground">Type</label>
-                        <span className="text-[10px] font-mono text-foreground capitalize">{clip.type}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                        <label className="text-[10px] text-muted-foreground">Track</label>
-                        <span className="text-[10px] font-mono text-foreground">{clip.trackId}</span>
-                    </div>
+                <InsetPanel className="space-y-1.5">
+                    <DawReadoutRow label="Type" value={clip.type} valueClassName="text-foreground capitalize" />
+                    <DawReadoutRow label="Track" value={clip.trackId} valueClassName="text-foreground" />
                     <div className="flex items-center justify-between">
                         <label className="text-[10px] text-muted-foreground" htmlFor="follow-action-select">
                             Follow Action
                         </label>
-                        <select
+                        <DawCompactSelect
                             id="follow-action-select"
-                            className="rounded bg-surface-overlay text-[10px] text-foreground text-right outline-none focus:ring-1 focus:ring-ring border border-border-hairline px-1 py-0.5 cursor-pointer hover:bg-surface-raised transition-colors"
+                            size="micro"
+                            align="right"
+                            className="border-border-hairline py-0.5 text-[10px]"
                             value={clip.followAction ?? 'none'}
                             onChange={(e) => {
                                 const val = e.target.value === 'none' ? undefined : (e.target.value as any);
@@ -292,17 +272,16 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                             <option className="bg-bg-overlay" value="play_random">
                                 Play Random
                             </option>
-                        </select>
+                        </DawCompactSelect>
                     </div>
                     {clip.type === 'audio' ? (
-                        <div className="flex items-center justify-between">
-                            <label className="text-[10px] text-muted-foreground">Audio Source</label>
-                            <span className="text-[10px] font-mono text-foreground truncate max-w-24">
-                                {clip.audioBufferId ? `${clip.audioBufferId.slice(0, 16)}…` : 'none'}
-                            </span>
-                        </div>
+                        <DawReadoutRow
+                            label="Audio Source"
+                            value={clip.audioBufferId ? `${clip.audioBufferId.slice(0, 16)}…` : 'none'}
+                            valueClassName="max-w-24 truncate text-foreground"
+                        />
                     ) : null}
-                </div>
+                </InsetPanel>
             </section>
 
             {clip.type === 'audio' ? (

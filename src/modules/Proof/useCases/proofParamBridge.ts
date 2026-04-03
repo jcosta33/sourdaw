@@ -2,12 +2,12 @@
  * Proof param bridge — sends parameter changes to the WASM audio engine.
  *
  * Registered when the ProofNode is created; called by UI controls.
+ * Per-device: each deviceId has its own bridge handle.
  */
 
 import { type ProofPatch } from '../models/ProofPatch';
-import { loadProofPatch, updateProofPatch, proofStore } from '../stores/proofStore';
+import { loadProofPatch, updateProofPatch, getProofState } from '../stores/proofStore';
 import { persistDeviceParam } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
-import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
 
 type ProofAudioBridge = {
     setParam: (name: string, value: number) => void;
@@ -15,61 +15,47 @@ type ProofAudioBridge = {
     resetIntegrated: () => void;
 };
 
-let bridge: ProofAudioBridge | null = null;
-let proofDeviceId: string | null = null;
+const bridges = new Map<string, ProofAudioBridge>();
 
-function resolveDeviceId(): string | null {
-    if (proofDeviceId) return proofDeviceId;
-    for (const track of getAllTracks()) {
-        const d = track.devices.find((dev) => dev.type === 'proof');
-        if (d) {
-            proofDeviceId = d.id;
-            return d.id;
-        }
-    }
-    return null;
+export function registerProofDevice(deviceId: string, b: ProofAudioBridge): void {
+    bridges.set(deviceId, b);
 }
 
-export function registerProofDevice(b: ProofAudioBridge): void {
-    bridge = b;
-    proofDeviceId = null;
-    resolveDeviceId();
+export function unregisterProofDevice(deviceId: string): void {
+    bridges.delete(deviceId);
 }
 
-export function unregisterProofDevice(): void {
-    bridge = null;
-    proofDeviceId = null;
-}
-
-export function setProofParam(name: string, value: number): void {
-    bridge?.setParam(name, value);
-    const did = resolveDeviceId();
-    if (did) persistDeviceParam(did, name, value);
+export function setProofParam(deviceId: string, name: string, value: number): void {
+    bridges.get(deviceId)?.setParam(name, value);
+    persistDeviceParam(deviceId, name, value);
 }
 
 /** Set a patch parameter and send to audio engine. */
-export function setProofParamWithPatch<K extends keyof ProofPatch>(key: K, value: ProofPatch[K]): void {
-    updateProofPatch({ [key]: value });
+export function setProofParamWithPatch<K extends keyof ProofPatch>(deviceId: string, key: K, value: ProofPatch[K]): void {
+    updateProofPatch(deviceId, { [key]: value });
 
-    // Map patch key to DSP param name and send
-    if (key === 'inputGain') bridge?.setParam('input_gain', value as number);
-    else if (key === 'outputGain') bridge?.setParam('output_gain', value as number);
-    else if (key === 'eqBypassed') bridge?.setParam('eq_bypass', (value as boolean) ? 1 : 0);
-    else if (key === 'dynBypassed') bridge?.setParam('dyn_bypass', (value as boolean) ? 1 : 0);
-    else if (key === 'imgBypassed') bridge?.setParam('img_bypass', (value as boolean) ? 1 : 0);
-    else if (key === 'excBypassed') bridge?.setParam('exc_bypass', (value as boolean) ? 1 : 0);
-    else if (key === 'limBypassed') bridge?.setParam('lim_bypass', (value as boolean) ? 1 : 0);
-    else if (key === 'limCeiling') bridge?.setParam('lim_ceiling', value as number);
-    else if (key === 'limRelease') bridge?.setParam('lim_release', value as number);
-    else if (key === 'limLookahead') bridge?.setParam('lim_lookahead', value as number);
-    else if (key === 'imgAutoMonoBass') bridge?.setParam('img_auto_mono_bass', (value as boolean) ? 1 : 0);
-    else if (key === 'imgMonoBassFreq') bridge?.setParam('img_mono_bass_freq', value as number);
+    const bridge = bridges.get(deviceId);
+    if (!bridge) return;
+
+    if (key === 'inputGain') bridge.setParam('input_gain', value as number);
+    else if (key === 'outputGain') bridge.setParam('output_gain', value as number);
+    else if (key === 'eqBypassed') bridge.setParam('eq_bypass', (value as boolean) ? 1 : 0);
+    else if (key === 'dynBypassed') bridge.setParam('dyn_bypass', (value as boolean) ? 1 : 0);
+    else if (key === 'imgBypassed') bridge.setParam('img_bypass', (value as boolean) ? 1 : 0);
+    else if (key === 'excBypassed') bridge.setParam('exc_bypass', (value as boolean) ? 1 : 0);
+    else if (key === 'limBypassed') bridge.setParam('lim_bypass', (value as boolean) ? 1 : 0);
+    else if (key === 'limCeiling') bridge.setParam('lim_ceiling', value as number);
+    else if (key === 'limRelease') bridge.setParam('lim_release', value as number);
+    else if (key === 'limLookahead') bridge.setParam('lim_lookahead', value as number);
+    else if (key === 'imgAutoMonoBass') bridge.setParam('img_auto_mono_bass', (value as boolean) ? 1 : 0);
+    else if (key === 'imgMonoBassFreq') bridge.setParam('img_mono_bass_freq', value as number);
 }
 
 /** Send all EQ band parameters to the engine. */
-export function syncEqBands(): void {
-    const patch = proofStore.value?.patch;
-    if (!patch || !bridge) return;
+export function syncEqBands(deviceId: string): void {
+    const patch = getProofState(deviceId).patch;
+    const bridge = bridges.get(deviceId);
+    if (!bridge) return;
     for (let i = 0; i < patch.eqBands.length; i++) {
         const band = patch.eqBands[i]!;
         bridge.setParam(`eq_band${i}_freq`, band.freq);
@@ -82,9 +68,10 @@ export function syncEqBands(): void {
 }
 
 /** Send all dynamics band parameters to the engine. */
-export function syncDynBands(): void {
-    const patch = proofStore.value?.patch;
-    if (!patch || !bridge) return;
+export function syncDynBands(deviceId: string): void {
+    const patch = getProofState(deviceId).patch;
+    const bridge = bridges.get(deviceId);
+    if (!bridge) return;
     for (let i = 0; i < 3; i++) {
         bridge.setParam(`dyn_xover${i}`, patch.dynCrossoverFreqs[i]!);
     }
@@ -102,9 +89,10 @@ export function syncDynBands(): void {
 }
 
 /** Send all imager parameters to the engine. */
-export function syncImager(): void {
-    const patch = proofStore.value?.patch;
-    if (!patch || !bridge) return;
+export function syncImager(deviceId: string): void {
+    const patch = getProofState(deviceId).patch;
+    const bridge = bridges.get(deviceId);
+    if (!bridge) return;
     for (let i = 0; i < 4; i++) {
         bridge.setParam(`img_width${i}`, patch.imgBandWidth[i]!);
     }
@@ -113,9 +101,10 @@ export function syncImager(): void {
 }
 
 /** Send all exciter parameters to the engine. */
-export function syncExciter(): void {
-    const patch = proofStore.value?.patch;
-    if (!patch || !bridge) return;
+export function syncExciter(deviceId: string): void {
+    const patch = getProofState(deviceId).patch;
+    const bridge = bridges.get(deviceId);
+    if (!bridge) return;
     for (let i = 0; i < patch.excBands.length; i++) {
         const band = patch.excBands[i]!;
         bridge.setParam(`exc_band${i}_type`, band.type);
@@ -126,9 +115,10 @@ export function syncExciter(): void {
 }
 
 /** Send full patch to engine (e.g., after preset load). */
-export function syncFullPatch(): void {
-    const patch = proofStore.value?.patch;
-    if (!patch || !bridge) return;
+export function syncFullPatch(deviceId: string): void {
+    const patch = getProofState(deviceId).patch;
+    const bridge = bridges.get(deviceId);
+    if (!bridge) return;
 
     bridge.setParam('input_gain', patch.inputGain);
     bridge.setParam('output_gain', patch.outputGain);
@@ -143,24 +133,24 @@ export function syncFullPatch(): void {
     bridge.setParam('dither_mode', patch.ditherMode === 'off' ? 0 : patch.ditherMode === 'tpdf' ? 1 : 2);
     bridge.setParam('dither_bits', patch.ditherBits);
 
-    syncEqBands();
-    syncDynBands();
-    syncImager();
-    syncExciter();
+    syncEqBands(deviceId);
+    syncDynBands(deviceId);
+    syncImager(deviceId);
+    syncExciter(deviceId);
 
     bridge.reorderModules(patch.chainOrder);
 }
 
-export function loadProofPatchWithAudio(patch: ProofPatch): void {
-    loadProofPatch(patch);
-    syncFullPatch();
+export function loadProofPatchWithAudio(deviceId: string, patch: ProofPatch): void {
+    loadProofPatch(deviceId, patch);
+    syncFullPatch(deviceId);
 }
 
-export function reorderChain(order: [number, number, number, number, number]): void {
-    updateProofPatch({ chainOrder: order });
-    bridge?.reorderModules(order);
+export function reorderChain(deviceId: string, order: [number, number, number, number, number]): void {
+    updateProofPatch(deviceId, { chainOrder: order });
+    bridges.get(deviceId)?.reorderModules(order);
 }
 
-export function resetIntegratedMeters(): void {
-    bridge?.resetIntegrated();
+export function resetIntegratedMeters(deviceId: string): void {
+    bridges.get(deviceId)?.resetIntegrated();
 }

@@ -7,8 +7,8 @@
  *
  * Messages from main thread:
  *   { type: 'init', wasmBytes: ArrayBuffer }
- *   { type: 'noteOn', pad, velocity, note, scheduleTime? }
- *   { type: 'noteOff', pad, scheduleTime? }
+ *   { type: 'noteOn', pad, velocity, note, sampleFrame? }
+ *   { type: 'noteOff', pad, sampleFrame? }
  *   { type: 'param', name, value }
  *   { type: 'padParam', pad, name, value }
  */
@@ -53,7 +53,7 @@ class ToasterProcessor extends AudioWorkletProcessor {
     _memory = null;     // WebAssembly.Memory
     _ready = false;
     _faulted = false;
-    _queue = [];        // Sorted by scheduleTime (AudioContext seconds)
+    _queue = [];        // Sorted by sampleFrame (integer sample count)
 
     constructor() {
         super();
@@ -84,21 +84,20 @@ class ToasterProcessor extends AudioWorkletProcessor {
     }
 
     _enqueue(msg) {
-        // Insert in ascending scheduleTime order.
+        // Insert in ascending sampleFrame order.
         let lo = 0, hi = this._queue.length;
         while (lo < hi) {
             const mid = (lo + hi) >>> 1;
-            if (this._queue[mid].scheduleTime <= msg.scheduleTime) lo = mid + 1;
+            if (this._queue[mid].sampleFrame <= msg.sampleFrame) lo = mid + 1;
             else hi = mid;
         }
         this._queue.splice(lo, 0, msg);
     }
 
     _handleMessage(msg) {
-        // If a future scheduleTime is given, defer to audio-clock queue.
-        if (msg.scheduleTime !== undefined) {
-            const now = currentFrame / sampleRate;
-            if (msg.scheduleTime > now) {
+        // If a future sampleFrame is given, defer to audio-clock queue.
+        if (msg.sampleFrame !== undefined) {
+            if (msg.sampleFrame > currentFrame) {
                 this._enqueue(msg);
                 return;
             }
@@ -124,8 +123,8 @@ class ToasterProcessor extends AudioWorkletProcessor {
         }
     }
 
-    _drainQueue(blockEndTime) {
-        while (this._queue.length > 0 && this._queue[0].scheduleTime <= blockEndTime) {
+    _drainQueue(blockEndFrame) {
+        while (this._queue.length > 0 && this._queue[0].sampleFrame <= blockEndFrame) {
             this._dispatch(this._queue.shift());
         }
     }
@@ -139,8 +138,8 @@ class ToasterProcessor extends AudioWorkletProcessor {
         const frames = output[0].length;
 
         // Drain any scheduled events that fall within this render block.
-        const blockEndTime = (currentFrame + frames) / sampleRate;
-        this._drainQueue(blockEndTime);
+        const blockEndFrame = currentFrame + frames;
+        this._drainQueue(blockEndFrame);
 
         try {
             const leftPtr = this._instance.process(frames);

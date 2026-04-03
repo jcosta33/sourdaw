@@ -6,6 +6,8 @@ import { NATIVE_MODEL_INFO, CLOUD_MODEL_INFO, WEBLLM_MODELS, type ModelInfo } fr
 import { getActiveModelId } from '#/modules/AiRuntime/repositories/webLlm/engineLifecycle';
 import { type LlmEngineStatus } from '#/modules/AiRuntime/stores/llmStatusStore';
 import { Button } from '#/components/ui/button';
+import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
+import { DawStatusDot } from '#/components/daw/DawStatusDot';
 
 type LlmStatusBadgeProps = {
     status: LlmEngineStatus;
@@ -13,9 +15,9 @@ type LlmStatusBadgeProps = {
 };
 
 const TIER_COLORS = {
-    native: 'bg-primary/20 text-primary border-primary/30',
-    cloud: 'bg-[var(--color-accent-cyan)]/20 text-[var(--color-accent-cyan)] border-[var(--color-accent-cyan)]/30',
-    webllm: 'bg-primary/20 text-primary border-primary/30',
+    native: 'border-primary/30 bg-primary/20 text-primary',
+    cloud: 'border-[var(--color-accent-cyan)]/30 bg-[var(--color-accent-cyan)]/20 text-[var(--color-accent-cyan)]',
+    webllm: 'border-primary/30 bg-primary/20 text-primary',
 } as const;
 
 const DropdownPanel = ({ children, onClose }: { children: React.ReactNode; onClose: () => void }): ReactElement => {
@@ -34,7 +36,7 @@ const DropdownPanel = ({ children, onClose }: { children: React.ReactNode; onClo
     return (
         <div
             ref={ref}
-            className="absolute top-full right-0 mt-2 z-50 rounded-xl border border-border bg-popover shadow-2xl overflow-hidden"
+            className="daw-floating-surface absolute top-full right-0 z-50 mt-2 overflow-hidden rounded-xl"
             style={{ width: '260px' }}
         >
             {children}
@@ -95,11 +97,9 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                                     )}
                                     <span className="text-xs font-semibold text-foreground">AI Model</span>
                                 </div>
-                                <span
-                                    className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full border ${TIER_COLORS[tierKey]} shrink-0`}
-                                >
+                                <DawMicroBadge rounded="full" className={TIER_COLORS[tierKey]}>
                                     {backendLabel}
-                                </span>
+                                </DawMicroBadge>
                             </div>
                         </div>
 
@@ -194,16 +194,14 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                                 <span className="text-xs font-semibold text-foreground truncate">
                                     {modelInfo.displayName}
                                 </span>
-                                <span
-                                    className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full border ${TIER_COLORS[tierKey]} shrink-0`}
-                                >
+                                <DawMicroBadge rounded="full" className={TIER_COLORS[tierKey]}>
                                     {backendLabel}
-                                </span>
+                                </DawMicroBadge>
                             </div>
                         </div>
                         <div className="px-3 py-2.5 space-y-2.5">
                             <div className="flex items-center gap-1.5 text-[10px] text-primary">
-                                <div className="size-1.5 rounded-full bg-primary animate-pulse" />
+                                <DawStatusDot tone="primary" pulse />
                                 <span>Active · {modelInfo.ramUsage} RAM</span>
                             </div>
                             <Button

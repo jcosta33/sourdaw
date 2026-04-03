@@ -1,9 +1,10 @@
 import { type ReactElement } from 'react';
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
-import { Card } from '#/components/ui/card';
 import { setMidiOutput, clearMidiOutput } from '#/modules/MIDI/useCases/midiRouting';
 import { toggleChordTrackFollow } from '#/modules/Arrangement/useCases/toggleTrackState/toggleChordTrackFollow';
 import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
+import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
 
 type TrackMidiOutputSectionProps = {
     track: Track;
@@ -15,9 +16,9 @@ export const TrackMidiOutputSection = ({ track, allTracks }: TrackMidiOutputSect
         <div>
             <DawHeaderBand compact className="mb-2 rounded-sm" title="MIDI Output" />
             <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
-                <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-2">
-                    <select
-                        className="w-full rounded-sm border border-border bg-surface-overlay px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                <SurfaceCard>
+                    <DawCompactSelect
+                        className="w-full border-border"
                         value={track.midiOutputTrackId ?? ''}
                         onChange={(e) => {
                             const val = e.target.value;
@@ -37,15 +38,15 @@ export const TrackMidiOutputSection = ({ track, allTracks }: TrackMidiOutputSect
                                     {t.name}
                                 </option>
                             ))}
-                    </select>
+                    </DawCompactSelect>
                     {track.midiOutputTrackId ? (
                         <p className="mt-2 text-[9px] text-muted-foreground leading-tight">
                             MIDI events from this track are routed to the destination track's instruments.
                         </p>
                     ) : null}
-                </Card>
+                </SurfaceCard>
 
-                <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-2">
+                <SurfaceCard>
                     <label className="flex items-center gap-2 cursor-pointer">
                         <input
                             type="checkbox"
@@ -60,7 +61,7 @@ export const TrackMidiOutputSection = ({ track, allTracks }: TrackMidiOutputSect
                         Transpose MIDI notes in real-time based on the chord track. Notes are mapped
                         relative to the chord at each clip's start position.
                     </p>
-                </Card>
+                </SurfaceCard>
             </div>
         </div>
     );

@@ -1,4 +1,4 @@
-import { type ReactElement, type MouseEvent, useRef, useEffect, useSyncExternalStore } from 'react';
+import { type ReactElement, type MouseEvent, useRef, useEffect, useLayoutEffect, useSyncExternalStore } from 'react';
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
@@ -56,7 +56,7 @@ export const NotePropertyLane = ({
     const clipColor = activeClip?.color || activeTrack?.color || 'oklch(0.45 0.06 250)';
     const selectedColor = brightenColor(clipColor, 0.22);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         const canvas = canvasRef.current;
         const container = containerRef.current;
         if (!canvas || !container) {

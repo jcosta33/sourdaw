@@ -1,3 +1,4 @@
+import './sentry';
 import './bootstrap';
 import '#/styles/main.css';
 import { createRoot } from 'react-dom/client';

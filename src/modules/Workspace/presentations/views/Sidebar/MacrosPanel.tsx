@@ -13,6 +13,8 @@ import {
     useEffect,
 } from 'react';
 import { Play, Trash2, Pencil, Circle, Square } from 'lucide-react';
+import { DawEmptyState } from '#/components/daw/DawEmptyState';
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { macroStore, type MacroStoreState } from '#/modules/Command/stores/macroStore';
 import { startMacroRecording, stopMacroRecording, type Macro } from '#/modules/Command/useCases/macro/recording';
 import { playMacro } from '#/modules/Command/useCases/macro/playback';
@@ -58,33 +60,36 @@ export const MacrosPanel = (): ReactElement => {
     return (
         <div className="flex flex-col h-full bg-surface-base">
             {/* Header */}
-            <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border/40 bg-surface-overlay/50">
-                <span className="text-[11px] font-semibold text-foreground">Macros</span>
-                <div className="flex-1" />
-                <button
-                    type="button"
-                    className={cn(
-                        'h-5 px-1.5 rounded flex items-center gap-1 text-[9px] transition-colors',
-                        state.recording
-                            ? 'text-[var(--color-state-danger)] bg-[var(--color-state-danger)]/10 hover:bg-[var(--color-state-danger)]/20'
-                            : 'text-muted-foreground/60 hover:text-muted-foreground hover:bg-white/5'
-                    )}
-                    onClick={handleToggleRecording}
-                    aria-label={state.recording ? 'Stop macro recording' : 'Start macro recording'}
-                >
-                    {state.recording ? (
-                        <>
-                            <Square className="size-2.5 fill-[var(--color-state-danger)]" />
-                            <span>Stop ({state.currentRecording.length})</span>
-                        </>
-                    ) : (
-                        <>
-                            <Circle className="size-2.5" />
-                            <span>Record</span>
-                        </>
-                    )}
-                </button>
-            </div>
+            <DawHeaderBand
+                className="px-3 py-1.5"
+                title="Macros"
+                titleClassName="text-[11px] font-semibold normal-case tracking-normal text-foreground"
+                actions={
+                    <button
+                        type="button"
+                        className={cn(
+                            'flex h-5 items-center gap-1 rounded px-1.5 text-[9px] transition-colors',
+                            state.recording
+                                ? 'bg-[var(--color-state-danger)]/10 text-[var(--color-state-danger)] hover:bg-[var(--color-state-danger)]/20'
+                                : 'text-muted-foreground/60 hover:bg-white/5 hover:text-muted-foreground'
+                        )}
+                        onClick={handleToggleRecording}
+                        aria-label={state.recording ? 'Stop macro recording' : 'Start macro recording'}
+                    >
+                        {state.recording ? (
+                            <>
+                                <Square className="size-2.5 fill-[var(--color-state-danger)]" />
+                                <span>Stop ({state.currentRecording.length})</span>
+                            </>
+                        ) : (
+                            <>
+                                <Circle className="size-2.5" />
+                                <span>Record</span>
+                            </>
+                        )}
+                    </button>
+                }
+            />
 
             {/* Recording name input (shown while recording) */}
             {state.recording ? (
@@ -101,10 +106,13 @@ export const MacrosPanel = (): ReactElement => {
             {/* Macro list */}
             <div className="flex-1 overflow-y-auto">
                 {state.macros.length === 0 && !state.recording ? (
-                    <div className="flex items-center justify-center h-full">
-                        <span className="text-[9px] text-muted-foreground/30">
-                            No macros yet · Click Record to start
-                        </span>
+                    <div className="flex h-full items-center justify-center p-4">
+                        <DawEmptyState
+                            compact
+                            title="No macros yet"
+                            description="Click Record to capture a repeatable command sequence."
+                            className="max-w-xs"
+                        />
                     </div>
                 ) : (
                     <div className="p-1 space-y-0.5">
