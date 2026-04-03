@@ -275,17 +275,11 @@ document synced alongside the project doc.
 
 ---
 
-### SP-2 · AI action history volatile
-**Severity:** P1 · **Verified:** ✅ confirmed — actively used UI panel
+### ~~SP-2 · AI action history volatile~~ — DONE
+**Severity:** P1 · **Fixed:** ✅
 
-`aiActionHistoryStore` uses `new Store<AiActionHistoryState>(logger, { initialData: ... })`
-with no `storage` option — defaults to `MemoryStorage`. All AI action history is
-wiped on every page reload. `AiActionHistoryPanel.tsx` is a full UI panel
-(expandable groups, timestamps, undo buttons, up to 50 items) actively fed by
-`pushAiActionGroup()` from the chat message flow.
-
-**Fix (simple):** Add `storage: new LocalStorageStorage('sourdaw-ai-history')`.
-**Fix (collaborative):** Bind `entries` into the Automerge CRDT document.
+Added `storage: new LocalStorageStorage('sourdaw-ai-history')` to `aiActionHistoryStore`.
+Key registered in `LocalStorageKeys.ts`. History now survives page reloads.
 
 ---
 
