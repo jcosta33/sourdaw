@@ -10,7 +10,7 @@ The Bacteria engine contains some of the most severe real-time DSP violations se
    *   **Impact:** Because `process_sample` is called for every single audio sample in the block, for every active band, this triggers **thousands of heap allocations per second on the audio thread**. This is a catastrophic violation of real-time audio constraints and will instantly cause severe stuttering and CPU spikes.
    *   **Fix:** Oversampling must be performed on blocks of audio rather than sample-by-sample. The upsampled buffers must be pre-allocated in the `BandChain` struct and reused during block processing.
 
-2. **Per-Block Allocation in WASM interop (`mod.rs`)**:
+2. [x] **Per-Block Allocation in WASM interop (`mod.rs`)**:
    *   **Issue:** `BacteriaInstance::process` checks if the requested block size exceeds the current capacity and calls `.resize(size, 0.0)` on the input and output vectors.
    *   **Impact:** Any change in block size during playback (or on the very first block) will trigger an allocation on the audio thread.
    *   **Fix:** Pre-allocate the vectors to a known maximum block size (e.g., 4096) during initialization and clamp/panic if a larger size is requested.
@@ -28,3 +28,4 @@ The Bacteria engine contains some of the most severe real-time DSP violations se
    *   **Fix:** The `process_block` loop must evaluate the `mod_assignments` and dynamically offset the target parameters of the bands/effects before processing the sample.
 
 **Summary:** The Bacteria plugin is structurally ambitious but its oversampling implementation is critically flawed, allocating memory on a per-sample basis. Additionally, its entire modulation framework is disconnected from the actual DSP logic.
+ logic.

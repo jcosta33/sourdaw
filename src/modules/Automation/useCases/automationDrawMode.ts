@@ -1,5 +1,5 @@
 import { type AutomationPoint } from '../models/Automation';
-import { automationStore } from '../stores/automationStore';
+import { automationStore, type AutomationStoreState } from '../stores/automationStore';
 import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
 
 type DrawSession = {
@@ -9,9 +9,24 @@ type DrawSession = {
     initialValue: number | null;
     drawnBeats: Set<number>;
     previousPoints: AutomationPoint[];
+    /** Accumulated lane state from the latest paintDrawPoint call, flushed to the
+     *  CRDT store at most once per animation frame to avoid O(N) CRDT mutations. */
+    pendingState: AutomationStoreState | null;
+    /** requestAnimationFrame handle for the deferred store write, or null if idle. */
+    rafId: number | null;
 };
 
 let activeSession: DrawSession | null = null;
+
+/** Flush the accumulated draw-state to the CRDT store (called by rAF callback). */
+function flushPendingState(): void {
+    if (!activeSession || !activeSession.pendingState) {
+        return;
+    }
+    automationStore.set(activeSession.pendingState);
+    activeSession.pendingState = null;
+    activeSession.rafId = null;
+}
 
 /**
  * Snap a beat to the nearest grid position.
@@ -41,6 +56,8 @@ export function beginDrawSession(laneId: string, gridResolution: number, constra
         initialValue: null,
         drawnBeats: new Set(),
         previousPoints: [...lane.points],
+        pendingState: null,
+        rafId: null,
     };
 }
 
@@ -62,32 +79,37 @@ export function paintDrawPoint(beat: number, value: number): void {
 
     const paintValue = activeSession.constrainHorizontal ? activeSession.initialValue : value;
 
-    const state = automationStore.value;
+    // Read from the latest pending state (if any) or the committed store state.
+    // This ensures successive fast paints within the same frame accumulate correctly.
+    const state = activeSession.pendingState ?? automationStore.value;
     if (!state) {
         return;
     }
 
-    // Replace or add point at snapped beat
-    automationStore.set({
+    // Compute the new lane state in memory — do NOT write to the CRDT store yet.
+    const nextState: AutomationStoreState = {
         lanes: state.lanes.map((l) => {
             if (l.id !== activeSession!.laneId) {
                 return l;
             }
-            // Remove any existing point at this beat
             const filtered = l.points.filter((p) => Math.abs(p.beat - snappedBeat) > 0.001);
-            // Add the painted point
             const newPoint: AutomationPoint = {
                 beat: snappedBeat,
                 value: Math.max(l.minValue, Math.min(l.maxValue, paintValue)),
                 curve: 'step',
                 tension: 0,
             };
-            const newPoints = [...filtered, newPoint].sort((a, b) => a.beat - b.beat);
-            return { ...l, points: newPoints };
+            return { ...l, points: [...filtered, newPoint].sort((a, b) => a.beat - b.beat) };
         }),
-    });
+    };
 
+    activeSession.pendingState = nextState;
     activeSession.drawnBeats.add(snappedBeat);
+
+    // Schedule a single rAF flush for this frame (idempotent — ignored if already scheduled).
+    if (activeSession.rafId === null) {
+        activeSession.rafId = requestAnimationFrame(flushPendingState);
+    }
 }
 
 /**
@@ -96,6 +118,16 @@ export function paintDrawPoint(beat: number, value: number): void {
 export function endDrawSession(): void {
     if (!activeSession) {
         return;
+    }
+
+    // Cancel any pending rAF and flush the final accumulated state synchronously.
+    if (activeSession.rafId !== null) {
+        cancelAnimationFrame(activeSession.rafId);
+        activeSession.rafId = null;
+    }
+    if (activeSession.pendingState !== null) {
+        automationStore.set(activeSession.pendingState);
+        activeSession.pendingState = null;
     }
 
     const { laneId, previousPoints } = activeSession;

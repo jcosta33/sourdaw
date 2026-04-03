@@ -1,4 +1,4 @@
-import { type CSSProperties, type ReactElement, useState, useRef, useEffect, useCallback } from 'react';
+import { type CSSProperties, type ReactElement, useState, useRef, useEffect } from 'react';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { Input } from '#/components/ui/input';
 import { Button } from '#/components/ui/button';
@@ -64,7 +64,7 @@ const TabScrollBar = ({
     const [canScrollLeft, setCanScrollLeft] = useState(false);
     const [canScrollRight, setCanScrollRight] = useState(false);
 
-    const updateScrollState = useCallback(() => {
+    const updateScrollState = () => {
         const el = scrollRef.current;
         if (!el) {
             return;
@@ -73,7 +73,7 @@ const TabScrollBar = ({
         const overflow = el.scrollWidth - el.clientWidth;
         setCanScrollLeft(sl > 1);
         setCanScrollRight(overflow > 1 && sl < overflow - 1);
-    }, []);
+    };
 
     useEffect(() => {
         const el = scrollRef.current;

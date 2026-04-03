@@ -6,8 +6,8 @@
 
 import { getTrackStrip } from '#/modules/AudioEngine/useCases/engineAccess';
 import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
-import { updatePad } from '../stores/toasterStore';
-import { type PadState } from '../models/ToasterKit';
+import { updateKit, updatePad } from '../stores/toasterStore';
+import { type PadState, type ToasterKit } from '../models/ToasterKit';
 
 type DeviceRef = { trackId: string; deviceId: string };
 
@@ -15,7 +15,9 @@ let cachedRefs: DeviceRef[] | null = null;
 let cacheTimer: ReturnType<typeof setTimeout> | null = null;
 
 function getActiveDevices(): DeviceRef[] {
-    if (cachedRefs) { return cachedRefs; }
+    if (cachedRefs) {
+        return cachedRefs;
+    }
     const refs: DeviceRef[] = [];
     for (const track of getAllTracks()) {
         for (const device of track.devices) {
@@ -25,8 +27,12 @@ function getActiveDevices(): DeviceRef[] {
         }
     }
     cachedRefs = refs;
-    if (cacheTimer) { clearTimeout(cacheTimer); }
-    cacheTimer = setTimeout(() => { cachedRefs = null; }, 2000);
+    if (cacheTimer) {
+        clearTimeout(cacheTimer);
+    }
+    cacheTimer = setTimeout(() => {
+        cachedRefs = null;
+    }, 2000);
     return refs;
 }
 
@@ -37,12 +43,16 @@ const padLatest = new Map<string, { pad: number; name: string; value: number }>(
 function flushPadParam(cacheKey: string): void {
     padPending.delete(cacheKey);
     const entry = padLatest.get(cacheKey);
-    if (!entry) { return; }
+    if (!entry) {
+        return;
+    }
     padLatest.delete(cacheKey);
 
     for (const { trackId } of getActiveDevices()) {
         const strip = getTrackStrip(trackId);
-        if (!strip) { continue; }
+        if (!strip) {
+            continue;
+        }
         const dn = strip.deviceNodes.find((d) => d.toasterControls && d.toasterControls.ready !== undefined);
         if (dn?.toasterControls) {
             dn.toasterControls.setPadParam(entry.pad, entry.name, entry.value);
@@ -56,6 +66,19 @@ function flushPadParam(cacheKey: string): void {
 // Fields that are strings in the store — don't overwrite with numbers
 const STRING_FIELDS = new Set(['engineType', 'name', 'color']);
 
+const KIT_PARAM_MAP = {
+    swing: 'swing',
+    masterGain: 'master_gain',
+    reverbMix: 'reverb_mix',
+    reverbDecay: 'reverb_decay',
+    delayTime: 'delay_time',
+    delayFeedback: 'delay_feedback',
+    delayMix: 'delay_mix',
+    lofiBits: 'lofi_bits',
+    lofiRate: 'lofi_rate',
+    lofiMix: 'lofi_mix',
+} as const;
+
 export function setToasterPadParam(padIndex: number, key: keyof PadState, value: number): void {
     // Only update the store for numeric fields
     if (!STRING_FIELDS.has(key)) {
@@ -65,7 +88,28 @@ export function setToasterPadParam(padIndex: number, key: keyof PadState, value:
     const cacheKey = `${padIndex}_${key}`;
     padLatest.set(cacheKey, { pad: padIndex, name: key, value });
     if (!padPending.has(cacheKey)) {
-        padPending.set(cacheKey, requestAnimationFrame(() => flushPadParam(cacheKey)));
+        padPending.set(
+            cacheKey,
+            requestAnimationFrame(() => flushPadParam(cacheKey))
+        );
+    }
+}
+
+export function setToasterKitParam<K extends keyof typeof KIT_PARAM_MAP>(key: K, value: ToasterKit[K]): void {
+    updateKit({ [key]: value } as Partial<ToasterKit>);
+
+    const paramName = KIT_PARAM_MAP[key];
+    for (const { trackId } of getActiveDevices()) {
+        const strip = getTrackStrip(trackId);
+        if (!strip) {
+            continue;
+        }
+        const deviceNode = strip.deviceNodes.find(
+            (device) => device.toasterControls && device.toasterControls.ready !== undefined
+        );
+        if (deviceNode?.toasterControls) {
+            deviceNode.toasterControls.setParam(paramName, value as number);
+        }
     }
 }
 

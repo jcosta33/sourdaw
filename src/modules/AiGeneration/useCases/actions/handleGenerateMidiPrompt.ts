@@ -4,11 +4,14 @@ import {
     isTauri,
 } from '#/modules/AudioEngine/useCases/nativeAiBridge';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
-import { addMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud';
+import { batchAddMidiNotes } from '#/modules/MIDI/useCases/midiNoteCrud';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
+import { pushUndo } from '#/modules/Command/stores/undoStore';
+import { createCallbackUndoEntry } from '#/modules/Command/models/UndoEntry';
 import { generateMidiViaLlm } from '../llmMidiGeneration';
 import { addTask, updateTask } from './taskManagement';
 
@@ -32,6 +35,10 @@ export async function handleGenerateMidiPrompt(prompt: string, numNotes: number 
         }
 
         if (finalNotes.length > 0) {
+            // Snapshot state before for undo support
+            const trackSnapshotBefore = structuredClone(trackStore.value);
+            const midiSnapshotBefore = structuredClone(midiStore.value);
+
             const tState = trackStore.value;
             const selectedTrackId = tState?.selectedTrackId;
 
@@ -56,9 +63,43 @@ export async function handleGenerateMidiPrompt(prompt: string, numNotes: number 
                 });
 
                 if (clip) {
-                    for (const n of finalNotes) {
-                        addMidiNote(clip.id, n.pitch, n.start_beat, n.duration_beats, n.velocity);
-                    }
+                    // Batch-insert all notes in a single store mutation (avoids O(N) CRDT flood)
+                    batchAddMidiNotes(
+                        clip.id,
+                        finalNotes.map((n) => ({
+                            pitch: n.pitch,
+                            startBeat: n.start_beat,
+                            duration: n.duration_beats,
+                            velocity: n.velocity,
+                        }))
+                    );
+
+                    // Register undo entry for the entire generation
+                    const trackSnapshotAfter = structuredClone(trackStore.value);
+                    const midiSnapshotAfter = structuredClone(midiStore.value);
+
+                    const undoEntry = createCallbackUndoEntry(
+                        `AI MIDI: ${prompt ? prompt.slice(0, 30) : 'Generation'}`,
+                        () => {
+                            if (trackSnapshotBefore) {
+                                trackStore.set(trackSnapshotBefore);
+                            }
+                            if (midiSnapshotBefore) {
+                                midiStore.set(midiSnapshotBefore);
+                            }
+                        },
+                        () => {
+                            if (trackSnapshotAfter) {
+                                trackStore.set(trackSnapshotAfter);
+                            }
+                            if (midiSnapshotAfter) {
+                                midiStore.set(midiSnapshotAfter);
+                            }
+                        },
+                        'ai'
+                    );
+                    pushUndo(undoEntry);
+
                     const ws = workspaceStore.value;
                     if (ws) {
                         workspaceStore.set({ ...ws, selectedClipId: clip.id });

@@ -332,6 +332,20 @@ export class GrinderInstance {
     /**
      * @returns {number}
      */
+    get_gate_envelope_db() {
+        const ret = wasm.grinderinstance_get_gate_envelope_db(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_gate_open() {
+        const ret = wasm.grinderinstance_get_gate_open(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
     get_input_db() {
         const ret = wasm.grinderinstance_get_input_db(this.__wbg_ptr);
         return ret;
@@ -356,6 +370,20 @@ export class GrinderInstance {
     get_latency_samples() {
         const ret = wasm.grinderinstance_get_latency_samples(this.__wbg_ptr);
         return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get_neural_cpu_percent() {
+        const ret = wasm.grinderinstance_get_neural_cpu_percent(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_neural_warmup_progress() {
+        const ret = wasm.grinderinstance_get_neural_warmup_progress(this.__wbg_ptr);
+        return ret;
     }
     /**
      * @returns {number}
@@ -431,6 +459,13 @@ export class KneadInstance {
     free() {
         const ptr = this.__destroy_into_raw();
         wasm.__wbg_kneadinstance_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    get_input_left_ptr() {
+        const ret = wasm.kneadinstance_get_input_left_ptr(this.__wbg_ptr);
+        return ret >>> 0;
     }
     /**
      * @param {number} sample_rate
@@ -620,6 +655,34 @@ export class ProofChamberEngine {
         return ret;
     }
     /**
+     * @returns {number}
+     */
+    get_input_left_ptr() {
+        const ret = wasm.proofchamberengine_get_input_left_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get_input_right_ptr() {
+        const ret = wasm.proofchamberengine_get_input_right_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get_output_left_ptr() {
+        const ret = wasm.proofchamberengine_get_output_left_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get_output_right_ptr() {
+        const ret = wasm.proofchamberengine_get_output_right_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
      * @param {number} sample_rate
      */
     constructor(sample_rate) {
@@ -629,21 +692,10 @@ export class ProofChamberEngine {
         return this;
     }
     /**
-     * @param {Float32Array} in_l
-     * @param {Float32Array} in_r
-     * @param {Float32Array} out_l
-     * @param {Float32Array} out_r
+     * @param {number} size
      */
-    process_block(in_l, in_r, out_l, out_r) {
-        const ptr0 = passArrayF32ToWasm0(in_l, wasm.__wbindgen_malloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passArrayF32ToWasm0(in_r, wasm.__wbindgen_malloc);
-        const len1 = WASM_VECTOR_LEN;
-        var ptr2 = passArrayF32ToWasm0(out_l, wasm.__wbindgen_malloc);
-        var len2 = WASM_VECTOR_LEN;
-        var ptr3 = passArrayF32ToWasm0(out_r, wasm.__wbindgen_malloc);
-        var len3 = WASM_VECTOR_LEN;
-        wasm.proofchamberengine_process_block(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, out_l, ptr3, len3, out_r);
+    process_block(size) {
+        wasm.proofchamberengine_process_block(this.__wbg_ptr, size);
     }
     /**
      * Update internal Dattorro plate parameters smoothly
@@ -942,9 +994,6 @@ if (Symbol.dispose) ToasterInstance.prototype[Symbol.dispose] = ToasterInstance.
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
-        __wbg___wbindgen_copy_to_typed_array_2f7503a7f71d6632: function(arg0, arg1, arg2) {
-            new Uint8Array(arg2.buffer, arg2.byteOffset, arg2.byteLength).set(getArrayU8FromWasm0(arg0, arg1));
-        },
         __wbg___wbindgen_throw_5549492daedad139: function(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
         },

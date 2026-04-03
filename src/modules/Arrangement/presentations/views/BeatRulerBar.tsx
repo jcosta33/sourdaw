@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect, type MouseEvent } from 'react';
+import { useRef, useEffect, type MouseEvent } from 'react';
 import { useSyncExternalStore } from 'react';
 import { timelineViewStore } from '../../stores/timelineViewStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
@@ -14,6 +14,8 @@ export const BeatRulerBar = (): React.ReactElement => {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const loopDragRef = useRef<{ startBeat: number } | null>(null);
+    /** Ephemeral loop preview during drag — avoids flooding transportStore with 60Hz writes. */
+    const loopPreviewRef = useRef<{ start: number; end: number } | null>(null);
 
     const viewState = useSyncExternalStore(
         (cb) => timelineViewStore.subscribe(cb),
@@ -33,146 +35,146 @@ export const BeatRulerBar = (): React.ReactElement => {
     const timeSigNum = transport?.timeSignatureNumerator ?? 4;
 
     // Draw the ruler via canvas
-    const drawRuler = useCallback(
-        (canvas: HTMLCanvasElement, playhead: number = playheadPositionRef.current) => {
-            const ctx = canvas.getContext('2d');
-            if (!ctx) {
-                return;
-            }
-            const dpr = window.devicePixelRatio || 1;
-            const w = canvas.offsetWidth;
-            const h = HEIGHT;
-            canvas.width = w * dpr;
-            canvas.height = h * dpr;
-            ctx.scale(dpr, dpr);
+    const drawRuler = (canvas: HTMLCanvasElement, playhead: number = playheadPositionRef.current) => {
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+            return;
+        }
+        const dpr = window.devicePixelRatio || 1;
+        const w = canvas.offsetWidth;
+        const h = HEIGHT;
+        canvas.width = w * dpr;
+        canvas.height = h * dpr;
+        ctx.scale(dpr, dpr);
 
-            // Background — subtle gradient for depth
-            const bgGrad = ctx.createLinearGradient(0, 0, 0, h);
-            bgGrad.addColorStop(0, '#151518');
-            bgGrad.addColorStop(1, '#111114');
-            ctx.fillStyle = bgGrad;
-            ctx.fillRect(0, 0, w, h);
+        // Background — subtle gradient for depth
+        const bgGrad = ctx.createLinearGradient(0, 0, 0, h);
+        bgGrad.addColorStop(0, '#151518');
+        bgGrad.addColorStop(1, '#111114');
+        ctx.fillStyle = bgGrad;
+        ctx.fillRect(0, 0, w, h);
 
-            // Loop region
-            if (isLooping && loopEnd > loopStart) {
-                const lx = loopStart * pixelsPerBeat - scrollX;
-                const lw = (loopEnd - loopStart) * pixelsPerBeat;
-                ctx.fillStyle = 'rgba(74, 144, 217, 0.15)';
-                ctx.fillRect(lx, 0, lw, h);
-                // Loop region handles — accent blue
-                ctx.fillStyle = 'rgba(74, 144, 217, 0.65)';
-                ctx.fillRect(lx, 0, 2, h);
-                ctx.fillRect(lx + lw - 2, 0, 2, h);
-            }
+        // Loop region — during drag, use ephemeral preview ref to avoid flooding transportStore
+        const effectiveLoopStart = loopPreviewRef.current?.start ?? loopStart;
+        const effectiveLoopEnd = loopPreviewRef.current?.end ?? loopEnd;
+        const effectiveIsLooping = isLooping || loopPreviewRef.current !== null;
+        if (effectiveIsLooping && effectiveLoopEnd > effectiveLoopStart) {
+            const lx = effectiveLoopStart * pixelsPerBeat - scrollX;
+            const lw = (effectiveLoopEnd - effectiveLoopStart) * pixelsPerBeat;
+            ctx.fillStyle = 'rgba(74, 144, 217, 0.15)';
+            ctx.fillRect(lx, 0, lw, h);
+            // Loop region handles — accent blue
+            ctx.fillStyle = 'rgba(74, 144, 217, 0.65)';
+            ctx.fillRect(lx, 0, 2, h);
+            ctx.fillRect(lx + lw - 2, 0, 2, h);
+        }
 
-            // Bar numbers & beat ticks
-            const viewportStartBeat = scrollX / pixelsPerBeat;
-            const beatsVisible = w / pixelsPerBeat;
-            const beatsPerBar = timeSigNum;
+        // Bar numbers & beat ticks
+        const viewportStartBeat = scrollX / pixelsPerBeat;
+        const beatsVisible = w / pixelsPerBeat;
+        const beatsPerBar = timeSigNum;
 
-            // Determine label interval based on zoom
-            const barPixels = beatsPerBar * pixelsPerBeat;
-            const labelEvery = barPixels < 40 ? Math.ceil(40 / barPixels) : 1;
+        // Determine label interval based on zoom
+        const barPixels = beatsPerBar * pixelsPerBeat;
+        const labelEvery = barPixels < 40 ? Math.ceil(40 / barPixels) : 1;
 
-            ctx.font = '500 9px -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
+        ctx.font = '500 9px -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
 
-            const firstBar = Math.floor(viewportStartBeat / beatsPerBar);
-            const lastBar = Math.ceil((viewportStartBeat + beatsVisible) / beatsPerBar) + 1;
+        const firstBar = Math.floor(viewportStartBeat / beatsPerBar);
+        const lastBar = Math.ceil((viewportStartBeat + beatsVisible) / beatsPerBar) + 1;
 
-            for (let bar = firstBar; bar < lastBar; bar++) {
-                const barBeat = bar * beatsPerBar;
-                const barX = (barBeat - viewportStartBeat) * pixelsPerBeat;
+        for (let bar = firstBar; bar < lastBar; bar++) {
+            const barBeat = bar * beatsPerBar;
+            const barX = (barBeat - viewportStartBeat) * pixelsPerBeat;
 
-                // Alternating bar background — Logic Pro-style visual grouping
-                if (bar % 2 === 1) {
-                    ctx.fillStyle = 'rgba(255, 255, 255, 0.025)';
-                    ctx.fillRect(barX, 0, barPixels, h);
-                }
-
-                // 4-bar group emphasis: brighter line at every 4th bar
-                const is4BarBoundary = bar % 4 === 0;
-                const is8BarBoundary = bar % 8 === 0;
-
-                if (is8BarBoundary) {
-                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
-                    ctx.lineWidth = 1;
-                } else if (is4BarBoundary) {
-                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
-                    ctx.lineWidth = 1;
-                } else {
-                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
-                    ctx.lineWidth = 1;
-                }
-                ctx.beginPath();
-                ctx.moveTo(barX, 0);
-                ctx.lineTo(barX, h);
-                ctx.stroke();
-
-                // Bar number label — brighter at 4-bar boundaries, clearer text
-                if (bar % labelEvery === 0 && bar >= 0) {
-                    ctx.fillStyle = is8BarBoundary
-                        ? 'rgba(224, 224, 224, 0.7)'
-                        : is4BarBoundary
-                            ? 'rgba(224, 224, 224, 0.55)'
-                            : 'rgba(224, 224, 224, 0.35)';
-                    ctx.fillText(String(bar + 1), barX + 3, 11);
-                }
-
-                // Beat subdivisions — graduated tick heights
-                if (barPixels > 25) {
-                    for (let beat = 1; beat < beatsPerBar; beat++) {
-                        const beatX = barX + beat * pixelsPerBeat;
-                        // Beat 2 (halfway through bar) gets a taller tick
-                        const isHalf = beat === Math.floor(beatsPerBar / 2);
-                        const tickH = isHalf ? 7 : 4;
-                        ctx.strokeStyle = isHalf
-                            ? 'rgba(255, 255, 255, 0.12)'
-                            : 'rgba(255, 255, 255, 0.07)';
-                        ctx.lineWidth = 1;
-                        ctx.beginPath();
-                        ctx.moveTo(beatX, h - tickH);
-                        ctx.lineTo(beatX, h);
-                        ctx.stroke();
-                    }
-                }
+            // Alternating bar background — Logic Pro-style visual grouping
+            if (bar % 2 === 1) {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.025)';
+                ctx.fillRect(barX, 0, barPixels, h);
             }
 
-            // Playhead marker — clean triangular indicator
-            const phX = (playhead - viewportStartBeat) * pixelsPerBeat;
-            if (phX >= 0 && phX <= w) {
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-                ctx.beginPath();
-                ctx.moveTo(phX - 4, 0);
-                ctx.lineTo(phX + 4, 0);
-                ctx.lineTo(phX, 7);
-                ctx.closePath();
-                ctx.fill();
+            // 4-bar group emphasis: brighter line at every 4th bar
+            const is4BarBoundary = bar % 4 === 0;
+            const is8BarBoundary = bar % 8 === 0;
 
+            if (is8BarBoundary) {
                 ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
                 ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.moveTo(phX, 7);
-                ctx.lineTo(phX, h);
-                ctx.stroke();
+            } else if (is4BarBoundary) {
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+                ctx.lineWidth = 1;
+            } else {
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+                ctx.lineWidth = 1;
             }
-
-            // Bottom border — crisp separator
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-            ctx.lineWidth = 1;
             ctx.beginPath();
-            ctx.moveTo(0, h - 0.5);
-            ctx.lineTo(w, h - 0.5);
+            ctx.moveTo(barX, 0);
+            ctx.lineTo(barX, h);
             ctx.stroke();
 
-            // Hint text on first load (only if no loop region)
-            if (!isLooping && w > 200) {
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
-                ctx.font = '8px -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
-                ctx.fillText('Drag to set loop region · Click to move playhead', w / 2 - 90, h - 4);
+            // Bar number label — brighter at 4-bar boundaries, clearer text
+            if (bar % labelEvery === 0 && bar >= 0) {
+                ctx.fillStyle = is8BarBoundary
+                    ? 'rgba(224, 224, 224, 0.7)'
+                    : is4BarBoundary
+                        ? 'rgba(224, 224, 224, 0.55)'
+                        : 'rgba(224, 224, 224, 0.35)';
+                ctx.fillText(String(bar + 1), barX + 3, 11);
             }
-        },
-        [pixelsPerBeat, scrollX, loopStart, loopEnd, isLooping, timeSigNum]
-    );
+
+            // Beat subdivisions — graduated tick heights
+            if (barPixels > 25) {
+                for (let beat = 1; beat < beatsPerBar; beat++) {
+                    const beatX = barX + beat * pixelsPerBeat;
+                    // Beat 2 (halfway through bar) gets a taller tick
+                    const isHalf = beat === Math.floor(beatsPerBar / 2);
+                    const tickH = isHalf ? 7 : 4;
+                    ctx.strokeStyle = isHalf
+                        ? 'rgba(255, 255, 255, 0.12)'
+                        : 'rgba(255, 255, 255, 0.07)';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(beatX, h - tickH);
+                    ctx.lineTo(beatX, h);
+                    ctx.stroke();
+                }
+            }
+        }
+
+        // Playhead marker — clean triangular indicator
+        const phX = (playhead - viewportStartBeat) * pixelsPerBeat;
+        if (phX >= 0 && phX <= w) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+            ctx.beginPath();
+            ctx.moveTo(phX - 4, 0);
+            ctx.lineTo(phX + 4, 0);
+            ctx.lineTo(phX, 7);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(phX, 7);
+            ctx.lineTo(phX, h);
+            ctx.stroke();
+        }
+
+        // Bottom border — crisp separator
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, h - 0.5);
+        ctx.lineTo(w, h - 0.5);
+        ctx.stroke();
+
+        // Hint text on first load (only if no loop region)
+        if (!effectiveIsLooping && w > 200) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+            ctx.font = '8px -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
+            ctx.fillText('Drag to set loop region · Click to move playhead', w / 2 - 90, h - 4);
+        }
+    };
 
     // Continuous playhead redraw via rAF — reads from the non-reactive ref
     useEffect(() => {
@@ -189,15 +191,12 @@ export const BeatRulerBar = (): React.ReactElement => {
         return () => animationScheduler.unregister(`beat-ruler-${id}`);
     }, [isPlaying, drawRuler]);
 
-    const setCanvas = useCallback(
-        (el: HTMLCanvasElement | null) => {
-            canvasRef.current = el;
-            if (el) {
-                drawRuler(el);
-            }
-        },
-        [drawRuler]
-    );
+    const setCanvas = (el: HTMLCanvasElement | null) => {
+        canvasRef.current = el;
+        if (el) {
+            drawRuler(el);
+        }
+    };
 
     // Redraw on discrete state change (non-playhead)
     if (canvasRef.current) {
@@ -213,52 +212,55 @@ export const BeatRulerBar = (): React.ReactElement => {
         return x / pixelsPerBeat + scrollX / pixelsPerBeat;
     };
 
-    const handleMouseDown = useCallback(
-        (e: MouseEvent<HTMLDivElement>) => {
-            if (e.button !== 0) {
-                return;
+    const handleMouseDown = (e: MouseEvent<HTMLDivElement>) => {
+        if (e.button !== 0) {
+            return;
+        }
+        const beat = getBeat(e.clientX);
+
+        // Set playhead immediately on click
+        seekPlayhead(beat);
+
+        // But also prepare for a drag to create a loop region
+        loopDragRef.current = { startBeat: beat };
+    };
+
+    const handleMouseMove = (e: MouseEvent<HTMLDivElement>) => {
+        if (!loopDragRef.current) {
+            return;
+        }
+        // Only consider it a drag if mouse is actually down (buttons === 1)
+        if (e.buttons !== 1) {
+            loopDragRef.current = null;
+            loopPreviewRef.current = null;
+            return;
+        }
+        const beat = getBeat(e.clientX);
+        const start = loopDragRef.current.startBeat;
+        const lo = Math.min(start, beat);
+        const hi = Math.max(start, beat);
+
+        // Require at least a 0.25 beat drag to establish a loop region.
+        // Update only the ephemeral preview ref and redraw directly — avoids
+        // flooding transportStore (and all its React subscribers) at 60 Hz.
+        if (hi - lo >= 0.25) {
+            loopPreviewRef.current = { start: Math.floor(lo), end: Math.ceil(hi) };
+            if (canvasRef.current) {
+                drawRuler(canvasRef.current, playheadPositionRef.current);
             }
-            const beat = getBeat(e.clientX);
+        }
+    };
 
-            // Set playhead immediately on click
-            seekPlayhead(beat);
-
-            // But also prepare for a drag to create a loop region
-            loopDragRef.current = { startBeat: beat };
-        },
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-        [pixelsPerBeat, scrollX]
-    );
-
-    const handleMouseMove = useCallback(
-        (e: MouseEvent<HTMLDivElement>) => {
-            if (!loopDragRef.current) {
-                return;
-            }
-            // Only consider it a drag if mouse is actually down (buttons === 1)
-            if (e.buttons !== 1) {
-                loopDragRef.current = null;
-                return;
-            }
-            const beat = getBeat(e.clientX);
-            const start = loopDragRef.current.startBeat;
-            const lo = Math.min(start, beat);
-            const hi = Math.max(start, beat);
-
-            // Require at least a 0.25 beat drag to establish a loop region
-            if (hi - lo >= 0.25) {
-                setLoopRegion(Math.floor(lo), Math.ceil(hi));
-            }
-        },
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-        [pixelsPerBeat, scrollX]
-    );
-
-    const handleMouseUp = useCallback(() => {
+    const handleMouseUp = () => {
         if (loopDragRef.current) {
             loopDragRef.current = null;
+            // Commit the final loop region to the store exactly once on mouseup.
+            if (loopPreviewRef.current) {
+                setLoopRegion(loopPreviewRef.current.start, loopPreviewRef.current.end);
+                loopPreviewRef.current = null;
+            }
         }
-    }, []);
+    };
 
     return (
         <div

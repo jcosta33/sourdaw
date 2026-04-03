@@ -4,14 +4,13 @@ import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { selectClip } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 import {
     setWorkspaceMode,
-    splitClip,
+    splitClipWithUndo,
     normalizeClip,
     reverseClip,
     lockClip,
     setClipColor,
     renameClip,
     muteClip,
-    addClip,
     removeClip,
     duplicateClip,
     duplicateClipToNextBar,
@@ -22,7 +21,6 @@ import {
     detectKey,
     stripSilence,
     exportMidiClip,
-    pushUndoEntry,
     executeAppAction,
 } from '../../useCases/timelineViewActions';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
@@ -140,41 +138,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                 type="button"
                 className={menuBtnClass}
                 role="menuitem"
-                onClick={act(() => {
-                    const origClip = trackStore.value?.tracks.flatMap((t) => t.clips).find((c) => c.id === clipId);
-                    if (origClip) {
-                        const savedClip = { ...origClip };
-                        splitClip(clipId, splitBeat);
-                        const afterState = trackStore.value;
-                        const newClipIds =
-                            afterState?.tracks
-                                .flatMap((t) => t.clips)
-                                .filter(
-                                    (c) =>
-                                        c.id !== clipId &&
-                                        c.startBeat >= savedClip.startBeat &&
-                                        c.endBeat <= savedClip.endBeat
-                                )
-                                .map((c) => c.id) ?? [];
-                        pushUndoEntry(
-                            'Split clip',
-                            () => {
-                                for (const id of newClipIds) {
-                                    removeClip(id);
-                                }
-                                addClip({
-                                    trackId: savedClip.trackId,
-                                    startBeat: savedClip.startBeat,
-                                    endBeat: savedClip.endBeat,
-                                    name: savedClip.name,
-                                    type: savedClip.type,
-                                    audioBufferId: savedClip.audioBufferId,
-                                });
-                            },
-                            () => splitClip(clipId, splitBeat)
-                        );
-                    }
-                })}
+                onClick={act(() => splitClipWithUndo(clipId, splitBeat))}
             >
                 Split at Cursor
             </button>

@@ -122,10 +122,10 @@ impl Voice {
             ms20_filter: Ms20Filter::new(),
             sem_filter: SemFilter::new(),
             fm_engine: FmEngine::new(),
-            ks_engine: None,
-            granular_engine: None,
-            additive: None,
-            sampler: None,
+            ks_engine: Some(Box::new(KarplusStrong::new(sample_rate))),
+            granular_engine: Some(Box::new(GranularEngine::new())),
+            additive: Some(Box::new(AdditiveEngine::new())),
+            sampler: Some(Box::new(SamplerEngine::new())),
             amp_env: Envelope::new(sample_rate),
             filter_env: Envelope::new(sample_rate),
             lfo: Lfo::new(),
@@ -217,31 +217,8 @@ impl Voice {
     }
 
     /// Set engine type: 0=wavetable, 1=polyblep, 2=FM, 3=karplus-strong, 4=granular, 5=additive, 6=sampler.
-    pub fn set_engine(&mut self, engine: u8, sample_rate: f32) {
+    pub fn set_engine(&mut self, engine: u8, _sample_rate: f32) {
         self.engine = engine.min(6);
-        match self.engine {
-            3 => {
-                if self.ks_engine.is_none() {
-                    self.ks_engine = Some(Box::new(KarplusStrong::new(sample_rate)));
-                }
-            }
-            4 => {
-                if self.granular_engine.is_none() {
-                    self.granular_engine = Some(Box::new(GranularEngine::new()));
-                }
-            }
-            5 => {
-                if self.additive.is_none() {
-                    self.additive = Some(Box::new(AdditiveEngine::new()));
-                }
-            }
-            6 => {
-                if self.sampler.is_none() {
-                    self.sampler = Some(Box::new(SamplerEngine::new()));
-                }
-            }
-            _ => {}
-        }
     }
 
     /// Set sampler engine parameters.
@@ -686,7 +663,8 @@ impl Voice {
 
             // Voice stealing fade
             if self.stealing {
-                self.steal_fade *= 0.995;
+                let steal_coeff = (-1.0 / (0.01 * p.sample_rate)).exp();
+                self.steal_fade *= steal_coeff;
                 if self.steal_fade < 0.001 {
                     self.active = false;
                     return;

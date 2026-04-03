@@ -6,6 +6,7 @@ import { addTakeLane } from '#/modules/Arrangement/useCases/comping/addTakeLane'
 import { addTake } from '#/modules/Arrangement/useCases/comping/addTake';
 import { getTakeLaneForTrack } from '#/modules/Arrangement/useCases/comping/getTakeLaneForTrack';
 import { setMidiInputTrack } from '#/modules/AudioEngine/useCases/webMidiInput';
+import { activeRecordingRef } from '../stores/activeRecordingRef';
 
 let recordClipId = 1;
 let takeCounter = 1;
@@ -92,12 +93,18 @@ export function startRecording(): Clip[] {
                 return { ...t, clips: [...t.clips, clip] };
             }),
         });
+        // Mark these clips as actively recording so the timeline renderer can
+        // grow them visually using the live playhead position.
+        activeRecordingRef.current = newClips.map((c) => c.id);
     }
 
     return newClips;
 }
 
 export function stopRecording(clipIds: string[]): void {
+    // Clear the recording overlay immediately so the canvas stops growing the clip.
+    activeRecordingRef.current = [];
+
     const trackState = getTrackState();
     const transportState = getTransportState();
     if (!trackState || !transportState) {
@@ -110,9 +117,15 @@ export function stopRecording(clipIds: string[]): void {
         ...trackState,
         tracks: trackState.tracks.map((t) => ({
             ...t,
-            clips: t.clips.map((c) =>
-                clipIds.includes(c.id) ? { ...c, endBeat: Math.max(c.startBeat + 1, endBeat) } : c
-            ),
+            clips: t.clips.map((c) => {
+                if (!clipIds.includes(c.id)) return c;
+                // Audio clips get an exact endBeat from the buffer duration via a
+                // deferred updateClip in toggleRecording — use the playhead as a
+                // provisional value here. MIDI clips have no buffer callback, so
+                // enforce a minimum of 1 beat to prevent zero-length clips.
+                const minEnd = c.type === 'midi' ? c.startBeat + 1 : c.startBeat;
+                return { ...c, endBeat: Math.max(minEnd, endBeat) };
+            }),
         })),
     });
 

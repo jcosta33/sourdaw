@@ -1,4 +1,4 @@
-import { type ReactElement, useMemo } from 'react';
+import { type ReactElement } from 'react';
 
 /**
  * Animated Sourdaw logo — the real bread icon split into layers.
@@ -98,21 +98,20 @@ const CANVAS_W = 480;
 const CANVAS_H = 480;
 
 export const SourdawLogo = ({ className, paused }: SourdawLogoProps): ReactElement => {
-    // Generate unique animation names once
-    const styleBlock = useMemo(() => {
-        if (paused) return '';
-        return PARTICLES.map((_, i) => {
-            const p = PARTICLES[i]!;
-            const dist = p.dir === 'up' ? -20 : 20;
-            return `
+    // Generate unique animation names once per render (React Compiler memoizes automatically)
+    const styleBlock = paused
+        ? ''
+        : PARTICLES.map((_, i) => {
+              const p = PARTICLES[i]!;
+              const dist = p.dir === 'up' ? -20 : 20;
+              return `
 @keyframes sdl-p${i} {
   0% { opacity: 0; transform: translateY(0) scale(0.4); }
   12% { opacity: 1; transform: translateY(0) scale(1); }
   65% { opacity: 0.8; transform: translateY(${dist * 0.6}px) scale(0.95); }
   100% { opacity: 0; transform: translateY(${dist}px) scale(0.5); }
 }`;
-        }).join('\n');
-    }, [paused]);
+          }).join('\n');
 
     return (
         <div

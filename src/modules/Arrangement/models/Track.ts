@@ -56,6 +56,7 @@ export type Clip = {
     endBeat: number;
     type: 'audio' | 'midi';
     audioBufferId?: string;
+    audioOffsetBeats?: number;
     fadeInBeats: number;
     fadeOutBeats: number;
     gain: number;

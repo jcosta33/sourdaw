@@ -369,6 +369,7 @@ pub struct LevainVoice {
     pub age: u32,
     /// Energy estimate (RMS over last N samples) for voice stealing.
     pub energy: f32,
+    pub energy_decay: f32,
 
     /// Primary sample playback stream (current articulation).
     pub playback: SamplePlayback,
@@ -400,12 +401,14 @@ pub struct LevainVoice {
 
 impl LevainVoice {
     pub fn new(sample_rate: f32) -> Self {
+        let energy_decay = (-1.0 / (0.022675 * sample_rate)).exp();
         Self {
             active: false,
             note: 0,
             velocity: 0,
             age: 0,
             energy: 0.0,
+            energy_decay,
             playback: SamplePlayback::new(),
             crossfade_playback: SamplePlayback::new(),
             crossfade_amount: 0.0,
@@ -521,7 +524,7 @@ impl LevainVoice {
 
         // Track energy for voice stealing (simple exponential RMS).
         let abs_sample = (sample * env * gain).abs();
-        self.energy = self.energy * 0.999 + abs_sample * 0.001;
+        self.energy = self.energy * self.energy_decay + abs_sample * (1.0 - self.energy_decay);
 
         sample * env * gain
     }

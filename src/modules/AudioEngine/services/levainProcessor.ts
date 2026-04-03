@@ -225,6 +225,7 @@ class LevainProcessor extends AudioWorkletProcessor {
             buf[i] = name.charCodeAt(i);
         }
         w.levaininstance_set_param(this._ptr, strPtr, len, value);
+        w.__wbindgen_free(strPtr, len, 1);
     }
 
     process(_inputs, outputs) {
@@ -234,17 +235,18 @@ class LevainProcessor extends AudioWorkletProcessor {
         if (!output || output.length < 2) return true;
 
         const frames = output[0].length;
+        const processFrames = Math.min(frames, 4096);
         const w = this._wasm;
 
         // Run DSP — returns pointer to left channel buffer
-        const leftPtr = w.levaininstance_process(this._ptr, frames) >>> 0;
+        const leftPtr = w.levaininstance_process(this._ptr, processFrames) >>> 0;
         const rightPtr = w.levaininstance_get_right_ptr(this._ptr) >>> 0;
 
         // Read from WASM linear memory into output
         const mem = w.memory.buffer;
-        output[0].set(new Float32Array(mem, leftPtr, frames));
+        output[0].set(new Float32Array(mem, leftPtr, processFrames));
         if (output[1]) {
-            output[1].set(new Float32Array(mem, rightPtr, frames));
+            output[1].set(new Float32Array(mem, rightPtr, processFrames));
         }
 
         return true;

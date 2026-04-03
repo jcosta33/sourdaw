@@ -26,7 +26,7 @@ pub struct ToasterInstance {
 impl ToasterInstance {
     #[wasm_bindgen(constructor)]
     pub fn new(sample_rate: f32, num_pads: u32) -> Self {
-        let block_size = 128;
+        let block_size = 4096; // Pre-allocate maximum likely block size
         Self {
             engine: ToasterEngine::new(sample_rate, num_pads as usize),
             left_buf: vec![0.0; block_size],
@@ -57,11 +57,7 @@ impl ToasterInstance {
     /// Process a block of audio. Returns pointer to left channel buffer.
     /// Caller reads left + right from WASM memory.
     pub fn process(&mut self, block_size: u32) -> *const f32 {
-        let size = block_size as usize;
-        if self.left_buf.len() < size {
-            self.left_buf.resize(size, 0.0);
-            self.right_buf.resize(size, 0.0);
-        }
+        let size = (block_size as usize).min(self.left_buf.len());
         self.left_buf[..size].fill(0.0);
         self.right_buf[..size].fill(0.0);
 

@@ -100,6 +100,8 @@ pub struct DrumVoice {
     filter: SvfFilter,
     amp_env: ExpDecayEnv,
     filter_active: bool,
+    choke_multiplier: f32,
+    choke_decay: f32,
 }
 
 impl DrumVoice {
@@ -113,6 +115,8 @@ impl DrumVoice {
             filter: SvfFilter::new(),
             amp_env: ExpDecayEnv::new(),
             filter_active: false,
+            choke_multiplier: 1.0,
+            choke_decay: 1.0,
         }
     }
 
@@ -130,6 +134,8 @@ impl DrumVoice {
         self.pad_index = pad_index;
         self.velocity = velocity;
         self.age = 0;
+        self.choke_multiplier = 1.0;
+        self.choke_decay = 1.0;
 
         // Re-create engine if type changed
         if self.engine.engine_type() != engine_type {
@@ -149,6 +155,8 @@ impl DrumVoice {
 
     pub fn release(&mut self) {
         self.engine.release();
+        // ~10ms fast fade out at typical sample rates to prevent choke clicks
+        self.choke_decay = 0.99;
     }
 
     /// Forward a parameter to the inner synth engine.
@@ -164,7 +172,17 @@ impl DrumVoice {
 
         self.age += 1;
 
-        let sample = self.engine.tick(sample_rate);
+        let mut sample = self.engine.tick(sample_rate);
+        
+        // Apply choke fade out if released
+        sample *= self.choke_multiplier;
+        if self.choke_decay < 1.0 {
+            self.choke_multiplier *= self.choke_decay;
+            if self.choke_multiplier < 1e-4 {
+                self.active = false;
+                self.choke_multiplier = 0.0;
+            }
+        }
 
         // Apply per-voice filter if cutoff is not fully open
         let filtered = if self.filter_active {

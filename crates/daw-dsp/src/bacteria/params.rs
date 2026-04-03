@@ -30,6 +30,15 @@ impl SmoothedParam {
         self.current
     }
 
+    pub fn next_with_offset(&mut self, offset: f32) -> f32 {
+        self.current = self.target + self.coeff * (self.current - self.target);
+        self.current + offset
+    }
+
+    pub fn target(&self) -> f32 {
+        self.target
+    }
+
     pub fn current(&self) -> f32 {
         self.current
     }

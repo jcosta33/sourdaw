@@ -138,6 +138,14 @@ impl ProofChain {
 
     /// Reorder modules. `new_order` contains ModuleId values in desired order.
     pub fn reorder(&mut self, new_order: [u8; NUM_MODULES]) {
+        let mut seen = [false; NUM_MODULES];
+        for &id in &new_order {
+            if id as usize >= NUM_MODULES || seen[id as usize] {
+                return;
+            }
+            seen[id as usize] = true;
+        }
+
         for (i, &id) in new_order.iter().enumerate() {
             self.order[i] = match id {
                 0 => ModuleId::Eq,
@@ -145,7 +153,7 @@ impl ProofChain {
                 2 => ModuleId::Imager,
                 3 => ModuleId::Exciter,
                 4 => ModuleId::Limiter,
-                _ => self.order[i],
+                _ => unreachable!(),
             };
         }
     }
@@ -165,12 +173,6 @@ impl ProofChain {
 
         // A/B comparison: auto gain-match the dry signal to the processed level
         if self.ab_bypass {
-            // Compute gain offset from input vs output LUFS
-            let in_lufs = self.input_lufs.get_lufs();
-            let out_lufs = self.output_lufs.get_lufs();
-            if in_lufs > -100.0 && out_lufs > -100.0 {
-                self.ab_gain_offset = out_lufs - in_lufs;
-            }
             let ab_gain = 10.0_f32.powf(self.ab_gain_offset / 20.0);
             for i in 0..left.len() {
                 left[i] *= ab_gain;
@@ -233,6 +235,14 @@ impl ProofChain {
             self.integrated_lufs.process_sample(left[i], right[i]);
             self.true_peak.process_sample(left[i], right[i]);
             self.lra.process_sample(left[i], right[i]);
+        }
+
+        if !self.bypassed {
+            let in_lufs = self.input_lufs.get_lufs();
+            let out_lufs = self.output_lufs.get_lufs();
+            if in_lufs > -100.0 && out_lufs > -100.0 {
+                self.ab_gain_offset = out_lufs - in_lufs;
+            }
         }
     }
 

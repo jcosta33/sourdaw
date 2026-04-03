@@ -1,9 +1,13 @@
 import { getTrackStoreState as getTrackState } from '#/modules/Arrangement/useCases/trackQueries/trackStoreAccess';
 import { setTrackState } from '#/modules/Arrangement/useCases/trackQueries/trackMutations';
 import { midiStore } from '../stores/midiStore';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { createTrack } from '#/modules/Arrangement/useCases/trackQueries';
-import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
+import { getNextClipId } from '#/modules/Arrangement/repositories/clipIdCounter';
+import { type Clip } from '#/modules/Arrangement/models/Track';
 import { type MidiNote } from '../models/MidiNote';
+import { pushUndo } from '#/modules/Command/stores/undoStore';
+import { createCallbackUndoEntry } from '#/modules/Command/models/UndoEntry';
 
 type ParsedTrack = {
     name: string;
@@ -190,36 +194,42 @@ export async function importMidiFile(file: File): Promise<void> {
         return;
     }
 
+    const trackSnapshotBefore = structuredClone(trackStore.value);
+    const midiSnapshotBefore = structuredClone(midiStore.value);
+
     const newMidiData: Record<string, MidiNote[]> = { ...(midiStore.value?.notesByClipId ?? {}) };
 
-    const createdTracks = parsedTracks.map((parsed) => ({
-        track: createTrack({ name: parsed.name, kind: 'midi' }),
-        parsed,
-    }));
+    // Build all tracks with their clips in-memory so we can commit everything
+    // in a single setTrackState() call instead of calling addClip() (→ updateTrack()
+    // → trackStore.set()) once per imported track.
+    const tracksWithClips = parsedTracks.map((parsed) => {
+        const track = createTrack({ name: parsed.name, kind: 'midi' });
+        const maxBeat = Math.max(...parsed.notes.map((n) => n.startBeat + n.duration), 4);
+        const endBeat = Math.ceil(maxBeat / 4) * 4;
+        const clip: Clip = {
+            id: getNextClipId(),
+            trackId: track.id,
+            name: parsed.name,
+            startBeat: 0,
+            endBeat,
+            type: 'midi',
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1.0,
+            color: '',
+            locked: false,
+            muted: false,
+        };
+        newMidiData[clip.id] = parsed.notes;
+        return { ...track, clips: [clip] };
+    });
 
     const ts = getTrackState();
     if (ts) {
         setTrackState({
             ...ts,
-            tracks: [...ts.tracks, ...createdTracks.map((ct) => ct.track)],
+            tracks: [...ts.tracks, ...tracksWithClips],
         });
-    }
-
-    for (const { track, parsed } of createdTracks) {
-        const maxBeat = Math.max(...parsed.notes.map((n) => n.startBeat + n.duration), 4);
-        const endBeat = Math.ceil(maxBeat / 4) * 4;
-
-        const clip = addClip({
-            trackId: track.id,
-            startBeat: 0,
-            endBeat,
-            name: parsed.name,
-            type: 'midi',
-        });
-
-        if (clip) {
-            newMidiData[clip.id] = parsed.notes;
-        }
     }
 
     midiStore.set({
@@ -227,4 +237,30 @@ export async function importMidiFile(file: File): Promise<void> {
         ccByClipId: midiStore.value?.ccByClipId ?? {},
         pitchBendByClipId: midiStore.value?.pitchBendByClipId ?? {},
     });
+
+    const trackSnapshotAfter = structuredClone(trackStore.value);
+    const midiSnapshotAfter = structuredClone(midiStore.value);
+
+    const name = parsedTracks.length === 1 ? (parsedTracks[0]?.name ?? 'MIDI file') : `${parsedTracks.length} MIDI tracks`;
+    pushUndo(
+        createCallbackUndoEntry(
+            `Import MIDI: ${name}`,
+            () => {
+                if (trackSnapshotBefore) {
+                    trackStore.set(trackSnapshotBefore);
+                }
+                if (midiSnapshotBefore) {
+                    midiStore.set(midiSnapshotBefore);
+                }
+            },
+            () => {
+                if (trackSnapshotAfter) {
+                    trackStore.set(trackSnapshotAfter);
+                }
+                if (midiSnapshotAfter) {
+                    midiStore.set(midiSnapshotAfter);
+                }
+            }
+        )
+    );
 }

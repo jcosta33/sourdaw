@@ -11,72 +11,74 @@ export type GlutenPatch = {
 
     // Core compressor
     topology: GlutenTopology;
-    amount: number;       // 0 – 100 (Level 1 macro: maps to threshold + ratio)
-    threshold: number;    // dB (-60 to 0)
-    ratio: number;        // 1:1 to 20:1
-    attack: number;       // ms (0.02 – 250)
-    release: number;      // ms (25 – 5000)
-    knee: number;         // dB (0 – 30)
-    makeup: number;       // dB (-12 to +24)
-    mix: number;          // 0 – 1
+    style: GlutenStyle;
+    amount: number; // 0 – 100 (Level 1 macro: maps to threshold + ratio)
+    threshold: number; // dB (-60 to 0)
+    ratio: number; // 1:1 to 20:1
+    attack: number; // ms (0.02 – 250)
+    release: number; // ms (25 – 5000)
+    knee: number; // dB (0 – 30)
+    makeup: number; // dB (-12 to +24)
+    mix: number; // 0 – 1
     autoMakeup: boolean;
     autoRelease: boolean;
-    range: number;        // dB (0 – 60, caps max GR)
+    range: number; // dB (0 – 60, caps max GR)
 
     // Sidechain
-    scHpfFreq: number;   // Hz (20 – 500)
+    scHpfFreq: number; // Hz (20 – 500)
     scHpfEnabled: boolean;
-    thrust: number;       // 0 = off, 1 = medium, 2 = loud
+    thrust: number; // 0 = off, 1 = medium, 2 = loud
 
     // Detection
     detection: 'rms' | 'peak';
 
     // Stereo
     stereoMode: 'stereo' | 'mid' | 'side' | 'dual-mono';
-    stereoLink: number;   // 0 – 1
+    stereoLink: number; // 0 – 1
 
     // Advanced
     oversampling: number; // 1, 2, or 4
-    lookahead: number;    // ms (0 – 20)
-    scLpfFreq: number;   // Hz (1000 – 20000)
+    lookahead: number; // ms (0 – 20)
+    scLpfFreq: number; // Hz (1000 – 20000)
     scLpfEnabled: boolean;
-    scEqFreq: number;    // Hz (20 – 20000)
-    scEqGain: number;    // dB (-18 – +18)
-    scEqQ: number;       // 0.1 – 10
+    scEqFreq: number; // Hz (20 – 20000)
+    scEqGain: number; // dB (-18 – +18)
+    scEqQ: number; // 0.1 – 10
     scEqEnabled: boolean;
     deltaListen: boolean;
     gainMatchBypass: boolean;
     extSidechain: boolean;
 
     // FET-specific
-    inputGain: number;    // dB
-    outputGain: number;   // dB
-    xfmrDrive: number;   // 0 – 3
+    inputGain: number; // dB
+    outputGain: number; // dB
+    xfmrDrive: number; // 0 – 3
     allButtons: boolean;
 
     // Opto-specific
     limitMode: boolean;
 
     // Diode-specific
-    recovery: number;     // 1 – 5
+    recovery: number; // 1 – 5
 
     // VCA-specific
-    vcaType: number;      // 0 = Ideal, 1 = THAT 2181, 2 = DBX 202
+    vcaType: number; // 0 = Ideal, 1 = THAT 2181, 2 = DBX 202
     vcaCharacter: number; // 0 – 0.02
     feedForward: boolean; // VCA: false = feedback/SSL, true = feed-forward
 
     // FET harmonic controls
-    jfetK3: number;       // 0 – 0.5 (odd harmonic amount)
-    xfmrK2: number;       // 0 – 0.3 (even harmonic amount from transformer)
+    jfetK3: number; // 0 – 0.5 (odd harmonic amount)
+    xfmrK2: number; // 0 – 0.3 (even harmonic amount from transformer)
 
     // Dual-stage blend (Shadow Hills style)
     blendTopology: GlutenTopology;
-    blendAmount: number;  // 0 – 1 (0 = single, 1 = full dual-stage)
+    blendAmount: number; // 0 – 1 (0 = single, 1 = full dual-stage)
 };
 
 export const DEFAULT_PATCH: GlutenPatch = {
     name: 'Init',
     topology: 'vca',
+    style: 'glue',
     amount: 50,
     threshold: -18,
     ratio: 4,
@@ -153,7 +155,16 @@ export const GLUTEN_PARAMS: readonly GlutenParamDef[] = [
     { id: 'scHpfEnabled', label: 'SC HPF On', min: 0, max: 1, default: 1, unit: '', step: 1, group: 'sidechain' },
     { id: 'thrust', label: 'Thrust', min: 0, max: 2, default: 0, unit: '', step: 1, group: 'sidechain' },
     { id: 'detection', label: 'Detection', min: 0, max: 1, default: 0, unit: '', step: 1, group: 'sidechain' },
-    { id: 'scLpfFreq', label: 'SC LPF', min: 1000, max: 20000, default: 20000, unit: 'Hz', step: 100, group: 'sidechain' },
+    {
+        id: 'scLpfFreq',
+        label: 'SC LPF',
+        min: 1000,
+        max: 20000,
+        default: 20000,
+        unit: 'Hz',
+        step: 100,
+        group: 'sidechain',
+    },
     { id: 'scLpfEnabled', label: 'SC LPF On', min: 0, max: 1, default: 0, unit: '', step: 1, group: 'sidechain' },
     // Stereo
     { id: 'stereoLink', label: 'Stereo Link', min: 0, max: 1, default: 1, unit: '', step: 0.01, group: 'stereo' },

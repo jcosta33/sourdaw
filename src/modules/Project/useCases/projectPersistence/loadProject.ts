@@ -1,8 +1,11 @@
 import { loadCrdtProject, createCrdtProject } from '#/modules/CrdtDocument/useCases/crdtProjectLifecycle';
 import { projectCrdtToStores } from '#/modules/CrdtDocument/useCases/projection/projectProjection';
+import { startCrdtAutoSave } from '#/modules/CrdtDocument/useCases/startCrdtAutoSave';
 
 import { projectStore } from '../../stores/projectStore';
 import { clearUndoHistory } from './helpers';
+
+let stopAutoSave: (() => void) | null = null;
 
 export async function loadProject(): Promise<boolean> {
     const current = projectStore.value;
@@ -33,5 +36,13 @@ export async function loadProject(): Promise<boolean> {
     }
 
     clearUndoHistory();
+
+    // Start debounced incremental auto-save so edits survive browser crashes.
+    // Stop any previous auto-save loop first (e.g. if loadProject is called again).
+    if (stopAutoSave) {
+        stopAutoSave();
+    }
+    stopAutoSave = startCrdtAutoSave();
+
     return true;
 }

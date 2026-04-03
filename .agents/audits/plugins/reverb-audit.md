@@ -3,7 +3,7 @@
 Based on a code-level audit of the **Reverb** (also known as Dutch Oven / ProofChamberEngine) plugin (`crates/daw-dsp/src/reverb/`), here is the comprehensive audit report:
 
 ### 🚨 Critical Performance Bugs (Real-Time Audio Violations)
-1. **Implicit WASM Bindgen Heap Allocations (`engine.rs`)**:
+1. [x] **Implicit WASM Bindgen Heap Allocations (`engine.rs`)**:
    *   **Issue:** Unlike the other plugins which maintain internal `Vec<f32>` buffers and expose raw pointers to JS (`get_input_left_ptr`), this plugin's AudioWorklet interface exposes a method that takes slices directly:
        ```rust
        pub fn process_block(&mut self, in_l: &[f32], in_r: &[f32], out_l: &mut [f32], out_r: &mut [f32])
@@ -12,7 +12,7 @@ Based on a code-level audit of the **Reverb** (also known as Dutch Oven / ProofC
    *   **Fix:** Refactor the WASM bindings to match the standard pattern used in Sourdaw: maintain internal `input_left`/`output_left` vectors, expose `get_input_left_ptr()` methods, and have the JS side write directly into the shared WASM linear memory before calling `process(block_size: u32)`.
 
 ### 🐛 Logical Bugs
-1. **Pre-Delay Buffer Underflow Risk (`engine.rs`)**:
+1. [x] **Pre-Delay Buffer Underflow Risk (`engine.rs`)**:
    *   **Issue:** The read index for the pre-delay ring buffer is calculated as:
        ```rust
        let read_idx = (self.pre_delay_idx + pd_len - pd_samples) % pd_len;

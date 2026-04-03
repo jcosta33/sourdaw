@@ -1,5 +1,50 @@
+// Main AudioBuffer cache — bounded to prevent OOM on sessions with many takes.
+// When the cap is reached the least-recently-used buffer is evicted; it can be
+// reloaded from IDB on demand. Map insertion order is used as the LRU proxy.
+const MAX_AUDIO_BUFFER_ENTRIES = 64;
 const cache = new Map<string, AudioBuffer>();
+
+function audioCacheSet(id: string, buffer: AudioBuffer): void {
+    // Promote existing entry to MRU position
+    if (cache.has(id)) {
+        cache.delete(id);
+    } else if (cache.size >= MAX_AUDIO_BUFFER_ENTRIES) {
+        // Evict LRU entry (first key in insertion-order Map)
+        const lruKey = cache.keys().next().value;
+        if (lruKey !== undefined) {
+            cache.delete(lruKey);
+            clearWaveformCachesForId(lruKey);
+        }
+    }
+    cache.set(id, buffer);
+}
+
+function audioCacheGet(id: string): AudioBuffer | undefined {
+    const buf = cache.get(id);
+    if (buf !== undefined) {
+        // Promote to MRU position
+        cache.delete(id);
+        cache.set(id, buf);
+    }
+    return buf;
+}
+
+// Waveform peak cache bounded to avoid unbounded memory growth.
+// Each entry stores Float32Array peaks for a specific (bufferId, numBins) pair.
+// Capped at MAX_WAVEFORM_CACHE_ENTRIES: oldest entries are evicted LRU-style.
+const MAX_WAVEFORM_CACHE_ENTRIES = 256;
 const waveformCache = new Map<string, Float32Array>();
+
+function waveformCacheSet(key: string, peaks: Float32Array): void {
+    if (waveformCache.size >= MAX_WAVEFORM_CACHE_ENTRIES) {
+        // Evict oldest entry (Map preserves insertion order)
+        const firstKey = waveformCache.keys().next().value;
+        if (firstKey !== undefined) {
+            waveformCache.delete(firstKey);
+        }
+    }
+    waveformCache.set(key, peaks);
+}
 
 const DB_NAME = 'sourdaw-audio';
 const DB_VERSION = 1;
@@ -69,11 +114,11 @@ function clearWaveformCachesForId(id: string) {
 
 export const audioBufferCache = {
     get(id: string): AudioBuffer | undefined {
-        return cache.get(id);
+        return audioCacheGet(id);
     },
 
     set(id: string, buffer: AudioBuffer): void {
-        cache.set(id, buffer);
+        audioCacheSet(id, buffer);
         clearWaveformCachesForId(id);
         void persistToIdb(id, buffer);
     },
@@ -167,7 +212,7 @@ export const audioBufferCache = {
             }
         }
 
-        waveformCache.set(key, peaks);
+        waveformCacheSet(key, peaks);
         return peaks;
     },
 
@@ -204,7 +249,7 @@ export const audioBufferCache = {
                     const src = data.channelData[ch]!;
                     buffer.getChannelData(ch).set(src);
                 }
-                cache.set(key as string, buffer);
+                audioCacheSet(key as string, buffer);
                 restored++;
             }
             return restored;

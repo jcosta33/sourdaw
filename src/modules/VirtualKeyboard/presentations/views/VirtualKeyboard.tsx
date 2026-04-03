@@ -19,7 +19,10 @@ import { cn } from '#/helpers/Styles/cn';
 import { triggerLiveNoteOn } from '#/modules/AudioEngine/useCases/triggerLiveNoteOn';
 import { triggerLiveNoteOff } from '#/modules/AudioEngine/useCases/triggerLiveNoteOff';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { setVirtualKeyboardOctave, setVirtualKeyboardVelocity } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
+import {
+    setVirtualKeyboardOctave,
+    setVirtualKeyboardVelocity,
+} from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 
 // ─── Layout constants ─────────────────────────────────────────────────────────
 
@@ -64,11 +67,11 @@ const WHITE_KEY_SEMITONES = new Set([0, 2, 4, 5, 7, 9, 11]);
  *   A#: 5.7 units               → fraction = 5.7   (A starts at 5.0)
  */
 const BLACK_KEY_FRACS: Record<number, number> = {
-    1:  0.60,  // C#
-    3:  1.67,  // D#
-    6:  3.60,  // F#
-    8:  4.65,  // G#
-    10: 5.70,  // A#
+    1: 0.6, // C#
+    3: 1.67, // D#
+    6: 3.6, // F#
+    8: 4.65, // G#
+    10: 5.7, // A#
 };
 
 // Pre-built list of all black keys: { midi, leftPx } for absolute positioning
@@ -101,14 +104,15 @@ function buildBlackKeys(): BlackKeyDef[] {
         for (const [semiStr, frac] of Object.entries(BLACK_KEY_FRACS)) {
             const semi = Number(semiStr);
             const midi = (oct - 1) * 12 + 12 + semi;
-            if (midi < 0 || midi > 127) { continue; }
+            if (midi < 0 || midi > 127) {
+                continue;
+            }
             const leftPx = octaveLeftPx + frac * KEY_W;
             keys.push({ midi, leftPx });
         }
     }
     return keys;
 }
-
 
 const ALL_BLACK_KEYS = buildBlackKeys();
 
@@ -122,23 +126,23 @@ const getVelocity = () => workspaceStore.value?.virtualKeyboardVelocity ?? 100;
 
 /** ASDFGHJKL; → semitone offset from root C of the active octave */
 const KEYBOARD_WHITE_MAP: Record<string, number> = {
-    a: 0,    // C
-    s: 2,    // D
-    d: 4,    // E
-    f: 5,    // F
-    g: 7,    // G
-    h: 9,    // A
-    j: 11,   // B
-    k: 12,   // C+1
-    l: 14,   // D+1
+    a: 0, // C
+    s: 2, // D
+    d: 4, // E
+    f: 5, // F
+    g: 7, // G
+    h: 9, // A
+    j: 11, // B
+    k: 12, // C+1
+    l: 14, // D+1
     ';': 16, // E+1
 };
 
 const KEYBOARD_BLACK_MAP: Record<string, number> = {
-    w: 1,  // C#
-    e: 3,  // D#
-    t: 6,  // F#
-    y: 8,  // G#
+    w: 1, // C#
+    e: 3, // D#
+    t: 6, // F#
+    y: 8, // G#
     u: 10, // A#
     o: 13, // C#+1
     p: 15, // D#+1
@@ -163,7 +167,9 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
 
     // Scroll to current octave on mount and when octave changes
     useEffect(() => {
-        if (!scrollRef.current) { return; }
+        if (!scrollRef.current) {
+            return;
+        }
         const firstWhite = octaveToFirstWhiteIdx(octave);
         const targetScroll = firstWhite * KEY_W - 60; // a little left-padding
         scrollRef.current.scrollLeft = Math.max(0, targetScroll);
@@ -173,10 +179,14 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
 
     const triggerNoteOn = useCallback(
         (midiNote: number) => {
-            if (midiNote < 0 || midiNote > 127) { return; }
+            if (midiNote < 0 || midiNote > 127) {
+                return;
+            }
             triggerLiveNoteOn(0, midiNote, velocity);
             setPressedNotes((prev) => {
-                if (prev.has(midiNote)) { return prev; }
+                if (prev.has(midiNote)) {
+                    return prev;
+                }
                 const next = new Set(prev);
                 next.add(midiNote);
                 return next;
@@ -188,7 +198,9 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
     const triggerNoteOff = useCallback((midiNote: number) => {
         triggerLiveNoteOff(0, midiNote);
         setPressedNotes((prev) => {
-            if (!prev.has(midiNote)) { return prev; }
+            if (!prev.has(midiNote)) {
+                return prev;
+            }
             const next = new Set(prev);
             next.delete(midiNote);
             return next;
@@ -286,7 +298,9 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
 
     const onKeyDown = useCallback(
         (event: React.KeyboardEvent<HTMLDivElement>) => {
-            if (event.metaKey || event.ctrlKey || event.altKey) { return; }
+            if (event.metaKey || event.ctrlKey || event.altKey) {
+                return;
+            }
             const key = event.key.toLowerCase();
 
             if (key === 'z') {
@@ -300,7 +314,9 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
                 return;
             }
 
-            if (heldKeys.current.has(key)) { return; }
+            if (heldKeys.current.has(key)) {
+                return;
+            }
             heldKeys.current.add(key);
 
             const whiteSemi = KEYBOARD_WHITE_MAP[key];
@@ -336,14 +352,14 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
         [octave, triggerNoteOff]
     );
 
-    const onBlur = useCallback(() => {
+    const onBlur = () => {
         heldKeys.current.clear();
         for (const midiNote of pressedNotes) {
             triggerLiveNoteOff(0, midiNote);
         }
         setPressedNotes(new Set());
         mouseNote.current = null;
-    }, [pressedNotes]);
+    };
 
     // ── Rendering ─────────────────────────────────────────────────────────────
 
@@ -451,10 +467,7 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
                 style={{ scrollbarWidth: 'none' }}
             >
                 {/* Keys container — fixed pixel width, full height of scroll area */}
-                <div
-                    className="relative h-full"
-                    style={{ width: TOTAL_WIDTH_PX, minHeight: '100%' }}
-                >
+                <div className="relative h-full" style={{ width: TOTAL_WIDTH_PX, minHeight: '100%' }}>
                     {/* ── White keys ─────────────────────────────────── */}
                     <div className="absolute inset-0 flex">
                         {Array.from({ length: TOTAL_WHITE_KEYS }, (_, whiteIdx) => {
@@ -462,7 +475,9 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
                             const semitone = ((midiNote % 12) + 12) % 12;
                             const isC = semitone === 0;
                             const isValid = midiNote >= 0 && midiNote <= 127 && WHITE_KEY_SEMITONES.has(semitone);
-                            const isCurrentOctaveStart = whiteIdx >= currentOctaveFirstWhite && whiteIdx < currentOctaveFirstWhite + WHITES_PER_OCT;
+                            const isCurrentOctaveStart =
+                                whiteIdx >= currentOctaveFirstWhite &&
+                                whiteIdx < currentOctaveFirstWhite + WHITES_PER_OCT;
                             const isPressed = pressedNotes.has(midiNote);
                             const displayOctave = Math.floor(midiNote / 12) - 1;
 
@@ -474,8 +489,8 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
                                         isPressed
                                             ? 'bg-[var(--color-accent-lavender)]/50 border-r-[var(--color-accent-lavender)]/40'
                                             : isCurrentOctaveStart
-                                            ? 'bg-[oklch(0.97_0.005_260)] hover:bg-[oklch(0.91_0.01_260)] border-r-neutral-300'
-                                            : 'bg-[oklch(0.94_0_0)] hover:bg-[oklch(0.88_0_0)] border-r-neutral-300'
+                                              ? 'bg-[oklch(0.97_0.005_260)] hover:bg-[oklch(0.91_0.01_260)] border-r-neutral-300'
+                                              : 'bg-[oklch(0.94_0_0)] hover:bg-[oklch(0.88_0_0)] border-r-neutral-300'
                                     )}
                                     style={{
                                         width: KEY_W,
@@ -483,7 +498,9 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
                                     }}
                                     onPointerDown={isValid ? (event) => onWhitePointerDown(midiNote, event) : undefined}
                                     onPointerUp={isValid ? (event) => onWhitePointerUp(midiNote, event) : undefined}
-                                    onPointerEnter={isValid ? (event) => onWhitePointerEnter(midiNote, event) : undefined}
+                                    onPointerEnter={
+                                        isValid ? (event) => onWhitePointerEnter(midiNote, event) : undefined
+                                    }
                                     aria-label={isC ? `C${displayOctave} (MIDI ${midiNote})` : `MIDI ${midiNote}`}
                                     role="button"
                                 >

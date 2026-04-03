@@ -110,6 +110,13 @@ export const PianoRoll = ({
     // ── Refs shared with interactions ────────────────────────────────
     const drawPreviewRef = useRef<{ beat: number; pitch: number; duration: number } | null>(null);
     const rubberBandRef = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
+    const dragPreviewRef = useRef<{
+        noteIds: Set<string>;
+        beatDelta: number;
+        pitchDelta: number;
+        durationOverride?: Map<string, number>;
+        beatOverride?: Map<string, { beat: number; duration: number }>;
+    } | null>(null);
 
     // ── Canvas rendering ─────────────────────────────────────────────
     const draw = usePianoRollRenderer({
@@ -130,6 +137,7 @@ export const PianoRoll = ({
         tracks: trackState?.tracks ?? null,
         drawPreviewRef,
         rubberBandRef,
+        dragPreviewRef,
     });
 
     // ── Interactions ─────────────────────────────────────────────────
@@ -168,6 +176,7 @@ export const PianoRoll = ({
         draw,
         drawPreviewRef,
         rubberBandRef,
+        dragPreviewRef,
     });
 
     // ── Render ────────────────────────────────────────────────────────

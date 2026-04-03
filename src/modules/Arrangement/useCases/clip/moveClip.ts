@@ -40,7 +40,7 @@ export function moveClip(clipId: string, targetTrackId: string, startBeat: numbe
         shiftClipAutomation(clipId, automationDelta);
     }
 
-    // MIDI: shift only from the current position (preview already shifts notes incrementally)
+    // MIDI: shift by the total delta from the clip's current position (preview no longer shifts incrementally)
     const midiDelta = startBeat - oldStartBeat;
     if (midiDelta !== 0) {
         shiftClipMidiNotes(clipId, midiDelta);

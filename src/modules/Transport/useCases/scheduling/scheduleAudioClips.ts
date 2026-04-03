@@ -105,11 +105,10 @@ export function scheduleAudioClips(
 
                 const isFirstIter = iter === 0;
                 const isLastIter = iter === maxIterations - 1 || iterStartBeat + loopLen >= clip.endBeat;
-                const hasExplicitFade = (isFirstIter && clip.fadeInBeats > 0) || (isLastIter && clip.fadeOutBeats > 0);
                 const needsMicroFadeIn = isFirstIter && clip.fadeInBeats === 0;
                 const needsMicroFadeOut = isLastIter && clip.fadeOutBeats === 0;
-                const needsFadeGain = hasExplicitFade || needsMicroFadeIn || needsMicroFadeOut;
-                const fadeGain = needsFadeGain ? getAudioContext().createGain() : null;
+                const fadeGain = getAudioContext().createGain();
+                (source as any).fadeGainNode = fadeGain;
 
                 const envGainDb = getGainAtBeat(clip.id, iterOffsetBeats);
                 const hasEnvGain = envGainDb !== 0;
@@ -132,15 +131,17 @@ export function scheduleAudioClips(
                 const beatOffset = iterStartBeat - accumulatedPosition;
                 const iterStartTime = getCurrentTime() + beatOffset / (currentTempo / 60) + compensation;
                 const now = getCurrentTime();
-                const playDuration = Math.min(iterDurationSeconds, buffer.duration / stretchRatio);
+                const clipAudioOffsetBeats = clip.audioOffsetBeats ?? 0;
+                const clipAudioOffsetSeconds = clipAudioOffsetBeats / clipBeatsPerSecond;
+                const playDuration = Math.min(iterDurationSeconds, (buffer.duration - clipAudioOffsetSeconds) / stretchRatio);
 
                 if (iterStartTime >= now) {
-                    source.start(iterStartTime, 0, playDuration * stretchRatio);
+                    source.start(iterStartTime, clipAudioOffsetSeconds, playDuration * stretchRatio);
                 } else {
                     const elapsed = now - iterStartTime;
-                    const bufferOffset = elapsed * stretchRatio;
-                    if (bufferOffset < buffer.duration && bufferOffset < playDuration * stretchRatio) {
-                        source.start(now, bufferOffset, playDuration * stretchRatio - bufferOffset);
+                    const bufferOffset = elapsed * stretchRatio + clipAudioOffsetSeconds;
+                    if (bufferOffset < buffer.duration && bufferOffset < playDuration * stretchRatio + clipAudioOffsetSeconds) {
+                        source.start(now, bufferOffset, playDuration * stretchRatio + clipAudioOffsetSeconds - bufferOffset);
                     } else {
                         continue;
                     }

@@ -40,6 +40,16 @@ type RendererDeps = {
     drawPreviewRef: RefObject<{ beat: number; pitch: number; duration: number } | null | null>;
     /** Active rubber band selection rectangle */
     rubberBandRef: RefObject<{ x: number; y: number; w: number; h: number } | null | null>;
+    /** Ephemeral drag preview — avoids flooding midiStore during note move/resize */
+    dragPreviewRef: RefObject<{
+        noteIds: Set<string>;
+        beatDelta: number;
+        pitchDelta: number;
+        /** For resize-right: duration override per note id */
+        durationOverride?: Map<string, number>;
+        /** For resize-left: beat and duration overrides per note id */
+        beatOverride?: Map<string, { beat: number; duration: number }>;
+    } | null>;
 };
 
 export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
@@ -61,6 +71,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
         tracks,
         drawPreviewRef,
         rubberBandRef,
+        dragPreviewRef,
     } = deps;
 
     const draw = (): void => {
@@ -98,7 +109,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
         if (showGhostNotes && tracks) {
             drawGhostNotes(ctx, visiblePitches, beatWidth, midiNotesByClipId, tracks, trackId, clipId);
         }
-        drawActiveNotes(ctx, visiblePitches, notes, beatWidth, selectedNoteIds, tracks, trackId, clipId);
+        drawActiveNotes(ctx, visiblePitches, notes, beatWidth, selectedNoteIds, tracks, trackId, clipId, dragPreviewRef.current);
         if (stepInput) {
             drawStepCursor(ctx, stepBeat, beatWidth, gridSnap, noteAreaHeight);
         }
@@ -315,6 +326,14 @@ function drawGhostNote(
     ctx.stroke();
 }
 
+type DragPreview = {
+    noteIds: Set<string>;
+    beatDelta: number;
+    pitchDelta: number;
+    durationOverride?: Map<string, number>;
+    beatOverride?: Map<string, { beat: number; duration: number }>;
+} | null;
+
 function drawActiveNotes(
     ctx: CanvasRenderingContext2D,
     visiblePitches: number[],
@@ -323,7 +342,8 @@ function drawActiveNotes(
     selectedNoteIds: Set<string>,
     tracks: Array<{ id: string; kind: string; color: string; clips: Array<{ id: string; type: string; color: string }> }> | null,
     trackId: string,
-    clipId: string
+    clipId: string,
+    dragPreview: DragPreview = null
 ): void {
     const activeTrack = tracks?.find((t) => t.id === trackId);
     const activeClip = activeTrack?.clips.find((c) => c.id === clipId);
@@ -331,13 +351,30 @@ function drawActiveNotes(
     const selectedColor = brightenColor(clipColor, 0.22);
 
     for (const note of notes) {
-        const row = visiblePitches.indexOf(note.pitch);
+        // Apply ephemeral drag preview offsets without touching the store
+        let displayPitch = note.pitch;
+        let displayStartBeat = note.startBeat;
+        let displayDuration = note.duration;
+        if (dragPreview && dragPreview.noteIds.has(note.id)) {
+            if (dragPreview.beatOverride?.has(note.id)) {
+                const override = dragPreview.beatOverride.get(note.id)!;
+                displayStartBeat = override.beat;
+                displayDuration = override.duration;
+            } else if (dragPreview.durationOverride?.has(note.id)) {
+                displayDuration = dragPreview.durationOverride.get(note.id)!;
+            } else {
+                displayStartBeat = Math.max(0, note.startBeat + dragPreview.beatDelta);
+                displayPitch = Math.max(0, Math.min(127, note.pitch + dragPreview.pitchDelta));
+            }
+        }
+
+        const row = visiblePitches.indexOf(displayPitch);
         if (row === -1) {
             continue;
         }
-        const x = note.startBeat * beatWidth;
+        const x = displayStartBeat * beatWidth;
         const y = row * ROW_HEIGHT;
-        const w = note.duration * beatWidth;
+        const w = displayDuration * beatWidth;
 
         const isSelected = selectedNoteIds.has(note.id);
         const alpha = 0.4 + (note.velocity / 127) * 0.6;
@@ -368,7 +405,7 @@ function drawActiveNotes(
         if (w > 20) {
             ctx.fillStyle = 'rgba(255,255,255,0.8)';
             ctx.font = '9px system-ui';
-            ctx.fillText(`${NOTE_NAMES[note.pitch % 12]}${Math.floor(note.pitch / 12) - 1}`, x + 6, y + 11);
+            ctx.fillText(`${NOTE_NAMES[displayPitch % 12]}${Math.floor(displayPitch / 12) - 1}`, x + 6, y + 11);
         }
     }
 }

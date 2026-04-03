@@ -1,20 +1,10 @@
-/**
- * ProofPanel — mastering suite panel with 5-level progressive disclosure.
- *
- * Level 1 (Play):   Style + Intensity + Target + IN/OUT LUFS
- * Level 2 (Shape):  Module enable/bypass + primary knob per module + chain meters
- * Level 3 (Build):  Full per-module controls
- * Level 4 (Route):  Reorder chain + M/S + Match EQ
- * Level 5 (Lab):    Advanced metering + AI assist
- */
 import { type ReactElement, useSyncExternalStore } from 'react';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { proofStore, setProofUiLevel, type ProofState } from '../../stores/proofStore';
 import { setProofParamWithPatch, setProofParam } from '../../useCases/proofParamBridge';
 import { PROOF_PRESETS } from '../../useCases/proofPresets';
-import { loadProofPatch } from '../../stores/proofStore';
 import { TARGET_LUFS, type ProofTarget } from '../../models/ProofPatch';
-import { reorderChain, resetIntegratedMeters } from '../../useCases/proofParamBridge';
+import { loadProofPatchWithAudio, reorderChain, resetIntegratedMeters } from '../../useCases/proofParamBridge';
 import { ProofEqSection } from '../components/ProofEqSection';
 import { ProofDynSection } from '../components/ProofDynSection';
 import { ProofImagerSection } from '../components/ProofImagerSection';
@@ -43,6 +33,14 @@ const TARGET_OPTIONS: { value: ProofTarget; label: string; lufs: number }[] = [
     { value: 'podcast', label: 'Podcast', lufs: -16 },
 ];
 
+const LEVEL_OPTIONS = [
+    { level: 1 as const, label: 'Play', detail: 'Target' },
+    { level: 2 as const, label: 'Shape', detail: 'Tone' },
+    { level: 3 as const, label: 'Build', detail: 'Modules' },
+    { level: 4 as const, label: 'Route', detail: 'Chain' },
+    { level: 5 as const, label: 'Lab', detail: 'Check' },
+];
+
 function formatLufs(v: number): string {
     if (v <= -100) return '-∞';
     return `${v.toFixed(1)}`;
@@ -53,109 +51,353 @@ function formatDb(v: number): string {
     return `${v > 0 ? '+' : ''}${v.toFixed(1)}`;
 }
 
+function getLevelMeta(level: ProofState['uiLevel']): {
+    title: string;
+    description: string;
+} {
+    if (level === 1) {
+        return {
+            title: 'Target desk',
+            description: 'Set the landing zone, check what streaming will do, and keep the finish obvious.',
+        };
+    }
+
+    if (level === 2) {
+        return {
+            title: 'Chain shape',
+            description: 'See the mastering stations as one desk instead of five stacked pages.',
+        };
+    }
+
+    if (level === 3) {
+        return {
+            title: 'Module detail',
+            description: 'Drop into the heavy controls without losing the mastering frame around them.',
+        };
+    }
+
+    if (level === 4) {
+        return {
+            title: 'Chain route',
+            description: 'Reorder the path like hardware on a bench, with the mission still in sight.',
+        };
+    }
+
+    return {
+        title: 'Check bench',
+        description: 'Deep metering, loudness history, and edge-case verification live here.',
+    };
+}
+
+const MetricTile = ({ label, value, detail }: { label: string; value: string; detail: string }): ReactElement => (
+    <div className="proof-window flex min-w-[96px] flex-col gap-1 px-3 py-2">
+        <span className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">{label}</span>
+        <span className="font-mono text-[13px] text-foreground">{value}</span>
+        <span className="text-[9px] leading-4 text-muted-foreground/55">{detail}</span>
+    </div>
+);
+
+const SideCard = ({
+    title,
+    detail,
+    children,
+}: {
+    title: string;
+    detail?: string;
+    children: ReactElement | ReactElement[];
+}): ReactElement => (
+    <section className="proof-window flex flex-col gap-3 p-3">
+        <div className="space-y-1">
+            <div className="text-[8px] font-semibold uppercase tracking-[0.24em] text-[var(--color-accent-mint)]/70">
+                {title}
+            </div>
+            {detail ? <span className="sr-only">{detail}</span> : null}
+        </div>
+        {children}
+    </section>
+);
+
+function renderLevel(state: ProofState): ReactElement {
+    if (state.uiLevel === 1) {
+        return <Level1Play state={state} />;
+    }
+
+    if (state.uiLevel === 2) {
+        return <Level2Shape state={state} />;
+    }
+
+    if (state.uiLevel === 3) {
+        return <Level3Build state={state} />;
+    }
+
+    if (state.uiLevel === 4) {
+        return <Level4Route state={state} />;
+    }
+
+    return <Level5Lab state={state} />;
+}
+
+function isModuleBypassed(state: ProofState, moduleIndex: number): boolean {
+    if (moduleIndex === 0) {
+        return state.patch.eqBypassed;
+    }
+
+    if (moduleIndex === 1) {
+        return state.patch.dynBypassed;
+    }
+
+    if (moduleIndex === 2) {
+        return state.patch.imgBypassed;
+    }
+
+    if (moduleIndex === 3) {
+        return state.patch.excBypassed;
+    }
+
+    return state.patch.limBypassed;
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export const ProofPanel = (): ReactElement => {
     const state = useSyncExternalStore<ProofState | null>(
         (cb) => proofStore.subscribe(cb),
-        () => proofStore.value,
+        () => proofStore.value
     );
 
     if (!state) {
-        return <div className="flex items-center justify-center h-full text-muted-foreground/40 text-xs italic">Letting the dough rest...</div>;
+        return (
+            <div className="flex items-center justify-center h-full text-muted-foreground/40 text-xs italic">
+                Letting the dough rest...
+            </div>
+        );
     }
 
     const { patch, uiLevel } = state;
+    const levelMeta = getLevelMeta(uiLevel);
+    const targetLabel = TARGET_OPTIONS.find((option) => option.value === patch.target)?.label ?? patch.target;
 
     return (
-        <div className="flex flex-col h-full">
-            {/* ─── Top bar ─── */}
-            <div
-                className="flex items-center justify-between px-3 py-1 shrink-0"
-                style={{
-                    background: 'linear-gradient(180deg, rgba(20,20,22,0.95) 0%, rgba(14,14,16,0.95) 100%)',
-                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 3px rgba(0,0,0,0.5)',
-                    borderBottom: '1px solid rgba(0,0,0,0.4)',
-                }}
-            >
-                {/* Left: Preset selector */}
-                <div className="flex items-center gap-2">
-                    <select
-                        className="h-5 rounded border border-border/40 bg-surface-inset px-1.5 text-[9px] text-foreground outline-none cursor-pointer"
-                        value={patch.name}
-                        onChange={(e) => {
-                            const preset = PROOF_PRESETS.find((p) => p.name === e.target.value);
-                            if (preset) loadProofPatch(preset.patch);
-                        }}
+        <div className="proof-faceplate h-full min-h-0 overflow-hidden rounded-[26px] p-3">
+            <div className="grid h-full min-h-0 grid-cols-[15rem_minmax(0,1fr)_16rem] gap-3">
+                <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
+                    <SideCard
+                        title="Mission"
+                        detail="Choose the target, the preset, and the depth of the mastering desk."
                     >
-                        <option value={patch.name}>{patch.name}</option>
-                        {PROOF_PRESETS.map((p) => (
-                            <option key={p.id} value={p.name}>{p.name}</option>
-                        ))}
-                    </select>
-                </div>
+                        <div className="space-y-2">
+                            <div className="space-y-1">
+                                <div className="text-[10px] font-medium text-foreground">Presets</div>
+                                <div className="flex min-h-0 flex-col gap-1">
+                                    {PROOF_PRESETS.map((preset) => {
+                                        const active = preset.patch.name === patch.name;
+                                        return (
+                                            <button
+                                                key={preset.id}
+                                                type="button"
+                                                className={`proof-window flex flex-col items-start gap-1 px-3 py-2 text-left transition-all ${
+                                                    active
+                                                        ? 'border-white/18 bg-white/[0.03]'
+                                                        : 'hover:border-white/12 hover:bg-white/[0.02]'
+                                                }`}
+                                                onClick={() => loadProofPatchWithAudio(preset.patch)}
+                                            >
+                                                <span className="text-[11px] font-medium text-foreground">
+                                                    {preset.name}
+                                                </span>
+                                                <span className="text-[9px] leading-4 text-muted-foreground">
+                                                    {preset.patch.target} · {formatLufs(preset.patch.targetLufs)} LUFS
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
 
-                {/* Center: Level switcher */}
-                <div className="flex gap-0.5 bg-surface-base/50 rounded p-0.5">
-                    {(['Play', 'Shape', 'Build', 'Route', 'Lab'] as const).map((label, i) => {
-                        const lvl = (i + 1) as 1 | 2 | 3 | 4 | 5;
-                        return (
+                            <div className="space-y-1">
+                                <div className="text-[10px] font-medium text-foreground">Targets</div>
+                                <div className="flex flex-wrap gap-1.5">
+                                    {TARGET_OPTIONS.map((option) => {
+                                        const active = patch.target === option.value;
+                                        return (
+                                            <button
+                                                key={option.value}
+                                                type="button"
+                                                className={`proof-chip ${active ? 'proof-chip-active' : ''}`}
+                                                onClick={() => {
+                                                    setProofParamWithPatch('target', option.value);
+                                                    setProofParamWithPatch('targetLufs', option.lufs);
+                                                }}
+                                            >
+                                                {option.label}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            <div className="space-y-1">
+                                <div className="text-[10px] font-medium text-foreground">Desk depth</div>
+                                <div className="flex flex-col gap-1">
+                                    {LEVEL_OPTIONS.map((entry) => {
+                                        const active = uiLevel === entry.level;
+                                        return (
+                                            <button
+                                                key={entry.label}
+                                                type="button"
+                                                className={`proof-window flex items-center justify-between px-3 py-2 text-left transition-all ${
+                                                    active
+                                                        ? 'border-white/18 bg-white/[0.03]'
+                                                        : 'hover:border-white/12 hover:bg-white/[0.02]'
+                                                }`}
+                                                onClick={() => setProofUiLevel(entry.level)}
+                                            >
+                                                <span className="text-[11px] font-medium text-foreground">
+                                                    {entry.label}
+                                                </span>
+                                                <span className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/45">
+                                                    {entry.detail}
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+                    </SideCard>
+                </aside>
+
+                <section className="flex min-h-0 min-w-0 flex-col gap-3">
+                    <div className="flex items-start justify-between gap-3">
+                        <div className="space-y-2">
+                            <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-mint)]/70">
+                                Mastering desk
+                            </div>
+                            <div className="text-[16px] font-semibold text-foreground">{levelMeta.title}</div>
+                            <span className="sr-only">{levelMeta.description}</span>
+                        </div>
+
+                        <div className="flex flex-wrap justify-end gap-2">
+                            <MetricTile
+                                label="In"
+                                value={`${formatLufs(state.inputLufs)} LUFS`}
+                                detail="Incoming loudness"
+                            />
+                            <MetricTile
+                                label="Out"
+                                value={`${formatLufs(state.outputLufs)} LUFS`}
+                                detail="Current output"
+                            />
+                            <MetricTile
+                                label="Peak"
+                                value={`${formatDb(state.truePeakDb)} dBTP`}
+                                detail="True peak ceiling"
+                            />
+                            <MetricTile label="LRA" value={`${state.lra.toFixed(1)} LU`} detail="Loudness range" />
+                        </div>
+                    </div>
+
+                    <div className="proof-window min-h-0 flex-1 overflow-auto p-3">{renderLevel(state)}</div>
+                </section>
+
+                <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
+                    <SideCard title="Quick read" detail="Keep the mission, the chain, and the compare switch in reach.">
+                        <div className="space-y-2 text-[10px] leading-4 text-muted-foreground">
+                            <div className="flex items-center justify-between gap-2">
+                                <span>Preset</span>
+                                <span className="font-mono text-foreground/85">{patch.name}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                                <span>Target</span>
+                                <span className="font-mono text-foreground/85">{targetLabel}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                                <span>Integrated</span>
+                                <span className="font-mono text-foreground/85">
+                                    {formatLufs(state.integratedLufs)} LUFS
+                                </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                                <span>Correlation</span>
+                                <span className="font-mono text-foreground/85">{state.correlation.toFixed(2)}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                                <span>Limiter GR</span>
+                                <span className="font-mono text-foreground/85">
+                                    {Math.abs(state.limiterGrDb).toFixed(1)} dB
+                                </span>
+                            </div>
+                        </div>
+                    </SideCard>
+
+                    <SideCard
+                        title="Chain"
+                        detail="The mastering stations stay visible even when you dive into one deck."
+                    >
+                        <div className="flex flex-col gap-1.5">
+                            {patch.chainOrder.map((moduleIndex, slot) => {
+                                const label = MODULE_LABELS[moduleIndex] ?? '?';
+                                const bypassed = isModuleBypassed(state, moduleIndex);
+                                return (
+                                    <div
+                                        key={`${moduleIndex}-${slot}`}
+                                        className="proof-window flex items-center justify-between px-3 py-2"
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/45">
+                                                {slot + 1}
+                                            </span>
+                                            <span className="text-[11px] font-medium text-foreground">{label}</span>
+                                        </div>
+                                        <span className={`proof-led ${bypassed ? 'opacity-50' : ''}`}>
+                                            {bypassed ? 'Bypass' : 'Live'}
+                                        </span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </SideCard>
+
+                    <SideCard title="Check" detail="Compare and reset without hunting through the deck.">
+                        <div className="flex flex-col gap-2">
                             <button
-                                key={label}
                                 type="button"
-                                className={`px-1.5 py-0.5 rounded text-[8px] font-medium transition-colors cursor-pointer ${
-                                    uiLevel === lvl
-                                        ? 'bg-[var(--color-accent-mint)] text-white'
-                                        : 'text-muted-foreground hover:text-foreground'
-                                }`}
-                                onClick={() => setProofUiLevel(lvl)}
+                                className={`proof-chip ${state.abBypass ? 'proof-chip-active' : ''}`}
+                                onClick={() => {
+                                    const next = !state.abBypass;
+                                    setProofParam('ab_bypass', next ? 1 : 0);
+                                    const proofState = proofStore.value;
+                                    if (proofState) {
+                                        proofStore.set({ ...proofState, abBypass: next });
+                                    }
+                                }}
                             >
-                                {label}
+                                {state.abBypass ? 'A / dry' : 'B / wet'}
                             </button>
-                        );
-                    })}
-                </div>
-
-                {/* A/B button */}
-                <button
-                    type="button"
-                    className={`px-2 py-0.5 rounded text-[8px] font-bold tracking-wider transition-colors cursor-pointer border ${
-                        state.abBypass
-                            ? 'bg-[var(--color-accent-peach)]/20 text-[var(--color-accent-peach)] border-[var(--color-accent-peach)]/30'
-                            : 'text-muted-foreground border-border/30 hover:text-foreground'
-                    }`}
-                    onClick={() => {
-                        const next = !state.abBypass;
-                        setProofParam('ab_bypass', next ? 1 : 0);
-                        const s = proofStore.value;
-                        if (s) proofStore.set({ ...s, abBypass: next });
-                    }}
-                    title="A/B comparison with auto gain-matching — press to bypass processing while matching loudness"
-                >
-                    {state.abBypass ? 'A (DRY)' : 'B (WET)'}
-                </button>
-
-                {/* Right: Metering summary */}
-                <div className="flex items-center gap-3 text-[9px] text-muted-foreground font-mono">
-                    <span>IN <span className="text-foreground">{formatLufs(state.inputLufs)}</span> LUFS</span>
-                    <span>OUT <span className="text-foreground">{formatLufs(state.outputLufs)}</span> LUFS</span>
-                    <span>TP <span className={state.truePeakDb > -1 ? 'text-[var(--color-state-danger)]' : 'text-foreground'}>{formatDb(state.truePeakDb)}</span> dBTP</span>
-                    {state.latency > 0 ? <span className="opacity-50">{((state.latency / 44100) * 1000).toFixed(1)}ms</span> : null}
-                </div>
+                            <button type="button" className="proof-chip" onClick={() => resetIntegratedMeters()}>
+                                Reset loudness
+                            </button>
+                            <div className="flex flex-col items-center gap-1 pt-1">
+                                <RotaryKnob
+                                    value={patch.limCeiling}
+                                    onChange={(value) => setProofParamWithPatch('limCeiling', value)}
+                                    min={-12}
+                                    max={0}
+                                    step={0.1}
+                                    defaultValue={-1}
+                                    size="md"
+                                />
+                                <span className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">
+                                    Ceiling
+                                </span>
+                                <span className="font-mono text-[9px] text-foreground/85">
+                                    {patch.limCeiling.toFixed(1)} dBTP
+                                </span>
+                            </div>
+                        </div>
+                    </SideCard>
+                </aside>
             </div>
-
-            {/* ─── Main body ─── */}
-            {uiLevel === 1 ? (
-                <Level1Play state={state} />
-            ) : uiLevel === 2 ? (
-                <Level2Shape state={state} />
-            ) : uiLevel === 3 ? (
-                <Level3Build state={state} />
-            ) : uiLevel === 4 ? (
-                <Level4Route state={state} />
-            ) : (
-                <Level5Lab state={state} />
-            )}
         </div>
     );
 };
@@ -196,13 +438,17 @@ const Level1Play = ({ state }: { state: ProofState }): ReactElement => {
                 <div className="flex gap-8">
                     <div className="flex flex-col items-center">
                         <span className="text-[8px] text-muted-foreground uppercase tracking-widest mb-1">Input</span>
-                        <span className="text-2xl font-mono text-foreground tabular-nums">{formatLufs(state.inputLufs)}</span>
+                        <span className="text-2xl font-mono text-foreground tabular-nums">
+                            {formatLufs(state.inputLufs)}
+                        </span>
                         <span className="text-[8px] text-muted-foreground">LUFS</span>
                     </div>
                     <div className="w-px h-16 bg-border/20 self-center" />
                     <div className="flex flex-col items-center">
                         <span className="text-[8px] text-muted-foreground uppercase tracking-widest mb-1">Output</span>
-                        <span className="text-2xl font-mono text-foreground tabular-nums">{formatLufs(state.outputLufs)}</span>
+                        <span className="text-2xl font-mono text-foreground tabular-nums">
+                            {formatLufs(state.outputLufs)}
+                        </span>
                         <span className="text-[8px] text-muted-foreground">LUFS</span>
                     </div>
                 </div>
@@ -216,7 +462,8 @@ const Level1Play = ({ state }: { state: ProofState }): ReactElement => {
                 {state.integratedLufs > -100 && state.integratedLufs > (TARGET_LUFS[patch.target] ?? -14) + 1 ? (
                     <div className="px-3 py-1.5 rounded bg-[var(--color-accent-peach)]/10 border border-[var(--color-accent-peach)]/20 text-[9px] text-[var(--color-accent-peach)] max-w-xs text-center">
                         Your master at {formatLufs(state.integratedLufs)} LUFS will be turned down by{' '}
-                        {(state.integratedLufs - (TARGET_LUFS[patch.target] ?? -14)).toFixed(1)} dB on streaming platforms.
+                        {(state.integratedLufs - (TARGET_LUFS[patch.target] ?? -14)).toFixed(1)} dB on streaming
+                        platforms.
                     </div>
                 ) : null}
             </div>
@@ -251,7 +498,11 @@ const Level2Shape = ({ state }: { state: ProofState }): ReactElement => {
             {/* Signal chain strip with inline meters */}
             <div className="flex items-center gap-1">
                 {/* Input meter */}
-                <MiniMeter peakL={state.tapPeaks[0]?.peakL ?? -100} peakR={state.tapPeaks[0]?.peakR ?? -100} label="IN" />
+                <MiniMeter
+                    peakL={state.tapPeaks[0]?.peakL ?? -100}
+                    peakR={state.tapPeaks[0]?.peakR ?? -100}
+                    label="IN"
+                />
 
                 {patch.chainOrder.map((moduleIdx, slot) => {
                     const bypassed = bypasses[moduleIdx] ?? false;
@@ -275,7 +526,10 @@ const Level2Shape = ({ state }: { state: ProofState }): ReactElement => {
                                 {label}
                             </button>
                             <div className="w-4 h-px bg-border/30" />
-                            <MiniMeter peakL={state.tapPeaks[tapIdx]?.peakL ?? -100} peakR={state.tapPeaks[tapIdx]?.peakR ?? -100} />
+                            <MiniMeter
+                                peakL={state.tapPeaks[tapIdx]?.peakL ?? -100}
+                                peakR={state.tapPeaks[tapIdx]?.peakR ?? -100}
+                            />
                         </div>
                     );
                 })}
@@ -283,29 +537,77 @@ const Level2Shape = ({ state }: { state: ProofState }): ReactElement => {
 
             {/* Primary knobs per module */}
             <div className="flex items-start justify-around flex-1 pt-2">
-                <KnobColumn label="EQ" sublabel="Output Gain" bypassed={patch.eqBypassed}
-                    value={0} onChange={() => {}} min={-12} max={12} unit="dB" color={MODULE_COLORS[0]!} />
-                <KnobColumn label="Dynamics" sublabel="Threshold" bypassed={patch.dynBypassed}
-                    value={patch.dynBands[0]?.threshold ?? -20} onChange={(v) => {
+                <KnobColumn
+                    label="EQ"
+                    sublabel="Output Gain"
+                    bypassed={patch.eqBypassed}
+                    value={0}
+                    onChange={() => {}}
+                    min={-12}
+                    max={12}
+                    unit="dB"
+                    color={MODULE_COLORS[0]!}
+                />
+                <KnobColumn
+                    label="Dynamics"
+                    sublabel="Threshold"
+                    bypassed={patch.dynBypassed}
+                    value={patch.dynBands[0]?.threshold ?? -20}
+                    onChange={(v) => {
                         const bands = [...patch.dynBands];
-                        bands.forEach((b) => b.threshold = v);
+                        bands.forEach((b) => (b.threshold = v));
                         setProofParamWithPatch('dynBands' as never, bands as never);
-                    }} min={-60} max={0} unit="dB" color={MODULE_COLORS[1]!} />
-                <KnobColumn label="Imager" sublabel="Width" bypassed={patch.imgBypassed}
-                    value={patch.imgBandWidth[2] ?? 1} onChange={(v) => {
+                    }}
+                    min={-60}
+                    max={0}
+                    unit="dB"
+                    color={MODULE_COLORS[1]!}
+                />
+                <KnobColumn
+                    label="Imager"
+                    sublabel="Width"
+                    bypassed={patch.imgBypassed}
+                    value={patch.imgBandWidth[2] ?? 1}
+                    onChange={(v) => {
                         const widths: [number, number, number, number] = [...patch.imgBandWidth];
-                        widths[2] = v; widths[3] = v;
+                        widths[2] = v;
+                        widths[3] = v;
                         setProofParamWithPatch('imgBandWidth', widths);
-                    }} min={0} max={2} unit="" color={MODULE_COLORS[2]!} />
-                <KnobColumn label="Exciter" sublabel="Drive" bypassed={patch.excBypassed}
-                    value={patch.excBands[1]?.drive ?? 0.2} onChange={(v) => {
+                    }}
+                    min={0}
+                    max={2}
+                    unit=""
+                    color={MODULE_COLORS[2]!}
+                />
+                <KnobColumn
+                    label="Exciter"
+                    sublabel="Drive"
+                    bypassed={patch.excBypassed}
+                    value={patch.excBands[1]?.drive ?? 0.2}
+                    onChange={(v) => {
                         const bands = [...patch.excBands];
-                        bands.forEach((b) => { b.drive = v; b.enabled = v > 0.01; });
+                        bands.forEach((b) => {
+                            b.drive = v;
+                            b.enabled = v > 0.01;
+                        });
                         setProofParamWithPatch('excBands' as never, bands as never);
-                    }} min={0} max={1} unit="" color={MODULE_COLORS[3]!} />
-                <KnobColumn label="Limiter" sublabel="Ceiling" bypassed={patch.limBypassed}
-                    value={patch.limCeiling} onChange={(v) => setProofParamWithPatch('limCeiling', v)}
-                    min={-12} max={0} unit="dBTP" color={MODULE_COLORS[4]!} />
+                    }}
+                    min={0}
+                    max={1}
+                    unit=""
+                    color={MODULE_COLORS[3]!}
+                />
+                <KnobColumn
+                    label="Limiter"
+                    sublabel="Ceiling"
+                    bypassed={patch.limBypassed}
+                    value={patch.limCeiling}
+                    onChange={(v) => setProofParamWithPatch('limCeiling', v)}
+                    min={-12}
+                    max={0}
+                    unit="dBTP"
+                    color={MODULE_COLORS[4]!}
+                />
             </div>
         </div>
     );
@@ -359,7 +661,9 @@ const Level3Build = ({ state }: { state: ProofState }): ReactElement => {
                     </div>
                     <div className="flex justify-between">
                         <span className="text-muted-foreground">True Peak</span>
-                        <span className={state.truePeakDb > -1 ? 'text-[var(--color-state-danger)]' : 'text-foreground'}>
+                        <span
+                            className={state.truePeakDb > -1 ? 'text-[var(--color-state-danger)]' : 'text-foreground'}
+                        >
                             {formatDb(state.truePeakDb)} dBTP
                         </span>
                     </div>
@@ -392,7 +696,9 @@ const Level4Route = ({ state }: { state: ProofState }): ReactElement => {
         <div className="flex-1 flex flex-col px-4 py-3 gap-4">
             {/* Chain reorder */}
             <div>
-                <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-wider mb-2 block">Signal Chain Order</span>
+                <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-wider mb-2 block">
+                    Signal Chain Order
+                </span>
                 <div className="flex items-center gap-1">
                     <span className="text-[7px] text-muted-foreground">IN</span>
                     <div className="w-4 h-px bg-border/30" />
@@ -431,7 +737,8 @@ const Level4Route = ({ state }: { state: ProofState }): ReactElement => {
 
             {/* Latency info */}
             <div className="flex items-center gap-4 text-[8px] text-muted-foreground">
-                <span>Reported latency: <span className="text-foreground font-mono">{state.latency} samples</span>
+                <span>
+                    Reported latency: <span className="text-foreground font-mono">{state.latency} samples</span>
                     {state.latency > 0 ? ` (${((state.latency / 44100) * 1000).toFixed(1)}ms)` : ''}
                 </span>
             </div>
@@ -441,18 +748,34 @@ const Level4Route = ({ state }: { state: ProofState }): ReactElement => {
                 <div className="flex flex-col items-center gap-1">
                     <span className="text-[8px] text-muted-foreground">Input Gain</span>
                     <RotaryKnob
-                        value={patch.inputGain} onChange={(v) => setProofParamWithPatch('inputGain', v)}
-                        min={-24} max={24} step={0.5} defaultValue={0} size="md"
+                        value={patch.inputGain}
+                        onChange={(v) => setProofParamWithPatch('inputGain', v)}
+                        min={-24}
+                        max={24}
+                        step={0.5}
+                        defaultValue={0}
+                        size="md"
                     />
-                    <span className="text-[7px] text-muted-foreground font-mono">{patch.inputGain > 0 ? '+' : ''}{patch.inputGain.toFixed(1)} dB</span>
+                    <span className="text-[7px] text-muted-foreground font-mono">
+                        {patch.inputGain > 0 ? '+' : ''}
+                        {patch.inputGain.toFixed(1)} dB
+                    </span>
                 </div>
                 <div className="flex flex-col items-center gap-1">
                     <span className="text-[8px] text-muted-foreground">Output Gain</span>
                     <RotaryKnob
-                        value={patch.outputGain} onChange={(v) => setProofParamWithPatch('outputGain', v)}
-                        min={-24} max={24} step={0.5} defaultValue={0} size="md"
+                        value={patch.outputGain}
+                        onChange={(v) => setProofParamWithPatch('outputGain', v)}
+                        min={-24}
+                        max={24}
+                        step={0.5}
+                        defaultValue={0}
+                        size="md"
                     />
-                    <span className="text-[7px] text-muted-foreground font-mono">{patch.outputGain > 0 ? '+' : ''}{patch.outputGain.toFixed(1)} dB</span>
+                    <span className="text-[7px] text-muted-foreground font-mono">
+                        {patch.outputGain > 0 ? '+' : ''}
+                        {patch.outputGain.toFixed(1)} dB
+                    </span>
                 </div>
             </div>
         </div>
@@ -473,7 +796,9 @@ const Level5Lab = ({ state }: { state: ProofState }): ReactElement => {
             <div className="flex-1 overflow-y-auto py-2 px-3 space-y-3">
                 {/* Loudness history */}
                 <div>
-                    <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-wider mb-1 block">Loudness History</span>
+                    <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-wider mb-1 block">
+                        Loudness History
+                    </span>
                     <LoudnessHistory
                         momentaryLufs={state.outputLufs}
                         targetLufs={targetLufs}
@@ -485,7 +810,9 @@ const Level5Lab = ({ state }: { state: ProofState }): ReactElement => {
 
                 {/* Tonal balance vs Harman target */}
                 <div>
-                    <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-wider mb-1 block">Tonal Balance</span>
+                    <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-wider mb-1 block">
+                        Tonal Balance
+                    </span>
                     <TonalBalance
                         fftData={fftData}
                         sampleRate={sampleRate}
@@ -501,20 +828,32 @@ const Level5Lab = ({ state }: { state: ProofState }): ReactElement => {
                     <MeterCard label="Momentary LUFS" value={formatLufs(state.outputLufs)} unit="LUFS" />
                     <MeterCard label="Short-term LUFS" value={formatLufs(state.outputStLufs)} unit="LUFS" />
                     <MeterCard label="Integrated LUFS" value={formatLufs(state.integratedLufs)} unit="LUFS" />
-                    <MeterCard label="True Peak" value={formatDb(state.truePeakDb)} unit="dBTP"
-                        alert={state.truePeakDb > -1} />
+                    <MeterCard
+                        label="True Peak"
+                        value={formatDb(state.truePeakDb)}
+                        unit="dBTP"
+                        alert={state.truePeakDb > -1}
+                    />
                     <MeterCard label="LRA" value={state.lra.toFixed(1)} unit="LU" />
-                    <MeterCard label="Correlation" value={state.correlation.toFixed(2)} unit=""
-                        alert={state.correlation < 0.3} />
+                    <MeterCard
+                        label="Correlation"
+                        value={state.correlation.toFixed(2)}
+                        unit=""
+                        alert={state.correlation < 0.3}
+                    />
                 </div>
 
                 {/* Platform normalization info */}
                 {delta > 1 ? (
                     <div className="px-3 py-2 rounded bg-[var(--color-accent-peach)]/10 border border-[var(--color-accent-peach)]/20 text-[9px] text-[var(--color-accent-peach)]">
-                        Your master at {formatLufs(state.integratedLufs)} LUFS will be turned down by {delta.toFixed(1)} dB on
-                        {patch.target === 'streaming' ? ' Spotify, Apple Music, and YouTube' :
-                         patch.target === 'broadcast' ? ' broadcast television' :
-                         ` ${patch.target}`}. Consider targeting {targetLufs} LUFS.
+                        Your master at {formatLufs(state.integratedLufs)} LUFS will be turned down by {delta.toFixed(1)}{' '}
+                        dB on
+                        {patch.target === 'streaming'
+                            ? ' Spotify, Apple Music, and YouTube'
+                            : patch.target === 'broadcast'
+                              ? ' broadcast television'
+                              : ` ${patch.target}`}
+                        . Consider targeting {targetLufs} LUFS.
                     </div>
                 ) : null}
 
@@ -543,10 +882,12 @@ const Level5Lab = ({ state }: { state: ProofState }): ReactElement => {
                 </div>
                 <div className="w-full h-px bg-border/20" />
                 <div className="text-center">
-                    <span className="text-[7px] text-muted-foreground uppercase tracking-wider block mb-1">Gain Applied</span>
+                    <span className="text-[7px] text-muted-foreground uppercase tracking-wider block mb-1">
+                        Gain Applied
+                    </span>
                     <span className="text-sm font-mono text-foreground">
                         {state.outputLufs > -100 && state.inputLufs > -100
-                            ? `${(state.outputLufs - state.inputLufs) > 0 ? '+' : ''}${(state.outputLufs - state.inputLufs).toFixed(1)}`
+                            ? `${state.outputLufs - state.inputLufs > 0 ? '+' : ''}${(state.outputLufs - state.inputLufs).toFixed(1)}`
                             : '—'}
                     </span>
                     <span className="text-[7px] text-muted-foreground block">dB</span>
@@ -556,7 +897,17 @@ const Level5Lab = ({ state }: { state: ProofState }): ReactElement => {
     );
 };
 
-const MeterCard = ({ label, value, unit, alert }: { label: string; value: string; unit: string; alert?: boolean }): ReactElement => (
+const MeterCard = ({
+    label,
+    value,
+    unit,
+    alert,
+}: {
+    label: string;
+    value: string;
+    unit: string;
+    alert?: boolean;
+}): ReactElement => (
     <div
         className="px-2 py-1.5 rounded"
         style={{
@@ -567,7 +918,9 @@ const MeterCard = ({ label, value, unit, alert }: { label: string; value: string
         }}
     >
         <span className="text-[7px] text-muted-foreground block">{label}</span>
-        <span className={`text-sm font-mono ${alert ? 'text-[var(--color-state-danger)]' : 'text-foreground'}`}>{value}</span>
+        <span className={`text-sm font-mono ${alert ? 'text-[var(--color-state-danger)]' : 'text-foreground'}`}>
+            {value}
+        </span>
         {unit ? <span className="text-[7px] text-muted-foreground ml-1">{unit}</span> : null}
     </div>
 );
@@ -601,17 +954,36 @@ const MiniMeter = ({ peakL, peakR, label }: { peakL: number; peakR: number; labe
     );
 };
 
-const KnobColumn = ({ label, sublabel, bypassed, value, onChange, min, max, unit, color }: {
-    label: string; sublabel: string; bypassed: boolean;
-    value: number; onChange: (v: number) => void;
-    min: number; max: number; unit: string; color: string;
+const KnobColumn = ({
+    label,
+    sublabel,
+    bypassed,
+    value,
+    onChange,
+    min,
+    max,
+    unit,
+    color,
+}: {
+    label: string;
+    sublabel: string;
+    bypassed: boolean;
+    value: number;
+    onChange: (v: number) => void;
+    min: number;
+    max: number;
+    unit: string;
+    color: string;
 }): ReactElement => (
     <div className={`flex flex-col items-center gap-1 ${bypassed ? 'opacity-30' : ''}`}>
-        <span className="text-[8px] font-bold uppercase tracking-wider" style={{ color }}>{label}</span>
+        <span className="text-[8px] font-bold uppercase tracking-wider" style={{ color }}>
+            {label}
+        </span>
         <RotaryKnob value={value} onChange={onChange} min={min} max={max} step={0.1} defaultValue={value} size="md" />
         <span className="text-[7px] text-muted-foreground">{sublabel}</span>
         <span className="text-[7px] text-muted-foreground/50 font-mono">
-            {value.toFixed(1)}{unit ? ` ${unit}` : ''}
+            {value.toFixed(1)}
+            {unit ? ` ${unit}` : ''}
         </span>
     </div>
 );

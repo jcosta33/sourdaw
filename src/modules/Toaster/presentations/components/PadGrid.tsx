@@ -1,9 +1,4 @@
-/**
- * Pad Grid — 4×4 interactive pads.
- * Each pad shows: name, engine type, color accent, and flashes on trigger.
- * Click to select. Click+hold or mousedown to trigger (play the sound).
- */
-import { type ReactElement, useCallback, useState, useEffect, useRef } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { type PadState } from '../../models/ToasterKit';
 
 type PadGridProps = {
@@ -17,79 +12,106 @@ export const PadGrid = ({ pads, selectedIndex, onSelectPad, onTriggerPad }: PadG
     const [flashingPads, setFlashingPads] = useState<Set<number>>(new Set());
     const flashTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
 
-    const triggerFlash = useCallback((index: number) => {
-        setFlashingPads((prev) => new Set(prev).add(index));
-        const existing = flashTimers.current.get(index);
-        if (existing) { clearTimeout(existing); }
-        flashTimers.current.set(index, setTimeout(() => {
-            setFlashingPads((prev) => {
-                const next = new Set(prev);
-                next.delete(index);
-                return next;
-            });
-            flashTimers.current.delete(index);
-        }, 120));
-    }, []);
+    function triggerFlash(index: number): void {
+        setFlashingPads((previous) => new Set(previous).add(index));
+        const existingTimer = flashTimers.current.get(index);
+        if (existingTimer) {
+            clearTimeout(existingTimer);
+        }
+
+        flashTimers.current.set(
+            index,
+            setTimeout(() => {
+                setFlashingPads((previous) => {
+                    const next = new Set(previous);
+                    next.delete(index);
+                    return next;
+                });
+                flashTimers.current.delete(index);
+            }, 120)
+        );
+    }
 
     useEffect(() => {
         return () => {
-            for (const timer of flashTimers.current.values()) { clearTimeout(timer); }
+            for (const timer of flashTimers.current.values()) {
+                clearTimeout(timer);
+            }
         };
     }, []);
 
     return (
-        <div className="grid grid-cols-4 gap-[3px]">
-            {pads.slice(0, 16).map((pad, i) => {
-                const isSelected = i === selectedIndex;
-                const isFlashing = flashingPads.has(i);
+        <div className="grid grid-cols-4 gap-1.5">
+            {pads.slice(0, 16).map((pad, index) => {
+                const isSelected = index === selectedIndex;
+                const isFlashing = flashingPads.has(index);
+                const baseGlow = isSelected ? `${pad.color}55` : `${pad.color}22`;
 
                 return (
                     <button
                         key={pad.id}
                         type="button"
-                        className="relative flex flex-col items-center justify-center rounded transition-all aspect-square select-none"
+                        className="relative aspect-square rounded-[16px] border transition-all select-none"
                         style={{
-                            backgroundColor: isFlashing
-                                ? pad.color
-                                : isSelected
-                                    ? `${pad.color}30`
-                                    : `${pad.color}12`,
-                            boxShadow: isSelected ? `inset 0 0 0 1.5px ${pad.color}60` : 'none',
-                            transform: isFlashing ? 'scale(0.95)' : 'scale(1)',
+                            background: isFlashing
+                                ? `linear-gradient(180deg, ${pad.color}, rgba(255,255,255,0.16))`
+                                : `linear-gradient(180deg, ${pad.color}26, rgba(0,0,0,0.18))`,
+                            borderColor: isSelected ? `${pad.color}88` : `${pad.color}33`,
+                            boxShadow: isSelected
+                                ? `inset 0 1px 0 rgba(255,255,255,0.12), 0 0 22px ${baseGlow}`
+                                : `inset 0 1px 0 rgba(255,255,255,0.08), 0 0 12px ${pad.color}12`,
+                            transform: isFlashing ? 'scale(0.97)' : 'scale(1)',
                         }}
-                        onClick={() => onSelectPad(i)}
-                        onMouseDown={(e) => {
-                            if (e.button === 0) {
-                                onTriggerPad(i);
-                                triggerFlash(i);
+                        onClick={() => onSelectPad(index)}
+                        onMouseDown={(event) => {
+                            if (event.button === 0) {
+                                onTriggerPad(index);
+                                triggerFlash(index);
                             }
                         }}
                     >
-                        {/* Pad name */}
-                        <span
-                            className="text-[8px] font-semibold leading-tight truncate w-full text-center px-0.5"
-                            style={{ color: isFlashing ? '#fff' : `${pad.color}cc` }}
-                        >
-                            {pad.name}
-                        </span>
+                        <div className="absolute inset-[1px] rounded-[14px] bg-black/30" />
+                        <div className="relative z-10 flex h-full flex-col justify-between px-2 py-2">
+                            <div className="flex items-start justify-between gap-2">
+                                <span
+                                    className="text-[10px] font-semibold leading-tight tracking-[0.02em]"
+                                    style={{ color: isFlashing ? '#fff' : `${pad.color}ee` }}
+                                >
+                                    {pad.name}
+                                </span>
+                                {pad.chokeGroup > 0 ? (
+                                    <span
+                                        className="rounded-full border px-1 py-0.5 text-[7px] font-medium text-white/55"
+                                        style={{ borderColor: `${pad.color}55` }}
+                                    >
+                                        C{pad.chokeGroup}
+                                    </span>
+                                ) : null}
+                            </div>
 
-                        {/* Engine type hint */}
-                        <span className="text-[6px] text-muted-foreground/40 leading-tight">
-                            {pad.engineType.replace(/^(kick|snare|hihat|modal)-/, '').slice(0, 6)}
-                        </span>
+                            <div className="space-y-1">
+                                <div className="flex items-center justify-between gap-2 text-[7px] uppercase tracking-[0.18em] text-white/45">
+                                    <span>{pad.engineType.replace(/^(kick|snare|hihat|modal)-/, '').slice(0, 8)}</span>
+                                    <span>{Math.round(pad.volume * 100)}%</span>
+                                </div>
+                                <div className="h-1.5 rounded-full bg-white/8">
+                                    <div
+                                        className="h-full rounded-full"
+                                        style={{
+                                            width: `${Math.round(pad.volume * 100)}%`,
+                                            backgroundColor: pad.color,
+                                            opacity: isFlashing ? 1 : 0.85,
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                        </div>
 
-                        {/* Choke group indicator */}
-                        {pad.chokeGroup > 0 ? (
-                            <div
-                                className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full border"
-                                style={{ borderColor: `${pad.color}50` }}
-                            />
-                        ) : null}
-
-                        {/* Muted overlay */}
                         {pad.muted ? (
-                            <div className="absolute inset-0 rounded bg-black/50 flex items-center justify-center">
-                                <span className="text-[7px] font-bold text-white/50">M</span>
+                            <div className="absolute inset-0 z-20 flex items-center justify-center rounded-[16px] bg-black/56">
+                                <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/55">
+                                    Mute
+                                </span>
                             </div>
                         ) : null}
                     </button>

@@ -1,110 +1,134 @@
-/**
- * XY Pad — two-axis performance controller.
- * Maps X/Y position to two macro parameters for expressive real-time control.
- * Sits alongside the macro strip in the Play level.
- */
-import { type ReactElement, useRef, useCallback, useEffect } from 'react';
+import { type ReactElement, useEffect, useRef } from 'react';
 
 type XYPadProps = {
-    xValue: number;  // 0-1
-    yValue: number;  // 0-1
+    xValue: number;
+    yValue: number;
     xLabel?: string;
     yLabel?: string;
-    onXChange: (v: number) => void;
-    onYChange: (v: number) => void;
+    onXChange: (value: number) => void;
+    onYChange: (value: number) => void;
     size?: number;
 };
 
 export const XYPad = ({
-    xValue, yValue, xLabel = 'X', yLabel = 'Y',
-    onXChange, onYChange, size = 120,
+    xValue,
+    yValue,
+    xLabel = 'X',
+    yLabel = 'Y',
+    onXChange,
+    onYChange,
+    size = 120,
 }: XYPadProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const draggingRef = useRef(false);
 
-    const handlePointer = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
-        const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
-        const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-        const y = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top) / rect.height)); // invert Y
-        onXChange(x);
-        onYChange(y);
-    }, [onXChange, onYChange]);
+    function updateFromPointer(event: React.PointerEvent<HTMLCanvasElement>): void {
+        const rect = event.currentTarget.getBoundingClientRect();
+        const nextX = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+        const nextY = Math.max(0, Math.min(1, 1 - (event.clientY - rect.top) / rect.height));
+
+        onXChange(nextX);
+        onYChange(nextY);
+    }
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        if (!canvas) {
+            return;
+        }
+
+        const context = canvas.getContext('2d');
+        if (!context) {
+            return;
+        }
 
         const dpr = window.devicePixelRatio || 1;
-        // Always reset canvas dimensions — this also clears the context transform
         canvas.width = size * dpr;
         canvas.height = size * dpr;
-        // Reset transform before scaling to prevent accumulation across renders
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.scale(dpr, dpr);
 
-        // Background
-        ctx.fillStyle = 'rgba(0,0,0,0.3)';
-        ctx.fillRect(0, 0, size, size);
+        context.setTransform(1, 0, 0, 1, 0, 0);
+        context.scale(dpr, dpr);
+        context.clearRect(0, 0, size, size);
 
-        // Grid
-        ctx.strokeStyle = 'rgba(255,255,255,0.05)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(size / 2, 0); ctx.lineTo(size / 2, size);
-        ctx.moveTo(0, size / 2); ctx.lineTo(size, size / 2);
-        ctx.stroke();
+        const background = context.createLinearGradient(0, 0, size, size);
+        background.addColorStop(0, 'rgba(127,184,196,0.12)');
+        background.addColorStop(0.5, 'rgba(10,10,14,0.94)');
+        background.addColorStop(1, 'rgba(196,170,95,0.12)');
+        context.fillStyle = background;
+        context.fillRect(0, 0, size, size);
 
-        // Axis labels
-        ctx.font = '7px system-ui';
-        ctx.fillStyle = 'rgba(255,255,255,0.2)';
-        ctx.textAlign = 'center';
-        ctx.fillText(xLabel, size / 2, size - 3);
-        ctx.save();
-        ctx.translate(8, size / 2);
-        ctx.rotate(-Math.PI / 2);
-        ctx.fillText(yLabel, 0, 0);
-        ctx.restore();
+        context.strokeStyle = 'rgba(255,255,255,0.05)';
+        context.lineWidth = 1;
+        for (let index = 1; index < 4; index += 1) {
+            const offset = (index / 4) * size;
+            context.beginPath();
+            context.moveTo(offset, 0);
+            context.lineTo(offset, size);
+            context.moveTo(0, offset);
+            context.lineTo(size, offset);
+            context.stroke();
+        }
 
-        // Puck position (Y inverted for screen coords)
-        const px = xValue * size;
-        const py = (1 - yValue) * size;
+        const puckX = xValue * size;
+        const puckY = (1 - yValue) * size;
 
-        // Crosshairs
-        ctx.strokeStyle = 'rgba(168, 130, 255, 0.2)';
-        ctx.beginPath();
-        ctx.moveTo(px, 0); ctx.lineTo(px, size);
-        ctx.moveTo(0, py); ctx.lineTo(size, py);
-        ctx.stroke();
+        context.strokeStyle = 'rgba(127,184,196,0.2)';
+        context.beginPath();
+        context.moveTo(puckX, 0);
+        context.lineTo(puckX, size);
+        context.moveTo(0, puckY);
+        context.lineTo(size, puckY);
+        context.stroke();
 
-        // Glow
-        const glow = ctx.createRadialGradient(px, py, 0, px, py, 15);
-        glow.addColorStop(0, 'rgba(168, 130, 255, 0.4)');
-        glow.addColorStop(1, 'rgba(168, 130, 255, 0)');
-        ctx.fillStyle = glow;
-        ctx.fillRect(px - 15, py - 15, 30, 30);
+        const glow = context.createRadialGradient(puckX, puckY, 0, puckX, puckY, 18);
+        glow.addColorStop(0, 'rgba(127,184,196,0.35)');
+        glow.addColorStop(1, 'rgba(127,184,196,0)');
+        context.fillStyle = glow;
+        context.fillRect(puckX - 18, puckY - 18, 36, 36);
 
-        // Dot
-        ctx.fillStyle = '#A882FF';
-        ctx.beginPath();
-        ctx.arc(px, py, 4, 0, Math.PI * 2);
-        ctx.fill();
-    }, [xValue, yValue, xLabel, yLabel, size]);
+        context.fillStyle = '#7fb8c4';
+        context.beginPath();
+        context.arc(puckX, puckY, 4.5, 0, Math.PI * 2);
+        context.fill();
+
+        context.font = '8px system-ui';
+        context.fillStyle = 'rgba(255,255,255,0.25)';
+        context.textAlign = 'center';
+        context.fillText(xLabel, size / 2, size - 4);
+
+        context.save();
+        context.translate(10, size / 2);
+        context.rotate(-Math.PI / 2);
+        context.fillText(yLabel, 0, 0);
+        context.restore();
+    }, [size, xLabel, xValue, yLabel, yValue]);
 
     return (
         <canvas
             ref={canvasRef}
-            style={{ width: size, height: size, cursor: draggingRef.current ? 'grabbing' : 'grab', touchAction: 'none' }}
-            className="rounded-lg border border-border/30"
-            onPointerDown={(e) => {
-                draggingRef.current = true;
-                (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
-                handlePointer(e);
+            className="rounded-[16px] border border-white/8"
+            style={{
+                width: size,
+                height: size,
+                cursor: draggingRef.current ? 'grabbing' : 'grab',
+                touchAction: 'none',
             }}
-            onPointerMove={(e) => { if (draggingRef.current) handlePointer(e); }}
-            onPointerUp={() => { draggingRef.current = false; }}
-            onPointerCancel={() => { draggingRef.current = false; }}
+            onPointerDown={(event) => {
+                draggingRef.current = true;
+                event.currentTarget.setPointerCapture(event.pointerId);
+                updateFromPointer(event);
+            }}
+            onPointerMove={(event) => {
+                if (draggingRef.current) {
+                    updateFromPointer(event);
+                }
+            }}
+            onPointerUp={() => {
+                draggingRef.current = false;
+            }}
+            onPointerCancel={() => {
+                draggingRef.current = false;
+            }}
         />
     );
 };

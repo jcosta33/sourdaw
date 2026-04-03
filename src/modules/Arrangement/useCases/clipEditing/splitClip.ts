@@ -38,6 +38,7 @@ export function splitClip(clipId: string, splitBeat: number): void {
                 endBeat: clip.endBeat,
                 fadeInBeats: 0,
                 fadeOutBeats: clip.fadeOutBeats,
+                audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (adjustedSplitBeat - clip.startBeat),
             };
 
             return {

@@ -107,6 +107,8 @@ pub struct GlutenEngine {
     lr_product_accum: f32,
     l_sq_accum: f32,
     r_sq_accum: f32,
+    current_threshold: f32,
+    current_ratio: f32,
 }
 
 impl GlutenEngine {
@@ -147,8 +149,8 @@ impl GlutenEngine {
             bypassed: false,
             delta_listen: false,
             ext_sidechain: false,
-            ext_sc_left: Vec::new(),
-            ext_sc_right: Vec::new(),
+            ext_sc_left: Vec::with_capacity(4096),
+            ext_sc_right: Vec::with_capacity(4096),
             gain_match_bypass: false,
             input_loudness: 0.0,
             output_loudness: 0.0,
@@ -167,6 +169,8 @@ impl GlutenEngine {
             lr_product_accum: 0.0,
             l_sq_accum: 0.0,
             r_sq_accum: 0.0,
+            current_threshold: -18.0,
+            current_ratio: 4.0,
         }
     }
 
@@ -280,6 +284,11 @@ impl GlutenEngine {
 
             // Forward all other params to active topology
             _ => {
+                if name == "threshold" {
+                    self.current_threshold = value;
+                } else if name == "ratio" {
+                    self.current_ratio = value;
+                }
                 self.vca.set_param(name, value);
                 self.opto.set_param(name, value);
                 self.fet.set_param(name, value);
@@ -329,10 +338,11 @@ impl GlutenEngine {
     /// Set external sidechain input for the next process_block call.
     pub fn set_ext_sc(&mut self, sc_left: &[f32], sc_right: &[f32]) {
         // Store in temp fields — used by process_block when ext_sidechain is true
-        self.ext_sc_left.clear();
-        self.ext_sc_left.extend_from_slice(sc_left);
-        self.ext_sc_right.clear();
-        self.ext_sc_right.extend_from_slice(sc_right);
+        let len_l = sc_left.len().min(self.ext_sc_left.len());
+        self.ext_sc_left[..len_l].copy_from_slice(&sc_left[..len_l]);
+        
+        let len_r = sc_right.len().min(self.ext_sc_right.len());
+        self.ext_sc_right[..len_r].copy_from_slice(&sc_right[..len_r]);
     }
 
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32]) {
@@ -395,20 +405,26 @@ impl GlutenEngine {
             );
 
             // Process through active topology.
-            // Feed-forward topologies (Diode) use the sidechain-filtered signal
-            // for detection. Feedback topologies (VCA, Opto, FET) detect from
-            // their own previous output, so sidechain filtering has limited effect
-            // on them — this matches hardware behavior where the sidechain filter
-            // is most impactful on feed-forward designs.
+            let (topo_l, topo_r) = match self.stereo_mode {
+                StereoMode::Mid => (delayed_l, 0.0),
+                StereoMode::Side => (0.0, delayed_r),
+                _ => (delayed_l, delayed_r),
+            };
+            let (sc_topo_l, sc_topo_r) = match self.stereo_mode {
+                StereoMode::Mid => (sc_l, 0.0),
+                StereoMode::Side => (0.0, sc_r),
+                _ => (sc_l, sc_r),
+            };
+
             // Primary topology
             let (mut wet_l, mut wet_r, gr_db) =
-                self.process_topology(self.active_topology, delayed_l, delayed_r, sc_l, sc_r);
+                self.process_topology(self.active_topology, topo_l, topo_r, sc_topo_l, sc_topo_r);
 
             // Dual-stage serial routing (Shadow Hills style)
             // Second topology processes the output of the first
             if self.blend_amount > 0.001 && self.blend_topology != self.active_topology {
                 let (s2_l, s2_r, gr2) =
-                    self.process_topology(self.blend_topology, wet_l, wet_r, sc_l, sc_r);
+                    self.process_topology(self.blend_topology, wet_l, wet_r, sc_topo_l, sc_topo_r);
                 // Crossfade between single and dual-stage
                 let b = self.blend_amount;
                 wet_l = wet_l * (1.0 - b) + s2_l * b;
@@ -437,8 +453,8 @@ impl GlutenEngine {
 
             // M/S decode if needed
             let (out_l, out_r) = match self.stereo_mode {
-                StereoMode::Mid => decode_ms(mixed_l, 0.0),  // mid only
-                StereoMode::Side => decode_ms(0.0, mixed_r), // side only
+                StereoMode::Mid => decode_ms(mixed_l, delayed_r),
+                StereoMode::Side => decode_ms(delayed_l, mixed_r),
                 _ => (mixed_l, mixed_r),
             };
 
@@ -526,12 +542,7 @@ impl GlutenEngine {
     }
 
     fn compute_auto_makeup(&self) -> f32 {
-        match self.active_topology {
-            Topology::Vca => auto_makeup(-18.0, 4.0),
-            Topology::Opto => auto_makeup(-20.0, 3.0),
-            Topology::Fet => auto_makeup(-24.0, 4.0),
-            Topology::Diode => auto_makeup(-16.0, 2.0),
-        }
+        auto_makeup(self.current_threshold, self.current_ratio)
     }
 
     pub fn current_gr_db(&self) -> f32 {

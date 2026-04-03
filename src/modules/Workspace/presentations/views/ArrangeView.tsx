@@ -1,10 +1,10 @@
-import { type ReactElement, type DragEvent, useSyncExternalStore, useState, useRef, useEffect } from 'react';
+import { type ReactElement, type MouseEvent as ReactMouseEvent, type DragEvent, useSyncExternalStore, useState, useRef, useEffect } from 'react';
 import { TimelineSurface } from '#/modules/Arrangement/presentations/views/TimelineSurface';
 import { TimelineMinimap } from '#/modules/Arrangement/presentations/views/TimelineMinimap';
 import { ArrangementBar } from '#/modules/Arrangement/presentations/views/ArrangementBar';
 import { MarkerLane } from '#/modules/Arrangement/presentations/views/MarkerLane';
 import { BeatRulerBar } from '#/modules/Arrangement/presentations/views/BeatRulerBar';
-import { timelineViewStore } from '#/modules/Arrangement/stores/timelineViewStore';
+import { timelineViewStore, setScrollX } from '#/modules/Arrangement/stores/timelineViewStore';
 import { TrackListView } from '#/modules/Arrangement/presentations/views/TrackListView';
 import { useTracks } from '../hooks/useTracks';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
@@ -32,8 +32,12 @@ export const ArrangeView = (): ReactElement => {
     const { tracks } = useTracks();
     const { trackListOpen, trackListWidth, scratchPadOpen, scratchPadHeight } = useWorkspaceState();
 
+    const hasUserTracks = tracks.filter((t) => t.kind !== 'master' && t.kind !== 'folder').length > 0;
+
     const [localTrackListWidth, setLocalTrackListWidth] = useState(trackListWidth);
     const trackListWidthRef = useRef(localTrackListWidth);
+    const timelineContainerRef = useRef<HTMLDivElement>(null);
+    const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
 
     useEffect(() => {
         setLocalTrackListWidth(trackListWidth);
@@ -50,6 +54,19 @@ export const ArrangeView = (): ReactElement => {
     const handleTrackListResizeEnd = (): void => {
         setTrackListWidth(trackListWidthRef.current);
     };
+
+    useEffect(() => {
+        const el = timelineContainerRef.current;
+        if (!el) return;
+        const observer = new ResizeObserver(() => {
+            setViewportWidth(el.clientWidth);
+        });
+        observer.observe(el);
+        setViewportWidth(el.clientWidth);
+        return () => observer.disconnect();
+        // Re-run when hasUserTracks flips so the observer attaches once the
+        // timeline container div is mounted (absent during the empty-state path).
+    }, [hasUserTracks]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const viewState = useSyncExternalStore(
         (cb) => timelineViewStore.subscribe(() => cb()),
@@ -73,8 +90,6 @@ export const ArrangeView = (): ReactElement => {
     const hasChords = (chordState?.events.length ?? 0) > 0 || (chordState?.enabled ?? false);
     const pixelsPerBeat = viewState?.pixelsPerBeat ?? 12;
     const scrollX = viewState?.scrollX ?? 0;
-
-    const hasUserTracks = tracks.filter((t) => t.kind !== 'master' && t.kind !== 'folder').length > 0;
 
     // Welcome screen — clean, no timeline chrome
     if (!hasUserTracks) {
@@ -100,18 +115,96 @@ export const ArrangeView = (): ReactElement => {
                     />
                 </>
             ) : null}
-            <div className="flex flex-1 flex-col overflow-hidden relative">
+            <div ref={timelineContainerRef} className="flex flex-1 flex-col overflow-hidden relative">
                 <ArrangementBar pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} />
                 {hasMarkers ? <MarkerLane pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} /> : null}
                 <TimelineMinimap />
                 <BeatRulerBar />
                 {hasChords ? <ChordTrackLane pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} /> : null}
                 <TimelineSurface />
+                <TimelineHScrollbar
+                    scrollX={scrollX}
+                    pixelsPerBeat={pixelsPerBeat}
+                    tracks={tracks}
+                    viewportWidth={viewportWidth}
+                />
                 {scratchPadOpen ? <ScratchPadView height={scratchPadHeight} onToggle={closeScratchPad} /> : null}
             </div>
         </div>
     );
-};const EmptyArrangeOverlay = (): ReactElement => {
+};
+
+type HScrollbarTrack = { clips: { endBeat: number }[] };
+
+const TimelineHScrollbar = ({
+    scrollX,
+    pixelsPerBeat,
+    tracks,
+    viewportWidth,
+}: {
+    scrollX: number;
+    pixelsPerBeat: number;
+    tracks: HScrollbarTrack[];
+    viewportWidth: number;
+}): ReactElement | null => {
+    const maxEndBeat = tracks.reduce((max, t) => {
+        const trackMax = t.clips.reduce((m, c) => (c.endBeat > m ? c.endBeat : m), max);
+        return trackMax;
+    }, 256);
+    const totalContentWidth = maxEndBeat * pixelsPerBeat;
+
+    // Only show when content actually overflows the viewport
+    if (totalContentWidth <= viewportWidth) {
+        return null;
+    }
+
+    const maxScrollX = totalContentWidth - viewportWidth;
+    const thumbWidth = Math.max(40, (viewportWidth / totalContentWidth) * viewportWidth);
+    const trackWidth = viewportWidth - thumbWidth;
+    const thumbLeft = Math.min(trackWidth, maxScrollX > 0 ? (scrollX / maxScrollX) * trackWidth : 0);
+
+    const handleMouseDown = (e: ReactMouseEvent<HTMLDivElement>): void => {
+        e.preventDefault();
+        const startClientX = e.clientX;
+        const startScrollX = scrollX;
+
+        const onMouseMove = (ev: MouseEvent): void => {
+            const delta = ev.clientX - startClientX;
+            const scrollDelta = trackWidth > 0 ? (delta / trackWidth) * maxScrollX : 0;
+            setScrollX(Math.max(0, Math.min(maxScrollX, startScrollX + scrollDelta)));
+        };
+
+        const onMouseUp = (): void => {
+            window.removeEventListener('mousemove', onMouseMove);
+            window.removeEventListener('mouseup', onMouseUp);
+        };
+
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onMouseUp);
+    };
+
+    return (
+        <div
+            className="relative shrink-0 select-none"
+            style={{ height: 10, background: 'rgba(0,0,0,0.25)' }}
+        >
+            <div
+                className="absolute rounded-full"
+                style={{
+                    top: 2,
+                    bottom: 2,
+                    left: thumbLeft,
+                    width: thumbWidth,
+                    background: 'rgba(255,255,255,0.14)',
+                    cursor: 'grab',
+                }}
+                onMouseDown={handleMouseDown}
+            />
+        </div>
+    );
+};
+
+const EmptyArrangeOverlay = (): ReactElement => {
     const [isDragOver, setIsDragOver] = useState(false);
 
     const handleDrop = async (e: DragEvent<HTMLDivElement>): Promise<void> => {

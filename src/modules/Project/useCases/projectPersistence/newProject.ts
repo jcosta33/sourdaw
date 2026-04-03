@@ -16,6 +16,9 @@ import { addTrack as addTrackUseCase } from '#/modules/Arrangement/useCases/addT
 import { clearUndoHistory } from './helpers';
 
 import { createCrdtProject } from '#/modules/CrdtDocument/useCases/crdtProjectLifecycle';
+import { startCrdtAutoSave } from '#/modules/CrdtDocument/useCases/startCrdtAutoSave';
+
+let stopAutoSave: (() => void) | null = null;
 
 export function newProject(name = 'Untitled Project'): void {
     // 1. Initialize CRDT Document structure so subsequent .set() calls persist
@@ -65,4 +68,10 @@ export function newProject(name = 'Untitled Project'): void {
     removeProjectJson();
     audioBufferCache.clear();
     clearUndoHistory();
+
+    // Start debounced incremental auto-save for the new project.
+    if (stopAutoSave) {
+        stopAutoSave();
+    }
+    stopAutoSave = startCrdtAutoSave();
 }

@@ -7,7 +7,7 @@
  * Level 4 (Route):  Keyboard split zones, CC routing
  * Level 5 (Lab):    Euclidean, Markov, mutation, groove template
  */
-import { type ReactElement, useSyncExternalStore, useState } from 'react';
+import { type ReactElement, useState, useSyncExternalStore } from 'react';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import {
     yeastStore,
@@ -24,71 +24,259 @@ import { StepPatternEditor } from '../components/StepPatternEditor';
 import { KeyboardSplit } from '../components/KeyboardSplit';
 import { createDefaultPattern, type ArpStep } from '../../models/ArpPattern';
 
+const LEVEL_OPTIONS = [
+    { level: 1 as const, label: 'Play', detail: 'Sprout' },
+    { level: 2 as const, label: 'Shape', detail: 'Drift' },
+    { level: 3 as const, label: 'Build', detail: 'Rack' },
+    { level: 4 as const, label: 'Route', detail: 'Split' },
+    { level: 5 as const, label: 'Lab', detail: 'Mutate' },
+];
+
+const MetricTile = ({ label, value, detail }: { label: string; value: string; detail: string }): ReactElement => (
+    <div className="yeast-window flex min-w-[92px] flex-col gap-1 px-3 py-2">
+        <span className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">{label}</span>
+        <span className="font-mono text-[13px] text-foreground">{value}</span>
+        <span className="text-[9px] leading-4 text-muted-foreground/55">{detail}</span>
+    </div>
+);
+
+const SideCard = ({
+    title,
+    detail,
+    children,
+}: {
+    title: string;
+    detail?: string;
+    children: ReactElement | ReactElement[];
+}): ReactElement => (
+    <section className="yeast-window flex flex-col gap-3 p-3">
+        <div className="space-y-1">
+            <div className="text-[8px] font-semibold uppercase tracking-[0.24em] text-[var(--color-accent-peach)]/70">
+                {title}
+            </div>
+            {detail ? <span className="sr-only">{detail}</span> : null}
+        </div>
+        {children}
+    </section>
+);
+
+function getLevelMeta(level: YeastState['uiLevel']): { title: string; description: string } {
+    if (level === 1) {
+        return {
+            title: 'Note flow',
+            description: 'Immediate arp moves, latch, and rate stay right under the phrase view.',
+        };
+    }
+
+    if (level === 2) {
+        return {
+            title: 'Phrase shape',
+            description: 'Gate, swing, spread, and velocity should feel like motion, not raw values.',
+        };
+    }
+
+    if (level === 3) {
+        return {
+            title: 'Rack build',
+            description: 'The transform chain stays musical while you add, remove, or open modules.',
+        };
+    }
+
+    if (level === 4) {
+        return {
+            title: 'Split map',
+            description: 'Zones and routes belong in the same frame as the note motion they control.',
+        };
+    }
+
+    return {
+        title: 'Pattern lab',
+        description: 'Mutation, Markov, Euclid, and groove templates live in the strange corner on purpose.',
+    };
+}
+
+function renderDeck(state: YeastState): ReactElement {
+    if (state.uiLevel === 1) {
+        return <Level1Play state={state} />;
+    }
+
+    if (state.uiLevel === 2) {
+        return <Level2Shape state={state} />;
+    }
+
+    if (state.uiLevel === 3) {
+        return <Level3Build state={state} />;
+    }
+
+    if (state.uiLevel === 4) {
+        return <Level4Route state={state} />;
+    }
+
+    return <Level5Lab state={state} />;
+}
+
+const NoteFlowHero = ({ state }: { state: YeastState }): ReactElement => {
+    const laneCount = Math.max(3, Math.min(7, state.processors.length + 2));
+
+    return (
+        <div className="yeast-window flex flex-col gap-3 p-3">
+            <div className="flex items-center justify-between gap-3">
+                <div>
+                    <div className="text-[10px] font-medium text-foreground">Phrase view</div>
+                    <div className="text-[9px] text-muted-foreground">
+                        A quick motion sketch for whatever the rack is doing right now.
+                    </div>
+                </div>
+                <div className="yeast-led">{state.processors.length} modules</div>
+            </div>
+
+            <div className="space-y-2">
+                {Array.from({ length: laneCount }, (_, index) => {
+                    const width = 24 + ((index * 17 + state.uiLevel * 11) % 68);
+                    const offset = (index * 9 + state.uiLevel * 7) % 36;
+                    return (
+                        <div key={index} className="h-4 rounded-full bg-white/5 px-1 py-1">
+                            <div
+                                className="h-full rounded-full bg-[linear-gradient(90deg,var(--color-accent-peach),var(--color-accent-cyan))]"
+                                style={{
+                                    width: `${width}%`,
+                                    marginLeft: `${offset}%`,
+                                    opacity: 0.8 - index * 0.07,
+                                }}
+                            />
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+};
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export const YeastPanel = (): ReactElement => {
     const state = useSyncExternalStore<YeastState | null>(
         (cb) => yeastStore.subscribe(cb),
-        () => yeastStore.value,
+        () => yeastStore.value
     );
 
     if (!state) {
-        return <div className="flex items-center justify-center h-full text-muted-foreground/40 text-xs italic">Activating the yeast...</div>;
+        return (
+            <div className="flex items-center justify-center h-full text-muted-foreground/40 text-xs italic">
+                Activating the yeast...
+            </div>
+        );
     }
 
     const { uiLevel } = state;
+    const levelMeta = getLevelMeta(uiLevel);
 
     return (
-        <div className="flex flex-col h-full">
-            {/* ─── Top bar ─── */}
-            <div
-                className="flex items-center justify-between px-3 py-1 shrink-0"
-                style={{
-                    background: 'linear-gradient(180deg, rgba(20,20,22,0.95) 0%, rgba(14,14,16,0.95) 100%)',
-                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 3px rgba(0,0,0,0.5)',
-                    borderBottom: '1px solid rgba(0,0,0,0.4)',
-                }}
-            >
-                <span className="text-[10px] font-bold text-[var(--color-accent-peach)] tracking-tight">Yeast</span>
+        <div className="yeast-faceplate h-full min-h-0 overflow-hidden rounded-[26px] p-3">
+            <div className="grid h-full min-h-0 grid-cols-[15rem_minmax(0,1fr)_16rem] gap-3">
+                <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
+                    <SideCard title="Rack frame" detail="Levels stay docked here so the instrument keeps one identity.">
+                        <div className="flex flex-col gap-1">
+                            {LEVEL_OPTIONS.map((entry) => {
+                                const active = uiLevel === entry.level;
+                                return (
+                                    <button
+                                        key={entry.label}
+                                        type="button"
+                                        className={`yeast-window flex items-center justify-between px-3 py-2 text-left transition-all ${
+                                            active
+                                                ? 'border-white/18 bg-white/[0.03]'
+                                                : 'hover:border-white/12 hover:bg-white/[0.02]'
+                                        }`}
+                                        onClick={() => setYeastUiLevel(entry.level)}
+                                    >
+                                        <span className="text-[11px] font-medium text-foreground">{entry.label}</span>
+                                        <span className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/45">
+                                            {entry.detail}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </SideCard>
 
-                {/* Level switcher */}
-                <div className="flex gap-0.5 bg-surface-base/50 rounded p-0.5">
-                    {(['Play', 'Shape', 'Build', 'Route', 'Lab'] as const).map((label, i) => {
-                        const lvl = (i + 1) as 1 | 2 | 3 | 4 | 5;
-                        return (
-                            <button
-                                key={label}
-                                type="button"
-                                className={`px-1.5 py-0.5 rounded text-[8px] font-medium transition-colors cursor-pointer ${
-                                    uiLevel === lvl
-                                        ? 'bg-[var(--color-accent-peach)] text-white'
-                                        : 'text-muted-foreground hover:text-foreground'
-                                }`}
-                                onClick={() => setYeastUiLevel(lvl)}
-                            >
-                                {label}
-                            </button>
-                        );
-                    })}
-                </div>
+                    <SideCard title="Sprout" detail="Keep a few immediate transforms one tap away.">
+                        <div className="flex flex-wrap gap-1.5">
+                            {PROCESSOR_TYPES.filter((processor) => processor.level <= 2).map((processor) => (
+                                <button
+                                    key={processor.type}
+                                    type="button"
+                                    className="yeast-chip"
+                                    onClick={() => addYeastProcessor(processor.type)}
+                                >
+                                    + {processor.name}
+                                </button>
+                            ))}
+                        </div>
+                    </SideCard>
+                </aside>
 
-                <div className="text-[8px] text-muted-foreground font-mono">
-                    {state.processors.length} modules
-                </div>
+                <section className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto pr-1">
+                    <div className="flex items-start justify-between gap-3">
+                        <div className="space-y-2">
+                            <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-peach)]/70">
+                                Note rack
+                            </div>
+                            <div className="text-[16px] font-semibold text-foreground">{levelMeta.title}</div>
+                            <span className="sr-only">{levelMeta.description}</span>
+                        </div>
+
+                        <div className="flex flex-wrap justify-end gap-2">
+                            <MetricTile label="Flow" value={`${state.processors.length}`} detail="Active transforms" />
+                            <MetricTile
+                                label="Deck"
+                                value={LEVEL_OPTIONS[uiLevel - 1]?.label ?? 'Play'}
+                                detail="Current focus"
+                            />
+                            <MetricTile
+                                label="Chord"
+                                value={state.processors.some((processor) => processor.type === 'chord') ? 'On' : 'Off'}
+                                detail="Harmony memory"
+                            />
+                        </div>
+                    </div>
+
+                    <NoteFlowHero state={state} />
+
+                    <div className="yeast-window min-h-0 flex-1 overflow-auto p-3">{renderDeck(state)}</div>
+                </section>
+
+                <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
+                    <SideCard title="Rack read" detail="Transforms stay visible even when you are focused on one deck.">
+                        <div className="flex flex-col gap-1.5">
+                            {state.processors.length > 0 ? (
+                                state.processors.map((processor) => (
+                                    <div
+                                        key={processor.id}
+                                        className="yeast-window flex items-center justify-between px-3 py-2"
+                                    >
+                                        <div>
+                                            <div className="text-[11px] font-medium text-foreground">
+                                                {processor.name}
+                                            </div>
+                                            <div className="text-[8px] uppercase tracking-[0.18em] text-muted-foreground/45">
+                                                {processor.type}
+                                            </div>
+                                        </div>
+                                        <span className={`yeast-led ${processor.bypassed ? 'opacity-50' : ''}`}>
+                                            {processor.bypassed ? 'Bypass' : 'Live'}
+                                        </span>
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="yeast-window px-3 py-3 text-[10px] leading-4 text-muted-foreground">
+                                    No processors yet. Add one from the sprout shelf and the note lanes will wake up.
+                                </div>
+                            )}
+                        </div>
+                    </SideCard>
+                </aside>
             </div>
-
-            {/* ─── Body ─── */}
-            {uiLevel === 1 ? (
-                <Level1Play state={state} />
-            ) : uiLevel === 2 ? (
-                <Level2Shape state={state} />
-            ) : uiLevel === 3 ? (
-                <Level3Build state={state} />
-            ) : uiLevel === 4 ? (
-                <Level4Route state={state} />
-            ) : (
-                <Level5Lab state={state} />
-            )}
         </div>
     );
 };
@@ -150,7 +338,11 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                         const arp = state.processors.find((p) => p.type === 'arpeggiator');
                         if (arp) setYeastProcessorParam(arp.id, 'rate_denom', Math.round(v));
                     }}
-                    min={1} max={32} step={1} defaultValue={8} size="lg"
+                    min={1}
+                    max={32}
+                    step={1}
+                    defaultValue={8}
+                    size="lg"
                 />
                 <span className="text-[8px] text-muted-foreground font-mono">1/8</span>
             </div>
@@ -177,14 +369,38 @@ const Level2Shape = ({ state }: { state: YeastState }): ReactElement => {
 
     return (
         <div className="flex-1 flex items-start justify-around px-4 py-3">
-            <KnobCol label="Gate" value={0.8} onChange={(v) => arp && setYeastProcessorParam(arp.id, 'gate', v)}
-                min={0.01} max={2} unit="%" />
-            <KnobCol label="Swing" value={0} onChange={(v) => arp && setYeastProcessorParam(arp.id, 'swing', v)}
-                min={0} max={1} unit="%" />
-            <KnobCol label="Octaves" value={1} onChange={(v) => arp && setYeastProcessorParam(arp.id, 'octave_range', v)}
-                min={1} max={4} unit="" />
-            <KnobCol label="Velocity" value={100} onChange={(v) => arp && setYeastProcessorParam(arp.id, 'fixed_velocity', v)}
-                min={1} max={127} unit="" />
+            <KnobCol
+                label="Gate"
+                value={0.8}
+                onChange={(v) => arp && setYeastProcessorParam(arp.id, 'gate', v)}
+                min={0.01}
+                max={2}
+                unit="%"
+            />
+            <KnobCol
+                label="Swing"
+                value={0}
+                onChange={(v) => arp && setYeastProcessorParam(arp.id, 'swing', v)}
+                min={0}
+                max={1}
+                unit="%"
+            />
+            <KnobCol
+                label="Octaves"
+                value={1}
+                onChange={(v) => arp && setYeastProcessorParam(arp.id, 'octave_range', v)}
+                min={1}
+                max={4}
+                unit=""
+            />
+            <KnobCol
+                label="Velocity"
+                value={100}
+                onChange={(v) => arp && setYeastProcessorParam(arp.id, 'fixed_velocity', v)}
+                min={1}
+                max={127}
+                unit=""
+            />
         </div>
     );
 };
@@ -217,25 +433,38 @@ const Level3Build = ({ state }: { state: YeastState }): ReactElement => {
                 {state.processors.map((proc, i) => (
                     <div key={proc.id} className="rounded bg-surface-base/50 border border-border/20 overflow-hidden">
                         {/* Header row */}
-                        <div className="flex items-center gap-2 px-2 py-1.5 cursor-pointer" onClick={() => setExpandedId(expandedId === proc.id ? null : proc.id)}>
+                        <div
+                            className="flex items-center gap-2 px-2 py-1.5 cursor-pointer"
+                            onClick={() => setExpandedId(expandedId === proc.id ? null : proc.id)}
+                        >
                             <span className="text-[7px] text-muted-foreground/50 w-3">{i + 1}</span>
-                            <span className={`text-[6px] ${expandedId === proc.id ? 'text-[var(--color-accent-peach)]' : 'text-muted-foreground/30'}`}>
+                            <span
+                                className={`text-[6px] ${expandedId === proc.id ? 'text-[var(--color-accent-peach)]' : 'text-muted-foreground/30'}`}
+                            >
                                 {expandedId === proc.id ? '▼' : '▶'}
                             </span>
-                            <span className={`text-[10px] font-medium flex-1 ${proc.bypassed ? 'text-muted-foreground/40 line-through' : 'text-foreground'}`}>
+                            <span
+                                className={`text-[10px] font-medium flex-1 ${proc.bypassed ? 'text-muted-foreground/40 line-through' : 'text-foreground'}`}
+                            >
                                 {proc.name}
                             </span>
                             <button
                                 type="button"
                                 className={`text-[7px] px-1 rounded cursor-pointer ${proc.bypassed ? 'text-muted-foreground' : 'text-[var(--color-accent-peach)]'}`}
-                                onClick={(e) => { e.stopPropagation(); setYeastProcessorBypass(proc.id, !proc.bypassed); }}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setYeastProcessorBypass(proc.id, !proc.bypassed);
+                                }}
                             >
                                 {proc.bypassed ? 'OFF' : 'ON'}
                             </button>
                             <button
                                 type="button"
                                 className="text-[7px] text-muted-foreground hover:text-[var(--color-state-danger)] cursor-pointer"
-                                onClick={(e) => { e.stopPropagation(); removeYeastProcessor(proc.id); }}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    removeYeastProcessor(proc.id);
+                                }}
                             >
                                 ✕
                             </button>
@@ -254,7 +483,9 @@ const Level3Build = ({ state }: { state: YeastState }): ReactElement => {
             {/* Arp pattern editor (when arp is present) */}
             {hasArpPattern ? (
                 <div className="border-t border-border/20 pt-2">
-                    <span className="text-[7px] text-muted-foreground/60 uppercase tracking-widest block mb-1">Arp Pattern</span>
+                    <span className="text-[7px] text-muted-foreground/60 uppercase tracking-widest block mb-1">
+                        Arp Pattern
+                    </span>
                     <StepPatternEditor
                         steps={arpPattern}
                         currentStep={0}
@@ -291,7 +522,9 @@ const Level4Route = ({ state }: { state: YeastState }): ReactElement => {
         <div className="flex-1 flex flex-col px-3 py-2 gap-2 overflow-y-auto">
             {/* Keyboard visualization */}
             <div>
-                <span className="text-[7px] text-muted-foreground/60 uppercase tracking-widest block mb-1">Keyboard</span>
+                <span className="text-[7px] text-muted-foreground/60 uppercase tracking-widest block mb-1">
+                    Keyboard
+                </span>
                 <KeyboardSplit width={500} height={32} />
             </div>
 
@@ -299,20 +532,39 @@ const Level4Route = ({ state }: { state: YeastState }): ReactElement => {
             <div className="flex flex-col gap-1">
                 {state.processors.map((proc, i) => (
                     <div key={proc.id} className="rounded bg-surface-base/50 border border-border/20 overflow-hidden">
-                        <div className="flex items-center gap-2 px-2 py-1.5 cursor-pointer" onClick={() => setExpandedId(expandedId === proc.id ? null : proc.id)}>
+                        <div
+                            className="flex items-center gap-2 px-2 py-1.5 cursor-pointer"
+                            onClick={() => setExpandedId(expandedId === proc.id ? null : proc.id)}
+                        >
                             <span className="text-[7px] text-muted-foreground/50 w-3">{i + 1}</span>
-                            <span className={`text-[6px] ${expandedId === proc.id ? 'text-[var(--color-accent-peach)]' : 'text-muted-foreground/30'}`}>
+                            <span
+                                className={`text-[6px] ${expandedId === proc.id ? 'text-[var(--color-accent-peach)]' : 'text-muted-foreground/30'}`}
+                            >
                                 {expandedId === proc.id ? '▼' : '▶'}
                             </span>
-                            <span className={`text-[10px] font-medium flex-1 ${proc.bypassed ? 'text-muted-foreground/40 line-through' : 'text-foreground'}`}>
+                            <span
+                                className={`text-[10px] font-medium flex-1 ${proc.bypassed ? 'text-muted-foreground/40 line-through' : 'text-foreground'}`}
+                            >
                                 {proc.name}
                             </span>
-                            <button type="button" className={`text-[7px] px-1 rounded cursor-pointer ${proc.bypassed ? 'text-muted-foreground' : 'text-[var(--color-accent-peach)]'}`}
-                                onClick={(e) => { e.stopPropagation(); setYeastProcessorBypass(proc.id, !proc.bypassed); }}>
+                            <button
+                                type="button"
+                                className={`text-[7px] px-1 rounded cursor-pointer ${proc.bypassed ? 'text-muted-foreground' : 'text-[var(--color-accent-peach)]'}`}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setYeastProcessorBypass(proc.id, !proc.bypassed);
+                                }}
+                            >
                                 {proc.bypassed ? 'OFF' : 'ON'}
                             </button>
-                            <button type="button" className="text-[7px] text-muted-foreground hover:text-[var(--color-state-danger)] cursor-pointer"
-                                onClick={(e) => { e.stopPropagation(); removeYeastProcessor(proc.id); }}>
+                            <button
+                                type="button"
+                                className="text-[7px] text-muted-foreground hover:text-[var(--color-state-danger)] cursor-pointer"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    removeYeastProcessor(proc.id);
+                                }}
+                            >
                                 ✕
                             </button>
                         </div>
@@ -328,9 +580,13 @@ const Level4Route = ({ state }: { state: YeastState }): ReactElement => {
             {/* Add — includes Route-level processors */}
             <div className="flex flex-wrap gap-1 pt-1 border-t border-border/20">
                 {PROCESSOR_TYPES.filter((pt) => pt.level <= 4).map((pt) => (
-                    <button key={pt.type} type="button"
+                    <button
+                        key={pt.type}
+                        type="button"
                         className="px-2 py-1 rounded text-[8px] text-muted-foreground hover:text-foreground border border-border/20 hover:border-border/40 cursor-pointer transition-colors"
-                        onClick={() => addYeastProcessor(pt.type)} title={pt.description}>
+                        onClick={() => addYeastProcessor(pt.type)}
+                        title={pt.description}
+                    >
                         + {pt.name}
                     </button>
                 ))}
@@ -352,21 +608,43 @@ const Level5Lab = ({ state }: { state: YeastState }): ReactElement => {
                 {/* Rack chain with params */}
                 <div className="flex flex-col gap-1">
                     {state.processors.map((proc, i) => (
-                        <div key={proc.id} className="rounded bg-surface-base/50 border border-border/20 overflow-hidden">
-                            <div className="flex items-center gap-2 px-2 py-1.5 cursor-pointer" onClick={() => setExpandedId(expandedId === proc.id ? null : proc.id)}>
+                        <div
+                            key={proc.id}
+                            className="rounded bg-surface-base/50 border border-border/20 overflow-hidden"
+                        >
+                            <div
+                                className="flex items-center gap-2 px-2 py-1.5 cursor-pointer"
+                                onClick={() => setExpandedId(expandedId === proc.id ? null : proc.id)}
+                            >
                                 <span className="text-[7px] text-muted-foreground/50 w-3">{i + 1}</span>
-                                <span className={`text-[6px] ${expandedId === proc.id ? 'text-[var(--color-accent-peach)]' : 'text-muted-foreground/30'}`}>
+                                <span
+                                    className={`text-[6px] ${expandedId === proc.id ? 'text-[var(--color-accent-peach)]' : 'text-muted-foreground/30'}`}
+                                >
                                     {expandedId === proc.id ? '▼' : '▶'}
                                 </span>
-                                <span className={`text-[10px] font-medium flex-1 ${proc.bypassed ? 'text-muted-foreground/40 line-through' : 'text-foreground'}`}>
+                                <span
+                                    className={`text-[10px] font-medium flex-1 ${proc.bypassed ? 'text-muted-foreground/40 line-through' : 'text-foreground'}`}
+                                >
                                     {proc.name}
                                 </span>
-                                <button type="button" className={`text-[7px] px-1 rounded cursor-pointer ${proc.bypassed ? 'text-muted-foreground' : 'text-[var(--color-accent-peach)]'}`}
-                                    onClick={(e) => { e.stopPropagation(); setYeastProcessorBypass(proc.id, !proc.bypassed); }}>
+                                <button
+                                    type="button"
+                                    className={`text-[7px] px-1 rounded cursor-pointer ${proc.bypassed ? 'text-muted-foreground' : 'text-[var(--color-accent-peach)]'}`}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setYeastProcessorBypass(proc.id, !proc.bypassed);
+                                    }}
+                                >
                                     {proc.bypassed ? 'OFF' : 'ON'}
                                 </button>
-                                <button type="button" className="text-[7px] text-muted-foreground hover:text-[var(--color-state-danger)] cursor-pointer"
-                                    onClick={(e) => { e.stopPropagation(); removeYeastProcessor(proc.id); }}>
+                                <button
+                                    type="button"
+                                    className="text-[7px] text-muted-foreground hover:text-[var(--color-state-danger)] cursor-pointer"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        removeYeastProcessor(proc.id);
+                                    }}
+                                >
                                     ✕
                                 </button>
                             </div>
@@ -381,19 +659,31 @@ const Level5Lab = ({ state }: { state: YeastState }): ReactElement => {
 
                 {/* All processors */}
                 <div className="flex flex-wrap gap-1 pt-1 border-t border-border/20">
-                    <span className="w-full text-[7px] text-muted-foreground/50 uppercase tracking-widest mb-0.5">Generative</span>
+                    <span className="w-full text-[7px] text-muted-foreground/50 uppercase tracking-widest mb-0.5">
+                        Generative
+                    </span>
                     {PROCESSOR_TYPES.filter((pt) => pt.level === 5).map((pt) => (
-                        <button key={pt.type} type="button"
+                        <button
+                            key={pt.type}
+                            type="button"
                             className="px-2 py-1 rounded text-[8px] text-lime-400/80 hover:text-lime-300 border border-lime-500/20 hover:border-lime-500/40 cursor-pointer transition-colors"
-                            onClick={() => addYeastProcessor(pt.type)} title={pt.description}>
+                            onClick={() => addYeastProcessor(pt.type)}
+                            title={pt.description}
+                        >
                             + {pt.name}
                         </button>
                     ))}
-                    <span className="w-full text-[7px] text-muted-foreground/50 uppercase tracking-widest mt-1 mb-0.5">Standard</span>
+                    <span className="w-full text-[7px] text-muted-foreground/50 uppercase tracking-widest mt-1 mb-0.5">
+                        Standard
+                    </span>
                     {PROCESSOR_TYPES.filter((pt) => pt.level <= 4).map((pt) => (
-                        <button key={pt.type} type="button"
+                        <button
+                            key={pt.type}
+                            type="button"
                             className="px-2 py-1 rounded text-[8px] text-muted-foreground hover:text-foreground border border-border/20 hover:border-border/40 cursor-pointer transition-colors"
-                            onClick={() => addYeastProcessor(pt.type)} title={pt.description}>
+                            onClick={() => addYeastProcessor(pt.type)}
+                            title={pt.description}
+                        >
                             + {pt.name}
                         </button>
                     ))}
@@ -429,15 +719,27 @@ const Level5Lab = ({ state }: { state: YeastState }): ReactElement => {
 
 // ── Shared ────────────────────────────────────────────────────────────────────
 
-const KnobCol = ({ label, value, onChange, min, max, unit }: {
-    label: string; value: number; onChange: (v: number) => void;
-    min: number; max: number; unit: string;
+const KnobCol = ({
+    label,
+    value,
+    onChange,
+    min,
+    max,
+    unit,
+}: {
+    label: string;
+    value: number;
+    onChange: (v: number) => void;
+    min: number;
+    max: number;
+    unit: string;
 }): ReactElement => (
     <div className="flex flex-col items-center gap-1">
         <span className="text-[8px] text-muted-foreground uppercase tracking-widest">{label}</span>
         <RotaryKnob value={value} onChange={onChange} min={min} max={max} step={0.01} defaultValue={value} size="md" />
         <span className="text-[7px] text-muted-foreground font-mono">
-            {value.toFixed(unit === '%' ? 0 : 1)}{unit}
+            {value.toFixed(unit === '%' ? 0 : 1)}
+            {unit}
         </span>
     </div>
 );

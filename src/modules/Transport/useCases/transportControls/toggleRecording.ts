@@ -27,6 +27,18 @@ function beginActualRecording(): void {
 
                 if (recClip) {
                     updateClip(recClip.id, (c) => ({ ...c, audioBufferId: bufferId }));
+
+                    // Compute beat-accurate endBeat from the actual buffer duration.
+                    // This fires synchronously inside stopAudioRecording(), BEFORE
+                    // stopRecording() runs, so we defer via microtask to override its
+                    // playhead-based estimate with the precise audio length.
+                    const transport = getTransportState();
+                    const bpm = transport?.tempo ?? 120;
+                    const durationBeats = buffer.duration * (bpm / 60);
+                    const exactEndBeat = recClip.startBeat + durationBeats;
+                    void Promise.resolve().then(() => {
+                        updateClip(recClip.id, (c) => ({ ...c, endBeat: exactEndBeat }));
+                    });
                 }
             });
         }

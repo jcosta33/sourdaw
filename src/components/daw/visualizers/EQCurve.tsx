@@ -4,7 +4,7 @@
  * Drag band dots horizontally to change frequency, vertically to change gain.
  * Log frequency axis (20 Hz – 20 kHz), linear dB axis (±24 dB).
  */
-import { type ReactElement, useRef, useEffect, useCallback } from 'react';
+import { type ReactElement, useRef, useEffect } from 'react';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type EQCurveProps = {
@@ -232,7 +232,7 @@ export const EQCurve = ({
         }
     }, [lowGain, lowFreq, lowQ, midGain, midFreq, midQ, highGain, highFreq, highQ, width, height, isInteractive, bands]);
 
-    const findNearestBand = useCallback((x: number): BandId | null => {
+    const findNearestBand = (x: number): BandId | null => {
         let closest: BandId | null = null;
         let minDist = 20; // 20px hit radius
         for (const band of bands) {
@@ -244,9 +244,9 @@ export const EQCurve = ({
             }
         }
         return closest;
-    }, [bands, width]);
+    };
 
-    const handlePointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
         if (!onParamChange) { return; }
         const canvas = canvasRef.current;
         if (!canvas) { return; }
@@ -257,9 +257,9 @@ export const EQCurve = ({
         dragBand.current = band;
         canvas.setPointerCapture(e.pointerId);
         canvas.style.cursor = 'grabbing';
-    }, [onParamChange, findNearestBand]);
+    };
 
-    const handlePointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
         if (!dragBand.current || !onParamChange) { return; }
         const canvas = canvasRef.current;
         if (!canvas) { return; }
@@ -278,16 +278,16 @@ export const EQCurve = ({
         const db = -((y - zeroY) / (height / 2)) * DB_RANGE;
         const clampedDb = Math.max(-DB_RANGE, Math.min(DB_RANGE, Math.round(db * 2) / 2));
         onParamChange(BAND_GAIN_PARAMS[band], clampedDb);
-    }, [onParamChange, width, height]);
+    };
 
-    const handlePointerUp = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
         dragBand.current = null;
         const canvas = canvasRef.current;
         if (canvas) {
             canvas.releasePointerCapture(e.pointerId);
             canvas.style.cursor = isInteractive ? 'grab' : 'default';
         }
-    }, [isInteractive]);
+    };
 
     return (
         <canvas

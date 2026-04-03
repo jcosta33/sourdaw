@@ -45,6 +45,14 @@ impl OptoCompressor {
         }
     }
 
+    pub fn get_threshold(&self) -> f32 {
+        self.threshold
+    }
+
+    pub fn get_ratio(&self) -> f32 {
+        if self.limit_mode { 10.0 } else { 3.0 }
+    }
+
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
             "threshold" => self.threshold = value.clamp(-60.0, 0.0),

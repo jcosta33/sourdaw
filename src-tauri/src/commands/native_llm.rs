@@ -285,9 +285,9 @@ pub async fn schema_constrained_generation(
     let mut request = RequestBuilder::new()
         .add_message(TextMessageRole::System, &system_prompt)
         .add_message(TextMessageRole::User, &user_message)
-        .set_constraint(Constraint::JsonSchema(json_schema))
+        .set_constraint(Constraint::JsonSchema(serde_json::Value::String(json_schema)))
         .set_sampler_temperature(temperature.unwrap_or(0.1) as f64)
-        .set_sampler_top_p(0.9)
+        .set_sampler_topp(0.9)
         .set_sampler_max_len(max_tokens.unwrap_or(2048));
 
     let mut stream = model.stream_chat_request(request).await.map_err(|e| {

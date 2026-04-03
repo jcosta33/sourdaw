@@ -84,6 +84,7 @@ struct BandChain {
 
     // Metering
     peak_level: f32,
+    meter_decay: f32,
 }
 
 impl BandChain {
@@ -120,6 +121,7 @@ impl BandChain {
             enabled: true,
             oversampling_factor: 1,
             peak_level: 0.0,
+            meter_decay: (-1.0 / (0.1 * sample_rate)).exp(),
         }
     }
 
@@ -177,19 +179,25 @@ impl BandChain {
         if self.distortion_enabled {
             if self.oversampling_factor > 1 {
                 // Upsample → process → downsample
-                let up_l = self.oversampler_l.upsample(l);
-                let mut processed_l = vec![0.0_f32; up_l.len()];
-                for (i, &s) in up_l.iter().enumerate() {
-                    processed_l[i] = self.distortion.process_sample(s);
-                }
-                l = self.oversampler_l.downsample(&processed_l);
+                let mut processed_l = [0.0_f32; 8];
+                let up_l_len = {
+                    let up_l = self.oversampler_l.upsample(l);
+                    for (i, &s) in up_l.iter().enumerate() {
+                        processed_l[i] = self.distortion.process_sample(s);
+                    }
+                    up_l.len()
+                };
+                l = self.oversampler_l.downsample(&processed_l[..up_l_len]);
 
-                let up_r = self.oversampler_r.upsample(r);
-                let mut processed_r = vec![0.0_f32; up_r.len()];
-                for (i, &s) in up_r.iter().enumerate() {
-                    processed_r[i] = self.distortion.process_sample(s);
-                }
-                r = self.oversampler_r.downsample(&processed_r);
+                let mut processed_r = [0.0_f32; 8];
+                let up_r_len = {
+                    let up_r = self.oversampler_r.upsample(r);
+                    for (i, &s) in up_r.iter().enumerate() {
+                        processed_r[i] = self.distortion.process_sample(s);
+                    }
+                    up_r.len()
+                };
+                r = self.oversampler_r.downsample(&processed_r[..up_r_len]);
             } else {
                 l = self.distortion.process_sample(l);
                 r = self.distortion.process_sample(r);
@@ -258,7 +266,7 @@ impl BandChain {
         if peak > self.peak_level {
             self.peak_level = peak;
         } else {
-            self.peak_level *= 0.9995;
+            self.peak_level *= self.meter_decay;
         }
 
         (l, r)
@@ -343,11 +351,15 @@ pub struct BacteriaEngine {
     // Metering
     input_peak: f32,
     output_peak: f32,
+    meter_decay_global: f32,
     band_levels: [f32; MAX_BANDS],
 
     // Scratch buffers for band splitting
     bands_l: [f32; MAX_BANDS],
     bands_r: [f32; MAX_BANDS],
+
+    // Computed parameter offsets per-block from modulations
+    param_offsets: [f32; 1024],
 }
 
 /// Simple step sequencer modulation source.
@@ -428,9 +440,11 @@ impl BacteriaEngine {
             ],
             input_peak: 0.0,
             output_peak: 0.0,
+            meter_decay_global: (-1.0 / (0.1 * sample_rate)).exp(), // ~100ms decay
             band_levels: [0.0; MAX_BANDS],
             bands_l: [0.0; MAX_BANDS],
             bands_r: [0.0; MAX_BANDS],
+            param_offsets: [0.0; 1024],
         }
     }
 
@@ -595,7 +609,7 @@ impl BacteriaEngine {
             if in_peak > self.input_peak {
                 self.input_peak = in_peak;
             } else {
-                self.input_peak *= 0.9999;
+                self.input_peak *= self.meter_decay_global;
             }
 
             // Advance modulation sources
@@ -609,6 +623,30 @@ impl BacteriaEngine {
             // Macros as mod sources [6..13]
             for m in 0..8 {
                 self.mod_values[6 + m] = self.macros[m];
+            }
+
+            // Evaluate modulation matrix to offsets
+            self.param_offsets.fill(0.0);
+            for i_mod in 0..self.mod_assignments.len() {
+                let assignment = &self.mod_assignments[i_mod];
+                if assignment.active {
+                    let source_val = self.mod_values[assignment.source_id as usize];
+                    let idx = assignment.target_param as usize;
+                    if idx < self.param_offsets.len() {
+                        self.param_offsets[idx] += source_val * assignment.amount;
+                    }
+                }
+            }
+            for i_mac in 0..self.macro_mappings.len() {
+                let mapping = &self.macro_mappings[i_mac];
+                if mapping.active {
+                    let source_val = self.macros[mapping.macro_index as usize];
+                    let idx = mapping.target_param as usize;
+                    if idx < self.param_offsets.len() {
+                        let mapped = mapping.min_value + source_val * (mapping.max_value - mapping.min_value);
+                        self.param_offsets[idx] += mapped;
+                    }
+                }
             }
 
             // Split through crossover
@@ -670,8 +708,9 @@ impl BacteriaEngine {
             sum_l *= og;
             sum_r *= og;
 
-            // Wet/dry mix
-            let m = self.mix.next();
+            // Wet/dry mix (Param ID 0 is conventionally assigned to mix in this mapping)
+            let mix_offset = self.param_offsets[0];
+            let m = (self.mix.next() + mix_offset).clamp(0.0, 1.0);
             left[i] = dry_l * (1.0 - m) + sum_l * m;
             right[i] = dry_r * (1.0 - m) + sum_r * m;
 
@@ -680,7 +719,7 @@ impl BacteriaEngine {
             if out_peak > self.output_peak {
                 self.output_peak = out_peak;
             } else {
-                self.output_peak *= 0.9999;
+                self.output_peak *= self.meter_decay_global;
             }
         }
     }

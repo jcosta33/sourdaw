@@ -40,7 +40,7 @@ pub struct BacteriaInstance {
 impl BacteriaInstance {
     #[wasm_bindgen(constructor)]
     pub fn new(sample_rate: f32) -> Self {
-        let block_size = 128;
+        let block_size = 4096; // Pre-allocate maximum likely block size
         Self {
             engine: BacteriaEngine::new(sample_rate),
             input_left: vec![0.0; block_size],
@@ -68,14 +68,7 @@ impl BacteriaInstance {
     /// Process a block. Input must already be written to input buffers.
     /// Returns pointer to output left buffer.
     pub fn process(&mut self, block_size: u32) -> *const f32 {
-        let size = block_size as usize;
-
-        if self.input_left.len() < size {
-            self.input_left.resize(size, 0.0);
-            self.input_right.resize(size, 0.0);
-            self.output_left.resize(size, 0.0);
-            self.output_right.resize(size, 0.0);
-        }
+        let size = (block_size as usize).min(self.input_left.len());
 
         self.output_left[..size].copy_from_slice(&self.input_left[..size]);
         self.output_right[..size].copy_from_slice(&self.input_right[..size]);

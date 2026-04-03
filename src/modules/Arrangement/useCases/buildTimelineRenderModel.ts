@@ -7,6 +7,8 @@ import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { preferencesStore } from '#/modules/Workspace/stores/preferencesStore';
 import { type TimelineRenderModel } from '../models/TimelineRenderModel';
 import { TRACK_HEIGHT_VALUES } from '#/modules/Workspace/useCases/workspaceQueries';
+import { clipDragPreviewRef } from '../stores/clipDragPreviewRef';
+import { activeRecordingRef } from '../stores/activeRecordingRef';
 
 let cachedModel: TimelineRenderModel | null = null;
 let lastTrackState: any = null;
@@ -121,5 +123,56 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
         cachedModel!.playheadPosition = playheadPositionRef.current;
     }
 
-    return cachedModel!;
+    // Apply live recording clip growth — expand endBeat to current playhead position.
+    // This runs on every rAF tick (playheadPositionRef changes) so the clip appears
+    // to grow in real-time without any store writes.
+    const recClips = activeRecordingRef.current;
+    if (recClips.length > 0) {
+        const liveEnd = playheadPositionRef.current;
+        const recIds = new Set(recClips);
+        const recTracks = cachedModel!.tracks.map((track) => ({
+            ...track,
+            clips: track.clips.map((clip) =>
+                recIds.has(clip.id) ? { ...clip, endBeat: Math.max(clip.startBeat, liveEnd) } : clip
+            ),
+        }));
+        return { ...cachedModel!, tracks: recTracks, dataDirty: true };
+    }
+
+    // Apply ephemeral clip drag preview without touching the cache or any store
+    const preview = clipDragPreviewRef.current;
+    if (!preview || preview.positions.size === 0) {
+        return cachedModel!;
+    }
+
+    // Build flat lookup of all clips across cached tracks
+    type CachedClip = TimelineRenderModel['tracks'][0]['clips'][0];
+    const clipById = new Map<string, CachedClip>();
+    for (const track of cachedModel!.tracks) {
+        for (const clip of track.clips) {
+            clipById.set(clip.id, clip);
+        }
+    }
+
+    const previewTracks = cachedModel!.tracks.map((track) => {
+        const clips: CachedClip[] = [];
+        // Add clips whose preview destination is this track
+        for (const [clipId, pos] of preview.positions) {
+            if (pos.trackId === track.id) {
+                const base = clipById.get(clipId);
+                if (base) {
+                    clips.push({ ...base, startBeat: pos.startBeat, endBeat: pos.endBeat });
+                }
+            }
+        }
+        // Add clips not involved in the preview that originally live here
+        for (const clip of track.clips) {
+            if (!preview.positions.has(clip.id)) {
+                clips.push(clip);
+            }
+        }
+        return { ...track, clips };
+    });
+
+    return { ...cachedModel!, tracks: previewTracks, dataDirty: true };
 }

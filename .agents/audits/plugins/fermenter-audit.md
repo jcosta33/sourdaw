@@ -10,7 +10,7 @@ The Fermenter engine suffers from multiple severe real-time DSP violations. Memo
    *   **Impact:** Since this runs 4 times (for 4 layers) every audio callback, it generates hundreds of allocations per second on the audio thread. This will inevitably cause audio engine stalls.
    *   **Fix:** Pre-allocate scratch buffers in the `Layer` struct during initialization (`Layer::new`) and reuse them, or use a fixed-size stack array (e.g., `[0.0f32; 1024]`).
 
-2. **Box Allocation on `note_on` in `voice.rs` (`Voice::set_engine`)**:
+2. [x] **Box Allocation on `note_on` in `voice.rs` (`Voice::set_engine`)**:
    *   **Issue:** `Layer::note_on` calls `voice.set_engine`, which dynamically allocates memory on the heap for specific engines if they haven't been used yet: `self.ks_engine = Some(Box::new(KarplusStrong::new(sample_rate)));`. 
    *   **Impact:** Pressing a key with a new engine type selected will cause a heap allocation during the `note_on` event processing on the audio thread, leading to note-trigger latency and potential dropouts.
    *   **Fix:** Pre-allocate all possible engine types when the `Voice` is constructed, or lazily initialize them on the main thread before notes are triggered.
@@ -26,7 +26,7 @@ The Fermenter engine suffers from multiple severe real-time DSP violations. Memo
    *   **Impact:** The fade-out time will change depending on the user's sample rate. At 96kHz, the fade out will be twice as fast as at 48kHz, potentially causing clicks.
    *   **Fix:** Calculate the decay coefficient dynamically based on the current `sample_rate`.
 
-2. **Expensive Math in Inner Loop (`voice.rs`)**:
+2. [x] **Expensive Math in Inner Loop (`voice.rs`)**:
    *   **Issue:** The voice inner loop uses `2.0f32.powf(...)` inside the sample-rate loop for pitch modulation when drift or sequence pitch mod is active.
    *   **Impact:** `powf` is computationally expensive to run per-sample. 
    *   **Fix:** Since modulation is control-rate data (LFOs/envelopes), the pitch modulation ratio should ideally be calculated once per block, or using a fast approximation for `pow2` if sample-rate pitch modulation (like audio-rate FM) is required.

@@ -9,9 +9,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
-import { isTauri as isTauriAvailable, tauriInvoke } from '#/helpers/tauriBridge';
+import { isTauri as isTauriAvailable } from '#/helpers/tauriBridge';
 import { injectPromptCommand } from '#/modules/AiRuntime/useCases/promptInjection';
 import { voiceStatusStore } from '#/modules/AiRuntime/stores/voiceStatusStore';
+import {
+    ensureWhisperReady,
+    startDictation,
+    stopDictation,
+    onDictationResult,
+} from '#/modules/AiRuntime/repositories/voiceTauriAdapter';
 
 const logger = Container.getInstance().get(Logger);
 
@@ -57,12 +63,9 @@ const resolveVoiceMode = (): VoiceMode => {
     return null;
 };
 
-/**
- * Ensure the Whisper model is downloaded and loaded before first use.
- * Auto-downloads ~142MB model from HuggingFace on first call.
- */
+/** Ensure the Whisper model is downloaded and loaded before first use. */
 const ensureWhisperLoaded = async (): Promise<void> => {
-    await tauriInvoke('ensure_whisper_ready');
+    await ensureWhisperReady();
 };
 
 // ── Hook return type ────────────────────────────────────────────────────
@@ -126,10 +129,8 @@ export const useVoiceRecording = (): VoiceRecordingState => {
             await ensureWhisperLoaded();
 
             // Listen for transcription result from Rust
-            const { tauriListen } = await import('#/helpers/tauriBridge');
-            const unlisten = await tauriListen('dictation-result', (payload: unknown) => {
-                const result = payload as { payload: { text: string; duration_ms: number } };
-                const text = result.payload?.text?.trim() ?? '';
+            const unlisten = await onDictationResult((result) => {
+                const text = result.text?.trim() ?? '';
                 if (text) {
                     setFinalText(text);
                     injectPromptCommand(text);
@@ -140,7 +141,7 @@ export const useVoiceRecording = (): VoiceRecordingState => {
             });
 
             // Start native recording via cpal + whisper inference
-            await tauriInvoke('start_dictation');
+            await startDictation();
 
             modeRef.current = 'whisper';
             setListening(true);
@@ -253,7 +254,7 @@ export const useVoiceRecording = (): VoiceRecordingState => {
         if (modeRef.current === 'whisper') {
             setTranscribingAndStore(true);
             setInterimText('Transcribing...');
-            void tauriInvoke('stop_dictation').catch((e: unknown) => {
+            void stopDictation().catch((e: unknown) => {
                 logger.warn(`stop_dictation failed: ${String(e)}`);
             });
             // The dictation-result event listener (set in startWhisperRecording) handles the rest

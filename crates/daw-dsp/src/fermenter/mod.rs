@@ -65,11 +65,7 @@ impl FermenterInstance {
     /// Process a block of 128 samples. Returns pointer to left channel.
     /// Caller reads left + right from WASM memory.
     pub fn process(&mut self, block_size: u32) -> *const f32 {
-        let size = block_size as usize;
-        if self.left_buf.len() < size {
-            self.left_buf.resize(size, 0.0);
-            self.right_buf.resize(size, 0.0);
-        }
+        let size = (block_size as usize).min(self.left_buf.len());
         self.left_buf[..size].fill(0.0);
         self.right_buf[..size].fill(0.0);
 

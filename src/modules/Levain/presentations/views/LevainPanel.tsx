@@ -1,211 +1,361 @@
-/**
- * LevainPanel — levain instrument panel.
- *
- * Single screen, horizontal layout for wide bottom panels.
- * All controls visible at once — no tabs, no levels.
- *
- *   ┌──────────┬──────────────────────────────────────────────┬──────────┐
- *   │ Artics   │ Expression │ Legato │ Humanize │ Mics        │ Macros   │
- *   │ sidebar  │ curve+knobs│ dia+kb │  XL+det  │ blend       │ 4×2 grid │
- *   └──────────┴──────────────────────────────────────────────┴──────────┘
- */
 import { type ReactElement, useState, useSyncExternalStore } from 'react';
-import { Cpu, ChevronDown } from 'lucide-react';
-
-import { levainStore } from '../../stores/levainStore';
-import { setMacroWithAudio, sendMicParamToEngine } from '../../useCases/levainParamBridge';
-import { loadInstrument } from '../../useCases/loadPreset';
+import { Cpu, Search } from 'lucide-react';
+import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { type InstrumentId } from '../../models/LevainPatch';
-
-import { LevainMacroStrip } from '../components/LevainMacroStrip';
+import { levainStore } from '../../stores/levainStore';
+import { loadInstrument } from '../../useCases/loadPreset';
+import { sendMicParamToEngine, setLevainParamWithAudio, setMacroWithAudio } from '../../useCases/levainParamBridge';
 import { ArticulationList } from '../components/ArticulationList';
 import { ExpressionPanel } from '../components/ExpressionPanel';
-import { LegatoTuning } from '../components/LegatoTuning';
 import { HumanizePanel } from '../components/HumanizePanel';
-import { setLevainParamWithAudio } from '../../useCases/levainParamBridge';
+import { LegatoTuning } from '../components/LegatoTuning';
+import { LevainMacroStrip } from '../components/LevainMacroStrip';
 import { MicBlendSlider } from '../components/MicBlendSlider';
 
-// ── Instruments ─────────────────────────────────────────────────────
-
-// All instruments with VSCO-2-CE sample content (CC0 — public domain).
-// Harp remains disabled until a suitable CC0 harp library is sourced.
 const INSTRUMENTS: { id: InstrumentId; label: string; hasSamples: boolean; family: string }[] = [
-    // Strings
     { id: 'violin-1', label: 'Solo Violin', hasSamples: true, family: 'Strings' },
     { id: 'violin-2', label: 'Violins II', hasSamples: true, family: 'Strings' },
     { id: 'viola', label: 'Violas', hasSamples: true, family: 'Strings' },
     { id: 'cello', label: 'Cellos', hasSamples: true, family: 'Strings' },
     { id: 'double-bass', label: 'Basses', hasSamples: true, family: 'Strings' },
-    // Brass
     { id: 'trumpet', label: 'Trumpets', hasSamples: true, family: 'Brass' },
     { id: 'horn', label: 'Horns', hasSamples: true, family: 'Brass' },
     { id: 'trombone', label: 'Trombones', hasSamples: true, family: 'Brass' },
     { id: 'tuba', label: 'Tuba', hasSamples: true, family: 'Brass' },
-    // Woodwinds
     { id: 'flute', label: 'Flutes', hasSamples: true, family: 'Woodwinds' },
     { id: 'piccolo', label: 'Piccolo', hasSamples: true, family: 'Woodwinds' },
     { id: 'oboe', label: 'Oboes', hasSamples: true, family: 'Woodwinds' },
     { id: 'clarinet', label: 'Clarinets', hasSamples: true, family: 'Woodwinds' },
     { id: 'bassoon', label: 'Bassoons', hasSamples: true, family: 'Woodwinds' },
-    // Percussion & Keys
     { id: 'timpani', label: 'Timpani', hasSamples: true, family: 'Percussion' },
     { id: 'glockenspiel', label: 'Glockenspiel', hasSamples: true, family: 'Percussion' },
     { id: 'marimba', label: 'Marimba', hasSamples: true, family: 'Percussion' },
-    // Not yet sourced
     { id: 'harp', label: 'Harp', hasSamples: false, family: 'Strings' },
 ];
 
-// ═════════════════════════════════════════════════════════════════════
+const FAMILIES = ['All', 'Strings', 'Brass', 'Woodwinds', 'Percussion'];
+
+const MetricTile = ({ label, value, detail }: { label: string; value: string; detail: string }): ReactElement => (
+    <div className="levain-window flex min-w-[96px] flex-col gap-1 px-3 py-2">
+        <span className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">{label}</span>
+        <span className="font-mono text-[13px] text-foreground">{value}</span>
+        <span className="text-[9px] leading-4 text-muted-foreground/55">{detail}</span>
+    </div>
+);
+
+const SectionCard = ({
+    title,
+    detail,
+    children,
+}: {
+    title: string;
+    detail?: string;
+    children: ReactElement | ReactElement[];
+}): ReactElement => (
+    <section className="levain-window flex flex-col gap-3 p-3">
+        <div className="space-y-1">
+            <div className="text-[8px] font-semibold uppercase tracking-[0.24em] text-[var(--color-accent-amber)]/70">
+                {title}
+            </div>
+            {detail ? <span className="sr-only">{detail}</span> : null}
+        </div>
+        {children}
+    </section>
+);
 
 export const LevainPanel = (): ReactElement => {
     const state = useSyncExternalStore(
-        (cb) => levainStore.subscribe(cb),
-        () => levainStore.value,
+        (callback) => levainStore.subscribe(callback),
+        () => levainStore.value
     );
+    const [search, setSearch] = useState('');
+    const [family, setFamily] = useState('All');
+
     const patch = state?.patch ?? levainStore.value?.patch;
-    const activeVoices = state?.activeVoices ?? 0;
-    const currentArt = state?.currentArticulationDisplay ?? 'Long';
-
-    const [instOpen, setInstOpen] = useState(false);
-
     if (!patch) {
-        return <div className="flex items-center justify-center h-full text-muted-foreground/40 text-xs italic">Warming up the starter...</div>;
+        return (
+            <div className="flex h-full items-center justify-center text-xs italic text-muted-foreground/40">
+                Warming up the starter...
+            </div>
+        );
     }
 
-    const instLabel = INSTRUMENTS.find((i) => i.id === patch.instrumentId)?.label ?? patch.instrumentId;
+    const activeVoices = state?.activeVoices ?? 0;
+    const currentArt = state?.currentArticulationDisplay ?? 'Long';
+    const engineReady = state?.engineReady ?? false;
+    const sampleLoadProgress = state?.sampleLoadProgress ?? null;
+
+    const instLabel =
+        INSTRUMENTS.find((instrument) => instrument.id === patch.instrumentId)?.label ?? patch.instrumentId;
+    const query = search.trim().toLowerCase();
+    const visibleInstruments = INSTRUMENTS.filter((instrument) => {
+        const matchesFamily = family === 'All' ? true : instrument.family === family;
+        const matchesSearch =
+            query.length === 0 ? true : `${instrument.label} ${instrument.family}`.toLowerCase().includes(query);
+        return matchesFamily && matchesSearch && instrument.hasSamples;
+    });
 
     return (
-        <div className="flex flex-col h-full relative">
-            {/* ─── Top bar ─── */}
-            <div
-                className="flex items-center justify-between px-3 py-1 shrink-0"
-                style={{
-                    background: 'linear-gradient(180deg, rgba(20,20,22,0.95) 0%, rgba(14,14,16,0.95) 100%)',
-                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 3px rgba(0,0,0,0.5)',
-                    borderBottom: '1px solid rgba(0,0,0,0.4)',
-                }}
-            >
-                <div className="flex items-center gap-2">
-                    {/* Instrument dropdown */}
-                    <div className="relative">
-                        <button
-                            type="button"
-                            className="flex items-center gap-1 text-[10px] font-bold text-[var(--color-accent-amber)] tracking-tight hover:text-[var(--color-accent-orange)] transition-colors"
-                            onClick={() => setInstOpen(!instOpen)}
-                        >
-                            {instLabel}
-                            <ChevronDown className="size-3 opacity-50" />
-                        </button>
-                        {instOpen ? (
-                            <>
-                                <div className="fixed inset-0 z-40" onClick={() => setInstOpen(false)} />
-                                <div className="absolute top-full left-0 mt-1 z-50 bg-surface-raised border border-border/40 rounded-md shadow-xl py-1 min-w-[160px] max-h-[320px] overflow-y-auto">
-                                    {(['Strings', 'Brass', 'Woodwinds', 'Percussion'] as const).map((family) => {
-                                        const familyInstruments = INSTRUMENTS.filter((i) => i.family === family && i.hasSamples);
-                                        if (familyInstruments.length === 0) return null;
-                                        return (
-                                            <div key={family}>
-                                                <div className="px-3 pt-2 pb-0.5 text-[8px] font-bold uppercase tracking-widest text-muted-foreground/50">
-                                                    {family}
-                                                </div>
-                                                {familyInstruments.map((inst) => (
-                                                    <button
-                                                        key={inst.id}
-                                                        type="button"
-                                                        className={`w-full text-left px-4 py-1 text-[10px] transition-colors ${
-                                                            patch.instrumentId === inst.id
-                                                                ? 'text-[var(--color-accent-amber)] bg-[var(--color-accent-amber)]/10'
-                                                                : 'text-foreground/80 hover:bg-surface-raised hover:text-foreground'
-                                                        }`}
-                                                        onClick={() => { loadInstrument(inst.id); setInstOpen(false); }}
-                                                    >
-                                                        {inst.label}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        );
-                                    })}
+        <div className="levain-faceplate h-full min-h-0 overflow-hidden rounded-[26px] p-3">
+            <div className="grid h-full min-h-0 grid-cols-[15rem_minmax(0,1fr)_16rem] gap-3">
+                <aside className="flex min-h-0 flex-col gap-3">
+                    <section className="levain-window flex min-h-0 flex-col gap-3 p-3">
+                        <div className="flex items-start justify-between gap-3">
+                            <div className="space-y-1">
+                                <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-amber)]/70">
+                                    Lineup
                                 </div>
-                            </>
-                        ) : null}
+                                <div className="text-[15px] font-semibold text-foreground">Levain</div>
+                            </div>
+                            <div className="levain-led">{engineReady ? 'Ready' : 'Loading'}</div>
+                        </div>
+
+                        <label className="levain-window flex items-center gap-2 px-3 py-2">
+                            <Search className="size-3.5 text-muted-foreground/55" />
+                            <input
+                                value={search}
+                                onChange={(event) => setSearch(event.target.value)}
+                                placeholder="Find a section"
+                                className="min-w-0 flex-1 bg-transparent text-[11px] text-foreground outline-none placeholder:text-muted-foreground/45"
+                                aria-label="Search Levain instruments"
+                            />
+                        </label>
+
+                        <div className="flex flex-wrap gap-1.5">
+                            {FAMILIES.map((entry) => {
+                                const active = family === entry;
+                                return (
+                                    <button
+                                        key={entry}
+                                        type="button"
+                                        className={`levain-chip ${active ? 'levain-chip-active' : ''}`}
+                                        onClick={() => setFamily(entry)}
+                                    >
+                                        {entry}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
+                            {visibleInstruments.map((instrument) => {
+                                const active = patch.instrumentId === instrument.id;
+                                return (
+                                    <button
+                                        key={instrument.id}
+                                        type="button"
+                                        className={`levain-window flex flex-col items-start gap-1 px-3 py-2 text-left transition-all ${
+                                            active
+                                                ? 'border-white/18 bg-white/[0.03]'
+                                                : 'hover:border-white/12 hover:bg-white/[0.02]'
+                                        }`}
+                                        onClick={() => loadInstrument(instrument.id)}
+                                    >
+                                        <div className="flex w-full items-center justify-between gap-2">
+                                            <span className="text-[11px] font-medium text-foreground">
+                                                {instrument.label}
+                                            </span>
+                                            <span className="text-[8px] uppercase tracking-[0.22em] text-muted-foreground/45">
+                                                {instrument.family}
+                                            </span>
+                                        </div>
+                                        <span className="text-[9px] leading-4 text-muted-foreground">
+                                            {instrument.id.replace(/-/g, ' ')}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </section>
+
+                    <section className="levain-window min-h-0 overflow-y-auto p-2">
+                        <div className="px-2 pb-2 text-[8px] uppercase tracking-[0.24em] text-[var(--color-accent-amber)]/70">
+                            Articulation rail
+                        </div>
+                        <ArticulationList articulations={patch.articulations} current={patch.currentArticulation} />
+                    </section>
+                </aside>
+
+                <section className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto pr-1">
+                    <div className="flex items-start justify-between gap-3">
+                        <div className="space-y-2">
+                            <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-amber)]/70">
+                                Phrase stage
+                            </div>
+                            <div className="text-[16px] font-semibold text-foreground">{instLabel}</div>
+                        </div>
+
+                        <div className="flex flex-wrap justify-end gap-2">
+                            <MetricTile label="Artic" value={currentArt} detail="Current technique" />
+                            <MetricTile label="Voices" value={`${activeVoices}`} detail="Live active voices" />
+                            <MetricTile
+                                label="Legato"
+                                value={patch.legato.enabled ? 'On' : 'Off'}
+                                detail="Transition engine"
+                            />
+                            <MetricTile
+                                label="Load"
+                                value={
+                                    sampleLoadProgress === null ? 'Ready' : `${Math.round(sampleLoadProgress * 100)}%`
+                                }
+                                detail="Sample stream"
+                            />
+                        </div>
                     </div>
-                    <span className="px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider bg-[var(--color-accent-amber)]/15 text-[var(--color-accent-amber)]">
-                        {currentArt}
-                    </span>
-                </div>
-                <div className="flex items-center gap-1 text-[9px] text-muted-foreground">
-                    <Cpu className="size-3" />
-                    <span>{activeVoices}v</span>
-                </div>
-            </div>
 
-            {/* ─── Body: horizontal layout, all controls visible ─── */}
-            <div className="flex flex-1 min-h-0 overflow-hidden">
+                    <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_18rem] gap-3">
+                        <div className="flex min-h-0 flex-col gap-3">
+                            <SectionCard
+                                title="Phrase"
+                                detail="Dynamics, vibrato, and legato belong together where the line is most visible."
+                            >
+                                <ExpressionPanel
+                                    expression={patch.expression}
+                                    legato={patch.legato}
+                                    onChangeExp={(partial) =>
+                                        setLevainParamWithAudio('expression', { ...patch.expression, ...partial })
+                                    }
+                                    onChangeLeg={(partial) =>
+                                        setLevainParamWithAudio('legato', { ...patch.legato, ...partial })
+                                    }
+                                />
+                            </SectionCard>
 
-                {/* LEFT: Articulations — always visible */}
-                <div className="w-[130px] shrink-0 border-r border-border/20 overflow-y-auto">
-                    <ArticulationList
-                        articulations={patch.articulations}
-                        current={patch.currentArticulation}
-                    />
-                </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <SectionCard
+                                    title="Lift"
+                                    detail="Transition timing and portamento stay tactile instead of technical."
+                                >
+                                    <LegatoTuning
+                                        config={patch.legato}
+                                        onChange={(partial) =>
+                                            setLevainParamWithAudio('legato', { ...patch.legato, ...partial })
+                                        }
+                                    />
+                                </SectionCard>
 
-                {/* CENTER: control groups laid out horizontally */}
-                <div className="flex-1 min-w-0 overflow-x-auto overflow-y-auto">
-                    <div className="flex items-start gap-0 p-2 h-full min-w-max">
-
-                        {/* Expression group */}
-                        <div className="shrink-0 px-2">
-                            <ExpressionPanel 
-                                expression={patch.expression} 
-                                legato={patch.legato} 
-                                onChangeExp={(p) => setLevainParamWithAudio('expression', { ...patch.expression, ...p })}
-                                onChangeLeg={(p) => setLevainParamWithAudio('legato', { ...patch.legato, ...p })}
-                            />
+                                <SectionCard
+                                    title="Spread"
+                                    detail="Keep the ensemble alive without turning it into soup."
+                                >
+                                    <HumanizePanel
+                                        config={patch.humanize}
+                                        onChange={(partial) =>
+                                            setLevainParamWithAudio('humanize', { ...patch.humanize, ...partial })
+                                        }
+                                    />
+                                </SectionCard>
+                            </div>
                         </div>
 
-                        <div className="w-px self-stretch bg-border/15 shrink-0" />
+                        <div className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
+                            <SectionCard
+                                title="Stage"
+                                detail="Mic balance should feel spatial, not like raw mixer math."
+                            >
+                                <MicBlendSlider
+                                    micPositions={patch.micPositions}
+                                    showFull
+                                    onSendMicParam={sendMicParamToEngine}
+                                />
+                            </SectionCard>
 
-                        {/* Legato group */}
-                        <div className="shrink-0 px-2">
-                            <LegatoTuning 
-                                config={patch.legato} 
-                                onChange={(p) => setLevainParamWithAudio('legato', { ...patch.legato, ...p })}
-                            />
-                        </div>
+                            <SectionCard
+                                title="Handles"
+                                detail="Macros stay close by as performance gestures instead of generic plugin knobs."
+                            >
+                                <LevainMacroStrip
+                                    macros={patch.macros}
+                                    labels={patch.macroLabels}
+                                    onMacroChange={setMacroWithAudio}
+                                    compact
+                                />
+                            </SectionCard>
 
-                        <div className="w-px self-stretch bg-border/15 shrink-0" />
+                            <SectionCard title="Desk" detail="A couple of master moves for the final line.">
+                                <div className="flex items-center justify-between gap-3">
+                                    <div className="flex flex-col items-center gap-1">
+                                        <RotaryKnob
+                                            value={patch.masterGain}
+                                            onChange={(value) => setLevainParamWithAudio('masterGain', value)}
+                                            min={0}
+                                            max={2}
+                                            step={0.01}
+                                            defaultValue={0.8}
+                                            size="md"
+                                        />
+                                        <span className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">
+                                            Master
+                                        </span>
+                                        <span className="font-mono text-[9px] text-foreground/85">
+                                            {(patch.masterGain * 100).toFixed(0)}%
+                                        </span>
+                                    </div>
 
-                        {/* Humanize group */}
-                        <div className="shrink-0 px-2">
-                            <HumanizePanel 
-                                config={patch.humanize} 
-                                onChange={(p) => setLevainParamWithAudio('humanize', { ...patch.humanize, ...p })}
-                            />
-                        </div>
-
-                        <div className="w-px self-stretch bg-border/15 shrink-0" />
-
-                        {/* Mic group — blend knob or full faders */}
-                        <div className="shrink-0 px-2">
-                            <MicBlendSlider
-                                micPositions={patch.micPositions}
-                                showFull={patch.micPositions.length > 1}
-                                onSendMicParam={sendMicParamToEngine}
-                            />
+                                    <div className="space-y-2">
+                                        <button
+                                            type="button"
+                                            className={`levain-chip ${patch.releaseTriggers.enabled ? 'levain-chip-active' : ''}`}
+                                            onClick={() =>
+                                                setLevainParamWithAudio('releaseTriggers', {
+                                                    ...patch.releaseTriggers,
+                                                    enabled: !patch.releaseTriggers.enabled,
+                                                })
+                                            }
+                                        >
+                                            Release tails
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className={`levain-chip ${patch.releaseTriggers.dynamicScale ? 'levain-chip-active' : ''}`}
+                                            onClick={() =>
+                                                setLevainParamWithAudio('releaseTriggers', {
+                                                    ...patch.releaseTriggers,
+                                                    dynamicScale: !patch.releaseTriggers.dynamicScale,
+                                                })
+                                            }
+                                        >
+                                            Dynamic tails
+                                        </button>
+                                        <div className="levain-led flex items-center gap-1">
+                                            <Cpu className="size-3" />
+                                            {activeVoices} voices
+                                        </div>
+                                    </div>
+                                </div>
+                            </SectionCard>
                         </div>
                     </div>
-                </div>
+                </section>
 
-                {/* RIGHT: Macro knobs — always visible */}
-                <div className="w-[130px] shrink-0 border-l border-border/20 p-2 overflow-y-auto">
-                    <LevainMacroStrip
-                        macros={patch.macros}
-                        labels={patch.macroLabels}
-                        onMacroChange={setMacroWithAudio}
-                        compact
-                    />
-                </div>
+                <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
+                    <SectionCard title="Quick read" detail="A compact performance summary for the current line.">
+                        <div className="space-y-2 text-[10px] leading-4 text-muted-foreground">
+                            <div className="flex items-center justify-between gap-2">
+                                <span>Instrument</span>
+                                <span className="font-mono text-foreground/85">{instLabel}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                                <span>Family</span>
+                                <span className="font-mono text-foreground/85">{patch.instrumentFamily}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                                <span>Phrase</span>
+                                <span className="font-mono text-foreground/85">{currentArt}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                                <span>Humanize</span>
+                                <span className="font-mono text-foreground/85">
+                                    {Math.round(patch.humanize.amount * 100)}%
+                                </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                                <span>Space</span>
+                                <span className="font-mono text-foreground/85">{patch.micPositions.length} mics</span>
+                            </div>
+                        </div>
+                    </SectionCard>
+                </aside>
             </div>
         </div>
     );

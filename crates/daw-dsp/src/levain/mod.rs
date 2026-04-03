@@ -34,7 +34,7 @@ pub struct LevainInstance {
 impl LevainInstance {
     #[wasm_bindgen(constructor)]
     pub fn new(sample_rate: f32, max_voices: u32) -> Self {
-        let max_block = 1024; // pre-allocate for max supported block size
+        let max_block = 4096; // pre-allocate for max supported block size
         Self {
             engine: LevainEngine::new(sample_rate, max_voices as usize),
             left_buf: vec![0.0; max_block],
@@ -159,8 +159,8 @@ impl LevainInstance {
     /// Caller reads left + right from WASM memory.
     pub fn process(&mut self, block_size: u32) -> *const f32 {
         let size = block_size as usize;
-        // Clamp to max 1024 to avoid audio-thread allocation.
-        let size = size.min(1024);
+        // Clamp to max 4096 to avoid audio-thread allocation.
+        let size = size.min(4096);
         self.left_buf[..size].fill(0.0);
         self.right_buf[..size].fill(0.0);
 

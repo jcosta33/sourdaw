@@ -11,16 +11,15 @@ export async function processAudioIPC(instanceId: string, audioData: Float32Arra
 
     try {
         // Note: Tauri v2 IPC allows us to pass Uint8Array bodies natively
-        // Here we cast Float32Array -> Uint8Array to send to Rust
         const bodyArray = new Uint8Array(audioData.buffer);
 
         const responseArray = (await tauriInvoke('audio_ipc', {
             instanceId,
-            body: Array.from(bodyArray),
-        })) as number[];
+            body: bodyArray,
+        })) as Uint8Array;
 
         // Reconstitute back from Rust
-        return new Float32Array(new Uint8Array(responseArray).buffer);
+        return new Float32Array(responseArray.buffer);
     } catch (error) {
         console.error('Audio IPC failed', error);
         return audioData;

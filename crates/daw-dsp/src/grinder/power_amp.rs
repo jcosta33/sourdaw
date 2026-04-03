@@ -61,6 +61,7 @@ pub struct PowerAmp {
     feedback_state: f32,
     feedback_low_state: f32,
     load_envelope: f32,
+    meter_decay_coeff: f32,
 
     // Metering
     peak_level: f32,
@@ -84,6 +85,7 @@ impl PowerAmp {
             feedback_state: 0.0,
             feedback_low_state: 0.0,
             load_envelope: 0.0,
+            meter_decay_coeff: (-1.0 / (sample_rate * 0.150)).exp(),
             peak_level: 0.0,
         }
     }
@@ -195,7 +197,7 @@ impl PowerAmp {
         if peak > self.peak_level {
             self.peak_level = peak;
         } else {
-            self.peak_level *= 0.9999;
+            self.peak_level *= self.meter_decay_coeff;
         }
 
         output

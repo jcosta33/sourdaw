@@ -733,8 +733,12 @@ export class TrackNode {
                                 data.preampDb,
                                 data.powerAmpDb,
                                 data.outputDb,
+                                data.gateOpen,
+                                data.gateEnvelopeDb,
                                 data.sagVoltage,
                                 data.latency,
+                                data.neuralCpuPercent,
+                                data.neuralWarmupProgress,
                             );
                         });
                         if (pendingBypass) {

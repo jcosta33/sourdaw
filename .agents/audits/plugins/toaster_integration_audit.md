@@ -13,7 +13,7 @@ This document identifies the remaining integration bugs between the Toaster drum
 **Root Cause:** The `src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts` playback loop does not contain the logic necessary to route child-track MIDI into a parent track's `toaster` device. 
 - While `messageHandlers.ts` (live MIDI monitoring) correctly identifies a `toaster` parent and remaps the MIDI channel/pad target, the sequencer loop does not. The notes are scheduled blindly or skipped.
 
-## 3. Groove Creator "To Timeline" Empty Clips
+## 3. [x] Groove Creator "To Timeline" Empty Clips
 **Issue:** "When I send 'To timeline' it adds some empty clips instead of adding the pattern properly."
 **Root Cause:** In `exportPatternToTimeline.ts`, the exported `startBeat` for each note is calculated as an **absolute beat** (`insertAt + s * stepDurationBeats`) rather than a **clip-relative beat**.
 - Because the `addMidiNote` API inherently expects note positions to be relative to the clip boundary, passing an absolute clock time results in notes that are placed *outside* the duration of the clip. They exist in the data model, but are completely out of bounds and therefore render as empty. 

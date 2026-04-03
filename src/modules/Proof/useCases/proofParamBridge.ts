@@ -5,7 +5,7 @@
  */
 
 import { type ProofPatch } from '../models/ProofPatch';
-import { updateProofPatch, proofStore } from '../stores/proofStore';
+import { loadProofPatch, updateProofPatch, proofStore } from '../stores/proofStore';
 import { persistDeviceParam } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
 import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
 
@@ -22,7 +22,10 @@ function resolveDeviceId(): string | null {
     if (proofDeviceId) return proofDeviceId;
     for (const track of getAllTracks()) {
         const d = track.devices.find((dev) => dev.type === 'proof');
-        if (d) { proofDeviceId = d.id; return d.id; }
+        if (d) {
+            proofDeviceId = d.id;
+            return d.id;
+        }
     }
     return null;
 }
@@ -146,6 +149,11 @@ export function syncFullPatch(): void {
     syncExciter();
 
     bridge.reorderModules(patch.chainOrder);
+}
+
+export function loadProofPatchWithAudio(patch: ProofPatch): void {
+    loadProofPatch(patch);
+    syncFullPatch();
 }
 
 export function reorderChain(order: [number, number, number, number, number]): void {

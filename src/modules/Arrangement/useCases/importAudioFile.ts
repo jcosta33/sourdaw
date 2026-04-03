@@ -4,6 +4,9 @@ import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases/decodeAudioFile';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
+import { trackStore } from '../stores/trackStore';
+import { pushUndo } from '#/modules/Command/stores/undoStore';
+import { createCallbackUndoEntry } from '#/modules/Command/models/UndoEntry';
 
 export async function importAudioFile(file: File): Promise<void> {
     let bufferId: string;
@@ -29,7 +32,12 @@ export async function importAudioFile(file: File): Promise<void> {
     const endBeat = Math.ceil(durationBeats / 4) * 4;
     const name = file.name.replace(/\.[^.]+$/, '');
 
+    const trackSnapshotBefore = structuredClone(trackStore.value);
+
     const track = createTrack({ name, kind: 'audio' });
+
+    // Add the track to the store first so that addClip can find it
+    setTrackState({ ...state, tracks: [...state.tracks, track] });
 
     addClip({
         trackId: track.id,
@@ -40,11 +48,21 @@ export async function importAudioFile(file: File): Promise<void> {
         audioBufferId: bufferId,
     });
 
-    const ts = getTrackState();
-    if (ts) {
-        setTrackState({
-            ...ts,
-            tracks: [...ts.tracks, track],
-        });
-    }
+    const trackSnapshotAfter = structuredClone(trackStore.value);
+
+    pushUndo(
+        createCallbackUndoEntry(
+            `Import audio: ${name}`,
+            () => {
+                if (trackSnapshotBefore) {
+                    trackStore.set(trackSnapshotBefore);
+                }
+            },
+            () => {
+                if (trackSnapshotAfter) {
+                    trackStore.set(trackSnapshotAfter);
+                }
+            }
+        )
+    );
 }

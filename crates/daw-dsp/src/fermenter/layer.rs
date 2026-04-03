@@ -376,18 +376,21 @@ impl Layer {
             // Render into scratch, then apply gain
             let block_size = left.len();
             // Use small stack buffers for the layer render
-            let mut scratch_l = vec![0.0f32; block_size];
-            let mut scratch_r = vec![0.0f32; block_size];
+            let mut scratch_l = [0.0f32; 4096];
+            let mut scratch_r = [0.0f32; 4096];
+            
+            let l_slice = &mut scratch_l[..block_size];
+            let r_slice = &mut scratch_r[..block_size];
 
             for voice in &mut self.voices {
                 if voice.is_active() {
-                    voice.render(&mut scratch_l, &mut scratch_r, &voice_params);
+                    voice.render(l_slice, r_slice, &voice_params);
                 }
             }
 
             for i in 0..block_size {
-                left[i] += scratch_l[i] * gain_l;
-                right[i] += scratch_r[i] * gain_r;
+                left[i] += l_slice[i] * gain_l;
+                right[i] += r_slice[i] * gain_r;
             }
         }
     }

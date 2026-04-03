@@ -6,7 +6,7 @@
 //! play automatically on note-off.
 
 use super::types::*;
-use super::zone::{SamplePool, ZoneMap};
+use super::zone::SamplePool;
 
 /// Track per-note start times for release trigger volume scaling.
 const MAX_NOTE_TRACKING: usize = 128;

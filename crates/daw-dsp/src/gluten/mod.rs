@@ -41,7 +41,7 @@ pub struct GlutenInstance {
 impl GlutenInstance {
     #[wasm_bindgen(constructor)]
     pub fn new(sample_rate: f32) -> Self {
-        let block_size = 128;
+        let block_size = 4096;
         Self {
             engine: GlutenEngine::new(sample_rate),
             input_left: vec![0.0; block_size],
@@ -82,16 +82,8 @@ impl GlutenInstance {
     /// Returns pointer to output left buffer.
     pub fn process(&mut self, block_size: u32) -> *const f32 {
         let size = block_size as usize;
-
-        // Resize buffers if needed
-        if self.input_left.len() < size {
-            self.input_left.resize(size, 0.0);
-            self.input_right.resize(size, 0.0);
-            self.output_left.resize(size, 0.0);
-            self.output_right.resize(size, 0.0);
-            self.sc_left.resize(size, 0.0);
-            self.sc_right.resize(size, 0.0);
-        }
+        // Clamp to max 4096 to avoid audio-thread allocation
+        let size = size.min(4096);
 
         // Copy input to output, then process in-place
         self.output_left[..size].copy_from_slice(&self.input_left[..size]);

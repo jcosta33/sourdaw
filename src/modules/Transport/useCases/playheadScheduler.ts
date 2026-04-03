@@ -89,9 +89,17 @@ export function startPlayheadScheduler(): void {
             lastScheduledBeat = newPosition - 0.0001;
             resetMetronomeBeat(newPosition);
             stopAllScheduled();
-            for (const src of activeAudioSources) {
+            const now = ctx.currentTime;
+            for (const src of activeAudioSources as any[]) {
                 try {
-                    src.stop();
+                    if (src.fadeGainNode) {
+                        src.fadeGainNode.gain.cancelScheduledValues(now);
+                        src.fadeGainNode.gain.setValueAtTime(src.fadeGainNode.gain.value, now);
+                        src.fadeGainNode.gain.linearRampToValueAtTime(0, now + 0.005);
+                        src.stop(now + 0.005);
+                    } else {
+                        src.stop(now + 0.005);
+                    }
                 } catch {
                     /* already stopped */
                 }
@@ -160,9 +168,17 @@ export function startPlayheadScheduler(): void {
             lastScheduledBeat = newPosition;
             resetMetronomeBeat(newPosition);
             stopAllScheduled();
-            for (const src of activeAudioSources) {
+            const now = ctx.currentTime;
+            for (const src of activeAudioSources as any[]) {
                 try {
-                    src.stop();
+                    if (src.fadeGainNode) {
+                        src.fadeGainNode.gain.cancelScheduledValues(now);
+                        src.fadeGainNode.gain.setValueAtTime(src.fadeGainNode.gain.value, now);
+                        src.fadeGainNode.gain.linearRampToValueAtTime(0, now + 0.005);
+                        src.stop(now + 0.005);
+                    } else {
+                        src.stop(now + 0.005);
+                    }
                 } catch {
                     /* already stopped */
                 }
@@ -258,9 +274,18 @@ export function stopPlayheadScheduler(): void {
     resetMetronomeBeat(0);
     scheduledAudioClips.clear();
     scheduledFrozenTracks.clear();
-    for (const src of activeAudioSources) {
+    const ctx = getAudioContext();
+    const now = ctx.currentTime;
+    for (const src of activeAudioSources as any[]) {
         try {
-            src.stop();
+            if (src.fadeGainNode) {
+                src.fadeGainNode.gain.cancelScheduledValues(now);
+                src.fadeGainNode.gain.setValueAtTime(src.fadeGainNode.gain.value, now);
+                src.fadeGainNode.gain.linearRampToValueAtTime(0, now + 0.005);
+                src.stop(now + 0.005);
+            } else {
+                src.stop(now + 0.005);
+            }
         } catch {
             /* already stopped */
         }

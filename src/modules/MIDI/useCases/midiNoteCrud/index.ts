@@ -1,4 +1,5 @@
 export { addMidiNote } from './addMidiNote';
+export { batchAddMidiNotes } from './batchAddMidiNotes';
 export { removeMidiNote } from './removeMidiNote';
 export { moveMidiNote } from './moveMidiNote';
 export { resizeMidiNote } from './resizeMidiNote';

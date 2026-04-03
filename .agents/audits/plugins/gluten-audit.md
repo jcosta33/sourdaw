@@ -5,7 +5,7 @@ Based on a code-level audit of the **Gluten** bus compressor engine (`crates/daw
 ### 🚨 Critical Performance Bugs (Real-Time Audio Violations)
 The Gluten engine suffers from memory allocation issues on the audio thread, primarily when utilizing the external sidechain feature.
 
-1. **External Sidechain Allocation (`engine.rs`)**:
+1. [x] **External Sidechain Allocation (`engine.rs`)**:
    *   **Issue:** In `GlutenEngine::new`, the `ext_sc_left` and `ext_sc_right` vectors are initialized with `Vec::new()`, which gives them a capacity of 0. When the DAW passes sidechain audio via `set_ext_sc`, the code calls `extend_from_slice()`.
    *   **Impact:** Because the vectors have no pre-allocated capacity, `extend_from_slice()` will force a heap allocation directly on the real-time audio thread during the first block (and whenever the block size increases). This will cause audio dropouts and stuttering.
    *   **Fix:** Pre-allocate the sidechain vectors in `GlutenEngine::new()` using `Vec::with_capacity(4096)` or pre-fill them with zeros to a known maximum block size.
@@ -16,7 +16,7 @@ The Gluten engine suffers from memory allocation issues on the audio thread, pri
    *   **Fix:** Use a pre-allocation pattern (e.g., maximum 4096 samples) during initialization and clamp the processing size.
 
 ### 🐛 Logical Bugs
-1. **Broken Auto-Makeup Gain (`engine.rs`)**:
+1. [x] **Broken Auto-Makeup Gain (`engine.rs`)**:
    *   **Issue:** The `compute_auto_makeup` function attempts to calculate makeup gain to match the perceived volume post-compression. However, it passes **hardcoded** threshold and ratio values to the `auto_makeup` algorithm depending on the topology:
      ```rust
      Topology::Vca => auto_makeup(-18.0, 4.0),

@@ -41,7 +41,7 @@ pub struct ProofInstance {
 impl ProofInstance {
     #[wasm_bindgen(constructor)]
     pub fn new(sample_rate: f32) -> Self {
-        let block_size = 128;
+        let block_size = 4096;
         Self {
             chain: ProofChain::new(sample_rate as f64),
             input_left: vec![0.0; block_size],
@@ -69,13 +69,7 @@ impl ProofInstance {
 
     /// Process a block. Input must already be written to input buffers.
     pub fn process(&mut self, block_size: u32) -> *const f32 {
-        let size = block_size as usize;
-        if self.input_left.len() < size {
-            self.input_left.resize(size, 0.0);
-            self.input_right.resize(size, 0.0);
-            self.output_left.resize(size, 0.0);
-            self.output_right.resize(size, 0.0);
-        }
+        let size = (block_size as usize).min(4096);
 
         self.output_left[..size].copy_from_slice(&self.input_left[..size]);
         self.output_right[..size].copy_from_slice(&self.input_right[..size]);

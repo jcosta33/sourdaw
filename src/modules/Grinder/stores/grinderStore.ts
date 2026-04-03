@@ -56,6 +56,18 @@ export function loadGrinderPatch(patch: GrinderPatch): void {
     }
 }
 
+export function replaceGrinderPatchLocally(patch: GrinderPatch): void {
+    const state = grinderStore.value;
+    if (!state) {
+        return;
+    }
+
+    grinderStore.set({
+        ...state,
+        patch: migrateGrinderPatch(patch),
+    });
+}
+
 export function updateGrinderMeters(
     inputDb: number,
     preampDb: number,

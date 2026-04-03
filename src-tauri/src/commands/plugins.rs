@@ -17,10 +17,9 @@ use daw_engine::sab_bridge::SabBridge;
 pub use crate::host::scanner::ScannedPlugin as ScannedPluginInfo;
 
 // ── Types ───────────────────────────────────────────────────────────────
-use specta::Type;
 use daw_core::{PluginId, PluginInstanceId};
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginParameter {
     pub id: u32,
     pub name: String,
@@ -32,7 +31,7 @@ pub struct PluginParameter {
     pub is_automatable: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginInstance {
     pub instance_id: PluginInstanceId,
     pub plugin_id: PluginId,

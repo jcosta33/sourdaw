@@ -18,7 +18,7 @@
     --color-bg-panelInset: #050505; /* Deep pushed-in state */
     --color-bg-slot: #000000;
     --color-bg-overlay: #151515;
-    --color-bg-dialog: #2E2E2E; /* Modal dialogs, tooltips */
+    --color-bg-dialog: #2e2e2e; /* Modal dialogs, tooltips */
     --color-bg-scrim: rgba(0, 0, 0, 0.85);
 
     /* Borders and Seams */
@@ -67,7 +67,7 @@
     --color-meter-hot: #b8993a;
     --color-meter-clip: #b84a40;
     --color-meter-grid: rgba(255, 255, 255, 0.08);
-    --color-meter-peakHold: rgba(255, 255, 255, 0.40);
+    --color-meter-peakHold: rgba(255, 255, 255, 0.4);
 
     /* Interaction Metrics */
     --radius-micro: 2px;
@@ -132,10 +132,10 @@
     --color-surface-dialog: var(--color-bg-dialog);
 
     /* Tracks Specifics (desaturated) */
-    --color-track-audio: oklch(0.60 0.08 145);
-    --color-track-midi: oklch(0.60 0.08 260);
-    --color-track-bus: oklch(0.60 0.08 50);
-    --color-track-master: oklch(0.60 0.08 0);
+    --color-track-audio: oklch(0.6 0.08 145);
+    --color-track-midi: oklch(0.6 0.08 260);
+    --color-track-bus: oklch(0.6 0.08 50);
+    --color-track-master: oklch(0.6 0.08 0);
 
     /* 16-color Track Palette (dusty industrial — desaturated 30-40%) */
     --color-palette-red: #b05050;
@@ -306,6 +306,644 @@
     box-shadow:
         0 0 4px var(--glow-color),
         0 0 12px color-mix(in oklch, var(--glow-color), transparent 60%);
+}
+
+@utility grinder-faceplate {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.036), rgba(255, 255, 255, 0.014)),
+        radial-gradient(circle at 15% 0%, rgba(229, 168, 75, 0.08), transparent 24%),
+        linear-gradient(180deg, var(--color-bg-panelRaised), var(--color-bg-panel));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.07),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        var(--shadow-elevation-raised);
+}
+
+@utility grinder-window {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.032), rgba(255, 255, 255, 0.01)),
+        linear-gradient(180deg, rgba(0, 0, 0, 0.18), transparent 22%), var(--color-bg-panelInset);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-top-color: rgba(255, 255, 255, 0.12);
+    border-radius: 22px;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.05),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        var(--shadow-elevation-inset);
+}
+
+@utility grinder-led {
+    background: linear-gradient(180deg, rgba(229, 168, 75, 0.24), rgba(229, 168, 75, 0.1));
+    border: 1px solid rgba(229, 168, 75, 0.35);
+    color: var(--color-accent-amber);
+    border-radius: 9999px;
+    padding: 0.28rem 0.55rem;
+    font-size: 0.575rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        0 0 24px rgba(229, 168, 75, 0.08);
+}
+
+@utility grinder-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    border-radius: 9999px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(0, 0, 0, 0.22);
+    padding: 0.45rem 0.8rem;
+    font-size: 0.625rem;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.56);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    transition:
+        color 120ms ease,
+        border-color 120ms ease,
+        background 120ms ease,
+        transform 120ms ease;
+}
+
+@utility grinder-tab-active {
+    color: var(--color-accent-amber);
+    border-color: rgba(229, 168, 75, 0.44);
+    background: linear-gradient(180deg, rgba(229, 168, 75, 0.16), rgba(229, 168, 75, 0.08));
+    transform: translateY(-1px);
+}
+
+@utility bacteria-faceplate {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.014)),
+        radial-gradient(circle at 12% 0%, rgba(127, 184, 196, 0.1), transparent 22%),
+        radial-gradient(circle at 82% 0%, rgba(193, 143, 163, 0.08), transparent 20%),
+        linear-gradient(180deg, var(--color-bg-panelRaised), var(--color-bg-panel));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.07),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        var(--shadow-elevation-raised);
+}
+
+@utility bacteria-window {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.012)),
+        linear-gradient(180deg, rgba(127, 184, 196, 0.035), transparent 22%), var(--color-bg-panelInset);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-top-color: rgba(255, 255, 255, 0.12);
+    border-radius: 18px;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.05),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        var(--shadow-elevation-inset);
+}
+
+@utility bacteria-led {
+    background:
+        linear-gradient(180deg, rgba(127, 184, 196, 0.22), rgba(127, 184, 196, 0.08)),
+        linear-gradient(90deg, rgba(193, 143, 163, 0.08), transparent);
+    border: 1px solid rgba(127, 184, 196, 0.3);
+    color: var(--color-accent-cyan);
+    border-radius: 9999px;
+    padding: 0.24rem 0.5rem;
+    font-size: 0.56rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        0 0 20px rgba(127, 184, 196, 0.08);
+}
+
+@utility bacteria-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border-radius: 9999px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(0, 0, 0, 0.24);
+    padding: 0.36rem 0.7rem;
+    font-size: 0.6rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.58);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    transition:
+        color 120ms ease,
+        border-color 120ms ease,
+        background 120ms ease,
+        transform 120ms ease;
+}
+
+@utility bacteria-chip-active {
+    color: var(--color-accent-cyan);
+    border-color: rgba(127, 184, 196, 0.38);
+    background:
+        linear-gradient(180deg, rgba(127, 184, 196, 0.16), rgba(127, 184, 196, 0.08)),
+        linear-gradient(90deg, rgba(193, 143, 163, 0.06), transparent);
+    transform: translateY(-1px);
+}
+
+@utility crust-faceplate {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.038), rgba(255, 255, 255, 0.014)),
+        radial-gradient(circle at 16% 0%, rgba(201, 160, 122, 0.12), transparent 24%),
+        radial-gradient(circle at 88% 0%, rgba(127, 184, 196, 0.08), transparent 20%),
+        linear-gradient(180deg, var(--color-bg-panelRaised), var(--color-bg-panel));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.07),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        var(--shadow-elevation-raised);
+}
+
+@utility crust-window {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.028), rgba(255, 255, 255, 0.01)),
+        linear-gradient(180deg, rgba(201, 160, 122, 0.05), transparent 20%), var(--color-bg-panelInset);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-top-color: rgba(255, 255, 255, 0.12);
+    border-radius: 18px;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.05),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        var(--shadow-elevation-inset);
+}
+
+@utility crust-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border-radius: 9999px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(0, 0, 0, 0.24);
+    padding: 0.36rem 0.72rem;
+    font-size: 0.6rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.58);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    transition:
+        color 120ms ease,
+        border-color 120ms ease,
+        background 120ms ease,
+        transform 120ms ease;
+}
+
+@utility crust-chip-active {
+    color: var(--color-accent-peach);
+    border-color: rgba(201, 160, 122, 0.42);
+    background:
+        linear-gradient(180deg, rgba(201, 160, 122, 0.18), rgba(201, 160, 122, 0.08)),
+        linear-gradient(90deg, rgba(127, 184, 196, 0.05), transparent);
+    transform: translateY(-1px);
+}
+
+@utility crust-led {
+    background:
+        linear-gradient(180deg, rgba(201, 160, 122, 0.24), rgba(201, 160, 122, 0.1)),
+        linear-gradient(90deg, rgba(196, 64, 48, 0.05), transparent);
+    border: 1px solid rgba(201, 160, 122, 0.34);
+    color: var(--color-accent-peach);
+    border-radius: 9999px;
+    padding: 0.24rem 0.5rem;
+    font-size: 0.56rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        0 0 20px rgba(201, 160, 122, 0.08);
+}
+
+@utility fermenter-faceplate {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.014)),
+        radial-gradient(circle at 14% 0%, rgba(127, 184, 196, 0.1), transparent 22%),
+        radial-gradient(circle at 82% 0%, rgba(196, 170, 95, 0.08), transparent 18%),
+        linear-gradient(180deg, var(--color-bg-panelRaised), var(--color-bg-panel));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.07),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        var(--shadow-elevation-raised);
+}
+
+@utility fermenter-window {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.028), rgba(255, 255, 255, 0.01)),
+        linear-gradient(180deg, rgba(127, 184, 196, 0.05), transparent 22%), var(--color-bg-panelInset);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-top-color: rgba(255, 255, 255, 0.12);
+    border-radius: 18px;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.05),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        var(--shadow-elevation-inset);
+}
+
+@utility fermenter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border-radius: 9999px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(0, 0, 0, 0.24);
+    padding: 0.36rem 0.72rem;
+    font-size: 0.6rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.58);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    transition:
+        color 120ms ease,
+        border-color 120ms ease,
+        background 120ms ease,
+        transform 120ms ease;
+}
+
+@utility fermenter-chip-active {
+    color: var(--color-accent-cyan);
+    border-color: rgba(127, 184, 196, 0.42);
+    background:
+        linear-gradient(180deg, rgba(127, 184, 196, 0.18), rgba(127, 184, 196, 0.08)),
+        linear-gradient(90deg, rgba(196, 170, 95, 0.05), transparent);
+    transform: translateY(-1px);
+}
+
+@utility fermenter-led {
+    background:
+        linear-gradient(180deg, rgba(127, 184, 196, 0.24), rgba(127, 184, 196, 0.1)),
+        linear-gradient(90deg, rgba(196, 170, 95, 0.06), transparent);
+    border: 1px solid rgba(127, 184, 196, 0.3);
+    color: var(--color-accent-cyan);
+    border-radius: 9999px;
+    padding: 0.24rem 0.5rem;
+    font-size: 0.56rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        0 0 20px rgba(127, 184, 196, 0.08);
+}
+
+@utility gluten-faceplate {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.042), rgba(255, 255, 255, 0.014)),
+        radial-gradient(circle at 14% 0%, rgba(201, 160, 122, 0.11), transparent 24%),
+        radial-gradient(circle at 82% 0%, rgba(170, 135, 200, 0.08), transparent 20%),
+        linear-gradient(180deg, var(--color-bg-panelRaised), var(--color-bg-panel));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.07),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        var(--shadow-elevation-raised);
+}
+
+@utility gluten-window {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
+        linear-gradient(180deg, rgba(201, 160, 122, 0.045), transparent 22%), var(--color-bg-panelInset);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-top-color: rgba(255, 255, 255, 0.12);
+    border-radius: 18px;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.05),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        var(--shadow-elevation-inset);
+}
+
+@utility gluten-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border-radius: 9999px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(0, 0, 0, 0.24);
+    padding: 0.34rem 0.68rem;
+    font-size: 0.58rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.58);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    transition:
+        color 120ms ease,
+        border-color 120ms ease,
+        background 120ms ease,
+        transform 120ms ease;
+}
+
+@utility gluten-chip-active {
+    color: var(--color-accent-peach);
+    border-color: rgba(201, 160, 122, 0.42);
+    background:
+        linear-gradient(180deg, rgba(201, 160, 122, 0.18), rgba(201, 160, 122, 0.08)),
+        linear-gradient(90deg, rgba(170, 135, 200, 0.05), transparent);
+    transform: translateY(-1px);
+}
+
+@utility gluten-led {
+    background:
+        linear-gradient(180deg, rgba(201, 160, 122, 0.24), rgba(201, 160, 122, 0.1)),
+        linear-gradient(90deg, rgba(170, 135, 200, 0.06), transparent);
+    border: 1px solid rgba(201, 160, 122, 0.34);
+    color: var(--color-accent-peach);
+    border-radius: 9999px;
+    padding: 0.24rem 0.5rem;
+    font-size: 0.56rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        0 0 20px rgba(201, 160, 122, 0.08);
+}
+
+@utility levain-faceplate {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.014)),
+        radial-gradient(circle at 16% 0%, rgba(196, 170, 95, 0.12), transparent 24%),
+        radial-gradient(circle at 88% 0%, rgba(127, 184, 196, 0.06), transparent 20%),
+        linear-gradient(180deg, var(--color-bg-panelRaised), var(--color-bg-panel));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.07),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        var(--shadow-elevation-raised);
+}
+
+@utility levain-window {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.028), rgba(255, 255, 255, 0.01)),
+        linear-gradient(180deg, rgba(196, 170, 95, 0.05), transparent 22%), var(--color-bg-panelInset);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-top-color: rgba(255, 255, 255, 0.12);
+    border-radius: 18px;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.05),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        var(--shadow-elevation-inset);
+}
+
+@utility levain-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border-radius: 9999px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(0, 0, 0, 0.24);
+    padding: 0.35rem 0.72rem;
+    font-size: 0.6rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.58);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    transition:
+        color 120ms ease,
+        border-color 120ms ease,
+        background 120ms ease,
+        transform 120ms ease;
+}
+
+@utility levain-chip-active {
+    color: var(--color-accent-amber);
+    border-color: rgba(196, 170, 95, 0.42);
+    background:
+        linear-gradient(180deg, rgba(196, 170, 95, 0.18), rgba(196, 170, 95, 0.08)),
+        linear-gradient(90deg, rgba(127, 184, 196, 0.05), transparent);
+    transform: translateY(-1px);
+}
+
+@utility levain-led {
+    background:
+        linear-gradient(180deg, rgba(196, 170, 95, 0.24), rgba(196, 170, 95, 0.1)),
+        linear-gradient(90deg, rgba(127, 184, 196, 0.06), transparent);
+    border: 1px solid rgba(196, 170, 95, 0.3);
+    color: var(--color-accent-amber);
+    border-radius: 9999px;
+    padding: 0.24rem 0.5rem;
+    font-size: 0.56rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        0 0 20px rgba(196, 170, 95, 0.08);
+}
+
+@utility proof-faceplate {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.014)),
+        radial-gradient(circle at 16% 0%, rgba(127, 184, 196, 0.1), transparent 24%),
+        radial-gradient(circle at 88% 0%, rgba(170, 135, 200, 0.06), transparent 20%),
+        linear-gradient(180deg, var(--color-bg-panelRaised), var(--color-bg-panel));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.07),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        var(--shadow-elevation-raised);
+}
+
+@utility proof-window {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.028), rgba(255, 255, 255, 0.01)),
+        linear-gradient(180deg, rgba(127, 184, 196, 0.05), transparent 22%), var(--color-bg-panelInset);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-top-color: rgba(255, 255, 255, 0.12);
+    border-radius: 18px;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.05),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        var(--shadow-elevation-inset);
+}
+
+@utility proof-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    border-radius: 9999px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(0, 0, 0, 0.24);
+    padding: 0.36rem 0.72rem;
+    font-size: 0.6rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.58);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    transition:
+        color 120ms ease,
+        border-color 120ms ease,
+        background 120ms ease,
+        transform 120ms ease;
+}
+
+@utility proof-chip-active {
+    color: var(--color-accent-mint);
+    border-color: rgba(127, 184, 196, 0.42);
+    background:
+        linear-gradient(180deg, rgba(127, 184, 196, 0.18), rgba(127, 184, 196, 0.08)),
+        linear-gradient(90deg, rgba(170, 135, 200, 0.05), transparent);
+    transform: translateY(-1px);
+}
+
+@utility proof-led {
+    background:
+        linear-gradient(180deg, rgba(127, 184, 196, 0.24), rgba(127, 184, 196, 0.1)),
+        linear-gradient(90deg, rgba(170, 135, 200, 0.06), transparent);
+    border: 1px solid rgba(127, 184, 196, 0.3);
+    color: var(--color-accent-cyan);
+    border-radius: 9999px;
+    padding: 0.24rem 0.5rem;
+    font-size: 0.56rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        0 0 20px rgba(127, 184, 196, 0.08);
+}
+
+@utility toaster-faceplate {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.014)),
+        radial-gradient(circle at 14% 0%, rgba(224, 136, 96, 0.14), transparent 24%),
+        radial-gradient(circle at 82% 0%, rgba(96, 200, 224, 0.08), transparent 20%),
+        linear-gradient(180deg, var(--color-bg-panelRaised), var(--color-bg-panel));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.07),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        var(--shadow-elevation-raised);
+}
+
+@utility toaster-window {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
+        linear-gradient(180deg, rgba(224, 136, 96, 0.05), transparent 22%), var(--color-bg-panelInset);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-top-color: rgba(255, 255, 255, 0.12);
+    border-radius: 18px;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.05),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        var(--shadow-elevation-inset);
+}
+
+@utility toaster-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    border-radius: 9999px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(0, 0, 0, 0.24);
+    padding: 0.36rem 0.72rem;
+    font-size: 0.6rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.58);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    transition:
+        color 120ms ease,
+        border-color 120ms ease,
+        background 120ms ease,
+        transform 120ms ease;
+}
+
+@utility toaster-chip-active {
+    color: var(--color-accent-peach);
+    border-color: rgba(224, 136, 96, 0.42);
+    background:
+        linear-gradient(180deg, rgba(224, 136, 96, 0.18), rgba(224, 136, 96, 0.08)),
+        linear-gradient(90deg, rgba(96, 200, 224, 0.05), transparent);
+    transform: translateY(-1px);
+}
+
+@utility toaster-led {
+    background:
+        linear-gradient(180deg, rgba(224, 136, 96, 0.24), rgba(224, 136, 96, 0.1)),
+        linear-gradient(90deg, rgba(96, 200, 224, 0.06), transparent);
+    border: 1px solid rgba(224, 136, 96, 0.3);
+    color: var(--color-accent-peach);
+    border-radius: 9999px;
+    padding: 0.24rem 0.5rem;
+    font-size: 0.56rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        0 0 20px rgba(224, 136, 96, 0.08);
+}
+
+@utility toaster-step-label {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.026), rgba(255, 255, 255, 0.01)),
+        linear-gradient(90deg, rgba(224, 136, 96, 0.05), transparent), var(--color-bg-panelInset);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.04),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.42);
+}
+
+@utility yeast-faceplate {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.014)),
+        radial-gradient(circle at 12% 0%, rgba(224, 136, 96, 0.12), transparent 24%),
+        radial-gradient(circle at 82% 0%, rgba(96, 200, 224, 0.08), transparent 20%),
+        linear-gradient(180deg, var(--color-bg-panelRaised), var(--color-bg-panel));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.07),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        var(--shadow-elevation-raised);
+}
+
+@utility yeast-window {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
+        linear-gradient(180deg, rgba(224, 136, 96, 0.05), transparent 22%), var(--color-bg-panelInset);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-top-color: rgba(255, 255, 255, 0.12);
+    border-radius: 18px;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.05),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        var(--shadow-elevation-inset);
+}
+
+@utility yeast-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    border-radius: 9999px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(0, 0, 0, 0.24);
+    padding: 0.36rem 0.72rem;
+    font-size: 0.6rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.58);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    transition:
+        color 120ms ease,
+        border-color 120ms ease,
+        background 120ms ease,
+        transform 120ms ease;
+}
+
+@utility yeast-led {
+    background:
+        linear-gradient(180deg, rgba(224, 136, 96, 0.24), rgba(224, 136, 96, 0.1)),
+        linear-gradient(90deg, rgba(96, 200, 224, 0.06), transparent);
+    border: 1px solid rgba(224, 136, 96, 0.3);
+    color: var(--color-accent-peach);
+    border-radius: 9999px;
+    padding: 0.24rem 0.5rem;
+    font-size: 0.56rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        0 0 20px rgba(224, 136, 96, 0.08);
 }
 
 /* Tauri specific font-weight compensation for Linux WebKitGTK */

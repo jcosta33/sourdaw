@@ -156,6 +156,18 @@ class AutomergeRepository {
         return bundle;
     }
 
+    /**
+     * Restore all in-memory documents from a binary snapshot bundle (e.g. for undo/redo).
+     * Unlike `loadAll`, this does NOT clear docs or handle IDB incremental chunks —
+     * it replaces existing docs in-place and fires listeners exactly once.
+     */
+    restoreSnapshot(bundle: DocumentBundle): void {
+        for (const [id, bytes] of bundle) {
+            this.docs.set(id, Automerge.load<AnyDoc>(bytes));
+        }
+        this.notifyListeners();
+    }
+
     /** Load all documents from a bundle, replacing current state. */
     loadAll(bundle: DocumentBundle): void {
         this.docs.clear();

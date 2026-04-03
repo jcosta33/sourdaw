@@ -66,6 +66,14 @@ impl FetCompressor {
         self.release_coeff = (-1.0 / (self.release_ms * 0.001 * self.sample_rate)).exp();
     }
 
+    pub fn get_threshold(&self) -> f32 {
+        self.threshold
+    }
+
+    pub fn get_ratio(&self) -> f32 {
+        self.ratio
+    }
+
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
             "threshold" => self.threshold = value.clamp(-60.0, 0.0),

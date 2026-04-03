@@ -1,10 +1,5 @@
-/**
- * Step Sequencer — visual grid with velocity bars.
- * Each step shows velocity as a vertical bar height, not just opacity.
- * Active steps glow with the pad's color. Playback cursor pulses.
- */
-import { type ReactElement, useCallback, useRef } from 'react';
-import { type Pattern, type PadState } from '../../models/ToasterKit';
+import { type ReactElement, useRef } from 'react';
+import { type PadState, type Pattern } from '../../models/ToasterKit';
 
 type StepSequencerProps = {
     pattern: Pattern;
@@ -15,104 +10,122 @@ type StepSequencerProps = {
     onSetVelocity: (padIndex: number, stepIndex: number, velocity: number) => void;
 };
 
-const STEP_H = 24;
+const STEP_HEIGHT = 28;
 
 export const StepSequencer = ({
-    pattern, pads, currentStep, isPlaying, onToggleStep, onSetVelocity,
+    pattern,
+    pads,
+    currentStep,
+    isPlaying,
+    onToggleStep,
+    onSetVelocity,
 }: StepSequencerProps): ReactElement => {
-    const numSteps = pattern.stepsPerBar * pattern.bars;
     const dragRef = useRef<{ padIndex: number; stepIndex: number; startY: number } | null>(null);
+    const stepCount = pattern.stepsPerBar * pattern.bars;
 
-    const handleStepPointerDown = useCallback((padIndex: number, stepIndex: number, e: React.PointerEvent) => {
-        if (e.altKey) {
-            // Alt+drag = adjust velocity
-            dragRef.current = { padIndex, stepIndex, startY: e.clientY };
-            (e.target as HTMLElement).setPointerCapture(e.pointerId);
-        } else {
-            onToggleStep(padIndex, stepIndex);
+    function handleStepPointerDown(
+        padIndex: number,
+        stepIndex: number,
+        event: React.PointerEvent<HTMLDivElement>
+    ): void {
+        if (event.altKey) {
+            dragRef.current = { padIndex, stepIndex, startY: event.clientY };
+            event.currentTarget.setPointerCapture(event.pointerId);
+            return;
         }
-    }, [onToggleStep]);
 
-    const handlePointerMove = useCallback((e: React.PointerEvent) => {
-        if (!dragRef.current) { return; }
-        const delta = dragRef.current.startY - e.clientY;
-        const vel = Math.max(0.05, Math.min(1, 0.5 + delta / 100));
-        onSetVelocity(dragRef.current.padIndex, dragRef.current.stepIndex, vel);
-    }, [onSetVelocity]);
+        onToggleStep(padIndex, stepIndex);
+    }
 
-    const handlePointerUp = useCallback(() => {
+    function handlePointerMove(event: React.PointerEvent<HTMLDivElement>): void {
+        if (!dragRef.current) {
+            return;
+        }
+
+        const delta = dragRef.current.startY - event.clientY;
+        const velocity = Math.max(0.05, Math.min(1, 0.5 + delta / 100));
+        onSetVelocity(dragRef.current.padIndex, dragRef.current.stepIndex, velocity);
+    }
+
+    function handlePointerUp(): void {
         dragRef.current = null;
-    }, []);
+    }
 
     return (
-        <div
-            className="select-none"
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-        >
-            {/* Pad rows */}
+        <div className="select-none" onPointerMove={handlePointerMove} onPointerUp={handlePointerUp}>
             {pattern.tracks.map((track) => {
                 const pad = pads[track.padIndex];
-                if (!pad) { return null; }
+                if (!pad) {
+                    return null;
+                }
 
                 return (
-                    <div key={track.padIndex} className="flex items-end mb-px">
-                        {/* Pad label */}
-                        <div className="w-[72px] shrink-0 flex items-center gap-1 px-1 h-7">
-                            <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: pad.color }} />
-                            <span className="text-[8px] font-medium truncate" style={{ color: `${pad.color}aa` }}>
+                    <div key={track.padIndex} className="mb-1 flex items-end gap-2">
+                        <div className="toaster-step-label flex h-8 w-[88px] shrink-0 items-center gap-2 rounded-[14px] px-2">
+                            <div className="size-2 rounded-full" style={{ backgroundColor: pad.color }} />
+                            <span className="truncate text-[9px] font-medium" style={{ color: `${pad.color}dd` }}>
                                 {pad.name}
                             </span>
                         </div>
 
-                        {/* Steps */}
-                        <div className="flex gap-px flex-1">
-                            {track.steps.slice(0, numSteps).map((step, s) => {
-                                const isCurrent = s === currentStep && isPlaying;
-                                const isBarStart = s % 4 === 0;
+                        <div className="flex min-w-0 flex-1 gap-1">
+                            {track.steps.slice(0, stepCount).map((step, stepIndex) => {
+                                const isCurrent = isPlaying && stepIndex === currentStep;
+                                const isBarStart = stepIndex % 4 === 0;
+                                const probabilityTint = step.active ? 0.12 + (1 - step.probability) * 0.18 : 0;
 
                                 return (
                                     <div
-                                        key={s}
-                                        className={`relative flex-1 min-w-[18px] rounded-sm cursor-pointer transition-colors ${isBarStart ? 'ml-px' : ''}`}
+                                        key={stepIndex}
+                                        className={`relative min-w-[19px] flex-1 cursor-pointer rounded-[10px] transition-all ${isBarStart ? 'ml-1' : ''}`}
                                         style={{
-                                            height: STEP_H,
-                                            backgroundColor: isCurrent
-                                                ? 'rgba(255,255,255,0.06)'
-                                                : s % 8 < 4
-                                                    ? 'rgba(255,255,255,0.015)'
-                                                    : 'rgba(255,255,255,0.008)',
+                                            height: STEP_HEIGHT,
+                                            background: isCurrent
+                                                ? 'linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.03))'
+                                                : stepIndex % 8 < 4
+                                                  ? 'rgba(255,255,255,0.02)'
+                                                  : 'rgba(255,255,255,0.012)',
+                                            boxShadow: isCurrent
+                                                ? `0 0 16px ${pad.color}33`
+                                                : 'inset 0 1px 0 rgba(255,255,255,0.04)',
                                         }}
-                                        onPointerDown={(e) => handleStepPointerDown(track.padIndex, s, e)}
+                                        onPointerDown={(event) =>
+                                            handleStepPointerDown(track.padIndex, stepIndex, event)
+                                        }
                                     >
-                                        {/* Velocity bar — grows from bottom */}
+                                        <div className="absolute inset-[1px] rounded-[9px] bg-black/22" />
+
                                         {step.active ? (
                                             <div
-                                                className="absolute bottom-0 left-[2px] right-[2px] rounded-t-sm transition-all"
+                                                className="absolute bottom-[2px] left-[2px] right-[2px] rounded-[7px] transition-all"
                                                 style={{
                                                     height: `${step.velocity * 100}%`,
-                                                    backgroundColor: pad.color,
-                                                    opacity: 0.8,
-                                                    boxShadow: isCurrent ? `0 0 6px ${pad.color}80` : 'none',
+                                                    background: `linear-gradient(180deg, ${pad.color}, ${pad.color}aa)`,
+                                                    opacity: 0.92,
+                                                    boxShadow: isCurrent
+                                                        ? `0 0 10px ${pad.color}88`
+                                                        : `0 0 6px ${pad.color}44`,
                                                 }}
                                             />
                                         ) : null}
 
-                                        {/* Probability indicator — dim dot if < 100% */}
                                         {step.active && step.probability < 1 ? (
-                                            <div className="absolute top-0.5 right-0.5 w-1 h-1 rounded-full bg-white/30" />
+                                            <div
+                                                className="absolute right-1 top-1 size-1.5 rounded-full"
+                                                style={{
+                                                    backgroundColor: `rgba(255,255,255,${0.18 + probabilityTint})`,
+                                                }}
+                                            />
                                         ) : null}
 
-                                        {/* Ratchet indicator */}
                                         {step.active && step.retriggerCount > 0 ? (
-                                            <div className="absolute top-0.5 left-0.5 text-[5px] text-white/40 font-bold">
+                                            <div className="absolute left-1 top-1 text-[5px] font-bold text-white/45">
                                                 {step.retriggerCount}×
                                             </div>
                                         ) : null}
 
-                                        {/* Playback cursor glow */}
                                         {isCurrent ? (
-                                            <div className="absolute inset-0 rounded-sm border border-white/20" />
+                                            <div className="absolute inset-0 rounded-[10px] border border-white/18" />
                                         ) : null}
                                     </div>
                                 );

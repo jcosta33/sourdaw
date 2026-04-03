@@ -16,7 +16,7 @@ Despite the clean Rust code, the WASM/JS integration layer has two severe bugs t
    *   **Impact:** Every single time the user moves a knob, tweaks a macro, or an automation curve fires, memory leaks in the WASM heap. The audio thread will eventually run Out-Of-Memory (OOM) and hard crash.
    *   **Fix:** Add `w.__wbindgen_free(strPtr, len, 1);` immediately after calling `levaininstance_set_param`.
 
-2. **Buffer Over-Read Risk (Out-of-Bounds Memory) in `mod.rs` & `LevainProcessor.ts`**
+2. [x] **Buffer Over-Read Risk (Out-of-Bounds Memory) in `mod.rs` & `LevainProcessor.ts`**
    *   **Issue:** In `mod.rs`, `LevainInstance::process` defensively clamps the block size to 1024 (`let size = size.min(1024);`) to fit in its pre-allocated array. However, the JS side (`LevainProcessor.ts`) ignores this and blindly reads `frames = output[0].length` floats from the returned pointer.
    *   **Impact:** If the browser requests a block size greater than 1024 (which is common during OfflineAudioContext rendering for exports, or on certain Safari/Bluetooth setups), the JS will read past the end of `left_buf` into random WASM memory, resulting in harsh digital noise/static.
    *   **Fix:** The JS side must read `Math.min(frames, 1024)` or the Rust side must allow dynamic buffer sizing up to a safe maximum (e.g., 4096).
@@ -28,3 +28,4 @@ Despite the clean Rust code, the WASM/JS integration layer has two severe bugs t
    *   **Fix:** Calculate the `0.999` decay factor dynamically using `self.sample_rate`.
 
 **Summary:** The core Rust DSP code in Levain is excellently written and real-time safe. However, the manual WASM-binding implementation in the TypeScript AudioWorklet is leaking memory and risks buffer overflows.
+ws.

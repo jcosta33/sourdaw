@@ -161,14 +161,18 @@ struct BusEffects {
     comp_threshold: f32, // 0-1 (linear)
     comp_ratio: f32,     // >= 1.0
     comp_env: f32,       // envelope follower state
+    attack_coeff: f32,
+    release_coeff: f32,
 }
 
 impl BusEffects {
-    fn new() -> Self {
+    fn new(sample_rate: f32) -> Self {
         Self {
             comp_threshold: 0.8,
             comp_ratio: 4.0,
             comp_env: 0.0,
+            attack_coeff: 1.0 - (-1.0 / (0.002 * sample_rate)).exp(), // ~2ms attack
+            release_coeff: 1.0 - (-1.0 / (0.050 * sample_rate)).exp(), // ~50ms release
         }
     }
 
@@ -176,9 +180,9 @@ impl BusEffects {
     /// sample.
     #[inline]
     fn process(&mut self, sample: f32) -> f32 {
-        // One-pole envelope follower (attack ~1ms, release ~50ms at 44.1k)
+        // One-pole envelope follower
         let abs = sample.abs();
-        let coeff = if abs > self.comp_env { 0.01 } else { 0.0005 };
+        let coeff = if abs > self.comp_env { self.attack_coeff } else { self.release_coeff };
         self.comp_env += coeff * (abs - self.comp_env);
 
         let gain = if self.comp_env > self.comp_threshold && self.comp_threshold > 0.0 {
@@ -210,6 +214,8 @@ pub struct ToasterEngine {
     global_reverb: PlateReverb,
     global_delay: StereoDelay,
     global_lofi: LofiProcessor,
+    pad_l_gains: Vec<f32>,
+    pad_r_gains: Vec<f32>,
     sample_rate: f32,
     master_gain: f32,
 }
@@ -276,7 +282,7 @@ impl ToasterEngine {
         let max_block = 4096;
         let bus_buffers_l = std::array::from_fn(|_| vec![0.0; max_block]);
         let bus_buffers_r = std::array::from_fn(|_| vec![0.0; max_block]);
-        let bus_effects = std::array::from_fn(|_| BusEffects::new());
+        let bus_effects = std::array::from_fn(|_| BusEffects::new(sample_rate));
 
         Self {
             pads,
@@ -288,6 +294,8 @@ impl ToasterEngine {
             global_reverb: PlateReverb::new(sample_rate),
             global_delay: StereoDelay::new(sample_rate),
             global_lofi: LofiProcessor::new(),
+            pad_l_gains: vec![0.70710677; num_pads],
+            pad_r_gains: vec![0.70710677; num_pads],
             sample_rate,
             master_gain: 0.8,
         }
@@ -312,7 +320,6 @@ impl ToasterEngine {
                     let vpad = voice.pad_index as usize;
                     if vpad < self.pads.len() && self.pads[vpad].choke_group == choke {
                         voice.release();
-                        voice.active = false;
                     }
                 }
             }
@@ -410,6 +417,13 @@ impl ToasterEngine {
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32]) {
         let len = left.len().min(right.len()).min(self.bus_buffers_l[0].len());
 
+        // Precompute panning gains per pad for this block to avoid sqrt() in the inner loop
+        for p in 0..self.pads.len() {
+            let pan = self.pads[p].pan;
+            self.pad_l_gains[p] = ((1.0_f32 - pan) * 0.5_f32).sqrt();
+            self.pad_r_gains[p] = ((1.0_f32 + pan) * 0.5_f32).sqrt();
+        }
+
         // --- Clear the required length of pre-allocated bus buffers -----------
         for b in 0..NUM_BUSES {
             self.bus_buffers_l[b][..len].fill(0.0);
@@ -444,9 +458,8 @@ impl ToasterEngine {
                     let pad = &self.pads[pad_idx];
 
                     // Constant-power pan
-                    let pan = pad.pan;
-                    let l_gain = ((1.0_f32 - pan) * 0.5_f32).sqrt();
-                    let r_gain = ((1.0_f32 + pan) * 0.5_f32).sqrt();
+                    let l_gain = self.pad_l_gains[pad_idx];
+                    let r_gain = self.pad_r_gains[pad_idx];
                     let sl = sample * l_gain;
                     let sr = sample * r_gain;
 

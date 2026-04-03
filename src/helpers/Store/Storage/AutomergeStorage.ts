@@ -21,6 +21,16 @@ type AutomergeStorageOptions<TDataSchema> = {
  * Use `toCrdt` to strip ephemeral fields that shouldn't be persisted or
  * synced (e.g. `isPlaying`, `playheadPosition` on the transport store).
  *
+ * ## CRDT write batching
+ *
+ * `set()` updates the in-memory cache and notifies React subscribers
+ * immediately (so the UI stays responsive at any frame rate). The actual
+ * Automerge `changeDoc()` write is deferred to the next animation frame via
+ * `requestAnimationFrame`.  This collapses rapid burst updates (knob sweeps,
+ * fader drags, clip moves) into a single CRDT mutation per frame instead of
+ * hundreds, eliminating the JSON-serialisation + CRDT-merge cost on the hot
+ * path.
+ *
  * ## Automerge v3 constraints handled here
  *
  * Values read from an Automerge doc are Proxy objects. Automerge rejects
@@ -37,6 +47,8 @@ export class AutomergeStorage<TDataSchema> implements Storage<TDataSchema> {
     readonly #key: string;
     readonly #toCrdt: ((value: TDataSchema) => Partial<TDataSchema>) | undefined;
     #cachedValue: TDataSchema | null = null;
+    /** rAF handle for the deferred CRDT write, or null when idle. */
+    #rafId: number | null = null;
 
     /**
      * @param docId - The Automerge document ID (typically the root doc).
@@ -54,16 +66,23 @@ export class AutomergeStorage<TDataSchema> implements Storage<TDataSchema> {
     }
 
     set(value: TDataSchema | null): void {
-        // Always update the cache first — the in-memory value is the UI source
-        // of truth. The CRDT write is persistence; it must never crash the caller.
+        // Always update the in-memory cache first — this is the UI source of
+        // truth and must be synchronous so React's useSyncExternalStore sees
+        // the new value on the very next render cycle.
         this.#cachedValue = value;
-        try {
-            this.#writeToCrdt(value);
-        } catch (error) {
-            // Log but swallow: Store.set() → Store.#notify() must always run so
-            // that useSyncExternalStore subscribers re-render. A throw here would
-            // prevent #notify() from being called and silently freeze the UI.
-            console.error('[AutomergeStorage] CRDT write failed, in-memory state still updated:', error);
+
+        // Batch the actual CRDT write to the next animation frame so that
+        // burst updates (e.g. 120 fader-drag events within one frame) result
+        // in a single Automerge changeDoc() call instead of 120.
+        if (this.#rafId === null) {
+            this.#rafId = requestAnimationFrame(() => {
+                this.#rafId = null;
+                try {
+                    this.#writeToCrdt(this.#cachedValue);
+                } catch (error) {
+                    console.error('[AutomergeStorage] CRDT write failed, in-memory state still updated:', error);
+                }
+            });
         }
     }
 

@@ -1,37 +1,15 @@
-/**
- * Fermenter — master synth panel.
- *
- * Horizontal-first layout optimized for wide bottom panels:
- *
- *   ┌─────────────────────────────────────────────────────────────────────────┐
- *   │ Top bar: preset actions · level switcher · oscilloscope · voice meter  │
- *   ├──────────┬──────────────────────────────────────┬───────────────────────┤
- *   │ Left:    │  Center: section tabs + content      │  Right (Level 3+):   │
- *   │ Preset   │  [Osc] [Filter] [Env] [Mod] [FX]    │  XY Pad / Layer      │
- *   │ Browser  │  ┌──────────────────────────────┐    │  Stack / Lab tools   │
- *   │ OR       │  │ Active section with visual   │    │                      │
- *   │ Macros   │  │ + knobs side by side         │    │                      │
- *   │          │  └──────────────────────────────┘    │                      │
- *   └──────────┴──────────────────────────────────────┴───────────────────────┘
- *
- * Level 1: Left=macros+XY, Center=hidden, Right=hidden
- * Level 2: Left=preset browser, Center=section tabs, Right=macros+XY
- * Level 3: Left=preset browser, Center=section tabs, Right=layer stack+XY
- * Level 4: Center gets signal flow at bottom
- * Level 5: Right gets transform pad + spectrum
- */
-import { type ReactElement, useCallback, useState, useSyncExternalStore } from 'react';
-import { ChevronDown, Cpu, RotateCcw, Save, Shuffle } from 'lucide-react';
+import { type ReactElement, useState, useSyncExternalStore } from 'react';
+import { Cpu, RotateCcw, Save, Shuffle } from 'lucide-react';
 import { Button } from '#/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { ScrollArea } from '#/components/ui/scroll-area';
 import {
-    fermenterStore, loadFermenterPatch, type FermenterState,
+    fermenterStore,
+    loadFermenterPatch,
+    setFermenterUiLevel,
+    type FermenterState,
 } from '../../stores/fermenterStore';
-import { type FermenterPatch, DEFAULT_PATCH } from '../../models/FermenterPatch';
-import { setFermenterParamWithAudio } from '../../useCases/fermenterParamBridge';
+import { DEFAULT_PATCH, type FermenterPatch, ENGINE_NAMES } from '../../models/FermenterPatch';
+import { loadFermenterPatchWithAudio, setFermenterParamWithAudio } from '../../useCases/fermenterParamBridge';
 import { FERMENTER_PRESETS } from '../../useCases/fermenterQueries';
-
 import { MacroStrip } from '../components/MacroStrip';
 import { XYPad } from '../components/XYPad';
 import { Oscilloscope } from '../components/Oscilloscope';
@@ -56,253 +34,693 @@ import { SignalFlowView } from '../components/SignalFlowView';
 import { TransformPad } from './TransformPad';
 import { SpectrumAnalyzer } from '../components/SpectrumAnalyzer';
 
-// ── Preset persistence ──────────────────────────────────────────────
 const USER_PATCHES_KEY = 'fermenter-user-patches';
+
+const LEVELS = [
+    { id: 1, label: 'Play', eyebrow: 'Scene' },
+    { id: 2, label: 'Shape', eyebrow: 'Voice' },
+    { id: 3, label: 'Build', eyebrow: 'Stack' },
+    { id: 4, label: 'Route', eyebrow: 'Flow' },
+    { id: 5, label: 'Lab', eyebrow: 'Bench' },
+] as const;
+
 function loadUserPatches(): Array<{ id: string; name: string; patch: FermenterPatch }> {
-    try { return JSON.parse(localStorage.getItem(USER_PATCHES_KEY) ?? '[]'); } catch { return []; }
+    try {
+        return JSON.parse(localStorage.getItem(USER_PATCHES_KEY) ?? '[]');
+    } catch {
+        return [];
+    }
 }
+
 function saveUserPatch(name: string, patch: FermenterPatch): void {
     const patches = loadUserPatches();
     patches.push({ id: `user-${Date.now()}`, name, patch: { ...patch, name } });
     localStorage.setItem(USER_PATCHES_KEY, JSON.stringify(patches));
 }
 
-// ── Component ───────────────────────────────────────────────────────
+function formatPercent(value: number): string {
+    return `${Math.round(value * 100)}%`;
+}
+
+function getSectionMeta(section: FermenterSection): {
+    eyebrow: string;
+    title: string;
+    description: string;
+    detail: string;
+} {
+    if (section === 'osc') {
+        return {
+            eyebrow: 'Engine',
+            title: 'Oscillator theater',
+            description:
+                'Keep the sound source front and center, then layer extra engines only when the patch needs it.',
+            detail: 'Wave + motion',
+        };
+    }
+    if (section === 'filter') {
+        return {
+            eyebrow: 'Tone',
+            title: 'Filter contour',
+            description:
+                'Shape the harmonic body and watch the synth breathe instead of chasing knobs across the panel.',
+            detail: 'Cutoff + bite',
+        };
+    }
+    if (section === 'env') {
+        return {
+            eyebrow: 'Motion',
+            title: 'Envelope and drift',
+            description: 'Amplitude and movement stay readable in one place so you can sculpt response quickly.',
+            detail: 'ADSR core',
+        };
+    }
+    if (section === 'mod') {
+        return {
+            eyebrow: 'Routes',
+            title: 'Mod constellation',
+            description: 'Sources and destinations should feel connected, not like separate spreadsheets.',
+            detail: 'LFO + seq',
+        };
+    }
+    return {
+        eyebrow: 'Space',
+        title: 'Effects bus',
+        description:
+            'Delay, reverb, distortion, and polish live together so the patch can finish strong without a separate plugin.',
+        detail: 'Send + finish',
+    };
+}
+
+const MetricTile = ({ label, value, detail }: { label: string; value: string; detail: string }): ReactElement => (
+    <div className="fermenter-window flex min-w-[92px] flex-col gap-1 px-3 py-2">
+        <span className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">{label}</span>
+        <span className="font-mono text-[13px] text-foreground">{value}</span>
+        <span className="text-[9px] text-muted-foreground/55">{detail}</span>
+    </div>
+);
+
+const SectionHeader = ({
+    eyebrow,
+    title,
+    description,
+    detail,
+}: {
+    eyebrow: string;
+    title: string;
+    description: string;
+    detail?: string;
+}): ReactElement => (
+    <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1">
+            <div className="text-[8px] font-semibold uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]/70">
+                {eyebrow}
+            </div>
+            <div className="text-[13px] font-semibold text-foreground">{title}</div>
+            <span className="sr-only">{description}</span>
+        </div>
+        {detail ? <div className="fermenter-led shrink-0">{detail}</div> : null}
+    </div>
+);
+
+function loadPresetPatch(
+    presetId: string,
+    userPatches: Array<{ id: string; name: string; patch: FermenterPatch }>
+): FermenterPatch | null {
+    const userPatch = userPatches.find((patch) => patch.id === presetId);
+    if (userPatch) {
+        return userPatch.patch;
+    }
+
+    const preset = FERMENTER_PRESETS.find((entry) => entry.id === presetId);
+    if (!preset) {
+        return null;
+    }
+
+    const values = preset.devices[0]?.parameterValues;
+    if (!values) {
+        return null;
+    }
+
+    const patch: FermenterPatch = { ...DEFAULT_PATCH, name: preset.name };
+    for (const [key, value] of Object.entries(values)) {
+        if (key in patch && typeof value === 'number') {
+            (patch as Record<string, unknown>)[key] = value;
+        }
+    }
+
+    return patch;
+}
+
+function randomizePatch(): FermenterPatch {
+    const range = (min: number, max: number) => min + Math.random() * (max - min);
+    const randomInt = (min: number, max: number) => Math.floor(range(min, max + 1));
+
+    return {
+        ...DEFAULT_PATCH,
+        name: 'Random',
+        oscEngine: randomInt(0, 5),
+        oscWaveform: randomInt(0, 3),
+        oscLevel: range(0.5, 1),
+        filterModel: randomInt(0, 5),
+        filterCutoff: range(200, 12000),
+        filterResonance: range(0.5, 8),
+        ampAttack: range(0.001, 0.5),
+        ampDecay: range(0.05, 1),
+        ampSustain: range(0, 1),
+        ampRelease: range(0.05, 2),
+        filterEnvAmount: range(-0.8, 0.8),
+        reverbMix: range(0, 0.6),
+        masterGain: range(0.6, 1),
+        macros: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+    };
+}
+
+function renderEngineControls(patch: FermenterPatch, onParam: (key: string, value: number) => void): ReactElement {
+    if (patch.oscEngine === 2) {
+        return (
+            <FmSection
+                algorithm={patch.fmAlgorithm}
+                ratios={[patch.fmRatio1, patch.fmRatio2, patch.fmRatio3, patch.fmRatio4]}
+                levels={[patch.fmLevel1, patch.fmLevel2, patch.fmLevel3, patch.fmLevel4]}
+                feedback={patch.fmFeedback}
+                modAmount={patch.fmModAmount}
+                onParam={onParam}
+            />
+        );
+    }
+
+    if (patch.oscEngine === 3) {
+        return (
+            <KarplusSection
+                damping={patch.ksDamping}
+                brightness={patch.ksBrightness}
+                onDampingChange={(value) => onParam('ksDamping', value)}
+                onBrightnessChange={(value) => onParam('ksBrightness', value)}
+            />
+        );
+    }
+
+    if (patch.oscEngine === 4) {
+        return (
+            <GranularSection
+                density={patch.grainDensity}
+                size={patch.grainSize}
+                position={patch.grainPosition}
+                spray={patch.grainSpray}
+                pitchVar={patch.grainPitchVar}
+                panSpread={patch.grainPanSpread}
+                onParam={onParam}
+            />
+        );
+    }
+
+    if (patch.oscEngine === 5) {
+        return (
+            <AdditiveSection
+                partials={patch.additivePartials}
+                tilt={patch.additiveTilt}
+                oddEmphasis={patch.additiveOdd}
+                inharmonicity={patch.additiveInharm}
+                onParam={onParam}
+            />
+        );
+    }
+
+    if (patch.oscEngine === 6) {
+        return (
+            <SamplerSection
+                mode={patch.samplerMode}
+                start={patch.samplerStart}
+                end={patch.samplerEnd}
+                onParam={onParam}
+            />
+        );
+    }
+
+    return (
+        <UnisonSection
+            voices={patch.unisonVoices}
+            detune={patch.unisonDetune}
+            spread={patch.unisonSpread}
+            onVoicesChange={(value) => onParam('unisonVoices', value)}
+            onDetuneChange={(value) => onParam('unisonDetune', value)}
+            onSpreadChange={(value) => onParam('unisonSpread', value)}
+        />
+    );
+}
+
+function renderSectionContent(
+    section: FermenterSection,
+    patch: FermenterPatch,
+    onParam: (key: string, value: number) => void
+): ReactElement {
+    if (section === 'osc') {
+        return (
+            <div className="flex flex-wrap items-start gap-4">
+                <OscillatorSection
+                    engine={patch.oscEngine}
+                    waveform={patch.oscWaveform}
+                    level={patch.oscLevel}
+                    coarse={patch.oscCoarse}
+                    fine={patch.oscFine}
+                    pulseWidth={patch.pulseWidth}
+                    noiseLevel={patch.noiseLevel}
+                    noiseColor={patch.noiseColor}
+                    onEngineChange={(value) => onParam('oscEngine', value)}
+                    onWaveformChange={(value) => onParam('oscWaveform', value)}
+                    onLevelChange={(value) => onParam('oscLevel', value)}
+                    onCoarseChange={(value) => onParam('oscCoarse', value)}
+                    onFineChange={(value) => onParam('oscFine', value)}
+                    onPulseWidthChange={(value) => onParam('pulseWidth', value)}
+                    onNoiseLevelChange={(value) => onParam('noiseLevel', value)}
+                    onNoiseColorChange={(value) => onParam('noiseColor', value)}
+                />
+                <div className="border-l border-border/15 pl-4">{renderEngineControls(patch, onParam)}</div>
+                <div className="border-l border-border/15 pl-4">
+                    <WarpSection
+                        warpMode={patch.warpMode}
+                        warpAmount={patch.warpAmount}
+                        audioModRate={patch.audioModRate}
+                        audioModDepth={patch.audioModDepth}
+                        audioModTarget={patch.audioModTarget}
+                        onParam={onParam}
+                    />
+                </div>
+            </div>
+        );
+    }
+
+    if (section === 'filter') {
+        return (
+            <FilterSection
+                model={patch.filterModel}
+                cutoff={patch.filterCutoff}
+                resonance={patch.filterResonance}
+                mode={patch.filterMode}
+                envAmount={patch.filterEnvAmount}
+                drive={patch.filterDrive}
+                keytrack={patch.filterKeytrack}
+                onModelChange={(value) => onParam('filterModel', value)}
+                onCutoffChange={(value) => onParam('filterCutoff', value)}
+                onResonanceChange={(value) => onParam('filterResonance', value)}
+                onModeChange={(value) => onParam('filterMode', value)}
+                onEnvAmountChange={(value) => onParam('filterEnvAmount', value)}
+                onDriveChange={(value) => onParam('filterDrive', value)}
+                onKeytrackChange={(value) => onParam('filterKeytrack', value)}
+            />
+        );
+    }
+
+    if (section === 'env') {
+        return (
+            <div className="flex flex-wrap items-start gap-4">
+                <EnvelopeSection
+                    ampA={patch.ampAttack}
+                    ampD={patch.ampDecay}
+                    ampS={patch.ampSustain}
+                    ampR={patch.ampRelease}
+                    filterA={patch.filterAttack}
+                    filterD={patch.filterDecay}
+                    filterS={patch.filterSustain}
+                    filterR={patch.filterRelease}
+                    onAmpChange={(key, value) => onParam(key, value)}
+                    onFilterChange={(key, value) => onParam(key, value)}
+                />
+                <div className="border-l border-border/15 pl-4">
+                    <LfoSection
+                        rate={patch.lfoRate}
+                        shape={patch.lfoShape}
+                        pitchAmount={patch.lfoPitchAmount}
+                        filterAmount={patch.lfoFilterAmount}
+                        onRateChange={(value) => onParam('lfoRate', value)}
+                        onShapeChange={(value) => onParam('lfoShape', value)}
+                        onPitchAmountChange={(value) => onParam('lfoPitchAmount', value)}
+                        onFilterAmountChange={(value) => onParam('lfoFilterAmount', value)}
+                    />
+                </div>
+            </div>
+        );
+    }
+
+    if (section === 'mod') {
+        return (
+            <div className="flex flex-wrap items-start gap-6">
+                <ModulationSection
+                    msegToFilter={patch.msegToFilter}
+                    seqRate={patch.seqRate}
+                    seqToPitch={patch.seqToPitch}
+                    onParam={onParam}
+                />
+                <div className="space-y-2 border-l border-border/20 pl-4">
+                    <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Glide</div>
+                    <div className="fermenter-window flex items-center gap-3 px-3 py-2">
+                        <div className="space-y-1">
+                            <div className="text-[8px] uppercase tracking-[0.22em] text-muted-foreground/55">Time</div>
+                            <div className="font-mono text-[12px] text-foreground">
+                                {patch.portamentoTime === 0 ? 'Off' : `${(patch.portamentoTime * 1000).toFixed(0)} ms`}
+                            </div>
+                        </div>
+                        <input
+                            type="range"
+                            min={0}
+                            max={2}
+                            step={0.01}
+                            value={patch.portamentoTime}
+                            onChange={(event) => onParam('portamentoTime', Number(event.target.value))}
+                            className="h-1 flex-1 accent-[var(--color-accent-cyan)]"
+                            aria-label="Portamento time"
+                        />
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <EffectsSection
+            reverbMix={patch.reverbMix}
+            reverbDecay={patch.reverbDecay}
+            delayTime={patch.delayTime}
+            delayFeedback={patch.delayFeedback}
+            delayMix={patch.delayMix}
+            chorusRate={patch.chorusRate}
+            chorusDepth={patch.chorusDepth}
+            chorusMix={patch.chorusMix}
+            phaserRate={patch.phaserRate}
+            phaserDepth={patch.phaserDepth}
+            phaserMix={patch.phaserMix}
+            distDrive={patch.distDrive}
+            distTone={patch.distTone}
+            distMix={patch.distMix}
+            compThreshold={patch.compThreshold}
+            compRatio={patch.compRatio}
+            compAttack={patch.compAttack}
+            compRelease={patch.compRelease}
+            compMix={patch.compMix}
+            stereoWidth={patch.stereoWidth}
+            masterGain={patch.masterGain}
+            eqLowFreq={patch.eqLowFreq}
+            eqLowGain={patch.eqLowGain}
+            eqLowQ={patch.eqLowQ}
+            eqMidFreq={patch.eqMidFreq}
+            eqMidGain={patch.eqMidGain}
+            eqMidQ={patch.eqMidQ}
+            eqHighFreq={patch.eqHighFreq}
+            eqHighGain={patch.eqHighGain}
+            eqHighQ={patch.eqHighQ}
+            onParam={onParam}
+        />
+    );
+}
+
 export const FermenterPanel = (): ReactElement => {
     const state = useSyncExternalStore<FermenterState | null>(
-        (cb) => fermenterStore.subscribe(cb), () => fermenterStore.value,
+        (cb) => fermenterStore.subscribe(cb),
+        () => fermenterStore.value
     );
     const patch = state?.patch ?? fermenterStore.value!.patch;
     const activeVoices = state?.activeVoices ?? 0;
     const scopeBuffer = state?.scopeBuffer ?? null;
     const peakL = state?.peakL ?? 0;
     const peakR = state?.peakR ?? 0;
+    const uiLevel = state?.uiLevel ?? 2;
 
     const [section, setSection] = useState<FermenterSection>('osc');
     const [showSave, setShowSave] = useState(false);
     const [saveName, setSaveName] = useState('');
-    const [upVer, setUpVer] = useState(0);
-    const [presetOpen, setPresetOpen] = useState(false);
-    const userPatches = loadUserPatches(); void upVer;
+    const [version, setVersion] = useState(0);
+    void version;
 
-    const setParam = useCallback((key: keyof FermenterPatch, value: number) => setFermenterParamWithAudio(key, value), []);
-    const onParam = useCallback((key: string, value: number) => setFermenterParamWithAudio(key as keyof FermenterPatch, value), []);
+    const userPatches = loadUserPatches();
+    const sectionMeta = getSectionMeta(section);
 
-    const setMacro = useCallback((index: number, value: number) => {
-        // Update store with new macro array
+    function onParam(key: string, value: number): void {
+        setFermenterParamWithAudio(key as keyof FermenterPatch, value);
+    }
+
+    function setMacro(index: number, value: number): void {
         const macros = [...patch.macros] as FermenterPatch['macros'];
         macros[index] = value;
         loadFermenterPatch({ ...patch, macros });
-        // Macros don't map to Rust params yet — they're performance controllers
-        // that will eventually map to synth params via the macro routing system
-    }, [patch]);
+    }
 
-    const loadPreset = useCallback((presetId: string) => {
-        const up = userPatches.find((p) => p.id === presetId);
-        const src = up ? up.patch : (() => {
-            const pr = FERMENTER_PRESETS.find((p) => p.id === presetId);
-            if (!pr) return null;
-            const pv = pr.devices[0]?.parameterValues; if (!pv) return null;
-            const np: FermenterPatch = { ...DEFAULT_PATCH, name: pr.name };
-            for (const [k, v] of Object.entries(pv)) { if (k in np && typeof v === 'number') (np as Record<string, unknown>)[k] = v; }
-            return np;
-        })();
-        if (!src) return;
-        loadFermenterPatch(src);
-        for (const [k, v] of Object.entries(src)) { if (typeof v === 'number') setFermenterParamWithAudio(k as keyof FermenterPatch, v); }
-    }, [userPatches]);
+    function loadPreset(presetId: string): void {
+        const loadedPatch = loadPresetPatch(presetId, userPatches);
+        if (!loadedPatch) {
+            return;
+        }
 
-    const initPatch = useCallback(() => {
-        loadFermenterPatch({ ...DEFAULT_PATCH });
-        for (const [k, v] of Object.entries(DEFAULT_PATCH)) { if (typeof v === 'number') setFermenterParamWithAudio(k as keyof FermenterPatch, v); }
-    }, []);
+        loadFermenterPatchWithAudio(loadedPatch);
+    }
 
-    const randomizePatch = useCallback(() => {
-        const r = (a: number, b: number) => a + Math.random() * (b - a);
-        const ri = (a: number, b: number) => Math.floor(r(a, b + 1));
-        const p: FermenterPatch = { ...DEFAULT_PATCH, name: 'Random', oscEngine: ri(0, 5), oscWaveform: ri(0, 3), oscLevel: r(0.5, 1), filterModel: ri(0, 5), filterCutoff: r(200, 12000), filterResonance: r(0.5, 8), ampAttack: r(0.001, 0.5), ampDecay: r(0.05, 1), ampSustain: r(0, 1), ampRelease: r(0.05, 2), filterEnvAmount: r(-0.8, 0.8), reverbMix: r(0, 0.6), masterGain: r(0.6, 1), macros: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5] };
-        loadFermenterPatch(p);
-        for (const [k, v] of Object.entries(p)) { if (typeof v === 'number') setFermenterParamWithAudio(k as keyof FermenterPatch, v); }
-    }, []);
+    function initPatch(): void {
+        loadFermenterPatchWithAudio({ ...DEFAULT_PATCH });
+    }
 
-    const handleSave = useCallback(() => {
-        if (!saveName.trim()) return;
+    function applyRandomPatch(): void {
+        loadFermenterPatchWithAudio(randomizePatch());
+    }
+
+    function handleSave(): void {
+        if (!saveName.trim()) {
+            return;
+        }
+
         saveUserPatch(saveName.trim(), patch);
-        setSaveName(''); setShowSave(false); setUpVer((v) => v + 1);
-    }, [saveName, patch]);
-
-    // ── Engine-specific sub-panel ────────────────────────────────────
-    const engineControls = (): ReactElement | null => {
-        switch (patch.oscEngine) {
-            case 2: return <FmSection algorithm={patch.fmAlgorithm} ratios={[patch.fmRatio1, patch.fmRatio2, patch.fmRatio3, patch.fmRatio4]} levels={[patch.fmLevel1, patch.fmLevel2, patch.fmLevel3, patch.fmLevel4]} feedback={patch.fmFeedback} modAmount={patch.fmModAmount} onParam={onParam} />;
-            case 3: return <KarplusSection damping={patch.ksDamping} brightness={patch.ksBrightness} onDampingChange={(v) => setParam('ksDamping', v)} onBrightnessChange={(v) => setParam('ksBrightness', v)} />;
-            case 4: return <GranularSection density={patch.grainDensity} size={patch.grainSize} position={patch.grainPosition} spray={patch.grainSpray} pitchVar={patch.grainPitchVar} panSpread={patch.grainPanSpread} onParam={onParam} />;
-            case 5: return <AdditiveSection partials={patch.additivePartials} tilt={patch.additiveTilt} oddEmphasis={patch.additiveOdd} inharmonicity={patch.additiveInharm} onParam={onParam} />;
-            case 6: return <SamplerSection mode={patch.samplerMode} start={patch.samplerStart} end={patch.samplerEnd} onParam={onParam} />;
-            default: return <UnisonSection voices={patch.unisonVoices} detune={patch.unisonDetune} spread={patch.unisonSpread} onVoicesChange={(v) => setParam('unisonVoices', v)} onDetuneChange={(v) => setParam('unisonDetune', v)} onSpreadChange={(v) => setParam('unisonSpread', v)} />;
-        }
-    };
-
-    // ── Section content ──────────────────────────────────────────────
-    const sectionContent = (): ReactElement => {
-        switch (section) {
-            case 'osc': return (
-                <div className="flex gap-4 items-start flex-wrap">
-                    <OscillatorSection engine={patch.oscEngine} waveform={patch.oscWaveform} level={patch.oscLevel} coarse={patch.oscCoarse} fine={patch.oscFine} pulseWidth={patch.pulseWidth} noiseLevel={patch.noiseLevel} noiseColor={patch.noiseColor} onEngineChange={(v) => setParam('oscEngine', v)} onWaveformChange={(v) => setParam('oscWaveform', v)} onLevelChange={(v) => setParam('oscLevel', v)} onCoarseChange={(v) => setParam('oscCoarse', v)} onFineChange={(v) => setParam('oscFine', v)} onPulseWidthChange={(v) => setParam('pulseWidth', v)} onNoiseLevelChange={(v) => setParam('noiseLevel', v)} onNoiseColorChange={(v) => setParam('noiseColor', v)} />
-                    <div className="border-l border-border/15 pl-4">{engineControls()}</div>
-                    <div className="border-l border-border/15 pl-4"><WarpSection warpMode={patch.warpMode} warpAmount={patch.warpAmount} audioModRate={patch.audioModRate} audioModDepth={patch.audioModDepth} audioModTarget={patch.audioModTarget} onParam={onParam} /></div>
-                </div>
-            );
-            case 'filter': return (
-                <FilterSection model={patch.filterModel} cutoff={patch.filterCutoff} resonance={patch.filterResonance} mode={patch.filterMode} envAmount={patch.filterEnvAmount} drive={patch.filterDrive} keytrack={patch.filterKeytrack} onModelChange={(v) => setParam('filterModel', v)} onCutoffChange={(v) => setParam('filterCutoff', v)} onResonanceChange={(v) => setParam('filterResonance', v)} onModeChange={(v) => setParam('filterMode', v)} onEnvAmountChange={(v) => setParam('filterEnvAmount', v)} onDriveChange={(v) => setParam('filterDrive', v)} onKeytrackChange={(v) => setParam('filterKeytrack', v)} />
-            );
-            case 'env': return (
-                <div className="flex gap-4 items-start flex-wrap">
-                    <EnvelopeSection ampA={patch.ampAttack} ampD={patch.ampDecay} ampS={patch.ampSustain} ampR={patch.ampRelease} filterA={patch.filterAttack} filterD={patch.filterDecay} filterS={patch.filterSustain} filterR={patch.filterRelease} onAmpChange={(k, v) => setParam(k, v)} onFilterChange={(k, v) => setParam(k, v)} />
-                    <div className="border-l border-border/15 pl-4"><LfoSection rate={patch.lfoRate} shape={patch.lfoShape} pitchAmount={patch.lfoPitchAmount} filterAmount={patch.lfoFilterAmount} onRateChange={(v) => setParam('lfoRate', v)} onShapeChange={(v) => setParam('lfoShape', v)} onPitchAmountChange={(v) => setParam('lfoPitchAmount', v)} onFilterAmountChange={(v) => setParam('lfoFilterAmount', v)} /></div>
-                </div>
-            );
-            case 'mod': return (
-                <div className="flex gap-6 items-start">
-                    <ModulationSection msegToFilter={patch.msegToFilter} seqRate={patch.seqRate} seqToPitch={patch.seqToPitch} onParam={onParam} />
-                    <div className="border-l border-border/20 pl-4 space-y-2">
-                        <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Portamento</div>
-                        <div className="flex items-end gap-2">
-                            <div className="flex flex-col items-center gap-0.5">
-                                <span className="text-[8px] text-muted-foreground">{patch.portamentoTime === 0 ? 'Off' : `${(patch.portamentoTime * 1000).toFixed(0)}ms`}</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            );
-            case 'fx': return (
-                <EffectsSection
-                    reverbMix={patch.reverbMix} reverbDecay={patch.reverbDecay}
-                    delayTime={patch.delayTime} delayFeedback={patch.delayFeedback} delayMix={patch.delayMix}
-                    chorusRate={patch.chorusRate} chorusDepth={patch.chorusDepth} chorusMix={patch.chorusMix}
-                    phaserRate={patch.phaserRate} phaserDepth={patch.phaserDepth} phaserMix={patch.phaserMix}
-                    distDrive={patch.distDrive} distTone={patch.distTone} distMix={patch.distMix}
-                    compThreshold={patch.compThreshold} compRatio={patch.compRatio} compAttack={patch.compAttack} compRelease={patch.compRelease} compMix={patch.compMix}
-                    stereoWidth={patch.stereoWidth} masterGain={patch.masterGain}
-                    eqLowFreq={patch.eqLowFreq} eqLowGain={patch.eqLowGain} eqLowQ={patch.eqLowQ}
-                    eqMidFreq={patch.eqMidFreq} eqMidGain={patch.eqMidGain} eqMidQ={patch.eqMidQ}
-                    eqHighFreq={patch.eqHighFreq} eqHighGain={patch.eqHighGain} eqHighQ={patch.eqHighQ}
-                    onParam={onParam}
-                />
-            );
-        }
-    };
-
-    // ── Macro XY + strip (compact for sidebar use) ───────────────────
-    const macroPanel = (compact: boolean): ReactElement => (
-        <div className="space-y-2 p-2">
-            <XYPad
-                xValue={patch.macros[0]} yValue={patch.macros[1]}
-                xLabel="Bright" yLabel="Motion"
-                onXChange={(v) => setMacro(0, v)}
-                onYChange={(v) => setMacro(1, v)}
-                size={compact ? 130 : 160}
-            />
-            <MacroStrip compact={compact} values={patch.macros} onChange={setMacro} />
-        </div>
-    );
-
-    // ═══════════════════════════════════════════════════════════════════
-    // LAYOUT — always show everything (former "Lab" level)
-    // ═══════════════════════════════════════════════════════════════════
+        setSaveName('');
+        setShowSave(false);
+        setVersion((currentVersion) => currentVersion + 1);
+    }
 
     return (
-        <div className="flex flex-col h-full">
-            {/* ─── Top bar ─── */}
-            <div
-                className="flex items-center justify-between px-3 py-1 shrink-0"
-                style={{
-                    background: 'linear-gradient(180deg, rgba(20,20,22,0.95) 0%, rgba(14,14,16,0.95) 100%)',
-                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 3px rgba(0,0,0,0.5)',
-                    borderBottom: '1px solid rgba(0,0,0,0.4)',
-                }}
-            >
-                <div className="flex items-center gap-2">
-                    {/* Preset name — click to open browser flyout */}
-                    <button
-                        type="button"
-                        className="flex items-center gap-1 group"
-                        onClick={() => setPresetOpen((o) => !o)}
-                    >
-                        <span className="text-[10px] font-bold text-[var(--color-accent-lavender)] tracking-tight group-hover:text-[var(--color-accent-lavender)]/70 transition-colors">{patch.name}</span>
-                        <ChevronDown className={`size-2.5 text-[var(--color-accent-lavender)]/50 transition-transform duration-150 ${presetOpen ? 'rotate-180' : ''}`} />
-                    </button>
-                    {showSave ? (
-                        <div className="flex items-center gap-1">
-                            <input type="text" value={saveName} onChange={(e) => setSaveName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') setShowSave(false); }} placeholder="Name…" className="h-5 w-20 rounded border border-border/40 bg-surface-inset px-1.5 text-[9px] outline-none" autoFocus />
-                            <Button variant="ghost" size="icon-xs" className="h-5 w-5" onClick={handleSave}><Save className="size-3" /></Button>
-                        </div>
-                    ) : (
-                        <div className="flex gap-0.5">
-                            <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon-xs" className="h-5 w-5" onClick={() => { setSaveName(patch.name === 'Init' ? '' : patch.name); setShowSave(true); }}><Save className="size-2.5" /></Button></TooltipTrigger><TooltipContent>Save</TooltipContent></Tooltip>
-                            <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon-xs" className="h-5 w-5" onClick={initPatch}><RotateCcw className="size-2.5" /></Button></TooltipTrigger><TooltipContent>Init</TooltipContent></Tooltip>
-                            <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon-xs" className="h-5 w-5" onClick={randomizePatch}><Shuffle className="size-2.5" /></Button></TooltipTrigger><TooltipContent>Random</TooltipContent></Tooltip>
-                        </div>
-                    )}
-                </div>
-                <div className="flex items-center gap-2">
-                    <div className="w-px h-4 shrink-0" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.01) 100%)' }} />
-                    <Oscilloscope buffer={scopeBuffer} width={80} height={20} />
-                    <div className="flex items-center gap-1 text-[9px] text-muted-foreground"><Cpu className="size-3" /><span>{activeVoices}v</span></div>
-                    <OutputMeter peakL={peakL} peakR={peakR} height={20} />
-                </div>
-            </div>
+        <div className="fermenter-faceplate flex h-full min-h-0 gap-2.5 overflow-hidden p-2.5">
+            <aside className="fermenter-window flex h-full w-[228px] shrink-0 flex-col gap-2.5 overflow-hidden p-2.5">
+                <SectionHeader
+                    eyebrow="Scenes"
+                    title="Preset bench"
+                    description="Pick instruments like scenes, not menu rows, then keep the performance controls close."
+                    detail={`${userPatches.length} user`}
+                />
 
-            {/* ─── Main body — full layout with all panels visible ─── */}
-            <div className="flex flex-1 min-h-0 overflow-hidden relative">
-                {/* LEFT: Layer stack */}
-                <div className="w-[120px] shrink-0 border-r border-border/20 flex flex-col overflow-hidden">
-                    <LayerStack numLayers={patch.numLayers} activeLayer={patch.activeLayer} layerLevel={patch.layerLevel} layerPan={patch.layerPan} currentEngine={patch.oscEngine} onActiveLayerChange={(v) => setParam('activeLayer', v)} onNumLayersChange={(v) => setParam('numLayers', v)} onLevelChange={(v) => setParam('layerLevel', v)} onPanChange={(v) => setParam('layerPan', v)} />
+                <div className="flex flex-wrap gap-1.5">
+                    {LEVELS.map((level) => (
+                        <button
+                            key={level.id}
+                            type="button"
+                            className={`fermenter-chip ${uiLevel === level.id ? 'fermenter-chip-active' : ''}`}
+                            onClick={() => setFermenterUiLevel(level.id)}
+                        >
+                            {level.label}
+                        </button>
+                    ))}
                 </div>
 
-                {/* CENTER: Section tabs + content */}
-                <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-                    <div className="px-2 py-1 border-b border-border/20 shrink-0">
-                        <SectionNav active={section} onChange={setSection} />
+                <div className="fermenter-window flex items-center justify-between gap-2 px-3 py-2">
+                    <div className="min-w-0">
+                        <div className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">
+                            Current scene
+                        </div>
+                        <div className="truncate text-[11px] text-foreground">{patch.name}</div>
                     </div>
-                    <ScrollArea className="flex-1 min-h-0">
-                        <div className="p-3">{sectionContent()}</div>
-                        {/* Signal flow — inside scroll area */}
-                        <div className="border-t border-border/20 overflow-x-auto px-3 py-2">
-                            <SignalFlowView patch={patch} numLayers={patch.numLayers} activeLayer={patch.activeLayer} onSelectSection={(s) => setSection(s as FermenterSection)} />
-                        </div>
-                    </ScrollArea>
-                </div>
-
-                {/* RIGHT: Macros/XY + Transform + Spectrum */}
-                <div className="w-[170px] shrink-0 border-l border-border/20 overflow-y-auto">
-                    {macroPanel(true)}
-                    <div className="p-2 border-t border-border/20 space-y-2">
-                        <TransformPad />
-                        <div className="space-y-1">
-                            <div className="text-[9px] font-medium text-muted-foreground uppercase tracking-wider">Spectrum</div>
-                            <SpectrumAnalyzer buffer={scopeBuffer} width={155} height={50} />
-                        </div>
+                    <div className="flex gap-1">
+                        {showSave ? (
+                            <>
+                                <input
+                                    type="text"
+                                    value={saveName}
+                                    onChange={(event) => setSaveName(event.target.value)}
+                                    onKeyDown={(event) => {
+                                        if (event.key === 'Enter') {
+                                            handleSave();
+                                        }
+                                        if (event.key === 'Escape') {
+                                            setShowSave(false);
+                                        }
+                                    }}
+                                    placeholder="Name…"
+                                    className="fermenter-window h-8 w-24 px-2 text-[10px] outline-none"
+                                    autoFocus
+                                />
+                                <Button variant="ghost" size="icon-xs" className="h-8 w-8" onClick={handleSave}>
+                                    <Save className="size-3" />
+                                </Button>
+                            </>
+                        ) : (
+                            <>
+                                <Button
+                                    variant="ghost"
+                                    size="icon-xs"
+                                    className="h-8 w-8"
+                                    onClick={() => {
+                                        setSaveName(patch.name === 'Init' ? '' : patch.name);
+                                        setShowSave(true);
+                                    }}
+                                >
+                                    <Save className="size-3" />
+                                </Button>
+                                <Button variant="ghost" size="icon-xs" className="h-8 w-8" onClick={initPatch}>
+                                    <RotateCcw className="size-3" />
+                                </Button>
+                                <Button variant="ghost" size="icon-xs" className="h-8 w-8" onClick={applyRandomPatch}>
+                                    <Shuffle className="size-3" />
+                                </Button>
+                            </>
+                        )}
                     </div>
                 </div>
 
-                {/* PRESET BROWSER FLYOUT */}
-                {presetOpen ? (
-                    <>
-                        <div
-                            className="absolute inset-0 z-10"
-                            onClick={() => setPresetOpen(false)}
+                <div className="fermenter-window min-h-0 flex-1 overflow-hidden">
+                    <PresetBrowser
+                        currentName={patch.name}
+                        userPatches={userPatches}
+                        presets={FERMENTER_PRESETS}
+                        onLoadPreset={loadPreset}
+                    />
+                </div>
+            </aside>
+
+            <div className="flex min-w-0 flex-1 flex-col gap-2.5">
+                <header className="fermenter-window flex shrink-0 flex-wrap items-center gap-2.5 px-3 py-2">
+                    <div className="space-y-1">
+                        <div className="text-[8px] uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]/70">
+                            {LEVELS.find((level) => level.id === uiLevel)?.eyebrow ?? 'Voice'}
+                        </div>
+                        <div className="text-[13px] font-semibold text-foreground">Fermenter</div>
+                    </div>
+
+                    <div className="ml-auto flex items-center gap-2">
+                        <div className="fermenter-led">{ENGINE_NAMES[patch.oscEngine] ?? 'Wavetable'}</div>
+                        <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                            <Cpu className="size-3" />
+                            <span>{activeVoices} voices</span>
+                        </div>
+                        <OutputMeter peakL={peakL} peakR={peakR} height={20} />
+                    </div>
+                </header>
+
+                <div className="grid shrink-0 grid-cols-4 gap-2.5">
+                    <MetricTile
+                        label="Engine"
+                        value={ENGINE_NAMES[patch.oscEngine] ?? 'Wavetable'}
+                        detail={`Wave ${patch.oscWaveform + 1}`}
+                    />
+                    <MetricTile
+                        label="Cutoff"
+                        value={`${Math.round(patch.filterCutoff)} Hz`}
+                        detail={`Res ${patch.filterResonance.toFixed(1)}`}
+                    />
+                    <MetricTile
+                        label="Motion"
+                        value={`${patch.lfoRate.toFixed(2)} Hz`}
+                        detail={`Macro A ${formatPercent(patch.macros[0])}`}
+                    />
+                    <MetricTile
+                        label="Width"
+                        value={patch.stereoWidth.toFixed(2)}
+                        detail={`${patch.numLayers} layer${patch.numLayers === 1 ? '' : 's'}`}
+                    />
+                </div>
+
+                <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.45fr)_260px] gap-2.5 overflow-hidden">
+                    <section className="fermenter-window flex min-h-0 flex-col gap-2.5 overflow-hidden p-2.5">
+                        <SectionHeader
+                            eyebrow={sectionMeta.eyebrow}
+                            title={sectionMeta.title}
+                            description={sectionMeta.description}
+                            detail={sectionMeta.detail}
                         />
-                        <div className="absolute left-0 top-0 bottom-0 z-20 w-[220px] bg-surface-tray border-r border-border/30 shadow-2xl flex flex-col animate-in slide-in-from-left-1 duration-150">
-                            <PresetBrowser
-                                currentName={patch.name}
-                                userPatches={userPatches}
-                                presets={FERMENTER_PRESETS}
-                                onLoadPreset={(id) => { loadPreset(id); setPresetOpen(false); }}
-                            />
+
+                        <div className="fermenter-window flex shrink-0 flex-col gap-2 p-3">
+                            <SectionNav active={section} onChange={setSection} />
+                            <div className="grid grid-cols-[minmax(0,1fr)_180px] gap-3">
+                                <div className="fermenter-window flex h-[136px] items-center justify-center p-2">
+                                    <Oscilloscope buffer={scopeBuffer} width={360} height={96} />
+                                </div>
+                                <div className="fermenter-window flex flex-col justify-between p-3">
+                                    <div>
+                                        <div className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">
+                                            Quick read
+                                        </div>
+                                        <div className="mt-1 text-[12px] font-medium text-foreground">
+                                            {ENGINE_NAMES[patch.oscEngine] ?? 'Wavetable'}
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center justify-between gap-2 text-[9px] text-muted-foreground">
+                                        <span>Master {formatPercent(Math.min(1, patch.masterGain / 2))}</span>
+                                        <span>Layer {patch.activeLayer + 1}</span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                    </>
-                ) : null}
+
+                        <div className="min-h-0 flex-1 overflow-y-auto px-1">
+                            <div className="pb-2">{renderSectionContent(section, patch, onParam)}</div>
+                            {uiLevel >= 4 ? (
+                                <div className="mt-3 border-t border-border/15 pt-3">
+                                    <SignalFlowView
+                                        patch={patch}
+                                        numLayers={patch.numLayers}
+                                        activeLayer={patch.activeLayer}
+                                        onSelectSection={(nextSection) => setSection(nextSection as FermenterSection)}
+                                    />
+                                </div>
+                            ) : null}
+                        </div>
+                    </section>
+
+                    <aside className="fermenter-window flex min-h-0 flex-col gap-2.5 overflow-y-auto p-2.5">
+                        <div className="fermenter-window flex flex-col gap-3 p-3">
+                            <SectionHeader
+                                eyebrow="Performance"
+                                title="Macro rig"
+                                description="Big moves live here so the right rail earns its space."
+                                detail="8 macros"
+                            />
+                            <div className="flex items-center justify-center">
+                                <XYPad
+                                    xValue={patch.macros[0]}
+                                    yValue={patch.macros[1]}
+                                    xLabel="Bright"
+                                    yLabel="Motion"
+                                    onXChange={(value) => setMacro(0, value)}
+                                    onYChange={(value) => setMacro(1, value)}
+                                    size={152}
+                                />
+                            </div>
+                            <MacroStrip compact values={patch.macros} onChange={setMacro} />
+                        </div>
+
+                        {uiLevel >= 3 ? (
+                            <div className="fermenter-window p-3">
+                                <LayerStack
+                                    numLayers={patch.numLayers}
+                                    activeLayer={patch.activeLayer}
+                                    layerLevel={patch.layerLevel}
+                                    layerPan={patch.layerPan}
+                                    currentEngine={patch.oscEngine}
+                                    onActiveLayerChange={(value) => onParam('activeLayer', value)}
+                                    onNumLayersChange={(value) => onParam('numLayers', value)}
+                                    onLevelChange={(value) => onParam('layerLevel', value)}
+                                    onPanChange={(value) => onParam('layerPan', value)}
+                                />
+                            </div>
+                        ) : null}
+
+                        {uiLevel >= 5 ? (
+                            <>
+                                <div className="fermenter-window p-3">
+                                    <TransformPad />
+                                </div>
+                                <div className="fermenter-window flex flex-col gap-2 p-3">
+                                    <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                                        Spectrum
+                                    </div>
+                                    <SpectrumAnalyzer buffer={scopeBuffer} width={210} height={62} />
+                                </div>
+                            </>
+                        ) : null}
+                    </aside>
+                </div>
             </div>
         </div>
     );

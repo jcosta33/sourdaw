@@ -1,28 +1,21 @@
-/**
- * Bacteria — creative multi-effects framework panel.
- *
- * 5-level progressive disclosure:
- *   Level 1 (Play): Preset browser, 8 macros, XY morph pad, master mix
- *   Level 2 (Shape): Selected module's core params + quick modulators
- *   Level 3 (Build): Multi-band crossover, per-band chains, modulation dock
- *   Level 4 (Route): Signal flow DAG, routing mode toggles
- *   Level 5 (Lab): Waveshaper editor, Bezier LFO, spectral bin editor
- */
-import { type ReactElement, useSyncExternalStore } from 'react';
-import { useState } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { type ReactElement, useState, useSyncExternalStore, useTransition } from 'react';
+import { Search } from 'lucide-react';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import {
     bacteriaStore,
     type BacteriaState,
     type BacteriaUiLevel,
-    setBacteriaUiLevel,
     setBacteriaActiveBand,
     setBacteriaActiveModule,
+    setBacteriaUiLevel,
 } from '../../stores/bacteriaStore';
-import { setBacteriaParamWithAudio, setBacteriaBandParamWithAudio } from '../../useCases/bacteriaParamBridge';
+import {
+    loadBacteriaPatchWithAudio,
+    setBacteriaBandParamWithAudio,
+    setBacteriaParamWithAudio,
+    type BacteriaPatch,
+} from '../../useCases/bacteriaParamBridge';
 import { BACTERIA_PRESETS } from '../../useCases/bacteriaPresets';
-import { loadBacteriaPatch } from '../../stores/bacteriaStore';
 import { XYMorphPad } from '../components/XYMorphPad';
 import { CrossoverDisplay } from '../components/CrossoverDisplay';
 import { BandStrip } from '../components/BandStrip';
@@ -34,25 +27,25 @@ import { ModulationDock } from '../components/ModulationDock';
 import { SpectrumAnalyzer } from '../components/SpectrumAnalyzer';
 import { NodeGraphEditor } from '../components/NodeGraphEditor';
 
-const LEVELS: { id: BacteriaUiLevel; label: string; description: string }[] = [
-    { id: 1, label: 'Play', description: 'Performance view' },
-    { id: 2, label: 'Shape', description: 'Module editing' },
-    { id: 3, label: 'Build', description: 'Multi-band + modulation' },
-    { id: 4, label: 'Route', description: 'Signal flow' },
-    { id: 5, label: 'Lab', description: 'Deep editing' },
+const LEVELS: Array<{ id: BacteriaUiLevel; label: string; eyebrow: string; description: string }> = [
+    { id: 1, label: 'Play', eyebrow: 'Morph floor', description: 'Macros, presets, and the petri pad.' },
+    { id: 2, label: 'Shape', eyebrow: 'Mutation deck', description: 'One band, one module, all the weirdness.' },
+    { id: 3, label: 'Build', eyebrow: 'Band broth', description: 'Split the signal and grow it sideways.' },
+    { id: 4, label: 'Route', eyebrow: 'Dish map', description: 'See how the organism is wired.' },
+    { id: 5, label: 'Lab', eyebrow: 'Bench', description: 'Curves, bins, and modulation plumbing.' },
 ];
 
 const EFFECT_MODULES = [
-    { id: 'distortion', label: 'Distortion' },
-    { id: 'filter', label: 'Filter' },
-    { id: 'chorus', label: 'Chorus' },
-    { id: 'phaser', label: 'Phaser' },
-    { id: 'granular', label: 'Granular' },
-    { id: 'spectral', label: 'Spectral' },
-    { id: 'freqShift', label: 'Freq Shift' },
-    { id: 'lofi', label: 'Lo-Fi' },
-    { id: 'convolution', label: 'Body' },
-];
+    { id: 'distortion', label: 'Drive', hint: 'Clip, fold, or scrape the active band.' },
+    { id: 'filter', label: 'Filter', hint: 'Tilt the broth with resonant cuts.' },
+    { id: 'chorus', label: 'Chorus', hint: 'Spread and sway the band.' },
+    { id: 'phaser', label: 'Phaser', hint: 'Sweep notches through the smear.' },
+    { id: 'granular', label: 'Granular', hint: 'Shred the input into grains.' },
+    { id: 'spectral', label: 'Spectral', hint: 'Blur the spectrum into fog.' },
+    { id: 'freqShift', label: 'Shift', hint: 'Offset partials off the center line.' },
+    { id: 'lofi', label: 'Lo-Fi', hint: 'Crunch codec edges and clock scars.' },
+    { id: 'convolution', label: 'Body', hint: 'Inject resonance and strange space.' },
+] as const;
 
 const DISTORTION_MODES = [
     'soft-clip',
@@ -73,10 +66,22 @@ function formatValue(v: number, unit: string): string {
         return `${v > 0 ? '+' : ''}${v.toFixed(1)}`;
     }
     if (unit === 'ms') {
-        return v < 1 ? `${(v * 1000).toFixed(0)}µs` : v >= 1000 ? `${(v / 1000).toFixed(1)}s` : `${v.toFixed(0)}ms`;
+        if (v < 1) {
+            return `${(v * 1000).toFixed(0)}µs`;
+        }
+
+        if (v >= 1000) {
+            return `${(v / 1000).toFixed(1)}s`;
+        }
+
+        return `${v.toFixed(0)}ms`;
     }
     if (unit === 'Hz') {
-        return v >= 1000 ? `${(v / 1000).toFixed(1)}k` : `${v.toFixed(0)}`;
+        if (v >= 1000) {
+            return `${(v / 1000).toFixed(1)}k`;
+        }
+
+        return `${v.toFixed(0)}`;
     }
     if (unit === '%') {
         return `${v.toFixed(0)}%`;
@@ -84,7 +89,52 @@ function formatValue(v: number, unit: string): string {
     if (unit === 'st') {
         return `${v > 0 ? '+' : ''}${v.toFixed(1)}`;
     }
+
     return `${v.toFixed(2)}`;
+}
+
+function countEnabledEffects(band: BacteriaPatch['bands'][0]): number {
+    const flags = [
+        band.distortionEnabled,
+        band.filterEnabled,
+        band.granularEnabled,
+        band.spectralEnabled,
+        band.modulationEnabled,
+        band.convolutionEnabled,
+        band.freqShiftEnabled,
+        band.chorusEnabled,
+        band.phaserEnabled,
+        band.lofiEnabled,
+    ];
+
+    return flags.filter(Boolean).length;
+}
+
+function getPresetCategories(): string[] {
+    const categories = ['All', ...new Set(BACTERIA_PRESETS.map((preset) => preset.category))];
+    return categories;
+}
+
+function getActiveLevel(level: BacteriaUiLevel) {
+    const activeLevel = LEVELS.find((candidate) => candidate.id === level);
+    if (activeLevel) {
+        return activeLevel;
+    }
+
+    return LEVELS[0]!;
+}
+
+function getModuleMeta(moduleId: string) {
+    const moduleMeta = EFFECT_MODULES.find((module) => module.id === moduleId);
+    if (moduleMeta) {
+        return moduleMeta;
+    }
+
+    return EFFECT_MODULES[0]!;
+}
+
+function setGlobalParam<K extends keyof BacteriaPatch>(key: K, value: BacteriaPatch[K]): void {
+    setBacteriaParamWithAudio(key, value);
 }
 
 const K = ({
@@ -108,195 +158,636 @@ const K = ({
     unit?: string;
     onChangeFn?: (key: string, value: number) => void;
 }): ReactElement => (
-    <div className="flex flex-col items-center gap-0">
+    <div className="flex min-w-[58px] flex-col items-center gap-1">
         <RotaryKnob
             value={v}
-            onChange={(val) => (onChangeFn ?? setGlobalParam)(k, val)}
+            onChange={(val: number) =>
+                (onChangeFn ?? ((key, value) => setGlobalParam(key as keyof BacteriaPatch, value as never)))(k, val)
+            }
             min={min}
             max={max}
             step={step}
             defaultValue={def}
             size="sm"
         />
-        <span className="text-[7px] text-muted-foreground leading-none">{label}</span>
-        {unit ? <span className="text-[6px] text-muted-foreground/40 font-mono">{formatValue(v, unit)}</span> : null}
+        <span className="text-[8px] leading-none text-muted-foreground">{label}</span>
+        {unit ? <span className="font-mono text-[7px] text-muted-foreground/45">{formatValue(v, unit)}</span> : null}
     </div>
 );
 
-function setGlobalParam(key: string, value: number): void {
-    setBacteriaParamWithAudio(key as never, value);
-}
+const SectionHeader = ({
+    eyebrow,
+    title,
+    description,
+    detail,
+}: {
+    eyebrow: string;
+    title: string;
+    description: string;
+    detail?: string;
+}): ReactElement => (
+    <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1">
+            <div className="text-[8px] font-semibold uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]/70">
+                {eyebrow}
+            </div>
+            <div className="text-[13px] font-semibold tracking-[0.02em] text-foreground">{title}</div>
+            <span className="sr-only">{description}</span>
+        </div>
+        {detail ? <div className="bacteria-led shrink-0">{detail}</div> : null}
+    </div>
+);
 
-// ── Level 1: Play ────────────────────────────────────────────────────────────
+const MetricCell = ({ label, value }: { label: string; value: string }): ReactElement => (
+    <div className="bacteria-window flex min-w-[92px] flex-col gap-1 px-3 py-2">
+        <span className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">{label}</span>
+        <span className="font-mono text-[12px] text-foreground">{value}</span>
+    </div>
+);
 
-const PlayLevel = ({ state }: { state: BacteriaState }): ReactElement => {
-    const patch = state.patch;
-    const [presetMenuOpen, setPresetMenuOpen] = useState(false);
+const BandMeters = ({ state }: { state: BacteriaState }): ReactElement => (
+    <div className="bacteria-window flex flex-col gap-2 px-3 py-2">
+        <div className="flex items-center justify-between gap-2">
+            <span className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">Band energy</span>
+            <span className="text-[8px] text-muted-foreground/45">{state.patch.bandCount} active lanes</span>
+        </div>
+        <div className="flex gap-2">
+            {Array.from({ length: state.patch.bandCount }, (_, index) => {
+                const level = Math.max(0, Math.min(1, ((state.bandLevels[index] ?? -60) + 60) / 60));
+                return (
+                    <div key={index} className="flex min-w-0 flex-1 flex-col gap-1">
+                        <div className="h-2 overflow-hidden rounded-full bg-black/40">
+                            <div
+                                className="h-full rounded-full bg-[linear-gradient(90deg,var(--color-accent-mint),var(--color-accent-cyan),var(--color-accent-lavender))]"
+                                style={{ width: `${Math.max(6, level * 100)}%` }}
+                            />
+                        </div>
+                        <div className="flex items-center justify-between gap-2 text-[8px] text-muted-foreground/45">
+                            <span>B{index + 1}</span>
+                            <span className="font-mono">{formatValue(state.bandLevels[index] ?? -100, 'dB')}</span>
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    </div>
+);
+
+const PresetRail = ({
+    state,
+    query,
+    category,
+    onQueryChange,
+    onCategoryChange,
+}: {
+    state: BacteriaState;
+    query: string;
+    category: string;
+    onQueryChange: (value: string) => void;
+    onCategoryChange: (value: string) => void;
+}): ReactElement => {
+    const categories = getPresetCategories();
+    const filteredPresets = BACTERIA_PRESETS.filter((preset) => {
+        const matchesCategory = category === 'All' ? true : preset.category === category;
+        const normalizedQuery = query.trim().toLowerCase();
+        const matchesQuery =
+            normalizedQuery.length === 0
+                ? true
+                : preset.name.toLowerCase().includes(normalizedQuery) ||
+                  preset.category.toLowerCase().includes(normalizedQuery);
+
+        return matchesCategory && matchesQuery;
+    });
+    const activeBand = state.patch.bands[state.activeBand] ?? state.patch.bands[0]!;
 
     return (
-        <div className="flex flex-1 min-h-0 overflow-hidden gap-3 p-3">
-            {/* Left: XY Morph Pad */}
-            <div className="flex flex-col gap-2 shrink-0">
-                <XYMorphPad
-                    x={patch.morphX}
-                    y={patch.morphY}
-                    onChangeX={(v) => setGlobalParam('morphX', v)}
-                    onChangeY={(v) => setGlobalParam('morphY', v)}
-                    snapshots={patch.snapshots}
-                    width={200}
-                    height={200}
+        <aside className="bacteria-window flex h-full w-[248px] shrink-0 flex-col gap-2.5 overflow-hidden p-2.5">
+            <SectionHeader
+                eyebrow="Presets"
+                title="Cultures"
+                description="Search the jars, filter the mess, and load a starting organism."
+                detail={`${filteredPresets.length} shown`}
+            />
+
+            <div className="bacteria-window flex items-center gap-2 px-3 py-2">
+                <Search className="size-3.5 shrink-0 text-muted-foreground/55" />
+                <label htmlFor="bacteria-preset-search" className="sr-only">
+                    Search Bacteria presets
+                </label>
+                <input
+                    id="bacteria-preset-search"
+                    type="search"
+                    value={query}
+                    onChange={(event) => onQueryChange(event.target.value)}
+                    placeholder="Search cultures"
+                    className="w-full bg-transparent text-[11px] text-foreground outline-none placeholder:text-muted-foreground/45"
                 />
-                <K v={patch.mix} k="mix" label="Mix" min={0} max={1} step={0.01} def={1} />
             </div>
 
-            {/* Center: 8 Performance Macros */}
-            <div className="flex-1 flex flex-col gap-2">
-                <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
-                    Performance Macros
-                </div>
-                <div className="grid grid-cols-4 gap-3">
-                    {([1, 2, 3, 4, 5, 6, 7, 8] as const).map((i) => (
-                        <K
-                            key={i}
-                            v={patch[`macro${i}` as keyof typeof patch] as number}
-                            k={`macro${i}`}
-                            label={`Macro ${i}`}
-                            min={0}
-                            max={1}
-                            step={0.01}
-                            def={0.5}
-                        />
-                    ))}
-                </div>
+            <div className="flex flex-wrap gap-1">
+                {categories.map((entry) => {
+                    const isActive = category === entry;
+
+                    return (
+                        <button
+                            key={entry}
+                            type="button"
+                            className={`bacteria-chip ${isActive ? 'bacteria-chip-active' : ''}`}
+                            onClick={() => onCategoryChange(entry)}
+                        >
+                            {entry}
+                        </button>
+                    );
+                })}
             </div>
 
-            {/* Right: Preset browser */}
-            <div className="flex flex-col gap-2 shrink-0 w-[160px]">
-                <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">Preset</div>
-                <div className="relative">
-                    <button
-                        type="button"
-                        className="flex items-center gap-1 w-full bg-surface-inset border border-border/40 rounded px-2 py-1 text-[10px] text-foreground font-medium cursor-pointer"
-                        onClick={() => setPresetMenuOpen(!presetMenuOpen)}
-                    >
-                        <span className="truncate flex-1 text-left">{patch.name}</span>
-                        <ChevronDown className="size-3 text-muted-foreground shrink-0" />
-                    </button>
-                    {presetMenuOpen ? (
-                        <div className="absolute top-full left-0 mt-1 z-50 bg-surface-raised border border-border/40 rounded-md shadow-lg py-0.5 w-full max-h-[200px] overflow-y-auto">
-                            {BACTERIA_PRESETS.map((preset) => (
+            <div className="bacteria-window flex min-h-0 flex-1 flex-col overflow-hidden">
+                <div className="flex items-center justify-between gap-2 border-b border-white/6 px-3 py-2">
+                    <span className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">
+                        Preset drawer
+                    </span>
+                    <span className="text-[8px] text-muted-foreground/45">{state.patch.name}</span>
+                </div>
+                <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 py-2">
+                    {filteredPresets.length > 0 ? (
+                        filteredPresets.map((preset) => {
+                            const active = preset.patch.name === state.patch.name;
+
+                            return (
                                 <button
                                     key={preset.id}
                                     type="button"
-                                    className={`w-full text-left px-2 py-1 text-[9px] hover:bg-surface-inset transition-colors ${
-                                        preset.patch.name === patch.name
-                                            ? 'text-foreground font-medium'
-                                            : 'text-foreground/70'
+                                    className={`bacteria-window flex w-full flex-col items-start gap-1 px-3 py-2 text-left ${
+                                        active ? 'border-[var(--color-accent-cyan)]/35' : ''
                                     }`}
-                                    onClick={() => {
-                                        loadBacteriaPatch(preset.patch);
-                                        setPresetMenuOpen(false);
-                                    }}
+                                    onClick={() => loadBacteriaPatchWithAudio(preset.patch)}
                                 >
-                                    <span className="block truncate">{preset.name}</span>
-                                    <span className="text-[7px] text-muted-foreground/40">{preset.category}</span>
+                                    <span className="text-[11px] font-medium text-foreground">{preset.name}</span>
+                                    <span className="text-[8px] uppercase tracking-[0.22em] text-muted-foreground/50">
+                                        {preset.category}
+                                    </span>
                                 </button>
-                            ))}
+                            );
+                        })
+                    ) : (
+                        <div className="flex h-full items-center justify-center px-4 text-center text-[11px] text-muted-foreground">
+                            Nothing matches that jar label yet.
                         </div>
-                    ) : null}
+                    )}
                 </div>
-                <div className="space-y-1 mt-2">
-                    <K
-                        v={patch.inputGain}
-                        k="inputGain"
-                        label="Input"
-                        min={-24}
-                        max={24}
-                        step={0.5}
-                        def={0}
-                        unit="dB"
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+                <MetricCell label="Bands" value={`${state.patch.bandCount}`} />
+                <MetricCell label="Routing" value={state.patch.globalRouting.replace('-', '/')} />
+                <MetricCell label="Active FX" value={`${countEnabledEffects(activeBand)}`} />
+                <MetricCell label="Mix" value={formatValue(state.patch.mix * 100, '%')} />
+            </div>
+        </aside>
+    );
+};
+
+const PlayHero = ({ state }: { state: BacteriaState }): ReactElement => (
+    <div className="grid h-full min-h-0 grid-cols-[minmax(250px,0.92fr)_minmax(0,1.2fr)] gap-2.5 p-2.5">
+        <div className="bacteria-window flex min-h-0 flex-col gap-3 p-3">
+            <SectionHeader
+                eyebrow="Petri pad"
+                title="Morph field"
+                description="Drag the crosshair and smear the patch between the four snapshot corners."
+                detail="A/B/C/D"
+            />
+            <div className="flex flex-1 items-center justify-center">
+                <XYMorphPad
+                    x={state.patch.morphX}
+                    y={state.patch.morphY}
+                    onChangeX={(value) => setGlobalParam('morphX', value)}
+                    onChangeY={(value) => setGlobalParam('morphY', value)}
+                    snapshots={state.patch.snapshots}
+                    width={264}
+                    height={212}
+                />
+            </div>
+            <div className="grid grid-cols-4 gap-2">
+                {state.patch.snapshots.slice(0, 4).map((snapshot) => (
+                    <div key={snapshot.id} className="bacteria-window flex flex-col gap-1 px-3 py-2">
+                        <span className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">
+                            Snap {snapshot.id}
+                        </span>
+                        <span className="truncate text-[11px] text-foreground">{snapshot.name}</span>
+                    </div>
+                ))}
+            </div>
+        </div>
+
+        <div className="flex min-h-0 flex-col gap-2.5">
+            <div className="bacteria-window flex flex-col gap-3 p-3">
+                <SectionHeader
+                    eyebrow="Quick read"
+                    title="Current broth"
+                    description="The analyzer and split map stay visible so the patch never feels like a blind box."
+                    detail={state.patch.globalRouting.replace('-', ' ')}
+                />
+                <SpectrumAnalyzer
+                    width={560}
+                    height={86}
+                    crossoverFreqs={[
+                        state.patch.crossoverFreq1,
+                        state.patch.crossoverFreq2,
+                        state.patch.crossoverFreq3,
+                        state.patch.crossoverFreq4,
+                        state.patch.crossoverFreq5,
+                    ]}
+                    bandCount={state.patch.bandCount}
+                    activeBand={state.activeBand}
+                    showHeatmap
+                />
+                <CrossoverDisplay
+                    bandCount={state.patch.bandCount}
+                    crossoverFreqs={[
+                        state.patch.crossoverFreq1,
+                        state.patch.crossoverFreq2,
+                        state.patch.crossoverFreq3,
+                        state.patch.crossoverFreq4,
+                        state.patch.crossoverFreq5,
+                    ]}
+                    crossoverMode={state.patch.crossoverMode}
+                    activeBand={state.activeBand}
+                    onBandSelect={setBacteriaActiveBand}
+                    onCrossoverChange={(index, freq) =>
+                        setGlobalParam(`crossoverFreq${index + 1}` as keyof BacteriaPatch, freq as never)
+                    }
+                />
+            </div>
+
+            <div className="grid min-h-0 flex-1 grid-cols-2 gap-2.5">
+                <div className="bacteria-window flex flex-col gap-3 p-3">
+                    <SectionHeader
+                        eyebrow="Input"
+                        title="Gain staging"
+                        description="Keep the organism fed, not flooded."
                     />
+                    <div className="flex flex-wrap gap-4">
+                        <K
+                            v={state.patch.inputGain}
+                            k="inputGain"
+                            label="Input"
+                            min={-24}
+                            max={24}
+                            step={0.5}
+                            def={0}
+                            unit="dB"
+                        />
+                        <K
+                            v={state.patch.outputGain}
+                            k="outputGain"
+                            label="Output"
+                            min={-24}
+                            max={24}
+                            step={0.5}
+                            def={0}
+                            unit="dB"
+                        />
+                        <K v={state.patch.mix} k="mix" label="Mix" min={0} max={1} step={0.01} def={1} />
+                    </div>
+                </div>
+                <BandMeters state={state} />
+            </div>
+        </div>
+    </div>
+);
+
+const PlayDeck = ({ state }: { state: BacteriaState }): ReactElement => (
+    <div className="flex h-full min-h-0 flex-col gap-2.5 overflow-y-auto p-2.5">
+        <div className="bacteria-window flex flex-col gap-3 p-3">
+            <SectionHeader
+                eyebrow="Macros"
+                title="Performance cluster"
+                description="Eight knobs for pushing the patch around without diving into the microscope."
+                detail="8 slots"
+            />
+            <div className="grid grid-cols-4 gap-x-2 gap-y-4">
+                {([1, 2, 3, 4, 5, 6, 7, 8] as const).map((index) => (
                     <K
-                        v={patch.outputGain}
-                        k="outputGain"
-                        label="Output"
-                        min={-24}
-                        max={24}
-                        step={0.5}
-                        def={0}
-                        unit="dB"
+                        key={index}
+                        v={state.patch[`macro${index}` as keyof BacteriaPatch] as number}
+                        k={`macro${index}`}
+                        label={`Macro ${index}`}
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        def={0.5}
                     />
+                ))}
+            </div>
+        </div>
+
+        <div className="bacteria-window flex flex-col gap-3 p-3">
+            <SectionHeader
+                eyebrow="Morph"
+                title="Crosshair offsets"
+                description="Fine-tune the resting position without dragging the pad."
+            />
+            <div className="flex flex-wrap gap-4">
+                <K v={state.patch.morphX} k="morphX" label="X" min={0} max={1} step={0.01} def={0.5} />
+                <K v={state.patch.morphY} k="morphY" label="Y" min={0} max={1} step={0.01} def={0.5} />
+            </div>
+        </div>
+    </div>
+);
+
+const ShapeHero = ({ state }: { state: BacteriaState }): ReactElement => {
+    const moduleMeta = getModuleMeta(state.activeModule);
+
+    return (
+        <div className="flex h-full min-h-0 flex-col gap-2.5 p-2.5">
+            <div className="bacteria-window flex flex-col gap-3 p-3">
+                <SectionHeader
+                    eyebrow="Mutation deck"
+                    title={moduleMeta.label}
+                    description={moduleMeta.hint}
+                    detail={`Band ${state.activeBand + 1}`}
+                />
+                <SpectrumAnalyzer
+                    width={560}
+                    height={88}
+                    crossoverFreqs={[
+                        state.patch.crossoverFreq1,
+                        state.patch.crossoverFreq2,
+                        state.patch.crossoverFreq3,
+                        state.patch.crossoverFreq4,
+                        state.patch.crossoverFreq5,
+                    ]}
+                    bandCount={state.patch.bandCount}
+                    activeBand={state.activeBand}
+                    showHeatmap
+                />
+                <CrossoverDisplay
+                    bandCount={state.patch.bandCount}
+                    crossoverFreqs={[
+                        state.patch.crossoverFreq1,
+                        state.patch.crossoverFreq2,
+                        state.patch.crossoverFreq3,
+                        state.patch.crossoverFreq4,
+                        state.patch.crossoverFreq5,
+                    ]}
+                    crossoverMode={state.patch.crossoverMode}
+                    activeBand={state.activeBand}
+                    onBandSelect={setBacteriaActiveBand}
+                    onCrossoverChange={(index, freq) =>
+                        setGlobalParam(`crossoverFreq${index + 1}` as keyof BacteriaPatch, freq as never)
+                    }
+                />
+            </div>
+
+            <div className="bacteria-window flex min-h-0 flex-1 flex-col gap-3 p-3">
+                <div className="flex items-center justify-between gap-3">
+                    <div>
+                        <div className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">
+                            Band broth
+                        </div>
+                        <div className="text-[12px] font-medium text-foreground">Zoomed strips</div>
+                    </div>
+                    <div className="bacteria-led">{state.patch.globalRouting.replace('-', ' ')}</div>
+                </div>
+                <div className="flex min-h-0 gap-2 overflow-x-auto">
+                    {Array.from({ length: state.patch.bandCount }, (_, index) => (
+                        <BandStrip
+                            key={index}
+                            index={index}
+                            band={state.patch.bands[index]!}
+                            isActive={state.activeBand === index}
+                            onSelect={() => setBacteriaActiveBand(index)}
+                            onParamChange={(key, value) =>
+                                setBacteriaBandParamWithAudio(
+                                    index,
+                                    key as keyof BacteriaPatch['bands'][0],
+                                    value as never
+                                )
+                            }
+                        />
+                    ))}
                 </div>
             </div>
         </div>
     );
 };
 
-// ── Level 2: Shape ───────────────────────────────────────────────────────────
+const BuildHero = ({ state }: { state: BacteriaState }): ReactElement => (
+    <div className="flex h-full min-h-0 flex-col gap-2.5 p-2.5">
+        <div className="bacteria-window flex flex-col gap-3 p-3">
+            <SectionHeader
+                eyebrow="Band broth"
+                title="Crossover tray"
+                description="Split the signal, retune the boundaries, and keep the lanes readable."
+                detail={`${state.patch.bandCount} bands`}
+            />
+            <SpectrumAnalyzer
+                width={560}
+                height={94}
+                crossoverFreqs={[
+                    state.patch.crossoverFreq1,
+                    state.patch.crossoverFreq2,
+                    state.patch.crossoverFreq3,
+                    state.patch.crossoverFreq4,
+                    state.patch.crossoverFreq5,
+                ]}
+                bandCount={state.patch.bandCount}
+                activeBand={state.activeBand}
+                showHeatmap
+            />
+            <CrossoverDisplay
+                bandCount={state.patch.bandCount}
+                crossoverFreqs={[
+                    state.patch.crossoverFreq1,
+                    state.patch.crossoverFreq2,
+                    state.patch.crossoverFreq3,
+                    state.patch.crossoverFreq4,
+                    state.patch.crossoverFreq5,
+                ]}
+                crossoverMode={state.patch.crossoverMode}
+                activeBand={state.activeBand}
+                onBandSelect={setBacteriaActiveBand}
+                onCrossoverChange={(index, freq) =>
+                    setGlobalParam(`crossoverFreq${index + 1}` as keyof BacteriaPatch, freq as never)
+                }
+            />
+        </div>
 
-const ShapeLevel = ({ state }: { state: BacteriaState }): ReactElement => {
+        <div className="bacteria-window flex min-h-0 flex-1 flex-col gap-3 p-3">
+            <div className="flex items-center justify-between gap-2">
+                <div>
+                    <div className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">Band cards</div>
+                    <div className="text-[12px] font-medium text-foreground">The organism split open</div>
+                </div>
+                <div className="bacteria-led">{state.patch.crossoverMode}</div>
+            </div>
+            <div className="flex min-h-0 gap-2 overflow-x-auto">
+                {Array.from({ length: state.patch.bandCount }, (_, index) => (
+                    <BandStrip
+                        key={index}
+                        index={index}
+                        band={state.patch.bands[index]!}
+                        isActive={state.activeBand === index}
+                        onSelect={() => setBacteriaActiveBand(index)}
+                        onParamChange={(key, value) =>
+                            setBacteriaBandParamWithAudio(index, key as keyof BacteriaPatch['bands'][0], value as never)
+                        }
+                    />
+                ))}
+            </div>
+        </div>
+    </div>
+);
+
+const RouteHero = ({ state }: { state: BacteriaState }): ReactElement => (
+    <div className="flex h-full min-h-0 flex-col gap-2.5 p-2.5">
+        <div className="bacteria-window flex h-full min-h-0 flex-col gap-3 p-3">
+            <SectionHeader
+                eyebrow="Dish map"
+                title="Signal petri"
+                description="A compact routing map that stays legible in the shallow drawer."
+                detail={state.patch.globalRouting.replace('-', ' ')}
+            />
+            <div className="flex flex-1 items-center justify-center">
+                <NodeGraphEditor
+                    width={620}
+                    height={248}
+                    bandCount={state.patch.bandCount}
+                    bands={state.patch.bands}
+                    globalRouting={state.patch.globalRouting}
+                    crossoverFreqs={[
+                        state.patch.crossoverFreq1,
+                        state.patch.crossoverFreq2,
+                        state.patch.crossoverFreq3,
+                        state.patch.crossoverFreq4,
+                        state.patch.crossoverFreq5,
+                    ]}
+                />
+            </div>
+        </div>
+    </div>
+);
+
+const LabHero = ({ state }: { state: BacteriaState }): ReactElement => (
+    <div className="grid h-full min-h-0 grid-cols-2 gap-2.5 p-2.5">
+        <div className="bacteria-window flex min-h-0 flex-col gap-2.5 p-3">
+            <SectionHeader
+                eyebrow="Curve"
+                title="Shaper bench"
+                description="For when the default clipping law is too polite."
+            />
+            <div className="flex flex-1 items-center justify-center">
+                <WaveshaperEditor width={300} height={176} segments={[]} onSegmentsChange={() => {}} />
+            </div>
+        </div>
+        <div className="bacteria-window flex min-h-0 flex-col gap-2.5 p-3">
+            <SectionHeader
+                eyebrow="Motion"
+                title="Bezier drift"
+                description="Draw a wobble instead of babysitting a rate knob."
+            />
+            <div className="flex flex-1 items-center justify-center">
+                <BezierLfoEditor width={300} height={176} points={[]} onPointsChange={() => {}} gridDivisions={8} />
+            </div>
+        </div>
+        <div className="bacteria-window flex min-h-0 flex-col gap-2.5 p-3">
+            <SectionHeader
+                eyebrow="Steps"
+                title="Sequencer"
+                description="Fast lane for rhythmic stabs and gated mutations."
+                detail={`${state.patch.stepSeqSteps} steps`}
+            />
+            <div className="flex flex-1 items-center justify-center">
+                <StepSequencerEditor
+                    width={300}
+                    height={96}
+                    steps={[]}
+                    numSteps={state.patch.stepSeqSteps}
+                    onStepsChange={() => {}}
+                />
+            </div>
+        </div>
+        <div className="bacteria-window flex min-h-0 flex-col gap-2.5 p-3">
+            <SectionHeader
+                eyebrow="Bins"
+                title="Spectral gate"
+                description="Carve holes in the top end without leaving the panel."
+            />
+            <div className="flex flex-1 items-center justify-center">
+                <SpectralBinEditor width={300} height={96} binValues={[]} onBinValuesChange={() => {}} mode="gate" />
+            </div>
+        </div>
+    </div>
+);
+
+function renderShapeControls(state: BacteriaState): ReactElement {
     const patch = state.patch;
     const band = patch.bands[state.activeBand] ?? patch.bands[0]!;
-    const bi = state.activeBand;
-    const module = state.activeModule;
+    const activeModule = state.activeModule;
 
-    const setBP = (key: string, value: number): void => {
-        setBacteriaBandParamWithAudio(bi, key as never, value);
+    const setBandParam = <K extends keyof BacteriaPatch['bands'][0]>(key: K, value: BacteriaPatch['bands'][0][K]) => {
+        setBacteriaBandParamWithAudio(state.activeBand, key, value);
     };
 
     return (
-        <div className="flex flex-1 min-h-0 overflow-hidden">
-            {/* Module selector sidebar */}
-            <div className="flex flex-col gap-0.5 p-1.5 shrink-0 border-r border-border/20">
-                {EFFECT_MODULES.map((m) => (
-                    <button
-                        key={m.id}
-                        type="button"
-                        className={`px-2 py-1 rounded text-[8px] font-medium text-left transition-colors ${
-                            module === m.id
-                                ? 'bg-rose-500/20 text-rose-300'
-                                : 'text-muted-foreground/60 hover:text-foreground hover:bg-surface-raised'
-                        }`}
-                        onClick={() => setBacteriaActiveModule(m.id)}
-                    >
-                        {m.label}
-                    </button>
-                ))}
+        <div className="flex h-full min-h-0 flex-col gap-2.5 overflow-y-auto p-2.5">
+            <div className="bacteria-window flex flex-col gap-3 p-3">
+                <SectionHeader
+                    eyebrow="Modules"
+                    title="Pick the mutation"
+                    description="Stay on one band and swap the active organism without losing the overall context."
+                    detail={`Band ${state.activeBand + 1}`}
+                />
+                <div className="flex flex-wrap gap-1.5">
+                    {EFFECT_MODULES.map((module) => {
+                        const active = module.id === activeModule;
+
+                        return (
+                            <button
+                                key={module.id}
+                                type="button"
+                                className={`bacteria-chip ${active ? 'bacteria-chip-active' : ''}`}
+                                onClick={() => setBacteriaActiveModule(module.id)}
+                            >
+                                {module.label}
+                            </button>
+                        );
+                    })}
+                </div>
             </div>
 
-            {/* Module controls */}
-            <div className="flex-1 overflow-y-auto p-3 space-y-3">
-                {module === 'distortion' ? (
-                    <div className="space-y-2">
+            <div className="bacteria-window flex flex-col gap-3 p-3">
+                <SectionHeader
+                    eyebrow="Controls"
+                    title={getModuleMeta(activeModule).label}
+                    description={getModuleMeta(activeModule).hint}
+                />
+
+                {activeModule === 'distortion' ? (
+                    <div className="space-y-3">
                         <div className="flex items-center gap-2">
-                            <label className="flex items-center gap-1 text-[8px] text-muted-foreground cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={band.distortionEnabled}
-                                    onChange={(e) => setBP('distortionEnabled', e.target.checked ? 1 : 0)}
-                                    className="size-2.5 rounded"
-                                    style={{ accentColor: 'rgb(244,63,94)' }}
-                                />
+                            <button
+                                type="button"
+                                className={`bacteria-chip ${Boolean(band.distortionEnabled) ? 'bacteria-chip-active' : ''}`}
+                                aria-pressed={Boolean(band.distortionEnabled)}
+                                onClick={() => setBandParam('distortionEnabled', !Boolean(band.distortionEnabled))}
+                            >
                                 Enabled
-                            </label>
-                            <div className="flex gap-0.5">
-                                {DISTORTION_MODES.map((mode, i) => (
+                            </button>
+                            <div className="flex flex-wrap gap-1">
+                                {DISTORTION_MODES.map((mode) => (
                                     <button
                                         key={mode}
                                         type="button"
-                                        className={`px-1 py-0.5 rounded text-[6px] font-medium transition-colors ${
-                                            band.distortionMode === mode
-                                                ? 'bg-rose-500 text-white'
-                                                : 'text-muted-foreground/40 hover:text-foreground'
-                                        }`}
-                                        onClick={() => setBP('distortionMode', i)}
+                                        className={`bacteria-chip ${band.distortionMode === mode ? 'bacteria-chip-active' : ''}`}
+                                        onClick={() => setBandParam('distortionMode', mode)}
                                     >
                                         {mode.replace('-', ' ')}
                                     </button>
                                 ))}
                             </div>
                         </div>
-                        <div className="flex gap-3 flex-wrap">
+                        <div className="flex flex-wrap gap-4">
                             <K
                                 v={band.drive}
                                 k="drive"
@@ -306,28 +797,28 @@ const ShapeLevel = ({ state }: { state: BacteriaState }): ReactElement => {
                                 step={1}
                                 def={25}
                                 unit="%"
-                                onChangeFn={setBP}
+                                onChangeFn={setBandParam as never}
                             />
                             <K
                                 v={band.asymmetry}
                                 k="asymmetry"
-                                label="Asymmetry"
+                                label="Asym"
                                 min={-1}
                                 max={1}
                                 step={0.01}
                                 def={0}
-                                onChangeFn={setBP}
+                                onChangeFn={setBandParam as never}
                             />
                             {band.distortionMode === 'foldback' ? (
                                 <K
                                     v={band.foldbackThreshold}
                                     k="foldbackThreshold"
-                                    label="Fold Thresh"
+                                    label="Fold"
                                     min={0.1}
                                     max={1}
                                     step={0.01}
                                     def={0.7}
-                                    onChangeFn={setBP}
+                                    onChangeFn={setBandParam as never}
                                 />
                             ) : null}
                             {band.distortionMode === 'bitcrush' ? (
@@ -335,22 +826,22 @@ const ShapeLevel = ({ state }: { state: BacteriaState }): ReactElement => {
                                     <K
                                         v={band.bitDepth}
                                         k="bitDepth"
-                                        label="Bit Depth"
+                                        label="Bits"
                                         min={1}
                                         max={24}
                                         step={1}
                                         def={16}
-                                        onChangeFn={setBP}
+                                        onChangeFn={setBandParam as never}
                                     />
                                     <K
                                         v={band.sampleRateReduce}
                                         k="sampleRateReduce"
-                                        label="SR Reduce"
+                                        label="Rate div"
                                         min={1}
                                         max={64}
                                         step={1}
                                         def={1}
-                                        onChangeFn={setBP}
+                                        onChangeFn={setBandParam as never}
                                     />
                                 </>
                             ) : null}
@@ -363,7 +854,7 @@ const ShapeLevel = ({ state }: { state: BacteriaState }): ReactElement => {
                                     max={1}
                                     step={0.01}
                                     def={0.5}
-                                    onChangeFn={setBP}
+                                    onChangeFn={setBandParam as never}
                                 />
                             ) : null}
                             {band.distortionMode === 'breakdown' ? (
@@ -376,44 +867,38 @@ const ShapeLevel = ({ state }: { state: BacteriaState }): ReactElement => {
                                     step={0.1}
                                     def={1}
                                     unit="st"
-                                    onChangeFn={setBP}
+                                    onChangeFn={setBandParam as never}
                                 />
                             ) : null}
                         </div>
                     </div>
                 ) : null}
 
-                {module === 'filter' ? (
-                    <div className="space-y-2">
+                {activeModule === 'filter' ? (
+                    <div className="space-y-3">
                         <div className="flex items-center gap-2">
-                            <label className="flex items-center gap-1 text-[8px] text-muted-foreground cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={band.filterEnabled}
-                                    onChange={(e) => setBP('filterEnabled', e.target.checked ? 1 : 0)}
-                                    className="size-2.5 rounded"
-                                    style={{ accentColor: 'rgb(244,63,94)' }}
-                                />
+                            <button
+                                type="button"
+                                className={`bacteria-chip ${Boolean(band.filterEnabled) ? 'bacteria-chip-active' : ''}`}
+                                aria-pressed={Boolean(band.filterEnabled)}
+                                onClick={() => setBandParam('filterEnabled', !Boolean(band.filterEnabled))}
+                            >
                                 Enabled
-                            </label>
-                            <div className="flex gap-0.5">
-                                {FILTER_MODES.map((mode, i) => (
+                            </button>
+                            <div className="flex flex-wrap gap-1">
+                                {FILTER_MODES.map((mode) => (
                                     <button
                                         key={mode}
                                         type="button"
-                                        className={`px-1.5 py-0.5 rounded text-[6px] font-medium transition-colors ${
-                                            band.filterMode === mode
-                                                ? 'bg-rose-500 text-white'
-                                                : 'text-muted-foreground/40 hover:text-foreground'
-                                        }`}
-                                        onClick={() => setBP('filterMode', i)}
+                                        className={`bacteria-chip ${band.filterMode === mode ? 'bacteria-chip-active' : ''}`}
+                                        onClick={() => setBandParam('filterMode', mode)}
                                     >
                                         {mode}
                                     </button>
                                 ))}
                             </div>
                         </div>
-                        <div className="flex gap-3 flex-wrap">
+                        <div className="flex flex-wrap gap-4">
                             <K
                                 v={band.filterCutoff}
                                 k="filterCutoff"
@@ -423,67 +908,65 @@ const ShapeLevel = ({ state }: { state: BacteriaState }): ReactElement => {
                                 step={1}
                                 def={8000}
                                 unit="Hz"
-                                onChangeFn={setBP}
+                                onChangeFn={setBandParam as never}
                             />
                             <K
                                 v={band.filterResonance}
                                 k="filterResonance"
-                                label="Resonance"
+                                label="Reso"
                                 min={0}
                                 max={1}
                                 step={0.01}
                                 def={0.3}
-                                onChangeFn={setBP}
+                                onChangeFn={setBandParam as never}
                             />
                             <K
                                 v={band.filterEnvAmount}
                                 k="filterEnvAmount"
-                                label="Env Amt"
+                                label="Env"
                                 min={-1}
                                 max={1}
                                 step={0.01}
                                 def={0}
-                                onChangeFn={setBP}
+                                onChangeFn={setBandParam as never}
                             />
                             <K
                                 v={band.filterEnvAttack}
                                 k="filterEnvAttack"
-                                label="Env Atk"
+                                label="Atk"
                                 min={0.1}
                                 max={500}
                                 step={0.1}
                                 def={5}
                                 unit="ms"
-                                onChangeFn={setBP}
+                                onChangeFn={setBandParam as never}
                             />
                             <K
                                 v={band.filterEnvRelease}
                                 k="filterEnvRelease"
-                                label="Env Rel"
+                                label="Rel"
                                 min={1}
                                 max={5000}
                                 step={1}
                                 def={200}
                                 unit="ms"
-                                onChangeFn={setBP}
+                                onChangeFn={setBandParam as never}
                             />
                         </div>
                     </div>
                 ) : null}
 
-                {module === 'chorus' ? (
-                    <div className="space-y-2">
-                        <label className="flex items-center gap-1 text-[8px] text-muted-foreground cursor-pointer">
-                            <input
-                                type="checkbox"
-                                checked={band.chorusEnabled}
-                                onChange={(e) => setBP('chorusEnabled', e.target.checked ? 1 : 0)}
-                                className="size-2.5 rounded"
-                                style={{ accentColor: 'rgb(244,63,94)' }}
-                            />
+                {activeModule === 'chorus' ? (
+                    <div className="space-y-3">
+                        <button
+                            type="button"
+                            className={`bacteria-chip ${Boolean(band.chorusEnabled) ? 'bacteria-chip-active' : ''}`}
+                            aria-pressed={Boolean(band.chorusEnabled)}
+                            onClick={() => setBandParam('chorusEnabled', !Boolean(band.chorusEnabled))}
+                        >
                             Enabled
-                        </label>
-                        <div className="flex gap-3 flex-wrap">
+                        </button>
+                        <div className="flex flex-wrap gap-4">
                             <K
                                 v={band.chorusRate}
                                 k="chorusRate"
@@ -493,7 +976,7 @@ const ShapeLevel = ({ state }: { state: BacteriaState }): ReactElement => {
                                 step={0.01}
                                 def={1.5}
                                 unit="Hz"
-                                onChangeFn={setBP}
+                                onChangeFn={setBandParam as never}
                             />
                             <K
                                 v={band.chorusDepth}
@@ -503,17 +986,17 @@ const ShapeLevel = ({ state }: { state: BacteriaState }): ReactElement => {
                                 max={1}
                                 step={0.01}
                                 def={0.4}
-                                onChangeFn={setBP}
+                                onChangeFn={setBandParam as never}
                             />
                             <K
                                 v={band.chorusFeedback}
                                 k="chorusFeedback"
-                                label="Feedback"
+                                label="Feed"
                                 min={-1}
                                 max={1}
                                 step={0.01}
                                 def={0.2}
-                                onChangeFn={setBP}
+                                onChangeFn={setBandParam as never}
                             />
                             <K
                                 v={band.chorusMix}
@@ -523,25 +1006,23 @@ const ShapeLevel = ({ state }: { state: BacteriaState }): ReactElement => {
                                 max={1}
                                 step={0.01}
                                 def={0.5}
-                                onChangeFn={setBP}
+                                onChangeFn={setBandParam as never}
                             />
                         </div>
                     </div>
                 ) : null}
 
-                {module === 'phaser' ? (
-                    <div className="space-y-2">
-                        <label className="flex items-center gap-1 text-[8px] text-muted-foreground cursor-pointer">
-                            <input
-                                type="checkbox"
-                                checked={band.phaserEnabled}
-                                onChange={(e) => setBP('phaserEnabled', e.target.checked ? 1 : 0)}
-                                className="size-2.5 rounded"
-                                style={{ accentColor: 'rgb(244,63,94)' }}
-                            />
+                {activeModule === 'phaser' ? (
+                    <div className="space-y-3">
+                        <button
+                            type="button"
+                            className={`bacteria-chip ${Boolean(band.phaserEnabled) ? 'bacteria-chip-active' : ''}`}
+                            aria-pressed={Boolean(band.phaserEnabled)}
+                            onClick={() => setBandParam('phaserEnabled', !Boolean(band.phaserEnabled))}
+                        >
                             Enabled
-                        </label>
-                        <div className="flex gap-3 flex-wrap">
+                        </button>
+                        <div className="flex flex-wrap gap-4">
                             <K
                                 v={band.phaserRate}
                                 k="phaserRate"
@@ -551,7 +1032,7 @@ const ShapeLevel = ({ state }: { state: BacteriaState }): ReactElement => {
                                 step={0.01}
                                 def={0.5}
                                 unit="Hz"
-                                onChangeFn={setBP}
+                                onChangeFn={setBandParam as never}
                             />
                             <K
                                 v={band.phaserDepth}
@@ -561,17 +1042,17 @@ const ShapeLevel = ({ state }: { state: BacteriaState }): ReactElement => {
                                 max={1}
                                 step={0.01}
                                 def={0.7}
-                                onChangeFn={setBP}
+                                onChangeFn={setBandParam as never}
                             />
                             <K
                                 v={band.phaserFeedback}
                                 k="phaserFeedback"
-                                label="Feedback"
+                                label="Feed"
                                 min={-1}
                                 max={1}
                                 step={0.01}
                                 def={0.5}
-                                onChangeFn={setBP}
+                                onChangeFn={setBandParam as never}
                             />
                             <K
                                 v={band.phaserMix}
@@ -581,37 +1062,33 @@ const ShapeLevel = ({ state }: { state: BacteriaState }): ReactElement => {
                                 max={1}
                                 step={0.01}
                                 def={0.5}
-                                onChangeFn={setBP}
+                                onChangeFn={setBandParam as never}
                             />
                         </div>
                     </div>
                 ) : null}
 
-                {module === 'granular' ? (
-                    <div className="space-y-2">
+                {activeModule === 'granular' ? (
+                    <div className="space-y-3">
                         <div className="flex items-center gap-2">
-                            <label className="flex items-center gap-1 text-[8px] text-muted-foreground cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={band.granularEnabled}
-                                    onChange={(e) => setBP('granularEnabled', e.target.checked ? 1 : 0)}
-                                    className="size-2.5 rounded"
-                                    style={{ accentColor: 'rgb(244,63,94)' }}
-                                />
+                            <button
+                                type="button"
+                                className={`bacteria-chip ${Boolean(band.granularEnabled) ? 'bacteria-chip-active' : ''}`}
+                                aria-pressed={Boolean(band.granularEnabled)}
+                                onClick={() => setBandParam('granularEnabled', !Boolean(band.granularEnabled))}
+                            >
                                 Enabled
-                            </label>
-                            <label className="flex items-center gap-1 text-[8px] text-muted-foreground cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={band.grainFreeze}
-                                    onChange={(e) => setBP('grainFreeze', e.target.checked ? 1 : 0)}
-                                    className="size-2.5 rounded"
-                                    style={{ accentColor: 'rgb(244,63,94)' }}
-                                />
+                            </button>
+                            <button
+                                type="button"
+                                className={`bacteria-chip ${Boolean(band.grainFreeze) ? 'bacteria-chip-active' : ''}`}
+                                aria-pressed={Boolean(band.grainFreeze)}
+                                onClick={() => setBandParam('grainFreeze', !Boolean(band.grainFreeze))}
+                            >
                                 Freeze
-                            </label>
+                            </button>
                         </div>
-                        <div className="flex gap-3 flex-wrap">
+                        <div className="flex flex-wrap gap-4">
                             <K
                                 v={band.grainSize}
                                 k="grainSize"
@@ -621,7 +1098,7 @@ const ShapeLevel = ({ state }: { state: BacteriaState }): ReactElement => {
                                 step={1}
                                 def={80}
                                 unit="ms"
-                                onChangeFn={setBP}
+                                onChangeFn={setBandParam as never}
                             />
                             <K
                                 v={band.grainDensity}
@@ -631,18 +1108,18 @@ const ShapeLevel = ({ state }: { state: BacteriaState }): ReactElement => {
                                 max={100}
                                 step={1}
                                 def={15}
-                                onChangeFn={setBP}
+                                onChangeFn={setBandParam as never}
                             />
                             <K
                                 v={band.grainPosOffset}
                                 k="grainPosOffset"
-                                label="Position"
+                                label="Offset"
                                 min={0}
                                 max={2000}
                                 step={1}
                                 def={100}
                                 unit="ms"
-                                onChangeFn={setBP}
+                                onChangeFn={setBandParam as never}
                             />
                             <K
                                 v={band.grainPitch}
@@ -653,7 +1130,7 @@ const ShapeLevel = ({ state }: { state: BacteriaState }): ReactElement => {
                                 step={0.1}
                                 def={0}
                                 unit="st"
-                                onChangeFn={setBP}
+                                onChangeFn={setBandParam as never}
                             />
                             <K
                                 v={band.grainMix}
@@ -663,37 +1140,33 @@ const ShapeLevel = ({ state }: { state: BacteriaState }): ReactElement => {
                                 max={1}
                                 step={0.01}
                                 def={0.5}
-                                onChangeFn={setBP}
+                                onChangeFn={setBandParam as never}
                             />
                         </div>
                     </div>
                 ) : null}
 
-                {module === 'spectral' ? (
-                    <div className="space-y-2">
+                {activeModule === 'spectral' ? (
+                    <div className="space-y-3">
                         <div className="flex items-center gap-2">
-                            <label className="flex items-center gap-1 text-[8px] text-muted-foreground cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={band.spectralEnabled}
-                                    onChange={(e) => setBP('spectralEnabled', e.target.checked ? 1 : 0)}
-                                    className="size-2.5 rounded"
-                                    style={{ accentColor: 'rgb(244,63,94)' }}
-                                />
+                            <button
+                                type="button"
+                                className={`bacteria-chip ${Boolean(band.spectralEnabled) ? 'bacteria-chip-active' : ''}`}
+                                aria-pressed={Boolean(band.spectralEnabled)}
+                                onClick={() => setBandParam('spectralEnabled', !Boolean(band.spectralEnabled))}
+                            >
                                 Enabled
-                            </label>
-                            <label className="flex items-center gap-1 text-[8px] text-muted-foreground cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={band.spectralFreeze}
-                                    onChange={(e) => setBP('spectralFreeze', e.target.checked ? 1 : 0)}
-                                    className="size-2.5 rounded"
-                                    style={{ accentColor: 'rgb(244,63,94)' }}
-                                />
+                            </button>
+                            <button
+                                type="button"
+                                className={`bacteria-chip ${Boolean(band.spectralFreeze) ? 'bacteria-chip-active' : ''}`}
+                                aria-pressed={Boolean(band.spectralFreeze)}
+                                onClick={() => setBandParam('spectralFreeze', !Boolean(band.spectralFreeze))}
+                            >
                                 Freeze
-                            </label>
+                            </button>
                         </div>
-                        <div className="flex gap-3 flex-wrap">
+                        <div className="flex flex-wrap gap-4">
                             <K
                                 v={band.spectralBlur}
                                 k="spectralBlur"
@@ -702,7 +1175,7 @@ const ShapeLevel = ({ state }: { state: BacteriaState }): ReactElement => {
                                 max={1}
                                 step={0.01}
                                 def={0.5}
-                                onChangeFn={setBP}
+                                onChangeFn={setBandParam as never}
                             />
                             <K
                                 v={band.spectralMix}
@@ -712,25 +1185,23 @@ const ShapeLevel = ({ state }: { state: BacteriaState }): ReactElement => {
                                 max={1}
                                 step={0.01}
                                 def={0.5}
-                                onChangeFn={setBP}
+                                onChangeFn={setBandParam as never}
                             />
                         </div>
                     </div>
                 ) : null}
 
-                {module === 'freqShift' ? (
-                    <div className="space-y-2">
-                        <label className="flex items-center gap-1 text-[8px] text-muted-foreground cursor-pointer">
-                            <input
-                                type="checkbox"
-                                checked={band.freqShiftEnabled}
-                                onChange={(e) => setBP('freqShiftEnabled', e.target.checked ? 1 : 0)}
-                                className="size-2.5 rounded"
-                                style={{ accentColor: 'rgb(244,63,94)' }}
-                            />
+                {activeModule === 'freqShift' ? (
+                    <div className="space-y-3">
+                        <button
+                            type="button"
+                            className={`bacteria-chip ${Boolean(band.freqShiftEnabled) ? 'bacteria-chip-active' : ''}`}
+                            aria-pressed={Boolean(band.freqShiftEnabled)}
+                            onClick={() => setBandParam('freqShiftEnabled', !Boolean(band.freqShiftEnabled))}
+                        >
                             Enabled
-                        </label>
-                        <div className="flex gap-3 flex-wrap">
+                        </button>
+                        <div className="flex flex-wrap gap-4">
                             <K
                                 v={band.freqShiftHz}
                                 k="freqShiftHz"
@@ -740,7 +1211,7 @@ const ShapeLevel = ({ state }: { state: BacteriaState }): ReactElement => {
                                 step={0.1}
                                 def={0}
                                 unit="Hz"
-                                onChangeFn={setBP}
+                                onChangeFn={setBandParam as never}
                             />
                             <K
                                 v={band.freqShiftMix}
@@ -750,25 +1221,23 @@ const ShapeLevel = ({ state }: { state: BacteriaState }): ReactElement => {
                                 max={1}
                                 step={0.01}
                                 def={0.5}
-                                onChangeFn={setBP}
+                                onChangeFn={setBandParam as never}
                             />
                         </div>
                     </div>
                 ) : null}
 
-                {module === 'lofi' ? (
-                    <div className="space-y-2">
-                        <label className="flex items-center gap-1 text-[8px] text-muted-foreground cursor-pointer">
-                            <input
-                                type="checkbox"
-                                checked={band.lofiEnabled}
-                                onChange={(e) => setBP('lofiEnabled', e.target.checked ? 1 : 0)}
-                                className="size-2.5 rounded"
-                                style={{ accentColor: 'rgb(244,63,94)' }}
-                            />
+                {activeModule === 'lofi' ? (
+                    <div className="space-y-3">
+                        <button
+                            type="button"
+                            className={`bacteria-chip ${Boolean(band.lofiEnabled) ? 'bacteria-chip-active' : ''}`}
+                            aria-pressed={Boolean(band.lofiEnabled)}
+                            onClick={() => setBandParam('lofiEnabled', !Boolean(band.lofiEnabled))}
+                        >
                             Enabled
-                        </label>
-                        <div className="flex gap-3 flex-wrap">
+                        </button>
+                        <div className="flex flex-wrap gap-4">
                             <K
                                 v={band.lofiAmount}
                                 k="lofiAmount"
@@ -778,7 +1247,7 @@ const ShapeLevel = ({ state }: { state: BacteriaState }): ReactElement => {
                                 step={1}
                                 def={0}
                                 unit="%"
-                                onChangeFn={setBP}
+                                onChangeFn={setBandParam as never}
                             />
                             <K
                                 v={band.codecArtifact}
@@ -788,25 +1257,23 @@ const ShapeLevel = ({ state }: { state: BacteriaState }): ReactElement => {
                                 max={1}
                                 step={0.01}
                                 def={0}
-                                onChangeFn={setBP}
+                                onChangeFn={setBandParam as never}
                             />
                         </div>
                     </div>
                 ) : null}
 
-                {module === 'convolution' ? (
-                    <div className="space-y-2">
-                        <label className="flex items-center gap-1 text-[8px] text-muted-foreground cursor-pointer">
-                            <input
-                                type="checkbox"
-                                checked={band.convolutionEnabled}
-                                onChange={(e) => setBP('convolutionEnabled', e.target.checked ? 1 : 0)}
-                                className="size-2.5 rounded"
-                                style={{ accentColor: 'rgb(244,63,94)' }}
-                            />
+                {activeModule === 'convolution' ? (
+                    <div className="space-y-3">
+                        <button
+                            type="button"
+                            className={`bacteria-chip ${Boolean(band.convolutionEnabled) ? 'bacteria-chip-active' : ''}`}
+                            aria-pressed={Boolean(band.convolutionEnabled)}
+                            onClick={() => setBandParam('convolutionEnabled', !Boolean(band.convolutionEnabled))}
+                        >
                             Enabled
-                        </label>
-                        <div className="flex gap-3 flex-wrap">
+                        </button>
+                        <div className="flex flex-wrap gap-4">
                             <K
                                 v={band.convolutionMix}
                                 k="convolutionMix"
@@ -815,258 +1282,175 @@ const ShapeLevel = ({ state }: { state: BacteriaState }): ReactElement => {
                                 max={1}
                                 step={0.01}
                                 def={0.3}
-                                onChangeFn={setBP}
+                                onChangeFn={setBandParam as never}
                             />
                             <K
                                 v={band.convolutionSeparation}
                                 k="convolutionSeparation"
-                                label="Separation"
+                                label="Spread"
                                 min={0}
                                 max={1}
                                 step={0.01}
                                 def={0.5}
-                                onChangeFn={setBP}
+                                onChangeFn={setBandParam as never}
                             />
                         </div>
                     </div>
                 ) : null}
+            </div>
 
-                {/* Quick modulators (LFO + Env follower) */}
-                <div className="border-t border-border/20 pt-2 mt-2 space-y-1">
-                    <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
-                        Quick Modulators
-                    </div>
-                    <div className="flex gap-3 flex-wrap">
-                        <K
-                            v={patch.lfo1Rate}
-                            k="lfo1Rate"
-                            label="LFO Rate"
-                            min={0.01}
-                            max={40}
-                            step={0.01}
-                            def={2}
-                            unit="Hz"
-                        />
-                        <K v={patch.lfo1Amount} k="lfo1Amount" label="LFO Amt" min={0} max={1} step={0.01} def={0.5} />
-                        <K
-                            v={patch.envFollowerAttack}
-                            k="envFollowerAttack"
-                            label="Env Atk"
-                            min={0.1}
-                            max={100}
-                            step={0.1}
-                            def={5}
-                            unit="ms"
-                        />
-                        <K
-                            v={patch.envFollowerRelease}
-                            k="envFollowerRelease"
-                            label="Env Rel"
-                            min={1}
-                            max={2000}
-                            step={1}
-                            def={200}
-                            unit="ms"
-                        />
-                    </div>
+            <div className="bacteria-window flex flex-col gap-3 p-3">
+                <SectionHeader
+                    eyebrow="Quick modulation"
+                    title="Fast movers"
+                    description="Enough motion control to shape the active mutation without going full bench mode."
+                />
+                <div className="flex flex-wrap gap-4">
+                    <K
+                        v={patch.lfo1Rate}
+                        k="lfo1Rate"
+                        label="LFO 1"
+                        min={0.01}
+                        max={40}
+                        step={0.01}
+                        def={2}
+                        unit="Hz"
+                    />
+                    <K v={patch.lfo1Amount} k="lfo1Amount" label="LFO Amt" min={0} max={1} step={0.01} def={0.5} />
+                    <K
+                        v={patch.envFollowerAttack}
+                        k="envFollowerAttack"
+                        label="Env Atk"
+                        min={0.1}
+                        max={100}
+                        step={0.1}
+                        def={5}
+                        unit="ms"
+                    />
+                    <K
+                        v={patch.envFollowerRelease}
+                        k="envFollowerRelease"
+                        label="Env Rel"
+                        min={1}
+                        max={2000}
+                        step={1}
+                        def={200}
+                        unit="ms"
+                    />
                 </div>
             </div>
         </div>
     );
-};
+}
 
-// ── Level 3: Build ───────────────────────────────────────────────────────────
-
-const BuildLevel = ({ state }: { state: BacteriaState }): ReactElement => {
-    const patch = state.patch;
-
-    return (
-        <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-            {/* Spectrum analyzer with crossover overlay */}
-            <div className="shrink-0 px-1 pt-1">
-                <SpectrumAnalyzer
-                    width={800}
-                    height={60}
-                    crossoverFreqs={[
-                        patch.crossoverFreq1,
-                        patch.crossoverFreq2,
-                        patch.crossoverFreq3,
-                        patch.crossoverFreq4,
-                        patch.crossoverFreq5,
-                    ]}
-                    bandCount={patch.bandCount}
-                    activeBand={state.activeBand}
-                    showHeatmap
-                />
-            </div>
-
-            {/* Crossover display */}
-            <CrossoverDisplay
-                bandCount={patch.bandCount}
-                crossoverFreqs={[
-                    patch.crossoverFreq1,
-                    patch.crossoverFreq2,
-                    patch.crossoverFreq3,
-                    patch.crossoverFreq4,
-                    patch.crossoverFreq5,
-                ]}
-                crossoverMode={patch.crossoverMode}
-                activeBand={state.activeBand}
-                onBandSelect={setBacteriaActiveBand}
-                onCrossoverChange={(idx, freq) => setGlobalParam(`crossoverFreq${idx + 1}`, freq)}
+const BuildDeck = ({ state }: { state: BacteriaState }): ReactElement => (
+    <div className="flex h-full min-h-0 flex-col gap-2.5 overflow-y-auto p-2.5">
+        <div className="bacteria-window flex flex-col gap-3 p-3">
+            <SectionHeader
+                eyebrow="Split"
+                title="Crossover controls"
+                description="Keep the lane count and slope close at hand."
             />
-
-            {/* Band strips */}
-            <div className="flex flex-1 min-h-0 overflow-x-auto gap-0.5 p-1">
-                {Array.from({ length: patch.bandCount }, (_, i) => (
-                    <BandStrip
-                        key={i}
-                        index={i}
-                        band={patch.bands[i]!}
-                        isActive={state.activeBand === i}
-                        onSelect={() => setBacteriaActiveBand(i)}
-                        onParamChange={(key, value) => setBacteriaBandParamWithAudio(i, key as never, value)}
-                    />
+            <div className="flex flex-wrap gap-2">
+                {[1, 2, 3, 4, 5, 6].map((count) => (
+                    <button
+                        key={count}
+                        type="button"
+                        className={`bacteria-chip ${state.patch.bandCount === count ? 'bacteria-chip-active' : ''}`}
+                        onClick={() => {
+                            setGlobalParam('bandCount', count);
+                            if (state.activeBand >= count) {
+                                setBacteriaActiveBand(count - 1);
+                            }
+                        }}
+                    >
+                        {count} band{count === 1 ? '' : 's'}
+                    </button>
                 ))}
             </div>
-
-            {/* Band count + crossover controls */}
-            <div className="flex items-center gap-3 px-2 py-1 border-t border-border/20">
-                <div className="flex items-center gap-1">
-                    <span className="text-[7px] text-muted-foreground">Bands:</span>
-                    {[1, 2, 3, 4, 5, 6].map((n) => (
-                        <button
-                            key={n}
-                            type="button"
-                            className={`w-4 h-4 rounded text-[7px] font-bold transition-colors ${
-                                patch.bandCount === n
-                                    ? 'bg-rose-500 text-white'
-                                    : 'text-muted-foreground/40 hover:text-foreground'
-                            }`}
-                            onClick={() => setGlobalParam('bandCount', n)}
-                        >
-                            {n}
-                        </button>
-                    ))}
-                </div>
-                <div className="flex items-center gap-1">
-                    <span className="text-[7px] text-muted-foreground">Slope:</span>
-                    {['12', '24', '36', '48'].map((s, i) => (
-                        <button
-                            key={s}
-                            type="button"
-                            className={`px-1 py-0.5 rounded text-[6px] font-medium transition-colors ${
-                                patch.crossoverSlope === i
-                                    ? 'bg-rose-500 text-white'
-                                    : 'text-muted-foreground/40 hover:text-foreground'
-                            }`}
-                            onClick={() => setGlobalParam('crossoverSlope', i)}
-                        >
-                            {s}
-                        </button>
-                    ))}
-                    <span className="text-[6px] text-muted-foreground/40">dB/oct</span>
-                </div>
-                <div className="flex items-center gap-1">
-                    <span className="text-[7px] text-muted-foreground">Mode:</span>
-                    {['LR4', 'Linear'].map((m, i) => (
-                        <button
-                            key={m}
-                            type="button"
-                            className={`px-1 py-0.5 rounded text-[6px] font-medium transition-colors ${
-                                patch.crossoverMode === (i === 0 ? 'lr4' : 'linear-phase')
-                                    ? 'bg-rose-500 text-white'
-                                    : 'text-muted-foreground/40 hover:text-foreground'
-                            }`}
-                            onClick={() => setGlobalParam('crossoverMode', i)}
-                        >
-                            {m}
-                        </button>
-                    ))}
-                </div>
-                <div className="flex-1" />
-                <ModulationDock patch={patch} modValues={[]} onAssignmentAdd={() => {}} onAssignmentRemove={() => {}} />
+            <div className="flex flex-wrap gap-2">
+                {['12', '24', '36', '48'].map((slope, index) => (
+                    <button
+                        key={slope}
+                        type="button"
+                        className={`bacteria-chip ${state.patch.crossoverSlope === index ? 'bacteria-chip-active' : ''}`}
+                        onClick={() => setGlobalParam('crossoverSlope', index)}
+                    >
+                        {slope} dB
+                    </button>
+                ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
+                {(['lr4', 'linear-phase'] as const).map((mode) => (
+                    <button
+                        key={mode}
+                        type="button"
+                        className={`bacteria-chip ${state.patch.crossoverMode === mode ? 'bacteria-chip-active' : ''}`}
+                        onClick={() => setGlobalParam('crossoverMode', mode)}
+                    >
+                        {mode === 'lr4' ? 'LR4' : 'Linear'}
+                    </button>
+                ))}
             </div>
         </div>
-    );
-};
 
-// ── Level 4: Route ───────────────────────────────────────────────────────────
+        <div className="bacteria-window flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3">
+            <SectionHeader
+                eyebrow="Modulation"
+                title="Source dock"
+                description="Still compact, still visible, and less stranded than before."
+            />
+            <ModulationDock
+                patch={state.patch}
+                modValues={[]}
+                onAssignmentAdd={() => {}}
+                onAssignmentRemove={() => {}}
+            />
+        </div>
+    </div>
+);
 
-const RouteLevel = ({ state }: { state: BacteriaState }): ReactElement => {
-    const patch = state.patch;
-
-    return (
-        <div className="flex flex-1 min-h-0 overflow-hidden">
-            {/* Signal flow DAG editor */}
-            <div className="flex-1 p-3">
-                <NodeGraphEditor
-                    width={600}
-                    height={350}
-                    bandCount={patch.bandCount}
-                    bands={patch.bands}
-                    globalRouting={patch.globalRouting}
-                    crossoverFreqs={[
-                        patch.crossoverFreq1,
-                        patch.crossoverFreq2,
-                        patch.crossoverFreq3,
-                        patch.crossoverFreq4,
-                        patch.crossoverFreq5,
-                    ]}
-                />
+const RouteDeck = ({ state }: { state: BacteriaState }): ReactElement => (
+    <div className="flex h-full min-h-0 flex-col gap-2.5 overflow-y-auto p-2.5">
+        <div className="bacteria-window flex flex-col gap-3 p-3">
+            <SectionHeader
+                eyebrow="Global"
+                title="Routing mode"
+                description="Choose how the bands behave before you dive into the per-band overrides."
+            />
+            <div className="flex flex-wrap gap-2">
+                {ROUTING_MODES.map((mode) => (
+                    <button
+                        key={mode}
+                        type="button"
+                        className={`bacteria-chip ${state.patch.globalRouting === mode ? 'bacteria-chip-active' : ''}`}
+                        onClick={() => setGlobalParam('globalRouting', mode)}
+                    >
+                        {mode === 'serial' ? 'Serial' : mode === 'parallel' ? 'Parallel' : 'Mid/side'}
+                    </button>
+                ))}
             </div>
+        </div>
 
-            {/* Routing controls */}
-            <div className="w-[200px] p-2 space-y-3 border-l border-border/20">
-                <div className="space-y-1">
-                    <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
-                        Global Routing
-                    </div>
-                    <div className="flex flex-col gap-0.5">
-                        {ROUTING_MODES.map((mode) => (
-                            <button
-                                key={mode}
-                                type="button"
-                                className={`px-2 py-1 rounded text-[8px] font-medium text-left transition-colors ${
-                                    patch.globalRouting === mode
-                                        ? 'bg-rose-500/20 text-rose-300'
-                                        : 'text-muted-foreground/60 hover:text-foreground hover:bg-surface-raised'
-                                }`}
-                                onClick={() => setGlobalParam('globalRouting', ROUTING_MODES.indexOf(mode))}
-                            >
-                                {mode === 'serial'
-                                    ? 'Serial (A → B → C)'
-                                    : mode === 'parallel'
-                                      ? 'Parallel (A + B + C)'
-                                      : 'Mid/Side (M | S)'}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-
-                {/* Per-band routing */}
-                {Array.from({ length: patch.bandCount }, (_, i) => (
-                    <div key={i} className="space-y-0.5">
-                        <div className="text-[7px] text-muted-foreground/40 font-medium">Band {i + 1}</div>
-                        <div className="flex gap-0.5">
+        <div className="bacteria-window flex flex-col gap-3 p-3">
+            <SectionHeader
+                eyebrow="Per band"
+                title="Lane overrides"
+                description="Useful when one band needs to misbehave on its own."
+            />
+            <div className="flex flex-col gap-2">
+                {Array.from({ length: state.patch.bandCount }, (_, index) => (
+                    <div key={index} className="bacteria-window flex items-center justify-between gap-3 px-3 py-2">
+                        <span className="text-[11px] font-medium text-foreground">Band {index + 1}</span>
+                        <div className="flex flex-wrap gap-1">
                             {ROUTING_MODES.map((mode) => (
                                 <button
                                     key={mode}
                                     type="button"
-                                    className={`px-1 py-0.5 rounded text-[6px] font-medium transition-colors ${
-                                        patch.bands[i]?.routingMode === mode
-                                            ? 'bg-rose-500 text-white'
-                                            : 'text-muted-foreground/40 hover:text-foreground'
-                                    }`}
-                                    onClick={() =>
-                                        setBacteriaBandParamWithAudio(
-                                            i,
-                                            'routingMode' as never,
-                                            ROUTING_MODES.indexOf(mode)
-                                        )
-                                    }
+                                    className={`bacteria-chip ${state.patch.bands[index]?.routingMode === mode ? 'bacteria-chip-active' : ''}`}
+                                    onClick={() => setBacteriaBandParamWithAudio(index, 'routingMode', mode)}
                                 >
-                                    {mode.split('-')[0]}
+                                    {mode === 'mid-side' ? 'M/S' : mode}
                                 </button>
                             ))}
                         </div>
@@ -1074,291 +1458,257 @@ const RouteLevel = ({ state }: { state: BacteriaState }): ReactElement => {
                 ))}
             </div>
         </div>
-    );
-};
+    </div>
+);
 
-// ── Level 5: Lab ─────────────────────────────────────────────────────────────
-
-const LabLevel = ({ state }: { state: BacteriaState }): ReactElement => {
-    const patch = state.patch;
-
-    return (
-        <div className="flex flex-1 min-h-0 overflow-hidden p-3 gap-3">
-            {/* Advanced modulation sources */}
-            <div className="flex-1 space-y-3 overflow-y-auto">
-                <div className="space-y-1">
-                    <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
-                        LFO 1
-                    </div>
-                    <div className="flex gap-3 flex-wrap">
-                        <K
-                            v={patch.lfo1Rate}
-                            k="lfo1Rate"
-                            label="Rate"
-                            min={0.01}
-                            max={40}
-                            step={0.01}
-                            def={2}
-                            unit="Hz"
-                        />
-                        <K v={patch.lfo1Amount} k="lfo1Amount" label="Amount" min={0} max={1} step={0.01} def={0.5} />
-                        <div className="flex flex-col items-center gap-0.5">
-                            <div className="flex gap-0.5">
-                                {['Sin', 'Tri', 'Saw', 'Sq', 'S&H'].map((s, i) => (
-                                    <button
-                                        key={s}
-                                        type="button"
-                                        className={`px-1 py-0.5 rounded text-[6px] font-medium transition-colors ${
-                                            patch.lfo1Shape === i
-                                                ? 'bg-rose-500 text-white'
-                                                : 'text-muted-foreground/40 hover:text-foreground'
-                                        }`}
-                                        onClick={() => setGlobalParam('lfo1Shape', i)}
-                                    >
-                                        {s}
-                                    </button>
-                                ))}
-                            </div>
-                            <span className="text-[6px] text-muted-foreground leading-none">Shape</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="space-y-1">
-                    <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
-                        LFO 2
-                    </div>
-                    <div className="flex gap-3 flex-wrap">
-                        <K
-                            v={patch.lfo2Rate}
-                            k="lfo2Rate"
-                            label="Rate"
-                            min={0.01}
-                            max={40}
-                            step={0.01}
-                            def={0.5}
-                            unit="Hz"
-                        />
-                        <K v={patch.lfo2Amount} k="lfo2Amount" label="Amount" min={0} max={1} step={0.01} def={0.5} />
-                        <div className="flex flex-col items-center gap-0.5">
-                            <div className="flex gap-0.5">
-                                {['Sin', 'Tri', 'Saw', 'Sq', 'S&H'].map((s, i) => (
-                                    <button
-                                        key={s}
-                                        type="button"
-                                        className={`px-1 py-0.5 rounded text-[6px] font-medium transition-colors ${
-                                            patch.lfo2Shape === i
-                                                ? 'bg-rose-500 text-white'
-                                                : 'text-muted-foreground/40 hover:text-foreground'
-                                        }`}
-                                        onClick={() => setGlobalParam('lfo2Shape', i)}
-                                    >
-                                        {s}
-                                    </button>
-                                ))}
-                            </div>
-                            <span className="text-[6px] text-muted-foreground leading-none">Shape</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="space-y-1">
-                    <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
-                        Envelope Follower
-                    </div>
-                    <div className="flex gap-3">
-                        <K
-                            v={patch.envFollowerAttack}
-                            k="envFollowerAttack"
-                            label="Attack"
-                            min={0.1}
-                            max={100}
-                            step={0.1}
-                            def={5}
-                            unit="ms"
-                        />
-                        <K
-                            v={patch.envFollowerRelease}
-                            k="envFollowerRelease"
-                            label="Release"
-                            min={1}
-                            max={2000}
-                            step={1}
-                            def={200}
-                            unit="ms"
-                        />
-                    </div>
-                </div>
-
-                <div className="space-y-1">
-                    <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
-                        Lorenz Attractor
-                    </div>
-                    <div className="flex gap-3 flex-wrap">
-                        <K v={patch.lorenzSigma} k="lorenzSigma" label="Sigma" min={1} max={30} step={0.1} def={10} />
-                        <K v={patch.lorenzRho} k="lorenzRho" label="Rho" min={1} max={50} step={0.1} def={28} />
-                        <K
-                            v={patch.lorenzBeta}
-                            k="lorenzBeta"
-                            label="Beta"
-                            min={0.1}
-                            max={10}
-                            step={0.01}
-                            def={2.667}
-                        />
-                        <K
-                            v={patch.lorenzSpeed}
-                            k="lorenzSpeed"
-                            label="Speed"
-                            min={0.01}
-                            max={10}
-                            step={0.01}
-                            def={1}
-                        />
-                    </div>
-                </div>
-
-                <div className="space-y-1">
-                    <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
-                        Step Sequencer
-                    </div>
-                    <div className="flex gap-3">
-                        <K v={patch.stepSeqSteps} k="stepSeqSteps" label="Steps" min={1} max={32} step={1} def={16} />
-                        <K
-                            v={patch.stepSeqRate}
-                            k="stepSeqRate"
-                            label="Rate"
-                            min={0.5}
-                            max={32}
-                            step={0.5}
-                            def={4}
-                            unit="Hz"
-                        />
-                    </div>
-                </div>
-            </div>
-
-            {/* Custom editors */}
-            <div className="w-[320px] shrink-0 flex flex-col gap-2 overflow-y-auto">
-                <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
-                    Custom Waveshaper
-                </div>
-                <WaveshaperEditor width={300} height={180} segments={[]} onSegmentsChange={() => {}} />
-
-                <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider mt-1">
-                    Bezier LFO
-                </div>
-                <BezierLfoEditor width={300} height={120} points={[]} onPointsChange={() => {}} gridDivisions={8} />
-
-                <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider mt-1">
-                    Step Sequencer
-                </div>
-                <StepSequencerEditor
-                    width={300}
-                    height={80}
-                    steps={[]}
-                    numSteps={patch.stepSeqSteps}
-                    onStepsChange={() => {}}
+const LabDeck = ({ state }: { state: BacteriaState }): ReactElement => (
+    <div className="flex h-full min-h-0 flex-col gap-2.5 overflow-y-auto p-2.5">
+        <div className="bacteria-window flex flex-col gap-3 p-3">
+            <SectionHeader
+                eyebrow="LFOs"
+                title="Motion core"
+                description="Rates and shapes for the built-in wigglers."
+            />
+            <div className="flex flex-wrap gap-4">
+                <K
+                    v={state.patch.lfo1Rate}
+                    k="lfo1Rate"
+                    label="LFO 1"
+                    min={0.01}
+                    max={40}
+                    step={0.01}
+                    def={2}
+                    unit="Hz"
                 />
-
-                <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider mt-1">
-                    Spectral Bin Gate
-                </div>
-                <SpectralBinEditor width={300} height={100} binValues={[]} onBinValuesChange={() => {}} mode="gate" />
+                <K v={state.patch.lfo1Amount} k="lfo1Amount" label="Amt 1" min={0} max={1} step={0.01} def={0.5} />
+                <K
+                    v={state.patch.lfo2Rate}
+                    k="lfo2Rate"
+                    label="LFO 2"
+                    min={0.01}
+                    max={40}
+                    step={0.01}
+                    def={0.5}
+                    unit="Hz"
+                />
+                <K v={state.patch.lfo2Amount} k="lfo2Amount" label="Amt 2" min={0} max={1} step={0.01} def={0.5} />
+            </div>
+            <div className="flex flex-wrap gap-2">
+                {['Sin', 'Tri', 'Saw', 'Sq', 'S&H'].map((shape, index) => (
+                    <button
+                        key={`lfo1-${shape}`}
+                        type="button"
+                        className={`bacteria-chip ${state.patch.lfo1Shape === index ? 'bacteria-chip-active' : ''}`}
+                        onClick={() => setGlobalParam('lfo1Shape', index)}
+                    >
+                        LFO1 {shape}
+                    </button>
+                ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
+                {['Sin', 'Tri', 'Saw', 'Sq', 'S&H'].map((shape, index) => (
+                    <button
+                        key={`lfo2-${shape}`}
+                        type="button"
+                        className={`bacteria-chip ${state.patch.lfo2Shape === index ? 'bacteria-chip-active' : ''}`}
+                        onClick={() => setGlobalParam('lfo2Shape', index)}
+                    >
+                        LFO2 {shape}
+                    </button>
+                ))}
             </div>
         </div>
-    );
-};
 
-// ── Main Panel ───────────────────────────────────────────────────────────────
+        <div className="bacteria-window flex flex-col gap-3 p-3">
+            <SectionHeader
+                eyebrow="Followers"
+                title="Bench controls"
+                description="Envelope, Lorenz, and steps in one place."
+            />
+            <div className="flex flex-wrap gap-4">
+                <K
+                    v={state.patch.envFollowerAttack}
+                    k="envFollowerAttack"
+                    label="Env Atk"
+                    min={0.1}
+                    max={100}
+                    step={0.1}
+                    def={5}
+                    unit="ms"
+                />
+                <K
+                    v={state.patch.envFollowerRelease}
+                    k="envFollowerRelease"
+                    label="Env Rel"
+                    min={1}
+                    max={2000}
+                    step={1}
+                    def={200}
+                    unit="ms"
+                />
+                <K v={state.patch.stepSeqSteps} k="stepSeqSteps" label="Steps" min={1} max={32} step={1} def={16} />
+                <K
+                    v={state.patch.stepSeqRate}
+                    k="stepSeqRate"
+                    label="Step Hz"
+                    min={0.5}
+                    max={32}
+                    step={0.5}
+                    def={4}
+                    unit="Hz"
+                />
+                <K v={state.patch.lorenzSigma} k="lorenzSigma" label="Sigma" min={1} max={30} step={0.1} def={10} />
+                <K v={state.patch.lorenzRho} k="lorenzRho" label="Rho" min={1} max={50} step={0.1} def={28} />
+                <K v={state.patch.lorenzBeta} k="lorenzBeta" label="Beta" min={0.1} max={10} step={0.01} def={2.667} />
+                <K v={state.patch.lorenzSpeed} k="lorenzSpeed" label="Speed" min={0.01} max={10} step={0.01} def={1} />
+            </div>
+        </div>
+    </div>
+);
+
+function renderHero(state: BacteriaState): ReactElement {
+    if (state.uiLevel === 1) {
+        return <PlayHero state={state} />;
+    }
+    if (state.uiLevel === 2) {
+        return <ShapeHero state={state} />;
+    }
+    if (state.uiLevel === 3) {
+        return <BuildHero state={state} />;
+    }
+    if (state.uiLevel === 4) {
+        return <RouteHero state={state} />;
+    }
+    return <LabHero state={state} />;
+}
+
+function renderDeck(state: BacteriaState): ReactElement {
+    if (state.uiLevel === 1) {
+        return <PlayDeck state={state} />;
+    }
+    if (state.uiLevel === 2) {
+        return renderShapeControls(state);
+    }
+    if (state.uiLevel === 3) {
+        return <BuildDeck state={state} />;
+    }
+    if (state.uiLevel === 4) {
+        return <RouteDeck state={state} />;
+    }
+    return <LabDeck state={state} />;
+}
 
 export const BacteriaPanel = (): ReactElement => {
     const state = useSyncExternalStore<BacteriaState | null>(
         (cb) => bacteriaStore.subscribe(cb),
         () => bacteriaStore.value
     );
+    const [presetQuery, setPresetQuery] = useState('');
+    const [presetCategory, setPresetCategory] = useState('All');
+    const [, startFilterTransition] = useTransition();
 
     if (!state) {
-        return <div className="flex items-center justify-center h-full text-muted-foreground">Loading...</div>;
+        return <div className="flex h-full items-center justify-center text-muted-foreground">Loading...</div>;
     }
 
+    const activeLevel = getActiveLevel(state.uiLevel);
+    const activeBand = state.patch.bands[state.activeBand] ?? state.patch.bands[0]!;
+    const moduleMeta = getModuleMeta(state.activeModule);
+
     return (
-        <div className="flex flex-col h-full">
-            {/* ─── Top bar: level selector ─── */}
-            <div
-                className="flex items-center gap-2 px-2 py-1 shrink-0"
-                style={{
-                    background: 'linear-gradient(180deg, rgba(20,20,22,0.95) 0%, rgba(14,14,16,0.95) 100%)',
-                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 3px rgba(0,0,0,0.5)',
-                    borderBottom: '1px solid rgba(0,0,0,0.4)',
+        <div className="bacteria-faceplate flex h-full min-h-0 gap-2.5 overflow-hidden p-2.5">
+            <PresetRail
+                state={state}
+                query={presetQuery}
+                category={presetCategory}
+                onQueryChange={(value) => {
+                    startFilterTransition(() => {
+                        setPresetQuery(value);
+                    });
                 }}
-            >
-                {/* Level tabs */}
-                <div className="flex gap-0.5">
-                    {LEVELS.map((level) => (
-                        <button
-                            key={level.id}
-                            type="button"
-                            className={`flex items-center gap-1 px-2.5 py-0.5 rounded text-[9px] font-medium transition-all ${
-                                state.uiLevel === level.id
-                                    ? 'bg-rose-500 text-white'
-                                    : 'text-muted-foreground/60 hover:text-foreground'
-                            }`}
-                            onClick={() => setBacteriaUiLevel(level.id)}
-                            title={level.description}
-                        >
-                            {level.label}
-                        </button>
-                    ))}
-                </div>
+                onCategoryChange={(value) => {
+                    startFilterTransition(() => {
+                        setPresetCategory(value);
+                    });
+                }}
+            />
 
-                <div
-                    className="w-px h-4 shrink-0"
-                    style={{
-                        background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.01) 100%)',
-                    }}
-                />
-
-                {/* Band selector (visible at Level 2+) */}
-                {state.uiLevel >= 2 ? (
-                    <div className="flex items-center gap-1">
-                        <span className="text-[7px] text-muted-foreground/40">Band:</span>
-                        {Array.from({ length: state.patch.bandCount }, (_, i) => (
-                            <button
-                                key={i}
-                                type="button"
-                                className={`w-4 h-4 rounded text-[7px] font-bold transition-colors ${
-                                    state.activeBand === i
-                                        ? 'bg-rose-500 text-white'
-                                        : 'text-muted-foreground/40 hover:text-foreground'
-                                }`}
-                                onClick={() => setBacteriaActiveBand(i)}
-                            >
-                                {i + 1}
-                            </button>
-                        ))}
+            <div className="flex min-w-0 flex-1 flex-col gap-2.5">
+                <header className="bacteria-window flex shrink-0 flex-wrap items-center gap-2.5 px-3 py-2">
+                    <div className="space-y-1">
+                        <div className="text-[8px] uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]/70">
+                            {activeLevel.eyebrow}
+                        </div>
+                        <div className="text-[13px] font-semibold text-foreground">Bacteria</div>
                     </div>
-                ) : null}
 
-                <div className="flex-1" />
+                    <div className="flex flex-wrap gap-1.5">
+                        {LEVELS.map((level) => {
+                            const active = level.id === state.uiLevel;
 
-                {/* Master mix + bypass */}
-                <div className="flex items-center gap-2">
-                    <span className="text-[7px] text-muted-foreground/40 font-mono">
-                        In: {formatValue(state.inputDb, 'dB')} / Out: {formatValue(state.outputDb, 'dB')}
-                    </span>
-                    {state.latency > 0 ? (
-                        <span className="text-[7px] text-muted-foreground/30 font-mono">Lat: {state.latency} smp</span>
+                            return (
+                                <button
+                                    key={level.id}
+                                    type="button"
+                                    className={`bacteria-chip ${active ? 'bacteria-chip-active' : ''}`}
+                                    title={level.description}
+                                    onClick={() => setBacteriaUiLevel(level.id)}
+                                >
+                                    {level.label}
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {state.uiLevel >= 2 ? (
+                        <div className="flex flex-wrap gap-1">
+                            {Array.from({ length: state.patch.bandCount }, (_, index) => (
+                                <button
+                                    key={index}
+                                    type="button"
+                                    className={`bacteria-chip ${state.activeBand === index ? 'bacteria-chip-active' : ''}`}
+                                    onClick={() => setBacteriaActiveBand(index)}
+                                >
+                                    Band {index + 1}
+                                </button>
+                            ))}
+                        </div>
                     ) : null}
-                </div>
-            </div>
 
-            {/* ─── Level content ─── */}
-            {state.uiLevel === 1 ? <PlayLevel state={state} /> : null}
-            {state.uiLevel === 2 ? <ShapeLevel state={state} /> : null}
-            {state.uiLevel === 3 ? <BuildLevel state={state} /> : null}
-            {state.uiLevel === 4 ? <RouteLevel state={state} /> : null}
-            {state.uiLevel === 5 ? <LabLevel state={state} /> : null}
+                    <div className="ml-auto flex items-center gap-2">
+                        <div className="bacteria-led">{moduleMeta.label}</div>
+                        <div className="text-right">
+                            <div className="text-[8px] uppercase tracking-[0.22em] text-muted-foreground/55">
+                                In {formatValue(state.inputDb, 'dB')} / Out {formatValue(state.outputDb, 'dB')}
+                            </div>
+                            <div className="text-[10px] text-muted-foreground">
+                                {countEnabledEffects(activeBand)} active effects in band {state.activeBand + 1}
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            className={`bacteria-chip ${Boolean(state.patch.bypass) ? 'bacteria-chip-active' : ''}`}
+                            aria-pressed={Boolean(state.patch.bypass)}
+                            onClick={() => setGlobalParam('bypass', !Boolean(state.patch.bypass))}
+                        >
+                            {Boolean(state.patch.bypass) ? 'Bypassed' : 'Live'}
+                        </button>
+                    </div>
+                </header>
+
+                <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.45fr)_minmax(320px,0.92fr)] gap-2.5 overflow-hidden">
+                    <section className="bacteria-window min-h-0 overflow-hidden">{renderHero(state)}</section>
+                    <section className="bacteria-window min-h-0 overflow-hidden">{renderDeck(state)}</section>
+                </div>
+
+                <footer className="grid shrink-0 grid-cols-[repeat(4,minmax(0,auto))_minmax(0,1fr)] gap-2.5">
+                    <MetricCell label="Input" value={formatValue(state.inputDb, 'dB')} />
+                    <MetricCell label="Output" value={formatValue(state.outputDb, 'dB')} />
+                    <MetricCell label="Latency" value={state.latency > 0 ? `${state.latency} smp` : '0 smp'} />
+                    <MetricCell label="Active band" value={`B${state.activeBand + 1}`} />
+                    <BandMeters state={state} />
+                </footer>
+            </div>
         </div>
     );
 };

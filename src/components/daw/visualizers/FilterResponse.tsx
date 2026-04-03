@@ -5,7 +5,7 @@
  * Drag the cutoff dot horizontally to change frequency,
  * vertically to change resonance.
  */
-import { type ReactElement, useRef, useEffect, useCallback } from 'react';
+import { type ReactElement, useRef, useEffect } from 'react';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type FilterResponseProps = {
@@ -207,16 +207,16 @@ export const FilterResponse = ({
         }
     }, [cutoff, resonance, filterType, width, height, isInteractive]);
 
-    const handlePointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
         if (!onParamChange) { return; }
         const canvas = canvasRef.current;
         if (!canvas) { return; }
         isDragging.current = true;
         canvas.setPointerCapture(e.pointerId);
         canvas.style.cursor = 'grabbing';
-    }, [onParamChange]);
+    };
 
-    const handlePointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
         if (!isDragging.current || !onParamChange) { return; }
         const canvas = canvasRef.current;
         if (!canvas) { return; }
@@ -232,16 +232,16 @@ export const FilterResponse = ({
         const normalizedY = 1 - Math.max(0, Math.min(1, y / height));
         const q = 0.1 + normalizedY * 19.9; // 0.1 to 20
         onParamChange('filterResonance', Math.round(q * 10) / 10);
-    }, [onParamChange, width, height]);
+    };
 
-    const handlePointerUp = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
         isDragging.current = false;
         const canvas = canvasRef.current;
         if (canvas) {
             canvas.releasePointerCapture(e.pointerId);
             canvas.style.cursor = isInteractive ? 'grab' : 'default';
         }
-    }, [isInteractive]);
+    };
 
     return (
         <canvas

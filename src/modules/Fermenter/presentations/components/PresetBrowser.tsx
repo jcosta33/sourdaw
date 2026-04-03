@@ -2,7 +2,7 @@
  * Preset Browser — proper navigation with search, tags, categories.
  * Replaces the single select dropdown with a full browsing experience.
  */
-import { type ReactElement, useState, useMemo } from 'react';
+import { type ReactElement, useState } from 'react';
 import { Search, Star, ChevronRight } from 'lucide-react';
 import { type SoundPreset } from '#/modules/Arrangement/useCases/trackQueries';
 
@@ -33,29 +33,26 @@ export const PresetBrowser = ({ currentName, userPatches, presets, onLoadPreset 
     const [category, setCategory] = useState('all');
     const [selectedTag, setSelectedTag] = useState<string | null>(null);
 
-    const filtered = useMemo(() => {
-        let results = category === 'user'
-            ? userPatches.map((p) => ({ id: p.id, name: p.name, category: 'user', tags: [] as string[] }))
-            : presets.map((p) => ({ id: p.id, name: p.name.replace('Fermenter — ', ''), category: p.category, tags: p.tags || [] }));
+    // React Compiler handles memoization automatically — no useMemo needed
+    let filtered = category === 'user'
+        ? userPatches.map((p) => ({ id: p.id, name: p.name, category: 'user', tags: [] as string[] }))
+        : presets.map((p) => ({ id: p.id, name: p.name.replace('Fermenter — ', ''), category: p.category, tags: p.tags || [] }));
 
-        if (category !== 'all' && category !== 'user') {
-            results = results.filter((p) => p.category === category);
-        }
+    if (category !== 'all' && category !== 'user') {
+        filtered = filtered.filter((p) => p.category === category);
+    }
 
-        if (search) {
-            const q = search.toLowerCase();
-            results = results.filter((p) =>
-                p.name.toLowerCase().includes(q) ||
-                p.tags.some((t) => t.toLowerCase().includes(q))
-            );
-        }
+    if (search) {
+        const q = search.toLowerCase();
+        filtered = filtered.filter((p) =>
+            p.name.toLowerCase().includes(q) ||
+            p.tags.some((t) => t.toLowerCase().includes(q))
+        );
+    }
 
-        if (selectedTag) {
-            results = results.filter((p) => p.tags.includes(selectedTag));
-        }
-
-        return results;
-    }, [search, category, selectedTag, userPatches, presets]);
+    if (selectedTag) {
+        filtered = filtered.filter((p) => p.tags.includes(selectedTag));
+    }
 
     return (
         <div className="flex flex-col h-full">

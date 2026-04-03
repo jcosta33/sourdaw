@@ -26,8 +26,7 @@ import { appendChatMessage, updateChatMessage, setChatGenerating } from '../../s
 import { pushAiActionGroup } from '../../stores/aiActionHistoryStore';
 import { pushUndo } from '#/modules/Command/stores/undoStore';
 import { createCallbackUndoEntry, generateGroupId } from '#/modules/Command/models/UndoEntry';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { transportStore } from '#/modules/Transport/stores/transportStore';
+import { automergeRepository } from '#/modules/CrdtDocument/repositories/automergeRepository';
 
 const logger = Container.getInstance().get(Logger);
 
@@ -235,37 +234,23 @@ function parseEditPlan(responseText: string): EditPlan {
 }
 
 async function commitDsos(plan: EditPlan, userRequest: string, assistantMsgId: string, reasoning?: string): Promise<string[]> {
-    // Snapshot for undo
-    const trackSnapshot = structuredClone(trackStore.value);
-    const transportSnapshot = structuredClone(transportStore.value);
+    // Binary snapshot of ALL Automerge documents before the edit.
+    // Much more compact than structuredClone(store.value) and correctly captures
+    // every store — including midiStore — that the DSO may modify.
+    const bundleBefore = automergeRepository.saveAll();
 
     // Execute
     const summaries = await executeDsos(plan.dsos);
 
-    // Snapshot after for redo
-    const trackAfter = structuredClone(trackStore.value);
-    const transportAfter = structuredClone(transportStore.value);
+    // Binary snapshot after — used for redo.
+    const bundleAfter = automergeRepository.saveAll();
 
     // Undo entry
     const { groupId, groupLabel } = generateGroupId(userRequest);
     const undoEntry = createCallbackUndoEntry(
         `AI: ${plan.intent}`,
-        () => {
-            if (trackSnapshot) {
-                trackStore.set(trackSnapshot);
-            }
-            if (transportSnapshot) {
-                transportStore.set(transportSnapshot);
-            }
-        },
-        () => {
-            if (trackAfter) {
-                trackStore.set(trackAfter);
-            }
-            if (transportAfter) {
-                transportStore.set(transportAfter);
-            }
-        },
+        () => { automergeRepository.restoreSnapshot(bundleBefore); },
+        () => { automergeRepository.restoreSnapshot(bundleAfter); },
         'ai'
     );
     undoEntry.groupId = groupId;

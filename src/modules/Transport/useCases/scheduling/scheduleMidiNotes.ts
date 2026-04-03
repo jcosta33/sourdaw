@@ -55,7 +55,10 @@ export function scheduleFrozenTrack(
     const source = createBufferSource();
     source.buffer = buffer;
 
-    source.connect(strip.gainNode);
+    const fadeGain = getAudioContext().createGain();
+    (source as any).fadeGainNode = fadeGain;
+    fadeGain.connect(strip.gainNode);
+    source.connect(fadeGain);
 
     const beatOffset = 0 - accumulatedPosition;
     const startTime = getCurrentTime() + beatOffset / (currentTempo / 60);

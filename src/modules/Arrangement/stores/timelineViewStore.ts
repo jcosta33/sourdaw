@@ -38,6 +38,14 @@ export function scrollTimeline(deltaX: number): void {
     timelineViewStore.set({ ...state, scrollX: Math.max(0, state.scrollX + deltaX) });
 }
 
+export function setScrollX(scrollX: number): void {
+    const state = timelineViewStore.value;
+    if (!state) {
+        return;
+    }
+    timelineViewStore.set({ ...state, scrollX: Math.max(0, scrollX) });
+}
+
 export function setAutoScroll(enabled: boolean): void {
     const state = timelineViewStore.value;
     if (!state) {

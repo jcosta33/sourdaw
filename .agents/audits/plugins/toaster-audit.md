@@ -7,7 +7,7 @@ Unlike the Fermenter and Bacteria plugins, the Toaster engine correctly handles 
 *   **Zero Audio-Thread Allocations for Routing:** The author successfully avoided per-block allocations for the internal mix buses by pre-allocating them to a maximum size of 4096 samples during engine initialization: `let bus_buffers_l = std::array::from_fn(|_| vec![0.0; max_block]);`. This is a great practice for real-time safety.
 
 ### 🚨 Critical Bugs
-1. **Audio Clicks/Pops on Choke Groups (`engine.rs`)**:
+1. [x] **Audio Clicks/Pops on Choke Groups (`engine.rs`)**:
    *   **Issue:** In `ToasterEngine::note_on`, when a pad belongs to a choke group (e.g., closed hi-hat choking an open hi-hat), it finds the active voice and immediately kills it:
        ```rust
        voice.release();
@@ -22,7 +22,7 @@ Unlike the Fermenter and Bacteria plugins, the Toaster engine correctly handles 
    *   **Fix:** Use the same pre-allocation pattern (e.g., maximum 4096 samples) used for the `bus_buffers`, and clamp the requested processing size to that maximum.
 
 ### ⚠️ DSP Logic & Efficiency Issues
-1. **Sample-Rate Dependent Compressor (`engine.rs`)**:
+1. [x] **Sample-Rate Dependent Compressor (`engine.rs`)**:
    *   **Issue:** The envelope follower in `BusEffects::process` uses hardcoded smoothing coefficients: `let coeff = if abs > self.comp_env { 0.01 } else { 0.0005 };`. 
    *   **Impact:** The attack and release times of the bus compressors will change dramatically depending on the user's sample rate (they will compress much faster at 96kHz than at 44.1kHz).
    *   **Fix:** Calculate the attack and release coefficients dynamically using `sample_rate`.

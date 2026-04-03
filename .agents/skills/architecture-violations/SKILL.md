@@ -1,309 +1,182 @@
 ---
 name: architecture-violations
-description: Apply when fixing architecture violations, refactoring modules, or performing codebase audits. Contains mandatory rules for how to properly address violations without hacking around the architecture. Prevents barrel re-exports that bypass DDD boundaries, fake use cases, dumping unrelated logic into single files, and other anti-patterns.
+description: Apply when fixing architecture violations, refactoring modules, restructuring boundaries, or performing codebase audits. Contains mandatory rules for addressing violations properly without hacking around the architecture. Prevents barrel re-exports that bypass boundaries, fake use cases, dumping unrelated logic into single files, shadow shared layers, and other forms of malicious or fake compliance.
 ---
 
 # Architecture Violations Skill
 
-Apply when fixing any architecture violation detected by `pnpm deps:validate`, during codebase audits, or when restructuring module internals.
+This document explains **why** the architecture must be followed, **how** to reason about real compliance, and **which forms of fake or malicious compliance are forbidden**.
 
-## Core Principle
+It applies to both AI agents and human maintainers.
 
-**Fix violations properly — never hack around the rules.**
-
-If a violation exists, the correct fix is to set up the proper scaffolding (repositories, use cases, stores, etc.) so the code flows through the right architectural layers. **Never:**
-
-- Change the validation rules to make violations pass
-- Create barrel exports of non-contract entities to bypass import restrictions
-- Move code into a "fake" use case file just to make imports work
-- Rename files or folders to trick the validator
+This is not another architecture overview. It is a guardrail document for preventing architectural drift, shortcut-driven refactors, validator gaming, and code that "passes the rules" without preserving the meaning of the rules.
 
 ---
 
-## Contract Folders
+## 1. When to Apply This Skill
 
-These (and only these) folders may be imported by other modules:
+Apply this skill when:
 
-```
+- fixing any architecture violation detected by `pnpm deps:validate`
+- restructuring a feature or module
+- moving logic across layers
+- introducing new public surfaces
+- adding adapters, stores, use cases, or projections
+- cleaning up tech debt
+- performing a codebase audit
+- refactoring legacy code toward the new architecture
+- reviewing whether a change is _actually_ compliant or only cosmetically compliant
+
+---
+
+## 2. Core Principle
+
+**Fix violations properly — never hack around the rules.**
+
+If a violation exists, the correct fix is to establish the proper architecture so the code flows through the right boundary.
+
+Never:
+
+- change validation rules to make violations pass
+- create barrel exports of non-contract entities to bypass restrictions
+- move code into a "fake" use case, action, or projection file just to make imports legal
+- rename files or folders to trick the validator
+- move forbidden logic into `src/helpers/`, `src/shared/`, `utils/`, or other ungoverned escape hatches
+- split code into many tiny files without improving responsibilities
+- collapse multiple responsibilities into a giant "allowed" file
+- keep unauthorized mutation but wrap it behind an allowed import path
+- create compatibility wrappers that become permanent shadow architecture
+
+A refactor is compliant only if it improves or preserves the _meaning_ of the boundary, not just the path.
+
+---
+
+## 3. Why Compliance Matters
+
+Architecture compliance is not cosmetic consistency.
+
+The architecture exists because this DAW has hard constraints that cannot be negotiated away by clever code organization.
+
+### 3.1 Real-time safety is fragile
+
+In a DAW, the real-time boundary is more important than aesthetics.
+
+If allocations, locks, UI coupling, shell coupling, or other unsafe behavior leak into runtime-sensitive paths, the result is not merely impurity. It can cause:
+
+- audio glitches
+- instability
+- timing drift
+- impossible-to-reproduce bugs
+- performance collapse under load
+
+The architecture exists partly to keep real-time execution isolated from everything that is not real-time safe.
+
+### 3.2 Shared state without ownership becomes corruption
+
+The project model is the source of truth. That only works if ownership is real.
+
+If multiple features casually mutate shared state because it is convenient, then:
+
+- undo semantics become unclear
+- persistence no longer reflects clear intent
+- collaboration becomes harder later
+- bugs become distributed instead of local
+- refactors cannot be trusted
+
+The architecture exists to preserve one owner per authoritative write surface, while still allowing broad read access via stores and projections.
+
+### 3.3 UI coupling destroys reuse and correctness
+
+When business logic lives in hooks, components, or shell entry points, it becomes:
+
+- harder to test
+- harder to reuse
+- easier to accidentally duplicate
+- dependent on rendering and lifecycle quirks
+- vulnerable to shortcut code
+
+The architecture exists so business logic can be reasoned about independently of React, Tauri, and imperative rendering.
+
+### 3.4 Thin shell, thick core is not optional
+
+Tauri, browser APIs, Web Audio setup, IndexedDB, filesystem operations, and plugin-host mechanics are real concerns, but they are not the business model.
+
+If shell/framework code becomes the de facto owner of logic, the result is:
+
+- runtime lock-in
+- poor testability
+- logic duplication across runtimes
+- hidden infrastructure assumptions inside business behavior
+
+The architecture exists to keep infrastructure replaceable and business logic stable.
+
+### 3.5 AI agents optimize locally unless constrained
+
+AI agents are very good at making a change "work" locally.
+They are much less reliable if the system tolerates shortcut patterns that technically pass linting and dependency rules but violate architectural intent.
+
+This means the codebase needs explicit protection against:
+
+- shortcut abstractions
+- fake boundary layers
+- pass-through facades
+- hidden write surfaces
+- giant files that flatten layers
+- barrel-export laundering
+- compatibility wrappers that become permanent shadow architecture
+
+This skill exists to prevent that.
+
+---
+
+## 4. Semantic Compliance vs Cosmetic Compliance
+
+A change is compliant only if it preserves the meaning of the boundary, not just the path structure.
+
+### 4.1 Real compliance
+
+A change is compliant when it improves or preserves:
+
+- ownership
+- write discipline
+- runtime isolation
+- testability
+- truth vs projection separation
+- framework independence of business logic
+- real-time safety
+
+### 4.2 Fake compliance
+
+A change is fake-compliant when it:
+
+- passes dependency-cruiser by routing imports through laundering files
+- moves logic into approved folders without changing dependency meaning
+- introduces pass-through layers with no real separation
+- collapses many concerns into one giant "allowed" file
+- preserves hidden bidirectional coupling through indirection
+- leaves unauthorized mutation intact while renaming entry points
+- keeps runtime ownership in UI code while wrapping it in helper functions
+
+If the architectural meaning did not improve, the refactor did not comply.
+
+### 4.3 The key test
+
+**A boundary is only real if responsibility changes across it.**
+
+If a layer exists only to satisfy the validator while the real logic still lives in the wrong place, it is non-compliant.
+
+---
+
+## 5. Contract Folders
+
+Only the agreed public surfaces may be imported across modules.
+
+In the legacy architecture, these contract folders are:
+
+```text
 useCases/              → business operations + exported DTOs
 events/                → DomainEvent subclasses
 errors/                → AppError subclasses
 stores/                → Store<T> instances (business-layer, cross-module)
 presentations/views/   → composable UI entry points
 ```
-
-**Everything else is private to its module:** `models/`, `repositories/`, `transformers/`, `helpers/`, `engine/`, `worklets/`, `presentations/hooks/`, `presentations/stores/`, `presentations/components/`.
-
-> [!IMPORTANT]
-> Note the distinction between `stores/` (business layer, **contract**) and `presentations/stores/` (UI layer, **private**). Business-layer stores hold project data, engine status, MIDI device lists, etc. Presentation-layer stores hold UI preferences (zoom, sidebar state) and are never imported cross-module.
-
----
-
-## One Function Per File
-
-**Each use case file exports exactly ONE function.** Each repository file exports exactly ONE function. No exceptions.
-
-This is the single most important rule for keeping the codebase maintainable. When a module grows, the temptation is to dump everything into one mega-file. **Resist this.**
-
-**❌ WRONG — mega use case file:**
-```typescript
-// useCases/trackActions.ts — 800 lines, 15 functions
-export const addTrack = ...
-export const removeTrack = ...
-export const muteTrack = ...
-export const soloTrack = ...
-export const renameTrack = ...
-export const duplicateTrack = ...
-export const reorderTrack = ...
-export const setTrackColor = ...
-export const freezeTrack = ...
-// ... 6 more
-```
-
-**✅ RIGHT — one function per file:**
-```
-useCases/
-├── addTrack.ts
-├── removeTrack.ts
-├── muteTrack.ts
-├── soloTrack.ts
-├── renameTrack.ts
-├── duplicateTrack.ts
-├── reorderTrack.ts
-├── setTrackColor.ts
-└── freezeTrack.ts
-```
-
-### When There Are Too Many Files: Use Subfolders
-
-When a module has 15+ use cases or repositories, group them in named subfolders. The subfolder name describes the logical concern.
-
-```
-useCases/
-├── playback/
-│   ├── startPlayback.ts
-│   ├── stopPlayback.ts
-│   ├── toggleLoop.ts
-│   └── seekPlayhead.ts
-├── tempo/
-│   ├── setTempo.ts
-│   ├── tapTempo.ts
-│   └── setTimeSignature.ts
-└── sync/
-    ├── sendMidiClock.ts
-    └── syncToExternal.ts
-```
-
-The same applies to repositories:
-
-```
-repositories/
-├── engine/
-│   ├── setEnginePlaybackRate.ts
-│   ├── setEngineLoop.ts
-│   └── seekEnginePosition.ts
-├── storage/
-│   ├── saveTransportConfig.ts
-│   └── loadTransportConfig.ts
-└── tauri/
-    ├── invokeMidiClock.ts
-    └── invokeExternalSync.ts
-```
-
-### When a Module Has Too Many Concerns: Split Into Smaller Modules
-
-If a module grows beyond ~20 files across use cases + repositories, it likely covers too many concerns. Split it into smaller, more focused modules. This is always preferable to having a bloated module with dozens of files.
-
-**❌ Module doing too much:**
-```
-AudioEngine/
-├── useCases/        ← 30 files covering playback, routing, effects, metering, recording
-├── repositories/    ← 15 files
-└── ...
-```
-
-**✅ Split into focused modules:**
-```
-AudioEngine/         ← Core engine lifecycle, context, master output
-Routing/             ← Track routing, bus routing, send/return
-Metering/            ← VU meters, LUFS, spectrum analysis
-Recording/           ← Arm, record, punch-in/out
-```
-
----
-
-## Repository vs Use Case: The I/O Boundary
-
-This is the most critical distinction in the architecture. **Repositories touch the bare metal. Use cases only orchestrate.**
-
-### What Goes in a Repository
-
-Repositories are the adapter layer between your business logic and the outside world. A repository accesses:
-
-- **DOM / Canvas / WebGL / WebGPU** — any browser rendering API
-- **Web Audio API** — AudioContext, AudioNodes, AudioWorklet
-- **localStorage / IndexedDB / sessionStorage** — client-side storage
-- **fetch / WebSocket / SSE** — network I/O
-- **Tauri invoke / listen** — native IPC
-- **File system** — via Tauri fs plugin
-- **Third-party libraries** — anything with side effects
-- **MIDI ports** — via midir / Web MIDI API
-
-A repository file is a thin wrapper. It translates domain concepts into API calls and API responses into domain types. It does NOT contain business logic, validation, or orchestration.
-
-```typescript
-// ✅ Repository — thin adapter around I/O
-// repositories/saveProjectToStorage.ts
-export const saveProjectToStorage = (data: ProjectState): void => {
-    localStorage.setItem('sourdaw-project', JSON.stringify(data));
-};
-```
-
-### What Goes in a Use Case
-
-A use case is a business operation. It orchestrates repositories, validates inputs, updates stores, and emits events. **It never does I/O directly.**
-
-```typescript
-// ✅ Use case — orchestrates, validates, emits
-// useCases/saveProject.ts
-import { saveProjectToStorage } from '../repositories/saveProjectToStorage';
-import { projectStore } from '../stores/projectStore';
-import { eventBus } from '#/app/eventBus';
-import { ProjectSavedEvent } from '../events/ProjectSavedEvent';
-
-export const saveProject = (): void => {
-    const state = projectStore.value;
-    if (!state) {
-        return;
-    }
-    saveProjectToStorage(state);
-    eventBus.emit(new ProjectSavedEvent({ name: state.meta.name }));
-};
-```
-
-### The Smell Test
-
-If your use case file contains any of these, the I/O belongs in a repository:
-
-- `localStorage.setItem` / `localStorage.getItem`
-- `fetch(` / `new WebSocket(`
-- `invoke(` / `listen(`
-- `document.createElement` / `canvas.getContext`
-- `new AudioContext` / `audioEngine.` direct method calls
-- `navigator.` API calls
-- Direct library API calls with side effects
-
-If your repository file contains any of these, the logic belongs in a use case:
-
-- `if (condition) throw new DomainError(...)`
-- `eventBus.emit(new SomeEvent(...))`
-- `store.set(...)` for business state
-- Calling other repositories or use cases
-- Multi-step orchestration logic
-
----
-
-## No Barrel Exports of Non-Contract Entities
-
-Cross-module imports MUST come from contract folders only.
-
-**❌ WRONG — Barrel re-export bypass:**
-```typescript
-// modules/Arrangement/useCases/index.ts
-export { trackStore } from '../stores/trackStore';  // stores/ is a contract, but
-                                                     // this is in useCases/, misleading
-```
-
-**❌ WRONG — Re-exporting private internals through contract folders:**
-```typescript
-// modules/Arrangement/useCases/index.ts
-export { useTrackControls } from '../presentations/hooks/useTrackControls'; // hooks are private!
-```
-
----
-
-## Proper Layer Separation
-
-The DDD layers must be respected:
-
-```
-Presentation (views, hooks) → Use Cases → Repositories → External I/O
-                             → Stores (read/write)
-```
-
-- **Presentations** consume use cases and stores (both same-module and cross-module)
-- **Use cases** orchestrate repositories, update stores, emit events — NO direct I/O
-- **Repositories** are thin adapters around external I/O — NO business logic
-- **Business-layer `stores/`** are cross-module contracts — readable/writable from any module's use cases
-- **Presentation-layer `presentations/stores/`** are module-private — only the owning module's presentations access them
-
----
-
-## React 19 / TypeScript Conventions
-
-When fixing violations, also enforce these conventions in any file you touch:
-
-### No `useCallback`, `useMemo`, `React.memo`, or `forwardRef`
-
-React Compiler handles memoization automatically. Remove all manual memoization.
-
-```typescript
-// ❌ const handler = useCallback((e) => { ... }, [dep]);
-// ✅ const handler = (e) => { ... };
-```
-
-### Direct React Type Imports — No Aliases, No `React.` Prefix
-
-Import types directly from React. Never alias them, never use `React.` dot notation.
-
-```typescript
-// ❌ import { type MouseEvent as ReactMouseEvent } from 'react';
-// ❌ import * as React from 'react';
-// ❌ (e: React.MouseEvent)
-// ✅ import { type MouseEvent, type ReactElement } from 'react';
-// ✅ (event: MouseEvent<HTMLDivElement>)
-```
-
-When the same file uses **both JSX event handlers and `addEventListener`**:
-- Import the React event type directly (e.g., `type MouseEvent`)
-- Use it for JSX handler params: `(event: MouseEvent<HTMLDivElement>)`
-- For `addEventListener` callbacks, use the native type: `(event: globalThis.MouseEvent)`
-
-### `type` Over `interface`
-
-Always use `type` declarations, never `interface`.
-
-```typescript
-// ❌ interface TrackProps { ... }
-// ✅ type TrackProps = { ... };
-```
-
-### No Single-Letter Variables
-
-Use descriptive parameter names: `event` not `e`, `track` not `t`, `index` not `i` (loop counters excepted).
-
-### No `import * as React`
-
-Always use named imports:
-```typescript
-// ❌ import * as React from 'react';
-// ✅ import { type ReactElement, useState, useRef } from 'react';
-```
-
-### Block Conditionals, No Chained Ternaries
-
-```typescript
-// ❌ condition && <Component />
-// ✅ condition ? <Component /> : null
-```
-
----
-
-## Verification
-
-After fixing any architecture violation:
-
-1. Run `pnpm typecheck` — must pass clean
-2. Run `pnpm deps:validate` — must pass clean
-3. Run `pnpm lint` — no new warnings
-4. Verify the app still loads: check `pnpm dev` output

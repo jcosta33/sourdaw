@@ -5,7 +5,7 @@
  * showing how the drive parameter clips the signal. Higher drive = more
  * aggressive S-curve. Uses 45 degree unity line as reference.
  */
-import { type ReactElement, useRef, useEffect, useCallback } from 'react';
+import { type ReactElement, useRef, useEffect } from 'react';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type DistortionCurveProps = {
@@ -155,43 +155,34 @@ export const DistortionCurve = ({
         }
     }, [drive, mix, width, height, _tone, isInteractive]);
 
-    const handlePointerDown = useCallback(
-        (e: React.PointerEvent<HTMLCanvasElement>) => {
-            if (!onParamChange) return;
-            const canvas = canvasRef.current;
-            if (!canvas) return;
-            isDragging.current = true;
-            lastY.current = e.clientY;
-            canvas.setPointerCapture(e.pointerId);
-            canvas.style.cursor = 'grabbing';
-        },
-        [onParamChange],
-    );
+    const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+        if (!onParamChange) return;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        isDragging.current = true;
+        lastY.current = e.clientY;
+        canvas.setPointerCapture(e.pointerId);
+        canvas.style.cursor = 'grabbing';
+    };
 
-    const handlePointerMove = useCallback(
-        (e: React.PointerEvent<HTMLCanvasElement>) => {
-            if (!onParamChange || !isDragging.current) return;
-            const deltaY = lastY.current - e.clientY; // up = positive
-            lastY.current = e.clientY;
-            // Map vertical drag to drive change: ~0.5 drive units per pixel
-            const sensitivity = 0.5;
-            const newDrive = Math.max(0, Math.min(100, drive + deltaY * sensitivity));
-            onParamChange('dist-drive', newDrive);
-        },
-        [onParamChange, drive],
-    );
+    const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+        if (!onParamChange || !isDragging.current) return;
+        const deltaY = lastY.current - e.clientY; // up = positive
+        lastY.current = e.clientY;
+        // Map vertical drag to drive change: ~0.5 drive units per pixel
+        const sensitivity = 0.5;
+        const newDrive = Math.max(0, Math.min(100, drive + deltaY * sensitivity));
+        onParamChange('dist-drive', newDrive);
+    };
 
-    const handlePointerUp = useCallback(
-        (e: React.PointerEvent<HTMLCanvasElement>) => {
-            if (!onParamChange) return;
-            const canvas = canvasRef.current;
-            if (!canvas) return;
-            isDragging.current = false;
-            canvas.releasePointerCapture(e.pointerId);
-            canvas.style.cursor = 'grab';
-        },
-        [onParamChange],
-    );
+    const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+        if (!onParamChange) return;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        isDragging.current = false;
+        canvas.releasePointerCapture(e.pointerId);
+        canvas.style.cursor = 'grab';
+    };
 
     return (
         <canvas

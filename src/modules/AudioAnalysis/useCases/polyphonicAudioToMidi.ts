@@ -18,7 +18,7 @@ import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache'
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries/getAllTracks';
 import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
-import { addMidiNote } from '#/modules/MIDI/useCases/midi';
+import { batchAddMidiNotes } from '#/modules/MIDI/useCases/midiNoteCrud';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 
 const logger = Container.getInstance().get(Logger);
@@ -207,14 +207,16 @@ function insertNotesIntoTimeline(
         return null;
     }
 
-    // Insert each detected note
-    for (const note of notes) {
-        const startBeat = note.startTimeSeconds * beatsPerSecond;
-        const durationBeats = Math.max(0.0625, note.durationSeconds * beatsPerSecond);
-        const velocity = Math.max(1, Math.min(127, Math.round(note.amplitude * 127)));
-
-        addMidiNote(midiClip.id, note.pitchMidi, startBeat, durationBeats, velocity);
-    }
+    // Insert all detected notes in a single batch store mutation (avoids O(N) CRDT flood)
+    batchAddMidiNotes(
+        midiClip.id,
+        notes.map((note) => ({
+            pitch: note.pitchMidi,
+            startBeat: note.startTimeSeconds * beatsPerSecond,
+            duration: Math.max(0.0625, note.durationSeconds * beatsPerSecond),
+            velocity: Math.max(1, Math.min(127, Math.round(note.amplitude * 127))),
+        }))
+    );
 
     return { clipId: midiClip.id, trackId: midiTrackId };
 }

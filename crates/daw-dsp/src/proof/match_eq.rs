@@ -12,7 +12,7 @@
 //! The analysis pass runs offline (on a provided buffer).
 //! The correction FIR is applied in real-time.
 
-use super::linear_phase_eq::LinearPhaseEq;
+// unused import removed
 use core::f64::consts::PI;
 
 const ANALYSIS_FFT_SIZE: usize = 8192;

@@ -10,7 +10,7 @@ import { updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls
 import { persistDeviceParam } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
 import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
 import { type FermenterPatch } from '../models/FermenterPatch';
-import { setFermenterParam } from '../stores/fermenterStore';
+import { loadFermenterPatch, setFermenterParam } from '../stores/fermenterStore';
 
 type DeviceRef = { trackId: string; deviceId: string };
 
@@ -31,7 +31,9 @@ function getActiveDevices(): DeviceRef[] {
     cachedRefs = refs;
 
     if (cacheStaleTimer) clearTimeout(cacheStaleTimer);
-    cacheStaleTimer = setTimeout(() => { cachedRefs = null; }, 2000);
+    cacheStaleTimer = setTimeout(() => {
+        cachedRefs = null;
+    }, 2000);
 
     return refs;
 }
@@ -55,6 +57,13 @@ function flushParam(key: string): void {
     }
 }
 
+function pushParamImmediately(key: string, value: number): void {
+    for (const { trackId, deviceId } of getActiveDevices()) {
+        updateDeviceParam(trackId, deviceId, key, value);
+        persistDeviceParam(deviceId, key, value);
+    }
+}
+
 /**
  * Set a Fermenter parameter — updates the UI store immediately,
  * and throttles audio engine updates to once per animation frame.
@@ -66,6 +75,19 @@ export function setFermenterParamWithAudio(key: keyof FermenterPatch, value: num
     // Audio engine: throttle to rAF to avoid flooding MessagePort
     latestValues.set(key, value);
     if (!pendingUpdates.has(key)) {
-        pendingUpdates.set(key, requestAnimationFrame(() => flushParam(key)));
+        pendingUpdates.set(
+            key,
+            requestAnimationFrame(() => flushParam(key))
+        );
+    }
+}
+
+export function loadFermenterPatchWithAudio(patch: FermenterPatch): void {
+    loadFermenterPatch(patch);
+
+    for (const [key, value] of Object.entries(patch)) {
+        if (typeof value === 'number') {
+            pushParamImmediately(key, value);
+        }
     }
 }

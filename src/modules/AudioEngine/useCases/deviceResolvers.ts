@@ -1,7 +1,14 @@
-import { DEVICE_FACTORIES as factories, applyParams as apply } from '../repositories/deviceNodeFactory';
+import {
+    DEVICE_FACTORIES,
+    applyParams as applyParamsImpl,
+    type OfflineDeviceNode,
+} from '../repositories/deviceNodeFactory';
 
-export const DEVICE_FACTORIES = factories;
-export const applyParams = apply;
+export { DEVICE_FACTORIES };
+
+export function applyParams(dn: OfflineDeviceNode, deviceType: string, params: Record<string, number>): void {
+    applyParamsImpl(dn, deviceType, params);
+}
 
 export async function createFaustDeviceNode(ctx: BaseAudioContext, pluginId: string) {
     const { createFaustDevice } = await import('../repositories/faustDeviceFactory');

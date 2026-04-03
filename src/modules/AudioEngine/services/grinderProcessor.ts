@@ -57,6 +57,7 @@ class GrinderProcessor extends AudioWorkletProcessor {
     _inputLeftPtr = 0;
     _inputRightPtr = 0;
     _meterCounter = 0;
+    _paramNameCache = new Map();
 
     constructor() {
         super();
@@ -133,13 +134,18 @@ class GrinderProcessor extends AudioWorkletProcessor {
 
     _setParam(name, value) {
         const w = this._wasm;
-        const len = name.length;
-        const strPtr = w.__wbindgen_malloc(len, 1) >>> 0;
-        const buf = new Uint8Array(w.memory.buffer, strPtr, len);
-        for (let i = 0; i < len; i++) {
-            buf[i] = name.charCodeAt(i);
+        let cached = this._paramNameCache.get(name);
+        if (!cached) {
+            const len = name.length;
+            const strPtr = w.__wbindgen_malloc(len, 1) >>> 0;
+            const buf = new Uint8Array(w.memory.buffer, strPtr, len);
+            for (let i = 0; i < len; i++) {
+                buf[i] = name.charCodeAt(i);
+            }
+            cached = { strPtr, len };
+            this._paramNameCache.set(name, cached);
         }
-        w.grinderinstance_set_param(this._ptr, strPtr, len, value);
+        w.grinderinstance_set_param(this._ptr, cached.strPtr, cached.len, value);
     }
 
     _passthrough(input, output) {

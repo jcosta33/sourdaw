@@ -9,6 +9,7 @@
 
 // ── Track: clip editing ───────────────────────────────────────────
 import { splitClip as _splitClip } from '#/modules/Arrangement/useCases/clipEditing/splitClip';
+import { splitClipWithUndo as _splitClipWithUndo } from '#/modules/Arrangement/useCases/clipEditing/splitClipWithUndo';
 import { normalizeClip as _normalizeClip } from '#/modules/Arrangement/useCases/clipEditing/normalizeClip';
 import { reverseClip as _reverseClip } from '#/modules/Arrangement/useCases/clipEditing/reverseClip';
 import { lockClip as _lockClip } from '#/modules/Arrangement/useCases/clipEditing/lockClip';
@@ -19,6 +20,7 @@ import { trimClipStart as _trimClipStart } from '#/modules/Arrangement/useCases/
 import { trimClipEnd as _trimClipEnd } from '#/modules/Arrangement/useCases/clipEditing/trimClipEnd';
 
 export const splitClip: typeof _splitClip = (...args) => _splitClip(...args);
+export const splitClipWithUndo: typeof _splitClipWithUndo = (...args) => _splitClipWithUndo(...args);
 export const normalizeClip: typeof _normalizeClip = (...args) => _normalizeClip(...args);
 export const reverseClip: typeof _reverseClip = (...args) => _reverseClip(...args);
 export const lockClip: typeof _lockClip = (...args) => _lockClip(...args);

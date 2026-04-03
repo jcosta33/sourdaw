@@ -7,7 +7,7 @@
  * - Threshold and knee indicators
  * Uses design tokens for consistent DAW aesthetic.
  */
-import { type ReactElement, useRef, useEffect, useCallback } from 'react';
+import { type ReactElement, useRef, useEffect } from 'react';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
 type CompressorCurveProps = {
@@ -208,46 +208,37 @@ export const CompressorCurve = ({
         }
     }, [threshold, ratio, knee, makeup, width, height, isInteractive]);
 
-    const handlePointerDown = useCallback(
-        (e: React.PointerEvent<HTMLCanvasElement>) => {
-            if (!onParamChange) return;
-            const canvas = canvasRef.current;
-            if (!canvas) return;
-            isDragging.current = true;
-            canvas.setPointerCapture(e.pointerId);
-            canvas.style.cursor = 'grabbing';
-        },
-        [onParamChange],
-    );
+    const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+        if (!onParamChange) return;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        isDragging.current = true;
+        canvas.setPointerCapture(e.pointerId);
+        canvas.style.cursor = 'grabbing';
+    };
 
-    const handlePointerMove = useCallback(
-        (e: React.PointerEvent<HTMLCanvasElement>) => {
-            if (!onParamChange || !isDragging.current) return;
-            const canvas = canvasRef.current;
-            if (!canvas) return;
-            const rect = canvas.getBoundingClientRect();
-            const pad = 4;
-            const plotH = height - pad * 2;
-            // Y position to dB: top = 0 dB, bottom = -60 dB
-            const yRatio = (e.clientY - rect.top - pad) / plotH;
-            const db = DB_MAX - yRatio * (DB_MAX - DB_MIN);
-            const clamped = Math.max(-60, Math.min(0, db));
-            onParamChange('comp-threshold', clamped);
-        },
-        [onParamChange, height],
-    );
+    const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+        if (!onParamChange || !isDragging.current) return;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const pad = 4;
+        const plotH = height - pad * 2;
+        // Y position to dB: top = 0 dB, bottom = -60 dB
+        const yRatio = (e.clientY - rect.top - pad) / plotH;
+        const db = DB_MAX - yRatio * (DB_MAX - DB_MIN);
+        const clamped = Math.max(-60, Math.min(0, db));
+        onParamChange('comp-threshold', clamped);
+    };
 
-    const handlePointerUp = useCallback(
-        (e: React.PointerEvent<HTMLCanvasElement>) => {
-            if (!onParamChange) return;
-            const canvas = canvasRef.current;
-            if (!canvas) return;
-            isDragging.current = false;
-            canvas.releasePointerCapture(e.pointerId);
-            canvas.style.cursor = 'grab';
-        },
-        [onParamChange],
-    );
+    const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+        if (!onParamChange) return;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        isDragging.current = false;
+        canvas.releasePointerCapture(e.pointerId);
+        canvas.style.cursor = 'grab';
+    };
 
     return (
         <canvas

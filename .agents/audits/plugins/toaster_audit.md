@@ -55,7 +55,7 @@ To solve all issues completely:
 1. **Pipeline Restructuring (`ts` bridge)** 
     - Unify `FermenterNode`, `ToasterNode`, and `LevainNode` to all fetch and instantiate from `/wasm/daw-dsp/daw_dsp_bg.wasm`. 
     - Update their `Processor.ts` files to intercept `./daw_dsp_bg.js` imports instead of individual crate imports.
-2. **Bridge Repair (`toasterParamBridge.ts`)** 
+2. [x] **Bridge Repair (`toasterParamBridge.ts`)** 
     - Rename all internal `grinder` references to `toaster` so that live UI tweaking works.
 3. **Decouple and Complete the DSP Math** 
     - **Snare/Percussion:** Remove the hardcoded bounds tying UI macros to basic internal constants. The instruments should load with robust, authentic default acoustic values (e.g. `snappy` is always high for a snare), and UI knobs like `drive` should just behave as secondary saturation stages.
