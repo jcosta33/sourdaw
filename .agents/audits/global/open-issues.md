@@ -319,18 +319,9 @@ traits. Tauri commands become thin DTO unwrappers that delegate to those traits.
 
 ---
 
-### RB-3 · Tauri v2 folder scope not persisted
-**Severity:** P3 · **Verified:** ✅ confirmed — `tauri-plugin-persisted-scope` not used anywhere
+### ~~RB-3 · Tauri v2 folder scope not persisted~~ — DONE
+**Severity:** P3 · **Fixed:** ✅
 
-The original audit referenced a non-existent file (`connectFolderTauri.ts`), but
-the concern is real. The relevant code is in
-`src/modules/SampleLibrary/useCases/connectFolder.ts` — it saves the raw
-filesystem path string via `libraryStore` (IDB-backed) but does not persist the
-Tauri v2 scope grant. On app restart the scope is lost; `readDir(root.rootRef)`
-fails silently and the user's sample library appears offline with no warning.
-
-`tauri-plugin-persisted-scope` is referenced nowhere in the codebase.
-
-**Fix:** Add `tauri-plugin-persisted-scope` to `src-tauri/Cargo.toml`, call
-`persisted_scope::allow_directory` when the user grants access, and restore
-scopes at boot before `restoreLibrary()` runs.
+Added `tauri-plugin-persisted-scope = "2"` to `src-tauri/Cargo.toml`.
+Registered `.plugin(tauri_plugin_persisted_scope::init())` in `src-tauri/src/lib.rs`.
+The plugin auto-intercepts scope grants and restores them on next app launch — no JS changes required.
