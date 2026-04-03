@@ -15,6 +15,7 @@ import { saveProject } from '#/modules/Project/useCases/projectPersistence/saveP
 import { ensureTrackStrips } from '#/modules/Transport/useCases/ensureTrackStrips';
 import { restoreLibrary } from '#/modules/SampleLibrary/repositories/libraryPersistence';
 import { preferencesStore } from '../../stores/preferencesStore';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 
 /**
  * Handles one-time app startup: audio engine + plugins on first user interaction,
@@ -35,7 +36,15 @@ export const useAppInitialization = (): void => {
                     // exists. The CRDT load path runs before any user gesture so it
                     // cannot create or use an AudioContext — this is the earliest safe
                     // point to decode and cache the PCM data.
-                    await audioBufferCache.restoreFromIdb(getAudioContext());
+                    // Scope the load to buffer IDs referenced by the already-loaded
+                    // project (loadProject runs before the first user gesture).
+                    const referencedIds = (trackStore.value?.tracks ?? [])
+                        .flatMap((t) => t.clips.map((c) => c.audioBufferId))
+                        .filter((id): id is string => Boolean(id));
+                    await audioBufferCache.restoreFromIdb(
+                        getAudioContext(),
+                        referencedIds.length > 0 ? referencedIds : undefined,
+                    );
                     verifyAudioBufferReferences();
                     void initWebMidi();
                     registerBuiltinPlugins();

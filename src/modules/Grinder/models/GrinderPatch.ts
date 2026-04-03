@@ -344,6 +344,7 @@ export type GrinderParamDef = {
     unit: string;
     step?: number;
     group?: string;
+    scaling?: 'log' | 'linear';
 };
 
 export const GRINDER_PARAMS: readonly GrinderParamDef[] = [
@@ -362,8 +363,8 @@ export const GRINDER_PARAMS: readonly GrinderParamDef[] = [
 
     // Gate
     { id: 'gateThreshold', label: 'Gate', min: -80, max: 0, default: -60, unit: 'dB', step: 1, group: 'gate' },
-    { id: 'gateAttack', label: 'Gate Atk', min: 0.1, max: 50, default: 0.5, unit: 'ms', group: 'gate' },
-    { id: 'gateRelease', label: 'Gate Rel', min: 5, max: 500, default: 50, unit: 'ms', group: 'gate' },
+    { id: 'gateAttack', label: 'Gate Atk', min: 0.1, max: 50, default: 0.5, unit: 'ms', group: 'gate', scaling: 'log' },
+    { id: 'gateRelease', label: 'Gate Rel', min: 5, max: 500, default: 50, unit: 'ms', group: 'gate', scaling: 'log' },
 
     // Preamp
     { id: 'gain', label: 'Gain', min: 0, max: 10, default: 5, unit: '', step: 0.1, group: 'preamp' },
@@ -381,7 +382,7 @@ export const GRINDER_PARAMS: readonly GrinderParamDef[] = [
     // Power amp
     { id: 'master', label: 'Master', min: 0, max: 10, default: 5, unit: '', step: 0.1, group: 'power' },
     { id: 'sagAmount', label: 'Sag', min: 0, max: 1, default: 0.4, unit: '', step: 0.01, group: 'power' },
-    { id: 'sagRecovery', label: 'Sag Recovery', min: 10, max: 2000, default: 200, unit: 'ms', group: 'power' },
+    { id: 'sagRecovery', label: 'Sag Recovery', min: 10, max: 2000, default: 200, unit: 'ms', group: 'power', scaling: 'log' },
     { id: 'negFeedback', label: 'NFB', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'power' },
 
     // Transformer
@@ -417,7 +418,7 @@ export const GRINDER_PARAMS: readonly GrinderParamDef[] = [
     },
 
     // Cabinet
-    { id: 'cabResonanceFreq', label: 'Cab Res', min: 40, max: 200, default: 80, unit: 'Hz', step: 1, group: 'cabinet' },
+    { id: 'cabResonanceFreq', label: 'Cab Res', min: 40, max: 200, default: 80, unit: 'Hz', step: 1, group: 'cabinet', scaling: 'log' },
     { id: 'cabResonanceQ', label: 'Cab Q', min: 0.5, max: 10, default: 2, unit: '', step: 0.1, group: 'cabinet' },
     { id: 'cabDamping', label: 'Damping', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'cabinet' },
     { id: 'coneBreakup', label: 'Breakup', min: 0, max: 1, default: 0.3, unit: '', step: 0.01, group: 'cabinet' },

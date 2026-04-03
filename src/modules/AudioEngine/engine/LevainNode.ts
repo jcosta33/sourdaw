@@ -37,8 +37,8 @@ async function fetchWasmBinary(url: string): Promise<ArrayBuffer> {
 
 export type LevainNodeResult = {
     workletNode: AudioWorkletNode;
-    noteOn: (note: number, velocity: number) => void;
-    noteOff: (note: number) => void;
+    noteOn: (note: number, velocity: number, scheduleTime?: number) => void;
+    noteOff: (note: number, scheduleTime?: number) => void;
     setParam: (name: string, value: number) => void;
     handleCc: (cc: number, value: number) => void;
     setBypass: (bypassed: boolean) => void;
@@ -87,18 +87,21 @@ export async function createLevainNode(
             }
         }, 10_000);
         node.port.onmessage = (e: MessageEvent) => {
-            if (!settled) {
-                if (e.data.type === 'ready') {
+            if (e.data.type === 'ready') {
+                if (!settled) {
                     settled = true;
                     clearTimeout(timeout);
                     resolve();
-                } else if (e.data.type === 'error') {
+                }
+            } else if (e.data.type === 'error') {
+                if (!settled) {
                     settled = true;
                     clearTimeout(timeout);
                     reject(new Error(e.data.message));
+                } else {
+                    console.error('LevainNode runtime fault (WASM panic — processor faulted):', e.data.message);
                 }
             }
-            // After init, continue handling runtime messages (voice count, errors, etc.)
         };
     });
 
@@ -116,14 +119,14 @@ export async function createLevainNode(
         // WASM init failed — no samples to load
     });
 
-    const noteOn = (note: number, velocity: number): void => {
+    const noteOn = (note: number, velocity: number, scheduleTime?: number): void => {
         if (!bypassed) {
-            node.port.postMessage({ type: 'noteOn', note, velocity });
+            node.port.postMessage({ type: 'noteOn', note, velocity, scheduleTime });
         }
     };
 
-    const noteOff = (note: number): void => {
-        node.port.postMessage({ type: 'noteOff', note });
+    const noteOff = (note: number, scheduleTime?: number): void => {
+        node.port.postMessage({ type: 'noteOff', note, scheduleTime });
     };
 
     const setParam = (name: string, value: number): void => {

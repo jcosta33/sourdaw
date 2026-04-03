@@ -2,15 +2,11 @@
  * Faust Instrument — Dedicated layout with identity header,
  * semantic parameter grouping, and collapsible advanced sections.
  */
-import { type ReactElement, useState } from 'react';
+import { type ReactElement } from 'react';
 import { Card } from '#/components/ui/card';
-import { ChevronDown, Music, Guitar, Piano, Mic2, Waves, Zap } from 'lucide-react';
+import { Music, Guitar, Piano, Mic2, Waves, Zap } from 'lucide-react';
 import { type LucideIcon } from 'lucide-react';
-import {
-    type DeviceLayoutProps,
-    SectionHeader,
-    registerPrefixLayout,
-} from '../deviceLayoutRegistry';
+import { type DeviceLayoutProps, SectionHeader, registerPrefixLayout } from '../deviceLayoutRegistry';
 import { DeviceParameterControl } from '../DeviceParameterControl';
 import { FilterResponse } from '#/components/daw/visualizers/FilterResponse';
 import { ADSREnvelope } from '#/components/daw/visualizers/ADSREnvelope';
@@ -31,7 +27,7 @@ const INSTRUMENT_META: Record<string, InstrumentMeta> = {
     'faust-fm-synth': { label: 'FM Synthesis', icon: Waves, color: 'var(--color-accent-blue)' },
     'faust-acid-bass-303': { label: 'Acid Bass', icon: Zap, color: 'var(--color-accent-coral)' },
     'faust-supersaw-unison': { label: 'Supersaw', icon: Waves, color: 'var(--color-accent-purple)' },
-    'faust-wavetable': { label: 'Wavetable', icon: Waves, color: 'var(--color-accent-blue)' },
+    'faust-morphing-synth': { label: 'Morphing Synth', icon: Waves, color: 'var(--color-accent-blue)' },
     'faust-additive': { label: 'Additive Synth', icon: Music, color: 'var(--color-accent-teal)' },
 };
 const DEFAULT_META: InstrumentMeta = { label: 'Instrument', icon: Mic2, color: 'var(--color-accent-purple)' };
@@ -40,10 +36,18 @@ const DEFAULT_META: InstrumentMeta = { label: 'Instrument', icon: Mic2, color: '
 type ParamCategory = { title: string; match: (name: string) => boolean; primary: boolean };
 
 const CATEGORIES: ParamCategory[] = [
-    { title: 'Tone', match: (n) => /bright|tone|cutoff|frequency|color|filter|harmonic|timbre/i.test(n), primary: true },
+    {
+        title: 'Tone',
+        match: (n) => /bright|tone|cutoff|frequency|color|filter|harmonic|timbre/i.test(n),
+        primary: true,
+    },
     { title: 'Envelope', match: (n) => /attack|decay|sustain|release|adsr|env/i.test(n), primary: true },
     { title: 'Output', match: (n) => /gain|volume|level|mix|output|master/i.test(n), primary: true },
-    { title: 'Modulation', match: (n) => /mod|vibrato|tremolo|lfo|rate|depth|chorus|leslie|speed/i.test(n), primary: false },
+    {
+        title: 'Modulation',
+        match: (n) => /mod|vibrato|tremolo|lfo|rate|depth|chorus|leslie|speed/i.test(n),
+        primary: false,
+    },
     { title: 'Resonance', match: (n) => /damp|reson|feedback|decay|ring|reverb/i.test(n), primary: false },
     { title: 'Drawbars', match: (n) => /drawbar/i.test(n), primary: true },
     { title: 'Character', match: (n) => /percussion|click|drive|saturation|overdrive/i.test(n), primary: false },
@@ -57,7 +61,9 @@ function categorizeParams(params: P[]): { title: string; params: P[]; primary: b
         const matching = params.filter((p) => cat.match(p.name) && !used.has(p.id));
         if (matching.length > 0) {
             result.push({ title: cat.title, params: matching, primary: cat.primary });
-            for (const p of matching) { used.add(p.id); }
+            for (const p of matching) {
+                used.add(p.id);
+            }
         }
     }
 
@@ -69,36 +75,28 @@ function categorizeParams(params: P[]): { title: string; params: P[]; primary: b
     return result;
 }
 
-const Param = ({ p, device, trackId }: { p: P; device: DeviceLayoutProps['device']; trackId: string }): ReactElement => (
+const Param = ({
+    p,
+    device,
+    trackId,
+}: {
+    p: P;
+    device: DeviceLayoutProps['device'];
+    trackId: string;
+}): ReactElement => (
     <Card className="rounded-md shadow-none bg-surface-base border-border/50 p-2 w-full">
         <DeviceParameterControl param={p} device={device} trackId={trackId} />
     </Card>
 );
-
-const Collapsible = ({ title, defaultOpen, children }: { title: string; defaultOpen: boolean; children: ReactElement }): ReactElement => {
-    const [open, setOpen] = useState(defaultOpen);
-    return (
-        <div>
-            <button
-                type="button"
-                className="flex items-center gap-1 w-full px-1 mb-2 border-b border-border-hairline pb-1 cursor-pointer hover:bg-surface-raised/50 rounded-t-sm"
-                onClick={() => setOpen(!open)}
-                aria-expanded={open}
-            >
-                <ChevronDown className={`size-3 text-muted-foreground transition-transform ${open ? '' : '-rotate-90'}`} />
-                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{title}</span>
-            </button>
-            {open ? children : null}
-        </div>
-    );
-};
 
 const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProps): ReactElement => {
     const meta = INSTRUMENT_META[device.type ?? ''] ?? DEFAULT_META;
     const Icon = meta.icon;
     const categories = categorizeParams(parameters);
 
-    const change = (id: string, v: number): void => { setDeviceParameter(device.id, id, v); };
+    const change = (id: string, v: number): void => {
+        setDeviceParameter(device.id, id, v);
+    };
 
     // Detect visualizations from device type (stable) with parameter fallback
     const pv = device.parameterValues;
@@ -111,9 +109,11 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
 
     // Visualization flags derived from device type
     const hasCompressor = isCompressor;
-    const hasFilter = isEq || parameters.some((p) => p.id === 'cutoff' || p.id === 'frequency' || p.id.includes('freq'));
-    const hasEnvelope = isSynth || parameters.some((p) => p.id === 'attack' && parameters.some((q) => q.id === 'sustain'));
-    const hasOscillator = isSynth && parameters.some((p) => p.id === 'waveform' || p.id === 'wave');
+    const hasFilter =
+        isEq || parameters.some((p) => p.id === 'cutoff' || p.id === 'frequency' || p.id.includes('freq'));
+    const hasEnvelope =
+        isSynth || parameters.some((p) => p.id === 'attack' && parameters.some((q) => q.id === 'sustain'));
+    const hasOscillator = isSynth && parameters.some((p) => p.id === 'waveform' || p.id === 'wave' || p.id === 'morph');
 
     if (parameters.length === 0) {
         return (
@@ -142,9 +142,7 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
                     <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: meta.color }}>
                         {meta.label}
                     </span>
-                    <span className="text-[9px] text-muted-foreground truncate">
-                        {device.name ?? device.type}
-                    </span>
+                    <span className="text-[9px] text-muted-foreground truncate">{device.name ?? device.type}</span>
                 </div>
             </div>
 
@@ -158,7 +156,9 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
                             decay={pv['decay'] ?? pv['Decay'] ?? 0.2}
                             sustain={pv['sustain'] ?? pv['Sustain'] ?? 0.7}
                             release={pv['release'] ?? pv['Release'] ?? 0.3}
-                            width={200} height={70} onParamChange={change}
+                            width={200}
+                            height={70}
+                            onParamChange={change}
                         />
                     </div>
                 </div>
@@ -171,7 +171,10 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
                         <FilterResponse
                             cutoff={pv['cutoff'] ?? pv['Cutoff'] ?? pv['frequency'] ?? 5000}
                             resonance={pv['resonance'] ?? pv['Resonance'] ?? pv['q'] ?? 1}
-                            filterType={0} width={200} height={60} onParamChange={change}
+                            filterType={0}
+                            width={200}
+                            height={60}
+                            onParamChange={change}
                         />
                     </div>
                 </div>
@@ -186,7 +189,9 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
                             ratio={pv['ratio'] ?? pv['Ratio'] ?? 4}
                             knee={pv['knee'] ?? pv['Knee'] ?? 6}
                             makeup={pv['makeup'] ?? pv['Makeup'] ?? 0}
-                            width={200} height={120} onParamChange={change}
+                            width={200}
+                            height={120}
+                            onParamChange={change}
                         />
                     </div>
                 </div>
@@ -197,36 +202,28 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
                     <SectionHeader title="Oscillator" />
                     <div className="flex justify-center mb-2">
                         <OscillatorWaveform
-                            waveform="sawtooth" osc2Waveform="sawtooth"
+                            waveform="sawtooth"
+                            osc2Waveform="sawtooth"
                             osc2Mix={pv['osc2_mix'] ?? pv['mix'] ?? 0}
                             detune={pv['detune'] ?? pv['Detune'] ?? 0}
-                            width={200} height={50}
+                            width={200}
+                            height={50}
                         />
                     </div>
                 </div>
             ) : null}
 
-            {/* Parameter sections — primary visible, secondary collapsible */}
-            {categories.map(({ title, params, primary }) => {
-                const content = (
-                    <div className="grid grid-cols-2 gap-2">
-                        {params.map((p) => <Param key={p.id} p={p} device={device} trackId={trackId} />)}
-                    </div>
-                );
-
-                if (primary) {
-                    return (
-                        <div key={title}>
-                            <SectionHeader title={title} />
-                            {content}
-                        </div>
-                    );
-                }
-
+            {/* Parameter sections — all fully visible */}
+            {categories.map(({ title, params }) => {
                 return (
-                    <Collapsible key={title} title={title} defaultOpen={false}>
-                        {content}
-                    </Collapsible>
+                    <div key={title} className="mb-4">
+                        <SectionHeader title={title} />
+                        <div className="grid grid-cols-2 gap-2 mt-1">
+                            {params.map((p) => (
+                                <Param key={p.id} p={p} device={device} trackId={trackId} />
+                            ))}
+                        </div>
+                    </div>
                 );
             })}
         </div>

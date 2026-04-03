@@ -2,22 +2,27 @@
 /**
  * AudioWorkletProcessor for the Levain suite engine.
  *
- * Calls the raw wasm-bindgen WASM exports directly — no glue JS, no TextDecoder,
- * no eval. Works in AudioWorklet scope on all browsers including Safari/WKWebView.
+ * Uses the generated wasm-bindgen JS bindings (daw_dsp.js) via initSync so all
+ * WASM memory management is handled by the generated glue — no manual malloc/free.
  *
  * Messages from main thread:
  *   { type: 'init', wasmBytes: ArrayBuffer }
- *   { type: 'noteOn', note, velocity }
- *   { type: 'noteOff', note }
+ *   { type: 'noteOn', note, velocity, scheduleTime? }
+ *   { type: 'noteOff', note, scheduleTime? }
  *   { type: 'param', name, value }
  *   { type: 'cc', cc, value }
  *   { type: 'bypass', bypassed }
- *   { type: 'loadSample', sampleId, data, frameCount, channels, sampleRate }
+ *   { type: 'addSample', sampleId, data, frameCount, channels, sampleRate }
+ *   { type: 'addZone', ... }
+ *   { type: 'buildZoneMap', numArticulations, numMics }
+ *   { type: 'clearZones' }
  */
+
+import { initSync, LevainInstance } from '../wasm/daw_dsp.js';
 
 /**
  * Map TypeScript camelCase param names to Rust snake_case names
- * used by OrchestraEngine::set_param.
+ * used by LevainEngine::set_param.
  */
 const PARAM_MAP = {
     masterGain: 'master_gain',
@@ -33,12 +38,13 @@ const PARAM_MAP = {
 };
 
 class LevainProcessor extends AudioWorkletProcessor {
-    _wasm = null;      // WASM exports
-    _mem = null;       // WebAssembly.Memory
-    _ptr = 0;          // OrchestraInstance pointer
+    _instance = null;   // LevainInstance (generated wasm-bindgen class)
+    _memory = null;     // WebAssembly.Memory (for direct buffer access in process())
     _ready = false;
+    _faulted = false;
     _bypassed = false;
     _pendingMessages = [];
+    _queue = [];        // Sorted by scheduleTime (AudioContext seconds)
 
     constructor() {
         super();
@@ -50,7 +56,7 @@ class LevainProcessor extends AudioWorkletProcessor {
                     this._initWasm(msg.wasmBytes);
                 } else if (!this._ready) {
                     this._pendingMessages.push(msg);
-                } else {
+                } else if (!this._faulted) {
                     this._handleMessage(msg);
                 }
             } catch (err) {
@@ -62,148 +68,12 @@ class LevainProcessor extends AudioWorkletProcessor {
         };
     }
 
-    _handleMessage(msg) {
-        switch (msg.type) {
-            case 'noteOn': {
-                this._wasm.levaininstance_note_on(this._ptr, msg.note, msg.velocity);
-                const voices = this._wasm.levaininstance_active_voices(this._ptr);
-                console.log(`[Orchestra] noteOn ${msg.note} vel=${msg.velocity} → ${voices} active voices`);
-                break;
-            }
-            case 'noteOff':
-                this._wasm.levaininstance_note_off(this._ptr, msg.note);
-                break;
-            case 'param': {
-                const rustName = PARAM_MAP[msg.name] ?? msg.name;
-                this._setParam(rustName, msg.value);
-                break;
-            }
-            case 'cc':
-                this._wasm.levaininstance_handle_cc(this._ptr, msg.cc, msg.value);
-                break;
-            case 'bypass':
-                this._bypassed = msg.bypassed;
-                break;
-            case 'addSample':
-                this._addSample(msg);
-                console.log(`[Orchestra] addSample id=${msg.sampleId} frames=${msg.frameCount} ch=${msg.channels}`);
-                break;
-            case 'addZone':
-                this._addZone(msg);
-                console.log(`[Orchestra] addZone id=${msg.zoneId} sample=${msg.sampleId} root=${msg.rootNote} keys=${msg.loKey}-${msg.hiKey}`);
-                break;
-            case 'buildZoneMap':
-                this._wasm.levaininstance_build_zone_map(
-                    this._ptr, msg.numArticulations, msg.numMics
-                );
-                console.log(`[Orchestra] buildZoneMap arts=${msg.numArticulations} mics=${msg.numMics}`);
-                break;
-            case 'clearZones':
-                this._wasm.levaininstance_clear_zones(this._ptr);
-                console.log(`[Orchestra] clearZones`);
-                break;
-        }
-    }
-
-    _addSample(msg) {
-        const w = this._wasm;
-        const data = msg.data; // Float32Array
-        const len = data.length;
-        // Allocate WASM memory and copy sample data.
-        const byteLen = len * 4;
-        const ptr = w.__wbindgen_malloc(byteLen, 4) >>> 0;
-        const wasmView = new Float32Array(w.memory.buffer, ptr, len);
-        wasmView.set(data);
-        w.levaininstance_add_sample(
-            this._ptr, ptr, len, msg.frameCount, msg.channels, msg.sampleRate
-        );
-    }
-
-    _addZone(msg) {
-        const w = this._wasm;
-        const loopMode = msg.loopMode === 'forward' ? 1 : msg.loopMode === 'pingpong' ? 2 : 0;
-        w.levaininstance_add_zone(
-            this._ptr,
-            msg.zoneId,
-            msg.sampleId,
-            msg.articulationId,
-            msg.rootNote,
-            msg.loKey,
-            msg.hiKey,
-            msg.loVel,
-            msg.hiVel,
-            msg.rrPos,
-            msg.rrLen,
-            msg.micId,
-            msg.isRelease ? 1 : 0,
-            loopMode,
-            msg.loopStart,
-            msg.loopEnd,
-            msg.loopCrossfade,
-            msg.gainDb,
-            msg.attack,
-            msg.decay,
-            msg.sustain,
-            msg.release
-        );
-    }
-
     _initWasm(wasmBytes) {
-        const mod = new WebAssembly.Module(wasmBytes);
-        const importInfo = WebAssembly.Module.imports(mod);
-        const bgImports = {};
-        
-        let instance; // captured securely
-
-        for (const imp of importInfo) {
-            if (imp.module === './daw_dsp_bg.js' || imp.module === './levain_bg.js') {
-                if (imp.name.startsWith('__wbg___wbindgen_throw_')) {
-                    bgImports[imp.name] = function(ptr, len) {
-                        throw new Error('WASM error at ptr ' + ptr + ' len ' + len);
-                    };
-                } else if (imp.name === '__wbindgen_init_externref_table') {
-                    bgImports[imp.name] = function() {
-                        const table = instance.exports.__wbindgen_externrefs;
-                        if (table) {
-                            const offset = table.grow(4);
-                            table.set(0, undefined);
-                            table.set(offset + 0, undefined);
-                            table.set(offset + 1, null);
-                            table.set(offset + 2, true);
-                            table.set(offset + 3, false);
-                        }
-                    };
-                } else if (imp.name.startsWith('__wbg___wbindgen_copy_to_typed_array_')) {
-                    bgImports[imp.name] = function(arg0, arg1, arg2) {
-                        // Minimal emulation
-                    };
-                } else {
-                    bgImports[imp.name] = function() {};
-                }
-            }
-        }
-
-        const imports = {
-            './daw_dsp_bg.js': bgImports,
-            './levain_bg.js': bgImports,
-        };
-
-        instance = new WebAssembly.Instance(mod, imports);
-        const w = instance.exports;
-
-        // Run wasm-bindgen init
-        if (w.__wbindgen_start) {
-            w.__wbindgen_start();
-        }
-
-        this._wasm = w;
-        this._mem = w.memory;
-
-        // Create levain engine: 64 voices at worklet sample rate
-        this._ptr = w.levaininstance_new(sampleRate, 64) >>> 0;
+        const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
+        this._memory = wasmExports.memory;
+        this._instance = new LevainInstance(sampleRate, 64);
         this._ready = true;
 
-        // Flush pending messages
         for (const msg of this._pendingMessages) {
             this._handleMessage(msg);
         }
@@ -212,41 +82,101 @@ class LevainProcessor extends AudioWorkletProcessor {
         this.port.postMessage({ type: 'ready' });
     }
 
-    /**
-     * Write an ASCII param name into WASM linear memory and call set_param.
-     * No TextEncoder needed — param names are always ASCII.
-     */
-    _setParam(name, value) {
-        const w = this._wasm;
-        const len = name.length;
-        const strPtr = w.__wbindgen_malloc(len, 1) >>> 0;
-        const buf = new Uint8Array(w.memory.buffer, strPtr, len);
-        for (let i = 0; i < len; i++) {
-            buf[i] = name.charCodeAt(i);
+    _enqueue(msg) {
+        let lo = 0, hi = this._queue.length;
+        while (lo < hi) {
+            const mid = (lo + hi) >>> 1;
+            if (this._queue[mid].scheduleTime <= msg.scheduleTime) lo = mid + 1;
+            else hi = mid;
         }
-        w.levaininstance_set_param(this._ptr, strPtr, len, value);
-        w.__wbindgen_free(strPtr, len, 1);
+        this._queue.splice(lo, 0, msg);
+    }
+
+    _handleMessage(msg) {
+        if (msg.scheduleTime !== undefined && (msg.type === 'noteOn' || msg.type === 'noteOff')) {
+            const now = currentFrame / sampleRate;
+            if (msg.scheduleTime > now) {
+                this._enqueue(msg);
+                return;
+            }
+        }
+        this._dispatch(msg);
+    }
+
+    _dispatch(msg) {
+        const inst = this._instance;
+        switch (msg.type) {
+            case 'noteOn':
+                inst.note_on(msg.note, msg.velocity);
+                break;
+            case 'noteOff':
+                inst.note_off(msg.note);
+                break;
+            case 'param': {
+                const rustName = PARAM_MAP[msg.name] ?? msg.name;
+                inst.set_param(rustName, msg.value);
+                break;
+            }
+            case 'cc':
+                inst.handle_cc(msg.cc, msg.value);
+                break;
+            case 'bypass':
+                this._bypassed = msg.bypassed;
+                break;
+            case 'addSample':
+                inst.add_sample(msg.data, msg.frameCount, msg.channels, msg.sampleRate);
+                break;
+            case 'addZone': {
+                const loopMode = msg.loopMode === 'forward' ? 1 : msg.loopMode === 'pingpong' ? 2 : 0;
+                inst.add_zone(
+                    msg.zoneId, msg.sampleId, msg.articulationId,
+                    msg.rootNote, msg.loKey, msg.hiKey, msg.loVel, msg.hiVel,
+                    msg.rrPos, msg.rrLen, msg.micId,
+                    !!msg.isRelease, loopMode,
+                    msg.loopStart, msg.loopEnd, msg.loopCrossfade,
+                    msg.gainDb, msg.attack, msg.decay, msg.sustain, msg.release
+                );
+                break;
+            }
+            case 'buildZoneMap':
+                inst.build_zone_map(msg.numArticulations, msg.numMics);
+                break;
+            case 'clearZones':
+                inst.clear_zones();
+                break;
+        }
+    }
+
+    _drainQueue(blockEndTime) {
+        while (this._queue.length > 0 && this._queue[0].scheduleTime <= blockEndTime) {
+            this._dispatch(this._queue.shift());
+        }
     }
 
     process(_inputs, outputs) {
-        if (!this._ready || this._bypassed) return true;
+        if (!this._ready || !this._instance || this._faulted || this._bypassed) return true;
 
         const output = outputs[0];
         if (!output || output.length < 2) return true;
 
         const frames = output[0].length;
         const processFrames = Math.min(frames, 4096);
-        const w = this._wasm;
 
-        // Run DSP — returns pointer to left channel buffer
-        const leftPtr = w.levaininstance_process(this._ptr, processFrames) >>> 0;
-        const rightPtr = w.levaininstance_get_right_ptr(this._ptr) >>> 0;
+        const blockEndTime = (currentFrame + frames) / sampleRate;
+        this._drainQueue(blockEndTime);
 
-        // Read from WASM linear memory into output
-        const mem = w.memory.buffer;
-        output[0].set(new Float32Array(mem, leftPtr, processFrames));
-        if (output[1]) {
-            output[1].set(new Float32Array(mem, rightPtr, processFrames));
+        try {
+            const leftPtr = this._instance.process(processFrames);
+            const rightPtr = this._instance.get_right_ptr();
+
+            const mem = this._memory.buffer;
+            output[0].set(new Float32Array(mem, leftPtr, processFrames));
+            if (output[1]) {
+                output[1].set(new Float32Array(mem, rightPtr, processFrames));
+            }
+        } catch (err) {
+            this._faulted = true;
+            this.port.postMessage({ type: 'error', message: String(err) });
         }
 
         return true;

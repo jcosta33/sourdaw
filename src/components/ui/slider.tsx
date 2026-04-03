@@ -44,19 +44,15 @@ function Slider({
             <SliderPrimitive.Track
                 data-slot="slider-track"
                 className={cn(
-                    'relative grow overflow-hidden rounded-full border border-black/50 data-[orientation=horizontal]:h-1.5 data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-1.5'
+                    'daw-inset-surface relative grow overflow-hidden rounded-full data-[orientation=horizontal]:h-1.5 data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-1.5'
                 )}
-                style={{
-                    background: 'linear-gradient(180deg, #060606 0%, #0a0a0a 100%)',
-                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.8), 0 1px 0 rgba(255,255,255,0.03)',
-                    borderTopColor: 'rgba(0,0,0,0.7)',
-                    borderBottomColor: 'rgba(40,40,40,0.3)',
-                }}
             >
                 <SliderPrimitive.Range
                     data-slot="slider-range"
                     className={cn(
-                        'absolute bg-accent-cyan/80 data-[orientation=horizontal]:h-full data-[orientation=vertical]:w-full'
+                        'absolute data-[orientation=horizontal]:h-full data-[orientation=vertical]:w-full',
+                        '[background:linear-gradient(180deg,rgba(127,184,196,0.92)_0%,rgba(127,184,196,0.62)_100%)]',
+                        'shadow-[0_0_10px_rgba(127,184,196,0.12)]'
                     )}
                 />
             </SliderPrimitive.Track>
@@ -96,15 +92,16 @@ function SliderThumbNode({
     return (
         <SliderPrimitive.Thumb
             data-slot="slider-thumb"
-            className="block size-4 shrink-0 rounded-[4px] border cursor-pointer outline-none transition-[color,box-shadow] hover:ring-2 hover:ring-accent-cyan/30 focus-visible:ring-4 focus-visible:ring-accent-cyan/40 disabled:pointer-events-none disabled:opacity-50"
+            className="block size-4 shrink-0 rounded-[4px] border cursor-pointer outline-none transition-[color,box-shadow,filter,transform] hover:ring-2 hover:ring-accent-cyan/25 hover:brightness-105 focus-visible:ring-4 focus-visible:ring-accent-cyan/35 disabled:pointer-events-none disabled:opacity-50"
             style={{
-                background: 'linear-gradient(180deg, #555 0%, #3e3e3e 25%, #353535 50%, #2c2c2c 75%, #222 100%)',
+                background: 'linear-gradient(180deg, #575757 0%, #404040 22%, #343434 52%, #2a2a2a 76%, #1f1f1f 100%)',
                 borderColor: 'rgba(255,255,255,0.05)',
                 borderTopColor: 'rgba(255,255,255,0.12)',
                 borderLeftColor: 'rgba(255,255,255,0.06)',
                 borderBottomColor: 'rgba(0,0,0,0.4)',
                 borderRightColor: 'rgba(0,0,0,0.2)',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.1)',
+                boxShadow:
+                    '0 2px 4px rgba(0,0,0,0.68), inset 0 1px 0 rgba(255,255,255,0.11), inset 0 -1px 0 rgba(0,0,0,0.28)',
             }}
             onPointerDown={(event) => {
                 if (event.metaKey || event.ctrlKey) {
@@ -123,7 +120,7 @@ function SliderThumbNode({
             {isEditing ? (
                 <input
                     autoFocus
-                    className="absolute -top-6 left-1/2 -translate-x-1/2 w-12 rounded bg-surface-overlay text-foreground text-[10px] text-center px-1 py-0.5 border border-border outline-none ring-1 ring-accent-cyan z-50 shadow-elevation-floating"
+                    className="daw-floating-surface absolute -top-6 left-1/2 z-50 w-12 -translate-x-1/2 rounded px-1 py-0.5 text-center text-[10px] text-foreground outline-none ring-1 ring-accent-cyan/35"
                     value={editVal}
                     onChange={(changeEvent) => setEditVal(changeEvent.target.value)}
                     onBlur={() => setIsEditing(false)}

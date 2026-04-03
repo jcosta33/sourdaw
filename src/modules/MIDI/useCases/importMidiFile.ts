@@ -183,6 +183,10 @@ function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBe
 
 export async function importMidiFile(file: File): Promise<void> {
     const buffer = await file.arrayBuffer();
+    // Yield to the event loop before the synchronous parse so that any pending
+    // UI work (e.g. a drag-and-drop visual update) can complete first.
+    // The parse itself remains on the main thread; a Web Worker is the full fix.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
     const { tracks: parsedTracks } = parseMidiFile(buffer);
 
     if (parsedTracks.length === 0) {

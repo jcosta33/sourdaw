@@ -19,6 +19,7 @@ export type DeviceParameter = {
     minValue: number;
     maxValue: number;
     unit: string;
+    scaling?: 'log' | 'linear';
     choices?: string[];
     automatable: boolean;
     hasAutomation: boolean;

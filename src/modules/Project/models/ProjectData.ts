@@ -7,6 +7,7 @@ import { type TimeSignatureMapStoreState } from '#/modules/Transport/stores/time
 import { type MarkerStoreState } from '#/modules/Arrangement/stores/markerStore';
 import { type TakeLaneStoreState } from '#/modules/Arrangement/stores/takeLaneStore';
 import { type SidechainRoute } from '#/modules/Routing/useCases/sidechain';
+import { type ExportedAudioBuffer } from '#/modules/AudioEngine/stores/audioBufferCache';
 
 export type ArrangementData = {
     id: string;
@@ -56,6 +57,11 @@ export type ProjectData = {
     // New arrangement fields
     arrangements?: ArrangementData[];
     activeArrangementId?: string;
+
+    /** Audio buffer data embedded for portability. Keyed by audioBufferId.
+     * Present when the project was exported with "include audio" (the default).
+     * Absent in legacy files — those rely on the local IDB cache instead. */
+    audioBuffers?: Record<string, ExportedAudioBuffer>;
 };
 
 export const RECENT_PROJECTS_KEY = 'sourdaw:recent-projects';

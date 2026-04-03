@@ -1,4 +1,4 @@
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores/trackStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
@@ -18,6 +18,24 @@ import { downloadProjectFile } from '../../repositories/project';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { clearUndoHistory, verifyAudioBufferReferences } from './helpers';
 
+/** Collect every audioBufferId (clips + frozen buffers + track alternatives)
+ * referenced by a TrackStoreState so the export can embed the raw PCM. */
+function collectBufferIds(trackState: TrackStoreState | null | undefined): Set<string> {
+    const ids = new Set<string>();
+    for (const track of trackState?.tracks ?? []) {
+        if (track.frozenBufferId) ids.add(track.frozenBufferId);
+        for (const clip of track.clips) {
+            if (clip.audioBufferId) ids.add(clip.audioBufferId);
+        }
+        for (const alt of track.alternatives) {
+            for (const clip of alt.clips) {
+                if (clip.audioBufferId) ids.add(clip.audioBufferId);
+            }
+        }
+    }
+    return ids;
+}
+
 export async function exportProjectFile(): Promise<void> {
     syncCurrentArrangementToStore();
 
@@ -31,6 +49,15 @@ export async function exportProjectFile(): Promise<void> {
     if (!tracks || !transport || !automation || !midi || !project || !arrState) {
         return;
     }
+
+    // Collect all audioBufferIds referenced by the project (current track state
+    // and every arrangement, including non-active ones).
+    const allBufferIds = new Set<string>();
+    for (const id of collectBufferIds(tracks)) allBufferIds.add(id);
+    for (const arr of arrState.arrangements) {
+        for (const id of collectBufferIds(arr.tracks)) allBufferIds.add(id);
+    }
+    const audioBuffers = await audioBufferCache.exportBuffers([...allBufferIds]);
 
     const data: ProjectData = {
         version: 1,
@@ -65,6 +92,7 @@ export async function exportProjectFile(): Promise<void> {
         sidechainRoutes: getAllSidechainRoutes(),
         arrangements: arrState.arrangements,
         activeArrangementId: arrState.activeArrangementId,
+        audioBuffers: Object.keys(audioBuffers).length > 0 ? audioBuffers : undefined,
     };
 
     await downloadProjectFile(data);
@@ -139,7 +167,20 @@ export async function importProjectFile(file: File): Promise<boolean> {
             });
         }
 
-        await audioBufferCache.restoreFromIdb(getAudioContext());
+        const ctx = getAudioContext();
+        if (data.audioBuffers && Object.keys(data.audioBuffers).length > 0) {
+            // Self-contained file: reconstruct buffers from embedded PCM data.
+            // This also writes them to IDB so they persist for future sessions.
+            await audioBufferCache.importBuffers(data.audioBuffers, ctx);
+        } else {
+            // Legacy file (no embedded audio): fall back to the local IDB cache,
+            // but load only the buffer IDs referenced by clips in this project so
+            // we don't mass-load unrelated takes from previous sessions.
+            const referencedIds = (data.tracks?.tracks ?? [])
+                .flatMap((t) => t.clips.map((c) => c.audioBufferId))
+                .filter((id): id is string => Boolean(id));
+            await audioBufferCache.restoreFromIdb(ctx, referencedIds.length > 0 ? referencedIds : undefined);
+        }
         if (trackStore.value) {
             trackStore.set({ ...trackStore.value });
         }

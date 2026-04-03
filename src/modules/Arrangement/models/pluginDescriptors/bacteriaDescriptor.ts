@@ -23,6 +23,7 @@ export const BACTERIA_DESCRIPTOR: PluginDescriptor = {
         minValue: p.min,
         maxValue: p.max,
         unit: p.unit,
+        scaling: p.scaling,
         automatable: true,
         hasAutomation: false,
     })),

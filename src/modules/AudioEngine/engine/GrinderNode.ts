@@ -88,10 +88,14 @@ export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string)
                     clearTimeout(timeout);
                     resolve();
                 }
-            } else if (e.data.type === 'error' && !settled) {
-                settled = true;
-                clearTimeout(timeout);
-                reject(new Error(e.data.message));
+            } else if (e.data.type === 'error') {
+                if (!settled) {
+                    settled = true;
+                    clearTimeout(timeout);
+                    reject(new Error(e.data.message));
+                } else {
+                    console.error('GrinderNode runtime fault (WASM panic — processor faulted):', e.data.message);
+                }
             } else if (e.data.type === 'meters' && meterCallback) {
                 meterCallback(e.data as GrinderMeterData);
             }

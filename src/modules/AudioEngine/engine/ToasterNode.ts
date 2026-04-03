@@ -31,8 +31,8 @@ async function fetchWasmBinary(url: string): Promise<ArrayBuffer> {
 
 export type ToasterNodeResult = {
     workletNode: AudioWorkletNode;
-    noteOn: (pad: number, velocity: number, midiNote?: number) => void;
-    noteOff: (pad: number) => void;
+    noteOn: (pad: number, velocity: number, midiNote?: number, scheduleTime?: number) => void;
+    noteOff: (pad: number, scheduleTime?: number) => void;
     setParam: (name: string, value: number) => void;
     setPadParam: (pad: number, name: string, value: number) => void;
     setBypass: (bypassed: boolean) => void;
@@ -81,13 +81,13 @@ export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string)
 
     return {
         workletNode: node,
-        noteOn(pad: number, velocity: number, midiNote: number = 60) {
+        noteOn(pad: number, velocity: number, midiNote: number = 60, scheduleTime?: number) {
             if (!bypassed) {
-                node.port.postMessage({ type: 'noteOn', pad, velocity: Math.min(127, Math.max(0, velocity)), note: midiNote });
+                node.port.postMessage({ type: 'noteOn', pad, velocity: Math.min(127, Math.max(0, velocity)), note: midiNote, scheduleTime });
             }
         },
-        noteOff(pad: number) {
-            node.port.postMessage({ type: 'noteOff', pad });
+        noteOff(pad: number, scheduleTime?: number) {
+            node.port.postMessage({ type: 'noteOff', pad, scheduleTime });
         },
         setParam(name: string, value: number) {
             if (Number.isFinite(value)) {

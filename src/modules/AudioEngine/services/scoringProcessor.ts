@@ -1,17 +1,28 @@
 // @ts-nocheck
 /**
  * AudioWorkletProcessor for the Scoring chromatic tuner.
+ *
+ * Uses the generated wasm-bindgen JS bindings (scoring.js) via initSync so all
+ * WASM memory management is handled by the generated glue — no manual malloc/free.
+ *
  * Audio passes through unchanged. Pitch analysis runs in WASM.
  * Telemetry sent back to main thread via postMessage every ~30ms.
+ *
+ * Messages from main thread:
+ *   { type: 'init', wasmBytes: ArrayBuffer }
+ *   { type: 'param', name, value }
+ *   { type: 'bypass', bypassed }
  */
+
+import { initSync, ScoringInstance } from '../wasm/scoring.js';
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
 class ScoringProcessor extends AudioWorkletProcessor {
-    _wasm = null;
-    _mem = null;
-    _ptr = 0;
+    _instance = null;   // ScoringInstance (generated wasm-bindgen class)
+    _memory = null;     // WebAssembly.Memory
     _ready = false;
+    _faulted = false;
     _bypassed = false;
     _frameCount = 0;
     _telemetryInterval = 4; // send telemetry every N process calls (~21ms at 128 samples/48kHz)
@@ -24,10 +35,10 @@ class ScoringProcessor extends AudioWorkletProcessor {
                 if (msg.type === 'init') {
                     if (this._ready) return;
                     this._initWasm(msg.wasmBytes);
-                } else if (msg.type === 'param' && this._ready) {
-                    this._setParam(msg.name, msg.value);
                 } else if (msg.type === 'bypass') {
                     this._bypassed = msg.bypassed;
+                } else if (msg.type === 'param' && this._ready && !this._faulted) {
+                    this._instance.set_param(msg.name, msg.value);
                 }
             } catch (err) {
                 console.error('ScoringProcessor error:', err);
@@ -39,127 +50,68 @@ class ScoringProcessor extends AudioWorkletProcessor {
     }
 
     _initWasm(wasmBytes) {
-        const mod = new WebAssembly.Module(wasmBytes);
-        const importInfo = WebAssembly.Module.imports(mod);
-        const bgImports = {};
-        
-        let instance;
-
-        for (const imp of importInfo) {
-            if (imp.module === './scoring_bg.js') {
-                if (imp.name.startsWith('__wbg___wbindgen_throw_')) {
-                    bgImports[imp.name] = function(ptr, len) {
-                        throw new Error('WASM error at ptr ' + ptr + ' len ' + len);
-                    };
-                } else if (imp.name === '__wbindgen_init_externref_table') {
-                    bgImports[imp.name] = function() {
-                        const table = instance.exports.__wbindgen_externrefs;
-                        if (table) {
-                            const offset = table.grow(4);
-                            table.set(0, undefined);
-                            table.set(offset + 0, undefined);
-                            table.set(offset + 1, null);
-                            table.set(offset + 2, true);
-                            table.set(offset + 3, false);
-                        }
-                    };
-                } else if (imp.name.startsWith('__wbg___wbindgen_copy_to_typed_array_')) {
-                    bgImports[imp.name] = function() {};
-                } else {
-                    bgImports[imp.name] = function() {};
-                }
-            }
-        }
-
-        const imports = {
-            './scoring_bg.js': bgImports,
-        };
-
-        instance = new WebAssembly.Instance(mod, imports);
-        const w = instance.exports;
-
-        if (w.__wbindgen_start) {
-            w.__wbindgen_start();
-        }
-
-        this._wasm = w;
-        this._mem = w.memory;
-        this._ptr = w.scoringinstance_new(sampleRate) >>> 0;
+        const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
+        this._memory = wasmExports.memory;
+        this._instance = new ScoringInstance(sampleRate);
         this._ready = true;
-
         this.port.postMessage({ type: 'ready' });
     }
 
-    _setParam(name, value) {
-        const w = this._wasm;
-        const len = name.length;
-        const strPtr = w.__wbindgen_malloc(len, 1) >>> 0;
-        const buf = new Uint8Array(w.memory.buffer, strPtr, len);
-        for (let i = 0; i < len; i++) {
-            buf[i] = name.charCodeAt(i);
+    _passthrough(input, output) {
+        for (let ch = 0; ch < Math.min(input.length, output.length); ch++) {
+            if (input[ch] && output[ch]) output[ch].set(input[ch]);
         }
-        w.scoringinstance_set_param(this._ptr, strPtr, len, value);
     }
 
     process(inputs, outputs) {
-        if (!this._ready) {
-            // Pass through
-            const input = inputs[0];
-            const output = outputs[0];
-            if (input && output) {
-                for (let ch = 0; ch < Math.min(input.length, output.length); ch++) {
-                    if (input[ch] && output[ch]) output[ch].set(input[ch]);
-                }
-            }
+        const input = inputs[0];
+        const output = outputs[0];
+
+        if (!this._ready || this._faulted) {
+            if (input && output) this._passthrough(input, output);
             return true;
         }
 
-        const input = inputs[0];
-        const output = outputs[0];
-        if (!input || !output || input.length < 1 || output.length < 1) return true;
+        if (!input || output.length < 1 || input.length < 1) return true;
 
         const frames = input[0].length;
-        const w = this._wasm;
 
-        // Copy input to WASM
-        const inBytes = frames * 4;
-        const leftInPtr = w.__wbindgen_malloc(inBytes, 4) >>> 0;
-        const rightInPtr = w.__wbindgen_malloc(inBytes, 4) >>> 0;
+        try {
+            // process() takes Float32Array inputs directly — no manual malloc needed
+            const leftPtr = this._instance.process(input[0], input[1] ?? input[0], frames);
+            const rightPtr = this._instance.get_right_ptr();
 
-        new Float32Array(w.memory.buffer, leftInPtr, frames).set(input[0]);
-        new Float32Array(w.memory.buffer, rightInPtr, frames).set(input[1] ?? input[0]);
+            const mem = this._memory.buffer;
+            output[0].set(new Float32Array(mem, leftPtr, frames));
+            if (output[1]) output[1].set(new Float32Array(mem, rightPtr, frames));
 
-        // Process (audio passes through, analysis runs internally)
-        const leftOutPtr = w.scoringinstance_process(this._ptr, leftInPtr, frames, rightInPtr, frames, frames) >>> 0;
-        const rightOutPtr = w.scoringinstance_get_right_ptr(this._ptr) >>> 0;
-
-        // Copy output
-        const mem = w.memory.buffer;
-        output[0].set(new Float32Array(mem, leftOutPtr, frames));
-        if (output[1]) {
-            output[1].set(new Float32Array(mem, rightOutPtr, frames));
-        }
-
-        // Send telemetry periodically
-        this._frameCount++;
-        if (this._frameCount >= this._telemetryInterval) {
-            this._frameCount = 0;
-            const active = w.scoringinstance_is_active(this._ptr);
-            if (active) {
-                this.port.postMessage({
-                    type: 'telemetry',
-                    frequency: w.scoringinstance_get_frequency(this._ptr),
-                    cents: w.scoringinstance_get_cents(this._ptr),
-                    confidence: w.scoringinstance_get_confidence(this._ptr),
-                    noteIndex: w.scoringinstance_get_note_index(this._ptr),
-                    octave: w.scoringinstance_get_octave(this._ptr),
-                    midiNote: w.scoringinstance_get_midi_note(this._ptr),
-                    noteName: NOTE_NAMES[w.scoringinstance_get_note_index(this._ptr) % 12] ?? 'C',
-                    active: true,
-                });
-            } else {
-                this.port.postMessage({ type: 'telemetry', active: false });
+            // Send telemetry periodically
+            this._frameCount++;
+            if (this._frameCount >= this._telemetryInterval) {
+                this._frameCount = 0;
+                const inst = this._instance;
+                const active = inst.is_active();
+                if (active) {
+                    const noteIdx = inst.get_note_index();
+                    this.port.postMessage({
+                        type: 'telemetry',
+                        frequency: inst.get_frequency(),
+                        cents: inst.get_cents(),
+                        confidence: inst.get_confidence(),
+                        noteIndex: noteIdx,
+                        octave: inst.get_octave(),
+                        midiNote: inst.get_midi_note(),
+                        noteName: NOTE_NAMES[noteIdx % 12] ?? 'C',
+                        active: true,
+                    });
+                } else {
+                    this.port.postMessage({ type: 'telemetry', active: false });
+                }
             }
+        } catch (err) {
+            this._faulted = true;
+            this.port.postMessage({ type: 'error', message: String(err) });
+            if (input && output) this._passthrough(input, output);
         }
 
         return true;

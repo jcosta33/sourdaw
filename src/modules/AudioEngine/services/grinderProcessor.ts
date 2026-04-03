@@ -1,8 +1,14 @@
 // @ts-nocheck
 /**
  * AudioWorkletProcessor for the Grinder amp simulator.
+ *
+ * Uses the generated wasm-bindgen JS bindings (daw_dsp.js) via initSync so all
+ * WASM memory management is handled by the generated glue — no manual malloc/free.
+ *
  * Effect processor: reads from inputs[0], writes to outputs[0].
  */
+
+import { initSync, GrinderInstance } from '../wasm/daw_dsp.js';
 
 const PARAM_MAP = {
     engineMode: 'engineMode',
@@ -50,14 +56,11 @@ const PARAM_MAP = {
 const MAX_GRINDER_BLOCK_SIZE = 2048;
 
 class GrinderProcessor extends AudioWorkletProcessor {
-    _wasm = null;
-    _mem = null;
-    _ptr = 0;
+    _instance = null;   // GrinderInstance (generated wasm-bindgen class)
+    _memory = null;     // WebAssembly.Memory (for direct buffer access in process())
     _ready = false;
-    _inputLeftPtr = 0;
-    _inputRightPtr = 0;
+    _faulted = false;
     _meterCounter = 0;
-    _paramNameCache = new Map();
 
     constructor() {
         super();
@@ -65,13 +68,11 @@ class GrinderProcessor extends AudioWorkletProcessor {
             const msg = e.data;
             try {
                 if (msg.type === 'init') {
-                    if (this._ready) {
-                        return;
-                    }
+                    if (this._ready) return;
                     this._initWasm(msg.wasmBytes);
-                } else if (msg.type === 'param' && this._ready) {
+                } else if (msg.type === 'param' && this._ready && !this._faulted) {
                     const rustName = PARAM_MAP[msg.name] ?? msg.name;
-                    this._setParam(rustName, msg.value);
+                    this._instance.set_param(rustName, msg.value);
                 }
             } catch (err) {
                 console.error('GrinderProcessor error:', err);
@@ -80,94 +81,26 @@ class GrinderProcessor extends AudioWorkletProcessor {
     }
 
     _initWasm(wasmBytes) {
-        const mod = new WebAssembly.Module(wasmBytes);
-        const importInfo = WebAssembly.Module.imports(mod);
-        const bgImports = {};
-
-        let instance;
-
-        for (const imp of importInfo) {
-            if (imp.module === './daw_dsp_bg.js') {
-                if (imp.name.startsWith('__wbg___wbindgen_throw_')) {
-                    bgImports[imp.name] = function (ptr, len) {
-                        throw new Error('WASM error at ptr ' + ptr + ' len ' + len);
-                    };
-                } else if (imp.name === '__wbindgen_init_externref_table') {
-                    bgImports[imp.name] = function () {
-                        const table = instance.exports.__wbindgen_externrefs;
-                        if (table) {
-                            const offset = table.grow(4);
-                            table.set(0, undefined);
-                            table.set(offset + 0, undefined);
-                            table.set(offset + 1, null);
-                            table.set(offset + 2, true);
-                            table.set(offset + 3, false);
-                        }
-                    };
-                } else {
-                    bgImports[imp.name] = function () {};
-                }
-            }
-        }
-
-        const imports = {
-            './daw_dsp_bg.js': bgImports,
-        };
-
-        instance = new WebAssembly.Instance(mod, imports);
-        const w = instance.exports;
-
-        if (w.__wbindgen_start) {
-            w.__wbindgen_start();
-        }
-
-        this._wasm = w;
-        this._mem = w.memory;
-
-        this._ptr = w.grinderinstance_new(sampleRate) >>> 0;
-        this._inputLeftPtr = w.grinderinstance_get_input_left_ptr(this._ptr) >>> 0;
-        this._inputRightPtr = w.grinderinstance_get_input_right_ptr(this._ptr) >>> 0;
-
+        const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
+        this._memory = wasmExports.memory;
+        this._instance = new GrinderInstance(sampleRate);
         this._ready = true;
         this.port.postMessage({ type: 'ready' });
-    }
-
-    _setParam(name, value) {
-        const w = this._wasm;
-        let cached = this._paramNameCache.get(name);
-        if (!cached) {
-            const len = name.length;
-            const strPtr = w.__wbindgen_malloc(len, 1) >>> 0;
-            const buf = new Uint8Array(w.memory.buffer, strPtr, len);
-            for (let i = 0; i < len; i++) {
-                buf[i] = name.charCodeAt(i);
-            }
-            cached = { strPtr, len };
-            this._paramNameCache.set(name, cached);
-        }
-        w.grinderinstance_set_param(this._ptr, cached.strPtr, cached.len, value);
     }
 
     _passthrough(input, output) {
         const leftIn = input[0];
         const rightIn = input[1] ?? leftIn;
-
-        if (output[0] && leftIn) {
-            output[0].set(leftIn);
-        }
-        if (output[1] && rightIn) {
-            output[1].set(rightIn);
-        }
+        if (output[0] && leftIn) output[0].set(leftIn);
+        if (output[1] && rightIn) output[1].set(rightIn);
     }
 
     process(inputs, outputs) {
         const input = inputs[0];
         const output = outputs[0];
 
-        if (!this._ready) {
-            if (input && output) {
-                this._passthrough(input, output);
-            }
+        if (!this._ready || this._faulted) {
+            if (input && output) this._passthrough(input, output);
             return true;
         }
         if (!input || input.length < 1 || !output || output.length < 1) {
@@ -180,47 +113,55 @@ class GrinderProcessor extends AudioWorkletProcessor {
             return true;
         }
 
-        const w = this._wasm;
+        try {
+            const inst = this._instance;
+            const mem = this._memory.buffer;
 
-        const inLeftPtr = w.grinderinstance_get_input_left_ptr(this._ptr) >>> 0;
-        const inRightPtr = w.grinderinstance_get_input_right_ptr(this._ptr) >>> 0;
-        if (!inLeftPtr || !inRightPtr) {
+            const inLeftPtr = inst.get_input_left_ptr();
+            const inRightPtr = inst.get_input_right_ptr();
+            if (!inLeftPtr || !inRightPtr) {
+                this._passthrough(input, output);
+                return true;
+            }
+
+            new Float32Array(mem, inLeftPtr, frames).set(input[0]);
+            new Float32Array(mem, inRightPtr, frames).set(input[1] ?? input[0]);
+
+            const outLeftPtr = inst.process(frames);
+            const outRightPtr = inst.get_right_ptr();
+            if (!outLeftPtr || !outRightPtr) {
+                this._passthrough(input, output);
+                return true;
+            }
+
+            output[0].set(new Float32Array(mem, outLeftPtr, frames));
+            if (output[1]) {
+                output[1].set(new Float32Array(mem, outRightPtr, frames));
+            }
+
+            this._meterCounter++;
+            if (this._meterCounter >= 8) {
+                this._meterCounter = 0;
+                this.port.postMessage({
+                    type: 'meters',
+                    inputDb: inst.get_input_db(),
+                    preampDb: inst.get_preamp_db(),
+                    powerAmpDb: inst.get_power_amp_db(),
+                    outputDb: inst.get_output_db(),
+                    gateOpen: inst.get_gate_open(),
+                    gateEnvelopeDb: inst.get_gate_envelope_db(),
+                    sagVoltage: inst.get_sag_voltage(),
+                    latency: inst.get_latency_samples(),
+                    neuralCpuPercent: inst.get_neural_cpu_percent(),
+                    neuralWarmupProgress: inst.get_neural_warmup_progress(),
+                });
+            }
+        } catch (err) {
+            // A WASM panic leaves WasmRefCell borrow counts corrupted — mark
+            // faulted so we stop calling into WASM and fall back to passthrough.
+            this._faulted = true;
+            this.port.postMessage({ type: 'error', message: String(err) });
             this._passthrough(input, output);
-            return true;
-        }
-
-        const mem = w.memory.buffer;
-        new Float32Array(mem, inLeftPtr, frames).set(input[0]);
-        new Float32Array(mem, inRightPtr, frames).set(input[1] ?? input[0]);
-
-        const outLeftPtr = w.grinderinstance_process(this._ptr, frames) >>> 0;
-        const outRightPtr = w.grinderinstance_get_right_ptr(this._ptr) >>> 0;
-        if (!outLeftPtr || !outRightPtr) {
-            this._passthrough(input, output);
-            return true;
-        }
-
-        output[0].set(new Float32Array(mem, outLeftPtr, frames));
-        if (output[1]) {
-            output[1].set(new Float32Array(mem, outRightPtr, frames));
-        }
-
-        this._meterCounter++;
-        if (this._meterCounter >= 8) {
-            this._meterCounter = 0;
-            this.port.postMessage({
-                type: 'meters',
-                inputDb: w.grinderinstance_get_input_db(this._ptr),
-                preampDb: w.grinderinstance_get_preamp_db(this._ptr),
-                powerAmpDb: w.grinderinstance_get_power_amp_db(this._ptr),
-                outputDb: w.grinderinstance_get_output_db(this._ptr),
-                gateOpen: w.grinderinstance_get_gate_open(this._ptr),
-                gateEnvelopeDb: w.grinderinstance_get_gate_envelope_db(this._ptr),
-                sagVoltage: w.grinderinstance_get_sag_voltage(this._ptr),
-                latency: w.grinderinstance_get_latency_samples(this._ptr),
-                neuralCpuPercent: w.grinderinstance_get_neural_cpu_percent(this._ptr),
-                neuralWarmupProgress: w.grinderinstance_get_neural_warmup_progress(this._ptr),
-            });
         }
 
         return true;

@@ -52,14 +52,16 @@ export const LED = ({ on, variant = 'amber', size = 'md', className }: LEDProps)
     const active = activeGlow[variant];
     return (
         <div
-            className={cn('rounded-full transition-all duration-fast', sizeStyles[size], className)}
+            className={cn(
+                'rounded-full transition-[background,box-shadow,filter] duration-fast',
+                sizeStyles[size],
+                className
+            )}
             style={{
                 background: on
                     ? `radial-gradient(circle at 40% 35%, rgba(255,255,255,0.3) 0%, transparent 50%), ${active.bg}`
                     : `radial-gradient(circle at 40% 35%, rgba(255,255,255,0.05) 0%, transparent 60%), ${offBackground[variant]}`,
-                boxShadow: on
-                    ? active.shadow
-                    : 'inset 0 1px 2px rgba(0,0,0,0.6)',
+                boxShadow: on ? active.shadow : 'inset 0 1px 2px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.03)',
                 border: on ? '1px solid rgba(0,0,0,0.3)' : '1px solid rgba(0,0,0,0.5)',
             }}
             aria-hidden="true"

@@ -2,18 +2,21 @@
 /**
  * AudioWorkletProcessor for the Proof mastering suite.
  *
+ * Uses the generated wasm-bindgen JS bindings (daw_dsp.js) via initSync so all
+ * WASM memory management is handled by the generated glue — no manual malloc/free.
+ *
  * Effect processor: reads inputs[0], writes outputs[0].
  * Handles the full mastering chain via WASM (EQ → Dynamics → Imager → Exciter → Limiter).
  * Sends metering data (LUFS, GR, correlation, tap levels) back to main thread.
  */
 
+import { initSync, ProofInstance } from '../wasm/daw_dsp.js';
+
 class ProofProcessor extends AudioWorkletProcessor {
-    _wasm = null;
-    _mem = null;
-    _ptr = 0;
+    _instance = null;   // ProofInstance (generated wasm-bindgen class)
+    _memory = null;     // WebAssembly.Memory
     _ready = false;
-    _inputLeftPtr = 0;
-    _inputRightPtr = 0;
+    _faulted = false;
     _meterCounter = 0;
 
     constructor() {
@@ -22,148 +25,110 @@ class ProofProcessor extends AudioWorkletProcessor {
             const msg = e.data;
             try {
                 if (msg.type === 'init') {
-                    if (this._ready) { return; }
+                    if (this._ready) return;
                     this._initWasm(msg.wasmBytes);
-                } else if (msg.type === 'param' && this._ready) {
-                    this._setParam(msg.name, msg.value);
-                } else if (msg.type === 'reorder' && this._ready) {
-                    const o = msg.order;
-                    this._wasm.proofinstance_reorder(this._ptr, o[0], o[1], o[2], o[3], o[4]);
-                } else if (msg.type === 'reset_integrated' && this._ready) {
-                    this._wasm.proofinstance_reset_integrated(this._ptr);
+                } else if (this._ready && !this._faulted) {
+                    this._handleMessage(msg);
                 }
             } catch (err) {
                 console.error('ProofProcessor error:', err);
+                if (!this._ready) {
+                    this.port.postMessage({ type: 'error', message: err?.message ?? String(err) });
+                }
             }
         };
     }
 
     _initWasm(wasmBytes) {
-        const mod = new WebAssembly.Module(wasmBytes);
-        const importInfo = WebAssembly.Module.imports(mod);
-        const bgImports = {};
-        
-        let instance;
-
-        for (const imp of importInfo) {
-            if (imp.module === './daw_dsp_bg.js' || imp.module === './proof_chamber_bg.js' || imp.module === './proof_bg.js') {
-                if (imp.name.startsWith('__wbg___wbindgen_throw_')) {
-                    bgImports[imp.name] = function(ptr, len) {
-                        throw new Error('WASM error at ptr ' + ptr + ' len ' + len);
-                    };
-                } else if (imp.name === '__wbindgen_init_externref_table') {
-                    bgImports[imp.name] = function() {
-                        const table = instance.exports.__wbindgen_externrefs;
-                        if (table) {
-                            const offset = table.grow(4);
-                            table.set(0, undefined);
-                            table.set(offset + 0, undefined);
-                            table.set(offset + 1, null);
-                            table.set(offset + 2, true);
-                            table.set(offset + 3, false);
-                        }
-                    };
-                } else if (imp.name.startsWith('__wbg___wbindgen_copy_to_typed_array_')) {
-                    bgImports[imp.name] = function(arg0, arg1, arg2) {};
-                } else {
-                    bgImports[imp.name] = function() {};
-                }
-            }
-        }
-
-        const imports = {
-            './daw_dsp_bg.js': bgImports,
-            './proof_chamber_bg.js': bgImports,
-            './proof_bg.js': bgImports,
-        };
-
-        instance = new WebAssembly.Instance(mod, imports);
-        const w = instance.exports;
-
-        if (w.__wbindgen_start) {
-            w.__wbindgen_start();
-        }
-
-        this._wasm = w;
-        this._mem = w.memory;
-        this._ptr = w.proofinstance_new(sampleRate) >>> 0;
-        this._inputLeftPtr = w.proofinstance_get_input_left_ptr(this._ptr) >>> 0;
-        this._inputRightPtr = w.proofinstance_get_input_right_ptr(this._ptr) >>> 0;
-
+        const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
+        this._memory = wasmExports.memory;
+        this._instance = new ProofInstance(sampleRate);
         this._ready = true;
         this.port.postMessage({ type: 'ready' });
     }
 
-    _setParam(name, value) {
-        const w = this._wasm;
-        const len = name.length;
-        const strPtr = w.__wbindgen_malloc(len, 1) >>> 0;
-        const buf = new Uint8Array(w.memory.buffer, strPtr, len);
-        for (let i = 0; i < len; i++) {
-            buf[i] = name.charCodeAt(i);
+    _handleMessage(msg) {
+        const inst = this._instance;
+        switch (msg.type) {
+            case 'param':
+                inst.set_param(msg.name, msg.value);
+                break;
+            case 'reorder': {
+                const o = msg.order;
+                inst.reorder(o[0], o[1], o[2], o[3], o[4]);
+                break;
+            }
+            case 'reset_integrated':
+                inst.reset_integrated();
+                break;
         }
-        w.proofinstance_set_param(this._ptr, strPtr, len, value);
+    }
+
+    _passthrough(input, output) {
+        if (output[0] && input[0]) output[0].set(input[0]);
+        if (output[1] && (input[1] ?? input[0])) output[1].set(input[1] ?? input[0]);
     }
 
     process(inputs, outputs) {
-        if (!this._ready) { return true; }
+        if (!this._ready || this._faulted) return true;
 
         const input = inputs[0];
         const output = outputs[0];
-        if (!input || input.length < 2 || !output || output.length < 2) { return true; }
+        if (!input || input.length < 2 || !output || output.length < 2) return true;
 
         const frames = output[0].length;
-        const w = this._wasm;
 
-        // Write input into WASM memory
-        const inLeftPtr = w.proofinstance_get_input_left_ptr(this._ptr) >>> 0;
-        const inRightPtr = w.proofinstance_get_input_right_ptr(this._ptr) >>> 0;
-        const mem = w.memory.buffer;
-        new Float32Array(mem, inLeftPtr, frames).set(input[0]);
-        new Float32Array(mem, inRightPtr, frames).set(input[1] ?? input[0]);
+        try {
+            const inst = this._instance;
+            const mem = this._memory.buffer;
 
-        // Process
-        const outLeftPtr = w.proofinstance_process(this._ptr, frames) >>> 0;
-        const outRightPtr = w.proofinstance_get_right_ptr(this._ptr) >>> 0;
+            const inLeftPtr = inst.get_input_left_ptr();
+            const inRightPtr = inst.get_input_right_ptr();
+            new Float32Array(mem, inLeftPtr, frames).set(input[0]);
+            new Float32Array(mem, inRightPtr, frames).set(input[1] ?? input[0]);
 
-        // Read output
-        output[0].set(new Float32Array(mem, outLeftPtr, frames));
-        if (output[1]) {
-            output[1].set(new Float32Array(mem, outRightPtr, frames));
-        }
+            const outLeftPtr = inst.process(frames);
+            const outRightPtr = inst.get_right_ptr();
 
-        // Send metering data (~every 8 blocks ≈ 23ms at 44.1kHz
-        this._meterCounter++;
-        if (this._meterCounter >= 8) {
-            this._meterCounter = 0;
-            this.port.postMessage({
-                type: 'meters',
-                inputLufs: w.proofinstance_get_input_lufs(this._ptr),
-                outputLufs: w.proofinstance_get_output_lufs(this._ptr),
-                outputStLufs: w.proofinstance_get_output_st_lufs(this._ptr),
-                integratedLufs: w.proofinstance_get_integrated_lufs(this._ptr),
-                truePeakDb: w.proofinstance_get_true_peak_db(this._ptr),
-                lra: w.proofinstance_get_lra(this._ptr),
-                correlation: w.proofinstance_get_correlation(this._ptr),
-                limiterGrDb: w.proofinstance_get_limiter_gr_db(this._ptr),
-                dynGr0: w.proofinstance_get_dynamics_gr(this._ptr, 0),
-                dynGr1: w.proofinstance_get_dynamics_gr(this._ptr, 1),
-                dynGr2: w.proofinstance_get_dynamics_gr(this._ptr, 2),
-                dynGr3: w.proofinstance_get_dynamics_gr(this._ptr, 3),
-                tap0PeakL: w.proofinstance_get_tap_peak_l(this._ptr, 0),
-                tap0PeakR: w.proofinstance_get_tap_peak_r(this._ptr, 0),
-                tap1PeakL: w.proofinstance_get_tap_peak_l(this._ptr, 1),
-                tap1PeakR: w.proofinstance_get_tap_peak_r(this._ptr, 1),
-                tap2PeakL: w.proofinstance_get_tap_peak_l(this._ptr, 2),
-                tap2PeakR: w.proofinstance_get_tap_peak_r(this._ptr, 2),
-                tap3PeakL: w.proofinstance_get_tap_peak_l(this._ptr, 3),
-                tap3PeakR: w.proofinstance_get_tap_peak_r(this._ptr, 3),
-                tap4PeakL: w.proofinstance_get_tap_peak_l(this._ptr, 4),
-                tap4PeakR: w.proofinstance_get_tap_peak_r(this._ptr, 4),
-                tap5PeakL: w.proofinstance_get_tap_peak_l(this._ptr, 5),
-                tap5PeakR: w.proofinstance_get_tap_peak_r(this._ptr, 5),
-                latency: w.proofinstance_get_latency_samples(this._ptr),
-            });
+            output[0].set(new Float32Array(mem, outLeftPtr, frames));
+            if (output[1]) output[1].set(new Float32Array(mem, outRightPtr, frames));
+
+            this._meterCounter++;
+            if (this._meterCounter >= 8) {
+                this._meterCounter = 0;
+                this.port.postMessage({
+                    type: 'meters',
+                    inputLufs: inst.get_input_lufs(),
+                    outputLufs: inst.get_output_lufs(),
+                    outputStLufs: inst.get_output_st_lufs(),
+                    integratedLufs: inst.get_integrated_lufs(),
+                    truePeakDb: inst.get_true_peak_db(),
+                    lra: inst.get_lra(),
+                    correlation: inst.get_correlation(),
+                    limiterGrDb: inst.get_limiter_gr_db(),
+                    dynGr0: inst.get_dynamics_gr(0),
+                    dynGr1: inst.get_dynamics_gr(1),
+                    dynGr2: inst.get_dynamics_gr(2),
+                    dynGr3: inst.get_dynamics_gr(3),
+                    tap0PeakL: inst.get_tap_peak_l(0),
+                    tap0PeakR: inst.get_tap_peak_r(0),
+                    tap1PeakL: inst.get_tap_peak_l(1),
+                    tap1PeakR: inst.get_tap_peak_r(1),
+                    tap2PeakL: inst.get_tap_peak_l(2),
+                    tap2PeakR: inst.get_tap_peak_r(2),
+                    tap3PeakL: inst.get_tap_peak_l(3),
+                    tap3PeakR: inst.get_tap_peak_r(3),
+                    tap4PeakL: inst.get_tap_peak_l(4),
+                    tap4PeakR: inst.get_tap_peak_r(4),
+                    tap5PeakL: inst.get_tap_peak_l(5),
+                    tap5PeakR: inst.get_tap_peak_r(5),
+                    latency: inst.get_latency_samples(),
+                });
+            }
+        } catch (err) {
+            this._faulted = true;
+            this.port.postMessage({ type: 'error', message: String(err) });
+            this._passthrough(input, output);
         }
 
         return true;

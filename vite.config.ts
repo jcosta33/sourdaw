@@ -9,6 +9,9 @@ import babel from '@rolldown/plugin-babel';
 
 export default defineConfig({
     base: './',
+    server: {
+        hmr: process.env.NO_HMR !== '1',
+    },
     esbuild: {
         keepNames: true, // Fixes @grame/faustwasm AudioWorkletNode mangling
     },

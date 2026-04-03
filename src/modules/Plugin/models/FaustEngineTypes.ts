@@ -14,5 +14,6 @@ export type FaustParamDescriptor = {
     max: number;
     defaultValue: number;
     step: number;
-    type: 'hslider' | 'vslider' | 'nentry' | 'button' | 'checkbox' | 'vbargraph' | 'hbargraph';
+    type: 'hslider' | 'vslider' | 'nentry' | 'button' | 'checkbox' | 'hbargraph' | 'vbargraph';
+    scaling?: 'log' | 'linear';
 };

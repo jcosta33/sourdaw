@@ -46,10 +46,15 @@ export const LUFSMeter = ({ height = 160, width = 48, target = -14 }: LUFSMeterP
         let rafId = 0;
         let lastStateUpdate = 0;
         const STATE_UPDATE_INTERVAL = 100; // ~10fps for React state
+        // Reused across frames — reallocated only if frequencyBinCount changes.
+        let analyserData: Float32Array<ArrayBuffer> | null = null;
 
         const draw = (): void => {
             const analyser = getMasterAnalyser();
-            const data = new Float32Array(analyser.frequencyBinCount);
+            if (!analyserData || analyserData.length !== analyser.frequencyBinCount) {
+                analyserData = new Float32Array(analyser.frequencyBinCount);
+            }
+            const data = analyserData;
             analyser.getFloatTimeDomainData(data);
 
             const mom = computeMomentaryLUFS(data, getAudioSampleRate());

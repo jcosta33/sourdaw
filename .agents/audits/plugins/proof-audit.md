@@ -11,12 +11,12 @@ Based on a code-level audit of the **Proof** mastering suite engine (`crates/daw
 
 ### 🐛 Logical Bugs
 
-1. [x] **Feedback Loop in A/B Gain Matching (`chain.rs`)**:
+1. [WRONG] **Feedback Loop in A/B Gain Matching (`chain.rs`)**:
     - **Issue:** When `ab_bypass` is engaged, the engine attempts to match the bypassed (dry) signal's loudness to the processed (wet) signal's loudness. It does this by dynamically updating `ab_gain_offset = out_lufs - in_lufs` on every block. However, when bypassed, the plugin skips the actual DSP modules and feeds the _gain-compensated dry signal_ into the `output_lufs` meter.
     - **Impact:** Because the `output_lufs` meter is now measuring the bypassed signal, the `out_lufs` value will drift toward the `in_lufs` value. This creates a feedback loop where the `ab_gain_offset` slowly collapses to `0.0 dB`, completely defeating the purpose of gain-matched A/B comparison.
     - **Fix:** When entering `ab_bypass` mode, the `ab_gain_offset` must be **frozen** at its last known value, and should not be dynamically recalculated while the DSP chain is skipped. Alternatively, the DSP chain must continue processing silently in the background to keep the `output_lufs` meter accurate.
 
-2. **Unvalidated Module Reordering (`chain.rs`)**:
+2. [WRONG] **Unvalidated Module Reordering (`chain.rs`)**:
     - **Issue:** The `reorder` function accepts an array of 5 integers (`[u8; 5]`) and maps them to `ModuleId` without checking for duplicates.
     - **Impact:** If the UI (or an API call) sends an array like `[0, 0, 0, 0, 0]`, the engine will happily run the EQ module 5 times in a row and completely skip the Limiter, Exciter, and Imager.
     - **Fix:** Validate that the incoming `new_order` array is a strict permutation of `[0, 1, 2, 3, 4]`. If duplicates are detected, reject the change or fall back to the default order.

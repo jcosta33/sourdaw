@@ -77,7 +77,7 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 fil
 - **Migration notes**: Lift all handler logic to `arrangementHandlers.ts` and dispatch cleanly.
 - **Required tests after remediation**: Verify Context Menu functionality and Undo/Redo stack preservation.
 - **Related issues**: AUDIT-010
-> ✅ **FIXED:** Created `splitClipWithUndo.ts` use case. It snapshots the original clip's `endBeat`, `name`, and `fadeOutBeats`, calls `splitClip`, finds the generated right-fragment clip ID, then registers an undo entry via `pushUndoEntry`. Undo correctly restores the left clip via `updateClip` (not `addClip`, which was the prior bug — the view's undo was creating a duplicate clip rather than restoring the left half in place). `ClipContextMenu.tsx`'s 30-line inline split block replaced with `splitClipWithUndo(clipId, splitBeat)`. `pushUndoEntry` and `addClip` imports removed from the view.
+    > ✅ **FIXED:** Created `splitClipWithUndo.ts` use case. It snapshots the original clip's `endBeat`, `name`, and `fadeOutBeats`, calls `splitClip`, finds the generated right-fragment clip ID, then registers an undo entry via `pushUndoEntry`. Undo correctly restores the left clip via `updateClip` (not `addClip`, which was the prior bug — the view's undo was creating a duplicate clip rather than restoring the left half in place). `ClipContextMenu.tsx`'s 30-line inline split block replaced with `splitClipWithUndo(clipId, splitBeat)`. `pushUndoEntry` and `addClip` imports removed from the view.
 
 ## Issue ID
 
@@ -98,7 +98,7 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 fil
 - **Migration notes**: Delete the hook wrappers and dependency arrays, leaving just the raw variable or function declarations.
 - **Required tests after remediation**: Verify component still renders and functions properly.
 - **Related issues**: None
-> ✅ **FIXED:** Removed `useMemo` from `SourdawLogo.tsx` (styleBlock now computed inline, React Compiler memoizes automatically) and from `PresetBrowser.tsx` (`filtered` computed as plain `let` with filter chain, no `useMemo` wrapper).
+    > ✅ **FIXED:** Removed `useMemo` from `SourdawLogo.tsx` (styleBlock now computed inline, React Compiler memoizes automatically) and from `PresetBrowser.tsx` (`filtered` computed as plain `let` with filter chain, no `useMemo` wrapper).
 
 ## Issue ID
 
@@ -119,7 +119,7 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 fil
 - **Migration notes**: Create `repositories/voiceTauriAdapter.ts`, move the `tauriInvoke` logic there.
 - **Required tests after remediation**: Verify native voice dictation operates seamlessly within the desktop boundary.
 - **Related issues**: None
-> ✅ **FIXED:** Created `src/modules/AiRuntime/repositories/voiceTauriAdapter.ts` which exports `ensureWhisperReady()`, `startDictation()`, `stopDictation()`, and `onDictationResult()`. All three direct `tauriInvoke` calls and the `tauriListen('dictation-result')` call in `useVoiceRecording.ts` now import from this adapter, removing bare-metal IPC from the presentation layer.
+    > ✅ **FIXED:** Created `src/modules/AiRuntime/repositories/voiceTauriAdapter.ts` which exports `ensureWhisperReady()`, `startDictation()`, `stopDictation()`, and `onDictationResult()`. All three direct `tauriInvoke` calls and the `tauriListen('dictation-result')` call in `useVoiceRecording.ts` now import from this adapter, removing bare-metal IPC from the presentation layer.
 
 ### 6.3 Store and state-tier violations
 
@@ -142,7 +142,7 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 fil
 - **Migration notes**: Migrate `DeviceState` entirely into the generic Arrangement CRDT model under `tracks[].devices[].state`.
 - **Required tests after remediation**: Verify 2 Fermenters can exist on 2 separate tracks with discrete states.
 - **Related issues**: AUDIT-023
-> ⬜ **Code-verified:** Not yet inspected. Major architectural refactor — needs careful planning before any changes.
+    > ⬜ **Code-verified:** Not yet inspected. Major architectural refactor — needs careful planning before any changes.
 
 ## Issue ID
 
@@ -163,7 +163,7 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 fil
 - **Migration notes**: Wrap the maps in a custom LRU cache structure and cap the cache size.
 - **Required tests after remediation**: Spam zoom on a 5-minute audio clip and verify Memory profiler heap remains stable.
 - **Related issues**: None
-> ✅ **FIXED (both caches):** `waveformCache` capped at 256 entries with LRU eviction via `waveformCacheSet()`. Main `cache` (`AudioBuffer` objects) now also capped at `MAX_AUDIO_BUFFER_ENTRIES = 64` with insertion-order LRU via `audioCacheSet()` / `audioCacheGet()`. All `get()`, `set()`, and `restoreFromIdb()` calls route through the bounded helpers. Evicted `AudioBuffer`s remain in IDB and reload on demand.
+    > ✅ **FIXED (both caches):** `waveformCache` capped at 256 entries with LRU eviction via `waveformCacheSet()`. Main `cache` (`AudioBuffer` objects) now also capped at `MAX_AUDIO_BUFFER_ENTRIES = 64` with insertion-order LRU via `audioCacheSet()` / `audioCacheGet()`. All `get()`, `set()`, and `restoreFromIdb()` calls route through the bounded helpers. Evicted `AudioBuffer`s remain in IDB and reload on demand.
 
 ## Issue ID
 
@@ -184,7 +184,7 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 fil
 - **Migration notes**: Refactor `saveAllToIdb()` to append incremental chunks rather than giant O(N) overwrites.
 - **Required tests after remediation**: Kill browser process mid-edit, restore session successfully.
 - **Related issues**: AUDIT-017
-> ✅ **FIXED:** Created `src/modules/CrdtDocument/useCases/startCrdtAutoSave.ts` which subscribes to `automergeRepository.onChange()` and debounces `persistCrdtProject()` calls by 2 seconds. Wired into both `loadProject.ts` and `newProject.ts` so every project has an active auto-save loop. The incremental save (`Automerge.saveIncremental`) only writes new changes, not the full snapshot, keeping IDB writes cheap. A compaction to a full snapshot still occurs every 50 incremental saves.
+    > ✅ **FIXED:** Created `src/modules/CrdtDocument/useCases/startCrdtAutoSave.ts` which subscribes to `automergeRepository.onChange()` and debounces `persistCrdtProject()` calls by 2 seconds. Wired into both `loadProject.ts` and `newProject.ts` so every project has an active auto-save loop. The incremental save (`Automerge.saveIncremental`) only writes new changes, not the full snapshot, keeping IDB writes cheap. A compaction to a full snapshot still occurs every 50 incremental saves.
 
 ## Issue ID
 
@@ -204,7 +204,7 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 fil
 - **Recommended scope of refactor**: Route graph and CV bindings.
 - **Migration notes**: Lift data into `document.tracks[id].routing`.
 - **Required tests after remediation**: Save project, reload, verify sidechains remain visually connected.
-> ✅ **FIXED (cvGate):** `sidechainStore` was already backed by `AutomergeStorage` — not volatile. `cvGateStore` had no `storage` option; added `storage: new AutomergeStorage(DOC_PREFIX_ROOT, 'cvGate')` so CV output channel configuration (outputs array, voltageStandard, clockDivision, etc.) now survives page reload. `kneadStore` pitch analysis blobs remain volatile — pitch analysis data is ephemeral/recomputable, not a composition artifact, so this is acceptable.
+    > ✅ **FIXED (cvGate):** `sidechainStore` was already backed by `AutomergeStorage` — not volatile. `cvGateStore` had no `storage` option; added `storage: new AutomergeStorage(DOC_PREFIX_ROOT, 'cvGate')` so CV output channel configuration (outputs array, voltageStandard, clockDivision, etc.) now survives page reload. `kneadStore` pitch analysis blobs remain volatile — pitch analysis data is ephemeral/recomputable, not a composition artifact, so this is acceptable.
 - **Related issues**: None
 
 ## Issue ID
@@ -226,7 +226,7 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 fil
 - **Migration notes**: Move the branch list to a dedicated `branches` map within the canonical Automerge document root, or a separate synchronized `metadata` document.
 - **Required tests after remediation**: Create a branch, verify a second connected peer instantly sees the new branch.
 - **Related issues**: None
-> ⬜ **Code-verified:** Confirmed real (partial). `branchStore` uses `new LocalStorageStorage('sourdaw-branches')` — branches are persisted to localStorage per-device, but NOT synced to the Automerge document. In a multiplayer session, peer B will never see peer A's branches. The concern about cross-peer visibility is valid; however, the non-CRDT design may be intentional (branches as a local workspace concept). Architectural decision needed before fixing.
+    > ⬜ **Code-verified:** Confirmed real (partial). `branchStore` uses `new LocalStorageStorage('sourdaw-branches')` — branches are persisted to localStorage per-device, but NOT synced to the Automerge document. In a multiplayer session, peer B will never see peer A's branches. The concern about cross-peer visibility is valid; however, the non-CRDT design may be intentional (branches as a local workspace concept). Architectural decision needed before fixing.
 
 ## Issue ID
 
@@ -247,7 +247,7 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 fil
 - **Migration notes**: Move the `entries` array to a persistent Automerge collection.
 - **Required tests after remediation**: Perform an AI edit, reload the page, ensure the action history panel retains the ability to revert.
 - **Related issues**: AUDIT-015
-> ⬜ **Code-verified:** Confirmed real. `aiActionHistoryStore` uses `new Store<AiActionHistoryState>(logger, { initialData: ... })` with no storage option — it IS fully volatile. The 50-entry action history panel is wiped on every page reload. Whether this needs IndexedDB persistence or Automerge integration depends on the product decision (history-panel-only vs. collaborative undo). Deferred — low priority relative to memory leak fixes.
+    > ⬜ **Code-verified:** Confirmed real. `aiActionHistoryStore` uses `new Store<AiActionHistoryState>(logger, { initialData: ... })` with no storage option — it IS fully volatile. The 50-entry action history panel is wiped on every page reload. Whether this needs IndexedDB persistence or Automerge integration depends on the product decision (history-panel-only vs. collaborative undo). Deferred — low priority relative to memory leak fixes.
 
 ### 6.4 Domain-boundary violations
 
@@ -270,7 +270,7 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 fil
 - **Migration notes**: Deprecate `pushUndoEntry` entirely. Shift logic to Typed `AppAction`s via `ActionHandler<T>`.
 - **Required tests after remediation**: Verify automation, transport changes generate network-syncable undo logs.
 - **Related issues**: None
-> ⬜ **Code-verified:** Confirmed real issue. `executeDsoEdit.ts` and import functions use `createCallbackUndoEntry` with anonymous closures (including the fixes we added for import undo and AI MIDI generation undo). Typing these as formal `AppAction` DTOs would require a large-scale refactor of the command system. Open architectural work.
+    > ⬜ **Code-verified:** Confirmed real issue. `executeDsoEdit.ts` and import functions use `createCallbackUndoEntry` with anonymous closures (including the fixes we added for import undo and AI MIDI generation undo). Typing these as formal `AppAction` DTOs would require a large-scale refactor of the command system. Open architectural work.
 
 ## Issue ID
 
@@ -291,7 +291,7 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 fil
 - **Migration notes**: Strip out `addTrack`/`addClip` logic. Return typed `NoteMap` payload.
 - **Required tests after remediation**: Verify Audio-to-MIDI export still places clips perfectly.
 - **Related issues**: None
-> ⬜ **Code-verified:** Confirmed real issue. `polyphonicAudioToMidi.ts` calls `addTrack`, `addClip`, and (formerly) `addMidiNote` inside `insertNotesIntoTimeline`. The audit's mixed-concern criticism is valid — the analyzer directly orchestrates the arrangement graph. Additionally, the `addMidiNote` per-note loop created an O(N) CRDT flood, which has been **FIXED** by replacing it with `batchAddMidiNotes`. The architectural separation of pure analysis vs. timeline insertion remains as open work.
+    > ⬜ **Code-verified:** Confirmed real issue. `polyphonicAudioToMidi.ts` calls `addTrack`, `addClip`, and (formerly) `addMidiNote` inside `insertNotesIntoTimeline`. The audit's mixed-concern criticism is valid — the analyzer directly orchestrates the arrangement graph. Additionally, the `addMidiNote` per-note loop created an O(N) CRDT flood, which has been **FIXED** by replacing it with `batchAddMidiNotes`. The architectural separation of pure analysis vs. timeline insertion remains as open work.
 
 ## Issue ID
 
@@ -312,7 +312,7 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 fil
 - **Migration notes**: Extract each handler property from `aiMidiHandlers.ts` and `generationHandlers.ts` into a standalone file exporting a single `ActionHandler`.
 - **Required tests after remediation**: Verify all AI generation commands still route correctly.
 - **Related issues**: None
-> ⬜ **Code-verified:** Partially superseded. The previously referenced files (`aiMidiHandlers.ts`, `generationHandlers.ts`) no longer exist — the module has been partially restructured into per-operation files. `taskManagement.ts` still exports 4 functions (addTask, updateTask, removeTask, clearTasks) and `audioProcessing.ts` exports 3 functions, both violating the one-function-per-file rule. The multi-export concern remains valid for these files.
+    > ⬜ **Code-verified:** Partially superseded. The previously referenced files (`aiMidiHandlers.ts`, `generationHandlers.ts`) no longer exist — the module has been partially restructured into per-operation files. `taskManagement.ts` still exports 4 functions (addTask, updateTask, removeTask, clearTasks) and `audioProcessing.ts` exports 3 functions, both violating the one-function-per-file rule. The multi-export concern remains valid for these files.
 
 ## Issue ID
 
@@ -333,7 +333,7 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 fil
 - **Migration notes**: Create a formal `batchDsoAction` Command that captures the state diffs declaratively.
 - **Required tests after remediation**: Ensure AI edits generate serializable commands in the undo stack.
 - **Related issues**: AUDIT-006
-> ✅ **FIXED (memory):** `commitDsos()` now uses `automergeRepository.saveAll()` binary snapshots instead of `structuredClone(store.value)` JSON clones. Callbacks call `automergeRepository.restoreSnapshot(bundle)` to restore all stores in one shot. The closure now holds compact binary `Uint8Array` bundles rather than large plain-object trees. Anonymous-closure pattern remains — full `AppAction` refactor is still open architectural work.
+    > ✅ **FIXED (memory):** `commitDsos()` now uses `automergeRepository.saveAll()` binary snapshots instead of `structuredClone(store.value)` JSON clones. Callbacks call `automergeRepository.restoreSnapshot(bundle)` to restore all stores in one shot. The closure now holds compact binary `Uint8Array` bundles rather than large plain-object trees. Anonymous-closure pattern remains — full `AppAction` refactor is still open architectural work.
 
 ## Issue ID
 
@@ -354,7 +354,7 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 fil
 - **Migration notes**: Find all exports like `export type { X } from '../models/X'`. Delete them. Duplicate the `X` type in the importing module's `models/` directory.
 - **Required tests after remediation**: TypeScript compiler `pnpm typecheck` must pass without broken cross-module imports.
 - **Related issues**: None
-> ⬜ **Code-verified:** Confirmed real. Grep finds 8 files with cross-module model type re-exports: `midi.ts`, `audioEngineQueries.ts`, `loadToasterKit.ts`, `workspaceQueries.ts`, `aiRuntimeQueries.ts`, and 3 plugin subscribers. These alias types from `../models/` through use cases. Fixing requires duplicating the type shapes in each importing module — wide-scope but mechanical refactor.
+    > ⬜ **Code-verified:** Confirmed real. Grep finds 8 files with cross-module model type re-exports: `midi.ts`, `audioEngineQueries.ts`, `loadToasterKit.ts`, `workspaceQueries.ts`, `aiRuntimeQueries.ts`, and 3 plugin subscribers. These alias types from `../models/` through use cases. Fixing requires duplicating the type shapes in each importing module — wide-scope but mechanical refactor.
 
 ## Issue ID
 
@@ -375,7 +375,7 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 fil
 - **Migration notes**: Convert `export const a = b;` to `export function a(props: AProps): AReturn { return b(props); }`.
 - **Required tests after remediation**: Run TS checker and unit tests.
 - **Related issues**: None
-> ✅ **FIXED:** `deviceResolvers.ts` now uses `export { DEVICE_FACTORIES }` (direct named re-export, no aliasing) and a proper wrapper `export function applyParams(dn, deviceType, params)` that delegates to `applyParamsImpl` from the repository. The lazy `const a = b` pattern is eliminated.
+    > ✅ **FIXED:** `deviceResolvers.ts` now uses `export { DEVICE_FACTORIES }` (direct named re-export, no aliasing) and a proper wrapper `export function applyParams(dn, deviceType, params)` that delegates to `applyParamsImpl` from the repository. The lazy `const a = b` pattern is eliminated.
 
 ### 6.7 React/renderer/performance mismatches for DAW UX
 
@@ -398,7 +398,7 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 fil
 - **Migration notes**: Implement `rtrb` (Rust) and `SharedArrayBuffer` mapping for IPC bridge.
 - **Required tests after remediation**: Verify audio playback does not spike UI thread.
 - **Related issues**: None
-> ⬜ **Code-verified:** Confirmed real P0 bug. `NativePluginBridgeNode.ts` receives audio blocks from the AudioWorklet via `postMessage`, then on the main thread calls `tauriInvoke('process_plugin_audio', { audioData: Array.from(audioData) })` — converting Float32Array to a plain JS array for JSON serialization, then awaiting Rust IPC, then creating `new Float32Array(processed)` on the return. This creates 128-sample allocation cycles on the main thread at audio rate. The fix requires SharedArrayBuffer ring buffers to bypass the JSON serialization entirely. Architectural fix needed.
+    > ⬜ **Code-verified:** Confirmed real P0 bug. `NativePluginBridgeNode.ts` receives audio blocks from the AudioWorklet via `postMessage`, then on the main thread calls `tauriInvoke('process_plugin_audio', { audioData: Array.from(audioData) })` — converting Float32Array to a plain JS array for JSON serialization, then awaiting Rust IPC, then creating `new Float32Array(processed)` on the return. This creates 128-sample allocation cycles on the main thread at audio rate. The fix requires SharedArrayBuffer ring buffers to bypass the JSON serialization entirely. Architectural fix needed.
 
 ## Issue ID
 
@@ -419,7 +419,7 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 fil
 - **Migration notes**: Port logic to WASM/Rust DSP crates, leaving UI simply adjusting parameter bounds.
 - **Required tests after remediation**: Verify Arpeggiator remains perfectly synced during heavy UI drag.
 - **Related issues**: None
-> ⬜ **Code-verified (partially incorrect):** `drumSynthVoices.ts` uses Web Audio API native scheduling (`source.start(startTime)`) — no `setTimeout`. `yeastSchedulingBridge.ts` processes MIDI in `processBlock(events, blockStartSamples, blockEndSamples, ...)` called from the transport scheduler — not via `setTimeout`. The concern about main-thread processing is partially valid (Yeast block processing happens during the transport scheduler tick on the main thread, not in an AudioWorklet), but the "setTimeout" framing in the audit is inaccurate. The severity depends on the computational cost of `rack.processBlock`.
+    > ⬜ **Code-verified (partially incorrect):** `drumSynthVoices.ts` uses Web Audio API native scheduling (`source.start(startTime)`) — no `setTimeout`. `yeastSchedulingBridge.ts` processes MIDI in `processBlock(events, blockStartSamples, blockEndSamples, ...)` called from the transport scheduler — not via `setTimeout`. The concern about main-thread processing is partially valid (Yeast block processing happens during the transport scheduler tick on the main thread, not in an AudioWorklet), but the "setTimeout" framing in the audit is inaccurate. The severity depends on the computational cost of `rack.processBlock`.
 
 ## Issue ID
 
@@ -440,7 +440,7 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 fil
 - **Migration notes**: Inject a central `DeviceDescriptor` capability map. Request nodes generically via `registry.create(device.kind)`.
 - **Required tests after remediation**: Verify all 8 DAW native plugins correctly synthesize nodes.
 - **Related issues**: None
-> ⬜ **Code-verified:** Confirmed real. `TrackNode.ts` has 18 occurrences of `isFermenterDevice` / `isCrustDevice` / `isToasterDevice` / etc. type guards in its device initialization logic — classic God Switch factory. Adding a new plugin requires modifying `TrackNode.ts`. Architectural fix needed — extract to a `DeviceDescriptor` registry. Large refactor, not a quick fix.
+    > ⬜ **Code-verified:** Confirmed real. `TrackNode.ts` has 18 occurrences of `isFermenterDevice` / `isCrustDevice` / `isToasterDevice` / etc. type guards in its device initialization logic — classic God Switch factory. Adding a new plugin requires modifying `TrackNode.ts`. Architectural fix needed — extract to a `DeviceDescriptor` registry. Large refactor, not a quick fix.
 
 ### 6.8 Tauri bridge violations & 6.9 Rust backend drift
 
@@ -463,7 +463,7 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 fil
 - **Migration notes**: Consolidate `Cargo.toml` targets and restructure `daw-dsp/src/wasm/` modules.
 - **Required tests after remediation**: Verify `pnpm build:tauri` compiles flawlessly.
 - **Related issues**: None
-> ⬜ **Code-verified:** Not yet inspected. Needs Cargo.toml workspace review before work begins.
+    > ⬜ **Code-verified:** Not yet inspected. Needs Cargo.toml workspace review before work begins.
 
 ## Issue ID
 
@@ -484,7 +484,7 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 fil
 - **Migration notes**: Refactor all orchestration logic downwards into `daw-io` or `daw-engine` traits.
 - **Required tests after remediation**: Validate cross-thread safety of core functions directly in Rust Unit Tests.
 - **Related issues**: None
-> ⬜ **Code-verified:** Not yet inspected. Needs Rust crate review before work begins.
+    > ⬜ **Code-verified:** Not yet inspected. Needs Rust crate review before work begins.
 
 ### 6.13 Other Violations (Sync & FS)
 
@@ -507,7 +507,7 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 fil
 - **Migration notes**: Strip and replace.
 - **Required tests after remediation**: Verify two peers sync seamlessly without cloning duplicate track UUIDs.
 - **Related issues**: None
-> ✅ **Audit incorrect — not applicable:** Neither `broadcasting.ts` nor `vectorClock.ts` exist in the codebase. The Collaboration module uses `automergeSync.ts` which correctly implements the native Automerge sync protocol (`Automerge.generateSyncMessage` / `Automerge.receiveSyncMessage`). There is no parallel OT/WebSocket system. This issue does not exist.
+    > ✅ **Audit incorrect — not applicable:** Neither `broadcasting.ts` nor `vectorClock.ts` exist in the codebase. The Collaboration module uses `automergeSync.ts` which correctly implements the native Automerge sync protocol (`Automerge.generateSyncMessage` / `Automerge.receiveSyncMessage`). There is no parallel OT/WebSocket system. This issue does not exist.
 
 ## Issue ID
 
@@ -528,7 +528,7 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 fil
 - **Migration notes**: Update `src-tauri` capabilities and frontend boot sequence to re-validate scope matching local IndexedDB string.
 - **Required tests after remediation**: Load sample dir, reload DAW window, verify samples stream instantly.
 - **Related issues**: None
-> ⬜ **Code-verified:** Referenced file `connectFolderTauri.ts` does not exist in the codebase. The SampleLibrary module may have been restructured. The concern about Tauri v2 scope persistence may still apply if folder access is granted at runtime but not persisted. Needs a fresh grep for `@tauri-apps/plugin-fs` or `readDir` usage in the SampleLibrary before work begins.
+    > ⬜ **Code-verified:** Referenced file `connectFolderTauri.ts` does not exist in the codebase. The SampleLibrary module may have been restructured. The concern about Tauri v2 scope persistence may still apply if folder access is granted at runtime but not persisted. Needs a fresh grep for `@tauri-apps/plugin-fs` or `readDir` usage in the SampleLibrary before work begins.
 
 ---
 
@@ -541,7 +541,6 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 fil
 - **AUDIT-013**: Delete the redundant `Collaboration` module logic and standardize on native Automerge patch syncing.
 - **AUDIT-009**: Migrate `Yeast` and `Synth` sequencers off the main UI thread immediately.
 - **AUDIT-004**: Fix Volatile CRDT Memory Trap, implement background patching.
-
 
 ### **P1 (Architecture violations actively slowing development)**
 
@@ -571,19 +570,18 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 fil
 
 ## 4.6 Pattern Prescription Matrix
 
-| Smell Encountered                                        | Why it's harmful here                                                           | Ideal Target Pattern                  | Simple Remediation                                                                               |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| **Singleton Device Stores**<br/>(e.g., `fermenterStore`) | Completely breaks track multi-instancing by clobbering global state.            | **Parameterized Selectors / Context** | Extract state into `trackStore`'s `DeviceState` CRDT model. Read via `useDeviceState(deviceId)`. |
-| **Anonymous Undo Closures**<br/>(`pushUndoEntry`)        | Prevents network sync and serialization. Leaves holes in the document log.      | **Command Pattern**                   | Wrap mutation in strict `AppAction` DTOs. Process via typed `ActionHandler`.                     |
-| **JSON IPC Audio Loops**<br/>(`tauriInvoke`)             | Fails frame-rate guarantees; GC spikes inside the audio thread.                 | **Lock-Free Ring Buffer**             | Use `SharedArrayBuffer` bridged directly to `daw-engine`.                                        |
-| **God Switches in Render**<br/>(`TrackNode.ts`)          | Violates Open/Closed principle. Hot-graph must be updated for every new plugin. | **Strategy / Registry**               | Invert dependency: Inject a `DeviceDescriptor` registry array at boot.                           |
-| **Main-Thread Sequencers**<br/>(`drumSynthVoices`)       | Cedes musical timing accuracy to the JS DOM Event loop.                         | **Compiled Schedule**                 | Process events purely inside `AudioWorkletProcessor` or native Rust `ProcessTask` iterator.      |
-| **Cross-Module Model Aliasing**<br/>(`export type {X}`)  | Tightly couples modules. Violates independence of bounded contexts.             | **Model Duplication**                 | Stop exporting models from use cases. Duplicate the model shape natively inside the importing module. |
-| **Lazy Function Passthroughs**<br/>(`export const a = b`) | Leaks inner implementation signatures instead of defining a rigid outer bound.  | **Typed Function Wrapper**            | Convert to `function a(props: Props): Res { return b(props); }` with fully distinct typing.      |
-| **Manual Memoization**<br/>(`useMemo`, `useCallback`)      | Obsolete due to React 19 Compiler. Visually clutters codebase.                  | **Plain Code**                        | Strip the hook wrappers; let the compiler optimize at build time.                                                |
-| **Presentation IPC Bypass**<br/>(`useVoiceRecording.ts`)  | Connects UI layer directly to bare-metal Tauri commands.                        | **Repository Extraction**             | Move all `tauriInvoke` lines into `repositories/`, orchestrated via a `useCase`.                                 |
-| **Unbounded Audio Cache**<br/>(`audioBufferCache.ts`)  | Endless RAM growth from waveform peak data caching leads to OOM crashes.   | **LRU Cache Limit**                   | Wrap `waveformCache` in an LRU implementation and cap max array size.                                            |
-
+| Smell Encountered                                         | Why it's harmful here                                                           | Ideal Target Pattern                  | Simple Remediation                                                                                    |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| **Singleton Device Stores**<br/>(e.g., `fermenterStore`)  | Completely breaks track multi-instancing by clobbering global state.            | **Parameterized Selectors / Context** | Extract state into `trackStore`'s `DeviceState` CRDT model. Read via `useDeviceState(deviceId)`.      |
+| **Anonymous Undo Closures**<br/>(`pushUndoEntry`)         | Prevents network sync and serialization. Leaves holes in the document log.      | **Command Pattern**                   | Wrap mutation in strict `AppAction` DTOs. Process via typed `ActionHandler`.                          |
+| **JSON IPC Audio Loops**<br/>(`tauriInvoke`)              | Fails frame-rate guarantees; GC spikes inside the audio thread.                 | **Lock-Free Ring Buffer**             | Use `SharedArrayBuffer` bridged directly to `daw-engine`.                                             |
+| **God Switches in Render**<br/>(`TrackNode.ts`)           | Violates Open/Closed principle. Hot-graph must be updated for every new plugin. | **Strategy / Registry**               | Invert dependency: Inject a `DeviceDescriptor` registry array at boot.                                |
+| **Main-Thread Sequencers**<br/>(`drumSynthVoices`)        | Cedes musical timing accuracy to the JS DOM Event loop.                         | **Compiled Schedule**                 | Process events purely inside `AudioWorkletProcessor` or native Rust `ProcessTask` iterator.           |
+| **Cross-Module Model Aliasing**<br/>(`export type {X}`)   | Tightly couples modules. Violates independence of bounded contexts.             | **Model Duplication**                 | Stop exporting models from use cases. Duplicate the model shape natively inside the importing module. |
+| **Lazy Function Passthroughs**<br/>(`export const a = b`) | Leaks inner implementation signatures instead of defining a rigid outer bound.  | **Typed Function Wrapper**            | Convert to `function a(props: Props): Res { return b(props); }` with fully distinct typing.           |
+| **Manual Memoization**<br/>(`useMemo`, `useCallback`)     | Obsolete due to React 19 Compiler. Visually clutters codebase.                  | **Plain Code**                        | Strip the hook wrappers; let the compiler optimize at build time.                                     |
+| **Presentation IPC Bypass**<br/>(`useVoiceRecording.ts`)  | Connects UI layer directly to bare-metal Tauri commands.                        | **Repository Extraction**             | Move all `tauriInvoke` lines into `repositories/`, orchestrated via a `useCase`.                      |
+| **Unbounded Audio Cache**<br/>(`audioBufferCache.ts`)     | Endless RAM growth from waveform peak data caching leads to OOM crashes.        | **LRU Cache Limit**                   | Wrap `waveformCache` in an LRU implementation and cap max array size.                                 |
 
 ---
 

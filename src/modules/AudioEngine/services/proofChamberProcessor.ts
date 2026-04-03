@@ -1,14 +1,25 @@
 // @ts-nocheck
 /**
- * AudioWorkletProcessor for Dutch Oven reverb.
- * Stereo in → stereo out effect processor.
+ * AudioWorkletProcessor for the ProofChamber reverb (Dutch Oven).
+ *
+ * Uses the generated wasm-bindgen JS bindings (proof_chamber.js) via initSync so all
+ * WASM memory management is handled by the generated glue — no manual malloc/free.
+ *
+ * Effect processor: reads from inputs[0], writes to outputs[0].
+ *
+ * Messages from main thread:
+ *   { type: 'init', wasmBytes: ArrayBuffer }
+ *   { type: 'param', name, value }
+ *   { type: 'bypass', bypassed }
  */
 
+import { initSync, ProofChamberInstance } from '../wasm/proof_chamber.js';
+
 class ProofChamberProcessor extends AudioWorkletProcessor {
-    _wasm = null;
-    _mem = null;
-    _ptr = 0;
+    _instance = null;   // ProofChamberInstance (generated wasm-bindgen class)
+    _memory = null;     // WebAssembly.Memory
     _ready = false;
+    _faulted = false;
     _bypassed = false;
 
     constructor() {
@@ -19,10 +30,10 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
                 if (msg.type === 'init') {
                     if (this._ready) return;
                     this._initWasm(msg.wasmBytes);
-                } else if (msg.type === 'param' && this._ready) {
-                    this._setParam(msg.name, msg.value);
                 } else if (msg.type === 'bypass') {
                     this._bypassed = msg.bypassed;
+                } else if (msg.type === 'param' && this._ready && !this._faulted) {
+                    this._instance.set_param(msg.name, msg.value);
                 }
             } catch (err) {
                 console.error('ProofChamberProcessor error:', err);
@@ -34,109 +45,45 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
     }
 
     _initWasm(wasmBytes) {
-        const mod = new WebAssembly.Module(wasmBytes);
-        const importInfo = WebAssembly.Module.imports(mod);
-        const bgImports = {};
-
-        let instance;
-
-        for (const imp of importInfo) {
-            if (imp.module === './proof_chamber_bg.js') {
-                if (imp.name.startsWith('__wbg___wbindgen_throw_')) {
-                    bgImports[imp.name] = function (ptr, len) {
-                        throw new Error('WASM error at ptr ' + ptr + ' len ' + len);
-                    };
-                } else if (imp.name === '__wbindgen_init_externref_table') {
-                    bgImports[imp.name] = function () {
-                        const table = instance.exports.__wbindgen_externrefs;
-                        if (table) {
-                            const offset = table.grow(4);
-                            table.set(0, undefined);
-                            table.set(offset + 0, undefined);
-                            table.set(offset + 1, null);
-                            table.set(offset + 2, true);
-                            table.set(offset + 3, false);
-                        }
-                    };
-                } else if (imp.name.startsWith('__wbg___wbindgen_copy_to_typed_array_')) {
-                    bgImports[imp.name] = function () {};
-                } else {
-                    bgImports[imp.name] = function () {};
-                }
-            }
-        }
-
-        const imports = {
-            './proof_chamber_bg.js': bgImports,
-        };
-
-        instance = new WebAssembly.Instance(mod, imports);
-        const w = instance.exports;
-
-        if (w.__wbindgen_start) {
-            w.__wbindgen_start();
-        }
-
-        this._wasm = w;
-        this._mem = w.memory;
-        this._ptr = w.proofchamberinstance_new(sampleRate) >>> 0;
+        const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
+        this._memory = wasmExports.memory;
+        this._instance = new ProofChamberInstance(sampleRate);
         this._ready = true;
-
         this.port.postMessage({ type: 'ready' });
     }
 
-    _setParam(name, value) {
-        const w = this._wasm;
-        const len = name.length;
-        const strPtr = w.__wbindgen_malloc(len, 1) >>> 0;
-        const buf = new Uint8Array(w.memory.buffer, strPtr, len);
-        for (let i = 0; i < len; i++) {
-            buf[i] = name.charCodeAt(i);
+    _passthrough(input, output) {
+        for (let ch = 0; ch < Math.min(input.length, output.length); ch++) {
+            if (input[ch] && output[ch]) output[ch].set(input[ch]);
         }
-        w.proofchamberinstance_set_param(this._ptr, strPtr, len, value);
     }
 
     process(inputs, outputs) {
-        if (!this._ready || this._bypassed) {
-            // Pass through
-            const input = inputs[0];
-            const output = outputs[0];
-            if (input && output) {
-                for (let ch = 0; ch < Math.min(input.length, output.length); ch++) {
-                    if (input[ch] && output[ch]) {
-                        output[ch].set(input[ch]);
-                    }
-                }
-            }
+        const input = inputs[0];
+        const output = outputs[0];
+
+        if (!this._ready || this._bypassed || this._faulted) {
+            if (input && output) this._passthrough(input, output);
             return true;
         }
 
-        const input = inputs[0];
-        const output = outputs[0];
-        if (!input || !output || input.length < 2 || output.length < 2) return true;
+        if (!input || input.length < 2 || !output || output.length < 2) return true;
 
         const frames = input[0].length;
-        const w = this._wasm;
 
-        // Copy input to WASM memory
-        const inByteLen = frames * 4;
-        const leftInPtr = w.__wbindgen_malloc(inByteLen, 4) >>> 0;
-        const rightInPtr = w.__wbindgen_malloc(inByteLen, 4) >>> 0;
+        try {
+            // process() takes Float32Array inputs directly — no manual malloc needed
+            const leftPtr = this._instance.process(input[0], input[1] ?? input[0], frames);
+            const rightPtr = this._instance.get_right_ptr();
 
-        new Float32Array(w.memory.buffer, leftInPtr, frames).set(input[0]);
-        new Float32Array(w.memory.buffer, rightInPtr, frames).set(input[1]);
-
-        // Process
-        // Args: (self_ptr, left_ptr, left_len, right_ptr, right_len, frames)
-        const leftOutPtr =
-            w.proofchamberinstance_process(this._ptr, leftInPtr, frames, rightInPtr, frames, frames) >>> 0;
-        // Note: left_len === right_len === frames since both are f32 arrays of `frames` elements
-        const rightOutPtr = w.proofchamberinstance_get_right_ptr(this._ptr) >>> 0;
-
-        // Copy output
-        const mem = w.memory.buffer;
-        output[0].set(new Float32Array(mem, leftOutPtr, frames));
-        output[1].set(new Float32Array(mem, rightOutPtr, frames));
+            const mem = this._memory.buffer;
+            output[0].set(new Float32Array(mem, leftPtr, frames));
+            output[1].set(new Float32Array(mem, rightPtr, frames));
+        } catch (err) {
+            this._faulted = true;
+            this.port.postMessage({ type: 'error', message: String(err) });
+            this._passthrough(input, output);
+        }
 
         return true;
     }

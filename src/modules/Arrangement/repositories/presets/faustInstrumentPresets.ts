@@ -17,34 +17,49 @@ function faust(moduleId: string, name: string, params: Record<string, number>): 
 }
 
 function eq(name: string, params: Record<string, number>): DevicePreset {
-    return { type: 'builtin-eq', name, parameterValues: { 'eq-low-gain': 0, 'eq-low-freq': 100, 'eq-low-q': 1, 'eq-mid-gain': 0, 'eq-mid-freq': 1000, 'eq-mid-q': 1, 'eq-high-gain': 0, 'eq-high-freq': 8000, 'eq-high-q': 1, ...params } };
+    return { 
+        type: 'faust-pro-parametric-eq', 
+        name, 
+        parameterValues: { 
+            'lf_gain': 0, 'lf_freq': 100, 
+            'mf_gain': 0, 'mf_freq': 1000, 'mf_q': 1, 
+            'hf_gain': 0, 'hf_freq': 8000, 
+            ...params 
+        } 
+    };
 }
 
 function distortion(name: string, params: Record<string, number>): DevicePreset {
-    return { type: 'builtin-distortion', name, parameterValues: { 'dist-drive': 20, 'dist-tone': 4000, 'dist-output': 0, 'dist-mix': 0.5, ...params } };
+    return { 
+        type: 'builtin-distortion', // Keeping builtin until Faust distortion is added
+        name, 
+        parameterValues: { 'dist-drive': 20, 'dist-tone': 4000, 'dist-output': 0, 'dist-mix': 0.5, ...params } 
+    };
 }
 
 // ── Helper: create a builtin effect device preset ────────────────
 
 function reverb(name: string, params: Record<string, number>): DevicePreset {
     return {
-        type: 'builtin-reverb',
+        type: 'faust-zita-rev1-reverb',
         name,
-        parameterValues: { 'rev-size': 0.5, 'rev-decay': 2, 'rev-damping': 0.5, 'rev-mix': 0.3, ...params },
+        // Mapping old generic params approximately to Zita-Rev1
+        parameterValues: { 'decay_time': 3, 'damping': 6000, 'dry_wet': 0.3, ...params },
     };
 }
 
 function delay(name: string, params: Record<string, number>): DevicePreset {
     return {
-        type: 'builtin-delay',
+        type: 'faust-tape-delay',
         name,
-        parameterValues: { 'delay-time': 250, 'delay-feedback': 0.4, 'delay-mix': 0.3, ...params },
+        // Mapping old generic params approximately to Tape Delay
+        parameterValues: { 'delay': 0.25, 'feedback': 0.4, 'dry_wet': 0.3, ...params },
     };
 }
 
 function chorus(name: string, params: Record<string, number>): DevicePreset {
     return {
-        type: 'builtin-chorus',
+        type: 'builtin-chorus', // Keeping builtin until Faust Chorus is added
         name,
         parameterValues: {
             'chorus-rate': 1.5,
@@ -58,14 +73,13 @@ function chorus(name: string, params: Record<string, number>): DevicePreset {
 
 function comp(name: string, params: Record<string, number>): DevicePreset {
     return {
-        type: 'builtin-compressor',
+        type: 'faust-1176-compressor',
         name,
         parameterValues: {
-            'comp-threshold': -20,
-            'comp-ratio': 4,
-            'comp-attack': 10,
-            'comp-release': 100,
-            'comp-makeup': 0,
+            'threshold': -20,
+            'ratio': 4,
+            'attack': 0.01, // Faust 1176 uses seconds
+            'release': 0.1, // Faust 1176 uses seconds
             ...params,
         },
     };
@@ -863,17 +877,17 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         isFactory: true,
     },
 
-    // ─── Wavetable Synth ─────────────────────────────────────────────────
+    // ─── Morphing Synth ─────────────────────────────────────────────────
 
     {
-        id: 'factory-faust-wt-morph-pad',
+        id: 'factory-faust-morphing-pad',
         name: 'Morph Pad',
         category: 'pad',
         subcategory: 'digital',
-        description: 'Slowly morphing wavetable pad. Evolving timbral texture.',
+        description: 'Slowly morphing pad. Evolving timbral texture.',
         trackKind: 'midi',
         devices: [
-            faust('faust-wavetable-synth', 'Morph Pad', {
+            faust('faust-morphing-synth', 'Morph Pad', {
                 morph: 0.3,
                 attack: 0.6,
                 decay: 0.5,
@@ -889,14 +903,14 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         isFactory: true,
     },
     {
-        id: 'factory-faust-wt-digital-lead',
-        name: 'Digital WT Lead',
+        id: 'factory-faust-morphing-lead',
+        name: 'Morphing Lead',
         category: 'lead',
         subcategory: 'digital',
-        description: 'Bright wavetable lead with square morph. Sharp and cutting.',
+        description: 'Bright morphing lead. Sharp and cutting.',
         trackKind: 'midi',
         devices: [
-            faust('faust-wavetable-synth', 'Digital Lead', {
+            faust('faust-morphing-synth', 'Digital Lead', {
                 morph: 0.8,
                 attack: 0.01,
                 decay: 0.2,
@@ -912,14 +926,14 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         isFactory: true,
     },
     {
-        id: 'factory-faust-wt-glitch',
-        name: 'WT Glitch',
+        id: 'factory-faust-morphing-fx',
+        name: 'Morphing FX',
         category: 'fx',
         subcategory: 'digital',
-        description: 'Fast-morphing wavetable texture for glitch and experimental use.',
+        description: 'Fast-morphing texture for glitch and experimental use.',
         trackKind: 'midi',
         devices: [
-            faust('faust-wavetable-synth', 'Glitch', {
+            faust('faust-morphing-synth', 'Glitch', {
                 morph: 0.6,
                 attack: 0.001,
                 decay: 0.05,
@@ -1071,6 +1085,54 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
             reverb('Hall', { 'rev-size': 0.6, 'rev-decay': 3, 'rev-mix': 0.25 }),
         ],
         tags: ['physical', 'dulcimer', 'hammer', 'bright', 'acoustic'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    // ─── Extra Presets ──────────────────────────────────────────────────
+    {
+        id: 'factory-faust-minimoog-sub',
+        name: 'Deep Sub Bass',
+        category: 'bass',
+        subcategory: 'analog',
+        description: 'A deep analog sub bass using only one oscillator and a low filter.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-minimoog', 'Sub Bass', {
+                cutoff: 150,
+                resonance: 1,
+                env_amount: 0,
+                osc3: 0,
+                attack: 0.05,
+                decay: 0.3,
+                sustain: 1,
+                release: 0.3,
+            }),
+            comp('Control', { threshold: -15, ratio: 4, attack: 0.05 }),
+        ],
+        tags: ['sub', 'bass', 'analog', 'deep'],
+        author: AUTHOR,
+        isFactory: true,
+    },
+    {
+        id: 'factory-faust-acid-303-wobble',
+        name: 'Wobble Acid',
+        category: 'bass',
+        subcategory: 'analog',
+        description: 'Acid bass with a slow LFO wobble on the filter.',
+        trackKind: 'midi',
+        devices: [
+            faust('faust-acid-bass-303', 'Wobble Bass', {
+                cutoff: 0.2,
+                resonance: 12,
+                envmod: 0.3,
+                decay: 0.4,
+                lfo_rate: 1.5,
+                lfo_depth: 0.4,
+            }),
+            distortion('Scream', { 'dist-drive': 30, 'dist-tone': 3000 }),
+            delay('Slap', { 'delay': 0.1, 'feedback': 0.2 }),
+        ],
+        tags: ['acid', 'bass', 'wobble', 'lfo', 'analog'],
         author: AUTHOR,
         isFactory: true,
     },

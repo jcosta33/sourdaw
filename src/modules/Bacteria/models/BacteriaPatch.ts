@@ -350,6 +350,7 @@ export type BacteriaParamDef = {
     unit: string;
     step?: number;
     group?: string;
+    scaling?: 'log' | 'linear';
 };
 
 export const BACTERIA_PARAMS: readonly BacteriaParamDef[] = [
@@ -369,6 +370,7 @@ export const BACTERIA_PARAMS: readonly BacteriaParamDef[] = [
         unit: 'Hz',
         step: 1,
         group: 'crossover',
+        scaling: 'log',
     },
     {
         id: 'crossoverFreq2',
@@ -379,6 +381,7 @@ export const BACTERIA_PARAMS: readonly BacteriaParamDef[] = [
         unit: 'Hz',
         step: 1,
         group: 'crossover',
+        scaling: 'log',
     },
     {
         id: 'crossoverFreq3',
@@ -389,6 +392,7 @@ export const BACTERIA_PARAMS: readonly BacteriaParamDef[] = [
         unit: 'Hz',
         step: 1,
         group: 'crossover',
+        scaling: 'log',
     },
     {
         id: 'crossoverFreq4',
@@ -399,6 +403,7 @@ export const BACTERIA_PARAMS: readonly BacteriaParamDef[] = [
         unit: 'Hz',
         step: 1,
         group: 'crossover',
+        scaling: 'log',
     },
     {
         id: 'crossoverFreq5',
@@ -409,6 +414,7 @@ export const BACTERIA_PARAMS: readonly BacteriaParamDef[] = [
         unit: 'Hz',
         step: 1,
         group: 'crossover',
+        scaling: 'log',
     },
     { id: 'crossoverSlope', label: 'Slope', min: 0, max: 3, default: 1, unit: '', step: 1, group: 'crossover' },
     { id: 'crossoverMode', label: 'XOver Mode', min: 0, max: 1, default: 0, unit: '', step: 1, group: 'crossover' },
@@ -451,12 +457,12 @@ export const BACTERIA_PARAMS: readonly BacteriaParamDef[] = [
 
     // Per-band filter
     { id: 'filterMode', label: 'Filter Mode', min: 0, max: 5, default: 0, unit: '', step: 1, group: 'filter' },
-    { id: 'filterCutoff', label: 'Cutoff', min: 20, max: 20000, default: 8000, unit: 'Hz', step: 1, group: 'filter' },
+    { id: 'filterCutoff', label: 'Cutoff', min: 20, max: 20000, default: 8000, unit: 'Hz', step: 1, group: 'filter', scaling: 'log' },
     { id: 'filterResonance', label: 'Resonance', min: 0, max: 1, default: 0.3, unit: '', step: 0.01, group: 'filter' },
     { id: 'filterEnvAmount', label: 'Env Amount', min: -1, max: 1, default: 0, unit: '', step: 0.01, group: 'filter' },
 
     // Modulation effects
-    { id: 'chorusRate', label: 'Chorus Rate', min: 0.01, max: 20, default: 1.5, unit: 'Hz', group: 'modulation' },
+    { id: 'chorusRate', label: 'Chorus Rate', min: 0.01, max: 20, default: 1.5, unit: 'Hz', group: 'modulation', scaling: 'log' },
     {
         id: 'chorusDepth',
         label: 'Chorus Depth',
@@ -480,7 +486,7 @@ export const BACTERIA_PARAMS: readonly BacteriaParamDef[] = [
     { id: 'chorusMix', label: 'Chorus Mix', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'modulation' },
 
     // Phaser
-    { id: 'phaserRate', label: 'Phaser Rate', min: 0.01, max: 10, default: 0.5, unit: 'Hz', group: 'modulation' },
+    { id: 'phaserRate', label: 'Phaser Rate', min: 0.01, max: 10, default: 0.5, unit: 'Hz', group: 'modulation', scaling: 'log' },
     {
         id: 'phaserDepth',
         label: 'Phaser Depth',
@@ -504,7 +510,7 @@ export const BACTERIA_PARAMS: readonly BacteriaParamDef[] = [
     { id: 'phaserMix', label: 'Phaser Mix', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'modulation' },
 
     // Granular
-    { id: 'grainSize', label: 'Grain Size', min: 10, max: 500, default: 80, unit: 'ms', step: 1, group: 'granular' },
+    { id: 'grainSize', label: 'Grain Size', min: 10, max: 500, default: 80, unit: 'ms', step: 1, group: 'granular', scaling: 'log' },
     { id: 'grainDensity', label: 'Density', min: 1, max: 100, default: 15, unit: 'g/s', step: 1, group: 'granular' },
     {
         id: 'grainPosOffset',
@@ -577,14 +583,14 @@ export const BACTERIA_PARAMS: readonly BacteriaParamDef[] = [
     { id: 'morphY', label: 'Morph Y', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'morph' },
 
     // Global modulation
-    { id: 'lfo1Rate', label: 'LFO 1 Rate', min: 0.01, max: 40, default: 2, unit: 'Hz', group: 'modulation' },
+    { id: 'lfo1Rate', label: 'LFO 1 Rate', min: 0.01, max: 40, default: 2, unit: 'Hz', group: 'modulation', scaling: 'log' },
     { id: 'lfo1Shape', label: 'LFO 1 Shape', min: 0, max: 4, default: 0, unit: '', step: 1, group: 'modulation' },
     { id: 'lfo1Amount', label: 'LFO 1 Amt', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'modulation' },
-    { id: 'lfo2Rate', label: 'LFO 2 Rate', min: 0.01, max: 40, default: 0.5, unit: 'Hz', group: 'modulation' },
+    { id: 'lfo2Rate', label: 'LFO 2 Rate', min: 0.01, max: 40, default: 0.5, unit: 'Hz', group: 'modulation', scaling: 'log' },
     { id: 'lfo2Shape', label: 'LFO 2 Shape', min: 0, max: 4, default: 1, unit: '', step: 1, group: 'modulation' },
     { id: 'lfo2Amount', label: 'LFO 2 Amt', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'modulation' },
-    { id: 'envFollowerAttack', label: 'Env Atk', min: 0.1, max: 100, default: 5, unit: 'ms', group: 'modulation' },
-    { id: 'envFollowerRelease', label: 'Env Rel', min: 1, max: 2000, default: 200, unit: 'ms', group: 'modulation' },
+    { id: 'envFollowerAttack', label: 'Env Atk', min: 0.1, max: 100, default: 5, unit: 'ms', group: 'modulation', scaling: 'log' },
+    { id: 'envFollowerRelease', label: 'Env Rel', min: 1, max: 2000, default: 200, unit: 'ms', group: 'modulation', scaling: 'log' },
 
     // Per-band gain (exposed for automation)
     { id: 'bandGain', label: 'Band Gain', min: -24, max: 24, default: 0, unit: 'dB', step: 0.5, group: 'band' },

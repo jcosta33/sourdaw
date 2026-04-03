@@ -1,3 +1,33 @@
+/** Serialized form of an AudioBuffer embedded inside a .sourdaw project file.
+ * Each channel's Float32 PCM data is base64-encoded to survive JSON round-trips. */
+export type ExportedAudioBuffer = {
+    sampleRate: number;
+    numberOfChannels: number;
+    /** One base64-encoded Float32Array string per channel, in channel order. */
+    channelData: string[];
+};
+
+function float32ToBase64(arr: Float32Array): string {
+    const bytes = new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength);
+    const CHUNK = 8192;
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+        // String.fromCharCode.apply avoids per-character string concatenation overhead
+        // and is safe for typed arrays up to the chosen chunk size.
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK) as unknown as number[]);
+    }
+    return btoa(binary);
+}
+
+function base64ToFloat32(b64: string): Float32Array {
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return new Float32Array(bytes.buffer);
+}
+
 // Main AudioBuffer cache — bounded to prevent OOM on sessions with many takes.
 // When the cap is reached the least-recently-used buffer is evicted; it can be
 // reloaded from IDB on demand. Map insertion order is used as the LRU proxy.
@@ -216,16 +246,26 @@ export const audioBufferCache = {
         return peaks;
     },
 
-    async restoreFromIdb(context: BaseAudioContext): Promise<number> {
+    async restoreFromIdb(context: BaseAudioContext, ids?: string[]): Promise<number> {
         try {
             const db = await openDb();
             const tx = db.transaction(STORE_NAME, 'readonly');
             const store = tx.objectStore(STORE_NAME);
-            const keys = await new Promise<IDBValidKey[]>((resolve, reject) => {
-                const req = store.getAllKeys();
-                req.onsuccess = () => resolve(req.result);
-                req.onerror = () => reject(req.error);
-            });
+
+            // When the caller supplies a list of IDs (e.g. the buffer IDs referenced
+            // by the current project's clips), load only those — skipping unrelated
+            // takes and imported samples that are not needed for this session.
+            // Without IDs, fall back to loading all keys (legacy / startup path).
+            let keys: IDBValidKey[];
+            if (ids && ids.length > 0) {
+                keys = ids.filter((id) => !cache.has(id));
+            } else {
+                keys = await new Promise<IDBValidKey[]>((resolve, reject) => {
+                    const req = store.getAllKeys();
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => reject(req.error);
+                });
+            }
 
             let restored = 0;
             for (const key of keys) {
@@ -269,5 +309,80 @@ export const audioBufferCache = {
             .catch(() => {
                 /* ignore */
             });
+    },
+
+    /** Serialize the given buffer IDs to base64-encoded PCM for embedding in a
+     * .sourdaw project file. IDs not found in the in-memory cache are fetched
+     * from IDB before serialization. IDs that cannot be resolved are silently
+     * omitted from the result. */
+    async exportBuffers(ids: string[]): Promise<Record<string, ExportedAudioBuffer>> {
+        const result: Record<string, ExportedAudioBuffer> = {};
+
+        // Pass 1: serialize buffers already in the in-memory cache
+        for (const id of ids) {
+            const buf = cache.get(id);
+            if (!buf) continue;
+            result[id] = {
+                sampleRate: buf.sampleRate,
+                numberOfChannels: buf.numberOfChannels,
+                channelData: Array.from({ length: buf.numberOfChannels }, (_, ch) =>
+                    float32ToBase64(new Float32Array(buf.getChannelData(ch)))
+                ),
+            };
+        }
+
+        // Pass 2: for IDs evicted from the LRU cache, read SerializedBuffer
+        // directly from IDB and encode without reconstructing an AudioBuffer
+        // (which would require an AudioContext we may not have here).
+        const missingIds = ids.filter((id) => !(id in result));
+        if (missingIds.length > 0) {
+            try {
+                const db = await openDb();
+                const tx = db.transaction(STORE_NAME, 'readonly');
+                const store = tx.objectStore(STORE_NAME);
+                for (const id of missingIds) {
+                    const data = await new Promise<SerializedBuffer | undefined>((resolve, reject) => {
+                        const req = store.get(id);
+                        req.onsuccess = () => resolve(req.result as SerializedBuffer | undefined);
+                        req.onerror = () => reject(req.error);
+                    });
+                    if (!data || (data.channelData[0]?.length ?? 0) === 0) continue;
+                    result[id] = {
+                        sampleRate: data.sampleRate,
+                        numberOfChannels: data.numberOfChannels,
+                        channelData: data.channelData.map(float32ToBase64),
+                    };
+                }
+            } catch {
+                // IDB unavailable — those IDs remain absent from the result
+            }
+        }
+
+        return result;
+    },
+
+    /** Reconstruct AudioBuffer objects from base64-encoded data embedded in a
+     * .sourdaw project file, loading them into both the in-memory cache and IDB.
+     * Buffers whose ID already exists in the cache are skipped. */
+    async importBuffers(
+        buffers: Record<string, ExportedAudioBuffer>,
+        context: BaseAudioContext
+    ): Promise<void> {
+        for (const [id, data] of Object.entries(buffers)) {
+            if (cache.has(id)) continue;
+            try {
+                const channels = data.channelData.map(base64ToFloat32);
+                const length = channels[0]?.length ?? 0;
+                if (length === 0) continue;
+                const buffer = context.createBuffer(data.numberOfChannels, length, data.sampleRate);
+                for (let ch = 0; ch < data.numberOfChannels; ch++) {
+                    buffer.getChannelData(ch).set(channels[ch]!);
+                }
+                audioCacheSet(id, buffer);
+                void persistToIdb(id, buffer);
+            } catch {
+                // Skip any malformed entry
+            }
+        }
     },
 };

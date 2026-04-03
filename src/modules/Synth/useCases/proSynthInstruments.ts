@@ -11,9 +11,9 @@ import { registerFaustDSP, type FaustParamDescriptor } from '#/modules/Plugin/us
  * Register all pro synth instruments.
  */
 export function registerProSynthInstruments(): void {
-    // Wavetable Synth — morph crossfade across 4 waveforms with ADSR
+    // Morphing Synth — morph crossfade across 4 waveforms with ADSR
     registerFaustDSP(
-        'Wavetable Synth',
+        'Morphing Synth',
         `
         import("stdfaust.lib");
         freq = hslider("freq", 440, 20, 12000, 0.01);
@@ -41,10 +41,10 @@ export function registerProSynthInstruments(): void {
     `,
         [
             { address: '/wt/morph', label: 'Morph', min: 0, max: 1, defaultValue: 0, step: 0.001, type: 'hslider' as const },
-            { address: '/wt/attack', label: 'Attack', min: 0.001, max: 5, defaultValue: 0.01, step: 0.001, type: 'hslider' as const },
-            { address: '/wt/decay', label: 'Decay', min: 0.01, max: 5, defaultValue: 0.3, step: 0.01, type: 'hslider' as const },
+            { address: '/wt/attack', label: 'Attack', min: 0.001, max: 5, defaultValue: 0.01, step: 0.001, type: 'hslider', scaling: 'log' as const },
+            { address: '/wt/decay', label: 'Decay', min: 0.01, max: 5, defaultValue: 0.3, step: 0.01, type: 'hslider', scaling: 'log' as const },
             { address: '/wt/sustain', label: 'Sustain', min: 0, max: 1, defaultValue: 0.6, step: 0.01, type: 'hslider' as const },
-            { address: '/wt/release', label: 'Release', min: 0.01, max: 10, defaultValue: 0.5, step: 0.01, type: 'hslider' as const },
+            { address: '/wt/release', label: 'Release', min: 0.01, max: 10, defaultValue: 0.5, step: 0.01, type: 'hslider', scaling: 'log' as const },
             { address: '/wt/gain', label: 'Gain', min: 0, max: 1, defaultValue: 0.5, step: 0.01, type: 'hslider' as const },
         ],
         true
@@ -70,9 +70,16 @@ export function registerProSynthInstruments(): void {
         v5 =  os.sawtooth(freq * spread(3)) * (1-mix) * 0.3;
         v6 =  os.sawtooth(freq / spread(3)) * (1-mix) * 0.3;
         raw = (v0 + v1 + v2 + v3 + v4 + v5 + v6) / 3.4;
+        
+        lfo_rate = hslider("lfo_rate", 5, 0.1, 20, 0.1);
+        lfo_depth = hslider("lfo_depth", 0, 0, 1, 0.01);
+        lfo = os.osc(lfo_rate) * lfo_depth;
+
         cutoff = hslider("cutoff", 6000, 100, 20000, 1);
+        mod_cutoff = cutoff * (1 + lfo * 0.5) : max(100) : min(20000) : si.smoo;
+        
         resonance = hslider("resonance", 0.3, 0, 0.99, 0.01);
-        filtered = fi.resonlp(cutoff, 1 + resonance * 8, raw);
+        filtered = fi.resonlp(mod_cutoff, 1 + resonance * 8, raw);
         process = filtered * en.adsr(
             hslider("attack",  0.01,  0.001, 5, 0.001),
             hslider("decay",   0.3,   0.01,  5, 0.01),
@@ -82,6 +89,24 @@ export function registerProSynthInstruments(): void {
         ) <: _, _;
     `,
         [
+            {
+                address: '/supersaw/lfo_rate',
+                label: 'LFO Rate',
+                min: 0.1,
+                max: 20,
+                defaultValue: 5,
+                step: 0.1,
+                type: 'hslider',
+            },
+            {
+                address: '/supersaw/lfo_depth',
+                label: 'LFO Depth',
+                min: 0,
+                max: 1,
+                defaultValue: 0,
+                step: 0.01,
+                type: 'hslider',
+            },
             {
                 address: '/supersaw/detune',
                 label: 'Detune (cents)',
@@ -107,7 +132,7 @@ export function registerProSynthInstruments(): void {
                 max: 20000,
                 defaultValue: 6000,
                 step: 1,
-                type: 'hslider',
+                type: 'hslider', scaling: 'log',
             },
             {
                 address: '/supersaw/resonance',
@@ -125,7 +150,7 @@ export function registerProSynthInstruments(): void {
                 max: 5,
                 defaultValue: 0.01,
                 step: 0.001,
-                type: 'hslider',
+                type: 'hslider', scaling: 'log',
             },
             {
                 address: '/synth/decay',
@@ -134,7 +159,7 @@ export function registerProSynthInstruments(): void {
                 max: 5,
                 defaultValue: 0.3,
                 step: 0.01,
-                type: 'hslider',
+                type: 'hslider', scaling: 'log',
             },
             {
                 address: '/synth/sustain',
@@ -152,7 +177,7 @@ export function registerProSynthInstruments(): void {
                 max: 10,
                 defaultValue: 0.5,
                 step: 0.01,
-                type: 'hslider',
+                type: 'hslider', scaling: 'log',
             },
         ]
     , true);
@@ -227,9 +252,9 @@ function makeSynthParams(
             max: 5,
             defaultValue: 0.01,
             step: 0.001,
-            type: 'hslider',
+            type: 'hslider', scaling: 'log',
         },
-        { address: '/synth/decay', label: 'Decay', min: 0.01, max: 5, defaultValue: 0.2, step: 0.01, type: 'hslider' },
+        { address: '/synth/decay', label: 'Decay', min: 0.01, max: 5, defaultValue: 0.2, step: 0.01, type: 'hslider', scaling: 'log' },
         { address: '/synth/sustain', label: 'Sustain', min: 0, max: 1, defaultValue: 0.7, step: 0.01, type: 'hslider' },
         {
             address: '/synth/release',
@@ -238,7 +263,7 @@ function makeSynthParams(
             max: 10,
             defaultValue: 0.5,
             step: 0.01,
-            type: 'hslider',
+            type: 'hslider', scaling: 'log',
         },
     ];
     return [...base, ...extra.map((p) => ({ ...p, type: 'hslider' as const }))];

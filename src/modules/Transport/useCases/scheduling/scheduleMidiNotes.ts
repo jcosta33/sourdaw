@@ -259,27 +259,18 @@ export function scheduleMidiNotes(
                                     const children = tracks.filter((t) => t.parentId === toasterParentTrack!.id);
                                     let pad = children.findIndex((t) => t.id === track.id);
                                     let pitchNote = pitch;
-                                    
+
                                     if (pad === -1) {
                                         pad = pitch - 36;
                                         if (pad >= 24 && pad <= 39) {
-                                            pad = pad - 24; 
+                                            pad = pad - 24;
                                         }
                                         pitchNote = 60;
                                     }
-                                    
+
                                     if (pad >= 0 && pad < 16) {
-                                        const ctx = getAudioContext();
-                                        const scheduleDelay = Math.max(0, time - ctx.currentTime);
                                         const safeVelocity = note.velocity ?? 100;
-                                        
-                                        if (scheduleDelay <= 0) {
-                                            dn.toasterControls.noteOn(pad, safeVelocity, pitchNote);
-                                        } else {
-                                            setTimeout(() => {
-                                                dn.toasterControls?.noteOn(pad, safeVelocity, pitchNote);
-                                            }, scheduleDelay * 1000);
-                                        }
+                                        dn.toasterControls.noteOn(pad, safeVelocity, pitchNote, time);
                                     }
                                 }
                             }

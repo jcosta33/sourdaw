@@ -59,7 +59,7 @@ export function LatchButton({
             className={cn(
                 // Base structure & smooth DAW transitions
                 'relative inline-flex items-center justify-center font-medium select-none overflow-hidden cursor-pointer',
-                'transition-all duration-fast easing-press',
+                'transition-[color,background,border-color,box-shadow,transform,filter] duration-fast easing-press',
                 'focus:outline-none focus-visible:ring-1 focus-visible:ring-border-focus',
                 'disabled:opacity-50 disabled:pointer-events-none',
 
@@ -74,7 +74,8 @@ export function LatchButton({
                           // Reversed gradient + deep inset — sinks INTO the panel
                           background: 'linear-gradient(180deg, #111 0%, #181818 50%, #1c1c1c 100%)',
                           boxShadow:
-                              'inset 0 2px 4px rgba(0,0,0,0.6), inset 0 1px 1px rgba(0,0,0,0.4)' + activeGlowShadow[variant],
+                              'inset 0 2px 4px rgba(0,0,0,0.6), inset 0 1px 1px rgba(0,0,0,0.4)' +
+                              activeGlowShadow[variant],
                           border: '1px solid rgba(0,0,0,0.6)',
                           borderTopColor: 'rgba(0,0,0,0.8)',
                           borderBottomColor: 'rgba(255,255,255,0.03)',
@@ -82,9 +83,9 @@ export function LatchButton({
                       }
                     : {
                           // Raised with NW light model, darkened slightly
-                          background: 'linear-gradient(180deg, #1f1f1f 0%, #181818 40%, #111111 100%)',
+                          background: 'linear-gradient(180deg, #1d1d1d 0%, #171717 42%, #111111 100%)',
                           boxShadow:
-                              '0 2px 4px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08)',
+                              '0 2px 4px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.24)',
                           border: '1px solid var(--color-border-soft)',
                           borderTopColor: 'var(--color-light-edge)',
                           borderLeftColor: 'rgba(255,255,255,0.04)',

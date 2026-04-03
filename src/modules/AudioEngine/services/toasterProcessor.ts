@@ -2,9 +2,18 @@
 /**
  * AudioWorkletProcessor for the Toaster drum machine.
  *
- * Calls raw wasm-bindgen WASM exports directly — same pattern as fermenterProcessor.
- * Handles noteOn (pad trigger), noteOff, param, and pad_param messages.
+ * Uses the generated wasm-bindgen JS bindings (daw_dsp.js) via initSync so all
+ * WASM memory management is handled by the generated glue — no manual malloc/free.
+ *
+ * Messages from main thread:
+ *   { type: 'init', wasmBytes: ArrayBuffer }
+ *   { type: 'noteOn', pad, velocity, note, scheduleTime? }
+ *   { type: 'noteOff', pad, scheduleTime? }
+ *   { type: 'param', name, value }
+ *   { type: 'padParam', pad, name, value }
  */
+
+import { initSync, ToasterInstance } from '../wasm/daw_dsp.js';
 
 /** Map camelCase pad param names from TypeScript to snake_case for Rust. */
 const PAD_PARAM_MAP = {
@@ -40,10 +49,11 @@ const KIT_PARAM_MAP = {
 };
 
 class ToasterProcessor extends AudioWorkletProcessor {
-    _wasm = null;
-    _mem = null;
-    _ptr = 0;
+    _instance = null;   // ToasterInstance (generated wasm-bindgen class)
+    _memory = null;     // WebAssembly.Memory
     _ready = false;
+    _faulted = false;
+    _queue = [];        // Sorted by scheduleTime (AudioContext seconds)
 
     constructor() {
         super();
@@ -51,120 +61,99 @@ class ToasterProcessor extends AudioWorkletProcessor {
             const msg = e.data;
             try {
                 if (msg.type === 'init') {
-                    if (this._ready) { return; }
+                    if (this._ready) return;
                     this._initWasm(msg.wasmBytes);
-                } else if (msg.type === 'noteOn' && this._ready) {
-                    this._wasm.toasterinstance_note_on(this._ptr, msg.pad, msg.velocity, msg.note ?? 60);
-                } else if (msg.type === 'noteOff' && this._ready) {
-                    this._wasm.toasterinstance_note_off(this._ptr, msg.pad);
-                } else if (msg.type === 'param' && this._ready) {
-                    this._setParam(KIT_PARAM_MAP[msg.name] ?? msg.name, msg.value);
-                } else if (msg.type === 'padParam' && this._ready) {
-                    this._setPadParam(msg.pad, PAD_PARAM_MAP[msg.name] ?? msg.name, msg.value);
+                } else if (this._ready && !this._faulted) {
+                    this._handleMessage(msg);
                 }
             } catch (err) {
                 console.error('ToasterProcessor error:', err);
+                if (!this._ready) {
+                    this.port.postMessage({ type: 'error', message: err?.message ?? String(err) });
+                }
             }
         };
     }
 
     _initWasm(wasmBytes) {
-        const mod = new WebAssembly.Module(wasmBytes);
-        const importInfo = WebAssembly.Module.imports(mod);
-        const bgImports = {};
-        
-        let instance; // captured securely
-
-        for (const imp of importInfo) {
-            if (imp.module === './daw_dsp_bg.js' || imp.module === './toaster_bg.js') {
-                if (imp.name.startsWith('__wbg___wbindgen_throw_')) {
-                    bgImports[imp.name] = function(ptr, len) {
-                        throw new Error('WASM error at ptr ' + ptr + ' len ' + len);
-                    };
-                } else if (imp.name === '__wbindgen_init_externref_table') {
-                    bgImports[imp.name] = function() {
-                        const table = instance.exports.__wbindgen_externrefs;
-                        if (table) {
-                            const offset = table.grow(4);
-                            table.set(0, undefined);
-                            table.set(offset + 0, undefined);
-                            table.set(offset + 1, null);
-                            table.set(offset + 2, true);
-                            table.set(offset + 3, false);
-                        }
-                    };
-                } else if (imp.name.startsWith('__wbg___wbindgen_copy_to_typed_array_')) {
-                    bgImports[imp.name] = function(arg0, arg1, arg2) {
-                        // Minimal emulation: arg2 is a fat pointer to JS object, arg0/arg1 is WASM slice
-                        // Realistically Worklets don't pass JS objects back and forth, so empty stub works 
-                        // as long as it doesn't crash initialization
-                    };
-                } else {
-                    bgImports[imp.name] = function() {};
-                }
-            }
-        }
-
-        const imports = {
-            './daw_dsp_bg.js': bgImports,
-            './toaster_bg.js': bgImports,
-        };
-
-        instance = new WebAssembly.Instance(mod, imports);
-        const w = instance.exports;
-
-        if (w.__wbindgen_start) {
-            w.__wbindgen_start();
-        }
-
-        this._wasm = w;
-        this._mem = w.memory;
-
-        // Create drum machine: 16 pads at worklet sample rate
-        this._ptr = w.toasterinstance_new(sampleRate, 16) >>> 0;
+        const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
+        this._memory = wasmExports.memory;
+        this._instance = new ToasterInstance(sampleRate, 16);
         this._ready = true;
-
         this.port.postMessage({ type: 'ready' });
     }
 
-    _setParam(name, value) {
-        const w = this._wasm;
-        const len = name.length;
-        const strPtr = w.__wbindgen_malloc(len, 1) >>> 0;
-        const buf = new Uint8Array(w.memory.buffer, strPtr, len);
-        for (let i = 0; i < len; i++) {
-            buf[i] = name.charCodeAt(i);
+    _enqueue(msg) {
+        // Insert in ascending scheduleTime order.
+        let lo = 0, hi = this._queue.length;
+        while (lo < hi) {
+            const mid = (lo + hi) >>> 1;
+            if (this._queue[mid].scheduleTime <= msg.scheduleTime) lo = mid + 1;
+            else hi = mid;
         }
-        w.toasterinstance_set_param(this._ptr, strPtr, len, value);
+        this._queue.splice(lo, 0, msg);
     }
 
-    _setPadParam(pad, name, value) {
-        const w = this._wasm;
-        const len = name.length;
-        const strPtr = w.__wbindgen_malloc(len, 1) >>> 0;
-        const buf = new Uint8Array(w.memory.buffer, strPtr, len);
-        for (let i = 0; i < len; i++) {
-            buf[i] = name.charCodeAt(i);
+    _handleMessage(msg) {
+        // If a future scheduleTime is given, defer to audio-clock queue.
+        if (msg.scheduleTime !== undefined) {
+            const now = currentFrame / sampleRate;
+            if (msg.scheduleTime > now) {
+                this._enqueue(msg);
+                return;
+            }
         }
-        w.toasterinstance_set_pad_param(this._ptr, pad, strPtr, len, value);
+        this._dispatch(msg);
+    }
+
+    _dispatch(msg) {
+        const inst = this._instance;
+        switch (msg.type) {
+            case 'noteOn':
+                inst.note_on(msg.pad, msg.velocity, msg.note ?? 60);
+                break;
+            case 'noteOff':
+                inst.note_off(msg.pad);
+                break;
+            case 'param':
+                inst.set_param(KIT_PARAM_MAP[msg.name] ?? msg.name, msg.value);
+                break;
+            case 'padParam':
+                inst.set_pad_param(msg.pad, PAD_PARAM_MAP[msg.name] ?? msg.name, msg.value);
+                break;
+        }
+    }
+
+    _drainQueue(blockEndTime) {
+        while (this._queue.length > 0 && this._queue[0].scheduleTime <= blockEndTime) {
+            this._dispatch(this._queue.shift());
+        }
     }
 
     process(_inputs, outputs) {
-        if (!this._ready) { return true; }
+        if (!this._ready || this._faulted) return true;
 
         const output = outputs[0];
-        if (!output || output.length < 2) { return true; }
+        if (!output || output.length < 2) return true;
 
         const frames = output[0].length;
-        const w = this._wasm;
 
-        const leftPtr = w.toasterinstance_process(this._ptr, frames) >>> 0;
-        const rightPtr = w.toasterinstance_get_right_ptr(this._ptr) >>> 0;
+        // Drain any scheduled events that fall within this render block.
+        const blockEndTime = (currentFrame + frames) / sampleRate;
+        this._drainQueue(blockEndTime);
 
-        const mem = w.memory.buffer;
-        output[0].set(new Float32Array(mem, leftPtr, frames));
-        if (output[1]) {
-            output[1].set(new Float32Array(mem, rightPtr, frames));
+        try {
+            const leftPtr = this._instance.process(frames);
+            const rightPtr = this._instance.get_right_ptr();
+
+            const mem = this._memory.buffer;
+            output[0].set(new Float32Array(mem, leftPtr, frames));
+            if (output[1]) {
+                output[1].set(new Float32Array(mem, rightPtr, frames));
+            }
+        } catch (err) {
+            this._faulted = true;
+            this.port.postMessage({ type: 'error', message: String(err) });
         }
 
         return true;

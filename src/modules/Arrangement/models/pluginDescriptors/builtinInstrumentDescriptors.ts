@@ -36,6 +36,7 @@ export const BUILTIN_INSTRUMENT_DESCRIPTORS: PluginDescriptor[] = [
                 unit: 's',
                 automatable: true,
                 hasAutomation: false,
+                scaling: 'log',
             },
             {
                 id: 'decay',
@@ -49,6 +50,7 @@ export const BUILTIN_INSTRUMENT_DESCRIPTORS: PluginDescriptor[] = [
                 unit: 's',
                 automatable: true,
                 hasAutomation: false,
+                scaling: 'log',
             },
             {
                 id: 'sustain',
@@ -75,6 +77,7 @@ export const BUILTIN_INSTRUMENT_DESCRIPTORS: PluginDescriptor[] = [
                 unit: 's',
                 automatable: true,
                 hasAutomation: false,
+                scaling: 'log',
             },
             {
                 id: 'filterCutoff',
@@ -88,6 +91,7 @@ export const BUILTIN_INSTRUMENT_DESCRIPTORS: PluginDescriptor[] = [
                 unit: 'Hz',
                 automatable: true,
                 hasAutomation: false,
+                scaling: 'log',
             },
             {
                 id: 'filterResonance',
@@ -128,6 +132,7 @@ export const BUILTIN_INSTRUMENT_DESCRIPTORS: PluginDescriptor[] = [
                 unit: 'Hz',
                 automatable: true,
                 hasAutomation: false,
+                scaling: 'log',
             },
             {
                 id: 'detune',

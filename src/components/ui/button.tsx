@@ -5,27 +5,26 @@ import { Slot } from 'radix-ui';
 import { cn } from '#/helpers/Styles/cn';
 
 const buttonVariants = cva(
-    'inline-flex shrink-0 items-center justify-center gap-2 font-medium whitespace-nowrap transition-all duration-fast cursor-pointer outline-none disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 select-none',
+    'inline-flex shrink-0 items-center justify-center gap-2 font-medium whitespace-nowrap transition-[color,background,border-color,box-shadow,transform,filter] duration-fast cursor-pointer outline-none disabled:pointer-events-none disabled:opacity-50 focus-visible:ring-1 focus-visible:ring-border-focus/70 focus-visible:ring-offset-0 [&_svg]:pointer-events-none [&_svg]:shrink-0 select-none',
     {
         variants: {
             variant: {
                 default:
-                    'bg-surface-panel text-text-primary border border-border-soft border-t-[var(--color-light-edge)] border-b-[var(--color-shadow-edge)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_1px_2px_rgba(0,0,0,0.5)] hover:bg-surface-raised active:bg-surface-inset active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] active:border-black active:translate-y-px',
+                    'daw-panel-surface text-text-primary hover:brightness-[1.04] hover:saturate-[1.02] active:daw-inset-surface active:translate-y-px',
                 destructive:
-                    'bg-state-danger text-white border border-red-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_1px_2px_rgba(0,0,0,0.5)] hover:brightness-110 active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] active:border-black active:translate-y-px',
+                    'border border-red-900/70 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_1px_2px_rgba(0,0,0,0.5)] hover:brightness-105 active:translate-y-px active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] [background:linear-gradient(180deg,rgba(196,80,64,0.92)_0%,rgba(152,72,72,0.92)_100%)]',
                 outline:
-                    'border border-border-soft border-t-[var(--color-light-edge)] bg-transparent hover:bg-surface-raised active:bg-surface-inset active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] active:translate-y-px',
-                secondary:
-                    'bg-surface-inset text-white border border-black shadow-[inset_0_2px_4px_rgba(0,0,0,0.6),0_1px_0_rgba(255,255,255,0.03)]',
-                ghost: 'hover:bg-surface-raised hover:text-text-primary text-text-secondary active:bg-surface-inset active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] active:translate-y-px',
+                    'border border-border-soft border-t-[var(--color-light-edge)] bg-black/10 text-text-secondary hover:bg-surface-raised/70 hover:text-text-primary active:daw-inset-surface active:translate-y-px',
+                secondary: 'daw-inset-surface text-white/92 hover:text-white',
+                ghost: 'text-text-secondary hover:bg-surface-raised/75 hover:text-text-primary active:daw-inset-surface active:translate-y-px',
                 link: 'text-accent-cyan underline-offset-4 hover:underline',
 
                 // --- DAW Specific Custom Variants ---
                 surface:
-                    'bg-surface-panel text-text-primary border border-border-soft border-t-[var(--color-light-edge)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_1px_2px_rgba(0,0,0,0.5)] hover:bg-surface-raised active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] active:border-black active:translate-y-px',
+                    'daw-panel-surface text-text-primary hover:brightness-[1.03] active:daw-inset-surface active:translate-y-px',
                 transport:
-                    'text-text-primary border border-border-soft border-t-[var(--color-light-edge)] border-l-[rgba(255,255,255,0.04)] border-b-[rgba(0,0,0,0.3)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_2px_4px_rgba(0,0,0,0.5)] hover:brightness-110 hover:text-accent-cyan active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(0,0,0,0.4)] active:text-accent-cyan active:border-black active:translate-y-px [background:linear-gradient(180deg,#1f1f1f_0%,#111111_100%)] active:[background:linear-gradient(180deg,#111_0%,#1a1a1a_100%)]',
-                danger: 'bg-surface-panel text-text-secondary border border-border-soft border-t-[var(--color-light-edge)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_1px_2px_rgba(0,0,0,0.5)] hover:bg-state-danger hover:text-white hover:border-transparent active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] focus-visible:ring-state-danger/50 active:translate-y-px',
+                    'text-text-primary border border-border-soft border-t-[var(--color-light-edge)] border-l-[rgba(255,255,255,0.04)] border-b-[rgba(0,0,0,0.3)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_2px_4px_rgba(0,0,0,0.5)] hover:text-accent-cyan hover:brightness-[1.05] active:translate-y-px active:text-accent-cyan active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(0,0,0,0.4)] [background:linear-gradient(180deg,#1d1d1d_0%,#111111_100%)] active:[background:linear-gradient(180deg,#111_0%,#181818_100%)]',
+                danger: 'daw-panel-surface text-text-secondary hover:border-transparent hover:bg-state-danger hover:text-white active:translate-y-px active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] focus-visible:ring-state-danger/50',
             },
             size: {
                 default: 'h-8 px-3 text-xs rounded-sm',

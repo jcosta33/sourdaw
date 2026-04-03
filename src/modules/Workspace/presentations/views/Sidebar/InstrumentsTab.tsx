@@ -34,7 +34,7 @@ type InstrumentGroup = {
 const INSTRUMENT_GROUPS: InstrumentGroup[] = [
     {
         label: 'Synth Instruments',
-        description: 'Subtractive, FM & wavetable synthesis',
+        description: 'Subtractive, FM & morphing synthesis',
         categories: ['synth', 'bass', 'lead', 'pad', 'keys'],
     },
     {

@@ -109,7 +109,10 @@ export class AutomergeStorage<TDataSchema> implements Storage<TDataSchema> {
 
         const value = (doc as Record<string, unknown>)[this.#key];
         if (value !== undefined) {
-            const crdtData = this.#toDocSafe(value) as TDataSchema;
+            // Compute the JSON string once so we can both parse it and use it
+            // for change-detection without a second full stringify on the hot path.
+            const incomingJson = JSON.stringify(value);
+            const crdtData = JSON.parse(incomingJson) as TDataSchema;
             const beforeJson = JSON.stringify(this.#cachedValue);
 
             if (this.#toCrdt && this.#cachedValue !== null && typeof crdtData === 'object' && crdtData !== null) {
@@ -117,11 +120,13 @@ export class AutomergeStorage<TDataSchema> implements Storage<TDataSchema> {
                 // Merge CRDT data into the existing cache to preserve ephemeral fields
                 // like selectedTrackId, isPlaying, playheadPosition.
                 this.#cachedValue = { ...this.#cachedValue, ...crdtData };
+                return JSON.stringify(this.#cachedValue) !== beforeJson;
             } else {
                 this.#cachedValue = crdtData;
+                // Re-use the already-computed incoming JSON — avoids re-stringifying
+                // the just-assigned cache on the common non-merge path.
+                return incomingJson !== beforeJson;
             }
-
-            return JSON.stringify(this.#cachedValue) !== beforeJson;
         }
 
         if (this.#cachedValue !== null) {

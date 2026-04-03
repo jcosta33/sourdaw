@@ -15,7 +15,9 @@ function Separator({
             decorative={decorative}
             orientation={orientation}
             className={cn(
-                'shrink-0 bg-border data-[orientation=horizontal]:h-px data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-px',
+                'shrink-0 opacity-90 data-[orientation=horizontal]:h-px data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-px',
+                'data-[orientation=horizontal]:bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.08),rgba(0,0,0,0.22),transparent)]',
+                'data-[orientation=vertical]:bg-[linear-gradient(180deg,transparent,rgba(255,255,255,0.08),rgba(0,0,0,0.22),transparent)]',
                 className
             )}
             {...props}

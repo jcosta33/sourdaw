@@ -1,250 +1,365 @@
-/**
- * ScoringPanel — chromatic tuner UI.
- *
- * Layout:
- *   ┌──────────────────────────────────────────────────────────────────┐
- *   │ Top: [Scoring] · [Needle|Strobe] mode · [A4=440Hz]              │
- *   ├──────────────────────────────────────────────────────────────────┤
- *   │  [Note: C#4]   [Needle/Strobe visualization]   [±cents: +3.2]  │
- *   ├──────────────────────────────────────────────────────────────────┤
- *   │  [History graph — cents over time]                               │
- *   └──────────────────────────────────────────────────────────────────┘
- */
-import { type ReactElement, useRef, useEffect, useSyncExternalStore } from 'react';
+import { type ReactElement, useEffect, useRef, useSyncExternalStore } from 'react';
+import { Activity, Waves } from 'lucide-react';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { scoringStore, setDisplayMode, setA4Reference } from '../../stores/scoringStore';
 import { type DisplayMode } from '../../models/ScoringState';
+import { scoringStore, setA4Reference, setDisplayMode } from '../../stores/scoringStore';
 
-const MODES: { id: DisplayMode; label: string }[] = [
-    { id: 'needle', label: 'Needle' },
-    { id: 'strobe', label: 'Strobe' },
-    { id: 'poly', label: 'Poly' },
+const MODES: ReadonlyArray<{ id: DisplayMode; label: string; detail: string }> = [
+    { id: 'needle', label: 'Needle', detail: 'Classic center read' },
+    { id: 'strobe', label: 'Strobe', detail: 'Motion lock' },
+    { id: 'poly', label: 'Poly', detail: 'String spread' },
 ];
+
+const GUITAR_STRINGS = ['E2', 'A2', 'D3', 'G3', 'B3', 'E4'] as const;
+
+function MetricTile({ label, value, detail }: { label: string; value: string; detail: string }): ReactElement {
+    return (
+        <div className="scoring-window flex min-w-[88px] flex-col gap-1 px-3 py-2">
+            <span className="text-[8px] uppercase tracking-[0.24em] text-white/48">{label}</span>
+            <span className="font-mono text-[13px] text-white/88">{value}</span>
+            <span className="text-[9px] text-white/42">{detail}</span>
+        </div>
+    );
+}
+
+function SectionCard({
+    title,
+    detail,
+    children,
+}: {
+    title: string;
+    detail?: string;
+    children: ReactElement | ReactElement[];
+}): ReactElement {
+    return (
+        <section className="scoring-window flex flex-col gap-3 p-3">
+            <div className="flex items-center justify-between gap-2">
+                <div className="text-[8px] font-semibold uppercase tracking-[0.24em] text-[var(--color-accent-mint)]/72">
+                    {title}
+                </div>
+                {detail ? <div className="scoring-led">{detail}</div> : null}
+            </div>
+            {children}
+        </section>
+    );
+}
 
 export const ScoringPanel = (): ReactElement => {
     const state = useSyncExternalStore(
-        (cb) => scoringStore.subscribe(cb),
-        () => scoringStore.value,
+        (callback) => scoringStore.subscribe(callback),
+        () => scoringStore.value
     );
 
     if (!state) {
-        return <div className="flex items-center justify-center h-full text-muted-foreground/40 text-xs italic">Sharpening the blade...</div>;
+        return (
+            <div className="flex h-full items-center justify-center text-xs italic text-muted-foreground/40">
+                Sharpening the blade...
+            </div>
+        );
     }
 
     const { noteName, octave, cents, confidence, active, mode, a4Reference, frequency } = state;
-
-    // Color based on cents deviation
-    const absCents = Math.abs(cents);
-    const color = !active ? 'text-muted-foreground/30'
-        : absCents <= 2 ? 'text-emerald-400'
-        : absCents <= 10 ? 'text-yellow-400'
-        : 'text-red-400';
-
-    const bgColor = !active ? 'bg-transparent'
-        : absCents <= 2 ? 'bg-emerald-500/10'
-        : absCents <= 10 ? 'bg-yellow-500/10'
-        : 'bg-red-500/10';
+    const absoluteCents = Math.abs(cents);
+    const toneColor = !active
+        ? 'text-white/28'
+        : absoluteCents <= 2
+          ? 'text-emerald-400'
+          : absoluteCents <= 10
+            ? 'text-yellow-400'
+            : 'text-red-400';
+    const centerGlow = !active
+        ? 'rgba(255,255,255,0.06)'
+        : absoluteCents <= 2
+          ? 'rgba(52,220,160,0.18)'
+          : absoluteCents <= 10
+            ? 'rgba(255,210,30,0.16)'
+            : 'rgba(255,100,100,0.14)';
 
     return (
-        <div className="flex flex-col h-full">
-            {/* ─── Top bar ─── */}
-            <div
-                className="flex items-center justify-between px-3 py-1 shrink-0"
-                style={{
-                    background: 'linear-gradient(180deg, rgba(20,20,22,0.95) 0%, rgba(14,14,16,0.95) 100%)',
-                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 3px rgba(0,0,0,0.5)',
-                    borderBottom: '1px solid rgba(0,0,0,0.4)',
-                }}
-            >
-                <span className="text-[10px] font-bold text-[var(--color-accent-mint)] tracking-tight">
-                    Scoring
-                </span>
+        <div className="scoring-faceplate flex h-full min-h-0 gap-3 overflow-hidden p-3">
+            <aside className="flex h-full w-[232px] shrink-0 flex-col gap-3 overflow-y-auto pr-1">
+                <SectionCard title="Display" detail={mode}>
+                    <div>
+                        <div className="text-[18px] font-semibold text-white/92">Scoring</div>
+                        <div className="mt-1 text-[11px] text-white/44">
+                            Tuning mode, reference pitch, and quick read stay docked here.
+                        </div>
+                    </div>
+                    <div className="grid gap-2">
+                        {MODES.map((entry) => {
+                            const selected = mode === entry.id;
+                            return (
+                                <button
+                                    key={entry.id}
+                                    type="button"
+                                    className={`scoring-window flex items-center justify-between gap-3 px-3 py-2 text-left transition-all ${
+                                        selected
+                                            ? 'border-white/16 bg-white/[0.03]'
+                                            : 'hover:border-white/12 hover:bg-white/[0.02]'
+                                    }`}
+                                    onClick={() => setDisplayMode(entry.id)}
+                                >
+                                    <div>
+                                        <div className="text-[11px] font-medium text-white/88">{entry.label}</div>
+                                        <div className="text-[9px] text-white/42">{entry.detail}</div>
+                                    </div>
+                                    {selected ? <div className="scoring-led">Live</div> : null}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </SectionCard>
 
-                {/* Mode selector */}
-                <div className="flex gap-0.5 bg-surface-base/50 rounded p-0.5">
-                    {MODES.map(({ id, label }) => (
-                        <button
-                            key={id}
-                            type="button"
-                            className={`px-1.5 py-0.5 rounded text-[8px] font-medium transition-colors ${
-                                mode === id
-                                    ? 'bg-[var(--color-accent-mint)] text-white'
-                                    : 'text-muted-foreground hover:text-foreground'
-                            }`}
-                            onClick={() => setDisplayMode(id)}
+                <SectionCard title="Reference" detail={`${a4Reference} Hz`}>
+                    <div className="flex items-center justify-center">
+                        <RotaryKnob
+                            value={a4Reference}
+                            onChange={(value) => setA4Reference(Math.round(value))}
+                            min={400}
+                            max={490}
+                            step={1}
+                            defaultValue={440}
+                            size="md"
+                        />
+                    </div>
+                    <div className="text-center">
+                        <div className="font-mono text-[16px] text-white/88">{a4Reference} Hz</div>
+                        <div className="text-[10px] uppercase tracking-[0.22em] text-white/42">Concert A</div>
+                    </div>
+                </SectionCard>
+            </aside>
+
+            <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
+                <header className="scoring-window flex shrink-0 flex-wrap items-center gap-2.5 px-3 py-2">
+                    <div className="space-y-1">
+                        <div className="text-[8px] uppercase tracking-[0.28em] text-[var(--color-accent-mint)]/72">
+                            Tuning deck
+                        </div>
+                        <div className="text-[14px] font-semibold text-white/92">
+                            {active ? `${noteName}${octave}` : 'Waiting for pitch'}
+                        </div>
+                    </div>
+                    <div className="ml-auto flex flex-wrap gap-2">
+                        <MetricTile
+                            label="Cents"
+                            value={active ? `${cents >= 0 ? '+' : ''}${cents.toFixed(1)}` : '—'}
+                            detail="Offset"
+                        />
+                        <MetricTile
+                            label="Pitch"
+                            value={active ? `${frequency.toFixed(1)} Hz` : '—'}
+                            detail="Detected"
+                        />
+                        <MetricTile label="Conf" value={`${Math.round(confidence * 100)}%`} detail="Tracker" />
+                    </div>
+                </header>
+
+                <div className="grid min-h-0 shrink-0 grid-cols-[minmax(0,1fr)_220px] gap-3">
+                    <div className="scoring-window min-h-[280px] overflow-hidden">
+                        <div
+                            className="flex h-full min-h-0 flex-col px-4 py-4 transition-colors duration-300"
+                            style={{
+                                background: `radial-gradient(circle at 50% 50%, ${centerGlow}, transparent 56%)`,
+                            }}
                         >
-                            {label}
-                        </button>
-                    ))}
-                </div>
+                            <div className="mb-3 flex items-center justify-between gap-3">
+                                <div className="text-[9px] uppercase tracking-[0.24em] text-white/42">Main read</div>
+                                <div className="scoring-led">{active ? 'Tracking' : 'Idle'}</div>
+                            </div>
+                            <div className="grid min-h-0 flex-1 grid-cols-[140px_minmax(0,1fr)_120px] items-center gap-4">
+                                <div className="flex flex-col items-center gap-1">
+                                    <div
+                                        className={`text-6xl font-bold tracking-tight transition-colors duration-200 ${toneColor}`}
+                                    >
+                                        {active ? noteName : '—'}
+                                    </div>
+                                    <div className="text-xl text-white/42">{active ? octave : ''}</div>
+                                </div>
 
-                {/* A4 reference */}
-                <div className="flex items-center gap-1">
-                    <span className="text-[8px] text-muted-foreground">A4=</span>
-                    <RotaryKnob
-                        value={a4Reference}
-                        onChange={(v) => setA4Reference(Math.round(v))}
-                        min={400}
-                        max={490}
-                        step={1}
-                        defaultValue={440}
-                        size="sm"
-                    />
-                    <span className="text-[8px] text-muted-foreground tabular-nums">{a4Reference}Hz</span>
-                </div>
-            </div>
+                                <div className="min-h-0">
+                                    {mode === 'needle' ? (
+                                        <NeedleDisplay cents={cents} active={active} confidence={confidence} />
+                                    ) : mode === 'strobe' ? (
+                                        <StrobeDisplay cents={cents} active={active} />
+                                    ) : (
+                                        <PolyDisplay />
+                                    )}
+                                </div>
 
-            {/* ─── Main display ─── */}
-            <div className={`flex-1 flex items-center justify-center gap-6 ${bgColor} transition-colors duration-300`}>
-                {/* Note name — large */}
-                <div className="flex flex-col items-center gap-0">
-                    <span className={`text-5xl font-bold tracking-tight transition-colors duration-200 ${color}`}>
-                        {active ? noteName : '—'}
-                    </span>
-                    <span className="text-lg text-muted-foreground/60 -mt-1">
-                        {active ? octave : ''}
-                    </span>
-                </div>
+                                <div className="flex flex-col items-center gap-1">
+                                    <div
+                                        className={`font-mono text-3xl font-semibold transition-colors duration-200 ${toneColor}`}
+                                    >
+                                        {active ? `${cents >= 0 ? '+' : ''}${cents.toFixed(1)}` : '—'}
+                                    </div>
+                                    <div className="text-[9px] uppercase tracking-[0.24em] text-white/42">Cents</div>
+                                    <div className="font-mono text-[10px] text-white/38">
+                                        {active ? `${frequency.toFixed(1)} Hz` : 'No input'}
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="mt-3 h-[56px] shrink-0 overflow-hidden rounded-[14px] border border-white/8 bg-black/24">
+                                <HistoryGraph cents={cents} active={active} />
+                            </div>
+                        </div>
+                    </div>
 
-                {/* Visualization */}
-                <div className="flex-1 max-w-[400px] h-full">
-                    {mode === 'needle' ? (
-                        <NeedleDisplay cents={cents} active={active} confidence={confidence} />
-                    ) : mode === 'strobe' ? (
-                        <StrobeDisplay cents={cents} active={active} />
-                    ) : (
-                        <PolyDisplay />
-                    )}
-                </div>
+                    <div className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
+                        <SectionCard title="Quick read" detail={active ? 'Signal up' : 'No signal'}>
+                            <div className="space-y-2 text-[10px] leading-4 text-white/56">
+                                <div className="flex items-center justify-between gap-2">
+                                    <span>Mode</span>
+                                    <span className="font-mono text-white/84">{mode}</span>
+                                </div>
+                                <div className="flex items-center justify-between gap-2">
+                                    <span>Reference</span>
+                                    <span className="font-mono text-white/84">{a4Reference} Hz</span>
+                                </div>
+                                <div className="flex items-center justify-between gap-2">
+                                    <span>Status</span>
+                                    <span className="font-mono text-white/84">{active ? 'Locked' : 'Listening'}</span>
+                                </div>
+                            </div>
+                        </SectionCard>
 
-                {/* Cents display */}
-                <div className="flex flex-col items-center gap-0 min-w-[80px]">
-                    <span className={`text-2xl font-bold tabular-nums transition-colors duration-200 ${color}`}>
-                        {active ? `${cents >= 0 ? '+' : ''}${cents.toFixed(1)}` : '—'}
-                    </span>
-                    <span className="text-[8px] text-muted-foreground/40 uppercase">cents</span>
-                    {active ? (
-                        <span className="text-[9px] text-muted-foreground/30 tabular-nums mt-1">
-                            {frequency.toFixed(1)} Hz
-                        </span>
-                    ) : null}
+                        <SectionCard title="Guide" detail="Center">
+                            <div className="grid gap-2">
+                                <div className="scoring-window flex items-center justify-between gap-2 px-3 py-2">
+                                    <div className="flex items-center gap-2 text-[10px] text-white/56">
+                                        <Activity className="size-3.5 text-[var(--color-accent-mint)]" />
+                                        Tight zone
+                                    </div>
+                                    <div className="font-mono text-[11px] text-white/82">±2c</div>
+                                </div>
+                                <div className="scoring-window flex items-center justify-between gap-2 px-3 py-2">
+                                    <div className="flex items-center gap-2 text-[10px] text-white/56">
+                                        <Waves className="size-3.5 text-[var(--color-accent-cyan)]" />
+                                        Usable zone
+                                    </div>
+                                    <div className="font-mono text-[11px] text-white/82">±10c</div>
+                                </div>
+                            </div>
+                        </SectionCard>
+                    </div>
                 </div>
-            </div>
-
-            {/* ─── History graph ─── */}
-            <div className="h-[40px] shrink-0 border-t border-border/20">
-                <HistoryGraph cents={cents} active={active} />
-            </div>
+            </section>
         </div>
     );
 };
 
-// ── Needle display ──────────────────────────────────────────────────
-
-const NeedleDisplay = ({ cents, active, confidence }: { cents: number; active: boolean; confidence: number }): ReactElement => {
+const NeedleDisplay = ({
+    cents,
+    active,
+    confidence,
+}: {
+    cents: number;
+    active: boolean;
+    confidence: number;
+}): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) { return; }
+        if (!canvas) {
+            return;
+        }
         const ctx = canvas.getContext('2d');
-        if (!ctx) { return; }
+        if (!ctx) {
+            return;
+        }
 
-        const w = canvas.width;
-        const h = canvas.height;
-        ctx.clearRect(0, 0, w, h);
+        const width = canvas.width;
+        const height = canvas.height;
+        ctx.clearRect(0, 0, width, height);
 
-        // Subtle radial background
-        const bgGrad = ctx.createRadialGradient(w / 2, h * 0.85, 0, w / 2, h * 0.85, h * 0.9);
-        bgGrad.addColorStop(0, 'rgba(12,14,18,0.3)');
-        bgGrad.addColorStop(1, 'rgba(4,4,6,0.0)');
-        ctx.fillStyle = bgGrad;
-        ctx.fillRect(0, 0, w, h);
+        const background = ctx.createRadialGradient(
+            width / 2,
+            height * 0.85,
+            0,
+            width / 2,
+            height * 0.85,
+            height * 0.9
+        );
+        background.addColorStop(0, 'rgba(12,14,18,0.3)');
+        background.addColorStop(1, 'rgba(4,4,6,0)');
+        ctx.fillStyle = background;
+        ctx.fillRect(0, 0, width, height);
 
-        const cx = w / 2;
-        const cy = h * 0.85;
-        const radius = h * 0.7;
-
-        // Draw arc — slightly brighter
+        const centerX = width / 2;
+        const centerY = height * 0.85;
+        const radius = height * 0.7;
         const maxAngle = Math.PI * 0.4;
+
         ctx.strokeStyle = 'rgba(255,255,255,0.1)';
         ctx.lineWidth = 3;
         ctx.beginPath();
-        ctx.arc(cx, cy, radius, Math.PI + maxAngle, -maxAngle, false);
+        ctx.arc(centerX, centerY, radius, Math.PI + maxAngle, -maxAngle, false);
         ctx.stroke();
 
-        // Color zones — richer, more saturated
         const zones = [
-            { range: 2, color: 'rgba(52,220,160,0.18)' },   // green
-            { range: 10, color: 'rgba(255,210,30,0.12)' },   // yellow
-            { range: 50, color: 'rgba(255,100,100,0.08)' },  // red
+            { range: 2, color: 'rgba(52,220,160,0.18)' },
+            { range: 10, color: 'rgba(255,210,30,0.12)' },
+            { range: 50, color: 'rgba(255,100,100,0.08)' },
         ];
 
         for (const zone of zones) {
             const zoneAngle = (zone.range / 50) * maxAngle;
             ctx.fillStyle = zone.color;
             ctx.beginPath();
-            ctx.moveTo(cx, cy);
-            ctx.arc(cx, cy, radius + 5, Math.PI / 2 * 3 - zoneAngle, Math.PI / 2 * 3 + zoneAngle, false);
+            ctx.moveTo(centerX, centerY);
+            ctx.arc(centerX, centerY, radius + 5, Math.PI * 1.5 - zoneAngle, Math.PI * 1.5 + zoneAngle, false);
             ctx.closePath();
             ctx.fill();
         }
 
-        // Center mark — with glow
         ctx.save();
         ctx.shadowColor = 'rgba(52,220,160,0.4)';
         ctx.shadowBlur = 6;
         ctx.strokeStyle = 'rgba(52,220,160,0.6)';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        const topX = cx;
-        const topY = cy - radius - 8;
+        const topX = centerX;
+        const topY = centerY - radius - 8;
         ctx.moveTo(topX, topY);
         ctx.lineTo(topX, topY + 12);
         ctx.stroke();
         ctx.restore();
 
-        // Needle
         if (active) {
-            const angle = Math.PI / 2 * 3 + (cents / 50) * maxAngle;
-            const needleLen = radius * 0.9;
-            const nx = cx + Math.cos(angle) * needleLen;
-            const ny = cy + Math.sin(angle) * needleLen;
+            const angle = Math.PI * 1.5 + (cents / 50) * maxAngle;
+            const needleLength = radius * 0.9;
+            const needleX = centerX + Math.cos(angle) * needleLength;
+            const needleY = centerY + Math.sin(angle) * needleLength;
 
-            // Needle glow
             ctx.save();
             ctx.shadowColor = 'rgba(255,255,255,0.25)';
             ctx.shadowBlur = 6;
             ctx.strokeStyle = `rgba(255,255,255,${0.35 + confidence * 0.65})`;
             ctx.lineWidth = 2;
             ctx.beginPath();
-            ctx.moveTo(cx, cy);
-            ctx.lineTo(nx, ny);
+            ctx.moveTo(centerX, centerY);
+            ctx.lineTo(needleX, needleY);
             ctx.stroke();
             ctx.restore();
 
-            // Needle tip dot — glow
             ctx.save();
             ctx.shadowColor = 'rgba(255,255,255,0.5)';
             ctx.shadowBlur = 8;
             ctx.fillStyle = 'white';
             ctx.beginPath();
-            ctx.arc(nx, ny, 3, 0, Math.PI * 2);
+            ctx.arc(needleX, needleY, 3, 0, Math.PI * 2);
             ctx.fill();
             ctx.restore();
         }
 
-        // Center pivot
         ctx.fillStyle = 'rgba(255,255,255,0.35)';
         ctx.beginPath();
-        ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+        ctx.arc(centerX, centerY, 4, 0, Math.PI * 2);
         ctx.fill();
     }, [cents, active, confidence]);
 
-    return <canvas ref={canvasRef} width={400} height={160} className="w-full h-full" />;
+    return <canvas ref={canvasRef} width={480} height={200} className="h-full w-full" />;
 };
-
-// ── Strobe display ──────────────────────────────────────────────────
 
 const StrobeDisplay = ({ cents, active }: { cents: number; active: boolean }): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -253,68 +368,59 @@ const StrobeDisplay = ({ cents, active }: { cents: number; active: boolean }): R
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) { return; }
+        if (!canvas) {
+            return;
+        }
         const ctx = canvas.getContext('2d');
-        if (!ctx) { return; }
+        if (!ctx) {
+            return;
+        }
 
         const draw = (): void => {
-            const w = canvas.width;
-            const h = canvas.height;
-
-            // Strobe motion: sqrt scaling for perceptual sensitivity
-            const velocity = active
-                ? Math.sign(cents) * Math.sqrt(Math.abs(cents)) * 0.15
-                : 0;
-
-            // Lock zone: freeze at ±0.1 cent
+            const width = canvas.width;
+            const height = canvas.height;
+            const velocity = active ? Math.sign(cents) * Math.sqrt(Math.abs(cents)) * 0.15 : 0;
             const effectiveVelocity = Math.abs(cents) < 0.1 ? 0 : velocity;
+            phaseRef.current += effectiveVelocity * 0.016;
 
-            phaseRef.current += effectiveVelocity * 0.016; // ~60fps
-
-            // Deep background
-            const bgGrad = ctx.createLinearGradient(0, 0, 0, h);
-            bgGrad.addColorStop(0, 'rgb(4,4,6)');
-            bgGrad.addColorStop(1, 'rgb(2,2,3)');
-            ctx.fillStyle = bgGrad;
-            ctx.fillRect(0, 0, w, h);
+            const background = ctx.createLinearGradient(0, 0, 0, height);
+            background.addColorStop(0, 'rgb(4,4,6)');
+            background.addColorStop(1, 'rgb(2,2,3)');
+            ctx.fillStyle = background;
+            ctx.fillRect(0, 0, width, height);
 
             if (!active) {
                 ctx.fillStyle = 'rgba(255,255,255,0.06)';
                 ctx.font = '12px sans-serif';
                 ctx.textAlign = 'center';
-                ctx.fillText('Waiting for signal...', w / 2, h / 2);
+                ctx.fillText('Waiting for signal...', width / 2, height / 2);
                 rafRef.current = requestAnimationFrame(draw);
                 return;
             }
 
-            // Draw strobe stripes — richer colors
-            const numStripes = 24;
-            for (let x = 0; x < w; x++) {
-                const u = x / w + phaseRef.current;
-                const t = u * numStripes;
-                const frac = t - Math.floor(t);
-                const intensity = 1.0 - Math.abs(2.0 * frac - 1.0);
+            const stripeCount = 24;
+            for (let x = 0; x < width; x += 1) {
+                const u = x / width + phaseRef.current;
+                const t = u * stripeCount;
+                const fraction = t - Math.floor(t);
+                const intensity = 1 - Math.abs(2 * fraction - 1);
                 const powered = Math.pow(intensity, 2.5);
-
-                // Richer green when near zero, brighter white otherwise
                 const nearZero = Math.abs(cents) < 2;
-                const r = nearZero ? Math.floor(powered * 30) : Math.floor(powered * 210);
-                const g = nearZero ? Math.floor(powered * 220) : Math.floor(powered * 210);
-                const b = nearZero ? Math.floor(powered * 140) : Math.floor(powered * 220);
-
-                ctx.fillStyle = `rgb(${r},${g},${b})`;
-                ctx.fillRect(x, 0, 1, h);
+                const red = nearZero ? Math.floor(powered * 30) : Math.floor(powered * 210);
+                const green = nearZero ? Math.floor(powered * 220) : Math.floor(powered * 210);
+                const blue = nearZero ? Math.floor(powered * 140) : Math.floor(powered * 220);
+                ctx.fillStyle = `rgb(${red},${green},${blue})`;
+                ctx.fillRect(x, 0, 1, height);
             }
 
-            // Center cage overlay (when near in-tune) — with glow
             if (Math.abs(cents) < 0.5) {
                 ctx.save();
                 ctx.shadowColor = 'rgba(52,220,160,0.3)';
                 ctx.shadowBlur = 8;
                 ctx.strokeStyle = 'rgba(52,220,160,0.35)';
                 ctx.lineWidth = 2;
-                const cageW = w * 0.15;
-                ctx.strokeRect(w / 2 - cageW / 2, 2, cageW, h - 4);
+                const cageWidth = width * 0.15;
+                ctx.strokeRect(width / 2 - cageWidth / 2, 2, cageWidth, height - 4);
                 ctx.restore();
             }
 
@@ -325,10 +431,8 @@ const StrobeDisplay = ({ cents, active }: { cents: number; active: boolean }): R
         return () => cancelAnimationFrame(rafRef.current);
     }, [cents, active]);
 
-    return <canvas ref={canvasRef} width={400} height={120} className="w-full h-full" />;
+    return <canvas ref={canvasRef} width={480} height={180} className="h-full w-full" />;
 };
-
-// ── History graph ───────────────────────────────────────────────────
 
 const HistoryGraph = ({ cents, active }: { cents: number; active: boolean }): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -343,114 +447,92 @@ const HistoryGraph = ({ cents, active }: { cents: number; active: boolean }): Re
         }
 
         const canvas = canvasRef.current;
-        if (!canvas) { return; }
+        if (!canvas) {
+            return;
+        }
         const ctx = canvas.getContext('2d');
-        if (!ctx) { return; }
+        if (!ctx) {
+            return;
+        }
 
-        const w = canvas.width;
-        const h = canvas.height;
+        const width = canvas.width;
+        const height = canvas.height;
+        const background = ctx.createLinearGradient(0, 0, 0, height);
+        background.addColorStop(0, 'rgb(8,8,11)');
+        background.addColorStop(1, 'rgb(4,4,6)');
+        ctx.fillStyle = background;
+        ctx.fillRect(0, 0, width, height);
 
-        // Deep gradient background
-        const bgGrad = ctx.createLinearGradient(0, 0, 0, h);
-        bgGrad.addColorStop(0, 'rgb(8,8,11)');
-        bgGrad.addColorStop(1, 'rgb(4,4,6)');
-        ctx.fillStyle = bgGrad;
-        ctx.fillRect(0, 0, w, h);
-
-        // Subtle +/-25 cent lines
         ctx.strokeStyle = 'rgba(255,255,255,0.03)';
         ctx.lineWidth = 0.5;
-        for (const frac of [0.25, 0.75]) {
+        for (const fraction of [0.25, 0.75]) {
             ctx.beginPath();
-            ctx.moveTo(0, h * frac);
-            ctx.lineTo(w, h * frac);
+            ctx.moveTo(0, height * fraction);
+            ctx.lineTo(width, height * fraction);
             ctx.stroke();
         }
 
-        // Center line (0 cents) — subtle green
         ctx.strokeStyle = 'rgba(52,220,160,0.15)';
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(0, h / 2);
-        ctx.lineTo(w, h / 2);
+        ctx.moveTo(0, height / 2);
+        ctx.lineTo(width, height / 2);
         ctx.stroke();
 
-        // History line
         const history = historyRef.current;
-        if (history.length < 2) { return; }
+        if (history.length < 2) {
+            return;
+        }
 
-        // Glow pass
         ctx.save();
         ctx.shadowColor = 'rgba(130,200,220,0.3)';
         ctx.shadowBlur = 4;
         ctx.strokeStyle = 'rgba(140,200,220,0.65)';
         ctx.lineWidth = 1.5;
         ctx.beginPath();
-        for (let i = 0; i < history.length; i++) {
-            const x = (i / 300) * w;
-            const y = h / 2 - ((history[i] ?? 0) / 50) * (h / 2);
-            if (i === 0) { ctx.moveTo(x, y); } else { ctx.lineTo(x, y); }
+        for (let index = 0; index < history.length; index += 1) {
+            const x = (index / 300) * width;
+            const y = height / 2 - ((history[index] ?? 0) / 50) * (height / 2);
+            if (index === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
         }
         ctx.stroke();
         ctx.restore();
 
-        // Crisp pass
         ctx.strokeStyle = 'rgba(140,200,220,0.7)';
         ctx.lineWidth = 1;
         ctx.beginPath();
-        for (let i = 0; i < history.length; i++) {
-            const x = (i / 300) * w;
-            const y = h / 2 - ((history[i] ?? 0) / 50) * (h / 2);
-            if (i === 0) { ctx.moveTo(x, y); } else { ctx.lineTo(x, y); }
+        for (let index = 0; index < history.length; index += 1) {
+            const x = (index / 300) * width;
+            const y = height / 2 - ((history[index] ?? 0) / 50) * (height / 2);
+            if (index === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
         }
         ctx.stroke();
     }, [cents, active]);
 
-    return <canvas ref={canvasRef} width={600} height={40} className="w-full h-full" />;
+    return <canvas ref={canvasRef} width={720} height={56} className="h-full w-full" />;
 };
 
-// ── Polyphonic string display ───────────────────────────────────────
-
-const GUITAR_STRINGS = ['E2', 'A2', 'D3', 'G3', 'B3', 'E4'];
-
 const PolyDisplay = (): ReactElement => {
-    // In a full implementation, this would read from the scoring store's poly data.
-    // For now, show the string labels with placeholder indicators.
     return (
-        <div className="flex flex-col justify-center gap-1 px-4 h-full">
-            {GUITAR_STRINGS.map((label) => {
-                const stringCents = 0; // would come from store
-                const stringActive = false;
-                const absCents = Math.abs(stringCents);
-                const barColor = !stringActive ? 'bg-muted-foreground/10'
-                    : absCents <= 2 ? 'bg-emerald-500'
-                    : absCents <= 10 ? 'bg-yellow-500'
-                    : 'bg-red-500';
-
-                return (
-                    <div key={label} className="flex items-center gap-2">
-                        <span className="text-[10px] text-muted-foreground/60 w-6 text-right font-mono">{label}</span>
-                        <div className="flex-1 h-3 bg-surface-base/50 rounded-full relative overflow-hidden">
-                            {/* Center line */}
-                            <div className="absolute left-1/2 top-0 bottom-0 w-px bg-emerald-500/20" />
-                            {/* Deviation indicator */}
-                            {stringActive ? (
-                                <div
-                                    className={`absolute top-0 bottom-0 w-2 rounded-full ${barColor} transition-all duration-100`}
-                                    style={{
-                                        left: `${50 + (stringCents / 50) * 50}%`,
-                                        transform: 'translateX(-50%)',
-                                    }}
-                                />
-                            ) : null}
-                        </div>
-                        <span className="text-[8px] text-muted-foreground/40 w-10 text-right tabular-nums">
-                            {stringActive ? `${stringCents >= 0 ? '+' : ''}${stringCents.toFixed(1)}` : '—'}
-                        </span>
+        <div className="flex h-full flex-col justify-center gap-2 px-4">
+            {GUITAR_STRINGS.map((label) => (
+                <div key={label} className="flex items-center gap-2">
+                    <span className="w-6 text-right font-mono text-[10px] text-white/52">{label}</span>
+                    <div className="relative h-3 flex-1 overflow-hidden rounded-full bg-black/28">
+                        <div className="absolute bottom-0 left-1/2 top-0 w-px bg-emerald-500/20" />
                     </div>
-                );
-            })}
-            <span className="text-[7px] text-muted-foreground/30 text-center mt-1">Strum all open strings</span>
+                    <span className="w-10 text-right font-mono text-[8px] text-white/36">—</span>
+                </div>
+            ))}
+            <span className="mt-1 text-center text-[8px] text-white/34">Strum all open strings</span>
         </div>
     );
 };

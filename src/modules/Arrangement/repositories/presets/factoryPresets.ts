@@ -20,7 +20,8 @@ import { stringsPresets } from './stringsPresets';
 // ── Standalone data files (unchanged — each already < 300 lines) ──────────
 import { EXPANDED_FX_PRESETS, EXPANDED_SYNTH_PRESETS } from './expandedPresets';
 import { FAUST_INSTRUMENT_PRESETS } from './faustInstrumentPresets';
-import { FERMENTER_PRESETS } from '#/modules/Fermenter/useCases/fermenterQueries';
+import { FAUST_EFFECT_PRESETS } from './faustEffectPresets';
+import { FERMENTER_PRESETS } from '#/modules/Fermenter/repositories/fermenterPresets';
 
 // ── Drum Kit presets ────────────────────────────────────────────────────────
 // Small enough to stay inline here (< 60 lines).
@@ -465,6 +466,7 @@ export const FACTORY_PRESETS: SoundPreset[] = [
     ...EXPANDED_FX_PRESETS,
     ...EXPANDED_SYNTH_PRESETS,
     ...FAUST_INSTRUMENT_PRESETS,
+    ...FAUST_EFFECT_PRESETS,
     ...FERMENTER_PRESETS,
 ];
 

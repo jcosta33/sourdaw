@@ -2,9 +2,13 @@
 /**
  * AudioWorkletProcessor for the Bacteria creative multi-effects framework.
  *
+ * Uses the generated wasm-bindgen JS bindings (daw_dsp.js) via initSync so all
+ * WASM memory management is handled by the generated glue — no manual malloc/free.
+ *
  * Effect processor: reads from inputs[0], writes to outputs[0].
- * Calls raw wasm-bindgen WASM exports directly.
  */
+
+import { initSync, BacteriaInstance } from '../wasm/daw_dsp.js';
 
 /** Bacteria passes param names through as-is (Rust engine uses camelCase matching). */
 const PARAM_MAP = {
@@ -46,12 +50,10 @@ const PARAM_MAP = {
 };
 
 class BacteriaProcessor extends AudioWorkletProcessor {
-    _wasm = null;
-    _mem = null;
-    _ptr = 0;
+    _instance = null;
+    _memory = null;
     _ready = false;
-    _inputLeftPtr = 0;
-    _inputRightPtr = 0;
+    _faulted = false;
     _meterCounter = 0;
 
     constructor() {
@@ -60,11 +62,11 @@ class BacteriaProcessor extends AudioWorkletProcessor {
             const msg = e.data;
             try {
                 if (msg.type === 'init') {
-                    if (this._ready) { return; }
+                    if (this._ready) return;
                     this._initWasm(msg.wasmBytes);
-                } else if (msg.type === 'param' && this._ready) {
+                } else if (msg.type === 'param' && this._ready && !this._faulted) {
                     const rustName = PARAM_MAP[msg.name] ?? msg.name;
-                    this._setParam(rustName, msg.value);
+                    this._instance.set_param(rustName, msg.value);
                 }
             } catch (err) {
                 console.error('BacteriaProcessor error:', err);
@@ -73,110 +75,56 @@ class BacteriaProcessor extends AudioWorkletProcessor {
     }
 
     _initWasm(wasmBytes) {
-        const mod = new WebAssembly.Module(wasmBytes);
-        const importInfo = WebAssembly.Module.imports(mod);
-        const bgImports = {};
-
-        let instance;
-
-        for (const imp of importInfo) {
-            if (imp.module === './daw_dsp_bg.js') {
-                if (imp.name.startsWith('__wbg___wbindgen_throw_')) {
-                    bgImports[imp.name] = function(ptr, len) {
-                        throw new Error('WASM error at ptr ' + ptr + ' len ' + len);
-                    };
-                } else if (imp.name === '__wbindgen_init_externref_table') {
-                    bgImports[imp.name] = function() {
-                        const table = instance.exports.__wbindgen_externrefs;
-                        if (table) {
-                            const offset = table.grow(4);
-                            table.set(0, undefined);
-                            table.set(offset + 0, undefined);
-                            table.set(offset + 1, null);
-                            table.set(offset + 2, true);
-                            table.set(offset + 3, false);
-                        }
-                    };
-                } else {
-                    bgImports[imp.name] = function() {};
-                }
-            }
-        }
-
-        const imports = {
-            './daw_dsp_bg.js': bgImports,
-        };
-
-        instance = new WebAssembly.Instance(mod, imports);
-        const w = instance.exports;
-
-        if (w.__wbindgen_start) {
-            w.__wbindgen_start();
-        }
-
-        this._wasm = w;
-        this._mem = w.memory;
-
-        // Create Bacteria instance at worklet sample rate
-        this._ptr = w.bacteriainstance_new(sampleRate) >>> 0;
-
-        // Get input buffer pointers
-        this._inputLeftPtr = w.bacteriainstance_get_input_left_ptr(this._ptr) >>> 0;
-        this._inputRightPtr = w.bacteriainstance_get_input_right_ptr(this._ptr) >>> 0;
-
+        const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
+        this._memory = wasmExports.memory;
+        this._instance = new BacteriaInstance(sampleRate);
         this._ready = true;
         this.port.postMessage({ type: 'ready' });
     }
 
-    _setParam(name, value) {
-        const w = this._wasm;
-        const len = name.length;
-        const strPtr = w.__wbindgen_malloc(len, 1) >>> 0;
-        const buf = new Uint8Array(w.memory.buffer, strPtr, len);
-        for (let i = 0; i < len; i++) {
-            buf[i] = name.charCodeAt(i);
-        }
-        w.bacteriainstance_set_param(this._ptr, strPtr, len, value);
+    _passthrough(input, output) {
+        if (output[0] && input[0]) output[0].set(input[0]);
+        if (output[1] && (input[1] ?? input[0])) output[1].set(input[1] ?? input[0]);
     }
 
     process(inputs, outputs) {
-        if (!this._ready) { return true; }
+        if (!this._ready || this._faulted) return true;
 
         const input = inputs[0];
         const output = outputs[0];
-        if (!input || input.length < 2 || !output || output.length < 2) { return true; }
+        if (!input || input.length < 2 || !output || output.length < 2) return true;
 
         const frames = output[0].length;
-        const w = this._wasm;
 
-        // Write input audio into WASM memory
-        const inLeftPtr = w.bacteriainstance_get_input_left_ptr(this._ptr) >>> 0;
-        const inRightPtr = w.bacteriainstance_get_input_right_ptr(this._ptr) >>> 0;
+        try {
+            const inst = this._instance;
+            const mem = this._memory.buffer;
 
-        const mem = w.memory.buffer;
-        new Float32Array(mem, inLeftPtr, frames).set(input[0]);
-        new Float32Array(mem, inRightPtr, frames).set(input[1] ?? input[0]);
+            const inLeftPtr = inst.get_input_left_ptr();
+            const inRightPtr = inst.get_input_right_ptr();
+            new Float32Array(mem, inLeftPtr, frames).set(input[0]);
+            new Float32Array(mem, inRightPtr, frames).set(input[1] ?? input[0]);
 
-        // Process — returns pointer to output left buffer
-        const outLeftPtr = w.bacteriainstance_process(this._ptr, frames) >>> 0;
-        const outRightPtr = w.bacteriainstance_get_right_ptr(this._ptr) >>> 0;
+            const outLeftPtr = inst.process(frames);
+            const outRightPtr = inst.get_right_ptr();
 
-        // Read output from WASM memory
-        output[0].set(new Float32Array(mem, outLeftPtr, frames));
-        if (output[1]) {
-            output[1].set(new Float32Array(mem, outRightPtr, frames));
-        }
+            output[0].set(new Float32Array(mem, outLeftPtr, frames));
+            if (output[1]) output[1].set(new Float32Array(mem, outRightPtr, frames));
 
-        // Send meter data periodically (~23ms at 44.1kHz)
-        this._meterCounter++;
-        if (this._meterCounter >= 8) {
-            this._meterCounter = 0;
-            this.port.postMessage({
-                type: 'meters',
-                inputDb: w.bacteriainstance_get_input_db(this._ptr),
-                outputDb: w.bacteriainstance_get_output_db(this._ptr),
-                latency: w.bacteriainstance_get_latency_samples(this._ptr),
-            });
+            this._meterCounter++;
+            if (this._meterCounter >= 8) {
+                this._meterCounter = 0;
+                this.port.postMessage({
+                    type: 'meters',
+                    inputDb: inst.get_input_db(),
+                    outputDb: inst.get_output_db(),
+                    latency: inst.get_latency_samples(),
+                });
+            }
+        } catch (err) {
+            this._faulted = true;
+            this.port.postMessage({ type: 'error', message: String(err) });
+            this._passthrough(input, output);
         }
 
         return true;

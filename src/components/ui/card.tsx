@@ -6,14 +6,7 @@ type CardProps = HTMLAttributes<HTMLDivElement> & {
 };
 
 export const Card = ({ className, ref, ...props }: CardProps): ReactElement => (
-    <div
-        ref={ref}
-        className={cn(
-            'rounded-md border border-border-soft border-t-[var(--color-light-edge)] bg-bg-panel text-text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_1px_2px_rgba(0,0,0,0.4)]',
-            className
-        )}
-        {...props}
-    />
+    <div ref={ref} className={cn('daw-panel-surface rounded-md text-text-primary', className)} {...props} />
 );
 
 type CardHeaderProps = HTMLAttributes<HTMLDivElement> & {
@@ -21,7 +14,7 @@ type CardHeaderProps = HTMLAttributes<HTMLDivElement> & {
 };
 
 export const CardHeader = ({ className, ref, ...props }: CardHeaderProps): ReactElement => (
-    <div ref={ref} className={cn('flex flex-col space-y-1.5 p-6', className)} {...props} />
+    <div ref={ref} className={cn('flex flex-col space-y-1 p-4 sm:p-5', className)} {...props} />
 );
 
 type CardTitleProps = HTMLAttributes<HTMLHeadingElement> & {
@@ -29,7 +22,11 @@ type CardTitleProps = HTMLAttributes<HTMLHeadingElement> & {
 };
 
 export const CardTitle = ({ className, ref, ...props }: CardTitleProps): ReactElement => (
-    <h3 ref={ref} className={cn('font-semibold leading-none tracking-tight', className)} {...props} />
+    <h3
+        ref={ref}
+        className={cn('font-semibold leading-none tracking-[0.01em] text-text-primary', className)}
+        {...props}
+    />
 );
 
 type CardDescriptionProps = HTMLAttributes<HTMLParagraphElement> & {
@@ -37,7 +34,7 @@ type CardDescriptionProps = HTMLAttributes<HTMLParagraphElement> & {
 };
 
 export const CardDescription = ({ className, ref, ...props }: CardDescriptionProps): ReactElement => (
-    <p ref={ref} className={cn('text-sm text-muted-foreground', className)} {...props} />
+    <p ref={ref} className={cn('text-xs text-text-secondary', className)} {...props} />
 );
 
 type CardContentProps = HTMLAttributes<HTMLDivElement> & {
@@ -45,7 +42,7 @@ type CardContentProps = HTMLAttributes<HTMLDivElement> & {
 };
 
 export const CardContent = ({ className, ref, ...props }: CardContentProps): ReactElement => (
-    <div ref={ref} className={cn('p-6 pt-0', className)} {...props} />
+    <div ref={ref} className={cn('p-4 pt-0 sm:p-5 sm:pt-0', className)} {...props} />
 );
 
 type CardFooterProps = HTMLAttributes<HTMLDivElement> & {
@@ -53,5 +50,5 @@ type CardFooterProps = HTMLAttributes<HTMLDivElement> & {
 };
 
 export const CardFooter = ({ className, ref, ...props }: CardFooterProps): ReactElement => (
-    <div ref={ref} className={cn('flex items-center p-6 pt-0', className)} {...props} />
+    <div ref={ref} className={cn('flex items-center p-4 pt-0 sm:p-5 sm:pt-0', className)} {...props} />
 );

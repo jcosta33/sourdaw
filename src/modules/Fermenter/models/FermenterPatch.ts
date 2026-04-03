@@ -328,6 +328,7 @@ export type FermenterParamDef = {
     unit: string;
     step?: number;
     group?: string;
+    scaling?: 'log' | 'linear';
 };
 
 export const FERMENTER_PARAMS: readonly FermenterParamDef[] = [
@@ -388,7 +389,7 @@ export const FERMENTER_PARAMS: readonly FermenterParamDef[] = [
 
     // Filter
     { id: 'filterModel', label: 'Filter Model', min: 0, max: 5, default: 0, unit: '', step: 1, group: 'filter' },
-    { id: 'filterCutoff', label: 'Cutoff', min: 20, max: 20000, default: 5000, unit: 'Hz', group: 'filter' },
+    { id: 'filterCutoff', label: 'Cutoff', min: 20, max: 20000, default: 5000, unit: 'Hz', group: 'filter', scaling: 'log' },
     { id: 'filterResonance', label: 'Resonance', min: 0.5, max: 20, default: 1, unit: '', group: 'filter' },
     { id: 'filterMode', label: 'Filter Type', min: 0, max: 3, default: 0, unit: '', step: 1, group: 'filter' },
     { id: 'filterDrive', label: 'Drive', min: 0, max: 10, default: 0, unit: '', group: 'filter' },
@@ -409,16 +410,16 @@ export const FERMENTER_PARAMS: readonly FermenterParamDef[] = [
     { id: 'fmModAmount', label: 'FM Depth', min: 0, max: 4, default: 1, unit: '', group: 'fm' },
 
     // Amp ADSR
-    { id: 'ampAttack', label: 'Attack', min: 0.001, max: 5, default: 0.01, unit: 's', group: 'ampEnv' },
-    { id: 'ampDecay', label: 'Decay', min: 0.001, max: 5, default: 0.2, unit: 's', group: 'ampEnv' },
+    { id: 'ampAttack', label: 'Attack', min: 0.001, max: 5, default: 0.01, unit: 's', group: 'ampEnv', scaling: 'log' },
+    { id: 'ampDecay', label: 'Decay', min: 0.001, max: 5, default: 0.2, unit: 's', group: 'ampEnv', scaling: 'log' },
     { id: 'ampSustain', label: 'Sustain', min: 0, max: 1, default: 0.7, unit: '', group: 'ampEnv' },
-    { id: 'ampRelease', label: 'Release', min: 0.001, max: 10, default: 0.3, unit: 's', group: 'ampEnv' },
+    { id: 'ampRelease', label: 'Release', min: 0.001, max: 10, default: 0.3, unit: 's', group: 'ampEnv', scaling: 'log' },
 
     // Filter ADSR
-    { id: 'filterAttack', label: 'Filter Attack', min: 0.001, max: 5, default: 0.01, unit: 's', group: 'filterEnv' },
-    { id: 'filterDecay', label: 'Filter Decay', min: 0.001, max: 5, default: 0.3, unit: 's', group: 'filterEnv' },
+    { id: 'filterAttack', label: 'Filter Attack', min: 0.001, max: 5, default: 0.01, unit: 's', group: 'filterEnv', scaling: 'log' },
+    { id: 'filterDecay', label: 'Filter Decay', min: 0.001, max: 5, default: 0.3, unit: 's', group: 'filterEnv', scaling: 'log' },
     { id: 'filterSustain', label: 'Filter Sustain', min: 0, max: 1, default: 0, unit: '', group: 'filterEnv' },
-    { id: 'filterRelease', label: 'Filter Release', min: 0.001, max: 10, default: 0.3, unit: 's', group: 'filterEnv' },
+    { id: 'filterRelease', label: 'Filter Release', min: 0.001, max: 10, default: 0.3, unit: 's', group: 'filterEnv', scaling: 'log' },
 
     // LFO
     { id: 'lfoRate', label: 'LFO Rate', min: 0, max: 5000, default: 0, unit: 'Hz', group: 'lfo' },
@@ -430,7 +431,7 @@ export const FERMENTER_PARAMS: readonly FermenterParamDef[] = [
     { id: 'msegToFilter', label: 'MSEG → Filter', min: -1, max: 1, default: 0, unit: '', group: 'mseg' },
 
     // Step Sequencer
-    { id: 'seqRate', label: 'Seq Rate', min: 0.5, max: 20, default: 4, unit: 'Hz', group: 'stepseq' },
+    { id: 'seqRate', label: 'Seq Rate', min: 0.5, max: 20, default: 4, unit: 'Hz', group: 'stepseq', scaling: 'log' },
     { id: 'seqToPitch', label: 'Seq → Pitch', min: -1, max: 1, default: 0, unit: '', group: 'stepseq' },
 
     // Portamento
@@ -443,18 +444,18 @@ export const FERMENTER_PARAMS: readonly FermenterParamDef[] = [
     { id: 'reverbDecay', label: 'Reverb Decay', min: 0, max: 0.99, default: 0.5, unit: '', group: 'reverb' },
 
     // EQ
-    { id: 'eqLowFreq', label: 'Low Freq', min: 20, max: 500, default: 100, unit: 'Hz', group: 'eq' },
+    { id: 'eqLowFreq', label: 'Low Freq', min: 20, max: 500, default: 100, unit: 'Hz', group: 'eq', scaling: 'log' },
     { id: 'eqLowGain', label: 'Low Gain', min: -24, max: 24, default: 0, unit: 'dB', group: 'eq' },
     { id: 'eqLowQ', label: 'Low Q', min: 0.1, max: 10, default: 1, unit: '', group: 'eq' },
-    { id: 'eqMidFreq', label: 'Mid Freq', min: 200, max: 8000, default: 1000, unit: 'Hz', group: 'eq' },
+    { id: 'eqMidFreq', label: 'Mid Freq', min: 200, max: 8000, default: 1000, unit: 'Hz', group: 'eq', scaling: 'log' },
     { id: 'eqMidGain', label: 'Mid Gain', min: -24, max: 24, default: 0, unit: 'dB', group: 'eq' },
     { id: 'eqMidQ', label: 'Mid Q', min: 0.1, max: 10, default: 1, unit: '', group: 'eq' },
-    { id: 'eqHighFreq', label: 'High Freq', min: 2000, max: 20000, default: 8000, unit: 'Hz', group: 'eq' },
+    { id: 'eqHighFreq', label: 'High Freq', min: 2000, max: 20000, default: 8000, unit: 'Hz', group: 'eq', scaling: 'log' },
     { id: 'eqHighGain', label: 'High Gain', min: -24, max: 24, default: 0, unit: 'dB', group: 'eq' },
     { id: 'eqHighQ', label: 'High Q', min: 0.1, max: 10, default: 1, unit: '', group: 'eq' },
 
     // Delay
-    { id: 'delayTime', label: 'Delay Time', min: 10, max: 2000, default: 375, unit: 'ms', group: 'delay' },
+    { id: 'delayTime', label: 'Delay Time', min: 10, max: 2000, default: 375, unit: 'ms', group: 'delay', scaling: 'log' },
     { id: 'delayFeedback', label: 'Delay Feedback', min: 0, max: 0.95, default: 0.35, unit: '', group: 'delay' },
     { id: 'delayMix', label: 'Delay Mix', min: 0, max: 1, default: 0, unit: '', group: 'delay' },
 
@@ -476,8 +477,8 @@ export const FERMENTER_PARAMS: readonly FermenterParamDef[] = [
     // Compressor
     { id: 'compThreshold', label: 'Comp Threshold', min: -60, max: 0, default: -20, unit: 'dB', group: 'compressor' },
     { id: 'compRatio', label: 'Comp Ratio', min: 1, max: 20, default: 4, unit: ':1', group: 'compressor' },
-    { id: 'compAttack', label: 'Comp Attack', min: 0.1, max: 100, default: 10, unit: 'ms', group: 'compressor' },
-    { id: 'compRelease', label: 'Comp Release', min: 10, max: 1000, default: 100, unit: 'ms', group: 'compressor' },
+    { id: 'compAttack', label: 'Comp Attack', min: 0.1, max: 100, default: 10, unit: 'ms', group: 'compressor', scaling: 'log' },
+    { id: 'compRelease', label: 'Comp Release', min: 10, max: 1000, default: 100, unit: 'ms', group: 'compressor', scaling: 'log' },
     { id: 'compMix', label: 'Comp Mix', min: 0, max: 1, default: 0, unit: '', group: 'compressor' },
 
     // Stereo Width

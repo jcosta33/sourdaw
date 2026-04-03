@@ -131,6 +131,7 @@ export type GlutenParamDef = {
     unit: string;
     step?: number;
     group?: string;
+    scaling?: 'log' | 'linear';
 };
 
 export const GLUTEN_PARAMS: readonly GlutenParamDef[] = [
@@ -139,8 +140,8 @@ export const GLUTEN_PARAMS: readonly GlutenParamDef[] = [
     { id: 'amount', label: 'Amount', min: 0, max: 100, default: 50, unit: '%', step: 1, group: 'core' },
     { id: 'threshold', label: 'Threshold', min: -60, max: 0, default: -18, unit: 'dB', step: 0.5, group: 'core' },
     { id: 'ratio', label: 'Ratio', min: 1, max: 20, default: 4, unit: ':1', step: 0.5, group: 'core' },
-    { id: 'attack', label: 'Attack', min: 0.02, max: 250, default: 10, unit: 'ms', step: 0.1, group: 'core' },
-    { id: 'release', label: 'Release', min: 25, max: 5000, default: 300, unit: 'ms', step: 1, group: 'core' },
+    { id: 'attack', label: 'Attack', min: 0.02, max: 250, default: 10, unit: 'ms', step: 0.1, group: 'core', scaling: 'log' },
+    { id: 'release', label: 'Release', min: 25, max: 5000, default: 300, unit: 'ms', step: 1, group: 'core', scaling: 'log' },
     { id: 'knee', label: 'Knee', min: 0, max: 30, default: 6, unit: 'dB', step: 0.5, group: 'core' },
     { id: 'makeup', label: 'Makeup', min: -12, max: 24, default: 0, unit: 'dB', step: 0.5, group: 'core' },
     { id: 'mix', label: 'Mix', min: 0, max: 1, default: 1, unit: '', step: 0.01, group: 'core' },
@@ -151,7 +152,7 @@ export const GLUTEN_PARAMS: readonly GlutenParamDef[] = [
     { id: 'lookahead', label: 'Lookahead', min: 0, max: 20, default: 0, unit: 'ms', step: 0.5, group: 'advanced' },
     { id: 'deltaListen', label: 'Delta Listen', min: 0, max: 1, default: 0, unit: '', step: 1, group: 'advanced' },
     // Sidechain
-    { id: 'scHpfFreq', label: 'SC HPF', min: 20, max: 500, default: 80, unit: 'Hz', step: 1, group: 'sidechain' },
+    { id: 'scHpfFreq', label: 'SC HPF', min: 20, max: 500, default: 80, unit: 'Hz', step: 1, group: 'sidechain', scaling: 'log' },
     { id: 'scHpfEnabled', label: 'SC HPF On', min: 0, max: 1, default: 1, unit: '', step: 1, group: 'sidechain' },
     { id: 'thrust', label: 'Thrust', min: 0, max: 2, default: 0, unit: '', step: 1, group: 'sidechain' },
     { id: 'detection', label: 'Detection', min: 0, max: 1, default: 0, unit: '', step: 1, group: 'sidechain' },
@@ -164,6 +165,7 @@ export const GLUTEN_PARAMS: readonly GlutenParamDef[] = [
         unit: 'Hz',
         step: 100,
         group: 'sidechain',
+        scaling: 'log',
     },
     { id: 'scLpfEnabled', label: 'SC LPF On', min: 0, max: 1, default: 0, unit: '', step: 1, group: 'sidechain' },
     // Stereo

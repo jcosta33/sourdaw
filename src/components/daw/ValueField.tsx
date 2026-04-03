@@ -85,7 +85,7 @@ export const ValueField = ({
     return (
         <div className={cn('flex flex-col items-center gap-0.5 group', className)}>
             {label ? (
-                <span className="text-[9px] uppercase tracking-wider text-text-disabled font-semibold mb-0.5">
+                <span className="mb-0.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-text-disabled">
                     {label}
                 </span>
             ) : null}
@@ -95,22 +95,13 @@ export const ValueField = ({
                 onPointerUp={handlePointerUp}
                 onDoubleClick={handleDoubleClick}
                 className={cn(
-                    'flex items-center justify-center font-mono cursor-ns-resize select-none tabular-nums',
-                    'transition-colors duration-fast rounded-micro px-1.5 py-0.5',
+                    'daw-inset-surface flex cursor-ns-resize items-center justify-center rounded-micro px-1.5 py-0.5 font-mono tabular-nums select-none',
+                    'transition-[color,box-shadow,border-color,filter] duration-fast',
                     isDragging
                         ? 'text-accent-cyan ring-1 ring-border-focus'
                         : 'text-text-primary hover:text-accent-cyan hover:border-border-soft',
                     'text-[10px]'
                 )}
-                style={{
-                    background: 'linear-gradient(180deg, #080808 0%, #0d0d0d 100%)',
-                    boxShadow: isDragging
-                        ? 'inset 0 1px 4px rgba(0,0,0,0.8), inset 0 0 1px rgba(0,0,0,0.4), 0 1px 0 rgba(255,255,255,0.04)'
-                        : 'inset 0 1px 4px rgba(0,0,0,0.8), inset 0 0 1px rgba(0,0,0,0.4), 0 1px 0 rgba(255,255,255,0.04)',
-                    border: '1px solid rgba(0,0,0,0.6)',
-                    borderTopColor: 'rgba(0,0,0,0.7)',
-                    borderBottomColor: 'rgba(40,40,40,0.4)',
-                }}
             >
                 {Math.round(value * 100) / 100}
                 {unit}

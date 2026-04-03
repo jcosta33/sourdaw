@@ -59,9 +59,7 @@ export const RotaryKnob = ({
         midiLearnState.learningTarget.paramId === paramId &&
         paramId !== undefined
     );
-    const isMapped = Boolean(
-        midiLearnState?.mappings.some((m) => m.paramId === paramId)
-    );
+    const isMapped = Boolean(midiLearnState?.mappings.some((m) => m.paramId === paramId));
     // Derive sensible defaults from range when not explicitly provided
     const step = stepProp ?? Math.max(0.001, (max - min) / 200);
     const fineStep = fineStepProp ?? step / 10;
@@ -134,7 +132,7 @@ export const RotaryKnob = ({
 
     // Conic arc gradient for the value ring
     const arcAngleDeg = normalized * 270;
-    const arcColor = 'rgba(127, 184, 196, 0.7)';
+    const arcColor = 'rgba(127, 184, 196, 0.62)';
     const arcBg = bipolar
         ? buildBipolarArc(normalized, arcColor)
         : `conic-gradient(from 225deg, ${arcColor} 0deg, ${arcColor} ${arcAngleDeg}deg, transparent ${arcAngleDeg}deg, transparent 270deg, transparent 270deg)`;
@@ -145,7 +143,7 @@ export const RotaryKnob = ({
             className={cn(
                 'group/knob relative flex flex-col items-center select-none touch-none cursor-ns-resize',
                 label && 'min-w-fit',
-                className,
+                className
             )}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
@@ -162,7 +160,7 @@ export const RotaryKnob = ({
             {/* Outer bezel (well) */}
             <div
                 className={cn(
-                    'relative rounded-full bg-bg-panelInset flex items-center justify-center p-[2px] channel-inset',
+                    'relative rounded-full bg-bg-panelInset flex items-center justify-center p-[2px] channel-inset'
                 )}
                 style={{ width: px, height: px }}
             >
@@ -179,13 +177,13 @@ export const RotaryKnob = ({
                 {/* Metallic dome cap — no CSS transition on transform for instant response */}
                 <div
                     className={cn(
-                        'w-full h-full rounded-full relative border border-border-soft',
+                        'relative h-full w-full rounded-full border border-border-soft transition-[filter,box-shadow] group-hover/knob:brightness-[1.03]'
                     )}
                     style={{
                         background:
-                            'radial-gradient(ellipse 60% 40% at 45% 32%, rgba(255,255,255,0.22) 0%, transparent 65%), radial-gradient(circle at 50% 40%, #4a4a4a 0%, #333 35%, #1e1e1e 80%, #1a1a1a 100%)',
+                            'radial-gradient(ellipse 60% 40% at 45% 32%, rgba(255,255,255,0.18) 0%, transparent 65%), radial-gradient(circle at 50% 40%, #474747 0%, #323232 36%, #1e1e1e 78%, #1a1a1a 100%)',
                         boxShadow:
-                            'inset 0 1px 0 rgba(255,255,255,0.1), 0 1px 3px rgba(0,0,0,0.6)',
+                            'inset 0 1px 0 rgba(255,255,255,0.09), inset 0 -1px 0 rgba(0,0,0,0.28), 0 1px 3px rgba(0,0,0,0.6)',
                         transform: `rotate(${rotation}deg)`,
                     }}
                 >
@@ -203,7 +201,7 @@ export const RotaryKnob = ({
                 </div>
             </div>
             {label ? (
-                <span className="text-[7px] text-muted-foreground whitespace-nowrap mt-0.5 leading-none">
+                <span className="mt-0.5 whitespace-nowrap text-[7px] leading-none tracking-[0.12em] text-text-tertiary uppercase">
                     {label}
                 </span>
             ) : null}
@@ -222,4 +220,3 @@ function buildBipolarArc(normalized: number, color: string): string {
     // Fill from value to center (counter-clockwise visual)
     return `conic-gradient(from 225deg, transparent 0deg, transparent ${valueDeg}deg, ${color} ${valueDeg}deg, ${color} ${centerDeg}deg, transparent ${centerDeg}deg)`;
 }
-

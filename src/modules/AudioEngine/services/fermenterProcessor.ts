@@ -2,15 +2,17 @@
 /**
  * AudioWorkletProcessor for the Fermenter synthesizer.
  *
- * Calls the raw wasm-bindgen WASM exports directly — no glue JS, no TextDecoder,
- * no eval. Works in AudioWorklet scope on all browsers including Safari/WKWebView.
+ * Uses the generated wasm-bindgen JS bindings (daw_dsp.js) via initSync so all
+ * WASM memory management is handled by the generated glue — no manual malloc/free.
  *
  * Messages from main thread:
  *   { type: 'init', wasmBytes: ArrayBuffer }
- *   { type: 'noteOn', note, velocity }
- *   { type: 'noteOff', note }
+ *   { type: 'noteOn', note, velocity, scheduleTime? }
+ *   { type: 'noteOff', note, scheduleTime? }
  *   { type: 'param', name, value }
  */
+
+import { initSync, FermenterInstance } from '../wasm/daw_dsp.js';
 
 /**
  * Map TypeScript camelCase param names (from FermenterPatch) to
@@ -125,10 +127,11 @@ const PARAM_MAP = {
 };
 
 class FermenterProcessor extends AudioWorkletProcessor {
-    _wasm = null;      // WASM exports
-    _mem = null;       // WebAssembly.Memory
-    _ptr = 0;          // FermenterInstance pointer
+    _instance = null;   // FermenterInstance (generated wasm-bindgen class)
+    _memory = null;     // WebAssembly.Memory (for direct buffer access in process())
     _ready = false;
+    _faulted = false;
+    _queue = [];        // Sorted by scheduleTime (AudioContext seconds)
 
     constructor() {
         super();
@@ -136,113 +139,95 @@ class FermenterProcessor extends AudioWorkletProcessor {
             const msg = e.data;
             try {
                 if (msg.type === 'init') {
-                    if (this._ready) return; // Guard against double-init
+                    if (this._ready) return;
                     this._initWasm(msg.wasmBytes);
-                } else if (msg.type === 'noteOn' && this._ready) {
-                    this._wasm.fermenterinstance_note_on(this._ptr, msg.note, msg.velocity);
-                } else if (msg.type === 'noteOff' && this._ready) {
-                    this._wasm.fermenterinstance_note_off(this._ptr, msg.note);
-                } else if (msg.type === 'param' && this._ready) {
-                    const rustName = PARAM_MAP[msg.name] ?? msg.name;
-                    this._setParam(rustName, msg.value);
+                } else if (this._ready && !this._faulted) {
+                    this._handleMessage(msg);
                 }
             } catch (err) {
                 console.error('FermenterProcessor error:', err);
+                if (!this._ready) {
+                    this.port.postMessage({ type: 'error', message: err?.message ?? String(err) });
+                }
             }
         };
     }
 
     _initWasm(wasmBytes) {
-        const mod = new WebAssembly.Module(wasmBytes);
-        const importInfo = WebAssembly.Module.imports(mod);
-        const bgImports = {};
-        
-        let instance; // captured securely
-
-        for (const imp of importInfo) {
-            if (imp.module === './daw_dsp_bg.js' || imp.module === './fermenter_bg.js') {
-                if (imp.name.startsWith('__wbg___wbindgen_throw_')) {
-                    bgImports[imp.name] = function(ptr, len) {
-                        throw new Error('WASM error at ptr ' + ptr + ' len ' + len);
-                    };
-                } else if (imp.name === '__wbindgen_init_externref_table') {
-                    bgImports[imp.name] = function() {
-                        const table = instance.exports.__wbindgen_externrefs;
-                        if (table) {
-                            const offset = table.grow(4);
-                            table.set(0, undefined);
-                            table.set(offset + 0, undefined);
-                            table.set(offset + 1, null);
-                            table.set(offset + 2, true);
-                            table.set(offset + 3, false);
-                        }
-                    };
-                } else if (imp.name.startsWith('__wbg___wbindgen_copy_to_typed_array_')) {
-                    bgImports[imp.name] = function(arg0, arg1, arg2) {
-                        // Minimal emulation
-                    };
-                } else {
-                    bgImports[imp.name] = function() {};
-                }
-            }
-        }
-
-        const imports = {
-            './daw_dsp_bg.js': bgImports,
-            './fermenter_bg.js': bgImports,
-        };
-
-        instance = new WebAssembly.Instance(mod, imports);
-        const w = instance.exports;
-
-        // Run wasm-bindgen init
-        if (w.__wbindgen_start) {
-            w.__wbindgen_start();
-        }
-
-        this._wasm = w;
-        this._mem = w.memory;
-
-        // Create synth: 32 voices at worklet sample rate
-        this._ptr = w.fermenterinstance_new(sampleRate, 32) >>> 0;
+        const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
+        this._memory = wasmExports.memory;
+        this._instance = new FermenterInstance(sampleRate, 32);
         this._ready = true;
-
         this.port.postMessage({ type: 'ready' });
     }
 
-    /**
-     * Write an ASCII param name into WASM linear memory and call set_param.
-     * No TextEncoder needed — param names are always ASCII.
-     */
-    _setParam(name, value) {
-        const w = this._wasm;
-        const len = name.length;
-        const strPtr = w.__wbindgen_malloc(len, 1) >>> 0;
-        const buf = new Uint8Array(w.memory.buffer, strPtr, len);
-        for (let i = 0; i < len; i++) {
-            buf[i] = name.charCodeAt(i);
+    _enqueue(msg) {
+        let lo = 0, hi = this._queue.length;
+        while (lo < hi) {
+            const mid = (lo + hi) >>> 1;
+            if (this._queue[mid].scheduleTime <= msg.scheduleTime) lo = mid + 1;
+            else hi = mid;
         }
-        w.fermenterinstance_set_param(this._ptr, strPtr, len, value);
+        this._queue.splice(lo, 0, msg);
+    }
+
+    _handleMessage(msg) {
+        if (msg.scheduleTime !== undefined) {
+            const now = currentFrame / sampleRate;
+            if (msg.scheduleTime > now) {
+                this._enqueue(msg);
+                return;
+            }
+        }
+        this._dispatch(msg);
+    }
+
+    _dispatch(msg) {
+        const inst = this._instance;
+        switch (msg.type) {
+            case 'noteOn':
+                inst.note_on(msg.note, msg.velocity);
+                break;
+            case 'noteOff':
+                inst.note_off(msg.note);
+                break;
+            case 'param': {
+                const rustName = PARAM_MAP[msg.name] ?? msg.name;
+                inst.set_param(rustName, msg.value);
+                break;
+            }
+        }
+    }
+
+    _drainQueue(blockEndTime) {
+        while (this._queue.length > 0 && this._queue[0].scheduleTime <= blockEndTime) {
+            this._dispatch(this._queue.shift());
+        }
     }
 
     process(_inputs, outputs) {
-        if (!this._ready) return true;
+        if (!this._ready || this._faulted) return true;
 
         const output = outputs[0];
         if (!output || output.length < 2) return true;
 
         const frames = output[0].length;
-        const w = this._wasm;
 
-        // Run DSP — returns pointer to left channel buffer
-        const leftPtr = w.fermenterinstance_process(this._ptr, frames) >>> 0;
-        const rightPtr = w.fermenterinstance_get_right_ptr(this._ptr) >>> 0;
+        const blockEndTime = (currentFrame + frames) / sampleRate;
+        this._drainQueue(blockEndTime);
 
-        // Read from WASM linear memory into output
-        const mem = w.memory.buffer;
-        output[0].set(new Float32Array(mem, leftPtr, frames));
-        if (output[1]) {
-            output[1].set(new Float32Array(mem, rightPtr, frames));
+        try {
+            const leftPtr = this._instance.process(frames);
+            const rightPtr = this._instance.get_right_ptr();
+
+            const mem = this._memory.buffer;
+            output[0].set(new Float32Array(mem, leftPtr, frames));
+            if (output[1]) {
+                output[1].set(new Float32Array(mem, rightPtr, frames));
+            }
+        } catch (err) {
+            this._faulted = true;
+            this.port.postMessage({ type: 'error', message: String(err) });
         }
 
         return true;

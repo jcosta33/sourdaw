@@ -7,8 +7,8 @@ import { type PluginDescriptor, type DeviceParameter } from '../DeviceParameter'
  * so the inspector shows controls immediately (before Faust compilation).
  */
 
-function fp(id: string, deviceId: string, name: string, min: number, max: number, defaultValue: number, _step: number, unit = ''): DeviceParameter {
-    return { id, deviceId, name, type: 'float', value: defaultValue, defaultValue, minValue: min, maxValue: max, unit, automatable: true, hasAutomation: false };
+function fp(id: string, deviceId: string, name: string, min: number, max: number, defaultValue: number, _step: number, unit = '', scaling?: 'log' | 'linear'): DeviceParameter {
+    return { id, deviceId, name, type: 'float', value: defaultValue, defaultValue, minValue: min, maxValue: max, unit, scaling, automatable: true, hasAutomation: false };
 }
 
 export const FAUST_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
@@ -20,8 +20,8 @@ export const FAUST_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
         category: 'effect',
         hasCustomUI: false,
         parameters: [
-            fp('decay_time', 'faust-zita-rev1-reverb', 'Decay Time', 0.1, 15, 3, 0.1, 's'),
-            fp('damping', 'faust-zita-rev1-reverb', 'Damping', 200, 12000, 6000, 100, 'Hz'),
+            fp('decay_time', 'faust-zita-rev1-reverb', 'Decay Time', 0.1, 15, 3, 0.1, 's', 'log'),
+            fp('damping', 'faust-zita-rev1-reverb', 'Damping', 200, 12000, 6000, 100, 'Hz', 'log'),
             fp('dry_wet', 'faust-zita-rev1-reverb', 'Dry/Wet', 0, 1, 0.3, 0.01),
         ],
     },
@@ -35,8 +35,8 @@ export const FAUST_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
         parameters: [
             fp('ratio', 'faust-1176-compressor', 'Ratio', 1, 20, 4, 0.1),
             fp('threshold', 'faust-1176-compressor', 'Threshold', -60, 0, -20, 0.1, 'dB'),
-            fp('attack', 'faust-1176-compressor', 'Attack', 0.0001, 0.1, 0.001, 0.0001, 's'),
-            fp('release', 'faust-1176-compressor', 'Release', 0.01, 1, 0.1, 0.001, 's'),
+            fp('attack', 'faust-1176-compressor', 'Attack', 0.0001, 0.1, 0.001, 0.0001, 's', 'log'),
+            fp('release', 'faust-1176-compressor', 'Release', 0.01, 1, 0.1, 0.001, 's', 'log'),
         ],
     },
     {
@@ -50,8 +50,8 @@ export const FAUST_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
             fp('low_threshold', 'faust-multiband-compressor', 'Low Threshold', -60, 0, -20, 0.5, 'dB'),
             fp('mid_threshold', 'faust-multiband-compressor', 'Mid Threshold', -60, 0, -15, 0.5, 'dB'),
             fp('high_threshold', 'faust-multiband-compressor', 'High Threshold', -60, 0, -10, 0.5, 'dB'),
-            fp('crossover_low', 'faust-multiband-compressor', 'Low Crossover', 50, 500, 200, 10, 'Hz'),
-            fp('crossover_high', 'faust-multiband-compressor', 'High Crossover', 1000, 10000, 3000, 100, 'Hz'),
+            fp('crossover_low', 'faust-multiband-compressor', 'Low Crossover', 50, 500, 200, 10, 'Hz', 'log'),
+            fp('crossover_high', 'faust-multiband-compressor', 'High Crossover', 1000, 10000, 3000, 100, 'Hz', 'log'),
         ],
     },
     {
@@ -63,12 +63,12 @@ export const FAUST_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
         hasCustomUI: false,
         parameters: [
             fp('lf_gain', 'faust-pro-parametric-eq', 'Low Gain', -18, 18, 0, 0.1, 'dB'),
-            fp('lf_freq', 'faust-pro-parametric-eq', 'Low Freq', 20, 500, 100, 1, 'Hz'),
+            fp('lf_freq', 'faust-pro-parametric-eq', 'Low Freq', 20, 500, 100, 1, 'Hz', 'log'),
             fp('mf_gain', 'faust-pro-parametric-eq', 'Mid Gain', -18, 18, 0, 0.1, 'dB'),
-            fp('mf_freq', 'faust-pro-parametric-eq', 'Mid Freq', 200, 8000, 1000, 1, 'Hz'),
+            fp('mf_freq', 'faust-pro-parametric-eq', 'Mid Freq', 200, 8000, 1000, 1, 'Hz', 'log'),
             fp('mf_q', 'faust-pro-parametric-eq', 'Mid Q', 0.1, 10, 1, 0.1),
             fp('hf_gain', 'faust-pro-parametric-eq', 'High Gain', -18, 18, 0, 0.1, 'dB'),
-            fp('hf_freq', 'faust-pro-parametric-eq', 'High Freq', 1000, 20000, 8000, 100, 'Hz'),
+            fp('hf_freq', 'faust-pro-parametric-eq', 'High Freq', 1000, 20000, 8000, 100, 'Hz', 'log'),
         ],
     },
     {
@@ -79,7 +79,7 @@ export const FAUST_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
         category: 'effect',
         hasCustomUI: false,
         parameters: [
-            fp('delay', 'faust-tape-delay', 'Delay Time', 0.01, 2, 0.3, 0.01, 's'),
+            fp('delay', 'faust-tape-delay', 'Delay Time', 0.01, 2, 0.3, 0.01, 's', 'log'),
             fp('feedback', 'faust-tape-delay', 'Feedback', 0, 0.95, 0.5, 0.01),
             fp('dry_wet', 'faust-tape-delay', 'Dry/Wet', 0, 1, 0.3, 0.01),
         ],
@@ -93,7 +93,7 @@ export const FAUST_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
         hasCustomUI: false,
         parameters: [
             fp('ceiling', 'faust-brick-wall-limiter', 'Ceiling', -12, 0, -0.3, 0.1, 'dB'),
-            fp('release', 'faust-brick-wall-limiter', 'Release', 0.01, 1, 0.1, 0.01, 's'),
+            fp('release', 'faust-brick-wall-limiter', 'Release', 0.01, 1, 0.1, 0.01, 's', 'log'),
         ],
     },
     {
@@ -104,7 +104,7 @@ export const FAUST_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
         category: 'effect',
         hasCustomUI: false,
         parameters: [
-            fp('decay', 'faust-spring-reverb', 'Decay', 0.1, 10, 2, 0.1, 's'),
+            fp('decay', 'faust-spring-reverb', 'Decay', 0.1, 10, 2, 0.1, 's', 'log'),
             fp('mix', 'faust-spring-reverb', 'Mix', 0, 1, 0.3, 0.01),
         ],
     },
@@ -117,8 +117,8 @@ export const FAUST_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
         hasCustomUI: false,
         parameters: [
             fp('threshold', 'faust-noise-gate', 'Threshold', -80, 0, -40, 0.5, 'dB'),
-            fp('attack', 'faust-noise-gate', 'Attack', 0.0001, 0.1, 0.001, 0.0001, 's'),
-            fp('release', 'faust-noise-gate', 'Release', 0.01, 1, 0.1, 0.01, 's'),
+            fp('attack', 'faust-noise-gate', 'Attack', 0.0001, 0.1, 0.001, 0.0001, 's', 'log'),
+            fp('release', 'faust-noise-gate', 'Release', 0.01, 1, 0.1, 0.01, 's', 'log'),
         ],
     },
     {
@@ -161,7 +161,7 @@ export const FAUST_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
         hasCustomUI: false,
         parameters: [
             fp('threshold', 'faust-de-esser', 'Threshold', -40, 0, -15, 0.5, 'dB'),
-            fp('frequency', 'faust-de-esser', 'Frequency', 2000, 12000, 6000, 100, 'Hz'),
+            fp('frequency', 'faust-de-esser', 'Frequency', 2000, 12000, 6000, 100, 'Hz', 'log'),
             fp('reduction', 'faust-de-esser', 'Reduction', 0, 20, 6, 0.5, 'dB'),
         ],
     },

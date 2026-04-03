@@ -59,12 +59,12 @@ export const DragResizeHandle = ({ side, onResize, className }: DragResizeHandle
                     ? [
                           'w-[5px] cursor-col-resize border-x border-border-hairline',
                           // groove center line
-                          'relative after:absolute after:inset-y-2 after:left-1/2 after:-translate-x-1/2 after:w-px after:bg-white/[0.04]',
+                          'relative after:absolute after:inset-y-2 after:left-1/2 after:-translate-x-1/2 after:w-px after:bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02),rgba(0,0,0,0.2))]',
                       ]
                     : [
                           'h-[5px] cursor-row-resize border-y border-border-hairline',
                           // groove center line
-                          'relative after:absolute after:inset-x-4 after:top-1/2 after:-translate-y-1/2 after:h-px after:bg-white/[0.04]',
+                          'relative after:absolute after:inset-x-4 after:top-1/2 after:-translate-y-1/2 after:h-px after:bg-[linear-gradient(90deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02),rgba(0,0,0,0.2))]',
                       ],
                 className
             )}

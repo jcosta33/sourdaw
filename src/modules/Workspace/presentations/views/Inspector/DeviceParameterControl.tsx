@@ -69,6 +69,83 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
     const isChoice = param.type === 'choice' && param.choices && param.choices.length > 0;
 
     const isSlider = param.unit === 'dB';
+    const isLog = param.scaling === 'log';
+
+    const renderSliderOrKnob = () => {
+        if (isChoice) {
+            return (
+                <select
+                    className="w-[80px] rounded bg-surface px-1.5 py-1 text-xs text-foreground border border-border/50 focus:outline-none focus:ring-1 focus:ring-primary"
+                    value={Math.round(value)}
+                    onChange={handleChoiceChange}
+                    aria-label={param.name}
+                >
+                    {param.choices!.map((label, i) => (
+                        <option key={label} value={i}>
+                            {label}
+                        </option>
+                    ))}
+                </select>
+            );
+        }
+
+        const min = isLog ? 0 : param.minValue;
+        const max = isLog ? 1 : param.maxValue;
+        const mappedStep = isLog ? 0.001 : step;
+        const mappedFineStep = isLog ? 0.0001 : fineStep;
+        
+        const toLinear = (logVal: number) => {
+            const clampVal = Math.max(param.minValue || 0.001, Math.min(param.maxValue, logVal));
+            return Math.log(clampVal / (param.minValue || 0.001)) / Math.log(param.maxValue / (param.minValue || 0.001));
+        };
+        const toLog = (linearVal: number) => {
+            return (param.minValue || 0.001) * Math.pow(param.maxValue / (param.minValue || 0.001), linearVal);
+        };
+
+        const mappedValue = isLog ? toLinear(value) : value;
+        const mappedDefaultValue = isLog ? toLinear(param.defaultValue ?? param.value) : (param.defaultValue ?? param.value);
+
+        const onChange = (v: number) => {
+            handleKnobChange(isLog ? toLog(v) : v);
+        };
+
+        if (isSlider) {
+            return (
+                <BipolarSlider
+                    value={mappedValue}
+                    onValueChange={onChange}
+                    min={min}
+                    max={max}
+                    step={mappedStep}
+                    defaultValue={mappedDefaultValue}
+                    formatValue={(v) => `${formatDisplayValue(isLog ? toLog(v) : v, param)} dB`}
+                    className="w-full"
+                />
+            );
+        }
+
+        return (
+            <RotaryKnob
+                value={mappedValue}
+                onChange={onChange}
+                min={min}
+                max={max}
+                step={mappedStep}
+                fineStep={mappedFineStep}
+                defaultValue={mappedDefaultValue}
+                bipolar={!isLog && param.minValue < 0 && param.maxValue > 0}
+                size={
+                    param.name.toLowerCase().includes('mix') ||
+                    param.name.toLowerCase().includes('dry/wet') ||
+                    param.name.toLowerCase().includes('threshold') ||
+                    param.name.toLowerCase().includes('time') ||
+                    param.name.toLowerCase().includes('rate')
+                        ? 'xl'
+                        : 'lg'
+                }
+            />
+        );
+    };
 
     return (
         <div className={cn('flex w-full min-w-0', isSlider ? 'flex-col gap-2' : 'flex-row items-center gap-3')}>
@@ -153,51 +230,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
             )}
 
             <div className={cn('flex items-center justify-center', isSlider ? 'w-full px-1' : 'shrink-0')}>
-                {isChoice ? (
-                    <select
-                        className="w-[80px] rounded bg-surface px-1.5 py-1 text-xs text-foreground border border-border/50 focus:outline-none focus:ring-1 focus:ring-primary"
-                        value={Math.round(value)}
-                        onChange={handleChoiceChange}
-                        aria-label={param.name}
-                    >
-                        {param.choices!.map((label, i) => (
-                            <option key={label} value={i}>
-                                {label}
-                            </option>
-                        ))}
-                    </select>
-                ) : isSlider ? (
-                    <BipolarSlider
-                        value={value}
-                        onValueChange={handleKnobChange}
-                        min={param.minValue}
-                        max={param.maxValue}
-                        step={step}
-                        defaultValue={param.defaultValue ?? param.value}
-                        formatValue={(v) => `${formatDisplayValue(v, param)} dB`}
-                        className="w-full"
-                    />
-                ) : (
-                    <RotaryKnob
-                        value={value}
-                        onChange={handleKnobChange}
-                        min={param.minValue}
-                        max={param.maxValue}
-                        step={step}
-                        fineStep={fineStep}
-                        defaultValue={param.defaultValue ?? param.value}
-                        bipolar={param.minValue < 0 && param.maxValue > 0}
-                        size={
-                            param.name.toLowerCase().includes('mix') ||
-                            param.name.toLowerCase().includes('dry/wet') ||
-                            param.name.toLowerCase().includes('threshold') ||
-                            param.name.toLowerCase().includes('time') ||
-                            param.name.toLowerCase().includes('rate')
-                                ? 'xl'
-                                : 'lg'
-                        }
-                    />
-                )}
+                {renderSliderOrKnob()}
             </div>
         </div>
     );

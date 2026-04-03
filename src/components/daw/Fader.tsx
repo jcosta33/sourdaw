@@ -113,14 +113,14 @@ export const Fader = ({
         >
             {/* dB scale marks (left side) */}
             {showScale ? (
-                <div className="absolute -left-6 top-0 bottom-0 w-5 flex flex-col justify-between pointer-events-none">
+                <div className="pointer-events-none absolute -left-6 top-0 bottom-0 flex w-5 flex-col justify-between">
                     {DB_MARKS.map((db) => {
                         const pct = ((db - min) / (max - min)) * 100;
                         return (
                             <span
                                 key={db}
                                 className={cn(
-                                    'absolute right-0 text-[8px] font-mono leading-none',
+                                    'absolute right-0 font-mono text-[8px] leading-none tracking-[0.08em]',
                                     db === 0 ? 'text-text-primary' : 'text-text-disabled'
                                 )}
                                 style={{ bottom: `${pct}%`, transform: 'translateY(50%)' }}
@@ -135,13 +135,10 @@ export const Fader = ({
             {/* Track groove */}
             <div
                 ref={trackRef}
-                className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-[5px] rounded-full overflow-hidden"
+                className="daw-inset-surface absolute top-0 bottom-0 left-1/2 w-[5px] -translate-x-1/2 overflow-hidden rounded-full"
                 style={{
-                    background: 'linear-gradient(90deg, #060606 0%, #0a0a0a 40%, #080808 100%)',
-                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.8), inset 1px 0 1px rgba(0,0,0,0.4), 0 1px 0 rgba(255,255,255,0.03)',
-                    border: '1px solid rgba(0,0,0,0.5)',
-                    borderTopColor: 'rgba(0,0,0,0.7)',
-                    borderBottomColor: 'rgba(40,40,40,0.3)',
+                    background:
+                        'linear-gradient(90deg, rgba(255,255,255,0.012) 0%, rgba(255,255,255,0.02) 48%, rgba(0,0,0,0.16) 100%), linear-gradient(90deg, #070707 0%, #0b0b0b 44%, #080808 100%)',
                 }}
             >
                 {/* Unity gain line */}
@@ -180,8 +177,8 @@ export const Fader = ({
                 style={{
                     bottom: `calc(${capBottomPct}% - 20px)`,
                     background: isDragging
-                        ? 'linear-gradient(180deg, #4a4a4a 0%, #383838 25%, #2e2e2e 50%, #252525 75%, #1e1e1e 100%)'
-                        : 'linear-gradient(180deg, #555 0%, #3e3e3e 25%, #353535 50%, #2c2c2c 75%, #222 100%)',
+                        ? 'linear-gradient(180deg, #484848 0%, #373737 24%, #2d2d2d 52%, #252525 76%, #1e1e1e 100%)'
+                        : 'linear-gradient(180deg, #545454 0%, #3e3e3e 25%, #353535 50%, #2b2b2b 75%, #222 100%)',
                     border: '1px solid rgba(255,255,255,0.05)',
                     borderTopColor: isDragging ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.12)',
                     borderLeftColor: isDragging ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.06)',
@@ -189,7 +186,7 @@ export const Fader = ({
                     borderRightColor: 'rgba(0,0,0,0.2)',
                     boxShadow: isDragging
                         ? 'inset 0 2px 4px rgba(0,0,0,0.6)'
-                        : 'inset 0 1px 0 rgba(255,255,255,0.08), 0 2px 4px rgba(0,0,0,0.6)',
+                        : 'inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.24), 0 2px 4px rgba(0,0,0,0.6)',
                 }}
             >
                 {/* Center groove marks */}
