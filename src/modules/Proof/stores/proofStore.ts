@@ -7,9 +7,28 @@ import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
 import { Store } from '#/helpers/Store/Store';
 import { type ProofPatch, DEFAULT_PATCH } from '../models/ProofPatch';
-import { type ProofMeterData } from '#/modules/AudioEngine/engine/ProofNode';
 
 const logger = Container.getInstance().get(Logger);
+
+/**
+ * Real-time metering data shape pushed from the WASM audio engine.
+ *
+ * Defined locally to avoid importing from AudioEngine/engine/ (private internal).
+ * Must remain structurally compatible with the ProofMeterData type in AudioEngine.
+ */
+export type ProofMeterData = {
+    inputLufs: number;
+    outputLufs: number;
+    outputStLufs: number;
+    integratedLufs: number;
+    truePeakDb: number;
+    lra: number;
+    correlation: number;
+    limiterGrDb: number;
+    dynGr: [number, number, number, number];
+    tapPeaks: Array<{ peakL: number; peakR: number }>;
+    latency: number;
+};
 
 export type ProofState = {
     patch: ProofPatch;

@@ -1,4 +1,5 @@
-import { sampleDatabaseStore, type SampleEntry } from '#/modules/SoundLibrary/stores/sampleDatabaseStore';
+import { sampleDatabaseStore } from '#/modules/SoundLibrary/stores/sampleDatabaseStore';
+import { type SampleEntry } from '#/modules/SoundLibrary/models/SampleEntry';
 import { AUTO_TAG_RULES } from '#/modules/SoundLibrary/services/sampleTaggingHelpers';
 
 /**

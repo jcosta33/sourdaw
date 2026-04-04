@@ -7,8 +7,6 @@
  */
 import { type ReactElement, useRef, useEffect } from 'react';
 import { type ProofPatch } from '../../models/ProofPatch';
-import { updateProofPatch } from '../../stores/proofStore';
-import { setProofParam } from '../../useCases/proofParamBridge';
 
 const MIN_FREQ = 20;
 const MAX_FREQ = 20000;
@@ -42,12 +40,13 @@ const peakingMag = (f: number, fc: number, gainDb: number, Q: number): number =>
 
 type Props = {
     patch: ProofPatch;
-    deviceId: string;
     width: number;
     height: number;
+    onPatchChange: (partial: Partial<ProofPatch>) => void;
+    onSendParam: (name: string, value: number) => void;
 };
 
-export const ProofEqCurve = ({ patch, deviceId, width, height }: Props): ReactElement => {
+export const ProofEqCurve = ({ patch, width, height, onPatchChange, onSendParam }: Props): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const dragBandRef = useRef<number | null>(null);
 
@@ -243,9 +242,9 @@ export const ProofEqCurve = ({ patch, deviceId, width, height }: Props): ReactEl
         const bands = patch.eqBands.map((b, i) =>
             i === idx ? { ...b, freq: newFreq, gain: newGain } : b
         );
-        updateProofPatch(deviceId, { eqBands: bands });
-        setProofParam(deviceId, `eq_band${idx}_freq`, newFreq);
-        setProofParam(deviceId, `eq_band${idx}_gain`, newGain);
+        onPatchChange({ eqBands: bands });
+        onSendParam(`eq_band${idx}_freq`, newFreq);
+        onSendParam(`eq_band${idx}_gain`, newGain);
     };
 
     const handlePointerUp = () => {

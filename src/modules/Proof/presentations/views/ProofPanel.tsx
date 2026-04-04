@@ -9,7 +9,7 @@ import { DawPluginReadoutList } from '#/components/daw/DawPluginReadoutList';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { proofStore, setProofUiLevel, getProofState, type ProofState } from '../../stores/proofStore';
+import { proofStore, setProofUiLevel, getProofState, updateProofPatch, type ProofState } from '../../stores/proofStore';
 import { setProofParamWithPatch, setProofParam } from '../../useCases/proofParamBridge';
 import { PROOF_PRESETS } from '../../useCases/proofPresets';
 import { TARGET_LUFS, type ProofTarget } from '../../models/ProofPatch';
@@ -595,15 +595,15 @@ const Level3Build = ({ state, deviceId }: { state: ProofState; deviceId: string 
         <div className="flex-1 flex min-h-0 overflow-hidden">
             {/* Module controls — scrollable */}
             <div className="flex-1 overflow-y-auto py-2 space-y-3">
-                <ProofEqSection patch={patch} deviceId={deviceId} />
+                <ProofEqSection patch={patch} onPatchChange={(p) => updateProofPatch(deviceId, p)} onSendParam={(n, v) => setProofParam(deviceId, n, v)} />
                 <div className="mx-2 border-t border-border/20" />
-                <ProofDynSection patch={patch} dynGr={state.dynGr} deviceId={deviceId} />
+                <ProofDynSection patch={patch} dynGr={state.dynGr} onPatchChange={(p) => updateProofPatch(deviceId, p)} onSendParam={(n, v) => setProofParam(deviceId, n, v)} />
                 <div className="mx-2 border-t border-border/20" />
-                <ProofImagerSection patch={patch} correlation={state.correlation} deviceId={deviceId} />
+                <ProofImagerSection patch={patch} correlation={state.correlation} onPatchChange={(p) => updateProofPatch(deviceId, p)} onSendParam={(n, v) => setProofParam(deviceId, n, v)} />
                 <div className="mx-2 border-t border-border/20" />
-                <ProofExciterSection patch={patch} deviceId={deviceId} />
+                <ProofExciterSection patch={patch} onPatchChange={(p) => updateProofPatch(deviceId, p)} onSendParam={(n, v) => setProofParam(deviceId, n, v)} />
                 <div className="mx-2 border-t border-border/20" />
-                <ProofLimiterSection patch={patch} limiterGrDb={state.limiterGrDb} truePeakDb={state.truePeakDb} deviceId={deviceId} />
+                <ProofLimiterSection patch={patch} limiterGrDb={state.limiterGrDb} truePeakDb={state.truePeakDb} onPatchChange={(p) => updateProofPatch(deviceId, p)} onSendParam={(n, v) => setProofParam(deviceId, n, v)} />
             </div>
 
             {/* Right: Loudness history + summary */}

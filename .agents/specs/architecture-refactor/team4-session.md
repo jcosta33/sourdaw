@@ -60,3 +60,53 @@ Before migrating `Arrangement`, grep for every import from `AudioEngine` inside 
 Do not move any `Arrangement` export that `AudioEngine` currently imports without adding a shim first.
 
 Wait for Teams 1 and 2 to have stable shim contracts before beginning `Arrangement`.
+
+---
+
+## Notes from Team 3 (Instrument Workshop) — 2026-04-04
+
+Team 3 completed its migration first and found the following violations that originate inside **your** modules. These will block `pnpm deps:validate` from passing until resolved.
+
+### Arrangement: 5 violations importing Team 3 private internals
+
+**`Arrangement/repositories/presets/factoryPresets.ts` imports `Fermenter/repositories/fermenterPresets.ts` directly.**
+This is a private repository path. A public path already exists: `Fermenter/useCases/fermenterQueries` re-exports `FERMENTER_PRESETS`. Switch the import there — no Team 3 changes needed.
+
+**`Arrangement/models/pluginDescriptors/` imports private model types from 4 Team 3 instruments:**
+- `bacteriaDescriptor.ts` → `Bacteria/models/BacteriaPatch.ts`
+- `crustDescriptor.ts` → `Crust/models/CrustPatch.ts`
+- `glutenDescriptor.ts` → `Gluten/models/GlutenPatch.ts`
+- `grinderDescriptor.ts` → `Grinder/models/GrinderPatch.ts`
+
+`models/` is private per the architecture rules. Two options — coordinate with Team 3 before deciding:
+1. Team 3 can expose patch types via a thin public barrel (e.g. `useCases/<instrument>Queries/index.ts`) — request this via the shared spec or PR comment.
+2. Arrangement can define minimal local descriptor interfaces that structurally match only the fields it needs, without importing the full patch type.
+
+### Arrangement: within-team CrdtDocument violations (internal to Team 4)
+
+These are within your boundary and do not require cross-team coordination:
+- `Arrangement/stores/trackStore.ts` → `CrdtDocument/models/CrdtDocumentTypes.ts`
+- `Arrangement/stores/takeLaneStore.ts` → `CrdtDocument/models/CrdtDocumentTypes.ts`
+- `Arrangement/stores/markerStore.ts` → `CrdtDocument/models/CrdtDocumentTypes.ts`
+
+Fix: expose `CrdtDocumentTypes` via `CrdtDocument/useCases/` or a public models barrel.
+
+### Arrangement/MIDI: violations importing Team 1 private paths
+
+These require Team 1 (Conductor) to expose public paths:
+- `Arrangement/useCases/importAudioFile.ts` → `Command/models/UndoEntry.ts` (private)
+- `MIDI/useCases/importMidiFile.ts` → `Command/models/UndoEntry.ts` (private)
+
+Coordinate with Team 1 to expose `UndoEntry` via `Command/useCases/` or a public models path.
+
+### MIDI: importing Arrangement private repository (within Team 4)
+
+- `MIDI/useCases/importMidiFile.ts` → `Arrangement/repositories/clipIdCounter.ts`
+
+`repositories/clipIdCounter.ts` is private. Expose it via a use case or public barrel within Arrangement.
+
+### Arrangement view ↔ Workspace component — mutual cross-presentation violation
+
+- `Arrangement/presentations/views/TrackListView.tsx` → `Workspace/presentations/components/MiniMasterSpectrum.tsx`
+
+A view in Arrangement is importing a presentation component from Workspace (Team 5). This is a `no-cross-module-private-presentation` violation. Coordinate with Team 5: either Workspace promotes `MiniMasterSpectrum` to a shared/public component, or Arrangement inlines an equivalent local component.

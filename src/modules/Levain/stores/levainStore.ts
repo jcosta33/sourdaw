@@ -2,6 +2,10 @@
  * Levain instrument state store.
  * Holds the current patch, selected instrument, articulation state, and UI level.
  * Reactive — UI subscribes via useSyncExternalStore.
+ *
+ * This store is a pure reactive state container. Engine calls belong in
+ * useCases/levainParamBridge.ts. Previously this store had a circular
+ * dependency with levainParamBridge — that has been removed.
  */
 
 import { Container } from '#/helpers/DependencyInjector/Container';
@@ -13,11 +17,6 @@ import {
     type MicPositionState,
     createDefaultPatch,
 } from '../models/LevainPatch';
-import {
-    sendHumanizeToEngine,
-    sendLegatoEnabledToEngine,
-    sendMicParamToEngine,
-} from '../useCases/levainParamBridge';
 
 const logger = Container.getInstance().get(Logger);
 
@@ -48,7 +47,8 @@ export const levainStore = new Store<LevainState>(logger, {
 });
 
 // ---------------------------------------------------------------------------
-// State update functions
+// State update functions — pure store mutations, no engine calls.
+// Engine sync is handled exclusively in useCases/levainParamBridge.ts.
 // ---------------------------------------------------------------------------
 
 export function setLevainParam<K extends keyof LevainPatch>(
@@ -95,6 +95,10 @@ export function setMacro(index: number, value: number): void {
     }
 }
 
+/**
+ * Update a mic position in the store.
+ * Engine sync is the caller's responsibility — use levainParamBridge for that.
+ */
 export function updateMicPosition(index: number, updates: Partial<MicPositionState>): void {
     const state = levainStore.value;
     if (state && index >= 0 && index < state.patch.micPositions.length) {
@@ -108,44 +112,6 @@ export function updateMicPosition(index: number, updates: Partial<MicPositionSta
             ...state,
             patch: { ...state.patch, micPositions },
         });
-        // Forward to engine
-        if (updates.volume !== undefined) {
-            sendMicParamToEngine(index, 'volume', updates.volume);
-        }
-        if (updates.pan !== undefined) {
-            sendMicParamToEngine(index, 'pan', updates.pan);
-        }
-        if (updates.enabled !== undefined) {
-            sendMicParamToEngine(index, 'enabled', updates.enabled ? 1.0 : 0.0);
-        }
-    }
-}
-
-export function setHumanizeAmount(amount: number): void {
-    const state = levainStore.value;
-    if (state) {
-        levainStore.set({
-            ...state,
-            patch: {
-                ...state.patch,
-                humanize: { ...state.patch.humanize, amount },
-            },
-        });
-        sendHumanizeToEngine(amount);
-    }
-}
-
-export function setLegatoEnabled(enabled: boolean): void {
-    const state = levainStore.value;
-    if (state) {
-        levainStore.set({
-            ...state,
-            patch: {
-                ...state.patch,
-                legato: { ...state.patch.legato, enabled },
-            },
-        });
-        sendLegatoEnabledToEngine(enabled);
     }
 }
 

@@ -3,7 +3,7 @@
  * and ID counter for sample entries.
  */
 
-import { type SampleTag, type SampleCategory } from '#/modules/SoundLibrary/stores/sampleDatabaseStore';
+import { type SampleTag, type SampleCategory } from '../models/SampleEntry';
 
 export const AUTO_TAG_RULES: Array<{ pattern: RegExp; tags: string[]; category: SampleCategory }> = [
     { pattern: /kick|bd|bass.?drum/i, tags: ['kick', 'drum', 'low-end'], category: 'kicks' },

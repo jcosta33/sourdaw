@@ -8,23 +8,25 @@ import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader'
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { type ProofPatch } from '../../models/ProofPatch';
-import { updateProofPatch } from '../../stores/proofStore';
-import { setProofParam } from '../../useCases/proofParamBridge';
 import { ProofEqCurve } from './ProofEqCurve';
 
 const BAND_TYPES = ['Peak', 'Lo Shelf', 'Hi Shelf', 'HP', 'LP'] as const;
 const CHANNEL_MODES = ['L/R', 'Mid', 'Side'] as const;
 const BAND_COLORS = ['#6BAACE', '#52BA46', '#E0AA2A', '#FF5F80', '#4CB8B8', '#954EB2', '#6BAACE', '#52BA46'];
 
-type Props = { patch: ProofPatch; deviceId: string };
+type Props = {
+    patch: ProofPatch;
+    onPatchChange: (partial: Partial<ProofPatch>) => void;
+    onSendParam: (name: string, value: number) => void;
+};
 
-export const ProofEqSection = ({ patch, deviceId }: Props): ReactElement => {
+export const ProofEqSection = ({ patch, onPatchChange, onSendParam }: Props): ReactElement => {
     const updateBand = (idx: number, key: string, value: number | boolean) => {
         const bands = patch.eqBands.map((b, i) =>
             i === idx ? { ...b, [key]: value } : b
         );
-        updateProofPatch(deviceId, { eqBands: bands });
-        setProofParam(deviceId, `eq_band${idx}_${key}`, value as number);
+        onPatchChange({ eqBands: bands });
+        onSendParam(`eq_band${idx}_${key}`, value as number);
     };
 
     return (
@@ -39,8 +41,8 @@ export const ProofEqSection = ({ patch, deviceId }: Props): ReactElement => {
                         tone="cyan"
                         size="xs"
                         onClick={() => {
-                            updateProofPatch(deviceId, { eqBypassed: !patch.eqBypassed });
-                            setProofParam(deviceId, 'eq_bypass', patch.eqBypassed ? 0 : 1);
+                            onPatchChange({ eqBypassed: !patch.eqBypassed });
+                            onSendParam('eq_bypass', patch.eqBypassed ? 0 : 1);
                         }}
                     >
                         {patch.eqBypassed ? 'OFF' : 'ON'}
@@ -50,7 +52,7 @@ export const ProofEqSection = ({ patch, deviceId }: Props): ReactElement => {
 
             {/* Interactive frequency response graph */}
             <div className={patch.eqBypassed ? 'opacity-30' : ''}>
-                <ProofEqCurve patch={patch} deviceId={deviceId} width={500} height={120} />
+                <ProofEqCurve patch={patch} width={500} height={120} onPatchChange={onPatchChange} onSendParam={onSendParam} />
             </div>
 
             <div className={`flex gap-1 overflow-x-auto ${patch.eqBypassed ? 'opacity-30' : ''}`}>
@@ -63,24 +65,24 @@ export const ProofEqSection = ({ patch, deviceId }: Props): ReactElement => {
                             style={{ backgroundColor: BAND_COLORS[i] }}
                             onClick={() => {
                                 updateBand(i, 'enabled', !band.enabled);
-                                setProofParam(deviceId, `eq_band${i}_enabled`, band.enabled ? 0 : 1);
+                                onSendParam(`eq_band${i}_enabled`, band.enabled ? 0 : 1);
                             }}
                         />
 
                         {/* Frequency */}
-                        <RotaryKnob value={band.freq} onChange={(v) => { updateBand(i, 'freq', v); setProofParam(deviceId, `eq_band${i}_freq`, v); }}
+                        <RotaryKnob value={band.freq} onChange={(v) => { updateBand(i, 'freq', v); onSendParam(`eq_band${i}_freq`, v); }}
                             min={20} max={20000} step={1} defaultValue={band.freq} size="sm" />
                         <span className="text-[6px] text-muted-foreground font-mono">
                             {band.freq >= 1000 ? `${(band.freq / 1000).toFixed(1)}k` : `${band.freq.toFixed(0)}`}
                         </span>
 
                         {/* Gain */}
-                        <RotaryKnob value={band.gain} onChange={(v) => { updateBand(i, 'gain', v); setProofParam(deviceId, `eq_band${i}_gain`, v); }}
+                        <RotaryKnob value={band.gain} onChange={(v) => { updateBand(i, 'gain', v); onSendParam(`eq_band${i}_gain`, v); }}
                             min={-18} max={18} step={0.5} defaultValue={0} size="sm" />
                         <span className="text-[6px] text-muted-foreground font-mono">{band.gain > 0 ? '+' : ''}{band.gain.toFixed(1)}</span>
 
                         {/* Q */}
-                        <RotaryKnob value={band.q} onChange={(v) => { updateBand(i, 'q', v); setProofParam(deviceId, `eq_band${i}_q`, v); }}
+                        <RotaryKnob value={band.q} onChange={(v) => { updateBand(i, 'q', v); onSendParam(`eq_band${i}_q`, v); }}
                             min={0.1} max={10} step={0.1} defaultValue={1} size="sm" />
                         <span className="text-[6px] text-muted-foreground font-mono">Q{band.q.toFixed(1)}</span>
 
@@ -93,7 +95,7 @@ export const ProofEqSection = ({ patch, deviceId }: Props): ReactElement => {
                             onChange={(e) => {
                                 const t = parseInt(e.target.value);
                                 updateBand(i, 'type', t);
-                                setProofParam(deviceId, `eq_band${i}_type`, t);
+                                onSendParam(`eq_band${i}_type`, t);
                             }}
                         >
                             {BAND_TYPES.map((label, ti) => (
@@ -110,7 +112,7 @@ export const ProofEqSection = ({ patch, deviceId }: Props): ReactElement => {
                             onChange={(e) => {
                                 const c = parseInt(e.target.value);
                                 updateBand(i, 'channel', c);
-                                setProofParam(deviceId, `eq_band${i}_channel`, c);
+                                onSendParam(`eq_band${i}_channel`, c);
                             }}
                         >
                             {CHANNEL_MODES.map((label, ci) => (
