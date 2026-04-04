@@ -4,8 +4,8 @@
 /// Full COM initialization (IComponent → IAudioProcessor) is pending —
 /// audio processing is passthrough until then.
 
-use crate::commands::plugins::PluginParameter;
-use crate::host::traits::AudioPlugin;
+use crate::params::PluginParameter;
+use crate::traits::AudioPlugin;
 use libloading::Library;
 use std::ffi::{c_void, CStr};
 use std::ptr;

@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::collections::hash_map::DefaultHasher;
+use sha2::{Sha256, Digest};
 use std::fs;
-use std::hash::{Hash, Hasher};
 use std::path::Path;
 
 use clap_sys::entry::clap_plugin_entry;
@@ -35,10 +34,14 @@ pub struct ScanResult {
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
+/// Compute a stable, version-independent ID for a plugin path.
+/// Uses the first 8 bytes of SHA-256 of the canonical path string.
+/// Safe to persist in project files — deterministic across Rust versions and builds.
 pub fn stable_id(path: &Path) -> String {
-    let mut hasher = DefaultHasher::new();
-    path.to_string_lossy().hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+    let mut hasher = Sha256::new();
+    hasher.update(path.to_string_lossy().as_bytes());
+    let digest = hasher.finalize();
+    format!("{:016x}", u64::from_be_bytes(digest[..8].try_into().expect("sha256 is 32 bytes")))
 }
 
 fn detect_format(path: &Path, is_dir: bool) -> Option<&'static str> {

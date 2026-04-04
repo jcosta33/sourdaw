@@ -1,34 +1,24 @@
 //! Tauri commands for plugin scanning, loading, and parameter management.
 
+use cpal::traits::{DeviceTrait, HostTrait};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-use crate::host::clap_wrapper::ClapWrapper;
-use crate::host::vst3_wrapper::Vst3Wrapper;
+use daw_plugin_host::{ClapWrapper, Vst3Wrapper, AudioPlugin};
+use daw_plugin_host::scanner::{self, ScannedPlugin, ScanResult};
 use crate::host::native_bridge::ClapPluginSlot;
-use crate::host::scanner::{self, ScannedPlugin, ScanResult};
-use crate::host::traits::AudioPlugin;
 use crate::state::{AppState, PluginInstanceData, PluginRegistryEntry};
 use daw_engine::EngineHandle;
 use daw_engine::plugin_slot::{MidiNoteEvent, TransportState};
 
-// Re-export for use by traits.rs and other modules
-pub use crate::host::scanner::ScannedPlugin as ScannedPluginInfo;
+// Re-export PluginParameter from daw-plugin-host for TypeScript binding generation
+pub use daw_plugin_host::PluginParameter;
+
+// Re-export for use by other modules
+pub use daw_plugin_host::ScannedPlugin as ScannedPluginInfo;
 
 // ── Types ───────────────────────────────────────────────────────────────
 use daw_core::{PluginId, PluginInstanceId};
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PluginParameter {
-    pub id: u32,
-    pub name: String,
-    pub value: f64,
-    pub default_value: f64,
-    pub min_value: f64,
-    pub max_value: f64,
-    pub unit: String,
-    pub is_automatable: bool,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginInstance {
@@ -149,7 +139,14 @@ pub async fn load_plugin(
                 entry.clap_id.clone()
             };
 
-            let wrapper = ClapWrapper::new(&entry.path, &clap_id)?;
+            // Query the real device sample rate so the plugin is activated at the correct rate.
+            let sample_rate = cpal::default_host()
+                .default_output_device()
+                .and_then(|d| d.default_output_config().ok())
+                .map(|c| c.sample_rate().0 as f64)
+                .unwrap_or(48000.0);
+
+            let wrapper = ClapWrapper::new(&entry.path, &clap_id, sample_rate)?;
             let name = wrapper.get_name().to_string();
             let params = wrapper.get_parameters();
 
@@ -159,7 +156,7 @@ pub async fn load_plugin(
                 let mut engine_guard = state.engine.lock()
                     .map_err(|e| format!("Failed to lock engine: {}", e))?;
                 if let Some(ref mut engine) = *engine_guard {
-                    let slot = ClapPluginSlot { wrapper };
+                    let slot = ClapPluginSlot::new(wrapper);
                     let id = engine.add_plugin(Box::new(slot))?;
 
                     // Create ring-buffer audio bridge
@@ -419,4 +416,3 @@ pub async fn process_plugin_audio(
         Ok(audio_bytes)
     }
 }
-

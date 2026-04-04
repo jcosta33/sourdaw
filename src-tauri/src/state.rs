@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::sync::{Arc, Mutex};
-use crate::host::traits::AudioPlugin;
-use crate::host::clap_wrapper::ClapWrapper;
+use daw_plugin_host::AudioPlugin;
+use daw_plugin_host::ClapWrapper;
 use daw_engine::EngineHandle;
 use daw_engine::audio_bridge::PluginAudioBridgeHandle;
 
