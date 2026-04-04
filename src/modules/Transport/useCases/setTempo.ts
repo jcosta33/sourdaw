@@ -1,4 +1,4 @@
-import { transportStore } from '../stores/transportStore';
+import { getTransportState, updateTransportState } from '../repositories/transport';
 import { InvalidTempoError } from '../errors/InvalidTempoError';
 
 export function setTempo(bpm: number): void {
@@ -6,10 +6,10 @@ export function setTempo(bpm: number): void {
         throw new InvalidTempoError(bpm);
     }
 
-    const state = transportStore.value;
+    const state = getTransportState();
     if (!state) {
         return;
     }
 
-    transportStore.set({ ...state, tempo: bpm });
+    updateTransportState({ tempo: bpm });
 }

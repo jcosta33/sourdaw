@@ -2,7 +2,7 @@ import { getTrackStoreState, setTrackStoreState } from '#/modules/Arrangement/us
 import { type AppAction } from '../models/AppAction';
 import { type Track, type TrackAlternative, type Clip } from '#/modules/Arrangement/useCases/trackQueries';
 
-export const handleCreateTrackAlternative = (action: Extract<AppAction, { type: 'createTrackAlternative' }>): void => {
+export function handleCreateTrackAlternative(action: Extract<AppAction, { type: 'createTrackAlternative' }>): void {
     const state = getTrackStoreState();
     if (!state) {
         return;
@@ -46,9 +46,9 @@ export const handleCreateTrackAlternative = (action: Extract<AppAction, { type: 
             };
         }),
     });
-};
+}
 
-export const handleSwitchTrackAlternative = (action: Extract<AppAction, { type: 'switchTrackAlternative' }>): void => {
+export function handleSwitchTrackAlternative(action: Extract<AppAction, { type: 'switchTrackAlternative' }>): void {
     const state = getTrackStoreState();
     if (!state) {
         return;
@@ -88,9 +88,9 @@ export const handleSwitchTrackAlternative = (action: Extract<AppAction, { type: 
             };
         }),
     });
-};
+}
 
-export const handleRenameTrackAlternative = (action: Extract<AppAction, { type: 'renameTrackAlternative' }>): void => {
+export function handleRenameTrackAlternative(action: Extract<AppAction, { type: 'renameTrackAlternative' }>): void {
     const state = getTrackStoreState();
     if (!state) {
         return;
@@ -113,9 +113,9 @@ export const handleRenameTrackAlternative = (action: Extract<AppAction, { type: 
             };
         }),
     });
-};
+}
 
-export const handleDeleteTrackAlternative = (action: Extract<AppAction, { type: 'deleteTrackAlternative' }>): void => {
+export function handleDeleteTrackAlternative(action: Extract<AppAction, { type: 'deleteTrackAlternative' }>): void {
     const state = getTrackStoreState();
     if (!state) {
         return;
@@ -152,4 +152,4 @@ export const handleDeleteTrackAlternative = (action: Extract<AppAction, { type: 
             };
         }),
     });
-};
+}

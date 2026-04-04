@@ -6,7 +6,7 @@
  */
 
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { transportStore } from '#/modules/Transport/stores/transportStore';
+import { getTransportState, updateTransportState } from '#/modules/Transport/repositories/transport';
 import { type TempoMapPoint, type TempoMapResult } from '#/modules/Transport/models/TempoMappingTypes';
 
 function createEmptyResult(): TempoMapResult {
@@ -103,7 +103,7 @@ export function estimateOnsetsFromClips(): number[] {
         return [];
     }
 
-    const transport = transportStore.value;
+    const transport = getTransportState();
     const currentTempo = transport?.tempo ?? 120;
     const beatDuration = 60 / currentTempo;
 
@@ -128,16 +128,13 @@ export function estimateOnsetsFromClips(): number[] {
  * Apply detected tempo map to the transport.
  */
 export function applyTempoMap(result: TempoMapResult): void {
-    const state = transportStore.value;
+    const state = getTransportState();
     if (!state) {
         return;
     }
 
     if (result.averageBpm > 0) {
-        transportStore.set({
-            ...state,
-            tempo: Math.round(result.averageBpm),
-        });
+        updateTransportState({ tempo: Math.round(result.averageBpm) });
     }
 }
 

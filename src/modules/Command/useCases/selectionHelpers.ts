@@ -10,9 +10,11 @@ import { getWorkspaceState } from '#/modules/Workspace/useCases/workspaceQueries
 
 // ── Track / clip selection readers ──────────────────────────────────────
 
-export const getSelectedTrackId = (): string | null => getTrackStoreState()?.selectedTrackId ?? null;
+export function getSelectedTrackId(): string | null {
+    return getTrackStoreState()?.selectedTrackId ?? null;
+}
 
-export const getSelectedClipId = (): string | null => {
+export function getSelectedClipId(): string | null {
     const ws = getWorkspaceState();
     if (!ws) {
         return null;
@@ -21,9 +23,9 @@ export const getSelectedClipId = (): string | null => {
         return ws.selectedClipIds[0] ?? null;
     }
     return ws.selectedClipId;
-};
+}
 
-export const getSelectedClipIds = (): string[] => {
+export function getSelectedClipIds(): string[] {
     const ws = getWorkspaceState();
     if (!ws) {
         return [];
@@ -35,9 +37,9 @@ export const getSelectedClipIds = (): string[] => {
         return [ws.selectedClipId];
     }
     return [];
-};
+}
 
-export const getAllClipIds = (): string[] => {
+export function getAllClipIds(): string[] {
     const state = getTrackStoreState();
     if (!state) {
         return [];
@@ -49,9 +51,9 @@ export const getAllClipIds = (): string[] => {
         }
     }
     return ids;
-};
+}
 
-export const getLastClipEndBeat = (): number => {
+export function getLastClipEndBeat(): number {
     const state = getTrackStoreState();
     if (!state) {
         return 0;
@@ -65,11 +67,11 @@ export const getLastClipEndBeat = (): number => {
         }
     }
     return maxEnd;
-};
+}
 
 // ── Marker navigation ───────────────────────────────────────────────────
 
-export const goToNextMarker = (): void => {
+export function goToNextMarker(): void {
     const markers = getMarkerState()?.markers;
     const playhead = getTransportStoreValue()?.playheadPosition ?? 0;
     if (!markers || markers.length === 0) {
@@ -80,9 +82,9 @@ export const goToNextMarker = (): void => {
     if (next) {
         seekPlayhead(next.beat);
     }
-};
+}
 
-export const goToPreviousMarker = (): void => {
+export function goToPreviousMarker(): void {
     const markers = getMarkerState()?.markers;
     const playhead = getTransportStoreValue()?.playheadPosition ?? 0;
     if (!markers || markers.length === 0) {
@@ -93,4 +95,4 @@ export const goToPreviousMarker = (): void => {
     if (prev) {
         seekPlayhead(prev.beat);
     }
-};
+}

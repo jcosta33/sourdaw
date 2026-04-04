@@ -9,14 +9,14 @@ import {
     setSend as setSendEngine,
 } from '#/modules/AudioEngine/useCases/engineAccess';
 
-export const ensureBusStrip = (busId: string): void => {
+export function ensureBusStrip(busId: string): void {
     ensureBusStripEngine(busId);
-};
+}
 
-export const setBusGain = (busId: string, gain: number): void => {
+export function setBusGain(busId: string, gain: number): void {
     setBusGainEngine(busId, gain);
-};
+}
 
-export const setSend = (sourceTrackId: string, busId: string, level: number, preFader = false): void => {
+export function setSend(sourceTrackId: string, busId: string, level: number, preFader = false): void {
     setSendEngine(sourceTrackId, busId, level, preFader);
-};
+}

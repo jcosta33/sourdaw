@@ -1,10 +1,9 @@
 import { type CommandEntry } from '../CommandRegistry';
-import { getAllClipIds } from '../../useCases/selectionHelpers';
 import { undo, redo } from '#/modules/Command/useCases/undoRedo';
 import { copySelectedClip } from '#/modules/Arrangement/useCases/clipboard/copySelectedClip';
 import { cutSelectedClip } from '#/modules/Arrangement/useCases/clipboard/cutSelectedClip';
 import { pasteClip } from '#/modules/Arrangement/useCases/clipboard/pasteClip';
-import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
+import { selectAllClips, deselectAllClips } from '#/modules/Command/useCases/editActionHandlers';
 
 /** Edit commands — undo, redo, copy, cut, paste, select/deselect all. */
 export const editCommands: CommandEntry[] = [
@@ -65,10 +64,7 @@ export const editCommands: CommandEntry[] = [
         category: 'Edit',
         shortcut: '⌘A',
         action: () => {
-            const ws = workspaceStore.value;
-            if (ws) {
-                workspaceStore.set({ ...ws, selectedClipIds: getAllClipIds(), selectedClipId: null });
-            }
+            selectAllClips();
         },
     },
     {
@@ -78,10 +74,7 @@ export const editCommands: CommandEntry[] = [
         category: 'Edit',
         shortcut: '⌘⇧A',
         action: () => {
-            const ws = workspaceStore.value;
-            if (ws) {
-                workspaceStore.set({ ...ws, selectedClipIds: [], selectedClipId: null });
-            }
+            deselectAllClips();
         },
     },
 ];

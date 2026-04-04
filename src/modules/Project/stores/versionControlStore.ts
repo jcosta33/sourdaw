@@ -23,10 +23,7 @@ export const versionControlStore = new Store<VersionControlState>(logger, {
     initialData: loadFromStorage(),
 });
 
-versionControlStore.subscribe((value) => {
-    if (!value) {
-        return;
-    }
+function persistVersionControlState(value: VersionControlState): void {
     try {
         // Persist only metadata — not full snapshots (too large for localStorage)
         const lightweight: VersionControlState = {
@@ -40,4 +37,11 @@ versionControlStore.subscribe((value) => {
     } catch {
         /* storage full */
     }
+}
+
+versionControlStore.subscribe((value) => {
+    if (!value) {
+        return;
+    }
+    persistVersionControlState(value);
 });

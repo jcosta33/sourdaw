@@ -1,4 +1,4 @@
-import { transportStore } from '../stores/transportStore';
+import { getTransportState, updateTransportState } from '../repositories/transport';
 
 const VALID_DENOMINATORS = [2, 4, 8, 16] as const;
 
@@ -10,13 +10,12 @@ export function setTimeSignature(numerator: number, denominator: number): void {
         return;
     }
 
-    const state = transportStore.value;
+    const state = getTransportState();
     if (!state) {
         return;
     }
 
-    transportStore.set({
-        ...state,
+    updateTransportState({
         timeSignatureNumerator: numerator,
         timeSignatureDenominator: denominator,
     });
