@@ -5,6 +5,7 @@
  * Below: detail knobs for timing, tuning, dynamic, vibrato variation.
  */
 import { type ReactElement } from 'react';
+import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { type HumanizeConfig } from '../../models/LevainPatch';
 
@@ -18,9 +19,7 @@ export const HumanizePanel = ({ config, onChange }: HumanizePanelProps): ReactEl
     return (
         <div className="space-y-4 max-w-[340px]">
             {/* Header */}
-            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                Humanization
-            </span>
+            <DawPluginSectionHeader title="Humanization" titleClassName="text-muted-foreground" />
 
             {/* Hero: large humanize knob centered */}
             <div className="flex flex-col items-center gap-1 py-2">

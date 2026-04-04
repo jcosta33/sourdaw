@@ -36,6 +36,8 @@ export type PresenceData = {
     viewportEndBeat: number;
     viewportTrackIds: string[];
     action: string | null;
+    /** Current playhead position in beats — used to render ghost playheads. */
+    playheadBeat: number | null;
 };
 
 /**

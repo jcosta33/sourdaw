@@ -4,6 +4,8 @@
  * Knobs below for precision. No isolated sub-tabs.
  */
 import { type ReactElement } from 'react';
+import { DawPluginChip } from '#/components/daw/DawPluginChip';
+import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { FilterResponse } from '#/components/daw/visualizers/FilterResponse';
 import { FILTER_MODE_NAMES, FILTER_MODEL_NAMES } from '../../models/FermenterPatch';
@@ -33,29 +35,33 @@ export const FilterSection = ({
     return (
         <div className="space-y-2 w-full">
             {/* Model + mode selectors in one row */}
-            <div className="flex items-center gap-3">
-                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider shrink-0">Filter</span>
-                <div className="flex gap-0.5">
-                    {FILTER_MODEL_NAMES.map((name, i) => (
-                        <button key={name} type="button"
-                            className={`px-1.5 py-0.5 rounded text-[7px] font-medium transition-colors ${model === i ? 'bg-[var(--color-accent-cyan)]/80 text-white' : 'text-muted-foreground/40 hover:text-foreground'}`}
-                            onClick={() => onModelChange(i)}
-                        >{name}</button>
-                    ))}
-                </div>
-                {isSvf ? (
-                    <div className="flex gap-0.5 ml-auto">
-                        {FILTER_MODE_NAMES.map((name, i) => (
-                            <button key={name} type="button"
-                                className={`px-1.5 py-0.5 rounded text-[7px] font-medium transition-colors ${mode === i ? 'bg-[var(--color-accent-cyan)] text-white' : 'bg-surface-raised/30 text-muted-foreground hover:text-foreground'}`}
-                                onClick={() => onModeChange(i)}
-                            >{name}</button>
-                        ))}
-                    </div>
-                ) : (
-                    <span className="text-[7px] text-muted-foreground/50 ml-auto">{description}</span>
-                )}
-            </div>
+            <DawPluginSectionHeader
+                title="Filter"
+                titleClassName="shrink-0 text-muted-foreground"
+                className="gap-3"
+                actions={
+                    <>
+                        <div className="flex gap-0.5">
+                            {FILTER_MODEL_NAMES.map((name, i) => (
+                                <DawPluginChip key={name} active={model === i} tone="cyan" size="xs"
+                                    onClick={() => onModelChange(i)}
+                                >{name}</DawPluginChip>
+                            ))}
+                        </div>
+                        {isSvf ? (
+                            <div className="ml-auto flex gap-0.5">
+                                {FILTER_MODE_NAMES.map((name, i) => (
+                                    <DawPluginChip key={name} active={mode === i} tone="cyan" size="xs"
+                                        onClick={() => onModeChange(i)}
+                                    >{name}</DawPluginChip>
+                                ))}
+                            </div>
+                        ) : (
+                            <span className="ml-auto text-[7px] text-muted-foreground/50">{description}</span>
+                        )}
+                    </>
+                }
+            />
 
             {/* HERO: Large interactive filter curve */}
             <div className="rounded-md overflow-hidden border border-border/20 bg-black/20">

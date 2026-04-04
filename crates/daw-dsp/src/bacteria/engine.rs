@@ -167,7 +167,7 @@ impl BandChain {
         }
     }
 
-    fn process_sample(&mut self, left: f32, right: f32) -> (f32, f32) {
+    fn process_sample(&mut self, left: f32, right: f32, gain_offset: f32) -> (f32, f32) {
         if !self.enabled || self.mute {
             return (0.0, 0.0);
         }
@@ -256,8 +256,8 @@ impl BandChain {
             r = cr;
         }
 
-        // Apply band gain
-        let g = self.gain.next();
+        // Apply band gain — gain_offset (linear) arrives from the modulation matrix
+        let g = (self.gain.next() + gain_offset).max(0.0);
         l *= g;
         r *= g;
 
@@ -358,7 +358,8 @@ pub struct BacteriaEngine {
     bands_l: [f32; MAX_BANDS],
     bands_r: [f32; MAX_BANDS],
 
-    // Computed parameter offsets per-block from modulations
+    // Computed parameter offsets per-block from modulations.
+    // Convention: [0] = global mix; [1..=6] = per-band gain offsets (linear scale, bands 0-5).
     param_offsets: [f32; 1024],
 }
 
@@ -666,8 +667,10 @@ impl BacteriaEngine {
                         if any_solo && !self.bands[b].solo {
                             continue;
                         }
+                        // param_offsets[1..=6] carry per-band gain offsets (linear scale).
+                        let gain_offset = self.param_offsets[1 + b];
                         let (bl, br) =
-                            self.bands[b].process_sample(self.bands_l[b], self.bands_r[b]);
+                            self.bands[b].process_sample(self.bands_l[b], self.bands_r[b], gain_offset);
                         sum_l += bl;
                         sum_r += br;
                         self.band_levels[b] = self.bands[b].peak_level;
@@ -680,12 +683,12 @@ impl BacteriaEngine {
 
                     // Process mid through band 0, side through band 1
                     let (pm, _) = if self.band_count > 0 {
-                        self.bands[0].process_sample(mid, mid)
+                        self.bands[0].process_sample(mid, mid, self.param_offsets[1])
                     } else {
                         (mid, mid)
                     };
                     let (ps, _) = if self.band_count > 1 {
-                        self.bands[1].process_sample(side, side)
+                        self.bands[1].process_sample(side, side, self.param_offsets[2])
                     } else {
                         (side, side)
                     };

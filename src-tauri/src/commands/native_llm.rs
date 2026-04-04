@@ -339,3 +339,15 @@ pub async fn get_native_llm_status(state: tauri::State<'_, NativeLlmState>) -> R
     let model_id = state.model_id.read().await.clone();
     Ok(NativeLlmStatus { loaded, model_id })
 }
+
+/// Return the default model directory path (creates it if absent).
+#[tauri::command]
+pub fn get_model_dir() -> Result<String, String> {
+    let dir = dirs::data_dir()
+        .ok_or("Could not determine data directory")?
+        .join("com.sourdaw.app")
+        .join("models");
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create model directory: {e}"))?;
+    Ok(dir.to_string_lossy().into_owned())
+}

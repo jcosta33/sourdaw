@@ -1,5 +1,6 @@
 import { type ReactElement, useState, useSyncExternalStore } from 'react';
 import { Cpu, RotateCcw, Save, Shuffle } from 'lucide-react';
+import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { Button } from '#/components/ui/button';
 import {
     fermenterStore,
@@ -504,14 +505,15 @@ export const FermenterPanel = (): ReactElement => {
 
                 <div className="flex flex-wrap gap-1.5">
                     {LEVELS.map((level) => (
-                        <button
+                        <DawPluginChip
                             key={level.id}
-                            type="button"
-                            className={`fermenter-chip ${uiLevel === level.id ? 'fermenter-chip-active' : ''}`}
+                            active={uiLevel === level.id}
+                            tone="cyan"
+                            size="sm"
                             onClick={() => setFermenterUiLevel(level.id)}
                         >
                             {level.label}
-                        </button>
+                        </DawPluginChip>
                     ))}
                 </div>
 

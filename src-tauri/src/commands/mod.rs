@@ -1,6 +1,5 @@
 pub mod collab;
 pub mod filesystem;
-pub mod llm;
 pub mod midi;
 pub mod plugins;
 pub mod speech;

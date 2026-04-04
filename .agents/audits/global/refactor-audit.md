@@ -459,7 +459,6 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 ori
 - **AUDIT-009**: Migrate `Yeast` and `Synth` sequencers off the main UI thread immediately.
 - **AUDIT-004**: Fix Volatile CRDT Memory Trap, implement background patching.
 
-
 ### **P1 (Architecture violations actively slowing development)**
 
 - **AUDIT-006**: Outlaw anonymous `pushUndoEntry` usage. Route all `Automation`, `Transport`, and `MIDI` CRUD processes through strict `ActionHandler` instances.
@@ -487,14 +486,14 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 ori
 
 ## 4.6 Pattern Prescription Matrix
 
-| Smell Encountered                                        | Why it's harmful here                                                           | Ideal Target Pattern                  | Simple Remediation                                                                               |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| **Singleton Device Stores**<br/>(e.g., `fermenterStore`) | Completely breaks track multi-instancing by clobbering global state.            | **Parameterized Selectors / Context** | Extract state into `trackStore`'s `DeviceState` CRDT model. Read via `useDeviceState(deviceId)`. |
-| **Anonymous Undo Closures**<br/>(`pushUndoEntry`)        | Prevents network sync and serialization. Leaves holes in the document log.      | **Command Pattern**                   | Wrap mutation in strict `AppAction` DTOs. Process via typed `ActionHandler`.                     |
-| **JSON IPC Audio Loops**<br/>(`tauriInvoke`)             | Fails frame-rate guarantees; GC spikes inside the audio thread.                 | **Lock-Free Ring Buffer**             | Use `SharedArrayBuffer` bridged directly to `daw-engine`.                                        |
-| **God Components**<br/>(`ExpandedChannelStrip.tsx`)      | Heavily couples critical render pathways to pure domain business logic.         | **Adapter/Facade Hook**               | Delegate all business logic to dedicated `useCase` presenter boundaries.                         |
-| **God Switches in Render**<br/>(`TrackNode.ts`)          | Violates Open/Closed principle. Hot-graph must be updated for every new plugin. | **Strategy / Registry**               | Invert dependency: Inject a `DeviceDescriptor` registry array at boot.                           |
-| **Main-Thread Sequencers**<br/>(`drumSynthVoices`)       | Cedes musical timing accuracy to the JS DOM Event loop.                         | **Compiled Schedule**                 | Process events purely inside `AudioWorkletProcessor` or native Rust `ProcessTask` iterator.      |
+| Smell Encountered                                        | Why it's harmful here                                                           | Ideal Target Pattern                  | Simple Remediation                                                                                    |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| **Singleton Device Stores**<br/>(e.g., `fermenterStore`) | Completely breaks track multi-instancing by clobbering global state.            | **Parameterized Selectors / Context** | Extract state into `trackStore`'s `DeviceState` CRDT model. Read via `useDeviceState(deviceId)`.      |
+| **Anonymous Undo Closures**<br/>(`pushUndoEntry`)        | Prevents network sync and serialization. Leaves holes in the document log.      | **Command Pattern**                   | Wrap mutation in strict `AppAction` DTOs. Process via typed `ActionHandler`.                          |
+| **JSON IPC Audio Loops**<br/>(`tauriInvoke`)             | Fails frame-rate guarantees; GC spikes inside the audio thread.                 | **Lock-Free Ring Buffer**             | Use `SharedArrayBuffer` bridged directly to `daw-engine`.                                             |
+| **God Components**<br/>(`ExpandedChannelStrip.tsx`)      | Heavily couples critical render pathways to pure domain business logic.         | **Adapter/Facade Hook**               | Delegate all business logic to dedicated `useCase` presenter boundaries.                              |
+| **God Switches in Render**<br/>(`TrackNode.ts`)          | Violates Open/Closed principle. Hot-graph must be updated for every new plugin. | **Strategy / Registry**               | Invert dependency: Inject a `DeviceDescriptor` registry array at boot.                                |
+| **Main-Thread Sequencers**<br/>(`drumSynthVoices`)       | Cedes musical timing accuracy to the JS DOM Event loop.                         | **Compiled Schedule**                 | Process events purely inside `AudioWorkletProcessor` or native Rust `ProcessTask` iterator.           |
 | **Cross-Module Model Aliasing**<br/>(`export type {X}`)  | Tightly couples modules. Violates independence of bounded contexts.             | **Model Duplication**                 | Stop exporting models from use cases. Duplicate the model shape natively inside the importing module. |
 
 ---
@@ -536,12 +535,12 @@ The audit was conducted via a systematic, file-by-file manual scanner (1,337 ori
 
 **Status:** ALL TARGET FILES AUDITED & VERIFIED.
 
-The manual, file-by-file architectural crawl has concluded with 100% coverage across the `Arrangement`, `AudioEngine`, `Toaster`, `Yeast`, `Crust`, `Plugin`, `Project`, `Proof`, `ProofChamber`, `Routing`, `SampleLibrary`, `Scoring`, and `SoundLibrary` modules. 
+The manual, file-by-file architectural crawl has concluded with 100% coverage across the `Arrangement`, `AudioEngine`, `Toaster`, `Yeast`, `Crust`, `Plugin`, `Project`, `Proof`, `ProofChamber`, `Routing`, `SampleLibrary`, `Scoring`, and `SoundLibrary` modules.
 
 The Ledger is closed.
 
 Sourdaw is structurally sound but operationally brittle. The codebase's massive ambition—pushing React, Web Audio, Automerge CRDTs, and Tauri to their absolute limits—has exposed the seams where these distinct environments meet.
 
-By systematically applying the Phase 1 through Phase 6 remediations defined above, we will decouple the UI from the Audio hot path, eradicate singleton-store memory leaks, and cement the Command Pattern as the sole source of truth for document orchestration. 
+By systematically applying the Phase 1 through Phase 6 remediations defined above, we will decouple the UI from the Audio hot path, eradicate singleton-store memory leaks, and cement the Command Pattern as the sole source of truth for document orchestration.
 
 **This audit document is canonical and final. We are cleared to begin Phase 1 Remediation.**

@@ -18,7 +18,10 @@ export const usePresence = (): Map<string, PresenceData> => {
         const unsubscribe = onPresence((data) => {
             setPresenceMap((prev) => {
                 const next = new Map(prev);
-                next.set(data.peerId, data);
+                // Merge with existing entry so partial updates (e.g. playhead-only
+                // broadcasts) don't wipe fields set by other update paths.
+                const existing = next.get(data.peerId);
+                next.set(data.peerId, existing ? { ...existing, ...data } : data);
                 return next;
             });
 

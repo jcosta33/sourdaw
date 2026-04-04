@@ -1,5 +1,8 @@
 import { type ReactElement, useEffect, useRef, useSyncExternalStore } from 'react';
 import { Activity, Waves } from 'lucide-react';
+import { DawPluginLed } from '#/components/daw/DawPluginLed';
+import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
+import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { type DisplayMode } from '../../models/ScoringState';
 import { scoringStore, getScoringState, setA4Reference, setDisplayMode } from '../../stores/scoringStore';
@@ -12,16 +15,6 @@ const MODES: ReadonlyArray<{ id: DisplayMode; label: string; detail: string }> =
 
 const GUITAR_STRINGS = ['E2', 'A2', 'D3', 'G3', 'B3', 'E4'] as const;
 
-function MetricTile({ label, value, detail }: { label: string; value: string; detail: string }): ReactElement {
-    return (
-        <div className="scoring-window flex min-w-[88px] flex-col gap-1 px-3 py-2">
-            <span className="text-[8px] uppercase tracking-[0.24em] text-white/48">{label}</span>
-            <span className="font-mono text-[13px] text-white/88">{value}</span>
-            <span className="text-[9px] text-white/42">{detail}</span>
-        </div>
-    );
-}
-
 function SectionCard({
     title,
     detail,
@@ -32,15 +25,16 @@ function SectionCard({
     children: ReactElement | ReactElement[];
 }): ReactElement {
     return (
-        <section className="scoring-window flex flex-col gap-3 p-3">
-            <div className="flex items-center justify-between gap-2">
-                <div className="text-[8px] font-semibold uppercase tracking-[0.24em] text-[var(--color-accent-mint)]/72">
-                    {title}
-                </div>
-                {detail ? <div className="scoring-led">{detail}</div> : null}
-            </div>
+        <DawPluginSectionCard
+            className="scoring-window"
+            title={title}
+            detail={detail}
+            detailMode="badge"
+            titleClassName="text-[var(--color-accent-mint)]/72"
+            detailClassName="text-[var(--color-accent-mint)]"
+        >
             {children}
-        </section>
+        </DawPluginSectionCard>
     );
 }
 
@@ -96,7 +90,7 @@ export const ScoringPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                         <div className="text-[11px] font-medium text-white/88">{entry.label}</div>
                                         <div className="text-[9px] text-white/42">{entry.detail}</div>
                                     </div>
-                                    {selected ? <div className="scoring-led">Live</div> : null}
+                                    {selected ? <DawPluginLed tone="mint">Live</DawPluginLed> : null}
                                 </button>
                             );
                         })}
@@ -133,17 +127,33 @@ export const ScoringPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                         </div>
                     </div>
                     <div className="ml-auto flex flex-wrap gap-2">
-                        <MetricTile
+                        <DawPluginMetricTile
+                            className="scoring-window min-w-[88px]"
+                            labelClassName="text-white/48"
+                            valueClassName="text-white/88"
+                            detailClassName="text-white/42"
                             label="Cents"
                             value={active ? `${cents >= 0 ? '+' : ''}${cents.toFixed(1)}` : '—'}
                             detail="Offset"
                         />
-                        <MetricTile
+                        <DawPluginMetricTile
+                            className="scoring-window min-w-[88px]"
+                            labelClassName="text-white/48"
+                            valueClassName="text-white/88"
+                            detailClassName="text-white/42"
                             label="Pitch"
                             value={active ? `${frequency.toFixed(1)} Hz` : '—'}
                             detail="Detected"
                         />
-                        <MetricTile label="Conf" value={`${Math.round(confidence * 100)}%`} detail="Tracker" />
+                        <DawPluginMetricTile
+                            className="scoring-window min-w-[88px]"
+                            labelClassName="text-white/48"
+                            valueClassName="text-white/88"
+                            detailClassName="text-white/42"
+                            label="Conf"
+                            value={`${Math.round(confidence * 100)}%`}
+                            detail="Tracker"
+                        />
                     </div>
                 </header>
 
@@ -157,7 +167,7 @@ export const ScoringPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                         >
                             <div className="mb-3 flex items-center justify-between gap-3">
                                 <div className="text-[9px] uppercase tracking-[0.24em] text-white/42">Main read</div>
-                                <div className="scoring-led">{active ? 'Tracking' : 'Idle'}</div>
+                                <DawPluginLed tone="mint">{active ? 'Tracking' : 'Idle'}</DawPluginLed>
                             </div>
                             <div className="grid min-h-0 flex-1 grid-cols-[140px_minmax(0,1fr)_120px] items-center gap-4">
                                 <div className="flex flex-col items-center gap-1">

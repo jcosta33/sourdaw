@@ -34,7 +34,9 @@ type ExportDialogProps = {
 
 const EXPORT_SETTINGS_KEY = 'sourdaw:export-settings';
 
-const loadExportSettings = (): { formats: ExportFormat[]; sampleRate: number; bitDepth: number } => {
+type Mp3BitRate = 96 | 128 | 192 | 320;
+
+const loadExportSettings = (): { formats: ExportFormat[]; sampleRate: number; bitDepth: number; mp3BitRate: Mp3BitRate } => {
     try {
         const stored = localStorage.getItem(EXPORT_SETTINGS_KEY);
         if (stored) {
@@ -43,15 +45,16 @@ const loadExportSettings = (): { formats: ExportFormat[]; sampleRate: number; bi
                 formats: Array.isArray(parsed.formats) ? parsed.formats : parsed.format ? [parsed.format] : ['wav'],
                 sampleRate: parsed.sampleRate ?? 44100,
                 bitDepth: parsed.bitDepth ?? 24,
+                mp3BitRate: ([96, 128, 192, 320] as Mp3BitRate[]).includes(parsed.mp3BitRate) ? (parsed.mp3BitRate as Mp3BitRate) : 128,
             };
         }
     } catch {
         /* ignore */
     }
-    return { formats: ['wav'], sampleRate: 44100, bitDepth: 24 };
+    return { formats: ['wav'], sampleRate: 44100, bitDepth: 24, mp3BitRate: 128 };
 };
 
-const saveExportSettings = (settings: { formats: ExportFormat[]; sampleRate: number; bitDepth: number }): void => {
+const saveExportSettings = (settings: { formats: ExportFormat[]; sampleRate: number; bitDepth: number; mp3BitRate: Mp3BitRate }): void => {
     try {
         localStorage.setItem(EXPORT_SETTINGS_KEY, JSON.stringify(settings));
     } catch {
@@ -65,6 +68,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     const [mode, setMode] = useState<ExportMode>('mixdown');
     const [sampleRate, setSampleRate] = useState(defaults.sampleRate);
     const [bitDepth, setBitDepth] = useState(defaults.bitDepth);
+    const [mp3BitRate, setMp3BitRate] = useState<Mp3BitRate>(defaults.mp3BitRate);
     const [exporting, setExporting] = useState(false);
     const [progress, setProgress] = useState(0);
     const [statusText, setStatusText] = useState('');
@@ -80,19 +84,24 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             } else {
                 next.add(f);
             }
-            saveExportSettings({ formats: Array.from(next), sampleRate, bitDepth });
+            saveExportSettings({ formats: Array.from(next), sampleRate, bitDepth, mp3BitRate });
             return next;
         });
     };
 
     const updateSampleRate = (sr: number) => {
         setSampleRate(sr);
-        saveExportSettings({ formats: Array.from(formats), sampleRate: sr, bitDepth });
+        saveExportSettings({ formats: Array.from(formats), sampleRate: sr, bitDepth, mp3BitRate });
     };
 
     const updateBitDepth = (bd: number) => {
         setBitDepth(bd);
-        saveExportSettings({ formats: Array.from(formats), sampleRate, bitDepth: bd });
+        saveExportSettings({ formats: Array.from(formats), sampleRate, bitDepth: bd, mp3BitRate });
+    };
+
+    const updateMp3BitRate = (br: Mp3BitRate) => {
+        setMp3BitRate(br);
+        saveExportSettings({ formats: Array.from(formats), sampleRate, bitDepth, mp3BitRate: br });
     };
 
     const handleCancel = () => {
@@ -236,7 +245,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     let fileData: Uint8Array | ArrayBuffer;
 
                     if (f === 'mp3') {
-                        fileData = await encodeMp3(buffer, 128, passProgress);
+                        fileData = await encodeMp3(buffer, mp3BitRate, passProgress);
                     } else if (f === 'flac') {
                         fileData = await encodeFlac(buffer, passProgress);
                     } else {
@@ -525,7 +534,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     </section>
 
                     {/* SETTINGS ──────────────────────────────────────────────────── */}
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className={`grid gap-4 ${formats.has('mp3') ? 'grid-cols-3' : 'grid-cols-2'}`}>
                         <section className="bg-stone-950/50 border border-stone-800/50 rounded-lg p-3">
                             <DawEyebrowLabel size="sm" className="mb-2 block font-bold tracking-widest text-stone-600">
                                 Sample Rate
@@ -573,6 +582,32 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                 ))}
                             </div>
                         </section>
+
+                        {formats.has('mp3') && (
+                            <section className="bg-stone-950/50 border border-stone-800/50 rounded-lg p-3">
+                                <DawEyebrowLabel size="sm" className="mb-2 block font-bold tracking-widest text-stone-600">
+                                    MP3 Quality
+                                </DawEyebrowLabel>
+                                <div className="flex flex-wrap gap-1">
+                                    {([96, 128, 192, 320] as Mp3BitRate[]).map((br) => (
+                                        <Button
+                                            key={br}
+                                            variant="ghost"
+                                            size="sm"
+                                            className={`h-6 text-[10px] px-2 rounded-md ${
+                                                mp3BitRate === br
+                                                    ? 'bg-stone-800 text-stone-200'
+                                                    : 'text-stone-500 hover:text-stone-300 hover:bg-stone-800/50'
+                                            }`}
+                                            onClick={() => updateMp3BitRate(br)}
+                                            disabled={exporting}
+                                        >
+                                            {br}k
+                                        </Button>
+                                    ))}
+                                </div>
+                            </section>
+                        )}
                     </div>
 
                     <Separator className="bg-gradient-to-r from-transparent via-orange-900/30 to-transparent" />

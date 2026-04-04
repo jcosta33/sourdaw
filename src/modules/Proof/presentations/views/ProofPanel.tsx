@@ -1,4 +1,9 @@
 import { type ReactElement, useSyncExternalStore } from 'react';
+import { DawPluginChip } from '#/components/daw/DawPluginChip';
+import { DawPluginLed } from '#/components/daw/DawPluginLed';
+import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
+import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
+import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { proofStore, setProofUiLevel, getProofState, type ProofState } from '../../stores/proofStore';
 import { setProofParamWithPatch, setProofParam } from '../../useCases/proofParamBridge';
@@ -89,14 +94,6 @@ function getLevelMeta(level: ProofState['uiLevel']): {
     };
 }
 
-const MetricTile = ({ label, value, detail }: { label: string; value: string; detail: string }): ReactElement => (
-    <div className="proof-window flex min-w-[96px] flex-col gap-1 px-3 py-2">
-        <span className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">{label}</span>
-        <span className="font-mono text-[13px] text-foreground">{value}</span>
-        <span className="text-[9px] leading-4 text-muted-foreground/55">{detail}</span>
-    </div>
-);
-
 const SideCard = ({
     title,
     detail,
@@ -106,15 +103,14 @@ const SideCard = ({
     detail?: string;
     children: ReactElement | ReactElement[];
 }): ReactElement => (
-    <section className="proof-window flex flex-col gap-3 p-3">
-        <div className="space-y-1">
-            <div className="text-[8px] font-semibold uppercase tracking-[0.24em] text-[var(--color-accent-mint)]/70">
-                {title}
-            </div>
-            {detail ? <span className="sr-only">{detail}</span> : null}
-        </div>
+    <DawPluginSectionCard
+        className="proof-window"
+        title={title}
+        detail={detail}
+        titleClassName="text-[var(--color-accent-mint)]/70"
+    >
         {children}
-    </section>
+    </DawPluginSectionCard>
 );
 
 function renderLevel(state: ProofState, deviceId: string): ReactElement {
@@ -213,17 +209,18 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                     {TARGET_OPTIONS.map((option) => {
                                         const active = patch.target === option.value;
                                         return (
-                                            <button
+                                            <DawPluginChip
                                                 key={option.value}
-                                                type="button"
-                                                className={`proof-chip ${active ? 'proof-chip-active' : ''}`}
+                                                active={active}
+                                                tone="mint"
+                                                size="sm"
                                                 onClick={() => {
                                                     setProofParamWithPatch(deviceId, 'target', option.value);
                                                     setProofParamWithPatch(deviceId, 'targetLufs', option.lufs);
                                                 }}
                                             >
                                                 {option.label}
-                                            </button>
+                                            </DawPluginChip>
                                         );
                                     })}
                                 </div>
@@ -271,22 +268,25 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         </div>
 
                         <div className="flex flex-wrap justify-end gap-2">
-                            <MetricTile
+                            <DawPluginMetricTile
+                                className="proof-window"
                                 label="In"
                                 value={`${formatLufs(state.inputLufs)} LUFS`}
                                 detail="Incoming loudness"
                             />
-                            <MetricTile
+                            <DawPluginMetricTile
+                                className="proof-window"
                                 label="Out"
                                 value={`${formatLufs(state.outputLufs)} LUFS`}
                                 detail="Current output"
                             />
-                            <MetricTile
+                            <DawPluginMetricTile
+                                className="proof-window"
                                 label="Peak"
                                 value={`${formatDb(state.truePeakDb)} dBTP`}
                                 detail="True peak ceiling"
                             />
-                            <MetricTile label="LRA" value={`${state.lra.toFixed(1)} LU`} detail="Loudness range" />
+                            <DawPluginMetricTile className="proof-window" label="LRA" value={`${state.lra.toFixed(1)} LU`} detail="Loudness range" />
                         </div>
                     </div>
 
@@ -295,31 +295,24 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
 
                 <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
                     <SideCard title="Quick read" detail="Keep the mission, the chain, and the compare switch in reach.">
-                        <div className="space-y-2 text-[10px] leading-4 text-muted-foreground">
-                            <div className="flex items-center justify-between gap-2">
-                                <span>Preset</span>
-                                <span className="font-mono text-foreground/85">{patch.name}</span>
-                            </div>
-                            <div className="flex items-center justify-between gap-2">
-                                <span>Target</span>
-                                <span className="font-mono text-foreground/85">{targetLabel}</span>
-                            </div>
-                            <div className="flex items-center justify-between gap-2">
-                                <span>Integrated</span>
-                                <span className="font-mono text-foreground/85">
-                                    {formatLufs(state.integratedLufs)} LUFS
-                                </span>
-                            </div>
-                            <div className="flex items-center justify-between gap-2">
-                                <span>Correlation</span>
-                                <span className="font-mono text-foreground/85">{state.correlation.toFixed(2)}</span>
-                            </div>
-                            <div className="flex items-center justify-between gap-2">
-                                <span>Limiter GR</span>
-                                <span className="font-mono text-foreground/85">
-                                    {Math.abs(state.limiterGrDb).toFixed(1)} dB
-                                </span>
-                            </div>
+                        <div className="space-y-2">
+                            <DawReadoutRow label="Preset" value={patch.name} valueClassName="text-foreground/85" />
+                            <DawReadoutRow label="Target" value={targetLabel} valueClassName="text-foreground/85" />
+                            <DawReadoutRow
+                                label="Integrated"
+                                value={`${formatLufs(state.integratedLufs)} LUFS`}
+                                valueClassName="text-foreground/85"
+                            />
+                            <DawReadoutRow
+                                label="Correlation"
+                                value={state.correlation.toFixed(2)}
+                                valueClassName="text-foreground/85"
+                            />
+                            <DawReadoutRow
+                                label="Limiter GR"
+                                value={`${Math.abs(state.limiterGrDb).toFixed(1)} dB`}
+                                valueClassName="text-foreground/85"
+                            />
                         </div>
                     </SideCard>
 
@@ -342,9 +335,9 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                             </span>
                                             <span className="text-[11px] font-medium text-foreground">{label}</span>
                                         </div>
-                                        <span className={`proof-led ${bypassed ? 'opacity-50' : ''}`}>
+                                        <DawPluginLed tone="mint" className={bypassed ? 'opacity-50' : ''}>
                                             {bypassed ? 'Bypass' : 'Live'}
-                                        </span>
+                                        </DawPluginLed>
                                     </div>
                                 );
                             })}
@@ -353,9 +346,10 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
 
                     <SideCard title="Check" detail="Compare and reset without hunting through the deck.">
                         <div className="flex flex-col gap-2">
-                            <button
-                                type="button"
-                                className={`proof-chip ${state.abBypass ? 'proof-chip-active' : ''}`}
+                            <DawPluginChip
+                                active={state.abBypass}
+                                tone="mint"
+                                size="sm"
                                 onClick={() => {
                                     const next = !state.abBypass;
                                     setProofParam(deviceId, 'ab_bypass', next ? 1 : 0);
@@ -365,10 +359,10 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                 }}
                             >
                                 {state.abBypass ? 'A / dry' : 'B / wet'}
-                            </button>
-                            <button type="button" className="proof-chip" onClick={() => resetIntegratedMeters(deviceId)}>
+                            </DawPluginChip>
+                            <DawPluginChip type="button" tone="mint" size="sm" onClick={() => resetIntegratedMeters(deviceId)}>
                                 Reset loudness
-                            </button>
+                            </DawPluginChip>
                             <div className="flex flex-col items-center gap-1 pt-1">
                                 <RotaryKnob
                                     value={patch.limCeiling}

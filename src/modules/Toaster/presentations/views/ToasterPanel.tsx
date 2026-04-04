@@ -1,5 +1,9 @@
 import { type ReactElement, useEffect, useState, useSyncExternalStore } from 'react';
 import { Cpu, Play, Send, Square } from 'lucide-react';
+import { DawPluginChip } from '#/components/daw/DawPluginChip';
+import { DawPluginLed } from '#/components/daw/DawPluginLed';
+import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
+import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
@@ -17,14 +21,6 @@ import { PadGrid } from '../components/PadGrid';
 import { PadMixer } from '../components/PadMixer';
 import { StepSequencer } from '../components/StepSequencer';
 
-const MetricTile = ({ label, value, detail }: { label: string; value: string; detail: string }): ReactElement => (
-    <div className="toaster-window flex min-w-[94px] flex-col gap-1 px-3 py-2">
-        <span className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">{label}</span>
-        <span className="font-mono text-[13px] text-foreground">{value}</span>
-        <span className="text-[9px] leading-4 text-muted-foreground/55">{detail}</span>
-    </div>
-);
-
 const SectionCard = ({
     title,
     detail,
@@ -34,15 +30,14 @@ const SectionCard = ({
     detail?: string;
     children: ReactElement | ReactElement[];
 }): ReactElement => (
-    <section className="toaster-window flex flex-col gap-3 p-3">
-        <div className="space-y-1">
-            <div className="text-[8px] font-semibold uppercase tracking-[0.24em] text-[var(--color-accent-peach)]/70">
-                {title}
-            </div>
-            {detail ? <span className="sr-only">{detail}</span> : null}
-        </div>
+    <DawPluginSectionCard
+        className="toaster-window"
+        title={title}
+        detail={detail}
+        titleClassName="text-[var(--color-accent-peach)]/70"
+    >
         {children}
-    </section>
+    </DawPluginSectionCard>
 );
 
 const Knob = ({
@@ -306,10 +301,10 @@ export const ToasterPanel = (): ReactElement => {
                         </div>
 
                         <div className="flex flex-wrap justify-end gap-2">
-                            <MetricTile label="Pattern" value={activePattern?.name ?? 'A1'} detail="Current lane" />
-                            <MetricTile label="Step" value={`${currentStep + 1}`} detail="Playback cursor" />
-                            <MetricTile label="Swing" value={`${Math.round(kit.swing * 100)}%`} detail="Groove push" />
-                            <MetricTile label="Voices" value={`${activeVoices}`} detail="Live hits" />
+                            <DawPluginMetricTile className="toaster-window min-w-[94px]" label="Pattern" value={activePattern?.name ?? 'A1'} detail="Current lane" />
+                            <DawPluginMetricTile className="toaster-window min-w-[94px]" label="Step" value={`${currentStep + 1}`} detail="Playback cursor" />
+                            <DawPluginMetricTile className="toaster-window min-w-[94px]" label="Swing" value={`${Math.round(kit.swing * 100)}%`} detail="Groove push" />
+                            <DawPluginMetricTile className="toaster-window min-w-[94px]" label="Voices" value={`${activeVoices}`} detail="Live hits" />
                         </div>
                     </div>
 
@@ -330,9 +325,10 @@ export const ToasterPanel = (): ReactElement => {
                 <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
                     <SectionCard title="Transport" detail="Keep the rhythm tools tight and ready.">
                         <div className="flex items-center gap-2">
-                            <button
-                                type="button"
-                                className={`toaster-chip ${isPlaying ? 'toaster-chip-active' : ''}`}
+                            <DawPluginChip
+                                active={isPlaying}
+                                tone="peach"
+                                size="sm"
                                 onClick={() => {
                                     if (isPlaying) {
                                         stopSequencer();
@@ -344,16 +340,16 @@ export const ToasterPanel = (): ReactElement => {
                             >
                                 {isPlaying ? <Square className="size-3.5" /> : <Play className="size-3.5" />}
                                 {isPlaying ? 'Stop' : 'Play'}
-                            </button>
-                            <button type="button" className="toaster-chip" onClick={() => exportPatternToTimeline()}>
+                            </DawPluginChip>
+                            <DawPluginChip type="button" tone="peach" size="sm" onClick={() => exportPatternToTimeline()}>
                                 <Send className="size-3.5" />
                                 To timeline
-                            </button>
+                            </DawPluginChip>
                         </div>
-                        <div className="toaster-led flex items-center gap-1">
+                        <DawPluginLed tone="peach" className="flex items-center gap-1">
                             <Cpu className="size-3" />
                             {activeVoices} voices
-                        </div>
+                        </DawPluginLed>
                     </SectionCard>
 
                     <SectionCard title="Pad mixer" detail="Per-pad level, pan, mute, and solo.">
@@ -378,13 +374,14 @@ export const ToasterPanel = (): ReactElement => {
                                 onChange={(event) => setEucSteps(Math.max(1, Math.min(64, Number(event.target.value))))}
                                 className="toaster-window h-9 w-14 px-2 text-center text-[11px] text-foreground outline-none"
                             />
-                            <button
-                                type="button"
-                                className="toaster-chip toaster-chip-active"
+                            <DawPluginChip
+                                active
+                                tone="peach"
+                                size="sm"
                                 onClick={() => applyEuclideanToTrack(selectedPadIndex, eucHits, eucSteps, 0)}
                             >
                                 Toast
-                            </button>
+                            </DawPluginChip>
                         </div>
                     </SectionCard>
 

@@ -2,6 +2,7 @@
  * Sampler engine controls — playback mode, start/end points.
  */
 import { type ReactElement } from 'react';
+import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 
 const MODE_NAMES = ['One-Shot', 'Loop', 'Ping-Pong'] as const;
@@ -24,18 +25,15 @@ export const SamplerSection = ({ mode, start, end, onParam }: SamplerSectionProp
         {/* Mode selector */}
         <div className="flex gap-0.5 px-1">
             {MODE_NAMES.map((name, i) => (
-                <button
+                <DawPluginChip
                     key={name}
-                    type="button"
-                    className={`px-1.5 py-0.5 rounded text-[7px] font-medium transition-colors ${
-                        mode === i
-                            ? 'bg-[var(--color-accent-cyan)]/80 text-white'
-                            : 'text-muted-foreground/50 hover:text-foreground'
-                    }`}
+                    active={mode === i}
+                    tone="cyan"
+                    size="xs"
                     onClick={() => onParam('samplerMode', i)}
                 >
                     {name}
-                </button>
+                </DawPluginChip>
             ))}
         </div>
         {/* Start / End */}

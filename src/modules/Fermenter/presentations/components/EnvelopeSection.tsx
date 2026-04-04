@@ -3,6 +3,8 @@
  * Large interactive ADSR as hero (drag breakpoints). Knobs below for precision.
  */
 import { type ReactElement, useState } from 'react';
+import { DawPluginChip } from '#/components/daw/DawPluginChip';
+import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { ADSREnvelope } from '#/components/daw/visualizers/ADSREnvelope';
 
@@ -36,13 +38,20 @@ export const EnvelopeSection = ({
     return (
         <div className="space-y-2 w-full max-w-[320px]">
             {/* Header with AMP/FILTER toggle */}
-            <div className="flex items-center gap-2">
-                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Envelope</span>
-                <div className="flex gap-0.5">
-                    <button type="button" className={`px-2 py-0.5 rounded text-[8px] font-medium ${isAmp ? 'bg-[var(--color-accent-mint)] text-white' : 'text-muted-foreground/50 hover:text-foreground'}`} onClick={() => setActiveEnv('amp')}>AMP</button>
-                    <button type="button" className={`px-2 py-0.5 rounded text-[8px] font-medium ${!isAmp ? 'bg-[var(--color-accent-cyan)] text-white' : 'text-muted-foreground/50 hover:text-foreground'}`} onClick={() => setActiveEnv('filter')}>FILTER</button>
-                </div>
-            </div>
+            <DawPluginSectionHeader
+                title="Envelope"
+                titleClassName="text-muted-foreground"
+                actions={
+                    <div className="flex gap-0.5">
+                        <DawPluginChip active={isAmp} tone="mint" size="xs" onClick={() => setActiveEnv('amp')}>
+                            AMP
+                        </DawPluginChip>
+                        <DawPluginChip active={!isAmp} tone="cyan" size="xs" onClick={() => setActiveEnv('filter')}>
+                            FILTER
+                        </DawPluginChip>
+                    </div>
+                }
+            />
 
             {/* HERO: Large interactive ADSR — drag the breakpoints */}
             <div className="rounded-md overflow-hidden border border-border/20 bg-black/20">

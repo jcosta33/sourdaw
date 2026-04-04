@@ -3,6 +3,8 @@
  * Large waveform display as hero, controls alongside.
  */
 import { type ReactElement } from 'react';
+import { DawPluginChip } from '#/components/daw/DawPluginChip';
+import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { OscillatorWaveform } from '#/components/daw/visualizers/OscillatorWaveform';
 import { ENGINE_NAMES, WAVEFORM_NAMES, NOISE_COLOR_NAMES } from '../../models/FermenterPatch';
@@ -29,17 +31,19 @@ export const OscillatorSection = ({
     return (
         <div className="space-y-2 w-full max-w-[300px]">
             {/* Header: title + engine selector */}
-            <div className="flex items-center justify-between">
-                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Oscillator</span>
-                <div className="flex gap-0.5">
-                    {ENGINE_NAMES.map((name, i) => (
-                        <button key={name} type="button"
-                            className={`px-1.5 py-0.5 rounded text-[7px] font-medium transition-colors ${engine === i ? 'bg-[var(--color-accent-cyan)]/80 text-white' : 'text-muted-foreground/50 hover:text-foreground'}`}
-                            onClick={() => onEngineChange(i)}
-                        >{name}</button>
-                    ))}
-                </div>
-            </div>
+            <DawPluginSectionHeader
+                title="Oscillator"
+                titleClassName="text-muted-foreground"
+                actions={
+                    <div className="flex gap-0.5">
+                        {ENGINE_NAMES.map((name, i) => (
+                            <DawPluginChip key={name} active={engine === i} tone="cyan" size="xs"
+                                onClick={() => onEngineChange(i)}
+                            >{name}</DawPluginChip>
+                        ))}
+                    </div>
+                }
+            />
 
             {/* HERO: Large waveform visualization */}
             <div className="rounded-md overflow-hidden border border-border/20 bg-black/20">
@@ -49,10 +53,9 @@ export const OscillatorSection = ({
             {/* Waveform selector */}
             <div className="flex gap-0.5">
                 {WAVEFORM_NAMES.map((name, i) => (
-                    <button key={name} type="button"
-                        className={`flex-1 py-0.5 rounded text-[8px] font-medium transition-colors ${waveform === i ? 'bg-[var(--color-accent-lavender)] text-white' : 'bg-surface-raised/50 text-muted-foreground hover:text-foreground'}`}
+                    <DawPluginChip key={name} active={waveform === i} tone="lavender" size="xs" shape="soft" className="flex-1"
                         onClick={() => onWaveformChange(i)}
-                    >{name}</button>
+                    >{name}</DawPluginChip>
                 ))}
             </div>
 
@@ -71,10 +74,9 @@ export const OscillatorSection = ({
                 <RotaryKnob paramId="noiseLevel" value={noiseLevel} onChange={onNoiseLevelChange} min={0} max={1} step={0.01} defaultValue={0} size="md" label="Noise" />
                 <div className="flex gap-0.5 pb-2">
                     {NOISE_COLOR_NAMES.map((name, i) => (
-                        <button key={name} type="button"
-                            className={`px-1 py-0.5 rounded text-[6px] font-medium ${noiseColor === i ? 'bg-muted text-foreground' : 'text-muted-foreground/40 hover:text-foreground'}`}
+                        <DawPluginChip key={name} active={noiseColor === i} tone="neutral" size="xs" caps={false}
                             onClick={() => onNoiseColorChange(i)}
-                        >{name}</button>
+                        >{name}</DawPluginChip>
                     ))}
                 </div>
             </div>

@@ -59,6 +59,15 @@ export async function exportProjectFile(): Promise<void> {
     }
     const audioBuffers = await audioBufferCache.exportBuffers([...allBufferIds]);
 
+    const resolvedIds = new Set(Object.keys(audioBuffers));
+    const missingCount = [...allBufferIds].filter((id) => !resolvedIds.has(id)).length;
+    if (missingCount > 0) {
+        notifyUser(
+            `${missingCount} audio file${missingCount > 1 ? 's' : ''} could not be bundled with the export — the project may not play back correctly on another machine.`,
+            'warning'
+        );
+    }
+
     const data: ProjectData = {
         version: 1,
         name: project.name,

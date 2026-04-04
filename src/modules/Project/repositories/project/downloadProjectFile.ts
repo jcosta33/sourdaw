@@ -13,18 +13,14 @@ export async function downloadProjectFile(data: ProjectData): Promise<void> {
     const filename = `${safeName}.sourdaw`;
 
     if (isTauri()) {
-        try {
-            const filePath = await save({
-                defaultPath: filename,
-                filters: [{ name: 'Sourdaw Project', extensions: ['sourdaw'] }],
-            });
-            if (filePath) {
-                const encoder = new TextEncoder();
-                const bytes = encoder.encode(json);
-                await writeFile(filePath, bytes);
-            }
-        } catch (error) {
-            console.warn('Tauri save failed:', error);
+        const filePath = await save({
+            defaultPath: filename,
+            filters: [{ name: 'Sourdaw Project', extensions: ['sourdaw'] }],
+        });
+        if (filePath) {
+            const encoder = new TextEncoder();
+            const bytes = encoder.encode(json);
+            await writeFile(filePath, bytes);
         }
         return;
     }

@@ -11,6 +11,8 @@ import { resolveClipsWithComping } from '#/modules/Arrangement/useCases/resolveC
 import { getGainAtBeat } from '#/modules/Arrangement/useCases/clipGainEnvelope/getGainAtBeat';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { scheduleFrozenTrack } from './scheduleMidiNotes';
+import { collaborationStore } from '#/modules/Collaboration/stores/collaborationStore';
+import { getAssetTransfer } from '#/modules/Collaboration/useCases/collaboration';
 
 const MICRO_FADE_SECONDS = 0.003;
 
@@ -68,7 +70,13 @@ export function scheduleAudioClips(
             if (!buffer) {
                 const isRecordingClip = clip.audioBufferId.startsWith('rec-');
                 if (!isRecordingClip) {
-                    notifyUser(`Missing audio for clip "${clip.name}" — re-import the audio file`, 'warning');
+                    // In a collaboration session, request the asset from peers if we have a hash.
+                    const inSession = collaborationStore.value?.isEnabled ?? false;
+                    if (inSession && clip.assetHash) {
+                        getAssetTransfer()?.requestAsset(clip.assetHash);
+                    } else {
+                        notifyUser(`Missing audio for clip "${clip.name}" — re-import the audio file`, 'warning');
+                    }
                     scheduledAudioClips.add(clipKey);
                 }
                 continue;

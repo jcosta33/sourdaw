@@ -105,4 +105,26 @@ impl BacteriaInstance {
     pub fn get_latency_samples(&self) -> u32 {
         self.engine.latency_samples()
     }
+
+    /// Add a modulation assignment: `source_id` → `target_param` with scalar `amount`.
+    ///
+    /// Source IDs: 0=LFO1, 1=LFO2, 2=envelope follower, 3=Lorenz X, 4=Lorenz Z,
+    /// 5=step sequencer, 6-13=macros 0-7.
+    ///
+    /// Target param IDs: 0=global mix, 1-6=band 0-5 gain (linear offset).
+    pub fn add_mod_assignment(&mut self, source_id: u8, target_param: u16, amount: f32) {
+        self.engine.add_mod_assignment(source_id, target_param, amount);
+    }
+
+    /// Add a macro mapping: macro `macro_index` (0-7) → `target_param`, remapped
+    /// from the macro's 0-1 range into `[min_value, max_value]`.
+    pub fn add_macro_mapping(
+        &mut self,
+        macro_index: u8,
+        target_param: u16,
+        min_value: f32,
+        max_value: f32,
+    ) {
+        self.engine.add_macro_mapping(macro_index, target_param, min_value, max_value);
+    }
 }

@@ -1,5 +1,10 @@
 import { type ReactElement, useState, useSyncExternalStore } from 'react';
 import { Cpu, Search } from 'lucide-react';
+import { DawPluginChip } from '#/components/daw/DawPluginChip';
+import { DawPluginLed } from '#/components/daw/DawPluginLed';
+import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
+import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
+import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { type InstrumentId } from '../../models/LevainPatch';
 import { levainStore } from '../../stores/levainStore';
@@ -35,14 +40,6 @@ const INSTRUMENTS: { id: InstrumentId; label: string; hasSamples: boolean; famil
 
 const FAMILIES = ['All', 'Strings', 'Brass', 'Woodwinds', 'Percussion'];
 
-const MetricTile = ({ label, value, detail }: { label: string; value: string; detail: string }): ReactElement => (
-    <div className="levain-window flex min-w-[96px] flex-col gap-1 px-3 py-2">
-        <span className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">{label}</span>
-        <span className="font-mono text-[13px] text-foreground">{value}</span>
-        <span className="text-[9px] leading-4 text-muted-foreground/55">{detail}</span>
-    </div>
-);
-
 const SectionCard = ({
     title,
     detail,
@@ -52,15 +49,14 @@ const SectionCard = ({
     detail?: string;
     children: ReactElement | ReactElement[];
 }): ReactElement => (
-    <section className="levain-window flex flex-col gap-3 p-3">
-        <div className="space-y-1">
-            <div className="text-[8px] font-semibold uppercase tracking-[0.24em] text-[var(--color-accent-amber)]/70">
-                {title}
-            </div>
-            {detail ? <span className="sr-only">{detail}</span> : null}
-        </div>
+    <DawPluginSectionCard
+        className="levain-window"
+        title={title}
+        detail={detail}
+        titleClassName="text-[var(--color-accent-amber)]/70"
+    >
         {children}
-    </section>
+    </DawPluginSectionCard>
 );
 
 export const LevainPanel = (): ReactElement => {
@@ -107,7 +103,7 @@ export const LevainPanel = (): ReactElement => {
                                 </div>
                                 <div className="text-[15px] font-semibold text-foreground">Levain</div>
                             </div>
-                            <div className="levain-led">{engineReady ? 'Ready' : 'Loading'}</div>
+                            <DawPluginLed tone="amber">{engineReady ? 'Ready' : 'Loading'}</DawPluginLed>
                         </div>
 
                         <label className="levain-window flex items-center gap-2 px-3 py-2">
@@ -125,14 +121,15 @@ export const LevainPanel = (): ReactElement => {
                             {FAMILIES.map((entry) => {
                                 const active = family === entry;
                                 return (
-                                    <button
+                                    <DawPluginChip
                                         key={entry}
-                                        type="button"
-                                        className={`levain-chip ${active ? 'levain-chip-active' : ''}`}
+                                        active={active}
+                                        tone="amber"
+                                        size="sm"
                                         onClick={() => setFamily(entry)}
                                     >
                                         {entry}
-                                    </button>
+                                    </DawPluginChip>
                                 );
                             })}
                         </div>
@@ -186,14 +183,16 @@ export const LevainPanel = (): ReactElement => {
                         </div>
 
                         <div className="flex flex-wrap justify-end gap-2">
-                            <MetricTile label="Artic" value={currentArt} detail="Current technique" />
-                            <MetricTile label="Voices" value={`${activeVoices}`} detail="Live active voices" />
-                            <MetricTile
+                            <DawPluginMetricTile className="levain-window" label="Artic" value={currentArt} detail="Current technique" />
+                            <DawPluginMetricTile className="levain-window" label="Voices" value={`${activeVoices}`} detail="Live active voices" />
+                            <DawPluginMetricTile
+                                className="levain-window"
                                 label="Legato"
                                 value={patch.legato.enabled ? 'On' : 'Off'}
                                 detail="Transition engine"
                             />
-                            <MetricTile
+                            <DawPluginMetricTile
+                                className="levain-window"
                                 label="Load"
                                 value={
                                     sampleLoadProgress === null ? 'Ready' : `${Math.round(sampleLoadProgress * 100)}%`
@@ -293,9 +292,10 @@ export const LevainPanel = (): ReactElement => {
                                     </div>
 
                                     <div className="space-y-2">
-                                        <button
-                                            type="button"
-                                            className={`levain-chip ${patch.releaseTriggers.enabled ? 'levain-chip-active' : ''}`}
+                                        <DawPluginChip
+                                            active={patch.releaseTriggers.enabled}
+                                            tone="amber"
+                                            size="sm"
                                             onClick={() =>
                                                 setLevainParamWithAudio('releaseTriggers', {
                                                     ...patch.releaseTriggers,
@@ -304,10 +304,11 @@ export const LevainPanel = (): ReactElement => {
                                             }
                                         >
                                             Release tails
-                                        </button>
-                                        <button
-                                            type="button"
-                                            className={`levain-chip ${patch.releaseTriggers.dynamicScale ? 'levain-chip-active' : ''}`}
+                                        </DawPluginChip>
+                                        <DawPluginChip
+                                            active={patch.releaseTriggers.dynamicScale}
+                                            tone="amber"
+                                            size="sm"
                                             onClick={() =>
                                                 setLevainParamWithAudio('releaseTriggers', {
                                                     ...patch.releaseTriggers,
@@ -316,11 +317,11 @@ export const LevainPanel = (): ReactElement => {
                                             }
                                         >
                                             Dynamic tails
-                                        </button>
-                                        <div className="levain-led flex items-center gap-1">
+                                        </DawPluginChip>
+                                        <DawPluginLed tone="amber" className="flex items-center gap-1">
                                             <Cpu className="size-3" />
                                             {activeVoices} voices
-                                        </div>
+                                        </DawPluginLed>
                                     </div>
                                 </div>
                             </SectionCard>
@@ -330,29 +331,20 @@ export const LevainPanel = (): ReactElement => {
 
                 <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
                     <SectionCard title="Quick read" detail="A compact performance summary for the current line.">
-                        <div className="space-y-2 text-[10px] leading-4 text-muted-foreground">
-                            <div className="flex items-center justify-between gap-2">
-                                <span>Instrument</span>
-                                <span className="font-mono text-foreground/85">{instLabel}</span>
-                            </div>
-                            <div className="flex items-center justify-between gap-2">
-                                <span>Family</span>
-                                <span className="font-mono text-foreground/85">{patch.instrumentFamily}</span>
-                            </div>
-                            <div className="flex items-center justify-between gap-2">
-                                <span>Phrase</span>
-                                <span className="font-mono text-foreground/85">{currentArt}</span>
-                            </div>
-                            <div className="flex items-center justify-between gap-2">
-                                <span>Humanize</span>
-                                <span className="font-mono text-foreground/85">
-                                    {Math.round(patch.humanize.amount * 100)}%
-                                </span>
-                            </div>
-                            <div className="flex items-center justify-between gap-2">
-                                <span>Space</span>
-                                <span className="font-mono text-foreground/85">{patch.micPositions.length} mics</span>
-                            </div>
+                        <div className="space-y-2">
+                            <DawReadoutRow label="Instrument" value={instLabel} valueClassName="text-foreground/85" />
+                            <DawReadoutRow label="Family" value={patch.instrumentFamily} valueClassName="text-foreground/85" />
+                            <DawReadoutRow label="Phrase" value={currentArt} valueClassName="text-foreground/85" />
+                            <DawReadoutRow
+                                label="Humanize"
+                                value={`${Math.round(patch.humanize.amount * 100)}%`}
+                                valueClassName="text-foreground/85"
+                            />
+                            <DawReadoutRow
+                                label="Space"
+                                value={`${patch.micPositions.length} mics`}
+                                valueClassName="text-foreground/85"
+                            />
                         </div>
                     </SectionCard>
                 </aside>

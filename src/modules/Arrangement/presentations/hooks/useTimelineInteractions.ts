@@ -1,4 +1,6 @@
 import { type MouseEvent, type DragEvent, useRef, useState } from 'react';
+import { broadcastPresence } from '#/modules/Collaboration/useCases/collaboration';
+import { collaborationStore } from '#/modules/Collaboration/stores/collaborationStore';
 import { timelineViewStore, zoomTimeline } from '../../stores/timelineViewStore';
 import { useTimelineGestures } from './useTimelineGestures';
 import { useTimelineFileDrop } from './useTimelineFileDrop';
@@ -60,6 +62,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
     );
     const rubberBandRef = useRef<{ startX: number; startY: number } | null>(null);
     const [hoverCursor, setHoverCursor] = useState<string | null>(null);
+    const lastPresenceBroadcastRef = useRef<number>(0);
 
     useTimelineGestures(canvasRef);
 
@@ -173,6 +176,30 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
 
     const handleMouseMove = (e: MouseEvent<HTMLCanvasElement>) => {
         const { x, y } = getCanvasCoords(e);
+
+        // Broadcast cursor presence to collaborators (~10 Hz throttle)
+        if (collaborationStore.value?.isEnabled) {
+            const now = performance.now();
+            if (now - lastPresenceBroadcastRef.current > 100) {
+                lastPresenceBroadcastRef.current = now;
+                const cursorBeat = getBeatFromX(x);
+                const tracks = trackStore.value ?? [];
+                const contentY = getContentY(y, getScrollY());
+                const trackHit = getTrackAtYHelper(tracks, Math.max(0, contentY));
+                broadcastPresence({
+                    view: 'arrangement',
+                    cursorBeat,
+                    cursorTrackId: trackHit?.id ?? null,
+                    selectedClipIds: [],
+                    selectedNoteIds: [],
+                    viewportStartBeat: 0,
+                    viewportEndBeat: 0,
+                    viewportTrackIds: [],
+                    action: null,
+                    playheadBeat: null,
+                });
+            }
+        }
 
         // Hover cursor (no active drag)
         if (

@@ -15,9 +15,9 @@ type PresenceOverlayProps = {
  * Renders collaborator presence indicators on top of the arrangement timeline.
  *
  * Shows:
- * - Colored vertical cursor lines at each peer's cursor position
- * - Colored name labels at the top of each cursor
- * - Small colored dots on track headers where a peer is focused
+ * - Dashed ghost playhead lines at each peer's current playhead position
+ * - Solid cursor lines at each peer's mouse cursor position
+ * - Name labels and track focus dots alongside cursor lines
  */
 export const PresenceOverlay = ({
     beatToX,
@@ -29,52 +29,82 @@ export const PresenceOverlay = ({
     return (
         <div className="pointer-events-none absolute inset-0 z-30 overflow-hidden">
             {Array.from(presenceMap.values()).map((presence) => {
-                if (presence.cursorBeat === null) {
-                    return null;
-                }
-
-                const x = beatToX(presence.cursorBeat);
+                const playheadX = presence.playheadBeat !== null
+                    ? beatToX(presence.playheadBeat)
+                    : null;
+                const cursorX = presence.cursorBeat !== null
+                    ? beatToX(presence.cursorBeat)
+                    : null;
                 const trackY = presence.cursorTrackId
                     ? trackIdToY(presence.cursorTrackId)
                     : null;
 
                 return (
                     <div key={presence.peerId}>
-                        {/* Cursor line */}
-                        <div
-                            className="absolute top-0 bottom-0 w-px"
-                            style={{
-                                left: `${x}px`,
-                                backgroundColor: presence.color,
-                                opacity: 0.7,
-                            }}
-                        />
-
-                        {/* Name label at top of cursor */}
-                        <div
-                            className="absolute rounded-b px-1 text-[9px] font-medium text-white whitespace-nowrap"
-                            style={{
-                                left: `${x + 2}px`,
-                                top: 0,
-                                backgroundColor: presence.color,
-                                opacity: 0.9,
-                            }}
-                        >
-                            {presence.name}
-                        </div>
-
-                        {/* Track focus dot */}
-                        {trackY !== null ? (
-                            <div
-                                className="absolute size-2 rounded-full"
-                                style={{
-                                    left: `${x - 3}px`,
-                                    top: `${trackY + trackHeight / 2 - 3}px`,
-                                    backgroundColor: presence.color,
-                                }}
-                            />
+                        {/* Ghost playhead — dashed line at peer's playhead position */}
+                        {playheadX !== null ? (
+                            <>
+                                <div
+                                    className="absolute top-0 bottom-0"
+                                    style={{
+                                        left: `${playheadX}px`,
+                                        width: '1px',
+                                        backgroundImage: `repeating-linear-gradient(to bottom, ${presence.color} 0px, ${presence.color} 4px, transparent 4px, transparent 8px)`,
+                                        opacity: 0.6,
+                                    }}
+                                />
+                                <div
+                                    className="absolute rounded-b px-1 text-[9px] font-medium text-white whitespace-nowrap"
+                                    style={{
+                                        left: `${playheadX + 3}px`,
+                                        bottom: 4,
+                                        backgroundColor: presence.color,
+                                        opacity: 0.75,
+                                    }}
+                                >
+                                    {presence.name}
+                                </div>
+                            </>
                         ) : null}
 
+                        {/* Cursor line */}
+                        {cursorX !== null ? (
+                            <>
+                                <div
+                                    className="absolute top-0 bottom-0 w-px"
+                                    style={{
+                                        left: `${cursorX}px`,
+                                        backgroundColor: presence.color,
+                                        opacity: 0.7,
+                                    }}
+                                />
+
+                                {/* Name label at top of cursor */}
+                                <div
+                                    className="absolute rounded-b px-1 text-[9px] font-medium text-white whitespace-nowrap"
+                                    style={{
+                                        left: `${cursorX + 2}px`,
+                                        top: 0,
+                                        backgroundColor: presence.color,
+                                        opacity: 0.9,
+                                    }}
+                                >
+                                    {presence.name}
+                                </div>
+
+                                {/* Track focus dot */}
+                                {trackY !== null ? (
+                                    <div
+                                        className="absolute size-2 rounded-full"
+                                        style={{
+                                            left: `${cursorX - 3}px`,
+                                            top: `${trackY + trackHeight / 2 - 3}px`,
+                                            backgroundColor: presence.color,
+                                        }}
+                                    />
+                                ) : null}
+                            </>
+                        ) : null}
                     </div>
                 );
             })}

@@ -7,14 +7,17 @@ export type ExportedAudioBuffer = {
     channelData: string[];
 };
 
-function float32ToBase64(arr: Float32Array): string {
+async function float32ToBase64(arr: Float32Array): Promise<string> {
     const bytes = new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength);
     const CHUNK = 8192;
+    const YIELD_EVERY = 32; // yield to main thread every 32 chunks (~256 KB)
     let binary = '';
+    let chunkIndex = 0;
     for (let i = 0; i < bytes.length; i += CHUNK) {
-        // String.fromCharCode.apply avoids per-character string concatenation overhead
-        // and is safe for typed arrays up to the chosen chunk size.
         binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK) as unknown as number[]);
+        if (++chunkIndex % YIELD_EVERY === 0) {
+            await new Promise<void>((r) => setTimeout(r, 0));
+        }
     }
     return btoa(binary);
 }
@@ -325,8 +328,10 @@ export const audioBufferCache = {
             result[id] = {
                 sampleRate: buf.sampleRate,
                 numberOfChannels: buf.numberOfChannels,
-                channelData: Array.from({ length: buf.numberOfChannels }, (_, ch) =>
-                    float32ToBase64(new Float32Array(buf.getChannelData(ch)))
+                channelData: await Promise.all(
+                    Array.from({ length: buf.numberOfChannels }, (_, ch) =>
+                        float32ToBase64(new Float32Array(buf.getChannelData(ch)))
+                    )
                 ),
             };
         }
@@ -350,7 +355,7 @@ export const audioBufferCache = {
                     result[id] = {
                         sampleRate: data.sampleRate,
                         numberOfChannels: data.numberOfChannels,
-                        channelData: data.channelData.map(float32ToBase64),
+                        channelData: await Promise.all(data.channelData.map(float32ToBase64)),
                     };
                 }
             } catch {
@@ -378,6 +383,7 @@ export const audioBufferCache = {
                 for (let ch = 0; ch < data.numberOfChannels; ch++) {
                     buffer.getChannelData(ch).set(channels[ch]!);
                 }
+                clearWaveformCachesForId(id);
                 audioCacheSet(id, buffer);
                 void persistToIdb(id, buffer);
             } catch {

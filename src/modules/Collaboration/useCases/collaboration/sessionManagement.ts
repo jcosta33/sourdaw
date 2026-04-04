@@ -6,29 +6,34 @@ import {
     type SignalingMessage,
     PEER_COLORS,
 } from '../../models/CollaborationTypes';
-import { startPlayback } from '#/modules/Transport/useCases/transportControls/startPlayback';
-import { stopPlayback } from '#/modules/Transport/useCases/transportControls/stopPlayback';
-import { seekPlayhead } from '#/modules/Transport/useCases/transportControls/seekPlayhead';
-import { updateTransportState } from '#/modules/Transport/useCases/transportQueries';
+import { transportStore } from '#/modules/Transport/stores/transportStore';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
+import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
 
 import { setupProjectionBridge } from '#/modules/CrdtDocument/useCases/projection/projectProjection';
 
 import { collaborationStore } from '../../stores/collaborationStore';
 import { PeerConnectionManager } from '../../repositories/peerConnection';
 import { AutomergeSync } from '../automergeSync';
-import { TransportSync } from '../transportSync';
 import { AssetTransfer } from '../assetTransfer';
 import { PermissionManager } from '../permissions';
 
 let peerManager: PeerConnectionManager | null = null;
 let automergeSync: AutomergeSync | null = null;
-let transportSync: TransportSync | null = null;
 let assetTransfer: AssetTransfer | null = null;
 let permissionManager: PermissionManager | null = null;
 let cleanupProjectionBridge: (() => void) | null = null;
 let presenceListeners = new Set<(data: PresenceData) => void>();
+let playheadBroadcastInterval: ReturnType<typeof setInterval> | null = null;
 /** Tracks the host-assigned peer slot ID for the in-flight invite, if any. */
 let pendingInviteId: PeerId | null = null;
+/** Cleanup timers for peers that disconnected without sending peer-leave. */
+const peerCleanupTimers = new Map<PeerId, ReturnType<typeof setTimeout>>();
+
+const PEER_CLEANUP_DELAY_MS = 15_000;
+
+const PLAYHEAD_BROADCAST_HZ = 4;
 
 const generatePeerId = (): PeerId => crypto.randomUUID();
 const generateSessionId = (): string => crypto.randomUUID().slice(0, 8);
@@ -74,25 +79,9 @@ export const createSession = (name: string): string => {
     automergeSync.start();
     cleanupProjectionBridge = setupProjectionBridge();
 
-    transportSync = new TransportSync(peerManager, {
-        onPlay: (positionBeats, delayMs) => {
-            updateTransportState({ playheadPosition: positionBeats });
-            setTimeout(() => startPlayback(), delayMs);
-        },
-        onStop: (positionBeats) => {
-            updateTransportState({ playheadPosition: positionBeats });
-            stopPlayback();
-        },
-        onSeek: (positionBeats) => {
-            seekPlayhead(positionBeats);
-        },
-    });
-    transportSync.start();
-
     assetTransfer = new AssetTransfer(peerManager, {
-        onAssetAvailable: (_hash) => {
-            // Asset is now available in the local content store.
-            // Clips referencing this hash can resolve their audio buffers.
+        onAssetAvailable: (hash) => {
+            void resolveAssetForClips(hash);
         },
         onProgress: (_hash, _received, _total) => {
             // Could update a UI progress indicator.
@@ -100,6 +89,7 @@ export const createSession = (name: string): string => {
     });
 
     permissionManager = new PermissionManager(peerManager);
+    startPlayheadBroadcast();
 
     collaborationStore.set({
         isEnabled: true,
@@ -186,27 +176,13 @@ export const joinSession = async (inviteString: string, name: string): Promise<s
     automergeSync.start();
     cleanupProjectionBridge = setupProjectionBridge();
 
-    transportSync = new TransportSync(peerManager, {
-        onPlay: (positionBeats, delayMs) => {
-            updateTransportState({ playheadPosition: positionBeats });
-            setTimeout(() => startPlayback(), delayMs);
-        },
-        onStop: (positionBeats) => {
-            updateTransportState({ playheadPosition: positionBeats });
-            stopPlayback();
-        },
-        onSeek: (positionBeats) => {
-            seekPlayhead(positionBeats);
-        },
-    });
-    transportSync.start();
-
     assetTransfer = new AssetTransfer(peerManager, {
         onAssetAvailable: (_hash) => {},
         onProgress: (_hash, _received, _total) => {},
     });
 
     permissionManager = new PermissionManager(peerManager);
+    startPlayheadBroadcast();
 
     const peer = peerManager.createPeer(invite.peerId);
     const answerSdp = await peer.acceptOffer(invite.sdp);
@@ -286,6 +262,11 @@ export const acceptAnswer = async (answerString: string): Promise<void> => {
 /** Tear down all subsystems without changing store state. */
 const cleanupSubsystems = (): void => {
     pendingInviteId = null;
+    stopPlayheadBroadcast();
+    for (const timer of peerCleanupTimers.values()) {
+        clearTimeout(timer);
+    }
+    peerCleanupTimers.clear();
     if (automergeSync) {
         automergeSync.stop();
         automergeSync = null;
@@ -293,10 +274,6 @@ const cleanupSubsystems = (): void => {
     if (cleanupProjectionBridge) {
         cleanupProjectionBridge();
         cleanupProjectionBridge = null;
-    }
-    if (transportSync) {
-        transportSync.stop();
-        transportSync = null;
     }
     if (permissionManager) {
         permissionManager.clear();
@@ -308,6 +285,86 @@ const cleanupSubsystems = (): void => {
         peerManager = null;
     }
     presenceListeners.clear();
+};
+
+// -- Asset resolution --
+
+/**
+ * When a peer sends us an audio asset, find all clips that reference its hash
+ * and decode the blob into the audioBufferCache under their audioBufferId.
+ * This lets the scheduler play the clip on the next playback start.
+ */
+async function resolveAssetForClips(hash: string): Promise<void> {
+    const blob = assetTransfer?.getAsset(hash);
+    if (!blob) {
+        return;
+    }
+
+    const tracks = trackStore.value?.tracks ?? [];
+    let ctx: BaseAudioContext;
+    try {
+        ctx = getAudioContext();
+    } catch {
+        return;
+    }
+
+    for (const track of tracks) {
+        for (const clip of track.clips) {
+            if (clip.assetHash !== hash || !clip.audioBufferId) {
+                continue;
+            }
+            if (audioBufferCache.has(clip.audioBufferId)) {
+                continue;
+            }
+            try {
+                const arrayBuffer = await blob.arrayBuffer();
+                const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+                audioBufferCache.set(clip.audioBufferId, audioBuffer);
+            } catch {
+                console.error('[Collaboration] Failed to decode asset for clip', clip.id);
+            }
+        }
+    }
+}
+
+// -- Playhead broadcast --
+
+const startPlayheadBroadcast = (): void => {
+    playheadBroadcastInterval = setInterval(() => {
+        if (!peerManager || peerManager.getConnectedPeerIds().length === 0) {
+            return;
+        }
+        const state = collaborationStore.value;
+        if (!state?.localPeerId) {
+            return;
+        }
+        const playheadBeat = transportStore.value?.playheadPosition ?? null;
+        peerManager.broadcastPresence({
+            type: 'presence',
+            data: {
+                peerId: state.localPeerId,
+                name: state.localName,
+                color: state.localColor,
+                view: 'arrangement',
+                cursorBeat: null,
+                cursorTrackId: null,
+                selectedClipIds: [],
+                selectedNoteIds: [],
+                viewportStartBeat: 0,
+                viewportEndBeat: 0,
+                viewportTrackIds: [],
+                action: null,
+                playheadBeat,
+            },
+        });
+    }, 1000 / PLAYHEAD_BROADCAST_HZ);
+};
+
+const stopPlayheadBroadcast = (): void => {
+    if (playheadBroadcastInterval !== null) {
+        clearInterval(playheadBroadcastInterval);
+        playheadBroadcastInterval = null;
+    }
 };
 
 /**
@@ -370,9 +427,6 @@ export const onPresence = (listener: (data: PresenceData) => void): (() => void)
     };
 };
 
-/** Get the transport sync instance (for wiring play/stop/seek). */
-export const getTransportSync = (): TransportSync | null => transportSync;
-
 /** Get the asset transfer instance (for requesting/providing assets). */
 export const getAssetTransfer = (): AssetTransfer | null => assetTransfer;
 
@@ -384,9 +438,7 @@ export const getPermissionManager = (): PermissionManager | null => permissionMa
 const handlePeerMessage = (peerId: PeerId, message: PeerMessage): void => {
     if (message.type === 'crdt-sync') {
         // Route by docId to the appropriate subsystem
-        if (message.docId === '__transport__') {
-            transportSync?.handleMessage(peerId, message);
-        } else if (message.docId === '__asset__') {
+        if (message.docId === '__asset__') {
             void assetTransfer?.handleMessage(peerId, message);
         } else if (message.docId === '__permissions__') {
             permissionManager?.handleMessage(peerId, message);
@@ -406,12 +458,22 @@ const handlePeerMessage = (peerId: PeerId, message: PeerMessage): void => {
 };
 
 const handlePeerConnected = (peerId: PeerId): void => {
+    // Cancel any pending cleanup from a prior disconnect.
+    const existing = peerCleanupTimers.get(peerId);
+    if (existing !== undefined) {
+        clearTimeout(existing);
+        peerCleanupTimers.delete(peerId);
+    }
+
     automergeSync?.addPeer(peerId);
 
     peerManager?.sendCrdtSync(peerId, {
         type: 'peer-info',
         peer: getLocalPeerInfo(),
     });
+
+    // Host auto-grants editor role so joiners can edit immediately.
+    permissionManager?.grantRole(peerId, 'editor');
 
     updatePeerConnectionState(peerId, true);
 
@@ -425,10 +487,12 @@ const handlePeerDisconnected = (peerId: PeerId): void => {
     automergeSync?.removePeer(peerId);
     updatePeerConnectionState(peerId, false);
 
-    // If the disconnected peer was the transport leader, elect a new one.
-    if (transportSync && transportSync.getLeaderId() === peerId) {
-        transportSync.electNewLeader();
-    }
+    // Schedule removal in case the peer never sends peer-leave (tab crash, etc.).
+    const timer = setTimeout(() => {
+        peerCleanupTimers.delete(peerId);
+        removePeer(peerId);
+    }, PEER_CLEANUP_DELAY_MS);
+    peerCleanupTimers.set(peerId, timer);
 
     const state = collaborationStore.value;
     if (state) {

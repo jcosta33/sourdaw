@@ -8,6 +8,8 @@
  * Level 5: L4 + Loudness statistics panel
  */
 import { type ReactElement } from 'react';
+import { DawPluginChip } from '#/components/daw/DawPluginChip';
+import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { type CrustPatch } from '../../models/CrustPatch';
 import { CrustSatCurve } from './CrustSatCurve';
@@ -31,42 +33,6 @@ const SectionLabel = ({ children }: { children: string }): ReactElement => (
     <div className="text-[7px] font-semibold text-muted-foreground/40 uppercase tracking-widest mb-1.5">
         {children}
     </div>
-);
-
-const Pill = ({
-    label, active, onClick, color = '#5B8FC4',
-}: {
-    label: string; active: boolean; onClick: () => void; color?: string;
-}): ReactElement => (
-    <button
-        type="button"
-        onClick={onClick}
-        className="px-2 py-0.5 rounded text-[9px] font-medium transition-all"
-        style={active ? { background: color, color: '#0E0E10' } : { background: '#1E1E22', color: '#8A8890' }}
-    >
-        {label}
-    </button>
-);
-
-/** Toggle switch rendered as a button (not a label+input pair — avoids semantic mismatch). */
-const SwitchButton = ({
-    id, label, checked, onChange,
-}: { id: string; label: string; checked: boolean; onChange: (v: boolean) => void }): ReactElement => (
-    <button
-        id={id}
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        onClick={() => onChange(!checked)}
-        className="rounded px-2 py-0.5 text-[9px] font-medium transition-all"
-        style={
-            checked
-                ? { background: '#5B8FC4', color: '#E8E6E0' }
-                : { background: '#1E1E22', color: '#52515A' }
-        }
-    >
-        {label}
-    </button>
 );
 
 function fmtKnob(v: number, unit?: string): string {
@@ -166,12 +132,15 @@ const Level2Core = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
             <SectionLabel>Algorithm</SectionLabel>
             <div className="flex flex-wrap gap-1">
                 {ALGORITHMS.map((a) => (
-                    <Pill
+                    <DawPluginChip
                         key={a.id}
-                        label={a.label}
                         active={patch.algorithm === a.id}
+                        tone="steel"
+                        size="xs"
                         onClick={() => setParam('algorithm', a.id)}
-                    />
+                    >
+                        {a.label}
+                    </DawPluginChip>
                 ))}
             </div>
             <div className="text-[7px] text-muted-foreground/40 mt-0.5 min-h-[10px]">
@@ -243,30 +212,31 @@ const SatSection = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
             <span className="text-[7px] font-semibold uppercase tracking-widest" style={{ color: '#D4883A' }}>
                 Saturation
             </span>
-            <SwitchButton
+            <DawPluginToggle
                 id="crust-sat-enabled"
-                label={patch.satEnabled ? 'ON' : 'OFF'}
-                checked={patch.satEnabled}
-                onChange={(v) => setParam('satEnabled', v)}
+                pressed={patch.satEnabled}
+                tone="steel"
+                size="xs"
+                role="switch"
+                aria-checked={patch.satEnabled}
+                onClick={() => setParam('satEnabled', !patch.satEnabled)}
             />
         </div>
         <div className="flex items-center gap-2">
             {/* Sat algorithm pills */}
             <div className="flex flex-wrap gap-0.5">
                 {SAT_ALGORITHMS.map((a) => (
-                    <button
+                    <DawPluginChip
                         key={a}
-                        type="button"
-                        className="px-1.5 py-0.5 rounded text-[8px] font-medium uppercase transition-all"
-                        style={patch.satAlgorithm === a
-                            ? { background: '#D4883A', color: '#0E0E10' }
-                            : { background: '#1E1E22', color: '#52515A' }}
+                        active={patch.satAlgorithm === a}
+                        tone="amber"
+                        size="xs"
                         onClick={() => setParam('satAlgorithm', a)}
                         disabled={!patch.satEnabled}
                         aria-pressed={patch.satAlgorithm === a}
                     >
                         {a}
-                    </button>
+                    </DawPluginChip>
                 ))}
             </div>
 
@@ -297,17 +267,27 @@ const SatSection = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
 
 const Level3Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }): ReactElement => (
     <div className="flex items-center gap-2 mt-1">
-        <SwitchButton
+        <DawPluginToggle
             id="crust-delta"
-            label="DELTA"
-            checked={patch.deltaListen}
-            onChange={(v) => setParam('deltaListen', v)}
+            pressed={patch.deltaListen}
+            tone="steel"
+            size="xs"
+            onLabel="DELTA"
+            offLabel="DELTA"
+            role="switch"
+            aria-checked={patch.deltaListen}
+            onClick={() => setParam('deltaListen', !patch.deltaListen)}
         />
-        <SwitchButton
+        <DawPluginToggle
             id="crust-unity"
-            label="A=B"
-            checked={patch.unityGain}
-            onChange={(v) => setParam('unityGain', v)}
+            pressed={patch.unityGain}
+            tone="steel"
+            size="xs"
+            onLabel="A=B"
+            offLabel="A=B"
+            role="switch"
+            aria-checked={patch.unityGain}
+            onClick={() => setParam('unityGain', !patch.unityGain)}
         />
     </div>
 );
@@ -320,12 +300,15 @@ const Level4Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter 
                 <SectionLabel>Multi-band</SectionLabel>
                 <div className="flex gap-0.5">
                     {(['wideband', '3band', '5band'] as const).map((mb) => (
-                        <Pill
+                        <DawPluginChip
                             key={mb}
-                            label={mb === 'wideband' ? 'Wide' : mb}
                             active={patch.multiBand === mb}
+                            tone="steel"
+                            size="xs"
                             onClick={() => setParam('multiBand', mb)}
-                        />
+                        >
+                            {mb === 'wideband' ? 'Wide' : mb}
+                        </DawPluginChip>
                     ))}
                 </div>
             </div>
@@ -335,12 +318,15 @@ const Level4Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter 
                 <SectionLabel>Stereo</SectionLabel>
                 <div className="flex gap-0.5">
                     {(['stereo', 'ms'] as const).map((sm) => (
-                        <Pill
+                        <DawPluginChip
                             key={sm}
-                            label={sm.toUpperCase()}
                             active={patch.stereoMode === sm}
+                            tone="steel"
+                            size="xs"
                             onClick={() => setParam('stereoMode', sm)}
-                        />
+                        >
+                            {sm.toUpperCase()}
+                        </DawPluginChip>
                     ))}
                 </div>
             </div>
@@ -349,11 +335,14 @@ const Level4Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter 
             <div>
                 <SectionLabel>SC HPF</SectionLabel>
                 <div className="flex items-center gap-1">
-                    <SwitchButton
+                    <DawPluginToggle
                         id="crust-sc-hpf"
-                        label={patch.scHpfEnabled ? 'ON' : 'OFF'}
-                        checked={patch.scHpfEnabled}
-                        onChange={(v) => setParam('scHpfEnabled', v)}
+                        pressed={patch.scHpfEnabled}
+                        tone="steel"
+                        size="xs"
+                        role="switch"
+                        aria-checked={patch.scHpfEnabled}
+                        onClick={() => setParam('scHpfEnabled', !patch.scHpfEnabled)}
                     />
                     {patch.scHpfEnabled ? (
                         <Knob
@@ -382,12 +371,15 @@ const Level4Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter 
             {patch.dither !== 'off' ? (
                 <div className="flex gap-1 mt-1">
                     {([16, 24, 32] as const).map((bd) => (
-                        <Pill
+                        <DawPluginChip
                             key={bd}
-                            label={`${bd}-bit`}
                             active={patch.outputBitDepth === bd}
+                            tone="steel"
+                            size="xs"
                             onClick={() => setParam('outputBitDepth', bd)}
-                        />
+                        >
+                            {bd}-bit
+                        </DawPluginChip>
                     ))}
                 </div>
             ) : null}

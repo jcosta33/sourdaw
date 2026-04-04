@@ -6,6 +6,7 @@
  * Matches the visual density of Fermenter's Filter section.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { type ExpressionConfig, type LegatoConfig } from '../../models/LevainPatch';
 
@@ -110,39 +111,42 @@ export const ExpressionPanel = ({ expression, legato, onChangeExp, onChangeLeg }
     return (
         <div className="space-y-3 max-w-[340px]">
             {/* Header */}
-            <div className="flex items-center gap-3">
-                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                    Expression
-                </span>
-                <div className="flex gap-0.5">
-                    {(['linear', 's-curve', 'logarithmic'] as const).map((c) => (
+            <DawPluginSectionHeader
+                title="Expression"
+                titleClassName="text-muted-foreground"
+                className="gap-3"
+                actions={
+                    <>
+                        <div className="flex gap-0.5">
+                            {(['linear', 's-curve', 'logarithmic'] as const).map((c) => (
+                                <button
+                                    key={c}
+                                    type="button"
+                                    className={`px-1.5 py-0.5 rounded text-[8px] font-medium transition-colors ${
+                                        expression.cc1Curve === c
+                                            ? 'bg-amber-500/20 text-amber-300'
+                                            : 'text-muted-foreground/60 hover:text-foreground'
+                                    }`}
+                                    onClick={() => onChangeExp({ cc1Curve: c })}
+                                >
+                                    {c === 's-curve' ? 'S-Curve' : c.charAt(0).toUpperCase() + c.slice(1)}
+                                </button>
+                            ))}
+                        </div>
                         <button
-                            key={c}
                             type="button"
-                            className={`px-1.5 py-0.5 rounded text-[8px] font-medium transition-colors ${
-                                expression.cc1Curve === c
-                                    ? 'bg-amber-500/20 text-amber-300'
-                                    : 'text-muted-foreground/60 hover:text-foreground'
+                            className={`ml-auto px-1.5 py-0.5 rounded text-[8px] font-medium transition-colors ${
+                                legato.enabled
+                                    ? 'bg-emerald-500/20 text-emerald-300'
+                                    : 'text-muted-foreground/40 hover:text-foreground'
                             }`}
-                            onClick={() => onChangeExp({ cc1Curve: c })}
+                            onClick={() => onChangeLeg({ enabled: !legato.enabled })}
                         >
-                            {c === 's-curve' ? 'S-Curve' : c.charAt(0).toUpperCase() + c.slice(1)}
+                            Legato {legato.enabled ? 'On' : 'Off'}
                         </button>
-                    ))}
-                </div>
-                {/* Legato toggle */}
-                <button
-                    type="button"
-                    className={`ml-auto px-1.5 py-0.5 rounded text-[8px] font-medium transition-colors ${
-                        legato.enabled
-                            ? 'bg-emerald-500/20 text-emerald-300'
-                            : 'text-muted-foreground/40 hover:text-foreground'
-                    }`}
-                    onClick={() => onChangeLeg({ enabled: !legato.enabled })}
-                >
-                    Legato {legato.enabled ? 'On' : 'Off'}
-                </button>
-            </div>
+                    </>
+                }
+            />
 
             {/* Hero: dynamics curve */}
             <DynamicsCurve

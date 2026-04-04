@@ -56,6 +56,9 @@ export type Clip = {
     endBeat: number;
     type: 'audio' | 'midi';
     audioBufferId?: string;
+    /** Content-addressed hash of the audio file (SHA-256 via AssetTransfer).
+     *  Set on import; used to request the file from peers in a collab session. */
+    assetHash?: string;
     audioOffsetBeats?: number;
     fadeInBeats: number;
     fadeOutBeats: number;

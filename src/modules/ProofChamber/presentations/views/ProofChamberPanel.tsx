@@ -1,4 +1,6 @@
 import { type ReactElement, type ReactNode, useEffect, useRef, useState } from 'react';
+import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
+import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { Waves } from 'lucide-react';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import {
@@ -79,15 +81,16 @@ function SectionCard({
     children: ReactNode;
 }): ReactElement {
     return (
-        <section className="proof-chamber-window flex flex-col gap-3 p-3">
-            <div className="flex items-center justify-between gap-2">
-                <div className="text-[8px] font-semibold uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]/72">
-                    {title}
-                </div>
-                {detail ? <div className="proof-chamber-led">{detail}</div> : null}
-            </div>
+        <DawPluginSectionCard
+            className="proof-chamber-window"
+            title={title}
+            detail={detail}
+            detailMode="badge"
+            titleClassName="text-[var(--color-accent-cyan)]/72"
+            detailClassName="proof-chamber-led"
+        >
             {children}
-        </section>
+        </DawPluginSectionCard>
     );
 }
 
@@ -360,25 +363,31 @@ export const ProofChamberPanel = (): ReactElement => {
 
                     <div className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
                         <SectionCard title="Quick read" detail={params.algorithm}>
-                            <div className="space-y-2 text-[10px] leading-4 text-white/56">
-                                <div className="flex items-center justify-between gap-2">
-                                    <span>High cut</span>
-                                    <span className="font-mono text-white/82">{formatValue(params.highCut, 'Hz')}</span>
-                                </div>
-                                <div className="flex items-center justify-between gap-2">
-                                    <span>Low cut</span>
-                                    <span className="font-mono text-white/82">{formatValue(params.lowCut, 'Hz')}</span>
-                                </div>
-                                <div className="flex items-center justify-between gap-2">
-                                    <span>Damping</span>
-                                    <span className="font-mono text-white/82">{formatValue(params.damping, '%')}</span>
-                                </div>
-                                <div className="flex items-center justify-between gap-2">
-                                    <span>Gravity</span>
-                                    <span className="font-mono text-white/82">
-                                        {formatValue(params.gravity, 'bipolar')}
-                                    </span>
-                                </div>
+                            <div className="space-y-2">
+                                <DawReadoutRow
+                                    label="High cut"
+                                    value={formatValue(params.highCut, 'Hz')}
+                                    labelClassName="text-white/56"
+                                    valueClassName="text-white/82"
+                                />
+                                <DawReadoutRow
+                                    label="Low cut"
+                                    value={formatValue(params.lowCut, 'Hz')}
+                                    labelClassName="text-white/56"
+                                    valueClassName="text-white/82"
+                                />
+                                <DawReadoutRow
+                                    label="Damping"
+                                    value={formatValue(params.damping, '%')}
+                                    labelClassName="text-white/56"
+                                    valueClassName="text-white/82"
+                                />
+                                <DawReadoutRow
+                                    label="Gravity"
+                                    value={formatValue(params.gravity, 'bipolar')}
+                                    labelClassName="text-white/56"
+                                    valueClassName="text-white/82"
+                                />
                             </div>
                         </SectionCard>
                         <SectionCard title="Switches" detail={params.freeze ? 'Frozen' : 'Moving'}>

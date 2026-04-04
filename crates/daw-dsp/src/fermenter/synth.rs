@@ -56,34 +56,34 @@ pub struct MasterSynth {
 
     // Delay parameters
     pub delay_time: f32,
-    pub delay_feedback: f32,
-    pub delay_mix: f32,
+    pub delay_feedback: SmoothedParam,
+    pub delay_mix: SmoothedParam,
 
     // Chorus parameters
     pub chorus_rate: f32,
     pub chorus_depth: f32,
-    pub chorus_mix: f32,
+    pub chorus_mix: SmoothedParam,
 
     // Phaser parameters
     pub phaser_rate: f32,
     pub phaser_depth: f32,
-    pub phaser_mix: f32,
+    pub phaser_mix: SmoothedParam,
 
     // Distortion parameters
-    pub dist_drive: f32,
+    pub dist_drive: SmoothedParam,
     pub dist_tone: f32,
-    pub dist_mix: f32,
+    pub dist_mix: SmoothedParam,
 
     // Compressor parameters
     pub comp_threshold: f32,
     pub comp_ratio: f32,
     pub comp_attack: f32,
     pub comp_release: f32,
-    pub comp_mix: f32,
+    pub comp_mix: SmoothedParam,
 
     // Master
-    pub master_gain: f32,
-    pub stereo_width: f32,
+    pub master_gain: SmoothedParam,
+    pub stereo_width: SmoothedParam,
 
     sample_rate: f32,
 }
@@ -131,24 +131,24 @@ impl MasterSynth {
             eq_high_gain: 0.0,
             eq_high_q: 1.0,
             delay_time: 300.0,
-            delay_feedback: 0.3,
-            delay_mix: 0.0,
+            delay_feedback: SmoothedParam::new(0.3, 5.0, sample_rate),
+            delay_mix: SmoothedParam::new(0.0, 5.0, sample_rate),
             chorus_rate: 1.0,
             chorus_depth: 0.5,
-            chorus_mix: 0.0,
+            chorus_mix: SmoothedParam::new(0.0, 5.0, sample_rate),
             phaser_rate: 1.0,
             phaser_depth: 0.5,
-            phaser_mix: 0.0,
-            dist_drive: 0.0,
+            phaser_mix: SmoothedParam::new(0.0, 5.0, sample_rate),
+            dist_drive: SmoothedParam::new(0.0, 5.0, sample_rate),
             dist_tone: 0.5,
-            dist_mix: 0.0,
+            dist_mix: SmoothedParam::new(0.0, 5.0, sample_rate),
             comp_threshold: -10.0,
             comp_ratio: 4.0,
             comp_attack: 10.0,
             comp_release: 100.0,
-            comp_mix: 0.0,
-            master_gain: 1.0,
-            stereo_width: 1.0,
+            comp_mix: SmoothedParam::new(0.0, 5.0, sample_rate),
+            master_gain: SmoothedParam::new(1.0, 5.0, sample_rate),
+            stereo_width: SmoothedParam::new(1.0, 5.0, sample_rate),
             sample_rate,
         }
     }
@@ -285,11 +285,11 @@ impl MasterSynth {
                 return;
             }
             "delay_feedback" => {
-                self.delay_feedback = value.clamp(0.0, 0.95);
+                self.delay_feedback.set(value.clamp(0.0, 0.95));
                 return;
             }
             "delay_mix" => {
-                self.delay_mix = value.clamp(0.0, 1.0);
+                self.delay_mix.set(value.clamp(0.0, 1.0));
                 return;
             }
             "chorus_rate" => {
@@ -301,7 +301,7 @@ impl MasterSynth {
                 return;
             }
             "chorus_mix" => {
-                self.chorus_mix = value.clamp(0.0, 1.0);
+                self.chorus_mix.set(value.clamp(0.0, 1.0));
                 return;
             }
             "phaser_rate" => {
@@ -313,11 +313,11 @@ impl MasterSynth {
                 return;
             }
             "phaser_mix" => {
-                self.phaser_mix = value.clamp(0.0, 1.0);
+                self.phaser_mix.set(value.clamp(0.0, 1.0));
                 return;
             }
             "dist_drive" => {
-                self.dist_drive = value.clamp(0.0, 10.0);
+                self.dist_drive.set(value.clamp(0.0, 10.0));
                 return;
             }
             "dist_tone" => {
@@ -325,7 +325,7 @@ impl MasterSynth {
                 return;
             }
             "dist_mix" => {
-                self.dist_mix = value.clamp(0.0, 1.0);
+                self.dist_mix.set(value.clamp(0.0, 1.0));
                 return;
             }
             "comp_threshold" => {
@@ -345,15 +345,15 @@ impl MasterSynth {
                 return;
             }
             "comp_mix" => {
-                self.comp_mix = value.clamp(0.0, 1.0);
+                self.comp_mix.set(value.clamp(0.0, 1.0));
                 return;
             }
             "master_gain" => {
-                self.master_gain = value.clamp(0.0, 2.0);
+                self.master_gain.set(value.clamp(0.0, 2.0));
                 return;
             }
             "stereo_width" => {
-                self.stereo_width = value.clamp(0.0, 2.0);
+                self.stereo_width.set(value.clamp(0.0, 2.0));
                 return;
             }
             _ => {}
@@ -406,19 +406,30 @@ impl MasterSynth {
 
         // ── Global effects ──────────────────────────────────────────
 
+        // Tick smoothed params once per block
+        let dist_drive = self.dist_drive.tick();
+        let dist_mix = self.dist_mix.tick();
+        let comp_mix = self.comp_mix.tick();
+        let delay_feedback = self.delay_feedback.tick();
+        let delay_mix = self.delay_mix.tick();
+        let chorus_mix = self.chorus_mix.tick();
+        let phaser_mix = self.phaser_mix.tick();
+        let master_gain = self.master_gain.tick();
+        let stereo_width = self.stereo_width.tick();
+
         // Apply distortion (pre-FX)
-        if self.dist_mix > 0.001 {
+        if dist_mix > 0.001 {
             self.distortion.process_block(
                 &mut left[..block_size],
                 &mut right[..block_size],
-                self.dist_drive,
+                dist_drive,
                 self.dist_tone,
-                self.dist_mix,
+                dist_mix,
             );
         }
 
         // Apply compressor (after distortion, before reverb)
-        if self.comp_mix > 0.001 {
+        if comp_mix > 0.001 {
             self.compressor.process_block(
                 &mut left[..block_size],
                 &mut right[..block_size],
@@ -426,7 +437,7 @@ impl MasterSynth {
                 self.comp_ratio,
                 self.comp_attack,
                 self.comp_release,
-                self.comp_mix,
+                comp_mix,
                 self.sample_rate,
             );
         }
@@ -458,35 +469,35 @@ impl MasterSynth {
         }
 
         // Apply delay
-        if self.delay_mix > 0.001 {
+        if delay_mix > 0.001 {
             self.delay.process_block(
                 &mut left[..block_size],
                 &mut right[..block_size],
                 self.delay_time,
-                self.delay_feedback,
-                self.delay_mix,
+                delay_feedback,
+                delay_mix,
             );
         }
 
         // Apply chorus
-        if self.chorus_mix > 0.001 {
+        if chorus_mix > 0.001 {
             self.chorus.process_block(
                 &mut left[..block_size],
                 &mut right[..block_size],
                 self.chorus_rate,
                 self.chorus_depth,
-                self.chorus_mix,
+                chorus_mix,
             );
         }
 
         // Apply phaser (after chorus)
-        if self.phaser_mix > 0.001 {
+        if phaser_mix > 0.001 {
             self.phaser.process_block(
                 &mut left[..block_size],
                 &mut right[..block_size],
                 self.phaser_rate,
                 self.phaser_depth,
-                self.phaser_mix,
+                phaser_mix,
             );
         }
 
@@ -495,19 +506,19 @@ impl MasterSynth {
             .process_block(&mut left[..block_size], &mut right[..block_size]);
 
         // Apply stereo width (last effect before master gain)
-        if (self.stereo_width - 1.0).abs() > 0.001 {
+        if (stereo_width - 1.0).abs() > 0.001 {
             StereoWidth::process_block(
                 &mut left[..block_size],
                 &mut right[..block_size],
-                self.stereo_width,
+                stereo_width,
             );
         }
 
         // Apply master gain
-        if (self.master_gain - 1.0).abs() > 0.001 {
+        if (master_gain - 1.0).abs() > 0.001 {
             for i in 0..block_size {
-                left[i] *= self.master_gain;
-                right[i] *= self.master_gain;
+                left[i] *= master_gain;
+                right[i] *= master_gain;
             }
         }
     }

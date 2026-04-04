@@ -2,6 +2,8 @@
  * ProofImagerSection — Per-band stereo width controls + correlation meter.
  */
 import { type ReactElement } from 'react';
+import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
+import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { type ProofPatch } from '../../models/ProofPatch';
 import { updateProofPatch } from '../../stores/proofStore';
@@ -26,19 +28,24 @@ export const ProofImagerSection = ({ patch, correlation, deviceId }: Props): Rea
 
     return (
         <div className="flex flex-col gap-1.5 px-2">
-            <div className="flex items-center justify-between">
-                <span className="text-[8px] font-bold text-[var(--color-accent-mint)] uppercase tracking-wider">Stereo Imager</span>
-                <button
-                    type="button"
-                    className={`text-[7px] px-1.5 py-0.5 rounded cursor-pointer ${patch.imgBypassed ? 'text-muted-foreground' : 'text-[var(--color-accent-mint)]'}`}
-                    onClick={() => {
-                        updateProofPatch(deviceId, { imgBypassed: !patch.imgBypassed });
-                        setProofParam(deviceId, 'img_bypass', patch.imgBypassed ? 0 : 1);
-                    }}
-                >
-                    {patch.imgBypassed ? 'OFF' : 'ON'}
-                </button>
-            </div>
+            <DawPluginSectionHeader
+                title="Stereo Imager"
+                size="xs"
+                titleClassName="text-[var(--color-accent-mint)]"
+                actions={
+                    <DawPluginToggle
+                        pressed={!patch.imgBypassed}
+                        tone="mint"
+                        size="xs"
+                        onClick={() => {
+                            updateProofPatch(deviceId, { imgBypassed: !patch.imgBypassed });
+                            setProofParam(deviceId, 'img_bypass', patch.imgBypassed ? 0 : 1);
+                        }}
+                    >
+                        {patch.imgBypassed ? 'OFF' : 'ON'}
+                    </DawPluginToggle>
+                }
+            />
 
             <div className={`flex flex-col gap-2 ${patch.imgBypassed ? 'opacity-30' : ''}`}>
                 {/* Per-band width knobs */}
@@ -60,18 +67,18 @@ export const ProofImagerSection = ({ patch, correlation, deviceId }: Props): Rea
 
                 {/* Auto mono bass */}
                 <div className="flex items-center gap-2 px-1">
-                    <button
-                        type="button"
-                        className={`text-[7px] px-1.5 py-0.5 rounded cursor-pointer ${
-                            patch.imgAutoMonoBass ? 'bg-[var(--color-accent-mint)]/20 text-[var(--color-accent-mint)]' : 'text-muted-foreground'
-                        }`}
+                    <DawPluginToggle
+                        pressed={patch.imgAutoMonoBass}
+                        tone="mint"
+                        size="xs"
+                        caps={false}
                         onClick={() => {
                             updateProofPatch(deviceId, { imgAutoMonoBass: !patch.imgAutoMonoBass });
                             setProofParam(deviceId, 'img_auto_mono_bass', patch.imgAutoMonoBass ? 0 : 1);
                         }}
                     >
                         Auto Mono Bass
-                    </button>
+                    </DawPluginToggle>
                     <RotaryKnob
                         value={patch.imgMonoBassFreq}
                         onChange={(v) => { updateProofPatch(deviceId, { imgMonoBassFreq: v }); setProofParam(deviceId, 'img_mono_bass_freq', v); }}

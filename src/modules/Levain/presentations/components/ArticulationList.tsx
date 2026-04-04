@@ -5,6 +5,7 @@
  * Level 3+: compact sidebar list.
  */
 import { type ReactElement } from 'react';
+import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { type ArticulationEntry, type ArticulationType } from '../../models/LevainPatch';
 import { setCurrentArticulation } from '../../stores/levainStore';
 
@@ -33,14 +34,13 @@ export const ArticulationList = ({
                 {enabled.map((art) => {
                     const isActive = art.type === current;
                     return (
-                        <button
+                        <DawPluginChip
                             key={art.type}
-                            type="button"
-                            className={`flex flex-col items-center gap-0.5 px-2 py-2 rounded-md border transition-all ${
-                                isActive
-                                    ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 shadow-[0_0_8px_rgba(245,158,11,0.1)]'
-                                    : 'bg-surface-raised/30 border-border/20 text-muted-foreground hover:bg-surface-raised/60 hover:text-foreground'
-                            }`}
+                            active={isActive}
+                            tone="amber"
+                            caps={false}
+                            shape="soft"
+                            className="flex flex-col gap-0.5 px-2 py-2"
                             onClick={() => setCurrentArticulation(art.type)}
                         >
                             <span className="text-[10px] font-medium leading-tight">{art.name}</span>
@@ -49,7 +49,7 @@ export const ArticulationList = ({
                                     {midiNoteToName(art.keyswitch)}
                                 </span>
                             ) : null}
-                        </button>
+                        </DawPluginChip>
                     );
                 })}
             </div>
@@ -65,14 +65,12 @@ export const ArticulationList = ({
             {enabled.map((art) => {
                 const isActive = art.type === current;
                 return (
-                    <button
+                    <DawPluginChip
                         key={art.type}
-                        type="button"
-                        className={`flex items-center justify-between px-2 py-1 rounded text-[10px] transition-colors ${
-                            isActive
-                                ? 'bg-amber-500/15 text-amber-300'
-                                : 'text-muted-foreground hover:bg-surface-raised/40 hover:text-foreground'
-                        }`}
+                        active={isActive}
+                        tone="amber"
+                        caps={false}
+                        className="flex w-full items-center justify-between px-2 py-1 text-[10px]"
                         onClick={() => setCurrentArticulation(art.type)}
                     >
                         <span>{art.name}</span>
@@ -81,7 +79,7 @@ export const ArticulationList = ({
                                 {midiNoteToName(art.keyswitch)}
                             </span>
                         ) : null}
-                    </button>
+                    </DawPluginChip>
                 );
             })}
         </div>

@@ -1,5 +1,7 @@
 import { type ReactElement, useState, useSyncExternalStore } from 'react';
 import { ChevronDown } from 'lucide-react';
+import { DawPluginChip } from '#/components/daw/DawPluginChip';
+import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { crustStore, type CrustState, resetCrustMeters, setCrustUiLevel } from '../../stores/crustStore';
 import { loadCrustPatchWithAudio, setCrustParamWithAudio } from '../../useCases/crustParamBridge';
 import { CRUST_PRESETS } from '../../useCases/crustPresets';
@@ -97,15 +99,15 @@ export const CrustPanel = (): ReactElement => {
 
                 <div className="flex flex-wrap gap-1.5">
                     {([1, 2, 3, 4, 5] as const).map((level) => (
-                        <button
+                        <DawPluginChip
                             key={level}
-                            type="button"
-                            className={`crust-chip ${patch.uiLevel === level ? 'crust-chip-active' : ''}`}
-                            aria-pressed={patch.uiLevel === level}
+                            active={patch.uiLevel === level}
+                            tone="peach"
+                            size="sm"
                             onClick={() => setCrustUiLevel(level)}
                         >
                             L{level}
-                        </button>
+                        </DawPluginChip>
                     ))}
                 </div>
 
@@ -226,9 +228,9 @@ export const CrustPanel = (): ReactElement => {
                 </div>
 
                 <div className="ml-auto flex items-center gap-2">
-                    <div className="crust-led">
+                    <DawPluginLed tone="peach">
                         {normalizationLoss > 0.25 ? `Watch ${normalizationLoss.toFixed(1)} dB` : 'On target'}
-                    </div>
+                    </DawPluginLed>
                     <div className="text-right">
                         <div className="text-[8px] uppercase tracking-[0.22em] text-muted-foreground/55">Ceiling</div>
                         <div className="font-mono text-[11px] text-foreground">{patch.ceiling.toFixed(1)} dBTP</div>
@@ -337,51 +339,51 @@ export const CrustPanel = (): ReactElement => {
                     />
                 </label>
 
-                <button
-                    type="button"
-                    className={`crust-chip ${patch.truePeak ? 'crust-chip-active' : ''}`}
-                    aria-pressed={patch.truePeak}
+                <DawPluginChip
+                    active={patch.truePeak}
+                    tone="peach"
+                    size="sm"
                     onClick={() => handleSetParam('truePeak', !patch.truePeak)}
                 >
                     True peak
-                </button>
+                </DawPluginChip>
 
                 {patch.uiLevel >= 2 ? (
                     <div className="flex flex-wrap gap-1.5">
                         {OVERSAMPLE_OPTIONS.map((option) => (
-                            <button
+                            <DawPluginChip
                                 key={option}
-                                type="button"
-                                className={`crust-chip ${patch.oversampling === option ? 'crust-chip-active' : ''}`}
-                                aria-pressed={patch.oversampling === option}
+                                active={patch.oversampling === option}
+                                tone="peach"
+                                size="sm"
                                 onClick={() => handleSetParam('oversampling', option)}
                             >
                                 {option === 1 ? 'OS off' : `${option}×`}
-                            </button>
+                            </DawPluginChip>
                         ))}
                     </div>
                 ) : null}
 
                 <div className="ml-auto flex flex-wrap gap-1.5">
-                    <button
-                        type="button"
-                        className={`crust-chip ${patch.unityGain ? 'crust-chip-active' : ''}`}
-                        aria-pressed={patch.unityGain}
+                    <DawPluginChip
+                        active={patch.unityGain}
+                        tone="peach"
+                        size="sm"
                         onClick={() => handleSetParam('unityGain', !patch.unityGain)}
                     >
                         A=B
-                    </button>
-                    <button
-                        type="button"
-                        className={`crust-chip ${patch.deltaListen ? 'crust-chip-active' : ''}`}
-                        aria-pressed={patch.deltaListen}
+                    </DawPluginChip>
+                    <DawPluginChip
+                        active={patch.deltaListen}
+                        tone="peach"
+                        size="sm"
                         onClick={() => handleSetParam('deltaListen', !patch.deltaListen)}
                     >
                         Delta
-                    </button>
-                    <button type="button" className="crust-chip" onClick={() => resetCrustMeters()}>
+                    </DawPluginChip>
+                    <DawPluginChip type="button" tone="peach" size="sm" onClick={() => resetCrustMeters()}>
                         Reset
-                    </button>
+                    </DawPluginChip>
                 </div>
             </footer>
         </div>

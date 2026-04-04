@@ -3,6 +3,8 @@
  * 4-band compressor with crossover frequencies, per-band threshold/ratio/attack/release.
  */
 import { type ReactElement } from 'react';
+import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
+import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { type ProofPatch } from '../../models/ProofPatch';
 import { updateProofPatch } from '../../stores/proofStore';
@@ -32,19 +34,24 @@ export const ProofDynSection = ({ patch, dynGr, deviceId }: Props): ReactElement
 
     return (
         <div className="flex flex-col gap-1.5 px-2">
-            <div className="flex items-center justify-between">
-                <span className="text-[8px] font-bold text-[var(--color-accent-peach)] uppercase tracking-wider">Multiband Dynamics</span>
-                <button
-                    type="button"
-                    className={`text-[7px] px-1.5 py-0.5 rounded cursor-pointer ${patch.dynBypassed ? 'text-muted-foreground' : 'text-[var(--color-accent-peach)]'}`}
-                    onClick={() => {
-                        updateProofPatch(deviceId, { dynBypassed: !patch.dynBypassed });
-                        setProofParam(deviceId, 'dyn_bypass', patch.dynBypassed ? 0 : 1);
-                    }}
-                >
-                    {patch.dynBypassed ? 'OFF' : 'ON'}
-                </button>
-            </div>
+            <DawPluginSectionHeader
+                title="Multiband Dynamics"
+                size="xs"
+                titleClassName="text-[var(--color-accent-peach)]"
+                actions={
+                    <DawPluginToggle
+                        pressed={!patch.dynBypassed}
+                        tone="peach"
+                        size="xs"
+                        onClick={() => {
+                            updateProofPatch(deviceId, { dynBypassed: !patch.dynBypassed });
+                            setProofParam(deviceId, 'dyn_bypass', patch.dynBypassed ? 0 : 1);
+                        }}
+                    >
+                        {patch.dynBypassed ? 'OFF' : 'ON'}
+                    </DawPluginToggle>
+                }
+            />
 
             {/* Crossover frequencies */}
             <div className="flex items-center gap-2 px-1">

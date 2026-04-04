@@ -5,6 +5,7 @@
  * Below: RotaryKnobs for thresholds and portamento velocity.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { type LegatoConfig } from '../../models/LevainPatch';
 type LegatoTuningProps = {
@@ -109,22 +110,24 @@ export const LegatoTuning = ({ config, onChange }: LegatoTuningProps): ReactElem
     return (
         <div className="space-y-3 max-w-[340px]">
             {/* Header */}
-            <div className="flex items-center gap-3">
-                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                    Legato
-                </span>
-                <button
-                    type="button"
-                    className={`px-1.5 py-0.5 rounded text-[8px] font-medium transition-colors ${
-                        config.adaptiveSpeed
-                            ? 'bg-amber-500/20 text-amber-300'
-                            : 'text-muted-foreground/40 hover:text-foreground'
-                    }`}
-                    onClick={() => update({ adaptiveSpeed: !config.adaptiveSpeed })}
-                >
-                    Adaptive {config.adaptiveSpeed ? 'On' : 'Off'}
-                </button>
-            </div>
+            <DawPluginSectionHeader
+                title="Legato"
+                titleClassName="text-muted-foreground"
+                className="gap-3"
+                actions={
+                    <button
+                        type="button"
+                        className={`px-1.5 py-0.5 rounded text-[8px] font-medium transition-colors ${
+                            config.adaptiveSpeed
+                                ? 'bg-amber-500/20 text-amber-300'
+                                : 'text-muted-foreground/40 hover:text-foreground'
+                        }`}
+                        onClick={() => update({ adaptiveSpeed: !config.adaptiveSpeed })}
+                    >
+                        Adaptive {config.adaptiveSpeed ? 'On' : 'Off'}
+                    </button>
+                }
+            />
 
             {/* Hero: legato timing diagram */}
             <LegatoDiagram slowMs={config.slowThresholdMs} fastMs={config.fastThresholdMs} />

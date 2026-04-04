@@ -1,5 +1,8 @@
 import { type ReactElement, useState, useSyncExternalStore } from 'react';
 import { Cpu, Radio, Search, Sparkles, Waves } from 'lucide-react';
+import { DawPluginChip } from '#/components/daw/DawPluginChip';
+import { DawPluginLed } from '#/components/daw/DawPluginLed';
+import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { CompressorCurve } from '#/components/daw/visualizers/CompressorCurve';
 import { DistortionCurve } from '#/components/daw/visualizers/DistortionCurve';
@@ -291,7 +294,7 @@ function ToneResponseStage({ patch, state }: { patch: GrinderPatch; state: Grind
                         Channel {patch.channel + 1} · {patch.powerTubeType.toUpperCase()} · {patch.rectifierType}
                     </div>
                 </div>
-                <div className="grinder-led">{patch.bright ? 'Bright' : patch.fat ? 'Fat' : 'Classic'}</div>
+                <DawPluginLed tone="amber">{patch.bright ? 'Bright' : patch.fat ? 'Fat' : 'Classic'}</DawPluginLed>
             </div>
             <svg
                 viewBox="0 0 100 84"
@@ -352,7 +355,7 @@ function DriveStage({ patch }: { patch: GrinderPatch }): ReactElement {
                             {drivePedal?.type ?? 'No drive block'}
                         </div>
                     </div>
-                    <div className="grinder-led">{drivePedal?.enabled ? 'Live' : 'Bypassed'}</div>
+                    <DawPluginLed tone="amber">{drivePedal?.enabled ? 'Live' : 'Bypassed'}</DawPluginLed>
                 </div>
                 <DistortionCurve
                     drive={driveAmount * 10}
@@ -414,7 +417,7 @@ function CabStage({ patch }: { patch: GrinderPatch }): ReactElement {
                         </div>
                         <div className="mt-1 text-lg font-semibold text-white/90">Speaker field</div>
                     </div>
-                    <div className="grinder-led">{patch.cabEnabled ? 'Cab In' : 'Cab Out'}</div>
+                    <DawPluginLed tone="amber">{patch.cabEnabled ? 'Cab In' : 'Cab Out'}</DawPluginLed>
                 </div>
                 <div
                     className="relative flex h-[180px] w-full items-center justify-center overflow-hidden rounded-[20px] border border-white/8 bg-[radial-gradient(circle_at_50%_42%,rgba(111,177,198,0.18),transparent_34%),radial-gradient(circle_at_50%_50%,rgba(229,168,75,0.14),transparent_54%),linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))]"
@@ -480,7 +483,7 @@ function NeuralStage({ patch, state }: { patch: GrinderPatch; state: GrinderStat
                             {patch.neuralPlacement === 'amp-capture' ? 'Amp capture' : 'Rig capture'}
                         </div>
                     </div>
-                    <div className="grinder-led">{statusLabel}</div>
+                    <DawPluginLed tone="amber">{statusLabel}</DawPluginLed>
                 </div>
                 <div className="rounded-[20px] border border-white/8 bg-black/35 p-4">
                     <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.24em] text-white/46">
@@ -611,18 +614,15 @@ function BrowserRail({
                 </div>
                 <div className="flex flex-wrap gap-2">
                     {categories.map((item) => (
-                        <button
+                        <DawPluginChip
                             key={item}
-                            type="button"
-                            className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.24em] ${
-                                category === item
-                                    ? 'border-[var(--color-accent-amber)]/60 bg-[var(--color-accent-amber)]/14 text-[var(--color-accent-amber)]'
-                                    : 'border-white/8 bg-black/20 text-white/50'
-                            }`}
+                            active={category === item}
+                            tone="amber"
+                            size="sm"
                             onClick={() => setCategory(item)}
                         >
                             {item}
-                        </button>
+                        </DawPluginChip>
                     ))}
                 </div>
                 <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
@@ -728,13 +728,10 @@ function DriveDeck({
                             <span className="text-[11px] uppercase tracking-[0.24em] text-[var(--color-accent-amber)]">
                                 {control.label}
                             </span>
-                            <button
-                                type="button"
-                                className={`rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] ${
-                                    pedal.enabled
-                                        ? 'border-[var(--color-accent-amber)]/60 bg-[var(--color-accent-amber)]/14 text-[var(--color-accent-amber)]'
-                                        : 'border-white/8 bg-black/20 text-white/50'
-                                }`}
+                            <DawPluginToggle
+                                pressed={pedal.enabled}
+                                tone="amber"
+                                size="sm"
                                 onClick={() =>
                                     replacePatch({
                                         ...patch,
@@ -751,7 +748,7 @@ function DriveDeck({
                                 }
                             >
                                 {pedal.enabled ? 'On' : 'Off'}
-                            </button>
+                            </DawPluginToggle>
                         </label>
                         <div className="flex flex-wrap gap-2.5">
                             {control.params.map((param) => (
@@ -875,18 +872,15 @@ function ControlDeck({
                     </div>
                     <div className="flex gap-2">
                         {[0, 1, 2].map((channel) => (
-                            <button
+                            <DawPluginChip
                                 key={channel}
-                                type="button"
-                                className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.18em] ${
-                                    patch.channel === channel
-                                        ? 'border-[var(--color-accent-amber)]/60 bg-[var(--color-accent-amber)]/14 text-[var(--color-accent-amber)]'
-                                        : 'border-white/8 bg-black/20 text-white/52'
-                                }`}
+                                active={patch.channel === channel}
+                                tone="amber"
+                                size="sm"
                                 onClick={() => setGrinderParamWithAudio(deviceId, 'channel', channel)}
                             >
                                 {['Clean', 'Crunch', 'Lead'][channel]}
-                            </button>
+                            </DawPluginChip>
                         ))}
                     </div>
                     <div className="flex gap-2">
@@ -894,48 +888,43 @@ function ControlDeck({
                             { key: 'bright', label: 'Bright', active: patch.bright },
                             { key: 'fat', label: 'Fat', active: patch.fat },
                         ].map((item) => (
-                            <button
+                            <DawPluginToggle
                                 key={item.key}
-                                type="button"
-                                className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.18em] ${
-                                    item.active
-                                        ? 'border-[var(--color-accent-cyan)]/60 bg-[var(--color-accent-cyan)]/12 text-[var(--color-accent-cyan)]'
-                                        : 'border-white/8 bg-black/20 text-white/52'
-                                }`}
+                                pressed={item.active}
+                                tone="cyan"
+                                size="sm"
                                 onClick={() => replacePatch({ ...patch, [item.key]: !item.active })}
                             >
                                 {item.label}
-                            </button>
+                            </DawPluginToggle>
                         ))}
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                         {POWER_TUBES.map((tube) => (
-                            <button
+                            <DawPluginChip
                                 key={tube}
-                                type="button"
-                                className={`rounded-[14px] border px-3 py-2 text-left text-[11px] uppercase tracking-[0.18em] ${
-                                    patch.powerTubeType === tube
-                                        ? 'border-[var(--color-accent-peach)]/60 bg-[var(--color-accent-peach)]/12 text-[var(--color-accent-peach)]'
-                                        : 'border-white/8 bg-black/20 text-white/50'
-                                }`}
+                                active={patch.powerTubeType === tube}
+                                tone="peach"
+                                size="sm"
+                                shape="soft"
+                                className="justify-start py-2 text-left text-[11px]"
                                 onClick={() => replacePatch({ ...patch, powerTubeType: tube })}
                             >
                                 {tube}
-                            </button>
+                            </DawPluginChip>
                         ))}
                         {RECTIFIERS.map((rectifier) => (
-                            <button
+                            <DawPluginChip
                                 key={rectifier}
-                                type="button"
-                                className={`rounded-[14px] border px-3 py-2 text-left text-[11px] uppercase tracking-[0.18em] ${
-                                    patch.rectifierType === rectifier
-                                        ? 'border-[var(--color-accent-cyan)]/60 bg-[var(--color-accent-cyan)]/12 text-[var(--color-accent-cyan)]'
-                                        : 'border-white/8 bg-black/20 text-white/50'
-                                }`}
+                                active={patch.rectifierType === rectifier}
+                                tone="cyan"
+                                size="sm"
+                                shape="soft"
+                                className="justify-start py-2 text-left text-[11px]"
                                 onClick={() => replacePatch({ ...patch, rectifierType: rectifier })}
                             >
                                 {rectifier}
-                            </button>
+                            </DawPluginChip>
                         ))}
                     </div>
                 </div>
@@ -1006,28 +995,22 @@ function ControlDeck({
                         Cab toggles
                     </div>
                     <div className="flex gap-2">
-                        <button
-                            type="button"
-                            className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.18em] ${
-                                patch.cabEnabled
-                                    ? 'border-[var(--color-accent-cyan)]/60 bg-[var(--color-accent-cyan)]/12 text-[var(--color-accent-cyan)]'
-                                    : 'border-white/8 bg-black/20 text-white/52'
-                            }`}
+                        <DawPluginToggle
+                            pressed={patch.cabEnabled}
+                            tone="cyan"
+                            size="sm"
                             onClick={() => replacePatch({ ...patch, cabEnabled: !patch.cabEnabled })}
                         >
                             {patch.cabEnabled ? 'Cab Enabled' : 'Cab Bypassed'}
-                        </button>
-                        <button
-                            type="button"
-                            className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.18em] ${
-                                patch.cabOpenBack
-                                    ? 'border-[var(--color-accent-peach)]/60 bg-[var(--color-accent-peach)]/12 text-[var(--color-accent-peach)]'
-                                    : 'border-white/8 bg-black/20 text-white/52'
-                            }`}
+                        </DawPluginToggle>
+                        <DawPluginToggle
+                            pressed={patch.cabOpenBack}
+                            tone="peach"
+                            size="sm"
                             onClick={() => replacePatch({ ...patch, cabOpenBack: !patch.cabOpenBack })}
                         >
                             {patch.cabOpenBack ? 'Open Back' : 'Closed Back'}
-                        </button>
+                        </DawPluginToggle>
                     </div>
                 </div>
             </div>

@@ -201,6 +201,9 @@ export const CollaborationPanel = (): ReactElement | null => {
                                         QR
                                     </Button>
                                 </div>
+                                <p className="text-[10px] text-muted-foreground/60">
+                                    Wait for each person to accept before inviting the next.
+                                </p>
 
                                 {/* QR code display */}
                                 {showQr && inviteString ? (

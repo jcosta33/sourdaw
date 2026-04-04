@@ -12,6 +12,7 @@ import { libraryStore } from '#/modules/SampleLibrary/stores/libraryStore';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { isTauri } from '#/helpers/tauriBridge';
+import { getAssetTransfer } from '#/modules/Collaboration/useCases/collaboration';
 
 type GetCanvasCoords = (e: DragEvent<HTMLDivElement>) => { x: number; y: number };
 type GetBeatFromX = (x: number) => number;
@@ -70,6 +71,7 @@ export const useTimelineFileDrop = ({
                 // Decode the actual audio file so it goes into audioBufferCache.
                 // Without this, the clip has no bufferId and will be silent in exports.
                 let audioBufferId: string | undefined;
+                let assetHash: string | undefined;
                 let durationBeats = sample.durationSeconds
                     ? Math.max(1, Math.ceil(sample.durationSeconds * 2))
                     : 4;
@@ -86,6 +88,7 @@ export const useTimelineFileDrop = ({
                         const result = await decodeAudioFile(file);
                         audioBufferId = result.id;
                         durationBeats = Math.max(1, Math.ceil((result.buffer.duration / 60) * buildTimelineRenderModel().tempo));
+                        assetHash = await getAssetTransfer()?.addLocalAsset(file, file.name);
                     } else if (!isTauri() && root?.provider === 'browser' && root.handle) {
                         // Browser FileSystem Access API: walk the directory handle to the file
                         const pathParts = sample.path.split('/');
@@ -99,6 +102,7 @@ export const useTimelineFileDrop = ({
                         const result = await decodeAudioFile(file);
                         audioBufferId = result.id;
                         durationBeats = Math.max(1, Math.ceil((result.buffer.duration / 60) * buildTimelineRenderModel().tempo));
+                        assetHash = await getAssetTransfer()?.addLocalAsset(file, file.name);
                     }
                 } catch {
                     notifyUser(`Could not load "${sample.name}" — the file may have moved or permissions were revoked.`, 'warning');
@@ -111,6 +115,7 @@ export const useTimelineFileDrop = ({
                     name: sample.name,
                     type: 'audio',
                     audioBufferId,
+                    assetHash,
                 });
             } catch {
                 /* ignored */
@@ -179,6 +184,8 @@ export const useTimelineFileDrop = ({
                         targetTrackId = newTrack.id;
                     }
 
+                    const assetHash = await getAssetTransfer()?.addLocalAsset(file, file.name);
+
                     addClip({
                         trackId: targetTrackId,
                         startBeat: currentBeat,
@@ -186,6 +193,7 @@ export const useTimelineFileDrop = ({
                         name: file.name.replace(/\.[^.]+$/, ''),
                         type: 'audio',
                         audioBufferId: bufferId,
+                        assetHash,
                     });
 
                     currentBeat += durationBeats;

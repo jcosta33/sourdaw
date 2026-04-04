@@ -2,6 +2,9 @@
  * ProofLimiterSection — Look-ahead limiter controls with GR meter + target presets.
  */
 import { type ReactElement } from 'react';
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
+import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
+import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { type ProofPatch } from '../../models/ProofPatch';
 import { updateProofPatch } from '../../stores/proofStore';
@@ -20,19 +23,24 @@ type Props = {
 export const ProofLimiterSection = ({ patch, limiterGrDb, truePeakDb, deviceId }: Props): ReactElement => {
     return (
         <div className="flex flex-col gap-1.5 px-2">
-            <div className="flex items-center justify-between">
-                <span className="text-[8px] font-bold text-[var(--color-state-danger)] uppercase tracking-wider">Limiter</span>
-                <button
-                    type="button"
-                    className={`text-[7px] px-1.5 py-0.5 rounded cursor-pointer ${patch.limBypassed ? 'text-muted-foreground' : 'text-[var(--color-state-danger)]'}`}
-                    onClick={() => {
-                        updateProofPatch(deviceId, { limBypassed: !patch.limBypassed });
-                        setProofParam(deviceId, 'lim_bypass', patch.limBypassed ? 0 : 1);
-                    }}
-                >
-                    {patch.limBypassed ? 'OFF' : 'ON'}
-                </button>
-            </div>
+            <DawPluginSectionHeader
+                title="Limiter"
+                size="xs"
+                titleClassName="text-[var(--color-state-danger)]"
+                actions={
+                    <DawPluginToggle
+                        pressed={!patch.limBypassed}
+                        tone="danger"
+                        size="xs"
+                        onClick={() => {
+                            updateProofPatch(deviceId, { limBypassed: !patch.limBypassed });
+                            setProofParam(deviceId, 'lim_bypass', patch.limBypassed ? 0 : 1);
+                        }}
+                    >
+                        {patch.limBypassed ? 'OFF' : 'ON'}
+                    </DawPluginToggle>
+                }
+            />
 
             <div className={`flex gap-4 ${patch.limBypassed ? 'opacity-30' : ''}`}>
                 {/* Controls */}
@@ -83,23 +91,27 @@ export const ProofLimiterSection = ({ patch, limiterGrDb, truePeakDb, deviceId }
                 {/* Dither */}
                 <div className="flex flex-col gap-1">
                     <span className="text-[7px] text-muted-foreground">Dither</span>
-                    <select
-                        className="h-5 text-[7px] bg-surface-inset border border-border/30 rounded px-1 text-foreground cursor-pointer"
+                    <DawCompactSelect
+                        size="micro"
+                        tone="inset"
+                        className="text-[7px]"
                         value={DITHER_VALUES.indexOf(patch.ditherMode as typeof DITHER_VALUES[number])}
                         onChange={(e) => {
                             const mode = DITHER_VALUES[parseInt(e.target.value)]!;
                             updateProofPatch(deviceId, { ditherMode: mode });
                             setProofParam(deviceId, 'dither_mode', parseInt(e.target.value));
                         }}
-                    >
+                        >
                         {DITHER_MODES.map((label, i) => (
                             <option key={i} value={i}>{label}</option>
                         ))}
-                    </select>
+                    </DawCompactSelect>
                     <div className="flex items-center gap-1">
                         <span className="text-[6px] text-muted-foreground">Bits:</span>
-                        <select
-                            className="h-4 text-[6px] bg-surface-inset border border-border/30 rounded px-0.5 text-foreground cursor-pointer"
+                        <DawCompactSelect
+                            size="micro"
+                            tone="inset"
+                            className="text-[6px]"
                             value={patch.ditherBits}
                             onChange={(e) => {
                                 const bits = parseInt(e.target.value);
@@ -109,7 +121,7 @@ export const ProofLimiterSection = ({ patch, limiterGrDb, truePeakDb, deviceId }
                         >
                             <option value={16}>16</option>
                             <option value={24}>24</option>
-                        </select>
+                        </DawCompactSelect>
                     </div>
                 </div>
             </div>

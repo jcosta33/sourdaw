@@ -1,5 +1,9 @@
 import { type ReactElement, type ReactNode, useState, useSyncExternalStore } from 'react';
 import { Activity, Flame, Radio, Search, SlidersHorizontal, Sun, Zap } from 'lucide-react';
+import { DawPluginChip } from '#/components/daw/DawPluginChip';
+import { DawPluginLed } from '#/components/daw/DawPluginLed';
+import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
+import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { type GlutenPatch, type GlutenStyle, type GlutenTopology } from '../../models/GlutenPatch';
 import { glutenStore, getGlutenState, type GlutenState } from '../../stores/glutenStore';
@@ -191,14 +195,6 @@ function buildStylePatch(style: GlutenStyle, patch: GlutenPatch): GlutenPatch {
     };
 }
 
-const MetricTile = ({ label, value, detail }: { label: string; value: string; detail: string }): ReactElement => (
-    <div className="gluten-window flex min-w-[90px] flex-col gap-1 px-3 py-2">
-        <span className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">{label}</span>
-        <span className="font-mono text-[13px] text-foreground">{value}</span>
-        <span className="text-[9px] leading-4 text-muted-foreground/55">{detail}</span>
-    </div>
-);
-
 const LensBar = ({
     label,
     value,
@@ -364,14 +360,15 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                         {CATEGORIES.map((entry) => {
                             const active = category === entry;
                             return (
-                                <button
+                                <DawPluginChip
                                     key={entry}
-                                    type="button"
-                                    className={`gluten-chip ${active ? 'gluten-chip-active' : ''}`}
+                                    active={active}
+                                    tone="peach"
+                                    size="sm"
                                     onClick={() => setCategory(entry)}
                                 >
                                     {entry === 'all' ? 'All' : entry}
-                                </button>
+                                </DawPluginChip>
                             );
                         })}
                     </div>
@@ -423,18 +420,20 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                         </div>
 
                         <div className="flex flex-wrap justify-end gap-2">
-                            <MetricTile
+                            <DawPluginMetricTile
+                                className="gluten-window min-w-[90px]"
                                 label="Grab"
                                 value={`${Math.abs(grDb).toFixed(1)} dB`}
                                 detail="Current gain reduction"
                             />
-                            <MetricTile label="Crest" value={`${crest.toFixed(1)} dB`} detail="Transient spread" />
-                            <MetricTile
+                            <DawPluginMetricTile className="gluten-window min-w-[90px]" label="Crest" value={`${crest.toFixed(1)} dB`} detail="Transient spread" />
+                            <DawPluginMetricTile
+                                className="gluten-window min-w-[90px]"
                                 label="Phase"
                                 value={phaseCorr > 0.99 ? 'Mono' : phaseCorr < -0.99 ? 'OOP' : phaseCorr.toFixed(2)}
                                 detail="Stereo correlation"
                             />
-                            <MetricTile label="Latency" value={`${latency} smp`} detail="Lookahead cost" />
+                            <DawPluginMetricTile className="gluten-window min-w-[90px]" label="Latency" value={`${latency} smp`} detail="Lookahead cost" />
                         </div>
                     </div>
 
@@ -472,7 +471,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                                 </div>
                                             </div>
                                         </div>
-                                        {active ? <div className="gluten-led">Live</div> : null}
+                                        {active ? <DawPluginLed tone="peach">Live</DawPluginLed> : null}
                                     </div>
                                 </button>
                             );
@@ -494,14 +493,15 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 {STYLES.map((style) => {
                                     const active = patch.style === style;
                                     return (
-                                        <button
+                                        <DawPluginChip
                                             key={style}
-                                            type="button"
-                                            className={`gluten-chip ${active ? 'gluten-chip-active' : ''}`}
+                                            active={active}
+                                            tone="peach"
+                                            size="sm"
                                             onClick={() => applyStyle(style)}
                                         >
                                             {STYLE_META[style].label}
-                                        </button>
+                                        </DawPluginChip>
                                     );
                                 })}
                             </div>
@@ -568,33 +568,29 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                     <div className="gluten-window flex flex-col gap-2 px-3 py-2">
                                         <div className="flex items-center justify-between gap-2">
                                             <div className="text-[10px] font-medium text-foreground">Quick read</div>
-                                            <div className="gluten-led">{topologyMeta.detail}</div>
+                                            <DawPluginLed tone="peach">{topologyMeta.detail}</DawPluginLed>
                                         </div>
-                                        <div className="space-y-1 text-[10px] leading-4 text-muted-foreground">
-                                            <div className="flex items-center justify-between gap-2">
-                                                <span>Input</span>
-                                                <span className="font-mono text-foreground/85">
-                                                    {inputDb.toFixed(1)} dB
-                                                </span>
-                                            </div>
-                                            <div className="flex items-center justify-between gap-2">
-                                                <span>Output</span>
-                                                <span className="font-mono text-foreground/85">
-                                                    {outputDb.toFixed(1)} dB
-                                                </span>
-                                            </div>
-                                            <div className="flex items-center justify-between gap-2">
-                                                <span>Mode</span>
-                                                <span className="font-mono text-foreground/85">
-                                                    {patch.detection.toUpperCase()}
-                                                </span>
-                                            </div>
-                                            <div className="flex items-center justify-between gap-2">
-                                                <span>Story</span>
-                                                <span className="font-mono text-foreground/85">
-                                                    {STYLE_META[patch.style].detail}
-                                                </span>
-                                            </div>
+                                        <div className="space-y-1">
+                                            <DawReadoutRow
+                                                label="Input"
+                                                value={`${inputDb.toFixed(1)} dB`}
+                                                valueClassName="text-foreground/85"
+                                            />
+                                            <DawReadoutRow
+                                                label="Output"
+                                                value={`${outputDb.toFixed(1)} dB`}
+                                                valueClassName="text-foreground/85"
+                                            />
+                                            <DawReadoutRow
+                                                label="Mode"
+                                                value={patch.detection.toUpperCase()}
+                                                valueClassName="text-foreground/85"
+                                            />
+                                            <DawReadoutRow
+                                                label="Story"
+                                                value={STYLE_META[patch.style].detail}
+                                                valueClassName="text-foreground/85"
+                                            />
                                         </div>
                                     </div>
                                 </div>
@@ -881,27 +877,29 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 {(['rms', 'peak'] as const).map((mode) => {
                                     const active = patch.detection === mode;
                                     return (
-                                        <button
+                                        <DawPluginChip
                                             key={mode}
-                                            type="button"
-                                            className={`gluten-chip ${active ? 'gluten-chip-active' : ''}`}
+                                            active={active}
+                                            tone="peach"
+                                            size="sm"
                                             onClick={() => setGlutenParamWithAudio(deviceId,'detection', mode)}
                                         >
                                             {mode.toUpperCase()}
-                                        </button>
+                                        </DawPluginChip>
                                     );
                                 })}
                                 {(['stereo', 'mid', 'side', 'dual-mono'] as const).map((mode) => {
                                     const active = patch.stereoMode === mode;
                                     return (
-                                        <button
+                                        <DawPluginChip
                                             key={mode}
-                                            type="button"
-                                            className={`gluten-chip ${active ? 'gluten-chip-active' : ''}`}
+                                            active={active}
+                                            tone="peach"
+                                            size="sm"
                                             onClick={() => setGlutenParamWithAudio(deviceId,'stereoMode', mode)}
                                         >
                                             {mode === 'dual-mono' ? 'Dual mono' : mode}
-                                        </button>
+                                        </DawPluginChip>
                                     );
                                 })}
                             </div>
@@ -910,14 +908,15 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                     const labels = ['Thrust off', 'Thrust med', 'Thrust loud'];
                                     const active = patch.thrust === thrust;
                                     return (
-                                        <button
+                                        <DawPluginChip
                                             key={thrust}
-                                            type="button"
-                                            className={`gluten-chip ${active ? 'gluten-chip-active' : ''}`}
+                                            active={active}
+                                            tone="peach"
+                                            size="sm"
                                             onClick={() => setGlutenParamWithAudio(deviceId,'thrust', thrust)}
                                         >
                                             {labels[thrust]}
-                                        </button>
+                                        </DawPluginChip>
                                     );
                                 })}
                             </div>

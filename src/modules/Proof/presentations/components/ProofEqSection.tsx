@@ -3,6 +3,9 @@
  * Knobs for freq/gain/Q per band, band type selector, M/S per-band.
  */
 import { type ReactElement } from 'react';
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
+import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
+import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { type ProofPatch } from '../../models/ProofPatch';
 import { updateProofPatch } from '../../stores/proofStore';
@@ -26,19 +29,24 @@ export const ProofEqSection = ({ patch, deviceId }: Props): ReactElement => {
 
     return (
         <div className="flex flex-col gap-1.5 px-2">
-            <div className="flex items-center justify-between">
-                <span className="text-[8px] font-bold text-[var(--color-accent-cyan)] uppercase tracking-wider">EQ</span>
-                <button
-                    type="button"
-                    className={`text-[7px] px-1.5 py-0.5 rounded cursor-pointer ${patch.eqBypassed ? 'text-muted-foreground' : 'text-[var(--color-accent-cyan)]'}`}
-                    onClick={() => {
-                        updateProofPatch(deviceId, { eqBypassed: !patch.eqBypassed });
-                        setProofParam(deviceId, 'eq_bypass', patch.eqBypassed ? 0 : 1);
-                    }}
-                >
-                    {patch.eqBypassed ? 'OFF' : 'ON'}
-                </button>
-            </div>
+            <DawPluginSectionHeader
+                title="EQ"
+                size="xs"
+                titleClassName="text-[var(--color-accent-cyan)]"
+                actions={
+                    <DawPluginToggle
+                        pressed={!patch.eqBypassed}
+                        tone="cyan"
+                        size="xs"
+                        onClick={() => {
+                            updateProofPatch(deviceId, { eqBypassed: !patch.eqBypassed });
+                            setProofParam(deviceId, 'eq_bypass', patch.eqBypassed ? 0 : 1);
+                        }}
+                    >
+                        {patch.eqBypassed ? 'OFF' : 'ON'}
+                    </DawPluginToggle>
+                }
+            />
 
             {/* Interactive frequency response graph */}
             <div className={patch.eqBypassed ? 'opacity-30' : ''}>
@@ -77,8 +85,10 @@ export const ProofEqSection = ({ patch, deviceId }: Props): ReactElement => {
                         <span className="text-[6px] text-muted-foreground font-mono">Q{band.q.toFixed(1)}</span>
 
                         {/* Band type */}
-                        <select
-                            className="w-full h-4 text-[6px] bg-surface-inset border border-border/30 rounded px-0.5 text-foreground cursor-pointer"
+                        <DawCompactSelect
+                            size="micro"
+                            tone="inset"
+                            className="w-full text-[6px]"
                             value={band.type}
                             onChange={(e) => {
                                 const t = parseInt(e.target.value);
@@ -89,11 +99,13 @@ export const ProofEqSection = ({ patch, deviceId }: Props): ReactElement => {
                             {BAND_TYPES.map((label, ti) => (
                                 <option key={ti} value={ti}>{label}</option>
                             ))}
-                        </select>
+                        </DawCompactSelect>
 
                         {/* M/S channel */}
-                        <select
-                            className="w-full h-4 text-[6px] bg-surface-inset border border-border/30 rounded px-0.5 text-foreground cursor-pointer"
+                        <DawCompactSelect
+                            size="micro"
+                            tone="inset"
+                            className="w-full text-[6px]"
                             value={band.channel}
                             onChange={(e) => {
                                 const c = parseInt(e.target.value);
@@ -104,7 +116,7 @@ export const ProofEqSection = ({ patch, deviceId }: Props): ReactElement => {
                             {CHANNEL_MODES.map((label, ci) => (
                                 <option key={ci} value={ci}>{label}</option>
                             ))}
-                        </select>
+                        </DawCompactSelect>
                     </div>
                 ))}
             </div>

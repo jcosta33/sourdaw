@@ -4,6 +4,7 @@
  * with knobs for precise adjustment below.
  */
 import { type ReactElement, useState } from 'react';
+import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { EQCurve } from '#/components/daw/visualizers/EQCurve';
 import { CompressorCurve } from '#/components/daw/visualizers/CompressorCurve';
@@ -176,13 +177,28 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
             {/* FX sub-tabs */}
             <div className="flex gap-0.5 flex-wrap">
                 {TAB_ITEMS.map(({ id, label, color }) => (
-                    <button key={id} type="button"
-                        className={`px-2 py-0.5 rounded text-[8px] font-medium transition-all ${
-                            activeTab === id ? 'text-white' : 'text-muted-foreground hover:text-foreground'
-                        }`}
-                        style={activeTab === id ? { backgroundColor: color } : undefined}
+                    <DawPluginChip
+                        key={id}
+                        active={activeTab === id}
+                        tone={
+                            id === 'dist'
+                                ? 'danger'
+                                : id === 'comp'
+                                  ? 'lavender'
+                                  : id === 'reverb'
+                                    ? 'mint'
+                                    : id === 'delay' || id === 'eq'
+                                      ? 'cyan'
+                                      : id === 'mod'
+                                        ? 'peach'
+                                        : 'neutral'
+                        }
+                        size="xs"
+                        style={activeTab === id && id === 'master' ? { backgroundColor: color } : undefined}
                         onClick={() => setActiveTab(id)}
-                    >{label}</button>
+                    >
+                        {label}
+                    </DawPluginChip>
                 ))}
             </div>
 

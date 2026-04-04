@@ -3,6 +3,8 @@
  * Large shape preview with shape selector, rate + mod amount knobs.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+import { DawPluginChip } from '#/components/daw/DawPluginChip';
+import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { LFO_SHAPE_NAMES } from '../../models/FermenterPatch';
 
@@ -57,17 +59,19 @@ export const LfoSection = ({
     onRateChange, onShapeChange, onPitchAmountChange, onFilterAmountChange,
 }: LfoSectionProps): ReactElement => (
     <div className="space-y-2 w-full max-w-[260px]">
-        <div className="flex items-center gap-2">
-            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">LFO</span>
-            <div className="flex gap-0.5">
-                {LFO_SHAPE_NAMES.map((name, i) => (
-                    <button key={name} type="button"
-                        className={`px-1.5 py-0.5 rounded text-[7px] font-medium transition-colors ${shape === i ? 'bg-[var(--color-accent-peach)] text-white' : 'text-muted-foreground/40 hover:text-foreground'}`}
-                        onClick={() => onShapeChange(i)}
-                    >{name.slice(0, 3)}</button>
-                ))}
-            </div>
-        </div>
+        <DawPluginSectionHeader
+            title="LFO"
+            titleClassName="text-muted-foreground"
+            actions={
+                <div className="flex gap-0.5">
+                    {LFO_SHAPE_NAMES.map((name, i) => (
+                        <DawPluginChip key={name} active={shape === i} tone="peach" size="xs"
+                            onClick={() => onShapeChange(i)}
+                        >{name.slice(0, 3)}</DawPluginChip>
+                    ))}
+                </div>
+            }
+        />
 
         {/* HERO: Large LFO preview */}
         <div className="rounded-md overflow-hidden border border-border/20 bg-black/20">

@@ -21,19 +21,12 @@ pub fn run() {
         .manage(state::AppState::default())
         .manage(commands::collab::CollabState::default())
         .manage(commands::midi::MidiState::default())
-        .manage(commands::llm::LlmSidecarState::default())
         .manage(commands::native_llm::NativeLlmState::default())
         .manage(commands::speech::DictationState::default())
         .manage(commands::audio_gen::AudioGenState::default())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_persisted_scope::init())
         .invoke_handler(tauri::generate_handler![
-            commands::llm::start_llm_sidecar,
-            commands::llm::stop_llm_sidecar,
-            commands::llm::get_llm_sidecar_status,
-            commands::llm::get_model_dir,
-            commands::llm::generate_llm_completion,
-            commands::llm::stream_llm_completion,
             // Native in-process LLM (mistral.rs)
             commands::native_llm::init_native_llm,
             commands::native_llm::generate_native_completion,
@@ -42,6 +35,7 @@ pub fn run() {
             commands::native_llm::schema_constrained_generation,
             commands::native_llm::unload_native_llm,
             commands::native_llm::get_native_llm_status,
+            commands::native_llm::get_model_dir,
             // AI audio processing (DeepFilterNet + Demucs ONNX)
             commands::ai_audio::denoise_audio,
             commands::ai_audio::separate_stems,

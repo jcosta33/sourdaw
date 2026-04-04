@@ -2,6 +2,7 @@
  * Additive synthesis controls — partials, tilt, odd emphasis, inharmonicity.
  */
 import { type ReactElement } from 'react';
+import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 
 type AdditiveSectionProps = {
@@ -16,9 +17,7 @@ export const AdditiveSection = ({
     partials, tilt, oddEmphasis, inharmonicity, onParam,
 }: AdditiveSectionProps): ReactElement => (
     <div className="space-y-2">
-        <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-1">
-            Additive
-        </div>
+        <DawPluginSectionHeader title="Additive" titleClassName="px-1 text-muted-foreground" />
         <div className="text-[8px] text-muted-foreground/60 px-1">
             Sum of sine partials — shape the harmonic spectrum directly.
         </div>

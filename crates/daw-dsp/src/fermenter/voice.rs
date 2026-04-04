@@ -439,6 +439,16 @@ impl Voice {
             self.perlin.set_speed(p.chaos_speed);
         }
 
+        // Cache drift ratio for the block — drift_value smoothing coefficient (0.001)
+        // changes negligibly within a 128-sample block, so one powf per block instead
+        // of per sample is perceptually identical and avoids a hot powf in the inner loop.
+        let drift_ratio = if self.drift_amount > 0.001 {
+            let drift_cents = self.drift_amount * 5.0 * self.drift_value;
+            2.0f32.powf(drift_cents / 1200.0)
+        } else {
+            1.0
+        };
+
         // ── Per-sample inner loop ───────────────────────────────────────
 
         for i in 0..block_size {
@@ -506,6 +516,7 @@ impl Voice {
             };
 
             // Analog drift simulation (very slow random LFO, ~0.3Hz)
+            // drift_ratio is pre-computed per block above — drift_value barely moves per sample.
             let freq = if self.drift_amount > 0.001 {
                 self.drift_phase += 0.3 / p.sample_rate;
                 if self.drift_phase >= 1.0 {
@@ -514,8 +525,7 @@ impl Voice {
                 let drift_lfo = (self.drift_phase * core::f32::consts::TAU * 1.7).sin() * 0.7
                     + (self.drift_phase * core::f32::consts::TAU * 0.6).sin() * 0.3;
                 self.drift_value += 0.001 * (drift_lfo - self.drift_value); // very slow smoothing
-                let drift_cents = self.drift_amount * 5.0 * self.drift_value;
-                freq_before_drift * 2.0f32.powf(drift_cents / 1200.0)
+                freq_before_drift * drift_ratio
             } else {
                 freq_before_drift
             };

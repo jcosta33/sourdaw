@@ -2,6 +2,7 @@
  * Spectral warp controls + Audio-rate modulation.
  */
 import { type ReactElement } from 'react';
+import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { WARP_MODE_NAMES, AUDIO_MOD_TARGET_NAMES } from '../../models/FermenterPatch';
 
@@ -27,18 +28,15 @@ export const WarpSection = ({
             <div className="text-[8px] text-muted-foreground/70 px-1">Spectral Warp</div>
             <div className="flex flex-wrap gap-0.5 px-1">
                 {WARP_MODE_NAMES.map((name, i) => (
-                    <button
+                    <DawPluginChip
                         key={name}
-                        type="button"
-                        className={`px-1 py-0.5 rounded text-[7px] font-medium transition-colors ${
-                            warpMode === i
-                                ? 'bg-[var(--color-accent-peach)]/80 text-white'
-                                : 'text-muted-foreground/50 hover:text-foreground'
-                        }`}
+                        active={warpMode === i}
+                        tone="peach"
+                        size="xs"
                         onClick={() => onParam('warpMode', i)}
                     >
                         {name}
-                    </button>
+                    </DawPluginChip>
                 ))}
             </div>
             {warpMode > 0 ? (
@@ -56,18 +54,15 @@ export const WarpSection = ({
             <div className="text-[8px] text-muted-foreground/70 px-1">Audio-Rate Mod</div>
             <div className="flex gap-0.5 px-1">
                 {AUDIO_MOD_TARGET_NAMES.map((name, i) => (
-                    <button
+                    <DawPluginChip
                         key={name}
-                        type="button"
-                        className={`px-1 py-0.5 rounded text-[7px] font-medium transition-colors ${
-                            audioModTarget === i
-                                ? 'bg-[var(--color-accent-mint)]/80 text-white'
-                                : 'text-muted-foreground/50 hover:text-foreground'
-                        }`}
+                        active={audioModTarget === i}
+                        tone="mint"
+                        size="xs"
                         onClick={() => onParam('audioModTarget', i)}
                     >
                         {name}
-                    </button>
+                    </DawPluginChip>
                 ))}
             </div>
             {audioModTarget > 0 ? (

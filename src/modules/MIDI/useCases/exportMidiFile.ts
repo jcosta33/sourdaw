@@ -115,7 +115,7 @@ export function exportMidiClip(clipId: string): void {
     const trackChunk = [...writeString('MTrk'), ...write32(trackData.length), ...trackData];
 
     const bytes = new Uint8Array([...headerChunk, ...trackChunk]);
-    const sanitizedName = clipName.replaceAll(/[^a-zA-Z0-9_-]/g, '_');
+    const sanitizedName = clipName.replaceAll(/[^a-zA-Z0-9_-]/g, '_').slice(0, 200);
     downloadBlob(bytes, `${sanitizedName}.mid`, 'audio/midi');
 }
 

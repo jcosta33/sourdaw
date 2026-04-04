@@ -2,6 +2,9 @@
  * ProofExciterSection — Per-band harmonic exciter with saturation type selection.
  */
 import { type ReactElement } from 'react';
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
+import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
+import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { type ProofPatch } from '../../models/ProofPatch';
 import { updateProofPatch } from '../../stores/proofStore';
@@ -22,19 +25,24 @@ export const ProofExciterSection = ({ patch, deviceId }: Props): ReactElement =>
 
     return (
         <div className="flex flex-col gap-1.5 px-2">
-            <div className="flex items-center justify-between">
-                <span className="text-[8px] font-bold text-[var(--color-accent-lavender)] uppercase tracking-wider">Harmonic Exciter</span>
-                <button
-                    type="button"
-                    className={`text-[7px] px-1.5 py-0.5 rounded cursor-pointer ${patch.excBypassed ? 'text-muted-foreground' : 'text-[var(--color-accent-lavender)]'}`}
-                    onClick={() => {
-                        updateProofPatch(deviceId, { excBypassed: !patch.excBypassed });
-                        setProofParam(deviceId, 'exc_bypass', patch.excBypassed ? 0 : 1);
-                    }}
-                >
-                    {patch.excBypassed ? 'OFF' : 'ON'}
-                </button>
-            </div>
+            <DawPluginSectionHeader
+                title="Harmonic Exciter"
+                size="xs"
+                titleClassName="text-[var(--color-accent-lavender)]"
+                actions={
+                    <DawPluginToggle
+                        pressed={!patch.excBypassed}
+                        tone="lavender"
+                        size="xs"
+                        onClick={() => {
+                            updateProofPatch(deviceId, { excBypassed: !patch.excBypassed });
+                            setProofParam(deviceId, 'exc_bypass', patch.excBypassed ? 0 : 1);
+                        }}
+                    >
+                        {patch.excBypassed ? 'OFF' : 'ON'}
+                    </DawPluginToggle>
+                }
+            />
 
             <div className={`flex gap-1 ${patch.excBypassed ? 'opacity-30' : ''}`}>
                 {BAND_LABELS.map((label, i) => {
@@ -44,24 +52,28 @@ export const ProofExciterSection = ({ patch, deviceId }: Props): ReactElement =>
                             <span className="text-[7px] text-muted-foreground">{label}</span>
 
                             {/* Enable */}
-                            <button
-                                type="button"
-                                className={`w-full text-[6px] py-0.5 rounded cursor-pointer ${band.enabled ? 'bg-[var(--color-accent-lavender)]/20 text-[var(--color-accent-lavender)]' : 'text-muted-foreground/50'}`}
+                            <DawPluginToggle
+                                pressed={band.enabled}
+                                tone="lavender"
+                                size="xs"
+                                className="w-full"
                                 onClick={() => updateBand(i, 'enabled', !band.enabled)}
                             >
                                 {band.enabled ? 'ON' : 'OFF'}
-                            </button>
+                            </DawPluginToggle>
 
                             {/* Saturation type */}
-                            <select
-                                className="w-full h-4 text-[6px] bg-surface-inset border border-border/30 rounded px-0.5 text-foreground cursor-pointer"
+                            <DawCompactSelect
+                                size="micro"
+                                tone="inset"
+                                className="w-full text-[6px]"
                                 value={band.type}
                                 onChange={(e) => updateBand(i, 'type', parseInt(e.target.value))}
                             >
                                 {SAT_TYPES.map((t, ti) => (
                                     <option key={ti} value={ti}>{t}</option>
                                 ))}
-                            </select>
+                            </DawCompactSelect>
 
                             {/* Drive */}
                             <RotaryKnob value={band.drive} onChange={(v) => updateBand(i, 'drive', v)}

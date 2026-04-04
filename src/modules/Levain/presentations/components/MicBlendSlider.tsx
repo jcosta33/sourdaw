@@ -8,6 +8,8 @@
  * does NOT import from useCases/ directly (DDD: components/ is private).
  */
 import { type ReactElement } from 'react';
+import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
+import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { Fader } from '#/components/daw/Fader';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { type MicPositionState } from '../../models/LevainPatch';
@@ -29,19 +31,14 @@ export const MicBlendSlider = ({
         // Full mic mixer with faders
         return (
             <div className="space-y-3 max-w-[400px]">
-                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                    Mic Positions
-                </span>
+                <DawPluginSectionHeader title="Mic Positions" titleClassName="text-muted-foreground" />
                 <div className="flex gap-3 items-end">
                     {micPositions.map((mic, i) => (
                         <div key={i} className="flex flex-col items-center gap-1">
-                            <button
-                                type="button"
-                                className={`text-[7px] font-medium px-1 rounded transition-colors ${
-                                    mic.enabled
-                                        ? 'text-amber-300 bg-amber-500/15'
-                                        : 'text-muted-foreground/40'
-                                }`}
+                            <DawPluginToggle
+                                pressed={mic.enabled}
+                                tone="amber"
+                                size="xs"
                                 onClick={() => {
                                     const enabled = !mic.enabled;
                                     updateMicPosition(i, { enabled });
@@ -49,7 +46,7 @@ export const MicBlendSlider = ({
                                 }}
                             >
                                 {mic.enabled ? 'ON' : 'OFF'}
-                            </button>
+                            </DawPluginToggle>
                             <Fader
                                 value={mic.enabled ? mic.volume * 76 - 70 : -70}
                                 onChange={(db) => {
@@ -92,9 +89,7 @@ export const MicBlendSlider = ({
 
     return (
         <div className="space-y-1">
-            <span className="text-[8px] text-muted-foreground/50 uppercase tracking-wider">
-                Space
-            </span>
+            <DawPluginSectionHeader title="Space" size="xs" titleClassName="text-muted-foreground/50" />
             <div className="flex flex-col items-center gap-0">
                 <RotaryKnob
                     value={blend}

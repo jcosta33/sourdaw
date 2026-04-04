@@ -59,6 +59,7 @@ import { toggleMixer } from '../../useCases/togglePanel/panelToggles';
 import { DragResizeHandle } from '#/components/ui/DragResizeHandle';
 import { preferencesStore } from '../../stores/preferencesStore';
 import { defaultPreferences } from '../../models/Preferences';
+import { MobileGate } from '../components/MobileGate';
 
 const CollaborationPanelLazy = lazy(() =>
     import('#/modules/Collaboration/presentations/views/CollaborationPanel').then((m) => ({
@@ -350,6 +351,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     }, [project.initialized, project.loading, showLaunch, launchExiting]);
 
     return (
+        <MobileGate>
         <div className="flex h-screen w-screen flex-col overflow-hidden bg-surface-app">
             <a
                 href="#main-content"
@@ -738,5 +740,6 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
             {/* Launch screen overlay — shown for new users, fades out when project initializes */}
             {showLaunch ? <LaunchScreen exiting={launchExiting} /> : null}
         </div>
+        </MobileGate>
     );
 };

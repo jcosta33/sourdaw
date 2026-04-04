@@ -9,6 +9,7 @@ export function addClip(input: {
     name: string;
     type?: 'audio' | 'midi';
     audioBufferId?: string;
+    assetHash?: string;
     isGhost?: boolean;
 }): Clip | null {
     const state = getTrackState();
@@ -27,6 +28,7 @@ export function addClip(input: {
         endBeat: input.endBeat,
         type: inferredType,
         audioBufferId: input.audioBufferId,
+        assetHash: input.assetHash,
         fadeInBeats: 0,
         fadeOutBeats: 0,
         gain: 1.0,

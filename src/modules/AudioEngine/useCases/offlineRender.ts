@@ -60,7 +60,10 @@ export type OfflineRenderOptions = {
 };
 
 const MICRO_FADE_SECONDS = 0.003;
-const RENDER_TIMEOUT_MS = 300_000;  // 5 min timeout for large projects
+/** Minimum timeout floor regardless of project length. */
+const MIN_RENDER_TIMEOUT_MS = 60_000;
+/** Timeout multiplier: allow this many seconds of wall-clock time per second of audio. */
+const RENDER_TIMEOUT_MULTIPLIER = 10;
 const YIELD_EVERY_N_NOTES = 200;    // yield to main thread every N notes
 /** Shared easing coefficient for simulated render-phase progress (both mixdown and stems). */
 const PROGRESS_EASE_COEFF = 0.025;
@@ -312,6 +315,7 @@ async function scheduleTrackClips(
         const clipVisualLength = clip.endBeat - clip.startBeat;
         // Skip degenerate clips (endBeat <= startBeat or zero-length)
         if (clipVisualLength <= 0) {
+            onWarning?.(`Clip "${clip.name || clip.id}" on track "${track.name}" has zero or negative duration and was skipped.`);
             continue;
         }
 
@@ -530,11 +534,11 @@ async function scheduleTrackClips(
  * Runs an offline render with a timeout guard to prevent stuck renders
  * from blocking the engine lock indefinitely.
  */
-function renderWithTimeout(offlineCtx: OfflineAudioContext): Promise<AudioBuffer> {
+function renderWithTimeout(offlineCtx: OfflineAudioContext, timeoutMs: number): Promise<AudioBuffer> {
     return new Promise<AudioBuffer>((resolve, reject) => {
         const timer = setTimeout(() => {
-            reject(new Error(`Offline render timed out after ${RENDER_TIMEOUT_MS / 1000}s`));
-        }, RENDER_TIMEOUT_MS);
+            reject(new Error(`Offline render timed out after ${timeoutMs / 1000}s`));
+        }, timeoutMs);
 
         offlineCtx.startRendering().then(
             (buffer) => {
@@ -705,7 +709,8 @@ export async function renderOffline(
               }, 100)
             : null;
 
-        const buffer = await renderWithTimeout(offlineCtx).finally(() => {
+        const renderTimeoutMs = Math.max(MIN_RENDER_TIMEOUT_MS, durationSeconds * RENDER_TIMEOUT_MULTIPLIER * 1000);
+        const buffer = await renderWithTimeout(offlineCtx, renderTimeoutMs).finally(() => {
             if (renderTimer !== null) clearInterval(renderTimer);
         });
 
@@ -820,7 +825,8 @@ export async function exportStems(
                   }, 100)
                 : null;
 
-            const buffer = await renderWithTimeout(offlineCtx).finally(() => {
+            const stemTimeoutMs = Math.max(MIN_RENDER_TIMEOUT_MS, durationSeconds * RENDER_TIMEOUT_MULTIPLIER * 1000);
+            const buffer = await renderWithTimeout(offlineCtx, stemTimeoutMs).finally(() => {
                 if (stemTimer !== null) clearInterval(stemTimer);
             });
 
