@@ -1,6 +1,6 @@
 /* (c) Copyright Sourdaw Ltd., all rights reserved. */
 
-export interface Storage<TDataSchema> {
+export type Storage<TDataSchema> = {
     get(): TDataSchema | null;
     set(value: TDataSchema | null): void;
     clear(): void;
