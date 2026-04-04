@@ -16,14 +16,7 @@ src-tauri/target/
 !.vscode/extensions.json
 *.sw?
 
-# Agent sandboxes (runtime files — committed structure, gitignored content)
-agents/tasks/*
-!agents/tasks/.gitkeep
-agents/state/*
-!agents/state/.gitkeep
-agents/logs/*
-!agents/logs/.gitkeep
-
 # Agent task files are worktree-specific and not shared
 .agents/tasks/*
+.agents/prompts/*
 !.agents/tasks/.gitkeep
