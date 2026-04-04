@@ -25,7 +25,7 @@ import { llmStatusStore } from '../../stores/llmStatusStore';
 import { appendChatMessage, updateChatMessage, setChatGenerating } from '../../stores/chatStore';
 import { pushAiActionGroup } from '../../stores/aiActionHistoryStore';
 import { pushUndo } from '#/modules/Command/stores/undoStore';
-import { createUndoEntry, generateGroupId } from '#/modules/Command/models/UndoEntry';
+import { createUndoEntry, generateGroupId } from '#/modules/Command/useCases/commandQueries';
 import { automergeRepository } from '#/modules/CrdtDocument/repositories/automergeRepository';
 
 const logger = Container.getInstance().get(Logger);

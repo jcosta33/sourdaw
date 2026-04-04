@@ -13,7 +13,7 @@ import { hasCrdtProject } from '#/modules/CrdtDocument/useCases/crdtProjectLifec
 import { projectStore } from '#/modules/Project/stores/projectStore';
 import { saveProject } from '#/modules/Project/useCases/projectPersistence/saveProject';
 import { ensureTrackStrips } from '#/modules/Transport/useCases/ensureTrackStrips';
-import { restoreLibrary } from '#/modules/SampleLibrary/repositories/libraryPersistence';
+import { restoreLibrary } from '#/modules/SampleLibrary/useCases/restoreLibrary';
 import { preferencesStore } from '../../stores/preferencesStore';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 

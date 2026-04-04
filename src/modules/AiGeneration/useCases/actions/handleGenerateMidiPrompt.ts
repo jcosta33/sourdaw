@@ -11,7 +11,7 @@ import { batchAddMidiNotes } from '#/modules/MIDI/useCases/midiNoteCrud';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { pushUndo } from '#/modules/Command/stores/undoStore';
-import { createCallbackUndoEntry } from '#/modules/Command/models/UndoEntry';
+import { createCallbackUndoEntry } from '#/modules/Command/useCases/commandQueries';
 import { generateMidiViaLlm } from '../llmMidiGeneration';
 import { addTask } from './addTask';
 import { updateTask } from './updateTask';

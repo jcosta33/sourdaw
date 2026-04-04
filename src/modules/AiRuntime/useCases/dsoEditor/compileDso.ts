@@ -12,12 +12,13 @@ import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { removeTrack } from '#/modules/Arrangement/useCases/removeTrack';
 import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
 import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
-import { type MelodyStyle, type ScaleType } from '#/modules/AiGeneration/useCases/generateMelody/algorithm';
-import {
-    type ChordProgressionStyle,
-    type ChordVoicing,
-} from '#/modules/AiGeneration/useCases/generateChordProgression/algorithm';
-import { type DrumPatternStyle } from '#/modules/AiGeneration/useCases/generateDrumPattern/algorithm';
+// Local type aliases — duplicated from AiGeneration algorithm files to avoid
+// a circular module dependency (AiGeneration already imports from AiRuntime).
+type MelodyStyle = 'simple' | 'arpeggiated' | 'stepwise' | 'rhythmic' | 'ambient';
+type ScaleType = 'major' | 'minor' | 'pentatonic' | 'minor-pentatonic' | 'blues' | 'dorian' | 'mixolydian' | 'lydian' | 'phrygian' | 'locrian' | 'harmonic-minor' | 'melodic-minor' | 'whole-tone' | 'chromatic';
+type ChordProgressionStyle = 'pop' | 'jazz' | 'classical' | 'edm' | 'blues' | 'rnb' | 'folk' | 'cinematic' | 'neo-soul' | 'gospel' | 'rock' | 'lofi';
+type ChordVoicing = 'close' | 'open' | 'spread' | 'power';
+type DrumPatternStyle = 'four-on-floor' | 'breakbeat' | 'trap' | 'jazz' | 'latin' | 'rock' | 'dnb' | 'half-time' | 'blues' | 'reggae' | 'lofi' | 'house' | 'techno' | 'synthwave' | 'afrobeat' | 'metal' | 'punk';
 
 // ── Safe enum mapping ────────────────────────────────────────────────────────
 
@@ -713,8 +714,8 @@ async function executeSingleDso(dso: Dso): Promise<void> {
                 const { setLoopRegion } = await import('#/modules/Transport/useCases/transportControls/setLoopRegion');
                 setLoopRegion(dso.start_beats, dso.end_beats);
             } else {
-                const { updateTransportState } = await import('#/modules/Transport/repositories/transport');
-                updateTransportState({ isLooping: false });
+                const { disableLooping } = await import('#/modules/Transport/useCases/setLooping');
+                disableLooping();
             }
             break;
         }
