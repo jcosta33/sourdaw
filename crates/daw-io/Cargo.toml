@@ -2,8 +2,11 @@
 name = "daw-io"
 version = "0.1.0"
 edition = "2021"
+description = "Native I/O: audio codec decode/encode, filesystem workflows."
 
 [lib]
 crate-type = ["rlib"]
 
 [dependencies]
+serde = { version = "1", features = ["derive"] }
+symphonia = { version = "0.5", features = ["all"] }

@@ -1,10 +1,19 @@
 /// Real CLAP plugin wrapper — loads .clap shared libraries and hosts them.
 ///
 /// Flow: dlopen → clap_entry.init() → factory.create_plugin(host, id) → plugin.activate() → plugin.process()
+///
+/// RT-safety: `process_audio_internal` and `process_with_midi` are called on the audio thread.
+/// All scratch buffers are preallocated in `new` — no heap allocation occurs
+/// on the RT path.
 
-use crate::commands::plugins::PluginParameter;
-use crate::host::clap_host_impl::create_host_descriptor;
-use crate::host::traits::AudioPlugin;
+/// Maximum audio buffer size this host supports (must match the max_frames_count passed to activate).
+const MAX_BUFFER: usize = 4096;
+/// Maximum MIDI events processed per audio block. Events beyond this are silently dropped.
+const MAX_MIDI: usize = 64;
+
+use crate::clap_host::create_host_descriptor;
+use crate::params::PluginParameter;
+use crate::traits::AudioPlugin;
 use clap_sys::entry::clap_plugin_entry;
 use clap_sys::plugin_factory::{clap_plugin_factory, CLAP_PLUGIN_FACTORY_ID};
 use clap_sys::host::clap_host;
@@ -54,6 +63,12 @@ pub struct ClapWrapper {
     gui_ext: *const clap_plugin_gui,
     /// Whether the GUI is currently open.
     gui_open: bool,
+    /// Preallocated input channel scratch (2 ch × MAX_BUFFER samples). No RT allocation.
+    input_scratch: Box<[[f32; MAX_BUFFER]; 2]>,
+    /// Preallocated output channel scratch (2 ch × MAX_BUFFER samples). No RT allocation.
+    output_scratch: Box<[[f32; MAX_BUFFER]; 2]>,
+    /// Preallocated MIDI event scratch list. Cleared + refilled each block, never reallocated.
+    midi_scratch: Vec<clap_event_note>,
 }
 
 // SAFETY: The clap_plugin is required to be thread-safe by the CLAP spec.
@@ -151,12 +166,9 @@ impl ClapWrapper {
     ///
     /// `plugin_path`: Path to the .clap file (shared library)
     /// `plugin_id`: The CLAP plugin ID to instantiate (from the descriptor)
-    /// `sample_rate`: Optional sample rate (defaults to device rate, falls back to 48000)
-    pub fn new(plugin_path: &str, plugin_id: &str) -> Result<Self, String> {
-        Self::new_with_sample_rate(plugin_path, plugin_id, 48000.0)
-    }
-
-    pub fn new_with_sample_rate(plugin_path: &str, plugin_id: &str, sample_rate: f64) -> Result<Self, String> {
+    /// `sample_rate`: The output device sample rate. Must match the running audio engine.
+    ///   Query via `cpal::default_host().default_output_device()?.default_output_config()?.sample_rate()`.
+    pub fn new(plugin_path: &str, plugin_id: &str, sample_rate: f64) -> Result<Self, String> {
         unsafe {
             // 1. Load the shared library
             let library = Library::new(plugin_path)
@@ -282,6 +294,9 @@ impl ClapWrapper {
                 state_ext,
                 gui_ext,
                 gui_open: false,
+                input_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
+                output_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
+                midi_scratch: Vec::with_capacity(MAX_MIDI),
             })
         }
     }
@@ -453,7 +468,9 @@ impl ClapWrapper {
     }
 
     /// Process audio with MIDI note events.
-    /// Builds a CLAP input event list from the provided note events.
+    ///
+    /// RT-safe: reuses `self.midi_scratch` (preallocated in `new`). Events beyond `MAX_MIDI`
+    /// per block are dropped — callers should batch at a reasonable granularity.
     pub fn process_with_midi(
         &mut self,
         inputs: &[&[f32]],
@@ -466,30 +483,32 @@ impl ClapWrapper {
             return;
         }
 
-        // Build CLAP note events
-        let mut events: Vec<clap_event_note> = midi_events.iter().map(|(note, vel, ch, is_on)| {
-            clap_event_note {
+        // Reuse preallocated scratch — no heap allocation on the RT thread.
+        self.midi_scratch.clear();
+        for &(note, vel, ch, is_on) in midi_events.iter().take(MAX_MIDI) {
+            self.midi_scratch.push(clap_event_note {
                 header: clap_event_header {
                     size: mem::size_of::<clap_event_note>() as u32,
                     time: 0,
                     space_id: CLAP_CORE_EVENT_SPACE_ID,
-                    type_: if *is_on { CLAP_EVENT_NOTE_ON } else { CLAP_EVENT_NOTE_OFF },
+                    type_: if is_on { CLAP_EVENT_NOTE_ON } else { CLAP_EVENT_NOTE_OFF },
                     flags: 0,
                 },
                 note_id: -1,
                 port_index: 0,
-                channel: *ch,
-                key: *note as i16,
-                velocity: *vel as f64 / 127.0,
-            }
-        }).collect();
+                channel: ch,
+                key: note as i16,
+                velocity: vel as f64 / 127.0,
+            });
+        }
 
-        // Build a dynamic input events list
-        let events_ptr = events.as_mut_ptr();
-        let events_count = events.len() as u32;
+        // Raw pointer into the scratch vec — safe because process_audio_internal
+        // does not touch midi_scratch (it only uses input_scratch/output_scratch/plugin).
+        let events_ptr: *const clap_event_note = self.midi_scratch.as_ptr();
+        let events_count = self.midi_scratch.len() as u32;
 
         struct EventListCtx {
-            events: *mut clap_event_note,
+            events: *const clap_event_note,
             count: u32,
         }
 
@@ -520,6 +539,9 @@ impl ClapWrapper {
     }
 
     /// Internal process method that accepts a custom input events list.
+    ///
+    /// RT-safe: uses preallocated `input_scratch`/`output_scratch`. Stack-allocates pointer
+    /// arrays. No heap allocation on the hot path.
     fn process_audio_internal(
         &mut self,
         inputs: &[&[f32]],
@@ -537,6 +559,21 @@ impl ClapWrapper {
             return;
         }
 
+        let n_samp = num_samples.min(MAX_BUFFER);
+        let n_ch = inputs.len().min(2);
+
+        // Copy inputs into scratch — zero allocation on RT path.
+        for (ch, src) in inputs.iter().enumerate().take(n_ch) {
+            let len = src.len().min(n_samp);
+            self.input_scratch[ch][..len].copy_from_slice(&src[..len]);
+            self.input_scratch[ch][len..n_samp].fill(0.0);
+        }
+        for ch in n_ch..2 {
+            self.input_scratch[ch][..n_samp].fill(0.0);
+        }
+        self.output_scratch[0][..n_samp].fill(0.0);
+        self.output_scratch[1][..n_samp].fill(0.0);
+
         unsafe {
             let plugin_ref = &*self.plugin;
             let process_fn = match plugin_ref.process {
@@ -544,42 +581,35 @@ impl ClapWrapper {
                 None => return,
             };
 
-            let num_channels = inputs.len().min(2) as u32;
-
-            let mut input_data: Vec<Vec<f32>> = inputs.iter()
-                .take(2)
-                .map(|ch| ch[..num_samples.min(ch.len())].to_vec())
-                .collect();
-            let mut input_ptrs: Vec<*mut f32> = input_data.iter_mut()
-                .map(|ch| ch.as_mut_ptr())
-                .collect();
-
-            let mut output_data: Vec<Vec<f32>> = (0..num_channels)
-                .map(|_| vec![0.0f32; num_samples])
-                .collect();
-            let mut output_ptrs: Vec<*mut f32> = output_data.iter_mut()
-                .map(|ch| ch.as_mut_ptr())
-                .collect();
+            // Stack-allocated pointer arrays — no heap allocation.
+            let in_ptrs: [*const f32; 2] = [
+                self.input_scratch[0].as_ptr(),
+                self.input_scratch[1].as_ptr(),
+            ];
+            let out_ptrs: [*mut f32; 2] = [
+                self.output_scratch[0].as_mut_ptr(),
+                self.output_scratch[1].as_mut_ptr(),
+            ];
 
             let input_buffer = clap_audio_buffer {
-                data32: input_ptrs.as_mut_ptr() as *const *const f32,
+                data32: in_ptrs.as_ptr() as *const *const f32,
                 data64: ptr::null_mut(),
-                channel_count: num_channels,
+                channel_count: n_ch as u32,
                 latency: 0,
                 constant_mask: 0,
             };
 
             let mut output_buffer = clap_audio_buffer {
-                data32: output_ptrs.as_mut_ptr() as *const *const f32,
+                data32: out_ptrs.as_ptr() as *const *const f32,
                 data64: ptr::null_mut(),
-                channel_count: num_channels,
+                channel_count: n_ch as u32,
                 latency: 0,
                 constant_mask: 0,
             };
 
             let process_data = clap_process {
                 steady_time: -1,
-                frames_count: num_samples as u32,
+                frames_count: n_samp as u32,
                 transport: ptr::null(),
                 audio_inputs: &input_buffer,
                 audio_outputs: &mut output_buffer,
@@ -591,11 +621,9 @@ impl ClapWrapper {
 
             let _status = process_fn(self.plugin, &process_data);
 
-            for (ch_idx, out_ch) in outputs.iter_mut().enumerate() {
-                if ch_idx < output_data.len() {
-                    let len = num_samples.min(out_ch.len()).min(output_data[ch_idx].len());
-                    out_ch[..len].copy_from_slice(&output_data[ch_idx][..len]);
-                }
+            for (ch_idx, out_ch) in outputs.iter_mut().enumerate().take(n_ch) {
+                let len = n_samp.min(out_ch.len());
+                out_ch[..len].copy_from_slice(&self.output_scratch[ch_idx][..len]);
             }
         }
     }
@@ -697,7 +725,7 @@ impl AudioPlugin for ClapWrapper {
                     default_value: info.default_value,
                     min_value: info.min_value,
                     max_value: info.max_value,
-                    unit: String::new(), // CLAP doesn't expose units in param_info directly
+                    unit: None, // CLAP does not expose units in clap_param_info
                     is_automatable: is_automatable && !is_readonly,
                 });
             }

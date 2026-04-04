@@ -1551,21 +1551,30 @@ dependencies = [
 name = "daw-engine"
 version = "0.1.0"
 dependencies = [
- "clap-sys",
  "cpal",
  "daw-core",
  "daw-dsp",
- "libloading 0.8.9",
  "rtrb",
 ]
 
 [[package]]
 name = "daw-io"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "symphonia",
+]
 
 [[package]]
 name = "daw-plugin-host"
 version = "0.1.0"
+dependencies = [
+ "clap-sys",
+ "libloading 0.8.9",
+ "serde",
+ "sha2",
+ "specta",
+]
 
 [[package]]
 name = "debugid"
@@ -7345,15 +7354,15 @@ dependencies = [
 name = "sourdaw"
 version = "0.1.0"
 dependencies = [
- "clap-sys",
  "cpal",
  "daw-collab",
  "daw-core",
  "daw-engine",
+ "daw-io",
+ "daw-plugin-host",
  "dirs 5.0.1",
  "futures-util",
  "hound",
- "libloading 0.8.9",
  "midir",
  "mistralrs",
  "ndarray 0.16.1",
@@ -7368,7 +7377,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "specta",
- "symphonia",
  "tauri",
  "tauri-build",
  "tauri-plugin-persisted-scope",

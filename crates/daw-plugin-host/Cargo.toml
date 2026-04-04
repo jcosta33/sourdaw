@@ -2,8 +2,14 @@
 name = "daw-plugin-host"
 version = "0.1.0"
 edition = "2021"
+description = "Native plugin hosting: CLAP/VST3 scanning, loading, parameter access, GUI lifecycle."
 
 [lib]
 crate-type = ["rlib"]
 
 [dependencies]
+serde = { version = "1", features = ["derive"] }
+specta = { version = "2.0.0-rc.20", features = ["derive"] }
+clap-sys = "0.3"
+libloading = "0.8"
+sha2 = "0.10"
