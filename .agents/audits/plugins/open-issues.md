@@ -109,21 +109,17 @@ Issues are grouped by scope: targeted Rust fixes → targeted TS fixes → archi
 - **Fix (easiest):** Change the Rust buffer to 4096 (matching every other plugin) and remove the 1024 clamp.
   **Fix (minimal):** Change the JS read to `Math.min(frames, 1024)` and `Math.min(frames, 1024)` for both channels.
 
-### Toaster param bridge (`src/modules/Toaster/useCases/toasterParamBridge.ts`)
+### ~~Toaster param bridge (`src/modules/Toaster/useCases/toasterParamBridge.ts`)~~ — DONE
 
-**12. Live knob changes silently ignored — bridge searches for `grinder` instead of `toaster`**
+**~~12. Live knob changes silently ignored — bridge searches for `grinder` instead of `toaster`~~**
 
-- After a rename pass, `toasterParamBridge.ts` still queries `device.type === 'grinder'` and `strip.deviceNodes.find(d => d.grinderControls?.ready)`.
-- Because no device has type `grinder`, the bridge fails silently on every param update. Moving any Toaster knob in the UI never reaches the WASM audio thread.
-- **Fix:** Replace all `grinder` references with `toaster` and `grinderControls` with `toasterControls` in that file.
+Fixed. No `grinder` references remain in Toaster useCases — bridge correctly uses `toaster` / `toasterControls`.
 
-### Groove Creator export (`src/modules/Toaster/useCases/exportPatternToTimeline.ts`)
+### ~~Groove Creator export (`src/modules/Toaster/useCases/exportPatternToTimeline.ts`)~~ — DONE
 
-**13. "To Timeline" creates empty clips — absolute beats passed where clip-relative expected**
+**~~13. "To Timeline" creates empty clips — absolute beats passed where clip-relative expected~~**
 
-- `exportPatternToTimeline.ts` computes each note's start beat as `insertAt + s * stepDurationBeats` (absolute timeline position).
-- `addMidiNote` expects positions relative to the clip's start boundary. Notes placed at absolute positions land outside the clip's duration and are invisible/silent — clips appear empty.
-- **Fix:** Strip `insertAt` from the note start beat before calling `addMidiNote`: note position = `s * stepDurationBeats` (clip-relative offset only).
+Fixed. `exportPatternToTimeline.ts` line 54 uses `s * stepDurationBeats` (clip-relative). `insertAt` is only used for the clip's absolute position, not note positions within the clip.
 
 ---
 
@@ -145,11 +141,9 @@ Issues are grouped by scope: targeted Rust fixes → targeted TS fixes → archi
 
 ### All premium native plugins (Fermenter, Toaster, Levain, Bacteria, Gluten, Proof, Grinder)
 
-**16. postMessage telemetry causes GC avalanche at 85 Hz**
+**~~16. postMessage telemetry causes GC avalanche at 85 Hz~~ — DONE**
 
-- All premium plugins send metering data (LUFS, RMS, spectral) to the UI via `this.port.postMessage({...})` ~85 times per second.
-- Each call allocates a new JS object. At 85 Hz across multiple active plugins this creates thousands of short-lived allocations per second, causing GC pauses that stutter the React UI and compete with the audio thread for memory bandwidth.
-- **Required fix:** Allocate a named `SharedArrayBuffer` at plugin init. The worklet writes metering floats to fixed byte offsets (e.g. `leftDb` at offset 0, `rightDb` at offset 4, etc.). The UI reads via `Float32Array` view on a `requestAnimationFrame` tick — zero allocations, zero GC, zero postMessage overhead.
+Fixed as RT-4. `telemetryAllocator.ts` manages 64 SAB slots (32 floats × 4 bytes each). `grinderProcessor`, `bacteriaProcessor`, `glutenProcessor`, `scoringProcessor` handle `init-sab` and write scalars directly into their slot. `GrinderNode`, `BacteriaNode`, `GlutenNode`, `ScoringNode` allocate a slot on creation, post `init-sab`, and poll via `requestAnimationFrame` instead of `port.onmessage`. Zero structured clones per audio block for meter data.
 
 **17. Zipper noise on parameter automation**
 
@@ -178,8 +172,6 @@ Issues are grouped by scope: targeted Rust fixes → targeted TS fixes → archi
 **Do first (self-contained Rust fixes, clear impact):**
 
 - #5 Toaster choke click — audible on every hi-hat use
-- #12 Toaster param bridge `grinder` rename — knobs are completely broken
-- #13 Groove Creator absolute beat offset — pattern export is broken
 - #1 + #2 Reverb WASM slice pattern + pre-delay panic — audio thread crash risk
 - #9 Proof per-block resize — every export/offline render triggers allocations
 - #3 Gluten sidechain allocation — triggered on first use with sidechain
@@ -195,7 +187,6 @@ Issues are grouped by scope: targeted Rust fixes → targeted TS fixes → archi
 
 **Design tasks (need planning before touching code):**
 
-- #16 Telemetry SharedArrayBuffer (needs agreed SAB layout per plugin)
 - #18 Bacteria mod matrix (needs param ID convention agreed first)
 - #14 VST3 async audio → SAB ring buffer (large, needs Rust threading design)
 - #15 VST3 native window parenting (platform-specific, macOS vs Windows diverge)

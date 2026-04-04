@@ -4,6 +4,7 @@ import { RouterProvider } from '@tanstack/react-router';
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { ErrorBoundary } from '#/modules/Workspace/presentations/components/ErrorBoundary';
 import { ProjectLoadingOverlay } from '#/modules/Workspace/presentations/components/ProjectLoadingOverlay';
+import { Analytics } from '@vercel/analytics/react';
 import { queryClient } from './queryClient';
 import { router } from './router';
 
@@ -17,6 +18,7 @@ export const App = (): ReactElement => {
                     </Suspense>
                 </TooltipProvider>
             </QueryClientProvider>
+            <Analytics />
         </ErrorBoundary>
     );
 };
