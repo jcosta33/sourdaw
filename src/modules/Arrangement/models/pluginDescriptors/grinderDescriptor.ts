@@ -1,9 +1,74 @@
 /**
  * Grinder — amp simulator, cabinet, pedalboard, neural capture plugin descriptor.
+ *
+ * Parameter data is inlined here rather than imported from the Grinder
+ * module. Models must not cross module boundaries; duplication is intentional.
  */
 
-import { type PluginDescriptor } from '../DeviceParameter';
-import { GRINDER_PARAMS } from '#/modules/Grinder/models/GrinderPatch';
+import { type PluginDescriptor, type PluginParamDef } from '../DeviceParameter';
+
+const GRINDER_PARAMS: readonly PluginParamDef[] = [
+    // Input
+    { id: 'inputGain', label: 'Input', min: -24, max: 24, default: 0, unit: 'dB', step: 0.5 },
+    { id: 'inputImpedance', label: 'Impedance', min: 10, max: 10000, default: 1000, unit: 'kΩ', step: 10 },
+
+    // Gate
+    { id: 'gateThreshold', label: 'Gate', min: -80, max: 0, default: -60, unit: 'dB', step: 1 },
+    { id: 'gateAttack', label: 'Gate Atk', min: 0.1, max: 50, default: 0.5, unit: 'ms', scaling: 'log' },
+    { id: 'gateRelease', label: 'Gate Rel', min: 5, max: 500, default: 50, unit: 'ms', scaling: 'log' },
+
+    // Preamp
+    { id: 'gain', label: 'Gain', min: 0, max: 10, default: 5, unit: '', step: 0.1 },
+    { id: 'channel', label: 'Channel', min: 0, max: 2, default: 1, unit: '', step: 1 },
+    { id: 'bright', label: 'Bright', min: 0, max: 1, default: 0, unit: '', step: 1 },
+    { id: 'fat', label: 'Fat', min: 0, max: 1, default: 0, unit: '', step: 1 },
+
+    // Tone stack
+    { id: 'bass', label: 'Bass', min: 0, max: 10, default: 5, unit: '', step: 0.1 },
+    { id: 'mid', label: 'Mid', min: 0, max: 10, default: 5, unit: '', step: 0.1 },
+    { id: 'treble', label: 'Treble', min: 0, max: 10, default: 5, unit: '', step: 0.1 },
+    { id: 'presence', label: 'Presence', min: 0, max: 10, default: 5, unit: '', step: 0.1 },
+    { id: 'resonance', label: 'Resonance', min: 0, max: 10, default: 5, unit: '', step: 0.1 },
+
+    // Power amp
+    { id: 'master', label: 'Master', min: 0, max: 10, default: 5, unit: '', step: 0.1 },
+    { id: 'sagAmount', label: 'Sag', min: 0, max: 1, default: 0.4, unit: '', step: 0.01 },
+    { id: 'sagRecovery', label: 'Sag Recovery', min: 10, max: 2000, default: 200, unit: 'ms', scaling: 'log' },
+    { id: 'negFeedback', label: 'NFB', min: 0, max: 1, default: 0.5, unit: '', step: 0.01 },
+
+    // Transformer
+    { id: 'transformerDrive', label: 'Xfmr Drive', min: 0, max: 1, default: 0.3, unit: '', step: 0.01 },
+    { id: 'transformerHysteresis', label: 'Hysteresis', min: 0, max: 1, default: 0.3, unit: '', step: 0.01 },
+    { id: 'transformerLfSaturation', label: 'LF Sat', min: 0, max: 1, default: 0.3, unit: '', step: 0.01 },
+
+    // Cabinet
+    { id: 'cabResonanceFreq', label: 'Cab Res', min: 40, max: 200, default: 80, unit: 'Hz', step: 1, scaling: 'log' },
+    { id: 'cabResonanceQ', label: 'Cab Q', min: 0.5, max: 10, default: 2, unit: '', step: 0.1 },
+    { id: 'cabDamping', label: 'Damping', min: 0, max: 1, default: 0.5, unit: '', step: 0.01 },
+    { id: 'coneBreakup', label: 'Breakup', min: 0, max: 1, default: 0.3, unit: '', step: 0.01 },
+    { id: 'backEmf', label: 'Back EMF', min: 0, max: 1, default: 0.2, unit: '', step: 0.01 },
+    { id: 'micBlend', label: 'Mic Blend', min: 0, max: 1, default: 0, unit: '', step: 0.01 },
+    { id: 'roomAmount', label: 'Room', min: 0, max: 1, default: 0.1, unit: '', step: 0.01 },
+
+    // Lab
+    { id: 'tubeBias', label: 'Tube Bias', min: 0, max: 1, default: 0.5, unit: '', step: 0.01 },
+    { id: 'tubeAge', label: 'Tube Age', min: 0, max: 1, default: 0, unit: '', step: 0.01 },
+    { id: 'millerCapacitance', label: 'Miller Cap', min: 0, max: 1, default: 0.5, unit: '', step: 0.01 },
+    { id: 'gridConduction', label: 'Grid Cond', min: 0, max: 1, default: 0.5, unit: '', step: 0.01 },
+    { id: 'couplingCapCharge', label: 'Coupling Cap', min: 0, max: 1, default: 0.5, unit: '', step: 0.01 },
+    { id: 'powerAmpBias', label: 'PA Bias', min: 0, max: 1, default: 0.5, unit: '', step: 0.01 },
+
+    // Neural
+    { id: 'engineMode', label: 'Engine Mode', min: 0, max: 2, default: 0, unit: '', step: 1 },
+    { id: 'neuralMix', label: 'Neural Mix', min: 0, max: 1, default: 1, unit: '', step: 0.01 },
+    { id: 'neuralCpuBudget', label: 'CPU Budget', min: 0, max: 2, default: 1, unit: '', step: 1 },
+
+    // Output
+    { id: 'outputGain', label: 'Output', min: -24, max: 24, default: 0, unit: 'dB', step: 0.5 },
+    { id: 'outputMix', label: 'Mix', min: 0, max: 1, default: 1, unit: '', step: 0.01 },
+    { id: 'cleanBlend', label: 'Clean Blend', min: 0, max: 1, default: 0, unit: '', step: 0.01 },
+    { id: 'limiterThreshold', label: 'Limiter', min: -12, max: 0, default: -0.3, unit: 'dB', step: 0.1 },
+];
 
 export const GRINDER_DESCRIPTOR: PluginDescriptor = {
     id: 'grinder',

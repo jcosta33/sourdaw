@@ -33,7 +33,7 @@ import { timelineViewStore, setScrollY } from '#/modules/Arrangement/stores/time
 import { injectPromptCommand } from '#/modules/AiRuntime/useCases/promptInjection';
 import { defaultPreferences, type Preferences } from '#/modules/Workspace/useCases/workspaceQueries';
 import { setTrackHeight } from '#/modules/Workspace/useCases/setTrackHeight';
-import { MiniMasterSpectrum } from '#/modules/Workspace/presentations/components/MiniMasterSpectrum';
+import { MiniMasterSpectrum } from './MiniMasterSpectrum';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 

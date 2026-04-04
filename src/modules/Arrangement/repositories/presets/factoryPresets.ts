@@ -21,7 +21,7 @@ import { stringsPresets } from './stringsPresets';
 import { EXPANDED_FX_PRESETS, EXPANDED_SYNTH_PRESETS } from './expandedPresets';
 import { FAUST_INSTRUMENT_PRESETS } from './faustInstrumentPresets';
 import { FAUST_EFFECT_PRESETS } from './faustEffectPresets';
-import { FERMENTER_PRESETS } from '#/modules/Fermenter/repositories/fermenterPresets';
+import { FERMENTER_PRESETS } from '#/modules/Fermenter/useCases/fermenterQueries';
 
 // ── Drum Kit presets ────────────────────────────────────────────────────────
 // Small enough to stay inline here (< 60 lines).

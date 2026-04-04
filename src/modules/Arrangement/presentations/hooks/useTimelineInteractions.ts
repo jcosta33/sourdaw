@@ -27,7 +27,8 @@ import {
 import { type AutomationPoint } from '#/modules/Automation/useCases/automation/types';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { transportStore } from '#/modules/Transport/stores/transportStore';
+import { toggleLoop } from '#/modules/Transport/useCases/transportControls';
+import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { getTrackAtY as getTrackAtYHelper } from '../../useCases/timelineInteractions/getTrackAtY';
 import {
@@ -224,9 +225,8 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             const loopEnd = Math.max(startBeat, currentBeat);
             if (loopEnd - loopStart > 0.25) {
                 setLoopRegion(Math.floor(loopStart), Math.ceil(loopEnd));
-                const state = transportStore.value;
-                if (state && !state.isLooping) {
-                    transportStore.set({ ...state, isLooping: true });
+                if (!getTransportState()?.isLooping) {
+                    toggleLoop();
                 }
             }
             return;

@@ -117,10 +117,13 @@ export class AssetTransfer {
             mime: blob.type || 'application/octet-stream',
         };
 
-        this.peerManager.sendCrdtSync(peerId, {
-            type: 'crdt-sync',
-            docId: '__asset__',
-            data: JSON.stringify({ type: 'asset.manifest', manifest } satisfies AssetControlMessage),
+        this.peerManager.sendCrdtSync({
+            peerId,
+            message: {
+                type: 'crdt-sync',
+                docId: '__asset__',
+                data: JSON.stringify({ type: 'asset.manifest', manifest } satisfies AssetControlMessage),
+            },
         });
 
         // Send requested chunks (or all if none specified)
@@ -135,15 +138,18 @@ export class AssetTransfer {
             const buffer = await slice.arrayBuffer();
             const base64 = arrayBufferToBase64(buffer);
 
-            await this.peerManager.sendCrdtSyncBuffered(peerId, {
-                type: 'crdt-sync',
-                docId: '__asset__',
-                data: JSON.stringify({
-                    type: 'asset.chunk',
-                    hash,
-                    index,
-                    data: base64,
-                } satisfies AssetControlMessage),
+            await this.peerManager.sendCrdtSyncBuffered({
+                peerId,
+                message: {
+                    type: 'crdt-sync',
+                    docId: '__asset__',
+                    data: JSON.stringify({
+                        type: 'asset.chunk',
+                        hash,
+                        index,
+                        data: base64,
+                    } satisfies AssetControlMessage),
+                },
             });
         }
     }

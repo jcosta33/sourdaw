@@ -29,7 +29,7 @@ const getIceConfig = (): RTCConfiguration => {
 };
 
 type PeerConnectionCallbacks = {
-    onMessage: (peerId: PeerId, message: PeerMessage) => void;
+    onMessage: ({ peerId, message }: { peerId: PeerId; message: PeerMessage }) => void;
     onConnected: (peerId: PeerId) => void;
     onDisconnected: (peerId: PeerId) => void;
 };
@@ -196,7 +196,7 @@ class PeerConnection {
         channel.onmessage = (event) => {
             try {
                 const message = JSON.parse(event.data as string) as PeerMessage;
-                this.callbacks.onMessage(this.peerId, message);
+                this.callbacks.onMessage({ peerId: this.peerId, message });
             } catch {
                 // Ignore malformed messages
             }
@@ -255,12 +255,12 @@ export class PeerConnectionManager {
     }
 
     /** Send a CRDT sync message to a specific peer. */
-    sendCrdtSync(peerId: PeerId, message: PeerMessage): void {
+    sendCrdtSync({ peerId, message }: { peerId: PeerId; message: PeerMessage }): void {
         this.peers.get(peerId)?.sendCrdtSync(message);
     }
 
     /** Send a CRDT sync message with backpressure (for bulk transfers). */
-    async sendCrdtSyncBuffered(peerId: PeerId, message: PeerMessage): Promise<void> {
+    async sendCrdtSyncBuffered({ peerId, message }: { peerId: PeerId; message: PeerMessage }): Promise<void> {
         await this.peers.get(peerId)?.sendCrdtSyncBuffered(message);
     }
 

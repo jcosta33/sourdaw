@@ -3,11 +3,11 @@ import { setTrackState } from '#/modules/Arrangement/useCases/trackQueries/track
 import { midiStore } from '../stores/midiStore';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { createTrack } from '#/modules/Arrangement/useCases/trackQueries';
-import { getNextClipId } from '#/modules/Arrangement/repositories/clipIdCounter';
+import { getNextClipId } from '#/modules/Arrangement/useCases/clipIdQueries';
 import { type Clip } from '#/modules/Arrangement/models/Track';
 import { type MidiNote } from '../models/MidiNote';
 import { pushUndo } from '#/modules/Command/stores/undoStore';
-import { createCallbackUndoEntry } from '#/modules/Command/models/UndoEntry';
+import { createCallbackUndoEntry } from '#/modules/Command/useCases/commandQueries';
 
 type ParsedTrack = {
     name: string;
