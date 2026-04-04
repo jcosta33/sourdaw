@@ -1,0 +1,50 @@
+[
+  {
+    "id": "feature",
+    "label": "Feature",
+    "description": "Implement a new feature from a spec",
+    "requiresSpec": true,
+    "requiresDepsValidate": true,
+    "readonly": false
+  },
+  {
+    "id": "refactor",
+    "label": "Refactor",
+    "description": "Restructure existing code — cross-module or large-scale changes",
+    "requiresSpec": false,
+    "requiresDepsValidate": true,
+    "readonly": false
+  },
+  {
+    "id": "fix",
+    "label": "Fix",
+    "description": "Targeted bug fix — minimal blast radius",
+    "requiresSpec": false,
+    "requiresDepsValidate": true,
+    "readonly": false
+  },
+  {
+    "id": "audit",
+    "label": "Audit",
+    "description": "Read-only investigation — produces an audit document, no code changes",
+    "requiresSpec": false,
+    "requiresDepsValidate": false,
+    "readonly": true
+  },
+  {
+    "id": "migration",
+    "label": "Migration",
+    "description": "Move code to a new structure — shim contracts required",
+    "requiresSpec": true,
+    "requiresDepsValidate": true,
+    "readonly": false
+  },
+  {
+    "id": "spec",
+    "label": "Spec",
+    "description": "Write a spec document — no code changes",
+    "requiresSpec": false,
+    "requiresDepsValidate": false,
+    "readonly": true
+  }
+]

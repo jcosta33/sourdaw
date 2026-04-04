@@ -4,23 +4,46 @@ import { join } from 'path';
 const METADATA_START = '## Metadata';
 
 /**
+ * Build the team scope block for injection into {{teamScope}}.
+ * @param {string} team
+ * @param {string} teamLabel
+ * @param {string[]} teamPaths
+ * @returns {string}
+ */
+function buildTeamScope(team, teamLabel, teamPaths) {
+  if (!team || !teamPaths || teamPaths.length === 0) {
+    return 'This is a **cross-cutting task** with no team boundary. Use good judgement about blast radius and note any unexpected file changes in Findings.';
+  }
+  const pathList = teamPaths.map(p => `- \`${p}/\``).join('\n');
+  return (
+    `You are operating as **${teamLabel || team}**. Confine all changes to these paths:\n\n` +
+    `${pathList}\n\n` +
+    `Changes outside these paths require a **handoff note** in this task file — do not edit files you do not own.`
+  );
+}
+
+/**
  * Render a task template with given data.
  * @param {string} templateContent
  * @param {object} data
  * @returns {string}
  */
 export function renderTemplate(templateContent, data) {
+  const teamScope = buildTeamScope(data.team, data.teamLabel, data.teamPaths);
   return templateContent
-    .replace(/\{\{title\}\}/g, data.title)
-    .replace(/\{\{slug\}\}/g, data.slug)
-    .replace(/\{\{agent\}\}/g, data.agent)
-    .replace(/\{\{branch\}\}/g, data.branch)
-    .replace(/\{\{baseBranch\}\}/g, data.baseBranch)
-    .replace(/\{\{worktreePath\}\}/g, data.worktreePath)
-    .replace(/\{\{createdAt\}\}/g, data.createdAt)
+    .replace(/\{\{title\}\}/g, data.title || '')
+    .replace(/\{\{slug\}\}/g, data.slug || '')
+    .replace(/\{\{agent\}\}/g, data.agent || '')
+    .replace(/\{\{branch\}\}/g, data.branch || '')
+    .replace(/\{\{baseBranch\}\}/g, data.baseBranch || '')
+    .replace(/\{\{worktreePath\}\}/g, data.worktreePath || '')
+    .replace(/\{\{createdAt\}\}/g, data.createdAt || '')
     .replace(/\{\{status\}\}/g, data.status || 'active')
-    .replace(/\{\{taskFile\}\}/g, data.taskFile)
-    .replace(/\{\{specFile\}\}/g, data.specFile || '');
+    .replace(/\{\{taskFile\}\}/g, data.taskFile || '')
+    .replace(/\{\{specFile\}\}/g, data.specFile || '')
+    .replace(/\{\{type\}\}/g, data.type || '')
+    .replace(/\{\{team\}\}/g, data.team || 'cross-cutting')
+    .replace(/\{\{teamScope\}\}/g, teamScope);
 }
 
 /**
@@ -38,8 +61,27 @@ function buildMetadataBlock(data) {
     `- Worktree: ${data.worktreePath}`,
     `- Created: ${data.createdAt}`,
     `- Status: ${data.status || 'active'}`,
+    ...(data.type ? [`- Type: ${data.type}`] : []),
+    ...(data.team ? [`- Team: ${data.team}`] : []),
     ...(data.specFile ? [`- Spec: ${data.specFile}`] : []),
   ].join('\n');
+}
+
+/**
+ * Resolve which template file to use.
+ * Prefers task-{type}.md when type is given, falls back to task.md.
+ * @param {string} templateDir
+ * @param {string} type
+ * @returns {string|null}
+ */
+function resolveTemplatePath(templateDir, type) {
+  if (type) {
+    const typed = join(templateDir, `task-${type}.md`);
+    if (existsSync(typed)) return typed;
+  }
+  const base = join(templateDir, 'task.md');
+  if (existsSync(base)) return base;
+  return null;
 }
 
 /**
@@ -50,8 +92,6 @@ function buildMetadataBlock(data) {
  * @param {object} data
  */
 export function createOrUpdateTaskFile(taskFilePath, templateDir, data) {
-  const templatePath = join(templateDir, 'task.md');
-
   if (existsSync(taskFilePath)) {
     // File exists — update metadata block only
     const existing = readFileSync(taskFilePath, 'utf8');
@@ -61,8 +101,9 @@ export function createOrUpdateTaskFile(taskFilePath, templateDir, data) {
   }
 
   // Create from template
+  const templatePath = resolveTemplatePath(templateDir, data.type);
   let content;
-  if (existsSync(templatePath)) {
+  if (templatePath) {
     content = renderTemplate(readFileSync(templatePath, 'utf8'), data);
   } else {
     content = defaultTemplate(data);
@@ -92,7 +133,7 @@ function updateMetadataInFile(content, data) {
 }
 
 /**
- * Fallback template when agents/templates/task.md doesn't exist.
+ * Fallback template when no template file exists on disk.
  * @param {object} data
  * @returns {string}
  */

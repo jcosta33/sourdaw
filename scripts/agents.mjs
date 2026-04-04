@@ -8,7 +8,7 @@
  * Subcommands: new, open, list, show, task, remove, prune, doctor, path, focus, pick
  */
 
-import { existsSync, mkdirSync, unlinkSync, readFileSync, writeFileSync, accessSync, constants, readdirSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, accessSync, constants, readdirSync } from 'fs';
 import { join, resolve, isAbsolute } from 'path';
 import { spawnSync, spawn } from 'child_process';
 
@@ -137,6 +137,28 @@ function formatTable(rows, cols) {
 
 const KNOWN_AGENTS = ['claude', 'gemini', 'codex'];
 
+// ─── Config loaders ──────────────────────────────────────────────────────────
+
+function loadTeams(repoRoot) {
+  const teamsPath = join(repoRoot, 'scripts', 'agents', 'teams.json');
+  try {
+    return JSON.parse(readFileSync(teamsPath, 'utf8'));
+  } catch (e) {
+    console.warn(`Warning: could not load teams.json: ${e.message}`);
+    return {};
+  }
+}
+
+function loadTaskTypes(repoRoot) {
+  const typesPath = join(repoRoot, 'scripts', 'agents', 'task-types.json');
+  try {
+    return JSON.parse(readFileSync(typesPath, 'utf8'));
+  } catch (e) {
+    console.warn(`Warning: could not load task-types.json: ${e.message}`);
+    return [];
+  }
+}
+
 // ─── Interactive helpers ──────────────────────────────────────────────────────
 
 /**
@@ -229,7 +251,11 @@ async function cmdNew(argv) {
     title = specBase.replace(/[-_]+/g, ' ').trim();
   }
 
-  // Interactive mode: no spec and no title — drop into guided fzf flow
+  // Interactive mode: no spec and no title — drop into guided wizard
+  let interactiveType = '';
+  let interactiveTeamKey = '';
+  let interactiveTeamData = null;
+
   if (!specFile && !title) {
     if (!agentCommandAvailable('fzf')) {
       die(
@@ -240,27 +266,59 @@ async function cmdNew(argv) {
 
     const repoRootEarly = getRepoRoot();
     const specsDir = join(repoRootEarly, '.agents', 'specs');
-    const specFiles = findMarkdownFiles(specsDir);
+    const taskTypes = loadTaskTypes(repoRootEarly);
+    const teams = loadTeams(repoRootEarly);
 
     console.log('');
 
-    if (specFiles.length) {
-      const selected = fzfSelect(specFiles, {
-        prompt: 'spec > ',
-        preview: `cat "${specsDir}/{}"`,
-      });
-      if (!selected) process.exit(0);
+    // Step 1: Task type
+    const typeItems = taskTypes.map(t => `${t.id.padEnd(10)}  —  ${t.description}`);
+    const selectedTypeRaw = fzfSelect(typeItems, { prompt: 'type > ' });
+    if (!selectedTypeRaw) process.exit(0);
+    interactiveType = selectedTypeRaw.split(/\s+—\s+/)[0].trim();
+    const taskTypeDef = taskTypes.find(t => t.id === interactiveType);
 
-      specFile = `.agents/specs/${selected}`;
-      const derived = selected.split('/').pop().replace(/\.md$/i, '').replace(/[-_]+/g, ' ').trim();
-      title = promptInput(`Title [${derived}]: `, derived);
-    } else {
-      title = promptInput('Task title: ', '');
+    // Step 2: Spec (required for feature/migration, optional for others)
+    const specFiles = findMarkdownFiles(specsDir);
+    if (specFiles.length) {
+      const specItems = taskTypeDef?.requiresSpec
+        ? specFiles
+        : ['(skip — no spec)', ...specFiles];
+      const selectedSpec = fzfSelect(specItems, {
+        prompt: 'spec > ',
+        preview: `cat "${specsDir}/{}" 2>/dev/null || echo ""`,
+      });
+      if (!selectedSpec) process.exit(0);
+      if (selectedSpec !== '(skip — no spec)') {
+        specFile = `.agents/specs/${selectedSpec}`;
+        const derived = selectedSpec.split('/').pop().replace(/\.md$/i, '').replace(/[-_]+/g, ' ').trim();
+        title = promptInput(`Title [${derived}]: `, derived);
+      }
     }
 
+    // Step 3: Title (if not derived from spec)
+    if (!title) {
+      title = promptInput('Task title: ', '');
+    }
     if (!title) process.exit(0);
 
-    // Agent selection — skip if already specified as a positional
+    // Step 4: Team scope
+    const teamEntries = Object.entries(teams);
+    const teamItems = [
+      '(no team)             —  Cross-cutting task, no boundary constraint',
+      ...teamEntries.map(([k, v]) => `${k.padEnd(20)}  —  ${v.description}`),
+    ];
+    const selectedTeamRaw = fzfSelect(teamItems, { prompt: 'team > ' });
+    // Cancelled team picker = cross-cutting (non-fatal)
+    if (selectedTeamRaw) {
+      const parsedTeam = selectedTeamRaw.split(/\s+—\s+/)[0].trim();
+      if (parsedTeam !== '(no team)') {
+        interactiveTeamKey = parsedTeam;
+        interactiveTeamData = teams[parsedTeam] || null;
+      }
+    }
+
+    // Step 5: Agent — skip if already specified as a positional
     if (!agentFromPositional) {
       const selectedAgent = fzfSelect(KNOWN_AGENTS, { prompt: 'agent > ' });
       if (selectedAgent) agentFromPositional = selectedAgent;
@@ -277,6 +335,15 @@ async function cmdNew(argv) {
   const repoName = getRepoName(repoRoot);
   const config = loadConfig(repoRoot);
   ensureRuntimeDirs(repoRoot);
+
+  // Resolve type and team — interactive values take priority, then --type/--team flags
+  const taskType = interactiveType || flags.get('type') || '';
+  const teamKey = interactiveTeamKey || flags.get('team') || '';
+  const teamData = interactiveTeamData || (() => {
+    if (!teamKey) return null;
+    const teams = loadTeams(repoRoot);
+    return teams[teamKey] || null;
+  })();
 
   const agentName = flags.get('agent') || agentFromPositional || config.defaultAgent;
   const baseBranch = flags.get('base') || config.defaultBaseBranch;
@@ -344,6 +411,10 @@ async function cmdNew(argv) {
       taskFile: names.taskFile,
       specFile,
       createdAt: new Date().toISOString(),
+      type: taskType,
+      team: teamKey,
+      teamLabel: teamData?.label || '',
+      teamPaths: teamData?.paths || [],
     });
   }
 
@@ -900,6 +971,9 @@ QOL subcommands:
 
 Flags for \`new\`:
   --agent <name>            Agent to launch: claude (default), gemini, codex
+  --type <type>             Task type: feature, refactor, fix, audit, migration, spec
+  --team <team>             Team scope: conductor, engine-room, instrument-workshop,
+                            session, studio-shell, platform, rust-core
   --spec <path>             Spec file to embed in task (also accepted as positional)
   --base <branch>           Base branch (default: main)
   --terminal <backend>      Terminal backend: current (default), terminal, iterm
