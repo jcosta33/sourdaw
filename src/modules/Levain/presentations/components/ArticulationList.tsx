@@ -7,12 +7,12 @@
 import { type ReactElement } from 'react';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { type ArticulationEntry, type ArticulationType } from '../../models/LevainPatch';
-import { setCurrentArticulation } from '../../stores/levainStore';
 
 type ArticulationListProps = {
     articulations: ArticulationEntry[];
     current: ArticulationType;
     grid?: boolean;
+    onSelect: (type: ArticulationType) => void;
 };
 
 const midiNoteToName = (note: number): string => {
@@ -25,6 +25,7 @@ export const ArticulationList = ({
     articulations,
     current,
     grid,
+    onSelect,
 }: ArticulationListProps): ReactElement => {
     const enabled = articulations.filter((a) => a.enabled);
 
@@ -41,7 +42,7 @@ export const ArticulationList = ({
                             caps={false}
                             shape="soft"
                             className="flex flex-col gap-0.5 px-2 py-2"
-                            onClick={() => setCurrentArticulation(art.type)}
+                            onClick={() => onSelect(art.type)}
                         >
                             <span className="text-[10px] font-medium leading-tight">{art.name}</span>
                             {art.keyswitch !== null ? (
@@ -71,7 +72,7 @@ export const ArticulationList = ({
                         tone="amber"
                         caps={false}
                         className="flex w-full items-center justify-between px-2 py-1 text-[10px]"
-                        onClick={() => setCurrentArticulation(art.type)}
+                        onClick={() => onSelect(art.type)}
                     >
                         <span>{art.name}</span>
                         {art.keyswitch !== null ? (

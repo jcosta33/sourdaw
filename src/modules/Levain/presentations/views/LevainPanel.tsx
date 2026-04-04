@@ -7,7 +7,7 @@ import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { type InstrumentId } from '../../models/LevainPatch';
-import { levainStore } from '../../stores/levainStore';
+import { levainStore, setCurrentArticulation, updateMicPosition } from '../../stores/levainStore';
 import { loadInstrument } from '../../useCases/loadPreset';
 import { sendMicParamToEngine, setLevainParamWithAudio, setMacroWithAudio } from '../../useCases/levainParamBridge';
 import { ArticulationList } from '../components/ArticulationList';
@@ -169,7 +169,7 @@ export const LevainPanel = (): ReactElement => {
                         <div className="px-2 pb-2 text-[8px] uppercase tracking-[0.24em] text-[var(--color-accent-amber)]/70">
                             Articulation rail
                         </div>
-                        <ArticulationList articulations={patch.articulations} current={patch.currentArticulation} />
+                        <ArticulationList articulations={patch.articulations} current={patch.currentArticulation} onSelect={setCurrentArticulation} />
                     </section>
                 </aside>
 
@@ -256,6 +256,7 @@ export const LevainPanel = (): ReactElement => {
                                     micPositions={patch.micPositions}
                                     showFull
                                     onSendMicParam={sendMicParamToEngine}
+                                    onUpdateMicPosition={updateMicPosition}
                                 />
                             </SectionCard>
 

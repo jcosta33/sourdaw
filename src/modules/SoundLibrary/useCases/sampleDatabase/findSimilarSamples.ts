@@ -1,4 +1,5 @@
-import { sampleDatabaseStore, type SampleEntry } from '#/modules/SoundLibrary/stores/sampleDatabaseStore';
+import { sampleDatabaseStore } from '#/modules/SoundLibrary/stores/sampleDatabaseStore';
+import { type SampleEntry } from '#/modules/SoundLibrary/models/SampleEntry';
 
 /**
  * Find samples similar to a given sample by tag overlap (Jaccard similarity).

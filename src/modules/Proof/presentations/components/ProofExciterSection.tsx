@@ -7,20 +7,22 @@ import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader'
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { type ProofPatch } from '../../models/ProofPatch';
-import { updateProofPatch } from '../../stores/proofStore';
-import { setProofParam } from '../../useCases/proofParamBridge';
 
 const BAND_LABELS = ['Sub', 'Low-Mid', 'Hi-Mid', 'High'] as const;
 const SAT_TYPES = ['Tape', 'Tube', 'Transistor', 'Warm'] as const;
-type Props = { patch: ProofPatch; deviceId: string };
+type Props = {
+    patch: ProofPatch;
+    onPatchChange: (partial: Partial<ProofPatch>) => void;
+    onSendParam: (name: string, value: number) => void;
+};
 
-export const ProofExciterSection = ({ patch, deviceId }: Props): ReactElement => {
+export const ProofExciterSection = ({ patch, onPatchChange, onSendParam }: Props): ReactElement => {
     const updateBand = (idx: number, key: string, value: number | boolean) => {
         const bands = patch.excBands.map((b, i) =>
             i === idx ? { ...b, [key]: value } : b
         );
-        updateProofPatch(deviceId, { excBands: bands });
-        setProofParam(deviceId, `exc_band${idx}_${key}`, typeof value === 'boolean' ? (value ? 1 : 0) : value);
+        onPatchChange({ excBands: bands });
+        onSendParam(`exc_band${idx}_${key}`, typeof value === 'boolean' ? (value ? 1 : 0) : value);
     };
 
     return (
@@ -35,8 +37,8 @@ export const ProofExciterSection = ({ patch, deviceId }: Props): ReactElement =>
                         tone="lavender"
                         size="xs"
                         onClick={() => {
-                            updateProofPatch(deviceId, { excBypassed: !patch.excBypassed });
-                            setProofParam(deviceId, 'exc_bypass', patch.excBypassed ? 0 : 1);
+                            onPatchChange({ excBypassed: !patch.excBypassed });
+                            onSendParam('exc_bypass', patch.excBypassed ? 0 : 1);
                         }}
                     >
                         {patch.excBypassed ? 'OFF' : 'ON'}

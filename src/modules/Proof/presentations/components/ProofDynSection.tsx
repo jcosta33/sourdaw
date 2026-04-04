@@ -7,29 +7,32 @@ import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader'
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { type ProofPatch } from '../../models/ProofPatch';
-import { updateProofPatch } from '../../stores/proofStore';
-import { setProofParam } from '../../useCases/proofParamBridge';
 
 const BAND_LABELS = ['Sub', 'Low-Mid', 'Hi-Mid', 'High'] as const;
 const BAND_COLORS = ['var(--color-accent-peach)', 'var(--color-accent-mint)', 'var(--color-accent-cyan)', 'var(--color-accent-lavender)'];
 
-type Props = { patch: ProofPatch; dynGr: [number, number, number, number]; deviceId: string };
+type Props = {
+    patch: ProofPatch;
+    dynGr: [number, number, number, number];
+    onPatchChange: (partial: Partial<ProofPatch>) => void;
+    onSendParam: (name: string, value: number) => void;
+};
 
-export const ProofDynSection = ({ patch, dynGr, deviceId }: Props): ReactElement => {
+export const ProofDynSection = ({ patch, dynGr, onPatchChange, onSendParam }: Props): ReactElement => {
     const updateBand = (idx: number, key: string, value: number | boolean) => {
         const bands = patch.dynBands.map((b, i) =>
             i === idx ? { ...b, [key]: value } : b
         );
-        updateProofPatch(deviceId, { dynBands: bands });
+        onPatchChange({ dynBands: bands });
         const paramName = key === 'autoMakeup' ? 'auto_makeup' : key === 'bypassed' ? 'bypass' : key;
-        setProofParam(deviceId, `dyn_band${idx}_${paramName}`, typeof value === 'boolean' ? (value ? 1 : 0) : value);
+        onSendParam(`dyn_band${idx}_${paramName}`, typeof value === 'boolean' ? (value ? 1 : 0) : value);
     };
 
     const updateXover = (idx: number, value: number) => {
         const freqs: [number, number, number] = [...patch.dynCrossoverFreqs];
         freqs[idx] = value;
-        updateProofPatch(deviceId, { dynCrossoverFreqs: freqs });
-        setProofParam(deviceId, `dyn_xover${idx}`, value);
+        onPatchChange({ dynCrossoverFreqs: freqs });
+        onSendParam(`dyn_xover${idx}`, value);
     };
 
     return (
@@ -44,8 +47,8 @@ export const ProofDynSection = ({ patch, dynGr, deviceId }: Props): ReactElement
                         tone="peach"
                         size="xs"
                         onClick={() => {
-                            updateProofPatch(deviceId, { dynBypassed: !patch.dynBypassed });
-                            setProofParam(deviceId, 'dyn_bypass', patch.dynBypassed ? 0 : 1);
+                            onPatchChange({ dynBypassed: !patch.dynBypassed });
+                            onSendParam('dyn_bypass', patch.dynBypassed ? 0 : 1);
                         }}
                     >
                         {patch.dynBypassed ? 'OFF' : 'ON'}

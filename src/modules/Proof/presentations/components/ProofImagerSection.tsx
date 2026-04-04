@@ -6,19 +6,22 @@ import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader'
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { type ProofPatch } from '../../models/ProofPatch';
-import { updateProofPatch } from '../../stores/proofStore';
-import { setProofParam } from '../../useCases/proofParamBridge';
 
 const BAND_LABELS = ['Sub', 'Low-Mid', 'Hi-Mid', 'High'] as const;
 
-type Props = { patch: ProofPatch; correlation: number; deviceId: string };
+type Props = {
+    patch: ProofPatch;
+    correlation: number;
+    onPatchChange: (partial: Partial<ProofPatch>) => void;
+    onSendParam: (name: string, value: number) => void;
+};
 
-export const ProofImagerSection = ({ patch, correlation, deviceId }: Props): ReactElement => {
+export const ProofImagerSection = ({ patch, correlation, onPatchChange, onSendParam }: Props): ReactElement => {
     const updateWidth = (idx: number, value: number) => {
         const widths: [number, number, number, number] = [...patch.imgBandWidth];
         widths[idx] = value;
-        updateProofPatch(deviceId, { imgBandWidth: widths });
-        setProofParam(deviceId, `img_width${idx}`, value);
+        onPatchChange({ imgBandWidth: widths });
+        onSendParam(`img_width${idx}`, value);
     };
 
     // Correlation bar color
@@ -38,8 +41,8 @@ export const ProofImagerSection = ({ patch, correlation, deviceId }: Props): Rea
                         tone="mint"
                         size="xs"
                         onClick={() => {
-                            updateProofPatch(deviceId, { imgBypassed: !patch.imgBypassed });
-                            setProofParam(deviceId, 'img_bypass', patch.imgBypassed ? 0 : 1);
+                            onPatchChange({ imgBypassed: !patch.imgBypassed });
+                            onSendParam('img_bypass', patch.imgBypassed ? 0 : 1);
                         }}
                     >
                         {patch.imgBypassed ? 'OFF' : 'ON'}
@@ -73,15 +76,15 @@ export const ProofImagerSection = ({ patch, correlation, deviceId }: Props): Rea
                         size="xs"
                         caps={false}
                         onClick={() => {
-                            updateProofPatch(deviceId, { imgAutoMonoBass: !patch.imgAutoMonoBass });
-                            setProofParam(deviceId, 'img_auto_mono_bass', patch.imgAutoMonoBass ? 0 : 1);
+                            onPatchChange({ imgAutoMonoBass: !patch.imgAutoMonoBass });
+                            onSendParam('img_auto_mono_bass', patch.imgAutoMonoBass ? 0 : 1);
                         }}
                     >
                         Auto Mono Bass
                     </DawPluginToggle>
                     <RotaryKnob
                         value={patch.imgMonoBassFreq}
-                        onChange={(v) => { updateProofPatch(deviceId, { imgMonoBassFreq: v }); setProofParam(deviceId, 'img_mono_bass_freq', v); }}
+                        onChange={(v) => { onPatchChange({ imgMonoBassFreq: v }); onSendParam('img_mono_bass_freq', v); }}
                         min={40} max={200} step={1} defaultValue={80} size="sm"
                     />
                     <span className="text-[6px] text-muted-foreground font-mono">{patch.imgMonoBassFreq.toFixed(0)} Hz</span>

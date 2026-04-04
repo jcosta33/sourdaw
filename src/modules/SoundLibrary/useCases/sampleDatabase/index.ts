@@ -1,12 +1,3 @@
-// Types
-export type {
-    SampleTag,
-    SampleEntry,
-    SampleCategory,
-    SampleDatabaseState,
-} from '#/modules/SoundLibrary/stores/sampleDatabaseStore';
-export { sampleDatabaseStore } from '#/modules/SoundLibrary/stores/sampleDatabaseStore';
-
 // CRUD
 export { addSample } from './addSample';
 export { removeSample } from './removeSample';
