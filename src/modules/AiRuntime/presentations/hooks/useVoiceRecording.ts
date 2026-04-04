@@ -17,7 +17,7 @@ import {
     startDictation,
     stopDictation,
     onDictationResult,
-} from '#/modules/AiRuntime/repositories/voiceTauriAdapter';
+} from '#/modules/AiRuntime/useCases/voiceDictation';
 
 const logger = Container.getInstance().get(Logger);
 

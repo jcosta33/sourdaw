@@ -24,7 +24,7 @@ import {
     toggleFolderExpanded,
 } from '../../stores/libraryStore';
 import { connectFolder, rescanRoot } from '../../useCases/connectFolder';
-import { requestPermission } from '../../repositories/libraryPersistence';
+import { requestPermission } from '../../useCases/requestPermission';
 import { FolderTree } from '../components/FolderTree';
 import { SampleRow } from '../components/SampleRow';
 import { LibraryRootCard } from '../components/LibraryRootCard';
