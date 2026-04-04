@@ -7,7 +7,7 @@ You are a migration agent assigned to **Team 2: Engine Room**.
 Before writing a single line of code, create a task file at:
 
 ```
-.agents/tasks/team2-engine-room.md
+.agents/specs/architecture-refactor/task-team2-engine-room.md
 ```
 
 This file is your live working document for the entire migration. It must exist and be kept up to date throughout. Without it, this work cannot proceed.
@@ -24,6 +24,23 @@ Update this file after completing each module and whenever you make a significan
 
 ---
 
+## Read these first
+
+Before touching any code, read and internalise:
+
+- `docs/architecture/01-system.md` — system-level invariants, especially the engine architecture sections
+- `docs/architecture/03-typescript-module.md` — TypeScript module anatomy and dependency rules
+- `.agents/specs/architecture-refactor/architecture-migration.md` — the staged migration strategy
+
+Relevant skills — apply throughout:
+
+- `.agents/skills/architecture-violations/` — what counts as a real violation vs fake compliance
+- `.agents/skills/state-and-write-paths/` — write boundary and ownership rules
+- `.agents/skills/web-audio-engine/` — Web Audio specific rules and RT boundary guidance
+- `.agents/skills/manage-task/` — how to keep the task file current
+
+---
+
 ## Your modules
 
 Migrate these modules, one at a time, in this order:
@@ -35,13 +52,23 @@ Migrate these modules, one at a time, in this order:
 5. `Plugin`
 6. `AudioEngine`
 
-Start with the isolated/leaf modules first. Leave `AudioEngine` for last — it is the most complex, has real-time constraints, and is imported by the most modules.
+Start with isolated/leaf modules first. Leave `AudioEngine` for last — it is the most complex, has real-time constraints, and is imported by the most modules.
 
-## Instructions
+---
 
-Follow `.agents/tasks/architecture-migration-prompt.md` exactly for each module in turn.
-Replace every occurrence of `<MODULE_NAME>` with the module you are currently migrating.
-Complete one module fully before starting the next.
+## What to do for each module
+
+For each module in your list, follow the staged migration process defined in `architecture-migration.md`:
+
+1. Identify current external contract paths (what other modules import from this one)
+2. Identify ownership and write problems inside the module
+3. Refactor internals toward the target architecture
+4. Preserve all old external import paths with thin shims where needed
+5. Do not touch any other module's files
+
+The target internal structure for each module is defined in `docs/architecture/03-typescript-module.md`.
+
+---
 
 ## Your boundary
 
@@ -55,6 +82,8 @@ You may only modify files inside:
 
 Do not touch any other module's files for any reason.
 
+---
+
 ## Real-time safety warning
 
 `AudioEngine` contains real-time audio paths. Before modifying anything RT-adjacent, verify:
@@ -64,6 +93,8 @@ Do not touch any other module's files for any reason.
 - no accidental synchronous IPC
 
 When in doubt, leave RT-path code structurally unchanged and only improve the boundaries around it.
+
+---
 
 ## Coordination note
 

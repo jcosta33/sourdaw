@@ -7,7 +7,7 @@ You are a migration agent assigned to **Team 3: Instrument Workshop**.
 Before writing a single line of code, create a task file at:
 
 ```
-.agents/tasks/team3-instrument-workshop.md
+.agents/specs/architecture-refactor/task-team3-instrument-workshop.md
 ```
 
 This file is your live working document for the entire migration. It must exist and be kept up to date throughout. Without it, this work cannot proceed.
@@ -21,6 +21,22 @@ Use it to track:
 - **Notes** — anything else relevant to continuity if the agent is interrupted and resumed
 
 Update this file after completing each module and whenever you make a significant finding.
+
+---
+
+## Read these first
+
+Before touching any code, read and internalise:
+
+- `docs/architecture/01-system.md` — system-level invariants
+- `docs/architecture/03-typescript-module.md` — TypeScript module anatomy and dependency rules
+- `.agents/specs/architecture-refactor/architecture-migration.md` — the staged migration strategy
+
+Relevant skills — apply throughout:
+
+- `.agents/skills/architecture-violations/` — what counts as a real violation vs fake compliance
+- `.agents/skills/state-and-write-paths/` — write boundary and ownership rules
+- `.agents/skills/manage-task/` — how to keep the task file current
 
 ---
 
@@ -38,11 +54,21 @@ Migrate these modules. Order is flexible — no instrument depends on another �
 8. `Proof`
 9. `ProofChamber`
 
-## Instructions
+---
 
-Follow `.agents/tasks/architecture-migration-prompt.md` exactly for each module in turn.
-Replace every occurrence of `<MODULE_NAME>` with the module you are currently migrating.
-Complete one module fully before starting the next.
+## What to do for each module
+
+For each module in your list, follow the staged migration process defined in `architecture-migration.md`:
+
+1. Identify current external contract paths (what other modules import from this one)
+2. Identify ownership and write problems inside the module
+3. Refactor internals toward the target architecture
+4. Preserve all old external import paths with thin shims where needed
+5. Do not touch any other module's files
+
+The target internal structure for each module is defined in `docs/architecture/03-typescript-module.md`.
+
+---
 
 ## Your boundary
 
@@ -58,6 +84,8 @@ You may only modify files inside:
 - `src/modules/ProofChamber/`
 
 Do not touch any other module's files for any reason.
+
+---
 
 ## Notes
 
