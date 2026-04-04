@@ -4,6 +4,7 @@
  * Inspired by FabFilter Pro-Q style: perceptual tilt, logarithmic frequency axis.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+import { DawMeterFrame } from '#/components/daw/DawMeterFrame';
 import { getMasterAnalyser, getTrackAnalyser, getAudioSampleRate } from '#/modules/AudioEngine/useCases/engineAccess';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
@@ -194,7 +195,7 @@ export const SpectrumAnalyzer = ({
     }, [trackId, width, height, color]);
 
     return (
-        <div className="relative rounded bg-[#0a0a0a] channel-inset overflow-hidden">
+        <DawMeterFrame>
             <canvas
                 ref={canvasRef}
                 width={width}
@@ -203,14 +204,7 @@ export const SpectrumAnalyzer = ({
                 aria-label="Spectrum analyzer"
                 role="img"
             />
-            <div
-                className="absolute inset-0 pointer-events-none rounded"
-                style={{
-                    background:
-                        'linear-gradient(90deg, rgba(10,10,10,1) 0%, transparent 3%, transparent 97%, rgba(10,10,10,1) 100%)',
-                }}
-            />
-        </div>
+        </DawMeterFrame>
     );
 };
 

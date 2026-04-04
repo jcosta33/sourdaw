@@ -16,6 +16,10 @@ import { getAssetTransfer } from '#/modules/Collaboration/useCases/collaboration
 
 const MICRO_FADE_SECONDS = 0.003;
 
+/** Hashes for which we have already sent a peer request this session.
+ *  Prevents spamming requestAsset() every scheduler tick while waiting. */
+const requestedAssets = new Set<string>();
+
 export function scheduleAudioClips(
     fromBeat: number,
     toBeat: number,
@@ -71,13 +75,18 @@ export function scheduleAudioClips(
                 const isRecordingClip = clip.audioBufferId.startsWith('rec-');
                 if (!isRecordingClip) {
                     // In a collaboration session, request the asset from peers if we have a hash.
+                    // Don't add to scheduledAudioClips — the clip must remain schedulable so the
+                    // scheduler picks it up on the next tick once the buffer arrives.
                     const inSession = collaborationStore.value?.isEnabled ?? false;
                     if (inSession && clip.assetHash) {
-                        getAssetTransfer()?.requestAsset(clip.assetHash);
+                        if (!requestedAssets.has(clip.assetHash)) {
+                            requestedAssets.add(clip.assetHash);
+                            getAssetTransfer()?.requestAsset(clip.assetHash);
+                        }
                     } else {
                         notifyUser(`Missing audio for clip "${clip.name}" — re-import the audio file`, 'warning');
+                        scheduledAudioClips.add(clipKey);
                     }
-                    scheduledAudioClips.add(clipKey);
                 }
                 continue;
             }

@@ -1,5 +1,5 @@
 import { type ReactElement, type WheelEvent, useRef, useSyncExternalStore } from 'react';
-import { DawEmptyState } from '#/components/daw/DawEmptyState';
+import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { ArrangementBar } from '#/modules/Arrangement/presentations/views/ArrangementBar';
 import { timelineViewStore, scrollTimeline, setScrollY } from '#/modules/Arrangement/stores/timelineViewStore';
 import { useTracks } from '../hooks/useTracks';
@@ -46,10 +46,12 @@ export const AutomationView = (): ReactElement => {
             <div className="flex-1 overflow-y-auto bg-surface-base/50" onWheel={handleWheel}>
                 {tracks.length === 0 ? (
                     <div className="flex h-full items-center justify-center p-6">
-                        <DawEmptyState
+                        <DawBlockedState
+                            eyebrow="Automation"
                             title="No tracks yet"
                             description="Add tracks in Arrange first, then return here to shape automation."
                             className="max-w-sm"
+                            summary="This view mirrors the arrangement timeline and exposes automation per track."
                         />
                     </div>
                 ) : (

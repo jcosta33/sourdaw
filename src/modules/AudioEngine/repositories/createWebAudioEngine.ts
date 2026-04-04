@@ -2,7 +2,6 @@ import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import type { AudioEngine, AudioEngineState, TrackChannelStrip, BusStrip, SendNode } from '../models/AudioEngineState';
-import audioCoreProcessorUrl from '../services/audioCoreProcessor.ts?worker&url';
 import recordingProcessorUrl from '../services/recordingProcessor.ts?worker&url';
 import { TrackNode } from '../engine/TrackNode';
 import { BusNode } from '../engine/BusNode';
@@ -62,7 +61,6 @@ class AudioEngineImpl implements AudioEngine {
             await this.context.audioWorklet.addModule('/audio/worklets/sidechain-compressor-processor.js');
             await this.context.audioWorklet.addModule('/audio/worklets/native-plugin-host-processor.js');
             await this.context.audioWorklet.addModule('/audio/worklets/native-plugin-bridge-processor.js');
-            await this.context.audioWorklet.addModule(audioCoreProcessorUrl);
             await this.context.audioWorklet.addModule(recordingProcessorUrl);
             this.workletReady = true;
         } catch (error) {

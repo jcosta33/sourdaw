@@ -1,4 +1,6 @@
 import { type ReactElement, useState, useRef, useEffect } from 'react';
+
+import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { type Track } from '#/modules/Arrangement/models/Track';
 import { renameTrack } from '#/modules/Arrangement/useCases/renameTrack';
 
@@ -32,7 +34,7 @@ export const InlineTrackName = ({ track }: InlineTrackNameProps): ReactElement =
 
     if (editing) {
         return (
-            <input
+            <DawCompactInput
                 ref={inputRef}
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
@@ -46,7 +48,8 @@ export const InlineTrackName = ({ track }: InlineTrackNameProps): ReactElement =
                     }
                 }}
                 onClick={(e) => e.stopPropagation()}
-                className="flex-1 min-w-0 truncate bg-transparent text-xs font-medium text-foreground outline-none ring-1 ring-ring rounded px-0.5"
+                size="micro"
+                className="flex-1 min-w-0 truncate bg-transparent px-0.5 text-xs font-medium text-foreground"
                 aria-label={`Rename track ${track.name}`}
                 autoFocus
             />

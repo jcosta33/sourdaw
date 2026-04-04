@@ -13,6 +13,7 @@ import {
     useEffect,
 } from 'react';
 import { Play, Trash2, Pencil, Circle, Square } from 'lucide-react';
+import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { macroStore, type MacroStoreState } from '#/modules/Command/stores/macroStore';
@@ -94,8 +95,9 @@ export const MacrosPanel = (): ReactElement => {
             {/* Recording name input (shown while recording) */}
             {state.recording ? (
                 <div className="px-3 py-1.5 border-b border-[var(--color-state-danger)]/20 bg-[var(--color-state-danger)]/5">
-                    <input
-                        className="w-full bg-transparent text-[10px] text-foreground/80 outline-none placeholder:text-muted-foreground/30"
+                    <DawCompactInput
+                        size="micro"
+                        className="border-0 bg-transparent px-0 text-[10px] text-foreground/80 shadow-none placeholder:text-muted-foreground/30 focus-visible:ring-0"
                         placeholder="Macro name..."
                         value={newMacroName}
                         onChange={(e) => setNewMacroName(e.target.value)}
@@ -122,9 +124,10 @@ export const MacrosPanel = (): ReactElement => {
                                 className="flex items-center gap-1 px-2 py-1 rounded hover:bg-white/5 group transition-colors"
                             >
                                 {editingId === macro.id ? (
-                                    <input
+                                    <DawCompactInput
                                         ref={inputRef}
-                                        className="flex-1 bg-transparent text-[10px] text-foreground outline-none"
+                                        size="micro"
+                                        className="flex-1 border-0 bg-transparent px-0 text-[10px] text-foreground shadow-none focus-visible:ring-0"
                                         value={editName}
                                         onChange={(e) => setEditName(e.target.value)}
                                         onBlur={commitRename}

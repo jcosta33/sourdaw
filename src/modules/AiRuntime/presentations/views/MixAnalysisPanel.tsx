@@ -1,10 +1,10 @@
 import { type ReactElement, useSyncExternalStore } from 'react';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { DawUtilitySection } from '#/components/daw/DawUtilitySection';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
 import { ScrollArea } from '#/components/ui/scroll-area';
-import { Separator } from '#/components/ui/separator';
 import { Activity, RefreshCw, Wrench, X } from 'lucide-react';
 import { mixAnalysisStore, toggleMixAnalysisPanel } from '#/modules/AiRuntime/stores/mixAnalysisStore';
 import { runAppAction } from '#/modules/AiRuntime/useCases/aiPanelActions';
@@ -73,43 +73,40 @@ export const MixAnalysisPanel = (): ReactElement | null => {
                 {state.result ? (
                     <div className="space-y-3 p-3">
                         <OverallLevel level={state.result.overallLevel} />
-                        <Separator />
                         <FrequencyBalance bands={state.result.frequencyBalance} />
-                        <Separator />
                         <TrackLevelsList trackLevels={state.result.trackLevels} />
-                        <Separator />
                         <IssuesList issues={state.result.issues} />
-                        {state.result.issues.length > 0 ? <Separator /> : null}
                         <SuggestionsList suggestions={state.result.suggestions} />
-                        <Separator />
-                        <div className="flex gap-2">
-                            <Button
-                                variant="outline"
-                                size="xs"
-                                className="flex-1"
-                                onClick={handleRefresh}
-                                disabled={state.isAnalyzing}
-                            >
-                                <RefreshCw className={`size-3 ${state.isAnalyzing ? 'animate-spin' : ''}`} />
-                                Refresh
-                            </Button>
-                            <Button
-                                variant="default"
-                                size="xs"
-                                className="flex-1"
-                                onClick={handleAutoFix}
-                                disabled={
-                                    state.isAnalyzing ||
-                                    state.result.issues.filter((i) => i.severity !== 'info').length === 0
-                                }
-                            >
-                                <Wrench className="size-3" />
-                                Auto-Fix
-                            </Button>
-                        </div>
-                        <p className="text-[9px] text-muted-foreground text-center">
-                            Analyzed at {new Date(state.result.timestamp).toLocaleTimeString()}
-                        </p>
+                        <DawUtilitySection
+                            title="Actions"
+                            detail={`Analyzed at ${new Date(state.result.timestamp).toLocaleTimeString()}`}
+                        >
+                            <div className="flex gap-2">
+                                <Button
+                                    variant="outline"
+                                    size="xs"
+                                    className="flex-1"
+                                    onClick={handleRefresh}
+                                    disabled={state.isAnalyzing}
+                                >
+                                    <RefreshCw className={`size-3 ${state.isAnalyzing ? 'animate-spin' : ''}`} />
+                                    Refresh
+                                </Button>
+                                <Button
+                                    variant="default"
+                                    size="xs"
+                                    className="flex-1"
+                                    onClick={handleAutoFix}
+                                    disabled={
+                                        state.isAnalyzing ||
+                                        state.result.issues.filter((i) => i.severity !== 'info').length === 0
+                                    }
+                                >
+                                    <Wrench className="size-3" />
+                                    Auto-Fix
+                                </Button>
+                            </div>
+                        </DawUtilitySection>
                     </div>
                 ) : (
                     <div className="p-3">

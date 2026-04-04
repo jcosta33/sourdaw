@@ -19,7 +19,7 @@ function getActiveDevices(): DeviceRef[] {
     const refs: DeviceRef[] = [];
     for (const track of getAllTracks()) {
         for (const device of track.devices) {
-            if (device.type === 'native-proof-chamber' || device.type === 'proof-chamber') {
+            if (device.type === 'native-proof-chamber') {
                 refs.push({ trackId: track.id, deviceId: device.id });
             }
         }

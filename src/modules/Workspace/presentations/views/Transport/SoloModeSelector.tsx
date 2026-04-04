@@ -1,5 +1,5 @@
 import { type ReactElement } from 'react';
-import { DawControlStrip } from '#/components/daw/DawControlStrip';
+import { DawTransportCluster } from '#/components/daw/DawTransportCluster';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { type SoloMode } from '../../../models/WorkspaceState';
@@ -29,7 +29,7 @@ type SoloModeSelectorProps = {
 
 export const SoloModeSelector = ({ soloMode }: SoloModeSelectorProps): ReactElement => {
     return (
-        <DawControlStrip className="gap-0.5 rounded-sm px-1 py-0.5" role="radiogroup" aria-label="Solo mode">
+        <DawTransportCluster role="radiogroup" aria-label="Solo mode">
             {SOLO_MODES.map((m) => (
                 <Tooltip key={m.value}>
                     <TooltipTrigger asChild>
@@ -47,6 +47,6 @@ export const SoloModeSelector = ({ soloMode }: SoloModeSelectorProps): ReactElem
                     <TooltipContent>{m.description}</TooltipContent>
                 </Tooltip>
             ))}
-        </DawControlStrip>
+        </DawTransportCluster>
     );
 };

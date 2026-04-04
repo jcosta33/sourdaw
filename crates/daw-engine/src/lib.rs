@@ -1,7 +1,6 @@
 pub mod scheduler;
 pub mod audio_thread;
 pub mod plugin_slot;
-pub mod sab_bridge;
 pub mod audio_bridge;
 
 use rtrb::{RingBuffer, Producer};
@@ -72,19 +71,6 @@ impl EngineHandle {
     /// Update the global transport state (lock-free).
     pub fn set_transport(&mut self, state: plugin_slot::TransportState) -> Result<(), String> {
         self.command_tx.push(GraphCommand::SetTransport(state))
-            .map_err(|_| "Audio command queue full".to_string())
-    }
-
-    /// Register a SharedArrayBuffer bridge for a plugin.
-    /// The bridge connects the Web Audio worklet to the native plugin.
-    pub fn register_bridge(&mut self, bridge: sab_bridge::SabBridge) -> Result<(), String> {
-        self.command_tx.push(GraphCommand::RegisterBridge(bridge))
-            .map_err(|_| "Audio command queue full".to_string())
-    }
-
-    /// Unregister a bridge by plugin ID.
-    pub fn unregister_bridge(&mut self, plugin_id: usize) -> Result<(), String> {
-        self.command_tx.push(GraphCommand::UnregisterBridge(plugin_id))
             .map_err(|_| "Audio command queue full".to_string())
     }
 

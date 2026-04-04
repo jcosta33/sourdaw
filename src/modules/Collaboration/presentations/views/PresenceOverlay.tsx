@@ -1,5 +1,6 @@
 import { type ReactElement } from 'react';
 
+import { PresenceMarker } from '../components/PresenceMarker';
 import { usePresence } from '../hooks/usePresence';
 
 type PresenceOverlayProps = {
@@ -41,69 +42,23 @@ export const PresenceOverlay = ({
 
                 return (
                     <div key={presence.peerId}>
-                        {/* Ghost playhead — dashed line at peer's playhead position */}
                         {playheadX !== null ? (
-                            <>
-                                <div
-                                    className="absolute top-0 bottom-0"
-                                    style={{
-                                        left: `${playheadX}px`,
-                                        width: '1px',
-                                        backgroundImage: `repeating-linear-gradient(to bottom, ${presence.color} 0px, ${presence.color} 4px, transparent 4px, transparent 8px)`,
-                                        opacity: 0.6,
-                                    }}
-                                />
-                                <div
-                                    className="absolute rounded-b px-1 text-[9px] font-medium text-white whitespace-nowrap"
-                                    style={{
-                                        left: `${playheadX + 3}px`,
-                                        bottom: 4,
-                                        backgroundColor: presence.color,
-                                        opacity: 0.75,
-                                    }}
-                                >
-                                    {presence.name}
-                                </div>
-                            </>
+                            <PresenceMarker
+                                name={presence.name}
+                                color={presence.color}
+                                left={playheadX}
+                                variant="playhead"
+                            />
                         ) : null}
 
-                        {/* Cursor line */}
                         {cursorX !== null ? (
-                            <>
-                                <div
-                                    className="absolute top-0 bottom-0 w-px"
-                                    style={{
-                                        left: `${cursorX}px`,
-                                        backgroundColor: presence.color,
-                                        opacity: 0.7,
-                                    }}
-                                />
-
-                                {/* Name label at top of cursor */}
-                                <div
-                                    className="absolute rounded-b px-1 text-[9px] font-medium text-white whitespace-nowrap"
-                                    style={{
-                                        left: `${cursorX + 2}px`,
-                                        top: 0,
-                                        backgroundColor: presence.color,
-                                        opacity: 0.9,
-                                    }}
-                                >
-                                    {presence.name}
-                                </div>
-
-                                {/* Track focus dot */}
-                                {trackY !== null ? (
-                                    <div
-                                        className="absolute size-2 rounded-full"
-                                        style={{
-                                            left: `${cursorX - 3}px`,
-                                            top: `${trackY + trackHeight / 2 - 3}px`,
-                                            backgroundColor: presence.color,
-                                        }}
-                                    />
-                                ) : null}
-                            </>
+                            <PresenceMarker
+                                name={presence.name}
+                                color={presence.color}
+                                left={cursorX}
+                                variant="cursor"
+                                trackDotY={trackY !== null ? trackY + trackHeight / 2 : null}
+                            />
                         ) : null}
                     </div>
                 );

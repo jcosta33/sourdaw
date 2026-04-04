@@ -1,15 +1,13 @@
 import { type ReactElement, useState, useRef, useEffect, useSyncExternalStore } from 'react';
 
-import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
-import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
+import { DawCompactInput } from '#/components/daw/DawCompactInput';
+import { DawUtilityNotice } from '#/components/daw/DawUtilityNotice';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
-import { cn } from '#/helpers/Styles/cn';
 import { Button } from '#/components/ui/button';
-import { Input } from '#/components/ui/input';
 import { closeCollaborationPanel } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { X, Copy, Check, Users, Wifi, WifiOff, Loader2, QrCode } from 'lucide-react';
+import { X, Copy, Users, Wifi, WifiOff, Loader2, QrCode } from 'lucide-react';
 
 import { useCollaborationState } from '../hooks/useCollaborationState';
 import {
@@ -19,6 +17,10 @@ import {
     generateInvite,
     acceptAnswer,
 } from '../../useCases/collaboration';
+import { InviteCodeRow } from '../components/InviteCodeRow';
+import { PeerPresenceRow } from '../components/PeerPresenceRow';
+import { CollaborationBlock } from '../components/CollaborationBlock';
+import { CollaborationStatusRow } from '../components/CollaborationStatusRow';
 import { QrInvite } from './QrInvite';
 
 
@@ -163,34 +165,38 @@ export const CollaborationPanel = (): ReactElement | null => {
 
             <div className="flex flex-col gap-3 p-3">
                 {/* Status */}
-                <div className="flex items-center gap-2">
-                    {statusIcon}
-                    <span className="text-[11px] text-muted-foreground">{statusLabel}</span>
-                </div>
+                <CollaborationStatusRow icon={statusIcon} label={statusLabel} />
 
                 {state.isEnabled ? (
                     <>
                         {/* Peer list */}
                         {state.peers.length > 0 ? (
-                            <div className="flex flex-col gap-1 max-h-32 overflow-y-auto">
-                                {state.peers.map((peer) => (
-                                    <div key={peer.id} className="flex items-center gap-2 rounded px-2 py-1 text-xs">
-                                        <span
-                                            className={cn('size-2 shrink-0 rounded-full', peer.isConnected ? 'opacity-100' : 'opacity-30')}
-                                            style={{ backgroundColor: peer.color }}
+                            <CollaborationBlock
+                                title="Peers"
+                                description="Everyone currently connected to the shared session."
+                                className="max-h-40 overflow-y-auto"
+                            >
+                                <div className="flex flex-col gap-1">
+                                    {state.peers.map((peer) => (
+                                        <PeerPresenceRow
+                                            key={peer.id}
+                                            name={peer.name}
+                                            color={peer.color}
+                                            isConnected={peer.isConnected}
+                                            isHost={peer.isHost}
                                         />
-                                        <span className="truncate text-foreground">{peer.name}</span>
-                                        {peer.isHost ? (
-                                            <DawMicroBadge className="ml-auto px-1" tone="muted">host</DawMicroBadge>
-                                        ) : null}
-                                    </div>
-                                ))}
-                            </div>
+                                    ))}
+                                </div>
+                            </CollaborationBlock>
                         ) : null}
 
                         {/* Host controls: invite methods */}
                         {state.isHost ? (
-                            <div className="flex flex-col gap-1.5">
+                            <CollaborationBlock
+                                title="Invite"
+                                description="Generate an invite, share it, then accept the join answer."
+                                className="flex flex-col gap-1.5"
+                            >
                                 <div className="flex gap-1">
                                     <Button variant="outline" size="xs" onClick={handleGenerateInvite} disabled={isGeneratingInvite} className="flex-1 gap-1">
                                         {isGeneratingInvite ? <Loader2 className="size-3 animate-spin" /> : <Copy className="size-3" />}
@@ -201,9 +207,9 @@ export const CollaborationPanel = (): ReactElement | null => {
                                         QR
                                     </Button>
                                 </div>
-                                <p className="text-[10px] text-muted-foreground/60">
+                                <DawUtilityNotice className="px-2.5 py-2 text-[10px] text-muted-foreground/60">
                                     Wait for each person to accept before inviting the next.
-                                </p>
+                                </DawUtilityNotice>
 
                                 {/* QR code display */}
                                 {showQr && inviteString ? (
@@ -212,44 +218,35 @@ export const CollaborationPanel = (): ReactElement | null => {
 
                                 {/* Invite text (if generated but QR not shown) */}
                                 {inviteString && !showQr ? (
-                                    <div className="flex items-center gap-1">
-                                        <code className="flex-1 truncate rounded bg-muted/30 px-2 py-1 text-[9px] font-mono text-foreground">
-                                            {inviteString.slice(0, 40)}...
-                                        </code>
-                                        <Button variant="ghost" size="icon-xs" onClick={handleCopyInvite}>
-                                            {copiedInvite ? <Check className="size-3 text-[var(--color-state-success)]" /> : <Copy className="size-3" />}
-                                        </Button>
-                                    </div>
+                                    <InviteCodeRow
+                                        value={inviteString}
+                                        copied={copiedInvite}
+                                        onCopy={handleCopyInvite}
+                                    />
                                 ) : null}
 
                                 {/* Accept answer from joiner */}
-                                <Input
+                                <DawCompactInput
                                     value={answerString}
                                     onChange={(e) => setAnswerString(e.target.value)}
                                     placeholder="Paste answer here"
-                                    className="h-7 text-xs font-mono"
+                                    monospace
                                 />
                                 <Button variant="outline" size="xs" onClick={handleAcceptAnswer} disabled={!answerString.trim()} className="w-full">
                                     Accept Answer
                                 </Button>
-                            </div>
+                            </CollaborationBlock>
                         ) : null}
 
                         {/* Joiner: show answer to copy back */}
                         {joinAnswer ? (
-                            <div className="flex flex-col gap-1.5">
-                                <DawEyebrowLabel size="sm">
-                                    Send this answer to the host
-                                </DawEyebrowLabel>
-                                <div className="flex items-center gap-1">
-                                    <code className="flex-1 truncate rounded bg-muted/30 px-2 py-1 text-[9px] font-mono text-foreground">
-                                        {joinAnswer.slice(0, 40)}...
-                                    </code>
-                                    <Button variant="ghost" size="icon-xs" onClick={handleCopyAnswer}>
-                                        {copiedAnswer ? <Check className="size-3 text-[var(--color-state-success)]" /> : <Copy className="size-3" />}
-                                    </Button>
-                                </div>
-                            </div>
+                            <CollaborationBlock
+                                title="Share back"
+                                description="Send this answer to the host so they can complete the connection."
+                                className="flex flex-col gap-1.5"
+                            >
+                                <InviteCodeRow value={joinAnswer} copied={copiedAnswer} onCopy={handleCopyAnswer} />
+                            </CollaborationBlock>
                         ) : null}
 
                         <Button variant="outline" size="xs" onClick={leaveSession} className="w-full">
@@ -259,41 +256,53 @@ export const CollaborationPanel = (): ReactElement | null => {
                 ) : (
                     <>
                         {/* Start Session */}
-                        <div className="flex flex-col gap-1.5">
-                            <Input
+                        <CollaborationBlock
+                            title="Start session"
+                            description="Host a live editing room from this machine."
+                            className="flex flex-col gap-1.5"
+                        >
+                            <DawCompactInput
                                 value={hostName}
                                 onChange={(e) => setHostName(e.target.value)}
                                 placeholder="Your name"
-                                className="h-7 text-xs"
                             />
                             <Button variant="default" size="xs" onClick={handleCreate} className="w-full">
                                 Start Session
                             </Button>
-                        </div>
+                        </CollaborationBlock>
 
                         {/* Join Session */}
-                        <div className="flex flex-col gap-1.5">
-                            <Input
+                        <CollaborationBlock
+                            title="Join session"
+                            description="Paste an invite from the host and create your answer."
+                            className="flex flex-col gap-1.5"
+                        >
+                            <DawCompactInput
                                 value={joinName}
                                 onChange={(e) => setJoinName(e.target.value)}
                                 placeholder="Your name"
-                                className="h-7 text-xs"
                             />
-                            <Input
+                            <DawCompactInput
                                 value={joinInvite}
                                 onChange={(e) => setJoinInvite(e.target.value)}
                                 placeholder="Paste invite"
-                                className="h-7 text-xs font-mono"
+                                monospace
                             />
                             <Button variant="outline" size="xs" onClick={handleJoin} disabled={!joinInvite.trim() || isJoining} className="w-full gap-1">
                                 {isJoining ? <Loader2 className="size-3 animate-spin" /> : null}
                                 {isJoining ? 'Gathering...' : 'Join Session'}
                             </Button>
-                        </div>
+                        </CollaborationBlock>
                     </>
                 )}
 
-                {state.error ? <p className="text-[10px] text-[var(--color-state-danger)]">{state.error}</p> : null}
+                {state.error ? (
+                    <CollaborationStatusRow
+                        icon={<WifiOff className="size-3 text-[var(--color-state-danger)]" />}
+                        label={state.error}
+                        tone="danger"
+                    />
+                ) : null}
             </div>
         </DawUtilityPanel>
     );

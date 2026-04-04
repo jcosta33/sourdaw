@@ -1,0 +1,25 @@
+{
+  "defaultBaseBranch": "main",
+  "worktreeDirPattern": "../{repoName}--{slug}",
+  "defaultTerminal": "auto",
+  "defaultAgent": "claude",
+  "agents": {
+    "claude": {
+      "command": "claude",
+      "args": []
+    },
+    "gemini": {
+      "command": "gemini",
+      "args": []
+    },
+    "codex": {
+      "command": "codex",
+      "args": []
+    }
+  },
+  "reuseExistingByDefault": true,
+  "writeTaskTemplateOnCreate": true,
+  "openTaskFileInBanner": true,
+  "allowSparseCheckout": false,
+  "slugMaxLen": 60
+}

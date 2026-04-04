@@ -6,8 +6,7 @@ All items verified against the current codebase. Fixed/phantom issues removed.
 
 ## Architecture (needs design before touching code)
 
-### VST3/CLAP hosting — async audio path causes unbounded queue growth
-**Status: VERIFIED LEGITIMATE** (Verified in `public/audio/worklets/native-plugin-bridge-processor.js`)
+### ~~VST3/CLAP hosting — async audio path causes unbounded queue growth~~ — DONE
 
 `src/modules/AudioEngine/engine/NativePluginBridgeNode.ts` + `public/audio/worklets/native-plugin-bridge-processor.js`
 

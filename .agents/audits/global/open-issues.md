@@ -6,54 +6,51 @@ All items verified against the current codebase.
 
 ## Real-time infrastructure
 
-### RT-5 · NativePluginBridgeNode JSON IPC in the audio hot-path
+### ~~RT-5 · NativePluginBridgeNode JSON IPC in the audio hot-path~~ — DONE
 
-**Severity:** P0 · **Verified:** ✅
+**Two bugs fixed:**
 
-`NativePluginBridgeNode.ts` (line 45) still calls `tauriInvoke('process_plugin_audio', { enginePluginId, audioData: Array.from(audioData) })` — converting a `Float32Array` to a plain array for JSON serialisation on the main thread at audio rate. The worklet sends audio out via `postMessage` every block, the main thread awaits the Tauri response and posts it back. No guard against falling behind: the worklet unconditionally sends a new block every `process()` call regardless of whether the previous round-trip has completed, meaning the message queue grows unbounded under load.
+**Bug 1 — Unbounded queue growth (correctness):** The worklet fired a `postMessage` every `process()` call regardless of whether the previous IPC round-trip completed. Under any load where the round-trip took >2.67ms, the queue grew forever. Fixed with a `pendingBlock` flag in `NativePluginBridgeNode.ts` — new blocks are dropped while a round-trip is in flight. The Rust-side ring buffer (8 blocks deep) absorbs transient delays; the worklet outputs the last available block.
 
-**Confirmed:** `NativePluginBridgeNode.ts` uses `Array.from(audioData)` which is a major performance bottleneck for real-time audio.
+**Bug 2 — JSON float serialization:** `Array.from(audioData)` serialized 256 f32 values as JSON number strings. Changed to pass raw IEEE 754 bytes (`Uint8Array`) and accept `Vec<u8>` on the Rust side, decoding with `f32::from_le_bytes`. Smaller JSON payload and cheaper Rust-side parse (integer 0-255 vs decimal float string).
 
-**Rust side is done:** `SabBridge`, `register_plugin_bridge` Tauri command, and `process_bridges()` audio-thread polling are all fully implemented in `crates/daw-engine/src/sab_bridge.rs`. Never called from TypeScript.
+**SabBridge removed:** `sab_bridge.rs` was premised on JS and Rust sharing process memory (true only on macOS WKWebView, false on Windows WebView2). No JS API exposes a SAB's raw address regardless. The whole approach was unviable cross-platform. Removed: `sab_bridge.rs`, `register_plugin_bridge` Tauri command, `RegisterBridge`/`UnregisterBridge` scheduler commands, `process_bridges()` audio-thread call.
 
-**Blocker:** No standard JS API exposes the raw address of a `SharedArrayBuffer`. `register_plugin_bridge` takes `sab_ptr: usize`. The issue spec says "Map the SAB into Rust via the WASM bridge" — this glue does not yet exist. Resolve before starting JS work.
-
-**JS work once unblocked (small):**
-
-1. New `nativePluginBridgeProcessor.ts`: on `init-sab`, store SAB views; in `process()`, read last output from SAB, write new input, set control word. No `postMessage` during `process()`.
-2. Update `NativePluginBridgeNode.ts`: allocate 2052-byte SAB, call `register_plugin_bridge`, post `init-sab`, remove async relay loop.
+**Remaining ceiling:** The ring buffer IPC still has an async round-trip (JS→Rust→JS) bounded by the OS scheduler. True zero-copy would require Tauri's raw-body fetch API (`ipc://localhost/` scheme with `ArrayBuffer` body). This is the next optimization if round-trip latency is measurably causing audio glitches.
 
 ---
 
 ## Architectural
 
-### SP-1 · Branch topology not synced to CRDT
+### ~~SP-1 · Branch topology not synced to CRDT~~ — DONE
 
-**Severity:** P1 · **Verified:** ✅
-
-`branchStore.ts` line 11: `new Store<BranchStoreState>(logger, { storage: new LocalStorageStorage('sourdaw-branches') })`. Branch documents themselves are in Automerge, but the `BranchRecord` list (IDs, names, sourceIds) is localStorage-only. In a collaborative session, peer B never sees peer A's branches. `BranchManagerDialog` (fork, switch, merge, delete) is active UI.
-
-**Confirmed:** `src/modules/CrdtDocument/stores/branchStore.ts` explicitly uses `LocalStorageStorage`. `actionHistoryStore.ts` is also local-only.
-
-**Requires product decision:** are branches a local workspace concept (intentional) or should they sync to collaborators?
-
-**If synced:** move `BranchStoreState` into a dedicated Automerge metadata document synced alongside the project doc. Use `src/modules/CrdtDocument/models/BranchTypes.ts` as the schema.
+Session-scoped branch metadata sync implemented. A `__branches__` Automerge doc (see `DOC_BRANCHES` in `CrdtDocumentTypes.ts`) carries the `BranchRecord[]` list during a session. `AutomergeSync` now syncs all docs (`root`, `__branches__`, `branch_*`), using per-peer-per-doc `SyncState` maps. `sessionManagement.ts` seeds the doc on `createSession`, subscribes to local `branchStore` mutations to mirror them into the Automerge doc, and projects incoming peer changes back into `branchStore`. On `leaveSession`, the pre-session snapshot is restored and the `__branches__` doc is removed so it isn't included in subsequent IDB saves. `activeBranchId` is not synced — each peer keeps their own active branch.
 
 ---
 
 ## Rust backend
 
-### RB-1 · Crate workspace sprawl
+### ~~RB-1 · Crate workspace sprawl~~ — DONE
 
-**Severity:** P2 · **Verified:** ✅ (with correction)
+Dead reverb code removed:
+- `crates/daw-dsp/src/reverb/` — entire directory deleted (5 files: `dattorro.rs`, `engine.rs`, `allpass.rs`, `delay.rs`, `mod.rs`). `ProofChamberEngine` was never exported from `lib.rs`, never registered as a device type, never called from TypeScript.
+- `crates/daw-dsp/src/effects/proof_chamber.rs` — deleted. A 645-line copy of the full `ProofChamber` struct was wired into `WasmPluginInstance` as `"proof-chamber"` type, but had no TypeScript descriptor or device strategy registration — users could not instantiate it.
+- `crates/daw-dsp/src/effects/` — entire directory deleted (compressor, delay, eq, gain, gate, lib, limiter, reverb). All 7 `native-*` DSP effects removed as part of platform-agnostic cleanup.
+- `daw-dsp/src/lib.rs` — `pub mod reverb` removed.
+- `proofChamberParamBridge.ts` — removed legacy `|| device.type === 'proof-chamber'` check.
 
-`Cargo.toml` has 9 workspace members: `daw-core`, `daw-collab`, `daw-engine`, `daw-dsp`, `daw-io`, `daw-plugin-host`, `proof-chamber`, `scoring`, `src-tauri`. `proof-chamber` and `scoring` are standalone WASM crates (`crate-type = ["cdylib", "rlib"]`) with no dependencies on any `daw-*` crate — only `wasm-bindgen`, `serde`, `js-sys`.
+Platform-agnostic cleanup completed:
+- `NativeDspNode.ts`, `nativeDspProcessor.ts`, `audioCoreProcessor.ts` — deleted.
+- `audio_core.*` WASM files — deleted.
+- `NativeEffectLayouts.tsx` — deleted.
+- `nativeDspDescriptors.ts` — rewritten to contain only Dutch Oven and Scoring (removed 7 `native-*` effect descriptors).
+- `builtinEffectDescriptors.ts` — all `platform: 'web'` → `platform: 'both'`; builtin effects now show on native too.
+- `getPlatformPlugins.ts` — `WEB_TO_NATIVE_MAP` removed; single passthrough filter (hide `native`-only platform).
+- `NativeDspDeviceStrategy.ts` — native DSP branch removed; class now serves premium plugins only.
+- `deviceStrategy/index.ts` — `isNativeDspDevice` removed from predicate.
+- `factoryPresets.ts` — all `native-*` preset helpers and `NATIVE_DSP_PRESETS` array removed.
 
-**Duplication claim corrected:** `daw-dsp/src/proof/` is the *Proof mastering suite* (EQ → multiband dynamics → stereo imager → limiter); `proof-chamber` is *Dutch Oven*, a completely separate multi-engine reverb plugin (Dattorro plate, FDN-8, FDN-16, spring, convolution). The `daw-dsp/src/reverb/` helper module may partially overlap with `proof-chamber`'s Dattorro sub-module, but this has not been confirmed at code level. `scoring` (chromatic tuner) has no apparent duplication.
-
-**Real issue:** two production WASM plugins ship as root workspace crates with their own `[profile.release]` sections instead of living within the `daw-dsp` plugin family. Consolidation would simplify CI, build scripts, and `wasm-pack` invocations.
-
-**Prerequisite before consolidating:** verify `proof-chamber`'s Dattorro code vs `daw-dsp/src/reverb/dattorro.rs` for actual duplication, then assess `wasm-pack` build pipeline impact.
+Live effect landscape: web-based builtins (available everywhere) + premium WASM plugins (Dutch Oven, Fermenter, Toaster, etc.). No platform split.
 
 ---
 

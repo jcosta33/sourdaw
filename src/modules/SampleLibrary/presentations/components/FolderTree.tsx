@@ -2,6 +2,7 @@
  * FolderTree — browsable folder hierarchy with expand/collapse.
  */
 import { type ReactElement } from 'react';
+import { DawHierarchyRow } from '#/components/daw/DawHierarchyRow';
 import { ChevronRight, ChevronDown, Folder, FolderOpen } from 'lucide-react';
 import { type FolderNode } from '../../models/LibraryTypes';
 
@@ -30,30 +31,29 @@ export const FolderTree = ({
 
             return (
                 <div key={node.path || node.name}>
-                    <button
-                        type="button"
-                        className={`flex items-center gap-1 w-full text-left py-0.5 rounded transition-colors ${
-                            isActive
-                                ? 'bg-white/[0.08] text-foreground'
-                                : 'text-muted-foreground hover:bg-white/[0.04] hover:text-foreground'
-                        }`}
-                        style={{ paddingLeft: `${depth * 12 + 4}px` }}
+                    <DawHierarchyRow
+                        active={isActive}
+                        depth={depth}
+                        className="py-0.5"
+                        startSlot={
+                            <>
+                                {hasChildren ? (
+                                    <ArrowIcon className="size-3 shrink-0 text-muted-foreground/50" />
+                                ) : (
+                                    <span className="size-3 shrink-0" />
+                                )}
+                                <FolderIcon className="size-3 shrink-0 text-amber-500/60" />
+                            </>
+                        }
+                        title={node.name}
+                        endSlot={<span className="pr-1 text-[8px] text-muted-foreground/40">{node.fileCount}</span>}
                         onClick={() => {
                             onFolderSelect(node.path);
                             if (hasChildren) {
                                 onToggleExpand(node.path);
                             }
                         }}
-                    >
-                        {hasChildren ? (
-                            <ArrowIcon className="size-3 shrink-0 text-muted-foreground/50" />
-                        ) : (
-                            <span className="size-3 shrink-0" />
-                        )}
-                        <FolderIcon className="size-3 shrink-0 text-amber-500/60" />
-                        <span className="text-[10px] truncate flex-1">{node.name}</span>
-                        <span className="text-[8px] text-muted-foreground/40 pr-1">{node.fileCount}</span>
-                    </button>
+                    />
                     {isExpanded && hasChildren ? (
                         <FolderTree
                             nodes={node.children}

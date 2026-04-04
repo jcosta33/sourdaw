@@ -1,4 +1,5 @@
 import { type ReactElement, useEffect, useRef } from 'react';
+import { DawMeterFrame } from '#/components/daw/DawMeterFrame';
 import { cn } from '#/helpers/Styles/cn';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 import { getTrackPeakLevel } from '#/modules/AudioEngine/useCases/trackAudioControls';
@@ -183,22 +184,16 @@ export const LevelMeter = ({
                 ))}
             </div>
 
-            <div
+            <DawMeterFrame
+                overlay="vertical"
                 ref={containerRef}
                 className={cn(
-                    'relative rounded-sm overflow-hidden bg-[#0a0a0a] channel-inset',
+                    'rounded-sm',
                     width,
                 )}
             >
                 <canvas ref={canvasRef} className="absolute inset-0 block w-full h-full" />
-                <div
-                    className="absolute inset-0 pointer-events-none rounded-sm"
-                    style={{
-                        background:
-                            'linear-gradient(180deg, rgba(10,10,10,1) 0%, transparent 3%, transparent 97%, rgba(10,10,10,1) 100%)',
-                    }}
-                />
-            </div>
+            </DawMeterFrame>
         </div>
     );
 };

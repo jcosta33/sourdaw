@@ -1,4 +1,5 @@
 import { type ReactElement, useState } from 'react';
+import { DawCompactTextarea } from '#/components/daw/DawCompactTextarea';
 import { setTrackNotes } from '#/modules/Arrangement/useCases/setTrackGainPan';
 import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
 import { InsetPanel } from '../../components/Inspector/InsetPanel';
@@ -22,8 +23,8 @@ export const TrackNotesSection = ({ track }: TrackNotesSectionProps): ReactEleme
             }}
         >
             <MetaText className="mb-1">Notes</MetaText>
-            <textarea
-                className="flex-1 w-full rounded border border-border-soft bg-surface-inset shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)] px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-border-focus resize-y min-h-[60px]"
+            <DawCompactTextarea
+                className="min-h-[60px] flex-1 resize-y"
                 placeholder="Add notes…"
                 value={notesValue}
                 onChange={(e) => setNotesValue(e.target.value)}

@@ -2,7 +2,6 @@ import { type AudioDeviceStrategy } from './AudioDeviceStrategy';
 import { type OfflineDeviceNode } from '../../useCases/buildDeviceChain';
 import { type Device } from '#/modules/Arrangement/useCases/trackQueries';
 
-import { isNativeDspDevice, NATIVE_DSP_DEVICE_TYPES, createNativeDspNode } from '../../engine/NativeDspNode';
 import { isFermenterDevice, createFermenterNode } from '../../engine/FermenterNode';
 import { isToasterDevice, createToasterNode } from '../../engine/ToasterNode';
 import { isLevainDevice, createLevainNode } from '../../engine/LevainNode';
@@ -58,12 +57,7 @@ export class NativeDspDeviceStrategy implements AudioDeviceStrategy {
 export async function createNativeDspStrategy(ctx: BaseAudioContext, device: Device): Promise<NativeDspDeviceStrategy> {
     let result: any = null;
 
-    if (isNativeDspDevice(device.type)) {
-        const pluginType = NATIVE_DSP_DEVICE_TYPES[device.type];
-        if (pluginType) {
-            result = await createNativeDspNode(ctx, pluginType);
-        }
-    } else if (isFermenterDevice(device.type)) {
+    if (isFermenterDevice(device.type)) {
         result = await createFermenterNode(ctx);
     } else if (isToasterDevice(device.type)) {
         result = await createToasterNode(ctx);

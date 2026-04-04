@@ -9,7 +9,7 @@ export const BUILTIN_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
-        platform: 'web',
+        platform: 'both',
         parameters: [
             {
                 id: 'eq-low-gain',
@@ -137,7 +137,7 @@ export const BUILTIN_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
-        platform: 'web',
+        platform: 'both',
         parameters: [
             {
                 id: 'comp-threshold',
@@ -226,7 +226,7 @@ export const BUILTIN_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
-        platform: 'web',
+        platform: 'both',
         parameters: [
             {
                 id: 'rev-size',
@@ -315,7 +315,7 @@ export const BUILTIN_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
-        platform: 'web',
+        platform: 'both',
         parameters: [
             {
                 id: 'delay-time',
@@ -391,7 +391,7 @@ export const BUILTIN_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
         format: 'builtin',
         category: 'utility',
         hasCustomUI: false,
-        platform: 'web',
+        platform: 'both',
         parameters: [
             {
                 id: 'gain-level',
@@ -676,7 +676,7 @@ export const BUILTIN_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
-        platform: 'web',
+        platform: 'both',
         parameters: [
             {
                 id: 'lim-threshold',
@@ -1074,7 +1074,7 @@ export const BUILTIN_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
         format: 'builtin',
         category: 'utility',
         hasCustomUI: false,
-        platform: 'web',
+        platform: 'both',
         parameters: [
             {
                 id: 'width-amount',
@@ -1137,7 +1137,7 @@ export const BUILTIN_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
-        platform: 'web',
+        platform: 'both',
         parameters: [
             {
                 id: 'deess-threshold',
@@ -1200,7 +1200,7 @@ export const BUILTIN_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
         format: 'builtin',
         category: 'analyzer',
         hasCustomUI: false,
-        platform: 'web',
+        platform: 'both',
         parameters: [
             {
                 id: 'lufs-target',

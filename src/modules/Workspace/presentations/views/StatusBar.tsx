@@ -1,7 +1,7 @@
 import { type ReactElement, useRef, useSyncExternalStore } from 'react';
 import { DawControlStrip } from '#/components/daw/DawControlStrip';
-import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { DawMeterBar } from '#/components/daw/DawMeterBar';
+import { DawMetricCluster } from '#/components/daw/DawMetricCluster';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { DawStatusDot, getDawStatusDotClassName } from '#/components/daw/DawStatusDot';
 import { useUndoState } from '../hooks/useUndoState';
@@ -58,37 +58,45 @@ export const StatusBar = (): ReactElement => {
         <footer role="status" aria-label="Application status">
             <DawControlStrip className="h-6 justify-between rounded-none border-t border-black/50 px-3">
                 <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-1">
-                        <DawEyebrowLabel size="sm" className="text-muted-foreground">CPU</DawEyebrowLabel>
-                        <DawMeterBar className="w-10" fillRef={cpuBarRef} />
-                        <span ref={cpuTextRef} className="w-7 text-right font-mono text-[10px] text-muted-foreground">
-                            0%
-                        </span>
-                    </div>
-
-                    <div ref={memContainerRef} className="flex items-center gap-1" style={{ display: 'none' }}>
-                        <DawEyebrowLabel size="sm" className="text-muted-foreground">MEM</DawEyebrowLabel>
-                        <span ref={memTextRef} className="font-mono text-[10px] text-muted-foreground">
-                            0 MB
-                        </span>
-                    </div>
-
-                    <div className="flex items-center gap-1">
-                        <DawEyebrowLabel size="sm" className="text-muted-foreground">GPU</DawEyebrowLabel>
-                        {llmStatus?.state === 'generating' ? (
-                            <span className="animate-pulse font-mono text-[10px] text-[var(--color-accent-lavender)]">
-                                active
+                    <DawMetricCluster
+                        label="CPU"
+                        meter={<DawMeterBar className="w-10" fillRef={cpuBarRef} />}
+                        value={
+                            <span ref={cpuTextRef} className="w-7 text-right font-mono text-[10px] text-muted-foreground">
+                                0%
                             </span>
-                        ) : llmStatus?.state === 'loading' ? (
-                            <span className="font-mono text-[10px] text-[var(--color-state-warning)]">
-                                {Math.round(llmStatus.progress * 100)}%
+                        }
+                    />
+
+                    <DawMetricCluster
+                        ref={memContainerRef}
+                        label="MEM"
+                        style={{ display: 'none' }}
+                        value={
+                            <span ref={memTextRef} className="font-mono text-[10px] text-muted-foreground">
+                                0 MB
                             </span>
-                        ) : llmStatus?.state === 'ready' ? (
-                            <span className="font-mono text-[10px] text-[var(--color-state-success)]/70">ready</span>
-                        ) : (
-                            <span className="font-mono text-[10px] text-muted-foreground/50">idle</span>
-                        )}
-                    </div>
+                        }
+                    />
+
+                    <DawMetricCluster
+                        label="GPU"
+                        value={
+                            llmStatus?.state === 'generating' ? (
+                                <span className="animate-pulse font-mono text-[10px] text-[var(--color-accent-lavender)]">
+                                    active
+                                </span>
+                            ) : llmStatus?.state === 'loading' ? (
+                                <span className="font-mono text-[10px] text-[var(--color-state-warning)]">
+                                    {Math.round(llmStatus.progress * 100)}%
+                                </span>
+                            ) : llmStatus?.state === 'ready' ? (
+                                <span className="font-mono text-[10px] text-[var(--color-state-success)]/70">ready</span>
+                            ) : (
+                                <span className="font-mono text-[10px] text-muted-foreground/50">idle</span>
+                            )
+                        }
+                    />
 
                     <DawReadoutRow
                         label="Rate"
@@ -111,19 +119,24 @@ export const StatusBar = (): ReactElement => {
                         labelClassName="text-muted-foreground/70"
                     />
 
-                    <div className="flex items-center gap-1">
-                        <DawMeterBar
-                            className="w-16"
-                            fillRef={masterLevelBarRef}
-                            fillClassName="h-full rounded-full bg-[var(--color-state-success)] transition-[width] duration-75"
-                        />
-                        <span
-                            ref={masterLevelTextRef}
-                            className="w-10 text-right font-mono text-[10px] text-muted-foreground"
-                        >
-                            -∞ dB
-                        </span>
-                    </div>
+                    <DawMetricCluster
+                        label="Out"
+                        meter={
+                            <DawMeterBar
+                                className="w-16"
+                                fillRef={masterLevelBarRef}
+                                fillClassName="h-full rounded-full bg-[var(--color-state-success)] transition-[width] duration-75"
+                            />
+                        }
+                        value={
+                            <span
+                                ref={masterLevelTextRef}
+                                className="w-10 text-right font-mono text-[10px] text-muted-foreground"
+                            >
+                                -∞ dB
+                            </span>
+                        }
+                    />
                 </div>
 
                 {selectionLabel ? <span className="text-[10px] text-muted-foreground">{selectionLabel}</span> : null}

@@ -1,6 +1,8 @@
 import { type ReactElement, useState, useSyncExternalStore } from 'react';
 import { Cpu, RotateCcw, Save, Shuffle } from 'lucide-react';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
+import { DawPluginLed } from '#/components/daw/DawPluginLed';
+import { Slider } from '#/components/ui/slider';
 import { Button } from '#/components/ui/button';
 import {
     fermenterStore,
@@ -139,7 +141,7 @@ const SectionHeader = ({
             <div className="text-[13px] font-semibold text-foreground">{title}</div>
             <span className="sr-only">{description}</span>
         </div>
-        {detail ? <div className="fermenter-led shrink-0">{detail}</div> : null}
+        {detail ? <DawPluginLed tone="cyan" className="shrink-0">{detail}</DawPluginLed> : null}
     </div>
 );
 
@@ -381,15 +383,19 @@ function renderSectionContent(
                                 {patch.portamentoTime === 0 ? 'Off' : `${(patch.portamentoTime * 1000).toFixed(0)} ms`}
                             </div>
                         </div>
-                        <input
-                            type="range"
+                        <Slider
+                            value={[patch.portamentoTime]}
                             min={0}
                             max={2}
                             step={0.01}
-                            value={patch.portamentoTime}
-                            onChange={(event) => onParam('portamentoTime', Number(event.target.value))}
-                            className="h-1 flex-1 accent-[var(--color-accent-cyan)]"
+                            className="flex-1"
                             aria-label="Portamento time"
+                            onValueChange={(values) => {
+                                const nextValue = values[0];
+                                if (nextValue !== undefined) {
+                                    onParam('portamentoTime', nextValue);
+                                }
+                            }}
                         />
                     </div>
                 </div>
@@ -591,7 +597,7 @@ export const FermenterPanel = (): ReactElement => {
                     </div>
 
                     <div className="ml-auto flex items-center gap-2">
-                        <div className="fermenter-led">{ENGINE_NAMES[patch.oscEngine] ?? 'Wavetable'}</div>
+                        <DawPluginLed tone="cyan">{ENGINE_NAMES[patch.oscEngine] ?? 'Wavetable'}</DawPluginLed>
                         <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
                             <Cpu className="size-3" />
                             <span>{activeVoices} voices</span>

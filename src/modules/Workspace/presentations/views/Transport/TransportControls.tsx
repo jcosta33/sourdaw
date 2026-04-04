@@ -1,4 +1,5 @@
 import { type ReactElement } from 'react';
+import { DawTransportCluster } from '#/components/daw/DawTransportCluster';
 import { Slider } from '#/components/ui/slider';
 import { Play, Pause, Square, Circle, Repeat, Scissors, ListOrdered, Layers } from 'lucide-react';
 import { Button } from '#/components/ui/button';
@@ -6,6 +7,7 @@ import { LatchButton } from '#/components/daw/LatchButton';
 import { LED } from '#/components/daw/LED';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { cn } from '#/helpers/Styles/cn';
+import { TransportValuePill } from '../../components/Transport/TransportValuePill';
 import {
     togglePlayback,
     stopPlayback,
@@ -54,7 +56,7 @@ export const TransportControls = ({
     };
 
     return (
-        <div className="daw-readout-well flex items-center gap-1 rounded-sm px-1.5 py-1" role="group" aria-label="Playback controls">
+        <DawTransportCluster tone="well" role="group" aria-label="Playback controls">
             <span className="sr-only" aria-live="polite" role="status">
                 {isRecording ? 'Recording' : isPlaying ? 'Playing' : 'Stopped'}
             </span>
@@ -224,18 +226,17 @@ export const TransportControls = ({
             {countInEnabled ? (
                 <Tooltip>
                     <TooltipTrigger asChild>
-                        <button
-                            type="button"
+                        <TransportValuePill
+                            active
                             onClick={cycleCountInBars}
-                            className="text-[10px] font-bold tabular-nums w-4 h-5 flex items-center justify-center rounded-sm text-[var(--color-accent-cyan)] hover:bg-white/[0.06] transition-colors"
                             aria-label={`Count-in bars: ${countInBars}. Click to cycle.`}
                         >
                             {countInBars}
-                        </button>
+                        </TransportValuePill>
                     </TooltipTrigger>
                     <TooltipContent>Count-in bars (click to cycle 1→2→4)</TooltipContent>
                 </Tooltip>
             ) : null}
-        </div>
+        </DawTransportCluster>
     );
 };

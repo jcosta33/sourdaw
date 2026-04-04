@@ -13,7 +13,6 @@ import { Logger } from '#/helpers/Logger/Logger';
 import { EventBus } from '#/helpers/Event/EventBus';
 import { AudioDeviceLoadedEvent } from '../events/AudioDeviceLoadedEvent';
 
-import { NATIVE_DSP_DEVICE_TYPES, createNativeDspNode, isNativeDspDevice, type NativeDspNodeResult } from './NativeDspNode';
 import { isFermenterDevice, createFermenterNode, type FermenterNodeResult } from './FermenterNode';
 import { isToasterDevice, createToasterNode, type ToasterNodeResult } from './ToasterNode';
 import { isLevainDevice, createLevainNode, type LevainNodeResult } from './LevainNode';
@@ -62,28 +61,6 @@ function loadingBypassNode(context: AudioContext, deviceId: string, deviceType: 
 }
 
 // ── Descriptors ──────────────────────────────────────────────────────────────
-
-const nativeDspDescriptor: WasmDeviceDescriptor = {
-    matches: isNativeDspDevice,
-    create({ context, deviceId, deviceType, onLoaded }) {
-        const placeholder = loadingBypassNode(context, deviceId, deviceType);
-        const pluginType = NATIVE_DSP_DEVICE_TYPES[deviceType]!;
-        const loadPromise = createNativeDspNode(context, pluginType)
-            .then(async (result: NativeDspNodeResult) => {
-                await result.ready;
-                onLoaded({
-                    deviceId,
-                    type: deviceType,
-                    nodes: [result.workletNode],
-                    inputNode: result.workletNode,
-                    outputNode: result.workletNode,
-                    nativeDspControls: result,
-                });
-            })
-            .catch((err) => logger.warn(`[WebAudioEngine] Native DSP failed: ${err}`));
-        return { placeholder, loadPromise };
-    },
-};
 
 const fermenterDescriptor: WasmDeviceDescriptor = {
     matches: isFermenterDevice,
@@ -422,7 +399,6 @@ const scoringDescriptor: WasmDeviceDescriptor = {
 // ── Registry ─────────────────────────────────────────────────────────────────
 
 const WASM_DEVICE_DESCRIPTORS: WasmDeviceDescriptor[] = [
-    nativeDspDescriptor,
     fermenterDescriptor,
     toasterDescriptor,
     levainDescriptor,

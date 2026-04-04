@@ -7,6 +7,9 @@ import { cn } from '#/helpers/Styles/cn';
 
 function Slider({
     className,
+    trackClassName,
+    rangeClassName,
+    thumbClassName,
     defaultValue,
     value,
     onValueChange,
@@ -14,7 +17,11 @@ function Slider({
     max = 100,
     step = 1,
     ...props
-}: ComponentProps<typeof SliderPrimitive.Root>) {
+}: ComponentProps<typeof SliderPrimitive.Root> & {
+    trackClassName?: string;
+    rangeClassName?: string;
+    thumbClassName?: string;
+}) {
     const computeValues = (): number[] => {
         if (value != null) {
             return Array.isArray(value) ? value : [value];
@@ -44,7 +51,8 @@ function Slider({
             <SliderPrimitive.Track
                 data-slot="slider-track"
                 className={cn(
-                    'daw-inset-surface relative grow overflow-hidden rounded-full data-[orientation=horizontal]:h-1.5 data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-1.5'
+                    'daw-inset-surface relative grow overflow-hidden rounded-full data-[orientation=horizontal]:h-1.5 data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-1.5',
+                    trackClassName
                 )}
             >
                 <SliderPrimitive.Range
@@ -52,7 +60,8 @@ function Slider({
                     className={cn(
                         'absolute data-[orientation=horizontal]:h-full data-[orientation=vertical]:w-full',
                         '[background:linear-gradient(180deg,rgba(127,184,196,0.92)_0%,rgba(127,184,196,0.62)_100%)]',
-                        'shadow-[0_0_10px_rgba(127,184,196,0.12)]'
+                        'shadow-[0_0_10px_rgba(127,184,196,0.12)]',
+                        rangeClassName
                     )}
                 />
             </SliderPrimitive.Track>
@@ -65,6 +74,7 @@ function Slider({
                     max={max}
                     defaultValue={defaultValue}
                     onValueChange={onValueChange}
+                    thumbClassName={thumbClassName}
                 />
             ))}
         </SliderPrimitive.Root>
@@ -78,6 +88,7 @@ function SliderThumbNode({
     max,
     defaultValue,
     onValueChange,
+    thumbClassName,
 }: {
     index: number;
     values: number[];
@@ -85,6 +96,7 @@ function SliderThumbNode({
     max: number;
     defaultValue?: number[];
     onValueChange?: (value: number[]) => void;
+    thumbClassName?: string;
 }) {
     const [isEditing, setIsEditing] = useState(false);
     const [editVal, setEditVal] = useState(String(values[index] ?? 0));
@@ -92,7 +104,10 @@ function SliderThumbNode({
     return (
         <SliderPrimitive.Thumb
             data-slot="slider-thumb"
-            className="block size-4 shrink-0 rounded-[4px] border cursor-pointer outline-none transition-[color,box-shadow,filter,transform] hover:ring-2 hover:ring-accent-cyan/25 hover:brightness-105 focus-visible:ring-4 focus-visible:ring-accent-cyan/35 disabled:pointer-events-none disabled:opacity-50"
+            className={cn(
+                'block size-4 shrink-0 rounded-[4px] border cursor-pointer outline-none transition-[color,box-shadow,filter,transform] hover:ring-2 hover:ring-accent-cyan/25 hover:brightness-105 focus-visible:ring-4 focus-visible:ring-accent-cyan/35 disabled:pointer-events-none disabled:opacity-50',
+                thumbClassName
+            )}
             style={{
                 background: 'linear-gradient(180deg, #575757 0%, #404040 22%, #343434 52%, #2a2a2a 76%, #1f1f1f 100%)',
                 borderColor: 'rgba(255,255,255,0.05)',

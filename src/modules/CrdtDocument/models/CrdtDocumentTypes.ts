@@ -12,3 +12,6 @@ export type MergeResult = {
 
 /** Document ID for the root project document. */
 export const DOC_PREFIX_ROOT = 'root';
+
+/** Document ID for the session-scoped branch metadata document (not persisted after session end). */
+export const DOC_BRANCHES = '__branches__';

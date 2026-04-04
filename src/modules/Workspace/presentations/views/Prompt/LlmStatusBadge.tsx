@@ -6,6 +6,7 @@ import { NATIVE_MODEL_INFO, CLOUD_MODEL_INFO, WEBLLM_MODELS, type ModelInfo } fr
 import { getActiveModelId } from '#/modules/AiRuntime/repositories/webLlm/engineLifecycle';
 import { type LlmEngineStatus } from '#/modules/AiRuntime/stores/llmStatusStore';
 import { Button } from '#/components/ui/button';
+import { DawChooserCard } from '#/components/daw/DawChooserCard';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawStatusDot } from '#/components/daw/DawStatusDot';
 
@@ -261,23 +262,20 @@ type ModelOptionProps = {
 };
 
 const ModelOption = ({ model, isSelected, onSelect }: ModelOptionProps): ReactElement => (
-    <button
-        type="button"
-        onClick={onSelect}
-        className={`w-full rounded-lg px-2.5 py-2 text-left transition-colors ${
-            isSelected
-                ? 'bg-primary/10 border border-primary/30'
-                : 'border border-transparent hover:bg-muted/30'
-        }`}
-    >
-        <div className="flex items-center justify-between">
-            <span className="text-[11px] font-medium text-foreground">{model.displayName}</span>
+    <DawChooserCard
+        compact
+        active={isSelected}
+        title={model.displayName}
+        description={model.description}
+        className={isSelected ? 'border-primary/30 bg-primary/10' : 'hover:bg-muted/30'}
+        endSlot={
             <div className="flex items-center gap-1.5">
                 <span className="text-[9px] text-muted-foreground">{model.parameterCount}</span>
                 {isSelected ? <Check className="size-3 text-primary" /> : null}
             </div>
-        </div>
-        <p className="text-[9px] text-muted-foreground mt-0.5 leading-relaxed">{model.description}</p>
+        }
+        onClick={onSelect}
+    >
         <div className="flex gap-3 mt-1 text-[9px] text-muted-foreground/70">
             <span className="inline-flex items-center gap-0.5">
                 <Download className="size-2.5" aria-hidden="true" />
@@ -288,5 +286,5 @@ const ModelOption = ({ model, isSelected, onSelect }: ModelOptionProps): ReactEl
                 {model.ramUsage}
             </span>
         </div>
-    </button>
+    </DawChooserCard>
 );

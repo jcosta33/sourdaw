@@ -1,5 +1,5 @@
 import { type ReactElement, type MouseEvent, useState, useRef, useSyncExternalStore } from 'react';
-import { DawEmptyState } from '#/components/daw/DawEmptyState';
+import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { cn } from '#/helpers/Styles/cn';
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
@@ -128,11 +128,13 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
     if (!clipId) {
         return (
             <div className="flex h-full items-center justify-center">
-                <DawEmptyState
+                <DawBlockedState
                     compact
+                    eyebrow="Clip Automation"
                     className="max-w-xs"
                     title="No clip selected"
                     description="Choose a MIDI clip to edit its pitch bend lane."
+                    summary="Pitch bend is edited per clip, with the center line and gesture curve appearing once a clip is focused."
                 />
             </div>
         );

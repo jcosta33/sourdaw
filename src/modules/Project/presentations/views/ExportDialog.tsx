@@ -2,9 +2,11 @@ import { type ReactElement, useState, useRef } from 'react';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
+import { DawDialogBody } from '#/components/daw/DawDialogBody';
+import { DawDialogFooter } from '#/components/daw/DawDialogFooter';
+import { DawDialogSection } from '#/components/daw/DawDialogSection';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { Button } from '#/components/ui/button';
-import { Separator } from '#/components/ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '#/components/ui/dialog';
 import { Flame, X, CheckCircle2 } from 'lucide-react';
 import {
@@ -437,9 +439,12 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 }
             }}
         >
-            <DialogContent className="w-[480px] bg-stone-950 border border-orange-900/40 shadow-[0_0_40px_rgba(234,88,12,0.1)] rounded-xl" showCloseButton={!exporting}>
+            <DialogContent
+                className="w-[480px] gap-0 overflow-hidden rounded-xl border border-orange-900/40 bg-stone-950 p-0 shadow-[0_0_40px_rgba(234,88,12,0.1)]"
+                showCloseButton={!exporting}
+            >
                 <DialogHeader
-                    className="relative overflow-hidden pt-6 pb-4 px-6 rounded-t-xl"
+                    className="relative overflow-hidden px-6 pb-4 pt-6 rounded-t-xl"
                     style={{
                         background: 'linear-gradient(180deg, rgba(120,53,15,0.4) 0%, rgba(10,10,10,1) 100%)',
                         boxShadow: 'inset 0 1px 0 rgba(251,146,60,0.1), inset 0 -1px rgba(251,146,60,0.05)',
@@ -447,22 +452,17 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     }}
                 >
                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-amber-500/10 via-transparent to-transparent" />
-                    <DialogTitle className="relative text-base font-semibold text-orange-50/90 flex items-center gap-2">
+                    <DialogTitle className="relative flex items-center gap-2 text-base font-semibold text-orange-50/90">
                         <Flame className="size-4 text-orange-500" />
                         The Bakery
                     </DialogTitle>
-                    <p className="text-xs text-orange-500/60 mt-0.5 tracking-wide">
+                    <p className="mt-0.5 text-xs tracking-wide text-orange-500/60">
                         Export your masterpiece straight from the Sourdaw oven.
                     </p>
                 </DialogHeader>
 
-                <div className="space-y-5 px-1 py-2">
-                    {/* MODE ──────────────────────────────────────────────────────── */}
-                    <section>
-                        <DawEyebrowLabel size="sm" className="mb-2 flex items-center gap-1.5 font-bold tracking-widest text-orange-900">
-                            <span className="h-1.5 w-1.5 rounded-full bg-orange-500/50" />
-                            Render Order
-                        </DawEyebrowLabel>
+                <DawDialogBody className="gap-4 bg-transparent px-6 py-5">
+                    <DawDialogSection tone="warm" title="Render Order">
                         <div className="flex gap-2">
                             <Button
                                 variant={mode === 'mixdown' ? 'default' : 'outline'}
@@ -470,13 +470,13 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                 onClick={() => setMode('mixdown')}
                                 className={
                                     mode === 'mixdown'
-                                        ? 'bg-orange-700/20 text-orange-300 border-orange-500/30 hover:bg-orange-700/30 w-full'
-                                        : 'border-orange-900/40 text-muted-foreground hover:text-orange-200 hover:border-orange-500/20 hover:bg-orange-950/20 w-full'
+                                        ? 'w-full border-orange-500/30 bg-orange-700/20 text-orange-300 hover:bg-orange-700/30'
+                                        : 'w-full border-orange-900/40 text-muted-foreground hover:border-orange-500/20 hover:bg-orange-950/20 hover:text-orange-200'
                                 }
                                 disabled={exporting}
                                 style={mode === 'mixdown' ? { boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)' } : {}}
                             >
-                                Whole Loaf <span className="text-[10px] opacity-60 ml-1">(Mixdown)</span>
+                                Whole Loaf <span className="ml-1 text-[10px] opacity-60">(Mixdown)</span>
                             </Button>
                             <Button
                                 variant={mode === 'stems' ? 'default' : 'outline'}
@@ -484,25 +484,18 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                 onClick={() => setMode('stems')}
                                 className={
                                     mode === 'stems'
-                                        ? 'bg-amber-700/20 text-amber-300 border-amber-500/30 hover:bg-amber-700/30 w-full'
-                                        : 'border-orange-900/40 text-muted-foreground hover:text-amber-200 hover:border-amber-500/20 hover:bg-amber-950/20 w-full'
+                                        ? 'w-full border-amber-500/30 bg-amber-700/20 text-amber-300 hover:bg-amber-700/30'
+                                        : 'w-full border-orange-900/40 text-muted-foreground hover:border-amber-500/20 hover:bg-amber-950/20 hover:text-amber-200'
                                 }
                                 disabled={exporting}
                                 style={mode === 'stems' ? { boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)' } : {}}
                             >
-                                Slices <span className="text-[10px] opacity-60 ml-1">(Stems)</span>
+                                Slices <span className="ml-1 text-[10px] opacity-60">(Stems)</span>
                             </Button>
                         </div>
-                    </section>
+                    </DawDialogSection>
 
-                    <Separator className="bg-gradient-to-r from-transparent via-orange-900/30 to-transparent" />
-
-                    {/* FORMAT ────────────────────────────────────────────────────── */}
-                    <section>
-                        <DawEyebrowLabel size="sm" className="mb-2 flex items-center gap-1.5 font-bold tracking-widest text-orange-900">
-                            <span className="h-1.5 w-1.5 rounded-full bg-orange-500/50" />
-                            Ingredients
-                        </DawEyebrowLabel>
+                    <DawDialogSection tone="warm" title="Ingredients">
                         <div className="grid grid-cols-3 gap-2">
                             {FORMAT_OPTIONS.map((f) => {
                                 const active = formats.has(f.value);
@@ -513,7 +506,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                         className={`rounded-lg border px-3 py-2.5 text-left transition-all ${
                                             active
                                                 ? 'border-orange-500/40 bg-orange-950/40 shadow-[inset_0_1px_0_rgba(251,146,60,0.1)]'
-                                                : 'border-stone-800 bg-stone-900/50 hover:bg-stone-800/80 hover:border-stone-700'
+                                                : 'border-stone-800 bg-stone-900/50 hover:border-stone-700 hover:bg-stone-800/80'
                                         }`}
                                         onClick={() => toggleFormat(f.value)}
                                         aria-pressed={active}
@@ -524,18 +517,22 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                         <div className={`text-sm font-semibold ${active ? 'text-orange-200' : 'text-stone-400'}`}>
                                             {f.label}
                                         </div>
-                                        <div className={`text-[10px] mt-0.5 ${active ? 'text-orange-400/80' : 'text-stone-600'}`}>
+                                        <div className={`mt-0.5 text-[10px] ${active ? 'text-orange-400/80' : 'text-stone-600'}`}>
                                             {f.desc}
                                         </div>
                                     </button>
                                 );
                             })}
                         </div>
-                    </section>
+                    </DawDialogSection>
 
-                    {/* SETTINGS ──────────────────────────────────────────────────── */}
-                    <div className={`grid gap-4 ${formats.has('mp3') ? 'grid-cols-3' : 'grid-cols-2'}`}>
-                        <section className="bg-stone-950/50 border border-stone-800/50 rounded-lg p-3">
+                    <DawDialogSection
+                        tone="warm"
+                        title="Fidelity"
+                        detail="Choose sample rate, bit depth, and compression quality."
+                        bodyClassName={`grid gap-4 ${formats.has('mp3') ? 'grid-cols-3' : 'grid-cols-2'}`}
+                    >
+                        <div className="rounded-lg border border-stone-800/50 bg-stone-950/55 p-3">
                             <DawEyebrowLabel size="sm" className="mb-2 block font-bold tracking-widest text-stone-600">
                                 Sample Rate
                             </DawEyebrowLabel>
@@ -545,10 +542,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                         key={sr}
                                         variant="ghost"
                                         size="sm"
-                                        className={`h-6 text-[10px] px-2 rounded-md ${
+                                        className={`h-6 rounded-md px-2 text-[10px] ${
                                             sampleRate === sr
                                                 ? 'bg-stone-800 text-stone-200'
-                                                : 'text-stone-500 hover:text-stone-300 hover:bg-stone-800/50'
+                                                : 'text-stone-500 hover:bg-stone-800/50 hover:text-stone-300'
                                         }`}
                                         onClick={() => updateSampleRate(sr)}
                                         disabled={exporting}
@@ -557,9 +554,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                     </Button>
                                 ))}
                             </div>
-                        </section>
+                        </div>
 
-                        <section className="bg-stone-950/50 border border-stone-800/50 rounded-lg p-3">
+                        <div className="rounded-lg border border-stone-800/50 bg-stone-950/55 p-3">
                             <DawEyebrowLabel size="sm" className="mb-2 block font-bold tracking-widest text-stone-600">
                                 Bit Depth
                             </DawEyebrowLabel>
@@ -569,10 +566,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                         key={bd}
                                         variant="ghost"
                                         size="sm"
-                                        className={`h-6 text-[10px] px-2 rounded-md ${
+                                        className={`h-6 rounded-md px-2 text-[10px] ${
                                             bitDepth === bd
                                                 ? 'bg-stone-800 text-stone-200'
-                                                : 'text-stone-500 hover:text-stone-300 hover:bg-stone-800/50'
+                                                : 'text-stone-500 hover:bg-stone-800/50 hover:text-stone-300'
                                         }`}
                                         onClick={() => updateBitDepth(bd)}
                                         disabled={exporting}
@@ -581,10 +578,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                     </Button>
                                 ))}
                             </div>
-                        </section>
+                        </div>
 
-                        {formats.has('mp3') && (
-                            <section className="bg-stone-950/50 border border-stone-800/50 rounded-lg p-3">
+                        {formats.has('mp3') ? (
+                            <div className="rounded-lg border border-stone-800/50 bg-stone-950/55 p-3">
                                 <DawEyebrowLabel size="sm" className="mb-2 block font-bold tracking-widest text-stone-600">
                                     MP3 Quality
                                 </DawEyebrowLabel>
@@ -594,10 +591,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                             key={br}
                                             variant="ghost"
                                             size="sm"
-                                            className={`h-6 text-[10px] px-2 rounded-md ${
+                                            className={`h-6 rounded-md px-2 text-[10px] ${
                                                 mp3BitRate === br
                                                     ? 'bg-stone-800 text-stone-200'
-                                                    : 'text-stone-500 hover:text-stone-300 hover:bg-stone-800/50'
+                                                    : 'text-stone-500 hover:bg-stone-800/50 hover:text-stone-300'
                                             }`}
                                             onClick={() => updateMp3BitRate(br)}
                                             disabled={exporting}
@@ -606,99 +603,101 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                         </Button>
                                     ))}
                                 </div>
-                            </section>
-                        )}
-                    </div>
+                            </div>
+                        ) : null}
+                    </DawDialogSection>
 
-                    <Separator className="bg-gradient-to-r from-transparent via-orange-900/30 to-transparent" />
-
-                    {/* PROGRESS & ERRORS ─────────────────────────────────────────── */}
-                    <div className="h-10">
-                        {exporting || progress === 100 ? (
-                            <div className="space-y-1.5 animate-in fade-in duration-300">
-                                <div className="flex justify-between items-end text-xs">
-                                    <span className={`font-medium ${progress === 100 ? 'text-green-400' : 'text-orange-400'}`}>
-                                        {statusText}
-                                    </span>
-                                    <span className="text-orange-500/50 font-mono text-[10px]">{progress.toFixed(0)}%</span>
-                                </div>
-                                <div
-                                    className="h-2 w-full rounded-full overflow-hidden bg-stone-900 border border-stone-800 shadow-inner"
-                                    role="progressbar"
-                                    aria-valuenow={Math.round(progress)}
-                                    aria-valuemin={0}
-                                    aria-valuemax={100}
-                                >
+                    <DawDialogSection
+                        tone="warm"
+                        title="Oven Status"
+                        detail={isTauri() ? 'Desktop oven ready' : 'Web oven ready'}
+                    >
+                        <div className="h-10">
+                            {exporting || progress === 100 ? (
+                                <div className="space-y-1.5 animate-in fade-in duration-300">
+                                    <div className="flex items-end justify-between text-xs">
+                                        <span className={`font-medium ${progress === 100 ? 'text-green-400' : 'text-orange-400'}`}>
+                                            {statusText}
+                                        </span>
+                                        <span className="font-mono text-[10px] text-orange-500/50">{progress.toFixed(0)}%</span>
+                                    </div>
                                     <div
-                                        className={`h-full rounded-full transition-all duration-300 ease-out ${
-                                            progress === 100 
-                                            ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.4)]' 
-                                            : 'bg-gradient-to-r from-amber-600 to-orange-400 shadow-[0_0_12px_rgba(251,146,60,0.6)]'
-                                        }`}
-                                        style={{ width: `${progress}%` }}
+                                        className="h-2 w-full overflow-hidden rounded-full border border-stone-800 bg-stone-900 shadow-inner"
+                                        role="progressbar"
+                                        aria-valuenow={Math.round(progress)}
+                                        aria-valuemin={0}
+                                        aria-valuemax={100}
                                     >
-                                        {progress < 100 && (
-                                            <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.4)_50%,transparent_100%)] w-[30%] animate-[shimmer_1.5s_infinite]" />
-                                        )}
+                                        <div
+                                            className={`h-full rounded-full transition-all duration-300 ease-out ${
+                                                progress === 100
+                                                    ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.4)]'
+                                                    : 'bg-gradient-to-r from-amber-600 to-orange-400 shadow-[0_0_12px_rgba(251,146,60,0.6)]'
+                                            }`}
+                                            style={{ width: `${progress}%` }}
+                                        >
+                                            {progress < 100 ? (
+                                                <div className="absolute inset-0 w-[30%] animate-[shimmer_1.5s_infinite] bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.4)_50%,transparent_100%)]" />
+                                            ) : null}
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        ) : errorText ? (
-                            <div className="h-full flex items-center text-xs text-red-400 bg-red-950/20 border border-red-900/30 rounded-lg px-3 animate-in fade-in">
-                                {errorText}
-                            </div>
-                        ) : (
-                            <div className="h-full flex flex-col justify-center text-[10px] text-stone-500 text-center uppercase tracking-widest">
-                                {isTauri() ? "Desktop Oven Ready" : "Web Oven Ready"}
-                            </div>
-                        )}
-                    </div>
+                            ) : errorText ? (
+                                <div className="flex h-full items-center rounded-lg border border-red-900/30 bg-red-950/20 px-3 text-xs text-red-400 animate-in fade-in">
+                                    {errorText}
+                                </div>
+                            ) : (
+                                <div className="flex h-full flex-col justify-center text-center text-[10px] uppercase tracking-widest text-stone-500">
+                                    {isTauri() ? 'Desktop Oven Ready' : 'Web Oven Ready'}
+                                </div>
+                            )}
+                        </div>
+                    </DawDialogSection>
+                </DawDialogBody>
 
-                    {/* FOOTER ACTIONS ────────────────────────────────────────────── */}
-                    <div className="flex justify-end gap-2 pt-2">
-                        {exporting ? (
-                            <Button 
-                                variant="destructive" 
-                                size="sm" 
-                                onClick={handleCancel}
-                                className="bg-red-950 text-red-400 border border-red-900/50 hover:bg-red-900 hover:text-red-200"
-                            >
-                                <X className="size-3.5 mr-1" />
-                                Turn off Oven
-                            </Button>
-                        ) : progress === 100 ? (
-                            <Button 
-                                variant="outline" 
-                                size="sm" 
+                <DawDialogFooter tone="warm" align="end" className="px-6">
+                    {exporting ? (
+                        <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={handleCancel}
+                            className="border border-red-900/50 bg-red-950 text-red-400 hover:bg-red-900 hover:text-red-200"
+                        >
+                            <X className="mr-1 size-3.5" />
+                            Turn off Oven
+                        </Button>
+                    ) : progress === 100 ? (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={onClose}
+                            className="border-green-900/50 text-green-400 hover:bg-green-950/30 hover:text-green-300"
+                        >
+                            <CheckCircle2 className="mr-1 size-3.5" />
+                            Close Bakery
+                        </Button>
+                    ) : (
+                        <>
+                            <Button
+                                variant="ghost"
+                                size="sm"
                                 onClick={onClose}
-                                className="border-green-900/50 text-green-400 hover:bg-green-950/30 hover:text-green-300"
+                                className="text-stone-400 hover:text-stone-200"
                             >
-                                <CheckCircle2 className="size-3.5 mr-1" />
-                                Close Bakery
+                                Cancel
                             </Button>
-                        ) : (
-                            <>
-                                <Button 
-                                    variant="ghost" 
-                                    size="sm" 
-                                    onClick={onClose}
-                                    className="text-stone-400 hover:text-stone-200"
-                                >
-                                    Cancel
-                                </Button>
-                                <Button 
-                                    size="sm" 
-                                    onClick={handleExport} 
-                                    disabled={formats.size === 0 || isExportActive()}
-                                    className="bg-orange-600 hover:bg-orange-500 text-white shadow-[0_0_15px_rgba(234,88,12,0.3)] hover:shadow-[0_0_20px_rgba(249,115,22,0.5)] border-t border-orange-400/30 transition-all font-medium"
-                                >
-                                    <Flame className="size-3.5 mr-1.5 opacity-80" />
-                                    Start Baking
-                                </Button>
-                            </>
-                        )}
-                    </div>
-                </div>
+                            <Button
+                                size="sm"
+                                onClick={handleExport}
+                                disabled={formats.size === 0 || isExportActive()}
+                                className="border-t border-orange-400/30 bg-orange-600 font-medium text-white shadow-[0_0_15px_rgba(234,88,12,0.3)] transition-all hover:bg-orange-500 hover:shadow-[0_0_20px_rgba(249,115,22,0.5)]"
+                            >
+                                <Flame className="mr-1.5 size-3.5 opacity-80" />
+                                Start Baking
+                            </Button>
+                        </>
+                    )}
+                </DawDialogFooter>
             </DialogContent>
         </Dialog>
     );

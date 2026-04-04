@@ -3,6 +3,7 @@
  * X-Y oscilloscope showing L+R vs L-R with phosphor glow decay.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+import { DawMeterFrame } from '#/components/daw/DawMeterFrame';
 import { getMasterAnalyser } from '#/modules/AudioEngine/useCases/engineAccess';
 import { resolveToken } from '#/helpers/UI/resolveToken';
 
@@ -125,7 +126,7 @@ export const Goniometer = ({ size = 120, color = resolveToken('--color-accent-la
     }, [size, color]);
 
     return (
-        <div className="relative rounded bg-[#0a0a0a] channel-inset overflow-hidden">
+        <DawMeterFrame overlay="radial">
             <canvas
                 ref={canvasRef}
                 width={size}
@@ -134,13 +135,6 @@ export const Goniometer = ({ size = 120, color = resolveToken('--color-accent-la
                 aria-label="Stereo goniometer"
                 role="img"
             />
-            <div
-                className="absolute inset-0 pointer-events-none rounded"
-                style={{
-                    background:
-                        'radial-gradient(ellipse at center, transparent 60%, rgba(10,10,10,0.8) 100%)',
-                }}
-            />
-        </div>
+        </DawMeterFrame>
     );
 };

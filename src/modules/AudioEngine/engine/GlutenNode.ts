@@ -114,12 +114,12 @@ export async function createGlutenNode(ctx: BaseAudioContext, wasmUrl?: string):
             const view = slot.view;
             const poll = () => {
                 cb({
-                    grDb: view[GLUTEN_IDX.grDb],
-                    inputDb: view[GLUTEN_IDX.inputDb],
-                    outputDb: view[GLUTEN_IDX.outputDb],
-                    crest: view[GLUTEN_IDX.crest],
-                    phaseCorr: view[GLUTEN_IDX.phaseCorr],
-                    latency: view[GLUTEN_IDX.latency],
+                    grDb: view[GLUTEN_IDX.grDb] ?? 0,
+                    inputDb: view[GLUTEN_IDX.inputDb] ?? 0,
+                    outputDb: view[GLUTEN_IDX.outputDb] ?? 0,
+                    crest: view[GLUTEN_IDX.crest] ?? 0,
+                    phaseCorr: view[GLUTEN_IDX.phaseCorr] ?? 0,
+                    latency: view[GLUTEN_IDX.latency] ?? 0,
                 });
                 meterRafId = requestAnimationFrame(poll);
             };

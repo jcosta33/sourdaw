@@ -1,4 +1,12 @@
-import { type ReactElement, type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ComponentProps, type ReactElement, type ReactNode, useEffect, useRef, useState } from 'react';
+import { DawPluginChip } from '#/components/daw/DawPluginChip';
+import { DawPluginChoiceRow } from '#/components/daw/DawPluginChoiceRow';
+import { DawPluginInsetCard } from '#/components/daw/DawPluginInsetCard';
+import { DawPluginLed } from '#/components/daw/DawPluginLed';
+import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
+import { DawPluginMetricStrip } from '#/components/daw/DawPluginMetricStrip';
+import { DawPluginRail } from '#/components/daw/DawPluginRail';
+import { DawPluginReadoutList } from '#/components/daw/DawPluginReadoutList';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { Waves } from 'lucide-react';
@@ -62,12 +70,14 @@ function formatValue(value: number, unit: string): string {
 
 function StatusTile({ label, value, accent }: { label: string; value: string; accent: string }): ReactElement {
     return (
-        <div className="proof-chamber-window flex min-w-[90px] flex-col gap-1 px-3 py-2">
-            <span className="text-[8px] uppercase tracking-[0.24em] text-white/48">{label}</span>
-            <span className="font-mono text-[13px]" style={{ color: accent }}>
-                {value}
-            </span>
-        </div>
+        <DawPluginMetricTile
+            className="proof-chamber-window min-w-[90px]"
+            label={label}
+            value={value}
+            labelClassName="text-white/48"
+            valueClassName="font-mono text-[13px]"
+            style={{ color: accent }}
+        />
     );
 }
 
@@ -84,15 +94,29 @@ function SectionCard({
         <DawPluginSectionCard
             className="proof-chamber-window"
             title={title}
-            detail={detail}
+            detail={detail ? <ChamberLed>{detail}</ChamberLed> : undefined}
             detailMode="badge"
             titleClassName="text-[var(--color-accent-cyan)]/72"
-            detailClassName="proof-chamber-led"
         >
             {children}
         </DawPluginSectionCard>
     );
 }
+
+const ChamberChip = ({
+    tone = 'cyan',
+    size = 'sm',
+    shape = 'soft',
+    caps = false,
+    ...props
+}: ComponentProps<typeof DawPluginChip>): ReactElement => (
+    <DawPluginChip tone={tone} size={size} shape={shape} caps={caps} {...props} />
+);
+
+const ChamberLed = ({
+    tone = 'cyan',
+    ...props
+}: ComponentProps<typeof DawPluginLed>): ReactElement => <DawPluginLed tone={tone} {...props} />;
 
 function KnobCell({
     label,
@@ -175,7 +199,7 @@ export const ProofChamberPanel = (): ReactElement => {
 
     return (
         <div className="proof-chamber-faceplate flex h-full min-h-0 gap-3 overflow-hidden p-3">
-            <aside className="flex h-full w-[248px] shrink-0 flex-col gap-3 overflow-y-auto pr-1">
+            <DawPluginRail className="h-full w-[248px] shrink-0">
                 <SectionCard title="Space tray" detail={params.space}>
                     <div>
                         <div className="text-[18px] font-semibold text-white/92">Dutch Oven</div>
@@ -187,22 +211,15 @@ export const ProofChamberPanel = (): ReactElement => {
                         {SPACES.map((space) => {
                             const active = params.space === space.id;
                             return (
-                                <button
+                                <DawPluginChoiceRow
                                     key={space.id}
-                                    type="button"
-                                    className={`proof-chamber-window flex items-center justify-between gap-3 px-3 py-2 text-left transition-all ${
-                                        active
-                                            ? 'border-white/16 bg-white/[0.03]'
-                                            : 'hover:border-white/12 hover:bg-white/[0.02]'
-                                    }`}
-                                    onClick={() => selectSpace(space.id)}
-                                >
-                                    <div>
-                                        <div className="text-[11px] font-medium text-white/88">{space.label}</div>
-                                        <div className="text-[9px] text-white/42">{space.mood}</div>
-                                    </div>
-                                    {active ? <div className="proof-chamber-led">Live</div> : null}
-                                </button>
+                                    className="proof-chamber-window"
+                                    active={active}
+                                    title={space.label}
+                                    subtitle={space.mood}
+                                    endSlot={active ? <ChamberLed>Live</ChamberLed> : null}
+                                    onPress={() => selectSpace(space.id)}
+                                />
                             );
                         })}
                     </div>
@@ -213,14 +230,9 @@ export const ProofChamberPanel = (): ReactElement => {
                         {VINTAGE_MODES.map((mode) => {
                             const active = params.vintage === mode.id;
                             return (
-                                <button
-                                    key={mode.id}
-                                    type="button"
-                                    className={`proof-chamber-chip ${active ? 'proof-chamber-chip-active' : ''}`}
-                                    onClick={() => setParam('vintage', mode.id)}
-                                >
+                                <ChamberChip key={mode.id} active={active} onClick={() => setParam('vintage', mode.id)}>
                                     {mode.label}
-                                </button>
+                                </ChamberChip>
                             );
                         })}
                     </div>
@@ -228,56 +240,35 @@ export const ProofChamberPanel = (): ReactElement => {
                         {ALGORITHMS.map((algorithm) => {
                             const active = params.algorithm === algorithm.id;
                             return (
-                                <button
+                                <ChamberChip
                                     key={algorithm.id}
-                                    type="button"
-                                    className={`proof-chamber-chip ${active ? 'proof-chamber-chip-active' : ''}`}
+                                    active={active}
                                     onClick={() => {
                                         setParams((prev) => ({ ...prev, algorithm: algorithm.id }));
                                         updateProofChamberParam('algorithm', ALGORITHM_MAP[algorithm.id] ?? 0);
                                     }}
                                 >
                                     {algorithm.label}
-                                </button>
+                                </ChamberChip>
                             );
                         })}
                     </div>
                     <div className="flex flex-wrap gap-1.5">
-                        <button
-                            type="button"
-                            className={`proof-chamber-chip ${showDecayEq ? 'proof-chamber-chip-active' : ''}`}
-                            onClick={() => setShowDecayEq((value) => !value)}
-                        >
+                        <ChamberChip active={showDecayEq} onClick={() => setShowDecayEq((value) => !value)}>
                             Decay EQ
-                        </button>
-                        <button
-                            type="button"
-                            className={`proof-chamber-chip ${showFlow ? 'proof-chamber-chip-active' : ''}`}
-                            onClick={() => setShowFlow((value) => !value)}
-                        >
+                        </ChamberChip>
+                        <ChamberChip active={showFlow} onClick={() => setShowFlow((value) => !value)}>
                             Flow
-                        </button>
-                        <button
-                            type="button"
-                            className={`proof-chamber-chip ${params.freeze ? 'proof-chamber-chip-active' : ''}`}
-                            onClick={() => setParam('freeze', !params.freeze)}
-                        >
+                        </ChamberChip>
+                        <ChamberChip active={params.freeze} onClick={() => setParam('freeze', !params.freeze)}>
                             Freeze
-                        </button>
-                        <button
-                            type="button"
-                            className={`proof-chamber-chip ${params.shimmer ? 'proof-chamber-chip-active' : ''}`}
-                            onClick={() => setParam('shimmer', !params.shimmer)}
-                        >
+                        </ChamberChip>
+                        <ChamberChip active={params.shimmer} onClick={() => setParam('shimmer', !params.shimmer)}>
                             Shimmer
-                        </button>
-                        <button
-                            type="button"
-                            className={`proof-chamber-chip ${params.saturation ? 'proof-chamber-chip-active' : ''}`}
-                            onClick={() => setParam('saturation', !params.saturation)}
-                        >
+                        </ChamberChip>
+                        <ChamberChip active={params.saturation} onClick={() => setParam('saturation', !params.saturation)}>
                             Saturation
-                        </button>
+                        </ChamberChip>
                     </div>
                 </SectionCard>
 
@@ -288,7 +279,7 @@ export const ProofChamberPanel = (): ReactElement => {
                         }}
                     />
                 </SectionCard>
-            </aside>
+            </DawPluginRail>
 
             <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
                 <header className="proof-chamber-window flex shrink-0 flex-wrap items-center gap-2.5 px-3 py-2">
@@ -300,7 +291,7 @@ export const ProofChamberPanel = (): ReactElement => {
                             {SPACES.find((space) => space.id === params.space)?.label ?? 'Hall'}
                         </div>
                     </div>
-                    <div className="ml-auto flex flex-wrap gap-2">
+                    <DawPluginMetricStrip className="ml-auto">
                         <StatusTile
                             label="Decay"
                             value={formatValue(params.decay, 's')}
@@ -321,7 +312,7 @@ export const ProofChamberPanel = (): ReactElement => {
                             value={formatValue(params.width / 2, '%')}
                             accent="var(--color-accent-lavender)"
                         />
-                    </div>
+                    </DawPluginMetricStrip>
                 </header>
 
                 <div className="grid min-h-0 shrink-0 grid-cols-[minmax(0,1.1fr)_280px] gap-3">
@@ -329,9 +320,9 @@ export const ProofChamberPanel = (): ReactElement => {
                         <div className="flex h-full min-h-0 flex-col">
                             <div className="flex items-center justify-between px-3 py-2">
                                 <div className="text-[9px] uppercase tracking-[0.24em] text-white/44">Tail view</div>
-                                <div className="proof-chamber-led">
+                                <ChamberLed>
                                     {showDecayEq ? 'EQ overlay' : showFlow ? 'Flow open' : 'Live tail'}
-                                </div>
+                                </ChamberLed>
                             </div>
                             <div className="relative min-h-0 flex-1 border-t border-white/6">
                                 <ReverbSpectrogram decay={params.decay} damping={params.damping} />
@@ -361,9 +352,9 @@ export const ProofChamberPanel = (): ReactElement => {
                         </div>
                     </div>
 
-                    <div className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
+                    <DawPluginRail as="div">
                         <SectionCard title="Quick read" detail={params.algorithm}>
-                            <div className="space-y-2">
+                            <DawPluginReadoutList>
                                 <DawReadoutRow
                                     label="High cut"
                                     value={formatValue(params.highCut, 'Hz')}
@@ -388,31 +379,19 @@ export const ProofChamberPanel = (): ReactElement => {
                                     labelClassName="text-white/56"
                                     valueClassName="text-white/82"
                                 />
-                            </div>
+                            </DawPluginReadoutList>
                         </SectionCard>
                         <SectionCard title="Switches" detail={params.freeze ? 'Frozen' : 'Moving'}>
                             <div className="flex flex-wrap gap-1.5">
-                                <button
-                                    type="button"
-                                    className={`proof-chamber-chip ${params.shimmer ? 'proof-chamber-chip-active' : ''}`}
-                                    onClick={() => setParam('shimmer', !params.shimmer)}
-                                >
+                                <ChamberChip active={params.shimmer} onClick={() => setParam('shimmer', !params.shimmer)}>
                                     Shimmer
-                                </button>
-                                <button
-                                    type="button"
-                                    className={`proof-chamber-chip ${params.freeze ? 'proof-chamber-chip-active' : ''}`}
-                                    onClick={() => setParam('freeze', !params.freeze)}
-                                >
+                                </ChamberChip>
+                                <ChamberChip active={params.freeze} onClick={() => setParam('freeze', !params.freeze)}>
                                     Freeze
-                                </button>
-                                <button
-                                    type="button"
-                                    className={`proof-chamber-chip ${params.saturation ? 'proof-chamber-chip-active' : ''}`}
-                                    onClick={() => setParam('saturation', !params.saturation)}
-                                >
+                                </ChamberChip>
+                                <ChamberChip active={params.saturation} onClick={() => setParam('saturation', !params.saturation)}>
                                     Saturation
-                                </button>
+                                </ChamberChip>
                             </div>
                             {params.shimmer ? (
                                 <div className="grid grid-cols-2 gap-2">
@@ -441,7 +420,7 @@ export const ProofChamberPanel = (): ReactElement => {
                                 </div>
                             ) : null}
                         </SectionCard>
-                    </div>
+                    </DawPluginRail>
                 </div>
 
                 <section className="proof-chamber-window shrink-0 p-3">
@@ -632,28 +611,30 @@ export const ProofChamberPanel = (): ReactElement => {
                             </div>
                             <div className="flex flex-wrap gap-1.5">
                                 {VINTAGE_MODES.map((mode) => (
-                                    <button
+                                    <ChamberChip
                                         key={mode.id}
-                                        type="button"
-                                        className={`proof-chamber-chip ${params.vintage === mode.id ? 'proof-chamber-chip-active' : ''}`}
+                                        active={params.vintage === mode.id}
                                         onClick={() => setParam('vintage', mode.id)}
                                     >
                                         {mode.label}
-                                    </button>
+                                    </ChamberChip>
                                 ))}
                             </div>
                         </SectionCard>
 
                         <SectionCard title="Engine" detail="Algo">
                             <div className="grid grid-cols-2 gap-2">
-                                <div className="proof-chamber-window flex flex-col gap-2 px-3 py-2">
-                                    <div className="text-[8px] uppercase tracking-[0.2em] text-white/46">Algorithm</div>
+                                <DawPluginInsetCard
+                                    className="proof-chamber-window"
+                                    title="Algorithm"
+                                    headerSize="xs"
+                                    titleClassName="text-white/46"
+                                >
                                     <div className="flex flex-wrap gap-1.5">
                                         {ALGORITHMS.map((algorithm) => (
-                                            <button
+                                            <ChamberChip
                                                 key={algorithm.id}
-                                                type="button"
-                                                className={`proof-chamber-chip ${params.algorithm === algorithm.id ? 'proof-chamber-chip-active' : ''}`}
+                                                active={params.algorithm === algorithm.id}
                                                 onClick={() => {
                                                     setParams((prev) => ({ ...prev, algorithm: algorithm.id }));
                                                     updateProofChamberParam(
@@ -663,21 +644,25 @@ export const ProofChamberPanel = (): ReactElement => {
                                                 }}
                                             >
                                                 {algorithm.label}
-                                            </button>
+                                            </ChamberChip>
                                         ))}
                                     </div>
-                                </div>
-                                <div className="proof-chamber-window flex flex-col gap-2 px-3 py-2">
-                                    <div className="text-[8px] uppercase tracking-[0.2em] text-white/46">State</div>
+                                </DawPluginInsetCard>
+                                <DawPluginInsetCard
+                                    className="proof-chamber-window"
+                                    title="State"
+                                    headerSize="xs"
+                                    titleClassName="text-white/46"
+                                >
                                     <div className="flex flex-wrap gap-1.5">
-                                        <div className="proof-chamber-led">
+                                        <ChamberLed>
                                             {params.freeze ? 'Freeze on' : 'Freeze off'}
-                                        </div>
-                                        <div className="proof-chamber-led">
+                                        </ChamberLed>
+                                        <ChamberLed>
                                             {params.shimmer ? 'Shimmer on' : 'Shimmer off'}
-                                        </div>
+                                        </ChamberLed>
                                     </div>
-                                </div>
+                                </DawPluginInsetCard>
                             </div>
                         </SectionCard>
                     </div>

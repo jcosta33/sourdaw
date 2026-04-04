@@ -183,7 +183,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             if (now - lastPresenceBroadcastRef.current > 100) {
                 lastPresenceBroadcastRef.current = now;
                 const cursorBeat = getBeatFromX(x);
-                const tracks = trackStore.value ?? [];
+                const tracks = trackStore.value?.tracks ?? [];
                 const contentY = getContentY(y, getScrollY());
                 const trackHit = getTrackAtYHelper(tracks, Math.max(0, contentY));
                 broadcastPresence({

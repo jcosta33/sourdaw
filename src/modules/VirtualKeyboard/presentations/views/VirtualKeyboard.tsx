@@ -13,9 +13,14 @@
 
 import { type ReactElement, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { ChevronLeft, ChevronRight, Minus, Plus, X } from 'lucide-react';
+import { DawControlStrip } from '#/components/daw/DawControlStrip';
+import { DawDisplaySurface } from '#/components/daw/DawDisplaySurface';
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { cn } from '#/helpers/Styles/cn';
+import { Slider } from '#/components/ui/slider';
 import { triggerLiveNoteOn } from '#/modules/AudioEngine/useCases/triggerLiveNoteOn';
 import { triggerLiveNoteOff } from '#/modules/AudioEngine/useCases/triggerLiveNoteOff';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
@@ -341,8 +346,7 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
     return (
         <div
             ref={panelRef}
-            className="flex flex-col w-full h-full outline-none select-none"
-            style={{ background: '#111' }}
+            className="flex h-full w-full select-none flex-col overflow-hidden rounded-[20px] border border-white/8 bg-[linear-gradient(180deg,rgba(18,18,20,0.98),rgba(11,11,13,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] outline-none"
             tabIndex={0}
             onKeyDown={onKeyDown}
             onKeyUp={onKeyUp}
@@ -350,36 +354,37 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
             aria-label="Virtual Piano Keyboard"
             role="application"
         >
-            {/* ── Controls bar ────────────────────────────────────────── */}
-            <div
-                className="flex items-center gap-2 px-2 shrink-0 border-b border-white/[0.06]"
-                style={{ height: 28, background: 'linear-gradient(180deg,#1a1a1a 0%,#141414 100%)' }}
+            <DawHeaderBand
+                compact
+                title="Virtual keyboard"
+                titleClassName="text-white/56"
+                className="border-b border-white/[0.06] bg-black/[0.16]"
+                actions={
+                    onClose ? (
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    variant="ghost"
+                                    size="icon-xs"
+                                    onClick={onClose}
+                                    aria-label="Close virtual keyboard"
+                                    className="text-white/40 hover:text-white"
+                                >
+                                    <X className="size-3" />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Close keyboard</TooltipContent>
+                        </Tooltip>
+                    ) : null
+                }
             >
-                {/* hint */}
-                <span className="text-[9px] font-mono text-white/30 select-none hidden md:block">
+                <DawInlineHint className="hidden bg-black/[0.2] font-mono text-white/30 md:inline-flex">
                     A…; white · W E T Y U O P black · Z/X octave
-                </span>
+                </DawInlineHint>
+            </DawHeaderBand>
 
-                {/* Close button (only if onClose provided) */}
-                {onClose ? (
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <Button
-                                variant="ghost"
-                                size="icon-xs"
-                                onClick={onClose}
-                                aria-label="Close virtual keyboard"
-                                className="text-white/40 hover:text-white"
-                            >
-                                <X className="size-3" />
-                            </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Close keyboard</TooltipContent>
-                    </Tooltip>
-                ) : null}
-
-                <div className="flex items-center gap-0.5 ml-auto shrink-0">
-                    {/* Octave control */}
+            <DawControlStrip className="justify-end border-b border-white/[0.04] bg-black/[0.12] px-2.5 py-1.5">
+                <div className="ml-auto flex shrink-0 items-center gap-0.5">
                     <span className="text-[9px] uppercase tracking-wider text-white/40 mr-0.5">Oct</span>
                     <Tooltip>
                         <TooltipTrigger asChild>
@@ -417,32 +422,37 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
 
                     <div className="w-px h-3.5 bg-white/10 mx-1" />
 
-                    {/* Velocity */}
                     <Minus className="size-2.5 text-white/30 shrink-0" />
-                    <input
-                        type="range"
+                    <Slider
+                        value={[velocity]}
                         min={1}
                         max={127}
-                        value={velocity}
-                        onChange={(event) => setVirtualKeyboardVelocity(Number(event.target.value))}
-                        className="w-16 h-1 accent-[var(--color-accent-lavender)] cursor-pointer"
+                        step={1}
+                        className="w-16"
+                        trackClassName="h-1 bg-white/10 shadow-[inset_0_1px_2px_rgba(0,0,0,0.45)]"
+                        rangeClassName="[background:linear-gradient(180deg,rgba(170,135,200,0.95)_0%,rgba(170,135,200,0.62)_100%)] shadow-[0_0_10px_rgba(170,135,200,0.18)]"
+                        thumbClassName="size-3 rounded-[3px] hover:ring-[rgba(170,135,200,0.28)] focus-visible:ring-[rgba(170,135,200,0.38)]"
                         aria-label="Note velocity"
+                        onValueChange={(values) => {
+                            const nextValue = values[0];
+                            if (nextValue !== undefined) {
+                                setVirtualKeyboardVelocity(nextValue);
+                            }
+                        }}
                     />
                     <Plus className="size-2.5 text-white/30 shrink-0" />
                     <span className="text-[9px] tabular-nums text-white/40 w-5 text-right">{velocity}</span>
                 </div>
-            </div>
+            </DawControlStrip>
 
-            {/* ── Piano area ───────────────────────────────────────────── */}
-            <div
-                ref={scrollRef}
-                className="flex-1 overflow-x-auto overflow-y-hidden"
-                style={{ scrollbarWidth: 'none' }}
-            >
-                {/* Keys container — fixed pixel width, full height of scroll area */}
-                <div className="relative h-full" style={{ width: TOTAL_WIDTH_PX, minHeight: '100%' }}>
-                    {/* ── White keys ─────────────────────────────────── */}
-                    <div className="absolute inset-0 flex">
+            <DawDisplaySurface className="min-h-0 flex-1 items-stretch justify-start rounded-none border-t border-white/[0.03] bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(0,0,0,0.08))] p-0">
+                <div
+                    ref={scrollRef}
+                    className="flex-1 overflow-x-auto overflow-y-hidden"
+                    style={{ scrollbarWidth: 'none' }}
+                >
+                    <div className="relative h-full" style={{ width: TOTAL_WIDTH_PX, minHeight: '100%' }}>
+                        <div className="absolute inset-0 flex">
                         {Array.from({ length: TOTAL_WHITE_KEYS }, (_, whiteIdx) => {
                             const midiNote = whiteIdxToMidi(whiteIdx);
                             const semitone = ((midiNote % 12) + 12) % 12;
@@ -488,38 +498,38 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
                                 </div>
                             );
                         })}
-                    </div>
+                        </div>
 
-                    {/* ── Black keys ─────────────────────────────────── */}
-                    {ALL_BLACK_KEYS.map(({ midi: midiNote, leftPx }) => {
-                        const isPressed = pressedNotes.has(midiNote);
-                        return (
-                            <div
-                                key={midiNote}
-                                className={cn(
-                                    'absolute top-0 z-10 rounded-b-[3px] cursor-pointer',
-                                    isPressed
-                                        ? 'bg-[var(--color-accent-lavender)]'
-                                        : 'bg-[oklch(0.12_0_0)] hover:bg-[oklch(0.2_0_0)]'
-                                )}
-                                style={{
-                                    left: leftPx,
-                                    width: BLACK_KEY_W,
-                                    height: `${BLACK_KEY_H_RATIO * 100}%`,
-                                    boxShadow: isPressed
-                                        ? '0 3px 10px rgba(139,92,246,0.7), inset 0 -1px 0 rgba(255,255,255,0.1)'
-                                        : '1px 3px 6px rgba(0,0,0,0.6), inset 0 -1px 0 rgba(255,255,255,0.06)',
-                                }}
-                                onPointerDown={(event) => onBlackPointerDown(midiNote, event)}
-                                onPointerUp={(event) => onBlackPointerUp(midiNote, event)}
-                                onPointerEnter={(event) => onBlackPointerEnter(midiNote, event)}
-                                aria-label={`MIDI ${midiNote}`}
-                                role="button"
-                            />
-                        );
-                    })}
+                        {ALL_BLACK_KEYS.map(({ midi: midiNote, leftPx }) => {
+                            const isPressed = pressedNotes.has(midiNote);
+                            return (
+                                <div
+                                    key={midiNote}
+                                    className={cn(
+                                        'absolute top-0 z-10 rounded-b-[3px] cursor-pointer',
+                                        isPressed
+                                            ? 'bg-[var(--color-accent-lavender)]'
+                                            : 'bg-[oklch(0.12_0_0)] hover:bg-[oklch(0.2_0_0)]'
+                                    )}
+                                    style={{
+                                        left: leftPx,
+                                        width: BLACK_KEY_W,
+                                        height: `${BLACK_KEY_H_RATIO * 100}%`,
+                                        boxShadow: isPressed
+                                            ? '0 3px 10px rgba(139,92,246,0.7), inset 0 -1px 0 rgba(255,255,255,0.1)'
+                                            : '1px 3px 6px rgba(0,0,0,0.6), inset 0 -1px 0 rgba(255,255,255,0.06)',
+                                    }}
+                                    onPointerDown={(event) => onBlackPointerDown(midiNote, event)}
+                                    onPointerUp={(event) => onBlackPointerUp(midiNote, event)}
+                                    onPointerEnter={(event) => onBlackPointerEnter(midiNote, event)}
+                                    aria-label={`MIDI ${midiNote}`}
+                                    role="button"
+                                />
+                            );
+                        })}
+                    </div>
                 </div>
-            </div>
+            </DawDisplaySurface>
         </div>
     );
 };

@@ -1,4 +1,5 @@
 import { type ReactElement } from 'react';
+import { DawCompactCheckbox } from '#/components/daw/DawCompactCheckbox';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { setMidiOutput, clearMidiOutput } from '#/modules/MIDI/useCases/midiRouting';
@@ -48,11 +49,9 @@ export const TrackMidiOutputSection = ({ track, allTracks }: TrackMidiOutputSect
 
                 <SurfaceCard>
                     <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                            type="checkbox"
+                        <DawCompactCheckbox
                             checked={track.followChordTrack}
                             onChange={() => toggleChordTrackFollow(track.id)}
-                            className="size-3 rounded border-border accent-[var(--color-accent-orange)]"
                             aria-label="Follow chord track"
                         />
                         <span className="text-[10px] text-foreground/80">Follow Chord Track</span>

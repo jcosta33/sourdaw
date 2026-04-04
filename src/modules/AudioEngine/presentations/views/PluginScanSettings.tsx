@@ -1,10 +1,10 @@
 import { type ReactElement, useSyncExternalStore, useState } from 'react';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
+import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { Button } from '#/components/ui/button';
-import { Input } from '#/components/ui/input';
 import { FolderOpen, Trash2, RefreshCw, Loader2, Plus, AlertCircle, CheckCircle2, Plug, Monitor } from 'lucide-react';
 import { pluginScanStore, defaultPluginScanState } from '../../stores/pluginScanStore';
 import { startPluginScan, addScanPath, removeScanPath } from '#/modules/Plugin/useCases/pluginScan/scanning';
@@ -92,14 +92,15 @@ export const PluginScanSettings = (): ReactElement | null => {
                 ) : null}
 
                 <div className="flex items-center gap-1">
-                    <Input
+                    <DawCompactInput
                         type="text"
                         placeholder="/path/to/plugins..."
                         value={newPath}
                         onChange={(e) => {
                             setNewPath(e.target.value);
                         }}
-                        className="h-7 text-xs flex-1 font-mono"
+                        className="flex-1"
+                        monospace
                         onKeyDown={(e) => {
                             if (e.key === 'Enter') {
                                 handleAddPath();

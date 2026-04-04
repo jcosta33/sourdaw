@@ -5,6 +5,7 @@
  * Below: RotaryKnobs for thresholds and portamento velocity.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { type LegatoConfig } from '../../models/LevainPatch';
@@ -115,17 +116,15 @@ export const LegatoTuning = ({ config, onChange }: LegatoTuningProps): ReactElem
                 titleClassName="text-muted-foreground"
                 className="gap-3"
                 actions={
-                    <button
-                        type="button"
-                        className={`px-1.5 py-0.5 rounded text-[8px] font-medium transition-colors ${
-                            config.adaptiveSpeed
-                                ? 'bg-amber-500/20 text-amber-300'
-                                : 'text-muted-foreground/40 hover:text-foreground'
-                        }`}
+                    <DawPluginToggle
+                        pressed={config.adaptiveSpeed}
+                        tone="amber"
+                        size="xs"
+                        caps={false}
                         onClick={() => update({ adaptiveSpeed: !config.adaptiveSpeed })}
                     >
                         Adaptive {config.adaptiveSpeed ? 'On' : 'Off'}
-                    </button>
+                    </DawPluginToggle>
                 }
             />
 

@@ -1,4 +1,5 @@
 import { type ReactElement } from 'react';
+import { Slider } from '#/components/ui/slider';
 import { registerDeviceLayout } from '../deviceLayoutRegistry';
 import { DeviceParameterControl } from '../DeviceParameterControl';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases/device/setDeviceParameter';
@@ -32,19 +33,22 @@ export const HammondB3Layout = ({ device, trackId }: any): ReactElement | null =
                         return (
                             <div key={p.id} className="flex flex-col items-center gap-2">
                                 <div className="h-[120px] relative w-6">
-                                    <input
-                                        type="range"
+                                    <Slider
+                                        orientation="vertical"
                                         min={p.minValue}
                                         max={p.maxValue}
-                                        step="1"
-                                        value={8 - val}
-                                        onChange={(e) => {
-                                            setDeviceParameter(device.id, p.id, 8 - Number(e.target.value));
-                                        }}
-                                        className="absolute top-1/2 left-1/2 w-[120px] h-6 cursor-pointer m-0"
-                                        style={{
-                                            transform: 'translate(-50%, -50%) rotate(270deg)',
-                                            WebkitAppearance: 'slider-horizontal',
+                                        step={1}
+                                        value={[8 - val]}
+                                        className="h-[120px] w-6"
+                                        trackClassName="w-2 rounded-sm bg-surface-inset shadow-[inset_0_1px_2px_rgba(0,0,0,0.45)]"
+                                        rangeClassName="[background:linear-gradient(180deg,rgba(201,160,122,0.92)_0%,rgba(201,160,122,0.6)_100%)] shadow-[0_0_10px_rgba(201,160,122,0.14)]"
+                                        thumbClassName="size-5 rounded-[4px]"
+                                        aria-label={p.name}
+                                        onValueChange={(values) => {
+                                            const nextValue = values[0];
+                                            if (nextValue !== undefined) {
+                                                setDeviceParameter(device.id, p.id, 8 - nextValue);
+                                            }
                                         }}
                                     />
                                 </div>

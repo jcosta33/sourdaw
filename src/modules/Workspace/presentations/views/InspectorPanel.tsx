@@ -1,5 +1,5 @@
 import { type CSSProperties, type ReactElement, useState, useSyncExternalStore } from 'react';
-import { DawEmptyState } from '#/components/daw/DawEmptyState';
+import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { Button } from '#/components/ui/button';
@@ -81,10 +81,12 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
                     />
                 ) : (
                     <div className="flex h-full items-center justify-center p-6">
-                        <DawEmptyState
+                        <DawBlockedState
+                            eyebrow="Inspector"
                             className="max-w-64"
                             title="No track selected"
                             description="Pick a track, clip, or device to inspect its details."
+                            summary="The inspector follows the current selection and switches between track, clip, and device detail."
                         />
                     </div>
                 )}

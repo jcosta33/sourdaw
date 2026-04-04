@@ -1,5 +1,6 @@
 import { type ReactElement } from 'react';
 import { type LucideIcon } from 'lucide-react';
+import { DawChooserCard } from '#/components/daw/DawChooserCard';
 
 type InstrumentCardProps = {
     icon: LucideIcon;
@@ -116,27 +117,22 @@ export const CRUST_THEME: InstrumentCardTheme = {
 };
 
 export const InstrumentCard = ({ icon: Icon, label, badge, description, onClick, theme }: InstrumentCardProps): ReactElement => (
-    <button
-        type="button"
-        className={`w-full group relative overflow-hidden rounded-lg border transition-all duration-200 cursor-pointer ${theme.button}`}
-        onClick={onClick}
-    >
-        <div className="flex items-center gap-3 px-3 py-3">
-            <div className={`flex items-center justify-center w-9 h-9 rounded-lg border ${theme.iconBox}`}>
+    <DawChooserCard
+        className={`group relative overflow-hidden cursor-pointer ${theme.button}`}
+        title={label}
+        description={description}
+        badge={
+            <span className={`rounded px-1 py-px text-[8px] font-bold uppercase tracking-wider ${theme.badgeColor}`}>
+                {badge}
+            </span>
+        }
+        startSlot={
+            <div className={`flex h-9 w-9 items-center justify-center rounded-lg border ${theme.iconBox}`}>
                 <Icon className={`size-4.5 ${theme.iconColor}`} />
             </div>
-            <div className="flex-1 min-w-0 text-left">
-                <div className="flex items-center gap-1.5">
-                    <span className="text-[12px] font-bold text-foreground tracking-tight">{label}</span>
-                    <span className={`px-1 py-px rounded text-[8px] font-bold uppercase tracking-wider ${theme.badgeColor}`}>
-                        {badge}
-                    </span>
-                </div>
-                <div className="text-[9px] text-muted-foreground/80 leading-tight mt-0.5">
-                    {description}
-                </div>
-            </div>
-        </div>
+        }
+        onClick={onClick}
+    >
         <div className={`absolute -top-6 -right-6 w-16 h-16 rounded-full blur-xl pointer-events-none ${theme.glow}`} />
-    </button>
+    </DawChooserCard>
 );

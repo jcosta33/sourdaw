@@ -1,5 +1,5 @@
 import { type ReactElement, useState } from 'react';
-import { Input } from '#/components/ui/input';
+import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { Button } from '#/components/ui/button';
 import { Snowflake, Zap } from 'lucide-react';
 import { renameTrack } from '#/modules/Arrangement/useCases/renameTrack';
@@ -43,7 +43,7 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                 <div>
                     <MetaText className="mb-1 block">Name</MetaText>
                     {editingName ? (
-                        <Input
+                        <DawCompactInput
                             value={nameValue}
                             onChange={(e) => setNameValue(e.target.value)}
                             onBlur={commitName}
@@ -52,7 +52,6 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                                     commitName();
                                 }
                             }}
-                            className="h-7 text-xs"
                             autoFocus
                         />
                     ) : (

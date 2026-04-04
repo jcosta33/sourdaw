@@ -1,4 +1,4 @@
-import { type HTMLAttributes, type ReactElement, type ReactNode } from 'react';
+import { type ButtonHTMLAttributes, type HTMLAttributes, type ReactElement, type ReactNode } from 'react';
 import { cn } from '#/helpers/Styles/cn';
 
 type DawMenuSectionLabelProps = HTMLAttributes<HTMLParagraphElement>;
@@ -52,4 +52,33 @@ export const DawMenuDisabledRow = ({
         {icon}
         <span className="text-[10px] text-muted-foreground">{children}</span>
     </div>
+);
+
+type DawMenuButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+    tone?: 'default' | 'danger';
+    active?: boolean;
+};
+
+export const DawMenuButton = ({
+    tone = 'default',
+    active = false,
+    className,
+    children,
+    type = 'button',
+    ...props
+}: DawMenuButtonProps): ReactElement => (
+    <button
+        type={type}
+        className={cn(
+            'flex w-full items-center rounded-sm px-2 py-1.5 text-xs transition-colors disabled:pointer-events-none disabled:opacity-30',
+            tone === 'danger'
+                ? 'text-destructive hover:bg-destructive/10'
+                : 'text-popover-foreground hover:bg-accent hover:text-accent-foreground',
+            active ? 'font-medium text-primary' : '',
+            className
+        )}
+        {...props}
+    >
+        {children}
+    </button>
 );

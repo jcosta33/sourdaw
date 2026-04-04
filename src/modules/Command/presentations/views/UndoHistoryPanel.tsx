@@ -1,5 +1,6 @@
 import { type ReactElement, useSyncExternalStore } from 'react';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
+import { DawUtilityListRow } from '#/components/daw/DawUtilityListRow';
 import { undoStore, type UndoStoreState } from '../../stores/undoStore';
 import { undoToIndex } from '../../useCases/undoRedo';
 import { closeUndoHistory } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
@@ -71,14 +72,12 @@ export const UndoHistoryPanel = (): ReactElement | null => {
                         {[...state.future].reverse().map((entry, i) => {
                             const futureIndex = pastCount + (state.future.length - 1 - i);
                             return (
-                                <button
-                                    type="button"
+                                <DawUtilityListRow
                                     key={entry.id}
-                                    className="flex w-full items-center gap-2 px-3 py-1 text-left text-xs text-muted-foreground/50 hover:bg-accent/50 hover:text-muted-foreground"
-                                    onClick={() => handleClick(futureIndex)}
-                                >
-                                    <span className="truncate">{entry.label}</span>
-                                </button>
+                                    title={entry.label}
+                                    titleClassName="text-xs text-muted-foreground/50"
+                                    onPress={() => handleClick(futureIndex)}
+                                />
                             );
                         })}
                     </div>
@@ -100,22 +99,20 @@ export const UndoHistoryPanel = (): ReactElement | null => {
                         {[...state.past].reverse().map((entry, i) => {
                             const entryIndex = pastCount - 1 - i;
                             return (
-                                <button
-                                    type="button"
+                                <DawUtilityListRow
                                     key={entry.id}
-                                    className={cn(
-                                        'flex w-full items-center gap-2 px-3 py-1 text-left text-xs hover:bg-accent',
-                                        i === 0 ? 'text-foreground font-medium' : 'text-muted-foreground'
-                                    )}
-                                    onClick={() => handleClick(entryIndex)}
-                                >
-                                    <span className="truncate">{entry.label}</span>
-                                    {entry.source !== 'manual' && (
-                                        <DawMicroBadge className="ml-auto px-1" tone="muted">
-                                            {entry.source}
-                                        </DawMicroBadge>
-                                    )}
-                                </button>
+                                    active={i === 0}
+                                    title={entry.label}
+                                    titleClassName={cn('text-xs', i === 0 ? 'text-foreground' : 'text-muted-foreground')}
+                                    endSlot={
+                                        entry.source !== 'manual' ? (
+                                            <DawMicroBadge className="px-1" tone="muted">
+                                                {entry.source}
+                                            </DawMicroBadge>
+                                        ) : null
+                                    }
+                                    onPress={() => handleClick(entryIndex)}
+                                />
                             );
                         })}
                     </div>

@@ -1,9 +1,15 @@
 import { type ReactElement, type ReactNode, useState, useSyncExternalStore } from 'react';
 import { Activity, Flame, Radio, Search, SlidersHorizontal, Sun, Zap } from 'lucide-react';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
+import { DawPluginChoiceRow } from '#/components/daw/DawPluginChoiceRow';
+import { DawPluginInsetCard } from '#/components/daw/DawPluginInsetCard';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
+import { DawPluginMetricStrip } from '#/components/daw/DawPluginMetricStrip';
+import { DawPluginRail } from '#/components/daw/DawPluginRail';
+import { DawPluginReadoutList } from '#/components/daw/DawPluginReadoutList';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
+import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { type GlutenPatch, type GlutenStyle, type GlutenTopology } from '../../models/GlutenPatch';
 import { glutenStore, getGlutenState, type GlutenState } from '../../stores/glutenStore';
@@ -227,17 +233,14 @@ const ControlCard = ({
     detail?: string;
     children: ReactNode;
 }): ReactElement => (
-    <section className="gluten-window flex flex-col gap-3 p-3">
-        <div className="flex items-center justify-between gap-3">
-            <div className="space-y-1">
-                <div className="text-[8px] font-semibold uppercase tracking-[0.24em] text-[var(--color-accent-peach)]/68">
-                    {title}
-                </div>
-                {detail ? <span className="sr-only">{detail}</span> : null}
-            </div>
-        </div>
+    <DawPluginSectionCard
+        className="gluten-window"
+        title={title}
+        detail={detail}
+        titleClassName="text-[var(--color-accent-peach)]/68"
+    >
         {children}
-    </section>
+    </DawPluginSectionCard>
 );
 
 const ToggleChip = ({
@@ -251,14 +254,15 @@ const ToggleChip = ({
     accentColor: string;
     onClick: () => void;
 }): ReactElement => (
-    <button
-        type="button"
-        className={`gluten-chip ${active ? 'gluten-chip-active' : ''}`}
+    <DawPluginChip
+        active={active}
+        tone="neutral"
+        size="sm"
         style={active ? { borderColor: accentColor, color: accentColor } : undefined}
         onClick={onClick}
     >
         {label}
-    </button>
+    </DawPluginChip>
 );
 
 const Knob = ({
@@ -334,7 +338,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
     return (
         <div className="gluten-faceplate h-full min-h-0 overflow-hidden rounded-[26px] p-3">
             <div className="grid h-full min-h-0 grid-cols-[15rem_minmax(0,1fr)_19rem] gap-3">
-                <aside className="gluten-window flex min-h-0 flex-col gap-3 p-3">
+                <DawPluginRail className="gluten-window p-3" scrollable={false}>
                     <div className="flex items-start justify-between gap-3">
                         <div className="space-y-1">
                             <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-peach)]/68">
@@ -342,7 +346,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             </div>
                             <div className="text-[15px] font-semibold text-foreground">Gluten</div>
                         </div>
-                        <div className="gluten-led">{filteredPresets.length} ready</div>
+                        <DawPluginLed tone="peach">{filteredPresets.length} ready</DawPluginLed>
                     </div>
 
                     <label className="gluten-window flex items-center gap-2 px-3 py-2">
@@ -378,28 +382,15 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             filteredPresets.map((preset) => {
                                 const active = preset.patch.name === patch.name;
                                 return (
-                                    <button
+                                    <DawPluginChoiceRow
                                         key={preset.id}
-                                        type="button"
-                                        className={`gluten-window flex flex-col items-start gap-1 px-3 py-2 text-left transition-all ${
-                                            active
-                                                ? 'border-white/18 bg-white/[0.03]'
-                                                : 'hover:border-white/12 hover:bg-white/[0.02]'
-                                        }`}
-                                        onClick={() => applyPreset(preset.patch)}
-                                    >
-                                        <div className="flex w-full items-center justify-between gap-2">
-                                            <span className="text-[11px] font-medium text-foreground">
-                                                {preset.name}
-                                            </span>
-                                            <span className="text-[8px] uppercase tracking-[0.22em] text-muted-foreground/45">
-                                                {preset.category}
-                                            </span>
-                                        </div>
-                                        <span className="text-[9px] leading-4 text-muted-foreground">
-                                            {describePreset(preset.patch)}
-                                        </span>
-                                    </button>
+                                        className="gluten-window"
+                                        active={active}
+                                        title={preset.name}
+                                        detail={preset.category}
+                                        subtitle={describePreset(preset.patch)}
+                                        onPress={() => applyPreset(preset.patch)}
+                                    />
                                 );
                             })
                         ) : (
@@ -408,7 +399,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             </div>
                         )}
                     </div>
-                </aside>
+                </DawPluginRail>
 
                 <section className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto pr-1">
                     <div className="flex items-start justify-between gap-3">
@@ -419,7 +410,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             <div className="text-[16px] font-semibold text-foreground">{patch.name}</div>
                         </div>
 
-                        <div className="flex flex-wrap justify-end gap-2">
+                        <DawPluginMetricStrip>
                             <DawPluginMetricTile
                                 className="gluten-window min-w-[90px]"
                                 label="Grab"
@@ -434,7 +425,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 detail="Stereo correlation"
                             />
                             <DawPluginMetricTile className="gluten-window min-w-[90px]" label="Latency" value={`${latency} smp`} detail="Lookahead cost" />
-                        </div>
+                        </DawPluginMetricStrip>
                     </div>
 
                     <div className="grid grid-cols-4 gap-2">
@@ -527,11 +518,12 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                     <GrHistory grDb={grDb} width={420} height={50} accentColor={accentColor} />
                                 </div>
                                 <div className="grid grid-cols-3 gap-2">
-                                    <div className="gluten-window flex flex-col gap-2 px-3 py-2">
-                                        <div className="flex items-center gap-2 text-[10px] font-medium text-foreground">
-                                            <Activity className="size-3.5" style={{ color: accentColor }} />
-                                            Detector lens
-                                        </div>
+                                    <DawPluginInsetCard
+                                        className="gluten-window"
+                                        title="Detector lens"
+                                        titleClassName="text-foreground"
+                                        actions={<Activity className="size-3.5" style={{ color: accentColor }} />}
+                                    >
                                         <LensBar
                                             label="Attack"
                                             value={normalize(patch.attack, 0.02, 250)}
@@ -547,12 +539,15 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                             value={normalize(patch.knee, 0, 30)}
                                             accentColor={accentColor}
                                         />
-                                    </div>
-                                    <div className="gluten-window flex flex-col gap-2 px-3 py-2">
-                                        <div className="flex items-center gap-2 text-[10px] font-medium text-foreground">
+                                    </DawPluginInsetCard>
+                                    <DawPluginInsetCard
+                                        className="gluten-window"
+                                        title="Sidechain"
+                                        titleClassName="text-foreground"
+                                        actions={
                                             <SlidersHorizontal className="size-3.5" style={{ color: accentColor }} />
-                                            Sidechain
-                                        </div>
+                                        }
+                                    >
                                         <LensBar
                                             label="HPF"
                                             value={normalize(patch.scHpfFreq, 20, 500)}
@@ -564,13 +559,14 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                             accentColor={accentColor}
                                         />
                                         <LensBar label="Link" value={patch.stereoLink} accentColor={accentColor} />
-                                    </div>
-                                    <div className="gluten-window flex flex-col gap-2 px-3 py-2">
-                                        <div className="flex items-center justify-between gap-2">
-                                            <div className="text-[10px] font-medium text-foreground">Quick read</div>
-                                            <DawPluginLed tone="peach">{topologyMeta.detail}</DawPluginLed>
-                                        </div>
-                                        <div className="space-y-1">
+                                    </DawPluginInsetCard>
+                                    <DawPluginInsetCard
+                                        className="gluten-window"
+                                        title="Quick read"
+                                        titleClassName="text-foreground"
+                                        actions={<DawPluginLed tone="peach">{topologyMeta.detail}</DawPluginLed>}
+                                    >
+                                        <DawPluginReadoutList density="tight">
                                             <DawReadoutRow
                                                 label="Input"
                                                 value={`${inputDb.toFixed(1)} dB`}
@@ -591,8 +587,8 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                                 value={STYLE_META[patch.style].detail}
                                                 valueClassName="text-foreground/85"
                                             />
-                                        </div>
-                                    </div>
+                                        </DawPluginReadoutList>
+                                    </DawPluginInsetCard>
                                 </div>
                             </div>
 
@@ -608,7 +604,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                     </div>
                 </section>
 
-                <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
+                <DawPluginRail>
                     <ControlCard title="Clamp" detail="Threshold, ratio, and timing stay front and center.">
                         <div className="grid grid-cols-3 gap-x-2 gap-y-3">
                             <Knob
@@ -996,14 +992,13 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         const labels = ['Compress', 'Limit'];
                                         const active = patch.limitMode === mode;
                                         return (
-                                            <button
+                                            <ToggleChip
                                                 key={labels[index]}
-                                                type="button"
-                                                className={`gluten-chip ${active ? 'gluten-chip-active' : ''}`}
+                                                label={labels[index] ?? ''}
+                                                active={active}
+                                                accentColor={accentColor}
                                                 onClick={() => setGlutenParamWithAudio(deviceId,'limitMode', mode)}
-                                            >
-                                                {labels[index]}
-                                            </button>
+                                            />
                                         );
                                     })}
                                 </div>
@@ -1019,14 +1014,13 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                     {[1, 2, 3, 4, 5].map((value) => {
                                         const active = patch.recovery === value;
                                         return (
-                                            <button
+                                            <ToggleChip
                                                 key={value}
-                                                type="button"
-                                                className={`gluten-chip ${active ? 'gluten-chip-active' : ''}`}
+                                                label={`Recovery ${value}`}
+                                                active={active}
+                                                accentColor={accentColor}
                                                 onClick={() => setGlutenParamWithAudio(deviceId,'recovery', value)}
-                                            >
-                                                Recovery {value}
-                                            </button>
+                                            />
                                         );
                                     })}
                                 </div>
@@ -1065,14 +1059,13 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         const labels = ['Feedback', 'Feed forward'];
                                         const active = patch.feedForward === mode;
                                         return (
-                                            <button
+                                            <ToggleChip
                                                 key={labels[index]}
-                                                type="button"
-                                                className={`gluten-chip ${active ? 'gluten-chip-active' : ''}`}
+                                                label={labels[index] ?? ''}
+                                                active={active}
+                                                accentColor={accentColor}
                                                 onClick={() => setGlutenParamWithAudio(deviceId,'feedForward', mode)}
-                                            >
-                                                {labels[index]}
-                                            </button>
+                                            />
                                         );
                                     })}
                                 </div>
@@ -1085,19 +1078,18 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             {stageTwoOptions.map((topology) => {
                                 const active = patch.blendTopology === topology;
                                 return (
-                                    <button
+                                    <ToggleChip
                                         key={topology}
-                                        type="button"
-                                        className={`gluten-chip ${active ? 'gluten-chip-active' : ''}`}
+                                        label={TOPOLOGY_META[topology].label}
+                                        active={active}
+                                        accentColor={accentColor}
                                         onClick={() => setGlutenParamWithAudio(deviceId,'blendTopology', topology)}
-                                    >
-                                        {TOPOLOGY_META[topology].label}
-                                    </button>
+                                    />
                                 );
                             })}
                         </div>
                     </ControlCard>
-                </aside>
+                </DawPluginRail>
             </div>
         </div>
     );

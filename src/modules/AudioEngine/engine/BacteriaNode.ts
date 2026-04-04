@@ -110,10 +110,10 @@ export async function createBacteriaNode(ctx: BaseAudioContext, wasmUrl?: string
             const view = slot.view;
             const poll = () => {
                 cb({
-                    inputDb: view[BACTERIA_IDX.inputDb],
-                    outputDb: view[BACTERIA_IDX.outputDb],
+                    inputDb: view[BACTERIA_IDX.inputDb] ?? 0,
+                    outputDb: view[BACTERIA_IDX.outputDb] ?? 0,
                     bandLevels: [],
-                    latency: view[BACTERIA_IDX.latency],
+                    latency: view[BACTERIA_IDX.latency] ?? 0,
                 });
                 meterRafId = requestAnimationFrame(poll);
             };

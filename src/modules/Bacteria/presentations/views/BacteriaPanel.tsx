@@ -1,5 +1,7 @@
 import { type ReactElement, useState, useSyncExternalStore, useTransition } from 'react';
 import { Search } from 'lucide-react';
+import { DawPluginChip } from '#/components/daw/DawPluginChip';
+import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import {
     bacteriaStore,
@@ -197,8 +199,24 @@ const SectionHeader = ({
             <div className="text-[13px] font-semibold tracking-[0.02em] text-foreground">{title}</div>
             <span className="sr-only">{description}</span>
         </div>
-        {detail ? <div className="bacteria-led shrink-0">{detail}</div> : null}
+        {detail ? (
+            <DawPluginLed tone="cyan" className="shrink-0">
+                {detail}
+            </DawPluginLed>
+        ) : null}
     </div>
+);
+
+const BChip = ({
+    active = false,
+    size = 'sm',
+    className,
+    children,
+    ...props
+}: React.ComponentProps<typeof DawPluginChip>): ReactElement => (
+    <DawPluginChip active={active} tone="cyan" size={size} className={className} {...props}>
+        {children}
+    </DawPluginChip>
 );
 
 const MetricCell = ({ label, value }: { label: string; value: string }): ReactElement => (
@@ -294,14 +312,13 @@ const PresetRail = ({
                     const isActive = category === entry;
 
                     return (
-                        <button
+                        <BChip
                             key={entry}
-                            type="button"
-                            className={`bacteria-chip ${isActive ? 'bacteria-chip-active' : ''}`}
+                            active={isActive}
                             onClick={() => onCategoryChange(entry)}
                         >
                             {entry}
-                        </button>
+                        </BChip>
                     );
                 })}
             </div>
@@ -555,7 +572,7 @@ const ShapeHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                         </div>
                         <div className="text-[12px] font-medium text-foreground">Zoomed strips</div>
                     </div>
-                    <div className="bacteria-led">{state.patch.globalRouting.replace('-', ' ')}</div>
+                    <DawPluginLed tone="cyan">{state.patch.globalRouting.replace('-', ' ')}</DawPluginLed>
                 </div>
                 <div className="flex min-h-0 gap-2 overflow-x-auto">
                     {Array.from({ length: state.patch.bandCount }, (_, index) => (
@@ -628,7 +645,7 @@ const BuildHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                     <div className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">Band cards</div>
                     <div className="text-[12px] font-medium text-foreground">The organism split open</div>
                 </div>
-                <div className="bacteria-led">{state.patch.crossoverMode}</div>
+                <DawPluginLed tone="cyan">{state.patch.crossoverMode}</DawPluginLed>
             </div>
             <div className="flex min-h-0 gap-2 overflow-x-auto">
                 {Array.from({ length: state.patch.bandCount }, (_, index) => (
@@ -752,14 +769,13 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                         const active = module.id === activeModule;
 
                         return (
-                            <button
+                            <BChip
                                 key={module.id}
-                                type="button"
-                                className={`bacteria-chip ${active ? 'bacteria-chip-active' : ''}`}
+                                active={active}
                                 onClick={() => setBacteriaActiveModule(deviceId, module.id)}
                             >
                                 {module.label}
-                            </button>
+                            </BChip>
                         );
                     })}
                 </div>
@@ -775,24 +791,21 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                 {activeModule === 'distortion' ? (
                     <div className="space-y-3">
                         <div className="flex items-center gap-2">
-                            <button
-                                type="button"
-                                className={`bacteria-chip ${Boolean(band.distortionEnabled) ? 'bacteria-chip-active' : ''}`}
-                                aria-pressed={Boolean(band.distortionEnabled)}
+                            <BChip
+                                active={Boolean(band.distortionEnabled)}
                                 onClick={() => setBandParam('distortionEnabled', !Boolean(band.distortionEnabled))}
                             >
                                 Enabled
-                            </button>
+                            </BChip>
                             <div className="flex flex-wrap gap-1">
                                 {DISTORTION_MODES.map((mode) => (
-                                    <button
+                                    <BChip
                                         key={mode}
-                                        type="button"
-                                        className={`bacteria-chip ${band.distortionMode === mode ? 'bacteria-chip-active' : ''}`}
+                                        active={band.distortionMode === mode}
                                         onClick={() => setBandParam('distortionMode', mode)}
                                     >
                                         {mode.replace('-', ' ')}
-                                    </button>
+                                    </BChip>
                                 ))}
                             </div>
                         </div>
@@ -893,24 +906,21 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                 {activeModule === 'filter' ? (
                     <div className="space-y-3">
                         <div className="flex items-center gap-2">
-                            <button
-                                type="button"
-                                className={`bacteria-chip ${Boolean(band.filterEnabled) ? 'bacteria-chip-active' : ''}`}
-                                aria-pressed={Boolean(band.filterEnabled)}
+                            <BChip
+                                active={Boolean(band.filterEnabled)}
                                 onClick={() => setBandParam('filterEnabled', !Boolean(band.filterEnabled))}
                             >
                                 Enabled
-                            </button>
+                            </BChip>
                             <div className="flex flex-wrap gap-1">
                                 {FILTER_MODES.map((mode) => (
-                                    <button
+                                    <BChip
                                         key={mode}
-                                        type="button"
-                                        className={`bacteria-chip ${band.filterMode === mode ? 'bacteria-chip-active' : ''}`}
+                                        active={band.filterMode === mode}
                                         onClick={() => setBandParam('filterMode', mode)}
                                     >
                                         {mode}
-                                    </button>
+                                    </BChip>
                                 ))}
                             </div>
                         </div>
@@ -979,14 +989,12 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
 
                 {activeModule === 'chorus' ? (
                     <div className="space-y-3">
-                        <button
-                            type="button"
-                            className={`bacteria-chip ${Boolean(band.chorusEnabled) ? 'bacteria-chip-active' : ''}`}
-                            aria-pressed={Boolean(band.chorusEnabled)}
+                        <BChip
+                            active={Boolean(band.chorusEnabled)}
                             onClick={() => setBandParam('chorusEnabled', !Boolean(band.chorusEnabled))}
                         >
                             Enabled
-                        </button>
+                        </BChip>
                         <div className="flex flex-wrap gap-4">
                             <K
                                 v={band.chorusRate}
@@ -1039,14 +1047,12 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
 
                 {activeModule === 'phaser' ? (
                     <div className="space-y-3">
-                        <button
-                            type="button"
-                            className={`bacteria-chip ${Boolean(band.phaserEnabled) ? 'bacteria-chip-active' : ''}`}
-                            aria-pressed={Boolean(band.phaserEnabled)}
+                        <BChip
+                            active={Boolean(band.phaserEnabled)}
                             onClick={() => setBandParam('phaserEnabled', !Boolean(band.phaserEnabled))}
                         >
                             Enabled
-                        </button>
+                        </BChip>
                         <div className="flex flex-wrap gap-4">
                             <K
                                 v={band.phaserRate}
@@ -1100,22 +1106,18 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                 {activeModule === 'granular' ? (
                     <div className="space-y-3">
                         <div className="flex items-center gap-2">
-                            <button
-                                type="button"
-                                className={`bacteria-chip ${Boolean(band.granularEnabled) ? 'bacteria-chip-active' : ''}`}
-                                aria-pressed={Boolean(band.granularEnabled)}
+                            <BChip
+                                active={Boolean(band.granularEnabled)}
                                 onClick={() => setBandParam('granularEnabled', !Boolean(band.granularEnabled))}
                             >
                                 Enabled
-                            </button>
-                            <button
-                                type="button"
-                                className={`bacteria-chip ${Boolean(band.grainFreeze) ? 'bacteria-chip-active' : ''}`}
-                                aria-pressed={Boolean(band.grainFreeze)}
+                            </BChip>
+                            <BChip
+                                active={Boolean(band.grainFreeze)}
                                 onClick={() => setBandParam('grainFreeze', !Boolean(band.grainFreeze))}
                             >
                                 Freeze
-                            </button>
+                            </BChip>
                         </div>
                         <div className="flex flex-wrap gap-4">
                             <K
@@ -1183,22 +1185,18 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                 {activeModule === 'spectral' ? (
                     <div className="space-y-3">
                         <div className="flex items-center gap-2">
-                            <button
-                                type="button"
-                                className={`bacteria-chip ${Boolean(band.spectralEnabled) ? 'bacteria-chip-active' : ''}`}
-                                aria-pressed={Boolean(band.spectralEnabled)}
+                            <BChip
+                                active={Boolean(band.spectralEnabled)}
                                 onClick={() => setBandParam('spectralEnabled', !Boolean(band.spectralEnabled))}
                             >
                                 Enabled
-                            </button>
-                            <button
-                                type="button"
-                                className={`bacteria-chip ${Boolean(band.spectralFreeze) ? 'bacteria-chip-active' : ''}`}
-                                aria-pressed={Boolean(band.spectralFreeze)}
+                            </BChip>
+                            <BChip
+                                active={Boolean(band.spectralFreeze)}
                                 onClick={() => setBandParam('spectralFreeze', !Boolean(band.spectralFreeze))}
                             >
                                 Freeze
-                            </button>
+                            </BChip>
                         </div>
                         <div className="flex flex-wrap gap-4">
                             <K
@@ -1229,14 +1227,12 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
 
                 {activeModule === 'freqShift' ? (
                     <div className="space-y-3">
-                        <button
-                            type="button"
-                            className={`bacteria-chip ${Boolean(band.freqShiftEnabled) ? 'bacteria-chip-active' : ''}`}
-                            aria-pressed={Boolean(band.freqShiftEnabled)}
+                        <BChip
+                            active={Boolean(band.freqShiftEnabled)}
                             onClick={() => setBandParam('freqShiftEnabled', !Boolean(band.freqShiftEnabled))}
                         >
                             Enabled
-                        </button>
+                        </BChip>
                         <div className="flex flex-wrap gap-4">
                             <K
                                 v={band.freqShiftHz}
@@ -1267,14 +1263,12 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
 
                 {activeModule === 'lofi' ? (
                     <div className="space-y-3">
-                        <button
-                            type="button"
-                            className={`bacteria-chip ${Boolean(band.lofiEnabled) ? 'bacteria-chip-active' : ''}`}
-                            aria-pressed={Boolean(band.lofiEnabled)}
+                        <BChip
+                            active={Boolean(band.lofiEnabled)}
                             onClick={() => setBandParam('lofiEnabled', !Boolean(band.lofiEnabled))}
                         >
                             Enabled
-                        </button>
+                        </BChip>
                         <div className="flex flex-wrap gap-4">
                             <K
                                 v={band.lofiAmount}
@@ -1305,14 +1299,12 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
 
                 {activeModule === 'convolution' ? (
                     <div className="space-y-3">
-                        <button
-                            type="button"
-                            className={`bacteria-chip ${Boolean(band.convolutionEnabled) ? 'bacteria-chip-active' : ''}`}
-                            aria-pressed={Boolean(band.convolutionEnabled)}
+                        <BChip
+                            active={Boolean(band.convolutionEnabled)}
                             onClick={() => setBandParam('convolutionEnabled', !Boolean(band.convolutionEnabled))}
                         >
                             Enabled
-                        </button>
+                        </BChip>
                         <div className="flex flex-wrap gap-4">
                             <K
                                 v={band.convolutionMix}
@@ -1398,10 +1390,9 @@ const BuildDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState
             />
             <div className="flex flex-wrap gap-2">
                 {[1, 2, 3, 4, 5, 6].map((count) => (
-                    <button
+                    <BChip
                         key={count}
-                        type="button"
-                        className={`bacteria-chip ${state.patch.bandCount === count ? 'bacteria-chip-active' : ''}`}
+                        active={state.patch.bandCount === count}
                         onClick={() => {
                             setGlobalParam(deviceId, 'bandCount', count);
                             if (state.activeBand >= count) {
@@ -1410,31 +1401,29 @@ const BuildDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                         }}
                     >
                         {count} band{count === 1 ? '' : 's'}
-                    </button>
+                    </BChip>
                 ))}
             </div>
             <div className="flex flex-wrap gap-2">
                 {['12', '24', '36', '48'].map((slope, index) => (
-                    <button
+                    <BChip
                         key={slope}
-                        type="button"
-                        className={`bacteria-chip ${state.patch.crossoverSlope === index ? 'bacteria-chip-active' : ''}`}
+                        active={state.patch.crossoverSlope === index}
                         onClick={() => setGlobalParam(deviceId, 'crossoverSlope', index)}
                     >
                         {slope} dB
-                    </button>
+                    </BChip>
                 ))}
             </div>
             <div className="flex flex-wrap gap-2">
                 {(['lr4', 'linear-phase'] as const).map((mode) => (
-                    <button
+                    <BChip
                         key={mode}
-                        type="button"
-                        className={`bacteria-chip ${state.patch.crossoverMode === mode ? 'bacteria-chip-active' : ''}`}
+                        active={state.patch.crossoverMode === mode}
                         onClick={() => setGlobalParam(deviceId, 'crossoverMode', mode)}
                     >
                         {mode === 'lr4' ? 'LR4' : 'Linear'}
-                    </button>
+                    </BChip>
                 ))}
             </div>
         </div>
@@ -1465,14 +1454,13 @@ const RouteDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState
             />
             <div className="flex flex-wrap gap-2">
                 {ROUTING_MODES.map((mode) => (
-                    <button
+                    <BChip
                         key={mode}
-                        type="button"
-                        className={`bacteria-chip ${state.patch.globalRouting === mode ? 'bacteria-chip-active' : ''}`}
+                        active={state.patch.globalRouting === mode}
                         onClick={() => setGlobalParam(deviceId, 'globalRouting', mode)}
                     >
                         {mode === 'serial' ? 'Serial' : mode === 'parallel' ? 'Parallel' : 'Mid/side'}
-                    </button>
+                    </BChip>
                 ))}
             </div>
         </div>
@@ -1489,14 +1477,13 @@ const RouteDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                         <span className="text-[11px] font-medium text-foreground">Band {index + 1}</span>
                         <div className="flex flex-wrap gap-1">
                             {ROUTING_MODES.map((mode) => (
-                                <button
+                                <BChip
                                     key={mode}
-                                    type="button"
-                                    className={`bacteria-chip ${state.patch.bands[index]?.routingMode === mode ? 'bacteria-chip-active' : ''}`}
+                                    active={state.patch.bands[index]?.routingMode === mode}
                                     onClick={() => setBacteriaBandParamWithAudio(deviceId, index, 'routingMode', mode)}
                                 >
                                     {mode === 'mid-side' ? 'M/S' : mode}
-                                </button>
+                                </BChip>
                             ))}
                         </div>
                     </div>
@@ -1542,26 +1529,24 @@ const LabDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState }
             </div>
             <div className="flex flex-wrap gap-2">
                 {['Sin', 'Tri', 'Saw', 'Sq', 'S&H'].map((shape, index) => (
-                    <button
+                    <BChip
                         key={`lfo1-${shape}`}
-                        type="button"
-                        className={`bacteria-chip ${state.patch.lfo1Shape === index ? 'bacteria-chip-active' : ''}`}
+                        active={state.patch.lfo1Shape === index}
                         onClick={() => setGlobalParam(deviceId, 'lfo1Shape', index)}
                     >
                         LFO1 {shape}
-                    </button>
+                    </BChip>
                 ))}
             </div>
             <div className="flex flex-wrap gap-2">
                 {['Sin', 'Tri', 'Saw', 'Sq', 'S&H'].map((shape, index) => (
-                    <button
+                    <BChip
                         key={`lfo2-${shape}`}
-                        type="button"
-                        className={`bacteria-chip ${state.patch.lfo2Shape === index ? 'bacteria-chip-active' : ''}`}
+                        active={state.patch.lfo2Shape === index}
                         onClick={() => setGlobalParam(deviceId, 'lfo2Shape', index)}
                     >
                         LFO2 {shape}
-                    </button>
+                    </BChip>
                 ))}
             </div>
         </div>
@@ -1695,15 +1680,14 @@ export const BacteriaPanel = ({ deviceId }: { deviceId: string }): ReactElement 
                             const active = level.id === state.uiLevel;
 
                             return (
-                                <button
+                                <BChip
                                     key={level.id}
-                                    type="button"
-                                    className={`bacteria-chip ${active ? 'bacteria-chip-active' : ''}`}
+                                    active={active}
                                     title={level.description}
                                     onClick={() => setBacteriaUiLevel(deviceId, level.id)}
                                 >
                                     {level.label}
-                                </button>
+                                </BChip>
                             );
                         })}
                     </div>
@@ -1711,20 +1695,19 @@ export const BacteriaPanel = ({ deviceId }: { deviceId: string }): ReactElement 
                     {state.uiLevel >= 2 ? (
                         <div className="flex flex-wrap gap-1">
                             {Array.from({ length: state.patch.bandCount }, (_, index) => (
-                                <button
+                                <BChip
                                     key={index}
-                                    type="button"
-                                    className={`bacteria-chip ${state.activeBand === index ? 'bacteria-chip-active' : ''}`}
+                                    active={state.activeBand === index}
                                     onClick={() => setBacteriaActiveBand(deviceId, index)}
                                 >
                                     Band {index + 1}
-                                </button>
+                                </BChip>
                             ))}
                         </div>
                     ) : null}
 
                     <div className="ml-auto flex items-center gap-2">
-                        <div className="bacteria-led">{moduleMeta.label}</div>
+                        <DawPluginLed tone="cyan">{moduleMeta.label}</DawPluginLed>
                         <div className="text-right">
                             <div className="text-[8px] uppercase tracking-[0.22em] text-muted-foreground/55">
                                 In {formatValue(state.inputDb, 'dB')} / Out {formatValue(state.outputDb, 'dB')}
@@ -1733,14 +1716,12 @@ export const BacteriaPanel = ({ deviceId }: { deviceId: string }): ReactElement 
                                 {countEnabledEffects(activeBand)} active effects in band {state.activeBand + 1}
                             </div>
                         </div>
-                        <button
-                            type="button"
-                            className={`bacteria-chip ${Boolean(state.patch.bypass) ? 'bacteria-chip-active' : ''}`}
-                            aria-pressed={Boolean(state.patch.bypass)}
+                        <BChip
+                            active={Boolean(state.patch.bypass)}
                             onClick={() => setGlobalParam(deviceId, 'bypass', !Boolean(state.patch.bypass))}
                         >
                             {Boolean(state.patch.bypass) ? 'Bypassed' : 'Live'}
-                        </button>
+                        </BChip>
                     </div>
                 </header>
 

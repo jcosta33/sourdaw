@@ -42,10 +42,7 @@ pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThr
                     // 1. Process pending commands lock-free
                     scheduler.update_graph();
 
-                    // 2. Process SAB bridges (legacy path)
-                    scheduler.process_bridges();
-
-                    // 3. Process ring-buffer audio bridges (production path)
+                    // 2. Process ring-buffer audio bridges (production path)
                     // Reads input from worklets via main thread, processes through
                     // CLAP/VST3, writes output back for main thread to return.
                     scheduler.process_audio_bridges();

@@ -4,7 +4,7 @@
  * Rows = source tracks, Columns = destination buses/tracks.
  */
 import { type ReactElement, useState } from 'react';
-import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { DawDiagramFrame } from '#/components/daw/DawDiagramFrame';
 import { cn } from '#/helpers/Styles/cn';
 import { useTracks } from '../hooks/useTracks';
 import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
@@ -42,14 +42,12 @@ export const RoutingMatrix = (): ReactElement => {
     const destinations = [...buses, { id: 'master', name: 'Master', kind: 'master' as const }];
 
     return (
-        <div className="flex flex-col h-full bg-surface-base overflow-auto">
-            <DawHeaderBand
-                className="shrink-0"
-                title="Routing Matrix"
-                titleClassName="text-[11px] font-semibold text-foreground uppercase tracking-wider"
-            />
-
-            <div className="overflow-auto flex-1 p-2">
+        <DawDiagramFrame
+            title="Routing matrix"
+            className="h-full"
+            footer={<div className="text-[10px] text-muted-foreground">Click any cell to toggle a route.</div>}
+        >
+            <div className="min-w-max">
                 <table className="border-collapse text-[10px]">
                     <thead>
                         <tr>
@@ -115,6 +113,6 @@ export const RoutingMatrix = (): ReactElement => {
                     </tbody>
                 </table>
             </div>
-        </div>
+        </DawDiagramFrame>
     );
 };

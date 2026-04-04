@@ -1,5 +1,5 @@
 import { type ReactElement, useState, useEffect, useRef, useSyncExternalStore } from 'react';
-import { DawEmptyState } from '#/components/daw/DawEmptyState';
+import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMenuDisabledRow, DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { Button } from '#/components/ui/button';
@@ -271,11 +271,13 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                     ))}
                 </div>
             ) : (
-                <DawEmptyState
+                <DawBlockedState
                     compact
                     className="mx-1"
+                    eyebrow="Device Rack"
                     title="Nothing in the oven yet"
                     description="Hit + to add an instrument, effect, utility, or analyzer."
+                    summary="The rack can host built-in effects, analyzers, and desktop plugins when available."
                 />
             )}
         </div>

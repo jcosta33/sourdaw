@@ -4,6 +4,7 @@
  * Canvas2D rendering with smoothed correlation value.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+import { DawMeterFrame } from '#/components/daw/DawMeterFrame';
 import { getMasterAnalyser } from '#/modules/AudioEngine/useCases/engineAccess';
 import { PhaseCorrelationMeter as PhaseMeter } from '#/modules/AudioEngine/useCases/advancedMetering';
 import { resolveToken } from '#/helpers/UI/resolveToken';
@@ -120,7 +121,7 @@ export const PhaseCorrelationDisplay = ({ width = 160, height = 24 }: PhaseCorre
     }, [width, height]);
 
     return (
-        <div className="relative rounded bg-[#0a0a0a] channel-inset overflow-hidden">
+        <DawMeterFrame>
             <canvas
                 ref={canvasRef}
                 width={width}
@@ -131,13 +132,6 @@ export const PhaseCorrelationDisplay = ({ width = 160, height = 24 }: PhaseCorre
                 aria-valuemin={-1}
                 aria-valuemax={1}
             />
-            <div
-                className="absolute inset-0 pointer-events-none rounded"
-                style={{
-                    background:
-                        'linear-gradient(90deg, rgba(10,10,10,1) 0%, transparent 4%, transparent 96%, rgba(10,10,10,1) 100%)',
-                }}
-            />
-        </div>
+        </DawMeterFrame>
     );
 };

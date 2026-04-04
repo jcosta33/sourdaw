@@ -1,7 +1,13 @@
 import { type ReactElement, useState, useSyncExternalStore } from 'react';
 import { ChevronDown } from 'lucide-react';
+import { DawCompactInput } from '#/components/daw/DawCompactInput';
+import { DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
+import { DawPluginChoiceRow } from '#/components/daw/DawPluginChoiceRow';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
+import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
+import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
+import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { crustStore, type CrustState, resetCrustMeters, setCrustUiLevel } from '../../stores/crustStore';
 import { loadCrustPatchWithAudio, setCrustParamWithAudio } from '../../useCases/crustParamBridge';
 import { CRUST_PRESETS } from '../../useCases/crustPresets';
@@ -52,11 +58,7 @@ function groupPresets(presets: readonly StreamingPreset[]): [string, StreamingPr
 }
 
 const MetricTile = ({ label, value, detail }: { label: string; value: string; detail: string }): ReactElement => (
-    <div className="crust-window flex min-w-[92px] flex-col gap-1 px-3 py-2">
-        <span className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">{label}</span>
-        <span className="font-mono text-[13px] text-foreground">{value}</span>
-        <span className="text-[9px] text-muted-foreground/55">{detail}</span>
-    </div>
+    <DawPluginMetricTile className="crust-window min-w-[92px]" label={label} value={value} detail={detail} />
 );
 
 export const CrustPanel = (): ReactElement => {
@@ -129,29 +131,27 @@ export const CrustPanel = (): ReactElement => {
                     </button>
                     {presetMenuOpen ? (
                         <div
-                            className="crust-window absolute left-0 top-full z-50 mt-1 flex max-h-[280px] min-w-[220px] flex-col overflow-y-auto p-1"
+                            className="crust-window daw-floating-surface absolute left-0 top-full z-50 mt-1 flex max-h-[280px] min-w-[220px] flex-col overflow-y-auto p-1"
                             role="listbox"
                             aria-label="Crust presets"
                         >
+                            <DawMenuSectionLabel className="px-2 py-1 text-[8px] tracking-[0.24em]">
+                                Factory
+                            </DawMenuSectionLabel>
                             {CRUST_PRESETS.map((preset) => (
-                                <button
+                                <DawPluginChoiceRow
                                     key={preset.id}
-                                    type="button"
-                                    role="option"
-                                    aria-selected={preset.patch.name === patch.name}
-                                    className={`crust-window flex w-full flex-col items-start gap-1 px-3 py-2 text-left ${
-                                        preset.patch.name === patch.name ? 'border-[var(--color-accent-peach)]/35' : ''
-                                    }`}
-                                    onClick={() => {
+                                    title={preset.name}
+                                    subtitle={preset.category}
+                                    active={preset.patch.name === patch.name}
+                                    className="crust-window w-full rounded-[12px]"
+                                    onPress={() => {
                                         loadCrustPatchWithAudio(preset.patch);
                                         setPresetMenuOpen(false);
                                     }}
-                                >
-                                    <span className="text-[11px] font-medium text-foreground">{preset.name}</span>
-                                    <span className="text-[8px] uppercase tracking-[0.22em] text-muted-foreground/50">
-                                        {preset.category}
-                                    </span>
-                                </button>
+                                    role="option"
+                                    aria-selected={preset.patch.name === patch.name}
+                                />
                             ))}
                         </div>
                     ) : null}
@@ -180,46 +180,34 @@ export const CrustPanel = (): ReactElement => {
                     </button>
                     {streamingMenuOpen ? (
                         <div
-                            className="crust-window absolute right-0 top-full z-50 mt-1 flex max-h-[300px] min-w-[268px] flex-col overflow-y-auto p-1"
+                            className="crust-window daw-floating-surface absolute right-0 top-full z-50 mt-1 flex max-h-[300px] min-w-[268px] flex-col overflow-y-auto p-1"
                             role="listbox"
                             aria-label="Streaming loudness targets"
                         >
-                            {groupPresets(STREAMING_PRESETS).map(([group, presets]) => (
+                            {groupPresets(STREAMING_PRESETS).map(([group, presets], groupIndex) => (
                                 <div key={group} className="mb-1 last:mb-0">
-                                    <div className="px-2 pt-1 pb-1 text-[8px] uppercase tracking-[0.24em] text-muted-foreground/45">
+                                    {groupIndex > 0 ? <DawMenuSeparator className="mx-1 my-1 border-border/50" /> : null}
+                                    <DawMenuSectionLabel className="px-2 py-1 text-[8px] tracking-[0.24em]">
                                         {group}
-                                    </div>
+                                    </DawMenuSectionLabel>
                                     {presets.map((preset) => (
-                                        <button
+                                        <DawPluginChoiceRow
                                             key={preset.id}
-                                            type="button"
-                                            role="option"
-                                            aria-selected={patch.streamingPreset === preset.id}
-                                            className={`crust-window flex w-full items-center justify-between gap-3 px-3 py-2 text-left ${
-                                                patch.streamingPreset === preset.id
-                                                    ? 'border-[var(--color-accent-peach)]/35'
-                                                    : ''
-                                            }`}
-                                            onClick={() => {
+                                            title={preset.label}
+                                            subtitle={`TP ${preset.tpCeiling.toFixed(1)}`}
+                                            detail={`${preset.lufsTarget} LUFS`}
+                                            active={patch.streamingPreset === preset.id}
+                                            className="crust-window w-full rounded-[12px]"
+                                            onPress={() => {
                                                 handleSetParam('streamingPreset', preset.id);
                                                 if (preset.id !== 'custom') {
                                                     handleSetParam('ceiling', preset.tpCeiling);
                                                 }
                                                 setStreamingMenuOpen(false);
                                             }}
-                                        >
-                                            <div className="min-w-0">
-                                                <div className="truncate text-[11px] font-medium text-foreground">
-                                                    {preset.label}
-                                                </div>
-                                                <div className="text-[8px] text-muted-foreground/50">
-                                                    TP {preset.tpCeiling.toFixed(1)}
-                                                </div>
-                                            </div>
-                                            <div className="font-mono text-[10px] text-[var(--color-accent-peach)]">
-                                                {preset.lufsTarget} LUFS
-                                            </div>
-                                        </button>
+                                            role="option"
+                                            aria-selected={patch.streamingPreset === preset.id}
+                                        />
                                     ))}
                                 </div>
                             ))}
@@ -262,19 +250,34 @@ export const CrustPanel = (): ReactElement => {
                     </div>
 
                     <div className="crust-window flex min-h-0 flex-1 flex-col gap-3 p-2.5">
-                        <div className="flex items-center justify-between gap-3 px-1">
-                            <div>
-                                <div className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">
-                                    Mission control
+                        <DawPluginSectionHeader
+                            className="px-1"
+                            size="xs"
+                            title="Mission control"
+                            titleClassName="text-muted-foreground/70"
+                            actions={
+                                <div className="flex items-center gap-2 text-[9px] text-muted-foreground">
+                                    <div className="space-y-0.5">
+                                        <DawReadoutRow
+                                            label="ST"
+                                            value={`${lufsShortTerm.toFixed(1)} LUFS`}
+                                            className="gap-1.5"
+                                            labelClassName="text-[8px] text-muted-foreground/55"
+                                            valueClassName="text-[8px] text-muted-foreground"
+                                        />
+                                        <DawReadoutRow
+                                            label="TP"
+                                            value={`${truepeakMax.toFixed(1)} dB`}
+                                            className="gap-1.5"
+                                            labelClassName="text-[8px] text-muted-foreground/55"
+                                            valueClassName="text-[8px] text-muted-foreground"
+                                        />
+                                    </div>
                                 </div>
-                                <div className="text-[12px] font-medium text-foreground">
-                                    Waveform, loudness, and shaved peaks
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-2 text-[9px] text-muted-foreground">
-                                <span>ST {lufsShortTerm.toFixed(1)} LUFS</span>
-                                <span>TP {truepeakMax.toFixed(1)} dB</span>
-                            </div>
+                            }
+                        />
+                        <div className="px-1 text-[12px] font-medium text-foreground">
+                            Waveform, loudness, and shaved peaks
                         </div>
                         <div className="min-h-0 overflow-hidden rounded-[14px] border border-white/6">
                             <CrustWaveformDisplay
@@ -327,14 +330,16 @@ export const CrustPanel = (): ReactElement => {
             <footer className="crust-window flex shrink-0 flex-wrap items-center gap-2.5 px-3 py-2">
                 <label className="flex items-center gap-2 text-[10px] text-muted-foreground">
                     <span className="uppercase tracking-[0.22em] text-muted-foreground/55">Ceiling</span>
-                    <input
+                    <DawCompactInput
                         type="number"
                         min={-6}
                         max={0}
                         step={0.1}
                         value={patch.ceiling}
                         onChange={(event) => handleSetParam('ceiling', Number(event.target.value))}
-                        className="crust-window w-16 px-2 py-1 text-center font-mono text-foreground outline-none"
+                        className="crust-window w-16"
+                        align="center"
+                        monospace
                         aria-label="Output ceiling in dBTP"
                     />
                 </label>

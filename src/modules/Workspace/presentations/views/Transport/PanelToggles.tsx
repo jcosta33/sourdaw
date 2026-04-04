@@ -10,7 +10,7 @@ import {
     Piano,
     Link as LinkIcon,
 } from 'lucide-react';
-import { DawControlStrip } from '#/components/daw/DawControlStrip';
+import { DawTransportCluster } from '#/components/daw/DawTransportCluster';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import {
@@ -59,7 +59,7 @@ export const PanelToggles = ({
     };
 
     return (
-        <DawControlStrip className="gap-0.5 rounded-sm px-1 py-0.5" role="group" aria-label="Panel toggles">
+        <DawTransportCluster role="group" aria-label="Panel toggles">
             <Tooltip>
                 <TooltipTrigger asChild>
                     <Button
@@ -190,6 +190,6 @@ export const PanelToggles = ({
                 </TooltipTrigger>
                 <TooltipContent>Preferences (⌘,)</TooltipContent>
             </Tooltip>
-        </DawControlStrip>
+        </DawTransportCluster>
     );
 };

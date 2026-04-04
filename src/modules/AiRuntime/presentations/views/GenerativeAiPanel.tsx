@@ -1,36 +1,33 @@
 import { type ReactElement, useState, useSyncExternalStore } from 'react';
-import { X, Sparkles, Music, RefreshCw, AudioWaveform, Play, Plus, Loader2, Music4, Library, Info, Upload } from 'lucide-react';
+import { X, Sparkles, Music, RefreshCw, AudioWaveform, Library, Info, Upload } from 'lucide-react';
+import { DawCompactTextarea } from '#/components/daw/DawCompactTextarea';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
+import { DawUtilityNotice } from '#/components/daw/DawUtilityNotice';
+import { DawUtilitySection } from '#/components/daw/DawUtilitySection';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { isTauri } from '#/helpers/tauriBridge';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import {
-    subscribeAiStore,
-    getAiSnapshot,
-    type AiTaskResult,
-    type AiState,
-} from '#/modules/AiGeneration/stores/aiStore';
+import { subscribeAiStore, getAiSnapshot, type AiTaskResult, type AiState } from '#/modules/AiGeneration/stores/aiStore';
 import { toggleAiPanel } from '#/modules/AiGeneration/useCases/actions/toggleAiPanel';
-import { removeTask } from '#/modules/AiGeneration/useCases/actions/removeTask';
 import { handleGenerateMidiPrompt } from '#/modules/AiGeneration/useCases/actions/handleGenerateMidiPrompt';
 import { handleGenerateAudioFallback } from '#/modules/AiGeneration/useCases/actions/handleGenerateAudioFallback';
 import { handleStemSeparationPreview } from '#/modules/AiGeneration/useCases/actions/handleStemSeparationPreview';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
+import { AiTaskResultCard } from '../components/AiTaskResultCard';
 import { GenreGrid, MoodGrid, InstrumentGrid } from '../components/GenerativeParamGrids';
 import { PatternBrowser } from './PatternBrowser';
 
 const DesktopOnlyNotice = ({ feature }: { feature: string }): ReactElement => (
-    <div className="flex items-start gap-2 p-3 rounded-md bg-surface-raised/80 border border-border/40 text-[10px] text-muted-foreground leading-relaxed">
-        <Info className="size-3.5 shrink-0 mt-0.5 text-[var(--color-accent-amber)]" />
+    <DawUtilityNotice icon={<Info className="size-3.5 text-[var(--color-accent-amber)]" />}>
         <div>
             <span className="font-medium text-foreground/80">{feature}</span> requires the Sourdaw desktop app.
             It uses on-device AI models that need GPU access not available in browsers.
         </div>
-    </div>
+    </DawUtilityNotice>
 );
 
 export const GenerativeAiPanel = (): ReactElement | null => {
@@ -187,20 +184,25 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                         </p>
 
                         {selectedClip ? (
-                            <div className="flex items-center gap-2 p-2 rounded-md bg-surface-raised border border-border/40">
-                                <AudioWaveform className="size-4 text-[var(--color-accent-lavender)]" />
-                                <div className="flex-1 min-w-0">
-                                    <div className="text-[11px] font-medium text-foreground truncate">{selectedClip.name}</div>
-                                    <DawEyebrowLabel className="block">Audio Clip Selected</DawEyebrowLabel>
+                            <DawUtilitySection
+                                title="Selected Clip"
+                                detail="The current timeline selection will be split into stems."
+                                bodyClassName="py-2"
+                            >
+                                <div className="flex items-center gap-2">
+                                    <AudioWaveform className="size-4 text-[var(--color-accent-lavender)]" />
+                                    <div className="min-w-0 flex-1">
+                                        <div className="truncate text-[11px] font-medium text-foreground">{selectedClip.name}</div>
+                                        <DawEyebrowLabel className="block">Audio Clip Selected</DawEyebrowLabel>
+                                    </div>
                                 </div>
-                            </div>
+                            </DawUtilitySection>
                         ) : (
-                            <div className="daw-readout-well flex items-center gap-2 rounded-md border border-dashed border-border/50 p-3 text-muted-foreground">
-                                <Upload className="size-4" />
+                            <DawUtilityNotice tone="dashed" icon={<Upload className="size-4" />}>
                                 <DawInlineHint className="bg-transparent px-0 py-0 text-[11px] text-muted-foreground/70">
                                     Select an audio clip on the timeline
                                 </DawInlineHint>
-                            </div>
+                            </DawUtilityNotice>
                         )}
 
                         <Button
@@ -224,11 +226,11 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                             <div className="space-y-3">
                                 <div className="space-y-1.5">
                                     <DawEyebrowLabel size="sm" className="block text-foreground/80">Describe the Sound</DawEyebrowLabel>
-                                    <textarea
+                                    <DawCompactTextarea
                                         value={prompt}
                                         onChange={(e) => setPrompt(e.target.value)}
                                         placeholder="e.g. warm vinyl crackle loop, 85 BPM"
-                                        className="w-full h-12 bg-surface-base border border-border/60 rounded-md p-2 text-xs placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-purple-500/50 resize-none"
+                                        className="h-12 border-border/60 bg-surface-base p-2 resize-none"
                                     />
                                 </div>
 
@@ -282,11 +284,11 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                         <div className="space-y-3">
                             <div className="space-y-1.5">
                                 <DawEyebrowLabel size="sm" className="block text-foreground/80">Describe the Music</DawEyebrowLabel>
-                                <textarea
+                                <DawCompactTextarea
                                     value={prompt}
                                     onChange={(e) => setPrompt(e.target.value)}
                                     placeholder="e.g. jazzy chord progression in D minor"
-                                    className="w-full h-12 bg-surface-base border border-border/60 rounded-md p-2 text-xs placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-purple-500/50 resize-none"
+                                    className="h-12 border-border/60 bg-surface-base p-2 resize-none"
                                 />
                             </div>
 
@@ -344,15 +346,27 @@ export const GenerativeAiPanel = (): ReactElement | null => {
 
                 {/* Results */}
                 {state.tasks.length > 0 ? (
-                    <div className="p-2" style={{ borderTop: '1px solid transparent', backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)', backgroundSize: '100% 1px', backgroundRepeat: 'no-repeat', backgroundPosition: 'top' }}>
-                        <DawEyebrowLabel size="sm" className="mb-2 block px-1">
-                            Recent
-                        </DawEyebrowLabel>
-                        <div className="space-y-1.5">
-                            {state.tasks.map((task: AiTaskResult) => (
-                                <TaskResultCard key={task.id} task={task} />
-                            ))}
-                        </div>
+                    <div
+                        className="p-2"
+                        style={{
+                            borderTop: '1px solid transparent',
+                            backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)',
+                            backgroundSize: '100% 1px',
+                            backgroundRepeat: 'no-repeat',
+                            backgroundPosition: 'top',
+                        }}
+                    >
+                        <DawUtilitySection
+                            title="Recent"
+                            detail="The latest generated clips, renders, and stem jobs."
+                            bodyClassName="px-2 py-2"
+                        >
+                            <div className="space-y-1.5">
+                                {state.tasks.map((task: AiTaskResult) => (
+                                    <AiTaskResultCard key={task.id} task={task} />
+                                ))}
+                            </div>
+                        </DawUtilitySection>
                     </div>
                 ) : null}
             </div>
@@ -390,62 +404,5 @@ const ParamSection = ({
             ) : null}
         </div>
         {children}
-    </div>
-);
-
-const TaskResultCard = ({ task }: { task: AiTaskResult }): ReactElement => (
-    <div className="group relative bg-surface-raised border border-border/40 rounded-md p-2 text-xs flex flex-col gap-1.5 hover:border-[var(--color-accent-lavender)]/40 transition-colors">
-        <div className="flex items-start justify-between">
-            <div className="flex items-center gap-1.5">
-                {task.type === 'midi-generation' ? (
-                    <Music4 className="size-3 text-[var(--color-accent-mint)]" />
-                ) : task.type === 'stem-separation' ? (
-                    <RefreshCw className="size-3 text-[var(--color-accent-peach)]" />
-                ) : (
-                    <AudioWaveform className="size-3 text-[var(--color-accent-lavender)]" />
-                )}
-                <span className="font-medium capitalize text-foreground/90 leading-none">
-                    {task.type.replace('-', ' ')}
-                </span>
-            </div>
-            <Button
-                variant="ghost"
-                size="icon-xs"
-                className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/20 hover:text-destructive"
-                onClick={() => removeTask(task.id)}
-            >
-                <X className="size-3" />
-            </Button>
-        </div>
-
-        {task.prompt ? (
-            <div className="text-[10px] text-muted-foreground italic line-clamp-2">"{task.prompt}"</div>
-        ) : null}
-
-        <div className="mt-1">
-            {task.status === 'processing' ? (
-                <div className="flex items-center gap-1.5 text-[10px] text-[var(--color-accent-lavender)]">
-                    <Loader2 className="size-3 animate-spin" /> Processing...
-                </div>
-            ) : null}
-            {task.status === 'error' ? (
-                <div className="text-[10px] text-destructive">{task.error}</div>
-            ) : null}
-            {task.status === 'success' ? (
-                <div className="flex items-center justify-between mt-1 pt-1 border-t border-border/30">
-                    <span className="text-[9px] text-muted-foreground/70">
-                        {task.durationMs ? `${(task.durationMs / 1000).toFixed(1)}s` : 'Done'}
-                    </span>
-                    <div className="flex items-center gap-1">
-                        <Button variant="secondary" size="icon-xs" className="h-5 w-5 bg-surface-base" title="Preview">
-                            <Play className="size-3 text-foreground" />
-                        </Button>
-                        <Button variant="secondary" size="icon-xs" className="h-5 w-5 bg-surface-base" title="Add to arrangement">
-                            <Plus className="size-3 text-foreground" />
-                        </Button>
-                    </div>
-                </div>
-            ) : null}
-        </div>
     </div>
 );

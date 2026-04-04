@@ -63,7 +63,6 @@ pub fn run() {
             commands::plugins::start_native_engine,
             commands::plugins::send_plugin_midi,
             commands::plugins::update_plugin_transport,
-            commands::plugins::register_plugin_bridge,
             commands::plugins::process_plugin_audio,
             // audio bridge
             // commands::audio_ipc::audio_ipc, // TODO: re-add when audio_ipc module is implemented

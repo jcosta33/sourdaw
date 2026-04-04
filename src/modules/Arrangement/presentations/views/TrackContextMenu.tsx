@@ -1,5 +1,6 @@
 import { type ReactElement,
     type MouseEvent, type ReactNode, useState, useRef } from 'react';
+import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { cn } from '#/helpers/Styles/cn';
 import { removeTrack } from '../../useCases/removeTrack';
@@ -239,8 +240,9 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                     >
                         {renaming ? (
                             <div className="px-2 py-1">
-                                <input
-                                    className="w-full rounded bg-surface-overlay px-2 py-1 text-xs text-foreground outline-none ring-1 ring-ring"
+                                <DawCompactInput
+                                    size="micro"
+                                    className="w-full text-xs"
                                     value={renameValue}
                                     onChange={(e) => setRenameValue(e.target.value)}
                                     onKeyDown={(e) => {

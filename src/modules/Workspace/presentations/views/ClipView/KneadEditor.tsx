@@ -6,6 +6,7 @@ import { ingestDspAnalysis } from '#/modules/Knead/useCases/dspAnalysis';
 import { updateTrackKneadState } from '#/modules/Knead/stores/kneadStore';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
+import { DawCompactCheckbox } from '#/components/daw/DawCompactCheckbox';
 import { Mic } from 'lucide-react';
 
 export const KneadEditor = ({ trackId, clipId: _clipId }: { trackId: string; clipId: string }): ReactElement => {
@@ -183,8 +184,7 @@ export const KneadEditor = ({ trackId, clipId: _clipId }: { trackId: string; cli
                         />
                     </div>
                     <div className="flex items-center gap-2 px-3 border-l border-border">
-                        <input 
-                            type="checkbox"
+                        <DawCompactCheckbox
                             checked={kneadState.formantPreserve ?? true}
                             onChange={(e) => updateTrackKneadState(trackId, s => ({ ...s, formantPreserve: e.target.checked }))}
                             className="cursor-pointer"

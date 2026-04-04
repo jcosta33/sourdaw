@@ -54,19 +54,31 @@ export const AnalysisPanel = (): ReactElement => {
         <div className="flex flex-col h-full bg-surface-base">
             <ScrollArea className="flex-1">
                 <div className="p-2 flex flex-wrap gap-2">
-                    <DawAnalysisCard title="Spectrum Analyzer" className="min-w-[280px] max-w-[600px] flex-1 h-[140px]">
+                    <DawAnalysisCard
+                        title="Spectrum Analyzer"
+                        detail="FFT spectrum in a shared analyzer shell."
+                        className="min-w-[280px] max-w-[600px] flex-1 h-[140px]"
+                    >
                         <Measured className="w-full h-full">
                             {({ width, height }) => <SpectrumAnalyzer width={width} height={height} />}
                         </Measured>
                     </DawAnalysisCard>
 
-                    <DawAnalysisCard title="Oscilloscope" className="min-w-[280px] max-w-[600px] flex-1 h-[140px]">
+                    <DawAnalysisCard
+                        title="Oscilloscope"
+                        detail="Waveform trace with the same inset meter frame."
+                        className="min-w-[280px] max-w-[600px] flex-1 h-[140px]"
+                    >
                         <Measured className="w-full h-full">
                             {({ width, height }) => <Oscilloscope width={width} height={height} />}
                         </Measured>
                     </DawAnalysisCard>
 
-                    <DawAnalysisCard title="Spectrogram" className="min-w-[280px] max-w-[600px] flex-1 h-[140px]">
+                    <DawAnalysisCard
+                        title="Spectrogram"
+                        detail="Time-based energy map in the shared analysis shell."
+                        className="min-w-[280px] max-w-[600px] flex-1 h-[140px]"
+                    >
                         <Measured className="w-full h-full">
                             {({ width, height }) => <Spectrogram width={width} height={height} />}
                         </Measured>
@@ -78,7 +90,11 @@ export const AnalysisPanel = (): ReactElement => {
                         </Measured>
                     </DawAnalysisCard>
 
-                    <DawAnalysisCard title="Goniometer" className="w-[140px] shrink-0 h-[140px]">
+                    <DawAnalysisCard
+                        title="Goniometer"
+                        detail="Stereo image scatter plot."
+                        className="w-[140px] shrink-0 h-[140px]"
+                    >
                         <Measured className="w-full h-full">
                             {({ width, height }) => {
                                 const s = Math.min(width, height);
@@ -96,13 +112,21 @@ export const AnalysisPanel = (): ReactElement => {
                         </Measured>
                     </DawAnalysisCard>
 
-                    <DawAnalysisCard title="LUFS" className="w-[80px] shrink-0 h-[140px]">
+                    <DawAnalysisCard
+                        title="LUFS"
+                        detail="Momentary, short-term, and integrated loudness."
+                        className="w-[80px] shrink-0 h-[140px]"
+                    >
                         <Measured className="w-full h-full">
                             {({ width, height }) => <LUFSMeter width={Math.min(width, 60)} height={height} />}
                         </Measured>
                     </DawAnalysisCard>
 
-                    <DawAnalysisCard title="Phase Correlation" className="w-full h-[48px]">
+                    <DawAnalysisCard
+                        title="Phase Correlation"
+                        detail="Mono compatibility from -1 to +1."
+                        className="w-full h-[48px]"
+                    >
                         <Measured className="w-full h-full">
                             {({ width }) => <PhaseCorrelationDisplay width={width} height={20} />}
                         </Measured>

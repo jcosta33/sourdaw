@@ -1,10 +1,10 @@
 import { type ReactElement, useRef, useEffect, useSyncExternalStore } from 'react';
-import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { type TimeDisplayMode } from '../../../models/WorkspaceState';
 import { toggleTimeDisplayMode } from '../../../useCases/togglePanel/panelToggles';
 import { playheadPositionRef } from '#/modules/Transport/stores/playheadPositionRef';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
+import { TransportSegmentedReadout } from '../../components/Transport/TransportSegmentedReadout';
 
 type PlayheadDisplayProps = {
     tempo: number;
@@ -103,23 +103,15 @@ export const PlayheadDisplay = ({
         return (
             <Tooltip>
                 <TooltipTrigger asChild>
-                    <button
-                        type="button"
-                        className="daw-readout-well group flex cursor-pointer items-center gap-0.5 rounded-sm px-2.5 py-1 font-mono font-medium tabular-nums transition-colors"
+                    <TransportSegmentedReadout
+                        label="Bars"
+                        segments={[bar, beat, String(tick).padStart(3, '0')]}
+                        separators={['.', '.']}
+                        segmentRefs={[seg1Ref, seg2Ref, seg3Ref]}
+                        active={isPlaying}
                         onClick={toggleTimeDisplayMode}
-                        aria-label="Playhead position — click to switch to wall-clock time"
-                    >
-                        <DawEyebrowLabel size="xs" className="mr-1.5 font-sans text-muted-foreground/40">
-                            Bars
-                        </DawEyebrowLabel>
-                        <span ref={seg1Ref} className="text-xl min-w-8 text-right" style={{ color: isPlaying ? '#7fb8a4' : '#b0b0b0' }}>{bar}</span>
-                        <span className="text-sm mt-0.5" style={{ color: 'rgba(255,255,255,0.2)' }}>.</span>
-                        <span ref={seg2Ref} className="text-xl min-w-6" style={{ color: isPlaying ? '#7fb8a4' : '#b0b0b0' }}>{beat}</span>
-                        <span className="text-sm mt-0.5" style={{ color: 'rgba(255,255,255,0.2)' }}>.</span>
-                        <span ref={seg3Ref} className="text-sm min-w-8 mt-0.5" style={{ color: isPlaying ? 'rgba(127,184,164,0.5)' : 'rgba(176,176,176,0.4)' }}>
-                            {String(tick).padStart(3, '0')}
-                        </span>
-                    </button>
+                        ariaLabel="Playhead position — click to switch to wall-clock time"
+                    />
                 </TooltipTrigger>
                 <TooltipContent>Click to switch to wall-clock time</TooltipContent>
             </Tooltip>
@@ -134,21 +126,15 @@ export const PlayheadDisplay = ({
     return (
         <Tooltip>
             <TooltipTrigger asChild>
-                <button
-                    type="button"
-                    className="daw-readout-well group flex cursor-pointer items-center gap-0.5 rounded-sm px-2.5 py-1 font-mono font-medium tabular-nums transition-colors"
+                <TransportSegmentedReadout
+                    label="Time"
+                    segments={[String(mins).padStart(2, '0'), String(secs).padStart(2, '0'), String(ms).padStart(3, '0')]}
+                    separators={[':', '.']}
+                    segmentRefs={[seg1Ref, seg2Ref, seg3Ref]}
+                    active={isPlaying}
                     onClick={toggleTimeDisplayMode}
-                    aria-label="Playhead position — click to switch to bars and beats"
-                >
-                    <DawEyebrowLabel size="xs" className="mr-1.5 font-sans text-muted-foreground/40">
-                        Time
-                    </DawEyebrowLabel>
-                    <span ref={seg1Ref} className="text-xl min-w-8 text-right" style={{ color: isPlaying ? '#7fb8a4' : '#b0b0b0' }}>{String(mins).padStart(2, '0')}</span>
-                    <span className="text-sm mt-0.5" style={{ color: 'rgba(255,255,255,0.2)' }}>:</span>
-                    <span ref={seg2Ref} className="text-xl min-w-6" style={{ color: isPlaying ? '#7fb8a4' : '#b0b0b0' }}>{String(secs).padStart(2, '0')}</span>
-                    <span className="text-sm mt-0.5" style={{ color: 'rgba(255,255,255,0.2)' }}>.</span>
-                    <span ref={seg3Ref} className="text-sm min-w-8 mt-0.5" style={{ color: isPlaying ? 'rgba(127,184,164,0.5)' : 'rgba(176,176,176,0.4)' }}>{String(ms).padStart(3, '0')}</span>
-                </button>
+                    ariaLabel="Playhead position — click to switch to bars and beats"
+                />
             </TooltipTrigger>
             <TooltipContent>Click to switch to bars &amp; beats</TooltipContent>
         </Tooltip>

@@ -12,6 +12,11 @@ import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache'
 import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
 
 import { setupProjectionBridge } from '#/modules/CrdtDocument/useCases/projection/projectProjection';
+import { branchStore } from '#/modules/CrdtDocument/stores/branchStore';
+import { automergeRepository } from '#/modules/CrdtDocument/repositories/automergeRepository';
+import { persistCrdtProject } from '#/modules/CrdtDocument/useCases/crdtProjectLifecycle';
+import { DOC_BRANCHES } from '#/modules/CrdtDocument/models/CrdtDocumentTypes';
+import { type BranchStoreState, MAIN_BRANCH_ID } from '#/modules/CrdtDocument/models/BranchTypes';
 
 import { collaborationStore } from '../../stores/collaborationStore';
 import { PeerConnectionManager } from '../../repositories/peerConnection';
@@ -31,9 +36,127 @@ let pendingInviteId: PeerId | null = null;
 /** Cleanup timers for peers that disconnected without sending peer-leave. */
 const peerCleanupTimers = new Map<PeerId, ReturnType<typeof setTimeout>>();
 
+// -- Branch sync state --
+/** Snapshot of branchStore taken at session start; restored on session end. */
+let branchStoreSnapshot: BranchStoreState | null = null;
+/** Unsubscribe from branchStore changes (local mutations → Automerge doc). */
+let unsubscribeBranchStore: (() => void) | null = null;
+/** Unsubscribe from automergeRepository changes (__branches__ doc → branchStore). */
+let unsubscribeAutomergeChanges: (() => void) | null = null;
+/**
+ * Guard flag to prevent infinite update loop:
+ * projecting __branches__ → branchStore triggers branchStore.subscribe,
+ * which must not write back to the Automerge doc.
+ */
+let isProjectingBranches = false;
+
 const PEER_CLEANUP_DELAY_MS = 15_000;
 
 const PLAYHEAD_BROADCAST_HZ = 4;
+
+// -- Branch sync helpers --
+
+/**
+ * Start session-scoped branch metadata sync.
+ *
+ * For the host: seeds the `__branches__` Automerge doc with current branch list.
+ * For joiners: the doc is created on first receipt of a sync message from the host.
+ *
+ * During the session:
+ *  - Local branch mutations (fork/delete/etc.) are mirrored into the Automerge doc
+ *    so peers receive them via the normal sync protocol.
+ *  - Incoming `__branches__` doc changes from peers are projected back into branchStore
+ *    (in-memory only — we restore the pre-session snapshot on leave).
+ *
+ * Only `branches` is synced; `activeBranchId` is per-peer and never shared.
+ */
+const startBranchSync = (isHost: boolean): void => {
+    // Snapshot current state so we can restore it on session end.
+    branchStoreSnapshot = branchStore.value ? { ...branchStore.value, branches: [...branchStore.value.branches] } : null;
+
+    if (isHost) {
+        // Seed the metadata doc. Remove any stale doc from a previous session first.
+        automergeRepository.removeDoc(DOC_BRANCHES);
+        automergeRepository.createChildDoc(DOC_BRANCHES);
+        const currentBranches = branchStore.value?.branches ?? [];
+        automergeRepository.changeDoc(DOC_BRANCHES, (doc: Record<string, unknown>) => {
+            doc['branches'] = currentBranches;
+        });
+    }
+    // For joiners, the doc is created on demand in AutomergeSync.receiveSync.
+
+    // Mirror local branch mutations into the Automerge doc.
+    unsubscribeBranchStore = branchStore.subscribe((state) => {
+        if (isProjectingBranches || !state) {
+            return;
+        }
+        if (!automergeRepository.hasDoc(DOC_BRANCHES)) {
+            return;
+        }
+        automergeRepository.changeDoc(DOC_BRANCHES, (doc: Record<string, unknown>) => {
+            doc['branches'] = state.branches;
+        });
+    });
+
+    // Project incoming __branches__ doc changes back into branchStore.
+    unsubscribeAutomergeChanges = automergeRepository.onChange(() => {
+        const doc = automergeRepository.getDoc<{ branches: BranchStoreState['branches'] }>(DOC_BRANCHES);
+        if (!doc?.branches) {
+            return;
+        }
+        const current = branchStore.value;
+        const incomingBranches = Array.from(doc.branches);
+        const activeBranchId = current?.activeBranchId ?? MAIN_BRANCH_ID;
+        // Only update if the branches list actually changed (avoid spurious writes).
+        const currentJson = JSON.stringify(current?.branches ?? []);
+        const incomingJson = JSON.stringify(incomingBranches);
+        if (currentJson === incomingJson) {
+            return;
+        }
+        isProjectingBranches = true;
+        try {
+            // Keep the peer's own activeBranchId — don't force them onto the host's branch.
+            const validActiveBranchId = incomingBranches.some((b) => b.branchId === activeBranchId)
+                ? activeBranchId
+                : MAIN_BRANCH_ID;
+            branchStore.set({ branches: incomingBranches, activeBranchId: validActiveBranchId });
+        } finally {
+            isProjectingBranches = false;
+        }
+    });
+};
+
+/**
+ * Stop branch sync and restore the pre-session branchStore state.
+ * Removes the `__branches__` Automerge doc so it isn't included in future saves.
+ */
+const stopBranchSync = (): void => {
+    if (unsubscribeBranchStore) {
+        unsubscribeBranchStore();
+        unsubscribeBranchStore = null;
+    }
+    if (unsubscribeAutomergeChanges) {
+        unsubscribeAutomergeChanges();
+        unsubscribeAutomergeChanges = null;
+    }
+
+    automergeRepository.removeDoc(DOC_BRANCHES);
+
+    if (branchStoreSnapshot) {
+        isProjectingBranches = true;
+        try {
+            branchStore.set(branchStoreSnapshot);
+        } finally {
+            isProjectingBranches = false;
+        }
+        branchStoreSnapshot = null;
+    }
+
+    // Persist without the __branches__ doc so IDB stays clean.
+    persistCrdtProject().catch((error) => {
+        console.error('[Collaboration] Failed to persist after branch sync cleanup:', error);
+    });
+};
 
 const generatePeerId = (): PeerId => crypto.randomUUID();
 const generateSessionId = (): string => crypto.randomUUID().slice(0, 8);
@@ -90,6 +213,7 @@ export const createSession = (name: string): string => {
 
     permissionManager = new PermissionManager(peerManager);
     startPlayheadBroadcast();
+    startBranchSync(true);
 
     collaborationStore.set({
         isEnabled: true,
@@ -177,12 +301,15 @@ export const joinSession = async (inviteString: string, name: string): Promise<s
     cleanupProjectionBridge = setupProjectionBridge();
 
     assetTransfer = new AssetTransfer(peerManager, {
-        onAssetAvailable: (_hash) => {},
+        onAssetAvailable: (hash) => {
+            void resolveAssetForClips(hash);
+        },
         onProgress: (_hash, _received, _total) => {},
     });
 
     permissionManager = new PermissionManager(peerManager);
     startPlayheadBroadcast();
+    startBranchSync(false);
 
     const peer = peerManager.createPeer(invite.peerId);
     const answerSdp = await peer.acceptOffer(invite.sdp);
@@ -263,6 +390,7 @@ export const acceptAnswer = async (answerString: string): Promise<void> => {
 const cleanupSubsystems = (): void => {
     pendingInviteId = null;
     stopPlayheadBroadcast();
+    stopBranchSync();
     for (const timer of peerCleanupTimers.values()) {
         clearTimeout(timer);
     }

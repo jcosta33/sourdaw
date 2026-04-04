@@ -1,5 +1,7 @@
 import { type ReactElement, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+
+import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawMenuMutedRow } from '#/components/daw/DawMenuParts';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { selectClip } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
@@ -102,7 +104,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
             {isRenaming ? (
                 <div className="px-2 py-1.5 flex flex-col gap-1 border-y border-border/40 my-0.5 bg-surface-raised">
                     <div className="text-[9px] text-muted-foreground uppercase tracking-wider">Rename Clip</div>
-                    <input
+                    <DawCompactInput
                         type="text"
                         autoFocus
                         value={newName}
@@ -116,7 +118,8 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                                 setIsRenaming(false);
                             }
                         }}
-                        className="w-full bg-surface-inset text-[10px] text-foreground rounded border border-border px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-[var(--color-accent-amber)]"
+                        size="micro"
+                        className="w-full text-[10px]"
                     />
                 </div>
             ) : (

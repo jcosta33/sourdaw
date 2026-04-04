@@ -1,10 +1,11 @@
 import { type ReactElement, useSyncExternalStore, useState } from 'react';
+import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
+import { DawPickerRow } from '#/components/daw/DawPickerRow';
 import { Button } from '#/components/ui/button';
-import { Input } from '#/components/ui/input';
 import { Search, ChevronDown, ChevronRight, Plug, RefreshCw, Loader2, Plus, AlertCircle, Monitor } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
 import { pluginScanStore, defaultPluginScanState } from '../../stores/pluginScanStore';
@@ -147,14 +148,15 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
                     <div className="flex items-center gap-1 px-1">
                         <div className="flex-1 flex items-center gap-1">
                             <Search className="size-3 text-muted-foreground" aria-hidden="true" />
-                            <Input
+                            <DawCompactInput
                                 type="search"
                                 placeholder="Filter plugins..."
                                 value={localSearch}
                                 onChange={(e) => {
                                     setLocalSearch(e.target.value);
                                 }}
-                                className="h-5 border-0 bg-transparent text-[10px] shadow-none focus-visible:ring-0 p-0"
+                                size="micro"
+                                className="h-5 border-0 bg-transparent p-0 text-[10px] shadow-none focus-visible:ring-0"
                                 aria-label="Filter external plugins"
                             />
                         </div>
@@ -241,16 +243,10 @@ const PluginRow = ({
     onLoad: (plugin: ScannedPlugin) => void;
 }): ReactElement => {
     return (
-        <div
-            className="flex items-center justify-between rounded px-2 py-1.5 hover:bg-accent/50 cursor-pointer"
-            onClick={() => {
-                onLoad(plugin);
-            }}
-            title={selectedTrackId ? 'Click to load onto selected track' : 'Click to create a new track'}
-        >
-            <div className="min-w-0 flex-1">
+        <DawPickerRow
+            heading={
                 <div className="flex items-center gap-1">
-                    <span className="text-xs text-foreground truncate">{plugin.name}</span>
+                    <span className="truncate">{plugin.name}</span>
                     <DawMicroBadge
                         className={cn(
                             'shrink-0 border-0 px-1 py-px text-[10px] font-bold uppercase',
@@ -260,17 +256,24 @@ const PluginRow = ({
                         {plugin.format}
                     </DawMicroBadge>
                 </div>
+            }
+            description={
                 <div className="flex items-center gap-1">
-                    <span className="text-[9px] text-muted-foreground truncate">{plugin.vendor}</span>
-                    {plugin.category ? (
-                        <span className="text-[9px] text-muted-foreground/70 capitalize">· {plugin.category}</span>
-                    ) : null}
+                    <span className="truncate">{plugin.vendor}</span>
+                    {plugin.category ? <span className="capitalize">· {plugin.category}</span> : null}
                 </div>
-            </div>
-            <div className="flex items-center gap-1 shrink-0">
-                <span className="text-[9px] text-muted-foreground">{plugin.num_parameters}p</span>
-                {selectedTrackId ? <Plus className="size-3 text-muted-foreground" /> : null}
-            </div>
-        </div>
+            }
+            endSlot={
+                <div className="flex items-center gap-1 shrink-0">
+                    <span className="text-[9px] text-muted-foreground">{plugin.num_parameters}p</span>
+                    {selectedTrackId ? <Plus className="size-3 text-muted-foreground" /> : null}
+                </div>
+            }
+            onClick={() => {
+                onLoad(plugin);
+            }}
+            className="px-2 py-1.5"
+            title={selectedTrackId ? 'Click to load onto selected track' : 'Click to create a new track'}
+        />
     );
 };

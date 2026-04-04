@@ -1,9 +1,10 @@
 import { type ReactElement } from 'react';
-import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { DawMeterBar } from '#/components/daw/DawMeterBar';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { DawStatusDot } from '#/components/daw/DawStatusDot';
+import { DawUtilityListRow } from '#/components/daw/DawUtilityListRow';
+import { DawUtilitySection } from '#/components/daw/DawUtilitySection';
 import { AlertCircle, AlertTriangle, Info, Volume2 } from 'lucide-react';
 import { type MixAnalysis, type MixIssue } from '#/modules/AiRuntime/models/MixAnalysis';
 
@@ -76,8 +77,7 @@ export const FrequencyBar = ({ label, range, db }: FrequencyBarProps): ReactElem
 type OverallLevelProps = { level: MixAnalysis['overallLevel'] };
 
 export const OverallLevel = ({ level }: OverallLevelProps): ReactElement => (
-    <section>
-        <DawEyebrowLabel size="sm" className="mb-2 block">Master Level</DawEyebrowLabel>
+    <DawUtilitySection title="Master Level" detail="Peak and RMS at the current master output.">
         <div className="flex items-center gap-3">
             <DawStatusDot className={`size-2.5 ${levelColor(level.peakDb)}`} />
             <div className="flex-1 space-y-0.5">
@@ -89,7 +89,7 @@ export const OverallLevel = ({ level }: OverallLevelProps): ReactElement => (
                 <DawReadoutRow label="RMS" value={`${level.rmsDb.toFixed(1)} dB`} valueClassName="text-xs" />
             </div>
         </div>
-    </section>
+    </DawUtilitySection>
 );
 
 // ── FrequencyBalance ────────────────────────────────────────────────────
@@ -97,14 +97,13 @@ export const OverallLevel = ({ level }: OverallLevelProps): ReactElement => (
 type FrequencyBalanceProps = { bands: MixAnalysis['frequencyBalance'] };
 
 export const FrequencyBalance = ({ bands }: FrequencyBalanceProps): ReactElement => (
-    <section>
-        <DawEyebrowLabel size="sm" className="mb-2 block">Frequency Balance</DawEyebrowLabel>
+    <DawUtilitySection title="Frequency Balance" detail="Broad-spectrum energy by band.">
         <div className="space-y-1.5">
             {BAND_LABELS.map(({ key, label, range }) => (
                 <FrequencyBar key={key} label={label} range={range} db={bands[key]} />
             ))}
         </div>
-    </section>
+    </DawUtilitySection>
 );
 
 // ── TrackLevelsList ─────────────────────────────────────────────────────
@@ -112,38 +111,38 @@ export const FrequencyBalance = ({ bands }: FrequencyBalanceProps): ReactElement
 type TrackLevelsListProps = { trackLevels: MixAnalysis['trackLevels'] };
 
 export const TrackLevelsList = ({ trackLevels }: TrackLevelsListProps): ReactElement => (
-    <section>
-        <DawEyebrowLabel size="sm" className="mb-2 block">
-            Track Levels ({trackLevels.length})
-        </DawEyebrowLabel>
+    <DawUtilitySection
+        title="Track Levels"
+        detail={`${trackLevels.length} track${trackLevels.length === 1 ? '' : 's'} in the current scan.`}
+    >
         {trackLevels.length > 0 ? (
             <div className="space-y-1">
                 {trackLevels.map((tl) => (
-                    <div
+                    <DawUtilityListRow
                         key={tl.trackId}
-                        className={`flex items-center justify-between rounded bg-surface-overlay px-2 py-1 ${tl.isMuted ? 'opacity-40' : ''}`}
-                    >
-                        <div className="flex items-center gap-1.5 min-w-0">
-                            <Volume2 className="size-3 shrink-0 text-muted-foreground" />
-                            <span className="text-xs text-foreground truncate">{tl.trackName}</span>
-                            {tl.isMuted ? <DawMicroBadge className="px-1" tone="muted">M</DawMicroBadge> : null}
-                            {tl.isSoloed ? <DawMicroBadge className="px-1" tone="peach">S</DawMicroBadge> : null}
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                            <span
-                                className={`text-[10px] font-mono ${tl.isClipping ? 'text-[var(--color-state-danger)] font-bold' : 'text-muted-foreground'}`}
-                            >
-                                {tl.peakDb.toFixed(1)} dB
-                            </span>
-                            <DawStatusDot className={levelColor(tl.peakDb)} />
-                        </div>
-                    </div>
+                        dimmed={tl.isMuted}
+                        className="rounded bg-surface-overlay/70 px-2"
+                        startSlot={<Volume2 className="size-3 text-muted-foreground" />}
+                        title={tl.trackName}
+                        endSlot={
+                            <div className="flex items-center gap-2">
+                                {tl.isMuted ? <DawMicroBadge className="px-1" tone="muted">M</DawMicroBadge> : null}
+                                {tl.isSoloed ? <DawMicroBadge className="px-1" tone="peach">S</DawMicroBadge> : null}
+                                <span
+                                    className={`text-[10px] font-mono ${tl.isClipping ? 'font-bold text-[var(--color-state-danger)]' : 'text-muted-foreground'}`}
+                                >
+                                    {tl.peakDb.toFixed(1)} dB
+                                </span>
+                                <DawStatusDot className={levelColor(tl.peakDb)} />
+                            </div>
+                        }
+                    />
                 ))}
             </div>
         ) : (
             <p className="text-[10px] text-muted-foreground">No tracks to analyze.</p>
         )}
-    </section>
+    </DawUtilitySection>
 );
 
 // ── IssuesList ──────────────────────────────────────────────────────────
@@ -155,8 +154,10 @@ export const IssuesList = ({ issues }: IssuesListProps): ReactElement | null => 
         return null;
     }
     return (
-        <section>
-            <DawEyebrowLabel size="sm" className="mb-2 block">Issues ({issues.length})</DawEyebrowLabel>
+        <DawUtilitySection
+            title="Issues"
+            detail={`${issues.length} item${issues.length === 1 ? '' : 's'} need attention.`}
+        >
             <div className="space-y-1">
                 {issues.map((issue, i) => (
                     <div key={i} className="flex items-start gap-1.5 rounded bg-surface-overlay px-2 py-1.5">
@@ -165,7 +166,7 @@ export const IssuesList = ({ issues }: IssuesListProps): ReactElement | null => 
                     </div>
                 ))}
             </div>
-        </section>
+        </DawUtilitySection>
     );
 };
 
@@ -178,8 +179,7 @@ export const SuggestionsList = ({ suggestions }: SuggestionsListProps): ReactEle
         return null;
     }
     return (
-        <section>
-            <DawEyebrowLabel size="sm" className="mb-2 block">Suggestions</DawEyebrowLabel>
+        <DawUtilitySection title="Suggestions" detail="Quick next moves suggested by the current analysis.">
             <ul className="space-y-1">
                 {suggestions.map((s, i) => (
                     <li key={i} className="flex items-start gap-1.5 text-[10px] text-muted-foreground leading-tight">
@@ -188,6 +188,6 @@ export const SuggestionsList = ({ suggestions }: SuggestionsListProps): ReactEle
                     </li>
                 ))}
             </ul>
-        </section>
+        </DawUtilitySection>
     );
 };

@@ -117,15 +117,15 @@ export async function createScoringNode(ctx: BaseAudioContext): Promise<ScoringN
             const poll = () => {
                 const active = view[SCORING_IDX.active] !== 0;
                 if (active) {
-                    const noteIndex = view[SCORING_IDX.noteIndex];
+                    const noteIndex = view[SCORING_IDX.noteIndex] ?? 0;
                     callback({
                         active: true,
-                        frequency: view[SCORING_IDX.frequency],
-                        cents: view[SCORING_IDX.cents],
-                        confidence: view[SCORING_IDX.confidence],
+                        frequency: view[SCORING_IDX.frequency] ?? 0,
+                        cents: view[SCORING_IDX.cents] ?? 0,
+                        confidence: view[SCORING_IDX.confidence] ?? 0,
                         noteIndex,
-                        octave: view[SCORING_IDX.octave],
-                        midiNote: view[SCORING_IDX.midiNote],
+                        octave: view[SCORING_IDX.octave] ?? 0,
+                        midiNote: view[SCORING_IDX.midiNote] ?? 0,
                         noteName: NOTE_NAMES[noteIndex % 12] ?? 'C',
                     });
                 } else {

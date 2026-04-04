@@ -1,11 +1,12 @@
 import { type ReactElement, useState } from 'react';
-import { DawMiniSectionHeader } from '#/components/daw/DawMiniSectionHeader';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
 import { Button } from '#/components/ui/button';
 import { useTracks } from '../../hooks/useTracks';
 import { setTrackOutput } from '#/modules/Arrangement/useCases/toggleTrackState/setTrackOutput';
 import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
+import { MixerMicroReadout } from '../../components/Mixer/MixerMicroReadout';
+import { MixerSection } from '../../components/Mixer/MixerSection';
 
 type IOSectionProps = {
     track: Track;
@@ -26,30 +27,29 @@ export const IOSection = ({ track }: IOSectionProps): ReactElement => {
     ];
 
     return (
-        <div className="w-full space-y-0.5">
-            <DawMiniSectionHeader label="I/O" />
+        <MixerSection label="I/O">
+            <MixerMicroReadout label="In" value={inputLabel} />
 
-            <div className="flex items-center justify-between px-0.5">
-                <span className="text-[6px] text-muted-foreground/50 uppercase">In</span>
-                <span className="text-[10px] text-muted-foreground truncate max-w-16 text-right">{inputLabel}</span>
-            </div>
-
-            <div className="relative flex items-center justify-between px-0.5">
-                <span className="text-[6px] text-muted-foreground/50 uppercase">Out</span>
-                <Button
-                    variant="ghost"
-                    size="xs"
-                    className="flex items-center gap-0.5 text-[10px] max-w-16 truncate h-5 px-1"
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        setOutputOpen(!outputOpen);
-                    }}
-                    aria-haspopup="listbox"
-                    aria-expanded={outputOpen}
-                >
-                    <span className="truncate">{outputLabel}</span>
-                    <ChevronDown className="size-2 shrink-0 text-muted-foreground" aria-hidden="true" />
-                </Button>
+            <div className="relative">
+                <MixerMicroReadout
+                    label="Out"
+                    endSlot={
+                        <Button
+                            variant="ghost"
+                            size="xs"
+                            className="flex h-5 max-w-16 items-center gap-0.5 truncate px-1 text-[10px]"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setOutputOpen(!outputOpen);
+                            }}
+                            aria-haspopup="listbox"
+                            aria-expanded={outputOpen}
+                        >
+                            <span className="truncate">{outputLabel}</span>
+                            <ChevronDown className="size-2 shrink-0 text-muted-foreground" aria-hidden="true" />
+                        </Button>
+                    }
+                />
 
                 {outputOpen ? (
                     <div
@@ -64,8 +64,8 @@ export const IOSection = ({ track }: IOSectionProps): ReactElement => {
                                 role="option"
                                 aria-selected={track.outputId === target.id}
                                 className={cn(
-                                    'w-full px-2 py-1 text-left text-[10px] hover:bg-white/[0.06] transition-colors',
-                                    track.outputId === target.id && 'text-primary font-medium'
+                                    'w-full px-2 py-1 text-left text-[10px] transition-colors hover:bg-white/[0.06]',
+                                    track.outputId === target.id && 'font-medium text-primary'
                                 )}
                                 onClick={(e) => {
                                     e.stopPropagation();
@@ -79,6 +79,6 @@ export const IOSection = ({ track }: IOSectionProps): ReactElement => {
                     </div>
                 ) : null}
             </div>
-        </div>
+        </MixerSection>
     );
 };

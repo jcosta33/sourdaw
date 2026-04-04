@@ -1,4 +1,4 @@
-import { type ReactElement, type MouseEvent, useRef, useEffect, useLayoutEffect, useSyncExternalStore } from 'react';
+import { type ReactElement, type MouseEvent, useRef, useLayoutEffect, useSyncExternalStore } from 'react';
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';

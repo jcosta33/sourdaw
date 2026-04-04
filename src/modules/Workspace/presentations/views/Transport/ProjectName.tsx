@@ -1,4 +1,5 @@
 import { type ReactElement, useState } from 'react';
+import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawStatusDot } from '#/components/daw/DawStatusDot';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { renameProject, saveProject } from '#/modules/Project/useCases/projectPersistence';
@@ -22,8 +23,8 @@ export const ProjectName = ({ name, dirty }: ProjectNameProps): ReactElement => 
     if (editing) {
         return (
             <div className="flex items-center gap-1.5 shrink-0">
-                <input
-                    className="daw-readout-well h-6 w-32 rounded-sm px-1.5 text-xs font-medium text-foreground outline-none ring-1 ring-ring"
+                <DawCompactInput
+                    className="daw-readout-well w-32 px-1.5 font-medium ring-1 ring-ring"
                     value={value}
                     onChange={(e) => setValue(e.target.value)}
                     onBlur={commit}

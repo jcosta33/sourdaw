@@ -1,6 +1,6 @@
 import { type ReactElement } from 'react';
+import { DawTransportCluster } from '#/components/daw/DawTransportCluster';
 import { Undo2, Redo2 } from 'lucide-react';
-import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { undo, redo } from '#/modules/Command/useCases/undoRedo';
@@ -12,7 +12,7 @@ type UndoRedoButtonsProps = {
 
 export const UndoRedoButtons = ({ canUndo, canRedo }: UndoRedoButtonsProps): ReactElement => {
     return (
-        <DawControlStrip className="gap-0.5 rounded-sm px-0.5 py-0.5" role="group" aria-label="Undo/Redo">
+        <DawTransportCluster className="px-0.5" role="group" aria-label="Undo/Redo">
             <Tooltip>
                 <TooltipTrigger asChild>
                     <Button
@@ -41,6 +41,6 @@ export const UndoRedoButtons = ({ canUndo, canRedo }: UndoRedoButtonsProps): Rea
                 </TooltipTrigger>
                 <TooltipContent>Redo (⌘⇧Z)</TooltipContent>
             </Tooltip>
-        </DawControlStrip>
+        </DawTransportCluster>
     );
 };

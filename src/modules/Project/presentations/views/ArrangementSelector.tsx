@@ -1,4 +1,7 @@
 import { type ReactElement, useState, useRef, useEffect, useSyncExternalStore } from 'react';
+import { DawCompactInput } from '#/components/daw/DawCompactInput';
+import { DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
+import { DawPickerRow } from '#/components/daw/DawPickerRow';
 import { ChevronDown, Plus, Copy, ListTree, Check, Edit2 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { arrangementStore } from '../../stores/arrangementStore';
@@ -110,13 +113,13 @@ export const ArrangementSelector = (): ReactElement | null => {
 
             {open ? (
                 <div
-                    className="absolute top-full left-0 mt-1 z-50 w-56 rounded-md border border-border bg-surface-overlay shadow-lg py-1 select-none"
+                    className="daw-floating-surface absolute top-full left-0 mt-1 z-50 w-56 rounded-md border border-border bg-surface-overlay py-1 select-none"
                     role="menu"
                     aria-label="Arrangement menu"
                 >
-                    <div className="px-3 py-1.5 text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider flex items-center justify-between">
+                    <DawMenuSectionLabel className="flex items-center justify-between px-3 py-1.5">
                         <span>Arrangements</span>
-                    </div>
+                    </DawMenuSectionLabel>
 
                     <div className="max-h-[300px] overflow-y-auto py-1">
                         {state.arrangements.map((arr) => {
@@ -127,7 +130,7 @@ export const ArrangementSelector = (): ReactElement | null => {
                                 <div
                                     key={arr.id}
                                     className={cn(
-                                        'group flex items-center gap-2 px-2 py-1 mx-1 rounded-sm cursor-pointer',
+                                        'group mx-1 rounded-sm px-2 py-1 cursor-pointer',
                                         isActive
                                             ? 'bg-primary/10 text-primary font-medium'
                                             : 'hover:bg-accent/50 text-foreground transition-colors'
@@ -138,15 +141,12 @@ export const ArrangementSelector = (): ReactElement | null => {
                                         }
                                     }}
                                 >
-                                    <div className="w-4 flex items-center justify-center shrink-0">
-                                        {isActive && !isEditing ? <Check className="size-3" /> : null}
-                                    </div>
-
                                     {isEditing ? (
-                                        <input
+                                        <DawCompactInput
                                             ref={inputRef}
                                             type="text"
-                                            className="flex-1 min-w-0 bg-background/50 border border-primary/50 rounded px-1 text-xs h-5 focus:outline-none"
+                                            size="micro"
+                                            className="h-5 flex-1 min-w-0 border-primary/50 bg-background/50 px-1"
                                             value={editName}
                                             onChange={(e) => setEditName(e.target.value)}
                                             onKeyDown={(e) => {
@@ -159,40 +159,40 @@ export const ArrangementSelector = (): ReactElement | null => {
                                             onClick={(e) => e.stopPropagation()}
                                         />
                                     ) : (
-                                        <div
-                                            className="flex-1 min-w-0 text-xs truncate"
-                                            onDoubleClick={(e) => {
-                                                e.stopPropagation();
-                                                setEditName(arr.name);
-                                                setEditingId(arr.id);
-                                            }}
-                                        >
-                                            {arr.name}
-                                        </div>
-                                    )}
-
-                                    {!isEditing && (
-                                        <button
-                                            type="button"
+                                        <DawPickerRow
+                                            heading={arr.name}
+                                            active={isActive}
+                                            compact
                                             className={cn(
-                                                'p-0.5 rounded hover:bg-background/80 transition-all',
-                                                isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                                                'flex-1 border-0 bg-transparent px-0 py-0',
+                                                isActive ? 'hover:bg-transparent' : ''
                                             )}
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setEditName(arr.name);
-                                                setEditingId(arr.id);
-                                            }}
-                                        >
-                                            <Edit2 className="size-3" />
-                                        </button>
+                                            startSlot={<div className="w-4">{isActive ? <Check className="size-3" /> : null}</div>}
+                                            endSlot={
+                                                <button
+                                                    type="button"
+                                                    className={cn(
+                                                        'rounded p-0.5 transition-all hover:bg-background/80',
+                                                        isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                                                    )}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setEditName(arr.name);
+                                                        setEditingId(arr.id);
+                                                    }}
+                                                >
+                                                    <Edit2 className="size-3" />
+                                                </button>
+                                            }
+                                            title={arr.name}
+                                        />
                                     )}
                                 </div>
                             );
                         })}
                     </div>
 
-                    <div className="mx-2 my-1 h-px bg-border" role="separator" />
+                    <DawMenuSeparator role="separator" />
 
                     <button
                         type="button"

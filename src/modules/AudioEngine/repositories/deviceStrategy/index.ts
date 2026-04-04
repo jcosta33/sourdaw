@@ -4,7 +4,6 @@ import { createFaustStrategy } from './FaustDeviceStrategy';
 import { createNativeDspStrategy } from './NativeDspDeviceStrategy';
 
 import { isFaustModule } from '../faustDeviceFactory';
-import { isNativeDspDevice } from '../../engine/NativeDspNode';
 import { isFermenterDevice } from '../../engine/FermenterNode';
 import { isToasterDevice } from '../../engine/ToasterNode';
 import { isLevainDevice } from '../../engine/LevainNode';
@@ -20,8 +19,7 @@ deviceRegistry.register('builtin-', async (ctx, device) => createWebAudioDevice(
 deviceRegistry.register(isFaustModule, createFaustStrategy);
 
 const isNativeDevice = (type: string) => {
-    return isNativeDspDevice(type) ||
-           isFermenterDevice(type) ||
+    return isFermenterDevice(type) ||
            isToasterDevice(type) ||
            isLevainDevice(type) ||
            isGlutenDevice(type) ||

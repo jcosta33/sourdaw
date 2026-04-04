@@ -7,6 +7,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '#/components/u
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { DawSideRail } from '#/components/daw/DawSideRail';
 import { DawStatusDot } from '#/components/daw/DawStatusDot';
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
+import { DawDialogBody } from '#/components/daw/DawDialogBody';
+import { DawDialogFooter } from '#/components/daw/DawDialogFooter';
 import {
     Sun,
     Moon,
@@ -140,7 +143,10 @@ export const PreferencesDialog = ({ open, onClose }: PreferencesDialogProps): Re
                                 </button>
                             ))}
 
-                            <div className="mt-auto flex flex-col gap-1.5">
+                            <DawDialogFooter
+                                align="start"
+                                className="mt-auto flex-col items-stretch gap-1.5 border-white/6 bg-transparent px-0 py-3 shadow-none"
+                            >
                                 <Separator className="daw-seam h-px" />
                                 <Button
                                     variant="ghost"
@@ -153,12 +159,12 @@ export const PreferencesDialog = ({ open, onClose }: PreferencesDialogProps): Re
                                 <Button size="sm" className="w-full text-xs" onClick={onClose}>
                                     Done
                                 </Button>
-                            </div>
+                            </DawDialogFooter>
                         </nav>
                     </DawSideRail>
 
                     {/* ── Content area ── */}
-                    <div className="flex-1 space-y-5 overflow-y-auto bg-surface-base/60 p-5">
+                    <DawDialogBody scrollable className="flex-1 gap-5 bg-surface-base/60 p-5">
                         {section === 'general' ? <GeneralSection prefs={prefs} update={update} /> : null}
                         {section === 'appearance' ? <AppearanceSection prefs={prefs} update={update} /> : null}
                         {section === 'layout' ? <LayoutSection prefs={prefs} update={update} /> : null}
@@ -167,7 +173,7 @@ export const PreferencesDialog = ({ open, onClose }: PreferencesDialogProps): Re
                         {section === 'performance' ? <PerformanceSection prefs={prefs} update={update} /> : null}
                         {section === 'ai' ? <AiSection /> : null}
                         {section === 'shortcuts' ? <ShortcutsSection /> : null}
-                    </div>
+                    </DawDialogBody>
                 </div>
             </DialogContent>
         </Dialog>
@@ -521,12 +527,12 @@ const MidiSection = ({ prefs, update }: SectionProps): ReactElement => (
         </FieldGroup>
 
         <FieldGroup label="Input Channel">
-            <select
+            <DawCompactSelect
                 value={prefs.midiInputChannel === 'all' ? 'all' : String(prefs.midiInputChannel)}
                 onChange={(e) =>
                     update({ midiInputChannel: e.target.value === 'all' ? 'all' : Number(e.target.value) })
                 }
-                className="w-full h-8 rounded-md border border-border bg-surface-overlay px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                className="w-full"
                 aria-label="MIDI input channel"
             >
                 <option value="all">All Channels</option>
@@ -535,7 +541,7 @@ const MidiSection = ({ prefs, update }: SectionProps): ReactElement => (
                         Channel {i + 1}
                     </option>
                 ))}
-            </select>
+            </DawCompactSelect>
         </FieldGroup>
     </>
 );
@@ -548,10 +554,10 @@ const PerformanceSection = ({ prefs, update }: SectionProps): ReactElement => (
 
         <FieldGroup label="Buffer Size">
             <div className="flex items-center gap-2">
-                <select
+                <DawCompactSelect
                     value={prefs.bufferSize}
                     onChange={(e) => update({ bufferSize: Number(e.target.value) as BufferSizeOption })}
-                    className="flex-1 h-8 rounded-md border border-border bg-surface-overlay px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                    className="flex-1"
                     aria-label="Buffer size"
                 >
                     {BUFFER_SIZE_OPTIONS.map((opt) => (
@@ -559,7 +565,7 @@ const PerformanceSection = ({ prefs, update }: SectionProps): ReactElement => (
                             {opt.label}
                         </option>
                     ))}
-                </select>
+                </DawCompactSelect>
                 <span className="text-[9px] text-muted-foreground whitespace-nowrap">
                     ~{((prefs.bufferSize / prefs.sampleRate) * 1000).toFixed(1)}ms latency
                 </span>
@@ -567,10 +573,10 @@ const PerformanceSection = ({ prefs, update }: SectionProps): ReactElement => (
         </FieldGroup>
 
         <FieldGroup label="Sample Rate">
-            <select
+            <DawCompactSelect
                 value={prefs.sampleRate}
                 onChange={(e) => update({ sampleRate: Number(e.target.value) as SampleRateOption })}
-                className="w-full h-8 rounded-md border border-border bg-surface-overlay px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                className="w-full"
                 aria-label="Sample rate"
             >
                 {SAMPLE_RATE_OPTIONS.map((opt) => (
@@ -578,7 +584,7 @@ const PerformanceSection = ({ prefs, update }: SectionProps): ReactElement => (
                         {opt.label}
                     </option>
                 ))}
-            </select>
+            </DawCompactSelect>
         </FieldGroup>
     </>
 );

@@ -20,6 +20,7 @@ import {
     AlertCircle,
 } from 'lucide-react';
 import { type LucideIcon } from 'lucide-react';
+import { DawChooserCard } from '#/components/daw/DawChooserCard';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { addDevice } from '#/modules/Arrangement/useCases/device/addDevice';
 import { type BUILTIN_PLUGINS } from '#/modules/Arrangement/useCases/trackQueries';
@@ -133,34 +134,28 @@ export const NavCard = ({
     badge?: ReactElement;
     onClick: () => void;
 }): ReactElement => (
-    <button
-        type="button"
-        className="w-full flex items-center gap-2.5 px-2 py-2 rounded-md hover:bg-surface-raised border border-transparent hover:border-border/30 transition-all group text-left"
-        onClick={onClick}
-    >
-        <div
-            className={`flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-md ${color} ${dimmed ? 'opacity-60' : ''}`}
-        >
-            <Icon className="size-3.5" aria-hidden="true" />
-        </div>
-
-        <div className="flex-1 min-w-0">
-            <div
-                className={`text-[11px] font-medium leading-tight flex items-center gap-1 ${dimmed ? 'text-foreground/60' : 'text-foreground/90'}`}
-            >
-                {label}
-                {badge}
+    <DawChooserCard
+        compact
+        dimmed={dimmed}
+        className="group rounded-md px-2 py-2"
+        title={label}
+        description={description}
+        badge={badge}
+        startSlot={
+            <div className={`flex h-7 w-7 items-center justify-center rounded-md ${color} ${dimmed ? 'opacity-60' : ''}`}>
+                <Icon className="size-3.5" aria-hidden="true" />
             </div>
-            <div className="text-[9px] text-muted-foreground/60 leading-tight truncate mt-0.5">{description}</div>
-        </div>
-
-        <div className="flex items-center gap-1 shrink-0">
+        }
+        endSlot={
+            <div className="flex items-center gap-1 shrink-0">
             <span className="text-[10px] text-muted-foreground group-hover:text-foreground/70 transition-colors tabular-nums">
                 {count}
             </span>
             <ChevronRight className="size-3.5 text-muted-foreground opacity-40 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
-        </div>
-    </button>
+            </div>
+        }
+        onClick={onClick}
+    />
 );
 
 // ── EffectItem ───────────────────────────────────────────────────────────────

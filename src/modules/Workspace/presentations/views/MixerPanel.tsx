@@ -1,5 +1,6 @@
 import { type CSSProperties, type ReactElement, useState, useRef } from 'react';
-import { DawEmptyState } from '#/components/daw/DawEmptyState';
+import { DawBlockedState } from '#/components/daw/DawBlockedState';
+import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
 import { ScrollArea } from '#/components/ui/scroll-area';
@@ -143,11 +144,12 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
                                     {snapshots.map((snap) => (
                                         <div key={snap.id} className="flex items-center gap-1">
                                             {editingSnapshotId === snap.id ? (
-                                                <input
+                                                <DawCompactInput
                                                     ref={renameInputRef}
                                                     autoFocus
                                                     defaultValue={snap.name}
-                                                    className="flex-1 rounded border border-ring bg-surface-base px-2 py-0.5 text-[10px] outline-none"
+                                                    size="micro"
+                                                    className="flex-1 text-[10px]"
                                                     onBlur={(e) => handleRenameCommit(snap.id, e.currentTarget.value)}
                                                     onKeyDown={(e) => {
                                                         if (e.key === 'Enter') {
@@ -210,11 +212,13 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
 
                     {tracks.length === 0 ? (
                         <div className="flex flex-1 items-center justify-center">
-                            <DawEmptyState
+                            <DawBlockedState
                                 compact
+                                eyebrow="Mixer"
                                 className="max-w-64"
                                 title="No tracks in the oven yet"
                                 description="Add a few channels to start shaping the mix."
+                                summary="Channel strips, meters, and send levels appear here once the session has tracks."
                             />
                         </div>
                     ) : null}

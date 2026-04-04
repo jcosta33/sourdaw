@@ -3,6 +3,7 @@
  * Displays momentary, short-term, and integrated loudness on a Canvas2D bar.
  */
 import { type ReactElement, useRef, useEffect, useState } from 'react';
+import { DawMeterFrame } from '#/components/daw/DawMeterFrame';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { getMasterAnalyser, getAudioSampleRate } from '#/modules/AudioEngine/useCases/engineAccess';
 import { resolveToken } from '#/helpers/UI/resolveToken';
@@ -159,7 +160,7 @@ export const LUFSMeter = ({ height = 160, width = 48, target = -14 }: LUFSMeterP
 
     return (
         <div className="flex flex-col items-center gap-1">
-            <div className="relative rounded bg-[#0a0a0a] channel-inset overflow-hidden">
+            <DawMeterFrame overlay="vertical">
                 <canvas
                     ref={canvasRef}
                     width={width}
@@ -167,14 +168,7 @@ export const LUFSMeter = ({ height = 160, width = 48, target = -14 }: LUFSMeterP
                     className="block"
                     aria-label={`LUFS: Momentary ${momentary > -70 ? momentary.toFixed(1) : '-∞'}, Short-term ${shortTerm > -70 ? shortTerm.toFixed(1) : '-∞'}, Integrated ${integrated > -70 ? integrated.toFixed(1) : '-∞'}`}
                 />
-                <div
-                    className="absolute inset-0 pointer-events-none rounded"
-                    style={{
-                        background:
-                            'linear-gradient(180deg, rgba(10,10,10,1) 0%, transparent 3%, transparent 97%, rgba(10,10,10,1) 100%)',
-                    }}
-                />
-            </div>
+            </DawMeterFrame>
             <DawReadoutRow
                 className="w-full gap-1"
                 label="I"

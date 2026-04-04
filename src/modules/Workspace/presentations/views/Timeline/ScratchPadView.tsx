@@ -10,7 +10,9 @@
  */
 
 import { type ReactElement, type MouseEvent, useSyncExternalStore, useState, useRef, useEffect } from 'react';
+import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
+import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { Copy, ArrowUpFromLine, Trash2, ChevronDown, ChevronUp, GripHorizontal } from 'lucide-react';
 import { scratchPadStore, type ScratchPadStoreState } from '#/modules/Arrangement/stores/scratchPadStore';
@@ -207,9 +209,10 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                                         title={`${section.name} — ${duration} beats`}
                                     >
                                         {isEditing ? (
-                                            <input
+                                            <DawCompactInput
                                                 ref={inputRef}
-                                                className="w-full bg-transparent text-[10px] text-white font-semibold outline-none"
+                                                size="micro"
+                                                className="w-full border-0 bg-transparent px-0 text-[10px] font-semibold text-white shadow-none focus-visible:ring-0"
                                                 value={editing.name}
                                                 onChange={(e) => setEditing({ ...editing, name: e.target.value })}
                                                 onBlur={commitRename}
@@ -256,11 +259,10 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                     <DawMenuMutedRow className="px-2">Color</DawMenuMutedRow>
                     <div className="flex gap-1 px-2 pb-1">
                         {SECTION_COLORS.map((c) => (
-                            <button
-                                type="button"
+                            <DawSwatchButton
                                 key={c}
-                                className="size-3.5 rounded-full border border-white/20 hover:ring-1 hover:ring-foreground/30"
-                                style={{ backgroundColor: c }}
+                                color={c}
+                                active={contextMenu.section.color === c}
                                 onClick={() => {
                                     setScratchPadSectionColor(contextMenu.section.id, c);
                                     setContextMenu({ kind: 'none' });

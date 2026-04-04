@@ -4,6 +4,7 @@
  * Each node is interactive — clicking opens its controls in the inspector.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+import { DawDiagramFrame } from '#/components/daw/DawDiagramFrame';
 import {
     ENGINE_NAMES,
     FILTER_MODEL_NAMES,
@@ -315,7 +316,8 @@ export const SignalFlowView = ({
     }, [patch, numLayers, activeLayer]);
 
     return (
-        <div className="overflow-x-auto">
+        <DawDiagramFrame title="Signal flow" compact className="bg-black/[0.16]" viewportClassName="p-2">
+            <div className="overflow-x-auto">
             <canvas
                 ref={canvasRef}
                 style={{ width: canvasW, height: canvasH }}
@@ -332,6 +334,7 @@ export const SignalFlowView = ({
                     }
                 }}
             />
-        </div>
+            </div>
+        </DawDiagramFrame>
     );
 };

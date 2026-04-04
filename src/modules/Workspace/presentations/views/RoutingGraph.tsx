@@ -1,4 +1,5 @@
 import { type ReactElement, useSyncExternalStore } from 'react';
+import { DawDiagramFrame } from '#/components/daw/DawDiagramFrame';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores/trackStore';
 import { getAllSidechainRoutes } from '#/modules/Routing/useCases/sidechain';
@@ -205,117 +206,121 @@ export const RoutingGraph = (): ReactElement => {
 
     if (tracks.length === 0) {
         return (
-            <div className="flex items-center justify-center p-4">
-                <DawEmptyState
-                    title="No routing to display"
-                    description="Add tracks or buses to inspect the project signal graph."
-                    className="max-w-xs"
-                />
-            </div>
+            <DawDiagramFrame title="Routing graph" className="h-full">
+                <div className="flex h-full items-center justify-center p-4">
+                    <DawEmptyState
+                        title="No routing to display"
+                        description="Add tracks or buses to inspect the project signal graph."
+                        className="max-w-xs"
+                    />
+                </div>
+            </DawDiagramFrame>
         );
     }
 
     return (
-        <svg viewBox={`0 0 ${width} ${height}`} className="w-full" role="img" aria-label="Signal routing graph">
-            {/* Output connections (track → output target) */}
-            {[...sources, ...buses].map((pos) => {
-                const targetId = pos.track.outputId;
-                const targetPos = targetId === 'master' ? master : (positionMap.get(targetId) ?? master);
+        <DawDiagramFrame
+            title="Routing graph"
+            className="h-full"
+            viewportClassName="p-3"
+            footer={
+                <div className="flex flex-wrap items-center gap-4 text-[10px] text-muted-foreground">
+                    <div className="flex items-center gap-2">
+                        <span className="h-px w-4 bg-muted-foreground/70" />
+                        Output
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <span className="h-px w-4 border-t border-dashed border-muted-foreground/70" />
+                        Send
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <span className="h-px w-4 border-t border-dashed border-[var(--color-state-record)]/80" />
+                        Sidechain
+                    </div>
+                </div>
+            }
+        >
+            <div className="overflow-x-auto">
+                <svg viewBox={`0 0 ${width} ${height}`} className="min-w-[420px]" role="img" aria-label="Signal routing graph">
+                    {[...sources, ...buses].map((pos) => {
+                        const targetId = pos.track.outputId;
+                        const targetPos = targetId === 'master' ? master : (positionMap.get(targetId) ?? master);
 
-                if (!targetPos) {
-                    return null;
-                }
-
-                const from = getNodeCenter(pos, 'right');
-                const to = getNodeCenter(targetPos, 'left');
-                const highlighted = isConnectedToSelected(pos.track.id) || isConnectedToSelected(targetPos.track.id);
-
-                return (
-                    <ConnectionLine
-                        key={`out-${pos.track.id}`}
-                        from={from}
-                        to={to}
-                        variant="output"
-                        highlighted={highlighted}
-                    />
-                );
-            })}
-
-            {/* Send connections */}
-            {[...sources, ...buses].flatMap((pos) =>
-                pos.track.sends
-                    .filter((send) => send.level > 0)
-                    .map((send) => {
-                        const busPos = positionMap.get(send.busId);
-                        if (!busPos) {
+                        if (!targetPos) {
                             return null;
                         }
 
                         const from = getNodeCenter(pos, 'right');
-                        const to = getNodeCenter(busPos, 'left');
-                        const highlighted =
-                            isConnectedToSelected(pos.track.id) || isConnectedToSelected(busPos.track.id);
-                        const label = `${(send.level * 100).toFixed(0)}%${send.preFader ? ' pre' : ''}`;
+                        const to = getNodeCenter(targetPos, 'left');
+                        const highlighted = isConnectedToSelected(pos.track.id) || isConnectedToSelected(targetPos.track.id);
 
                         return (
                             <ConnectionLine
-                                key={`send-${pos.track.id}-${send.busId}`}
+                                key={`out-${pos.track.id}`}
                                 from={from}
                                 to={to}
-                                variant="send"
-                                label={label}
+                                variant="output"
                                 highlighted={highlighted}
                             />
                         );
-                    })
-            )}
+                    })}
 
-            {/* Sidechain connections */}
-            {sidechainRoutes.map((route) => {
-                const sourcePos = positionMap.get(route.sourceTrackId);
-                const targetPos = positionMap.get(route.targetTrackId);
-                if (!sourcePos || !targetPos) {
-                    return null;
-                }
+                    {[...sources, ...buses].flatMap((pos) =>
+                        pos.track.sends
+                            .filter((send) => send.level > 0)
+                            .map((send) => {
+                                const busPos = positionMap.get(send.busId);
+                                if (!busPos) {
+                                    return null;
+                                }
 
-                const from = getNodeCenter(sourcePos, 'right');
-                const to = getNodeCenter(targetPos, 'left');
-                const highlighted =
-                    isConnectedToSelected(route.sourceTrackId) || isConnectedToSelected(route.targetTrackId);
+                                const from = getNodeCenter(pos, 'right');
+                                const to = getNodeCenter(busPos, 'left');
+                                const highlighted =
+                                    isConnectedToSelected(pos.track.id) || isConnectedToSelected(busPos.track.id);
+                                const label = `${(send.level * 100).toFixed(0)}%${send.preFader ? ' pre' : ''}`;
 
-                return (
-                    <ConnectionLine
-                        key={`sc-${route.id}`}
-                        from={from}
-                        to={to}
-                        variant="sidechain"
-                        highlighted={highlighted}
-                    />
-                );
-            })}
+                                return (
+                                    <ConnectionLine
+                                        key={`send-${pos.track.id}-${send.busId}`}
+                                        from={from}
+                                        to={to}
+                                        variant="send"
+                                        label={label}
+                                        highlighted={highlighted}
+                                    />
+                                );
+                            })
+                    )}
 
-            {/* Nodes on top of lines */}
-            {allPositions.map((pos) => (
-                <TrackNode key={pos.track.id} pos={pos} isSelected={pos.track.id === selectedTrackId} />
-            ))}
+                    {sidechainRoutes.map((route) => {
+                        const sourcePos = positionMap.get(route.sourceTrackId);
+                        const targetPos = positionMap.get(route.targetTrackId);
+                        if (!sourcePos || !targetPos) {
+                            return null;
+                        }
 
-            {/* Legend */}
-            <g transform={`translate(${PAD}, ${height - 28})`}>
-                <line x1={0} y1={0} x2={16} y2={0} stroke={resolveToken('--color-text-tertiary', '#737373')} strokeWidth={1} />
-                <text x={20} y={0} dominantBaseline="central" className="fill-muted-foreground text-[10px]">
-                    Output
-                </text>
+                        const from = getNodeCenter(sourcePos, 'right');
+                        const to = getNodeCenter(targetPos, 'left');
+                        const highlighted =
+                            isConnectedToSelected(route.sourceTrackId) || isConnectedToSelected(route.targetTrackId);
 
-                <line x1={60} y1={0} x2={76} y2={0} stroke={resolveToken('--color-text-tertiary', '#737373')} strokeWidth={1} strokeDasharray="4 3" />
-                <text x={80} y={0} dominantBaseline="central" className="fill-muted-foreground text-[10px]">
-                    Send
-                </text>
+                        return (
+                            <ConnectionLine
+                                key={`sc-${route.id}`}
+                                from={from}
+                                to={to}
+                                variant="sidechain"
+                                highlighted={highlighted}
+                            />
+                        );
+                    })}
 
-                <line x1={110} y1={0} x2={126} y2={0} stroke={resolveToken('--color-state-record', '#c45040')} strokeWidth={1} strokeDasharray="2 3" />
-                <text x={130} y={0} dominantBaseline="central" className="fill-muted-foreground text-[10px]">
-                    Sidechain
-                </text>
-            </g>
-        </svg>
+                    {allPositions.map((pos) => (
+                        <TrackNode key={pos.track.id} pos={pos} isSelected={pos.track.id === selectedTrackId} />
+                    ))}
+                </svg>
+            </div>
+        </DawDiagramFrame>
     );
 };

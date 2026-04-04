@@ -2,7 +2,6 @@ import {
     type ReactElement,
     type MouseEvent,
     useRef,
-    useEffect,
     useLayoutEffect,
     useState,
     useSyncExternalStore,

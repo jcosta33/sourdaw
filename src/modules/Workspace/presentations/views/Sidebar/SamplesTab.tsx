@@ -1,6 +1,7 @@
 import { type ReactElement } from 'react';
 import { Folder, File, Star, Upload } from 'lucide-react';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
+import { DawPickerRow } from '#/components/daw/DawPickerRow';
 import { cn } from '#/helpers/Styles/cn';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { addClip } from '#/modules/Arrangement/useCases/clip/addClip';
@@ -69,8 +70,8 @@ export const SamplesTab = ({
                         .map((sample) => (
                             <div
                                 key={sample.id}
-                                className="flex items-center gap-1 rounded px-2 py-1 hover:bg-white/[0.06] cursor-grab active:cursor-grabbing group"
                                 draggable
+                                className="group"
                                 onDragStart={(e) => {
                                     const data = {
                                         name: sample.name,
@@ -86,44 +87,53 @@ export const SamplesTab = ({
                                 }}
                                 title="Drag to timeline or click to add"
                             >
-                                <PreviewButton
-                                    isPlaying={preview.playingId === sample.id}
-                                    onPlay={() => {
-                                        const buffer = sample.audioBufferId
-                                            ? audioBufferCache.get(sample.audioBufferId)
-                                            : undefined;
-                                        if (buffer) {
-                                            preview.play(sample.id, buffer);
-                                        } else {
-                                            preview.playTone(sample.id, 261.63, 0.5);
-                                        }
-                                    }}
-                                    onStop={preview.stop}
-                                />
-                                <File className="size-3 text-muted-foreground" />
-                                <span className="flex-1 text-xs text-foreground truncate">{sample.name}</span>
-                                <span className="text-[9px] text-muted-foreground">{sample.duration}</span>
-                                <button
-                                    type="button"
-                                    className={cn(
-                                        'size-3 opacity-0 group-hover:opacity-100 transition-opacity',
-                                        favorites.has(sample.id) && 'opacity-100'
-                                    )}
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onToggleFavorite(sample.id);
-                                    }}
-                                    aria-label={favorites.has(sample.id) ? 'Remove from favorites' : 'Add to favorites'}
-                                >
-                                    <Star
+                            <DawPickerRow
+                                className="cursor-grab active:cursor-grabbing px-2 py-1"
+                                startSlot={
+                                    <div className="flex items-center gap-1">
+                                        <PreviewButton
+                                            isPlaying={preview.playingId === sample.id}
+                                            onPlay={() => {
+                                                const buffer = sample.audioBufferId
+                                                    ? audioBufferCache.get(sample.audioBufferId)
+                                                    : undefined;
+                                                if (buffer) {
+                                                    preview.play(sample.id, buffer);
+                                                } else {
+                                                    preview.playTone(sample.id, 261.63, 0.5);
+                                                }
+                                            }}
+                                            onStop={preview.stop}
+                                        />
+                                        <File className="size-3 text-muted-foreground" />
+                                    </div>
+                                }
+                                heading={sample.name}
+                                description={sample.duration}
+                                endSlot={
+                                    <button
+                                        type="button"
                                         className={cn(
-                                            'size-3',
-                                            favorites.has(sample.id)
-                                                ? 'text-[var(--color-accent-peach)] fill-[var(--color-accent-peach)]'
-                                                : 'text-muted-foreground'
+                                            'size-3 opacity-0 transition-opacity group-hover:opacity-100',
+                                            favorites.has(sample.id) && 'opacity-100'
                                         )}
-                                    />
-                                </button>
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onToggleFavorite(sample.id);
+                                        }}
+                                        aria-label={favorites.has(sample.id) ? 'Remove from favorites' : 'Add to favorites'}
+                                    >
+                                        <Star
+                                            className={cn(
+                                                'size-3',
+                                                favorites.has(sample.id)
+                                                    ? 'text-[var(--color-accent-peach)] fill-[var(--color-accent-peach)]'
+                                                    : 'text-muted-foreground'
+                                            )}
+                                        />
+                                    </button>
+                                }
+                            />
                             </div>
                         ))}
                 </div>

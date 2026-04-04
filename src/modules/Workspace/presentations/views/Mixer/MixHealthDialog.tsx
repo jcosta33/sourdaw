@@ -1,4 +1,7 @@
 import { type ReactElement, useState, useEffect, useRef } from 'react';
+import { DawDialogBody } from '#/components/daw/DawDialogBody';
+import { DawDialogFooter } from '#/components/daw/DawDialogFooter';
+import { DawDialogSection } from '#/components/daw/DawDialogSection';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Dialog, DialogContent, DialogTitle } from '#/components/ui/dialog';
 import { Button } from '#/components/ui/button';
@@ -87,22 +90,27 @@ export const MixHealthDialog = ({ open, onOpenChange }: MixHealthDialogProps): R
                     titleClassName="text-[11px] text-foreground normal-case tracking-normal"
                 />
 
-                <div className="min-h-[200px] max-h-[500px] overflow-y-auto space-y-4 bg-surface-base/40 px-4 py-4 text-sm leading-relaxed">
-                    {report ? (
-                        <div className="prose prose-invert prose-sm max-w-none">
-                            <ReactMarkdown>{report}</ReactMarkdown>
-                        </div>
-                    ) : null}
+                <DawDialogBody scrollable className="min-h-[200px] max-h-[500px] px-4 py-4 text-sm leading-relaxed">
+                    <DawDialogSection
+                        title="Analysis"
+                        detail={report ? 'Cloud mentor report' : 'Generating a fresh read on the current mix'}
+                    >
+                        {report ? (
+                            <div className="prose prose-invert prose-sm max-w-none">
+                                <ReactMarkdown>{report}</ReactMarkdown>
+                            </div>
+                        ) : null}
 
-                    {isAnalyzing ? (
-                        <div className="flex items-center gap-2 text-muted-foreground pt-4">
-                            <Loader2 className="size-4 animate-spin" />
-                            <span>Mentor is thinking...</span>
-                        </div>
-                    ) : null}
-                </div>
+                        {isAnalyzing ? (
+                            <div className="flex items-center gap-2 pt-4 text-muted-foreground">
+                                <Loader2 className="size-4 animate-spin" />
+                                <span>Mentor is thinking...</span>
+                            </div>
+                        ) : null}
+                    </DawDialogSection>
+                </DawDialogBody>
 
-                <div className="daw-header-band flex items-center justify-between gap-2 px-4 py-3">
+                <DawDialogFooter>
                     <Button
                         variant="secondary"
                         size="sm"
@@ -116,7 +124,7 @@ export const MixHealthDialog = ({ open, onOpenChange }: MixHealthDialogProps): R
                     <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
                         Close
                     </Button>
-                </div>
+                </DawDialogFooter>
             </DialogContent>
         </Dialog>
     );

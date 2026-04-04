@@ -1,6 +1,7 @@
 import { type ReactElement, useState, useRef, useSyncExternalStore } from 'react';
 import { useTracks } from '../hooks/useTracks';
 import { Button } from '#/components/ui/button';
+import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { setWorkspaceMode } from '../../useCases/setWorkspaceMode';
@@ -31,10 +32,12 @@ export const ClipView = (): ReactElement => {
     if (!selectedTrack) {
         return (
             <div className="flex h-full p-4">
-                <DawEmptyState
+                <DawBlockedState
+                    eyebrow="Clip Editor"
                     className="flex-1"
                     title="Select a track to edit clips"
                     description="Choose a track in the arrangement, then return here to edit notes, audio, and clip automation."
+                    summary="The editor follows the currently selected arrange track and opens its clips inline."
                     action={
                         <Button variant="outline" size="sm" onClick={() => setWorkspaceMode('arrange')}>
                             Back to Arrange

@@ -2,6 +2,36 @@
 
 This document provides the canonical instructions and architectural rules that YOU, the AI agent, MUST follow at all times. By existing in this file, these rules are permanently injected into your system prompt.
 
+---
+
+## Documentation-first workflow
+
+Before starting significant implementation work, read the shared process documentation:
+
+| Document | What it covers |
+|---|---|
+| `docs/agents/process.md` | Why documentation-first exists and the five document types |
+| `docs/agents/file-types.md` | Definitions, required sections, and completion criteria for each type |
+| `docs/agents/workflow.md` | Step-by-step execution flow for agent sessions |
+| `docs/agents/standards.md` | Writing quality, citation, certainty, and scope rules |
+| `docs/agents/templates/` | Ready-to-use templates for each document type |
+
+Working artifacts for this repo live in:
+
+| Directory | Contains |
+|---|---|
+| `.agents/audits/` | Codebase state reports relative to a goal |
+| `.agents/specs/` | Feature specs, requirements, acceptance criteria |
+| `.agents/research/` | Technical findings from external sources |
+| `.agents/skills/` | Reusable domain knowledge — load before working in a domain |
+| `.agents/tasks/` | Active work items (gitignored, worktree-specific) |
+
+**Before implementing any non-trivial feature:** load `.agents/skills/documentation-gatekeeper/SKILL.md` — it encodes the sequencing invariants for this repo. Then check `.agents/specs/` for an existing spec and `.agents/audits/` for an existing audit of the area. Read relevant domain skills from `.agents/skills/` before touching their domains. Do not skip this step.
+
+Agent sandboxes (isolated worktrees) are managed by `docs/agents.md` — the launcher tool built into this repo.
+
+---
+
 ## 🚨 MANDATORY REFLEX RULE (THE "SHOCK COLLAR")
 
 When asked to perform cross-module refactoring, move files, or update imports across multiple files:

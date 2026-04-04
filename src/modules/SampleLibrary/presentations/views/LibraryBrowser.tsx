@@ -9,6 +9,8 @@
  * - Sample preview, favorites, drag-to-timeline
  */
 import { type ReactElement, useSyncExternalStore, useState } from 'react';
+import { DawBlockedState } from '#/components/daw/DawBlockedState';
+import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { FolderPlus, Search, Star, X } from 'lucide-react';
 import {
     libraryStore,
@@ -134,12 +136,13 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
             {showSearch ? (
                 <div className="flex items-center gap-1 px-2 pb-1 shrink-0">
                     <Search className="size-3 text-muted-foreground/40 shrink-0" />
-                    <input
+                    <DawCompactInput
                         type="text"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         placeholder="Search samples..."
-                        className="flex-1 bg-transparent text-[10px] text-foreground outline-none placeholder:text-muted-foreground/30"
+                        size="micro"
+                        className="flex-1 border-0 bg-transparent px-0 text-[10px] text-foreground shadow-none placeholder:text-muted-foreground/30 focus-visible:ring-0"
                         autoFocus
                     />
                     {searchQuery ? (
@@ -169,22 +172,23 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
 
             {/* ── Empty state ── */}
             {roots.length === 0 ? (
-                <div className="flex flex-col items-center gap-3 px-4 py-10 text-center">
-                    <FolderPlus className="size-8 text-muted-foreground/20" />
-                    <div>
-                        <p className="text-xs text-muted-foreground">No folders connected</p>
-                        <p className="text-[10px] text-muted-foreground/50 mt-1">
-                            Connect a folder from your computer to browse and search your samples. No upload, no account
-                            — your files stay on your machine.
-                        </p>
-                    </div>
-                    <button
-                        type="button"
-                        className="px-3 py-1.5 rounded-md bg-white/[0.08] hover:bg-white/[0.12] text-[11px] font-medium text-foreground transition-colors"
-                        onClick={handleConnectFolder}
-                    >
-                        Connect Sample Folder
-                    </button>
+                <div className="px-4 py-10">
+                    <DawBlockedState
+                        eyebrow="Sample Library"
+                        icon={<FolderPlus className="size-8" />}
+                        title="No folders connected"
+                        description="Connect a folder from your computer to browse and search your samples."
+                        summary="Local folders only. No upload, no account, and your files stay on your machine."
+                        action={
+                            <button
+                                type="button"
+                                className="rounded-md bg-white/[0.08] px-3 py-1.5 text-[11px] font-medium text-foreground transition-colors hover:bg-white/[0.12]"
+                                onClick={handleConnectFolder}
+                            >
+                                Connect Sample Folder
+                            </button>
+                        }
+                    />
                 </div>
             ) : null}
 

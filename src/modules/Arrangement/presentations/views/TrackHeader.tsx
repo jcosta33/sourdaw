@@ -1,5 +1,6 @@
 import { type ReactElement } from 'react';
 import { Button } from '#/components/ui/button';
+import { DawHierarchyRow } from '#/components/daw/DawHierarchyRow';
 import { LatchButton } from '#/components/daw/LatchButton';
 import { Circle, ChevronRight, ChevronDown, Folder, Music, AudioLines, Radio, Monitor, Drum } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
@@ -54,15 +55,46 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
 
         return (
             <TrackContextMenu track={track}>
-                <div
+                <DawHierarchyRow
+                    as="div"
+                    active={isSelected}
                     className={cn(
-                        'relative flex shrink-0 items-center gap-1 border-b border-border-soft px-1 cursor-pointer transition-colors',
-                        isSelected
-                            ? 'bg-surface-overlay'
-                            : isDrumMachine
-                            ? 'bg-surface-panel hover:bg-surface-base'
-                            : 'bg-surface-tray hover:bg-surface-base'
+                        'relative shrink-0 border-b border-border-soft px-1 py-0',
+                        isSelected ? 'bg-surface-overlay' : '',
+                        isDrumMachine ? 'bg-surface-panel hover:bg-surface-base' : 'bg-surface-tray hover:bg-surface-base'
                     )}
+                    title={track.name}
+                    titleClassName="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground select-none"
+                    startSlot={
+                        <>
+                            <Button
+                                variant="ghost"
+                                size="icon-xs"
+                                aria-label={track.collapsed ? 'Expand folder' : 'Collapse folder'}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleFolderCollapse(track.id);
+                                }}
+                                className="size-5 shrink-0"
+                            >
+                                {track.collapsed ? (
+                                    <ChevronRight className="size-3" aria-hidden="true" />
+                                ) : (
+                                    <ChevronDown className="size-3" aria-hidden="true" />
+                                )}
+                            </Button>
+                            <FolderIcon
+                                className={cn(
+                                    'size-3 shrink-0',
+                                    isDrumMachine
+                                        ? 'text-[var(--color-accent-blue)]/80'
+                                        : 'text-[var(--color-accent-peach)]/70'
+                                )}
+                                aria-hidden="true"
+                            />
+                        </>
+                    }
+                    endSlot={<ResizeHandle trackId={track.id} />}
                     style={{
                         height: 26,
                         boxShadow: isSelected
@@ -73,29 +105,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                     role="row"
                     aria-selected={isSelected}
                     onClick={() => selectTrack(track.id)}
-                >
-                    <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        aria-label={track.collapsed ? 'Expand folder' : 'Collapse folder'}
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            toggleFolderCollapse(track.id);
-                        }}
-                        className="size-5 shrink-0"
-                    >
-                        {track.collapsed ? (
-                            <ChevronRight className="size-3" aria-hidden="true" />
-                        ) : (
-                            <ChevronDown className="size-3" aria-hidden="true" />
-                        )}
-                    </Button>
-                    <FolderIcon className={cn("size-3 shrink-0", isDrumMachine ? "text-[var(--color-accent-blue)]/80" : "text-[var(--color-accent-peach)]/70")} aria-hidden="true" />
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground truncate flex-1 min-w-0 select-none">
-                        {track.name}
-                    </span>
-                    <ResizeHandle trackId={track.id} />
-                </div>
+                />
             </TrackContextMenu>
         );
     }

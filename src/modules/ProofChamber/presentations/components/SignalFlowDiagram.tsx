@@ -5,6 +5,7 @@
  * Updates dynamically when the algorithm or routing changes.
  */
 import { type ReactElement } from 'react';
+import { DawDiagramFrame } from '#/components/daw/DawDiagramFrame';
 import { type AlgorithmType } from '../../models/ProofChamberPatch';
 
 type SignalFlowDiagramProps = {
@@ -105,77 +106,81 @@ export const SignalFlowDiagram = ({
     const { nodes, edges } = getFlowForAlgorithm(algorithm, shimmerEnabled, freezeEnabled);
 
     return (
-        <svg
-            viewBox="0 0 500 65"
-            className="w-full h-[65px]"
-            xmlns="http://www.w3.org/2000/svg"
+        <DawDiagramFrame
+            title="Signal flow"
+            compact
+            className="bg-black/[0.16]"
+            viewportClassName="p-2"
         >
-            {/* Edges */}
-            {edges.map((edge, i) => {
-                const from = nodes.find((n) => n.id === edge.from);
-                const to = nodes.find((n) => n.id === edge.to);
-                if (!from || !to) {
-                    return null;
-                }
-                const x1 = from.x + 30;
-                const y1 = from.y;
-                const x2 = to.x - 5;
-                const y2 = to.y;
-                return (
-                    <g key={i}>
-                        <line
-                            x1={x1} y1={y1} x2={x2} y2={y2}
-                            stroke="rgba(127,184,196,0.3)"
-                            strokeWidth="1"
-                            markerEnd="url(#arrowhead)"
+            <svg
+                viewBox="0 0 500 65"
+                className="h-[65px] w-full"
+                xmlns="http://www.w3.org/2000/svg"
+            >
+                {edges.map((edge, i) => {
+                    const from = nodes.find((n) => n.id === edge.from);
+                    const to = nodes.find((n) => n.id === edge.to);
+                    if (!from || !to) {
+                        return null;
+                    }
+                    const x1 = from.x + 30;
+                    const y1 = from.y;
+                    const x2 = to.x - 5;
+                    const y2 = to.y;
+                    return (
+                        <g key={i}>
+                            <line
+                                x1={x1} y1={y1} x2={x2} y2={y2}
+                                stroke="rgba(127,184,196,0.3)"
+                                strokeWidth="1"
+                                markerEnd="url(#arrowhead)"
+                            />
+                            {edge.label ? (
+                                <text
+                                    x={(x1 + x2) / 2}
+                                    y={(y1 + y2) / 2 - 3}
+                                    fill="rgba(255,255,255,0.25)"
+                                    fontSize="6"
+                                    textAnchor="middle"
+                                >
+                                    {edge.label}
+                                </text>
+                            ) : null}
+                        </g>
+                    );
+                })}
+
+                {nodes.map((node) => (
+                    <g key={node.id}>
+                        <rect
+                            x={node.x - 5}
+                            y={node.y - 8}
+                            width={60}
+                            height={16}
+                            rx="3"
+                            fill={node.active ? `${node.color}20` : 'rgba(50,50,50,0.5)'}
+                            stroke={node.active ? `${node.color}60` : 'rgba(80,80,80,0.3)'}
+                            strokeWidth="0.5"
                         />
-                        {edge.label ? (
-                            <text
-                                x={(x1 + x2) / 2}
-                                y={(y1 + y2) / 2 - 3}
-                                fill="rgba(255,255,255,0.25)"
-                                fontSize="6"
-                                textAnchor="middle"
-                            >
-                                {edge.label}
-                            </text>
-                        ) : null}
+                        <text
+                            x={node.x + 25}
+                            y={node.y + 1}
+                            fill={node.active ? node.color : 'rgba(100,100,100,0.5)'}
+                            fontSize="7"
+                            textAnchor="middle"
+                            dominantBaseline="middle"
+                        >
+                            {node.label}
+                        </text>
                     </g>
-                );
-            })}
+                ))}
 
-            {/* Nodes */}
-            {nodes.map((node) => (
-                <g key={node.id}>
-                    <rect
-                        x={node.x - 5}
-                        y={node.y - 8}
-                        width={60}
-                        height={16}
-                        rx="3"
-                        fill={node.active ? `${node.color}20` : 'rgba(50,50,50,0.5)'}
-                        stroke={node.active ? `${node.color}60` : 'rgba(80,80,80,0.3)'}
-                        strokeWidth="0.5"
-                    />
-                    <text
-                        x={node.x + 25}
-                        y={node.y + 1}
-                        fill={node.active ? node.color : 'rgba(100,100,100,0.5)'}
-                        fontSize="7"
-                        textAnchor="middle"
-                        dominantBaseline="middle"
-                    >
-                        {node.label}
-                    </text>
-                </g>
-            ))}
-
-            {/* Arrowhead marker */}
-            <defs>
-                <marker id="arrowhead" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto">
-                    <polygon points="0 0, 6 2, 0 4" fill="rgba(127,184,196,0.3)" />
-                </marker>
-            </defs>
-        </svg>
+                <defs>
+                    <marker id="arrowhead" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto">
+                        <polygon points="0 0, 6 2, 0 4" fill="rgba(127,184,196,0.3)" />
+                    </marker>
+                </defs>
+            </svg>
+        </DawDiagramFrame>
     );
 };

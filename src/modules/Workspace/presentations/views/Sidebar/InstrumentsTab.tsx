@@ -1,5 +1,6 @@
 import { type ReactElement, useState } from 'react';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
+import { DawPickerRow } from '#/components/daw/DawPickerRow';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { Save, X, ChevronRight, Star, Folder, Music2, Drum, Music } from 'lucide-react';
@@ -321,21 +322,20 @@ export const InstrumentsTab = ({
 
             {/* My Presets & Save */}
             <div className="flex items-center gap-1 mb-2">
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    className="flex-1 justify-between px-2 py-1.5 h-auto group border border-transparent hover:border-border/30"
+                <DawPickerRow
+                    compact
+                    className="flex-1 px-2 py-1.5"
+                    startSlot={<Star className="size-3 text-[var(--color-accent-peach)]" aria-hidden="true" />}
+                    heading="My Presets"
+                    description={`${filteredUser.length} saved`}
+                    endSlot={
+                        <div className="flex items-center gap-1">
+                            <span className="text-[9px] text-muted-foreground">{filteredUser.length}</span>
+                            <ChevronRight className="size-3 text-muted-foreground opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
+                        </div>
+                    }
                     onClick={() => pushRoute({ id: 'instruments-user', title: 'My Presets' })}
-                >
-                    <div className="flex items-center gap-1.5">
-                        <Star className="size-3 text-[var(--color-accent-peach)]" aria-hidden="true" />
-                        <span className="text-[10px] font-medium text-foreground/80">My Presets</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                        <span className="text-[9px] text-muted-foreground">{filteredUser.length}</span>
-                        <ChevronRight className="size-3 text-muted-foreground opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
-                    </div>
-                </Button>
+                />
 
                 {selectedTrack ? (
                     <>
@@ -453,16 +453,14 @@ export const InstrumentsTab = ({
 
             {/* Blank track shortcut */}
             <div className="border-t border-border/20 pt-2 mt-1">
-                <button
-                    type="button"
-                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-surface-raised text-left transition-colors group cursor-pointer"
+                <DawPickerRow
+                    compact
+                    className="px-2 py-1.5"
+                    heading="+ Add blank MIDI track"
+                    description="Create a plain track with the default synth"
                     onClick={handleAddBlankMidiTrack}
                     title="Add a blank MIDI track with a default synthesizer"
-                >
-                    <span className="text-[10px] text-muted-foreground group-hover:text-foreground/70 transition-colors">
-                        + Add blank MIDI track
-                    </span>
-                </button>
+                />
             </div>
         </div>
     );

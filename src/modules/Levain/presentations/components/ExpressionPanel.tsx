@@ -6,6 +6,8 @@
  * Matches the visual density of Fermenter's Filter section.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+import { DawPluginChip } from '#/components/daw/DawPluginChip';
+import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { type ExpressionConfig, type LegatoConfig } from '../../models/LevainPatch';
@@ -119,31 +121,28 @@ export const ExpressionPanel = ({ expression, legato, onChangeExp, onChangeLeg }
                     <>
                         <div className="flex gap-0.5">
                             {(['linear', 's-curve', 'logarithmic'] as const).map((c) => (
-                                <button
+                                <DawPluginChip
                                     key={c}
-                                    type="button"
-                                    className={`px-1.5 py-0.5 rounded text-[8px] font-medium transition-colors ${
-                                        expression.cc1Curve === c
-                                            ? 'bg-amber-500/20 text-amber-300'
-                                            : 'text-muted-foreground/60 hover:text-foreground'
-                                    }`}
+                                    active={expression.cc1Curve === c}
+                                    tone="amber"
+                                    size="xs"
+                                    caps={false}
                                     onClick={() => onChangeExp({ cc1Curve: c })}
                                 >
                                     {c === 's-curve' ? 'S-Curve' : c.charAt(0).toUpperCase() + c.slice(1)}
-                                </button>
+                                </DawPluginChip>
                             ))}
                         </div>
-                        <button
-                            type="button"
-                            className={`ml-auto px-1.5 py-0.5 rounded text-[8px] font-medium transition-colors ${
-                                legato.enabled
-                                    ? 'bg-emerald-500/20 text-emerald-300'
-                                    : 'text-muted-foreground/40 hover:text-foreground'
-                            }`}
+                        <DawPluginToggle
+                            pressed={legato.enabled}
+                            tone="mint"
+                            size="xs"
+                            caps={false}
+                            className="ml-auto"
                             onClick={() => onChangeLeg({ enabled: !legato.enabled })}
                         >
                             Legato {legato.enabled ? 'On' : 'Off'}
-                        </button>
+                        </DawPluginToggle>
                     </>
                 }
             />

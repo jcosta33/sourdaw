@@ -1,7 +1,11 @@
 import { type ReactElement, useSyncExternalStore } from 'react';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
+import { DawPluginChoiceRow } from '#/components/daw/DawPluginChoiceRow';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
+import { DawPluginMetricStrip } from '#/components/daw/DawPluginMetricStrip';
+import { DawPluginRail } from '#/components/daw/DawPluginRail';
+import { DawPluginReadoutList } from '#/components/daw/DawPluginReadoutList';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
@@ -169,7 +173,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     return (
         <div className="proof-faceplate h-full min-h-0 overflow-hidden rounded-[26px] p-3">
             <div className="grid h-full min-h-0 grid-cols-[15rem_minmax(0,1fr)_16rem] gap-3">
-                <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
+                <DawPluginRail>
                     <SideCard
                         title="Mission"
                         detail="Choose the target, the preset, and the depth of the mastering desk."
@@ -181,23 +185,14 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                     {PROOF_PRESETS.map((preset) => {
                                         const active = preset.patch.name === patch.name;
                                         return (
-                                            <button
+                                            <DawPluginChoiceRow
                                                 key={preset.id}
-                                                type="button"
-                                                className={`proof-window flex flex-col items-start gap-1 px-3 py-2 text-left transition-all ${
-                                                    active
-                                                        ? 'border-white/18 bg-white/[0.03]'
-                                                        : 'hover:border-white/12 hover:bg-white/[0.02]'
-                                                }`}
-                                                onClick={() => loadProofPatchWithAudio(deviceId, preset.patch)}
-                                            >
-                                                <span className="text-[11px] font-medium text-foreground">
-                                                    {preset.name}
-                                                </span>
-                                                <span className="text-[9px] leading-4 text-muted-foreground">
-                                                    {preset.patch.target} · {formatLufs(preset.patch.targetLufs)} LUFS
-                                                </span>
-                                            </button>
+                                                className="proof-window"
+                                                active={active}
+                                                title={preset.name}
+                                                subtitle={`${preset.patch.target} · ${formatLufs(preset.patch.targetLufs)} LUFS`}
+                                                onPress={() => loadProofPatchWithAudio(deviceId, preset.patch)}
+                                            />
                                         );
                                     })}
                                 </div>
@@ -232,30 +227,21 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                     {LEVEL_OPTIONS.map((entry) => {
                                         const active = uiLevel === entry.level;
                                         return (
-                                            <button
+                                            <DawPluginChoiceRow
                                                 key={entry.label}
-                                                type="button"
-                                                className={`proof-window flex items-center justify-between px-3 py-2 text-left transition-all ${
-                                                    active
-                                                        ? 'border-white/18 bg-white/[0.03]'
-                                                        : 'hover:border-white/12 hover:bg-white/[0.02]'
-                                                }`}
-                                                onClick={() => setProofUiLevel(deviceId, entry.level)}
-                                            >
-                                                <span className="text-[11px] font-medium text-foreground">
-                                                    {entry.label}
-                                                </span>
-                                                <span className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/45">
-                                                    {entry.detail}
-                                                </span>
-                                            </button>
+                                                className="proof-window"
+                                                active={active}
+                                                title={entry.label}
+                                                detail={entry.detail}
+                                                onPress={() => setProofUiLevel(deviceId, entry.level)}
+                                            />
                                         );
                                     })}
                                 </div>
                             </div>
                         </div>
                     </SideCard>
-                </aside>
+                </DawPluginRail>
 
                 <section className="flex min-h-0 min-w-0 flex-col gap-3">
                     <div className="flex items-start justify-between gap-3">
@@ -267,7 +253,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                             <span className="sr-only">{levelMeta.description}</span>
                         </div>
 
-                        <div className="flex flex-wrap justify-end gap-2">
+                        <DawPluginMetricStrip>
                             <DawPluginMetricTile
                                 className="proof-window"
                                 label="In"
@@ -287,15 +273,15 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                 detail="True peak ceiling"
                             />
                             <DawPluginMetricTile className="proof-window" label="LRA" value={`${state.lra.toFixed(1)} LU`} detail="Loudness range" />
-                        </div>
+                        </DawPluginMetricStrip>
                     </div>
 
                     <div className="proof-window min-h-0 flex-1 overflow-auto p-3">{renderLevel(state, deviceId)}</div>
                 </section>
 
-                <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
+                <DawPluginRail>
                     <SideCard title="Quick read" detail="Keep the mission, the chain, and the compare switch in reach.">
-                        <div className="space-y-2">
+                        <DawPluginReadoutList>
                             <DawReadoutRow label="Preset" value={patch.name} valueClassName="text-foreground/85" />
                             <DawReadoutRow label="Target" value={targetLabel} valueClassName="text-foreground/85" />
                             <DawReadoutRow
@@ -313,7 +299,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                 value={`${Math.abs(state.limiterGrDb).toFixed(1)} dB`}
                                 valueClassName="text-foreground/85"
                             />
-                        </div>
+                        </DawPluginReadoutList>
                     </SideCard>
 
                     <SideCard
@@ -325,20 +311,21 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                 const label = MODULE_LABELS[moduleIndex] ?? '?';
                                 const bypassed = isModuleBypassed(state, moduleIndex);
                                 return (
-                                    <div
+                                    <DawPluginChoiceRow
                                         key={`${moduleIndex}-${slot}`}
-                                        className="proof-window flex items-center justify-between px-3 py-2"
-                                    >
-                                        <div className="flex items-center gap-2">
+                                        className="proof-window"
+                                        title={label}
+                                        startSlot={
                                             <span className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/45">
                                                 {slot + 1}
                                             </span>
-                                            <span className="text-[11px] font-medium text-foreground">{label}</span>
-                                        </div>
-                                        <DawPluginLed tone="mint" className={bypassed ? 'opacity-50' : ''}>
-                                            {bypassed ? 'Bypass' : 'Live'}
-                                        </DawPluginLed>
-                                    </div>
+                                        }
+                                        endSlot={
+                                            <DawPluginLed tone="mint" className={bypassed ? 'opacity-50' : ''}>
+                                                {bypassed ? 'Bypass' : 'Live'}
+                                            </DawPluginLed>
+                                        }
+                                    />
                                 );
                             })}
                         </div>
@@ -382,7 +369,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                             </div>
                         </div>
                     </SideCard>
-                </aside>
+                </DawPluginRail>
             </div>
         </div>
     );

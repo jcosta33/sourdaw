@@ -6,6 +6,8 @@ import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { Button } from '#/components/ui/button';
 import { Copy, Check, AlertTriangle } from 'lucide-react';
 
+import { CollaborationBlock } from '../components/CollaborationBlock';
+
 type QrInviteProps = {
     inviteString: string;
 };
@@ -74,7 +76,11 @@ export const QrInvite = ({ inviteString }: QrInviteProps): ReactElement => {
     }
 
     return (
-        <div className="flex flex-col items-center gap-2">
+        <CollaborationBlock
+            title="Scan to join"
+            description="Share this QR when copying the raw invite text is inconvenient."
+            className="flex flex-col items-center gap-2"
+        >
             <canvas ref={canvasRef} className="rounded" />
             <DawInlineHint className="px-0 py-0 text-[10px] text-muted-foreground/70">
                 Scan this QR code to join, or copy the invite text
@@ -83,6 +89,6 @@ export const QrInvite = ({ inviteString }: QrInviteProps): ReactElement => {
                 {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
                 {copied ? 'Copied' : 'Copy Invite'}
             </Button>
-        </div>
+        </CollaborationBlock>
     );
 };

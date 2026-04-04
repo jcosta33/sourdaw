@@ -1,6 +1,8 @@
 import { type ReactElement, type MouseEvent, useState, useRef, useEffect } from 'react';
+import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawMenuMutedRow } from '#/components/daw/DawMenuParts';
+import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
 import { Fader } from '#/components/daw/Fader';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
@@ -25,6 +27,7 @@ import { LevelMeter } from '../Metering/LevelMeter';
 import { DeviceChainSection } from './DeviceChainSection';
 import { SendsSection } from './SendsSection';
 import { IOSection } from './IOSection';
+import { MixerStripValue } from '../../components/Mixer/MixerStripValue';
 import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
 import {
     getAllVCAGroups,
@@ -89,10 +92,13 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
 
             {/* Track name */}
             {isRenaming ? (
-                <input
+                <DawCompactInput
                     ref={renameRef}
                     defaultValue={track.name}
-                    className="w-full rounded border border-border-soft bg-surface-inset shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)] px-1 text-center text-[9px] text-foreground font-mono outline-none focus-visible:ring-1 focus-visible:ring-border-focus"
+                    size="micro"
+                    align="center"
+                    monospace
+                    className="w-full px-1 text-[9px]"
                     onBlur={(e) => {
                         renameTrack(track.id, e.currentTarget.value);
                         setIsRenaming(false);
@@ -236,9 +242,9 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                 />
             </div>
 
-            <span className="text-[10px] font-mono text-text-secondary mt-1">
+            <MixerStripValue>
                 {track.gain === 0 ? '-∞' : `${((track.gain - 0.8) * 40).toFixed(1)}`} dB
-            </span>
+            </MixerStripValue>
 
             {/* Pan */}
             <div className="w-full px-1 flex flex-col items-center mt-2 mb-2">
@@ -261,13 +267,13 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                         bipolar
                     />
                 </div>
-                <span className="text-[9px] font-mono text-text-secondary mt-1">
+                <MixerStripValue size="sm">
                     {track.pan === 0
                         ? 'C'
                         : track.pan > 0
                           ? `R${Math.round(track.pan)}`
                           : `L${Math.abs(Math.round(track.pan))}`}
-                </span>
+                </MixerStripValue>
             </div>
 
             {/* Devices — contained with scroll */}
@@ -332,11 +338,10 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                     <DawMenuMutedRow>Color</DawMenuMutedRow>
                     <div className="flex gap-1 px-3 py-1">
                         {TRACK_COLOR_PRESETS.map((c) => (
-                            <button
-                                type="button"
+                            <DawSwatchButton
                                 key={c}
-                                className="size-3.5 rounded-full border border-border/50 hover:ring-1 hover:ring-foreground/30"
-                                style={{ backgroundColor: c, outline: c === track.color ? '2px solid white' : 'none', outlineOffset: '1px' }}
+                                color={c}
+                                active={c === track.color}
                                 onClick={act(() => setTrackColor(track.id, c))}
                                 aria-label={`Set color`}
                             />

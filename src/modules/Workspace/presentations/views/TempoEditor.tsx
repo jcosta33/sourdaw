@@ -1,6 +1,6 @@
 import { type ReactElement } from 'react';
+import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
-import { Input } from '#/components/ui/input';
 import { Button } from '#/components/ui/button';
 import { ValueField } from '#/components/daw/ValueField';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
@@ -67,7 +67,7 @@ export const TempoEditor = (): ReactElement => {
 
             {t.editingTimeSig ? (
                 <div className="flex items-center gap-0.5">
-                    <Input
+                    <DawCompactInput
                         type="number"
                         value={t.numValue}
                         onChange={(e) => t.setNumValue(e.target.value)}
@@ -79,7 +79,10 @@ export const TempoEditor = (): ReactElement => {
                                 t.cancelTimeSigEdit();
                             }
                         }}
-                        className="h-6 w-8 text-center font-mono text-xs"
+                        size="micro"
+                        align="center"
+                        monospace
+                        className="w-8"
                         min={1}
                         max={32}
                         autoFocus
@@ -142,7 +145,7 @@ export const TempoEditor = (): ReactElement => {
                                     </span>
 
                                     {t.editingChangeId === change.id ? (
-                                        <Input
+                                        <DawCompactInput
                                             type="number"
                                             value={t.editingChangeTempo}
                                             onChange={(e) => t.setEditingChangeTempo(e.target.value)}
@@ -155,7 +158,10 @@ export const TempoEditor = (): ReactElement => {
                                                     t.cancelEditChange();
                                                 }
                                             }}
-                                            className="h-5 w-14 text-center font-mono text-xs"
+                                            size="micro"
+                                            align="center"
+                                            monospace
+                                            className="h-5 w-14"
                                             min={20}
                                             max={999}
                                             step={0.1}
@@ -202,21 +208,27 @@ export const TempoEditor = (): ReactElement => {
                     )}
 
                     <div className="mt-2 flex items-center gap-1 border-t border-border pt-2">
-                        <Input
+                        <DawCompactInput
                             type="number"
                             value={t.newBeat}
                             onChange={(e) => t.setNewBeat(e.target.value)}
-                            className="h-6 w-14 text-center font-mono text-xs"
+                            size="micro"
+                            align="center"
+                            monospace
+                            className="w-14"
                             min={0}
                             step={1}
                             placeholder="Beat"
                             aria-label="New tempo change beat"
                         />
-                        <Input
+                        <DawCompactInput
                             type="number"
                             value={t.newTempo}
                             onChange={(e) => t.setNewTempo(e.target.value)}
-                            className="h-6 w-14 text-center font-mono text-xs"
+                            size="micro"
+                            align="center"
+                            monospace
+                            className="w-14"
                             min={20}
                             max={999}
                             step={0.1}

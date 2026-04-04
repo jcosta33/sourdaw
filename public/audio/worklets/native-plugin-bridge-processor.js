@@ -1,9 +1,8 @@
 /**
  * Native Plugin Bridge Processor — ring-buffer audio bridge via MessagePort.
  *
- * Sends audio blocks to the main thread, which forwards to Rust via Tauri IPC.
- * The Rust audio thread processes through the CLAP/VST3 plugin and returns
- * the output via the same path.
+ * Sends audio blocks to the main thread as raw bytes (Uint8Array), which
+ * forwards to Rust via Tauri IPC. Processed output returns the same way.
  *
  * Latency: 1 audio block (128 samples ≈ 2.67ms at 48kHz).
  * The worklet reads the PREVIOUS block's output while sending the current input.
@@ -22,14 +21,15 @@ class NativePluginBridgeProcessor extends AudioWorkletProcessor {
                 this.enginePluginId = event.data.enginePluginId;
                 this.ready = true;
             } else if (event.data.type === 'processed') {
-                // Received processed audio back from Rust
-                const data = event.data.audio;
-                const numSamples = data.length / 2;
+                // Decode raw bytes back to f32 samples
+                const bytes = new Uint8Array(event.data.audio);
+                const view = new DataView(bytes.buffer);
+                const numSamples = bytes.byteLength / 8; // 4 bytes L + 4 bytes R per frame
                 this.lastOutputL = new Float32Array(numSamples);
                 this.lastOutputR = new Float32Array(numSamples);
                 for (let i = 0; i < numSamples; i++) {
-                    this.lastOutputL[i] = data[i * 2];
-                    this.lastOutputR[i] = data[i * 2 + 1];
+                    this.lastOutputL[i] = view.getFloat32(i * 8, true);       // little-endian
+                    this.lastOutputR[i] = view.getFloat32(i * 8 + 4, true);
                 }
             }
         };
@@ -63,18 +63,19 @@ class NativePluginBridgeProcessor extends AudioWorkletProcessor {
             }
         }
 
-        // Interleave current input and send to main thread for Rust processing
-        const interleaved = new Float32Array(frames * 2);
+        // Encode current input as raw bytes and send to main thread
         const left = input[0];
         const right = input[1] ?? input[0];
+        const bytes = new Uint8Array(frames * 8); // 4 bytes L + 4 bytes R per frame
+        const view = new DataView(bytes.buffer);
         for (let i = 0; i < frames; i++) {
-            interleaved[i * 2] = left[i];
-            interleaved[i * 2 + 1] = right[i];
+            view.setFloat32(i * 8, left[i], true);       // little-endian
+            view.setFloat32(i * 8 + 4, right[i], true);
         }
 
         this.port.postMessage(
-            { type: 'process', audio: interleaved.buffer },
-            [interleaved.buffer] // Transfer ownership for zero-copy
+            { type: 'process', audio: bytes.buffer },
+            [bytes.buffer]
         );
 
         return true;

@@ -8,4 +8,3 @@ import './ReverbLayout';
 import './DelayLayout';
 import './DistortionLayout';
 import './ChorusLayout';
-import './NativeEffectLayouts';

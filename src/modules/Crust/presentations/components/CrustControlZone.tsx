@@ -8,9 +8,14 @@
  * Level 5: L4 + Loudness statistics panel
  */
 import { type ReactElement } from 'react';
+import { cn } from '#/helpers/Styles/cn';
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
+import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
+import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { Slider } from '#/components/ui/slider';
 import { type CrustPatch } from '../../models/CrustPatch';
 import { CrustSatCurve } from './CrustSatCurve';
 
@@ -66,6 +71,35 @@ const Knob = ({
     </div>
 );
 
+const SliderRow = ({
+    label,
+    value,
+    onChange,
+}: {
+    label: string;
+    value: number;
+    onChange: (value: number) => void;
+}): ReactElement => (
+    <div className="flex items-center gap-2">
+        <span className="w-14 shrink-0 text-[7px] text-muted-foreground/40">{label}</span>
+        <Slider
+            value={[value]}
+            min={0}
+            max={100}
+            step={1}
+            className="flex-1"
+            aria-label={label}
+            onValueChange={(values) => {
+                const nextValue = values[0];
+                if (nextValue !== undefined) {
+                    onChange(nextValue);
+                }
+            }}
+        />
+        <span className="w-8 shrink-0 text-right text-[7px] font-mono text-muted-foreground/50">{value}%</span>
+    </div>
+);
+
 // ── Algorithm data ────────────────────────────────────────────────────────────
 
 const ALGORITHMS = [
@@ -98,28 +132,47 @@ const STYLE_TILES = [
     { id: 'loud'        as const, label: 'LOUD',        sub: 'Maximum\nloudness' },
 ];
 
+const LevelTile = ({
+    active,
+    label,
+    subtitle,
+    onClick,
+}: {
+    active: boolean;
+    label: string;
+    subtitle: string;
+    onClick: () => void;
+}): ReactElement => (
+    <button
+        type="button"
+        className={cn(
+            'flex h-full flex-1 flex-col items-center justify-center rounded-[14px] border px-3 py-4 transition-all',
+            active
+                ? 'border-[var(--color-accent-cyan)]/45 border-l-[3px] bg-white/[0.045] text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]'
+                : 'border-white/8 bg-black/20 text-white/36 hover:border-white/14 hover:text-white/80'
+        )}
+        onClick={onClick}
+        aria-pressed={active}
+    >
+        <span className="text-[11px] font-semibold leading-tight">{label}</span>
+        <span className="mt-1 whitespace-pre-line text-center text-[8px] leading-snug text-muted-foreground/45">
+            {subtitle}
+        </span>
+    </button>
+);
+
 const Level1 = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }): ReactElement => (
     <div className="flex gap-2 h-full items-center px-2">
         {STYLE_TILES.map((tile) => {
             const active = patch.style === tile.id;
             return (
-                <button
+                <LevelTile
                     key={tile.id}
-                    type="button"
-                    className="flex-1 h-full flex flex-col items-center justify-center rounded-md transition-all border"
-                    style={active
-                        ? { background: '#28282E', borderColor: '#5B8FC4', borderLeftWidth: 3, padding: '8px' }
-                        : { background: '#161619', borderColor: '#2E2E36', padding: '8px' }}
+                    active={active}
+                    label={tile.label}
+                    subtitle={tile.sub}
                     onClick={() => setParam('style', tile.id)}
-                    aria-pressed={active}
-                >
-                    <span className="text-[11px] font-semibold leading-tight" style={{ color: active ? '#E8E6E0' : '#52515A' }}>
-                        {tile.label}
-                    </span>
-                    <span className="text-[8px] text-muted-foreground/40 whitespace-pre-line text-center mt-1 leading-snug">
-                        {tile.sub}
-                    </span>
-                </button>
+                />
             );
         })}
     </div>
@@ -169,61 +222,39 @@ const Level2Core = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
 
         {/* Channel link sliders */}
         <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-2">
-                <span className="text-[7px] text-muted-foreground/40 w-14 shrink-0">Link Trans</span>
-                <input
-                    type="range" min={0} max={100} step={1}
-                    value={patch.channelLinkTransient}
-                    onChange={(e) => setParam('channelLinkTransient', Number(e.target.value))}
-                    className="flex-1 h-1 accent-[#5B8FC4]"
-                    aria-label="Channel link transient"
-                />
-                <span className="text-[7px] font-mono text-muted-foreground/50 w-8 text-right shrink-0">
-                    {patch.channelLinkTransient}%
-                </span>
-            </div>
-            <div className="flex items-center gap-2">
-                <span className="text-[7px] text-muted-foreground/40 w-14 shrink-0">Link Rel</span>
-                <input
-                    type="range" min={0} max={100} step={1}
-                    value={patch.channelLinkRelease}
-                    onChange={(e) => setParam('channelLinkRelease', Number(e.target.value))}
-                    className="flex-1 h-1 accent-[#5B8FC4]"
-                    aria-label="Channel link release"
-                />
-                <span className="text-[7px] font-mono text-muted-foreground/50 w-8 text-right shrink-0">
-                    {patch.channelLinkRelease}%
-                </span>
-            </div>
+            <SliderRow
+                label="Link Trans"
+                value={patch.channelLinkTransient}
+                onChange={(value) => setParam('channelLinkTransient', value)}
+            />
+            <SliderRow
+                label="Link Rel"
+                value={patch.channelLinkRelease}
+                onChange={(value) => setParam('channelLinkRelease', value)}
+            />
         </div>
     </div>
 );
 
 const SatSection = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }): ReactElement => (
-    <div
-        className="flex flex-col gap-1.5 p-2 rounded-md"
-        style={{
-            background: '#1A1208',
-            border: '1px solid rgba(46,46,54,0.4)',
-            borderLeft: '3px solid #D4883A',
-        }}
-    >
-        <div className="flex items-center justify-between">
-            <span className="text-[7px] font-semibold uppercase tracking-widest" style={{ color: '#D4883A' }}>
-                Saturation
-            </span>
+    <DawPluginSectionCard
+        title="Saturation"
+        detailMode="badge"
+        detail={
             <DawPluginToggle
                 id="crust-sat-enabled"
                 pressed={patch.satEnabled}
-                tone="steel"
+                tone="amber"
                 size="xs"
                 role="switch"
                 aria-checked={patch.satEnabled}
                 onClick={() => setParam('satEnabled', !patch.satEnabled)}
             />
-        </div>
+        }
+        className="rounded-[14px] border border-white/8 bg-[linear-gradient(180deg,rgba(212,136,58,0.12),rgba(0,0,0,0.18))] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+        titleClassName="text-[var(--color-accent-amber)]"
+    >
         <div className="flex items-center gap-2">
-            {/* Sat algorithm pills */}
             <div className="flex flex-wrap gap-0.5">
                 {SAT_ALGORITHMS.map((a) => (
                     <DawPluginChip
@@ -240,10 +271,8 @@ const SatSection = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
                 ))}
             </div>
 
-            {/* Transfer curve */}
             <CrustSatCurve algorithm={patch.satAlgorithm} drive={patch.satDrive} />
 
-            {/* Drive + Mix knobs */}
             <div className="flex gap-2">
                 <div className="flex flex-col items-center gap-0.5">
                     <Knob
@@ -252,7 +281,7 @@ const SatSection = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
                         label="Drive" min={0} max={18} step={0.1} unit="dB" def={0}
                     />
                     {patch.satDrive > 6 ? (
-                        <span className="text-[6px] font-bold" style={{ color: '#C44030' }}>HOT</span>
+                        <span className="text-[6px] font-bold text-[var(--color-state-danger)]">HOT</span>
                     ) : null}
                 </div>
                 <Knob
@@ -262,7 +291,7 @@ const SatSection = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
                 />
             </div>
         </div>
-    </div>
+    </DawPluginSectionCard>
 );
 
 const Level3Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }): ReactElement => (
@@ -358,16 +387,18 @@ const Level4Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter 
         {/* Dithering */}
         <div>
             <SectionLabel>Dithering</SectionLabel>
-            <select
+            <DawCompactSelect
                 value={patch.dither}
                 onChange={(e) => setParam('dither', e.target.value)}
-                className="h-6 rounded border border-border/30 bg-surface-inset text-[9px] text-foreground px-1"
+                size="micro"
+                tone="inset"
+                className="min-w-[7rem]"
                 aria-label="Dither mode"
             >
                 {DITHER_OPTIONS.map((d) => (
                     <option key={d.id} value={d.id}>{d.label}</option>
                 ))}
-            </select>
+            </DawCompactSelect>
             {patch.dither !== 'off' ? (
                 <div className="flex gap-1 mt-1">
                     {([16, 24, 32] as const).map((bd) => (
@@ -408,10 +439,14 @@ const Level5Stats = ({
             role="group"
         >
             {rows.map(([label, value]) => (
-                <div key={label} className="flex justify-between items-baseline">
-                    <span className="text-[7px] text-muted-foreground/40">{label}</span>
-                    <span className="text-[8px] font-mono text-foreground/70">{value}</span>
-                </div>
+                <DawReadoutRow
+                    key={label}
+                    label={label}
+                    value={value}
+                    className="gap-2"
+                    labelClassName="text-[7px] text-muted-foreground/40"
+                    valueClassName="text-[8px] text-foreground/70"
+                />
             ))}
         </div>
     );

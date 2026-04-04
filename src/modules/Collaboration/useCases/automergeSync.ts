@@ -1,20 +1,27 @@
 import * as Automerge from '@automerge/automerge';
 
-import { DOC_PREFIX_ROOT } from '#/modules/CrdtDocument/models/CrdtDocumentTypes';
+import { DOC_PREFIX_ROOT, DOC_BRANCHES } from '#/modules/CrdtDocument/models/CrdtDocumentTypes';
 import { automergeRepository } from '#/modules/CrdtDocument/repositories/automergeRepository';
 import { persistCrdtProject } from '#/modules/CrdtDocument/useCases/crdtProjectLifecycle';
 
 import { type PeerId, type PeerMessage } from '../models/CollaborationTypes';
 import { type PeerConnectionManager } from '../repositories/peerConnection';
 
-type SyncStateMap = Map<PeerId, Automerge.SyncState>;
+// Sync state is per-peer per-doc: each document requires its own Automerge SyncState.
+type PerDocSyncStateMap = Map<string, Automerge.SyncState>;
+type SyncStateMap = Map<PeerId, PerDocSyncStateMap>;
 
 /**
  * Manages the Automerge sync protocol for all connected peers.
  *
- * Each peer has its own SyncState that tracks what they've seen.
- * When the local document changes, we generate sync messages for each peer.
+ * Each peer has its own SyncState per document that tracks what they've seen.
+ * When any local document changes, we generate sync messages for each peer.
  * When we receive a sync message, we apply it and hydrate stores.
+ *
+ * Documents synced:
+ *  - `root` — the primary project document
+ *  - `__branches__` — session-scoped branch metadata (created/removed by sessionManagement)
+ *  - `branch_*` — branch content documents (created by crdtBranching)
  */
 export class AutomergeSync {
     private syncStates: SyncStateMap = new Map();
@@ -43,7 +50,7 @@ export class AutomergeSync {
 
     /** Initialize sync state for a new peer and send initial sync. */
     addPeer(peerId: PeerId): void {
-        this.syncStates.set(peerId, Automerge.initSyncState());
+        this.syncStates.set(peerId, new Map());
         this.sendSyncToPeer(peerId);
     }
 
@@ -54,12 +61,16 @@ export class AutomergeSync {
 
     /** Handle an incoming CRDT sync message from a peer. */
     receiveSync(peerId: PeerId, docId: string, syncMessageBase64: string): void {
-        const doc = automergeRepository.getDoc(docId);
+        let doc = automergeRepository.getDoc(docId);
         if (!doc) {
-            return;
+            // Unknown doc — peer is syncing a branch or metadata doc we don't have yet.
+            // Initialize empty and let the sync message fill it in.
+            automergeRepository.createChildDoc(docId);
+            doc = automergeRepository.getDoc(docId)!;
         }
 
-        const syncState = this.syncStates.get(peerId) ?? Automerge.initSyncState();
+        const peerStates = this.syncStates.get(peerId) ?? new Map<string, Automerge.SyncState>();
+        const syncState = peerStates.get(docId) ?? Automerge.initSyncState();
 
         let newDoc: Automerge.Doc<unknown>;
         let newSyncState: Automerge.SyncState;
@@ -75,7 +86,8 @@ export class AutomergeSync {
             return;
         }
 
-        this.syncStates.set(peerId, newSyncState);
+        peerStates.set(docId, newSyncState);
+        this.syncStates.set(peerId, peerStates);
 
         // Update the document in the repository.
         // This triggers onChange → hydration + response sync messages.
@@ -94,22 +106,43 @@ export class AutomergeSync {
         }
     }
 
-    /** Generate and send sync messages to a specific peer. */
+    /** Generate and send sync messages to a specific peer for all known documents. */
     private sendSyncToPeer(peerId: PeerId): void {
-        const doc = automergeRepository.getDoc(DOC_PREFIX_ROOT);
+        // Always sync the root project doc
+        this.sendDocSyncToPeer(peerId, DOC_PREFIX_ROOT);
+
+        // Sync branch metadata doc if it exists (session-scoped)
+        if (automergeRepository.hasDoc(DOC_BRANCHES)) {
+            this.sendDocSyncToPeer(peerId, DOC_BRANCHES);
+        }
+
+        // Sync branch content docs
+        for (const docId of automergeRepository.getDocIds()) {
+            if (docId.startsWith('branch_')) {
+                this.sendDocSyncToPeer(peerId, docId);
+            }
+        }
+    }
+
+    /** Generate and send a sync message for one document to one peer. */
+    private sendDocSyncToPeer(peerId: PeerId, docId: string): void {
+        const doc = automergeRepository.getDoc(docId);
         if (!doc) {
             return;
         }
 
-        const syncState = this.syncStates.get(peerId) ?? Automerge.initSyncState();
+        const peerStates = this.syncStates.get(peerId) ?? new Map<string, Automerge.SyncState>();
+        const syncState = peerStates.get(docId) ?? Automerge.initSyncState();
+
         const [newSyncState, syncMessage] = Automerge.generateSyncMessage(doc, syncState);
 
-        this.syncStates.set(peerId, newSyncState);
+        peerStates.set(docId, newSyncState);
+        this.syncStates.set(peerId, peerStates);
 
         if (syncMessage) {
             const message: PeerMessage = {
                 type: 'crdt-sync',
-                docId: DOC_PREFIX_ROOT,
+                docId,
                 data: bytesToBase64(syncMessage),
             };
             this.peerManager.sendCrdtSync(peerId, message);

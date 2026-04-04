@@ -7,7 +7,13 @@
  * Level 4 (Route):  Keyboard split zones, CC routing
  * Level 5 (Lab):    Euclidean, Markov, mutation, groove template
  */
-import { type ReactElement, useState, useSyncExternalStore } from 'react';
+import { type ComponentProps, type ReactElement, useState, useSyncExternalStore } from 'react';
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
+import { DawPluginChip } from '#/components/daw/DawPluginChip';
+import { DawPluginLed } from '#/components/daw/DawPluginLed';
+import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
+import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
+import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import {
     yeastStore,
@@ -33,11 +39,7 @@ const LEVEL_OPTIONS = [
 ];
 
 const MetricTile = ({ label, value, detail }: { label: string; value: string; detail: string }): ReactElement => (
-    <div className="yeast-window flex min-w-[92px] flex-col gap-1 px-3 py-2">
-        <span className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">{label}</span>
-        <span className="font-mono text-[13px] text-foreground">{value}</span>
-        <span className="text-[9px] leading-4 text-muted-foreground/55">{detail}</span>
-    </div>
+    <DawPluginMetricTile className="yeast-window min-w-[92px]" label={label} value={value} detail={detail} />
 );
 
 const SideCard = ({
@@ -49,16 +51,30 @@ const SideCard = ({
     detail?: string;
     children: ReactElement | ReactElement[];
 }): ReactElement => (
-    <section className="yeast-window flex flex-col gap-3 p-3">
-        <div className="space-y-1">
-            <div className="text-[8px] font-semibold uppercase tracking-[0.24em] text-[var(--color-accent-peach)]/70">
-                {title}
-            </div>
-            {detail ? <span className="sr-only">{detail}</span> : null}
-        </div>
+    <DawPluginSectionCard
+        className="yeast-window"
+        title={title}
+        detail={detail}
+        titleClassName="text-[var(--color-accent-peach)]/70"
+    >
         {children}
-    </section>
+    </DawPluginSectionCard>
 );
+
+const YeastChip = ({
+    tone = 'peach',
+    size = 'xs',
+    shape = 'soft',
+    caps = false,
+    ...props
+}: ComponentProps<typeof DawPluginChip>): ReactElement => (
+    <DawPluginChip tone={tone} size={size} shape={shape} caps={caps} {...props} />
+);
+
+const YeastLed = ({
+    tone = 'peach',
+    ...props
+}: ComponentProps<typeof DawPluginLed>): ReactElement => <DawPluginLed tone={tone} {...props} />;
 
 function getLevelMeta(level: YeastState['uiLevel']): { title: string; description: string } {
     if (level === 1) {
@@ -127,7 +143,7 @@ const NoteFlowHero = ({ state }: { state: YeastState }): ReactElement => {
                         A quick motion sketch for whatever the rack is doing right now.
                     </div>
                 </div>
-                <div className="yeast-led">{state.processors.length} modules</div>
+                <YeastLed>{state.processors.length} modules</YeastLed>
             </div>
 
             <div className="space-y-2">
@@ -203,14 +219,9 @@ export const YeastPanel = (): ReactElement => {
                     <SideCard title="Sprout" detail="Keep a few immediate transforms one tap away.">
                         <div className="flex flex-wrap gap-1.5">
                             {PROCESSOR_TYPES.filter((processor) => processor.level <= 2).map((processor) => (
-                                <button
-                                    key={processor.type}
-                                    type="button"
-                                    className="yeast-chip"
-                                    onClick={() => addYeastProcessor(processor.type)}
-                                >
+                                <YeastChip key={processor.type} onClick={() => addYeastProcessor(processor.type)}>
                                     + {processor.name}
-                                </button>
+                                </YeastChip>
                             ))}
                         </div>
                     </SideCard>
@@ -263,9 +274,9 @@ export const YeastPanel = (): ReactElement => {
                                                 {processor.type}
                                             </div>
                                         </div>
-                                        <span className={`yeast-led ${processor.bypassed ? 'opacity-50' : ''}`}>
+                                        <YeastLed className={processor.bypassed ? 'opacity-50' : undefined}>
                                             {processor.bypassed ? 'Bypass' : 'Live'}
-                                        </span>
+                                        </YeastLed>
                                     </div>
                                 ))
                             ) : (
@@ -289,13 +300,14 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
     return (
         <div className="flex-1 flex items-center justify-center gap-8 px-8">
             {/* Arp On/Off */}
-            <button
-                type="button"
-                className={`px-4 py-2 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
-                    hasArp
-                        ? 'bg-[var(--color-accent-peach)]/20 text-[var(--color-accent-peach)] border border-[var(--color-accent-peach)]/30'
-                        : 'text-muted-foreground border border-border/30 hover:text-foreground'
-                }`}
+            <DawPluginToggle
+                pressed={hasArp}
+                tone="peach"
+                size="sm"
+                shape="soft"
+                onLabel="Arp On"
+                offLabel="Arp Off"
+                caps
                 onClick={() => {
                     if (hasArp) {
                         const arp = state.processors.find((p) => p.type === 'arpeggiator');
@@ -305,14 +317,16 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                     }
                 }}
             >
-                {hasArp ? 'ARP ON' : 'ARP OFF'}
-            </button>
+                {hasArp ? 'Arp On' : 'Arp Off'}
+            </DawPluginToggle>
 
             {/* Mode */}
             <div className="flex flex-col items-center gap-1">
                 <span className="text-[8px] text-muted-foreground uppercase tracking-widest">Mode</span>
-                <select
-                    className="h-6 rounded border border-border/40 bg-surface-inset px-2 text-[9px] text-foreground cursor-pointer"
+                <DawCompactSelect
+                    size="micro"
+                    tone="inset"
+                    className="min-w-[4.5rem]"
                     onChange={(e) => {
                         const arp = state.processors.find((p) => p.type === 'arpeggiator');
                         if (arp) setYeastProcessorParam(arp.id, 'mode', parseInt(e.target.value));
@@ -326,7 +340,7 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                     <option value={4}>Random</option>
                     <option value={5}>Order</option>
                     <option value={6}>Chord</option>
-                </select>
+                </DawCompactSelect>
             </div>
 
             {/* Rate */}
@@ -348,16 +362,15 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
             </div>
 
             {/* Latch */}
-            <button
-                type="button"
-                className="px-3 py-1.5 rounded text-[9px] font-medium transition-colors cursor-pointer text-muted-foreground border border-border/30 hover:text-foreground"
+            <YeastChip
+                size="sm"
                 onClick={() => {
                     const arp = state.processors.find((p) => p.type === 'arpeggiator');
                     if (arp) setYeastProcessorParam(arp.id, 'latch', 1);
                 }}
             >
                 Latch
-            </button>
+            </YeastChip>
         </div>
     );
 };
@@ -448,16 +461,18 @@ const Level3Build = ({ state }: { state: YeastState }): ReactElement => {
                             >
                                 {proc.name}
                             </span>
-                            <button
-                                type="button"
-                                className={`text-[7px] px-1 rounded cursor-pointer ${proc.bypassed ? 'text-muted-foreground' : 'text-[var(--color-accent-peach)]'}`}
+                            <DawPluginToggle
+                                pressed={!proc.bypassed}
+                                tone="peach"
+                                size="xs"
+                                shape="soft"
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     setYeastProcessorBypass(proc.id, !proc.bypassed);
                                 }}
                             >
-                                {proc.bypassed ? 'OFF' : 'ON'}
-                            </button>
+                                {proc.bypassed ? 'Off' : 'On'}
+                            </DawPluginToggle>
                             <button
                                 type="button"
                                 className="text-[7px] text-muted-foreground hover:text-[var(--color-state-danger)] cursor-pointer"
@@ -498,15 +513,9 @@ const Level3Build = ({ state }: { state: YeastState }): ReactElement => {
             {/* Add processor */}
             <div className="flex flex-wrap gap-1 pt-1 border-t border-border/20">
                 {PROCESSOR_TYPES.filter((pt) => pt.level <= 3).map((pt) => (
-                    <button
-                        key={pt.type}
-                        type="button"
-                        className="px-2 py-1 rounded text-[8px] text-muted-foreground hover:text-foreground border border-border/20 hover:border-border/40 cursor-pointer transition-colors"
-                        onClick={() => addYeastProcessor(pt.type)}
-                        title={pt.description}
-                    >
+                    <YeastChip key={pt.type} onClick={() => addYeastProcessor(pt.type)} title={pt.description}>
                         + {pt.name}
-                    </button>
+                    </YeastChip>
                 ))}
             </div>
         </div>
@@ -547,16 +556,18 @@ const Level4Route = ({ state }: { state: YeastState }): ReactElement => {
                             >
                                 {proc.name}
                             </span>
-                            <button
-                                type="button"
-                                className={`text-[7px] px-1 rounded cursor-pointer ${proc.bypassed ? 'text-muted-foreground' : 'text-[var(--color-accent-peach)]'}`}
+                            <DawPluginToggle
+                                pressed={!proc.bypassed}
+                                tone="peach"
+                                size="xs"
+                                shape="soft"
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     setYeastProcessorBypass(proc.id, !proc.bypassed);
                                 }}
                             >
-                                {proc.bypassed ? 'OFF' : 'ON'}
-                            </button>
+                                {proc.bypassed ? 'Off' : 'On'}
+                            </DawPluginToggle>
                             <button
                                 type="button"
                                 className="text-[7px] text-muted-foreground hover:text-[var(--color-state-danger)] cursor-pointer"
@@ -580,15 +591,9 @@ const Level4Route = ({ state }: { state: YeastState }): ReactElement => {
             {/* Add — includes Route-level processors */}
             <div className="flex flex-wrap gap-1 pt-1 border-t border-border/20">
                 {PROCESSOR_TYPES.filter((pt) => pt.level <= 4).map((pt) => (
-                    <button
-                        key={pt.type}
-                        type="button"
-                        className="px-2 py-1 rounded text-[8px] text-muted-foreground hover:text-foreground border border-border/20 hover:border-border/40 cursor-pointer transition-colors"
-                        onClick={() => addYeastProcessor(pt.type)}
-                        title={pt.description}
-                    >
+                    <YeastChip key={pt.type} onClick={() => addYeastProcessor(pt.type)} title={pt.description}>
                         + {pt.name}
-                    </button>
+                    </YeastChip>
                 ))}
             </div>
         </div>
@@ -627,16 +632,18 @@ const Level5Lab = ({ state }: { state: YeastState }): ReactElement => {
                                 >
                                     {proc.name}
                                 </span>
-                                <button
-                                    type="button"
-                                    className={`text-[7px] px-1 rounded cursor-pointer ${proc.bypassed ? 'text-muted-foreground' : 'text-[var(--color-accent-peach)]'}`}
+                                <DawPluginToggle
+                                    pressed={!proc.bypassed}
+                                    tone="peach"
+                                    size="xs"
+                                    shape="soft"
                                     onClick={(e) => {
                                         e.stopPropagation();
                                         setYeastProcessorBypass(proc.id, !proc.bypassed);
                                     }}
                                 >
-                                    {proc.bypassed ? 'OFF' : 'ON'}
-                                </button>
+                                    {proc.bypassed ? 'Off' : 'On'}
+                                </DawPluginToggle>
                                 <button
                                     type="button"
                                     className="text-[7px] text-muted-foreground hover:text-[var(--color-state-danger)] cursor-pointer"
@@ -663,29 +670,22 @@ const Level5Lab = ({ state }: { state: YeastState }): ReactElement => {
                         Generative
                     </span>
                     {PROCESSOR_TYPES.filter((pt) => pt.level === 5).map((pt) => (
-                        <button
+                        <YeastChip
                             key={pt.type}
-                            type="button"
-                            className="px-2 py-1 rounded text-[8px] text-lime-400/80 hover:text-lime-300 border border-lime-500/20 hover:border-lime-500/40 cursor-pointer transition-colors"
+                            tone="mint"
                             onClick={() => addYeastProcessor(pt.type)}
                             title={pt.description}
                         >
                             + {pt.name}
-                        </button>
+                        </YeastChip>
                     ))}
                     <span className="w-full text-[7px] text-muted-foreground/50 uppercase tracking-widest mt-1 mb-0.5">
                         Standard
                     </span>
                     {PROCESSOR_TYPES.filter((pt) => pt.level <= 4).map((pt) => (
-                        <button
-                            key={pt.type}
-                            type="button"
-                            className="px-2 py-1 rounded text-[8px] text-muted-foreground hover:text-foreground border border-border/20 hover:border-border/40 cursor-pointer transition-colors"
-                            onClick={() => addYeastProcessor(pt.type)}
-                            title={pt.description}
-                        >
+                        <YeastChip key={pt.type} onClick={() => addYeastProcessor(pt.type)} title={pt.description}>
                             + {pt.name}
-                        </button>
+                        </YeastChip>
                     ))}
                 </div>
             </div>

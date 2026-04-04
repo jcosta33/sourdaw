@@ -103,24 +103,16 @@ Joiners can edit by default.
 ---
 
 ### ~~INT-4 · Asset transfer not wired to clip playback~~ — DONE
-**Severity:** P2
 
 `getAssetTransfer()` is exported but nothing calls `requestAsset(hash)` when a clip's
 audio file is missing locally. Peers joining a session mid-project will have silent
 clips.
 
-This is a multi-step feature, not a one-liner. The `Clip` model (`Track.ts`) has
-`audioBufferId` (a local cache key) but no content-addressed hash. The full scope:
-
-1. Add `assetHash?: string` to the `Clip` model (CRDT-backed — persists and syncs)
-2. In the audio import flow, call `getAssetTransfer()?.addLocalAsset(blob, name)` and
-   store the returned hash as `clip.assetHash`
-3. In `scheduleAudioClips`, when `audioBufferCache.get(clip.audioBufferId)` misses
-   and `clip.assetHash` is set, call `getAssetTransfer()?.requestAsset(clip.assetHash)`
-   (fire-once — guard with a `requestedAssets` set to avoid spamming)
-4. In `AssetTransfer.onAssetAvailable`, decode the blob to an `AudioBuffer`,
-   store it in `audioBufferCache` under the original `audioBufferId`, and
-   trigger re-scheduling
+All four steps completed:
+1. `assetHash?: string` was already in the `Clip` model
+2. `importAudioFile.ts` now calls `getAssetTransfer()?.addLocalAsset(file, file.name)` and passes hash to `addClip`
+3. `scheduleAudioClips.ts` already called `requestAsset` on cache miss; replaced `scheduledAudioClips.add` with a module-level `requestedAssets` guard so the clip stays schedulable until the buffer arrives
+4. `resolveAssetForClips` already decoded + cached in host path; fixed joiner path (`joinSession`) which had an empty `onAssetAvailable` callback
 
 ---
 
@@ -157,12 +149,6 @@ so hosts know to wait for the current invite to be accepted before generating a 
 
 ---
 
-### DD-1 · Branch topology not synced across peers
-**Severity:** P1
+### ~~DD-1 · Branch topology not synced across peers~~ — DONE
 
-`branchStore` persists to `localStorage`. Branch documents (the actual content) live
-in Automerge and will sync, but the branch list metadata (names, IDs, source IDs)
-is local-only. Peer B never sees peer A's branches during a session.
-
-Requires a product call: are branches a per-user workspace concept (keep local)
-or a shared session concept (move metadata into a synced Automerge doc)?
+Session-scoped branch sync implemented. See SP-1 entry in the global audit for details.

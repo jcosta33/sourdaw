@@ -1,9 +1,12 @@
 import { type ReactElement, useState, useRef, useLayoutEffect } from 'react';
 import { Search, Music, Plus, SlidersHorizontal } from 'lucide-react';
+import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
+import { DawPickerCard } from '#/components/daw/DawPickerCard';
 import { Button } from '#/components/ui/button';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
+import { Slider } from '#/components/ui/slider';
 import { cn } from '#/helpers/Styles/cn';
 import {
     PATTERN_CATEGORIES,
@@ -130,14 +133,19 @@ const ParamSlider = ({
             <DawEyebrowLabel>{label}</DawEyebrowLabel>
             <span className="text-[9px] text-muted-foreground/50 tabular-nums">{value}</span>
         </div>
-        <input
-            type="range"
+        <Slider
+            value={[value]}
             min={min}
             max={max}
-            value={value}
-            onChange={(e) => onChange(Number(e.target.value))}
-            className="w-full h-1 accent-purple-500 cursor-pointer"
+            step={1}
+            className="pt-0.5"
             aria-label={label}
+            onValueChange={(values) => {
+                const nextValue = values[0];
+                if (nextValue !== undefined) {
+                    onChange(nextValue);
+                }
+            }}
         />
     </div>
 );
@@ -169,26 +177,31 @@ const TemplateCard = ({
     const notes = template.generate(genParams);
 
     return (
-        <div className="group relative bg-surface-raised border border-border/40 rounded-lg overflow-hidden hover:border-[var(--color-accent-lavender)]/40 transition-all duration-200">
-            <div className="bg-surface-base/80 border-b border-border/20 px-1.5 pt-1.5 pb-1">
-                <MiniPianoRoll notes={notes} lengthBeats={template.lengthBeats} />
-            </div>
-            <div className="p-2 space-y-1.5">
-                <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-medium text-foreground/90 leading-none truncate pr-1">
-                        {template.name}
-                    </span>
-                    <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        className="h-5 w-5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-[var(--color-accent-lavender)]/20 hover:text-[var(--color-accent-lavender)]"
-                        onClick={() => onInsert(template)}
-                        title="Insert at playhead"
-                        aria-label={`Insert ${template.name} at playhead`}
-                    >
-                        <Plus className="size-3" />
-                    </Button>
+        <DawPickerCard
+            className="hover:border-[var(--color-accent-lavender)]/30"
+            media={
+                <div className="px-1.5 pb-1 pt-1.5">
+                    <MiniPianoRoll notes={notes} lengthBeats={template.lengthBeats} />
                 </div>
+            }
+            heading={
+                <span className="truncate pr-1">
+                    {template.name}
+                </span>
+            }
+            action={
+                <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    className="h-5 w-5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-[var(--color-accent-lavender)]/20 hover:text-[var(--color-accent-lavender)]"
+                    onClick={() => onInsert(template)}
+                    title="Insert at playhead"
+                    aria-label={`Insert ${template.name} at playhead`}
+                >
+                    <Plus className="size-3" />
+                </Button>
+            }
+            meta={
                 <div className="flex items-center gap-1 flex-wrap">
                     <DawMicroBadge
                         rounded="full"
@@ -198,9 +211,9 @@ const TemplateCard = ({
                     </DawMicroBadge>
                     <span className="text-[9px] text-muted-foreground/50">{template.lengthBeats}b</span>
                 </div>
-                <p className="text-[9px] text-muted-foreground/60 leading-tight line-clamp-1">{template.description}</p>
-            </div>
-        </div>
+            }
+            description={template.description}
+        />
     );
 };
 
@@ -269,12 +282,13 @@ export const PatternBrowser = (): ReactElement => {
             <div className="flex gap-1">
                 <div className="relative flex-1">
                     <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3 text-muted-foreground/50" />
-                    <input
+                    <DawCompactInput
                         type="text"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         placeholder="Search patterns..."
-                        className="w-full h-7 bg-surface-base border border-border/60 rounded-md pl-7 pr-2 text-xs placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-purple-500/50"
+                        size="sm"
+                        className="w-full border-border/60 bg-surface-base pl-7 pr-2"
                         aria-label="Search MIDI patterns"
                     />
                 </div>

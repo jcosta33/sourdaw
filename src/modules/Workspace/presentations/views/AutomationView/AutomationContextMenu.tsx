@@ -3,7 +3,7 @@
  */
 import { type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
-import { DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
+import { DawMenuButton, DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { cn } from '#/helpers/Styles/cn';
 import { type AutomationPoint, type AutomationCurveType } from '#/modules/Automation/useCases/automation/types';
 import { type AutomationShapeType } from '#/modules/Automation/useCases/automationShapes';
@@ -43,32 +43,30 @@ export const AutomationContextMenu = ({
                 <>
                     <DawMenuSectionLabel className="px-2">Curve Type</DawMenuSectionLabel>
                     {CURVE_OPTIONS.map((opt) => (
-                        <button
-                            type="button"
+                        <DawMenuButton
                             key={opt.value}
                             className={cn(
-                                'w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors',
+                                'justify-start px-3 text-foreground hover:bg-accent/50 hover:text-foreground',
                                 points.find((p) => Math.abs(p.beat - beat) < 0.05)?.curve === opt.value &&
                                     'text-primary font-medium'
                             )}
                             onClick={() => onCurveSelect(opt.value)}
                         >
                             {opt.label}
-                        </button>
+                        </DawMenuButton>
                     ))}
                     <DawMenuSeparator />
                 </>
             ) : null}
             <DawMenuSectionLabel className="px-2">Insert Shape</DawMenuSectionLabel>
             {SHAPE_OPTIONS.map((opt) => (
-                <button
-                    type="button"
+                <DawMenuButton
                     key={opt.value}
-                    className="w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
+                    className="justify-start px-3 text-foreground hover:bg-accent/50 hover:text-foreground"
                     onClick={() => onShapeInsert(opt.value)}
                 >
                     {opt.label}
-                </button>
+                </DawMenuButton>
             ))}
         </div>
     </>,

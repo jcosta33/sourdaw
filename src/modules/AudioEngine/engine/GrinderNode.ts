@@ -126,16 +126,16 @@ export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string)
             const view = slot.view;
             const poll = () => {
                 cb({
-                    inputDb: view[GRINDER_IDX.inputDb],
-                    preampDb: view[GRINDER_IDX.preampDb],
-                    powerAmpDb: view[GRINDER_IDX.powerAmpDb],
-                    outputDb: view[GRINDER_IDX.outputDb],
-                    gateOpen: view[GRINDER_IDX.gateOpen],
-                    gateEnvelopeDb: view[GRINDER_IDX.gateEnvelopeDb],
-                    sagVoltage: view[GRINDER_IDX.sagVoltage],
-                    latency: view[GRINDER_IDX.latency],
-                    neuralCpuPercent: view[GRINDER_IDX.neuralCpuPercent],
-                    neuralWarmupProgress: view[GRINDER_IDX.neuralWarmupProgress],
+                    inputDb: view[GRINDER_IDX.inputDb] ?? 0,
+                    preampDb: view[GRINDER_IDX.preampDb] ?? 0,
+                    powerAmpDb: view[GRINDER_IDX.powerAmpDb] ?? 0,
+                    outputDb: view[GRINDER_IDX.outputDb] ?? 0,
+                    gateOpen: view[GRINDER_IDX.gateOpen] ?? 0,
+                    gateEnvelopeDb: view[GRINDER_IDX.gateEnvelopeDb] ?? 0,
+                    sagVoltage: view[GRINDER_IDX.sagVoltage] ?? 0,
+                    latency: view[GRINDER_IDX.latency] ?? 0,
+                    neuralCpuPercent: view[GRINDER_IDX.neuralCpuPercent] ?? 0,
+                    neuralWarmupProgress: view[GRINDER_IDX.neuralWarmupProgress] ?? 0,
                 });
                 meterRafId = requestAnimationFrame(poll);
             };

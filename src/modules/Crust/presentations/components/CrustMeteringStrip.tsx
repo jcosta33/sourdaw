@@ -2,6 +2,10 @@
  * CrustMeteringStrip — right panel: L/R output meters, GR meter, LUFS readouts, TP LED.
  */
 import { type ReactElement } from 'react';
+import { DawPluginLed } from '#/components/daw/DawPluginLed';
+import { DawPluginReadoutList } from '#/components/daw/DawPluginReadoutList';
+import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
+import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 
 type Props = {
     grDb: number;
@@ -56,6 +60,29 @@ const MeterBar = ({ value, id }: { value: number; id: string }): ReactElement =>
     );
 };
 
+const MeterSection = ({
+    title,
+    children,
+    actions,
+    className = '',
+}: {
+    title: string;
+    children: ReactElement | ReactElement[];
+    actions?: ReactElement;
+    className?: string;
+}): ReactElement => (
+    <section className={`rounded-[14px] border border-white/8 bg-black/[0.22] px-3 py-2 ${className}`}>
+        <DawPluginSectionHeader
+            title={title}
+            actions={actions}
+            size="xs"
+            titleClassName="text-muted-foreground/70"
+            className="mb-2"
+        />
+        {children}
+    </section>
+);
+
 export const CrustMeteringStrip = ({
     grDb,
     outputDb,
@@ -85,13 +112,10 @@ export const CrustMeteringStrip = ({
                 borderLeft: '1px solid rgba(46,46,54,0.5)',
             }}
         >
-            {/* Output meters */}
-            <div>
-                <div className="text-[7px] font-semibold text-muted-foreground/40 uppercase tracking-widest mb-1">Output</div>
+            <MeterSection title="Output">
                 <div className="flex gap-1 h-16">
                     <MeterBar value={outNorm} id="crust-meter-l" />
                     <MeterBar value={outNorm * 0.97} id="crust-meter-r" />
-                    {/* GR meter (inverted) */}
                     <div
                         className="relative"
                         style={{ width: 12, background: '#1E1E22', borderRadius: 2, overflow: 'hidden' }}
@@ -114,13 +138,9 @@ export const CrustMeteringStrip = ({
                     </span>
                     <span className="text-[7px] font-mono text-muted-foreground/50">R</span>
                 </div>
-            </div>
+            </MeterSection>
 
-            {/* LUFS readouts */}
-            <div className="flex-1">
-                <div className="text-[7px] font-semibold text-muted-foreground/40 uppercase tracking-widest mb-1">Loudness</div>
-
-                {/* Integrated — large */}
+            <MeterSection title="Loudness" className="flex-1">
                 <div className="mb-1">
                     <span
                         className="font-mono font-bold tabular-nums"
@@ -140,64 +160,58 @@ export const CrustMeteringStrip = ({
                     ) : null}
                 </div>
 
-                {/* ST + MOM */}
-                <div className="flex justify-between">
-                    <div>
-                        <div className="text-[7px] text-muted-foreground/40 leading-none">ST</div>
-                        <div
-                            className="text-[12px] font-mono tabular-nums text-foreground/70"
-                            aria-label={`Short-term LUFS: ${lufsShortTerm.toFixed(1)}`}
-                        >
-                            {lufsShortTerm > -99 ? lufsShortTerm.toFixed(1) : '—'}
-                        </div>
-                    </div>
-                    <div>
-                        <div className="text-[7px] text-muted-foreground/40 leading-none">MOM</div>
-                        <div
-                            className="text-[12px] font-mono tabular-nums text-foreground/70"
-                            aria-label={`Momentary LUFS: ${lufsMomentary.toFixed(1)}`}
-                        >
-                            {lufsMomentary > -99 ? lufsMomentary.toFixed(1) : '—'}
-                        </div>
-                    </div>
-                </div>
+                <DawPluginReadoutList density="tight">
+                    <DawReadoutRow
+                        label="ST"
+                        value={lufsShortTerm > -99 ? lufsShortTerm.toFixed(1) : '—'}
+                        aria-label={`Short-term LUFS: ${lufsShortTerm.toFixed(1)}`}
+                        labelClassName="text-[7px] text-muted-foreground/40"
+                        valueClassName="text-[12px] tabular-nums text-foreground/70"
+                    />
+                    <DawReadoutRow
+                        label="MOM"
+                        value={lufsMomentary > -99 ? lufsMomentary.toFixed(1) : '—'}
+                        aria-label={`Momentary LUFS: ${lufsMomentary.toFixed(1)}`}
+                        labelClassName="text-[7px] text-muted-foreground/40"
+                        valueClassName="text-[12px] tabular-nums text-foreground/70"
+                    />
+                </DawPluginReadoutList>
 
-                {/* LRA */}
                 <div className="mt-1 pt-1 border-t border-border/10">
-                    <div className="flex justify-between items-baseline">
-                        <span className="text-[7px] text-muted-foreground/40">LRA</span>
-                        <span className="text-[10px] font-mono text-foreground/60" aria-label={`Loudness range: ${lra.toFixed(1)} LU`}>
-                            {lra.toFixed(1)} <span className="text-[7px] text-muted-foreground/40">LU</span>
-                        </span>
-                    </div>
+                    <DawReadoutRow
+                        label="LRA"
+                        value={`${lra.toFixed(1)} LU`}
+                        aria-label={`Loudness range: ${lra.toFixed(1)} LU`}
+                        labelClassName="text-[7px] text-muted-foreground/40"
+                        valueClassName="text-[10px] text-foreground/60"
+                    />
                 </div>
-            </div>
+            </MeterSection>
 
-            {/* True Peak */}
-            <div className="pt-1 border-t border-border/10">
+            <MeterSection
+                title="TP max"
+                actions={
+                    <button
+                        type="button"
+                        onClick={onResetTp}
+                        aria-label="Reset true peak indicator"
+                        title="Reset true peak indicator"
+                        className="size-2 rounded-full border-0 bg-[var(--color-state-success)] p-0"
+                        style={{ background: truepeakExceeded ? '#C44030' : '#4A7C6F', cursor: 'pointer' }}
+                    />
+                }
+            >
                 <div className="flex items-center justify-between">
-                    <span className="text-[7px] text-muted-foreground/40 uppercase tracking-widest">TP MAX</span>
                     <div className="flex items-center gap-1">
                         <span className="text-[9px] font-mono" style={{ color: truepeakExceeded ? '#C44030' : '#E8E6E0' }}>
                             {truepeakMax > -99 ? truepeakMax.toFixed(1) : '—'}
                         </span>
-                        <button
-                            type="button"
-                            onClick={onResetTp}
-                            aria-label="True peak indicator — click to reset"
-                            title="True peak exceeded — click to reset"
-                            className="flex-shrink-0 rounded-full"
-                            style={{
-                                width: 8,
-                                height: 8,
-                                background: truepeakExceeded ? '#C44030' : '#4A7C6F',
-                                border: 'none',
-                                cursor: 'pointer',
-                            }}
-                        />
+                        <DawPluginLed tone={truepeakExceeded ? 'danger' : 'neutral'}>
+                            {truepeakExceeded ? 'Clip' : 'Clear'}
+                        </DawPluginLed>
                     </div>
                 </div>
-            </div>
+            </MeterSection>
         </div>
     );
 };

@@ -14,9 +14,10 @@ import { sendChatMessage } from '#/modules/AiRuntime/useCases/sendChatMessage';
 import { toggleChat } from '#/modules/AiRuntime/useCases/aiPanelActions';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Button } from '#/components/ui/button';
-import { X, Send, Trash2, Bot, User, ChevronRight, ChevronDown, Zap, Brain, Square } from 'lucide-react';
+import { X, Trash2, Bot, User, ChevronRight, ChevronDown, Zap } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
 import { isLlmAvailable } from '#/modules/AiRuntime/useCases/llmOrchestration';
+import { ChatComposer } from '../components/ChatComposer';
 
 /** Collapsible reasoning block — shows model's internal thinking in a subdued, smaller style. */
 const ReasoningBlock = ({ reasoning, isStreaming }: { reasoning: string; isStreaming?: boolean }): ReactElement => {
@@ -212,90 +213,20 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                 )}
             </div>
 
-            {/* Input Footer */}
-            <div
-                className="p-3 shrink-0"
-                style={{
-                    background: 'linear-gradient(180deg, #0e0e0e 0%, #080808 100%)',
-                    borderTop: '1px solid rgba(40,40,40,0.3)',
-                    boxShadow: '0 -1px 0 rgba(255,255,255,0.03)',
-                }}
-            >
-                <div className="flex items-center justify-between mb-2 px-1">
-                    <button
-                        type="button"
-                        onClick={() => setChatMode(chatState.chatMode === 'chat' ? 'prompt' : 'chat')}
-                        disabled={chatState.isGenerating}
-                        className={cn(
-                            "flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium transition-colors border",
-                            chatState.chatMode === 'prompt'
-                                ? "bg-primary/20 text-primary border-primary/30"
-                                : "bg-surface-inset text-muted-foreground border-border/50 hover:bg-white/5"
-                        )}
-                        title={chatState.chatMode === 'prompt' ? "Switch to open-ended chat" : "Switch to command mode to issue actions"}
-                    >
-                        <Zap className="size-3" />
-                        Command Mode
-                    </button>
-                    
-                    <button
-                        type="button"
-                        onClick={toggleReasoning}
-                        disabled={chatState.isGenerating}
-                        className={cn(
-                            "flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium transition-colors border",
-                            chatState.enableReasoning
-                                ? "bg-[var(--color-accent-lavender)]/20 text-[var(--color-accent-lavender)] border-[var(--color-accent-lavender)]/30"
-                                : "bg-surface-inset text-muted-foreground opacity-60 border-border/50 hover:bg-white/5 hover:opacity-100"
-                        )}
-                        title="Toggle model's thinking process"
-                    >
-                        <Brain className="size-3" />
-                        Think
-                    </button>
-                </div>
-
-                <div className="relative rounded-lg bg-surface-base border border-border focus-within:ring-1 focus-within:ring-[var(--color-accent-lavender)]/50 focus-within:border-[var(--color-accent-lavender)]/50 transition-all flex shadow-sm">
-                    <textarea
-                        ref={textareaRef}
-                        value={inputValue}
-                        onChange={(e) => setInputValue(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        placeholder={
-                            chatState.isGenerating
-                                ? 'AI is thinking...'
-                                : chatState.chatMode === 'prompt'
-                                  ? 'Type a command to execute or generate...'
-                                  : 'Send a message... (Shift+Enter for newline)'
-                        }
-                        className="flex-1 w-full text-xs min-h-[44px] max-h-32 bg-transparent text-foreground placeholder:text-muted-foreground p-3 resize-none focus:outline-none scrollbar-thin scrollbar-thumb-white/10"
-                        disabled={chatState.isGenerating || !isLlmAvailable()}
-                        rows={1}
-                    />
-                    <div className="shrink-0 flex items-start justify-end p-2 pb-0 opacity-100">
-                        <Button
-                            size="icon-sm"
-                            disabled={!chatState.isGenerating && (!inputValue.trim() || !isLlmAvailable())}
-                            onClick={chatState.isGenerating ? stopGenerating : handleSend}
-                            className={cn(
-                                'h-7 w-7 transition-all rounded-[6px]',
-                                chatState.isGenerating
-                                    ? 'bg-destructive/20 text-destructive hover:bg-destructive/30 border border-destructive/30'
-                                    : inputValue.trim()
-                                        ? 'bg-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)] text-white shadow-md shadow-[var(--color-accent-lavender)]/20'
-                                        : 'bg-transparent text-muted-foreground hover:bg-white/5'
-                            )}
-                            title={chatState.isGenerating ? "Stop Generation" : undefined}
-                        >
-                            {chatState.isGenerating ? (
-                                <Square className="size-3 fill-current" />
-                            ) : (
-                                <Send className="size-3.5" />
-                            )}
-                        </Button>
-                    </div>
-                </div>
-            </div>
+            <ChatComposer
+                chatMode={chatState.chatMode}
+                enableReasoning={chatState.enableReasoning}
+                isGenerating={chatState.isGenerating}
+                inputValue={inputValue}
+                isLlmAvailable={isLlmAvailable()}
+                textareaRef={textareaRef}
+                onChange={setInputValue}
+                onKeyDown={handleKeyDown}
+                onToggleMode={() => setChatMode(chatState.chatMode === 'chat' ? 'prompt' : 'chat')}
+                onToggleReasoning={toggleReasoning}
+                onSend={handleSend}
+                onStop={stopGenerating}
+            />
         </div>
     );
 };

@@ -3,6 +3,7 @@
  * All CC0 or CC-BY licensed and safe for commercial use.
  */
 import { type ReactElement } from 'react';
+import { DawPickerRow } from '#/components/daw/DawPickerRow';
 import { ExternalLink, Package, Music, Drum, Guitar, Piano, Mic2, Waves } from 'lucide-react';
 import { type PreviewHandle } from '../../hooks/usePreviewAudio';
 
@@ -237,31 +238,28 @@ export const OnlineSampleBrowser = (_props: Props): ReactElement => {
                         {sources.map((source) => {
                             const Icon = source.icon;
                             return (
-                                <a
+                                <DawPickerRow
                                     key={source.id}
                                     href={source.url}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className={`flex items-start gap-2 p-1.5 rounded-md hover:${meta.bgColor} group cursor-pointer transition-colors`}
-                                >
-                                    <div className={`size-5 rounded flex items-center justify-center ${meta.bgColor} shrink-0 mt-0.5`}>
-                                        <Icon className={`size-3 ${meta.iconColor} group-hover:${meta.color} transition-colors`} />
-                                    </div>
-                                    <div className="flex-1 min-w-0">
+                                    className={`p-1.5 hover:${meta.bgColor}`}
+                                    startSlot={
+                                        <div className={`size-5 rounded flex items-center justify-center ${meta.bgColor} shrink-0`}>
+                                            <Icon className={`size-3 ${meta.iconColor} group-hover:${meta.color} transition-colors`} />
+                                        </div>
+                                    }
+                                    heading={source.name}
+                                    description={source.description}
+                                    endSlot={
                                         <div className="flex items-center gap-1">
-                                            <span className="text-[10px] font-medium text-foreground/80 group-hover:text-foreground transition-colors">
-                                                {source.name}
-                                            </span>
                                             <ExternalLink className="size-2 text-muted-foreground/30 group-hover:text-muted-foreground/60" />
-                                            <span className="text-[7px] font-medium text-[var(--color-state-success)]/70 ml-auto shrink-0 bg-[var(--color-state-success)]/10 px-1 py-0.5 rounded">
+                                            <span className="rounded bg-[var(--color-state-success)]/10 px-1 py-0.5 text-[7px] font-medium text-[var(--color-state-success)]/70">
                                                 {source.license}
                                             </span>
                                         </div>
-                                        <div className="text-[9px] text-muted-foreground/50 leading-snug mt-0.5">
-                                            {source.description}
-                                        </div>
-                                    </div>
-                                </a>
+                                    }
+                                />
                             );
                         })}
                     </div>

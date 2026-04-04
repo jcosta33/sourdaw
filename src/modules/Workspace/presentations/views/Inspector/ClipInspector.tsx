@@ -1,11 +1,11 @@
 import { type ReactElement, useState } from 'react';
+import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { Slider } from '#/components/ui/slider';
 import { Separator } from '#/components/ui/separator';
 import { Button } from '#/components/ui/button';
-import { Input } from '#/components/ui/input';
 import { ChevronRight } from 'lucide-react';
 import { trimClipStart } from '#/modules/Arrangement/useCases/clipEditing/trimClipStart';
 import { trimClipEnd } from '#/modules/Arrangement/useCases/clipEditing/trimClipEnd';
@@ -56,7 +56,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                     <ChevronRight className="size-3 rotate-180" />
                 </Button>
                 {editingName ? (
-                    <Input
+                    <DawCompactInput
                         value={nameValue}
                         onChange={(e) => setNameValue(e.target.value)}
                         onBlur={commitClipName}
@@ -69,7 +69,8 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                                 setEditingName(false);
                             }
                         }}
-                        className="h-6 flex-1 text-xs"
+                        size="micro"
+                        className="flex-1"
                         aria-label={`Rename clip ${clip.name}`}
                         autoFocus
                     />

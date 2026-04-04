@@ -7,6 +7,7 @@ import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { trackStore } from '../stores/trackStore';
 import { pushUndo } from '#/modules/Command/stores/undoStore';
 import { createCallbackUndoEntry } from '#/modules/Command/models/UndoEntry';
+import { getAssetTransfer } from '#/modules/Collaboration/useCases/collaboration';
 
 export async function importAudioFile(file: File): Promise<void> {
     let bufferId: string;
@@ -32,6 +33,10 @@ export async function importAudioFile(file: File): Promise<void> {
     const endBeat = Math.ceil(durationBeats / 4) * 4;
     const name = file.name.replace(/\.[^.]+$/, '');
 
+    // Register the blob with AssetTransfer if a collaboration session is active,
+    // so peers can request it by hash. addLocalAsset is a no-op when null.
+    const assetHash = await getAssetTransfer()?.addLocalAsset(file, file.name);
+
     const trackSnapshotBefore = structuredClone(trackStore.value);
 
     const track = createTrack({ name, kind: 'audio' });
@@ -46,6 +51,7 @@ export async function importAudioFile(file: File): Promise<void> {
         name,
         type: 'audio',
         audioBufferId: bufferId,
+        assetHash,
     });
 
     const trackSnapshotAfter = structuredClone(trackStore.value);

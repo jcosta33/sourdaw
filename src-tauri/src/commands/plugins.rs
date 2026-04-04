@@ -11,7 +11,6 @@ use crate::host::traits::AudioPlugin;
 use crate::state::{AppState, PluginInstanceData, PluginRegistryEntry};
 use daw_engine::EngineHandle;
 use daw_engine::plugin_slot::{MidiNoteEvent, TransportState};
-use daw_engine::sab_bridge::SabBridge;
 
 // Re-export for use by traits.rs and other modules
 pub use crate::host::scanner::ScannedPlugin as ScannedPluginInfo;
@@ -370,23 +369,31 @@ pub async fn update_plugin_transport(
 /// Process an audio block through a native plugin via the ring-buffer bridge.
 /// Called from the main thread (relayed from the AudioWorklet via MessagePort).
 ///
-/// Takes interleaved stereo audio (L0,R0,L1,R1,...), returns processed audio.
+/// Takes interleaved stereo audio as raw bytes (IEEE 754 little-endian f32,
+/// L0,R0,L1,R1,...). Returns processed audio as raw bytes in the same format.
 /// Uses the lock-free ring buffer — no mutex on the audio thread.
 #[tauri::command]
 
 pub async fn process_plugin_audio(
     engine_plugin_id: usize,
-    audio_data: Vec<f32>,
+    audio_bytes: Vec<u8>,
     state: tauri::State<'_, AppState>,
-) -> Result<Vec<f32>, String> {
+) -> Result<Vec<u8>, String> {
     let mut bridges = state.audio_bridges.lock()
         .map_err(|e| format!("Failed to lock audio_bridges: {}", e))?;
 
     let bridge = bridges.get_mut(&engine_plugin_id)
         .ok_or_else(|| format!("No audio bridge for plugin {}", engine_plugin_id))?;
 
+    // Interpret raw bytes as interleaved f32 samples
+    let num_floats = audio_bytes.len() / 4;
+    let num_samples = num_floats / 2;
+
+    let audio_data: Vec<f32> = audio_bytes.chunks_exact(4)
+        .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
+        .collect();
+
     // De-interleave input
-    let num_samples = audio_data.len() / 2;
     let mut left = vec![0.0f32; num_samples];
     let mut right = vec![0.0f32; num_samples];
     for i in 0..num_samples {
@@ -399,40 +406,17 @@ pub async fn process_plugin_audio(
 
     // Try to pop processed output (may be from previous block — 1 block latency)
     if let Some(output) = bridge.pop_output() {
-        // Re-interleave output
-        let mut result = vec![0.0f32; num_samples * 2];
-        for i in 0..num_samples.min(128) {
-            result[i * 2] = output.left[i];
-            result[i * 2 + 1] = output.right[i];
+        // Re-interleave and encode as raw bytes
+        let n = num_samples.min(128);
+        let mut result = Vec::with_capacity(n * 2 * 4);
+        for i in 0..n {
+            result.extend_from_slice(&output.left[i].to_le_bytes());
+            result.extend_from_slice(&output.right[i].to_le_bytes());
         }
         Ok(result)
     } else {
         // No output yet (first block) — return the dry input
-        Ok(audio_data)
+        Ok(audio_bytes)
     }
 }
 
-/// Register a SharedArrayBuffer bridge for a plugin instance.
-/// The SAB pointer is passed as a usize (raw address) from JavaScript.
-///
-/// # Safety
-/// The pointer must point to a valid SharedArrayBuffer of at least 2052 bytes
-/// that remains alive for the lifetime of the plugin.
-#[tauri::command]
-
-pub async fn register_plugin_bridge(
-    engine_plugin_id: usize,
-    sab_ptr: usize,
-    state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
-    let mut engine_guard = state.engine.lock()
-        .map_err(|e| format!("Failed to lock engine: {}", e))?;
-    let engine = engine_guard.as_mut()
-        .ok_or("Native engine not running")?;
-
-    let bridge = unsafe {
-        SabBridge::new(sab_ptr as *mut u8, engine_plugin_id)
-    };
-
-    engine.register_bridge(bridge)
-}

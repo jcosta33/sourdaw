@@ -2,6 +2,7 @@ import { type ReactElement, useSyncExternalStore, useState } from 'react';
 
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { DawUtilityListRow } from '#/components/daw/DawUtilityListRow';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
 import { ScrollArea } from '#/components/ui/scroll-area';
@@ -126,37 +127,37 @@ const AiGroupItem = ({ group }: { group: AiActionGroup }): ReactElement => {
 
     return (
         <div className={`border-b border-border/50 last:border-0 ${group.reverted ? 'opacity-40' : ''}`}>
-            <div className="flex items-center gap-1.5 px-3 py-1.5">
-                <button
-                    type="button"
-                    onClick={() => setExpanded(!expanded)}
-                    className="shrink-0 text-muted-foreground hover:text-foreground"
-                >
-                    {expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
-                </button>
-                <Bot className="size-3 text-[var(--color-accent-lavender)] shrink-0" />
-                <div className="flex-1 min-w-0">
-                    <p className="text-[11px] font-medium text-foreground truncate" title={group.prompt}>
-                        {group.prompt}
-                    </p>
-                    <p className="text-[9px] text-muted-foreground">
-                        {group.actions.length} change{group.actions.length !== 1 ? 's' : ''} ·{' '}
-                        {formatTimeAgo(group.timestamp)}
-                    </p>
-                </div>
-                {!group.reverted ? (
-                    <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={() => void revertAiActionGroup(group)}
-                        title="Undo all changes from this AI action"
-                    >
-                        <Undo2 className="size-3" />
-                    </Button>
-                ) : (
-                    <span className="text-[8px] text-muted-foreground italic">undone</span>
-                )}
-            </div>
+            <DawUtilityListRow
+                dimmed={group.reverted}
+                startSlot={
+                    <div className="flex items-center gap-1.5">
+                        <button
+                            type="button"
+                            onClick={() => setExpanded(!expanded)}
+                            className="text-muted-foreground hover:text-foreground"
+                        >
+                            {expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+                        </button>
+                        <Bot className="size-3 text-[var(--color-accent-lavender)]" />
+                    </div>
+                }
+                title={group.prompt}
+                subtitle={`${group.actions.length} change${group.actions.length !== 1 ? 's' : ''} · ${formatTimeAgo(group.timestamp)}`}
+                endSlot={
+                    !group.reverted ? (
+                        <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            onClick={() => void revertAiActionGroup(group)}
+                            title="Undo all changes from this AI action"
+                        >
+                            <Undo2 className="size-3" />
+                        </Button>
+                    ) : (
+                        <span className="text-[8px] italic text-muted-foreground">undone</span>
+                    )
+                }
+            />
             {expanded ? (
                 <div className="px-3 pb-1.5 pl-8 space-y-0.5">
                     {group.actions.map((a, i) => (
@@ -175,25 +176,27 @@ const ActionItem = ({ entry }: { entry: ActionHistoryEntry }): ReactElement => {
     const revertable = canRevertAction(entry);
 
     return (
-        <div className={`flex items-center gap-1.5 px-3 py-1.5 border-b border-border/30 last:border-0 ${entry.reverted ? 'opacity-40' : ''}`}>
-            <User className="size-3 text-muted-foreground/50 shrink-0" />
-            <div className="flex-1 min-w-0">
-                <p className="text-[11px] text-foreground/80 truncate">{entry.label}</p>
-                <p className="text-[9px] text-muted-foreground">{formatTimeAgo(entry.timestamp)}</p>
-            </div>
-            {entry.reverted ? (
-                <span className="text-[8px] text-muted-foreground italic">undone</span>
-            ) : revertable ? (
-                <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={() => void revertAction(entry.id)}
-                    title="Revert this change"
-                >
-                    <Undo2 className="size-3 text-muted-foreground/50" />
-                </Button>
-            ) : null}
-        </div>
+        <DawUtilityListRow
+            className="border-b border-border/30 last:border-0"
+            dimmed={entry.reverted}
+            startSlot={<User className="size-3 text-muted-foreground/50" />}
+            title={entry.label}
+            subtitle={formatTimeAgo(entry.timestamp)}
+            endSlot={
+                entry.reverted ? (
+                    <span className="text-[8px] italic text-muted-foreground">undone</span>
+                ) : revertable ? (
+                    <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={() => void revertAction(entry.id)}
+                        title="Revert this change"
+                    >
+                        <Undo2 className="size-3 text-muted-foreground/50" />
+                    </Button>
+                ) : null
+            }
+        />
     );
 };
 

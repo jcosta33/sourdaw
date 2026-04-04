@@ -6,6 +6,7 @@ import {
     useEffect,
     useSyncExternalStore,
 } from 'react';
+import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { markerStore } from '../../stores/markerStore';
 import { addMarker, removeMarker, renameMarker, setMarkerColor, moveMarker } from '../../useCases/marker/markerOperations';
@@ -225,9 +226,10 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                         >
                             <Flag className="size-2.5" />
                             {isEditing ? (
-                                <input
+                                <DawCompactInput
                                     ref={inputRef}
-                                    className="h-3 bg-transparent text-[9px] font-medium outline-none min-w-[60px]"
+                                    size="micro"
+                                    className="h-3 min-w-[60px] border-0 bg-transparent px-0 text-[9px] font-medium text-current shadow-none focus-visible:ring-0"
                                     value={editing.name}
                                     onChange={(e) => setEditing({ ...editing, name: e.target.value })}
                                     onBlur={commitRename}

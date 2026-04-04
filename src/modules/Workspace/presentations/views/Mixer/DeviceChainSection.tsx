@@ -1,5 +1,4 @@
 import { type ReactElement, useState } from 'react';
-import { DawMiniSectionHeader } from '#/components/daw/DawMiniSectionHeader';
 import { cn } from '#/helpers/Styles/cn';
 import { selectTrack } from '#/modules/Arrangement/useCases/toggleTrackState/selectTrack';
 import { bypassDevice } from '#/modules/Arrangement/useCases/device/bypassDevice';
@@ -10,6 +9,8 @@ import { getPlatformPlugins } from '#/modules/Arrangement/useCases/trackQueries'
 import { openInspector } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
 import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases/pluginQueries';
+import { MixerInsetButton } from '../../components/Mixer/MixerInsetButton';
+import { MixerSection } from '../../components/Mixer/MixerSection';
 
 type DeviceChainSectionProps = {
     track: Track;
@@ -24,15 +25,13 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
     };
 
     return (
-        <div className="w-full space-y-0.5">
-            <DawMiniSectionHeader label="Devices" />
-            <div className="max-h-[100px] overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-white/10 space-y-0.5">
+        <MixerSection label="Devices">
+            <div className="max-h-[100px] space-y-0.5 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-white/10">
                 {track.devices.map((d, deviceIndex) => (
                     <div key={d.id} className="group relative">
-                        <button
-                            type="button"
+                        <MixerInsetButton
                             className={cn(
-                                'w-full rounded bg-surface-inset shadow-[inset_0_1px_2px_rgba(0,0,0,0.4)] border border-border-hairline px-1 py-0.5 text-center hover:bg-surface-raised transition-colors cursor-grab active:cursor-grabbing',
+                                'cursor-grab active:cursor-grabbing shadow-[inset_0_1px_2px_rgba(0,0,0,0.4)]',
                                 d.bypassed && 'opacity-40 line-through'
                             )}
                             onClick={(e) => {
@@ -65,7 +64,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                                 <span className="text-[9px] text-muted-foreground/50 mr-0.5">≡</span>
                                 {d.name}
                             </span>
-                        </button>
+                        </MixerInsetButton>
                         <button
                             type="button"
                             className="absolute -right-0.5 -top-0.5 hidden size-3.5 items-center justify-center rounded-full bg-destructive/80 text-[10px] text-destructive-foreground hover:bg-destructive group-hover:flex"
@@ -84,10 +83,8 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
             {showAdd ? (
                 <div className="space-y-0.5">
                     {getPlatformPlugins().map((p) => (
-                        <button
-                            type="button"
+                        <MixerInsetButton
                             key={p.id}
-                            className="w-full rounded bg-surface-inset border border-border-hairline shadow-[inset_0_1px_2px_rgba(0,0,0,0.3)] px-1 py-0.5 text-center hover:bg-surface-raised text-[10px] text-foreground transition-colors"
                             onClick={(e) => {
                                 e.stopPropagation();
                                 addDevice(track.id, p.name);
@@ -95,16 +92,15 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                             }}
                         >
                             + {p.name}
-                        </button>
+                        </MixerInsetButton>
                     ))}
                     <div className="px-3 py-0.5 text-[10px] text-muted-foreground/60 uppercase tracking-wider mt-0.5" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
                         MIDI FX
                     </div>
                     {MIDI_EFFECT_FACTORIES.map((fx) => (
-                        <button
-                            type="button"
+                        <MixerInsetButton
                             key={fx.id}
-                            className="w-full rounded bg-[var(--color-accent-lavender)]/10 border border-[var(--color-accent-lavender)]/20 px-1 py-0.5 text-center hover:bg-[var(--color-accent-lavender)]/20 text-[10px] text-foreground transition-colors"
+                            tone="accent"
                             onClick={(e) => {
                                 e.stopPropagation();
                                 addDevice(track.id, fx.name);
@@ -112,7 +108,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                             }}
                         >
                             ♪ {fx.name}
-                        </button>
+                        </MixerInsetButton>
                     ))}
                     <button
                         type="button"
@@ -126,17 +122,15 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                     </button>
                 </div>
             ) : (
-                <button
-                    type="button"
-                    className="w-full rounded bg-surface-inset border border-border-hairline shadow-[inset_0_1px_2px_rgba(0,0,0,0.3)] px-1 py-0.5 text-center hover:bg-surface-raised transition-colors"
+                <MixerInsetButton
                     onClick={(e) => {
                         e.stopPropagation();
                         setShowAdd(true);
                     }}
                 >
                     <span className="text-[10px] text-muted-foreground/50">+ add</span>
-                </button>
+                </MixerInsetButton>
             )}
-        </div>
+        </MixerSection>
     );
 };

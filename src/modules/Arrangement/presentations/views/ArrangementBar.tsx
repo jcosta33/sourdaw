@@ -6,7 +6,9 @@ import {
     useEffect,
     useSyncExternalStore,
 } from 'react';
-import { DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
+import { DawCompactInput } from '#/components/daw/DawCompactInput';
+import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
+import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { markerStore } from '../../stores/markerStore';
 import {
     addSection,
@@ -328,9 +330,10 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                         />
 
                         {isEditing ? (
-                            <input
+                            <DawCompactInput
                                 ref={inputRef}
-                                className="w-full h-full bg-transparent text-[10px] text-white font-medium px-1.5 outline-none"
+                                size="micro"
+                                className="h-full w-full border-0 bg-transparent px-1.5 text-[10px] font-medium text-white shadow-none focus-visible:ring-0"
                                 value={editing.name}
                                 onChange={(e) => setEditing({ ...editing, name: e.target.value })}
                                 onBlur={commitRename}
@@ -375,31 +378,21 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                     }}
                 >
                     {contextMenu.kind === 'empty' && (
-                        <button
-                            type="button"
-                            className="flex w-full items-center rounded-sm px-2 py-1.5 text-xs text-popover-foreground hover:bg-accent hover:text-accent-foreground"
-                            onClick={handleAddSection}
-                        >
+                        <DawMenuButton onClick={handleAddSection}>
                             Add Section
-                        </button>
+                        </DawMenuButton>
                     )}
                     {contextMenu.kind === 'section' && (
                         <>
-                            <button
-                                type="button"
-                                className="flex w-full items-center rounded-sm px-2 py-1.5 text-xs text-popover-foreground hover:bg-accent hover:text-accent-foreground"
-                                onClick={handleStartRename}
-                            >
+                            <DawMenuButton onClick={handleStartRename}>
                                 Rename
-                            </button>
+                            </DawMenuButton>
                             <DawMenuMutedRow className="px-2">Color</DawMenuMutedRow>
                             <div className="flex gap-1 px-2 pb-1">
                                 {SECTION_COLORS.map((c) => (
-                                    <button
-                                        type="button"
+                                    <DawSwatchButton
                                         key={c}
-                                        className="size-3.5 rounded-full border border-white/20 hover:ring-1 hover:ring-foreground/30"
-                                        style={{ backgroundColor: c }}
+                                        color={c}
                                         onClick={() => {
                                             setSectionColor(contextMenu.section.id, c);
                                             setContextMenu({ kind: 'none' });
@@ -409,9 +402,7 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                                 ))}
                             </div>
                             <DawMenuSeparator className="mx-1 my-0.5 border-border/50" />
-                            <button
-                                type="button"
-                                className="flex w-full items-center rounded-sm px-2 py-1.5 text-xs text-popover-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-30 disabled:pointer-events-none"
+                            <DawMenuButton
                                 disabled={sections.indexOf(contextMenu.section) === 0}
                                 onClick={() => {
                                     reorderSection(contextMenu.section.id, 'left');
@@ -419,10 +410,8 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                                 }}
                             >
                                 Move Left
-                            </button>
-                            <button
-                                type="button"
-                                className="flex w-full items-center rounded-sm px-2 py-1.5 text-xs text-popover-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-30 disabled:pointer-events-none"
+                            </DawMenuButton>
+                            <DawMenuButton
                                 disabled={sections.indexOf(contextMenu.section) === sections.length - 1}
                                 onClick={() => {
                                     reorderSection(contextMenu.section.id, 'right');
@@ -430,15 +419,11 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                                 }}
                             >
                                 Move Right
-                            </button>
+                            </DawMenuButton>
                             <DawMenuSeparator className="mx-1 my-0.5 border-border/50" />
-                            <button
-                                type="button"
-                                className="flex w-full items-center rounded-sm px-2 py-1.5 text-xs text-destructive hover:bg-destructive/10"
-                                onClick={handleDeleteSection}
-                            >
+                            <DawMenuButton tone="danger" onClick={handleDeleteSection}>
                                 Delete
-                            </button>
+                            </DawMenuButton>
                         </>
                     )}
                 </div>

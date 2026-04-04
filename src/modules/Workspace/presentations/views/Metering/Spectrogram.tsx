@@ -5,6 +5,7 @@
  * color intensity from dark blue → cyan → yellow → white.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+import { DawMeterFrame } from '#/components/daw/DawMeterFrame';
 import { getMasterAnalyser, getTrackAnalyser } from '#/modules/AudioEngine/useCases/engineAccess';
 
 
@@ -120,7 +121,7 @@ export const Spectrogram = ({ trackId, width = 300, height = 100 }: SpectrogramP
     }, [trackId, width, height]);
 
     return (
-        <div className="relative rounded bg-[#0a0a0a] channel-inset overflow-hidden">
+        <DawMeterFrame>
             <canvas
                 ref={canvasRef}
                 width={width}
@@ -129,13 +130,6 @@ export const Spectrogram = ({ trackId, width = 300, height = 100 }: SpectrogramP
                 aria-label="Spectrogram"
                 role="img"
             />
-            <div
-                className="absolute inset-0 pointer-events-none rounded"
-                style={{
-                    background:
-                        'linear-gradient(90deg, rgba(10,10,10,1) 0%, transparent 3%, transparent 97%, rgba(10,10,10,1) 100%)',
-                }}
-            />
-        </div>
+        </DawMeterFrame>
     );
 };

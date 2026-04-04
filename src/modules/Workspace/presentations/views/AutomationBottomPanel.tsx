@@ -1,4 +1,5 @@
-import { type ReactElement, type RefObject, type WheelEvent, useRef, useState, useEffect, useLayoutEffect, useSyncExternalStore } from 'react';
+import { type ReactElement, type RefObject, type WheelEvent, useRef, useState, useLayoutEffect, useSyncExternalStore } from 'react';
+import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
@@ -149,11 +150,13 @@ export const AutomationBottomPanel = (): ReactElement => {
     if (!selectedTrack) {
         return (
             <div className="flex h-full items-center justify-center bg-surface-base/60">
-                <DawEmptyState
+                <DawBlockedState
                     compact
+                    eyebrow="Automation"
                     className="mx-4 w-full max-w-sm"
                     title="No track selected"
                     description="Select a track to shape its automation curves."
+                    summary="Automation lanes attach to a track and expose its volume, pan, and device parameters."
                 />
             </div>
         );

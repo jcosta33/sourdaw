@@ -6,7 +6,6 @@
 use rtrb::Consumer;
 use daw_dsp::knead::engine::KneadEngine;
 use crate::plugin_slot::{NativePlugin, MidiNoteEvent, TransportState};
-use crate::sab_bridge::SabBridge;
 use crate::audio_bridge::PluginAudioBridge;
 
 /// Commands sent from the UI/main thread to the audio thread (lock-free via rtrb).
@@ -28,11 +27,7 @@ pub enum GraphCommand {
     // Transport state (global, affects all plugins)
     SetTransport(TransportState),
 
-    // SharedArrayBuffer bridge registration (legacy)
-    RegisterBridge(SabBridge),
-    UnregisterBridge(usize),
-
-    // Ring buffer audio bridge (production path)
+    // Ring buffer audio bridge
     RegisterAudioBridge(PluginAudioBridge),
     UnregisterAudioBridge(usize),
 }
@@ -52,7 +47,6 @@ struct ActiveEffect {
 
 pub struct AudioScheduler {
     effects: Vec<ActiveEffect>,
-    bridges: Vec<SabBridge>,
     audio_bridges: Vec<PluginAudioBridge>,
     command_rx: Consumer<GraphCommand>,
     sample_rate: f32,
@@ -63,7 +57,6 @@ impl AudioScheduler {
     pub fn new(command_rx: Consumer<GraphCommand>, sample_rate: f32) -> Self {
         Self {
             effects: Vec::new(),
-            bridges: Vec::new(),
             audio_bridges: Vec::new(),
             command_rx,
             sample_rate,
@@ -123,50 +116,12 @@ impl AudioScheduler {
                 GraphCommand::SetTransport(state) => {
                     self.transport = state;
                 }
-                GraphCommand::RegisterBridge(bridge) => {
-                    self.bridges.push(bridge);
-                }
-                GraphCommand::UnregisterBridge(plugin_id) => {
-                    self.bridges.retain(|b| b.plugin_id != plugin_id);
-                }
                 GraphCommand::RegisterAudioBridge(bridge) => {
                     self.audio_bridges.push(bridge);
                 }
                 GraphCommand::UnregisterAudioBridge(plugin_id) => {
                     self.audio_bridges.retain(|b| b.plugin_id != plugin_id);
                 }
-            }
-        }
-    }
-
-    /// Process SAB bridges — reads input from worklets, processes through plugins,
-    /// writes output back. Called every audio callback regardless of process_block.
-    #[inline]
-    pub fn process_bridges(&mut self) {
-        for bridge in &self.bridges {
-            let mut input_l = [0.0f32; 128];
-            let mut input_r = [0.0f32; 128];
-
-            if bridge.try_read_input(&mut input_l, &mut input_r) {
-                // Find the plugin for this bridge
-                if let Some(effect) = self.effects.iter_mut().find(|e| e.id == bridge.plugin_id) {
-                    if !effect.bypassed {
-                        if let PluginCore::Native(ref mut plugin) = effect.instance {
-                            if effect.pending_midi.is_empty() {
-                                plugin.process_audio(&mut input_l, &mut input_r, 128);
-                            } else {
-                                plugin.process_with_events(
-                                    &mut input_l, &mut input_r, 128,
-                                    &effect.pending_midi, &self.transport,
-                                );
-                                effect.pending_midi.clear();
-                            }
-                        }
-                    }
-                }
-
-                // Write processed output back to SAB
-                bridge.write_output(&input_l, &input_r);
             }
         }
     }

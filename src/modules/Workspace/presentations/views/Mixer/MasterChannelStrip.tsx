@@ -4,6 +4,7 @@ import { Fader } from '#/components/daw/Fader';
 import { cn } from '#/helpers/Styles/cn';
 import { setMasterGain } from '#/modules/Transport/useCases/setMasterGain';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
+import { MixerStripValue } from '../../components/Mixer/MixerStripValue';
 
 import { LevelMeter } from '../Metering/LevelMeter';
 
@@ -37,9 +38,9 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
                 />
             </div>
 
-            <span className="text-[10px] font-mono text-text-secondary mt-1">
+            <MixerStripValue>
                 {masterGain === 0 ? '-∞' : `${((masterGain / 80 - 1) * 12).toFixed(1)} dB`}
-            </span>
+            </MixerStripValue>
         </DawChannelStripShell>
     );
 };
