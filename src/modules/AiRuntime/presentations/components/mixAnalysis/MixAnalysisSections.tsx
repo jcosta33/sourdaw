@@ -1,5 +1,7 @@
 import { type ReactElement } from 'react';
+import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { DawMeterBar } from '#/components/daw/DawMeterBar';
+import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { DawStatusDot } from '#/components/daw/DawStatusDot';
 import { AlertCircle, AlertTriangle, Info, Volume2 } from 'lucide-react';
@@ -75,7 +77,7 @@ type OverallLevelProps = { level: MixAnalysis['overallLevel'] };
 
 export const OverallLevel = ({ level }: OverallLevelProps): ReactElement => (
     <section>
-        <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Master Level</h3>
+        <DawEyebrowLabel size="sm" className="mb-2 block">Master Level</DawEyebrowLabel>
         <div className="flex items-center gap-3">
             <DawStatusDot className={`size-2.5 ${levelColor(level.peakDb)}`} />
             <div className="flex-1 space-y-0.5">
@@ -96,9 +98,7 @@ type FrequencyBalanceProps = { bands: MixAnalysis['frequencyBalance'] };
 
 export const FrequencyBalance = ({ bands }: FrequencyBalanceProps): ReactElement => (
     <section>
-        <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-            Frequency Balance
-        </h3>
+        <DawEyebrowLabel size="sm" className="mb-2 block">Frequency Balance</DawEyebrowLabel>
         <div className="space-y-1.5">
             {BAND_LABELS.map(({ key, label, range }) => (
                 <FrequencyBar key={key} label={label} range={range} db={bands[key]} />
@@ -113,9 +113,9 @@ type TrackLevelsListProps = { trackLevels: MixAnalysis['trackLevels'] };
 
 export const TrackLevelsList = ({ trackLevels }: TrackLevelsListProps): ReactElement => (
     <section>
-        <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+        <DawEyebrowLabel size="sm" className="mb-2 block">
             Track Levels ({trackLevels.length})
-        </h3>
+        </DawEyebrowLabel>
         {trackLevels.length > 0 ? (
             <div className="space-y-1">
                 {trackLevels.map((tl) => (
@@ -126,8 +126,8 @@ export const TrackLevelsList = ({ trackLevels }: TrackLevelsListProps): ReactEle
                         <div className="flex items-center gap-1.5 min-w-0">
                             <Volume2 className="size-3 shrink-0 text-muted-foreground" />
                             <span className="text-xs text-foreground truncate">{tl.trackName}</span>
-                            {tl.isMuted ? <span className="text-[9px] text-muted-foreground">M</span> : null}
-                            {tl.isSoloed ? <span className="text-[9px] text-[var(--color-state-warning)]">S</span> : null}
+                            {tl.isMuted ? <DawMicroBadge className="px-1" tone="muted">M</DawMicroBadge> : null}
+                            {tl.isSoloed ? <DawMicroBadge className="px-1" tone="peach">S</DawMicroBadge> : null}
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                             <span
@@ -156,9 +156,7 @@ export const IssuesList = ({ issues }: IssuesListProps): ReactElement | null => 
     }
     return (
         <section>
-            <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                Issues ({issues.length})
-            </h3>
+            <DawEyebrowLabel size="sm" className="mb-2 block">Issues ({issues.length})</DawEyebrowLabel>
             <div className="space-y-1">
                 {issues.map((issue, i) => (
                     <div key={i} className="flex items-start gap-1.5 rounded bg-surface-overlay px-2 py-1.5">
@@ -181,7 +179,7 @@ export const SuggestionsList = ({ suggestions }: SuggestionsListProps): ReactEle
     }
     return (
         <section>
-            <h3 className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Suggestions</h3>
+            <DawEyebrowLabel size="sm" className="mb-2 block">Suggestions</DawEyebrowLabel>
             <ul className="space-y-1">
                 {suggestions.map((s, i) => (
                     <li key={i} className="flex items-start gap-1.5 text-[10px] text-muted-foreground leading-tight">

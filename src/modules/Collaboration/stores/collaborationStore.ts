@@ -13,7 +13,6 @@ const initialState: CollaborationState = {
     localName: '',
     localColor: '',
     isHost: false,
-    approvalRequired: false,
     peers: [],
     connectionStatus: 'disconnected',
     error: null,

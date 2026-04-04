@@ -1,4 +1,7 @@
 import { type ReactElement, useSyncExternalStore } from 'react';
+import { DawEmptyState } from '#/components/daw/DawEmptyState';
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { Separator } from '#/components/ui/separator';
@@ -41,24 +44,30 @@ export const MixAnalysisPanel = (): ReactElement | null => {
     };
 
     return (
-        <div className="fixed right-4 bottom-16 z-50 w-80 max-h-[70vh] rounded-lg border border-border bg-surface-raised shadow-xl flex flex-col animate-in slide-in-from-right-5">
-            <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
-                <Activity className="size-3.5 text-[var(--color-state-success)]" />
-                <span className="text-xs font-medium text-foreground flex-1">Mix Analysis</span>
-                <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={handleRefresh}
-                    disabled={state.isAnalyzing}
-                    title="Refresh analysis"
-                    aria-label="Refresh mix analysis"
-                >
-                    <RefreshCw className={`size-3 ${state.isAnalyzing ? 'animate-spin' : ''}`} />
-                </Button>
-                <Button variant="ghost" size="icon-xs" onClick={toggleMixAnalysisPanel} aria-label="Close mix analysis">
-                    <X className="size-3" />
-                </Button>
-            </div>
+        <DawUtilityPanel className="fixed right-4 bottom-16 z-50 flex max-h-[70vh] w-80 flex-col animate-in slide-in-from-right-5">
+            <DawHeaderBand
+                className="rounded-t-lg px-3 py-2"
+                startSlot={<Activity className="size-3.5 text-[var(--color-state-success)]" />}
+                title="Mix Analysis"
+                titleClassName="text-xs font-medium normal-case tracking-normal text-foreground"
+                actions={
+                    <div className="flex items-center gap-1">
+                        <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            onClick={handleRefresh}
+                            disabled={state.isAnalyzing}
+                            title="Refresh analysis"
+                            aria-label="Refresh mix analysis"
+                        >
+                            <RefreshCw className={`size-3 ${state.isAnalyzing ? 'animate-spin' : ''}`} />
+                        </Button>
+                        <Button variant="ghost" size="icon-xs" onClick={toggleMixAnalysisPanel} aria-label="Close mix analysis">
+                            <X className="size-3" />
+                        </Button>
+                    </div>
+                }
+            />
 
             <ScrollArea className="flex-1 max-h-[60vh]">
                 {state.result ? (
@@ -103,20 +112,34 @@ export const MixAnalysisPanel = (): ReactElement | null => {
                         </p>
                     </div>
                 ) : (
-                    <div className="p-6 text-center space-y-3">
-                        <Activity className="size-8 text-muted-foreground/30 mx-auto" />
-                        <p className="text-xs text-muted-foreground">
-                            {state.isAnalyzing ? 'Analyzing mix…' : 'Click refresh to analyze the current mix.'}
-                        </p>
-                        {!state.isAnalyzing ? (
-                            <Button variant="outline" size="xs" onClick={handleRefresh}>
-                                <RefreshCw className="size-3" />
-                                Analyze Mix
-                            </Button>
-                        ) : null}
+                    <div className="p-3">
+                        <DawEmptyState
+                            compact
+                            icon={
+                                state.isAnalyzing ? (
+                                    <RefreshCw className="size-4 animate-spin" />
+                                ) : (
+                                    <Activity className="size-4" />
+                                )
+                            }
+                            title={state.isAnalyzing ? 'Analyzing mix...' : 'No mix analysis yet'}
+                            description={
+                                state.isAnalyzing
+                                    ? 'The current project is being inspected now.'
+                                    : 'Run analysis to inspect the current mix.'
+                            }
+                            action={
+                                !state.isAnalyzing ? (
+                                    <Button variant="outline" size="xs" onClick={handleRefresh}>
+                                        <RefreshCw className="size-3" />
+                                        Analyze Mix
+                                    </Button>
+                                ) : undefined
+                            }
+                        />
                     </div>
                 )}
             </ScrollArea>
-        </div>
+        </DawUtilityPanel>
     );
 };

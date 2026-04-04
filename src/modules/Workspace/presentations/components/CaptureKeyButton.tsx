@@ -1,0 +1,25 @@
+import { type ComponentProps, type ReactElement } from 'react';
+import { cn } from '#/helpers/Styles/cn';
+
+type CaptureKeyButtonProps = ComponentProps<'button'> & {
+    listening?: boolean;
+};
+
+export const CaptureKeyButton = ({
+    listening = false,
+    className,
+    children,
+    ...props
+}: CaptureKeyButtonProps): ReactElement => (
+    <button
+        type="button"
+        className={cn(
+            'rounded border bg-surface-overlay font-mono text-foreground transition-colors',
+            listening ? 'border-primary bg-primary/10 text-primary animate-pulse' : 'border-border',
+            className
+        )}
+        {...props}
+    >
+        {children}
+    </button>
+);

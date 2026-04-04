@@ -60,13 +60,20 @@ export class AutomergeSync {
         }
 
         const syncState = this.syncStates.get(peerId) ?? Automerge.initSyncState();
-        const syncMessage = base64ToBytes(syncMessageBase64);
 
-        const [newDoc, newSyncState] = Automerge.receiveSyncMessage(
-            doc,
-            syncState,
-            syncMessage as Automerge.SyncMessage,
-        );
+        let newDoc: Automerge.Doc<unknown>;
+        let newSyncState: Automerge.SyncState;
+        try {
+            const syncMessage = base64ToBytes(syncMessageBase64);
+            [newDoc, newSyncState] = Automerge.receiveSyncMessage(
+                doc,
+                syncState,
+                syncMessage as Automerge.SyncMessage,
+            );
+        } catch (error) {
+            console.error('[AutomergeSync] Malformed sync message from peer', peerId, error);
+            return;
+        }
 
         this.syncStates.set(peerId, newSyncState);
 

@@ -1,5 +1,6 @@
 import { type ReactElement, useState } from 'react';
 import { Plus } from 'lucide-react';
+import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { cn } from '#/helpers/Styles/cn';
 import { AUTOMATION_MODE_CONFIG } from '../../helpers/automationViewHelpers';
 import { type AutomationMode } from '#/modules/Arrangement/useCases/trackQueries';
@@ -38,7 +39,7 @@ export const AutomationModeControl = ({
 
     return (
         <div className={cn('relative flex items-center gap-1.5', className)}>
-            <span className="text-[9px] uppercase tracking-wider text-muted-foreground/60">Mode</span>
+            <DawEyebrowLabel>Mode</DawEyebrowLabel>
             <button
                 type="button"
                 className={cn(
@@ -145,9 +146,9 @@ export const AutomationAddLaneControl = ({
                 <>
                     <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
                     <div className="daw-floating-surface absolute left-0 top-full z-50 mt-1 max-h-[300px] min-w-[200px] overflow-y-auto rounded-md py-1">
-                        <div className="px-2 py-1 text-[8px] uppercase tracking-wider text-muted-foreground/60">
+                        <DawEyebrowLabel className="block px-2 py-1 text-[8px]">
                             Add parameter
-                        </div>
+                        </DawEyebrowLabel>
                         <div className="max-h-[200px] overflow-y-auto">
                             {params.map((param) => (
                                 <button

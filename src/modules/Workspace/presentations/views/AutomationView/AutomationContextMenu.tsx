@@ -3,10 +3,10 @@
  */
 import { type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
+import { DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { cn } from '#/helpers/Styles/cn';
 import { type AutomationPoint, type AutomationCurveType } from '#/modules/Automation/useCases/automation/types';
 import { type AutomationShapeType } from '#/modules/Automation/useCases/automationShapes';
-import { FloatingMenuSectionLabel, FloatingMenuSeparator } from '../../components/FloatingMenuParts';
 import { CURVE_OPTIONS, SHAPE_OPTIONS } from '../../helpers/automationLaneConstants';
 
 type AutomationContextMenuProps = {
@@ -41,7 +41,7 @@ export const AutomationContextMenu = ({
         >
             {section !== 'shape' ? (
                 <>
-                    <FloatingMenuSectionLabel className="px-2">Curve Type</FloatingMenuSectionLabel>
+                    <DawMenuSectionLabel className="px-2">Curve Type</DawMenuSectionLabel>
                     {CURVE_OPTIONS.map((opt) => (
                         <button
                             type="button"
@@ -56,10 +56,10 @@ export const AutomationContextMenu = ({
                             {opt.label}
                         </button>
                     ))}
-                    <FloatingMenuSeparator />
+                    <DawMenuSeparator />
                 </>
             ) : null}
-            <FloatingMenuSectionLabel className="px-2">Insert Shape</FloatingMenuSectionLabel>
+            <DawMenuSectionLabel className="px-2">Insert Shape</DawMenuSectionLabel>
             {SHAPE_OPTIONS.map((opt) => (
                 <button
                     type="button"

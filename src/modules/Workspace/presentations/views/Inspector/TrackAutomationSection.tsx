@@ -1,6 +1,7 @@
 import { type ReactElement, useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { Button } from '#/components/ui/button';
 import { Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
 import { BUILTIN_PLUGINS } from '#/modules/Arrangement/useCases/trackQueries';
@@ -9,7 +10,6 @@ import { toggleAutomationVisibility } from '#/modules/Automation/useCases/automa
 import { removeAutomationLane } from '#/modules/Automation/useCases/automation/removeAutomationLane';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { type Track } from '#/modules/Arrangement/useCases/trackQueries';
-import { FloatingMenuSectionLabel, FloatingMenuSeparator } from '../../components/FloatingMenuParts';
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
 
 type TrackAutomationSectionProps = {
@@ -65,7 +65,7 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                                 className="daw-floating-surface absolute right-0 top-full z-50 mt-1 w-48 rounded-md py-1"
                                 role="menu"
                             >
-                                <FloatingMenuSectionLabel>Track</FloatingMenuSectionLabel>
+                                <DawMenuSectionLabel>Track</DawMenuSectionLabel>
                                 <button
                                     type="button"
                                     className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
@@ -90,7 +90,7 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                                 </button>
                                 {track.devices.length > 0 ? (
                                     <>
-                                        <FloatingMenuSeparator />
+                                        <DawMenuSeparator />
                                         {track.devices.map((device) => {
                                             const plugin = BUILTIN_PLUGINS.find(
                                                 (p) => p.name.toLowerCase() === device.type.toLowerCase()
@@ -104,7 +104,7 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                                             }
                                             return (
                                                 <div key={device.id}>
-                                                    <FloatingMenuSectionLabel>{device.name}</FloatingMenuSectionLabel>
+                                                    <DawMenuSectionLabel>{device.name}</DawMenuSectionLabel>
                                                     {autoParams.map((param) => (
                                                         <button
                                                             type="button"

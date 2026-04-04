@@ -1,5 +1,6 @@
 import { type ReactElement, useState, useEffect, useRef } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '#/components/ui/dialog';
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { Dialog, DialogContent, DialogTitle } from '#/components/ui/dialog';
 import { Button } from '#/components/ui/button';
 import { Loader2, Sparkles, GraduationCap } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -77,15 +78,16 @@ export const MixHealthDialog = ({ open, onOpenChange }: MixHealthDialogProps): R
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-w-2xl bg-surface-raised border border-border/50 text-foreground">
-                <DialogHeader>
-                    <DialogTitle className="text-sm font-semibold flex items-center gap-2">
-                        <Sparkles className="size-4 text-[var(--color-accent-lavender)]" />
-                        AI Music Mentor: Mix Health
-                    </DialogTitle>
-                </DialogHeader>
+            <DialogContent className="max-w-2xl gap-0 overflow-hidden p-0 text-foreground">
+                <DialogTitle className="sr-only">AI Music Mentor: Mix Health</DialogTitle>
+                <DawHeaderBand
+                    className="px-4 py-3"
+                    startSlot={<Sparkles className="size-3.5 text-[var(--color-accent-lavender)]" />}
+                    title="AI Music Mentor: Mix Health"
+                    titleClassName="text-[11px] text-foreground normal-case tracking-normal"
+                />
 
-                <div className="min-h-[200px] max-h-[500px] overflow-y-auto space-y-4 text-sm leading-relaxed p-2">
+                <div className="min-h-[200px] max-h-[500px] overflow-y-auto space-y-4 bg-surface-base/40 px-4 py-4 text-sm leading-relaxed">
                     {report ? (
                         <div className="prose prose-invert prose-sm max-w-none">
                             <ReactMarkdown>{report}</ReactMarkdown>
@@ -100,7 +102,7 @@ export const MixHealthDialog = ({ open, onOpenChange }: MixHealthDialogProps): R
                     ) : null}
                 </div>
 
-                <div className="flex justify-between items-center pt-2 border-t border-border/50">
+                <div className="daw-header-band flex items-center justify-between gap-2 px-4 py-3">
                     <Button
                         variant="secondary"
                         size="sm"

@@ -1,5 +1,7 @@
 import { type ReactElement, useState, useSyncExternalStore } from 'react';
 
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { GitBranch, Plus, Merge, Trash2, Check, X } from 'lucide-react';
@@ -72,57 +74,59 @@ export const BranchManagerDialog = ({ onClose }: BranchManagerDialogProps): Reac
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <div className="w-96 rounded-lg bg-zinc-900 p-4 shadow-xl">
-                <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                        <GitBranch className="size-4 text-muted-foreground" />
-                        <h2 className="text-sm font-semibold text-white">Branches</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg-scrim/90 px-4 backdrop-blur-[2px]">
+            <DawUtilityPanel className="w-full max-w-sm">
+                <DawHeaderBand
+                    className="px-4 py-3"
+                    startSlot={<GitBranch className="size-3.5 text-muted-foreground" />}
+                    title="Branches"
+                    titleClassName="text-[11px] text-foreground"
+                    actions={
+                        <Button variant="ghost" size="icon-xs" onClick={onClose}>
+                            <X className="size-3" />
+                        </Button>
+                    }
+                />
+
+                <div className="space-y-4 px-4 py-4">
+                    <div className="flex max-h-60 flex-col gap-1 overflow-y-auto">
+                        {state.branches.map((branch) => (
+                            <BranchRow
+                                key={branch.branchId}
+                                branch={branch}
+                                isActive={branch.branchId === state.activeBranchId}
+                                onSwitch={() => handleSwitch(branch.branchId)}
+                                onMerge={() => void handleMerge(branch.branchId)}
+                                onDelete={() => handleDelete(branch.branchId)}
+                            />
+                        ))}
                     </div>
-                    <Button variant="ghost" size="icon-xs" onClick={onClose}>
-                        <X className="size-3" />
-                    </Button>
-                </div>
 
-                {/* Branch list */}
-                <div className="flex flex-col gap-1 mb-4 max-h-60 overflow-y-auto">
-                    {state.branches.map((branch) => (
-                        <BranchRow
-                            key={branch.branchId}
-                            branch={branch}
-                            isActive={branch.branchId === state.activeBranchId}
-                            onSwitch={() => handleSwitch(branch.branchId)}
-                            onMerge={() => void handleMerge(branch.branchId)}
-                            onDelete={() => handleDelete(branch.branchId)}
+                    <div className="flex gap-1.5">
+                        <Input
+                            value={newBranchName}
+                            onChange={(e) => setNewBranchName(e.target.value)}
+                            placeholder="New branch name"
+                            className="h-7 flex-1 text-xs"
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    void handleCreate();
+                                }
+                            }}
                         />
-                    ))}
+                        <Button
+                            variant="outline"
+                            size="xs"
+                            onClick={() => void handleCreate()}
+                            disabled={!newBranchName.trim() || creating}
+                            className="gap-1"
+                        >
+                            <Plus className="size-3" />
+                            Fork
+                        </Button>
+                    </div>
                 </div>
-
-                {/* Create new branch */}
-                <div className="flex gap-1.5">
-                    <Input
-                        value={newBranchName}
-                        onChange={(e) => setNewBranchName(e.target.value)}
-                        placeholder="New branch name"
-                        className="h-7 text-xs flex-1"
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                                void handleCreate();
-                            }
-                        }}
-                    />
-                    <Button
-                        variant="outline"
-                        size="xs"
-                        onClick={() => void handleCreate()}
-                        disabled={!newBranchName.trim() || creating}
-                        className="gap-1"
-                    >
-                        <Plus className="size-3" />
-                        Fork
-                    </Button>
-                </div>
-            </div>
+            </DawUtilityPanel>
         </div>
     );
 };

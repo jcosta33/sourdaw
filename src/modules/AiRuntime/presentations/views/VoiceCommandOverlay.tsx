@@ -3,6 +3,7 @@
  * All recording lifecycle logic is in the useVoiceRecording hook.
  */
 import { type ReactElement } from 'react';
+import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { Mic, MicOff } from 'lucide-react';
 import { cn } from '#/helpers/Styles/cn';
 import { useVoiceRecording } from '../hooks/useVoiceRecording';
@@ -56,7 +57,9 @@ export const VoiceCommandOverlay = (): ReactElement | null => {
                     )}
                 </div>
                 {!voice.errorText ? (
-                    <span className="text-[9px] text-muted-foreground/60 whitespace-nowrap">tap mic to stop</span>
+                    <DawInlineHint className="whitespace-nowrap bg-transparent px-0 py-0 text-muted-foreground/60">
+                        tap mic to stop
+                    </DawInlineHint>
                 ) : null}
             </div>
         </div>

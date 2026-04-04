@@ -1,4 +1,8 @@
 import { type ReactElement, useSyncExternalStore, useState } from 'react';
+import { DawEmptyState } from '#/components/daw/DawEmptyState';
+import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
+import { DawInlineHint } from '#/components/daw/DawInlineHint';
+import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { Search, ChevronDown, ChevronRight, Plug, RefreshCw, Loader2, Plus, AlertCircle, Monitor } from 'lucide-react';
@@ -38,15 +42,17 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
             <div className="space-y-1">
                 <div className="flex items-center gap-1 px-1 py-0.5 pt-2">
                     <Plug className="size-3 text-muted-foreground" aria-hidden="true" />
-                    <span className="text-[10px] font-medium text-muted-foreground uppercase">External Plugins</span>
+                    <DawEyebrowLabel size="sm">External Plugins</DawEyebrowLabel>
                 </div>
                 <Tooltip>
                     <TooltipTrigger asChild>
-                        <div className="px-2 py-3 text-center opacity-50 cursor-not-allowed" aria-disabled="true">
-                            <Monitor className="size-5 text-muted-foreground mx-auto mb-1" aria-hidden="true" />
-                            <p className="text-[10px] text-muted-foreground">VST / AU / CLAP plugins</p>
-                            <p className="text-[9px] text-muted-foreground/60 mt-0.5">Desktop app required</p>
-                        </div>
+                        <DawEmptyState
+                            compact
+                            className="cursor-not-allowed opacity-50"
+                            icon={<Monitor className="size-5" aria-hidden="true" />}
+                            title="VST / AU / CLAP plugins"
+                            description="Desktop app required"
+                        />
                     </TooltipTrigger>
                     <TooltipContent side="top" className="max-w-64 text-center">
                         {DISABLED_REASONS.nativePlugins}
@@ -107,24 +113,32 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
         <div className="space-y-1">
             <div className="flex items-center gap-1 px-1 py-0.5 pt-2">
                 <Plug className="size-3 text-muted-foreground" aria-hidden="true" />
-                <span className="text-[10px] font-medium text-muted-foreground uppercase">External Plugins</span>
+                <DawEyebrowLabel size="sm">External Plugins</DawEyebrowLabel>
                 <span className="ml-auto text-[9px] text-muted-foreground">{state.scannedPlugins.length}</span>
             </div>
 
             {state.scannedPlugins.length === 0 && !state.isScanning ? (
-                <div className="px-2 py-3 text-center">
-                    <p className="text-[10px] text-muted-foreground mb-2">No external plugins found.</p>
-                    <Button variant="outline" size="xs" className="gap-1 text-[10px]" onClick={handleScan}>
-                        <RefreshCw className="size-3" aria-hidden="true" />
-                        Scan Plugins
-                    </Button>
+                <div className="px-2 py-3">
+                    <DawEmptyState
+                        compact
+                        icon={<Plug className="size-4" aria-hidden="true" />}
+                        title="No external plugins found"
+                        action={
+                            <Button variant="outline" size="xs" className="gap-1 text-[10px]" onClick={handleScan}>
+                                <RefreshCw className="size-3" aria-hidden="true" />
+                                Scan Plugins
+                            </Button>
+                        }
+                    />
                 </div>
             ) : null}
 
             {state.isScanning ? (
                 <div className="flex items-center gap-2 px-2 py-2">
                     <Loader2 className="size-3 animate-spin text-primary" aria-hidden="true" />
-                    <span className="text-[10px] text-muted-foreground animate-pulse">Scanning for plugins...</span>
+                    <DawInlineHint className="animate-pulse px-0 py-0 text-[10px] text-muted-foreground">
+                        Scanning for plugins...
+                    </DawInlineHint>
                 </div>
             ) : null}
 
@@ -172,14 +186,14 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
                                     ) : (
                                         <ChevronDown className="size-3 text-muted-foreground" />
                                     )}
-                                    <span
+                                    <DawMicroBadge
                                         className={cn(
-                                            'shrink-0 rounded px-1 py-px text-[10px] font-bold uppercase',
+                                            'shrink-0 border-0 px-1 py-px text-[10px] font-bold uppercase',
                                             FORMAT_COLORS[format] ?? 'bg-muted text-muted-foreground'
                                         )}
                                     >
                                         {format}
-                                    </span>
+                                    </DawMicroBadge>
                                     <span className="ml-auto text-[9px] text-muted-foreground">{plugins.length}</span>
                                 </button>
                                 {!isCollapsed &&
@@ -195,11 +209,11 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
                         );
                     })}
 
-                    {filtered.length === 0 && query && (
-                        <p className="px-2 py-2 text-center text-[10px] text-muted-foreground">
+                    {filtered.length === 0 && query ? (
+                        <DawInlineHint className="mx-2 flex px-2 py-2 text-[10px] text-muted-foreground/70">
                             No plugins match "{query}"
-                        </p>
-                    )}
+                        </DawInlineHint>
+                    ) : null}
                 </>
             ) : null}
 
@@ -237,14 +251,14 @@ const PluginRow = ({
             <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1">
                     <span className="text-xs text-foreground truncate">{plugin.name}</span>
-                    <span
+                    <DawMicroBadge
                         className={cn(
-                            'shrink-0 rounded px-1 py-px text-[10px] font-bold uppercase',
+                            'shrink-0 border-0 px-1 py-px text-[10px] font-bold uppercase',
                             FORMAT_COLORS[plugin.format.toLowerCase()] ?? 'bg-muted text-muted-foreground'
                         )}
                     >
                         {plugin.format}
-                    </span>
+                    </DawMicroBadge>
                 </div>
                 <div className="flex items-center gap-1">
                     <span className="text-[9px] text-muted-foreground truncate">{plugin.vendor}</span>

@@ -1,6 +1,7 @@
 import { type ReactElement, useState, useRef, useLayoutEffect } from 'react';
 import { Search, Music, Plus, SlidersHorizontal } from 'lucide-react';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
+import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { Button } from '#/components/ui/button';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { cn } from '#/helpers/Styles/cn';
@@ -92,7 +93,7 @@ const CompactSelect = <T extends string>({
     allLabel?: string;
 }): ReactElement => (
     <div className="flex flex-col gap-0.5">
-        <span className="text-[9px] uppercase tracking-wider text-muted-foreground/60 font-medium">{label}</span>
+        <DawEyebrowLabel>{label}</DawEyebrowLabel>
         <DawCompactSelect
             value={value ?? ''}
             onChange={(e) => onChange(e.target.value ? (e.target.value as T) : undefined)}
@@ -126,7 +127,7 @@ const ParamSlider = ({
 }): ReactElement => (
     <div className="flex flex-col gap-0.5">
         <div className="flex items-center justify-between">
-            <span className="text-[9px] uppercase tracking-wider text-muted-foreground/60 font-medium">{label}</span>
+            <DawEyebrowLabel>{label}</DawEyebrowLabel>
             <span className="text-[9px] text-muted-foreground/50 tabular-nums">{value}</span>
         </div>
         <input

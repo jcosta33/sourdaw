@@ -1,4 +1,6 @@
 import { type ReactElement, type MouseEvent, useState, useRef, useEffect } from 'react';
+import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
+import { DawMenuMutedRow } from '#/components/daw/DawMenuParts';
 import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
 import { Fader } from '#/components/daw/Fader';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
@@ -116,7 +118,11 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
             )}
 
             <span className="text-[10px] text-muted-foreground capitalize">{track.kind}</span>
-            {track.vcaGroupId ? <span className="text-[9px] text-[var(--color-accent-cyan)]/80 font-mono">VCA</span> : null}
+            {track.vcaGroupId ? (
+                <DawMicroBadge tone="cyan" rounded="full" className="font-mono">
+                    VCA
+                </DawMicroBadge>
+            ) : null}
 
             {/* Mute / Solo / Arm / Monitor */}
             <div className="flex flex-wrap justify-center gap-1">
@@ -323,7 +329,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                         Rename…
                     </button>
                     <div className={menuSepClass} />
-                    <div className="px-3 py-1 text-[10px] text-muted-foreground">Color</div>
+                    <DawMenuMutedRow>Color</DawMenuMutedRow>
                     <div className="flex gap-1 px-3 py-1">
                         {TRACK_COLOR_PRESETS.map((c) => (
                             <button
@@ -337,7 +343,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                         ))}
                     </div>
                     <div className={menuSepClass} />
-                    <div className="px-3 py-1 text-[10px] text-muted-foreground">VCA Group</div>
+                    <DawMenuMutedRow>VCA Group</DawMenuMutedRow>
                     {getAllVCAGroups().map((g) => (
                         <button
                             type="button"

@@ -5,6 +5,9 @@
  */
 
 import scoringProcessorUrl from '../services/scoringProcessor.ts?worker&url';
+import { telemetryAllocator, SCORING_IDX, type TelemetrySlot } from './telemetryAllocator';
+
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
 const DEFAULT_WASM_URL = '/wasm/scoring/scoring_bg.wasm';
 
@@ -74,7 +77,12 @@ export async function createScoringNode(ctx: BaseAudioContext): Promise<ScoringN
     });
 
     let settled = false;
-    let telemetryCallback: ((data: TunerTelemetry) => void) | null = null;
+    let slot: TelemetrySlot | null = telemetryAllocator.allocateSlot();
+    let telemetryRafId: number | null = null;
+
+    if (slot) {
+        node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
+    }
 
     const readyPromise = new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => {
@@ -84,10 +92,6 @@ export async function createScoringNode(ctx: BaseAudioContext): Promise<ScoringN
             if (!settled) {
                 if (e.data.type === 'ready') { settled = true; clearTimeout(timeout); resolve(); }
                 else if (e.data.type === 'error') { settled = true; clearTimeout(timeout); reject(new Error(e.data.message)); }
-            }
-            // Runtime messages
-            if (e.data.type === 'telemetry' && telemetryCallback) {
-                telemetryCallback(e.data as TunerTelemetry);
             }
         };
     });
@@ -107,11 +111,38 @@ export async function createScoringNode(ctx: BaseAudioContext): Promise<ScoringN
             node.port.postMessage({ type: 'bypass', bypassed });
         },
         onTelemetry: (callback) => {
-            telemetryCallback = callback;
+            if (telemetryRafId !== null) { cancelAnimationFrame(telemetryRafId); telemetryRafId = null; }
+            if (!slot) return;
+            const view = slot.view;
+            const poll = () => {
+                const active = view[SCORING_IDX.active] !== 0;
+                if (active) {
+                    const noteIndex = view[SCORING_IDX.noteIndex];
+                    callback({
+                        active: true,
+                        frequency: view[SCORING_IDX.frequency],
+                        cents: view[SCORING_IDX.cents],
+                        confidence: view[SCORING_IDX.confidence],
+                        noteIndex,
+                        octave: view[SCORING_IDX.octave],
+                        midiNote: view[SCORING_IDX.midiNote],
+                        noteName: NOTE_NAMES[noteIndex % 12] ?? 'C',
+                    });
+                } else {
+                    callback({ active: false, frequency: 0, cents: 0, confidence: 0, noteIndex: 0, octave: 0, midiNote: 0, noteName: '' });
+                }
+                telemetryRafId = requestAnimationFrame(poll);
+            };
+            telemetryRafId = requestAnimationFrame(poll);
         },
         connect: (dest) => node.connect(dest),
         disconnect: () => { try { node.disconnect(); } catch { /* */ } },
-        destroy: () => { try { node.disconnect(); } catch { /* */ } node.port.close(); },
+        destroy: () => {
+            if (telemetryRafId !== null) { cancelAnimationFrame(telemetryRafId); telemetryRafId = null; }
+            if (slot) { telemetryAllocator.releaseSlot(slot.byteOffset); slot = null; }
+            try { node.disconnect(); } catch { /* */ }
+            node.port.close();
+        },
         ready: readyPromise,
     };
 }

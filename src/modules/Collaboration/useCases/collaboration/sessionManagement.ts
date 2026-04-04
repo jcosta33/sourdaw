@@ -68,7 +68,6 @@ export const createSession = (name: string): string => {
         onMessage: handlePeerMessage,
         onConnected: handlePeerConnected,
         onDisconnected: handlePeerDisconnected,
-        onIceCandidate: handleIceCandidate,
     });
 
     automergeSync = new AutomergeSync(peerManager);
@@ -109,7 +108,6 @@ export const createSession = (name: string): string => {
         localName: name,
         localColor: color,
         isHost: true,
-        approvalRequired: false,
         peers: [],
         connectionStatus: 'disconnected',
         error: null,
@@ -182,7 +180,6 @@ export const joinSession = async (inviteString: string, name: string): Promise<s
         onMessage: handlePeerMessage,
         onConnected: handlePeerConnected,
         onDisconnected: handlePeerDisconnected,
-        onIceCandidate: handleIceCandidate,
     });
 
     automergeSync = new AutomergeSync(peerManager);
@@ -230,7 +227,6 @@ export const joinSession = async (inviteString: string, name: string): Promise<s
             lastSeen: Date.now(),
             latencyMs: null,
         }],
-        approvalRequired: false,
         connectionStatus: 'connecting',
         error: null,
     });
@@ -334,7 +330,6 @@ export const leaveSession = (): void => {
         localName: '',
         localColor: '',
         isHost: false,
-        approvalRequired: false,
         peers: [],
         connectionStatus: 'disconnected',
         error: null,
@@ -442,11 +437,6 @@ const handlePeerDisconnected = (peerId: PeerId): void => {
             collaborationStore.set({ ...state, connectionStatus: 'disconnected' });
         }
     }
-};
-
-const handleIceCandidate = (_peerId: PeerId, _candidate: string): void => {
-    // In manual signaling mode, ICE candidates are gathered before the offer/answer
-    // is copied. For trickle ICE (future), these would be exchanged separately.
 };
 
 const addOrUpdatePeer = (peer: PeerInfo): void => {

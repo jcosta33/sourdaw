@@ -1,4 +1,8 @@
 import { type ReactElement } from 'react';
+import { AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
+import { Button } from '#/components/ui/button';
 
 export type MergeResultData = {
     success: boolean;
@@ -16,52 +20,60 @@ type MergeResultDialogProps = {
 export const MergeResultDialog = ({ result, onClose }: MergeResultDialogProps): ReactElement => {
     if (!result.success) {
         return (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-                <div className="w-96 rounded-lg bg-zinc-900 p-6 shadow-xl">
-                    <h2 className="mb-4 text-lg font-semibold text-white">Merge Failed</h2>
-                    <p className="mb-4 text-sm text-zinc-400">
-                        {result.error ?? 'An unknown error occurred during merge.'}
-                    </p>
-                    <div className="flex justify-end">
-                        <button
-                            onClick={onClose}
-                            className="rounded bg-zinc-700 px-4 py-2 text-sm text-white hover:bg-zinc-600"
-                        >
-                            Close
-                        </button>
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg-scrim/90 px-4 backdrop-blur-[2px]">
+                <DawUtilityPanel className="w-full max-w-sm">
+                    <DawHeaderBand
+                        className="px-4 py-3"
+                        startSlot={<AlertTriangle className="size-3.5 text-[var(--color-state-warning)]" />}
+                        title="Merge Failed"
+                        titleClassName="text-[11px] text-foreground"
+                    />
+                    <div className="space-y-4 px-4 py-4">
+                        <p className="text-sm leading-relaxed text-muted-foreground">
+                            {result.error ?? 'An unknown error occurred during merge.'}
+                        </p>
+                        <div className="flex justify-end">
+                            <Button variant="secondary" size="sm" onClick={onClose}>
+                                Close
+                            </Button>
+                        </div>
                     </div>
-                </div>
+                </DawUtilityPanel>
             </div>
         );
     }
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <div className="w-96 rounded-lg bg-zinc-900 p-6 shadow-xl">
-                <h2 className="mb-4 text-lg font-semibold text-white">Merge Complete</h2>
-                <div className="mb-4 space-y-2 text-sm text-zinc-300">
-                    {result.tracksAdded > 0 ? (
-                        <p>{result.tracksAdded} new track{result.tracksAdded > 1 ? 's' : ''} added</p>
-                    ) : null}
-                    {result.documentsMerged > 0 ? (
-                        <p>{result.documentsMerged} document{result.documentsMerged > 1 ? 's' : ''} merged</p>
-                    ) : null}
-                    {result.documentsNew > 0 ? (
-                        <p>{result.documentsNew} new document{result.documentsNew > 1 ? 's' : ''} imported</p>
-                    ) : null}
-                    {result.documentsMerged === 0 && result.documentsNew === 0 ? (
-                        <p className="text-zinc-500">No changes detected. The projects are already in sync.</p>
-                    ) : null}
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg-scrim/90 px-4 backdrop-blur-[2px]">
+            <DawUtilityPanel className="w-full max-w-sm">
+                <DawHeaderBand
+                    className="px-4 py-3"
+                    startSlot={<CheckCircle2 className="size-3.5 text-[var(--color-state-success)]" />}
+                    title="Merge Complete"
+                    titleClassName="text-[11px] text-foreground"
+                />
+                <div className="space-y-4 px-4 py-4">
+                    <div className="space-y-2 text-sm text-foreground/88">
+                        {result.tracksAdded > 0 ? (
+                            <p>{result.tracksAdded} new track{result.tracksAdded > 1 ? 's' : ''} added</p>
+                        ) : null}
+                        {result.documentsMerged > 0 ? (
+                            <p>{result.documentsMerged} document{result.documentsMerged > 1 ? 's' : ''} merged</p>
+                        ) : null}
+                        {result.documentsNew > 0 ? (
+                            <p>{result.documentsNew} new document{result.documentsNew > 1 ? 's' : ''} imported</p>
+                        ) : null}
+                        {result.documentsMerged === 0 && result.documentsNew === 0 ? (
+                            <p className="text-muted-foreground">No changes detected. The projects are already in sync.</p>
+                        ) : null}
+                    </div>
+                    <div className="flex justify-end">
+                        <Button size="sm" onClick={onClose}>
+                            Done
+                        </Button>
+                    </div>
                 </div>
-                <div className="flex justify-end">
-                    <button
-                        onClick={onClose}
-                        className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500"
-                    >
-                        Done
-                    </button>
-                </div>
-            </div>
+            </DawUtilityPanel>
         </div>
     );
 };

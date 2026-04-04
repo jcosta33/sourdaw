@@ -1,5 +1,6 @@
 import { type ReactElement,
     type MouseEvent, type ReactNode, useState, useRef } from 'react';
+import { DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { cn } from '#/helpers/Styles/cn';
 import { removeTrack } from '../../useCases/removeTrack';
 import { toggleSoloSafe } from '../../useCases/toggleTrackState/toggleSoloSafe';
@@ -256,7 +257,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                             </div>
                         ) : showColorPicker ? (
                             <div className="p-2">
-                                <p className="text-[10px] text-muted-foreground mb-1.5">Track Color</p>
+                                <DawMenuMutedRow className="mb-1.5 px-0 py-0">Track Color</DawMenuMutedRow>
                                 <div className="grid grid-cols-5 gap-1">
                                     {TRACK_COLOR_PRESETS.map((color) => (
                                         <button
@@ -278,7 +279,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                             </div>
                         ) : showInputMon ? (
                             <div className="p-1">
-                                <p className="text-[10px] text-muted-foreground px-2 mb-1">Input Monitoring</p>
+                                <DawMenuMutedRow className="mb-1 px-2 py-0">Input Monitoring</DawMenuMutedRow>
                                 {INPUT_MON_OPTIONS.map((opt) => (
                                     <button
                                         type="button"
@@ -300,7 +301,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                         ) : (
                             actions.map((item, i) =>
                                 item.label === '---' ? (
-                                    <div key={i} className="my-1 mx-2 h-px" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)' }} />
+                                    <DawMenuSeparator key={i} className="border-border/50" />
                                 ) : (
                                     <button
                                         type="button"

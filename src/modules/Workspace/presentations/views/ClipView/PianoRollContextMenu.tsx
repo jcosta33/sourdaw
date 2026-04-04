@@ -3,6 +3,7 @@
  * quantize, transpose, humanize, strum, AI, and groove operations.
  */
 import { type ReactElement, useEffect, useRef } from 'react';
+import { DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { type MidiNote } from '#/modules/MIDI/useCases/midi';
 import { pushUndoEntry } from '#/modules/Command/useCases/pushUndoEntry';
 import { addMidiNote } from '#/modules/MIDI/useCases/midiNoteCrud/addMidiNote';
@@ -26,8 +27,6 @@ import { type PianoRollMenu } from '../../helpers/pianoRollConstants';
 
 const menuItemClass = 'flex w-full items-center px-3 py-1.5 text-xs hover:bg-accent';
 const pillBtnClass = 'rounded bg-accent/50 px-1.5 py-0.5 text-[9px] hover:bg-accent';
-const dividerClass = 'my-1 border-t border-border/50';
-const sectionLabelClass = 'px-3 py-1 text-[10px] text-muted-foreground';
 
 type PianoRollContextMenuProps = {
     menu: NonNullable<PianoRollMenu>;
@@ -105,7 +104,7 @@ export const PianoRollContextMenu = ({
             <button type="button" className={menuItemClass} role="menuitem" onClick={act(onSelectAll)}>
                 Select All <span className="ml-auto pl-4 text-muted-foreground">⌘A</span>
             </button>
-            <div className={dividerClass} />
+            <DawMenuSeparator className="border-border/50" />
             <button
                 type="button"
                 className={menuItemClass}
@@ -156,8 +155,8 @@ export const PianoRollContextMenu = ({
             </button>
 
             {/* Quantize */}
-            <div className={dividerClass} />
-            <div className={sectionLabelClass}>Quantize</div>
+            <DawMenuSeparator className="border-border/50" />
+            <DawMenuSectionLabel className="text-[10px] font-normal normal-case tracking-normal">Quantize</DawMenuSectionLabel>
             <div className="flex gap-1 px-3 py-0.5">
                 {([1, 0.5, 0.25, 0.125] as const).map((g) => (
                     <button
@@ -185,8 +184,8 @@ export const PianoRollContextMenu = ({
             </div>
 
             {/* Transpose */}
-            <div className={dividerClass} />
-            <div className={sectionLabelClass}>Transpose</div>
+            <DawMenuSeparator className="border-border/50" />
+            <DawMenuSectionLabel className="text-[10px] font-normal normal-case tracking-normal">Transpose</DawMenuSectionLabel>
             <div className="flex gap-1 px-3 py-0.5">
                 {([-12, -1, 1, 12] as const).map((semi) => (
                     <button
@@ -208,7 +207,7 @@ export const PianoRollContextMenu = ({
             </div>
 
             {/* Humanize */}
-            <div className={dividerClass} />
+            <DawMenuSeparator className="border-border/50" />
             {([
                 { amount: 0.02, label: 'subtle' },
                 { amount: 0.05, label: 'medium' },
@@ -252,8 +251,8 @@ export const PianoRollContextMenu = ({
             ))}
 
             {/* Strum */}
-            <div className={dividerClass} />
-            <div className={sectionLabelClass}>Strum</div>
+            <DawMenuSeparator className="border-border/50" />
+            <DawMenuSectionLabel className="text-[10px] font-normal normal-case tracking-normal">Strum</DawMenuSectionLabel>
             <div className="flex gap-1 px-3 py-0.5">
                 {(['up', 'down'] as const).map((dir) => (
                     <button
@@ -279,7 +278,7 @@ export const PianoRollContextMenu = ({
             </div>
 
             {/* AI */}
-            <div className={dividerClass} />
+            <DawMenuSeparator className="border-border/50" />
             <button
                 type="button"
                 className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-[var(--color-accent-lavender)] font-medium hover:bg-accent"
@@ -293,8 +292,8 @@ export const PianoRollContextMenu = ({
             </button>
 
             {/* Groove */}
-            <div className={dividerClass} />
-            <div className={sectionLabelClass}>Groove</div>
+            <DawMenuSeparator className="border-border/50" />
+            <DawMenuSectionLabel className="text-[10px] font-normal normal-case tracking-normal">Groove</DawMenuSectionLabel>
             <button
                 type="button"
                 className={menuItemClass}
@@ -340,7 +339,7 @@ export const PianoRollContextMenu = ({
             </button>
 
             {/* Delete */}
-            <div className={dividerClass} />
+            <DawMenuSeparator className="border-border/50" />
             <button
                 type="button"
                 className="flex w-full items-center px-3 py-1.5 text-xs text-destructive hover:bg-destructive/10"

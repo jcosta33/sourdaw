@@ -2,6 +2,7 @@ import { type ReactElement, useState, useRef } from 'react';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
+import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { Button } from '#/components/ui/button';
 import { Separator } from '#/components/ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '#/components/ui/dialog';
@@ -449,10 +450,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 <div className="space-y-5 px-1 py-2">
                     {/* MODE ──────────────────────────────────────────────────────── */}
                     <section>
-                        <label className="text-[10px] font-bold text-orange-900 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                        <DawEyebrowLabel size="sm" className="mb-2 flex items-center gap-1.5 font-bold tracking-widest text-orange-900">
                             <span className="h-1.5 w-1.5 rounded-full bg-orange-500/50" />
                             Render Order
-                        </label>
+                        </DawEyebrowLabel>
                         <div className="flex gap-2">
                             <Button
                                 variant={mode === 'mixdown' ? 'default' : 'outline'}
@@ -489,10 +490,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
 
                     {/* FORMAT ────────────────────────────────────────────────────── */}
                     <section>
-                        <label className="text-[10px] font-bold text-orange-900 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                        <DawEyebrowLabel size="sm" className="mb-2 flex items-center gap-1.5 font-bold tracking-widest text-orange-900">
                             <span className="h-1.5 w-1.5 rounded-full bg-orange-500/50" />
                             Ingredients
-                        </label>
+                        </DawEyebrowLabel>
                         <div className="grid grid-cols-3 gap-2">
                             {FORMAT_OPTIONS.map((f) => {
                                 const active = formats.has(f.value);
@@ -526,9 +527,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     {/* SETTINGS ──────────────────────────────────────────────────── */}
                     <div className="grid grid-cols-2 gap-4">
                         <section className="bg-stone-950/50 border border-stone-800/50 rounded-lg p-3">
-                            <label className="text-[10px] font-bold text-stone-600 uppercase tracking-widest mb-2 block">
+                            <DawEyebrowLabel size="sm" className="mb-2 block font-bold tracking-widest text-stone-600">
                                 Sample Rate
-                            </label>
+                            </DawEyebrowLabel>
                             <div className="flex flex-wrap gap-1">
                                 {sampleRates.map((sr) => (
                                     <Button
@@ -550,9 +551,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         </section>
 
                         <section className="bg-stone-950/50 border border-stone-800/50 rounded-lg p-3">
-                            <label className="text-[10px] font-bold text-stone-600 uppercase tracking-widest mb-2 block">
+                            <DawEyebrowLabel size="sm" className="mb-2 block font-bold tracking-widest text-stone-600">
                                 Bit Depth
-                            </label>
+                            </DawEyebrowLabel>
                             <div className="flex flex-wrap gap-1">
                                 {bitDepths.map((bd) => (
                                     <Button

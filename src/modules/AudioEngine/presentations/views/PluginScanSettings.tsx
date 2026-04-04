@@ -1,4 +1,8 @@
 import { type ReactElement, useSyncExternalStore, useState } from 'react';
+import { DawEmptyState } from '#/components/daw/DawEmptyState';
+import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
+import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
+import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { FolderOpen, Trash2, RefreshCw, Loader2, Plus, AlertCircle, CheckCircle2, Plug, Monitor } from 'lucide-react';
@@ -19,22 +23,19 @@ export const PluginScanSettings = (): ReactElement | null => {
     if (!hasPluginScanning) {
         return (
             <section>
-                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1">
+                <div className="mb-2 flex items-center gap-1">
                     <Plug className="size-3" aria-hidden="true" />
-                    Plugin Paths
-                </label>
+                    <DawEyebrowLabel size="sm">Plugin Paths</DawEyebrowLabel>
+                </div>
                 <Tooltip>
                     <TooltipTrigger asChild>
-                        <div
-                            className="flex items-center gap-2 rounded-md border border-border/30 bg-surface-overlay/30 px-3 py-3 opacity-50 cursor-not-allowed"
-                            aria-disabled="true"
-                        >
-                            <Monitor className="size-4 text-muted-foreground shrink-0" aria-hidden="true" />
-                            <div>
-                                <p className="text-[10px] text-muted-foreground">Plugin scanning unavailable</p>
-                                <p className="text-[9px] text-muted-foreground/60">Desktop app required</p>
-                            </div>
-                        </div>
+                        <DawEmptyState
+                            compact
+                            className="cursor-not-allowed opacity-50"
+                            icon={<Monitor className="size-4" aria-hidden="true" />}
+                            title="Plugin scanning unavailable"
+                            description="Desktop app required"
+                        />
                     </TooltipTrigger>
                     <TooltipContent side="top" className="max-w-64 text-center">
                         {DISABLED_REASONS.pluginScanning}
@@ -60,10 +61,10 @@ export const PluginScanSettings = (): ReactElement | null => {
 
     return (
         <section>
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1">
+            <div className="mb-2 flex items-center gap-1">
                 <Plug className="size-3" aria-hidden="true" />
-                Plugin Paths
-            </label>
+                <DawEyebrowLabel size="sm">Plugin Paths</DawEyebrowLabel>
+            </div>
 
             <div className="space-y-2">
                 {state.scanPaths.length > 0 ? (
@@ -132,14 +133,22 @@ export const PluginScanSettings = (): ReactElement | null => {
                         {state.isScanning ? 'Scanning...' : 'Scan Now'}
                     </Button>
 
-                    <div className="flex-1 text-right">
-                        <span className="text-[10px] text-muted-foreground">
-                            {state.scannedPlugins.length} plugins found
-                        </span>
-                    </div>
+                    <div className="flex-1" />
                 </div>
 
-                <div className="text-[10px] text-muted-foreground">Last scan: {lastScanLabel}</div>
+                <div className="space-y-1">
+                    <DawReadoutRow
+                        label="Plugins Found"
+                        value={state.scannedPlugins.length}
+                        className="gap-2"
+                    />
+                    <DawReadoutRow
+                        label="Last Scan"
+                        value={lastScanLabel}
+                        className="gap-2"
+                        valueClassName="truncate text-right"
+                    />
+                </div>
 
                 {state.errors.length > 0 ? (
                     <div className="space-y-1 rounded-md border border-destructive/30 bg-destructive/5 p-2">
@@ -153,10 +162,10 @@ export const PluginScanSettings = (): ReactElement | null => {
                 ) : null}
 
                 {state.scannedPlugins.length > 0 && state.errors.length === 0 && !state.isScanning ? (
-                    <div className="flex items-center gap-1 text-[10px] text-[var(--color-state-success)]">
+                    <DawMicroBadge tone="success" className="w-fit">
                         <CheckCircle2 className="size-3" aria-hidden="true" />
                         <span>All plugins scanned successfully</span>
-                    </div>
+                    </DawMicroBadge>
                 ) : null}
             </div>
         </section>

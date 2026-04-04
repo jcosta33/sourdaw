@@ -1,5 +1,6 @@
 import { type ReactElement, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { DawMenuMutedRow } from '#/components/daw/DawMenuParts';
 import {
     addClip,
     addTrack,
@@ -55,7 +56,7 @@ const NearbyMarkerColorMenu = ({ beat, onClose }: NearbyMarkerColorMenuProps): R
             {nearby.map((marker) => (
                 <div key={marker.id}>
                     <div className={menuSepClass} />
-                    <div className="px-3 py-1 text-[10px] text-muted-foreground">Marker: {marker.name}</div>
+                    <DawMenuMutedRow>Marker: {marker.name}</DawMenuMutedRow>
                     <div className="flex gap-1 px-3 py-1">
                         {MARKER_COLOR_PRESETS.map((c) => (
                             <button
@@ -221,10 +222,10 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
             </button>
             <NearbyMarkerColorMenu beat={beat} onClose={onClose} />
             <div className={menuSepClass} />
-            <div className="px-3 py-1 text-[10px] font-medium text-muted-foreground/70 flex items-center gap-1">
-                <span className="inline-block size-2.5 rounded-full bg-[var(--color-accent-lavender)]/60" />
-                AI Generate
-            </div>
+                <DawMenuMutedRow className="flex items-center gap-1 font-medium text-muted-foreground/70">
+                    <span className="inline-block size-2.5 rounded-full bg-[var(--color-accent-lavender)]/60" />
+                    AI Generate
+                </DawMenuMutedRow>
             {isTauri() ? (
                 <button
                     type="button"
@@ -245,9 +246,9 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
                     Generate Audio Here…
                 </button>
             ) : (
-                <div className="px-3 py-1 text-[10px] text-muted-foreground/50 italic">
+                <DawMenuMutedRow className="italic text-muted-foreground/50">
                     Audio generation requires desktop app
-                </div>
+                </DawMenuMutedRow>
             )}
             <button
                 type="button"

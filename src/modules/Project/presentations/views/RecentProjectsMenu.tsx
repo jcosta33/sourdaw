@@ -1,4 +1,5 @@
 import { type ReactElement, useState, useRef, useEffect } from 'react';
+import { DawKeycap } from '#/components/daw/DawKeycap';
 import {
     ChevronDown,
     Clock,
@@ -211,7 +212,9 @@ export const RecentProjectsMenu = (): ReactElement => {
                             <Save className="size-3 text-muted-foreground" aria-hidden="true" />
                             Save
                         </span>
-                        <kbd className="text-[10px] text-muted-foreground/60">⌘S</kbd>
+                        <DawKeycap compact className="border-transparent bg-transparent px-0 text-muted-foreground/60">
+                            ⌘S
+                        </DawKeycap>
                     </button>
 
                     <button
@@ -224,7 +227,9 @@ export const RecentProjectsMenu = (): ReactElement => {
                             <Music className="size-3 text-muted-foreground" aria-hidden="true" />
                             Export Audio…
                         </span>
-                        <kbd className="text-[10px] text-muted-foreground/60">⌘⇧E</kbd>
+                        <DawKeycap compact className="border-transparent bg-transparent px-0 text-muted-foreground/60">
+                            ⌘⇧E
+                        </DawKeycap>
                     </button>
 
                     <div className="mx-2 my-1 h-px bg-border" role="separator" />

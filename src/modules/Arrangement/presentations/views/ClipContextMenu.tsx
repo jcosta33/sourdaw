@@ -1,5 +1,6 @@
 import { type ReactElement, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { DawMenuMutedRow } from '#/components/daw/DawMenuParts';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { selectClip } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 import {
@@ -86,9 +87,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
             }}
             role="menu"
         >
-            {multiSelected ? (
-                <div className="px-3 py-1 text-[10px] text-muted-foreground">{selectedIds.length} clips selected</div>
-            ) : null}
+            {multiSelected ? <DawMenuMutedRow>{selectedIds.length} clips selected</DawMenuMutedRow> : null}
             <button
                 type="button"
                 className={menuBtnClass}
@@ -388,7 +387,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                 {isLocked ? 'Unlock Clip' : 'Lock Clip'}
             </button>
             <div className={menuSepClass} />
-            <div className="px-3 py-1 text-[10px] text-muted-foreground">Color</div>
+            <DawMenuMutedRow>Color</DawMenuMutedRow>
             <div className="flex gap-1 px-3 py-1">
                 {[
                     '',

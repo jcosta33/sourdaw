@@ -1,5 +1,8 @@
 import { type ReactElement, useSyncExternalStore, useState } from 'react';
 
+import { DawEmptyState } from '#/components/daw/DawEmptyState';
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { History, Undo2, Trash2, ChevronDown, ChevronRight, X, Bot, User } from 'lucide-react';
@@ -69,30 +72,41 @@ export const AiActionHistoryPanel = (): ReactElement | null => {
     };
 
     return (
-        <div className="fixed right-4 bottom-16 z-50 w-80 max-h-[60vh] rounded-lg border border-border bg-surface-raised shadow-xl flex flex-col animate-in slide-in-from-right-5">
-            <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
-                <History className="size-3.5 text-[var(--color-accent-lavender)]" />
-                <span className="text-xs font-medium text-foreground flex-1">Action History</span>
-                {visibleItems.length > 0 ? (
-                    <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={handleClearAll}
-                        title="Clear history"
-                        aria-label="Clear action history"
-                    >
-                        <Trash2 className="size-3" />
-                    </Button>
-                ) : null}
-                <Button variant="ghost" size="icon-xs" onClick={toggleAiHistoryPanel} aria-label="Close action history">
-                    <X className="size-3" />
-                </Button>
-            </div>
+        <DawUtilityPanel className="fixed right-4 bottom-16 z-50 flex max-h-[60vh] w-80 flex-col animate-in slide-in-from-right-5">
+            <DawHeaderBand
+                className="rounded-t-lg px-3 py-2"
+                startSlot={<History className="size-3.5 text-[var(--color-accent-lavender)]" />}
+                title="Action History"
+                titleClassName="text-xs font-medium normal-case tracking-normal text-foreground"
+                actions={
+                    <div className="flex items-center gap-1">
+                        {visibleItems.length > 0 ? (
+                            <Button
+                                variant="ghost"
+                                size="icon-xs"
+                                onClick={handleClearAll}
+                                title="Clear history"
+                                aria-label="Clear action history"
+                            >
+                                <Trash2 className="size-3" />
+                            </Button>
+                        ) : null}
+                        <Button variant="ghost" size="icon-xs" onClick={toggleAiHistoryPanel} aria-label="Close action history">
+                            <X className="size-3" />
+                        </Button>
+                    </div>
+                }
+            />
             <ScrollArea className="flex-1 max-h-[50vh]">
                 {visibleItems.length === 0 ? (
-                    <p className="px-3 py-6 text-center text-[10px] text-muted-foreground">
-                        No actions yet. Changes you make will appear here.
-                    </p>
+                    <div className="p-3">
+                        <DawEmptyState
+                            compact
+                            icon={<History className="size-4" />}
+                            title="No actions yet"
+                            description="Changes you make will appear here."
+                        />
+                    </div>
                 ) : (
                     visibleItems.map((item, idx) =>
                         item.kind === 'ai' ? (
@@ -103,7 +117,7 @@ export const AiActionHistoryPanel = (): ReactElement | null => {
                     )
                 )}
             </ScrollArea>
-        </div>
+        </DawUtilityPanel>
     );
 };
 

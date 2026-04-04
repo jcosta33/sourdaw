@@ -32,7 +32,6 @@ type PeerConnectionCallbacks = {
     onMessage: (peerId: PeerId, message: PeerMessage) => void;
     onConnected: (peerId: PeerId) => void;
     onDisconnected: (peerId: PeerId) => void;
-    onIceCandidate: (peerId: PeerId, candidate: string) => void;
 };
 
 /**
@@ -53,12 +52,6 @@ class PeerConnection {
         this.callbacks = callbacks;
 
         this.rtc = new RTCPeerConnection(getIceConfig());
-
-        this.rtc.onicecandidate = (event) => {
-            if (event.candidate) {
-                this.callbacks.onIceCandidate(this.peerId, JSON.stringify(event.candidate));
-            }
-        };
 
         this.rtc.onconnectionstatechange = () => {
             if (this.rtc.connectionState === 'disconnected' || this.rtc.connectionState === 'failed') {
@@ -107,12 +100,6 @@ class PeerConnection {
     async acceptAnswer(answerSdp: string): Promise<void> {
         const answer = JSON.parse(answerSdp) as RTCSessionDescriptionInit;
         await this.rtc.setRemoteDescription(answer);
-    }
-
-    /** Add a remote ICE candidate. */
-    async addIceCandidate(candidateJson: string): Promise<void> {
-        const candidate = JSON.parse(candidateJson) as RTCIceCandidateInit;
-        await this.rtc.addIceCandidate(candidate);
     }
 
     /** Send a message over the CRDT sync channel. */
@@ -304,11 +291,6 @@ export class PeerConnectionManager {
             }
         }
         return ids;
-    }
-
-    /** Get all peer IDs (connected or not). */
-    getAllPeerIds(): PeerId[] {
-        return Array.from(this.peers.keys());
     }
 
     /** Close all connections. */

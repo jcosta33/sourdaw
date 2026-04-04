@@ -3,13 +3,6 @@ import { type PeerConnectionManager } from '../repositories/peerConnection';
 
 const CHUNK_SIZE = 256 * 1024; // 256 KiB
 
-export type AssetRef = {
-    hash: string;
-    size: number;
-    name: string;
-    mime: string;
-};
-
 export type AssetManifest = {
     hash: string;
     size: number;
@@ -22,8 +15,7 @@ export type AssetManifest = {
 type AssetControlMessage =
     | { type: 'asset.request'; hash: string; missingChunks: number[] }
     | { type: 'asset.manifest'; manifest: AssetManifest }
-    | { type: 'asset.chunk'; hash: string; index: number; data: string }
-    | { type: 'asset.complete'; hash: string };
+    | { type: 'asset.chunk'; hash: string; index: number; data: string };
 
 type AssetTransferCallbacks = {
     onAssetAvailable: (hash: string) => void;
@@ -93,14 +85,18 @@ export class AssetTransfer {
             return;
         }
 
-        const data = JSON.parse(message.data) as AssetControlMessage;
+        try {
+            const data = JSON.parse(message.data) as AssetControlMessage;
 
-        if (data.type === 'asset.request') {
-            await this.handleAssetRequest(peerId, data.hash, data.missingChunks);
-        } else if (data.type === 'asset.manifest') {
-            this.handleManifest(peerId, data.manifest);
-        } else if (data.type === 'asset.chunk') {
-            this.handleChunk(data.hash, data.index, data.data);
+            if (data.type === 'asset.request') {
+                await this.handleAssetRequest(peerId, data.hash, data.missingChunks);
+            } else if (data.type === 'asset.manifest') {
+                this.handleManifest(peerId, data.manifest);
+            } else if (data.type === 'asset.chunk') {
+                this.handleChunk(data.hash, data.index, data.data);
+            }
+        } catch (error) {
+            console.error('[AssetTransfer] Failed to handle message:', error);
         }
     }
 

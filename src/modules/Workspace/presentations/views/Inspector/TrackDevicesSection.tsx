@@ -1,6 +1,7 @@
 import { type ReactElement, useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { DawMenuDisabledRow, DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { Button } from '#/components/ui/button';
 import { Plus, Power, Trash2, Monitor, LayoutGrid } from 'lucide-react';
 import { getPlatformPlugins } from '#/modules/Arrangement/useCases/trackQueries';
@@ -17,11 +18,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip
 import { cn } from '#/helpers/Styles/cn';
 import { openPluginGui } from '#/modules/Plugin/useCases/pluginLifecycle';
 import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
-import {
-    FloatingMenuDisabledRow,
-    FloatingMenuSectionLabel,
-    FloatingMenuSeparator,
-} from '../../components/FloatingMenuParts';
 
 type TrackDevicesSectionProps = {
     track: Track;
@@ -75,7 +71,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                 className="daw-floating-surface absolute right-0 top-full z-50 mt-1 w-48 rounded-md py-1"
                                 role="menu"
                             >
-                                <FloatingMenuSectionLabel>Effects</FloatingMenuSectionLabel>
+                                <DawMenuSectionLabel>Effects</DawMenuSectionLabel>
                                 {getPlatformPlugins().filter((p) => p.category === 'effect').map((plugin) => (
                                     <button
                                         type="button"
@@ -90,8 +86,8 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                         {plugin.name}
                                     </button>
                                 ))}
-                                <FloatingMenuSeparator />
-                                <FloatingMenuSectionLabel>Utility</FloatingMenuSectionLabel>
+                                <DawMenuSeparator />
+                                <DawMenuSectionLabel>Utility</DawMenuSectionLabel>
                                 {getPlatformPlugins().filter((p) => p.category === 'utility').map((plugin) => (
                                     <button
                                         type="button"
@@ -108,8 +104,8 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                 ))}
                                 {getPlatformPlugins().filter((p) => p.category === 'analyzer').length > 0 ? (
                                     <>
-                                        <FloatingMenuSeparator />
-                                        <FloatingMenuSectionLabel>Analyzer</FloatingMenuSectionLabel>
+                                        <DawMenuSeparator />
+                                        <DawMenuSectionLabel>Analyzer</DawMenuSectionLabel>
                                         {getPlatformPlugins().filter((p) => p.category === 'analyzer').map((plugin) => (
                                             <button
                                                 type="button"
@@ -126,8 +122,8 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                         ))}
                                     </>
                                 ) : null}
-                                <FloatingMenuSeparator />
-                                <FloatingMenuSectionLabel>External</FloatingMenuSectionLabel>
+                                <DawMenuSeparator />
+                                <DawMenuSectionLabel>External</DawMenuSectionLabel>
                                 {getPlatformCapabilities().hasNativePlugins && pluginScanState.scannedPlugins.length > 0 ? (
                                     <div className="max-h-32 overflow-y-auto">
                                         {pluginScanState.scannedPlugins.map((plugin) => (
@@ -151,7 +147,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                 ) : (
                                     <Tooltip>
                                         <TooltipTrigger asChild>
-                                            <FloatingMenuDisabledRow
+                                            <DawMenuDisabledRow
                                                 icon={
                                                     <Monitor
                                                         className="size-3 shrink-0 text-muted-foreground"
@@ -162,7 +158,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                                 {getPlatformCapabilities().hasNativePlugins
                                                     ? 'No plugins found — scan first'
                                                     : 'Desktop app required'}
-                                            </FloatingMenuDisabledRow>
+                                            </DawMenuDisabledRow>
                                         </TooltipTrigger>
                                         <TooltipContent side="left" className="max-w-56 text-center">
                                             {getPlatformCapabilities().hasNativePlugins

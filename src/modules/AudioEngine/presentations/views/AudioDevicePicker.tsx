@@ -1,4 +1,7 @@
 import { type ReactElement, useSyncExternalStore, useState, useEffect } from 'react';
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
+import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
+import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { Button } from '#/components/ui/button';
 import { RefreshCw } from 'lucide-react';
 import {
@@ -45,12 +48,14 @@ export const AudioDevicePicker = (): ReactElement => {
     return (
         <div className="space-y-3">
             <div className="space-y-1.5">
-                <label className="text-[10px] text-muted-foreground block">Output</label>
+                <DawEyebrowLabel size="sm" className="block">Output</DawEyebrowLabel>
                 <div className="flex items-center gap-2">
-                    <select
+                    <DawCompactSelect
                         value={state?.selectedOutputId ?? ''}
                         onChange={(e) => handleOutputChange(e.target.value)}
-                        className="flex-1 h-8 rounded-md border border-border bg-surface-overlay px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                        tone="inset"
+                        size="sm"
+                        className="flex-1"
                         aria-label="Audio output device"
                         disabled={loading}
                     >
@@ -60,7 +65,7 @@ export const AudioDevicePicker = (): ReactElement => {
                                 {d.label}
                             </option>
                         ))}
-                    </select>
+                    </DawCompactSelect>
                     <Button
                         variant="ghost"
                         size="icon-xs"
@@ -74,11 +79,13 @@ export const AudioDevicePicker = (): ReactElement => {
             </div>
 
             <div className="space-y-1.5">
-                <label className="text-[10px] text-muted-foreground block">Input</label>
-                <select
+                <DawEyebrowLabel size="sm" className="block">Input</DawEyebrowLabel>
+                <DawCompactSelect
                     value={state?.selectedInputId ?? ''}
                     onChange={(e) => handleInputChange(e.target.value)}
-                    className="w-full h-8 rounded-md border border-border bg-surface-overlay px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                    tone="inset"
+                    size="sm"
+                    className="w-full"
                     aria-label="Audio input device"
                     disabled={loading}
                 >
@@ -88,11 +95,13 @@ export const AudioDevicePicker = (): ReactElement => {
                             {d.label}
                         </option>
                     ))}
-                </select>
+                </DawCompactSelect>
             </div>
 
             {loading ? (
-                <p className="text-[10px] text-muted-foreground/70 animate-pulse">Detecting devices...</p>
+                <DawInlineHint className="animate-pulse justify-start px-0 py-0 text-[10px] text-muted-foreground/70">
+                    Detecting devices...
+                </DawInlineHint>
             ) : null}
         </div>
     );

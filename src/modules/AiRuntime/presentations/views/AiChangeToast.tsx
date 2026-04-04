@@ -1,4 +1,5 @@
 import { type ReactElement, useState, useEffect } from 'react';
+import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
 import { Check, Undo2, X } from 'lucide-react';
 import { undoLastAction } from '#/modules/AiRuntime/useCases/aiPanelActions';
@@ -32,8 +33,8 @@ export const AiChangeToast = (): ReactElement | null => {
     const latest = changes[0]!;
 
     return (
-        <div
-            className="fixed bottom-16 right-4 z-50 w-72 rounded-lg border border-border bg-surface-raised p-3 shadow-xl animate-in slide-in-from-right-5"
+        <DawUtilityPanel
+            className="fixed bottom-16 right-4 z-50 w-72 p-3 animate-in slide-in-from-right-5"
             role="status"
             aria-live="polite"
         >
@@ -69,6 +70,6 @@ export const AiChangeToast = (): ReactElement | null => {
                     </div>
                 </div>
             </div>
-        </div>
+        </DawUtilityPanel>
     );
 };

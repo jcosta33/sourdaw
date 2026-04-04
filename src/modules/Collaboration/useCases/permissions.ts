@@ -13,8 +13,7 @@ export type RoleGrant = {
 };
 
 type PermissionMessage =
-    | { type: 'role.grant'; grant: RoleGrant }
-    | { type: 'role.request'; peerId: PeerId; requestedRole: PeerRole; name: string };
+    | { type: 'role.grant'; grant: RoleGrant };
 
 /** Capabilities per role. */
 const ROLE_CAPABILITIES: Record<PeerRole, Set<string>> = {
@@ -34,15 +33,9 @@ export class PermissionManager {
     private peerManager: PeerConnectionManager;
     private grants = new Map<PeerId, RoleGrant>();
     private epoch = 0;
-    private onJoinRequest: ((peerId: PeerId, name: string, role: PeerRole) => void) | null = null;
 
     constructor(peerManager: PeerConnectionManager) {
         this.peerManager = peerManager;
-    }
-
-    /** Set the callback for incoming join/role requests (host only). */
-    setJoinRequestHandler(handler: (peerId: PeerId, name: string, role: PeerRole) => void): void {
-        this.onJoinRequest = handler;
     }
 
     /** Grant a role to a peer (host only). */
@@ -117,7 +110,12 @@ export class PermissionManager {
             return;
         }
 
-        const data = JSON.parse(message.data) as PermissionMessage;
+        let data: PermissionMessage;
+        try {
+            data = JSON.parse(message.data) as PermissionMessage;
+        } catch {
+            return;
+        }
 
         if (data.type === 'role.grant') {
             // Only accept grants from a peer the store recognises as the host.
@@ -130,43 +128,12 @@ export class PermissionManager {
             if (!existing || data.grant.epoch > existing.epoch) {
                 this.grants.set(data.grant.peerId, data.grant);
             }
-        } else if (data.type === 'role.request') {
-            if (this.onJoinRequest) {
-                this.onJoinRequest(data.peerId, data.name, data.requestedRole);
-            }
         }
-    }
-
-    /** Request a role from the host (non-host peers). */
-    requestRole(requestedRole: PeerRole): void {
-        const state = collaborationStore.value;
-        if (!state?.localPeerId) {
-            return;
-        }
-
-        const msg: PermissionMessage = {
-            type: 'role.request',
-            peerId: state.localPeerId,
-            requestedRole,
-            name: state.localName,
-        };
-
-        this.peerManager.broadcastCrdtSync({
-            type: 'crdt-sync',
-            docId: '__permissions__',
-            data: JSON.stringify(msg),
-        });
-    }
-
-    /** Get all current role grants. */
-    getAllGrants(): RoleGrant[] {
-        return Array.from(this.grants.values());
     }
 
     /** Clear all grants (on session leave). */
     clear(): void {
         this.grants.clear();
         this.epoch = 0;
-        this.onJoinRequest = null;
     }
 }

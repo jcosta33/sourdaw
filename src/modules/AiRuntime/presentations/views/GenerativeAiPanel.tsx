@@ -1,6 +1,8 @@
 import { type ReactElement, useState, useSyncExternalStore } from 'react';
 import { X, Sparkles, Music, RefreshCw, AudioWaveform, Play, Plus, Loader2, Music4, Library, Info, Upload } from 'lucide-react';
+import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { isTauri } from '#/helpers/tauriBridge';
@@ -189,13 +191,15 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                 <AudioWaveform className="size-4 text-[var(--color-accent-lavender)]" />
                                 <div className="flex-1 min-w-0">
                                     <div className="text-[11px] font-medium text-foreground truncate">{selectedClip.name}</div>
-                                    <div className="text-[9px] text-muted-foreground">Audio clip selected</div>
+                                    <DawEyebrowLabel className="block">Audio Clip Selected</DawEyebrowLabel>
                                 </div>
                             </div>
                         ) : (
                             <div className="daw-readout-well flex items-center gap-2 rounded-md border border-dashed border-border/50 p-3 text-muted-foreground">
                                 <Upload className="size-4" />
-                                <span className="text-[11px]">Select an audio clip on the timeline</span>
+                                <DawInlineHint className="bg-transparent px-0 py-0 text-[11px] text-muted-foreground/70">
+                                    Select an audio clip on the timeline
+                                </DawInlineHint>
                             </div>
                         )}
 
@@ -206,9 +210,9 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                         >
                             <RefreshCw className="size-3.5 mr-2" /> Extract Stems
                         </Button>
-                        <p className="text-[9px] text-muted-foreground/60">
+                        <DawInlineHint className="justify-start px-0 py-0 text-muted-foreground/60">
                             First run downloads the model (~235 MB). Runs locally on your device.
-                        </p>
+                        </DawInlineHint>
                     </div>
                 ) : null}
 
@@ -219,7 +223,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                         ) : (
                             <div className="space-y-3">
                                 <div className="space-y-1.5">
-                                    <label className="text-[10px] font-medium text-foreground/80">Describe the sound</label>
+                                    <DawEyebrowLabel size="sm" className="block text-foreground/80">Describe the Sound</DawEyebrowLabel>
                                     <textarea
                                         value={prompt}
                                         onChange={(e) => setPrompt(e.target.value)}
@@ -242,7 +246,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
 
                                 <div className="space-y-2">
                                     <div className="flex justify-between items-center">
-                                        <label className="text-[10px] font-medium text-foreground/80">Duration</label>
+                                        <DawEyebrowLabel size="sm" className="text-foreground/80">Duration</DawEyebrowLabel>
                                         <span className="text-[10px] text-muted-foreground">{audioDuration}s</span>
                                     </div>
                                     <Slider
@@ -253,7 +257,9 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                         step={1}
                                         className="pt-1"
                                     />
-                                    <p className="text-[9px] text-muted-foreground/60">Max 11s per generation (Stable Audio Open)</p>
+                                    <DawInlineHint className="justify-start px-0 py-0 text-muted-foreground/60">
+                                        Max 11s per generation (Stable Audio Open)
+                                    </DawInlineHint>
                                 </div>
 
                                 <Button
@@ -263,9 +269,9 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                 >
                                     <Sparkles className="size-3.5 mr-2" /> Generate Audio
                                 </Button>
-                                <p className="text-[9px] text-muted-foreground/60">
+                                <DawInlineHint className="justify-start px-0 py-0 text-muted-foreground/60">
                                     First run downloads the model (~1.7 GB). Runs locally on your device.
-                                </p>
+                                </DawInlineHint>
                             </div>
                         )}
                     </div>
@@ -275,7 +281,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                     <div className="p-3 space-y-4">
                         <div className="space-y-3">
                             <div className="space-y-1.5">
-                                <label className="text-[10px] font-medium text-foreground/80">Describe the music</label>
+                                <DawEyebrowLabel size="sm" className="block text-foreground/80">Describe the Music</DawEyebrowLabel>
                                 <textarea
                                     value={prompt}
                                     onChange={(e) => setPrompt(e.target.value)}
@@ -298,7 +304,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
 
                             <div className="space-y-2">
                                 <div className="flex justify-between items-center">
-                                    <label className="text-[10px] font-medium text-foreground/80">Max Notes</label>
+                                    <DawEyebrowLabel size="sm" className="text-foreground/80">Max Notes</DawEyebrowLabel>
                                     <span className="text-[10px] text-muted-foreground">{midiNotes}</span>
                                 </div>
                                 <Slider
@@ -312,7 +318,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                             </div>
                             <div className="space-y-2">
                                 <div className="flex justify-between items-center">
-                                    <label className="text-[10px] font-medium text-foreground/80">Creativity</label>
+                                    <DawEyebrowLabel size="sm" className="text-foreground/80">Creativity</DawEyebrowLabel>
                                     <span className="text-[10px] text-muted-foreground">{creativity}%</span>
                                 </div>
                                 <Slider
@@ -339,9 +345,9 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                 {/* Results */}
                 {state.tasks.length > 0 ? (
                     <div className="p-2" style={{ borderTop: '1px solid transparent', backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)', backgroundSize: '100% 1px', backgroundRepeat: 'no-repeat', backgroundPosition: 'top' }}>
-                        <h3 className="text-[10px] font-semibold text-muted-foreground mb-2 px-1 uppercase tracking-wider">
+                        <DawEyebrowLabel size="sm" className="mb-2 block px-1">
                             Recent
-                        </h3>
+                        </DawEyebrowLabel>
                         <div className="space-y-1.5">
                             {state.tasks.map((task: AiTaskResult) => (
                                 <TaskResultCard key={task.id} task={task} />
@@ -368,8 +374,10 @@ const ParamSection = ({
     children: ReactElement;
 }): ReactElement => (
     <div className="space-y-2">
-        <label className="text-[10px] font-semibold text-foreground/90 uppercase tracking-wider flex items-center justify-between">
-            {label}
+        <div className="flex items-center justify-between">
+            <DawEyebrowLabel size="sm" className="text-foreground/90">
+                {label}
+            </DawEyebrowLabel>
             {value ? (
                 <Button
                     variant="link"
@@ -380,7 +388,7 @@ const ParamSection = ({
                     Clear
                 </Button>
             ) : null}
-        </label>
+        </div>
         {children}
     </div>
 );

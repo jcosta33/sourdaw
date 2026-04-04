@@ -55,6 +55,7 @@ class BacteriaProcessor extends AudioWorkletProcessor {
     _ready = false;
     _faulted = false;
     _meterCounter = 0;
+    _sabView = null;    // Float32Array view into the telemetry SharedArrayBuffer slot
 
     constructor() {
         super();
@@ -64,6 +65,8 @@ class BacteriaProcessor extends AudioWorkletProcessor {
                 if (msg.type === 'init') {
                     if (this._ready) return;
                     this._initWasm(msg.wasmBytes);
+                } else if (msg.type === 'init-sab') {
+                    this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
                 } else if (msg.type === 'param' && this._ready && !this._faulted) {
                     const rustName = PARAM_MAP[msg.name] ?? msg.name;
                     this._instance.set_param(rustName, msg.value);
@@ -114,12 +117,11 @@ class BacteriaProcessor extends AudioWorkletProcessor {
             this._meterCounter++;
             if (this._meterCounter >= 8) {
                 this._meterCounter = 0;
-                this.port.postMessage({
-                    type: 'meters',
-                    inputDb: inst.get_input_db(),
-                    outputDb: inst.get_output_db(),
-                    latency: inst.get_latency_samples(),
-                });
+                if (this._sabView) {
+                    this._sabView[0] = inst.get_input_db();
+                    this._sabView[1] = inst.get_output_db();
+                    this._sabView[2] = inst.get_latency_samples();
+                }
             }
         } catch (err) {
             this._faulted = true;

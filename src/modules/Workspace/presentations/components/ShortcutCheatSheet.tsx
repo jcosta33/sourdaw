@@ -1,4 +1,7 @@
 import { type ReactElement, useState, useEffect } from 'react';
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { DawKeycap } from '#/components/daw/DawKeycap';
+import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
 import { X } from 'lucide-react';
 
@@ -123,22 +126,29 @@ export const ShortcutCheatSheet = (): ReactElement | null => {
     }
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setOpen(false)}>
-            <div
-                className="w-[560px] max-h-[80vh] overflow-y-auto rounded-lg border border-border bg-surface-raised p-6 shadow-xl"
+        <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-bg-scrim/90 px-4 backdrop-blur-[2px]"
+            onClick={() => setOpen(false)}
+        >
+            <DawUtilityPanel
+                className="w-[560px] max-h-[80vh]"
                 onClick={(e) => e.stopPropagation()}
                 role="dialog"
                 aria-label="Keyboard shortcuts"
                 aria-modal="true"
             >
-                <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-sm font-semibold text-foreground">Keyboard Shortcuts</h2>
-                    <Button variant="ghost" size="icon-xs" onClick={() => setOpen(false)} aria-label="Close">
-                        <X className="size-4" />
-                    </Button>
-                </div>
+                <DawHeaderBand
+                    className="px-4 py-3"
+                    title="Keyboard Shortcuts"
+                    titleClassName="text-[11px] text-foreground"
+                    actions={
+                        <Button variant="ghost" size="icon-xs" onClick={() => setOpen(false)} aria-label="Close">
+                            <X className="size-4" />
+                        </Button>
+                    }
+                />
 
-                <div className="grid grid-cols-2 gap-6">
+                <div className="grid grid-cols-2 gap-6 overflow-y-auto px-4 py-4">
                     {SHORTCUT_GROUPS.map((group) => (
                         <div key={group.title}>
                             <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
@@ -150,12 +160,9 @@ export const ShortcutCheatSheet = (): ReactElement | null => {
                                         <span className="text-xs text-foreground">{s.description}</span>
                                         <div className="flex gap-0.5">
                                             {s.keys.split(' ').map((k, i) => (
-                                                <kbd
-                                                    key={i}
-                                                    className="min-w-[20px] rounded bg-surface-overlay px-1.5 py-0.5 text-center text-[10px] font-mono text-muted-foreground border border-border"
-                                                >
+                                                <DawKeycap key={`${s.keys}-${i}`} compact>
                                                     {k}
-                                                </kbd>
+                                                </DawKeycap>
                                             ))}
                                         </div>
                                     </div>
@@ -165,14 +172,12 @@ export const ShortcutCheatSheet = (): ReactElement | null => {
                     ))}
                 </div>
 
-                <p className="mt-4 text-center text-[10px] text-muted-foreground">
+                <p className="px-4 py-3 text-center text-[10px] text-muted-foreground">
                     Press{' '}
-                    <kbd className="rounded bg-surface-overlay px-1 py-0.5 text-[10px] font-mono border border-border">
-                        ?
-                    </kbd>{' '}
+                    <DawKeycap compact className="px-1">?</DawKeycap>{' '}
                     to toggle this sheet
                 </p>
-            </div>
+            </DawUtilityPanel>
         </div>
     );
 };

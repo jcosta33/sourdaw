@@ -3,6 +3,7 @@
  */
 
 import grinderProcessorUrl from '../services/grinderProcessor.ts?worker&url';
+import { telemetryAllocator, GRINDER_IDX, type TelemetrySlot } from './telemetryAllocator';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
@@ -72,7 +73,12 @@ export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string)
     });
 
     let settled = false;
-    let meterCallback: ((data: GrinderMeterData) => void) | null = null;
+    let slot: TelemetrySlot | null = telemetryAllocator.allocateSlot();
+    let meterRafId: number | null = null;
+
+    if (slot) {
+        node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
+    }
 
     const readyPromise = new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => {
@@ -96,8 +102,6 @@ export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string)
                 } else {
                     console.error('GrinderNode runtime fault (WASM panic — processor faulted):', e.data.message);
                 }
-            } else if (e.data.type === 'meters' && meterCallback) {
-                meterCallback(e.data as GrinderMeterData);
             }
         };
     });
@@ -117,7 +121,25 @@ export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string)
             node.port.postMessage({ type: 'param', name: 'bypass', value: state ? 1 : 0 });
         },
         onMeterData(cb: (data: GrinderMeterData) => void) {
-            meterCallback = cb;
+            if (meterRafId !== null) { cancelAnimationFrame(meterRafId); meterRafId = null; }
+            if (!slot) return;
+            const view = slot.view;
+            const poll = () => {
+                cb({
+                    inputDb: view[GRINDER_IDX.inputDb],
+                    preampDb: view[GRINDER_IDX.preampDb],
+                    powerAmpDb: view[GRINDER_IDX.powerAmpDb],
+                    outputDb: view[GRINDER_IDX.outputDb],
+                    gateOpen: view[GRINDER_IDX.gateOpen],
+                    gateEnvelopeDb: view[GRINDER_IDX.gateEnvelopeDb],
+                    sagVoltage: view[GRINDER_IDX.sagVoltage],
+                    latency: view[GRINDER_IDX.latency],
+                    neuralCpuPercent: view[GRINDER_IDX.neuralCpuPercent],
+                    neuralWarmupProgress: view[GRINDER_IDX.neuralWarmupProgress],
+                });
+                meterRafId = requestAnimationFrame(poll);
+            };
+            meterRafId = requestAnimationFrame(poll);
         },
         connect(dest: AudioNode) {
             node.connect(dest);
@@ -128,6 +150,8 @@ export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string)
             } catch {}
         },
         destroy() {
+            if (meterRafId !== null) { cancelAnimationFrame(meterRafId); meterRafId = null; }
+            if (slot) { telemetryAllocator.releaseSlot(slot.byteOffset); slot = null; }
             try {
                 node.disconnect();
             } catch {}

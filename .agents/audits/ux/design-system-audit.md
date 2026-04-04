@@ -63,7 +63,10 @@ The following shared primitives and utilities now exist and are live adopters, s
   - `src/components/daw/DawUtilityPanel.tsx`
 - small repeated presentation primitives:
   - `src/components/daw/DawCompactSelect.tsx`
+  - `src/components/daw/DawEyebrowLabel.tsx`
   - `src/components/daw/DawInlineHint.tsx`
+  - `src/components/daw/DawKeycap.tsx`
+  - `src/components/daw/DawMenuParts.tsx`
   - `src/components/daw/DawMicroBadge.tsx`
   - `src/components/daw/DawSectionDivider.tsx`
   - `src/components/daw/DawStatusDot.tsx`
@@ -78,18 +81,18 @@ The following shared primitives and utilities now exist and are live adopters, s
   - `daw-grid-header-cell`
 - sidebar-local shared presentation helpers:
   - `src/modules/Workspace/presentations/components/Sidebar/SearchSummary.tsx`
+- settings-local shared presentation helpers:
+  - `src/modules/Workspace/presentations/components/CaptureKeyButton.tsx`
 - inspector-local shared presentation helpers:
   - `src/modules/Workspace/presentations/components/Inspector/ChoiceCard.tsx`
   - `src/modules/Workspace/presentations/components/Inspector/ControlHeader.tsx`
   - `src/modules/Workspace/presentations/components/Inspector/InsetPanel.tsx`
   - `src/modules/Workspace/presentations/components/Inspector/MetaText.tsx`
   - `src/modules/Workspace/presentations/components/Inspector/SurfaceCard.tsx`
-- workspace-local floating-menu helpers:
-  - `src/modules/Workspace/presentations/components/FloatingMenuParts.tsx`
 - a local shared automation family:
   - `src/modules/Workspace/presentations/views/AutomationView/AutomationControls.tsx`
 
-These already have real adoption across shell, transport, sidebar, prompt, automation, inspector, mixer, collaboration, command, and arrangement views, including but not limited to:
+These already have real adoption across shell, transport, sidebar, prompt, automation, inspector, mixer, collaboration, command, arrangement, and AudioEngine views, including but not limited to:
 
 - `src/modules/Workspace/presentations/views/PreferencesDialog.tsx`
 - `src/modules/Workspace/presentations/views/SessionView.tsx`
@@ -97,6 +100,7 @@ These already have real adoption across shell, transport, sidebar, prompt, autom
 - `src/modules/Workspace/presentations/views/Prompt/LlmStatusBadge.tsx`
 - `src/modules/Workspace/presentations/views/StatusBar.tsx`
 - `src/modules/Workspace/presentations/views/Transport/ProjectName.tsx`
+- `src/modules/Workspace/presentations/views/Transport/PlayheadDisplay.tsx`
 - `src/modules/Workspace/presentations/views/TempoEditor.tsx`
 - `src/modules/Workspace/presentations/views/ClipView/PianoRollToolbar.tsx`
 - `src/modules/Workspace/presentations/views/ClipView/AutomationLane.tsx`
@@ -120,26 +124,41 @@ These already have real adoption across shell, transport, sidebar, prompt, autom
 - `src/modules/Workspace/presentations/views/Sidebar/ColorTab.tsx`
 - `src/modules/Workspace/presentations/views/Sidebar/StageTab.tsx`
 - `src/modules/Workspace/presentations/views/Sidebar/InstrumentsTab.tsx`
+- `src/modules/Workspace/presentations/components/ShortcutCheatSheet.tsx`
 - `src/modules/Arrangement/presentations/views/ArrangementBar.tsx`
 - `src/modules/Arrangement/presentations/views/TrackHeader/InputSelector.tsx`
 - `src/modules/Arrangement/presentations/views/TrackListView.tsx`
 - `src/modules/Arrangement/presentations/views/TimelineSurface.tsx`
+- `src/modules/CrdtDocument/presentations/views/BranchManagerDialog.tsx`
+- `src/modules/CrdtDocument/presentations/views/MergeResultDialog.tsx`
 - `src/modules/Command/presentations/views/CommandPalette.tsx`
 - `src/modules/Command/presentations/views/UndoHistoryPanel.tsx`
 - `src/modules/Collaboration/presentations/views/CollaborationPanel.tsx`
 - `src/modules/AiRuntime/presentations/views/ChatPanel.tsx`
 - `src/modules/AiRuntime/presentations/views/GenerativeAiPanel.tsx`
+- `src/modules/AiRuntime/presentations/views/AiActionHistoryPanel.tsx`
+- `src/modules/AiRuntime/presentations/views/AiChangeToast.tsx`
+- `src/modules/AiRuntime/presentations/views/MixAnalysisPanel.tsx`
 - `src/modules/AiRuntime/presentations/views/PatternBrowser.tsx`
 - `src/modules/AiRuntime/presentations/components/mixAnalysis/MixAnalysisSections.tsx`
+- `src/modules/AiRuntime/presentations/views/VoiceCommandOverlay.tsx`
+- `src/modules/AudioEngine/presentations/views/AudioDevicePicker.tsx`
+- `src/modules/AudioEngine/presentations/views/MidiDevicePicker.tsx`
+- `src/modules/AudioEngine/presentations/views/PluginBrowser.tsx`
+- `src/modules/AudioEngine/presentations/views/PluginScanSettings.tsx`
+- `src/modules/Collaboration/presentations/views/CollaborationPanel.tsx`
+- `src/modules/Collaboration/presentations/views/QrInvite.tsx`
+- `src/modules/Command/presentations/views/UndoHistoryPanel.tsx`
+- `src/modules/Workspace/presentations/views/AutomationView/AutomationControls.tsx`
 
 Because of that, several earlier findings are now only partially open:
 
 - repeated DAW header and shell chrome: substantially addressed, but not complete
-- floating menu/context surfaces: substantially addressed for DAW-facing menus, but not fully eliminated repo-wide
-- empty/blocked states: partially addressed through `DawEmptyState` and sidebar-local empty-state reuse
+- floating menu/context surfaces: substantially addressed for DAW-facing menus through `daw-floating-surface` and `DawMenuParts`, but not fully eliminated repo-wide
+- empty/blocked states: partially addressed through `DawEmptyState`, sidebar-local empty-state reuse, and the AudioEngine browser/scanning adopters
 - transport/readout wells: partially addressed through `daw-readout-well` and related adopters
 - compact DAW select controls: partially addressed through `DawCompactSelect`
-- tiny micro-label / chip / status-dot families: partially addressed through `DawMicroBadge`, `DawSectionDivider`, `DawStatusDot`, and `SearchSummary`
+- tiny micro-label / chip / status-dot families: partially addressed through `DawMicroBadge`, `DawSectionDivider`, `DawStatusDot`, `DawKeycap`, `DawEyebrowLabel`, and `SearchSummary`
 
 The highest-priority unresolved areas after this implementation pass are now:
 
@@ -421,7 +440,7 @@ This is the single largest low-risk consolidation opportunity outside plugin pan
 
 ### 2. Floating menus and context surfaces are still hand-rolled repeatedly
 
-Status: partially addressed by `daw-floating-surface` and `DawUtilityPanel`; many DAW-facing custom menus have already converged, including arrangement menus plus the mixer/inspector popups in `ExpandedChannelStrip`, `IOSection`, and `TrackDevicesSection`, but this is not yet universal.
+Status: partially addressed by `daw-floating-surface`, `DawUtilityPanel`, and the new `DawMenuParts` family; many DAW-facing custom menus have already converged, including arrangement menus, piano-roll/timeline menus, and the mixer/inspector popups in `ExpandedChannelStrip`, `IOSection`, `TrackDevicesSection`, and `TrackAutomationSection`, but this is not yet universal.
 
 Custom floating menu surfaces are repeated instead of using the shared floating/menu treatment:
 
@@ -614,7 +633,7 @@ The keys themselves should stay custom. The framing around them should move clos
 
 ### 8. AI Runtime panels still duplicate a lot of shell work already solved elsewhere
 
-Status: partially addressed. `ChatPanel`, `GenerativeAiPanel`, `PromptBar`, `LlmStatusBadge`, and related utility surfaces are more centralized now, but AI analysis/detail interiors still have local repeated micro-surfaces.
+Status: partially addressed. `ChatPanel`, `GenerativeAiPanel`, `PromptBar`, `LlmStatusBadge`, and related utility surfaces are more centralized now; `GenerativeAiPanel.tsx` also reuses `DawEyebrowLabel` and `DawInlineHint` for its control labels, result section header, selected-clip summary, and model footnotes, but AI analysis/detail interiors still have local repeated micro-surfaces.
 
 The AI panels still use local header/footer chrome and low-level layout styling:
 
@@ -740,7 +759,7 @@ These should sit below plugin flair in visual intensity and become the standard 
 
 ### 12. Transport-area components still share a repeated chrome language without shared primitives
 
-Status: partially addressed by `daw-readout-well`, `DawControlStrip`, and several migrated transport/project widgets, but compact readout and meter rows remain duplicated.
+Status: partially addressed by `daw-readout-well`, `DawControlStrip`, `DawEyebrowLabel`, and several migrated transport/project widgets; `PlayheadDisplay.tsx` now reuses the shared micro-label language, but compact readout and meter rows remain duplicated.
 
 The transport cluster still duplicates top-bar and display-well styling in many places:
 
@@ -837,7 +856,7 @@ The current `ArrangeView.tsx` horizontal scrollbar is especially a good candidat
 
 ### 15. Small label systems are duplicated everywhere and need typography tokens or tiny primitives
 
-Status: partially addressed by `DawMicroBadge`, `DawSectionDivider`, sidebar `SearchSummary`, and some migrated micro-label families, but typography is still only partly tokenized.
+Status: partially addressed by `DawMicroBadge`, `DawSectionDivider`, `DawKeycap`, `DawEyebrowLabel`, sidebar `SearchSummary`, and some migrated micro-label families, including newer adoption in `PlayheadDisplay.tsx`, `StatusBar.tsx`, and `GenerativeAiPanel.tsx`, but typography is still only partly tokenized.
 
 The app repeats a lot of very small uppercase label styling:
 
@@ -873,7 +892,7 @@ This is lower urgency than surface primitives, but the repetition level is high 
 
 ### 16. Empty-state and “desktop required” cards should be standardized
 
-Status: partially addressed by `DawEmptyState` and broader sidebar/utility-panel empty-state reuse, but a few feature-gate and picker-specific variants still remain.
+Status: partially addressed by `DawEmptyState` and broader sidebar/utility-panel empty-state reuse; `PluginBrowser.tsx`, `PluginScanSettings.tsx`, and `QrInvite.tsx` now also use the shared blocked/empty-state grammar, but a few feature-gate and picker-specific variants still remain.
 
 There are multiple variants of informational empty/blocked states:
 
@@ -1026,7 +1045,7 @@ This would clean up a lot of custom list UIs without forcing everything into a s
 
 ### 21. Readout wells and micro-status displays should become shared display primitives
 
-Status: partially addressed by `daw-readout-well`, `DawDisplaySurface`, `DawStatusDot`, `DawMeterBar`, and `DawReadoutRow`, but several compact status clusters and analysis-side adopters remain local.
+Status: partially addressed by `daw-readout-well`, `DawDisplaySurface`, `DawStatusDot`, `DawMeterBar`, and `DawReadoutRow`; `PlayheadDisplay.tsx` now also reuses `DawEyebrowLabel`, but several compact status clusters and analysis-side adopters remain local.
 
 A number of views render compact hardware-like readouts:
 
@@ -1059,6 +1078,8 @@ This is especially important for the transport and status bar because those area
 
 ### 22. Workspace-level dialogs need a calmer shared modal interior language
 
+Status: partially addressed. `BranchManagerDialog.tsx` and `MergeResultDialog.tsx` now use the shared DAW-shell grammar through `DawUtilityPanel` and `DawHeaderBand`, and `MixHealthDialog.tsx` now uses the same restrained header/body/action structure, but richer dialog interior structure is still inconsistent across `PreferencesDialog` and `ExportDialog`.
+
 Several dialogs are already using `Dialog`, but the internals still drift:
 
 - `PreferencesDialog.tsx`
@@ -1089,7 +1110,7 @@ This would let dialogs feel related without making them look like generic web ad
 
 ### 23. Status/selection/empty-state copy patterns should become reusable content components, not just styles
 
-Status: partially addressed by `DawEmptyState`, `DawInlineHint`, and sidebar `SearchSummary`, but selection-summary and richer blocked-state content patterns are still fragmented.
+Status: partially addressed by `DawEmptyState`, `DawInlineHint`, and sidebar `SearchSummary`; the AudioEngine browser/picker family now also reuses those shared hint/empty treatments, `GenerativeAiPanel.tsx` now uses the same hint language for selected-clip prompts and model footnotes, and `QrInvite.tsx` now uses the shared hint/blocked-state family, but selection-summary and richer blocked-state content patterns are still fragmented.
 
 There are many small status blocks that are structurally similar:
 
@@ -1156,6 +1177,8 @@ That would eliminate a lot of tiny inline gradients that are visually consistent
 ---
 
 ### 25. A few dialogs still bypass the shared dialog system entirely
+
+Status: partially addressed. The CRDT modal pair now uses the shared neutral shell treatment instead of raw bespoke zinc windows, but `ExportDialog.tsx` still bypasses the calmer modal family and there is still no reusable dialog interior/action-row kit.
 
 Some modal flows are still building their own fixed overlays, window chrome, and action rows instead of composing the existing dialog primitives:
 
@@ -1380,7 +1403,7 @@ That would keep modal UX calmer and more consistent without making every dialog 
 
 ### 32. The app still lacks a complete DAW form kit for selects, small fields, and inline editors
 
-Status: partially addressed by `DawCompactSelect`, now adopted in `PianoRollToolbar`, `AutomationLane`, `TempoEditor`, `TrackMidiOutputSection`, `TrackVcaSection`, `InputSelector`, `ClipInspector`, `DeviceParameterControl`, `PatternBrowser`, and the save form in `InstrumentsTab`, but the broader field/edit family is still fragmented.
+Status: partially addressed by `DawCompactSelect`, now adopted in `PianoRollToolbar`, `AutomationLane`, `TempoEditor`, `TrackMidiOutputSection`, `TrackVcaSection`, `InputSelector`, `ClipInspector`, `DeviceParameterControl`, `PatternBrowser`, the save form in `InstrumentsTab`, and the AudioEngine device pickers (`AudioDevicePicker.tsx`, `MidiDevicePicker.tsx`), but the broader field/edit family is still fragmented.
 
 Many module-level views are still styling compact DAW form controls directly instead of composing thin themed wrappers:
 
@@ -1481,7 +1504,7 @@ The goal is not to eliminate all typographic classes; it is to stop rebuilding t
 
 ### 35. Floating utility overlays should have their own understated primitive family
 
-Status: partially addressed by `DawUtilityPanel` and the shared floating-surface treatment.
+Status: partially addressed by `DawUtilityPanel` and the shared floating-surface treatment, including the keyboard utility modals around `ShortcutCheatSheet.tsx` and shortcut-binding capture, plus the AI utility overlays in `AiActionHistoryPanel.tsx`, `MixAnalysisPanel.tsx`, and `AiChangeToast.tsx`; those adopters now also reuse the shared micro-language (`DawEmptyState`, `DawInlineHint`, `DawEyebrowLabel`, `DawMicroBadge`) instead of carrying fully local interior markup, and adjacent AI utility interiors like `GenerativeAiPanel.tsx` now share the same caption/hint language even where they keep richer panel-specific structure.
 
 Not every floating UI in the app is a menu or a dialog. Some are lighter utility overlays with their own recurring structure:
 
@@ -1511,7 +1534,7 @@ This would keep these surfaces tactile and polished without overloading the menu
 
 ### 36. Status and metric clusters are still composed ad hoc across DAW shells
 
-Status: partially addressed by the first `DawMeterBar` / `DawReadoutRow` adoption in `StatusBar`, `mixAnalysis`, `TrackLatencySection`, `TrackLevelSection`, `TrackRoutingSection`, `ClipInspector`, and `LUFSMeter`, but this remains one of the highest-value neutral-shell follow-up passes.
+Status: partially addressed by the first `DawMeterBar` / `DawReadoutRow` adoption in `StatusBar`, `mixAnalysis`, `TrackLatencySection`, `TrackLevelSection`, `TrackRoutingSection`, `ClipInspector`, `LUFSMeter`, and `PluginScanSettings`; `mixAnalysis` now also uses `DawEyebrowLabel` and `DawMicroBadge` internally, and `PlayheadDisplay.tsx` now shares the eyebrow-label micro-language, but this remains one of the highest-value neutral-shell follow-up passes.
 
 Several views build dense little metric groups out of raw spans, bars, pills, and mono readouts instead of using a shared cluster pattern:
 
@@ -1917,7 +1940,7 @@ It would work well for analysis, diagnostics, and some AI-side insight panels.
 
 ### 50. Status badges and model badges deserve a shared pill/badge family
 
-Status: partially addressed by `DawMicroBadge` and `DawStatusDot`, but adoption is still incomplete outside the most obvious prompt/sidebar/transport surfaces.
+Status: partially addressed by `DawMicroBadge` and `DawStatusDot`, with newer adoption in `CollaborationPanel`, `UndoHistoryPanel`, the `mixAnalysis` track rows, the AudioEngine plugin-format badges, and the MIDI device connection state, but adoption is still incomplete outside the most obvious prompt/sidebar/transport surfaces.
 
 There are many small status pills, model badges, and approval/format markers across the app:
 

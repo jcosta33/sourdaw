@@ -1,9 +1,11 @@
 import { type ReactElement, useSyncExternalStore } from 'react';
+import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { undoStore, type UndoStoreState } from '../../stores/undoStore';
 import { undoToIndex } from '../../useCases/undoRedo';
 import { closeUndoHistory } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { cn } from '#/helpers/Styles/cn';
 import { X, Undo2, Redo2 } from 'lucide-react';
@@ -62,10 +64,10 @@ export const UndoHistoryPanel = (): ReactElement | null => {
 
                 {state.future.length > 0 ? (
                     <div className="border-b border-border/30 pb-1 pt-1">
-                        <div className="px-3 py-0.5 text-[9px] font-medium uppercase tracking-wider text-muted-foreground/60">
+                        <DawEyebrowLabel className="block px-3 py-0.5">
                             <Redo2 className="mr-1 inline size-2.5" />
                             Redo
-                        </div>
+                        </DawEyebrowLabel>
                         {[...state.future].reverse().map((entry, i) => {
                             const futureIndex = pastCount + (state.future.length - 1 - i);
                             return (
@@ -83,18 +85,18 @@ export const UndoHistoryPanel = (): ReactElement | null => {
                 ) : null}
 
                 <div className="px-3 py-1">
-                    <div className="flex items-center gap-1 text-[9px] font-medium uppercase tracking-wider text-[var(--color-state-success)]/80">
+                    <DawEyebrowLabel className="flex items-center gap-1 text-[var(--color-state-success)]/80">
                         <span className="size-1.5 rounded-full bg-[var(--color-state-success)]" />
                         Current State
-                    </div>
+                    </DawEyebrowLabel>
                 </div>
 
                 {state.past.length > 0 ? (
                     <div className="pt-0.5 pb-1">
-                        <div className="px-3 py-0.5 text-[9px] font-medium uppercase tracking-wider text-muted-foreground/60">
+                        <DawEyebrowLabel className="block px-3 py-0.5">
                             <Undo2 className="mr-1 inline size-2.5" />
                             Undo
-                        </div>
+                        </DawEyebrowLabel>
                         {[...state.past].reverse().map((entry, i) => {
                             const entryIndex = pastCount - 1 - i;
                             return (
@@ -109,9 +111,9 @@ export const UndoHistoryPanel = (): ReactElement | null => {
                                 >
                                     <span className="truncate">{entry.label}</span>
                                     {entry.source !== 'manual' && (
-                                        <span className="ml-auto shrink-0 rounded bg-muted/40 px-1 text-[10px] text-muted-foreground">
+                                        <DawMicroBadge className="ml-auto px-1" tone="muted">
                                             {entry.source}
-                                        </span>
+                                        </DawMicroBadge>
                                     )}
                                 </button>
                             );

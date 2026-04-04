@@ -7,6 +7,7 @@
  */
 
 import { type ReactElement, type MouseEvent, useSyncExternalStore, useState, useRef, useEffect } from 'react';
+import { DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { Music2, Plus, Power, Trash2 } from 'lucide-react';
 import { chordTrackStore, type ChordTrackState } from '#/modules/Arrangement/stores/chordTrackStore';
@@ -263,9 +264,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                 >
                     {contextMenu.kind === 'empty' && (
                         <>
-                            <div className="px-2 py-1 text-[10px] text-muted-foreground">
-                                Beat {Math.floor(contextMenu.beat)}
-                            </div>
+                            <DawMenuMutedRow className="px-2">Beat {Math.floor(contextMenu.beat)}</DawMenuMutedRow>
                             {ROOT_NAMES.slice(0, 7).map((name, rootIdx) => (
                                 <button
                                     type="button"
@@ -280,10 +279,8 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                     )}
                     {contextMenu.kind === 'chord' && (
                         <>
-                            <div className="px-2 py-1 text-[10px] text-muted-foreground">
-                                {formatChordName(contextMenu.event)}
-                            </div>
-                            <div className="px-2 py-1 text-[10px] text-muted-foreground">Quality</div>
+                            <DawMenuMutedRow className="px-2">{formatChordName(contextMenu.event)}</DawMenuMutedRow>
+                            <DawMenuMutedRow className="px-2">Quality</DawMenuMutedRow>
                             <div className="flex flex-wrap gap-0.5 px-2 pb-1">
                                 {ADD_MENU_QUALITIES.map((q) => (
                                     <button
@@ -304,7 +301,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                                     </button>
                                 ))}
                             </div>
-                            <div className="px-2 py-1 text-[10px] text-muted-foreground">Root</div>
+                            <DawMenuMutedRow className="px-2">Root</DawMenuMutedRow>
                             <div className="flex flex-wrap gap-0.5 px-2 pb-1">
                                 {ROOT_NAMES.map((name, idx) => (
                                     <button
@@ -325,7 +322,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                                     </button>
                                 ))}
                             </div>
-                            <div className="my-0.5 border-t border-border/50" />
+                            <DawMenuSeparator className="my-0.5 border-border/50" />
                             <button
                                 type="button"
                                 className="flex w-full items-center rounded-sm px-2 py-1.5 text-xs text-destructive hover:bg-destructive/10"

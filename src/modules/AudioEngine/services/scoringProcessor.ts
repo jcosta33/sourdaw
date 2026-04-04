@@ -26,6 +26,7 @@ class ScoringProcessor extends AudioWorkletProcessor {
     _bypassed = false;
     _frameCount = 0;
     _telemetryInterval = 4; // send telemetry every N process calls (~21ms at 128 samples/48kHz)
+    _sabView = null;    // Float32Array view into the telemetry SharedArrayBuffer slot
 
     constructor() {
         super();
@@ -35,6 +36,8 @@ class ScoringProcessor extends AudioWorkletProcessor {
                 if (msg.type === 'init') {
                     if (this._ready) return;
                     this._initWasm(msg.wasmBytes);
+                } else if (msg.type === 'init-sab') {
+                    this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
                 } else if (msg.type === 'bypass') {
                     this._bypassed = msg.bypassed;
                 } else if (msg.type === 'param' && this._ready && !this._faulted) {
@@ -91,21 +94,18 @@ class ScoringProcessor extends AudioWorkletProcessor {
                 this._frameCount = 0;
                 const inst = this._instance;
                 const active = inst.is_active();
-                if (active) {
-                    const noteIdx = inst.get_note_index();
-                    this.port.postMessage({
-                        type: 'telemetry',
-                        frequency: inst.get_frequency(),
-                        cents: inst.get_cents(),
-                        confidence: inst.get_confidence(),
-                        noteIndex: noteIdx,
-                        octave: inst.get_octave(),
-                        midiNote: inst.get_midi_note(),
-                        noteName: NOTE_NAMES[noteIdx % 12] ?? 'C',
-                        active: true,
-                    });
-                } else {
-                    this.port.postMessage({ type: 'telemetry', active: false });
+                if (this._sabView) {
+                    if (active) {
+                        this._sabView[0] = 1;
+                        this._sabView[1] = inst.get_frequency();
+                        this._sabView[2] = inst.get_cents();
+                        this._sabView[3] = inst.get_confidence();
+                        this._sabView[4] = inst.get_note_index();
+                        this._sabView[5] = inst.get_octave();
+                        this._sabView[6] = inst.get_midi_note();
+                    } else {
+                        this._sabView[0] = 0;
+                    }
                 }
             }
         } catch (err) {

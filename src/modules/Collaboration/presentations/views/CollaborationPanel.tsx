@@ -1,6 +1,8 @@
 import { type ReactElement, useState, useRef, useEffect, useSyncExternalStore } from 'react';
 
+import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { cn } from '#/helpers/Styles/cn';
 import { Button } from '#/components/ui/button';
@@ -179,7 +181,7 @@ export const CollaborationPanel = (): ReactElement | null => {
                                         />
                                         <span className="truncate text-foreground">{peer.name}</span>
                                         {peer.isHost ? (
-                                            <span className="ml-auto shrink-0 rounded bg-muted/40 px-1 text-[10px] text-muted-foreground">host</span>
+                                            <DawMicroBadge className="ml-auto px-1" tone="muted">host</DawMicroBadge>
                                         ) : null}
                                     </div>
                                 ))}
@@ -233,9 +235,9 @@ export const CollaborationPanel = (): ReactElement | null => {
                         {/* Joiner: show answer to copy back */}
                         {joinAnswer ? (
                             <div className="flex flex-col gap-1.5">
-                                <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
+                                <DawEyebrowLabel size="sm">
                                     Send this answer to the host
-                                </span>
+                                </DawEyebrowLabel>
                                 <div className="flex items-center gap-1">
                                     <code className="flex-1 truncate rounded bg-muted/30 px-2 py-1 text-[9px] font-mono text-foreground">
                                         {joinAnswer.slice(0, 40)}...

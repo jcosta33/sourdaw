@@ -4,6 +4,7 @@
 import { type ReactElement, useState, useEffect, useRef } from 'react';
 import { Button } from '#/components/ui/button';
 import { GRID_SNAP_OPTIONS, type GridSnapOption } from '../../models/Preferences';
+import { CaptureKeyButton } from '../components/CaptureKeyButton';
 
 // ── SectionTitle ──────────────────────────────────────────────────────
 
@@ -82,14 +83,14 @@ export const VoiceKeyEditor = ({
     return (
         <FieldGroup label="Voice Command Key">
             <div className="flex items-center gap-2">
-                <button
-                    type="button"
+                <CaptureKeyButton
                     ref={ref}
-                    className={`rounded px-3 py-1.5 text-xs font-mono border transition-colors ${listening ? 'border-primary bg-primary/10 text-primary animate-pulse' : 'border-border bg-surface-overlay text-foreground'}`}
+                    listening={listening}
+                    className="px-3 py-1.5 text-xs"
                     onClick={() => setListening(true)}
                 >
                     {listening ? 'Press a key...' : currentKey.toUpperCase()}
-                </button>
+                </CaptureKeyButton>
                 <span className="text-[10px] text-muted-foreground">
                     {listening ? 'Listening for keypress' : 'Click to change — hold to activate voice input'}
                 </span>

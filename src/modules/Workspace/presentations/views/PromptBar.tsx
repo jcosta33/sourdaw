@@ -59,7 +59,7 @@ const TAG_ICONS = {
 const SelectionTagChip = ({ tag, onRemove }: { tag: SelectionTag; onRemove: () => void }): ReactElement => {
     const Icon = TAG_ICONS[tag.icon];
     return (
-        <span className="inline-flex items-center gap-1 rounded-md bg-primary/15 border border-primary/30 px-1.5 py-0.5 text-[10px] text-primary shrink-0">
+        <DawMicroBadge tone="primary" className="shrink-0 gap-1 text-[10px]">
             <Icon className="size-2.5" aria-hidden="true" />
             <span className="truncate max-w-20">{tag.label}</span>
             <button
@@ -74,7 +74,7 @@ const SelectionTagChip = ({ tag, onRemove }: { tag: SelectionTag; onRemove: () =
             >
                 <X className="size-2.5" />
             </button>
-        </span>
+        </DawMicroBadge>
     );
 };
 
@@ -126,12 +126,12 @@ export const PromptBar = (): ReactElement => {
                 <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap gap-1">
                         {prompt.preview.actions.map((a: AppAction, i: number) => (
-                            <span
+                            <DawMicroBadge
                                 key={i}
-                                className="inline-flex items-center rounded bg-accent/50 px-1.5 py-0.5 text-[10px] text-foreground"
+                                className="text-[10px] text-foreground"
                             >
                                 {describeAction(a)}
-                            </span>
+                            </DawMicroBadge>
                         ))}
                     </div>
                 </div>

@@ -69,24 +69,16 @@ Main thread WASM work reduced from O(m·n) (repeated loadIncremental) to O(n) (s
 
 ---
 
-### RT-4 · AudioWorklet telemetry via `postMessage`
-**Severity:** P1 · **Verified:** ✅ confirmed
+### ~~RT-4 · AudioWorklet telemetry via `postMessage`~~ — DONE
+**Severity:** P1 · **Fixed:** ✅
 
-Each processor sends telemetry (RMS, LUFS, pitch, EQ) via
-`this.port.postMessage({})` every ~4 audio blocks (~85 Hz). With 12 tracks and
-4 plugins each this produces ~4 000 structured clones/second, driving continuous
-GC pressure. All 8 processor files confirmed: `fermenterProcessor.ts`,
-`levainProcessor.ts`, `grinderProcessor.ts`, `toasterProcessor.ts`,
-`proofChamberProcessor.ts`, `scoringProcessor.ts`, `bacteriaProcessor.ts`,
-`glutenProcessor.ts`.
+`telemetryAllocator.ts` was already in place. Connected it end-to-end:
 
-**Steps:**
-1. Allocate a single `SharedArrayBuffer` at engine init, large enough for all plugin telemetry slots (e.g. 64 plugins × N floats).
-2. During `addDeviceToStrip`, assign a fixed byte offset to each plugin instance and send it via `postMessage({ type: 'init-sab', offset, buffer })`.
-3. Each processor writes scalar telemetry directly into a `Float32Array` view of the SAB at its offset.
-4. UI meters read from the SAB inside their `requestAnimationFrame` loops — zero allocations, zero IPC.
+- `grinderProcessor.ts`, `bacteriaProcessor.ts`, `glutenProcessor.ts`, `scoringProcessor.ts`: added `_sabView = null` field; handle `init-sab` message to set `new Float32Array(msg.sab, msg.byteOffset, 32)`; replace `this.port.postMessage({ type: 'meters'/'telemetry', ... })` with indexed writes into `_sabView` (only when SAB is available). Index order matches `GRINDER_IDX` / `BACTERIA_IDX` / `GLUTEN_IDX` / `SCORING_IDX` in `telemetryAllocator.ts`.
+- `GrinderNode.ts`, `BacteriaNode.ts`, `GlutenNode.ts`, `ScoringNode.ts`: allocate a SAB slot via `telemetryAllocator.allocateSlot()` immediately after node creation; post `{ type: 'init-sab', sab, byteOffset }` before `init`; replace `port.onmessage meters/telemetry` handler with rAF polling of slot view; `onMeterData`/`onTelemetry` starts the rAF loop, `destroy()` cancels it and calls `releaseSlot()`.
+- `ScoringNode.ts`: `noteName` re-derived from `view[SCORING_IDX.noteIndex]` using `NOTE_NAMES` array on the main thread — the string is never transferred.
 
-Do in the same sprint as RT-2 since both require a new `init-sab` message type in the processor protocol.
+Result: zero structured clones per audio block for meter data; rAF reads are plain array-index loads; slot memory is reused across device lifetimes.
 
 ---
 

@@ -6,6 +6,7 @@ import {
     useEffect,
     useSyncExternalStore,
 } from 'react';
+import { DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { markerStore } from '../../stores/markerStore';
 import { addMarker, removeMarker, renameMarker, setMarkerColor, moveMarker } from '../../useCases/marker/markerOperations';
 import { type Marker } from '../../models/Marker';
@@ -274,7 +275,7 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                             >
                                 Rename Marker
                             </button>
-                            <div className="px-2 py-1 text-[10px] text-muted-foreground">Color</div>
+                            <DawMenuMutedRow className="px-2">Color</DawMenuMutedRow>
                             <div className="flex gap-1 px-2 pb-1">
                                 {MARKER_COLORS.map((c) => (
                                     <button
@@ -290,7 +291,7 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                                     />
                                 ))}
                             </div>
-                            <div className="my-0.5 mx-1 h-px" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.2) 100%)' }} />
+                            <DawMenuSeparator className="mx-1 my-0.5 border-border/50" />
                             <button
                                 type="button"
                                 className="flex w-full items-center rounded-sm px-2 py-1.5 text-xs text-destructive hover:bg-destructive/10"

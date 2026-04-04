@@ -1,4 +1,5 @@
 import { type ReactElement, useRef, useEffect, useSyncExternalStore } from 'react';
+import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { type TimeDisplayMode } from '../../../models/WorkspaceState';
 import { toggleTimeDisplayMode } from '../../../useCases/togglePanel/panelToggles';
@@ -108,9 +109,9 @@ export const PlayheadDisplay = ({
                         onClick={toggleTimeDisplayMode}
                         aria-label="Playhead position — click to switch to wall-clock time"
                     >
-                        <span className="text-[9px] text-muted-foreground/40 uppercase mr-1.5 font-sans font-medium tracking-wider">
+                        <DawEyebrowLabel size="xs" className="mr-1.5 font-sans text-muted-foreground/40">
                             Bars
-                        </span>
+                        </DawEyebrowLabel>
                         <span ref={seg1Ref} className="text-xl min-w-8 text-right" style={{ color: isPlaying ? '#7fb8a4' : '#b0b0b0' }}>{bar}</span>
                         <span className="text-sm mt-0.5" style={{ color: 'rgba(255,255,255,0.2)' }}>.</span>
                         <span ref={seg2Ref} className="text-xl min-w-6" style={{ color: isPlaying ? '#7fb8a4' : '#b0b0b0' }}>{beat}</span>
@@ -139,9 +140,9 @@ export const PlayheadDisplay = ({
                     onClick={toggleTimeDisplayMode}
                     aria-label="Playhead position — click to switch to bars and beats"
                 >
-                    <span className="text-[9px] text-muted-foreground/40 uppercase mr-1.5 font-sans font-medium tracking-wider">
+                    <DawEyebrowLabel size="xs" className="mr-1.5 font-sans text-muted-foreground/40">
                         Time
-                    </span>
+                    </DawEyebrowLabel>
                     <span ref={seg1Ref} className="text-xl min-w-8 text-right" style={{ color: isPlaying ? '#7fb8a4' : '#b0b0b0' }}>{String(mins).padStart(2, '0')}</span>
                     <span className="text-sm mt-0.5" style={{ color: 'rgba(255,255,255,0.2)' }}>:</span>
                     <span ref={seg2Ref} className="text-xl min-w-6" style={{ color: isPlaying ? '#7fb8a4' : '#b0b0b0' }}>{String(secs).padStart(2, '0')}</span>

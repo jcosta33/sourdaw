@@ -17,7 +17,6 @@ export type CollaborationState = {
     localName: string;
     localColor: string;
     isHost: boolean;
-    approvalRequired: boolean;
     peers: PeerInfo[];
     connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'error';
     error: string | null;

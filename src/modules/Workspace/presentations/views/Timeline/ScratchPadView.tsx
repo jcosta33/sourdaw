@@ -10,6 +10,7 @@
  */
 
 import { type ReactElement, type MouseEvent, useSyncExternalStore, useState, useRef, useEffect } from 'react';
+import { DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { Copy, ArrowUpFromLine, Trash2, ChevronDown, ChevronUp, GripHorizontal } from 'lucide-react';
 import { scratchPadStore, type ScratchPadStoreState } from '#/modules/Arrangement/stores/scratchPadStore';
@@ -252,7 +253,7 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                     >
                         Rename
                     </button>
-                    <div className="px-2 py-1 text-[10px] text-muted-foreground">Color</div>
+                    <DawMenuMutedRow className="px-2">Color</DawMenuMutedRow>
                     <div className="flex gap-1 px-2 pb-1">
                         {SECTION_COLORS.map((c) => (
                             <button
@@ -268,7 +269,7 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                             />
                         ))}
                     </div>
-                    <div className="my-0.5 border-t border-border/50" />
+                    <DawMenuSeparator className="my-0.5 border-border/50" />
                     <button
                         type="button"
                         className="flex w-full items-center rounded-sm px-2 py-1.5 text-xs text-popover-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-30 disabled:pointer-events-none"
@@ -291,7 +292,7 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                     >
                         Move Right
                     </button>
-                    <div className="my-0.5 border-t border-border/50" />
+                    <DawMenuSeparator className="my-0.5 border-border/50" />
                     <button
                         type="button"
                         className="flex w-full items-center rounded-sm px-2 py-1.5 text-xs text-destructive hover:bg-destructive/10"

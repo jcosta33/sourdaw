@@ -8,6 +8,7 @@
  */
 
 import glutenProcessorUrl from '../services/glutenProcessor.ts?worker&url';
+import { telemetryAllocator, GLUTEN_IDX, type TelemetrySlot } from './telemetryAllocator';
 
 const DEFAULT_WASM_URL = '/wasm/gluten/gluten_bg.wasm';
 
@@ -71,7 +72,12 @@ export async function createGlutenNode(ctx: BaseAudioContext, wasmUrl?: string):
     });
 
     let settled = false;
-    let meterCallback: ((data: GlutenMeterData) => void) | null = null;
+    let slot: TelemetrySlot | null = telemetryAllocator.allocateSlot();
+    let meterRafId: number | null = null;
+
+    if (slot) {
+        node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
+    }
 
     const readyPromise = new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => {
@@ -79,17 +85,11 @@ export async function createGlutenNode(ctx: BaseAudioContext, wasmUrl?: string):
         }, 10_000);
         node.port.onmessage = (e: MessageEvent) => {
             if (e.data.type === 'ready') {
-                if (!settled) {
-                    settled = true;
-                    clearTimeout(timeout);
-                    resolve();
-                }
+                if (!settled) { settled = true; clearTimeout(timeout); resolve(); }
             } else if (e.data.type === 'error' && !settled) {
                 settled = true;
                 clearTimeout(timeout);
                 reject(new Error(e.data.message));
-            } else if (e.data.type === 'meters' && meterCallback) {
-                meterCallback(e.data as GlutenMeterData);
             }
         };
     });
@@ -109,11 +109,30 @@ export async function createGlutenNode(ctx: BaseAudioContext, wasmUrl?: string):
             node.port.postMessage({ type: 'param', name: 'bypass', value: state ? 1 : 0 });
         },
         onMeterData(cb: (data: GlutenMeterData) => void) {
-            meterCallback = cb;
+            if (meterRafId !== null) { cancelAnimationFrame(meterRafId); meterRafId = null; }
+            if (!slot) return;
+            const view = slot.view;
+            const poll = () => {
+                cb({
+                    grDb: view[GLUTEN_IDX.grDb],
+                    inputDb: view[GLUTEN_IDX.inputDb],
+                    outputDb: view[GLUTEN_IDX.outputDb],
+                    crest: view[GLUTEN_IDX.crest],
+                    phaseCorr: view[GLUTEN_IDX.phaseCorr],
+                    latency: view[GLUTEN_IDX.latency],
+                });
+                meterRafId = requestAnimationFrame(poll);
+            };
+            meterRafId = requestAnimationFrame(poll);
         },
         connect(dest: AudioNode) { node.connect(dest); },
         disconnect() { try { node.disconnect(); } catch {} },
-        destroy() { try { node.disconnect(); } catch {} node.port.close(); },
+        destroy() {
+            if (meterRafId !== null) { cancelAnimationFrame(meterRafId); meterRafId = null; }
+            if (slot) { telemetryAllocator.releaseSlot(slot.byteOffset); slot = null; }
+            try { node.disconnect(); } catch {}
+            node.port.close();
+        },
         ready: readyPromise,
     };
 }

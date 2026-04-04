@@ -5,7 +5,6 @@ import {
     type KeyboardEvent,
     useRef,
     useState,
-    useEffect,
     useLayoutEffect,
     useSyncExternalStore,
 } from 'react';
@@ -15,8 +14,8 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
     DropdownMenuSeparator,
-    DropdownMenuLabel,
 } from '#/components/ui/dropdown-menu';
+import { DawMenuSectionLabel } from '#/components/daw/DawMenuParts';
 import { getTrackTemplates, loadTrackTemplate } from '../../useCases/trackTemplate';
 import { Button } from '#/components/ui/button';
 import { Plus, FolderPlus, Rows3, Music, Mic2, GitBranch, FileStack, Wand2 } from 'lucide-react';
@@ -315,7 +314,7 @@ const AddTrackMenu = ({ trackCount }: { trackCount: number }): ReactElement => {
             <DropdownMenuContent
                 align="end"
                 sideOffset={4}
-                className="w-44 rounded-md border border-border-soft border-t-[var(--color-light-edge)] bg-surface-overlay shadow-[0_4px_16px_rgba(0,0,0,0.5)] py-1"
+                className="w-44"
             >
                 <DropdownMenuItem onClick={() => createTrackOfKind('audio')} className="flex items-center gap-2 px-3 py-1.5 text-xs focus:bg-white/[0.06] cursor-pointer">
                     <Mic2 className="size-3 text-[var(--color-accent-cyan)]" />
@@ -331,10 +330,8 @@ const AddTrackMenu = ({ trackCount }: { trackCount: number }): ReactElement => {
                 </DropdownMenuItem>
                 {templates.length > 0 && (
                     <>
-                        <DropdownMenuSeparator className="mx-2 my-1 border-border/30 bg-transparent border-t" />
-                        <DropdownMenuLabel className="px-3 py-1 text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">
-                            Templates
-                        </DropdownMenuLabel>
+                        <DropdownMenuSeparator className="border-border/50" />
+                        <DawMenuSectionLabel>Templates</DawMenuSectionLabel>
                         {templates.map((tmpl) => (
                             <DropdownMenuItem
                                 key={tmpl.id}

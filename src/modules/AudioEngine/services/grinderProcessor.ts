@@ -61,6 +61,7 @@ class GrinderProcessor extends AudioWorkletProcessor {
     _ready = false;
     _faulted = false;
     _meterCounter = 0;
+    _sabView = null;    // Float32Array view into the telemetry SharedArrayBuffer slot
 
     constructor() {
         super();
@@ -70,6 +71,8 @@ class GrinderProcessor extends AudioWorkletProcessor {
                 if (msg.type === 'init') {
                     if (this._ready) return;
                     this._initWasm(msg.wasmBytes);
+                } else if (msg.type === 'init-sab') {
+                    this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
                 } else if (msg.type === 'param' && this._ready && !this._faulted) {
                     const rustName = PARAM_MAP[msg.name] ?? msg.name;
                     this._instance.set_param(rustName, msg.value);
@@ -142,19 +145,18 @@ class GrinderProcessor extends AudioWorkletProcessor {
             this._meterCounter++;
             if (this._meterCounter >= 8) {
                 this._meterCounter = 0;
-                this.port.postMessage({
-                    type: 'meters',
-                    inputDb: inst.get_input_db(),
-                    preampDb: inst.get_preamp_db(),
-                    powerAmpDb: inst.get_power_amp_db(),
-                    outputDb: inst.get_output_db(),
-                    gateOpen: inst.get_gate_open(),
-                    gateEnvelopeDb: inst.get_gate_envelope_db(),
-                    sagVoltage: inst.get_sag_voltage(),
-                    latency: inst.get_latency_samples(),
-                    neuralCpuPercent: inst.get_neural_cpu_percent(),
-                    neuralWarmupProgress: inst.get_neural_warmup_progress(),
-                });
+                if (this._sabView) {
+                    this._sabView[0] = inst.get_input_db();
+                    this._sabView[1] = inst.get_preamp_db();
+                    this._sabView[2] = inst.get_power_amp_db();
+                    this._sabView[3] = inst.get_output_db();
+                    this._sabView[4] = inst.get_gate_open();
+                    this._sabView[5] = inst.get_gate_envelope_db();
+                    this._sabView[6] = inst.get_sag_voltage();
+                    this._sabView[7] = inst.get_latency_samples();
+                    this._sabView[8] = inst.get_neural_cpu_percent();
+                    this._sabView[9] = inst.get_neural_warmup_progress();
+                }
             }
         } catch (err) {
             // A WASM panic leaves WasmRefCell borrow counts corrupted — mark

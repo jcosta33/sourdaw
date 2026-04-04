@@ -11,9 +11,9 @@ import { type PeerConnectionManager } from '../repositories/peerConnection';
  */
 
 export type TransportCommand =
-    | { type: 'transport.play'; positionBeats: number; leaderTimeMs: number; tempoRevision: number }
+    | { type: 'transport.play'; positionBeats: number; leaderTimeMs: number }
     | { type: 'transport.stop'; positionBeats: number }
-    | { type: 'transport.seek'; positionBeats: number; continuePlayback: boolean }
+    | { type: 'transport.seek'; positionBeats: number }
     | { type: 'transport.leader-change'; newLeaderId: PeerId; epoch: number };
 
 export type ClockSyncMessage =
@@ -23,7 +23,7 @@ export type ClockSyncMessage =
 type TransportSyncCallbacks = {
     onPlay: (positionBeats: number, delayMs: number) => void;
     onStop: (positionBeats: number) => void;
-    onSeek: (positionBeats: number, continuePlayback: boolean) => void;
+    onSeek: (positionBeats: number) => void;
 };
 
 export class TransportSync {
@@ -77,7 +77,7 @@ export class TransportSync {
     }
 
     /** Leader: broadcast play command. */
-    play(positionBeats: number, tempoRevision: number): void {
+    play(positionBeats: number): void {
         if (!this.isLeader()) {
             return;
         }
@@ -86,7 +86,6 @@ export class TransportSync {
             type: 'transport.play',
             positionBeats,
             leaderTimeMs: performance.now(),
-            tempoRevision,
         };
 
         this.peerManager.broadcastCrdtSync({
@@ -115,7 +114,7 @@ export class TransportSync {
     }
 
     /** Leader: broadcast seek command. */
-    seek(positionBeats: number, continuePlayback: boolean): void {
+    seek(positionBeats: number): void {
         if (!this.isLeader()) {
             return;
         }
@@ -123,25 +122,6 @@ export class TransportSync {
         const cmd: TransportCommand = {
             type: 'transport.seek',
             positionBeats,
-            continuePlayback,
-        };
-
-        this.peerManager.broadcastCrdtSync({
-            type: 'crdt-sync',
-            docId: '__transport__',
-            data: JSON.stringify(cmd),
-        });
-    }
-
-    /** Transfer leadership to another peer. */
-    transferLeadership(newLeaderId: PeerId): void {
-        this.leaderEpoch++;
-        this.leaderId = newLeaderId;
-
-        const cmd: TransportCommand = {
-            type: 'transport.leader-change',
-            newLeaderId,
-            epoch: this.leaderEpoch,
         };
 
         this.peerManager.broadcastCrdtSync({
@@ -157,7 +137,12 @@ export class TransportSync {
             return;
         }
 
-        const data = JSON.parse(message.data) as TransportCommand | ClockSyncMessage;
+        let data: TransportCommand | ClockSyncMessage;
+        try {
+            data = JSON.parse(message.data) as TransportCommand | ClockSyncMessage;
+        } catch {
+            return;
+        }
 
         if (data.type === 'clock.ping') {
             this.handleClockPing(peerId, data);
@@ -178,7 +163,7 @@ export class TransportSync {
         } else if (cmd.type === 'transport.stop') {
             this.callbacks.onStop(cmd.positionBeats);
         } else if (cmd.type === 'transport.seek') {
-            this.callbacks.onSeek(cmd.positionBeats, cmd.continuePlayback);
+            this.callbacks.onSeek(cmd.positionBeats);
         } else if (cmd.type === 'transport.leader-change') {
             if (cmd.epoch > this.leaderEpoch) {
                 this.leaderEpoch = cmd.epoch;

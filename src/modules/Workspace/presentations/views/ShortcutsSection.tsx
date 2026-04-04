@@ -1,5 +1,7 @@
 import { type ReactElement, useSyncExternalStore, useState, useEffect } from 'react';
 import { Keyboard } from 'lucide-react';
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
 import {
     shortcutStore,
@@ -9,6 +11,7 @@ import {
     type ShortcutAction,
 } from '../../models/Shortcuts';
 import { cn } from '#/helpers/Styles/cn';
+import { CaptureKeyButton } from '../components/CaptureKeyButton';
 import { SectionTitle } from './preferencesShared';
 
 // ── Action label map ──────────────────────────────────────────────────
@@ -97,32 +100,37 @@ export const ShortcutsSection = (): ReactElement => {
                     return (
                         <div key={action} className="flex items-center justify-between group">
                             <span className="text-xs text-muted-foreground">{label}</span>
-                            <button
-                                type="button"
+                            <CaptureKeyButton
+                                listening={isEditing}
                                 className={cn(
-                                    'min-w-[80px] text-right rounded px-2 py-1 text-xs font-mono border transition-colors',
-                                    isEditing
-                                        ? 'border-primary bg-primary/10 text-primary animate-pulse'
-                                        : 'border-transparent hover:border-border bg-surface-overlay text-foreground'
+                                    'min-w-[80px] px-2 py-1 text-right text-xs',
+                                    !isEditing && 'border-transparent hover:border-border'
                                 )}
                                 onClick={() => setEditingAction(action)}
                             >
                                 {isEditing ? 'Press keys...' : formatKeyBinding(binding)}
-                            </button>
+                            </CaptureKeyButton>
                         </div>
                     );
                 })}
             </div>
             {editingAction ? (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm pointer-events-auto">
-                    <div className="daw-floating-surface flex flex-col items-center gap-2 rounded-lg p-6">
-                        <Keyboard className="size-8 text-primary mb-2" />
-                        <h3 className="font-semibold text-lg">Binding: {ACTION_LABELS[editingAction]}</h3>
-                        <p className="text-sm text-muted-foreground">Press the desired key combination.</p>
-                        <Button variant="ghost" size="sm" className="mt-4" onClick={() => setEditingAction(null)}>
-                            Cancel
-                        </Button>
-                    </div>
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg-scrim/90 px-4 backdrop-blur-[2px] pointer-events-auto">
+                    <DawUtilityPanel className="w-full max-w-sm">
+                        <DawHeaderBand
+                            className="px-4 py-3"
+                            startSlot={<Keyboard className="size-3.5 text-primary" />}
+                            title={`Binding: ${ACTION_LABELS[editingAction]}`}
+                            titleClassName="text-[11px] text-foreground normal-case tracking-normal"
+                        />
+                        <div className="flex flex-col items-center gap-3 px-4 py-5 text-center">
+                            <Keyboard className="size-8 text-primary" />
+                            <p className="text-sm text-muted-foreground">Press the desired key combination.</p>
+                            <Button variant="ghost" size="sm" onClick={() => setEditingAction(null)}>
+                                Cancel
+                            </Button>
+                        </div>
+                    </DawUtilityPanel>
                 </div>
             ) : null}
         </>

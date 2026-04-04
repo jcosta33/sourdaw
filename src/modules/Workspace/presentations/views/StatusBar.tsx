@@ -1,6 +1,8 @@
 import { type ReactElement, useRef, useSyncExternalStore } from 'react';
 import { DawControlStrip } from '#/components/daw/DawControlStrip';
+import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { DawMeterBar } from '#/components/daw/DawMeterBar';
+import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { DawStatusDot, getDawStatusDotClassName } from '#/components/daw/DawStatusDot';
 import { useUndoState } from '../hooks/useUndoState';
 import { useCollaborationState } from '../hooks/useCollaborationState';
@@ -57,7 +59,7 @@ export const StatusBar = (): ReactElement => {
             <DawControlStrip className="h-6 justify-between rounded-none border-t border-black/50 px-3">
                 <div className="flex items-center gap-3">
                     <div className="flex items-center gap-1">
-                        <span className="text-[10px] text-muted-foreground">CPU:</span>
+                        <DawEyebrowLabel size="sm" className="text-muted-foreground">CPU</DawEyebrowLabel>
                         <DawMeterBar className="w-10" fillRef={cpuBarRef} />
                         <span ref={cpuTextRef} className="w-7 text-right font-mono text-[10px] text-muted-foreground">
                             0%
@@ -65,14 +67,14 @@ export const StatusBar = (): ReactElement => {
                     </div>
 
                     <div ref={memContainerRef} className="flex items-center gap-1" style={{ display: 'none' }}>
-                        <span className="text-[10px] text-muted-foreground">MEM:</span>
+                        <DawEyebrowLabel size="sm" className="text-muted-foreground">MEM</DawEyebrowLabel>
                         <span ref={memTextRef} className="font-mono text-[10px] text-muted-foreground">
                             0 MB
                         </span>
                     </div>
 
                     <div className="flex items-center gap-1">
-                        <span className="text-[10px] text-muted-foreground">GPU:</span>
+                        <DawEyebrowLabel size="sm" className="text-muted-foreground">GPU</DawEyebrowLabel>
                         {llmStatus?.state === 'generating' ? (
                             <span className="animate-pulse font-mono text-[10px] text-[var(--color-accent-lavender)]">
                                 active
@@ -88,12 +90,26 @@ export const StatusBar = (): ReactElement => {
                         )}
                     </div>
 
-                    <span ref={sampleRateRef} className="font-mono tabular-nums text-[10px] text-muted-foreground">
-                        0kHz
-                    </span>
-                    <span ref={latencyRef} className="font-mono tabular-nums text-[10px] text-muted-foreground">
-                        0.0ms
-                    </span>
+                    <DawReadoutRow
+                        label="Rate"
+                        value={
+                            <span ref={sampleRateRef} className="font-mono tabular-nums text-[10px] text-muted-foreground">
+                                0kHz
+                            </span>
+                        }
+                        className="gap-1.5"
+                        labelClassName="text-muted-foreground/70"
+                    />
+                    <DawReadoutRow
+                        label="Latency"
+                        value={
+                            <span ref={latencyRef} className="font-mono tabular-nums text-[10px] text-muted-foreground">
+                                0.0ms
+                            </span>
+                        }
+                        className="gap-1.5"
+                        labelClassName="text-muted-foreground/70"
+                    />
 
                     <div className="flex items-center gap-1">
                         <DawMeterBar

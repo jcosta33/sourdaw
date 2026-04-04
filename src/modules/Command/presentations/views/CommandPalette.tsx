@@ -1,4 +1,5 @@
 import { type ReactElement, type KeyboardEvent, useState, useEffect, useRef, useSyncExternalStore } from 'react';
+import { DawKeycap } from '#/components/daw/DawKeycap';
 import { Dialog, DialogContent, DialogTitle } from '#/components/ui/dialog';
 import { Input } from '#/components/ui/input';
 import { cn } from '#/helpers/Styles/cn';
@@ -98,9 +99,9 @@ export const CommandPalette = (): ReactElement | null => {
                                 <span className="ml-2 text-xs text-muted-foreground">{cmd.description}</span>
                             </div>
                             {cmd.shortcut ? (
-                                <kbd className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+                                <DawKeycap compact className="bg-muted">
                                     {cmd.shortcut}
-                                </kbd>
+                                </DawKeycap>
                             ) : null}
                         </button>
                     ))}
