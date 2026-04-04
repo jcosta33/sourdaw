@@ -5,18 +5,18 @@
  */
 import { audioEngine } from '../repositories/createWebAudioEngine';
 
-export const scheduleClick = (time: number, accent: boolean, volume = 1): void => {
+export function scheduleClick(time: number, accent: boolean, volume = 1): void {
     audioEngine.scheduleClick(time, accent, volume);
-};
+}
 
-export const stopAllScheduled = (): void => {
+export function stopAllScheduled(): void {
     audioEngine.stopAllScheduled();
-};
+}
 
-export const getCurrentTime = (): number => {
+export function getCurrentTime(): number {
     return audioEngine.context.currentTime;
-};
+}
 
-export const createBufferSource = (): AudioBufferSourceNode => {
+export function createBufferSource(): AudioBufferSourceNode {
     return audioEngine.context.createBufferSource();
-};
+}

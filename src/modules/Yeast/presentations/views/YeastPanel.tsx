@@ -15,15 +15,12 @@ import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import {
-    yeastStore,
-    setYeastUiLevel,
-    addYeastProcessor,
-    removeYeastProcessor,
-    setYeastProcessorBypass,
-    setYeastProcessorParam,
-    type YeastState,
-} from '../../stores/yeastStore';
+import { yeastStore, type YeastState } from '../../stores/yeastStore';
+import { addYeastProcessor } from '../../useCases/addYeastProcessor';
+import { removeYeastProcessor } from '../../useCases/removeYeastProcessor';
+import { setYeastProcessorBypass } from '../../useCases/setYeastProcessorBypass';
+import { setYeastProcessorParam } from '../../useCases/setYeastProcessorParam';
+import { setYeastUiLevel } from '../../useCases/setYeastUiLevel';
 import { PROCESSOR_TYPES } from '../../useCases/processorFactory';
 import { ProcessorParams } from '../components/ProcessorParams';
 import { StepPatternEditor } from '../components/StepPatternEditor';
@@ -488,7 +485,7 @@ const Level3Build = ({ state }: { state: YeastState }): ReactElement => {
                         {/* Expanded parameter panel */}
                         {expandedId === proc.id ? (
                             <div className="border-t border-border/10 bg-surface-app/30">
-                                <ProcessorParams processorId={proc.id} processorType={proc.type} />
+                                <ProcessorParams processorId={proc.id} processorType={proc.type} onSetParam={setYeastProcessorParam} />
                             </div>
                         ) : null}
                     </div>
@@ -581,7 +578,7 @@ const Level4Route = ({ state }: { state: YeastState }): ReactElement => {
                         </div>
                         {expandedId === proc.id ? (
                             <div className="border-t border-border/10 bg-surface-app/30">
-                                <ProcessorParams processorId={proc.id} processorType={proc.type} />
+                                <ProcessorParams processorId={proc.id} processorType={proc.type} onSetParam={setYeastProcessorParam} />
                             </div>
                         ) : null}
                     </div>
@@ -657,7 +654,7 @@ const Level5Lab = ({ state }: { state: YeastState }): ReactElement => {
                             </div>
                             {expandedId === proc.id ? (
                                 <div className="border-t border-border/10 bg-surface-app/30">
-                                    <ProcessorParams processorId={proc.id} processorType={proc.type} />
+                                    <ProcessorParams processorId={proc.id} processorType={proc.type} onSetParam={setYeastProcessorParam} />
                                 </div>
                             ) : null}
                         </div>

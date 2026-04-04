@@ -6,37 +6,37 @@
 import { audioEngine } from '../repositories/createWebAudioEngine';
 import { isDeviceSupportedOnCurrentPlatform } from '#/modules/Arrangement/useCases/trackQueries';
 
-export const addDeviceToStrip = (
+export function addDeviceToStrip(
     trackId: string,
     deviceId: string,
     deviceType: string,
     externalInstanceId?: string
-): void => {
+): void {
     if (!isDeviceSupportedOnCurrentPlatform(deviceType)) {
         console.warn(`Device type ${deviceType} not supported on platform, skipping init.`);
         return;
     }
     audioEngine.addDeviceToStrip(trackId, deviceId, deviceType, externalInstanceId);
-};
+}
 
-export const removeDeviceFromStrip = (trackId: string, deviceId: string): void => {
+export function removeDeviceFromStrip(trackId: string, deviceId: string): void {
     audioEngine.removeDeviceFromStrip(trackId, deviceId);
-};
+}
 
-export const updateDeviceParam = (trackId: string, deviceId: string, paramId: string, value: number): void => {
+export function updateDeviceParam(trackId: string, deviceId: string, paramId: string, value: number): void {
     audioEngine.updateDeviceParam(trackId, deviceId, paramId, value);
-};
+}
 
-export const scheduleDeviceParam = (
+export function scheduleDeviceParam(
     trackId: string,
     deviceId: string,
     paramId: string,
     value: number,
     time: number
-): void => {
+): void {
     audioEngine.scheduleDeviceParam(trackId, deviceId, paramId, value, time);
-};
+}
 
-export const updateDeviceBypass = (trackId: string, deviceId: string, bypassed: boolean): void => {
+export function updateDeviceBypass(trackId: string, deviceId: string, bypassed: boolean): void {
     audioEngine.updateDeviceBypass(trackId, deviceId, bypassed);
-};
+}

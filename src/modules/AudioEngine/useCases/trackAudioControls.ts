@@ -7,30 +7,30 @@
 import { audioEngine } from '../repositories/createWebAudioEngine';
 import { type TrackChannelStrip } from '../models/AudioEngineState';
 
-export const ensureTrackStrip = (trackId: string): TrackChannelStrip => {
+export function ensureTrackStrip(trackId: string): TrackChannelStrip {
     return audioEngine.ensureTrackStrip(trackId);
-};
+}
 
-export const getTrackStrip = (trackId: string): TrackChannelStrip | undefined => {
+export function getTrackStrip(trackId: string): TrackChannelStrip | undefined {
     return audioEngine.getTrackStrip(trackId);
-};
+}
 
-export const setTrackGain = (trackId: string, gain: number): void => {
+export function setTrackGain(trackId: string, gain: number): void {
     audioEngine.setTrackGain(trackId, gain);
-};
+}
 
-export const setTrackPan = (trackId: string, pan: number): void => {
+export function setTrackPan(trackId: string, pan: number): void {
     audioEngine.setTrackPan(trackId, pan);
-};
+}
 
-export const setTrackMute = (trackId: string, muted: boolean, restoreGain?: number): void => {
+export function setTrackMute(trackId: string, muted: boolean, restoreGain?: number): void {
     audioEngine.setTrackMute(trackId, muted, restoreGain);
-};
+}
 
-export const setTrackOutput = (trackId: string, outputId: string): void => {
+export function setTrackOutput(trackId: string, outputId: string): void {
     audioEngine.setTrackOutput(trackId, outputId);
-};
+}
 
-export const getTrackPeakLevel = (trackId: string): number => {
+export function getTrackPeakLevel(trackId: string): number {
     return audioEngine.getTrackPeakLevel(trackId);
-};
+}

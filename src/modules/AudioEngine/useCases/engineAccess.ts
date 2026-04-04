@@ -7,37 +7,37 @@
 import { audioEngine } from '../repositories/createWebAudioEngine';
 import { type AudioEngineState } from '../models/AudioEngineState';
 
-export const getAudioContext = (): AudioContext => {
+export function getAudioContext(): AudioContext {
     return audioEngine.context;
-};
+}
 
-export const getEngineState = (): AudioEngineState => {
+export function getEngineState(): AudioEngineState {
     return audioEngine.getState();
-};
+}
 
-export const resumeEngine = (): Promise<void> => {
+export function resumeEngine(): Promise<void> {
     return audioEngine.resume();
-};
+}
 
-export const waitForDevices = (): Promise<void> => {
+export function waitForDevices(): Promise<void> {
     return audioEngine.waitForDevices();
-};
+}
 
-export const getMasterAnalyser = (): AnalyserNode => {
+export function getMasterAnalyser(): AnalyserNode {
     return audioEngine.masterAnalyser;
-};
+}
 
-export const getMasterPeakLevel = (): number => {
+export function getMasterPeakLevel(): number {
     return audioEngine.getMasterPeakLevel();
-};
+}
 
-export const setMasterGainValue = (value: number): void => {
+export function setMasterGainValue(value: number): void {
     audioEngine.setMasterGain(value);
-};
+}
 
-export const getAudioSampleRate = (): number => {
+export function getAudioSampleRate(): number {
     return audioEngine.context?.sampleRate ?? 44100;
-};
+}
 
 export function getTrackAnalyser(trackId: string): AnalyserNode | null {
     return audioEngine.getTrackStrip(trackId)?.analyserNode ?? null;
@@ -53,31 +53,31 @@ export function ensureTrackStrip(trackId: string) {
 
 export function getAudioTime(): number {
     return audioEngine.context?.currentTime ?? 0;
-};
+}
 
 // ─── Bus operations ────────────────────────────────────────────────────────────
 
-export const ensureBusStrip = (busId: string): void => {
+export function ensureBusStrip(busId: string): void {
     audioEngine.ensureBusStrip(busId);
-};
+}
 
-export const setBusGain = (busId: string, gain: number): void => {
+export function setBusGain(busId: string, gain: number): void {
     audioEngine.setBusGain(busId, gain);
-};
+}
 
-export const setSend = (sourceTrackId: string, busId: string, level: number, preFader: boolean): void => {
+export function setSend(sourceTrackId: string, busId: string, level: number, preFader: boolean): void {
     audioEngine.setSend(sourceTrackId, busId, level, preFader);
-};
+}
 
 // ─── Sidechain operations ──────────────────────────────────────────────────────
 
-export const wireSidechainRoute = (sourceTrackId: string, targetTrackId: string, targetDeviceId: string): void => {
+export function wireSidechainRoute(sourceTrackId: string, targetTrackId: string, targetDeviceId: string): void {
     audioEngine.wireSidechainRoute(sourceTrackId, targetTrackId, targetDeviceId);
-};
+}
 
-export const unwireSidechainRoute = (sourceTrackId: string, targetDeviceId: string): void => {
+export function unwireSidechainRoute(sourceTrackId: string, targetDeviceId: string): void {
     audioEngine.unwireSidechainRoute(sourceTrackId, targetDeviceId);
-};
+}
 
 // ─── Link (Ableton Link) operations ────────────────────────────────────────────
 

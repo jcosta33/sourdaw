@@ -1,12 +1,22 @@
 /**
  * Yeast store — tracks the MIDI rack state for UI rendering.
+ *
+ * Write operations have moved to useCases/:
+ *   addYeastProcessor, removeYeastProcessor, reorderYeastProcessor,
+ *   setYeastProcessorBypass, setYeastProcessorParam, setYeastUiLevel
+ *
+ * This store holds:
+ *   - the reactive yeastStore instance (public contract surface)
+ *   - singleton rack/worklet runtime state
+ *   - read access helpers (getYeastRack, getYeastWorkletNodeAsync)
+ *   - internal sync and registration helpers used by the use cases
  */
 
 import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
 import { Store } from '#/helpers/Store/Store';
 import { MidiRack } from '../useCases/MidiRack';
-import { createProcessor, type ProcessorType } from '../useCases/processorFactory';
+import { type ProcessorType } from '../useCases/processorFactory';
 import { createYeastWorkletNode, type YeastWorkletNodeResult } from '../engine/YeastWorkletNode';
 
 const logger = Container.getInstance().get(Logger);
@@ -73,51 +83,36 @@ export function getYeastRack(): MidiRack {
     return rackInstance;
 }
 
-export function addYeastProcessor(type: ProcessorType): void {
-    const rack = getYeastRack();
-    const id = `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const processor = createProcessor(type, id);
+/**
+ * Synchronous access to the worklet node if it has already resolved.
+ * Returns null if the worklet has not yet initialized.
+ * Use cases call this to notify the worklet of mutations without awaiting.
+ */
+export function getWorkletNodeSync(): YeastWorkletNodeResult | null {
+    return _workletNode;
+}
+
+/**
+ * Register a processor type mapping for a given processor ID.
+ * Called by write use cases when adding a processor.
+ */
+export function registerProcessorType(id: string, type: ProcessorType): void {
     processorTypeMap.set(id, type);
-    rack.addProcessor(processor);
-    _workletNode?.addProcessor(type, id);
-    syncStoreFromRack();
 }
 
-export function removeYeastProcessor(id: string): void {
-    const rack = getYeastRack();
+/**
+ * Remove a processor type mapping.
+ * Called by write use cases when removing a processor.
+ */
+export function unregisterProcessorType(id: string): void {
     processorTypeMap.delete(id);
-    rack.removeProcessor(id);
-    _workletNode?.removeProcessor(id);
-    syncStoreFromRack();
 }
 
-export function reorderYeastProcessor(fromIdx: number, toIdx: number): void {
-    const rack = getYeastRack();
-    rack.reorder(fromIdx, toIdx);
-    syncStoreFromRack();
-}
-
-export function setYeastProcessorBypass(id: string, bypassed: boolean): void {
-    const rack = getYeastRack();
-    rack.setProcessorBypass(id, bypassed);
-    _workletNode?.setBypass(id, bypassed);
-    syncStoreFromRack();
-}
-
-export function setYeastProcessorParam(id: string, name: string, value: number): void {
-    const rack = getYeastRack();
-    rack.setProcessorParam(id, name, value);
-    _workletNode?.setParam(id, name, value);
-}
-
-export function setYeastUiLevel(level: 1 | 2 | 3 | 4 | 5): void {
-    const state = yeastStore.value;
-    if (state) {
-        yeastStore.set({ ...state, uiLevel: level });
-    }
-}
-
-function syncStoreFromRack(): void {
+/**
+ * Sync the reactive store from the current rack state.
+ * Called by write use cases after any mutation to the rack.
+ */
+export function syncStoreFromRack(): void {
     const rack = getYeastRack();
     const state = yeastStore.value;
     if (!state) return;
