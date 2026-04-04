@@ -2,6 +2,7 @@ import { type CSSProperties, type ReactElement, useState, useRef } from 'react';
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { Button } from '#/components/ui/button';
@@ -82,8 +83,8 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
     };
 
     return (
-        <div
-            className="flex shrink-0 flex-col border-t border-black/60 bg-surface-base shadow-[inset_0_1px_4px_rgba(0,0,0,0.5)]"
+        <DawPanelSurface
+            tone="dock"
             style={style}
             role="region"
             aria-label="Mixer panel"
@@ -224,6 +225,6 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
                     ) : null}
                 </div>
             </ScrollArea>
-        </div>
+        </DawPanelSurface>
     );
 };

@@ -79,7 +79,7 @@ export const PanKnob = ({ panLeft, panRight }: PanAmount): ReactElement => {
 - **No manual memoization**: The [React Compiler](https://react.dev/learn/react-compiler) handles memoization automatically at build time. Do not use `useMemo`, `useCallback`, or `React.memo` manually -- the compiler inserts optimal memoization for you. Existing manual calls are harmless (the compiler skips already-memoized code) but should be removed when touching a file.
 - **No `forwardRef`**: In React 19, `ref` is a regular prop. Destructure it directly instead of wrapping with `forwardRef`.
 - **Prefer `use()` over `useContext`**: The `use()` hook replaces `useContext` for reading context. It can be called conditionally and also reads Promises for Suspense-based patterns.
-- **No manual form state**: All forms must be managed with [React Hook Form](./forms.md) and a schema library like Zod.
+- **No manual form state**: All forms must be managed with [React Hook Form](./02-forms.md) and a schema library like Zod.
 
 ```tsx
 // ❌ Bad: Manual memoization (the React Compiler handles this automatically)

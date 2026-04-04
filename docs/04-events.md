@@ -1,6 +1,6 @@
 # Events
 
-Cross-module communication via domain events enables loose coupling. This guide explains how to define, publish, and subscribe to events. The base classes and APIs documented here match `src/helpers/Event/DomainEvent.ts` and `src/helpers/Event/EventBus.ts`. Event payloads often inform cache invalidations or UI updates in TanStack Query and [state management](./state-management.md).
+Cross-module communication via domain events enables loose coupling. This guide explains how to define, publish, and subscribe to events. The base classes and APIs documented here match `src/helpers/Event/DomainEvent.ts` and `src/helpers/Event/EventBus.ts`. Event payloads often inform cache invalidations or UI updates in TanStack Query and [state management](./03-state-management.md).
 
 ## Core workflow
 
@@ -158,7 +158,7 @@ export function subscribeToFlagsFetchedEvent(callback: SubscribeToFlagsFetchedEv
 ```
 
 > [!WARNING]
-> Do not resolve Container dependencies at module scope in hook files — resolve them inside `useEffect` instead. Module-scope resolution in a hook file can evaluate before bootstrap has registered dependencies. See [dependency injection](./dependency-injection.md) for the full rule.
+> Do not resolve Container dependencies at module scope in hook files — resolve them inside `useEffect` instead. Module-scope resolution in a hook file can evaluate before bootstrap has registered dependencies. See [dependency injection](./01-dependency-injection.md) for the full rule.
 
 The following example illustrates the anti-pattern and its fix. Note the use of `useEffectEvent` (stable in React 19.2) to capture the latest callback without adding it to the Effect's dependency array, preventing unnecessary re-subscriptions:
 
@@ -228,7 +228,7 @@ export function registerAiEventHandlers(eventBus: EventBus): () => void {
 
 ## Testing event flows
 
-For a complete guide on our testing philosophy and patterns, see the [testing](./testing.md) documentation. The following examples show patterns specific to event-driven architectures.
+For a complete guide on our testing philosophy and patterns, see the [testing](./06-testing.md) documentation. The following examples show patterns specific to event-driven architectures.
 
 ### Event handler testing
 

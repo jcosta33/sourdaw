@@ -2,7 +2,7 @@
 
 Reliable tests increase confidence and speed. This guide shows how to test the architecture effectively.
 
-For event-driven flows, use patterns from [events](./events.md). For React components that suspend on data, wrap them in a `SuspenseGuard`.
+For event-driven flows, use patterns from [events](./04-events.md). For React components that suspend on data, wrap them in a `SuspenseGuard`.
 
 ---
 
@@ -223,7 +223,7 @@ describe('TrackList', () => {
 
 ### 5. Test event subscriptions
 
-Use the mock event bus to test how components or hooks react to domain events. You can find a complete guide on this pattern in the [events](./events.md) documentation.
+Use the mock event bus to test how components or hooks react to domain events. You can find a complete guide on this pattern in the [events](./04-events.md) documentation.
 
 - **Goal**: Verify that a component re-renders or a hook behaves correctly when a relevant event is published.
 - **Method**: Render the component, publish an event using the mock bus, and assert the expected change.

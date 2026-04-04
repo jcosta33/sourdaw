@@ -347,7 +347,7 @@ const userSchema = z.discriminatedUnion('userType', [
 
 ### Server integration
 
-Connect your form's submission handler to a TanStack Query mutation to process the data and handle server-side responses. For more details on this pattern, see the [state management](./state-management.md) guide.
+Connect your form's submission handler to a TanStack Query mutation to process the data and handle server-side responses. For more details on this pattern, see the [state management](./03-state-management.md) guide.
 
 ```tsx
 // Project/presentations/views/ProjectSettingsDialogContent.tsx

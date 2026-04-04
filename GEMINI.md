@@ -16,17 +16,19 @@ Before implementing anything non-trivial:
 4. Load domain skills from `.agents/skills/` — read the `description` field of each SKILL.md
 5. Check `.agents/research/` for existing findings (you cannot create research — surface gaps as blockers)
 
-Full workflow: `docs/agents/workflow.md`
-File type definitions and templates: `docs/agents/file-types.md`, `docs/agents/templates/`
+Full workflow: `docs/agents/03-workflow.md`
+File type definitions: `docs/agents/02-file-types.md`
+Templates: `agents/templates/` (audit, spec, task)
 
 ## Your task file
 
-Create `.agents/tasks/<slug>.md` at the start of your session:
+Create `.agents/tasks/<slug>.md` at the start of your session using `agents/templates/task.md`:
 
 - Fill in **Objective** before doing anything else
-- Fill in **Relevant docs** with any specs/audits/skills loaded
-- Update **Progress log** as you work
-- Fill in **Handoff** before ending the session
+- Fill in **Linked docs** with any specs/audits/skills loaded
+- Check off **Progress checklist** steps as you complete them
+- Log **Decisions** and **Findings** as they emerge
+- Fill in **Handoff** before ending the session — never leave it empty
 
 ## Hard rules
 

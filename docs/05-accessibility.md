@@ -61,7 +61,7 @@ If a Shadcn component is not available, you must manually ensure your custom com
 - ✅ **Buttons**: Ensure `type` is set. **Icon-only buttons require an `aria-label` to provide an accessible name.**
 - ✅ **Links vs. buttons**: Use `<Link>` for navigation and `<Button>` for actions. Never use a `<div>` with an `onClick` handler to simulate a button, as it will be inaccessible to keyboard and screen reader users.
 - ✅ **Images**: Provide meaningful `alt` text. Decorative images should have an empty `alt=""`.
-- ✅ **Forms**: Bind error messages via `aria-describedby` and manage `aria-invalid`. For more detailed patterns, see the main [forms](./forms.md) guide.
+- ✅ **Forms**: Bind error messages via `aria-describedby` and manage `aria-invalid`. For more detailed patterns, see the main [forms](./02-forms.md) guide.
 
 ```tsx
 // Track/presentations/components/RemoveTrackButton.tsx
@@ -122,7 +122,7 @@ export const AiStatusBanner = ({ messages }: AiStatusBannerProps): ReactElement 
 
 After building your component, verify its accessibility through a combination of automated and manual testing.
 
-- **Automated Testing**: Use Testing Library queries that target accessible roles and names (`getByRole('button', { name: /save/i })`). Our ESLint rules will also catch common violations. See our [testing](./testing.md) guide for more on this.
+- **Automated Testing**: Use Testing Library queries that target accessible roles and names (`getByRole('button', { name: /save/i })`). Our ESLint rules will also catch common violations. See our [testing](./06-testing.md) guide for more on this.
 - **Manual Testing**:
     - Exercise all keyboard navigation paths. Can you reach and operate everything without a mouse?
     - Use browser developer tools to inspect the accessibility tree.

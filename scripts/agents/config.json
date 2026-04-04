@@ -1,7 +1,7 @@
 {
   "defaultBaseBranch": "main",
   "worktreeDirPattern": "../{repoName}--{slug}",
-  "defaultTerminal": "auto",
+  "defaultTerminal": "current",
   "defaultAgent": "claude",
   "agents": {
     "claude": {

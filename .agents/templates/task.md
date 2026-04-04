@@ -18,14 +18,14 @@ Be specific. Vague objectives produce vague outcomes.
 
 ---
 
-## Relevant docs
+## Linked docs
 
-Specs, audits, research files, and skills loaded for this session.
+Durable artifacts this task is executing under.
 
 - Spec: `.agents/specs/`
 - Audit: `.agents/audits/`
 - Research: `.agents/research/`
-- Skills: `.agents/skills/`
+- Skills loaded: `.agents/skills/`
 
 ---
 
@@ -49,11 +49,35 @@ Update this if the plan changes.
 
 ---
 
-## Progress log
+## Progress checklist
 
-Running record of what was done, what was found, what was decided.
+- [ ] Step or deliverable
+- [ ] Step or deliverable
+
+---
+
+## Decisions
+
+Key decisions made during this session and why.
 
 -
+
+---
+
+## Findings
+
+Codebase discoveries worth preserving. Move anything durable to an audit or spec.
+
+-
+
+---
+
+## Assumptions
+
+Things assumed to be true that were not explicitly confirmed.
+Mark each as `[pending]` or `[confirmed]` as the session progresses.
+
+- [pending]
 
 ---
 
@@ -65,10 +89,9 @@ Anything preventing progress. What is needed to unblock.
 
 ---
 
-## Assumptions
+## Next steps
 
-Things assumed to be true that were not explicitly confirmed.
-Mark each as `[pending]` or `[confirmed]` as the session progresses.
+Concrete starting points for the next session if this one ends incomplete.
 
 -
 

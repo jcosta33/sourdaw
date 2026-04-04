@@ -16,6 +16,7 @@ import { Play, Trash2, Pencil, Circle, Square } from 'lucide-react';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { macroStore, type MacroStoreState } from '#/modules/Command/stores/macroStore';
 import { startMacroRecording, stopMacroRecording, type Macro } from '#/modules/Command/useCases/macro/recording';
 import { playMacro } from '#/modules/Command/useCases/macro/playback';
@@ -59,7 +60,7 @@ export const MacrosPanel = (): ReactElement => {
     };
 
     return (
-        <div className="flex flex-col h-full bg-surface-base">
+        <DawPanelSurface>
             {/* Header */}
             <DawHeaderBand
                 className="px-3 py-1.5"
@@ -190,6 +191,6 @@ export const MacrosPanel = (): ReactElement => {
                     </div>
                 )}
             </div>
-        </div>
+        </DawPanelSurface>
     );
 };

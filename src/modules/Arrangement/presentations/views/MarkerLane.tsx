@@ -7,7 +7,8 @@ import {
     useSyncExternalStore,
 } from 'react';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
-import { DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
+import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
+import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { markerStore } from '../../stores/markerStore';
 import { addMarker, removeMarker, renameMarker, setMarkerColor, moveMarker } from '../../useCases/marker/markerOperations';
 import { type Marker } from '../../models/Marker';
@@ -260,31 +261,21 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                     }}
                 >
                     {contextMenu.kind === 'empty' && (
-                        <button
-                            type="button"
-                            className="flex w-full items-center rounded-sm px-2 py-1.5 text-xs text-popover-foreground hover:bg-accent hover:text-accent-foreground"
-                            onClick={handleAddMarker}
-                        >
+                        <DawMenuButton onClick={handleAddMarker}>
                             Add Marker at Beat {Math.floor(contextMenu.beat)}
-                        </button>
+                        </DawMenuButton>
                     )}
                     {contextMenu.kind === 'marker' && (
                         <>
-                            <button
-                                type="button"
-                                className="flex w-full items-center rounded-sm px-2 py-1.5 text-xs text-popover-foreground hover:bg-accent hover:text-accent-foreground"
-                                onClick={handleStartRename}
-                            >
+                            <DawMenuButton onClick={handleStartRename}>
                                 Rename Marker
-                            </button>
+                            </DawMenuButton>
                             <DawMenuMutedRow className="px-2">Color</DawMenuMutedRow>
                             <div className="flex gap-1 px-2 pb-1">
                                 {MARKER_COLORS.map((c) => (
-                                    <button
-                                        type="button"
+                                    <DawSwatchButton
                                         key={c}
-                                        className="size-3.5 rounded-full border border-white/20 hover:ring-1 hover:ring-foreground/30"
-                                        style={{ backgroundColor: c }}
+                                        color={c}
                                         onClick={() => {
                                             setMarkerColor(contextMenu.marker.id, c);
                                             setContextMenu({ kind: 'none' });
@@ -294,13 +285,9 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                                 ))}
                             </div>
                             <DawMenuSeparator className="mx-1 my-0.5 border-border/50" />
-                            <button
-                                type="button"
-                                className="flex w-full items-center rounded-sm px-2 py-1.5 text-xs text-destructive hover:bg-destructive/10"
-                                onClick={handleDeleteMarker}
-                            >
+                            <DawMenuButton tone="danger" onClick={handleDeleteMarker}>
                                 Delete Marker
-                            </button>
+                            </DawMenuButton>
                         </>
                     )}
                 </div>

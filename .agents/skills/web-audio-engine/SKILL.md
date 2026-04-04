@@ -1,11 +1,11 @@
-# SKILL: web-audio-engine
-
 ---
 
 name: web-audio-engine
 description: Apply when creating, editing, or reviewing the browser audio engine, transport, routing, scheduling, clip playback, buses, automation, metering, offline rendering, or AudioWorklet-based DSP. This is the authoritative skill for browser-side audio execution and real-time-safe Web Audio architecture.
 
 ---
+
+# SKILL: web-audio-engine
 
 ## Purpose
 

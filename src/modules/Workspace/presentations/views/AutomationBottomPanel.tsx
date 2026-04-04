@@ -2,6 +2,7 @@ import { type ReactElement, type RefObject, type WheelEvent, useRef, useState, u
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { timelineViewStore, scrollTimeline } from '#/modules/Arrangement/stores/timelineViewStore';
@@ -163,7 +164,7 @@ export const AutomationBottomPanel = (): ReactElement => {
     }
 
     return (
-        <div className="flex h-full overflow-hidden bg-surface-base/50">
+        <DawPanelSurface className="overflow-hidden bg-surface-base/50">
             {/* Left panel — fixed width matching track list */}
             {trackListOpen ? (
                 <div
@@ -262,6 +263,6 @@ export const AutomationBottomPanel = (): ReactElement => {
                     ) : null}
                 </div>
             </div>
-        </div>
+        </DawPanelSurface>
     );
 };

@@ -1,11 +1,11 @@
-# SKILL: state-and-write-paths
-
 ---
 
 name: state-and-write-paths
 description: Apply when creating, editing, or reviewing any form of state: project truth, shared runtime state, projections, selectors, stores, undo/redo, command execution, events, async fetching, UI state, or telemetry flows. This is the authoritative skill for state ownership and write-path discipline.
 
 ---
+
+# SKILL: state-and-write-paths
 
 ## Purpose
 

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# agents/shell.sh — optional shell integration for the agents launcher
+# scripts/agents/shell.sh — optional shell integration for the agents launcher
 #
 # Usage (from the repo root, or anywhere after sourcing):
-#   source /path/to/repo/agents/shell.sh
+#   source /path/to/repo/scripts/agents/shell.sh
 #
 # Or add to ~/.zshrc / ~/.bashrc:
-#   source /path/to/repo/agents/shell.sh
+#   source /path/to/repo/scripts/agents/shell.sh
 #
 # Provides short functions so you can skip "npm run" entirely.
 
@@ -13,10 +13,10 @@
 # Works correctly when sourced in both bash and zsh.
 if [ -n "$ZSH_VERSION" ]; then
   # zsh: ${(%):-%x} gives the path of the currently-sourced file
-  _AGENTS_REPO="$(cd "$(dirname "${(%):-%x}")/.." && pwd)"
+  _AGENTS_REPO="$(cd "$(dirname "${(%):-%x}")/../.." && pwd)"
 else
   # bash: BASH_SOURCE[0] gives the path of the sourced file
-  _AGENTS_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  _AGENTS_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 fi
 _AGENTS_BIN="node $_AGENTS_REPO/scripts/agents.mjs"
 
@@ -31,7 +31,7 @@ anew() { $_AGENTS_BIN new "$@"; }
 aopen() { $_AGENTS_BIN open "$@"; }
 
 # List all active sandboxes
-# Usage: alist  |  alist --all  |  alist --dirty-only
+# Usage: alist  |  alist --dirty-only
 alist() { $_AGENTS_BIN list "$@"; }
 
 # Show detailed info for a sandbox
@@ -39,7 +39,7 @@ alist() { $_AGENTS_BIN list "$@"; }
 ashow() { $_AGENTS_BIN show "$@"; }
 
 # Update task metadata or append notes
-# Usage: atask <slug> --set-status blocked  |  atask <slug> --append "note"
+# Usage: atask <slug> --append "note"
 atask() { $_AGENTS_BIN task "$@"; }
 
 # Remove a sandbox
@@ -65,10 +65,6 @@ afocus() { $_AGENTS_BIN focus "$@"; }
 # Print worktree path (safe for $() capture)
 # Usage: apath <slug>  |  cd $(apath <slug>)
 apath() { $_AGENTS_BIN path "$@"; }
-
-# Archive a sandbox (mark done, keep branch + worktree)
-# Usage: aarchive <slug>
-aarchive() { $_AGENTS_BIN archive "$@"; }
 
 # ─── Per-agent shortcuts ─────────────────────────────────────────────────────
 

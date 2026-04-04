@@ -38,8 +38,7 @@
     "agents:doctor": "node ./scripts/agents.mjs doctor",
     "agents:path": "node ./scripts/agents.mjs path",
     "agents:focus": "node ./scripts/agents.mjs focus",
-    "agents:pick": "node ./scripts/agents.mjs pick",
-    "agents:archive": "node ./scripts/agents.mjs archive"
+    "agents:pick": "node ./scripts/agents.mjs pick"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.81.0",

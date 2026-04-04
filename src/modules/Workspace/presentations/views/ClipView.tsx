@@ -4,6 +4,7 @@ import { Button } from '#/components/ui/button';
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
+import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { setWorkspaceMode } from '../../useCases/setWorkspaceMode';
 import { selectClip } from '../../useCases/togglePanel/panelToggles';
 import { workspaceStore } from '../../stores/workspaceStore';
@@ -65,7 +66,7 @@ export const ClipView = (): ReactElement => {
     };
 
     return (
-        <div className="flex h-full flex-col">
+        <DawPanelSurface>
             <DawControlStrip className="px-3 py-1.5">
                 <span className="text-xs font-medium text-foreground">{selectedTrack.name}</span>
                 {selectedClip ? <span className="text-xs text-muted-foreground">— {selectedClip.name}</span> : null}
@@ -143,6 +144,6 @@ export const ClipView = (): ReactElement => {
                     scrollRef={automationScrollRef}
                 />
             </div>
-        </div>
+        </DawPanelSurface>
     );
 };

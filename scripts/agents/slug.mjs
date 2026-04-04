@@ -42,9 +42,7 @@ export function deriveNames(slug, repoName, config) {
   return {
     branch,
     worktreePath,
-    taskFile: `agents/tasks/${slug}.md`,
-    stateFile: `agents/state/${slug}.json`,
-    logFile: `agents/logs/${slug}.log`,
+    taskFile: `.agents/tasks/${slug}.md`,
   };
 }
 

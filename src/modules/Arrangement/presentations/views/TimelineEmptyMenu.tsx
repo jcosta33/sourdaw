@@ -1,6 +1,7 @@
 import { type ReactElement, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { DawMenuMutedRow } from '#/components/daw/DawMenuParts';
+import { DawMenuButton, DawMenuMutedRow } from '#/components/daw/DawMenuParts';
+import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import {
     addClip,
     addTrack,
@@ -15,7 +16,7 @@ import { isTauri } from '#/helpers/tauriBridge';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { markerStore } from '#/modules/Arrangement/stores/markerStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { menuBtnClass, menuSepClass, menuShortcutClass } from '#/helpers/UI/contextMenuStyles';
+import { menuSepClass, menuShortcutClass } from '#/helpers/UI/contextMenuStyles';
 import { useContextMenuDismiss } from '#/helpers/UI/useContextMenuDismiss';
 
 // ── Marker color presets ──────────────────────────────────────────────
@@ -59,28 +60,19 @@ const NearbyMarkerColorMenu = ({ beat, onClose }: NearbyMarkerColorMenuProps): R
                     <DawMenuMutedRow>Marker: {marker.name}</DawMenuMutedRow>
                     <div className="flex gap-1 px-3 py-1">
                         {MARKER_COLOR_PRESETS.map((c) => (
-                            <button
-                                type="button"
+                            <DawSwatchButton
                                 key={c}
-                                className="size-4 rounded-full border border-border/50 hover:ring-1 hover:ring-foreground/30"
-                                style={{
-                                    backgroundColor: c,
-                                    outline: c === marker.color ? '2px solid white' : 'none',
-                                    outlineOffset: '1px',
-                                }}
+                                color={c}
+                                active={c === marker.color}
+                                className="size-4"
                                 onClick={act(() => setMarkerColor(marker.id, c))}
                                 aria-label="Set marker color"
                             />
                         ))}
                     </div>
-                    <button
-                        type="button"
-                        className={`${menuBtnClass} text-destructive hover:bg-destructive/10`}
-                        role="menuitem"
-                        onClick={act(() => removeMarkerUseCase(marker.id))}
-                    >
+                    <DawMenuButton tone="danger" role="menuitem" onClick={act(() => removeMarkerUseCase(marker.id))}>
                         Remove Marker
-                    </button>
+                    </DawMenuButton>
                 </div>
             ))}
         </>
@@ -163,35 +155,18 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
             }}
             role="menu"
         >
-            <button
-                type="button"
-                className={menuBtnClass}
-                role="menuitem"
-                onClick={act(() => addTrack({ name: 'Audio', kind: 'audio' }))}
-            >
+            <DawMenuButton role="menuitem" onClick={act(() => addTrack({ name: 'Audio', kind: 'audio' }))}>
                 Add Audio Track
-            </button>
-            <button
-                type="button"
-                className={menuBtnClass}
-                role="menuitem"
-                onClick={act(() => addTrack({ name: 'MIDI', kind: 'midi' }))}
-            >
+            </DawMenuButton>
+            <DawMenuButton role="menuitem" onClick={act(() => addTrack({ name: 'MIDI', kind: 'midi' }))}>
                 Add MIDI Track
-            </button>
-            <button
-                type="button"
-                className={menuBtnClass}
-                role="menuitem"
-                onClick={act(() => addTrack({ name: 'Bus', kind: 'bus' }))}
-            >
+            </DawMenuButton>
+            <DawMenuButton role="menuitem" onClick={act(() => addTrack({ name: 'Bus', kind: 'bus' }))}>
                 Add Bus Track
-            </button>
+            </DawMenuButton>
             <div className={menuSepClass} />
             {trackId ? (
-                <button
-                    type="button"
-                    className={menuBtnClass}
+                <DawMenuButton
                     role="menuitem"
                     onClick={act(() => {
                         const track = trackStore.value?.tracks.find((t) => t.id === trackId);
@@ -206,20 +181,15 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
                     })}
                 >
                     Add Clip Here
-                </button>
+                </DawMenuButton>
             ) : null}
-            <button type="button" className={menuBtnClass} role="menuitem" onClick={act(() => pasteClip())}>
+            <DawMenuButton role="menuitem" onClick={act(() => pasteClip())}>
                 Paste <span className={menuShortcutClass}>⌘V</span>
-            </button>
+            </DawMenuButton>
             <div className={menuSepClass} />
-            <button
-                type="button"
-                className={menuBtnClass}
-                role="menuitem"
-                onClick={act(() => addMarker(beat, `Marker at ${beat}`))}
-            >
+            <DawMenuButton role="menuitem" onClick={act(() => addMarker(beat, `Marker at ${beat}`))}>
                 Add Marker Here
-            </button>
+            </DawMenuButton>
             <NearbyMarkerColorMenu beat={beat} onClose={onClose} />
             <div className={menuSepClass} />
                 <DawMenuMutedRow className="flex items-center gap-1 font-medium text-muted-foreground/70">
@@ -227,9 +197,7 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
                     AI Generate
                 </DawMenuMutedRow>
             {isTauri() ? (
-                <button
-                    type="button"
-                    className={menuBtnClass}
+                <DawMenuButton
                     role="menuitem"
                     onClick={act(() => {
                         const prompt = window.prompt('Describe the audio to generate:');
@@ -244,15 +212,13 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
                 >
                     <span className="text-[var(--color-accent-lavender)] mr-1.5">✦</span>
                     Generate Audio Here…
-                </button>
+                </DawMenuButton>
             ) : (
                 <DawMenuMutedRow className="italic text-muted-foreground/50">
                     Audio generation requires desktop app
                 </DawMenuMutedRow>
             )}
-            <button
-                type="button"
-                className={menuBtnClass}
+            <DawMenuButton
                 role="menuitem"
                 onClick={act(() => {
                     void executeAppAction({
@@ -263,10 +229,8 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
             >
                 <span className="text-[var(--color-accent-lavender)] mr-1.5">✦</span>
                 Generate Drum Pattern
-            </button>
-            <button
-                type="button"
-                className={menuBtnClass}
+            </DawMenuButton>
+            <DawMenuButton
                 role="menuitem"
                 onClick={act(() => {
                     void executeAppAction({
@@ -277,14 +241,14 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
             >
                 <span className="text-[var(--color-accent-lavender)] mr-1.5">✦</span>
                 Generate Chord Progression
-            </button>
+            </DawMenuButton>
             <div className={menuSepClass} />
-            <button type="button" className={menuBtnClass} role="menuitem" onClick={handleImportAudio}>
+            <DawMenuButton role="menuitem" onClick={handleImportAudio}>
                 Import Audio…
-            </button>
-            <button type="button" className={menuBtnClass} role="menuitem" onClick={handleImportMidi}>
+            </DawMenuButton>
+            <DawMenuButton role="menuitem" onClick={handleImportMidi}>
                 Import MIDI…
-            </button>
+            </DawMenuButton>
         </div>,
         document.body
     );

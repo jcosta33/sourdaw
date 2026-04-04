@@ -1,5 +1,3 @@
-# SKILL: manage-task
-
 ---
 
 name: manage-task
@@ -7,11 +5,13 @@ description: Load at the start of every session. Covers how to fill in, maintain
 
 ---
 
+# SKILL: manage-task
+
 ## Purpose
 
 The task file is the agent's working memory for a session. It records objective, plan, decisions, blockers, assumptions, and progress. A well-maintained task file means the session can be interrupted and resumed without loss. A poor one means context is reconstructed from scratch.
 
-Template: `docs/agents/templates/task.template.md`.
+Template: `agents/templates/task.md`.
 Task files are gitignored — they are local to the worktree and not shared.
 
 ---

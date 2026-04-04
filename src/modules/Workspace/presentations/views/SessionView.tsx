@@ -7,6 +7,7 @@ import { type ReactElement, useState } from 'react';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawGridHeaderCell } from '#/components/daw/DawGridHeaderCell';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { DawSideRail } from '#/components/daw/DawSideRail';
 import { cn } from '#/helpers/Styles/cn';
 import { Button } from '#/components/ui/button';
@@ -57,7 +58,7 @@ export const SessionView = (): ReactElement => {
     };
 
     return (
-        <div className="flex flex-col h-full bg-surface-base">
+        <DawPanelSurface>
             <DawHeaderBand
                 className="shrink-0"
                 title="Session"
@@ -173,6 +174,6 @@ export const SessionView = (): ReactElement => {
                     </div>
                 )}
             </div>
-        </div>
+        </DawPanelSurface>
     );
 };

@@ -19,12 +19,12 @@ const DEFAULTS = {
 };
 
 /**
- * Load and merge agents/config.json with defaults.
+ * Load and merge scripts/agents/config.json with defaults.
  * @param {string} repoRoot
  * @returns {object}
  */
 export function loadConfig(repoRoot) {
-  const configPath = join(repoRoot, 'agents', 'config.json');
+  const configPath = join(repoRoot, 'scripts', 'agents', 'config.json');
   if (!existsSync(configPath)) {
     return { ...DEFAULTS };
   }

@@ -37,7 +37,7 @@ All working documents live under `.agents/`. Each subdirectory has a specific ro
 | `.agents/skills/` | Skill | Durable work product |
 | `.agents/tasks/` | Task | Local execution scaffolding |
 
-Full definitions, required sections, and what "done" looks like for each type: see `docs/agents/file-types.md`.
+Full definitions, required sections, and what "done" looks like for each type: see `docs/agents/02-file-types.md`.
 
 ---
 
@@ -79,7 +79,7 @@ These apply to all agents in all worktrees:
 
 ## Tooling
 
-Agent sandboxes — isolated git worktrees with their own branch, task file, and terminal session — are managed by the launcher built into this repo. See `docs/agents.md` for usage.
+Agent sandboxes — isolated git worktrees with their own branch, task file, and terminal session — are managed by the launcher built into this repo. See `docs/08-agents.md` for usage.
 
 The short version:
 

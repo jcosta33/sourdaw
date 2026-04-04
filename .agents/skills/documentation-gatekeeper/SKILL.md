@@ -1,5 +1,3 @@
-# SKILL: documentation-gatekeeper
-
 ---
 
 name: documentation-gatekeeper
@@ -7,13 +5,15 @@ description: Load before any non-trivial session. Decides what documentation is 
 
 ---
 
+# SKILL: documentation-gatekeeper
+
 ## Purpose
 
 This skill encodes the sequencing invariants of the documentation-first workflow. It exists because agents that skip documentation produce work that conflicts with existing architecture, cannot be reviewed, and cannot be resumed.
 
-Full process explanation for humans: `docs/agents/process.md`.
-Full workflow steps: `docs/agents/workflow.md`.
-File type definitions: `docs/agents/file-types.md`.
+Full process explanation for humans: `docs/agents/01-process.md`.
+Full workflow steps: `docs/agents/03-workflow.md`.
+File type definitions: `docs/agents/02-file-types.md`.
 
 ---
 

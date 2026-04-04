@@ -25,31 +25,31 @@ The unresolved work still needs to respect `.agents/specs/look-and-feel.md`:
 ### 1. DAW header and shell stragglers still exist
 
 Open issue:
-- A few view-local toolbar and panel-chrome variants still sit outside the shared DAW shell language.
+- Shared panel surfaces now cover the main base, dock, and tray shells; the remaining drift is concentrated in timeline-specific header bars and a few view-local empty-state / shell hybrids.
 
 Representative files:
 - `src/modules/Arrangement/presentations/views/ArrangementBar.tsx`
 - `src/modules/Workspace/presentations/views/ArrangeView.tsx`
-- `src/modules/Workspace/presentations/views/SessionView.tsx`
-- `src/modules/Workspace/presentations/views/MixerPanel.tsx`
+- `src/modules/Workspace/presentations/views/AutomationBottomPanel.tsx`
+- `src/modules/Workspace/presentations/views/ClipView.tsx`
 
 Needed:
-- finish the last restrained DAW header/panel-shell variants without making the shell louder
+- finish the last restrained DAW shell variants without making the shell louder
 
 ### 2. Floating menus and context surfaces are not fully unified repo-wide
 
 Open issue:
-- Floating shells, section labels, separators, swatch rows, and base menu actions are now shared, but repo-wide menus still drift once inline editors or richer embedded controls appear.
+- Floating shells, section labels, separators, swatch rows, and base menu actions are now shared, but the remaining drift is concentrated in the richer editor-style menus with inline inputs, pill controls, or nested utility states.
 
 Representative files:
 - `src/modules/Workspace/presentations/views/ClipView/PianoRollContextMenu.tsx`
 - `src/modules/Arrangement/presentations/views/TrackContextMenu.tsx`
-- `src/modules/Arrangement/presentations/views/TimelineEmptyMenu.tsx`
 - `src/modules/Arrangement/presentations/views/ClipContextMenu.tsx`
+- `src/modules/Arrangement/presentations/views/TimelineEmptyMenu.tsx`
 
 Needed:
-- finish the remaining menu/popup surfaces
-- formalize patterns for menus that contain inline editors or utility states
+- finish the last rich menu/popup surfaces
+- formalize patterns for menus that contain inline editors, pill groups, or utility states
 
 ### 3. Compact readout and meter clusters are still duplicated inline
 

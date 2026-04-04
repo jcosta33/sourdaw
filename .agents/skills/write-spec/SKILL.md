@@ -1,5 +1,3 @@
-# SKILL: write-spec
-
 ---
 
 name: write-spec
@@ -7,14 +5,16 @@ description: Load before creating or updating a spec file. Covers what a spec mu
 
 ---
 
+# SKILL: write-spec
+
 ## Purpose
 
 A spec is the contract between intent and code. It translates upstream developer research (or direct knowledge) into specific, verifiable requirements. An agent implementing from a spec should be able to verify completion without asking anyone.
 
 Specs are the bridge between developer-supplied input (research, product decisions) and agent execution. If research exists for the area being specced, that research must be reflected in the spec's requirements and constraints.
 
-Full definition and required sections: `docs/agents/file-types.md` → Spec section.
-Template: `docs/agents/templates/spec.template.md`.
+Full definition and required sections: `docs/agents/02-file-types.md` → Spec section.
+Template: `docs/agents/templates/01-spec-template.md`.
 
 ---
 

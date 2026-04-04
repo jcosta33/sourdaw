@@ -1,7 +1,8 @@
 import { type ReactElement,
     type MouseEvent, type ReactNode, useState, useRef } from 'react';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
-import { DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
+import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
+import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { cn } from '#/helpers/Styles/cn';
 import { removeTrack } from '../../useCases/removeTrack';
 import { toggleSoloSafe } from '../../useCases/toggleTrackState/toggleSoloSafe';
@@ -262,14 +263,11 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                                 <DawMenuMutedRow className="mb-1.5 px-0 py-0">Track Color</DawMenuMutedRow>
                                 <div className="grid grid-cols-5 gap-1">
                                     {TRACK_COLOR_PRESETS.map((color) => (
-                                        <button
-                                            type="button"
+                                        <DawSwatchButton
                                             key={color}
-                                            className={cn(
-                                                'size-5 rounded-full border-2 transition-transform hover:scale-110',
-                                                track.color === color ? 'border-foreground' : 'border-transparent'
-                                            )}
-                                            style={{ backgroundColor: color }}
+                                            color={color}
+                                            active={track.color === color}
+                                            className={cn('size-5 transition-transform hover:scale-110')}
                                             onClick={() => {
                                                 setTrackColor(track.id, color);
                                                 close();
@@ -283,21 +281,18 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                             <div className="p-1">
                                 <DawMenuMutedRow className="mb-1 px-2 py-0">Input Monitoring</DawMenuMutedRow>
                                 {INPUT_MON_OPTIONS.map((opt) => (
-                                    <button
-                                        type="button"
+                                    <DawMenuButton
                                         key={opt.value}
                                         role="menuitem"
-                                        className={cn(
-                                            'flex w-full items-center rounded-sm px-2 py-1.5 text-xs hover:bg-accent',
-                                            track.inputMonitoring === opt.value && 'bg-accent/50 font-medium'
-                                        )}
+                                        className={cn(track.inputMonitoring === opt.value && 'bg-accent/50')}
+                                        active={track.inputMonitoring === opt.value}
                                         onClick={() => {
                                             setInputMonitoring(track.id, opt.value);
                                             close();
                                         }}
                                     >
                                         {opt.label}
-                                    </button>
+                                    </DawMenuButton>
                                 ))}
                             </div>
                         ) : (
@@ -305,21 +300,14 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                                 item.label === '---' ? (
                                     <DawMenuSeparator key={i} className="border-border/50" />
                                 ) : (
-                                    <button
-                                        type="button"
+                                    <DawMenuButton
                                         key={i}
                                         role="menuitem"
-                                        className={cn(
-                                            'flex w-full items-center rounded-sm px-2 py-1.5 text-xs',
-                                            'hover:bg-accent',
-                                            'destructive' in item &&
-                                                item.destructive &&
-                                                'text-destructive-foreground hover:bg-destructive/20'
-                                        )}
+                                        tone={'destructive' in item && item.destructive ? 'danger' : 'default'}
                                         onClick={(item as MenuItem).action}
                                     >
                                         {item.label}
-                                    </button>
+                                    </DawMenuButton>
                                 )
                             )
                         )}

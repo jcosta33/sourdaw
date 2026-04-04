@@ -1,5 +1,6 @@
 import { type ReactElement, type ReactNode, useRef, useState, useEffect } from 'react';
 import { DawAnalysisCard } from '#/components/daw/DawAnalysisCard';
+import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { LUFSMeter } from './Metering/LUFSMeter';
 import { PhaseCorrelationDisplay } from './Metering/PhaseCorrelationDisplay';
@@ -51,7 +52,7 @@ const Measured = ({ children, className = '' }: MeasuredProps): ReactElement => 
 /* ── Panel ───────────────────────────────────────────── */
 export const AnalysisPanel = (): ReactElement => {
     return (
-        <div className="flex flex-col h-full bg-surface-base">
+        <DawPanelSurface>
             <ScrollArea className="flex-1">
                 <div className="p-2 flex flex-wrap gap-2">
                     <DawAnalysisCard
@@ -133,6 +134,6 @@ export const AnalysisPanel = (): ReactElement => {
                     </DawAnalysisCard>
                 </div>
             </ScrollArea>
-        </div>
+        </DawPanelSurface>
     );
 };

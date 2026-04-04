@@ -19,7 +19,7 @@ This creates:
 - an isolated worktree (`../webdaw--implement-limiter-dsp-backend`)
 - a task file at `.agents/tasks/implement-limiter-dsp-backend.md`
 
-See `docs/agents.md` for the full launcher reference.
+See `docs/08-agents.md` for the full launcher reference.
 
 ---
 

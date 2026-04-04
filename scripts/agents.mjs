@@ -5,8 +5,7 @@
  * Usage:
  *   node scripts/agents.mjs <subcommand> [options]
  *
- * Subcommands: new, open, list, show, task, remove, prune, doctor,
- *              path, focus, pick, archive
+ * Subcommands: new, open, list, show, task, remove, prune, doctor, path, focus, pick
  */
 
 import { existsSync, mkdirSync, unlinkSync, readFileSync, writeFileSync, accessSync, constants } from 'fs';
@@ -17,10 +16,9 @@ import { loadConfig } from './agents/config.mjs';
 import { toSlug, deriveNames, nextDuplicateSlug } from './agents/slug.mjs';
 import {
   getRepoRoot, getRepoName,
-  findWorktreeForBranch, worktreeCreate, worktreeRemove,
+  worktreeList, findWorktreeForBranch, worktreeCreate, worktreeRemove,
   worktreePrune, isWorktreeDirty, getStatusSummary, gitAvailable,
 } from './agents/git.mjs';
-import { readState, writeState, listSlugs, listStates, removeState } from './agents/state.mjs';
 import { createOrUpdateTaskFile } from './agents/template.mjs';
 import { resolveBackend, launch, checkBackend } from './agents/terminal.mjs';
 
@@ -28,7 +26,7 @@ import { resolveBackend, launch, checkBackend } from './agents/terminal.mjs';
 
 // Flags that never consume the next argument
 const BOOLEAN_FLAGS = new Set([
-  'no-launch', 'json', 'duplicate', 'force', 'dirty-only', 'all', 'sparse', 'archived',
+  'no-launch', 'json', 'duplicate', 'force', 'dirty-only', 'sparse',
 ]);
 
 /**
@@ -42,6 +40,11 @@ function parseArgs(argv) {
   let i = 0;
   while (i < argv.length) {
     const arg = argv[i];
+    if (arg === '--') {
+      // POSIX end-of-flags sentinel — everything after is positional
+      for (let j = i + 1; j < argv.length; j++) positional.push(argv[j]);
+      break;
+    }
     if (arg.startsWith('--')) {
       // Handle --key=value
       const eqIdx = arg.indexOf('=');
@@ -89,10 +92,25 @@ async function loadAdapter(agentName) {
 }
 
 function ensureRuntimeDirs(repoRoot) {
-  for (const dir of ['agents/tasks', 'agents/state', 'agents/logs']) {
-    const abs = join(repoRoot, dir);
-    if (!existsSync(abs)) mkdirSync(abs, { recursive: true });
-  }
+  const abs = join(repoRoot, '.agents/tasks');
+  if (!existsSync(abs)) mkdirSync(abs, { recursive: true });
+}
+
+/**
+ * List all agent worktrees as { slug, branch, path } objects.
+ * Derived from git worktrees with an agent/* branch.
+ */
+function listAgentWorktrees(repoRoot) {
+  return worktreeList(repoRoot)
+    .filter(w => w.branch && w.branch.startsWith('agent/'))
+    .map(w => ({ slug: w.branch.slice(6), branch: w.branch, path: w.path }));
+}
+
+/**
+ * Find the worktree path for a slug. Returns null if not checked out.
+ */
+function findWorktreePath(slug, repoRoot) {
+  return findWorktreeForBranch(`agent/${slug}`, repoRoot);
 }
 
 function resolveWorktreePath(pattern, repoRoot) {
@@ -156,45 +174,34 @@ async function cmdNew(argv) {
   let slug = toSlug(title, maxLen);
   if (suffix) slug = `${slug}-${toSlug(suffix, 20)}`;
 
-  const stateDir = join(repoRoot, 'agents', 'state');
-  const templateDir = join(repoRoot, 'agents', 'templates');
+  const templateDir = join(repoRoot, '.agents', 'templates');
 
-  // Collect existing slugs for duplicate detection
-  const existingSlugs = new Set(listSlugs(stateDir));
-
-  // Handle duplicate mode
-  if (duplicate && existingSlugs.has(slug)) {
-    slug = nextDuplicateSlug(slug, existingSlugs);
+  // Handle duplicate mode — find next available slug using git worktrees
+  if (duplicate) {
+    const existingSlugs = new Set(listAgentWorktrees(repoRoot).map(w => w.slug));
+    if (existingSlugs.has(slug)) slug = nextDuplicateSlug(slug, existingSlugs);
   }
 
   const names = deriveNames(slug, repoName, config);
   const worktreeAbs = resolveWorktreePath(names.worktreePath, repoRoot);
 
-  // Check if already exists — forward the resolved agent name so positional agent is preserved
-  const existing = readState(slug, stateDir);
-  if (existing && config.reuseExistingByDefault && !duplicate) {
-    if (!jsonOutput) console.log(`Sandbox "${slug}" already exists — reopening.\n`);
-    const reopenArgs = [slug, '--agent', agentName];
-    if (noLaunch) reopenArgs.push('--no-launch');
-    if (jsonOutput) reopenArgs.push('--json');
-    if (flags.has('terminal')) reopenArgs.push('--terminal', terminal);
-    return cmdOpen(reopenArgs);
-  }
-
-  // Check if branch already checked out elsewhere
+  // Check if branch already checked out somewhere
   const existingWT = findWorktreeForBranch(names.branch, repoRoot);
-  if (existingWT && existingWT !== worktreeAbs) {
+  if (existingWT) {
     if (config.reuseExistingByDefault && !duplicate) {
-      if (!jsonOutput) console.log(`Branch already checked out at ${existingWT} — reopening.\n`);
-      return openAt({
-        slug, title, agentName, terminal, noLaunch, jsonOutput, repoRoot,
-        worktreeAbs: existingWT, names, agentArgsRaw, stateDir,
-      });
+      if (!jsonOutput) console.log(`Sandbox "${slug}" already exists — reopening.\n`);
+      const reopenArgs = [slug, '--agent', agentName];
+      if (noLaunch) reopenArgs.push('--no-launch');
+      if (jsonOutput) reopenArgs.push('--json');
+      if (flags.has('terminal')) reopenArgs.push('--terminal', terminal);
+      return cmdOpen(reopenArgs);
     }
-    die(
-      `Branch "${names.branch}" is already checked out at:\n  ${existingWT}\n\n` +
-      `Use --duplicate to create a separate sandbox, or:\n  npm run agents:open -- ${slug}`
-    );
+    if (existingWT !== worktreeAbs) {
+      die(
+        `Branch "${names.branch}" is already checked out at:\n  ${existingWT}\n\n` +
+        `Use --duplicate to create a separate sandbox, or:\n  npm run agents:open -- ${slug}`
+      );
+    }
   }
 
   // Create worktree if it doesn't exist
@@ -218,29 +225,11 @@ async function cmdNew(argv) {
       worktreePath: names.worktreePath,
       taskFile: names.taskFile,
       createdAt: new Date().toISOString(),
-      status: 'active',
     });
   }
 
-  // Write state
-  const now = new Date().toISOString();
-  const state = {
-    title, slug, agent: agentName,
-    branch: names.branch, baseBranch,
-    worktreePath: worktreeAbs,
-    taskFile: names.taskFile,
-    stateFile: names.stateFile,
-    logFile: names.logFile,
-    status: 'active',
-    createdAt: now,
-    lastOpenedAt: now,
-    terminalBackend: terminal,
-    pid: null,
-  };
-  writeState(slug, stateDir, state);
-
   if (jsonOutput) {
-    printJson(state);
+    printJson({ slug, branch: names.branch, worktreePath: worktreeAbs, taskFile: names.taskFile });
     if (noLaunch) return;
   } else {
     console.log(`\nCreated sandbox: ${slug}`);
@@ -254,7 +243,7 @@ async function cmdNew(argv) {
     console.log('');
   }
 
-  await openAt({ slug, title, agentName, terminal, repoRoot, worktreeAbs, names, agentArgsRaw, stateDir });
+  await openAt({ slug, title, agentName, terminal, repoRoot, worktreeAbs, names, agentArgsRaw });
 }
 
 // ─── Subcommand: open ────────────────────────────────────────────────────────
@@ -279,50 +268,34 @@ async function cmdOpen(argv) {
 
   const repoRoot = getRepoRoot();
   const config = loadConfig(repoRoot);
-  const stateDir = join(repoRoot, 'agents', 'state');
   ensureRuntimeDirs(repoRoot);
 
-  const state = readState(slug, stateDir);
-  if (!state) die(`No sandbox found for slug "${slug}".\nRun: npm run agents:list`);
+  const worktreeAbs = findWorktreePath(slug, repoRoot);
+  if (!worktreeAbs) {
+    die(`No sandbox found for slug "${slug}".\nRun: npm run agents:list`);
+  }
 
-  const agentName = flags.get('agent') || agentFromPositional || state.agent;
+  const repoName = getRepoName(repoRoot);
+  const names = deriveNames(slug, repoName, config);
+  const agentName = flags.get('agent') || agentFromPositional || config.defaultAgent;
   const terminal = flags.get('terminal') || config.defaultTerminal;
   const noLaunch = flags.has('no-launch');
   const jsonOutput = flags.has('json');
   const agentArgsRaw = flags.get('agent-args') || '';
 
-  const worktreeAbs = state.worktreePath;
-  if (!existsSync(worktreeAbs)) {
-    die(
-      `Worktree directory not found:\n  ${worktreeAbs}\n\n` +
-      `The worktree may have been deleted. Try:\n  npm run agents:prune`
-    );
-  }
+  if (jsonOutput) printJson({ slug, branch: names.branch, worktreePath: worktreeAbs, taskFile: names.taskFile });
 
-  if (jsonOutput) printJson(state);
-
-  await openAt({ slug, title: state.title, agentName, terminal, noLaunch, jsonOutput,
-    repoRoot, worktreeAbs, names: {
-      branch: state.branch, taskFile: state.taskFile,
-      stateFile: state.stateFile, logFile: state.logFile,
-    }, agentArgsRaw, stateDir });
+  await openAt({ slug, title: slug, agentName, terminal, noLaunch, jsonOutput,
+    repoRoot, worktreeAbs, names, agentArgsRaw });
 }
 
 /**
  * Shared launch logic used by both `new` and `open`.
- * Does not accept noLaunch — callers must check before calling.
  */
 async function openAt({ slug, title, agentName, terminal, noLaunch = false, jsonOutput = false,
-  repoRoot, worktreeAbs, names, agentArgsRaw, stateDir }) {
+  repoRoot, worktreeAbs, names, agentArgsRaw }) {
 
-  if (noLaunch) {
-    // Still update lastOpenedAt only if we're actually going to open
-    return;
-  }
-
-  // Update lastOpenedAt now that we know we're actually launching
-  const state = readState(slug, stateDir) || {};
-  writeState(slug, stateDir, { ...state, lastOpenedAt: new Date().toISOString(), agent: agentName });
+  if (noLaunch) return;
 
   const adapter = await loadAdapter(agentName);
   const extraArgs = agentArgsRaw ? agentArgsRaw.split(/\s+/).filter(Boolean) : [];
@@ -352,26 +325,13 @@ async function cmdList(argv) {
   const { flags } = parseArgs(argv);
   const jsonOutput = flags.has('json');
   const dirtyOnly = flags.has('dirty-only');
-  const showAll = flags.has('all');
-  const archivedOnly = flags.has('archived');
 
   const repoRoot = getRepoRoot();
-  const stateDir = join(repoRoot, 'agents', 'state');
-  const states = listStates(stateDir);
+  const sandboxes = listAgentWorktrees(repoRoot);
 
-  // Filter by archive status before computing git status (git status is expensive)
-  let filtered = states;
-  if (archivedOnly) {
-    filtered = states.filter(s => s.status === 'archived');
-  } else if (!showAll) {
-    filtered = states.filter(s => s.status !== 'archived');
-  }
-  if (dirtyOnly) filtered = filtered.filter(s => s.status !== 'archived');
-
-  const enriched = filtered.map(s => ({
+  const enriched = sandboxes.map(s => ({
     ...s,
-    gitStatus: s.status === 'archived' ? 'archived' : getStatusSummary(s.worktreePath),
-    worktreeExists: existsSync(s.worktreePath),
+    gitStatus: getStatusSummary(s.path),
   }));
 
   const finalRows = dirtyOnly ? enriched.filter(s => s.gitStatus.startsWith('dirty')) : enriched;
@@ -382,14 +342,12 @@ async function cmdList(argv) {
   }
 
   if (!finalRows.length) {
-    const hint = !showAll && states.some(s => s.status === 'archived')
-      ? ' (use --all to include archived)' : '';
-    console.log(`No agent sandboxes found.${hint}`);
+    console.log('No agent sandboxes found.');
     return;
   }
 
-  const rows = finalRows.map(s => [s.slug, s.agent, s.branch, s.worktreePath, s.gitStatus]);
-  console.log(formatTable(rows, ['SLUG', 'AGENT', 'BRANCH', 'WORKTREE', 'STATUS']));
+  const rows = finalRows.map(s => [s.slug, s.branch, s.path, s.gitStatus]);
+  console.log(formatTable(rows, ['SLUG', 'BRANCH', 'WORKTREE', 'STATUS']));
 }
 
 // ─── Subcommand: show ────────────────────────────────────────────────────────
@@ -402,33 +360,28 @@ async function cmdShow(argv) {
   if (!slug) die('Usage: agents show <slug>');
 
   const repoRoot = getRepoRoot();
-  const stateDir = join(repoRoot, 'agents', 'state');
-  const state = readState(slug, stateDir);
-  if (!state) die(`No sandbox found for slug "${slug}".`);
+  const repoName = getRepoName(repoRoot);
+  const config = loadConfig(repoRoot);
 
-  const gitStatus = getStatusSummary(state.worktreePath);
+  const worktreeAbs = findWorktreePath(slug, repoRoot);
+  if (!worktreeAbs) die(`No sandbox found for slug "${slug}".`);
+
+  const names = deriveNames(slug, repoName, config);
+  const gitStatus = getStatusSummary(worktreeAbs);
+  const info = { slug, branch: names.branch, worktreePath: worktreeAbs, taskFile: names.taskFile, gitStatus };
 
   if (jsonOutput) {
-    printJson({ ...state, gitStatus });
+    printJson(info);
     return;
   }
 
   console.log('');
   console.log(`Sandbox: ${slug}`);
   console.log(`${'─'.repeat(50)}`);
-  console.log(`  Title:       ${state.title}`);
-  console.log(`  Slug:        ${state.slug}`);
-  console.log(`  Agent:       ${state.agent}`);
-  console.log(`  Branch:      ${state.branch}`);
-  console.log(`  Base branch: ${state.baseBranch}`);
-  console.log(`  Worktree:    ${state.worktreePath}`);
-  console.log(`  Task file:   ${state.taskFile}`);
-  console.log(`  State file:  ${state.stateFile}`);
-  console.log(`  Log file:    ${state.logFile}`);
-  console.log(`  Created:     ${state.createdAt}`);
-  console.log(`  Last opened: ${state.lastOpenedAt}`);
-  console.log(`  Status:      ${state.status}`);
-  console.log(`  Git status:  ${gitStatus}`);
+  console.log(`  Branch:    ${names.branch}`);
+  console.log(`  Worktree:  ${worktreeAbs}`);
+  console.log(`  Task file: ${names.taskFile}`);
+  console.log(`  Status:    ${gitStatus}`);
   console.log('');
 }
 
@@ -437,38 +390,26 @@ async function cmdShow(argv) {
 async function cmdTask(argv) {
   const { flags, positional } = parseArgs(argv);
   const slug = positional[0];
-  if (!slug) die('Usage: agents task <slug> [--set-status <status>] [--append "note"]');
+  if (!slug) die('Usage: agents task <slug> [--append "note"]');
 
   const repoRoot = getRepoRoot();
-  const stateDir = join(repoRoot, 'agents', 'state');
-  const state = readState(slug, stateDir);
-  if (!state) die(`No sandbox found for slug "${slug}".`);
-
-  let changed = false;
-
-  if (flags.has('set-status')) {
-    const newStatus = flags.get('set-status');
-    writeState(slug, stateDir, { ...state, status: newStatus });
-    console.log(`Status updated to: ${newStatus}`);
-    changed = true;
-  }
+  const repoName = getRepoName(repoRoot);
+  const config = loadConfig(repoRoot);
+  const names = deriveNames(slug, repoName, config);
 
   if (flags.has('append')) {
     const note = flags.get('append');
-    const taskFileAbs = join(repoRoot, state.taskFile);
+    const taskFileAbs = join(repoRoot, names.taskFile);
     if (existsSync(taskFileAbs)) {
       const content = readFileSync(taskFileAbs, 'utf8');
       const appended = content.trimEnd() + `\n\n<!-- note: ${new Date().toISOString()} -->\n${note}\n`;
       writeFileSync(taskFileAbs, appended, 'utf8');
-      console.log(`Appended note to: ${state.taskFile}`);
-      changed = true;
+      console.log(`Appended note to: ${names.taskFile}`);
     } else {
-      warn(`Task file not found: ${state.taskFile}`);
+      warn(`Task file not found: ${names.taskFile}`);
     }
-  }
-
-  if (!changed) {
-    console.log('No changes made. Use --set-status or --append.');
+  } else {
+    console.log('No changes made. Use --append.');
   }
 }
 
@@ -481,13 +422,12 @@ async function cmdRemove(argv) {
 
   const force = flags.has('force');
   const repoRoot = getRepoRoot();
-  const stateDir = join(repoRoot, 'agents', 'state');
-  const state = readState(slug, stateDir);
-  if (!state) die(`No sandbox found for slug "${slug}".`);
+  const repoName = getRepoName(repoRoot);
+  const config = loadConfig(repoRoot);
 
-  const worktreeAbs = state.worktreePath;
+  const worktreeAbs = findWorktreePath(slug, repoRoot);
 
-  if (existsSync(worktreeAbs)) {
+  if (worktreeAbs) {
     if (!force && isWorktreeDirty(worktreeAbs)) {
       die(
         `Worktree "${slug}" has uncommitted changes:\n  ${worktreeAbs}\n\n` +
@@ -505,14 +445,12 @@ async function cmdRemove(argv) {
       }
     }
   } else {
-    console.log(`Worktree path not found (already gone): ${worktreeAbs}`);
+    console.log(`No active worktree for "${slug}" (already removed).`);
   }
 
-  removeState(slug, stateDir);
-  const taskFileAbs = join(repoRoot, state.taskFile);
-  if (existsSync(taskFileAbs)) { unlinkSync(taskFileAbs); console.log(`Removed task file: ${state.taskFile}`); }
-  const logFileAbs = join(repoRoot, state.logFile);
-  if (existsSync(logFileAbs)) { unlinkSync(logFileAbs); console.log(`Removed log file: ${state.logFile}`); }
+  const names = deriveNames(slug, repoName, config);
+  const taskFileAbs = join(repoRoot, names.taskFile);
+  if (existsSync(taskFileAbs)) { unlinkSync(taskFileAbs); console.log(`Removed task file: ${names.taskFile}`); }
 
   console.log(`\nSandbox "${slug}" removed.`);
 }
@@ -521,28 +459,9 @@ async function cmdRemove(argv) {
 
 async function cmdPrune() {
   const repoRoot = getRepoRoot();
-  const stateDir = join(repoRoot, 'agents', 'state');
-
   console.log('Running git worktree prune...');
   worktreePrune(repoRoot);
-
-  const slugs = listSlugs(stateDir);
-  let pruned = 0;
-  for (const slug of slugs) {
-    const state = readState(slug, stateDir);
-    if (!state) continue;
-    if (!existsSync(state.worktreePath)) {
-      console.log(`  Removing stale registry entry: ${slug} (path: ${state.worktreePath})`);
-      removeState(slug, stateDir);
-      pruned++;
-    }
-  }
-
-  if (pruned === 0) {
-    console.log('Nothing to prune — all entries are valid.');
-  } else {
-    console.log(`\nPruned ${pruned} stale entr${pruned !== 1 ? 'ies' : 'y'}.`);
-  }
+  console.log('Done.');
 }
 
 // ─── Subcommand: doctor ──────────────────────────────────────────────────────
@@ -582,15 +501,13 @@ async function cmdDoctor(argv) {
   let config;
   try {
     config = loadConfig(repoRoot);
-    check('agents/config.json is valid', true);
+    check('scripts/agents/config.json is valid', true);
   } catch (e) {
-    check('agents/config.json is valid', false, e.message);
+    check('scripts/agents/config.json is valid', false, e.message);
   }
 
-  // 4. Runtime dirs exist
-  for (const d of ['agents/tasks', 'agents/state', 'agents/logs']) {
-    check(`Runtime dir exists: ${d}`, existsSync(join(repoRoot, d)), `Run: mkdir -p ${d}`);
-  }
+  // 4. Runtime dir exists
+  check('Runtime dir exists: .agents/tasks', existsSync(join(repoRoot, '.agents/tasks')), 'Run: mkdir -p .agents/tasks');
 
   // 5. Worktree parent dir writable
   if (config) {
@@ -653,12 +570,10 @@ async function cmdPath(argv) {
   if (!slug) die('Usage: agents path <slug>');
 
   const repoRoot = getRepoRoot();
-  const stateDir = join(repoRoot, 'agents', 'state');
-  const state = readState(slug, stateDir);
-  if (!state) die(`No sandbox found for slug "${slug}".`);
+  const worktreeAbs = findWorktreePath(slug, repoRoot);
+  if (!worktreeAbs) die(`No sandbox found for slug "${slug}".`);
 
-  // Print only the path — safe for $() capture
-  process.stdout.write(state.worktreePath + '\n');
+  process.stdout.write(worktreeAbs + '\n');
 }
 
 // ─── Subcommand: focus ───────────────────────────────────────────────────────
@@ -670,13 +585,9 @@ async function cmdFocus(argv) {
 
   const repoRoot = getRepoRoot();
   const config = loadConfig(repoRoot);
-  const stateDir = join(repoRoot, 'agents', 'state');
-  const state = readState(slug, stateDir);
-  if (!state) die(`No sandbox found for slug "${slug}".`);
 
-  if (!existsSync(state.worktreePath)) {
-    die(`Worktree not found: ${state.worktreePath}\nTry: npm run agents:prune`);
-  }
+  const worktreeAbs = findWorktreePath(slug, repoRoot);
+  if (!worktreeAbs) die(`No sandbox found for slug "${slug}".`);
 
   // Resolve editor: flag > config > $VISUAL > $EDITOR > auto-detect > open (Finder)
   const candidates = ['cursor', 'code', 'zed', 'subl'];
@@ -689,18 +600,18 @@ async function cmdFocus(argv) {
 
   // Use spawn + unref so GUI editors (cursor, code) return immediately
   // without blocking the terminal
-  const child = spawn(editor, [state.worktreePath], {
+  const child = spawn(editor, [worktreeAbs], {
     stdio: 'ignore',
     detached: true,
   });
   child.on('error', (e) => {
     console.error(`\nError: Failed to open editor "${editor}": ${e.message}`);
-    console.error(`Set preferredEditor in agents/config.json or pass --editor <cmd>\n`);
+    console.error(`Set preferredEditor in scripts/agents/config.json or pass --editor <cmd>\n`);
     process.exit(1);
   });
   child.unref();
 
-  console.log(`Opened ${editor}: ${state.worktreePath}`);
+  console.log(`Opened ${editor}: ${worktreeAbs}`);
 }
 
 // ─── Subcommand: pick ────────────────────────────────────────────────────────
@@ -711,7 +622,6 @@ async function cmdPick(argv) {
   const noLaunch = flags.has('no-launch');
 
   const repoRoot = getRepoRoot();
-  const stateDir = join(repoRoot, 'agents', 'state');
 
   if (!agentCommandAvailable('fzf')) {
     die(
@@ -723,10 +633,7 @@ async function cmdPick(argv) {
     );
   }
 
-  const slugs = listSlugs(stateDir).filter(slug => {
-    const s = readState(slug, stateDir);
-    return s && s.status !== 'archived';
-  });
+  const slugs = listAgentWorktrees(repoRoot).map(w => w.slug);
 
   if (!slugs.length) {
     console.log('No active sandboxes to pick from.');
@@ -758,30 +665,6 @@ async function cmdPick(argv) {
   await cmdOpen(openArgs);
 }
 
-// ─── Subcommand: archive ─────────────────────────────────────────────────────
-
-async function cmdArchive(argv) {
-  const { positional } = parseArgs(argv);
-  const slug = positional[0];
-  if (!slug) die('Usage: agents archive <slug>');
-
-  const repoRoot = getRepoRoot();
-  const stateDir = join(repoRoot, 'agents', 'state');
-  const state = readState(slug, stateDir);
-  if (!state) die(`No sandbox found for slug "${slug}".`);
-
-  if (state.status === 'archived') {
-    console.log(`Sandbox "${slug}" is already archived.`);
-    return;
-  }
-
-  writeState(slug, stateDir, { ...state, status: 'archived' });
-  console.log(`Archived: ${slug}`);
-  console.log(`  Branch and worktree are untouched.`);
-  console.log(`  To restore: npm run agents:task -- ${slug} --set-status active`);
-  console.log(`  To delete:  npm run agents:remove -- ${slug}`);
-}
-
 // ─── Subcommand: help ────────────────────────────────────────────────────────
 
 function cmdHelp() {
@@ -805,12 +688,11 @@ QOL subcommands:
   path    <slug>            Print worktree path (for cd \$(...) or scripts)
   focus   <slug>            Open worktree in editor (cursor/code/zed/subl)
   pick                      fzf fuzzy-picker over active sandboxes
-  archive <slug>            Mark done without deleting worktree or branch
 
 Flags for \`new\`:
   --agent <name>            Agent to launch (claude, gemini, codex)
   --base <branch>           Base branch for the worktree
-  --terminal <backend>      Terminal backend (auto, current, terminal, iterm)
+  --terminal <backend>      Terminal backend (current, terminal, iterm)
   --duplicate               Force a new sandbox even if slug exists
   --suffix <text>           Append suffix to slug
   --agent-args "<args>"     Extra args passed to the agent CLI
@@ -818,8 +700,6 @@ Flags for \`new\`:
   --json                    Machine-readable output
 
 Flags for \`list\`:
-  --all                     Include archived sandboxes
-  --archived                Show only archived sandboxes
   --dirty-only              Show only dirty worktrees
   --json                    Machine-readable output
 
@@ -827,7 +707,7 @@ Flags for \`focus\`:
   --editor <cmd>            Override editor (e.g. --editor=zed)
 
 Shell integration (optional):
-  source agents/shell.sh    Adds short functions: anew, aopen, alist, apick…
+  source scripts/agents/shell.sh    Adds short functions: anew, aopen, alist, apick…
 
 Examples:
   npm run agents:new -- "Fix auth redirect loop"
@@ -837,8 +717,7 @@ Examples:
   npm run agents:pick
   npm run agents:focus -- fix-auth-redirect-loop
   cd \$(npm run --silent agents:path -- fix-auth-redirect-loop)
-  npm run agents:archive -- fix-auth-redirect-loop
-  npm run agents:list -- --all
+  npm run agents:list -- --dirty-only
 `);
 }
 
@@ -858,7 +737,6 @@ const commands = {
   path: cmdPath,
   focus: cmdFocus,
   pick: cmdPick,
-  archive: cmdArchive,
   help: async () => cmdHelp(),
 };
 

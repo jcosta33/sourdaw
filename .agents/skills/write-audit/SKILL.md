@@ -1,5 +1,3 @@
-# SKILL: write-audit
-
 ---
 
 name: write-audit
@@ -7,11 +5,13 @@ description: Load before creating or updating an audit file. Covers what an audi
 
 ---
 
+# SKILL: write-audit
+
 ## Purpose
 
 Audits are honest reports on the current state of a codebase area relative to a goal. A good audit makes the next session's job clear without requiring that session to re-examine the same ground.
 
-Full definition and required sections: `docs/agents/file-types.md` → Audit section.
+Full definition and required sections: `docs/agents/02-file-types.md` → Audit section.
 Template: `docs/agents/templates/audit.template.md`.
 
 ---

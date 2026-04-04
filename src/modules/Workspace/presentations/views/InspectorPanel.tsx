@@ -1,6 +1,7 @@
 import { type CSSProperties, type ReactElement, useState, useSyncExternalStore } from 'react';
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { Button } from '#/components/ui/button';
 import { X } from 'lucide-react';
@@ -32,8 +33,10 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
     const isDeviceView = !!selectedDevice;
 
     return (
-        <aside
-            className="contain-strict flex shrink-0 flex-col border-l border-border-hairline bg-surface-tray shadow-[inset_1px_0_0_rgba(255,255,255,0.02),inset_0_1px_0_rgba(255,255,255,0.04)] transition-[width,min-width] duration-200 ease-out"
+        <DawPanelSurface
+            as="aside"
+            tone="tray"
+            className="transition-[width,min-width] duration-200 ease-out"
             style={{
                 ...style,
                 width: isDeviceView ? Math.max((style?.width as number) ?? 260, 320) : (style?.width as number) ?? 260,
@@ -91,6 +94,6 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
                     </div>
                 )}
             </ScrollArea>
-        </aside>
+        </DawPanelSurface>
     );
 };

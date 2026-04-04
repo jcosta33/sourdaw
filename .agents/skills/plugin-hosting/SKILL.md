@@ -1,11 +1,11 @@
-# SKILL: plugin-hosting
-
 ---
 
 name: plugin-hosting
 description: Apply when implementing or reviewing native plugin hosting, plugin scanning, plugin metadata, instance lifecycle, plugin editor windows, RT-safe host/plugin communication, or plugin-host failure handling. This is the authoritative skill for native plugin hosting.
 
 ---
+
+# SKILL: plugin-hosting
 
 ## Purpose
 

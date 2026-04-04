@@ -1,6 +1,6 @@
 # State management
 
-This document explains our approach to client-side state management for UI and domain state. For server state, use TanStack Query. For cross-domain UI updates, use [domain events](./events.md).
+This document explains our approach to client-side state management for UI and domain state. For server state, use TanStack Query. For cross-domain UI updates, use [domain events](./04-events.md).
 
 ---
 
