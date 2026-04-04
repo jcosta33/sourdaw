@@ -72,7 +72,7 @@ export const ArticulationList = ({
                         tone="amber"
                         caps={false}
                         className="flex w-full items-center justify-between px-2 py-1 text-[10px]"
-                        onClick={() => setCurrentArticulation(art.type)}
+                        onClick={() => onSelect(art.type)}
                     >
                         <span>{art.name}</span>
                         {art.keyswitch !== null ? (
