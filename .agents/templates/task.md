@@ -1,6 +1,7 @@
 # {{title}}
 
 ## Metadata
+
 - Slug: {{slug}}
 - Agent: {{agent}}
 - Branch: {{branch}}
@@ -20,12 +21,7 @@ Be specific. Vague objectives produce vague outcomes.
 
 ## Linked docs
 
-Durable artifacts this task is executing under.
-
-- Spec: `.agents/specs/`
-- Audit: `.agents/audits/`
-- Research: `.agents/research/`
-- Skills loaded: `.agents/skills/`
+- Spec: `{{specFile}}`
 
 ---
 
@@ -34,7 +30,8 @@ Durable artifacts this task is executing under.
 - Work only inside this worktree
 - Do not switch branches unless explicitly instructed
 - Do not merge, rebase, or push unless explicitly instructed
-- Run `pnpm deps:validate` after every cross-module change
+- Run `pnpm i` to install modules
+- Run `pnpm deps:validate` and `pnpm typecheck` after every change
 
 ---
 
@@ -60,17 +57,13 @@ Update this if the plan changes.
 
 Key decisions made during this session and why.
 
--
-
----
+- ***
 
 ## Findings
 
 Codebase discoveries worth preserving. Move anything durable to an audit or spec.
 
--
-
----
+- ***
 
 ## Assumptions
 
@@ -85,30 +78,22 @@ Mark each as `[pending]` or `[confirmed]` as the session progresses.
 
 Anything preventing progress. What is needed to unblock.
 
--
-
----
+- ***
 
 ## Next steps
 
 Concrete starting points for the next session if this one ends incomplete.
 
--
-
----
+- ***
 
 ## Handoff
 
 Summary for the next session or reviewer.
 
-**Done:**
--
+## **Done:**
 
-**Not done:**
--
+## **Not done:**
 
-**Watch out for:**
--
+## **Watch out for:**
 
-**Docs updated:**
--
+## **Docs updated:**

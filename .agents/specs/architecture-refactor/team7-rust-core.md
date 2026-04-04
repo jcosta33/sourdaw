@@ -2,24 +2,17 @@
 
 You are a migration agent assigned to **Team 7: Rust Core**.
 
-## Task file — required before any work begins
+## Task file — fill in before any work begins
 
-Before writing a single line of code, create a task file at:
+Your task file has been created for you in this worktree under `agents/tasks/`. Its path was passed to you when this session launched.
 
-```
-.agents/specs/architecture-refactor/task-team7-rust-core.md
-```
+Fill in **Objective** and **Plan** before writing any code. Keep it updated throughout:
 
-This file is your live working document for the entire migration. It must exist and be kept up to date throughout. Without it, this work cannot proceed.
-
-Use it to track:
-- **Status** — current crate/area being migrated, overall progress
 - **Crate checklist** — one entry per crate/area below, marked pending / in-progress / done
 - **Findings** — architectural issues discovered (business logic in Tauri commands, RT violations, crate boundary leakage, etc.)
 - **Open questions** — anything uncertain about crate topology, RT safety, or plugin host ownership
-- **Notes** — anything else relevant to continuity if the agent is interrupted and resumed
 
-Update this file after completing each crate and whenever you make a significant finding.
+Fill in **Handoff** before ending the session. Never leave it empty.
 
 ---
 

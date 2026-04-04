@@ -22,7 +22,9 @@ Templates: `agents/templates/` (audit, spec, task)
 
 ## Your task file
 
-When you start a session you will have a task file at `.agents/tasks/<slug>.md`.
+This only applies if you were launched via the agents workflow (worktree-based parallel sessions). In a regular session this directory will be empty and you can ignore this entirely.
+
+If `.agents/tasks/` contains a file, that is your task file for this session. Read it before doing anything else — it contains your spec reference, objective, plan, and checklist. Its name is the session slug.
 
 - Fill in **Objective** before doing anything else
 - Fill in **Linked docs** with any specs/audits/skills you loaded
@@ -39,12 +41,23 @@ When you start a session you will have a task file at `.agents/tasks/<slug>.md`.
 - Never render with `&&` — use ternaries or early returns.
 - All audio-thread code: no allocation, no mutex locks, no blocking.
 
+## Safety rules (bypass-permissions mode is active)
+
+There are no confirmation prompts. Actions are immediate. Read the full safety section in `AGENTS.md` before doing anything. The short version:
+
+- **Do not delete files** — ever, unless the instruction explicitly names the file to delete.
+- **Do not run destructive git commands** — no `reset --hard`, `clean`, `push --force`, or anything that discards work.
+- **Do not install or remove packages** without an explicit instruction to do so.
+- **Do not modify `.github/`, CI config, or `package.json` scripts** unless that is the task.
+- **Stay in your worktree.** Do not make changes in the main repo or other worktrees.
+- **When in doubt, don't.** Log it as a finding and move on.
+
 ## Artifact placement
 
-| Type | Location |
-|---|---|
-| Audit | `.agents/audits/<name>.md` |
-| Spec | `.agents/specs/<name>.md` |
-| Research | `.agents/research/<name>.md` |
-| Skill | `.agents/skills/<name>/SKILL.md` |
-| Task | `.agents/tasks/<slug>.md` (gitignored) |
+| Type     | Location                               |
+| -------- | -------------------------------------- |
+| Audit    | `.agents/audits/<name>.md`             |
+| Spec     | `.agents/specs/<name>.md`              |
+| Research | `.agents/research/<name>.md`           |
+| Skill    | `.agents/skills/<name>/SKILL.md`       |
+| Task     | `.agents/tasks/<slug>.md` (gitignored) |

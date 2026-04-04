@@ -40,6 +40,53 @@ When asked to perform cross-module refactoring, move files, or update imports ac
 2. You are **STRICTLY FORBIDDEN** from proceeding or declaring a task "done" until this validation passes with 0 zero architectural violations.
 3. **NEVER use code mods** or AST-altering scripts to run refactors unless explicitly instructed by the user. Do the work manually, but validate it constantly.
 
+## 🔒 SAFETY RULES — READ BEFORE TOUCHING ANYTHING
+
+> **Why these exist:** You are running in bypass-permissions mode. There are no confirmation prompts. Every action you take is immediate and irreversible. These rules exist to prevent you from causing damage that cannot be undone by a simple undo.
+
+### File system — what you may NOT do without explicit instruction
+
+- **Do not delete any file.** Not source files, not config files, not generated files, not "obviously unused" files. If you believe a file should be deleted, note it in your task file and surface it as a finding. Deletion requires an explicit human instruction naming the file.
+- **Do not rename or move files** unless the spec or task you are executing explicitly calls for it by name.
+- **Do not overwrite a file with a full rewrite** when a targeted edit will do. Prefer Edit over Write for existing files.
+- **Do not create new files outside your assigned scope.** If something new needs to exist outside the modules you own, surface it as a handoff item.
+
+### Git — what you may NOT do
+
+- **Do not run destructive git commands:** `git reset --hard`, `git clean`, `git push --force`, `git branch -D`, `git checkout -- .`, `git restore .`, or any command that discards uncommitted work.
+- **Do not commit unrelated files.** Stage only the files you intentionally changed.
+- **Do not amend published commits** or rebase commits that have already been pushed.
+- **Do not push to any remote** unless the task explicitly says to.
+- **Do not operate outside your worktree.** You are in an isolated git worktree on your own branch. Do not `cd` to the main repo or another worktree and make changes there.
+
+### Commands — what you may NOT run
+
+- **Do not run commands that alter source code automatically** — no codemods, no code formatters applied globally, no linters in `--fix` mode across the whole codebase.
+- **Do not install or remove packages** (`npm install <pkg>`, `pnpm add`, `cargo add`, etc.) unless explicitly asked. Dependency changes affect every developer and require intentional review.
+- **Do not modify `package.json` scripts, CI/CD files (`.github/`), or build configuration** unless it is the explicit subject of your task.
+- **Do not start long-running background processes** (dev servers, watchers, daemons) that will outlive your session.
+- **Do not run commands that require network access** to external services unless you are explicitly fetching a documented dependency.
+
+### When in doubt
+
+If you are unsure whether an action is safe: **do not take it.** Log it as an open question in your task file. The cost of pausing is zero. The cost of irreversible damage is high.
+
+---
+
+## 🚫 NO AUTOMATED CODE MUTATIONS — ABSOLUTE RULE
+
+**You are STRICTLY FORBIDDEN from using any automated process to modify, rename, or move source files.** This applies unconditionally — no exceptions, no "just this once", regardless of how many files are involved.
+
+Prohibited tools and techniques include, but are not limited to:
+
+- Codemods (jscodeshift, ts-morph, ast-grep, or any AST-based script)
+- Shell loops or scripts that batch-edit files (e.g. `for f in ...; do sed ... done`)
+- `sed`, `awk`, `perl -pi`, or any command-line find-and-replace run across multiple files
+- Automated file renaming or moving via scripts (`mv`, `rename`, `find -exec mv`)
+- Any custom script written in this session for the purpose of bulk-editing files
+
+**Every file change must be made individually, deliberately, using the Edit or Write tools.** If the scope of manual edits feels impractical, surface that as a blocker and discuss with the user — do not reach for automation as a shortcut.
+
 ## 🏛️ Frontend Domain-Driven Architecture
 
 - **Contract Boundaries:** Cross-module imports MUST only come from contract folders: `useCases/`, `events/`, `errors/`, `stores/`, and `presentations/views/`.

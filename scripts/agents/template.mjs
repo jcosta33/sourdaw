@@ -19,7 +19,8 @@ export function renderTemplate(templateContent, data) {
     .replace(/\{\{worktreePath\}\}/g, data.worktreePath)
     .replace(/\{\{createdAt\}\}/g, data.createdAt)
     .replace(/\{\{status\}\}/g, data.status || 'active')
-    .replace(/\{\{taskFile\}\}/g, data.taskFile);
+    .replace(/\{\{taskFile\}\}/g, data.taskFile)
+    .replace(/\{\{specFile\}\}/g, data.specFile || '');
 }
 
 /**
@@ -37,6 +38,7 @@ function buildMetadataBlock(data) {
     `- Worktree: ${data.worktreePath}`,
     `- Created: ${data.createdAt}`,
     `- Status: ${data.status || 'active'}`,
+    ...(data.specFile ? [`- Spec: ${data.specFile}`] : []),
   ].join('\n');
 }
 

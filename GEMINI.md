@@ -22,7 +22,9 @@ Templates: `agents/templates/` (audit, spec, task)
 
 ## Your task file
 
-Create `.agents/tasks/<slug>.md` at the start of your session using `agents/templates/task.md`:
+This only applies if you were launched via the agents workflow (worktree-based parallel sessions). In a regular session this directory will be empty and you can ignore this entirely.
+
+If `.agents/tasks/` contains a file, that is your task file for this session. Read it before doing anything else — it contains your spec reference, objective, plan, and checklist.
 
 - Fill in **Objective** before doing anything else
 - Fill in **Linked docs** with any specs/audits/skills loaded
@@ -37,6 +39,17 @@ Create `.agents/tasks/<slug>.md` at the start of your session using `agents/temp
 - Module internals (`models/`, `repositories/`, `engine/`, `presentations/components/`) are strictly private
 - No barrel files, no `index.ts` re-exports
 - Audio thread: no allocation, no blocking, no mutex locks
+
+## Safety rules (bypass-permissions mode is active)
+
+There are no confirmation prompts. Actions are immediate. Read the full safety section in `AGENTS.md` before doing anything. The short version:
+
+- **Do not delete files** — ever, unless the instruction explicitly names the file to delete.
+- **Do not run destructive git commands** — no `reset --hard`, `clean`, `push --force`, or anything that discards work.
+- **Do not install or remove packages** without an explicit instruction to do so.
+- **Do not modify `.github/`, CI config, or `package.json` scripts** unless that is the task.
+- **Stay in your worktree.** Do not make changes in the main repo or other worktrees.
+- **When in doubt, don't.** Log it as a finding and move on.
 
 ## Artifact placement
 

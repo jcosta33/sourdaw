@@ -1,0 +1,84 @@
+# Special Effects Research: Yeast & Knead
+
+This document consolidates research and design goals for the **Yeast** (MIDI Effects Rack) and **Knead** (Pitch Correction) modules in Sourdaw. 
+
+*(Note: Text describing features that are already fully implemented has been removed. The sections below outline what is currently missing or partially implemented based on codebase analysis.)*
+
+---
+
+## 1. Yeast — Arpeggiator / MIDI Effects Rack
+
+**Codebase Status:** Most core features, the rack architecture, the 5-level progressive disclosure UI (`YeastPanel.tsx`), and the 15+ MIDI processors (including `Arpeggiator`, `MarkovChain`, `EuclideanGenerator`, `GrooveModule`, `ChordGenerator`, etc.) are **fully implemented** in `src/modules/Yeast/`.
+
+### 1.1 Missing Visual Feedback Features
+
+**Piano Roll Preview**
+*(Status: **Missing**. No dedicated component exists yet.)*
+- A horizontally scrolling mini-roll showing scheduled upcoming events.
+- Display requirements: pitch (vertical), time (horizontal), note length (width), velocity (brightness/height), and probability (opacity).
+
+### 1.2 Missing Advanced Processing Features
+
+**Groove Template Extraction**
+*(Status: **Missing**. The `GrooveModule` exists, but template extraction does not.)*
+- Ability to extract a groove from a MIDI performance.
+- Store as a template and apply to the arp, chord stabs, repeater, and note lanes.
+
+---
+
+## 2. Knead — Pitch Correction and Melodic Editing
+
+**Codebase Status:** The real-time monophonic MVP is **implemented**, including YIN tracking (`yin.rs`), the PSOLA shifter (`psola.rs`), voicing detection (`voicing.rs`), the `KneadEngine`, and the basic `KneadEditor.tsx` UI shell with `NoteBlob` models.
+
+### 2.1 Missing Advanced Monophonic Features
+
+**pYIN — Probabilistic Candidates & Sequence Decoding**
+*(Status: **Missing**. Only standard YIN is implemented; `pYIN` is absent from the DSP codebase.)*
+- Produce **multiple pitch candidates** with probabilities.
+- Use an HMM decoded with Viterbi to pick a globally consistent pitch track and jointly estimate voicing.
+- Includes transition costs for continuity vs. octave jumps and V/UV chatter.
+
+**Formant Estimation, Preservation, and Shifting**
+*(Status: **Missing**. The UI has a `formantPreserve` toggle, but there is no LPC or cepstral formant DSP engine.)*
+- **LPC envelope**: LPC order 12–20, pre-emphasis 0.95, analysis frame 20–40 ms.
+- **Cepstral envelope**: lifter approach for inharmonic signals.
+- **Mechanism**: compute spectral envelope, shift fine structure, preserve/follow/shift envelope independently.
+
+**Complex Blob Editing Tools**
+*(Status: **Incomplete**. `NoteBlob` rendering exists, but advanced repair tools are missing.)*
+- "Assignment Mode (Lab)" for editing detection rather than the sound directly.
+- Operations needed: split note at cursor, merge contiguous notes, reassign partials, add/remove note hypotheses.
+
+### 2.2 Missing Polyphonic "DNA-level" Decomposition Mode (Lab)
+
+*(Status: **Entirely Missing**. No STFT, partial tracking, or harmonic grouping code exists in `daw-dsp/src/knead/`.)*
+
+**Polyphonic Pipeline Overview**
+- STFT (e.g., Blackman-Harris 8192 window, 2048 hop).
+- Peak picking and sub-bin quadratic interpolation.
+- Partial tracking (peak matching, birth/death, slope constraints).
+- Harmonic grouping into note objects using subharmonic summation or GCD-like f0 candidates.
+- Soft masks / spectral proportion factors for soft attribution.
+- Residual modeling (keeping transients/noise outside stable partial tracks).
+
+**Phase Vocoder (Peak-based / Phase-locked)**
+*(Status: **Missing**. Only PSOLA is implemented, limiting large pitch shifts and polyphony.)*
+- STFT analysis, transient detection, phase propagation with phase-locking around spectral peaks to reduce "phasiness".
+
+**Transient Detection and Preservation**
+*(Status: **Missing**.)*
+- Mark transient frames using spectral flux / energy slope.
+- Route transient energy into the residual or handle with time-domain methods to prevent phase-vocoder smearing.
+
+**Hybrid Designs with Neural Multipitch Priors**
+*(Status: **Missing**.)*
+- Use NN posteriorgrams (e.g., Basic Pitch via ONNX/`ort` crate) to propose active pitches, onsets, and confidence regions.
+- Run sinusoidal tracking constrained to those neural proposals.
+
+### 2.3 Missing Production Workflows (Route Level)
+
+*(Status: **Missing** from both the UI and DSP engine.)*
+- **Harmonizer**: Up to 4 voices, scale-aware intervals (3rd/5th/octave), spread (delay/detune/formant variance).
+- **Doubler**: Two default layers with random drift and microtiming.
+- **Pitch-to-MIDI**: Mono mode from blobs and poly mode from NN posteriorgrams (export).
+- **Performance Transfer (Revoice-style)**: Guide track + dub track with transfer strength for timing, pitch, and level.

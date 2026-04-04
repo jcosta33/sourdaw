@@ -8,7 +8,7 @@
  * Subcommands: new, open, list, show, task, remove, prune, doctor, path, focus, pick
  */
 
-import { existsSync, mkdirSync, unlinkSync, readFileSync, writeFileSync, accessSync, constants } from 'fs';
+import { existsSync, mkdirSync, unlinkSync, readFileSync, writeFileSync, accessSync, constants, readdirSync } from 'fs';
 import { join, resolve, isAbsolute } from 'path';
 import { spawnSync, spawn } from 'child_process';
 
@@ -18,6 +18,7 @@ import {
   getRepoRoot, getRepoName,
   worktreeList, findWorktreeForBranch, worktreeCreate, worktreeRemove,
   worktreePrune, isWorktreeDirty, getStatusSummary, gitAvailable,
+  isBranchMergedInto, deleteBranch, listBranchesByPrefix,
 } from './agents/git.mjs';
 import { createOrUpdateTaskFile } from './agents/template.mjs';
 import { resolveBackend, launch, checkBackend } from './agents/terminal.mjs';
@@ -136,6 +137,66 @@ function formatTable(rows, cols) {
 
 const KNOWN_AGENTS = ['claude', 'gemini', 'codex'];
 
+// ─── Interactive helpers ──────────────────────────────────────────────────────
+
+/**
+ * Recursively find all .md files under a directory.
+ * Returns paths relative to the given root.
+ */
+function findMarkdownFiles(dir) {
+  const results = [];
+  function walk(absDir, relDir) {
+    let entries;
+    try {
+      entries = readdirSync(absDir, { withFileTypes: true });
+    } catch (e) {
+      console.warn(`Warning: could not read directory ${absDir}: ${e.message}`);
+      return;
+    }
+    for (const entry of entries) {
+      const relPath = relDir ? `${relDir}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        walk(join(absDir, entry.name), relPath);
+      } else if (entry.isFile() && entry.name.endsWith('.md')) {
+        results.push(relPath);
+      }
+    }
+  }
+  walk(dir, '');
+  return results;
+}
+
+/**
+ * Run fzf over a list of items. Returns the selected item or null if cancelled.
+ */
+function fzfSelect(items, { prompt = '> ', preview = '' } = {}) {
+  if (!items.length) return null;
+  const args = ['--prompt', prompt, '--height', '60%', '--border', '--ansi'];
+  if (preview) args.push('--preview', preview, '--preview-window', 'right:55%:wrap');
+  const result = spawnSync('fzf', args, {
+    input: items.join('\n'),
+    encoding: 'utf8',
+    stdio: ['pipe', 'pipe', 'inherit'],
+  });
+  if (result.status !== 0 || !result.stdout.trim()) return null;
+  return result.stdout.trim();
+}
+
+/**
+ * Prompt for text input via bash read, with an optional pre-filled default.
+ * Returns the entered value, or defaultValue if the user just pressed enter.
+ */
+function promptInput(question, defaultValue = '') {
+  const safe = defaultValue.replace(/\\/g, '\\\\').replace(/'/g, "'\\''");
+  const result = spawnSync(
+    'bash', ['-c', `read -rp $'${question}' -e -i '${safe}' val && printf '%s' "$val"`],
+    { stdio: ['inherit', 'pipe', 'inherit'], encoding: 'utf8' },
+  );
+  if (result.status !== 0) return defaultValue;
+  const val = result.stdout.trim();
+  return val !== '' ? val : defaultValue;
+}
+
 // ─── Subcommand: new ─────────────────────────────────────────────────────────
 
 async function cmdNew(argv) {
@@ -150,10 +211,66 @@ async function cmdNew(argv) {
     titlePositional = positional.slice(1);
   }
 
-  const title = titlePositional.join(' ').trim();
+  // If the first positional looks like a file path, treat it as the spec
+  let specFile = flags.get('spec') || '';
+  if (!specFile && titlePositional.length > 0) {
+    const first = titlePositional[0];
+    if (first.endsWith('.md') || first.includes('/')) {
+      specFile = first;
+      titlePositional = titlePositional.slice(1);
+    }
+  }
+
+  let title = titlePositional.join(' ').trim();
+
+  // Derive title from spec filename when none given
+  if (!title && specFile) {
+    const specBase = specFile.split('/').pop().replace(/\.md$/i, '');
+    title = specBase.replace(/[-_]+/g, ' ').trim();
+  }
+
+  // Interactive mode: no spec and no title — drop into guided fzf flow
+  if (!specFile && !title) {
+    if (!agentCommandAvailable('fzf')) {
+      die(
+        'Usage: agents new [agent] <"Task title" | path/to/spec.md>\n\n' +
+        'Install fzf for interactive mode:\n  brew install fzf'
+      );
+    }
+
+    const repoRootEarly = getRepoRoot();
+    const specsDir = join(repoRootEarly, '.agents', 'specs');
+    const specFiles = findMarkdownFiles(specsDir);
+
+    console.log('');
+
+    if (specFiles.length) {
+      const selected = fzfSelect(specFiles, {
+        prompt: 'spec > ',
+        preview: `cat "${specsDir}/{}"`,
+      });
+      if (!selected) process.exit(0);
+
+      specFile = `.agents/specs/${selected}`;
+      const derived = selected.split('/').pop().replace(/\.md$/i, '').replace(/[-_]+/g, ' ').trim();
+      title = promptInput(`Title [${derived}]: `, derived);
+    } else {
+      title = promptInput('Task title: ', '');
+    }
+
+    if (!title) process.exit(0);
+
+    // Agent selection — skip if already specified as a positional
+    if (!agentFromPositional) {
+      const selectedAgent = fzfSelect(KNOWN_AGENTS, { prompt: 'agent > ' });
+      if (selectedAgent) agentFromPositional = selectedAgent;
+    }
+
+    console.log('');
+  }
 
   if (!title) {
-    die('Usage: agents new [claude|gemini|codex] "Task title"\n\nProvide a human-readable task title.');
+    die('Usage: agents new [agent] <"Task title" | path/to/spec.md>');
   }
 
   const repoRoot = getRepoRoot();
@@ -216,14 +333,16 @@ async function cmdNew(argv) {
     if (!jsonOutput) console.log(`Worktree already exists at ${worktreeAbs}`);
   }
 
-  // Create task file
-  const taskFileAbs = join(repoRoot, names.taskFile);
+  // Create task file inside the worktree (not the main repo) so Claude can read it on launch
+  const taskFileAbs = join(worktreeAbs, names.taskFile);
   if (config.writeTaskTemplateOnCreate) {
+    mkdirSync(join(worktreeAbs, '.agents/tasks'), { recursive: true });
     createOrUpdateTaskFile(taskFileAbs, templateDir, {
       title, slug, agent: agentName,
       branch: names.branch, baseBranch,
       worktreePath: names.worktreePath,
       taskFile: names.taskFile,
+      specFile,
       createdAt: new Date().toISOString(),
     });
   }
@@ -243,7 +362,7 @@ async function cmdNew(argv) {
     console.log('');
   }
 
-  await openAt({ slug, title, agentName, terminal, repoRoot, worktreeAbs, names, agentArgsRaw });
+  await openAt({ slug, title, agentName, terminal, repoRoot, worktreeAbs, names, agentArgsRaw, promptContent: names.taskFile });
 }
 
 // ─── Subcommand: open ────────────────────────────────────────────────────────
@@ -283,23 +402,43 @@ async function cmdOpen(argv) {
   const jsonOutput = flags.has('json');
   const agentArgsRaw = flags.get('agent-args') || '';
 
+  // Create task file if missing (e.g. worktree predates this feature, or reuse path from cmdNew)
+  const taskFileAbs = join(worktreeAbs, names.taskFile);
+  if (config.writeTaskTemplateOnCreate && !existsSync(taskFileAbs)) {
+    const templateDir = join(repoRoot, '.agents', 'templates');
+    mkdirSync(join(worktreeAbs, '.agents/tasks'), { recursive: true });
+    createOrUpdateTaskFile(taskFileAbs, templateDir, {
+      title: slug, slug, agent: agentName,
+      branch: names.branch, baseBranch: config.defaultBaseBranch,
+      worktreePath: names.worktreePath,
+      taskFile: names.taskFile,
+      specFile: '',
+      createdAt: new Date().toISOString(),
+    });
+    if (!jsonOutput) console.log(`Created missing task file: ${names.taskFile}`);
+  }
+
   if (jsonOutput) printJson({ slug, branch: names.branch, worktreePath: worktreeAbs, taskFile: names.taskFile });
 
   await openAt({ slug, title: slug, agentName, terminal, noLaunch, jsonOutput,
-    repoRoot, worktreeAbs, names, agentArgsRaw });
+    repoRoot, worktreeAbs, names, agentArgsRaw, promptContent: names.taskFile });
 }
 
 /**
  * Shared launch logic used by both `new` and `open`.
  */
 async function openAt({ slug, title, agentName, terminal, noLaunch = false, jsonOutput = false,
-  repoRoot, worktreeAbs, names, agentArgsRaw }) {
+  repoRoot, worktreeAbs, names, agentArgsRaw, promptContent = '' }) {
 
   if (noLaunch) return;
 
   const adapter = await loadAdapter(agentName);
   const extraArgs = agentArgsRaw ? agentArgsRaw.split(/\s+/).filter(Boolean) : [];
-  const agentArgs = adapter.buildArgs(slug, extraArgs);
+  const agentArgs = adapter.buildArgs(slug, extraArgs, {
+    taskFile: promptContent,
+    branch: names.branch,
+    worktreePath: worktreeAbs,
+  });
   const backend = resolveBackend(terminal);
 
   const backendCheck = checkBackend(backend);
@@ -397,16 +536,19 @@ async function cmdTask(argv) {
   const config = loadConfig(repoRoot);
   const names = deriveNames(slug, repoName, config);
 
+  const worktreeAbs = findWorktreePath(slug, repoRoot);
+  if (!worktreeAbs) die(`No active worktree for "${slug}". Is it checked out?`);
+
   if (flags.has('append')) {
     const note = flags.get('append');
-    const taskFileAbs = join(repoRoot, names.taskFile);
+    const taskFileAbs = join(worktreeAbs, names.taskFile);
     if (existsSync(taskFileAbs)) {
       const content = readFileSync(taskFileAbs, 'utf8');
       const appended = content.trimEnd() + `\n\n<!-- note: ${new Date().toISOString()} -->\n${note}\n`;
       writeFileSync(taskFileAbs, appended, 'utf8');
       console.log(`Appended note to: ${names.taskFile}`);
     } else {
-      warn(`Task file not found: ${names.taskFile}`);
+      warn(`Task file not found at: ${taskFileAbs}`);
     }
   } else {
     console.log('No changes made. Use --append.');
@@ -422,8 +564,6 @@ async function cmdRemove(argv) {
 
   const force = flags.has('force');
   const repoRoot = getRepoRoot();
-  const repoName = getRepoName(repoRoot);
-  const config = loadConfig(repoRoot);
 
   const worktreeAbs = findWorktreePath(slug, repoRoot);
 
@@ -448,19 +588,86 @@ async function cmdRemove(argv) {
     console.log(`No active worktree for "${slug}" (already removed).`);
   }
 
-  const names = deriveNames(slug, repoName, config);
-  const taskFileAbs = join(repoRoot, names.taskFile);
-  if (existsSync(taskFileAbs)) { unlinkSync(taskFileAbs); console.log(`Removed task file: ${names.taskFile}`); }
+  // Task file lives inside the worktree — it's gone when the worktree is removed.
 
   console.log(`\nSandbox "${slug}" removed.`);
 }
 
 // ─── Subcommand: prune ───────────────────────────────────────────────────────
 
-async function cmdPrune() {
+async function cmdPrune(argv) {
+  const { flags } = parseArgs(argv);
+  const force = flags.has('force');
+
   const repoRoot = getRepoRoot();
+  const config = loadConfig(repoRoot);
+  const baseBranch = config.defaultBaseBranch;
+
+  // Prune stale worktree metadata first
   console.log('Running git worktree prune...');
   worktreePrune(repoRoot);
+
+  // Build a map of branch → worktree path for active worktrees
+  const activeWorktrees = listAgentWorktrees(repoRoot);
+  const activeByBranch = new Map(activeWorktrees.map(s => [s.branch, s]));
+
+  // Scan all local agent/* branches (catches orphaned branches with no worktree)
+  const allAgentBranches = listBranchesByPrefix('agent/', repoRoot);
+
+  if (!allAgentBranches.length) {
+    console.log('No agent branches found.\nDone.');
+    return;
+  }
+
+  console.log(`\nScanning ${allAgentBranches.length} agent branch(es)...\n`);
+
+  let cleaned = 0;
+
+  for (const branch of allAgentBranches) {
+    const slug = branch.slice(6); // strip 'agent/'
+    const active = activeByBranch.get(branch);
+    const isMerged = isBranchMergedInto(branch, baseBranch, repoRoot);
+    const hasWorktree = !!active;
+
+    // Skip branches that are not merged and still have an active worktree
+    if (!isMerged && hasWorktree) continue;
+
+    // Skip branches that are not merged and have no worktree only if not --force
+    if (!isMerged && !hasWorktree && !force) continue;
+
+    const reason = isMerged ? 'merged' : 'orphaned (no worktree)';
+    console.log(`  ${slug}  [${reason}]`);
+
+    // Remove active worktree if present
+    if (active) {
+      if (!force && isWorktreeDirty(active.path)) {
+        console.log(`    Skipping — dirty worktree (use --force to override)\n`);
+        continue;
+      }
+      try {
+        worktreeRemove(active.path, force, repoRoot);
+        console.log(`    Removed worktree: ${active.path}`);
+      } catch (e) {
+        warn(`Could not remove worktree for "${slug}": ${e.message}`);
+      }
+    }
+
+    // Delete the branch
+    try {
+      deleteBranch(branch, repoRoot, true); // always force-delete since we verified merge or --force
+      console.log(`    Deleted branch:   ${branch}`);
+    } catch (e) {
+      warn(`Could not delete branch "${branch}": ${e.message}`);
+    }
+
+    console.log('');
+    cleaned++;
+  }
+
+  if (!cleaned) {
+    console.log('Nothing to clean up.\n  - Use --force to also remove orphaned branches with no worktree.');
+  }
+
   console.log('Done.');
 }
 
@@ -672,16 +879,18 @@ function cmdHelp() {
 agents — local multi-agent workspace launcher
 
 Usage:
-  npm run agents -- <subcommand> [options]
+  pnpm agents:new                   Interactive spec/agent picker (requires fzf)
+  pnpm agents:new <"Task title" | spec.md>
+  pnpm agents -- <subcommand> [options]
 
 Core subcommands:
-  new     <title>           Create or reopen an agent sandbox
-  open    <slug>            Open an existing sandbox
+  new     [title|spec.md]   Create or reopen a sandbox — interactive if no args given
+  open    <slug>            Reopen an existing sandbox
   list                      List all active sandboxes
   show    <slug>            Show detailed info for a sandbox
-  task    <slug>            Update task metadata or append notes
-  remove  <slug>            Remove a sandbox
-  prune                     Clean stale worktree metadata
+  task    <slug>            Append a note to the task file
+  remove  <slug>            Remove a sandbox and its worktree
+  prune                     Remove merged/orphaned sandboxes
   doctor                    Run preflight checks
 
 QOL subcommands:
@@ -690,40 +899,47 @@ QOL subcommands:
   pick                      fzf fuzzy-picker over active sandboxes
 
 Flags for \`new\`:
-  --agent <name>            Agent to launch (claude, gemini, codex)
-  --base <branch>           Base branch for the worktree
-  --terminal <backend>      Terminal backend (current, terminal, iterm)
-  --duplicate               Force a new sandbox even if slug exists
-  --suffix <text>           Append suffix to slug
-  --agent-args "<args>"     Extra args passed to the agent CLI
-  --no-launch               Create sandbox without opening terminal
+  --agent <name>            Agent to launch: claude (default), gemini, codex
+  --spec <path>             Spec file to embed in task (also accepted as positional)
+  --base <branch>           Base branch (default: main)
+  --terminal <backend>      Terminal backend: current (default), terminal, iterm
+  --duplicate               Force a new sandbox even if slug already exists
+  --suffix <text>           Append a suffix to the slug
+  --agent-args "<args>"     Extra args forwarded to the agent CLI
+  --no-launch               Create sandbox without launching the agent
   --json                    Machine-readable output
 
+Flags for \`prune\`:
+  --force                   Also remove orphaned branches and skip dirty check
+
 Flags for \`list\`:
-  --dirty-only              Show only dirty worktrees
+  --dirty-only              Show only sandboxes with uncommitted changes
   --json                    Machine-readable output
 
 Flags for \`focus\`:
   --editor <cmd>            Override editor (e.g. --editor=zed)
 
 Shell integration (optional):
-  source scripts/agents/shell.sh    Adds short functions: anew, aopen, alist, apick…
+  source scripts/agents/shell.sh    Adds short aliases: anew, aopen, alist, apick…
 
 Examples:
-  npm run agents:new -- "Fix auth redirect loop"
-  npm run agents:new:claude -- "Fix auth redirect loop"
-  npm run agents:new -- gemini --base develop "Refactor settings"
-  npm run agents:open -- fix-auth-redirect-loop codex
-  npm run agents:pick
-  npm run agents:focus -- fix-auth-redirect-loop
-  cd \$(npm run --silent agents:path -- fix-auth-redirect-loop)
-  npm run agents:list -- --dirty-only
+  pnpm agents:new                                              # interactive picker
+  pnpm agents:new 'Fix auth redirect loop'
+  pnpm agents:new .agents/specs/architecture-refactor/team4-session.md
+  pnpm agents:new gemini 'Refactor settings'
+  pnpm agents:open fix-auth-redirect-loop
+  pnpm agents:pick
+  pnpm agents:prune
+  pnpm agents:prune --force
+  pnpm agents:list -- --dirty-only
 `);
 }
 
 // ─── Main dispatch ───────────────────────────────────────────────────────────
 
-const [,, subcommand, ...rest] = process.argv;
+const [,, subcommand, ...rawRest] = process.argv;
+// pnpm/npm inject a bare '--' before forwarded flags — strip it so our parseArgs sees real flags
+const rest = rawRest[0] === '--' ? rawRest.slice(1) : rawRest;
 
 const commands = {
   new: cmdNew,

@@ -2,15 +2,16 @@
  * Adapter for the OpenAI Codex CLI.
  */
 export const command = 'codex';
-export const defaultArgs = [];
 
 /**
  * Build the final args array for launching Codex.
  * @param {string} slug
  * @param {string[]} extraArgs  - from --agent-args
+ * @param {object} options      - taskFile, branch, worktreePath (unused — context via CLAUDE.md)
  * @returns {string[]}
  */
-export function buildArgs(slug, extraArgs = []) {
-  // Codex supports passthrough of profile/sandbox args via extraArgs
-  return [...defaultArgs, ...extraArgs];
+export function buildArgs(slug, extraArgs = [], options = {}) {
+  // Codex does not support session naming. Pass sandbox/profile args via --agent-args.
+  // Session context is provided via .agents/tasks/ which CLAUDE.md instructs the agent to read.
+  return [...extraArgs];
 }

@@ -1,0 +1,89 @@
+# CODEOWNERS
+#
+# Defines module ownership across the codebase.
+# Ownership maps to the bounded contexts defined in .agents/specs/architecture-refactor/ownership.md.
+#
+# Format: <path pattern>  <owner>
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# ─── Default owner ────────────────────────────────────────────────────────────
+
+*  @sourdaw/team-platform
+
+# ─── Team 1: Conductor ────────────────────────────────────────────────────────
+# Foundational platform infrastructure: execution flow, project persistence,
+# signal routing, notifications. Almost everything else depends on these modules.
+
+/src/modules/Command/        @sourdaw/team-conductor
+/src/modules/Project/        @sourdaw/team-conductor
+/src/modules/Transport/      @sourdaw/team-conductor
+/src/modules/Routing/        @sourdaw/team-conductor
+/src/modules/Toaster/        @sourdaw/team-conductor
+
+# ─── Team 2: Engine Room ──────────────────────────────────────────────────────
+# Audio processing core: real-time Web Audio graph, plugin hosting, synthesis.
+# Real-time safety rules apply to all code in these modules.
+
+/src/modules/AudioEngine/            @sourdaw/team-engine-room
+/src/modules/createWebAudioEngine/   @sourdaw/team-engine-room
+/src/modules/Plugin/                 @sourdaw/team-engine-room
+/src/modules/Synth/                  @sourdaw/team-engine-room
+/src/modules/Yeast/                  @sourdaw/team-engine-room
+/src/modules/Scoring/                @sourdaw/team-engine-room
+
+# ─── Team 3: Instrument Workshop ──────────────────────────────────────────────
+# Instrument and signal-processing modules. All follow the same minimal pattern:
+# import only Arrangement and AudioEngine, own their DSP/synthesis logic.
+
+/src/modules/Bacteria/       @sourdaw/team-instrument-workshop
+/src/modules/Crust/          @sourdaw/team-instrument-workshop
+/src/modules/Fermenter/      @sourdaw/team-instrument-workshop
+/src/modules/Gluten/         @sourdaw/team-instrument-workshop
+/src/modules/Grinder/        @sourdaw/team-instrument-workshop
+/src/modules/Levain/         @sourdaw/team-instrument-workshop
+/src/modules/Proof/          @sourdaw/team-instrument-workshop
+/src/modules/ProofChamber/   @sourdaw/team-instrument-workshop
+/src/modules/SoundLibrary/   @sourdaw/team-instrument-workshop
+
+# ─── Team 4: Session ──────────────────────────────────────────────────────────
+# Arrangement data layer and tightly coupled session modules.
+# Arrangement is the main project data hub — nearly every module imports from it.
+
+/src/modules/Arrangement/    @sourdaw/team-session
+/src/modules/MIDI/           @sourdaw/team-session
+/src/modules/Automation/     @sourdaw/team-session
+/src/modules/CrdtDocument/   @sourdaw/team-session
+/src/modules/Collaboration/  @sourdaw/team-session
+
+# ─── Team 5: Studio Shell ─────────────────────────────────────────────────────
+# User-facing intelligence and workspace layer. Workspace is the top-level UI
+# orchestrator. AI modules (AiGeneration ↔ AiRuntime) have a known circular
+# dependency resolved within this team.
+
+/src/modules/Workspace/        @sourdaw/team-studio-shell
+/src/modules/AiGeneration/     @sourdaw/team-studio-shell
+/src/modules/AiRuntime/        @sourdaw/team-studio-shell
+/src/modules/AudioAnalysis/    @sourdaw/team-studio-shell
+/src/modules/SampleLibrary/    @sourdaw/team-studio-shell
+/src/modules/VirtualKeyboard/  @sourdaw/team-studio-shell
+/src/modules/Extension/        @sourdaw/team-studio-shell
+/src/modules/Knead/            @sourdaw/team-studio-shell
+
+# ─── Team 6: Platform ─────────────────────────────────────────────────────────
+# Cross-cutting concerns: shared UI components, DI infrastructure, global styles,
+# docs architecture, build config, and scripts.
+
+/src/components/   @sourdaw/team-platform
+/src/styles/       @sourdaw/team-platform
+/src/lib/          @sourdaw/team-platform
+/docs/             @sourdaw/team-platform
+/scripts/          @sourdaw/team-platform
+/.agents/          @sourdaw/team-platform
+
+# ─── Team 7: Rust Core ────────────────────────────────────────────────────────
+# Rust backend crates: audio engine, DSP, plugin host, I/O, Tauri bridge.
+# RT-thread rules apply strictly — no allocation, no locks, no blocking on the
+# real-time audio path.
+
+/crates/           @sourdaw/team-rust-core
+/src-tauri/        @sourdaw/team-rust-core

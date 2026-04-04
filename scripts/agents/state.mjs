@@ -12,7 +12,8 @@ export function readState(slug, stateDir) {
   if (!existsSync(file)) return null;
   try {
     return JSON.parse(readFileSync(file, 'utf8'));
-  } catch {
+  } catch (e) {
+    console.warn(`Warning: could not parse state file for "${slug}": ${e.message}`);
     return null;
   }
 }

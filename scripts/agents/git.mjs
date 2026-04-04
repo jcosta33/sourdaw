@@ -50,7 +50,8 @@ export function worktreeList(repoRoot) {
   let raw;
   try {
     raw = git(['worktree', 'list', '--porcelain'], { cwd: repoRoot });
-  } catch {
+  } catch (e) {
+    console.warn(`Warning: could not list worktrees: ${e.message}`);
     return [];
   }
   const worktrees = [];
@@ -165,6 +166,65 @@ export function getStatusSummary(worktreePath) {
   if (!lines) return 'clean';
   const count = lines.split('\n').length;
   return `dirty (${count} change${count !== 1 ? 's' : ''})`;
+}
+
+/**
+ * Check if a local branch is fully merged into another branch.
+ * Checks both the local ref and origin/<baseBranch> so it works even when
+ * the local base branch hasn't been pulled yet.
+ * Note: squash-merged and rebase-merged branches are NOT detected — delete those manually.
+ * @param {string} branch
+ * @param {string} baseBranch
+ * @param {string} repoRoot
+ * @returns {boolean}
+ */
+export function isBranchMergedInto(branch, baseBranch, repoRoot) {
+  const refs = [baseBranch, `origin/${baseBranch}`];
+  for (const ref of refs) {
+    try {
+      // A branch with 0 unique commits relative to this ref is empty, not merged
+      const uniqueCount = parseInt(
+        git(['rev-list', '--count', `${ref}..${branch}`], { cwd: repoRoot }), 10
+      );
+      if (uniqueCount === 0) continue;
+
+      const output = git(['branch', '--merged', ref], { cwd: repoRoot });
+      const merged = output.split('\n').map(l => l.trim().replace(/^[*+]\s*/, ''));
+      if (merged.includes(branch)) return true;
+    } catch (e) {
+      console.warn(`Warning: could not check merged status of "${branch}" against "${ref}": ${e.message}`);
+    }
+  }
+  return false;
+}
+
+/**
+ * Delete a local branch.
+ * @param {string} branch
+ * @param {string} repoRoot
+ * @param {boolean} force  - use -D instead of -d
+ */
+export function deleteBranch(branch, repoRoot, force = false) {
+  git(['branch', force ? '-D' : '-d', branch], { cwd: repoRoot });
+}
+
+/**
+ * List all local branches matching a prefix.
+ * @param {string} prefix  e.g. 'agent/'
+ * @param {string} repoRoot
+ * @returns {string[]}
+ */
+export function listBranchesByPrefix(prefix, repoRoot) {
+  try {
+    const output = git(['branch', '--list', `${prefix}*`], { cwd: repoRoot });
+    return output
+      .split('\n')
+      .map(l => l.trim().replace(/^[*+]\s*/, ''))  // * = current branch, + = checked out in worktree
+      .filter(Boolean);
+  } catch (e) {
+    console.warn(`Warning: could not list branches with prefix "${prefix}": ${e.message}`);
+    return [];
+  }
 }
 
 /**
