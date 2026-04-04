@@ -5,7 +5,9 @@ import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { type DisplayMode } from '../../models/ScoringState';
-import { scoringStore, getScoringState, setA4Reference, setDisplayMode } from '../../stores/scoringStore';
+import { scoringStore, getScoringState } from '../../stores/scoringStore';
+import { setDisplayMode } from '../../useCases/setDisplayMode';
+import { setA4Reference } from '../../useCases/setA4Reference';
 
 const MODES: ReadonlyArray<{ id: DisplayMode; label: string; detail: string }> = [
     { id: 'needle', label: 'Needle', detail: 'Classic center read' },

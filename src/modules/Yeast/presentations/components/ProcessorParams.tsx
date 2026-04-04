@@ -4,12 +4,12 @@
  */
 import { type ReactElement } from 'react';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { setYeastProcessorParam } from '../../stores/yeastStore';
 import { type ProcessorType } from '../../useCases/processorFactory';
 
 type Props = {
     processorId: string;
     processorType: ProcessorType;
+    onSetParam: (id: string, name: string, value: number) => void;
 };
 
 const K = ({ id, name, label, value, min, max, step, unit }: {
@@ -37,7 +37,7 @@ const Sel = ({ id, name, label, options, value }: {
     </div>
 );
 
-export const ProcessorParams = ({ processorId: pid, processorType }: Props): ReactElement | null => {
+export const ProcessorParams = ({ processorId: pid, processorType, onSetParam: setYeastProcessorParam }: Props): ReactElement | null => {
     switch (processorType) {
         case 'arpeggiator':
             return (

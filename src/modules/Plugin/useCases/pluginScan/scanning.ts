@@ -1,4 +1,4 @@
-import { pluginScanStore, defaultPluginScanState } from '#/modules/AudioEngine/stores/pluginScanStore';
+import { pluginScanStore, defaultPluginScanState } from '../../stores/pluginScanStore';
 import { scanPlugins } from '../../repositories/pluginBridge/scanPlugins';
 import { getDefaultPluginPaths } from '../../repositories/pluginBridge/getDefaultPluginPaths';
 
