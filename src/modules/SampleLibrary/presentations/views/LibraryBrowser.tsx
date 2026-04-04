@@ -118,6 +118,24 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
         void connectFolder();
     };
 
+    const playSample = async (sample: (typeof rootSamples)[number]): Promise<void> => {
+        const root = roots.find((r) => r.id === sample.libraryRootId);
+        if (!root?.handle) return;
+        try {
+            const pathParts = sample.relativePath.split('/');
+            const fileName = pathParts.pop()!;
+            let dirHandle: FileSystemDirectoryHandle = root.handle;
+            for (const part of pathParts) {
+                dirHandle = await dirHandle.getDirectoryHandle(part);
+            }
+            const fileHandle = await dirHandle.getFileHandle(fileName);
+            const file = await fileHandle.getFile();
+            await preview.playFile(sample.id, file);
+        } catch {
+            // File inaccessible or format unsupported — silently ignore for preview
+        }
+    };
+
     return (
         <div className="flex flex-col h-full">
             {/* ── Header ── */}
@@ -304,9 +322,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                                 key={sample.id}
                                 sample={sample}
                                 isPlaying={preview.playingId === sample.id}
-                                onPlay={() => {
-                                    preview.playTone(sample.id, 440, 0.3);
-                                }}
+                                onPlay={() => { void playSample(sample); }}
                                 onStop={preview.stop}
                                 onToggleFavorite={() => toggleSampleFavorite(sample.id)}
                                 onDragStart={(e) => {
@@ -325,7 +341,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                                     if (preview.playingId === sample.id) {
                                         preview.stop();
                                     } else {
-                                        preview.playTone(sample.id, 440, 0.3);
+                                        void playSample(sample);
                                     }
                                 }}
                             />

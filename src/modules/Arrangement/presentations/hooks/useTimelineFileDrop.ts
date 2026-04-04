@@ -99,13 +99,17 @@ export const useTimelineFileDrop = ({
                         }
                         const fileHandle = await dirHandle.getFileHandle(fileName);
                         const file = await fileHandle.getFile();
-                        const result = await decodeAudioFile(file);
-                        audioBufferId = result.id;
-                        durationBeats = Math.max(1, Math.ceil((result.buffer.duration / 60) * buildTimelineRenderModel().tempo));
-                        assetHash = await getAssetTransfer()?.addLocalAsset(file, file.name);
+                        try {
+                            const result = await decodeAudioFile(file);
+                            audioBufferId = result.id;
+                            durationBeats = Math.max(1, Math.ceil((result.buffer.duration / 60) * buildTimelineRenderModel().tempo));
+                            assetHash = await getAssetTransfer()?.addLocalAsset(file, file.name);
+                        } catch {
+                            notifyUser(`"${sample.name}" could not be decoded — this format may not be supported in the browser (e.g. ALAC or DRM-protected files).`, 'warning');
+                        }
                     }
                 } catch {
-                    notifyUser(`Could not load "${sample.name}" — the file may have moved or permissions were revoked.`, 'warning');
+                    notifyUser(`Could not access "${sample.name}" — the file may have moved or folder permissions were revoked.`, 'warning');
                 }
 
                 addClip({

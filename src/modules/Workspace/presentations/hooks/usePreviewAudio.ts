@@ -5,6 +5,7 @@ export type PreviewHandle = {
     playingId: string | null;
     play: (id: string, buffer: AudioBuffer) => void;
     playTone: (id: string, frequency: number, durationSec: number) => void;
+    playFile: (id: string, file: File) => Promise<void>;
     stop: () => void;
 };
 
@@ -91,5 +92,19 @@ export const usePreviewAudio = (): PreviewHandle => {
         };
     };
 
-    return { playingId, play, playTone, stop };
+    const playFile = async (id: string, file: File): Promise<void> => {
+        try {
+            const ctx = getAudioContext();
+            if (ctx.state === 'suspended') {
+                await ctx.resume();
+            }
+            const arrayBuffer = await file.arrayBuffer();
+            const buffer = await ctx.decodeAudioData(arrayBuffer);
+            play(id, buffer);
+        } catch {
+            // Format not supported or decode failed — preview is best-effort
+        }
+    };
+
+    return { playingId, play, playTone, playFile, stop };
 };
