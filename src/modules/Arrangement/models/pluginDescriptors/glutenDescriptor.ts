@@ -1,10 +1,58 @@
 /**
  * Gluten — multi-topology bus compressor plugin descriptor.
  * Registers Gluten as an effect that can be added to any track.
+ *
+ * Parameter data is inlined here rather than imported from the Gluten
+ * module. Models must not cross module boundaries; duplication is intentional.
  */
 
-import { type PluginDescriptor } from '../DeviceParameter';
-import { GLUTEN_PARAMS } from '#/modules/Gluten/models/GlutenPatch';
+import { type PluginDescriptor, type PluginParamDef } from '../DeviceParameter';
+
+const GLUTEN_PARAMS: readonly PluginParamDef[] = [
+    // Core
+    { id: 'topology',   label: 'Topology',   min: 0,    max: 3,     default: 0,     unit: '',    step: 1   },
+    { id: 'amount',     label: 'Amount',     min: 0,    max: 100,   default: 50,    unit: '%',   step: 1   },
+    { id: 'threshold',  label: 'Threshold',  min: -60,  max: 0,     default: -18,   unit: 'dB',  step: 0.5 },
+    { id: 'ratio',      label: 'Ratio',      min: 1,    max: 20,    default: 4,     unit: ':1',  step: 0.5 },
+    { id: 'attack',     label: 'Attack',     min: 0.02, max: 250,   default: 10,    unit: 'ms',  step: 0.1, scaling: 'log' },
+    { id: 'release',    label: 'Release',    min: 25,   max: 5000,  default: 300,   unit: 'ms',  step: 1,   scaling: 'log' },
+    { id: 'knee',       label: 'Knee',       min: 0,    max: 30,    default: 6,     unit: 'dB',  step: 0.5 },
+    { id: 'makeup',     label: 'Makeup',     min: -12,  max: 24,    default: 0,     unit: 'dB',  step: 0.5 },
+    { id: 'mix',        label: 'Mix',        min: 0,    max: 1,     default: 1,     unit: '',    step: 0.01 },
+    { id: 'autoMakeup', label: 'Auto Makeup', min: 0,  max: 1,     default: 0,     unit: '',    step: 1   },
+    { id: 'autoRelease', label: 'Auto Release', min: 0, max: 1,    default: 1,     unit: '',    step: 1   },
+    // Advanced
+    { id: 'range',         label: 'Range',       min: 0,    max: 60,    default: 15,    unit: 'dB',  step: 1   },
+    { id: 'lookahead',     label: 'Lookahead',   min: 0,    max: 20,    default: 0,     unit: 'ms',  step: 0.5 },
+    { id: 'deltaListen',   label: 'Delta Listen', min: 0,   max: 1,     default: 0,     unit: '',    step: 1   },
+    // Sidechain
+    { id: 'scHpfFreq',     label: 'SC HPF',      min: 20,   max: 500,   default: 80,    unit: 'Hz',  step: 1,   scaling: 'log' },
+    { id: 'scHpfEnabled',  label: 'SC HPF On',   min: 0,    max: 1,     default: 1,     unit: '',    step: 1   },
+    { id: 'thrust',        label: 'Thrust',      min: 0,    max: 2,     default: 0,     unit: '',    step: 1   },
+    { id: 'detection',     label: 'Detection',   min: 0,    max: 1,     default: 0,     unit: '',    step: 1   },
+    { id: 'scLpfFreq',     label: 'SC LPF',      min: 1000, max: 20000, default: 20000, unit: 'Hz',  step: 100, scaling: 'log' },
+    { id: 'scLpfEnabled',  label: 'SC LPF On',   min: 0,    max: 1,     default: 0,     unit: '',    step: 1   },
+    // Stereo
+    { id: 'stereoLink',    label: 'Stereo Link', min: 0,    max: 1,     default: 1,     unit: '',    step: 0.01 },
+    { id: 'stereoMode',    label: 'Stereo Mode', min: 0,    max: 3,     default: 0,     unit: '',    step: 1   },
+    // FET-specific
+    { id: 'inputGain',     label: 'Input Gain',  min: -12,  max: 24,    default: 0,     unit: 'dB',  step: 0.5 },
+    { id: 'outputGain',    label: 'Output Gain', min: -24,  max: 24,    default: 0,     unit: 'dB',  step: 0.5 },
+    { id: 'xfmrDrive',     label: 'Transformer', min: 0,    max: 3,     default: 1.2,   unit: '',    step: 0.01 },
+    { id: 'allButtons',    label: 'All Buttons', min: 0,    max: 1,     default: 0,     unit: '',    step: 1   },
+    // Opto-specific
+    { id: 'limitMode',     label: 'Limit Mode',  min: 0,    max: 1,     default: 0,     unit: '',    step: 1   },
+    // Diode-specific
+    { id: 'recovery',      label: 'Recovery',    min: 1,    max: 5,     default: 3,     unit: '',    step: 1   },
+    // VCA-specific
+    { id: 'vcaCharacter',  label: 'VCA Color',   min: 0,    max: 0.02,  default: 0.003, unit: '',    step: 0.001 },
+    { id: 'feedForward',   label: 'Feed-Forward', min: 0,   max: 1,     default: 0,     unit: '',    step: 1   },
+    // Dual-stage blend
+    { id: 'blendTopology', label: 'Blend Topo',  min: 0,    max: 3,     default: 1,     unit: '',    step: 1   },
+    { id: 'blendAmount',   label: 'Blend',       min: 0,    max: 1,     default: 0,     unit: '',    step: 0.01 },
+    // Bypass
+    { id: 'gainMatchBypass', label: 'Gain Match', min: 0,   max: 1,     default: 0,     unit: '',    step: 1   },
+];
 
 export const GLUTEN_DESCRIPTOR: PluginDescriptor = {
     id: 'gluten',

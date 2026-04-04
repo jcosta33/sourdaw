@@ -13,16 +13,38 @@ import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
 
 import { setupProjectionBridge } from '#/modules/CrdtDocument/useCases/projection/projectProjection';
 import { branchStore } from '#/modules/CrdtDocument/stores/branchStore';
-import { automergeRepository } from '#/modules/CrdtDocument/repositories/automergeRepository';
+import {
+    subscribeToCrdtChanges,
+    getCrdtDoc,
+    createCrdtDoc,
+    hasCrdtDoc,
+    removeCrdtDoc,
+    mutateCrdtDoc,
+} from '#/modules/CrdtDocument/useCases/crdtRepositoryAccess';
 import { persistCrdtProject } from '#/modules/CrdtDocument/useCases/crdtProjectLifecycle';
-import { DOC_BRANCHES } from '#/modules/CrdtDocument/models/CrdtDocumentTypes';
-import { type BranchStoreState, MAIN_BRANCH_ID } from '#/modules/CrdtDocument/models/BranchTypes';
-
 import { collaborationStore } from '../../stores/collaborationStore';
 import { PeerConnectionManager } from '../../repositories/peerConnection';
 import { AutomergeSync } from '../automergeSync';
 import { AssetTransfer } from '../assetTransfer';
 import { PermissionManager } from '../permissions';
+
+const DOC_BRANCHES = '__branches__';
+const MAIN_BRANCH_ID = 'main';
+
+type LocalBranchRecord = {
+    branchId: string;
+    name: string;
+    rootDocId: string;
+    sourceBranchId: string | null;
+    createdAt: number;
+    createdFromHeads: string[];
+    note: string;
+};
+
+type LocalBranchState = {
+    branches: LocalBranchRecord[];
+    activeBranchId: string;
+};
 
 let peerManager: PeerConnectionManager | null = null;
 let automergeSync: AutomergeSync | null = null;
@@ -38,7 +60,7 @@ const peerCleanupTimers = new Map<PeerId, ReturnType<typeof setTimeout>>();
 
 // -- Branch sync state --
 /** Snapshot of branchStore taken at session start; restored on session end. */
-let branchStoreSnapshot: BranchStoreState | null = null;
+let branchStoreSnapshot: LocalBranchState | null = null;
 /** Unsubscribe from branchStore changes (local mutations → Automerge doc). */
 let unsubscribeBranchStore: (() => void) | null = null;
 /** Unsubscribe from automergeRepository changes (__branches__ doc → branchStore). */
@@ -76,11 +98,14 @@ const startBranchSync = (isHost: boolean): void => {
 
     if (isHost) {
         // Seed the metadata doc. Remove any stale doc from a previous session first.
-        automergeRepository.removeDoc(DOC_BRANCHES);
-        automergeRepository.createChildDoc(DOC_BRANCHES);
+        removeCrdtDoc(DOC_BRANCHES);
+        createCrdtDoc(DOC_BRANCHES);
         const currentBranches = branchStore.value?.branches ?? [];
-        automergeRepository.changeDoc(DOC_BRANCHES, (doc: Record<string, unknown>) => {
-            doc['branches'] = currentBranches;
+        mutateCrdtDoc({
+            id: DOC_BRANCHES,
+            changeFn: (doc: Record<string, unknown>) => {
+                doc['branches'] = currentBranches;
+            },
         });
     }
     // For joiners, the doc is created on demand in AutomergeSync.receiveSync.
@@ -90,17 +115,20 @@ const startBranchSync = (isHost: boolean): void => {
         if (isProjectingBranches || !state) {
             return;
         }
-        if (!automergeRepository.hasDoc(DOC_BRANCHES)) {
+        if (!hasCrdtDoc(DOC_BRANCHES)) {
             return;
         }
-        automergeRepository.changeDoc(DOC_BRANCHES, (doc: Record<string, unknown>) => {
-            doc['branches'] = state.branches;
+        mutateCrdtDoc({
+            id: DOC_BRANCHES,
+            changeFn: (doc: Record<string, unknown>) => {
+                doc['branches'] = state.branches;
+            },
         });
     });
 
     // Project incoming __branches__ doc changes back into branchStore.
-    unsubscribeAutomergeChanges = automergeRepository.onChange(() => {
-        const doc = automergeRepository.getDoc<{ branches: BranchStoreState['branches'] }>(DOC_BRANCHES);
+    unsubscribeAutomergeChanges = subscribeToCrdtChanges(() => {
+        const doc = getCrdtDoc<{ branches: LocalBranchState['branches'] }>(DOC_BRANCHES);
         if (!doc?.branches) {
             return;
         }
@@ -116,7 +144,7 @@ const startBranchSync = (isHost: boolean): void => {
         isProjectingBranches = true;
         try {
             // Keep the peer's own activeBranchId — don't force them onto the host's branch.
-            const validActiveBranchId = incomingBranches.some((b) => b.branchId === activeBranchId)
+            const validActiveBranchId = incomingBranches.some((branch) => branch.branchId === activeBranchId)
                 ? activeBranchId
                 : MAIN_BRANCH_ID;
             branchStore.set({ branches: incomingBranches, activeBranchId: validActiveBranchId });
@@ -140,7 +168,7 @@ const stopBranchSync = (): void => {
         unsubscribeAutomergeChanges = null;
     }
 
-    automergeRepository.removeDoc(DOC_BRANCHES);
+    removeCrdtDoc(DOC_BRANCHES);
 
     if (branchStoreSnapshot) {
         isProjectingBranches = true;
@@ -563,7 +591,8 @@ export const getPermissionManager = (): PermissionManager | null => permissionMa
 
 // -- Internal handlers --
 
-const handlePeerMessage = (peerId: PeerId, message: PeerMessage): void => {
+type HandlePeerMessageInput = { peerId: PeerId; message: PeerMessage };
+const handlePeerMessage = ({ peerId, message }: HandlePeerMessageInput): void => {
     if (message.type === 'crdt-sync') {
         // Route by docId to the appropriate subsystem
         if (message.docId === '__asset__') {
@@ -571,7 +600,7 @@ const handlePeerMessage = (peerId: PeerId, message: PeerMessage): void => {
         } else if (message.docId === '__permissions__') {
             permissionManager?.handleMessage(peerId, message);
         } else {
-            automergeSync?.handlePeerMessage(peerId, message);
+            automergeSync?.handlePeerMessage({ peerId, message });
         }
     } else if (message.type === 'presence') {
         for (const listener of presenceListeners) {
@@ -595,9 +624,9 @@ const handlePeerConnected = (peerId: PeerId): void => {
 
     automergeSync?.addPeer(peerId);
 
-    peerManager?.sendCrdtSync(peerId, {
-        type: 'peer-info',
-        peer: getLocalPeerInfo(),
+    peerManager?.sendCrdtSync({
+        peerId,
+        message: { type: 'peer-info', peer: getLocalPeerInfo() },
     });
 
     // Host auto-grants editor role so joiners can edit immediately.

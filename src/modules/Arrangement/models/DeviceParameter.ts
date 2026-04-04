@@ -25,6 +25,25 @@ export type DeviceParameter = {
     hasAutomation: boolean;
 };
 
+/**
+ * Minimal parameter definition shape used by plugin descriptors within
+ * this module. Each instrument module owns its own full param-def type;
+ * this local type captures only the fields the descriptor mapping needs.
+ * Models must not cross module boundaries — each descriptor file inlines
+ * its own param array using this type rather than importing from the
+ * instrument module.
+ */
+export type PluginParamDef = {
+    id: string;
+    label: string;
+    min: number;
+    max: number;
+    default: number;
+    unit: string;
+    step?: number;
+    scaling?: 'log' | 'linear';
+};
+
 export type PluginFormat = 'builtin' | 'vst3' | 'clap' | 'au';
 
 export type PluginPlatform = 'web' | 'native' | 'both';

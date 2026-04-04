@@ -6,7 +6,7 @@ import { getTransportState } from '#/modules/Transport/useCases/transportQueries
 import { notifyUser } from '#/helpers/Notification/notifyUser';
 import { trackStore } from '../stores/trackStore';
 import { pushUndo } from '#/modules/Command/stores/undoStore';
-import { createCallbackUndoEntry } from '#/modules/Command/models/UndoEntry';
+import { createCallbackUndoEntry } from '#/modules/Command/useCases/commandQueries';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases/collaboration';
 
 export async function importAudioFile(file: File): Promise<void> {

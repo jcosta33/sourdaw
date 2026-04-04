@@ -5,7 +5,7 @@ import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { arrangementStore } from '#/modules/Project/stores/arrangementStore';
 import { projectStore } from '#/modules/Project/stores/projectStore';
-import { sidechainStore } from '#/modules/Routing/stores/sidechainStore';
+import { hydrateSidechainRoutes } from '#/modules/Routing/useCases/hydrateSidechainRoutes';
 import { tempoMapStore } from '#/modules/Transport/stores/tempoMapStore';
 import { timeSignatureMapStore } from '#/modules/Transport/stores/timeSignatureMapStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
@@ -23,7 +23,6 @@ const projectStores = [
     markerStore,
     takeLaneStore,
     arrangementStore,
-    sidechainStore,
     projectStore,
 ];
 
@@ -42,6 +41,7 @@ export const projectCrdtToStores = (): void => {
     for (const store of projectStores) {
         store.hydrate();
     }
+    hydrateSidechainRoutes();
 };
 
 /**

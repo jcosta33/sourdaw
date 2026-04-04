@@ -209,6 +209,14 @@ Why bad:
 - runtime-handle-free
 - easy to diff, clone, and persist
 
+### Model isolation across modules
+
+Models must never cross module boundaries — not via direct import, not via re-export through `useCases/` or any other folder.
+
+If module B needs data that resembles module A's model, module B defines its own local type with only the fields it uses. That duplication is intentional. The structural match at a use-case boundary is implicit — a contract break shows up as a compile error at the call site, not as a shared import drifting silently across the codebase.
+
+This applies to constants defined in `models/` as well. Opaque identifiers like document IDs or string sentinels that live in one module's `models/` file must be inlined in any consuming module rather than imported.
+
 ---
 
 ## 4.2 `errors/`
