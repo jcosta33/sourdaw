@@ -10,32 +10,13 @@ import { loadCrustPatch, setCrustParam } from '../stores/crustStore';
 
 type DeviceRef = { trackId: string; deviceId: string };
 
-let cachedRefs: DeviceRef[] | null = null;
-let cacheStaleTimer: ReturnType<typeof setTimeout> | null = null;
-
-function getActiveDevices(): DeviceRef[] {
-    if (cachedRefs) {
-        return cachedRefs;
-    }
-
-    const refs: DeviceRef[] = [];
+function findDeviceRef(deviceId: string): DeviceRef | null {
     for (const track of getAllTracks()) {
-        for (const device of track.devices) {
-            if (device.type === 'crust') {
-                refs.push({ trackId: track.id, deviceId: device.id });
-            }
+        if (track.devices.some((d) => d.id === deviceId)) {
+            return { trackId: track.id, deviceId };
         }
     }
-    cachedRefs = refs;
-
-    if (cacheStaleTimer) {
-        clearTimeout(cacheStaleTimer);
-    }
-    cacheStaleTimer = setTimeout(() => {
-        cachedRefs = null;
-    }, 2000);
-
-    return refs;
+    return null;
 }
 
 const pendingUpdates = new Map<string, number>();
@@ -97,25 +78,21 @@ const AB_SLOT_INDEX = {
     b: 1,
 } as const;
 
-function flushParam(key: string): void {
-    pendingUpdates.delete(key);
-    const value = latestValues.get(key);
+function flushParam(deviceId: string, ref: DeviceRef, key: string): void {
+    const compositeKey = `${deviceId}:${key}`;
+    pendingUpdates.delete(compositeKey);
+    const value = latestValues.get(compositeKey);
     if (value === undefined) {
         return;
     }
-    latestValues.delete(key);
-
-    for (const { trackId, deviceId } of getActiveDevices()) {
-        updateDeviceParam(trackId, deviceId, key, value);
-        persistDeviceParam(deviceId, key, value);
-    }
+    latestValues.delete(compositeKey);
+    updateDeviceParam(ref.trackId, ref.deviceId, key, value);
+    persistDeviceParam(ref.deviceId, key, value);
 }
 
-function pushParamImmediately(key: string, value: number): void {
-    for (const { trackId, deviceId } of getActiveDevices()) {
-        updateDeviceParam(trackId, deviceId, key, value);
-        persistDeviceParam(deviceId, key, value);
-    }
+function pushParamImmediately(ref: DeviceRef, key: string, value: number): void {
+    updateDeviceParam(ref.trackId, ref.deviceId, key, value);
+    persistDeviceParam(ref.deviceId, key, value);
 }
 
 function encodeCrustValue(key: string, value: unknown): number | null {
@@ -170,7 +147,7 @@ function encodeCrustValue(key: string, value: unknown): number | null {
  * Set a Crust parameter — updates the UI store immediately,
  * throttles audio engine updates to rAF.
  */
-export function setCrustParamWithAudio<K extends keyof CrustPatch>(key: K, value: CrustPatch[K]): void {
+export function setCrustParamWithAudio<K extends keyof CrustPatch>(deviceId: string, key: K, value: CrustPatch[K]): void {
     setCrustParam(key, value);
 
     const encodedValue = encodeCrustValue(key, value);
@@ -178,17 +155,28 @@ export function setCrustParamWithAudio<K extends keyof CrustPatch>(key: K, value
         return;
     }
 
-    latestValues.set(key, encodedValue);
-    if (!pendingUpdates.has(key)) {
+    const ref = findDeviceRef(deviceId);
+    if (!ref) {
+        return;
+    }
+
+    const compositeKey = `${deviceId}:${key}`;
+    latestValues.set(compositeKey, encodedValue);
+    if (!pendingUpdates.has(compositeKey)) {
         pendingUpdates.set(
-            key,
-            requestAnimationFrame(() => flushParam(key))
+            compositeKey,
+            requestAnimationFrame(() => flushParam(deviceId, ref, key))
         );
     }
 }
 
-export function loadCrustPatchWithAudio(patch: CrustPatch): void {
+export function loadCrustPatchWithAudio(deviceId: string, patch: CrustPatch): void {
     loadCrustPatch(patch);
+
+    const ref = findDeviceRef(deviceId);
+    if (!ref) {
+        return;
+    }
 
     const params: Array<[string, unknown]> = [
         ['gain', patch.gain],
@@ -225,7 +213,7 @@ export function loadCrustPatchWithAudio(patch: CrustPatch): void {
     for (const [key, rawValue] of params) {
         const encodedValue = encodeCrustValue(key, rawValue);
         if (encodedValue !== null) {
-            pushParamImmediately(key, encodedValue);
+            pushParamImmediately(ref, key, encodedValue);
         }
     }
 }

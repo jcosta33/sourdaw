@@ -17,8 +17,8 @@ export type LibraryState = {
     roots: LibraryRoot[];
     /** All indexed sample records */
     samples: SampleRecord[];
-    /** Folder tree built from sample paths */
-    folderTree: FolderNode[];
+    /** Folder trees per root id */
+    folderTrees: Record<string, FolderNode>;
     /** Currently expanded root id (for single-root focus) */
     activeRootId: string | null;
     /** Currently browsed folder path within active root */
@@ -42,7 +42,7 @@ export const libraryStore = new Store<LibraryState>(logger, {
     initialData: {
         roots: [],
         samples: [],
-        folderTree: [],
+        folderTrees: {},
         activeRootId: null,
         currentFolder: null,
         searchQuery: '',
@@ -78,10 +78,12 @@ export function removeLibraryRoot(rootId: string): void {
     if (!state) {
         return;
     }
+    const { [rootId]: _removed, ...remainingTrees } = state.folderTrees;
     libraryStore.set({
         ...state,
         roots: state.roots.filter((r) => r.id !== rootId),
         samples: state.samples.filter((s) => s.libraryRootId !== rootId),
+        folderTrees: remainingTrees,
         activeRootId: state.activeRootId === rootId ? null : state.activeRootId,
     });
 }
@@ -190,30 +192,36 @@ export function setScanProgress(scanning: boolean, progress: number): void {
     }
 }
 
-export function setFolderTree(tree: FolderNode[]): void {
+export function setFolderTree(rootId: string, tree: FolderNode): void {
     const state = libraryStore.value;
     if (state) {
-        libraryStore.set({ ...state, folderTree: tree });
+        libraryStore.set({ ...state, folderTrees: { ...state.folderTrees, [rootId]: tree } });
     }
 }
 
 export function toggleFolderExpanded(path: string): void {
     const state = libraryStore.value;
-    if (!state) {
+    if (!state || !state.activeRootId) {
         return;
     }
 
-    function toggleInTree(nodes: FolderNode[]): FolderNode[] {
-        return nodes.map((node) => {
-            if (node.path === path) {
-                return { ...node, expanded: !node.expanded };
-            }
-            if (node.children.length > 0) {
-                return { ...node, children: toggleInTree(node.children) };
-            }
-            return node;
-        });
+    const rootTree = state.folderTrees[state.activeRootId];
+    if (!rootTree) {
+        return;
     }
 
-    libraryStore.set({ ...state, folderTree: toggleInTree(state.folderTree) });
+    function toggleInNode(node: FolderNode): FolderNode {
+        if (node.path === path) {
+            return { ...node, expanded: !node.expanded };
+        }
+        if (node.children.length > 0) {
+            return { ...node, children: node.children.map(toggleInNode) };
+        }
+        return node;
+    }
+
+    libraryStore.set({
+        ...state,
+        folderTrees: { ...state.folderTrees, [state.activeRootId]: toggleInNode(rootTree) },
+    });
 }

@@ -76,7 +76,7 @@ const Knob = ({
     </div>
 );
 
-export const ToasterPanel = (): ReactElement => {
+export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     const state = useSyncExternalStore<ToasterState | null>(
         (callback) => toasterStore.subscribe(callback),
         () => toasterStore.value
@@ -142,7 +142,7 @@ export const ToasterPanel = (): ReactElement => {
             updatePad(padIndex, { soloed: value > 0 });
             return;
         }
-        setToasterPadParam(padIndex, key as keyof PadState, value);
+        setToasterPadParam(deviceId, padIndex, key as keyof PadState, value);
     }
 
     return (
@@ -225,7 +225,7 @@ export const ToasterPanel = (): ReactElement => {
                         <div className="grid grid-cols-3 gap-x-2 gap-y-3">
                             <Knob
                                 value={selectedPad.decay}
-                                onChange={(value) => setToasterPadParam(selectedPadIndex, 'decay', value)}
+                                onChange={(value) => setToasterPadParam(deviceId, selectedPadIndex, 'decay', value)}
                                 label="Hit"
                                 min={0}
                                 max={1}
@@ -235,7 +235,7 @@ export const ToasterPanel = (): ReactElement => {
                             />
                             <Knob
                                 value={selectedPad.tone}
-                                onChange={(value) => setToasterPadParam(selectedPadIndex, 'tone', value)}
+                                onChange={(value) => setToasterPadParam(deviceId, selectedPadIndex, 'tone', value)}
                                 label="Tone"
                                 min={0}
                                 max={1}
@@ -245,7 +245,7 @@ export const ToasterPanel = (): ReactElement => {
                             />
                             <Knob
                                 value={selectedPad.drive}
-                                onChange={(value) => setToasterPadParam(selectedPadIndex, 'drive', value)}
+                                onChange={(value) => setToasterPadParam(deviceId, selectedPadIndex, 'drive', value)}
                                 label="Crunch"
                                 min={0}
                                 max={10}
@@ -255,7 +255,7 @@ export const ToasterPanel = (): ReactElement => {
                             />
                             <Knob
                                 value={selectedPad.volume}
-                                onChange={(value) => setToasterPadParam(selectedPadIndex, 'volume', value)}
+                                onChange={(value) => setToasterPadParam(deviceId, selectedPadIndex, 'volume', value)}
                                 label="Level"
                                 min={0}
                                 max={1}
@@ -265,7 +265,7 @@ export const ToasterPanel = (): ReactElement => {
                             />
                             <Knob
                                 value={selectedPad.pan}
-                                onChange={(value) => setToasterPadParam(selectedPadIndex, 'pan', value)}
+                                onChange={(value) => setToasterPadParam(deviceId, selectedPadIndex, 'pan', value)}
                                 label="Pan"
                                 min={-1}
                                 max={1}
@@ -275,7 +275,7 @@ export const ToasterPanel = (): ReactElement => {
                             />
                             <Knob
                                 value={selectedPad.filterCutoff}
-                                onChange={(value) => setToasterPadParam(selectedPadIndex, 'filterCutoff', value)}
+                                onChange={(value) => setToasterPadParam(deviceId, selectedPadIndex, 'filterCutoff', value)}
                                 label="Bright"
                                 min={20}
                                 max={20000}
@@ -389,7 +389,7 @@ export const ToasterPanel = (): ReactElement => {
                         <div className="grid grid-cols-2 gap-x-2 gap-y-3">
                             <Knob
                                 value={kit.swing}
-                                onChange={(value) => setToasterKitParam('swing', value)}
+                                onChange={(value) => setToasterKitParam(deviceId, 'swing', value)}
                                 label="Swing"
                                 min={0}
                                 max={1}
@@ -399,7 +399,7 @@ export const ToasterPanel = (): ReactElement => {
                             />
                             <Knob
                                 value={kit.masterGain}
-                                onChange={(value) => setToasterKitParam('masterGain', value)}
+                                onChange={(value) => setToasterKitParam(deviceId, 'masterGain', value)}
                                 label="Master"
                                 min={0}
                                 max={2}
@@ -409,7 +409,7 @@ export const ToasterPanel = (): ReactElement => {
                             />
                             <Knob
                                 value={kit.reverbMix}
-                                onChange={(value) => setToasterKitParam('reverbMix', value)}
+                                onChange={(value) => setToasterKitParam(deviceId, 'reverbMix', value)}
                                 label="Space"
                                 min={0}
                                 max={1}
@@ -419,7 +419,7 @@ export const ToasterPanel = (): ReactElement => {
                             />
                             <Knob
                                 value={kit.delayMix}
-                                onChange={(value) => setToasterKitParam('delayMix', value)}
+                                onChange={(value) => setToasterKitParam(deviceId, 'delayMix', value)}
                                 label="Spray"
                                 min={0}
                                 max={1}
@@ -429,7 +429,7 @@ export const ToasterPanel = (): ReactElement => {
                             />
                             <Knob
                                 value={kit.lofiBits}
-                                onChange={(value) => setToasterKitParam('lofiBits', value)}
+                                onChange={(value) => setToasterKitParam(deviceId, 'lofiBits', value)}
                                 label="Bits"
                                 min={4}
                                 max={16}
@@ -439,7 +439,7 @@ export const ToasterPanel = (): ReactElement => {
                             />
                             <Knob
                                 value={kit.lofiMix}
-                                onChange={(value) => setToasterKitParam('lofiMix', value)}
+                                onChange={(value) => setToasterKitParam(deviceId, 'lofiMix', value)}
                                 label="Dust"
                                 min={0}
                                 max={1}

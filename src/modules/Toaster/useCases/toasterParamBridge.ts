@@ -1,5 +1,5 @@
 /**
- * Bridge between Grinder UI and the audio engine.
+ * Bridge between Toaster UI and the audio engine.
  * Routes kit-level and pad-level params to the WASM worklet.
  * Uses rAF throttling to avoid flooding MessagePort during knob dragging.
  */
@@ -11,36 +11,34 @@ import { type PadState, type ToasterKit } from '../models/ToasterKit';
 
 type DeviceRef = { trackId: string; deviceId: string };
 
-let cachedRefs: DeviceRef[] | null = null;
-let cacheTimer: ReturnType<typeof setTimeout> | null = null;
-
-function getActiveDevices(): DeviceRef[] {
-    if (cachedRefs) {
-        return cachedRefs;
-    }
-    const refs: DeviceRef[] = [];
+function findDeviceRef(deviceId: string): DeviceRef | null {
     for (const track of getAllTracks()) {
-        for (const device of track.devices) {
-            if (device.type === 'toaster') {
-                refs.push({ trackId: track.id, deviceId: device.id });
-            }
+        if (track.devices.some((d) => d.id === deviceId)) {
+            return { trackId: track.id, deviceId };
         }
     }
-    cachedRefs = refs;
-    if (cacheTimer) {
-        clearTimeout(cacheTimer);
+    return null;
+}
+
+/**
+ * Returns the first Toaster device ID found across all tracks.
+ * Used by the sequencer and 16 Levels which operate on the single global kit.
+ */
+export function getFirstToasterDeviceId(): string | null {
+    for (const track of getAllTracks()) {
+        const device = track.devices.find((d) => d.type === 'toaster');
+        if (device) {
+            return device.id;
+        }
     }
-    cacheTimer = setTimeout(() => {
-        cachedRefs = null;
-    }, 2000);
-    return refs;
+    return null;
 }
 
 // Throttling for pad-level params
 const padPending = new Map<string, number>();
 const padLatest = new Map<string, { pad: number; name: string; value: number }>();
 
-function flushPadParam(cacheKey: string): void {
+function flushPadParam(cacheKey: string, trackId: string): void {
     padPending.delete(cacheKey);
     const entry = padLatest.get(cacheKey);
     if (!entry) {
@@ -48,15 +46,13 @@ function flushPadParam(cacheKey: string): void {
     }
     padLatest.delete(cacheKey);
 
-    for (const { trackId } of getActiveDevices()) {
-        const strip = getTrackStrip(trackId);
-        if (!strip) {
-            continue;
-        }
-        const dn = strip.deviceNodes.find((d) => d.toasterControls && d.toasterControls.ready !== undefined);
-        if (dn?.toasterControls) {
-            dn.toasterControls.setPadParam(entry.pad, entry.name, entry.value);
-        }
+    const strip = getTrackStrip(trackId);
+    if (!strip) {
+        return;
+    }
+    const dn = strip.deviceNodes.find((d) => d.toasterControls && d.toasterControls.ready !== undefined);
+    if (dn?.toasterControls) {
+        dn.toasterControls.setPadParam(entry.pad, entry.name, entry.value);
     }
 }
 
@@ -79,37 +75,45 @@ const KIT_PARAM_MAP = {
     lofiMix: 'lofi_mix',
 } as const;
 
-export function setToasterPadParam(padIndex: number, key: keyof PadState, value: number): void {
+export function setToasterPadParam(deviceId: string, padIndex: number, key: keyof PadState, value: number): void {
     // Only update the store for numeric fields
     if (!STRING_FIELDS.has(key)) {
         updatePad(padIndex, { [key]: value } as Partial<PadState>);
     }
 
-    const cacheKey = `${padIndex}_${key}`;
+    const ref = findDeviceRef(deviceId);
+    if (!ref) {
+        return;
+    }
+
+    const cacheKey = `${deviceId}_${padIndex}_${key}`;
     padLatest.set(cacheKey, { pad: padIndex, name: key, value });
     if (!padPending.has(cacheKey)) {
         padPending.set(
             cacheKey,
-            requestAnimationFrame(() => flushPadParam(cacheKey))
+            requestAnimationFrame(() => flushPadParam(cacheKey, ref.trackId))
         );
     }
 }
 
-export function setToasterKitParam<K extends keyof typeof KIT_PARAM_MAP>(key: K, value: ToasterKit[K]): void {
+export function setToasterKitParam<K extends keyof typeof KIT_PARAM_MAP>(deviceId: string, key: K, value: ToasterKit[K]): void {
     updateKit({ [key]: value } as Partial<ToasterKit>);
 
+    const ref = findDeviceRef(deviceId);
+    if (!ref) {
+        return;
+    }
+
     const paramName = KIT_PARAM_MAP[key];
-    for (const { trackId } of getActiveDevices()) {
-        const strip = getTrackStrip(trackId);
-        if (!strip) {
-            continue;
-        }
-        const deviceNode = strip.deviceNodes.find(
-            (device) => device.toasterControls && device.toasterControls.ready !== undefined
-        );
-        if (deviceNode?.toasterControls) {
-            deviceNode.toasterControls.setParam(paramName, value as number);
-        }
+    const strip = getTrackStrip(ref.trackId);
+    if (!strip) {
+        return;
+    }
+    const deviceNode = strip.deviceNodes.find(
+        (device) => device.toasterControls && device.toasterControls.ready !== undefined
+    );
+    if (deviceNode?.toasterControls) {
+        deviceNode.toasterControls.setParam(paramName, value as number);
     }
 }
 
@@ -118,15 +122,18 @@ export function setToasterKitParam<K extends keyof typeof KIT_PARAM_MAP>(key: K,
  * Used by sound locks which need immediate engine swap before triggering.
  * Does NOT update the store — the pad's stored engineType remains the default.
  */
-export function setPadEngineImmediate(padIndex: number, engineIdx: number): void {
-    for (const { trackId } of getActiveDevices()) {
-        const strip = getTrackStrip(trackId);
-        if (!strip) {
-            continue;
-        }
-        const dn = strip.deviceNodes.find((d) => d.toasterControls && d.toasterControls.ready !== undefined);
-        if (dn?.toasterControls) {
-            dn.toasterControls.setPadParam(padIndex, 'engine_type', engineIdx);
-        }
+export function setPadEngineImmediate(deviceId: string, padIndex: number, engineIdx: number): void {
+    const ref = findDeviceRef(deviceId);
+    if (!ref) {
+        return;
+    }
+
+    const strip = getTrackStrip(ref.trackId);
+    if (!strip) {
+        return;
+    }
+    const dn = strip.deviceNodes.find((d) => d.toasterControls && d.toasterControls.ready !== undefined);
+    if (dn?.toasterControls) {
+        dn.toasterControls.setPadParam(padIndex, 'engine_type', engineIdx);
     }
 }

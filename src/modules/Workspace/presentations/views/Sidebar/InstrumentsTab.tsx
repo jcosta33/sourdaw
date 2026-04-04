@@ -14,6 +14,7 @@ import {
     deleteUserPreset,
 } from '#/modules/Arrangement/useCases/preset/presetStorage';
 import { createTrackFromPreset, loadPresetToTrack } from '#/modules/Arrangement/useCases/preset/presetLoading';
+import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
 import { createDrumTrackStack } from '#/modules/Toaster/useCases/createDrumTrackStack';
 import { APP_EVENTS } from '#/helpers/Event/appEvents';
 
@@ -175,13 +176,17 @@ export const InstrumentsTab = ({
             author: 'Sourdaw',
             isFactory: true,
         };
-        createTrackFromPreset(preset);
-        document.dispatchEvent(new Event(APP_EVENTS.SHOW_FERMENTER_TAB));
+        const trackId = createTrackFromPreset(preset);
+        const track = trackId ? getAllTracks().find((t) => t.id === trackId) : null;
+        const device = track?.devices.find((d) => d.type === 'fermenter');
+        document.dispatchEvent(new CustomEvent(APP_EVENTS.SHOW_FERMENTER_TAB, { detail: { deviceId: device?.id } }));
     };
 
     const handleAddToasterTrack = () => {
-        createDrumTrackStack();
-        document.dispatchEvent(new Event(APP_EVENTS.SHOW_TOASTER_TAB));
+        const trackId = createDrumTrackStack();
+        const track = trackId ? getAllTracks().find((t) => t.id === trackId) : null;
+        const device = track?.devices.find((d) => d.type === 'toaster');
+        document.dispatchEvent(new CustomEvent(APP_EVENTS.SHOW_TOASTER_TAB, { detail: { deviceId: device?.id } }));
     };
 
     const handleAddLevainTrack = () => {

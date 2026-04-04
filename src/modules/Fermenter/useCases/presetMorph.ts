@@ -49,11 +49,11 @@ export function bilinearPatch(
 /**
  * Apply a morphed patch — updates both the store and the audio engine.
  */
-export function applyMorphedPatch(patch: FermenterPatch): void {
-    loadFermenterPatch(patch);
+export function applyMorphedPatch(deviceId: string, patch: FermenterPatch): void {
+    loadFermenterPatch(deviceId, patch);
     for (const [key, val] of Object.entries(patch)) {
         if (typeof val === 'number') {
-            setFermenterParamWithAudio(key as keyof FermenterPatch, val);
+            setFermenterParamWithAudio(deviceId, key as keyof FermenterPatch, val);
         }
     }
 }

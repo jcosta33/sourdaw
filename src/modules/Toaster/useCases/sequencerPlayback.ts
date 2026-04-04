@@ -8,7 +8,7 @@ import { getAudioTime } from '#/modules/AudioEngine/useCases/engineAccess';
 import { toasterStore } from '../stores/toasterStore';
 import { type Step, type Pattern } from '../models/ToasterKit';
 import { triggerToasterPad } from './triggerPad';
-import { setToasterPadParam, setPadEngineImmediate } from './toasterParamBridge';
+import { setToasterPadParam, setPadEngineImmediate, getFirstToasterDeviceId } from './toasterParamBridge';
 import { morphPatterns } from './patternMorph';
 import { TOASTER_ENGINE_MAP } from './loadToasterKit';
 
@@ -69,6 +69,8 @@ function tick(currentStep: number, bpm: number, stepsPerBeat: number): void {
     const totalSteps = pattern.stepsPerBar * pattern.bars;
     const stepDurationMs = (60_000 / bpm) / stepsPerBeat;
 
+    const toasterDeviceId = getFirstToasterDeviceId();
+
     for (const track of pattern.tracks) {
         const trackSteps = track.stepsOverride ?? totalSteps;
         const stepIdx = currentStep % trackSteps;
@@ -80,16 +82,18 @@ function tick(currentStep: number, bpm: number, stepsPerBeat: number): void {
 
         // Apply sound lock: swap engine type before triggering
         const pad = state.kit.pads[track.padIndex];
-        if (step.soundLock && pad) {
+        if (step.soundLock && pad && toasterDeviceId) {
             const lockIdx = TOASTER_ENGINE_MAP[step.soundLock] ?? 0;
-            setPadEngineImmediate(track.padIndex, lockIdx);
+            setPadEngineImmediate(toasterDeviceId, track.padIndex, lockIdx);
         }
 
         // Apply parameter locks before trigger
-        const locks = step.paramLocks;
-        for (const [key, value] of Object.entries(locks)) {
-            if (key.startsWith('_')) { continue; }
-            setToasterPadParam(track.padIndex, key as keyof import('../models/ToasterKit').PadState, value);
+        if (toasterDeviceId) {
+            const locks = step.paramLocks;
+            for (const [key, value] of Object.entries(locks)) {
+                if (key.startsWith('_')) { continue; }
+                setToasterPadParam(toasterDeviceId, track.padIndex, key as keyof import('../models/ToasterKit').PadState, value);
+            }
         }
 
         // Micro-timing + swing offset
@@ -100,9 +104,9 @@ function tick(currentStep: number, bpm: number, stepsPerBeat: number): void {
         const fire = () => {
             triggerToasterPad(track.padIndex, vel);
             // Restore default engine type after sound-locked trigger
-            if (step.soundLock && pad) {
+            if (step.soundLock && pad && toasterDeviceId) {
                 const defaultIdx = TOASTER_ENGINE_MAP[pad.engineType] ?? 0;
-                setPadEngineImmediate(track.padIndex, defaultIdx);
+                setPadEngineImmediate(toasterDeviceId, track.padIndex, defaultIdx);
             }
         };
 

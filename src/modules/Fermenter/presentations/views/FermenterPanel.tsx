@@ -6,6 +6,7 @@ import { Slider } from '#/components/ui/slider';
 import { Button } from '#/components/ui/button';
 import {
     fermenterStore,
+    getFermenterState,
     loadFermenterPatch,
     setFermenterUiLevel,
     type FermenterState,
@@ -440,17 +441,17 @@ function renderSectionContent(
     );
 }
 
-export const FermenterPanel = (): ReactElement => {
-    const state = useSyncExternalStore<FermenterState | null>(
+export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
+    const state = useSyncExternalStore<FermenterState>(
         (cb) => fermenterStore.subscribe(cb),
-        () => fermenterStore.value
+        () => getFermenterState(deviceId)
     );
-    const patch = state?.patch ?? fermenterStore.value!.patch;
-    const activeVoices = state?.activeVoices ?? 0;
-    const scopeBuffer = state?.scopeBuffer ?? null;
-    const peakL = state?.peakL ?? 0;
-    const peakR = state?.peakR ?? 0;
-    const uiLevel = state?.uiLevel ?? 2;
+    const patch = state.patch;
+    const activeVoices = state.activeVoices;
+    const scopeBuffer = state.scopeBuffer;
+    const peakL = state.peakL;
+    const peakR = state.peakR;
+    const uiLevel = state.uiLevel;
 
     const [section, setSection] = useState<FermenterSection>('osc');
     const [showSave, setShowSave] = useState(false);
@@ -462,13 +463,13 @@ export const FermenterPanel = (): ReactElement => {
     const sectionMeta = getSectionMeta(section);
 
     function onParam(key: string, value: number): void {
-        setFermenterParamWithAudio(key as keyof FermenterPatch, value);
+        setFermenterParamWithAudio(deviceId, key as keyof FermenterPatch, value);
     }
 
     function setMacro(index: number, value: number): void {
         const macros = [...patch.macros] as FermenterPatch['macros'];
         macros[index] = value;
-        loadFermenterPatch({ ...patch, macros });
+        loadFermenterPatch(deviceId, { ...patch, macros });
     }
 
     function loadPreset(presetId: string): void {
@@ -477,15 +478,15 @@ export const FermenterPanel = (): ReactElement => {
             return;
         }
 
-        loadFermenterPatchWithAudio(loadedPatch);
+        loadFermenterPatchWithAudio(deviceId, loadedPatch);
     }
 
     function initPatch(): void {
-        loadFermenterPatchWithAudio({ ...DEFAULT_PATCH });
+        loadFermenterPatchWithAudio(deviceId, { ...DEFAULT_PATCH });
     }
 
     function applyRandomPatch(): void {
-        loadFermenterPatchWithAudio(randomizePatch());
+        loadFermenterPatchWithAudio(deviceId, randomizePatch());
     }
 
     function handleSave(): void {
@@ -516,7 +517,7 @@ export const FermenterPanel = (): ReactElement => {
                             active={uiLevel === level.id}
                             tone="cyan"
                             size="sm"
-                            onClick={() => setFermenterUiLevel(level.id)}
+                            onClick={() => setFermenterUiLevel(deviceId, level.id)}
                         >
                             {level.label}
                         </DawPluginChip>
@@ -717,7 +718,7 @@ export const FermenterPanel = (): ReactElement => {
                         {uiLevel >= 5 ? (
                             <>
                                 <div className="fermenter-window p-3">
-                                    <TransformPad />
+                                    <TransformPad deviceId={deviceId} />
                                 </div>
                                 <div className="fermenter-window flex flex-col gap-2 p-3">
                                     <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">

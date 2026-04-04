@@ -5,7 +5,7 @@
  */
 
 import { triggerToasterPad } from './triggerPad';
-import { setToasterPadParam } from './toasterParamBridge';
+import { setToasterPadParam, getFirstToasterDeviceId } from './toasterParamBridge';
 
 export type SixteenLevelsTarget = 'velocity' | 'tune' | 'decay' | 'filter';
 
@@ -41,23 +41,25 @@ export function trigger16Level(gridIndex: number): void {
 
     const normalized = (gridIndex + 1) / 16; // 0.0625 to 1.0
 
+    const deviceId = getFirstToasterDeviceId();
+
     switch (target) {
         case 'velocity':
             triggerToasterPad(targetPad, Math.round(normalized * 127));
             break;
         case 'tune':
-            setToasterPadParam(targetPad, 'tune', -24 + normalized * 48);
+            if (deviceId) { setToasterPadParam(deviceId, targetPad, 'tune', -24 + normalized * 48); }
             triggerToasterPad(targetPad, 127);
             break;
         case 'decay':
-            setToasterPadParam(targetPad, 'decay', normalized);
+            if (deviceId) { setToasterPadParam(deviceId, targetPad, 'decay', normalized); }
             triggerToasterPad(targetPad, 127);
             break;
         case 'filter': {
             const minHz = 20;
             const maxHz = 20000;
             const freq = minHz * Math.pow(maxHz / minHz, normalized);
-            setToasterPadParam(targetPad, 'filterCutoff', freq);
+            if (deviceId) { setToasterPadParam(deviceId, targetPad, 'filterCutoff', freq); }
             triggerToasterPad(targetPad, 127);
             break;
         }

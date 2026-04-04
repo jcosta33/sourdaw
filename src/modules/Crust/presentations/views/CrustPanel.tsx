@@ -61,7 +61,7 @@ const MetricTile = ({ label, value, detail }: { label: string; value: string; de
     <DawPluginMetricTile className="crust-window min-w-[92px]" label={label} value={value} detail={detail} />
 );
 
-export const CrustPanel = (): ReactElement => {
+export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     const state = useSyncExternalStore<CrustState | null>(
         (cb) => crustStore.subscribe(cb),
         () => crustStore.value
@@ -86,7 +86,7 @@ export const CrustPanel = (): ReactElement => {
     const streamingLabel = activeStreamingPreset ? activeStreamingPreset.label : 'Custom';
 
     function handleSetParam<K extends keyof CrustPatch>(key: K, value: CrustPatch[K]): void {
-        setCrustParamWithAudio(key, value);
+        setCrustParamWithAudio(deviceId, key, value);
     }
 
     return (
@@ -146,7 +146,7 @@ export const CrustPanel = (): ReactElement => {
                                     active={preset.patch.name === patch.name}
                                     className="crust-window w-full rounded-[12px]"
                                     onPress={() => {
-                                        loadCrustPatchWithAudio(preset.patch);
+                                        loadCrustPatchWithAudio(deviceId, preset.patch);
                                         setPresetMenuOpen(false);
                                     }}
                                     role="option"

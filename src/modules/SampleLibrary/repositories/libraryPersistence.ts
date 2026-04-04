@@ -6,6 +6,7 @@
  */
 import { type LibraryRoot, type SampleRecord } from '../models/LibraryTypes';
 import { libraryStore, addLibraryRoot, addSamples } from '../stores/libraryStore';
+import { buildFolderTree } from '../useCases/buildFolderTree';
 
 const DB_NAME = 'sourdaw-library';
 const DB_VERSION = 1;
@@ -166,6 +167,11 @@ export async function restoreLibrary(): Promise<void> {
 
         if (samples.length > 0) {
             addSamples(samples);
+        }
+
+        // Rebuild folder trees for all restored roots
+        for (const root of roots) {
+            buildFolderTree(root.id);
         }
 
         db.close();

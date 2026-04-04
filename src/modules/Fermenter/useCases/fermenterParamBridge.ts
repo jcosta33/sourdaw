@@ -1,8 +1,7 @@
 /**
  * Bridge between FermenterPanel UI and the audio engine.
  *
- * Maintains a cached registry of active Fermenter devices to avoid
- * O(n) track iteration on every knob change. Throttles audio engine
+ * Scoped to a single device instance via deviceId. Throttles audio engine
  * updates to avoid flooding the MessagePort during rapid knob dragging.
  */
 
@@ -14,80 +13,65 @@ import { loadFermenterPatch, setFermenterParam } from '../stores/fermenterStore'
 
 type DeviceRef = { trackId: string; deviceId: string };
 
-let cachedRefs: DeviceRef[] | null = null;
-let cacheStaleTimer: ReturnType<typeof setTimeout> | null = null;
-
-function getActiveDevices(): DeviceRef[] {
-    if (cachedRefs) return cachedRefs;
-
-    const refs: DeviceRef[] = [];
+function findDeviceRef(deviceId: string): DeviceRef | null {
     for (const track of getAllTracks()) {
-        for (const device of track.devices) {
-            if (device.type === 'fermenter') {
-                refs.push({ trackId: track.id, deviceId: device.id });
-            }
+        if (track.devices.some((d) => d.id === deviceId)) {
+            return { trackId: track.id, deviceId };
         }
     }
-    cachedRefs = refs;
-
-    if (cacheStaleTimer) clearTimeout(cacheStaleTimer);
-    cacheStaleTimer = setTimeout(() => {
-        cachedRefs = null;
-    }, 2000);
-
-    return refs;
+    return null;
 }
 
 /**
- * Throttle map: key → pending rAF id.
- * Groups rapid param updates (e.g. knob dragging) into one update per frame.
+ * Throttle map: compositeKey (`${deviceId}:${paramKey}`) → pending rAF id.
  */
 const pendingUpdates = new Map<string, number>();
 const latestValues = new Map<string, number>();
 
-function flushParam(key: string): void {
-    pendingUpdates.delete(key);
-    const value = latestValues.get(key);
+function flushParam(deviceId: string, ref: DeviceRef, key: string): void {
+    const compositeKey = `${deviceId}:${key}`;
+    pendingUpdates.delete(compositeKey);
+    const value = latestValues.get(compositeKey);
     if (value === undefined) return;
-    latestValues.delete(key);
-
-    for (const { trackId, deviceId } of getActiveDevices()) {
-        updateDeviceParam(trackId, deviceId, key, value);
-        persistDeviceParam(deviceId, key, value);
-    }
+    latestValues.delete(compositeKey);
+    updateDeviceParam(ref.trackId, ref.deviceId, key, value);
+    persistDeviceParam(ref.deviceId, key, value);
 }
 
-function pushParamImmediately(key: string, value: number): void {
-    for (const { trackId, deviceId } of getActiveDevices()) {
-        updateDeviceParam(trackId, deviceId, key, value);
-        persistDeviceParam(deviceId, key, value);
-    }
+function pushParamImmediately(ref: DeviceRef, key: string, value: number): void {
+    updateDeviceParam(ref.trackId, ref.deviceId, key, value);
+    persistDeviceParam(ref.deviceId, key, value);
 }
 
 /**
  * Set a Fermenter parameter — updates the UI store immediately,
  * and throttles audio engine updates to once per animation frame.
  */
-export function setFermenterParamWithAudio(key: keyof FermenterPatch, value: number): void {
-    // UI store: always immediate for responsive knobs
-    setFermenterParam(key, value);
+export function setFermenterParamWithAudio(deviceId: string, key: keyof FermenterPatch, value: number): void {
+    setFermenterParam(deviceId, key, value);
 
-    // Audio engine: throttle to rAF to avoid flooding MessagePort
-    latestValues.set(key, value);
-    if (!pendingUpdates.has(key)) {
+    const ref = findDeviceRef(deviceId);
+    if (!ref) return;
+
+    const compositeKey = `${deviceId}:${key}`;
+    latestValues.set(compositeKey, value);
+    if (!pendingUpdates.has(compositeKey)) {
         pendingUpdates.set(
-            key,
-            requestAnimationFrame(() => flushParam(key))
+            compositeKey,
+            requestAnimationFrame(() => flushParam(deviceId, ref, key))
         );
     }
 }
 
-export function loadFermenterPatchWithAudio(patch: FermenterPatch): void {
-    loadFermenterPatch(patch);
+export function loadFermenterPatchWithAudio(deviceId: string, patch: FermenterPatch): void {
+    loadFermenterPatch(deviceId, patch);
+
+    const ref = findDeviceRef(deviceId);
+    if (!ref) return;
 
     for (const [key, value] of Object.entries(patch)) {
         if (typeof value === 'number') {
-            pushParamImmediately(key, value);
+            pushParamImmediately(ref, key, value);
         }
     }
 }

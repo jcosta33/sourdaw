@@ -3,7 +3,7 @@ import { type FermenterPatch, DEFAULT_PATCH } from '../../models/FermenterPatch'
 import { FERMENTER_PRESETS } from '../../useCases/fermenterQueries';
 import { bilinearPatch, applyMorphedPatch } from '../../useCases/presetMorph';
 
-type TransformPadProps = Record<string, never>;
+type TransformPadProps = { deviceId: string };
 
 const PAD_SIZE = 160;
 const CORNER_PRESETS = ['fermenter-init', 'fermenter-supersaw', 'fermenter-dark-drone', 'fermenter-acid-bass'];
@@ -29,7 +29,7 @@ function presetToPatch(presetId: string): FermenterPatch {
     return patch;
 }
 
-export const TransformPad = (_props: TransformPadProps): ReactElement => {
+export const TransformPad = ({ deviceId }: TransformPadProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [puck, setPuck] = useState({ x: 0.5, y: 0.5 });
     const [dragging, setDragging] = useState(false);
@@ -38,7 +38,7 @@ export const TransformPad = (_props: TransformPadProps): ReactElement => {
     function applyPosition(x: number, y: number): void {
         const morphed = bilinearPatch(corners[0]!, corners[1]!, corners[2]!, corners[3]!, x, y);
         morphed.name = 'Transform';
-        applyMorphedPatch(morphed);
+        applyMorphedPatch(deviceId, morphed);
     }
 
     function updateFromPointer(event: React.PointerEvent<HTMLCanvasElement>): void {

@@ -1,6 +1,7 @@
 /**
  * Fermenter synth state store.
  * Holds the current patch and UI state. Reactive — UI subscribes via useSyncExternalStore.
+ * Keyed by deviceId to support multiple simultaneous instances.
  */
 
 import { Container } from '#/helpers/DependencyInjector/Container';
@@ -22,38 +23,38 @@ export type FermenterState = {
     scopeBuffer: Float32Array | null;
 };
 
-export const fermenterStore = new Store<FermenterState>(logger, {
-    initialData: {
-        patch: DEFAULT_PATCH,
-        activeVoices: 0,
-        engineReady: false,
-        uiLevel: 2,
-        peakL: 0,
-        peakR: 0,
-        scopeBuffer: null,
-    },
-});
+export const DEFAULT_FERMENTER_STATE: FermenterState = {
+    patch: DEFAULT_PATCH,
+    activeVoices: 0,
+    engineReady: false,
+    uiLevel: 2,
+    peakL: 0,
+    peakR: 0,
+    scopeBuffer: null,
+};
 
-export function setFermenterParam(key: keyof FermenterPatch, value: number): void {
-    const state = fermenterStore.value;
-    if (!state) { return; }
-    fermenterStore.set({
-        ...state,
-        patch: { ...state.patch, [key]: value },
-    });
+type FermenterInstances = Record<string, FermenterState>;
+
+export const fermenterStore = new Store<FermenterInstances>(logger, { initialData: {} });
+
+export function getFermenterState(deviceId: string): FermenterState {
+    return (fermenterStore.value ?? {})[deviceId] ?? DEFAULT_FERMENTER_STATE;
 }
 
-export function setFermenterUiLevel(level: 1 | 2 | 3 | 4 | 5): void {
-    const state = fermenterStore.value;
-    if (state) {
-        fermenterStore.set({ ...state, uiLevel: level });
-    }
+export function setFermenterParam(deviceId: string, key: keyof FermenterPatch, value: number): void {
+    const instances = fermenterStore.value ?? {};
+    const state = instances[deviceId] ?? { ...DEFAULT_FERMENTER_STATE, patch: { ...DEFAULT_PATCH } };
+    fermenterStore.set({ ...instances, [deviceId]: { ...state, patch: { ...state.patch, [key]: value } } });
 }
 
-export function loadFermenterPatch(patch: FermenterPatch): void {
-    const state = fermenterStore.value;
-    if (state) {
-        fermenterStore.set({ ...state, patch });
-    }
+export function setFermenterUiLevel(deviceId: string, level: 1 | 2 | 3 | 4 | 5): void {
+    const instances = fermenterStore.value ?? {};
+    const state = instances[deviceId] ?? { ...DEFAULT_FERMENTER_STATE, patch: { ...DEFAULT_PATCH } };
+    fermenterStore.set({ ...instances, [deviceId]: { ...state, uiLevel: level } });
 }
 
+export function loadFermenterPatch(deviceId: string, patch: FermenterPatch): void {
+    const instances = fermenterStore.value ?? {};
+    const state = instances[deviceId] ?? { ...DEFAULT_FERMENTER_STATE, patch: { ...DEFAULT_PATCH } };
+    fermenterStore.set({ ...instances, [deviceId]: { ...state, patch } });
+}

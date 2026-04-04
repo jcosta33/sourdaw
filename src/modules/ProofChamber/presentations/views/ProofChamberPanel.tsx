@@ -159,7 +159,7 @@ function KnobCell({
     );
 }
 
-export const ProofChamberPanel = (): ReactElement => {
+export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     const [params, setParams] = useState<ProofChamberParams>({ ...DEFAULT_PARAMS });
     const [decayEqMults, setDecayEqMults] = useState([1.0, 1.0, 1.0, 1.0, 1.0, 1.0]);
     const [showDecayEq, setShowDecayEq] = useState(false);
@@ -172,7 +172,7 @@ export const ProofChamberPanel = (): ReactElement => {
             return;
         }
         const numericValue = typeof value === 'boolean' ? (value ? 1 : 0) : value;
-        updateProofChamberParam(rustKey, numericValue);
+        updateProofChamberParam(deviceId, rustKey, numericValue);
     }
 
     function selectSpace(space: SpaceType): void {
@@ -180,7 +180,7 @@ export const ProofChamberPanel = (): ReactElement => {
         const algorithm = (preset as Record<string, unknown>).algorithm as AlgorithmType | undefined;
         const nextParams = { ...DEFAULT_PARAMS, ...preset, space, algorithm: algorithm ?? 'plate' };
         setParams(nextParams);
-        updateProofChamberParam('algorithm', ALGORITHM_MAP[nextParams.algorithm] ?? 0);
+        updateProofChamberParam(deviceId, 'algorithm', ALGORITHM_MAP[nextParams.algorithm] ?? 0);
         for (const [key, rawValue] of Object.entries(nextParams)) {
             if (key === 'algorithm' || key === 'space') {
                 continue;
@@ -190,9 +190,9 @@ export const ProofChamberPanel = (): ReactElement => {
                 continue;
             }
             if (typeof rawValue === 'boolean') {
-                updateProofChamberParam(rustKey, rawValue ? 1 : 0);
+                updateProofChamberParam(deviceId, rustKey, rawValue ? 1 : 0);
             } else if (typeof rawValue === 'number') {
-                updateProofChamberParam(rustKey, rawValue);
+                updateProofChamberParam(deviceId, rustKey, rawValue);
             }
         }
     }
@@ -245,7 +245,7 @@ export const ProofChamberPanel = (): ReactElement => {
                                     active={active}
                                     onClick={() => {
                                         setParams((prev) => ({ ...prev, algorithm: algorithm.id }));
-                                        updateProofChamberParam('algorithm', ALGORITHM_MAP[algorithm.id] ?? 0);
+                                        updateProofChamberParam(deviceId, 'algorithm', ALGORITHM_MAP[algorithm.id] ?? 0);
                                     }}
                                 >
                                     {algorithm.label}
@@ -333,7 +333,7 @@ export const ProofChamberPanel = (): ReactElement => {
                                             const next = [...decayEqMults];
                                             next[band] = mult;
                                             setDecayEqMults(next);
-                                            updateProofChamberParam(`decay_eq_${band}`, mult);
+                                            updateProofChamberParam(deviceId, `decay_eq_${band}`, mult);
                                         }}
                                         width={600}
                                         height={120}
@@ -638,6 +638,7 @@ export const ProofChamberPanel = (): ReactElement => {
                                                 onClick={() => {
                                                     setParams((prev) => ({ ...prev, algorithm: algorithm.id }));
                                                     updateProofChamberParam(
+                                                        deviceId,
                                                         'algorithm',
                                                         ALGORITHM_MAP[algorithm.id] ?? 0
                                                     );

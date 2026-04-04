@@ -122,17 +122,17 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const [bottomTab, setBottomTab] = useState<'editor' | 'mixer' | 'session' | 'routing' | 'analysis' | 'automation'>(
         'mixer'
     );
-    const [fermenterOpen, setFermenterOpen] = useState(false);
-    const [toasterOpen, setToasterOpen] = useState(false);
+    const [fermenterDeviceId, setFermenterDeviceId] = useState<string | null>(null);
+    const [toasterDeviceId, setToasterDeviceId] = useState<string | null>(null);
     const [levainOpen, setLevainOpen] = useState(false);
-    const [proofChamberOpen, setProofChamberOpen] = useState(false);
+    const [proofChamberDeviceId, setProofChamberDeviceId] = useState<string | null>(null);
     const [glutenDeviceId, setGlutenDeviceId] = useState<string | null>(null);
     const [bacteriaDeviceId, setBacteriaDeviceId] = useState<string | null>(null);
     const [grinderDeviceId, setGrinderDeviceId] = useState<string | null>(null);
     const [scoringDeviceId, setScoringDeviceId] = useState<string | null>(null);
     const [proofDeviceId, setProofDeviceId] = useState<string | null>(null);
     const [yeastOpen, setYeastOpen] = useState(false);
-    const [crustOpen, setCrustOpen] = useState(false);
+    const [crustDeviceId, setCrustDeviceId] = useState<string | null>(null);
 
     // ─── Extracted hooks ───
     useAppInitialization();
@@ -183,24 +183,24 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     // ─── Shared state helpers ───
     const closeAllDevicePanels = () => {
-        setFermenterOpen(false);
-        setToasterOpen(false);
+        setFermenterDeviceId(null);
+        setToasterDeviceId(null);
         setLevainOpen(false);
-        setProofChamberOpen(false);
+        setProofChamberDeviceId(null);
         setGlutenDeviceId(null);
         setBacteriaDeviceId(null);
         setGrinderDeviceId(null);
         setScoringDeviceId(null);
         setProofDeviceId(null);
         setYeastOpen(false);
-        setCrustOpen(false);
+        setCrustDeviceId(null);
     };
 
     // Listen for fermenter panel open (from inspector device click)
     useEffect(() => {
-        const handler = (): void => {
+        const handler = (e: Event): void => {
             closeAllDevicePanels();
-            setFermenterOpen(true);
+            setFermenterDeviceId((e as CustomEvent<{ deviceId?: string }>).detail?.deviceId ?? null);
         };
         document.addEventListener(APP_EVENTS.SHOW_FERMENTER_TAB, handler);
         return () => document.removeEventListener(APP_EVENTS.SHOW_FERMENTER_TAB, handler);
@@ -208,9 +208,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     // Listen for toaster panel open (from inspector device click)
     useEffect(() => {
-        const handler = (): void => {
+        const handler = (e: Event): void => {
             closeAllDevicePanels();
-            setToasterOpen(true);
+            setToasterDeviceId((e as CustomEvent<{ deviceId?: string }>).detail?.deviceId ?? null);
         };
         document.addEventListener(APP_EVENTS.SHOW_TOASTER_TAB, handler);
         return () => document.removeEventListener(APP_EVENTS.SHOW_TOASTER_TAB, handler);
@@ -228,9 +228,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     // Listen for Dutch Oven panel open (from inspector device click)
     useEffect(() => {
-        const handler = (): void => {
+        const handler = (e: Event): void => {
             closeAllDevicePanels();
-            setProofChamberOpen(true);
+            setProofChamberDeviceId((e as CustomEvent<{ deviceId?: string }>).detail?.deviceId ?? null);
         };
         document.addEventListener(APP_EVENTS.SHOW_PROOF_CHAMBER_TAB, handler);
         return () => document.removeEventListener(APP_EVENTS.SHOW_PROOF_CHAMBER_TAB, handler);
@@ -297,9 +297,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     // Listen for Crust limiter panel open
     useEffect(() => {
-        const handler = (): void => {
+        const handler = (e: Event): void => {
             closeAllDevicePanels();
-            setCrustOpen(true);
+            setCrustDeviceId((e as CustomEvent<{ deviceId?: string }>).detail?.deviceId ?? null);
         };
         document.addEventListener(APP_EVENTS.SHOW_CRUST_TAB, handler);
         return () => document.removeEventListener(APP_EVENTS.SHOW_CRUST_TAB, handler);
@@ -401,29 +401,29 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                         {children}
                     </main>
 
-                    {fermenterOpen ? (
+                    {fermenterDeviceId !== null ? (
                         <InstrumentBottomPanel
                             label="Fermenter"
                             labelColor="text-[var(--color-accent-lavender)]"
                             borderColor="border-[var(--color-accent-lavender)]/20"
                             height={fermenterHeight}
                             onResize={setFermenterHeight}
-                            onClose={() => setFermenterOpen(false)}
+                            onClose={() => setFermenterDeviceId(null)}
                         >
-                            <FermenterPanel />
+                            <FermenterPanel deviceId={fermenterDeviceId} />
                         </InstrumentBottomPanel>
                     ) : null}
 
-                    {toasterOpen ? (
+                    {toasterDeviceId !== null ? (
                         <InstrumentBottomPanel
                             label="Toaster"
                             labelColor="text-[var(--color-accent-peach)]"
                             borderColor="border-[var(--color-accent-peach)]/20"
                             height={toasterHeight}
                             onResize={setToasterHeight}
-                            onClose={() => setToasterOpen(false)}
+                            onClose={() => setToasterDeviceId(null)}
                         >
-                            <ToasterPanel />
+                            <ToasterPanel deviceId={toasterDeviceId} />
                         </InstrumentBottomPanel>
                     ) : null}
 
@@ -440,16 +440,16 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                         </InstrumentBottomPanel>
                     ) : null}
 
-                    {proofChamberOpen ? (
+                    {proofChamberDeviceId !== null ? (
                         <InstrumentBottomPanel
                             label="Dutch Oven"
                             labelColor="text-[var(--color-accent-cyan)]"
                             borderColor="border-[var(--color-accent-cyan)]/20"
                             height={proofChamberHeight}
                             onResize={setProofChamberHeight}
-                            onClose={() => setProofChamberOpen(false)}
+                            onClose={() => setProofChamberDeviceId(null)}
                         >
-                            <ProofChamberPanel />
+                            <ProofChamberPanel deviceId={proofChamberDeviceId} />
                         </InstrumentBottomPanel>
                     ) : null}
 
@@ -531,16 +531,16 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                         </InstrumentBottomPanel>
                     ) : null}
 
-                    {crustOpen ? (
+                    {crustDeviceId !== null ? (
                         <InstrumentBottomPanel
                             label="Crust"
                             labelColor="text-[var(--color-accent-cyan)]"
                             borderColor="border-[var(--color-accent-cyan)]/20"
                             height={crustHeight}
                             onResize={setCrustHeight}
-                            onClose={() => setCrustOpen(false)}
+                            onClose={() => setCrustDeviceId(null)}
                         >
-                            <CrustPanel />
+                            <CrustPanel deviceId={crustDeviceId} />
                         </InstrumentBottomPanel>
                     ) : null}
 

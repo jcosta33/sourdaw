@@ -16,6 +16,7 @@ import { setFermenterParamWithAudio } from '#/modules/Fermenter/useCases/ferment
 import { recordAutomationValue } from '#/modules/Automation/useCases/automationRecording/recordAutomationValue';
 import { getTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { getAllTracks } from '#/modules/Arrangement/useCases/trackQueries';
 
 const logger = Container.getInstance().get(Logger);
 
@@ -132,8 +133,15 @@ export function handleMidiMessage(channel: number, cc: number, value: number): v
             }
             case 'fermenterGlobalParam': {
                 if (mapping.paramId) {
-                    // Update Fermenter store + audio engine
-                    setFermenterParamWithAudio(mapping.paramId as any, scaled);
+                    // Find the first Fermenter device to target
+                    let fermenterDeviceId: string | undefined;
+                    for (const track of getAllTracks()) {
+                        const d = track.devices.find((dev) => dev.type === 'fermenter');
+                        if (d) { fermenterDeviceId = d.id; break; }
+                    }
+                    if (fermenterDeviceId) {
+                        setFermenterParamWithAudio(fermenterDeviceId, mapping.paramId as any, scaled);
+                    }
 
                     // Record automation if playing
                     const transport = getTransportState();

@@ -6,16 +6,16 @@
  *
  * After connecting, starts async scanning to discover audio files.
  */
-import { type LibraryRoot, type SampleRecord, type FolderNode, isAudioFile } from '../models/LibraryTypes';
+import { type LibraryRoot, type SampleRecord, isAudioFile } from '../models/LibraryTypes';
 import {
     libraryStore,
     addLibraryRoot,
     addSamples,
     updateLibraryRootStatus,
     setScanProgress,
-    setFolderTree,
 } from '../stores/libraryStore';
 import { persistLibraryRoots, persistSamples } from '../repositories/libraryPersistence';
+import { buildFolderTree } from './buildFolderTree';
 
 let scanAbortController: AbortController | null = null;
 
@@ -139,7 +139,7 @@ async function scanBrowserDirectory(root: LibraryRoot): Promise<void> {
         }
 
         updateLibraryRootStatus(root.id, 'ready', totalFound);
-        rebuildFolderTree(root.id);
+        buildFolderTree(root.id);
         await persistLibraryRoots();
         await persistSamples();
     } catch (error) {
@@ -154,7 +154,7 @@ async function* traverseBrowserDirectory(
     dir: FileSystemDirectoryHandle,
     parentPath: string
 ): AsyncIterable<{ path: string; name: string; handle: FileSystemFileHandle }> {
-    for await (const entry of (dir as unknown as AsyncIterable<FileSystemDirectoryHandle | FileSystemFileHandle>)) {
+    for await (const entry of dir.values()) {
         const childPath = parentPath ? `${parentPath}/${entry.name}` : entry.name;
         if (entry.kind === 'file' && isAudioFile(entry.name)) {
             yield { path: childPath, name: entry.name, handle: entry as FileSystemFileHandle };
@@ -212,7 +212,7 @@ async function scanTauriDirectory(root: LibraryRoot): Promise<void> {
         }
 
         updateLibraryRootStatus(root.id, 'ready', totalFound);
-        rebuildFolderTree(root.id);
+        buildFolderTree(root.id);
         await persistLibraryRoots();
         await persistSamples();
     } catch {
@@ -245,77 +245,6 @@ function createSampleRecord(rootId: string, relativePath: string, filename: stri
         tags: [],
         favorite: false,
     };
-}
-
-/**
- * Build a folder tree from the current sample records for a given root.
- */
-function rebuildFolderTree(rootId: string): void {
-    const state = libraryStore.value;
-    if (!state) {
-        return;
-    }
-
-    const rootSamples = state.samples.filter((s) => s.libraryRootId === rootId);
-    const root = state.roots.find((r) => r.id === rootId);
-    if (!root) {
-        return;
-    }
-
-    // Build tree from folder paths
-    const treeRoot: FolderNode = {
-        name: root.name,
-        path: '',
-        children: [],
-        fileCount: 0,
-        expanded: true,
-    };
-
-    const folderMap = new Map<string, FolderNode>();
-    folderMap.set('', treeRoot);
-
-    for (const sample of rootSamples) {
-        const parts = sample.folder.split('/').filter(Boolean);
-        let currentPath = '';
-
-        for (const part of parts) {
-            const parentPath = currentPath;
-            currentPath = currentPath ? `${currentPath}/${part}` : part;
-
-            if (!folderMap.has(currentPath)) {
-                const node: FolderNode = {
-                    name: part,
-                    path: currentPath,
-                    children: [],
-                    fileCount: 0,
-                    expanded: false,
-                };
-                folderMap.set(currentPath, node);
-                const parent = folderMap.get(parentPath);
-                if (parent) {
-                    parent.children.push(node);
-                }
-            }
-        }
-
-        // Increment file count for the folder
-        const folderNode = folderMap.get(sample.folder);
-        if (folderNode) {
-            folderNode.fileCount++;
-        }
-        treeRoot.fileCount++;
-    }
-
-    // Sort children alphabetically
-    function sortTree(node: FolderNode): void {
-        node.children.sort((a, b) => a.name.localeCompare(b.name));
-        for (const child of node.children) {
-            sortTree(child);
-        }
-    }
-    sortTree(treeRoot);
-
-    setFolderTree([treeRoot]);
 }
 
 export function cancelScan(): void {
