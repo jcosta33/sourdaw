@@ -8,15 +8,14 @@ import { markerStore } from '#/modules/Arrangement/stores/markerStore';
 import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
 import { arrangementStore, defaultArrangementId } from '../../stores/arrangementStore';
 import { syncCurrentArrangementToStore } from '../arrangement';
-import { defaultTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { type ProjectData } from '../../models/ProjectData';
 import { projectStore } from '../../stores/projectStore';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
-import { getAllSidechainRoutes, setSidechainRoutes } from '#/modules/Routing/useCases/sidechain';
+import { getAllSidechainRoutes } from '#/modules/Routing/useCases/sidechain';
 import { downloadProjectFile } from '../../repositories/project';
 import { notifyUser } from '#/helpers/Notification/notifyUser';
-import { clearUndoHistory, verifyAudioBufferReferences } from './helpers';
+import { clearUndoHistory, hydrateModuleStoresFromProjectData, verifyAudioBufferReferences } from './helpers';
 
 /** Collect every audioBufferId (clips + frozen buffers + track alternatives)
  * referenced by a TrackStoreState so the export can embed the raw PCM. */
@@ -117,32 +116,7 @@ export async function importProjectFile(file: File): Promise<boolean> {
             return false;
         }
 
-        trackStore.set(data.tracks);
-        transportStore.set({
-            ...defaultTransportState,
-            ...data.transport,
-        });
-        if (data.automation) {
-            automationStore.set(data.automation);
-        }
-        if (data.midi) {
-            midiStore.set(data.midi);
-        }
-        if (data.tempoMap) {
-            tempoMapStore.set(data.tempoMap);
-        }
-        if (data.timeSignatureMap) {
-            timeSignatureMapStore.set(data.timeSignatureMap);
-        }
-        if (data.markers) {
-            markerStore.set(data.markers);
-        }
-        if (data.takeLanes) {
-            takeLaneStore.set(data.takeLanes);
-        }
-        if (data.sidechainRoutes && data.sidechainRoutes.length > 0) {
-            setSidechainRoutes(data.sidechainRoutes);
-        }
+        hydrateModuleStoresFromProjectData(data);
         projectStore.set({
             name: data.name,
             createdAt: data.createdAt,

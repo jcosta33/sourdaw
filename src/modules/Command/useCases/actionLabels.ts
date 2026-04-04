@@ -49,7 +49,7 @@ export const ACTION_LABELS: Record<string, string> = {
 /**
  * Produce a human-readable summary for a single action.
  */
-export const describeAction = (action: AppAction): string => {
+export function describeAction(action: AppAction): string {
     const base = ACTION_LABELS[action.type] ?? action.type;
     const p = action.payload as Record<string, unknown> | undefined;
     if (!p) {
@@ -80,4 +80,4 @@ export const describeAction = (action: AppAction): string => {
         return `${base}: ${p.tool}`;
     }
     return base;
-};
+}

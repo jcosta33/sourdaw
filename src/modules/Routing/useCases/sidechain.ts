@@ -2,6 +2,7 @@ import { createSidechainRoute, type SidechainRoute } from '#/modules/AudioEngine
 import { wireSidechainRoute, unwireSidechainRoute } from '#/modules/AudioEngine/useCases/engineAccess';
 
 import { sidechainStore } from '../stores/sidechainStore';
+import { SidechainCycleError } from '../errors/RoutingErrors';
 
 export type { SidechainRoute };
 
@@ -24,7 +25,7 @@ export function addSidechainRoute(
     }
 
     if (wouldCreateCycle(sourceTrackId, targetTrackId, state.routes)) {
-        throw new Error(`Sidechain route ${sourceTrackId} → ${targetTrackId} would create a routing cycle`);
+        throw new SidechainCycleError(sourceTrackId, targetTrackId);
     }
 
     const route = createSidechainRoute(sourceTrackId, targetTrackId, targetDeviceId, targetParameterId);

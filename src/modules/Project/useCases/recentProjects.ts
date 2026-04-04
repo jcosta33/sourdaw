@@ -2,22 +2,12 @@ import { Container } from '#/helpers/DependencyInjector/Container';
 import { Logger } from '#/helpers/Logger/Logger';
 import { LocalStorageStorage } from '#/helpers/Store/Storage/LocalStorageStorage';
 import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { transportStore } from '#/modules/Transport/stores/transportStore';
-import { automationStore } from '#/modules/Automation/stores/automationStore';
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
-import { tempoMapStore } from '#/modules/Transport/stores/tempoMapStore';
-import { timeSignatureMapStore } from '#/modules/Transport/stores/timeSignatureMapStore';
-import { markerStore } from '#/modules/Arrangement/stores/markerStore';
-import { takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
-import { setSidechainRoutes } from '#/modules/Routing/useCases/sidechain';
-import { defaultTransportState } from '#/modules/Transport/useCases/transportQueries';
 import { type ProjectData, RECENT_PROJECTS_KEY } from '../models/ProjectData';
 import { projectStore } from '../stores/projectStore';
 import { readNamedProjectJson, writeProjectJson } from '../repositories/project/storageOperations';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { getAudioContext } from '#/modules/AudioEngine/useCases/engineAccess';
-import { undoStore } from '#/modules/Command/stores/undoStore';
-import { notifyUser } from '#/helpers/Notification/notifyUser';
+import { hydrateModuleStoresFromProjectData, clearUndoHistory, verifyAudioBufferReferences } from './projectPersistence/helpers';
 
 const logger = Container.getInstance().get(Logger);
 
@@ -69,30 +59,7 @@ export async function loadRecentProject(key: string): Promise<boolean> {
             return false;
         }
 
-        trackStore.set(data.tracks);
-        transportStore.set({
-            ...defaultTransportState,
-            ...data.transport,
-        });
-        automationStore.set(data.automation);
-        if (data.midi) {
-            midiStore.set(data.midi);
-        }
-        if (data.tempoMap) {
-            tempoMapStore.set(data.tempoMap);
-        }
-        if (data.timeSignatureMap) {
-            timeSignatureMapStore.set(data.timeSignatureMap);
-        }
-        if (data.markers) {
-            markerStore.set(data.markers);
-        }
-        if (data.takeLanes) {
-            takeLaneStore.set(data.takeLanes);
-        }
-        if (data.sidechainRoutes && data.sidechainRoutes.length > 0) {
-            setSidechainRoutes(data.sidechainRoutes);
-        }
+        hydrateModuleStoresFromProjectData(data);
         projectStore.set({
             name: data.name,
             createdAt: data.createdAt,
@@ -109,35 +76,11 @@ export async function loadRecentProject(key: string): Promise<boolean> {
             trackStore.set({ ...trackStore.value });
         }
         verifyAudioBufferReferences();
-        undoStore.set({ past: [], future: [] });
+        clearUndoHistory();
 
         return true;
     } catch (error) {
         logger.error(new Error('Failed to load recent project', { cause: error }));
         return false;
-    }
-}
-
-function verifyAudioBufferReferences(): void {
-    const state = trackStore.value;
-    if (!state) {
-        return;
-    }
-
-    const missingClips: string[] = [];
-    for (const track of state.tracks) {
-        for (const clip of track.clips) {
-            if (clip.type === 'audio' && clip.audioBufferId && !audioBufferCache.has(clip.audioBufferId)) {
-                missingClips.push(clip.name);
-            }
-        }
-    }
-
-    if (missingClips.length > 0) {
-        const clipList =
-            missingClips.length <= 3
-                ? missingClips.join(', ')
-                : `${missingClips.slice(0, 3).join(', ')} and ${missingClips.length - 3} more`;
-        notifyUser(`Missing audio buffers for: ${clipList} — re-import the audio files`, 'warning');
     }
 }

@@ -23,7 +23,7 @@ import { defaultTransportState } from '#/modules/Transport/useCases/transportQue
 import { createTrack, createAutomationLane } from '#/modules/Arrangement/useCases/trackQueries';
 import type { MidiNote } from '#/modules/Arrangement/useCases/trackQueries';
 import { note, applyPreset, createMidiClip, syncArrangement } from '../demoUtils';
-import { DEFAULT_PAD_NAMES } from '#/modules/Toaster/models/ToasterKit';
+import { DEFAULT_PAD_NAMES } from '#/modules/Toaster/useCases/toasterQueries';
 
 const TB = 320; // total beats (~2:34 at 125 BPM)
 const bpm = 125;

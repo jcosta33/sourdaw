@@ -1,4 +1,4 @@
-import { transportStore } from '../stores/transportStore';
+import { getTransportState, updateTransportState } from '../repositories/transport';
 import { setMasterGainValue } from '#/modules/AudioEngine/useCases/engineAccess';
 
 /**
@@ -6,10 +6,10 @@ import { setMasterGainValue } from '#/modules/AudioEngine/useCases/engineAccess'
  * audio engine (for actual gain change). The `storeValue` is 0-100 (fader %).
  */
 export function setMasterGain(storeValue: number): void {
-    const state = transportStore.value;
+    const state = getTransportState();
     if (!state) {
         return;
     }
-    transportStore.set({ ...state, masterGain: storeValue });
+    updateTransportState({ masterGain: storeValue });
     setMasterGainValue(storeValue / 100);
 }

@@ -88,3 +88,32 @@ Before migrating `Arrangement`, grep for every import from `AudioEngine` inside 
 Do not move any `Arrangement` export that `AudioEngine` currently imports without adding a shim first.
 
 Wait for Teams 1 and 2 to have stable shim contracts before beginning `Arrangement`.
+
+---
+
+## Notes from Team 1 (Conductor) — read before starting
+
+Team 1 migration is complete on branch `agent/arch-migration-team1-conductor`. The following items require action from Team 4.
+
+### 1. `CrdtDocument` — promote `CrdtDocumentTypes` and `automergeRepository` to public surface
+
+Several Team 1 stores (`Transport/stores/transportStore`, `tempoMapStore`, `timeSignatureMapStore`, `Routing/stores/sidechainStore`, `Project/stores/projectStore`, `arrangementStore`) previously imported `DOC_PREFIX_ROOT` from `CrdtDocument/models/CrdtDocumentTypes` — a private path. Team 1 inlined the constant (`const DOC_PREFIX_ROOT = 'root'`) with a comment marking it for promotion.
+
+**Action required:** In your `CrdtDocument` migration, promote `DOC_PREFIX_ROOT` (and any other types from `CrdtDocumentTypes` needed cross-module) to `CrdtDocument`'s public surface (`useCases/` or `stores/`). Once done, the inline constant in each Team 1 store should be replaced with the canonical import.
+
+Additionally, `Command/useCases/executeAppAction.ts` performs a dynamic import of `CrdtDocument/repositories/automergeRepository` to call `restoreSnapshot`. This is a private-repository import. **CrdtDocument must expose a `restoreSnapshot` use case** so Command can call it through the public surface instead.
+
+### 2. `MIDI` — update `UndoEntry` import path
+
+`MIDI/useCases/importMidiFile.ts` imports `UndoEntry` from `Command/models/UndoEntry` — a private path.
+
+**Action required:** Update the import to `#/modules/Command/useCases/commandQueries`, where all `UndoEntry` types (`UndoEntry`, `ActionUndoEntry`, `CallbackUndoEntry`, `UndoSource`, `createUndoEntry`, `createCallbackUndoEntry`, `isActionEntry`) are now re-exported from the public surface.
+
+### 3. `Arrangement` — update `UndoEntry` import path and fix direct `transportStore.set()`
+
+- `Arrangement/useCases/importAudioFile.ts` imports `UndoEntry` from `Command/models/UndoEntry` — update to `#/modules/Command/useCases/commandQueries`.
+- `Arrangement/presentations/hooks/useTimelineInteractions.ts` calls `transportStore.set()` directly (line 229) instead of using Transport's `toggleLoop()` use case. Fix this in your Arrangement migration.
+
+### 4. `CrdtDocument/projectProjection.ts` — use exposed hydration use case
+
+`CrdtDocument/useCases/projection/projectProjection.ts` imports `sidechainStore` directly from `Routing/stores/sidechainStore` and calls `store.hydrate()`. Team 1 has exposed `hydrateSidechainRoutes()` at `#/modules/Routing/useCases/hydrateSidechainRoutes`. Update `projectProjection.ts` to call that use case instead of importing the store directly.

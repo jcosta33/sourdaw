@@ -13,7 +13,6 @@ import {
 import { type TransportState, defaultTransportState } from '../models/TransportState';
 import { type TempoChange, getTempoAtBeat as modelGetTempoAtBeat } from '../models/TempoMap';
 import { type TimeSignatureChange } from '../models/TimeSignatureMap';
-import { transportStore } from '../stores/transportStore';
 import { tempoMapStore } from '../stores/tempoMapStore';
 
 export { defaultTransportState };
@@ -26,7 +25,7 @@ export function getTransportState(): TransportState | null {
 
 /** Get the raw transport store value (for direct snapshot access). */
 export function getTransportStoreValue(): TransportState | null {
-    return transportStore.value;
+    return repoGetTransportState();
 }
 
 /** Get tempo map store state snapshot. */

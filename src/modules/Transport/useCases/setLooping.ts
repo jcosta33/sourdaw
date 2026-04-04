@@ -1,9 +1,9 @@
-import { transportStore } from '../stores/transportStore';
+import { getTransportState, updateTransportState } from '../repositories/transport';
 
 export function disableLooping(): void {
-    const state = transportStore.value;
+    const state = getTransportState();
     if (!state) {
         return;
     }
-    transportStore.set({ ...state, isLooping: false });
+    updateTransportState({ isLooping: false });
 }
